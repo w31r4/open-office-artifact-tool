@@ -1,9 +1,8 @@
-import { attributes, attrEscape, decodeXml } from "../ooxml/source-reference-xml.mjs";
-import { presentationColorXml } from "./ooxml-masters.mjs";
-import { normalizePresentationRunLink, parsePresentationRunLinkXml, presentationRunHyperlinkXml } from "./ooxml-hyperlinks.mjs";
+import { attrEscape } from "../ooxml/source-reference-xml.mjs";
+import { resolveColorToken } from "../shared/colors.mjs";
+import { normalizePresentationRunLink } from "./ooxml-hyperlinks.mjs";
 
 const EMU_PER_PIXEL = 9525;
-const HUNDREDTH_POINTS_PER_PIXEL = 75;
 const MAX_PARAGRAPHS = 4096;
 const MAX_RUNS = 16384;
 const MAX_TAB_POSITION = 2147483647 / EMU_PER_PIXEL;
@@ -27,16 +26,18 @@ function xmlEscape(value) {
   return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
-function localElementBlock(xml = "", localName) {
-  return new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${localName}\\b[^>]*>[\\s\\S]*?<\\/(?:[A-Za-z_][\\w.-]*:)?${localName}>`).exec(String(xml))?.[0] || "";
-}
+const PRESENTATION_SCHEME_COLORS = new Set(["dk1", "lt1", "dk2", "lt2", "tx1", "bg1", "tx2", "bg2", "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink", "folHlink"]);
 
-function localElementOpening(xml = "", localName) {
-  return new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${localName}\\b[^>]*\\/?>`).exec(String(xml))?.[0] || "";
-}
-
-function localElement(xml = "", localName) {
-  return localElementBlock(xml, localName) || localElementOpening(xml, localName);
+function normalizePresentationColor(value, label) {
+  const raw = String(value ?? "").trim();
+  if (!raw) throw new TypeError(`${label} must be a non-empty color string.`);
+  if (PRESENTATION_SCHEME_COLORS.has(raw)) return raw;
+  const resolved = String(resolveColorToken(raw, raw) || "").trim();
+  const short = /^#?([0-9a-f]{3})$/i.exec(resolved)?.[1];
+  if (short) return `#${[...short].map((character) => character.repeat(2)).join("").toLowerCase()}`;
+  const full = /^#?([0-9a-f]{6})$/i.exec(resolved)?.[1];
+  if (!full) throw new TypeError(`${label} must be a DrawingML scheme color, six-digit RGB color, or supported color token.`);
+  return `#${full.toLowerCase()}`;
 }
 
 function finiteNumber(value, fallback) {
@@ -61,7 +62,7 @@ function normalizeRunStyle(style = {}) {
     ...(style.underline == null ? {} : { underline: String(style.underline) }),
     ...(fontSize == null ? {} : { fontSize }),
     ...(style.fontFamily || style.typeface ? { fontFamily: String(style.fontFamily || style.typeface) } : {}),
-    ...(style.color || style.fill ? { color: style.color || style.fill } : {}),
+    ...(style.color || style.fill ? { color: normalizePresentationColor(style.color || style.fill, "Presentation run color") } : {}),
   };
 }
 
@@ -178,14 +179,13 @@ function normalizeParagraph(value, defaults = {}, options = {}) {
   const bulletImage = normalizeBulletImage(input.bulletImage ?? input.pictureBullet ?? input.bullet?.image ?? defaults.bulletImage);
   if ([bulletCharacter != null, Boolean(autoNumber), bulletNone, Boolean(bulletImage)].filter(Boolean).length > 1) throw new Error("Presentation paragraph can use exactly one of bulletCharacter, autoNumber, bulletImage, or bulletNone.");
   const bulletFont = input.bulletFont ?? input.bullet?.fontFamily ?? defaults.bulletFont;
-  const bulletColor = input.bulletColor ?? input.bullet?.color ?? defaults.bulletColor;
+  const bulletColorInput = input.bulletColor ?? input.bullet?.color ?? defaults.bulletColor;
+  const bulletColor = bulletColorInput == null ? undefined : normalizePresentationColor(bulletColorInput, "Presentation bulletColor");
   const bulletFontFollowText = Boolean(input.bulletFontFollowText ?? input.bullet?.fontFollowText ?? defaults.bulletFontFollowText);
   const bulletColorFollowText = Boolean(input.bulletColorFollowText ?? input.bullet?.colorFollowText ?? defaults.bulletColorFollowText);
   const bulletSizeFollowText = Boolean(input.bulletSizeFollowText ?? input.bullet?.sizeFollowText ?? defaults.bulletSizeFollowText);
   if (bulletFont != null && !String(bulletFont).trim()) throw new TypeError("Presentation bulletFont must not be empty.");
   if (bulletFont != null && String(bulletFont).length > 255) throw new RangeError("Presentation bulletFont exceeds 255 characters.");
-  if (bulletColor != null && (typeof bulletColor !== "string" || !bulletColor.trim())) throw new TypeError("Presentation bulletColor must be a non-empty color string.");
-  if (bulletColor != null) presentationColorXml(bulletColor);
   if (bulletFont != null && bulletFontFollowText) throw new Error("Presentation paragraph cannot combine bulletFont with bulletFontFollowText.");
   if (bulletColor != null && bulletColorFollowText) throw new Error("Presentation paragraph cannot combine bulletColor with bulletColorFollowText.");
   const numberFields = ["marginLeft", "indent", "spaceBefore", "spaceAfter", "spaceBeforePercent", "spaceAfterPercent", "lineSpacing", "bulletSize", "bulletSizePercent"];
@@ -318,241 +318,6 @@ export function replacePresentationParagraphText(paragraphs, search, replacement
     return paragraphs;
   }
   return normalizePresentationParagraphs(presentationParagraphsText(paragraphs).replace(search, replacement));
-}
-
-function parseColor(xml = "") {
-  const scheme = attributes(localElementOpening(xml, "schemeClr")).val;
-  if (scheme) return scheme;
-  const rgb = attributes(localElementOpening(xml, "srgbClr")).val;
-  if (rgb) return `#${String(rgb).toLowerCase()}`;
-  const system = attributes(localElementOpening(xml, "sysClr")).lastClr;
-  return system ? `#${String(system).toLowerCase()}` : undefined;
-}
-
-function parseRunStyle(xml = "") {
-  const opening = localElementOpening(xml, "rPr") || localElementOpening(xml, "defRPr") || localElementOpening(xml, "endParaRPr");
-  const attrs = attributes(opening);
-  const fontFamily = attributes(localElementOpening(xml, "latin")).typeface;
-  const color = parseColor(xml);
-  return {
-    ...(attrs.sz && Number.isFinite(Number(attrs.sz)) ? { fontSize: Number(attrs.sz) / HUNDREDTH_POINTS_PER_PIXEL } : {}),
-    ...(attrs.b != null ? { bold: ["1", "true", "on"].includes(String(attrs.b).toLowerCase()) } : {}),
-    ...(attrs.i != null ? { italic: ["1", "true", "on"].includes(String(attrs.i).toLowerCase()) } : {}),
-    ...(attrs.u && attrs.u !== "none" ? { underline: attrs.u } : {}),
-    ...(fontFamily ? { fontFamily } : {}),
-    ...(color ? { color } : {}),
-  };
-}
-
-function parseSpacing(xml, localName) {
-  const block = localElementBlock(xml, localName);
-  const points = attributes(localElementOpening(block, "spcPts")).val;
-  const percent = attributes(localElementOpening(block, "spcPct")).val;
-  return points != null ? { points: Number(points) / HUNDREDTH_POINTS_PER_PIXEL } : percent != null ? { percent: Number(percent) / 100000 } : undefined;
-}
-
-function parseParagraphProperties(xml = "", inherited = {}) {
-  const opening = localElementOpening(xml, "pPr") || localElementOpening(xml, "defPPr") || /<(?:[A-Za-z_][\w.-]*:)?lvl[1-9]pPr\b[^>]*\/?>/.exec(String(xml))?.[0] || "";
-  const attrs = attributes(opening);
-  const bullet = attributes(localElementOpening(xml, "buChar")).char;
-  const autoNumberAttrs = attributes(localElementOpening(xml, "buAutoNum"));
-  const pictureBulletBlipAttrs = attributes(localElementOpening(localElementBlock(xml, "buBlip"), "blip"));
-  const embeddedPictureBulletId = Object.entries(pictureBulletBlipAttrs).find(([name]) => /:embed$/.test(name))?.[1];
-  const linkedPictureBulletId = Object.entries(pictureBulletBlipAttrs).find(([name]) => /:link$/.test(name))?.[1];
-  const bulletImage = embeddedPictureBulletId || linkedPictureBulletId ? { relationshipId: embeddedPictureBulletId || linkedPictureBulletId, relationshipMode: linkedPictureBulletId ? "link" : "embed" } : undefined;
-  const hasBulletNone = Boolean(localElementOpening(xml, "buNone"));
-  const bulletFont = decodeXml(attributes(localElementOpening(xml, "buFont")).typeface || "") || undefined;
-  const bulletColor = parseColor(localElementBlock(xml, "buClr"));
-  const bulletSizePoints = attributes(localElementOpening(xml, "buSzPts")).val;
-  const bulletSizePercent = attributes(localElementOpening(xml, "buSzPct")).val;
-  const bulletFontFollowText = Boolean(localElementOpening(xml, "buFontTx"));
-  const bulletColorFollowText = Boolean(localElementOpening(xml, "buClrTx"));
-  const bulletSizeFollowText = Boolean(localElementOpening(xml, "buSzTx"));
-  const tabStops = [...localElementBlock(xml, "tabLst").matchAll(/<(?:[A-Za-z_][\w.-]*:)?tab\b[^>]*\/?>/g)].map((match) => {
-    const tab = attributes(match[0]);
-    return {
-      position: Number(tab.pos || 0) / EMU_PER_PIXEL,
-      alignment: ({ l: "left", ctr: "center", r: "right", dec: "decimal" })[tab.algn] || "left",
-    };
-  });
-  const level = normalizeLevel(attrs.lvl ?? inherited.level ?? 0);
-  const alignment = { l: "left", ctr: "center", r: "right", just: "justify" }[attrs.algn] || inherited.alignment;
-  const spaceBefore = parseSpacing(xml, "spcBef");
-  const spaceAfter = parseSpacing(xml, "spcAft");
-  const lineSpacing = parseSpacing(xml, "lnSpc");
-  const parsed = {
-    ...inherited,
-    level,
-    ...(alignment ? { alignment } : {}),
-    ...(attrs.marL != null ? { marginLeft: Number(attrs.marL) / EMU_PER_PIXEL } : {}),
-    ...(attrs.indent != null ? { indent: Number(attrs.indent) / EMU_PER_PIXEL } : {}),
-    ...(bullet != null ? { bulletCharacter: decodeXml(bullet), bulletImage: undefined, autoNumber: undefined, bulletNone: undefined } : {}),
-    ...(bulletImage ? { bulletImage, bulletCharacter: undefined, autoNumber: undefined, bulletNone: undefined } : {}),
-    ...(autoNumberAttrs.type ? { autoNumber: { type: autoNumberAttrs.type, ...(autoNumberAttrs.startAt == null ? {} : { startAt: Number(autoNumberAttrs.startAt) }) }, bulletCharacter: undefined, bulletImage: undefined, bulletNone: undefined } : {}),
-    ...(hasBulletNone ? { bulletNone: true, bulletCharacter: undefined, bulletImage: undefined, autoNumber: undefined } : {}),
-    ...(bulletFont ? { bulletFont, bulletFontFollowText: undefined } : {}),
-    ...(bulletFontFollowText ? { bulletFontFollowText: true, bulletFont: undefined } : {}),
-    ...(bulletColor ? { bulletColor, bulletColorFollowText: undefined } : {}),
-    ...(bulletColorFollowText ? { bulletColorFollowText: true, bulletColor: undefined } : {}),
-    ...(bulletSizePoints != null ? { bulletSize: Number(bulletSizePoints) / HUNDREDTH_POINTS_PER_PIXEL, bulletSizePercent: undefined, bulletSizeFollowText: undefined } : {}),
-    ...(bulletSizePercent != null ? { bulletSizePercent: Number(bulletSizePercent) / 100000, bulletSize: undefined, bulletSizeFollowText: undefined } : {}),
-    ...(bulletSizeFollowText ? { bulletSizeFollowText: true, bulletSize: undefined, bulletSizePercent: undefined } : {}),
-    ...(tabStops.length ? { tabStops } : {}),
-    ...(lineSpacing?.points != null ? { lineSpacing: lineSpacing.points } : {}),
-    ...(lineSpacing?.percent != null ? { lineSpacing: lineSpacing.percent } : {}),
-    style: { ...(inherited.style || {}), ...parseRunStyle(localElementBlock(xml, "defRPr") || xml) },
-  };
-  for (const [spacing, points, percent] of [[spaceBefore, "spaceBefore", "spaceBeforePercent"], [spaceAfter, "spaceAfter", "spaceAfterPercent"]]) {
-    if (!spacing) continue;
-    delete parsed[points];
-    delete parsed[percent];
-    if (spacing.points != null) parsed[points] = spacing.points;
-    else parsed[percent] = spacing.percent;
-  }
-  return parsed;
-}
-
-function parseLevelStyles(xml = "") {
-  const styles = {};
-  for (let level = 0; level < 9; level += 1) {
-    const block = localElement(xml, `lvl${level + 1}pPr`);
-    if (!block) continue;
-    const parsed = parseParagraphProperties(block, { level });
-    const modeled = Object.keys(parsed).some((key) => key !== "level" && key !== "runs" && key !== "style") || Object.keys(parsed.style || {}).length > 0;
-    if (modeled) styles[level] = parsed;
-  }
-  return styles;
-}
-
-export function parsePresentationListStyleXml(xml = "") {
-  const listStyle = localElementBlock(xml, "lstStyle");
-  return listStyle ? parseLevelStyles(listStyle) : {};
-}
-
-export function parsePresentationMasterListStylesXml(xml = "") {
-  return Object.fromEntries(Object.entries({ title: "titleStyle", body: "bodyStyle", other: "otherStyle" }).map(([kind, localName]) => {
-    const block = localElementBlock(xml, localName);
-    return [kind, block ? parseLevelStyles(block) : {}];
-  }));
-}
-
-function directParagraphBlocks(xml = "") {
-  const body = localElementBlock(xml, "txBody") || String(xml);
-  return [...body.matchAll(/<(?:[A-Za-z_][\w.-]*:)?p\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?p>/g)].map((match) => match[0]);
-}
-
-export function parsePresentationParagraphsXml(xml = "", options = {}) {
-  const inheritedByLevel = options.inheritedByLevel || {};
-  return directParagraphBlocks(xml).map((block) => {
-    const pPr = localElement(block, "pPr");
-    const pPrAttrs = attributes(localElementOpening(pPr, "pPr"));
-    const level = normalizeLevel(pPrAttrs.lvl || 0);
-    const properties = parseParagraphProperties(pPr, inheritedByLevel[level] || { level });
-    const runs = [...block.matchAll(/<(?:[A-Za-z_][\w.-]*:)?(r|fld|br)\b[^>]*(?:\/>|>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?\1>)/g)].map((match) => {
-      const runXml = match[0];
-      const kind = match[1];
-      const text = decodeXml([...runXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?t\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>/g)].map((item) => item[1]).join(""));
-      const link = parsePresentationRunLinkXml(runXml, options.relationshipContext);
-      const common = { style: parseRunStyle(runXml), ...(link ? { link } : {}) };
-      if (kind === "br") return { break: true, ...common };
-      if (kind === "fld") {
-        const field = attributes(match[0].match(/^<[^>]+>/)?.[0] || "");
-        return { field: { id: decodeXml(field.id || ""), type: decodeXml(field.type || ""), text }, ...common };
-      }
-      return { text, ...common };
-    });
-    if (!runs.length) {
-      const text = decodeXml([...block.matchAll(/<(?:[A-Za-z_][\w.-]*:)?t\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>/g)].map((item) => item[1]).join(""));
-      if (text) runs.push({ text, style: {} });
-    }
-    return normalizeParagraph({ ...properties, runs }, {}, { allowTargetPart: true });
-  });
-}
-
-function colorXml(style) {
-  return style.color ? presentationColorXml(style.color) : "";
-}
-
-function runPropertiesXml(style = {}, tag = "a:rPr", hyperlinkXml = "") {
-  const attrs = `${style.fontSize ? ` sz="${Math.round(style.fontSize * HUNDREDTH_POINTS_PER_PIXEL)}"` : ""}${style.bold != null ? ` b="${style.bold ? 1 : 0}"` : ""}${style.italic != null ? ` i="${style.italic ? 1 : 0}"` : ""}${style.underline ? ` u="${attrEscape(style.underline)}"` : ""}`;
-  const typeface = style.fontFamily ? attrEscape(style.fontFamily) : "";
-  const scriptFonts = typeface ? `<a:latin typeface="${typeface}"/>${typeface.endsWith("-lt") ? `<a:ea typeface="${typeface.slice(0, -2)}ea"/><a:cs typeface="${typeface.slice(0, -2)}cs"/>` : ""}` : "";
-  return `<${tag} lang="en-US"${attrs}>${colorXml(style)}${scriptFonts}${hyperlinkXml}</${tag}>`;
-}
-
-function spacingXml(localName, value, percent = false) {
-  if (value == null) return "";
-  return percent ? `<a:${localName}><a:spcPct val="${Math.round(value * 100000)}"/></a:${localName}>` : `<a:${localName}><a:spcPts val="${Math.round(value * HUNDREDTH_POINTS_PER_PIXEL)}"/></a:${localName}>`;
-}
-
-function bulletColorXml(value) {
-  return presentationColorXml(value).replace(/^<a:solidFill>/, "").replace(/<\/a:solidFill>$/, "");
-}
-
-function paragraphPropertiesXml(paragraph, options = {}) {
-  const alignment = { left: "l", center: "ctr", right: "r", justify: "just" }[paragraph.alignment];
-  const attrs = `${paragraph.level ? ` lvl="${paragraph.level}"` : ""}${alignment ? ` algn="${alignment}"` : ""}${paragraph.marginLeft != null ? ` marL="${Math.round(paragraph.marginLeft * EMU_PER_PIXEL)}"` : ""}${paragraph.indent != null ? ` indent="${Math.round(paragraph.indent * EMU_PER_PIXEL)}"` : ""}`;
-  let bullet = "";
-  if (paragraph.bulletCharacter != null) bullet = `<a:buChar char="${attrEscape(paragraph.bulletCharacter)}"/>`;
-  else if (paragraph.bulletImage) {
-    const relationshipId = options.pictureBulletRelationshipId?.(paragraph.bulletImage);
-    if (!relationshipId) throw new Error("Presentation picture bullet has no relationship in its owning OOXML part.");
-    const relationshipAttribute = paragraph.bulletImage.relationshipMode === "link" ? "link" : "embed";
-    bullet = `<a:buBlip><a:blip r:${relationshipAttribute}="${attrEscape(relationshipId)}"/></a:buBlip>`;
-  } else if (paragraph.autoNumber) bullet = `<a:buAutoNum type="${attrEscape(paragraph.autoNumber.type)}"${paragraph.autoNumber.startAt == null ? "" : ` startAt="${paragraph.autoNumber.startAt}"`}/>`;
-  else if (paragraph.bulletNone) bullet = "<a:buNone/>";
-  const bulletColor = paragraph.bulletColorFollowText ? "<a:buClrTx/>" : paragraph.bulletColor != null ? `<a:buClr>${bulletColorXml(paragraph.bulletColor)}</a:buClr>` : "";
-  const bulletSize = paragraph.bulletSizeFollowText ? "<a:buSzTx/>" : paragraph.bulletSizePercent != null ? `<a:buSzPct val="${Math.round(paragraph.bulletSizePercent * 100000)}"/>` : paragraph.bulletSize != null ? `<a:buSzPts val="${Math.round(paragraph.bulletSize * HUNDREDTH_POINTS_PER_PIXEL)}"/>` : "";
-  const bulletFont = paragraph.bulletFontFollowText ? "<a:buFontTx/>" : paragraph.bulletFont != null ? `<a:buFont typeface="${attrEscape(paragraph.bulletFont)}"/>` : "";
-  const tabStops = paragraph.tabStops?.length ? `<a:tabLst>${paragraph.tabStops.map((tab) => `<a:tab pos="${Math.round(tab.position * EMU_PER_PIXEL)}" algn="${({ left: "l", center: "ctr", right: "r", decimal: "dec" })[tab.alignment]}"/>`).join("")}</a:tabLst>` : "";
-  const spacing = `${spacingXml("lnSpc", paragraph.lineSpacing, paragraph.lineSpacing == null || paragraph.lineSpacing <= 10)}${spacingXml("spcBef", paragraph.spaceBefore)}${spacingXml("spcBef", paragraph.spaceBeforePercent, true)}${spacingXml("spcAft", paragraph.spaceAfter)}${spacingXml("spcAft", paragraph.spaceAfterPercent, true)}`;
-  const defaultRun = Object.keys(paragraph.style || {}).length ? runPropertiesXml(paragraph.style, "a:defRPr") : "";
-  return `<a:pPr${attrs}>${spacing}${bulletColor}${bulletSize}${bulletFont}${bullet}${tabStops}${defaultRun}</a:pPr>`;
-}
-
-export function presentationParagraphsXml(paragraphs = [], defaultStyle = {}, options = {}) {
-  return paragraphs.map((paragraph) => {
-    const runs = paragraph.runs.map((run) => {
-      const style = { ...defaultStyle, ...(paragraph.style || {}), ...(run.style || {}) };
-      const relationshipId = run.link ? options.hyperlinkRelationshipId?.(run.link) : undefined;
-      const customShowId = run.link?.customShow ? options.hyperlinkCustomShowId?.(run.link) : undefined;
-      const hyperlinkXml = presentationRunHyperlinkXml(run.link, relationshipId, customShowId);
-      const properties = runPropertiesXml(style, "a:rPr", hyperlinkXml);
-      if (run.break) return `<a:br>${properties}</a:br>`;
-      if (run.field) {
-        const preserve = /^\s|\s$/.test(run.field.text) ? ' xml:space="preserve"' : "";
-        return `<a:fld id="${attrEscape(run.field.id)}" type="${attrEscape(run.field.type)}">${properties}<a:t${preserve}>${xmlEscape(run.field.text)}</a:t></a:fld>`;
-      }
-      const preserve = /^\s|\s$/.test(run.text) ? ' xml:space="preserve"' : "";
-      return `<a:r>${properties}<a:t${preserve}>${xmlEscape(run.text)}</a:t></a:r>`;
-    }).join("");
-    const endStyle = { ...defaultStyle, ...(paragraph.style || {}) };
-    return `<a:p>${paragraphPropertiesXml(paragraph, options)}${runs}<a:endParaRPr lang="en-US"${endStyle.fontSize ? ` sz="${Math.round(endStyle.fontSize * HUNDREDTH_POINTS_PER_PIXEL)}"` : ""}/></a:p>`;
-  }).join("");
-}
-
-export function presentationListStyleXml(styles = {}, options = {}) {
-  const levels = Object.entries(styles).sort(([left], [right]) => Number(left) - Number(right)).map(([level, style]) => paragraphPropertiesXml({ ...style, level: 0 }, options).replace(/^<a:pPr/, `<a:lvl${Number(level) + 1}pPr`).replace(/<\/a:pPr>$/, `</a:lvl${Number(level) + 1}pPr>`)).join("");
-  return `<a:lstStyle>${levels}</a:lstStyle>`;
-}
-
-export function presentationMasterListStylesXml(stylesByKind = {}, fallbackTextStyles = {}, options = {}) {
-  const localNames = { title: "titleStyle", body: "bodyStyle", other: "otherStyle" };
-  return Object.entries(localNames).map(([kind, localName]) => {
-    const fallback = fallbackTextStyles[kind] || {};
-    const levels = Array.from({ length: 9 }, (_, level) => {
-      const explicit = stylesByKind[kind]?.[level] || {};
-      const paragraph = {
-        alignment: explicit.alignment ?? fallback.alignment,
-        marginLeft: explicit.marginLeft ?? level * 48,
-        indent: explicit.indent ?? (level ? -24 : 0),
-        ...explicit,
-        style: { fontSize: fallback.fontSize == null ? undefined : fallback.fontSize * 4 / 3, bold: fallback.bold, italic: fallback.italic, color: fallback.color, fontFamily: fallback.fontFamily, ...(explicit.style || {}) },
-      };
-      return paragraphPropertiesXml(paragraph, options).replace(/^<a:pPr/, `<a:lvl${level + 1}pPr`).replace(/<\/a:pPr>$/, `</a:lvl${level + 1}pPr>`).replace(/<a:defRPr lang="en-US" sz="([^"]+)"/, '<a:defRPr sz="$1"');
-    }).join("");
-    return `<p:${localName}>${levels}</p:${localName}>`;
-  }).join("");
 }
 
 function autoNumberLabel(autoNumber, index) {

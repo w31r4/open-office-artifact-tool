@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using System.Security.Cryptography;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Validation;
@@ -11,6 +12,164 @@ namespace OpenChestnut.Codec.Tests;
 
 public sealed class DocxCodecTests
 {
+    [Fact]
+    public void SourceFreeParagraphReimportsTwoIndependentlyFormattedRuns()
+    {
+        var document = new DocumentArtifact { Id = "document/two-runs", Name = "Two formatted runs" };
+        var paragraph = new DocumentBlock
+        {
+            Id = "document/two-runs/paragraph",
+            StyleId = "Normal",
+            Paragraph = new DocumentParagraph { Text = "Bold red" },
+        };
+        paragraph.Paragraph.Runs.Add(new DocumentRun
+        {
+            Text = "Bold ",
+            Formatting = new DocumentRunFormatting { Bold = true },
+        });
+        paragraph.Paragraph.Runs.Add(new DocumentRun
+        {
+            Text = "red",
+            Formatting = new DocumentRunFormatting { Italic = true, ColorRgb = "CC0000" },
+        });
+        document.Blocks.Add(paragraph);
+        var authored = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = new ArtifactEnvelope
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Family = ArtifactFamily.Document,
+                Document = document,
+            },
+        });
+        Assert.True(authored.Ok, Diagnostics(authored));
+
+        var imported = DocxCodec.Import(authored.File.ToByteArray(), EffectiveCodecLimits.From(null)).Artifact;
+        var runs = Assert.Single(imported.Document.Blocks).Paragraph.Runs;
+        Assert.Collection(runs,
+            run =>
+            {
+                Assert.Equal("Bold ", run.Text);
+                Assert.True(run.Formatting.Bold);
+            },
+            run =>
+            {
+                Assert.Equal("red", run.Text);
+                Assert.True(run.Formatting.Italic);
+                Assert.Equal("CC0000", run.Formatting.ColorRgb);
+            });
+    }
+
+    [Fact]
+    public void OfficeSkillProfileRoundTripsFormattingImagesSectionsAndHeaders()
+    {
+        var authored = Invoke(OfficeSkillProfileExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var mainPart = package.MainDocumentPart!;
+            Assert.NotNull(mainPart.StyleDefinitionsPart?.Styles?.DocDefaults?.RunPropertiesDefault);
+            Assert.Contains(mainPart.StyleDefinitionsPart!.Styles!.Elements<W.Style>(), style => style.StyleId == "BriefLead");
+            Assert.Single(mainPart.ImageParts);
+            Assert.Equal(2, mainPart.HeaderParts.Count());
+            Assert.Single(mainPart.FooterParts);
+            Assert.NotNull(mainPart.DocumentSettingsPart?.Settings?.GetFirstChild<W.EvenAndOddHeaders>());
+            Assert.Equal(2, mainPart.Document!.Body!.Descendants<W.SectionProperties>().Count());
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var document = imported.Artifact.Document;
+        Assert.Equal("Aptos", document.DefaultRunStyle.FontFamily);
+        Assert.Contains(document.Styles, style => style.Id == "BriefLead" && style.BasedOn == "Normal");
+        Assert.True(document.EvenAndOddHeaders);
+        Assert.Equal(2, document.Headers.Count);
+        Assert.Single(document.Footers);
+        Assert.True(Assert.Single(document.SectionSettings).DifferentFirstPage);
+
+        var paragraph = document.Blocks.Single(block => block.ContentCase == DocumentBlock.ContentOneofCase.Paragraph && block.StyleId == "BriefLead");
+        Assert.True(paragraph.Source.Editable);
+        Assert.Equal("center", paragraph.Paragraph.Formatting.Alignment);
+        Assert.True(paragraph.Paragraph.Formatting.KeepNext);
+        Assert.Equal("Aptos Display", paragraph.Paragraph.Runs[0].Formatting.FontFamily);
+        Assert.Equal((uint)30, paragraph.Paragraph.Runs[0].Formatting.FontSizeHalfPoints);
+        Assert.Equal("315A83", paragraph.Paragraph.Runs[0].Formatting.ColorRgb);
+        Assert.True(paragraph.Paragraph.Runs[0].Formatting.Bold);
+        Assert.True(paragraph.Paragraph.Runs[0].Formatting.Underline);
+        Assert.True(paragraph.Paragraph.Runs[0].Formatting.HasItalic);
+        Assert.False(paragraph.Paragraph.Runs[0].Formatting.Italic);
+        Assert.Contains(document.Blocks, block => block.ContentCase == DocumentBlock.ContentOneofCase.Field && block.Field.Instruction == "PAGE");
+        var image = document.Blocks.Single(block => block.ContentCase == DocumentBlock.ContentOneofCase.Image);
+        Assert.True(image.Source.Editable);
+        Assert.Single(imported.Artifact.Assets);
+        var section = document.Blocks.Single(block => block.ContentCase == DocumentBlock.ContentOneofCase.Section);
+        Assert.True(section.Section.Landscape);
+        Assert.Equal(DocumentSectionBreak.Continuous, section.Section.BreakType);
+
+        paragraph.Paragraph.Text = "Edited styled lead";
+        paragraph.Paragraph.Runs[0].Text = paragraph.Paragraph.Text;
+        paragraph.Paragraph.Runs[0].Formatting.ColorRgb = "9C2B2E";
+        image.Image.AltText = "Edited chart preview";
+        image.Image.WidthEmu += 9_525;
+        section.Section.MarginLeftTwips = 1_200;
+        var edited = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(edited.Ok, Diagnostics(edited));
+        using (var stream = new MemoryStream(edited.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+
+        var roundTrip = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = edited.File,
+        });
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        Assert.Contains(roundTrip.Artifact.Document.Blocks, block =>
+            block.ContentCase == DocumentBlock.ContentOneofCase.Paragraph && block.Paragraph.Text == "Edited styled lead" &&
+            block.Paragraph.Runs[0].Formatting.ColorRgb == "9C2B2E");
+        Assert.Contains(roundTrip.Artifact.Document.Blocks, block =>
+            block.ContentCase == DocumentBlock.ContentOneofCase.Image && block.Image.AltText == "Edited chart preview");
+        Assert.Equal((uint)1_200, roundTrip.Artifact.Document.Blocks.Single(block =>
+            block.ContentCase == DocumentBlock.ContentOneofCase.Section).Section.MarginLeftTwips);
+    }
+
+    [Fact]
+    public void OfficeSkillProfileRejectsMissingImageAssetsAndInvalidSectionGeometry()
+    {
+        var missingAsset = OfficeSkillProfileExportRequest();
+        missingAsset.Artifact.Assets.Clear();
+        var missingAssetResponse = Invoke(missingAsset);
+        Assert.False(missingAssetResponse.Ok);
+        Assert.Equal("invalid_document_image_asset", Assert.Single(missingAssetResponse.Diagnostics).Code);
+
+        var invalidSection = OfficeSkillProfileExportRequest();
+        var section = invalidSection.Artifact.Document.Blocks.Single(block =>
+            block.ContentCase == DocumentBlock.ContentOneofCase.Section).Section;
+        section.MarginLeftTwips = section.PageWidthTwips;
+        var invalidSectionResponse = Invoke(invalidSection);
+        Assert.False(invalidSectionResponse.Ok);
+        Assert.Equal("invalid_document_section", Assert.Single(invalidSectionResponse.Diagnostics).Code);
+    }
+
     [Fact]
     public void ProtocolRoundTripsMinimalDocument()
     {
@@ -1646,6 +1805,178 @@ public sealed class DocxCodecTests
         };
     }
 
+    private static CodecRequest OfficeSkillProfileExportRequest()
+    {
+        var png = Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=");
+        var digest = Convert.ToHexString(SHA256.HashData(png)).ToLowerInvariant();
+        var assetId = $"asset/document/image/{digest}";
+        var document = new DocumentArtifact
+        {
+            Id = "document/office-skill-profile",
+            Name = "Office skill profile",
+            EvenAndOddHeaders = true,
+            DefaultRunStyle = new DocumentRunFormatting
+            {
+                FontFamily = "Aptos",
+                FontSizeHalfPoints = 22,
+                ColorRgb = "202020",
+            },
+        };
+        document.Styles.Add(new DocumentStyle
+        {
+            Id = "BriefLead",
+            Name = "Brief lead",
+            Type = DocumentStyleType.Paragraph,
+            BasedOn = "Normal",
+            RunFormat = new DocumentRunFormatting
+            {
+                FontFamily = "Aptos Display",
+                FontSizeHalfPoints = 30,
+                Bold = true,
+            },
+            ParagraphFormat = new DocumentParagraphFormatting
+            {
+                Alignment = "center",
+                SpaceAfterTwips = 240,
+                KeepNext = true,
+            },
+        });
+        var lead = new DocumentBlock
+        {
+            Id = "document/lead",
+            StyleId = "BriefLead",
+            Paragraph = new DocumentParagraph
+            {
+                Text = "Styled office brief",
+                Formatting = new DocumentParagraphFormatting
+                {
+                    Alignment = "center",
+                    LeftIndentTwips = 360,
+                    SpaceBeforeTwips = 120,
+                    SpaceAfterTwips = 240,
+                    LineSpacingTwips = 300,
+                    LineSpacingRule = "auto",
+                    KeepNext = true,
+                },
+            },
+        };
+        lead.Paragraph.Runs.Add(new DocumentRun
+        {
+            Text = lead.Paragraph.Text,
+            Formatting = new DocumentRunFormatting
+            {
+                FontFamily = "Aptos Display",
+                FontSizeHalfPoints = 30,
+                ColorRgb = "315A83",
+                CharacterSpacingTwips = 10,
+                Bold = true,
+                Italic = false,
+                Underline = true,
+            },
+        });
+        document.Blocks.Add(lead);
+        document.Blocks.Add(new DocumentBlock
+        {
+            Id = "document/page-field",
+            StyleId = "Normal",
+            Field = new DocumentField { Instruction = "PAGE", Display = "1" },
+        });
+        document.Blocks.Add(new DocumentBlock
+        {
+            Id = "document/image",
+            Name = "Chart preview",
+            StyleId = "Normal",
+            Image = new DocumentImage
+            {
+                AssetId = assetId,
+                AltText = "Chart preview",
+                WidthEmu = 1_905_000,
+                HeightEmu = 952_500,
+            },
+        });
+        document.Blocks.Add(new DocumentBlock
+        {
+            Id = "document/section",
+            Section = new DocumentSection
+            {
+                BreakType = DocumentSectionBreak.Continuous,
+                PageWidthTwips = 15_840,
+                PageHeightTwips = 12_240,
+                Landscape = true,
+                MarginTopTwips = 720,
+                MarginRightTwips = 900,
+                MarginBottomTwips = 720,
+                MarginLeftTwips = 900,
+            },
+        });
+        var secondSection = new DocumentBlock
+        {
+            Id = "document/second-section-body",
+            StyleId = "Normal",
+            Paragraph = new DocumentParagraph { Text = "Second section" },
+        };
+        secondSection.Paragraph.Runs.Add(new DocumentRun { Text = secondSection.Paragraph.Text });
+        document.Blocks.Add(secondSection);
+        document.SectionSettings.Add(new DocumentSectionSettings
+        {
+            SectionIndex = 0,
+            DifferentFirstPage = true,
+        });
+        document.Headers.Add(new DocumentHeaderFooter
+        {
+            Id = "document/header/default",
+            Name = "Default header",
+            StyleId = "Normal",
+            Text = "OpenChestnut",
+            Reference = DocumentHeaderFooterReference.Default,
+            SectionIndex = 0,
+            VariantActive = true,
+        });
+        document.Headers.Add(new DocumentHeaderFooter
+        {
+            Id = "document/header/first",
+            Name = "First header",
+            StyleId = "Normal",
+            Text = "Office skill profile",
+            Reference = DocumentHeaderFooterReference.First,
+            SectionIndex = 0,
+            VariantActive = true,
+        });
+        document.Footers.Add(new DocumentHeaderFooter
+        {
+            Id = "document/footer/even",
+            Name = "Even page footer",
+            StyleId = "Normal",
+            Text = "1",
+            FieldInstruction = "PAGE",
+            Reference = DocumentHeaderFooterReference.Even,
+            SectionIndex = 0,
+            VariantActive = true,
+        });
+        var envelope = new ArtifactEnvelope
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Family = ArtifactFamily.Document,
+            Document = document,
+        };
+        envelope.Assets.Add(new Asset
+        {
+            Id = assetId,
+            FileName = "chart-preview.png",
+            ContentType = "image/png",
+            Data = ByteString.CopyFrom(png),
+            Sha256 = digest,
+        });
+        return new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = envelope,
+        };
+    }
+
     private static CodecRequest ClassicCommentExportRequest()
     {
         var paragraph = new DocumentBlock
@@ -2041,7 +2372,7 @@ public sealed class DocxCodecTests
             paragraph.ParagraphProperties = new W.ParagraphProperties(
                 new W.ParagraphStyleId { Val = "DerivedList" });
 
-            var stylesPart = mainPart.AddNewPart<StyleDefinitionsPart>();
+            var stylesPart = mainPart.StyleDefinitionsPart ?? mainPart.AddNewPart<StyleDefinitionsPart>();
             stylesPart.Styles = new W.Styles(
                 new W.Style(
                     new W.StyleName { Val = "Base list" },
@@ -2108,7 +2439,7 @@ public sealed class DocxCodecTests
             paragraph.ParagraphProperties = new W.ParagraphProperties(
                 new W.ParagraphStyleId { Val = "DerivedList" });
 
-            var stylesPart = mainPart.AddNewPart<StyleDefinitionsPart>();
+            var stylesPart = mainPart.StyleDefinitionsPart ?? mainPart.AddNewPart<StyleDefinitionsPart>();
             stylesPart.Styles = new W.Styles(
                 new W.Style(
                     new W.StyleName { Val = "Base list" },

@@ -4,49 +4,38 @@ import { deflateSync, inflateSync } from "node:zlib";
 import JSZip from "jszip";
 import { validatePptxPackageSemantics } from "./ooxml/pptx-package-semantics.mjs";
 import { mutateOoxmlSourceReference, mutateOoxmlSourceReferenceTarget, supportedOoxmlSourceReferenceSummary, supportsOoxmlSourceReference, validateOoxmlSourceReferenceTarget } from "./ooxml/source-references.mjs";
-import { docxSettingsXml, normalizeDocxSettings, parseDocxSettings } from "./ooxml/docx-settings.mjs";
-import { docxRunPropertiesXml, docxThemeXml, effectiveDocxRunStyle, mergeDocxRunStyleCascade, normalizeDocxRunStyle, normalizeDocxThemeConfig, parseDocxDefaultRunPropertiesXml, parseDocxRunPropertiesXml, parseDocxRunStyleId, parseDocxThemeXml } from "./ooxml/docx-run-styles.mjs";
-import { DOCX_COMMENTS_EXTENDED_CONTENT_TYPE, DOCX_COMMENTS_EXTENDED_PATH, DOCX_COMMENTS_EXTENDED_RELATIONSHIP_TYPE, DOCX_COMMENTS_EXTENSIBLE_CONTENT_TYPE, DOCX_COMMENTS_EXTENSIBLE_PATH, DOCX_COMMENTS_EXTENSIBLE_RELATIONSHIP_TYPE, DOCX_COMMENTS_IDS_CONTENT_TYPE, DOCX_COMMENTS_IDS_PATH, DOCX_COMMENTS_IDS_RELATIONSHIP_TYPE, DOCX_PEOPLE_CONTENT_TYPE, DOCX_PEOPLE_PATH, DOCX_PEOPLE_RELATIONSHIP_TYPE, docxCommentsExtendedXml, docxCommentsExtensibleXml, docxCommentsIdsXml, docxCommentsXml, docxPeopleXml, parseDocxComments, planDocxComments, validateDocxCommentPackageSemantics } from "./ooxml/docx-comments.mjs";
-import { docxBookmarkEntriesForBlock, docxBookmarkEntriesForTableCell, docxHyperlinkAttributes, parseDocxBookmarkMarkers, parseDocxHyperlink, parseDocxTableBookmarkMarkers, planDocxBookmarks, validateDocxLinkPackageSemantics, wrapDocxParagraphBookmarks } from "./ooxml/docx-links.mjs";
-import { DOCX_BIBLIOGRAPHY_PATH, DOCX_BIBLIOGRAPHY_RELATIONSHIP_TYPE, docxBibliographyXml, docxCitationInstruction, normalizeDocxBibliographySource, parseDocxBibliography, parseDocxCitationInstruction, planDocxBibliography, validateDocxBibliographyPackageSemantics } from "./ooxml/docx-bibliography.mjs";
-import { collectDocxHeaderFooterParts, normalizeDocxSectionSettings, parseDocxSectionDeclarations, planDocxHeaderFooterSections, resolveDocxPageHeaderFooter } from "./ooxml/docx-sections.mjs";
-import { collectDocxNumbering, docxNumberingXml, normalizeDocumentPictureBullet, parseDocxNumberingXml, parseDocxStyleNumberingPropertiesXml, resolveDocxParagraphNumbering } from "./ooxml/docx-numbering.mjs";
+import { normalizeDocxSettings } from "./ooxml/docx-settings.mjs";
+import { effectiveDocxRunStyle, mergeDocxRunStyleCascade, normalizeDocxRunStyle, normalizeDocxThemeConfig } from "./ooxml/docx-run-styles.mjs";
+import { DOCX_COMMENTS_EXTENDED_CONTENT_TYPE, DOCX_COMMENTS_EXTENDED_RELATIONSHIP_TYPE, DOCX_COMMENTS_EXTENSIBLE_CONTENT_TYPE, DOCX_COMMENTS_EXTENSIBLE_RELATIONSHIP_TYPE, DOCX_COMMENTS_IDS_CONTENT_TYPE, DOCX_COMMENTS_IDS_RELATIONSHIP_TYPE, DOCX_PEOPLE_CONTENT_TYPE, DOCX_PEOPLE_RELATIONSHIP_TYPE, validateDocxCommentPackageSemantics } from "./ooxml/docx-comments.mjs";
+import { validateDocxLinkPackageSemantics } from "./ooxml/docx-links.mjs";
+import { normalizeDocxBibliographySource, validateDocxBibliographyPackageSemantics } from "./ooxml/docx-bibliography.mjs";
+import { normalizeDocxSectionSettings, planDocxHeaderFooterSections, resolveDocxPageHeaderFooter } from "./ooxml/docx-sections.mjs";
+import { normalizeDocumentPictureBullet } from "./ooxml/docx-numbering.mjs";
 import { resolveColorToken } from "./shared/colors.mjs";
 import { matchesFormulaCriteria } from "./spreadsheet/formula-criteria.mjs";
-import { normalizeSpreadsheetChartSeriesLine, spreadsheetChartLineDashArray, spreadsheetChartSeriesLineXml } from "./spreadsheet/chart-line-style.mjs";
+import { normalizeSpreadsheetChartSeriesLine, spreadsheetChartLineDashArray } from "./spreadsheet/chart-line-style.mjs";
 import { normalizeSpreadsheetChartLineOptions, spreadsheetChartSmoothLinePath } from "./spreadsheet/chart-line-options.mjs";
-import { normalizeSpreadsheetChartSeriesMarker, spreadsheetChartMarkerSvg, spreadsheetChartSeriesMarkerXml } from "./spreadsheet/chart-marker-style.mjs";
-import { normalizeSpreadsheetChartDataLabels, spreadsheetChartDataLabelPositionXml, spreadsheetChartDataLabelSvgPlacement, spreadsheetChartDataLabelText } from "./spreadsheet/chart-data-labels.mjs";
-import { PIVOT_RELATIVE_DATE_FILTER_TYPES } from "./spreadsheet/pivot-filters.mjs";
-import { parseSpreadsheetChart, parseSpreadsheetDrawing } from "./spreadsheet/ooxml-drawings.mjs";
-import { parsePivotCacheDefinition, parsePivotTableDefinition, parseWorkbookPivotCaches, spreadsheetPivotCacheDefinitionXml, spreadsheetPivotCacheRecordsXml, spreadsheetPivotTableDefinitionXml } from "./spreadsheet/ooxml-pivots.mjs";
+import { normalizeSpreadsheetChartSeriesMarker, spreadsheetChartMarkerSvg } from "./spreadsheet/chart-marker-style.mjs";
+import { normalizeSpreadsheetChartDataLabels, spreadsheetChartDataLabelSvgPlacement, spreadsheetChartDataLabelText } from "./spreadsheet/chart-data-labels.mjs";
 import { computePivotValues, normalizePivotConfig } from "./spreadsheet/pivots.mjs";
-import { formatSpreadsheetDisplayValue, normalizeXlsxColor, normalizeXlsxStyle, normalizeXlsxThemeConfig, parseXlsxStylesXml, parseXlsxThemeColors, parseXlsxThemeConfig, xlsxColorCss, xlsxFillSvgPaint, xlsxStyleKey, xlsxStylesXml, xlsxThemeXml } from "./spreadsheet/ooxml-styles.mjs";
-import { XLSX_PERSON_CONTENT_TYPE, XLSX_PERSON_RELATIONSHIP_TYPE, XLSX_THREADED_COMMENTS_CONTENT_TYPE, XLSX_THREADED_COMMENTS_RELATIONSHIP_TYPE, parseSpreadsheetPeople, parseSpreadsheetThreadedComments, planSpreadsheetThreadedComments, spreadsheetPersonsXml, spreadsheetThreadRoots, spreadsheetThreadedCommentsXml, validateSpreadsheetThreadedCommentPackageSemantics } from "./spreadsheet/ooxml-threaded-comments.mjs";
+import { formatSpreadsheetDisplayValue, normalizeXlsxColor, normalizeXlsxThemeConfig, xlsxColorCss, xlsxFillSvgPaint } from "./spreadsheet/ooxml-styles.mjs";
+import { planSpreadsheetThreadedComments, validateSpreadsheetThreadedCommentPackageSemantics } from "./spreadsheet/ooxml-threaded-comments.mjs";
 import { parseStructuredReference, scanStructuredReferenceIntersections, scanStructuredReferences, splitReferenceIntersectionOperands } from "./spreadsheet/structured-references.mjs";
-import { normalizePresentationThemeConfig, parsePresentationSlideMasterThemeXml, parsePresentationThemeXml, presentationSlideMasterXml, presentationThemeXml } from "./presentation/ooxml-theme.mjs";
-import { mergePresentationPlaceholders, normalizePresentationBackground, parsePresentationBackgroundXml, parsePresentationPlaceholderStyleXml, presentationBackgroundXml, presentationColorXml, resolvePresentationBackgroundColor } from "./presentation/ooxml-masters.mjs";
-import { planPresentationMasterGraph } from "./presentation/master-graph.mjs";
-import { createPresentationGroupShapeClass, directPresentationChildren, parsePresentationGroupTree } from "./presentation/group-shapes.mjs";
-import { capturePresentationOpaqueObject, planPresentationOpaqueParts, presentationOpaqueContentTypeXml } from "./presentation/opaque-objects.mjs";
-import { validatePresentationOleWorkbookReplacements } from "./presentation/ole-workbooks.mjs";
-import { normalizePresentationChartAxisGroup, normalizePresentationChartDataLabels, normalizePresentationChartErrorBars, normalizePresentationChartSeriesStyle, normalizePresentationChartStyle, normalizePresentationChartTrendlines, parsePresentationChartXml, presentationChartXml } from "./presentation/ooxml-charts.mjs";
-import { normalizePresentationChartExternalData, parsePresentationChartExternalData, planPresentationChartExternalDataParts, presentationChartExternalDataContentTypesXml, presentationChartExternalDataRelationship, presentationChartUsesFormulaReferences, validatePresentationChartExternalDataWorkbooks } from "./presentation/ooxml-chart-data.mjs";
+import { normalizePresentationThemeConfig } from "./presentation/ooxml-theme.mjs";
+import { mergePresentationPlaceholders, normalizePresentationBackground, resolvePresentationBackgroundColor } from "./presentation/ooxml-masters.mjs";
+import { createPresentationGroupShapeClass } from "./presentation/group-shapes.mjs";
+import { normalizePresentationChartAxisGroup, normalizePresentationChartDataLabels, normalizePresentationChartErrorBars, normalizePresentationChartSeriesStyle, normalizePresentationChartStyle, normalizePresentationChartTrendlines } from "./presentation/ooxml-charts.mjs";
+import { normalizePresentationChartExternalData, presentationChartUsesFormulaReferences } from "./presentation/ooxml-chart-data.mjs";
 import { presentationChartLineSvgAttributes, presentationChartTrendlinesSvg } from "./presentation/chart-trendline-svg.mjs";
-import { planPresentationRunHyperlinks, presentationRunHyperlinkKey, presentationRunHyperlinkReferencesFromParagraphs, resolvePresentationRunHyperlinkTargets } from "./presentation/ooxml-hyperlinks.mjs";
-import { parsePresentationCustomShowsXml, planPresentationCustomShows, PresentationCustomShowCollection, presentationCustomShowsXml } from "./presentation/ooxml-custom-shows.mjs";
-import { planPresentationPictureBullets, presentationPictureBulletReferencesFromParagraphs, presentationPictureBulletReferencesFromStyles, resolvePresentationPictureBulletMasterStyles, resolvePresentationPictureBulletParagraphs, resolvePresentationPictureBulletStyles } from "./presentation/ooxml-picture-bullets.mjs";
-import { inheritPresentationParagraphs, normalizePresentationParagraphs, normalizePresentationParagraphStyles, parsePresentationListStyleXml, parsePresentationMasterListStylesXml, parsePresentationParagraphsXml, presentationListStyleXml, presentationParagraphsNeedSerialization, presentationParagraphsSvg, presentationParagraphsText, presentationParagraphsXml, replacePresentationParagraphText } from "./presentation/text-paragraphs.mjs";
-import { normalizePresentationTextBodyProperties, parsePresentationTextBodyPropertiesXml, presentationTextBodyPropertiesXml } from "./presentation/text-body-properties.mjs";
-import { PPTX_MODERN_AUTHOR_CONTENT_TYPE, PPTX_MODERN_AUTHOR_RELATIONSHIP_TYPE, PPTX_MODERN_COMMENT_CONTENT_TYPE, PPTX_MODERN_COMMENT_RELATIONSHIP_TYPE, parsePresentationElementIdentity, parsePresentationModernAuthors, parsePresentationModernComments, planPresentationModernComments, planPresentationSlideElementIdentities, presentationCreationIdExtensionXml, presentationModernAuthorsXml, presentationModernCommentsXml } from "./presentation/ooxml-modern-comments.mjs";
+import { planPresentationCustomShows, PresentationCustomShowCollection } from "./presentation/ooxml-custom-shows.mjs";
+import { inheritPresentationParagraphs, normalizePresentationParagraphs, normalizePresentationParagraphStyles, presentationParagraphsNeedSerialization, presentationParagraphsSvg, presentationParagraphsText, replacePresentationParagraphText } from "./presentation/text-paragraphs.mjs";
+import { normalizePresentationTextBodyProperties } from "./presentation/text-body-properties.mjs";
+import { PPTX_MODERN_AUTHOR_CONTENT_TYPE, PPTX_MODERN_AUTHOR_RELATIONSHIP_TYPE, PPTX_MODERN_COMMENT_CONTENT_TYPE, PPTX_MODERN_COMMENT_RELATIONSHIP_TYPE, planPresentationModernComments } from "./presentation/ooxml-modern-comments.mjs";
 import { normalizePdfTableGrid, pdfTableCellBBox, serializePdfTableCells } from "./pdf/table-grid.mjs";
 import { analyzePdfReadingOrder, inspectPdfReadingOrderIds, normalizePdfReadingOrder, pdfPageBodyTextLines, pdfReadingOrderInspectRecords, resolvePdfReadingOrder } from "./pdf/reading-order.mjs";
 import { inspectPdfFigureAccessibility, normalizePdfFigureAccessibility, normalizePdfHeadingLevel, pdfFigureAccessibilityIssue, pdfHeadingNestingIssues } from "./pdf/accessibility.mjs";
 import { formulaTimeParts, formulaTimeSerial, parseFormulaDateText, parseFormulaNumberText, parseFormulaTimeText } from "./spreadsheet/formula-coercion.mjs";
 import { createWorkbookWindowCollection, worksheetWindowMemberships } from "./spreadsheet/workbook-windows.mjs";
-import { OFFICE_CODEC_IDS, codecDelegateOptions, loadOpenChestnutCodec, resolveOfficeCodec } from "./codecs/office-codec-policy.mjs";
-
-export { OFFICE_CODEC_IDS };
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const XLSX_DYNAMIC_ARRAY_METADATA_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml";
@@ -930,8 +919,8 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbookWindow.getSelectedWorksheets", summary: "Return one window's visible selected worksheet tabs in workbook order." },
   { artifactKind: "workbook", kind: "api", name: "workbookWindow.setSelectedWorksheets", summary: "Set one window's non-empty visible selected tab group, which must include its active worksheet." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.visibility", summary: "Read or assign native worksheet visibility as visible, hidden, or veryHidden; at least one sheet must remain visible." },
-  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load XLSX into an editable Workbook facade with options.codec set to javascript (default) or open-chestnut." },
-  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade to XLSX with options.codec set to javascript (default) or open-chestnut." },
+  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.importXlsx", summary: "Load XLSX through the single bundled OpenChestnut codec into an editable Workbook facade." },
+  { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportXlsx", summary: "Serialize a Workbook facade through the single bundled OpenChestnut codec." },
   { artifactKind: "workbook", kind: "api", name: "exportXlsxWithOpenChestnut", summary: "Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy/dynamic-array formula topology, worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG pictures, and native bar/line/pie worksheet charts with title, legend, formulas, caches, per-series solid RGB fills, bounded RGB line color/dash/width, direct line-marker symbol/size/RGB fill/bounded outline, chart-level line smoothing, title/tick-label font sizes, and primary-axis semantics, through the bundled C# Open XML SDK WebAssembly codec." },
   { artifactKind: "workbook", kind: "api", name: "importXlsxWithOpenChestnut", summary: "Experimentally import XLSX bytes, effective cell styles and shared/legacy/dynamic-array formula topology, bounded worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG pictures, native bar/line/pie worksheet charts with recognized solid RGB series fills, bounded direct line styles and line-marker symbol/size/RGB fill/bounded outline, chart-level line smoothing, title/tick-label font sizes, and primary axes, and source-bound database connection-root metadata through the bundled OpenChestnut codec." },
   { artifactKind: "workbook", kind: "api", name: "openChestnutStatus", summary: "Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its protocol, assembly, and integrity manifest." },
@@ -1087,7 +1076,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "slide.groups.add", summary: "Add an editable grouped-shape tree with local child coordinates, nested shapes/connectors/groups/tables/charts/images, native p:grpSp roundtrip, relationship parts, and Office 2021 group-aware comment monikers." },
   { artifactKind: "presentation", kind: "api", name: "slide.compose", summary: "Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects." },
   { artifactKind: "presentation", kind: "api", name: "slide.autoLayout", summary: "Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options." },
-  { artifactKind: "presentation", kind: "api", name: "slide.tables.add", summary: "Add an inspectable table facade with rows, columns, values, cells, layout JSON, SVG preview, native JavaScript PPTX output, and a bounded OpenChestnut fixed-grid plain-text table profile." },
+  { artifactKind: "presentation", kind: "api", name: "slide.tables.add", summary: "Add an inspectable table facade with rows, columns, values, cells, layout JSON, SVG preview, and canonical OpenChestnut fixed-grid plain-text PPTX output." },
   { artifactKind: "presentation", kind: "api", name: "slide.charts.add", summary: "Add an inspectable bar/line/pie or bar+line combo chart facade with primary/secondary axis groups, standard chart style IDs, color variation, series fill/line formatting, point overrides, bar direction/grouping/gap/overlap, line markers/smoothing, chart/per-series data labels, six standard native and model-previewed trendline types, error bars including custom formula references and caches, axes, legend, layout JSON, SVG preview, and native PPTX chart output." },
   { artifactKind: "presentation", kind: "api", name: "slide.images.add", summary: "Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, direct rotation/flips, layout JSON, SVG preview, and PPTX output. OpenChestnut owns a bounded embedded rectangular picture profile." },
   { artifactKind: "presentation", kind: "api", name: "presentation.theme", summary: "Configure the deck's inspectable default theme colors, Latin/East-Asian/complex-script fonts, master title/body/other text styles, and color mapping; export/import preserves native Slide Master inheritance and per-master overrides." },
@@ -1106,10 +1095,10 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "slide.connectors.add", summary: "Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.inspectPptx", summary: "Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics." },
-  { artifactKind: "presentation", kind: "api", name: "PresentationFile.exportPptx", summary: "Serialize PPTX with options.codec set to javascript (default) or open-chestnut; each codec enforces its documented editable boundary." },
-  { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import PPTX with options.codec set to javascript (default) or open-chestnut; source-bound slide placeholders resolve effective position, rotation, and flips from their linked layout by idx and expose slide/layout/master/unresolved provenance without flattening the native frame." },
+  { artifactKind: "presentation", kind: "api", name: "PresentationFile.exportPptx", summary: "Serialize PPTX through the single bundled OpenChestnut codec. Only limits is accepted; legacy codec and lossy-fallback options fail explicitly." },
+  { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import PPTX through the single bundled OpenChestnut codec with source-bound opaque preservation and fail-closed edits." },
   { artifactKind: "presentation", kind: "api", name: "exportPptxWithOpenChestnut", summary: "Experimentally export bounded rectangle/ellipse shapes and text semantics, embedded rectangular pictures, fixed-grid plain-text tables, source-evidenced Master/Layout placeholder direct-frame add/remove/move/resize/rotation/flip edits, name/outer-frame edits for recognized top-level OLE/diagram/contentPart objects, and validated XLSX payload replacement for uniquely bound OLE packages through the bundled OpenChestnut codec." },
-  { artifactKind: "presentation", kind: "api", name: "importPptxWithOpenChestnut", summary: "Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology shape text, recognized embedded pictures and fixed-grid plain-text tables, recognized Master/Layout placeholder transform slots, read-only slide-placeholder effective position/rotation/flips/provenance, bounded native-object placement, eligible OLE workbook payload access, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export." },
+  { artifactKind: "presentation", kind: "api", name: "importPptxWithOpenChestnut", summary: "Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology shape text, recognized embedded pictures and fixed-grid plain-text tables, recognized Master/Layout placeholder transform slots, read-only slide-placeholder effective position/rotation/flips/provenance, bounded native-object placement, eligible OLE workbook payload access, slide/shape-tree source bindings, and opaque part/relationship evidence for source-bound, fail-closed second export." },
   { artifactKind: "presentation", kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
   { artifactKind: "presentation", kind: "api", name: "compose.paragraph", summary: "Create an editable text block with name, className/style text tokens, and stable inspect output." },
 
@@ -1141,10 +1130,10 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.layoutJson", summary: "Return page-aware layout JSON with block bounding boxes, section/page ordinals, effective inherited header/footer selections, styles, and target/search slicing." },
   { artifactKind: "document", kind: "api", name: "document.render", summary: "Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs." },
   { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for fake lists, invalid links/citations/bibliography sources, duplicate/dangling/reversed bookmark ranges, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to DOCX with options.codec set to javascript (default) or open-chestnut; each codec enforces its documented editable boundary." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import relationship-driven DOCX semantics with options.codec set to javascript (default) or open-chestnut; the OpenChestnut path carries loss-aware source bindings for its bounded editable slice." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to DOCX through the single bundled OpenChestnut codec. Only limits is accepted; legacy codec and lossy-fallback options fail explicitly." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import relationship-driven DOCX semantics through the single bundled OpenChestnut codec with source-bound opaque preservation." },
   { artifactKind: "document", kind: "api", name: "exportDocxWithOpenChestnut", summary: "Experimentally export bounded DocumentModel paragraphs/runs/tables, classic whole-paragraph comments, validated source-free gridSpan/vMerge tables, and direct text-marker numbering graphs; recognized imports permit fixed-topology classic-comment metadata/text, hyperlink/simple-field/table-text, direct table-formatting, and coherent numbering-definition edits through bundled OpenChestnut." },
-  { artifactKind: "document", kind: "api", name: "importDocxWithOpenChestnut", summary: "Experimentally import DOCX bytes through OpenChestnut with loss-aware block and exact-profile classic-comment source bindings; extended or complex comment graphs and other advanced content remain opaque and fail closed." },
+  { artifactKind: "document", kind: "api", name: "importDocxWithOpenChestnut", summary: "Experimentally import DOCX bytes through OpenChestnut with source-bound block and exact-profile classic-comment bindings; extended or complex comment graphs and other advanced content remain opaque and fail closed." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.inspectDocx", summary: "Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs." },
 
@@ -1168,7 +1157,6 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "PdfFile.importPdf", summary: "Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, reconstruct tables from positioned text geometry when explicit tables are absent, or fall back to heuristic visible-text/table extraction." },
   { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter to extract page geometry, positioned text, heuristic tables, and bounded embedded raster or stencil-mask PNG images with placement boxes." },
 
-  { artifactKind: "shared", kind: "api", name: "OFFICE_CODEC_IDS", summary: "Frozen public codec IDs accepted by the DOCX, PPTX, and XLSX main file facades: javascript and open-chestnut." },
   { artifactKind: "shared", kind: "api", name: "verifyArtifact", summary: "Run an artifact's verify() method and return a bounded NDJSON QA report." },
   { artifactKind: "shared", kind: "api", name: "visualQaArtifact", summary: "Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline render, optionally register small translations, and return a configurable aligned PNG diff heatmap." },
   { artifactKind: "shared", kind: "api", name: "renderArtifact", summary: "Render an artifact through its render/export method, attach normalized FileBlob metadata, and optionally pass SVG output through a caller-provided renderer adapter for PNG/WebP/JPEG/PDF output." },
@@ -1215,16 +1203,6 @@ const HELP_DETAIL_OVERRIDES = {
     examples: ["pdf.inspect({ kind: 'image,table', target: image.id, include: 'alt,bbox' })"],
     options: ["kind", "search", "target/targetId/id/anchor", "before/after/context", "include/fields", "exclude/omit", "maxChars"],
     returns: "{ ndjson, truncated } bounded NDJSON records",
-  },
-  OFFICE_CODEC_IDS: {
-    examples: ["OFFICE_CODEC_IDS.includes('open-chestnut')"],
-    returns: "readonly ['javascript', 'open-chestnut']",
-    schema: {
-      parameters: {},
-      returns: {
-        codecIds: { type: "readonly string[]", description: "Frozen exact codec identifiers accepted by all six Office file-facade import/export methods." },
-      },
-    },
   },
   renderArtifact: {
     examples: ["await renderArtifact(document, { format: 'png', renderer: createPlaywrightRenderer() })"],
@@ -1918,25 +1896,20 @@ const DOCUMENT_HELP_SCHEMAS = {
   }, "report", "object", "Document semantic/layout QA result."),
   "DocumentFile.exportDocx": helpSchema({
     document: { type: "DocumentModel", required: true, description: "Document facade to serialize." },
-    codec: { type: "string", description: "Office codec ID: javascript (default) or open-chestnut. Unsupported values fail closed." },
-    allowLossy: { type: "boolean", description: "OpenChestnut only: explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false." },
-    limits: { type: "object", description: "OpenChestnut only: optional maxInputBytes, maxUncompressedBytes, maxParts, maxCells, and maxCompressionRatio codec budgets." },
+    limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxCells, and maxCompressionRatio codec budgets." },
   }, "blob", "FileBlob", "DOCX package bytes."),
   "DocumentFile.importDocx": helpSchema({
     docx: { type: "FileBlob|Uint8Array", required: true, description: "DOCX package bytes." },
-    codec: { type: "string", description: "Office codec ID: javascript (default) or open-chestnut. Unsupported values fail closed." },
-    preferNative: { type: "boolean", description: "JavaScript codec only: parse native OOXML even when clean-room metadata exists; useful after package patches and for relationship-driven fidelity checks." },
-    limits: { type: "object", description: "OpenChestnut only: optional maxInputBytes, maxUncompressedBytes, maxParts, maxCells, and maxCompressionRatio codec budgets." },
+    limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxCells, and maxCompressionRatio codec budgets." },
   }, "document", "DocumentModel", "Imported editable document facade."),
   "exportDocxWithOpenChestnut": helpSchema({
-    document: { type: "DocumentModel", required: true, description: "Document facade within the current paragraph/run/table authoring boundary. Source-free export accepts complete explicit gridSpan/vMerge geometry and direct text-marker list items grouped by numberingId/abstractNumberingId with consistent levels; picture bullets and style-linked numbering remain on the JavaScript codec. Imported hyperlinks, simple fields, merge-aware simple table-cell text, and direct or paragraph/numbering-style-linked numbered single-run paragraphs retain source bindings. Complete direct numId/level groups may coherently edit numberFormat/start/levelText through an instance-local override; partial, linked, nested, or cross-part edits fail closed." },
-    allowLossy: { type: "boolean", description: "Explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false." },
+    document: { type: "DocumentModel", required: true, description: "Document facade within the OpenChestnut paragraph/run/style, section, header/footer, image, list, hyperlink, simple-field, comment, and fixed-table boundary. Advanced imported content remains source-bound; unsupported edits fail closed." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxCells, and maxCompressionRatio codec budgets." },
   }, "blob", "FileBlob", "DOCX bytes produced by the bundled Open XML SDK WebAssembly codec, with codec diagnostics in metadata."),
   "importDocxWithOpenChestnut": helpSchema({
     input: { type: "FileBlob|Uint8Array|ArrayBuffer", required: true, description: "DOCX package bytes." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxCells, and maxCompressionRatio codec budgets." },
-  }, "document", "DocumentModel", "Imported document facade carrying source/opaque package evidence and loss-aware block bindings for fail-closed second export."),
+  }, "document", "DocumentModel", "Imported document facade carrying source/opaque package evidence and source-bound block bindings for fail-closed second export."),
   "DocumentFile.inspectDocx": helpSchema({
     docx: { type: "FileBlob|Uint8Array", required: true, description: "DOCX package bytes." },
     includeText: { type: "boolean", description: "Include bounded XML/JSON/relationship previews." },
@@ -1999,7 +1972,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     name: { type: "string", description: "Inspectable shape name." },
     geometry: { type: "string", description: "Shape geometry such as rect or ellipse." },
     position: { type: "object", description: "Pixel left/top/width/height frame." },
-    transform: { type: "object", description: "Optional { rotationDegrees, flipHorizontal, flipVertical } center transform. Rotation is bounded to -360 through 360 degrees and flip booleans retain explicit false. Both the JavaScript codec and OpenChestnut author/import this direct DrawingML transform on ordinary rectangle/ellipse shapes. OpenChestnut safely edits or clears recognized source-bound transform attributes; complex or unknown native transform graphs remain read-only. On an inherited slide placeholder, the same property is only an effective read-only projection." },
+    transform: { type: "object", description: "Optional { rotationDegrees, flipHorizontal, flipVertical } center transform. Rotation is bounded to -360 through 360 degrees and flip booleans retain explicit false. OpenChestnut authors/imports this direct DrawingML transform on supported shapes; complex or unknown native transform graphs remain read-only." },
     text: { type: "string|string[]|object|object[]", description: "Plain text or structured paragraphs accepted by shape.text.set, including ordered text/field/line-break inlines, paragraph tab stops, styles, and relationship-backed hyperlinks." },
     textBodyProperties: { type: "object", description: "DrawingML text-frame layout: pixel insets; anchor/wrap/AutoFit; -360..360 degree rotation; horizontal/vertical/vertical270 text; horizontal/vertical overflow; 1-16 columns with pixel spacing and RTL flow; and upright text." },
     fill: { type: "string|object", description: "Shape fill." },
@@ -2180,18 +2153,14 @@ const PRESENTATION_HELP_SCHEMAS = {
   }, "blob", "FileBlob", "Patched PPTX FileBlob with part/relationship/content-type/source-reference update counts and validation metadata."),
   "PresentationFile.exportPptx": helpSchema({
     presentation: { type: "Presentation", required: true, description: "Presentation facade to serialize." },
-    codec: { type: "string", description: "Office codec ID: javascript (default) or open-chestnut. Unsupported values fail closed." },
-    allowLossy: { type: "boolean", description: "OpenChestnut only: explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false." },
-    limits: { type: "object", description: "OpenChestnut only: optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
+    limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
   }, "blob", "FileBlob", "Native OOXML PPTX package bytes."),
   "PresentationFile.importPptx": helpSchema({
     pptx: { type: "FileBlob|Uint8Array", required: true, description: "PPTX package bytes." },
-    codec: { type: "string", description: "Office codec ID: javascript (default) or open-chestnut. Unsupported values fail closed." },
-    limits: { type: "object", description: "OpenChestnut only: optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
+    limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
   }, "presentation", "Presentation", "Imported presentation facade. Source-bound slide placeholders without a direct a:xfrm expose effective position/rotation/flips plus placeholder.geometrySource from the linked layout/master and remain read-only so export preserves the original wire."),
   "exportPptxWithOpenChestnut": helpSchema({
     presentation: { type: "Presentation", required: true, description: "Presentation facade within the bounded shape/text/picture/fixed-table boundary, or carrying validated fixed-topology source bindings whose recognized top-level pictures and tables may change only their documented fields, whose OLE/diagram/contentPart groups may change name/outer frame, whose uniquely bound OLE XLSX payload may be replaced, and whose read-only slide-placeholder effective projections must remain unchanged." },
-    allowLossy: { type: "boolean", description: "Explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
   }, "blob", "FileBlob", "PPTX bytes produced by the bundled Open XML SDK WebAssembly codec, including bounded top-level embedded-picture and fixed-grid plain-text-table profiles, with codec diagnostics in metadata."),
   "importPptxWithOpenChestnut": helpSchema({
@@ -2268,21 +2237,16 @@ const WORKBOOK_HELP_SCHEMAS = {
   "worksheet.freezePanes.unfreeze": helpSchema({}, "freezePanes", "object", "Worksheet frozen-pane facade reset to zero frozen rows and columns."),
   "SpreadsheetFile.importXlsx": helpSchema({
     xlsx: { type: "FileBlob|Uint8Array", required: true, description: "XLSX package bytes." },
-    codec: { type: "string", description: "Office codec ID: javascript (default) or open-chestnut. Unsupported values fail closed." },
-    relativeDateAsOf: { type: "string|Date", description: "JavaScript codec only: optional deterministic ISO/Date evaluation anchor for metadata-free native relative Pivot filters; defaults to the current UTC date." },
-    limits: { type: "object", description: "OpenChestnut only: optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
-  }, "workbook", "Workbook", "Imported editable workbook facade with relationship-driven worksheet tables, worksheet-backed pivots/caches, and basic chart or embedded-image drawings restored from native OOXML parts."),
+    limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
+  }, "workbook", "Workbook", "Imported editable workbook facade with cells, formulas, styles, tables, images, basic charts, validation, conditional formatting, and single-layer threaded comments."),
   "SpreadsheetFile.exportXlsx": helpSchema({
     workbook: { type: "Workbook", required: true, description: "Workbook facade to recalculate and serialize." },
-    codec: { type: "string", description: "Office codec ID: javascript (default) or open-chestnut. Unsupported values fail closed." },
-    recalculate: { type: "boolean", description: "OpenChestnut only: recalculate formulas before serialization; defaults to true." },
-    allowLossy: { type: "boolean", description: "OpenChestnut only: explicitly permit discarding detected opaque OPC content on a second export; defaults to false." },
-    limits: { type: "object", description: "OpenChestnut only: optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
+    recalculate: { type: "boolean", description: "Recalculate formulas before serialization; defaults to true." },
+    limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
   }, "blob", "FileBlob", "Native OOXML XLSX package bytes."),
   "exportXlsxWithOpenChestnut": helpSchema({
     workbook: { type: "Workbook", required: true, description: "Workbook facade within the current bounded feature boundary, including a 12-slot theme, complete static cell styles, validated native shared/legacy/dynamic-array formula metadata, worksheet tables/QueryTables, embedded PNG/JPEG pictures, bounded bar/line/pie charts with title, legend, category/value caches, optional worksheet formulas, per-series solid RGB fills, direct RGB line color/dash/width, direct line-marker symbol/size/RGB fill/bounded outline, chart-level line smoothing, title/tick-label font sizes, and text/value primary-axis titles, number formats, intervals, bounds and major units, plus recognized source-bound database connection-root metadata." },
     recalculate: { type: "boolean", description: "Recalculate formulas before serialization; defaults to true." },
-    allowLossy: { type: "boolean", description: "Explicitly permit discarding detected opaque OPC content on a second export; defaults to false and must not be used as a compatibility shortcut." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
   }, "blob", "FileBlob", "XLSX bytes produced by the bundled Open XML SDK WebAssembly codec, with codec diagnostics in metadata."),
   "importXlsxWithOpenChestnut": helpSchema({
@@ -3663,76 +3627,6 @@ class SparklineGroupCollection {
 class RangeSparklineFacade {
   constructor(range) { this.range = range; }
   add(type, sourceData, config = {}) { return this.range.worksheet.sparklineGroups.add({ ...config, type, targetRange: this.range, sourceData }); }
-}
-
-function xlsxSheetNameForFormula(name) {
-  const raw = String(name || "");
-  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(raw) ? raw : `'${raw.replaceAll("'", "''")}'`;
-}
-
-function xlsxQualifiedRangeRef(ref, defaultSheetName) {
-  const normalized = workbookRangeRef(ref);
-  const sheetName = normalized.sheetName || defaultSheetName;
-  return `${xlsxSheetNameForFormula(sheetName)}!${normalized.address}`;
-}
-
-function xlsxColorRgb(color, fallback = "FF0EA5E9") {
-  const raw = String(color || "").trim();
-  const hex = raw.startsWith("#") ? raw.slice(1) : raw;
-  if (/^[0-9a-fA-F]{6}$/.test(hex)) return `FF${hex.toUpperCase()}`;
-  if (/^[0-9a-fA-F]{8}$/.test(hex)) return hex.toUpperCase();
-  return fallback;
-}
-
-function sparklineGroupExtXml(sheet) {
-  if (!sheet.sparklineGroups.items.length) return "";
-  const groups = sheet.sparklineGroups.items.map((group) => {
-    const attrs = [
-      `type="${attrEscape(group.type || "line")}"`,
-      group.displayHidden ? `displayHidden="1"` : "",
-      group.displayEmptyCellsAs ? `displayEmptyCellsAs="${attrEscape(group.displayEmptyCellsAs)}"` : "",
-      group.markers?.show ? `markers="1"` : "",
-      group.axis?.show ? `displayXAxis="1"` : "",
-      group.dateAxisRange ? `dateAxis="1"` : "",
-      group.lineWeight != null ? `lineWeight="${Number(group.lineWeight) || 1}"` : "",
-    ].filter(Boolean).join(" ");
-    const dateAxis = group.dateAxisRange ? `<x14:dateAxisRange>${xmlEscape(xlsxQualifiedRangeRef(group.dateAxisRange, sheet.name))}</x14:dateAxisRange>` : "";
-    const negative = group.negativeColor ? `<x14:colorNegative rgb="${xlsxColorRgb(group.negativeColor, "FFFF0000")}"/>` : "";
-    return `<x14:sparklineGroup ${attrs}><x14:colorSeries rgb="${xlsxColorRgb(group.seriesColor)}"/>${negative}${dateAxis}<x14:sparklines><x14:sparkline><xm:f>${xmlEscape(xlsxQualifiedRangeRef(group.sourceData, sheet.name))}</xm:f><xm:sqref>${xmlEscape(group.targetRange.address)}</xm:sqref></x14:sparkline></x14:sparklines></x14:sparklineGroup>`;
-  }).join("");
-  return `<extLst><ext uri="{05C60535-1F16-4fd2-B633-F4F36F0B64E0}" xmlns:x14="http://schemas.microsoft.com/office/spreadsheetml/2009/9/main"><x14:sparklineGroups xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main">${groups}</x14:sparklineGroups></ext></extLst>`;
-}
-
-function parseXlsxBool(value) {
-  return value === "1" || value === "true";
-}
-
-function parseSparklineGroupsXml(sheet, xml) {
-  for (const match of String(xml || "").matchAll(/<x14:sparklineGroup\b([^>]*)>([\s\S]*?)<\/x14:sparklineGroup>/g)) {
-    const attrs = match[1] || "";
-    const body = match[2] || "";
-    const formula = decodeXml(/<xm:f[^>]*>([\s\S]*?)<\/xm:f>/.exec(body)?.[1] || "");
-    const targetRange = decodeXml(/<xm:sqref[^>]*>([\s\S]*?)<\/xm:sqref>/.exec(body)?.[1] || "");
-    if (!formula || !targetRange) continue;
-    const sourceData = workbookRangeRef(formula.replace(/^'([^']*(?:''[^']*)*)'!/, (_, sheetName) => `${sheetName.replaceAll("''", "'")}!`));
-    const type = /\btype="([^"]+)"/.exec(attrs)?.[1] || "line";
-    const seriesColor = /<x14:colorSeries[^>]*rgb="(?:FF)?([0-9A-Fa-f]{6})"/.exec(body)?.[1];
-    const negativeColor = /<x14:colorNegative[^>]*rgb="(?:FF)?([0-9A-Fa-f]{6})"/.exec(body)?.[1];
-    const dateAxisText = decodeXml(/<x14:dateAxisRange[^>]*>([\s\S]*?)<\/x14:dateAxisRange>/.exec(body)?.[1] || "");
-    sheet.sparklineGroups.add({
-      type,
-      targetRange,
-      sourceData,
-      dateAxisRange: dateAxisText || undefined,
-      seriesColor: seriesColor ? `#${seriesColor}` : undefined,
-      negativeColor: negativeColor ? `#${negativeColor}` : undefined,
-      markers: { show: parseXlsxBool(/\bmarkers="([^"]+)"/.exec(attrs)?.[1]) },
-      axis: { show: parseXlsxBool(/\bdisplayXAxis="([^"]+)"/.exec(attrs)?.[1]) },
-      displayHidden: parseXlsxBool(/\bdisplayHidden="([^"]+)"/.exec(attrs)?.[1]),
-      displayEmptyCellsAs: /\bdisplayEmptyCellsAs="([^"]+)"/.exec(attrs)?.[1],
-      lineWeight: Number(/\blineWeight="([^"]+)"/.exec(attrs)?.[1] || 1.5),
-    });
-  }
 }
 
 class RangeConditionalFormatFacade {
@@ -6929,170 +6823,14 @@ export class SpreadsheetFile {
   }
 
   static async exportXlsx(workbook, options = {}) {
-    if (resolveOfficeCodec(options, "SpreadsheetFile.exportXlsx") === "open-chestnut") {
-      const { exportXlsxWithOpenChestnut } = await loadOpenChestnutCodec();
-      return exportXlsxWithOpenChestnut(workbook, codecDelegateOptions(options));
-    }
-    const queryTable = workbook.worksheets.items.flatMap((sheet) => sheet.tables.items).find((table) => table.queryTable != null || table[WORKSHEET_TABLE_QUERY_UNSUPPORTED] === true);
-    if (queryTable)
-      throw new Error(`The JavaScript XLSX codec cannot author or source-preserve QueryTable/external-connection graphs for ${queryTable.name}; use the source-bound OpenChestnut XLSX codec.`);
-    workbook.recalculate();
-    const zip = new JSZip();
-    const tableParts = collectWorkbookTableParts(workbook);
-    const pivotParts = collectWorkbookPivotParts(workbook);
-    const imageParts = collectWorkbookImageParts(workbook);
-    const chartParts = collectWorkbookChartParts(workbook, imageParts);
-    const threadParts = collectWorkbookThreadParts(workbook);
-    const threadedCommentPlan = planSpreadsheetThreadedComments(threadParts);
-    const sharedStrings = collectWorkbookSharedStrings(workbook);
-    const styleTable = collectWorkbookStyles(workbook);
-    const hasDynamicArrays = workbookHasDynamicArrays(workbook);
-    const workbookRels = workbookRelsXml(workbook.worksheets.items.length, threadParts.length > 0, sharedStrings.strings.length > 0, pivotParts, hasDynamicArrays);
-    zip.file("[Content_Types].xml", xlsxContentTypes(workbook.worksheets.items.length, tableParts, imageParts, chartParts, threadParts, sharedStrings, pivotParts, hasDynamicArrays));
-    zip.file("_rels/.rels", relsXml([{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument", target: "xl/workbook.xml" }]));
-    zip.file("xl/workbook.xml", workbookXml(workbook, pivotParts));
-    zip.file("xl/_rels/workbook.xml.rels", workbookRels);
-    zip.file("xl/styles.xml", xlsxStylesXml(styleTable));
-    zip.file("xl/theme/theme1.xml", xlsxThemeXml(workbook.theme));
-    if (hasDynamicArrays) zip.file("xl/metadata.xml", xlsxDynamicArrayMetadataXml());
-    if (sharedStrings.strings.length) zip.file("xl/sharedStrings.xml", sharedStringsXml(sharedStrings));
-    zip.file("customXml/open-office-artifact.json", JSON.stringify(workbookMetadata(workbook), null, 2));
-    workbook.worksheets.items.forEach((sheet, index) => {
-      const sheetTableParts = tableParts.filter((part) => part.sheetIndex === index);
-      const sheetImageParts = imageParts.filter((part) => part.sheetIndex === index);
-      const sheetChartParts = chartParts.filter((part) => part.sheetIndex === index);
-      const sheetPivotParts = pivotParts.filter((part) => part.sheetIndex === index);
-      const sheetThreadPart = threadParts.find((part) => part.sheetIndex === index);
-      let nextRelIndex = sheetTableParts.length + 1;
-      const drawingRelId = sheetImageParts.length || sheetChartParts.length ? `rId${nextRelIndex++}` : undefined;
-      if (sheetThreadPart) sheetThreadPart.relId = `rId${nextRelIndex++}`;
-      for (const part of sheetPivotParts) part.relId = `rId${nextRelIndex++}`;
-      zip.file(`xl/worksheets/sheet${index + 1}.xml`, worksheetXml(sheet, sheetTableParts, drawingRelId, sharedStrings, styleTable));
-      if (sheetTableParts.length || sheetImageParts.length || sheetChartParts.length || sheetThreadPart || sheetPivotParts.length) zip.file(`xl/worksheets/_rels/sheet${index + 1}.xml.rels`, worksheetRelsXml(sheetTableParts, drawingRelId ? { relId: drawingRelId, target: `../drawings/drawing${index + 1}.xml` } : undefined, sheetThreadPart, sheetPivotParts));
-      if (sheetImageParts.length || sheetChartParts.length) {
-        zip.file(`xl/drawings/drawing${index + 1}.xml`, drawingXml(sheetImageParts, sheetChartParts));
-        zip.file(`xl/drawings/_rels/drawing${index + 1}.xml.rels`, drawingRelsXml(sheetImageParts, sheetChartParts));
-      }
-    });
-    tableParts.forEach((part) => zip.file(`xl/tables/table${part.tablePartId}.xml`, tableXml(part.table, part.tablePartId, styleTable)));
-    pivotParts.forEach((part) => {
-      zip.file(`xl/pivotTables/pivotTable${part.pivotPartId}.xml`, spreadsheetPivotTableDefinitionXml(part));
-      zip.file(`xl/pivotTables/_rels/pivotTable${part.pivotPartId}.xml.rels`, pivotTableDefinitionRelsXml(part));
-      zip.file(`xl/pivotCache/pivotCacheDefinition${part.cachePartId}.xml`, spreadsheetPivotCacheDefinitionXml(part));
-      if (part.pivot.refreshPolicy.saveData !== false) {
-        zip.file(`xl/pivotCache/pivotCacheRecords${part.recordsPartId}.xml`, spreadsheetPivotCacheRecordsXml(part));
-        zip.file(`xl/pivotCache/_rels/pivotCacheDefinition${part.cachePartId}.xml.rels`, pivotCacheDefinitionRelsXml(part));
-      }
-    });
-    imageParts.forEach((part) => zip.file(`xl/media/image${part.imagePartId}.${part.extension}`, part.bytes));
-    chartParts.forEach((part) => zip.file(`xl/charts/chart${part.chartPartId}.xml`, xlsxChartXml(part.chart)));
-    threadedCommentPlan.parts.forEach((part) => zip.file(`xl/threadedComments/threadedComment${part.threadPartId}.xml`, spreadsheetThreadedCommentsXml(part)));
-    if (threadParts.length) zip.file("xl/persons/person.xml", spreadsheetPersonsXml(threadedCommentPlan));
-    const bytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
-    return new FileBlob(bytes, { type: XLSX_MIME, metadata: { artifactKind: "workbook", codec: "javascript" } });
+    const { exportXlsxWithOpenChestnut } = await import("./codecs/open-chestnut.mjs");
+    return exportXlsxWithOpenChestnut(workbook, options);
   }
 
   static async importXlsx(blobOrBuffer, options = {}) {
-    if (resolveOfficeCodec(options, "SpreadsheetFile.importXlsx") === "open-chestnut") {
-      const { importXlsxWithOpenChestnut } = await loadOpenChestnutCodec();
-      return importXlsxWithOpenChestnut(blobOrBuffer, codecDelegateOptions(options));
-    }
-    const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
-    const zip = await JSZip.loadAsync(bytes);
-    const workbook = Workbook.create();
-    const sharedStrings = parseSharedStringsXml(await zip.file("xl/sharedStrings.xml")?.async("text"));
-    const workbookText = await zip.file("xl/workbook.xml")?.async("text");
-    const workbookProperties = /<(?:[A-Za-z_][\w.-]*:)?workbookPr\b[^>]*\/?>/.exec(String(workbookText || ""))?.[0];
-    if (workbookProperties) {
-      const date1904 = ooxmlXmlAttributes(workbookProperties).date1904;
-      if (date1904 != null) workbook.setDateSystem(["1", "true", "on"].includes(String(date1904).trim().toLowerCase()) ? "1904" : "1900");
-    }
-    const workbookRelationshipRecords = parseRelsXml(await zip.file("xl/_rels/workbook.xml.rels")?.async("text"));
-    const workbookRelationships = new Map(workbookRelationshipRecords.map((relationship) => [relationship.id, relationship]));
-    const metadataRelationship = workbookRelationshipRecords.find((relationship) => relationship.type === XLSX_DYNAMIC_ARRAY_METADATA_RELATIONSHIP_TYPE && String(relationship.targetMode || "").toLowerCase() !== "external");
-    const metadataPartPath = metadataRelationship?.target ? ooxmlResolveRelationshipTarget("xl/workbook.xml", metadataRelationship.target) : undefined;
-    const dynamicArrayMetadataIndexes = dynamicArrayCellMetadataIndexes(metadataPartPath ? await zip.file(metadataPartPath)?.async("text") : "");
-    const connectionRelationships = workbookRelationshipRecords.filter((relationship) => relationship.type.endsWith("/connections") && String(relationship.targetMode || "").toLowerCase() !== "external");
-    if (connectionRelationships.length === 1) {
-      const connectionPath = ooxmlResolveRelationshipTarget("xl/workbook.xml", connectionRelationships[0].target);
-      workbook.connections = parseNativeWorkbookConnections(await zip.file(connectionPath)?.async("text"));
-    }
-    const themeRelationship = workbookRelationshipRecords.find((relationship) => relationship.type.endsWith("/theme") && String(relationship.targetMode || "").toLowerCase() !== "external");
-    const themePath = themeRelationship?.target ? ooxmlResolveRelationshipTarget("xl/workbook.xml", themeRelationship.target) : undefined;
-    const nativeThemeXml = themePath ? await zip.file(themePath)?.async("text") : "";
-    workbook.setTheme(parseXlsxThemeConfig(nativeThemeXml));
-    const themeColors = parseXlsxThemeColors(nativeThemeXml);
-    const styles = parseXlsxStylesXml(await zip.file("xl/styles.xml")?.async("text"), { themeColors });
-    workbook.indexedColors = [...(styles.indexedColors || [])];
-    const sheetNames = [...String(workbookText || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?sheet\b[^>]*\/?>/g)].map((match, position) => {
-      const attrs = ooxmlXmlAttributes(match[0]);
-      const relationshipId = Object.entries(attrs).find(([name]) => /:id$/.test(name))?.[1];
-      const relationship = workbookRelationships.get(relationshipId);
-      return { name: attrs.name || `Sheet${position + 1}`, visibility: normalizeWorksheetVisibility(attrs.state), index: position + 1, sheetId: Number(attrs.sheetId || position + 1), relationshipId, partPath: relationship?.target ? ooxmlResolveRelationshipTarget("xl/workbook.xml", relationship.target) : `xl/worksheets/sheet${attrs.sheetId || position + 1}.xml` };
-    });
-    const nativeActiveTabs = [...String(workbookText || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?workbookView\b[^>]*\/?>/g)]
-      .map((match) => Number(ooxmlXmlAttributes(match[0]).activeTab ?? 0));
-    const nativePivotCaches = await importNativePivotCaches(zip, workbookText, workbookRelationships, sheetNames);
-    for (const { name, visibility, partPath } of sheetNames.length ? sheetNames : [{ name: "Sheet1", visibility: "visible", index: 1, partPath: "xl/worksheets/sheet1.xml" }]) {
-      const sheet = workbook.worksheets.add(name, { visibility });
-      const xml = await zip.file(partPath)?.async("text");
-      if (xml) {
-        parseWorksheetXml(sheet, xml, { sharedStrings, styles, dynamicArrayMetadataIndexes });
-        await importNativeWorksheetTables(sheet, zip, partPath, styles);
-        await importNativeWorksheetDrawings(sheet, zip, partPath);
-        await importNativeWorksheetPivots(sheet, zip, partPath, nativePivotCaches, options);
-      }
-    }
-    if (!workbook.worksheets.items.some((sheet) => sheet.visibility === "visible")) throw new Error("XLSX workbook must contain at least one visible worksheet.");
-    hydrateImportedWorksheetCharts(workbook);
-    parseWorkbookDefinedNames(workbook, workbookText);
-    parseWorkbookCalculation(workbook, workbookText);
-    const metadataText = await zip.file("customXml/open-office-artifact.json")?.async("text");
-    if (metadataText) applyWorkbookMetadata(workbook, JSON.parse(metadataText));
-    else await importNativeThreadedComments(workbook, zip, "xl/workbook.xml", workbookRelationshipRecords, sheetNames.length ? sheetNames : [{ name: "Sheet1", index: 1 }]);
-    if (!metadataText) {
-      const activeTabs = nativeActiveTabs.length ? nativeActiveTabs : [0];
-      workbook.windows._clearAdditional();
-      for (let windowIndex = 0; windowIndex < activeTabs.length; windowIndex += 1) {
-        const activeTab = activeTabs[windowIndex];
-        const active = Number.isInteger(activeTab) && activeTab >= 0 ? workbook.worksheets.getItemAt(activeTab) : undefined;
-        if (!active || active.visibility !== "visible") continue;
-        const window = windowIndex === 0
-          ? workbook.windows.getItemAt(0)
-          : workbook.windows.add({ activeWorksheet: active });
-        window.setActiveWorksheet(active);
-        const selected = workbook.worksheets.items.filter((sheet) => sheet._tabSelectedByWorkbookViewId?.get(windowIndex) && sheet.visibility === "visible");
-        if (!selected.includes(active)) selected.push(active);
-        window.setSelectedWorksheets(selected);
-      }
-    }
-    for (const sheet of workbook.worksheets.items) delete sheet._tabSelectedByWorkbookViewId;
-    workbook.recalculate();
-    return workbook;
+    const { importXlsxWithOpenChestnut } = await import("./codecs/open-chestnut.mjs");
+    return importXlsxWithOpenChestnut(blobOrBuffer, options);
   }
-}
-
-function collectWorkbookTableParts(workbook) {
-  const parts = [];
-  let tablePartId = 1;
-  workbook.worksheets.items.forEach((sheet, sheetIndex) => {
-    sheet.tables.items.forEach((table, tableIndex) => {
-      parts.push({ sheet, sheetIndex, table, tableIndex, tablePartId: tablePartId++, relId: `rId${tableIndex + 1}` });
-    });
-  });
-  return parts;
-}
-
-function collectWorkbookPivotParts(workbook) {
-  const parts = [];
-  let pivotPartId = 1;
-  workbook.worksheets.items.forEach((sheet, sheetIndex) => {
-    sheet.pivotTables.items.forEach((pivot, pivotIndex) => {
-      parts.push({ sheet, sheetIndex, pivot, pivotIndex, pivotPartId: pivotPartId, cacheId: pivotPartId, cachePartId: pivotPartId, recordsPartId: pivotPartId, recordsRelId: "rId1", relId: undefined, cacheRelId: undefined });
-      pivotPartId += 1;
-    });
-  });
-  return parts;
 }
 
 function imageDataFromDataUrl(dataUrl) {
@@ -7101,16 +6839,6 @@ function imageDataFromDataUrl(dataUrl) {
   const contentType = match[1].toLowerCase();
   const extension = contentType === "image/jpeg" ? "jpg" : contentType.split("/")[1] || "bin";
   return { contentType, extension: extension === "svg+xml" ? "svg" : extension, bytes: Buffer.from(match[2], "base64") };
-}
-
-function imageContentTypeDefaults(imageParts = []) {
-  return [
-    ["png", "image/png"],
-    ["jpg", "image/jpeg"],
-    ["jpeg", "image/jpeg"],
-    ["gif", "image/gif"],
-    ["svg", "image/svg+xml"],
-  ].filter(([extension]) => imageParts.some((part) => part.extension === extension)).map(([extension, contentType]) => `<Default Extension="${extension}" ContentType="${contentType}"/>`).join("");
 }
 
 function imageContentTypeFromExtension(extension) {
@@ -7122,1507 +6850,16 @@ function imageContentTypeFromExtension(extension) {
   return "application/octet-stream";
 }
 
-function collectWorkbookImageParts(workbook) {
-  const parts = [];
-  let imagePartId = 1;
-  workbook.worksheets.items.forEach((sheet, sheetIndex) => {
-    let drawingRelIndex = 1;
-    sheet.images.items.forEach((image, imageIndex) => {
-      const data = imageDataFromDataUrl(image.dataUrl);
-      if (!data) return;
-      parts.push({
-        sheet,
-        sheetIndex,
-        image,
-        imageIndex,
-        imagePartId: imagePartId++,
-        drawingRelId: `rId${drawingRelIndex++}`,
-        ...data,
-      });
-    });
-  });
-  return parts;
-}
-
-function collectWorkbookChartParts(workbook, imageParts = []) {
-  const parts = [];
-  let chartPartId = 1;
-  workbook.worksheets.items.forEach((sheet, sheetIndex) => {
-    let drawingRelIndex = imageParts.filter((part) => part.sheetIndex === sheetIndex).length + 1;
-    sheet.charts.items.forEach((chart, chartIndex) => {
-      parts.push({ sheet, sheetIndex, chart, chartIndex, chartPartId: chartPartId++, drawingRelId: `rId${drawingRelIndex++}` });
-    });
-  });
-  return parts;
-}
-
 function collectWorkbookThreadParts(workbook) {
   const parts = [];
   let threadPartId = 1;
   workbook.worksheets.items.forEach((sheet, sheetIndex) => {
-    const threads = workbook.comments.threads.filter((thread) => (thread.target.sheetName || sheet.name) === sheet.name);
+    const activeSheetName = workbook.worksheets.getActiveWorksheet().name;
+    const threads = workbook.comments.threads.filter((thread) => (thread.target.sheetName || activeSheetName) === sheet.name);
     if (threads.length) parts.push({ sheet, sheetIndex, threads, threadPartId: threadPartId++, relId: undefined });
   });
   return parts;
 }
-
-function collectWorkbookSharedStrings(workbook) {
-  const strings = [];
-  const indexByText = new Map();
-  for (const sheet of workbook.worksheets) {
-    for (const [, cell] of sheet.store.entries()) {
-      if (cell.formula || typeof cell.value !== "string") continue;
-      if (!indexByText.has(cell.value)) {
-        indexByText.set(cell.value, strings.length);
-        strings.push(cell.value);
-      }
-    }
-  }
-  return { strings, indexByText };
-}
-
-function sharedStringsXml(sharedStrings) {
-  const items = sharedStrings.strings.map((value) => `<si><t>${xmlEscape(value)}</t></si>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="${sharedStrings.strings.length}" uniqueCount="${sharedStrings.strings.length}">${items}</sst>`;
-}
-
-function parseSharedStringsXml(xml = "") {
-  return [...String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?si\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?si>/g)].map((match) => decodeXml([...match[1].matchAll(/<(?:[A-Za-z_][\w.-]*:)?t\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>/g)].map((text) => text[1]).join("")));
-}
-
-function collectWorkbookStyles(workbook) {
-  const styles = [{}];
-  const indexByKey = new Map([["", 0]]);
-  const dxfs = [];
-  const dxfIndexByKey = new Map();
-  const addStyle = (style = {}) => {
-    const key = xlsxStyleKey(style || {});
-    if (!indexByKey.has(key)) {
-      indexByKey.set(key, styles.length);
-      styles.push(normalizeXlsxStyle(style || {}));
-    }
-  };
-  const addDxf = (style = {}) => {
-    const key = xlsxStyleKey(style || {});
-    if (!key || dxfIndexByKey.has(key)) return;
-    dxfIndexByKey.set(key, dxfs.length);
-    dxfs.push(style || {});
-  };
-  for (const sheet of workbook.worksheets) {
-    for (const [, cell] of sheet.store.entries()) addStyle(cell.style || {});
-    for (const rule of sheet.conditionalFormattings.items) addDxf(rule.format || rule.rule?.format || {});
-    for (const condition of sheet.sortState?.conditions || []) if (condition?.kind === "color") addDxf(tableColorDxfStyle(condition));
-    for (const table of sheet.tables.items) {
-      for (const filter of table.filters || []) if (filter?.kind === "color") addDxf(tableColorDxfStyle(filter));
-      for (const condition of table.sortState?.conditions || []) if (condition?.kind === "color") addDxf(tableColorDxfStyle(condition));
-    }
-  }
-  return { styles, indexByKey, dxfs, dxfIndexByKey, indexedColors: workbook.indexedColors };
-}
-
-function xlsxStyleIndex(cell, styleTable) {
-  return styleTable.indexByKey.get(xlsxStyleKey(cell.style || {})) || 0;
-}
-
-function parseAttrs(attrs = "") {
-  return Object.fromEntries([...String(attrs || "").matchAll(/\b([A-Za-z_:][\w:.-]*)="([^"]*)"/g)].map((match) => [match[1], decodeXml(match[2])]));
-}
-
-function dynamicArrayReference(address, cell) {
-  if (!cell?.formula || cell.formulaType === "array" || cell.formulaType === "shared") return undefined;
-  if (cell.formulaType === "dynamicArray") return String(cell.dynamicArrayRef || cell.spillRange || address);
-  if (!cell.formulaType && cell.spillRange) return String(cell.spillError ? address : cell.spillRange);
-  return undefined;
-}
-
-function workbookHasDynamicArrays(workbook) {
-  return workbook.worksheets.items.some((sheet) => [...sheet.store.entries()].some(([address, cell]) => dynamicArrayReference(address, cell)));
-}
-
-function xlsxDynamicArrayMetadataXml() {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><metadata xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:xda="http://schemas.microsoft.com/office/spreadsheetml/2017/dynamicarray"><metadataTypes count="1"><metadataType name="XLDAPR" minSupportedVersion="120000" copy="1" pasteAll="1" pasteValues="1" merge="1" splitFirst="1" rowColShift="1" clearFormats="1" clearComments="1" assign="1" coerce="1" cellMeta="1"/></metadataTypes><futureMetadata name="XLDAPR" count="1"><bk><extLst><ext uri="${XLSX_DYNAMIC_ARRAY_METADATA_EXTENSION_URI}"><xda:dynamicArrayProperties fDynamic="1" fCollapsed="0"/></ext></extLst></bk></futureMetadata><cellMetadata count="1"><bk><rc t="1" v="0"/></bk></cellMetadata></metadata>`;
-}
-
-function dynamicArrayCellMetadataIndexes(xml = "") {
-  const source = String(xml || "");
-  if (!source) return new Set();
-  const typeTags = [...source.matchAll(/<(?:[A-Za-z_][\w.-]*:)?metadataType\b([^>]*)\/?\s*>/g)];
-  const typeIndexes = typeTags
-    .map((match, index) => ({ attrs: ooxmlXmlAttributes(match[1] || ""), index: index + 1 }))
-    .filter((item) => item.attrs.name === "XLDAPR" && ["1", "true"].includes(String(item.attrs.cellMeta || "").toLowerCase()))
-    .map((item) => item.index);
-  if (typeIndexes.length !== 1) return new Set();
-
-  const futureMatches = [...source.matchAll(/<(?:[A-Za-z_][\w.-]*:)?futureMetadata\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?futureMetadata\s*>/g)]
-    .filter((match) => ooxmlXmlAttributes(match[1] || "").name === "XLDAPR");
-  if (futureMatches.length !== 1) return new Set();
-  const dynamicValues = new Set([...futureMatches[0][2].matchAll(/<(?:[A-Za-z_][\w.-]*:)?bk\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?bk\s*>/g)]
-    .map((match, index) => ({ body: match[1] || "", index }))
-    .filter(({ body }) => {
-      const extension = [...body.matchAll(/<(?:[A-Za-z_][\w.-]*:)?ext\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?ext\s*>/g)]
-        .find((match) => String(ooxmlXmlAttributes(match[1] || "").uri || "").toUpperCase() === XLSX_DYNAMIC_ARRAY_METADATA_EXTENSION_URI);
-      if (!extension) return false;
-      const properties = /<(?:[A-Za-z_][\w.-]*:)?dynamicArrayProperties\b([^>]*)\/?\s*>/.exec(extension[2] || "");
-      if (!properties) return false;
-      const attrs = ooxmlXmlAttributes(properties[1] || "");
-      return ["1", "true"].includes(String(attrs.fDynamic || "").toLowerCase()) && !["1", "true"].includes(String(attrs.fCollapsed || "").toLowerCase());
-    })
-    .map((item) => item.index));
-  if (!dynamicValues.size) return new Set();
-
-  const cellMetadata = /<(?:[A-Za-z_][\w.-]*:)?cellMetadata\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?cellMetadata\s*>/.exec(source)?.[1] || "";
-  const indexes = new Set();
-  [...cellMetadata.matchAll(/<(?:[A-Za-z_][\w.-]*:)?bk\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?bk\s*>/g)].forEach((block, index) => {
-    const dynamic = [...String(block[1] || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?rc\b([^>]*)\/?\s*>/g)].some((record) => {
-      const attrs = ooxmlXmlAttributes(record[1] || "");
-      return Number(attrs.t) === typeIndexes[0] && dynamicValues.has(Number(attrs.v));
-    });
-    if (dynamic) indexes.add(index + 1);
-  });
-  return indexes;
-}
-
-function xlsxContentTypes(sheetCount, tableParts = [], imageParts = [], chartParts = [], threadParts = [], sharedStrings = { strings: [] }, pivotParts = [], hasDynamicArrays = false) {
-  const sheets = Array.from({ length: sheetCount }, (_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join("");
-  const tables = tableParts.map((part) => `<Override PartName="/xl/tables/table${part.tablePartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>`).join("");
-  const drawingSheetIndexes = [...new Set([...imageParts, ...chartParts].map((part) => part.sheetIndex))].sort((left, right) => left - right);
-  const drawings = drawingSheetIndexes.map((sheetIndex) => `<Override PartName="/xl/drawings/drawing${sheetIndex + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>`).join("");
-  const imageDefaults = [
-    ["png", "image/png"],
-    ["jpg", "image/jpeg"],
-    ["jpeg", "image/jpeg"],
-    ["gif", "image/gif"],
-    ["svg", "image/svg+xml"],
-  ].filter(([extension]) => imageParts.some((part) => part.extension === extension)).map(([extension, contentType]) => `<Default Extension="${extension}" ContentType="${contentType}"/>`).join("");
-  const charts = chartParts.map((part) => `<Override PartName="/xl/charts/chart${part.chartPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`).join("");
-  const pivots = pivotParts.map((part) => `<Override PartName="/xl/pivotTables/pivotTable${part.pivotPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotTable+xml"/><Override PartName="/xl/pivotCache/pivotCacheDefinition${part.cachePartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheDefinition+xml"/>${part.pivot.refreshPolicy.saveData === false ? "" : `<Override PartName="/xl/pivotCache/pivotCacheRecords${part.recordsPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.pivotCacheRecords+xml"/>`}`).join("");
-  const threadedComments = threadParts.map((part) => `<Override PartName="/xl/threadedComments/threadedComment${part.threadPartId}.xml" ContentType="${XLSX_THREADED_COMMENTS_CONTENT_TYPE}"/>`).join("");
-  const persons = threadParts.length ? `<Override PartName="/xl/persons/person.xml" ContentType="${XLSX_PERSON_CONTENT_TYPE}"/>` : "";
-  const shared = sharedStrings.strings?.length ? `<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>` : "";
-  const metadata = hasDynamicArrays ? `<Override PartName="/xl/metadata.xml" ContentType="${XLSX_DYNAMIC_ARRAY_METADATA_CONTENT_TYPE}"/>` : "";
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="json" ContentType="application/json"/>${imageDefaults}<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/xl/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>${metadata}${shared}${sheets}${tables}${drawings}${charts}${pivots}${threadedComments}${persons}</Types>`;
-}
-
-function relsXml(rels) {
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels.map((rel) => `<Relationship Id="${rel.id}" Type="${rel.type}" Target="${attrEscape(rel.target)}"${rel.targetMode ? ` TargetMode="${attrEscape(rel.targetMode)}"` : ""}/>`).join("")}</Relationships>`;
-}
-
-function parseRelsXml(xml) {
-  return [...String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?Relationship\b[^>]*\/?\s*>/g)].map((match) => {
-    const attrs = ooxmlXmlAttributes(match[0]);
-    return { id: attrs.Id || "", type: attrs.Type || "", target: attrs.Target || "", targetMode: attrs.TargetMode || "" };
-  }).filter((rel) => rel.id);
-}
-
-function workbookXml(workbook, pivotParts = []) {
-  const dateSystem = normalizeExcelDateSystem(workbook.dateSystem);
-  const workbookProperties = dateSystem === "1904" ? '<workbookPr date1904="1"/>' : "";
-  const visibilities = workbook.worksheets.items.map((sheet) => normalizeWorksheetVisibility(sheet.visibility));
-  const bookViews = `<bookViews>${workbook.windows.items.map((window) => {
-    const activeTab = workbook.worksheets.items.indexOf(window.getActiveWorksheet());
-    return `<workbookView activeTab="${activeTab}"/>`;
-  }).join("")}</bookViews>`;
-  const sheets = workbook.worksheets.items.map((sheet, i) => {
-    const visibility = visibilities[i];
-    const state = visibility === "visible" ? "" : ` state="${visibility}"`;
-    return `<sheet name="${attrEscape(sheet.name)}" sheetId="${i + 1}"${state} r:id="rId${i + 1}"/>`;
-  }).join("");
-  const definedNames = workbook.definedNames.items.length
-    ? `<definedNames>${workbook.definedNames.items.map((item) => {
-      const localSheetId = item.scope ? workbook.worksheets.items.findIndex((sheet) => sheet.name === item.scope) : -1;
-      const comment = item.comment !== undefined ? ` comment="${attrEscape(item.comment)}"` : "";
-      const hidden = item.hidden !== undefined ? ` hidden="${item.hidden ? 1 : 0}"` : "";
-      return `<definedName name="${attrEscape(item.name)}"${localSheetId >= 0 ? ` localSheetId="${localSheetId}"` : ""}${comment}${hidden}>${xmlEscape(item.refersTo)}</definedName>`;
-    }).join("")}</definedNames>`
-    : "";
-  const calculation = workbookCalculationXml(workbook.calculation);
-  const pivotCaches = pivotParts.length ? `<pivotCaches>${pivotParts.map((part) => `<pivotCache cacheId="${part.cacheId}" r:id="${part.cacheRelId}"/>`).join("")}</pivotCaches>` : "";
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${workbookProperties}${bookViews}<sheets>${sheets}</sheets>${definedNames}${calculation}${pivotCaches}</workbook>`;
-}
-
-function workbookCalculationXml(value) {
-  if (value === undefined) return "";
-  const calculation = normalizeWorkbookCalculation(value);
-  const mode = calculation.mode === "automatic" ? "auto" : calculation.mode === "automaticExceptTables" ? "autoNoTable" : calculation.mode;
-  const attrs = [
-    calculation.mode !== undefined ? `calcMode="${mode}"` : "",
-    calculation.calculateOnSave !== undefined ? `calcOnSave="${calculation.calculateOnSave ? 1 : 0}"` : "",
-    calculation.fullCalculationOnLoad !== undefined ? `fullCalcOnLoad="${calculation.fullCalculationOnLoad ? 1 : 0}"` : "",
-    calculation.forceFullCalculation !== undefined ? `forceFullCalc="${calculation.forceFullCalculation ? 1 : 0}"` : "",
-    calculation.iteration?.enabled !== undefined ? `iterate="${calculation.iteration.enabled ? 1 : 0}"` : "",
-    calculation.iteration?.maxIterations !== undefined ? `iterateCount="${calculation.iteration.maxIterations}"` : "",
-    calculation.iteration?.maxChange !== undefined ? `iterateDelta="${calculation.iteration.maxChange}"` : "",
-    calculation.fullPrecision !== undefined ? `fullPrecision="${calculation.fullPrecision ? 1 : 0}"` : "",
-  ].filter(Boolean).join(" ");
-  return `<calcPr${attrs ? ` ${attrs}` : ""}/>`;
-}
-
-function parseWorkbookCalculation(workbook, xml = "") {
-  const match = /<(?:[A-Za-z_][\w.-]*:)?calcPr\b[^>]*\/?\s*>/.exec(String(xml || ""));
-  if (!match) return;
-  const attrs = ooxmlXmlAttributes(match[0]);
-  if ((attrs.refMode != null && attrs.refMode !== "A1") || attrs.calcCompleted != null || attrs.concurrentCalc != null || attrs.concurrentManualCount != null) return;
-  const calculation = {};
-  if (attrs.calcMode != null) {
-    const mode = { auto: "automatic", autoNoTable: "automaticExceptTables", manual: "manual" }[attrs.calcMode];
-    if (!mode) return;
-    calculation.mode = mode;
-  }
-  for (const [attribute, field] of [["calcOnSave", "calculateOnSave"], ["fullCalcOnLoad", "fullCalculationOnLoad"], ["forceFullCalc", "forceFullCalculation"], ["fullPrecision", "fullPrecision"]])
-    if (attrs[attribute] !== undefined) calculation[field] = xlsxBoolean(attrs[attribute]);
-  const iteration = {};
-  if (attrs.iterate !== undefined) iteration.enabled = xlsxBoolean(attrs.iterate);
-  if (attrs.iterateCount !== undefined) iteration.maxIterations = Number(attrs.iterateCount);
-  if (attrs.iterateDelta !== undefined) iteration.maxChange = Number(attrs.iterateDelta);
-  if (Object.keys(iteration).length) calculation.iteration = iteration;
-  try { workbook.setCalculation(calculation); } catch { /* Unsupported native profiles stay outside the bounded semantic model. */ }
-}
-
-function parseWorkbookDefinedNames(workbook, xml = "") {
-  for (const match of String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?definedName\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?definedName>/g)) {
-    const attrs = ooxmlXmlAttributes(match[1] || "");
-    const name = attrs.name || "";
-    if (!name) continue;
-    const localSheetIdRaw = attrs.localSheetId;
-    const scope = localSheetIdRaw != null ? workbook.worksheets.items[Number(localSheetIdRaw)]?.name : undefined;
-    workbook.definedNames.add({
-      name,
-      refersTo: decodeXml(match[2] || ""),
-      scope,
-      ...(attrs.comment !== undefined ? { comment: attrs.comment } : {}),
-      ...(attrs.hidden !== undefined ? { hidden: xlsxBoolean(attrs.hidden) } : {}),
-    });
-  }
-}
-
-function workbookRelsXml(sheetCount, hasThreadedComments = false, hasSharedStrings = false, pivotParts = [], hasDynamicArrays = false) {
-  const rels = Array.from({ length: sheetCount }, (_, i) => ({ id: `rId${i + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet", target: `worksheets/sheet${i + 1}.xml` }));
-  rels.push({ id: `rId${sheetCount + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles", target: "styles.xml" });
-  let nextId = sheetCount + 2;
-  if (hasSharedStrings) rels.push({ id: `rId${nextId++}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings", target: "sharedStrings.xml" });
-  if (hasDynamicArrays) rels.push({ id: `rId${nextId++}`, type: XLSX_DYNAMIC_ARRAY_METADATA_RELATIONSHIP_TYPE, target: "metadata.xml" });
-  if (hasThreadedComments) rels.push({ id: `rId${nextId++}`, type: XLSX_PERSON_RELATIONSHIP_TYPE, target: "persons/person.xml" });
-  for (const part of pivotParts) {
-    part.cacheRelId = `rId${nextId++}`;
-    rels.push({ id: part.cacheRelId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheDefinition", target: `pivotCache/pivotCacheDefinition${part.cachePartId}.xml` });
-  }
-  rels.push({ id: `rId${nextId++}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme", target: "theme/theme1.xml" });
-  return relsXml(rels);
-}
-
-function worksheetRelsXml(tableParts, drawingRel, threadedPart, pivotParts = []) {
-  const rels = tableParts.map((part) => ({
-    id: part.relId,
-    type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/table",
-    target: `../tables/table${part.tablePartId}.xml`,
-  }));
-  if (drawingRel) rels.push({ id: drawingRel.relId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing", target: drawingRel.target });
-  if (threadedPart) rels.push({ id: threadedPart.relId, type: XLSX_THREADED_COMMENTS_RELATIONSHIP_TYPE, target: `../threadedComments/threadedComment${threadedPart.threadPartId}.xml` });
-  for (const part of pivotParts) rels.push({ id: part.relId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotTable", target: `../pivotTables/pivotTable${part.pivotPartId}.xml` });
-  return relsXml(rels);
-}
-
-async function importNativeThreadedComments(workbook, zip, workbookPartPath, workbookRelationships, sheetRefs) {
-  const personRelationship = workbookRelationships.find((relationship) => relationship.type === XLSX_PERSON_RELATIONSHIP_TYPE && String(relationship.targetMode || "").toLowerCase() !== "external");
-  const personPartPath = personRelationship?.target ? ooxmlResolveRelationshipTarget(workbookPartPath, personRelationship.target) : undefined;
-  const people = parseSpreadsheetPeople(personPartPath ? await zip.file(personPartPath)?.async("text") : "");
-  for (const [position, sheetRef] of sheetRefs.entries()) {
-    const sheet = workbook.worksheets.items[position];
-    if (!sheet) continue;
-    const sourcePart = sheetRef.partPath || `xl/worksheets/sheet${sheetRef.sheetId || sheetRef.index || position + 1}.xml`;
-    const rels = parseRelsXml(await zip.file(ooxmlRelationshipPartPath(sourcePart, "XLSX"))?.async("text"));
-    for (const rel of rels.filter((item) => item.type === XLSX_THREADED_COMMENTS_RELATIONSHIP_TYPE && String(item.targetMode || "").toLowerCase() !== "external")) {
-      const target = ooxmlResolveRelationshipTarget(sourcePart, rel.target);
-      const xml = await zip.file(target)?.async("text");
-      for (const group of spreadsheetThreadRoots(parseSpreadsheetThreadedComments(xml))) {
-        const root = group.find((entry) => !entry.parentId) || group[0];
-        const person = people.get(root.personId);
-        const author = person?.displayName || workbook.comments.self?.displayName || "User";
-        const commentConfig = { id: root.id, personId: root.personId, person, date: root.date, done: root.done };
-        const thread = workbook.comments.addThread({ cell: sheet.getRange(root.ref || "A1") }, root.text, { author, resolved: root.done, comment: commentConfig });
-        for (const entry of group) {
-          if (entry === root) continue;
-          const replyPerson = people.get(entry.personId);
-          thread.addReply(entry.text, { id: entry.id, parentId: entry.parentId, personId: entry.personId, person: replyPerson, author: replyPerson?.displayName || author, date: entry.date, done: entry.done });
-        }
-      }
-    }
-  }
-}
-
-function drawingRelsXml(imageParts, chartParts = []) {
-  return relsXml([
-    ...imageParts.map((part) => ({
-      id: part.drawingRelId,
-      type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
-      target: `../media/image${part.imagePartId}.${part.extension}`,
-    })),
-    ...chartParts.map((part) => ({
-      id: part.drawingRelId,
-      type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart",
-      target: `../charts/chart${part.chartPartId}.xml`,
-    })),
-  ]);
-}
-
-function drawingXml(imageParts, chartParts = []) {
-  const markerValues = (marker = {}, name = "anchor marker") => {
-    const row = Number(marker.row ?? 0);
-    const col = Number(marker.col ?? 0);
-    const rowOffsetPx = Number(marker.rowOffsetPx ?? 0);
-    const colOffsetPx = Number(marker.colOffsetPx ?? 0);
-    if (!Number.isInteger(row) || row < 0 || row >= 1_048_576 || !Number.isInteger(col) || col < 0 || col >= 16_384 ||
-        !Number.isFinite(rowOffsetPx) || rowOffsetPx < 0 || !Number.isFinite(colOffsetPx) || colOffsetPx < 0) {
-      throw new Error(`${name} must use bounded 0-based row/col coordinates and non-negative pixel offsets.`);
-    }
-    return { row, col, rowOffsetPx, colOffsetPx };
-  };
-  const markerXml = (name, marker = {}) => {
-    const value = markerValues(marker, `image anchor.${name}`);
-    return `<xdr:${name}><xdr:col>${value.col}</xdr:col><xdr:colOff>${Math.round(value.colOffsetPx * 9525)}</xdr:colOff><xdr:row>${value.row}</xdr:row><xdr:rowOff>${Math.round(value.rowOffsetPx * 9525)}</xdr:rowOff></xdr:${name}>`;
-  };
-  const cropXml = (image) => {
-    if (image.crop == null) return "";
-    if (typeof image.crop !== "object" || Array.isArray(image.crop)) throw new Error(`Worksheet image ${image.name || "(unnamed)"} crop must be an object.`);
-    const values = ["leftPercent", "topPercent", "rightPercent", "bottomPercent"].map((name) => Number(image.crop[name] ?? 0));
-    if (values.some((value) => !Number.isFinite(value) || value < -100 || value > 100) || values[0] + values[2] >= 100 || values[1] + values[3] >= 100) {
-      throw new Error(`Worksheet image ${image.name || "(unnamed)"} crop must use -100 through 100 percent offsets whose opposing edges leave a positive source rectangle.`);
-    }
-    return `<a:srcRect l="${Math.round(values[0] * 1000)}" t="${Math.round(values[1] * 1000)}" r="${Math.round(values[2] * 1000)}" b="${Math.round(values[3] * 1000)}"/>`;
-  };
-  const effectsXml = (image) => {
-    if (image.effects == null) return "";
-    if (typeof image.effects !== "object" || Array.isArray(image.effects)) throw new Error(`Worksheet image ${image.name || "(unnamed)"} effects must be an object.`);
-    const has = (name) => Object.hasOwn(image.effects, name) && image.effects[name] != null;
-    if (has("grayscale") && typeof image.effects.grayscale !== "boolean") throw new Error(`Worksheet image ${image.name || "(unnamed)"} effects.grayscale must be a boolean.`);
-    const percent = (name, minimum) => {
-      const value = Number(image.effects[name]);
-      if (!Number.isFinite(value) || value < minimum || value > 100) throw new Error(`Worksheet image ${image.name || "(unnamed)"} effects.${name} must be between ${minimum} and 100 percent.`);
-      return Math.round(value * 1000);
-    };
-    const output = [];
-    if (has("opacityPercent")) output.push(`<a:alphaModFix amt="${percent("opacityPercent", 0)}"/>`);
-    if (image.effects.grayscale === true) output.push("<a:grayscl/>");
-    if (has("brightnessPercent") || has("contrastPercent")) output.push(`<a:lum bright="${has("brightnessPercent") ? percent("brightnessPercent", -100) : 0}" contrast="${has("contrastPercent") ? percent("contrastPercent", -100) : 0}"/>`);
-    return output.join("");
-  };
-  const transformXml = (image) => {
-    if (image.transform == null) return "";
-    if (typeof image.transform !== "object" || Array.isArray(image.transform)) throw new Error(`Worksheet image ${image.name || "(unnamed)"} transform must be an object.`);
-    const has = (name) => Object.hasOwn(image.transform, name) && image.transform[name] != null;
-    const attributes = [];
-    if (has("rotationDegrees")) {
-      const degrees = Number(image.transform.rotationDegrees);
-      if (!Number.isFinite(degrees) || degrees < -360 || degrees > 360) throw new Error(`Worksheet image ${image.name || "(unnamed)"} transform.rotationDegrees must be between -360 and 360 degrees.`);
-      attributes.push(`rot="${Math.round(degrees * 60_000)}"`);
-    }
-    for (const [name, attribute] of [["flipHorizontal", "flipH"], ["flipVertical", "flipV"]]) {
-      if (!has(name)) continue;
-      if (typeof image.transform[name] !== "boolean") throw new Error(`Worksheet image ${image.name || "(unnamed)"} transform.${name} must be a boolean.`);
-      attributes.push(`${attribute}="${image.transform[name] ? 1 : 0}"`);
-    }
-    if (attributes.length === 0) throw new Error(`Worksheet image ${image.name || "(unnamed)"} transform must define rotationDegrees, flipHorizontal, or flipVertical.`);
-    return `<a:xfrm ${attributes.join(" ")}/>`;
-  };
-  const imageAnchors = imageParts.map((part, index) => {
-    const anchorType = part.image.anchor?.type;
-    if (anchorType != null && !["oneCell", "twoCell", "absolute"].includes(anchorType)) throw new Error(`Worksheet image ${part.image.name || index + 1} has unsupported anchor.type ${anchorType}.`);
-    if (anchorType === "oneCell" && part.image.anchor?.to) throw new Error(`Worksheet image ${part.image.name || index + 1} cannot combine anchor.type oneCell with anchor.to.`);
-    const from = part.image.anchor?.from || { row: 0, col: 0 };
-    const effects = effectsXml(part.image);
-    const blip = effects ? `<a:blip r:embed="${part.drawingRelId}">${effects}</a:blip>` : `<a:blip r:embed="${part.drawingRelId}"/>`;
-    const picture = `<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="${index + 2}" name="${attrEscape(part.image.name || `Image ${index + 1}`)}" descr="${attrEscape(part.image.alt || "")}"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill>${blip}${cropXml(part.image)}<a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr>${transformXml(part.image)}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/>`;
-    if (anchorType === "absolute") {
-      if (!part.image.anchor?.position || !part.image.anchor?.extent) throw new Error(`Worksheet image ${part.image.name || index + 1} absolute anchor requires anchor.position and anchor.extent.`);
-      if (part.image.anchor?.from || part.image.anchor?.to || part.image.anchor?.editAs != null || part.image.anchor?.widthPx != null || part.image.anchor?.heightPx != null) throw new Error(`Worksheet image ${part.image.name || index + 1} cannot combine absolute geometry with cell markers, editAs, or legacy extent fields.`);
-      const leftPx = Number(part.image.anchor.position.leftPx ?? 0);
-      const topPx = Number(part.image.anchor.position.topPx ?? 0);
-      const widthPx = Number(part.image.anchor.extent.widthPx);
-      const heightPx = Number(part.image.anchor.extent.heightPx);
-      if (!Number.isFinite(leftPx) || Math.abs(leftPx) > 10_000_000 || !Number.isFinite(topPx) || Math.abs(topPx) > 10_000_000 ||
-          !Number.isFinite(widthPx) || widthPx <= 0 || widthPx > 10_000_000 || !Number.isFinite(heightPx) || heightPx <= 0 || heightPx > 10_000_000) {
-        throw new Error(`Worksheet image ${part.image.name || index + 1} requires bounded finite absolute position and positive extent geometry.`);
-      }
-      return `<xdr:absoluteAnchor><xdr:pos x="${Math.round(leftPx * 9525)}" y="${Math.round(topPx * 9525)}"/><xdr:ext cx="${Math.round(widthPx * 9525)}" cy="${Math.round(heightPx * 9525)}"/>${picture}</xdr:absoluteAnchor>`;
-    }
-    if (part.image.anchor?.type === "twoCell" || part.image.anchor?.to) {
-      if (part.image.anchor?.extent || part.image.anchor?.widthPx != null || part.image.anchor?.heightPx != null) throw new Error(`Worksheet image ${part.image.name || index + 1} cannot combine two-cell markers with one-cell extent geometry.`);
-      const fromValue = markerValues(from, "image anchor.from");
-      const toValue = markerValues(part.image.anchor.to, "image anchor.to");
-      const columnAfter = toValue.col > fromValue.col || (toValue.col === fromValue.col && toValue.colOffsetPx > fromValue.colOffsetPx);
-      const rowAfter = toValue.row > fromValue.row || (toValue.row === fromValue.row && toValue.rowOffsetPx > fromValue.rowOffsetPx);
-      if (!columnAfter || !rowAfter) throw new Error(`Worksheet image ${part.image.name || index + 1} requires anchor.to strictly after anchor.from on both axes.`);
-      if (part.image.anchor.editAs != null && !["twoCell", "oneCell", "absolute"].includes(part.image.anchor.editAs)) throw new Error(`Worksheet image ${part.image.name || index + 1} has unsupported anchor.editAs ${part.image.anchor.editAs}.`);
-      const editAs = part.image.anchor?.editAs ? ` editAs="${attrEscape(part.image.anchor.editAs)}"` : "";
-      return `<xdr:twoCellAnchor${editAs}>${markerXml("from", from)}${markerXml("to", part.image.anchor.to)}${picture}</xdr:twoCellAnchor>`;
-    }
-    const extent = part.image.anchor?.extent || {};
-    const widthPx = Number(extent.widthPx ?? part.image.anchor?.widthPx ?? 160);
-    const heightPx = Number(extent.heightPx ?? part.image.anchor?.heightPx ?? 120);
-    if (!Number.isFinite(widthPx) || widthPx <= 0 || !Number.isFinite(heightPx) || heightPx <= 0) throw new Error(`Worksheet image ${part.image.name || index + 1} requires positive finite one-cell extent geometry.`);
-    const cx = Math.round(widthPx * 9525);
-    const cy = Math.round(heightPx * 9525);
-    return `<xdr:oneCellAnchor>${markerXml("from", from)}<xdr:ext cx="${cx}" cy="${cy}"/>${picture}</xdr:oneCellAnchor>`;
-  }).join("");
-  const chartAnchors = chartParts.map((part, index) => {
-    const p = part.chart.position;
-    const columnAnchor = worksheetCellAtPixel(part.sheet, "column", p.left);
-    const rowAnchor = worksheetCellAtPixel(part.sheet, "row", p.top);
-    const col = columnAnchor.index;
-    const row = rowAnchor.index;
-    const colOff = Math.max(0, Math.round(columnAnchor.offset * 9525));
-    const rowOff = Math.max(0, Math.round(rowAnchor.offset * 9525));
-    const cx = Math.round(p.width * 9525);
-    const cy = Math.round(p.height * 9525);
-    const id = imageParts.length + index + 2;
-    return `<xdr:oneCellAnchor><xdr:from><xdr:col>${col}</xdr:col><xdr:colOff>${colOff}</xdr:colOff><xdr:row>${row}</xdr:row><xdr:rowOff>${rowOff}</xdr:rowOff></xdr:from><xdr:ext cx="${cx}" cy="${cy}"/><xdr:graphicFrame><xdr:nvGraphicFramePr><xdr:cNvPr id="${id}" name="${attrEscape(part.chart.name || `Chart ${index + 1}`)}"/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr><xdr:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></xdr:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart r:id="${part.drawingRelId}"/></a:graphicData></a:graphic></xdr:graphicFrame><xdr:clientData/></xdr:oneCellAnchor>`;
-  }).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${imageAnchors}${chartAnchors}</xdr:wsDr>`;
-}
-
-function sanitizeTableColumnName(value, index, seen) {
-  const base = String(value ?? "").trim() || `Column${index + 1}`;
-  let name = base;
-  let suffix = 2;
-  while (seen.has(name)) name = `${base}_${suffix++}`;
-  seen.add(name);
-  return name;
-}
-
-function tableFormulaXml(name, formula, array) {
-  if (!formula) return "";
-  const text = String(formula).startsWith("=") ? String(formula).slice(1) : String(formula);
-  return `<${name}${array ? ' array="1"' : ""}>${xmlEscape(text)}</${name}>`;
-}
-
-function tableColumnXml(definition, id, name) {
-  const totalsFunction = definition?.totalsRowFunction ? ` totalsRowFunction="${attrEscape(definition.totalsRowFunction)}"` : "";
-  const totalsLabel = definition?.totalsRowLabel ? ` totalsRowLabel="${attrEscape(definition.totalsRowLabel)}"` : "";
-  const calculated = tableFormulaXml("calculatedColumnFormula", definition?.calculatedColumnFormula, definition?.calculatedColumnFormulaArray);
-  const totals = tableFormulaXml("totalsRowFormula", definition?.totalsRowFormula, definition?.totalsRowFormulaArray);
-  if (!calculated && !totals) return `<tableColumn id="${id}" name="${attrEscape(name)}"${totalsFunction}${totalsLabel}/>`;
-  return `<tableColumn id="${id}" name="${attrEscape(name)}"${totalsFunction}${totalsLabel}>${calculated}${totals}</tableColumn>`;
-}
-
-function tableColorDxfStyle(value) {
-  if (value?.target !== "cell" && value?.target !== "font") throw new Error("Worksheet table color target must be 'cell' or 'font'.");
-  if (value.color == null) throw new Error("Worksheet table color selector must provide a color.");
-  return value.target === "cell"
-    ? { fill: { patternType: "solid", foreground: value.color } }
-    : { font: { color: value.color } };
-}
-
-function tableColorDxfId(value, styleTable) {
-  const id = styleTable?.dxfIndexByKey?.get(xlsxStyleKey(tableColorDxfStyle(value)));
-  if (id == null) throw new Error("Worksheet table color selector has no differential-style resource.");
-  return id;
-}
-
-function tableFilterXml(filter, styleTable) {
-  const columnIndex = Number(filter?.columnIndex ?? 0);
-  if (filter?.kind === "custom") {
-    const criteria = (filter.criteria || []).map((criterion) => `<customFilter operator="${attrEscape(criterion?.operator || "equal")}" val="${attrEscape(criterion?.value ?? "")}"/>`).join("");
-    return `<filterColumn colId="${columnIndex}"><customFilters${filter.matchAll ? ' and="1"' : ""}>${criteria}</customFilters></filterColumn>`;
-  }
-  if (filter?.kind === "dynamic") {
-    const value = filter.value == null ? "" : ` val="${attrEscape(filter.value)}"`;
-    const maxValue = filter.maxValue == null ? "" : ` maxVal="${attrEscape(filter.maxValue)}"`;
-    return `<filterColumn colId="${columnIndex}"><dynamicFilter type="${attrEscape(filter.type ?? "")}"${value}${maxValue}/></filterColumn>`;
-  }
-  if (filter?.kind === "top10") {
-    const filterValue = filter.filterValue == null ? "" : ` filterVal="${attrEscape(filter.filterValue)}"`;
-    return `<filterColumn colId="${columnIndex}"><top10 top="${filter.top === false ? 0 : 1}" percent="${filter.percent ? 1 : 0}" val="${attrEscape(filter.value ?? 0)}"${filterValue}/></filterColumn>`;
-  }
-  if (filter?.kind === "icon") {
-    const iconId = filter.iconId == null ? "" : ` iconId="${attrEscape(filter.iconId)}"`;
-    return `<filterColumn colId="${columnIndex}"><iconFilter iconSet="${attrEscape(filter.iconSet ?? "")}"${iconId}/></filterColumn>`;
-  }
-  if (filter?.kind === "color") {
-    return `<filterColumn colId="${columnIndex}"><colorFilter dxfId="${tableColorDxfId(filter, styleTable)}" cellColor="${filter.target === "cell" ? 1 : 0}"/></filterColumn>`;
-  }
-  const selectedValues = filter?.values || [];
-  const selectedDateGroups = filter?.dateGroups || [];
-  if (selectedValues.length && selectedDateGroups.length) throw new Error("Worksheet table <filters> cannot mix exact values and grouped dates.");
-  const values = selectedValues.map((value) => `<filter val="${attrEscape(value)}"/>`).join("");
-  const groups = selectedDateGroups.map((group) => {
-    const fields = ["month", "day", "hour", "minute", "second"].map((name) => group?.[name] == null ? "" : ` ${name}="${attrEscape(group[name])}"`).join("");
-    return `<dateGroupItem year="${attrEscape(group?.year ?? "")}"${fields} dateTimeGrouping="${attrEscape(group?.grouping ?? "")}"/>`;
-  }).join("");
-  const calendarType = filter?.calendarType ? ` calendarType="${attrEscape(filter.calendarType)}"` : "";
-  return `<filterColumn colId="${columnIndex}"><filters${filter?.includeBlank ? ' blank="1"' : ""}${calendarType}>${values}${groups}</filters></filterColumn>`;
-}
-
-function tableSortStateXml(sortState, styleTable) {
-  if (!sortState) return "";
-  const conditions = (sortState.conditions || []).map((condition) =>
-    `<sortCondition ref="${attrEscape(condition?.reference ?? "")}"${condition?.descending ? ' descending="1"' : ""}${condition?.kind === "icon" || condition?.iconSet ? ` sortBy="icon" iconSet="${attrEscape(condition?.iconSet ?? "")}"${condition?.iconId == null ? "" : ` iconId="${attrEscape(condition.iconId)}"`}` : condition?.kind === "color" ? ` sortBy="${condition.target === "cell" ? "cellColor" : "fontColor"}" dxfId="${tableColorDxfId(condition, styleTable)}"` : condition?.customList == null ? "" : ` customList="${attrEscape(condition.customList)}"`}/>`).join("");
-  return `<sortState ref="${attrEscape(sortState.reference ?? "")}"${sortState.caseSensitive ? ' caseSensitive="1"' : ""}${sortState.sortMethod == null ? "" : ` sortMethod="${attrEscape(sortState.sortMethod)}"`}${sortState.columnSort == null ? "" : ` columnSort="${sortState.columnSort ? 1 : 0}"`}>${conditions}</sortState>`;
-}
-
-function tableAutoFilterXml(table, reference, styleTable) {
-  if (!table.showFilterButton) return "";
-  if (table.sortState?.columnSort != null) throw new Error("Worksheet table AutoFilter sortState cannot define columnSort.");
-  const filters = Array.isArray(table.filters) ? table.filters.map((filter) => tableFilterXml(filter, styleTable)).join("") : "";
-  const sortState = tableSortStateXml(table.sortState, styleTable);
-  return filters || sortState
-    ? `<autoFilter ref="${attrEscape(reference)}">${filters}${sortState}</autoFilter>`
-    : `<autoFilter ref="${attrEscape(reference)}"/>`;
-}
-
-function tableXml(table, tablePartId, styleTable) {
-  const ref = table.range;
-  const seen = new Set();
-  const headers = table.columnNames?.length
-    ? table.columnNames
-    : (table.showHeaders && table.values[0]
-        ? table.values[0]
-        : Array.from({ length: table.columnCount || 1 }, (_, index) => `Column${index + 1}`));
-  const columns = Array.from({ length: table.columnCount || headers.length || 1 }, (_, index) => {
-    const name = sanitizeTableColumnName(headers[index], index, seen);
-    return tableColumnXml(table.columnDefinitions?.[index], index + 1, name);
-  }).join("");
-  const headerRowCount = table.showHeaders ? 1 : 0;
-  const totalsRowShown = table.showTotals ? 1 : 0;
-  const autoFilter = tableAutoFilterXml(table, ref, styleTable);
-  const styleName = table.style || "TableStyleMedium2";
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="${tablePartId}" name="${attrEscape(table.name)}" displayName="${attrEscape(table.name)}" ref="${attrEscape(ref)}" headerRowCount="${headerRowCount}" totalsRowShown="${totalsRowShown}">${autoFilter}<tableColumns count="${table.columnCount || headers.length || 1}">${columns}</tableColumns><tableStyleInfo name="${attrEscape(styleName)}" showFirstColumn="${table.showFirstColumn ? 1 : 0}" showLastColumn="${table.showLastColumn ? 1 : 0}" showRowStripes="${table.showRowStripes ? 1 : 0}" showColumnStripes="${table.showBandedColumns ? 1 : 0}"/></table>`;
-}
-
-function xlsxChartXml(chart) {
-  const chartType = chart.type || chart.chartType || "bar";
-  const chartElementName = chartType === "line" ? "lineChart" : chartType === "pie" ? "pieChart" : "barChart";
-  const grouping = chartType === "pie" ? "<c:varyColors val=\"1\"/>" : chartType === "bar" ? "<c:barDir val=\"col\"/><c:grouping val=\"clustered\"/>" : "";
-  const seriesItems = chart.series?.items || chart.series || [];
-  const seriesXml = (seriesItems.length ? seriesItems : [{ name: chart.title || "Series", values: [] }]).map((series, index) => {
-    const values = series.values || [];
-    const categories = chart.categories || values.map((_, i) => String(i + 1));
-    const catPts = categories.map((category, pointIndex) => `<c:pt idx="${pointIndex}"><c:v>${xmlEscape(category)}</c:v></c:pt>`).join("");
-    const valPts = values.map((value, pointIndex) => `<c:pt idx="${pointIndex}"><c:v>${Number(value) || 0}</c:v></c:pt>`).join("");
-    if (series.fill != null && (typeof series.fill !== "string" || !/^#[0-9a-f]{6}$/i.test(series.fill))) throw new TypeError(`Worksheet chart series ${index + 1} fill must be a #RRGGBB solid color.`);
-    const fill = series.fill == null ? "" : `<a:solidFill><a:srgbClr val="${series.fill.slice(1).toUpperCase()}"/></a:solidFill>`;
-    const line = spreadsheetChartSeriesLineXml(series);
-    const marker = spreadsheetChartSeriesMarkerXml(series.marker);
-    const shapeProperties = fill || line ? `<c:spPr>${fill}${line}</c:spPr>` : "";
-    if (marker && chartType !== "line") throw new TypeError("Worksheet chart series markers require a line chart.");
-    return `<c:ser><c:idx val="${index}"/><c:order val="${index}"/><c:tx><c:v>${xmlEscape(series.name || `Series ${index + 1}`)}</c:v></c:tx>${shapeProperties}${marker}<c:cat><c:strLit><c:ptCount val="${categories.length}"/>${catPts}</c:strLit></c:cat><c:val><c:numLit><c:ptCount val="${values.length}"/>${valPts}</c:numLit></c:val></c:ser>`;
-  }).join("");
-  const lineOptions = normalizeSpreadsheetChartLineOptions(chart.lineOptions);
-  if (lineOptions != null && chartType !== "line") throw new TypeError("Worksheet chart lineOptions require a line chart.");
-  const lineGrouping = chartType === "line" ? `<c:grouping val="${lineOptions?.grouping || "standard"}"/>` : "";
-  const varyColors = chartType === "line" && lineOptions?.varyColors === true ? '<c:varyColors val="1"/>' : "";
-  const smooth = lineOptions?.smooth == null ? "" : `<c:smooth val="${lineOptions.smooth ? 1 : 0}"/>`;
-  const dataLabels = normalizeSpreadsheetChartDataLabels(chart.dataLabels);
-  const dataLabelsXml = dataLabels == null ? "" : `<c:dLbls>${spreadsheetChartDataLabelPositionXml(dataLabels)}<c:showVal val="${dataLabels.showValue ? 1 : 0}"/><c:showCatName val="${dataLabels.showCategoryName ? 1 : 0}"/>${dataLabels.showSeriesName == null ? "" : `<c:showSerName val="${dataLabels.showSeriesName ? 1 : 0}"/>`}</c:dLbls>`;
-  const textStyle = (value, name) => {
-    if (value == null) return undefined;
-    if (typeof value !== "object" || Array.isArray(value)) throw new TypeError(`Worksheet chart ${name} must be an object.`);
-    const unsupported = Object.keys(value).filter((key) => key !== "fontSize" && value[key] != null);
-    if (unsupported.length) throw new TypeError(`Worksheet chart ${name} supports only fontSize.`);
-    if (value.fontSize == null) return undefined;
-    const fontSize = Number(value.fontSize);
-    if (!Number.isFinite(fontSize) || fontSize < 1 || fontSize > 4000) throw new TypeError(`Worksheet chart ${name}.fontSize must be from 1 through 4000 points.`);
-    return fontSize;
-  };
-  const axisTitle = (axis) => axis?.title?.text ? `<c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>${xmlEscape(axis.title.text)}</a:t></a:r></a:p></c:rich></c:tx><c:layout/></c:title>` : "";
-  const axisTextProperties = (axis, name) => {
-    const fontSize = textStyle(axis?.textStyle, `${name}.textStyle`);
-    return fontSize == null ? "" : `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="${Math.round(fontSize * 100)}"/></a:pPr><a:endParaRPr/></a:p></c:txPr>`;
-  };
-  const numberFormat = (axis) => axis?.numberFormatCode ? `<c:numFmt formatCode="${attrEscape(axis.numberFormatCode)}" sourceLinked="0"/>` : "";
-  if (chartType === "pie" && (chart.xAxis != null || chart.yAxis != null)) throw new TypeError("Worksheet pie charts cannot carry category/value axes.");
-  const xAxis = chart.xAxis || { axisType: "textAxis", title: { text: "" } };
-  const yAxis = chart.yAxis || { axisType: "valueAxis", title: { text: "" } };
-  if (chartType !== "pie" && (xAxis.axisType !== "textAxis" || yAxis.axisType !== "valueAxis")) throw new TypeError("Worksheet chart axes must use textAxis and valueAxis.");
-  for (const [name, axis] of [["xAxis", xAxis], ["yAxis", yAxis]]) {
-    if (axis.title?.textStyle != null) throw new TypeError(`Worksheet chart ${name} axis-title text styling is outside the bounded native chart profile.`);
-    const title = String(axis.title?.text || "");
-    const format = String(axis.numberFormatCode || "");
-    if (title.length > 32_767 || /\p{Cc}/u.test(title)) throw new TypeError(`Worksheet chart ${name} title is invalid.`);
-    if (format.length > 255 || /\p{Cc}/u.test(format)) throw new TypeError(`Worksheet chart ${name} numberFormatCode is invalid.`);
-  }
-  if (xAxis.tickLabelInterval != null && (!Number.isInteger(Number(xAxis.tickLabelInterval)) || Number(xAxis.tickLabelInterval) < 1 || Number(xAxis.tickLabelInterval) > 1_048_576)) throw new TypeError("Worksheet chart xAxis.tickLabelInterval must be an integer from 1 through 1048576.");
-  if ([yAxis.min, yAxis.max].some((value) => value != null && !Number.isFinite(Number(value)))) throw new TypeError("Worksheet chart yAxis min/max must be finite.");
-  if (yAxis.min != null && yAxis.max != null && Number(yAxis.min) >= Number(yAxis.max)) throw new TypeError("Worksheet chart yAxis.min must be less than yAxis.max.");
-  const requestedMajorUnit = yAxis.majorUnit ?? yAxis.tickLabelInterval;
-  if (requestedMajorUnit != null && (!Number.isFinite(Number(requestedMajorUnit)) || Number(requestedMajorUnit) <= 0)) throw new TypeError("Worksheet chart yAxis majorUnit must be finite and positive.");
-  const interval = xAxis.tickLabelInterval == null ? "" : `<c:tickLblSkip val="${Math.trunc(Number(xAxis.tickLabelInterval))}"/>`;
-  const yMinimum = yAxis.min == null ? "" : `<c:min val="${Number(yAxis.min)}"/>`;
-  const yMaximum = yAxis.max == null ? "" : `<c:max val="${Number(yAxis.max)}"/>`;
-  const yMajorUnitValue = requestedMajorUnit;
-  const yMajorUnit = yMajorUnitValue == null ? "" : `<c:majorUnit val="${Number(yMajorUnitValue)}"/>`;
-  const axes = chartType === "pie" ? "" : `<c:catAx><c:axId val="1"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:axPos val="b"/>${axisTitle(xAxis)}${numberFormat(xAxis)}${axisTextProperties(xAxis, "xAxis")}<c:crossAx val="2"/>${interval}</c:catAx><c:valAx><c:axId val="2"/><c:scaling><c:orientation val="minMax"/>${yMaximum}${yMinimum}</c:scaling><c:axPos val="l"/>${axisTitle(yAxis)}${numberFormat(yAxis)}${axisTextProperties(yAxis, "yAxis")}<c:crossAx val="1"/>${yMajorUnit}</c:valAx>`;
-  const axisReferences = chartType === "pie" ? "" : '<c:axId val="1"/><c:axId val="2"/>';
-  const legend = chart.hasLegend === false ? "" : '<c:legend><c:legendPos val="r"/><c:layout/></c:legend>';
-  const titleFontSize = textStyle(chart.titleTextStyle, "titleTextStyle");
-  if (titleFontSize != null && !String(chart.title || "").length) throw new TypeError("Worksheet chart titleTextStyle requires a non-empty title.");
-  const titleRunProperties = titleFontSize == null ? "" : `<a:rPr sz="${Math.round(titleFontSize * 100)}"/>`;
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><c:chart><c:title><c:tx><c:rich><a:bodyPr/><a:lstStyle/><a:p><a:r>${titleRunProperties}<a:t>${xmlEscape(chart.title || chartType)}</a:t></a:r></a:p></c:rich></c:tx></c:title><c:plotArea><c:layout/><c:${chartElementName}>${grouping}${lineGrouping}${varyColors}${seriesXml}${dataLabelsXml}${smooth}${axisReferences}</c:${chartElementName}>${axes}</c:plotArea>${legend}<c:plotVisOnly val="1"/></c:chart></c:chartSpace>`;
-}
-
-function pivotCacheDefinitionRelsXml(part) {
-  return relsXml([{ id: part.recordsRelId || "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheRecords", target: `pivotCacheRecords${part.recordsPartId}.xml` }]);
-}
-
-function pivotTableDefinitionRelsXml(part) {
-  return relsXml([{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/pivotCacheDefinition", target: `../pivotCache/pivotCacheDefinition${part.cachePartId}.xml` }]);
-}
-
-function dataValidationsXml(sheet) {
-  if (sheet.dataValidations.items.length === 0) return "";
-  const rules = sheet.dataValidations.items.map((item) => {
-    const rule = item.rule || item;
-    const type = rule.type || "custom";
-    const operator = rule.operator ? ` operator="${attrEscape(rule.operator)}"` : "";
-    const valuesFormula = Array.isArray(rule.values) ? `"${rule.values.map((value) => String(value).replaceAll('"', '""')).join(",")}"` : undefined;
-    const formula1 = rule.formula1 ?? valuesFormula;
-    const formula2 = rule.formula2;
-    return `<dataValidation type="${attrEscape(type)}"${operator} allowBlank="1" sqref="${attrEscape(item.range || "A1")}">${formula1 != null ? `<formula1>${xmlEscape(formula1)}</formula1>` : ""}${formula2 != null ? `<formula2>${xmlEscape(formula2)}</formula2>` : ""}</dataValidation>`;
-  }).join("");
-  return `<dataValidations count="${sheet.dataValidations.items.length}">${rules}</dataValidations>`;
-}
-
-function conditionalFormattingXml(sheet, styleTable = {}) {
-  return sheet.conditionalFormattings.items.map((item, index) => {
-    const ruleType = item.ruleType || "expression";
-    if (String(ruleType).toLowerCase() === "colorscale") {
-      const colors = colorScaleColors(item);
-      const cfvos = colors.length >= 3 ? `<cfvo type="min"/><cfvo type="percentile" val="50"/><cfvo type="max"/>` : `<cfvo type="min"/><cfvo type="max"/>`;
-      const colorXml = colors.map((color) => `<color rgb="FF${normalizeXlsxColor(color, "FFFFFF")}"/>`).join("");
-      return `<conditionalFormatting sqref="${attrEscape(item.range || "A1")}"><cfRule type="colorScale" priority="${index + 1}"><colorScale>${cfvos}${colorXml}</colorScale></cfRule></conditionalFormatting>`;
-    }
-    const type = ruleType === "cellIs" || ruleType === "CellValue" ? "cellIs" : ruleType === "containsText" ? "containsText" : "expression";
-    const operator = item.operator ? ` operator="${attrEscape(item.operator)}"` : "";
-    const formula = Array.isArray(item.formula) ? item.formula[0] : item.formula || item.expression || "TRUE";
-    const text = item.text ? ` text="${attrEscape(item.text)}"` : "";
-    const dxfId = styleTable.dxfIndexByKey?.get(xlsxStyleKey(item.format || item.rule?.format || {}));
-    const dxfAttr = dxfId != null ? ` dxfId="${dxfId}"` : "";
-    return `<conditionalFormatting sqref="${attrEscape(item.range || "A1")}"><cfRule type="${attrEscape(type)}" priority="${index + 1}"${operator}${text}${dxfAttr}><formula>${xmlEscape(formula)}</formula></cfRule></conditionalFormatting>`;
-  }).join("");
-}
-
-function worksheetViewXml(sheet) {
-  const rows = normalizeFreezeCount(sheet.freezePanes?.rows ?? 0, XLSX_MAX_FREEZE_ROWS, "row count");
-  const columns = normalizeFreezeCount(sheet.freezePanes?.columns ?? 0, XLSX_MAX_FREEZE_COLUMNS, "column count");
-  const showGridLines = sheet.showGridLines !== false;
-  const windows = sheet.workbook?.windows?.items || [];
-  const selections = windows.map((window, index) => index === 0 && !sheet.workbook._selectedWorksheetIds
-    ? false
-    : window.getSelectedWorksheets().some((selected) => selected.id === sheet.id));
-  if (rows === 0 && columns === 0 && showGridLines && !selections.some(Boolean) && windows.length <= 1) return "";
-  const pane = rows > 0 || columns > 0
-    ? `<pane${columns > 0 ? ` xSplit="${columns}"` : ""}${rows > 0 ? ` ySplit="${rows}"` : ""} topLeftCell="${makeCellAddress(rows, columns)}" activePane="${rows > 0 && columns > 0 ? "bottomRight" : rows > 0 ? "bottomLeft" : "topRight"}" state="frozen"/>`
-    : "";
-  return `<sheetViews>${windows.map((window, index) => `<sheetView workbookViewId="${index}"${selections[index] ? ' tabSelected="1"' : ""}${showGridLines ? "" : ' showGridLines="0"'}>${pane}</sheetView>`).join("")}</sheetViews>`;
-}
-
-function worksheetColumnsXml(sheet) {
-  for (const column of sheet.columnDimensions?.keys() || []) if (!Number.isInteger(column) || column < 0 || column > XLSX_MAX_FREEZE_COLUMNS) throw new Error(`Worksheet column dimension index ${column} must be an integer from 0 through ${XLSX_MAX_FREEZE_COLUMNS}.`);
-  const entries = [...(sheet.columnDimensions || new Map()).entries()]
-    .filter(([column]) => Number.isInteger(column) && column >= 0 && column <= XLSX_MAX_FREEZE_COLUMNS)
-    .sort((left, right) => left[0] - right[0]);
-  if (!entries.length) return "";
-  const groups = [];
-  for (const [column, dimension] of entries) {
-    const key = JSON.stringify({ width: dimension.width, hidden: Boolean(dimension.hidden), bestFit: Boolean(dimension.bestFit) });
-    const previous = groups.at(-1);
-    if (previous && previous.max === column - 1 && previous.key === key) previous.max = column;
-    else groups.push({ min: column, max: column, key, dimension });
-  }
-  const columns = groups.map(({ min, max, dimension }) => {
-    if (dimension.width != null && (!Number.isFinite(dimension.width) || dimension.width <= 0 || dimension.width > XLSX_MAX_COLUMN_WIDTH)) throw new Error(`Worksheet column ${min + 1} width must be greater than 0 and at most ${XLSX_MAX_COLUMN_WIDTH}.`);
-    const width = dimension.width != null ? ` width="${Number(dimension.width)}" customWidth="1"` : "";
-    const hidden = dimension.hidden ? ' hidden="1"' : "";
-    const bestFit = dimension.bestFit ? ' bestFit="1"' : "";
-    return `<col min="${min + 1}" max="${max + 1}"${width}${hidden}${bestFit}/>`;
-  }).join("");
-  return `<cols>${columns}</cols>`;
-}
-
-function worksheetMergeCellsXml(sheet) {
-  if (!sheet.mergedRanges?.length) return "";
-  const normalized = [];
-  for (const range of sheet.mergedRanges) {
-    const bounds = worksheetRangeBounds(range);
-    if (bounds.rowCount * bounds.colCount <= 1) continue;
-    const canonical = rangeToAddress(bounds);
-    for (const existing of normalized) if (worksheetBoundsIntersect(existing.bounds, bounds)) throw new Error(`Worksheet merged range ${canonical} overlaps ${existing.range}.`);
-    normalized.push({ range: canonical, bounds });
-  }
-  if (!normalized.length) return "";
-  return `<mergeCells count="${normalized.length}">${normalized.map((item) => `<mergeCell ref="${attrEscape(item.range)}"/>`).join("")}</mergeCells>`;
-}
-
-function worksheetXml(sheet, tableParts = [], drawingRelId, sharedStrings = { indexByText: new Map() }, styleTable = { styles: [{}], indexByKey: new Map([["", 0]]) }) {
-  const rows = new Map();
-  for (const [address, cell] of sheet.store.entries()) {
-    const { row, col } = parseCellAddress(address);
-    if (!rows.has(row)) rows.set(row, []);
-    rows.get(row).push({ address, col, cell });
-  }
-  for (const row of sheet.rowDimensions?.keys() || []) if (!rows.has(row)) rows.set(row, []);
-  const rowXml = [...rows.entries()].sort((a, b) => a[0] - b[0]).map(([row, cells]) => {
-    if (!Number.isInteger(row) || row < 0 || row > XLSX_MAX_FREEZE_ROWS) throw new Error(`Worksheet row dimension index ${row} must be an integer from 0 through ${XLSX_MAX_FREEZE_ROWS}.`);
-    const dimension = worksheetRowDimension(sheet, row);
-    if (dimension.height != null && (!Number.isFinite(dimension.height) || dimension.height <= 0 || dimension.height > XLSX_MAX_ROW_HEIGHT)) throw new Error(`Worksheet row ${row + 1} height must be greater than 0 and at most ${XLSX_MAX_ROW_HEIGHT}.`);
-    const height = dimension.height != null ? ` ht="${Number(dimension.height)}" customHeight="1"` : "";
-    const hidden = dimension.hidden ? ' hidden="1"' : "";
-    const content = cells.sort((a, b) => a.col - b.col).map(({ address, cell }) => cellXml(address, cell, sharedStrings, styleTable)).join("");
-    return content ? `<row r="${row + 1}"${height}${hidden}>${content}</row>` : `<row r="${row + 1}"${height}${hidden}/>`;
-  }).join("");
-  const tablePartsXml = tableParts.length ? `<tableParts count="${tableParts.length}">${tableParts.map((part) => `<tablePart r:id="${part.relId}"/>`).join("")}</tableParts>` : "";
-  const drawingXml = drawingRelId ? `<drawing r:id="${drawingRelId}"/>` : "";
-  const sparklineXml = sparklineGroupExtXml(sheet);
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${worksheetViewXml(sheet)}${worksheetColumnsXml(sheet)}<sheetData>${rowXml}</sheetData>${tableSortStateXml(sheet.sortState, styleTable)}${worksheetMergeCellsXml(sheet)}${conditionalFormattingXml(sheet, styleTable)}${dataValidationsXml(sheet)}${drawingXml}${tablePartsXml}${sparklineXml}</worksheet>`;
-}
-
-function cellFormulaXml(address, cell, dynamicRef = dynamicArrayReference(address, cell)) {
-  if (!cell.formula) return "";
-  const text = String(cell.formula).replace(/^=/, "");
-  const formulaType = cell.formulaType || "";
-  if (formulaType === "shared") {
-    const attrs = [`t="shared"`];
-    if (cell.sharedIndex != null) attrs.push(`si="${Number(cell.sharedIndex) || 0}"`);
-    let includeBody = true;
-    if (cell.sharedRef) {
-      try {
-        const bounds = parseRangeAddress(cell.sharedRef);
-        includeBody = String(address).toUpperCase() === makeCellAddress(bounds.top, bounds.left);
-        if (includeBody) attrs.push(`ref="${attrEscape(cell.sharedRef)}"`);
-      } catch {
-        includeBody = true;
-        attrs.push(`ref="${attrEscape(cell.sharedRef)}"`);
-      }
-    }
-    return `<f ${attrs.join(" ")}>${includeBody ? xmlEscape(text) : ""}</f>`;
-  }
-  if (formulaType === "array") {
-    const ref = cell.arrayRef ? ` ref="${attrEscape(cell.arrayRef)}"` : "";
-    return `<f t="array"${ref}>${xmlEscape(text)}</f>`;
-  }
-  if (dynamicRef) {
-    return `<f t="array" ref="${attrEscape(dynamicRef)}">${xmlEscape(text)}</f>`;
-  }
-  const type = formulaType ? ` t="${attrEscape(formulaType)}"` : "";
-  return `<f${type}>${xmlEscape(text)}</f>`;
-}
-
-function cellXml(address, cell, sharedStrings = { indexByText: new Map() }, styleTable = { styles: [{}], indexByKey: new Map([["", 0]]) }) {
-  const dynamicRef = dynamicArrayReference(address, cell);
-  const f = cellFormulaXml(address, cell, dynamicRef);
-  const styleIndex = xlsxStyleIndex(cell, styleTable);
-  const s = styleIndex ? ` s="${styleIndex}"` : "";
-  const cm = dynamicRef ? ' cm="1"' : "";
-  if (cell.value instanceof Date && !Number.isNaN(cell.value.valueOf())) {
-    const value = cell.value.toISOString();
-    return f ? `<c r="${address}" t="str"${s}${cm}>${f}<v>${value}</v></c>` : `<c r="${address}" t="inlineStr"${s}><is><t>${value}</t></is></c>`;
-  }
-  if (typeof cell.value === "number") return `<c r="${address}"${s}${cm}>${f}<v>${cell.value}</v></c>`;
-  if (typeof cell.value === "boolean") return `<c r="${address}" t="b"${s}${cm}>${f}<v>${cell.value ? 1 : 0}</v></c>`;
-  if (cell.value == null && !f) return styleIndex ? `<c r="${address}"${s}/>` : "";
-  if (cell.value == null) return `<c r="${address}"${s}${cm}>${f}</c>`;
-  if (f) return `<c r="${address}" t="str"${s}${cm}>${f}<v>${xmlEscape(cell.value)}</v></c>`;
-  const sharedIndex = sharedStrings.indexByText?.get(String(cell.value));
-  if (sharedIndex !== undefined) return `<c r="${address}" t="s"${s}><v>${sharedIndex}</v></c>`;
-  return `<c r="${address}" t="inlineStr"${s}><is><t>${xmlEscape(cell.value)}</t></is></c>`;
-}
-
-function parseXlsxSqref(value = "") {
-  return String(value || "").trim().split(/\s+/).map((item) => item.trim()).filter(Boolean);
-}
-
-function parseDataValidationsXml(sheet, xml = "") {
-  const text = String(xml || "");
-  for (const match of text.matchAll(/<dataValidation\b([^>]*)>([\s\S]*?)<\/dataValidation>/g)) {
-    const attrs = parseAttrs(match[1]);
-    const body = match[2] || "";
-    const formula1 = decodeXml(/<formula1[^>]*>([\s\S]*?)<\/formula1>/.exec(body)?.[1] || "");
-    const formula2 = decodeXml(/<formula2[^>]*>([\s\S]*?)<\/formula2>/.exec(body)?.[1] || "");
-    const listMatch = /^"([\s\S]*)"$/.exec(formula1);
-    const rule = {
-      type: attrs.type || "custom",
-      operator: attrs.operator || undefined,
-      formula1: formula1 || undefined,
-      formula2: formula2 || undefined,
-    };
-    if (listMatch) rule.values = listMatch[1].split(",").map((item) => item.replaceAll('""', '"'));
-    for (const range of parseXlsxSqref(attrs.sqref || attrs.ref || "A1")) sheet.dataValidations.add({ range, rule });
-  }
-}
-
-function parseConditionalFormattingXml(sheet, xml = "", styles = []) {
-  const text = String(xml || "");
-  for (const block of text.matchAll(/<conditionalFormatting\b([^>]*)>([\s\S]*?)<\/conditionalFormatting>/g)) {
-    const attrs = parseAttrs(block[1]);
-    const ranges = parseXlsxSqref(attrs.sqref || "A1");
-    for (const ruleMatch of String(block[2] || "").matchAll(/<cfRule\b([^>]*)>([\s\S]*?)<\/cfRule>/g)) {
-      const ruleAttrs = parseAttrs(ruleMatch[1]);
-      const type = ruleAttrs.type || "expression";
-      if (type === "colorScale") {
-        const colorScaleBody = /<colorScale>([\s\S]*?)<\/colorScale>/.exec(ruleMatch[2])?.[1] || "";
-        const colors = [...colorScaleBody.matchAll(/<color[^>]*rgb="(?:FF)?([0-9A-Fa-f]{6})"\/>/g)].map((m) => `#${m[1]}`);
-        for (const range of ranges) sheet.conditionalFormattings.add({ range, ruleType: "colorScale", colors });
-        continue;
-      }
-      const formula = decodeXml(/<formula[^>]*>([\s\S]*?)<\/formula>/.exec(ruleMatch[2])?.[1] || "");
-      const ruleType = type === "cellIs" ? "cellIs" : type === "containsText" ? "containsText" : "expression";
-      const format = styles?.dxfs?.[Number(ruleAttrs.dxfId)] || undefined;
-      for (const range of ranges) {
-        sheet.conditionalFormattings.add({
-          range,
-          ruleType,
-          operator: ruleAttrs.operator || undefined,
-          text: ruleAttrs.text || undefined,
-          formula: formula || (type === "containsText" ? ruleAttrs.text : undefined),
-          format,
-          priority: ruleAttrs.priority ? Number(ruleAttrs.priority) : undefined,
-        });
-      }
-    }
-  }
-}
-
-function parseWorksheetXml(sheet, xml, options = {}) {
-  parseWorksheetViewXml(sheet, xml);
-  parseWorksheetDimensionsXml(sheet, xml);
-  sheet.sortState = parseNativeSortState(xml, options.styles);
-  const cellMatches = [...String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?c\s+([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?c>)/g)].map((match) => {
-    const attrs = match[1];
-    const body = match[2] || "";
-    const address = /r="([^"]+)"/.exec(attrs)?.[1];
-    const formulaMatch = /<(?:[A-Za-z_][\w.-]*:)?f\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?f>)/.exec(body);
-    return { attrs, body, address, formulaAttrs: parseAttrs(formulaMatch?.[1] || ""), formulaBody: formulaMatch ? decodeXml(formulaMatch[2] || "") : undefined };
-  }).filter((item) => item.address);
-  const sharedFormulas = new Map();
-  for (const item of cellMatches) {
-    if (item.formulaAttrs.t === "shared" && item.formulaAttrs.si != null && item.formulaBody) {
-      sharedFormulas.set(String(item.formulaAttrs.si), { address: item.address, formula: item.formulaBody, ref: item.formulaAttrs.ref });
-    }
-  }
-  for (const item of cellMatches) {
-    const { attrs, body, address, formulaAttrs, formulaBody } = item;
-    const cellAttrs = parseAttrs(attrs);
-    const cell = sheet.store.get(address);
-    const styleIndex = Number(/\bs="([^"]+)"/.exec(attrs)?.[1] || 0);
-    if (options.styles?.[styleIndex]) cell.style = { ...options.styles[styleIndex] };
-    if (formulaBody !== undefined || formulaAttrs.t === "shared") {
-      if (formulaAttrs.t === "shared") {
-        const shared = sharedFormulas.get(String(formulaAttrs.si));
-        const formulaText = formulaBody || (shared ? conditionalFormulaForCell(shared.formula, parseRangeAddress(shared.address), address) : "");
-        if (formulaText) cell.formula = `=${formulaText}`;
-        cell.formulaType = "shared";
-        cell.sharedIndex = formulaAttrs.si != null ? Number(formulaAttrs.si) : undefined;
-        cell.sharedRef = formulaAttrs.ref || shared?.ref;
-      } else if (formulaAttrs.t === "array") {
-        if (formulaBody) cell.formula = `=${formulaBody}`;
-        const metadataIndex = Number(cellAttrs.cm);
-        if (Number.isInteger(metadataIndex) && options.dynamicArrayMetadataIndexes?.has(metadataIndex)) {
-          cell.formulaType = "dynamicArray";
-          cell.dynamicArrayRef = formulaAttrs.ref;
-        } else {
-          cell.formulaType = "array";
-          cell.arrayRef = formulaAttrs.ref;
-        }
-      } else if (formulaBody) {
-        cell.formula = `=${formulaBody}`;
-        cell.formulaType = formulaAttrs.t || undefined;
-      }
-    }
-    const text = /<(?:[A-Za-z_][\w.-]*:)?is\b[^>]*>[\s\S]*?<(?:[A-Za-z_][\w.-]*:)?t\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?is>/.exec(body)?.[1];
-    const value = /<(?:[A-Za-z_][\w.-]*:)?v\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?v>/.exec(body)?.[1];
-    const type = /\bt="([^"]+)"/.exec(attrs)?.[1];
-    if (type === "s" && value !== undefined) cell.value = options.sharedStrings?.[Number(value)] ?? "";
-    else if (type === "b" && value !== undefined) cell.value = ["1", "true"].includes(String(value).trim().toLowerCase());
-    else if (text !== undefined) cell.value = decodeXml(text);
-    else if (value !== undefined) cell.value = Number.isFinite(Number(value)) && type !== "str" ? Number(value) : decodeXml(value);
-  }
-  parseDataValidationsXml(sheet, xml);
-  parseConditionalFormattingXml(sheet, xml, options.styles || []);
-  parseSparklineGroupsXml(sheet, xml);
-  parseWorksheetMergeCellsXml(sheet, xml);
-}
-
-function tableColorFromDxf(styles, dxfId, target) {
-  if (!Number.isInteger(dxfId) || dxfId < 0) return undefined;
-  const style = styles?.dxfs?.[dxfId];
-  if (!style || Object.keys(style).some((key) => key !== (target === "cell" ? "fill" : "font"))) return undefined;
-  if (target === "cell") {
-    const fill = style.fill;
-    const color = typeof fill === "string" ? fill : fill?.patternType === "solid" ? fill.foreground : undefined;
-    return color == null ? undefined : { target, color: tableSemanticColor(color) };
-  }
-  const font = style.font;
-  if (!font?.color || font.bold || font.italic || font.underline || font.strike || font.size !== 11 || font.name !== "Aptos") return undefined;
-  return { target, color: tableSemanticColor(font.color) };
-}
-
-function tableSemanticColor(color) {
-  if (typeof color === "string") return color;
-  return {
-    ...(color?.rgb != null ? { rgb: color.rgb } : {}),
-    ...(color?.theme != null ? { theme: color.theme } : {}),
-    ...(color?.indexed != null ? { indexed: color.indexed } : {}),
-    ...(color?.auto === true ? { auto: true } : {}),
-    ...(color?.tint != null ? { tint: color.tint } : {}),
-  };
-}
-
-function parseNativeTableFilters(xml, styles) {
-  const autoFilter = /<(?:[A-Za-z_][\w.-]*:)?autoFilter\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?autoFilter\s*>/.exec(String(xml || ""));
-  if (!autoFilter) return [];
-  return [...autoFilter[1].matchAll(/<(?:[A-Za-z_][\w.-]*:)?filterColumn\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?filterColumn\s*>/g)].flatMap((match) => {
-    const columnAttrs = ooxmlXmlAttributes(match[1] || "");
-    const columnIndex = Number(columnAttrs.colId);
-    if (!Number.isInteger(columnIndex) || columnIndex < 0) return [];
-    const valuesMatch = /<(?:[A-Za-z_][\w.-]*:)?filters\b([^>]*?)(?:\/\s*>|>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?filters\s*>)/.exec(match[2]);
-    if (valuesMatch) {
-      const filterAttrs = ooxmlXmlAttributes(valuesMatch[1] || "");
-      const values = [...(valuesMatch[2] || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?filter\b([^>]*?)\/\s*>/g)]
-        .map((valueMatch) => ooxmlXmlAttributes(valueMatch[1] || "").val)
-        .filter((value) => value != null);
-      const dateGroups = [...(valuesMatch[2] || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?dateGroupItem\b([^>]*?)\/\s*>/g)].map((groupMatch) => {
-        const group = ooxmlXmlAttributes(groupMatch[1] || "");
-        if (!group.year || !group.dateTimeGrouping) return undefined;
-        const output = { grouping: group.dateTimeGrouping, year: Number(group.year) };
-        for (const name of ["month", "day", "hour", "minute", "second"]) if (group[name] != null) output[name] = Number(group[name]);
-        return Object.values(output).some((value) => typeof value === "number" && !Number.isInteger(value)) ? undefined : output;
-      });
-      if (dateGroups.some((group) => !group)) return [];
-      return [{
-        columnIndex,
-        kind: "values",
-        values,
-        includeBlank: filterAttrs.blank != null && !["0", "false", "off"].includes(String(filterAttrs.blank).toLowerCase()),
-        ...(dateGroups.length ? { dateGroups } : {}),
-        ...(filterAttrs.calendarType ? { calendarType: filterAttrs.calendarType } : {}),
-      }];
-    }
-    const dynamicMatch = /<(?:[A-Za-z_][\w.-]*:)?dynamicFilter\b([^>]*?)(?:\/\s*>|>\s*<\/(?:[A-Za-z_][\w.-]*:)?dynamicFilter\s*>)/.exec(match[2]);
-    if (dynamicMatch) {
-      const dynamic = ooxmlXmlAttributes(dynamicMatch[1] || "");
-      const value = dynamic.val == null ? undefined : Number(dynamic.val);
-      const maxValue = dynamic.maxVal == null ? undefined : Number(dynamic.maxVal);
-      if (!dynamic.type || value != null && !Number.isFinite(value) || maxValue != null && !Number.isFinite(maxValue)) return [];
-      return [{ columnIndex, kind: "dynamic", type: dynamic.type, ...(value == null ? {} : { value }), ...(maxValue == null ? {} : { maxValue }) }];
-    }
-    const top10Match = /<(?:[A-Za-z_][\w.-]*:)?top10\b([^>]*?)(?:\/\s*>|>\s*<\/(?:[A-Za-z_][\w.-]*:)?top10\s*>)/.exec(match[2]);
-    if (top10Match) {
-      const top10 = ooxmlXmlAttributes(top10Match[1] || "");
-      const value = Number(top10.val);
-      const filterValue = top10.filterVal == null ? undefined : Number(top10.filterVal);
-      if (top10.val == null || !Number.isFinite(value) || filterValue != null && !Number.isFinite(filterValue)) return [];
-      return [{
-        columnIndex,
-        kind: "top10",
-        top: top10.top == null || !["0", "false", "off"].includes(String(top10.top).toLowerCase()),
-        percent: top10.percent != null && !["0", "false", "off"].includes(String(top10.percent).toLowerCase()),
-        value,
-        ...(filterValue == null ? {} : { filterValue }),
-      }];
-    }
-    const iconMatch = /<(?:[A-Za-z_][\w.-]*:)?iconFilter\b([^>]*?)(?:\/\s*>|>\s*<\/(?:[A-Za-z_][\w.-]*:)?iconFilter\s*>)/.exec(match[2]);
-    if (iconMatch) {
-      const icon = ooxmlXmlAttributes(iconMatch[1] || "");
-      const iconId = icon.iconId == null ? undefined : Number(icon.iconId);
-      if (!icon.iconSet || iconId != null && (!Number.isInteger(iconId) || iconId < 0)) return [];
-      return [{ columnIndex, kind: "icon", iconSet: icon.iconSet, ...(iconId == null ? {} : { iconId }) }];
-    }
-    const colorMatch = /<(?:[A-Za-z_][\w.-]*:)?colorFilter\b([^>]*?)(?:\/\s*>|>\s*<\/(?:[A-Za-z_][\w.-]*:)?colorFilter\s*>)/.exec(match[2]);
-    if (colorMatch) {
-      const attrs = ooxmlXmlAttributes(colorMatch[1] || "");
-      const target = attrs.cellColor == null || !["0", "false", "off"].includes(String(attrs.cellColor).toLowerCase()) ? "cell" : "font";
-      const color = tableColorFromDxf(styles, Number(attrs.dxfId), target);
-      return color ? [{ columnIndex, kind: "color", ...color }] : [];
-    }
-    const customMatch = /<(?:[A-Za-z_][\w.-]*:)?customFilters\b([^>]*?)(?:\/\s*>|>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?customFilters\s*>)/.exec(match[2]);
-    if (!customMatch) return [];
-    const customAttrs = ooxmlXmlAttributes(customMatch[1] || "");
-    const criteria = [...(customMatch[2] || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?customFilter\b([^>]*?)\/\s*>/g)].map((criterionMatch) => {
-      const criterion = ooxmlXmlAttributes(criterionMatch[1] || "");
-      return { operator: criterion.operator || "equal", value: criterion.val ?? "" };
-    });
-    return [{ columnIndex, kind: "custom", matchAll: customAttrs.and != null && !["0", "false", "off"].includes(String(customAttrs.and).toLowerCase()), criteria }];
-  });
-}
-
-function parseNativeSortState(xml, styles, options = {}) {
-  const matches = [...String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?sortState\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?sortState\s*>/g)];
-  if (matches.length !== 1) return undefined;
-  const match = matches[0];
-  const attrs = ooxmlXmlAttributes(match[1] || "");
-  if (!attrs.ref || Object.keys(attrs).some((name) => !name.startsWith("xmlns") && !["ref", "caseSensitive", "sortMethod", "columnSort"].includes(name)) ||
-    options.allowColumnSort === false && attrs.columnSort != null ||
-    attrs.sortMethod != null && !["none", "pinYin", "stroke"].includes(attrs.sortMethod)) return undefined;
-  const body = match[2] || "";
-  const extensionPattern = /<(?:[A-Za-z_][\w.-]*:)?extLst\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?extLst\s*>/g;
-  const extensions = [...body.matchAll(extensionPattern)];
-  if (extensions.length > 1) return undefined;
-  const bodyWithoutExtensions = body.replace(extensionPattern, "");
-  const conditionPattern = /<(?:[A-Za-z_][\w.-]*:)?sortCondition\b([^>]*?)\/\s*>/g;
-  const conditionMatches = [...bodyWithoutExtensions.matchAll(conditionPattern)];
-  const residual = bodyWithoutExtensions.replace(conditionPattern, "").trim();
-  if (residual) return undefined;
-  const conditions = conditionMatches.map((conditionMatch) => {
-    const condition = ooxmlXmlAttributes(conditionMatch[1] || "");
-    if (!condition.ref || Object.keys(condition).some((name) => !name.startsWith("xmlns") && !["ref", "descending", "sortBy", "iconSet", "iconId", "dxfId", "customList"].includes(name))) return undefined;
-    const descending = condition.descending != null && !["0", "false", "off"].includes(String(condition.descending).toLowerCase());
-    if (condition.sortBy === "icon") {
-      const iconId = condition.iconId == null ? undefined : Number(condition.iconId);
-      if (!condition.iconSet || condition.dxfId != null || condition.customList != null || iconId != null && (!Number.isInteger(iconId) || iconId < 0)) return undefined;
-      return { reference: condition.ref, descending, kind: "icon", iconSet: condition.iconSet, ...(iconId == null ? {} : { iconId }) };
-    }
-    if (condition.sortBy === "cellColor" || condition.sortBy === "fontColor") {
-      if (condition.iconId != null || condition.iconSet != null || condition.customList != null) return undefined;
-      const color = tableColorFromDxf(styles, Number(condition.dxfId), condition.sortBy === "cellColor" ? "cell" : "font");
-      return color ? { reference: condition.ref, descending, kind: "color", ...color } : undefined;
-    }
-    if ((condition.sortBy != null && condition.sortBy !== "value") || condition.iconId != null || condition.iconSet != null || condition.dxfId != null) return undefined;
-    return { reference: condition.ref, descending, ...(condition.customList == null ? {} : { customList: condition.customList }) };
-  });
-  if (!conditions.length || conditions.some((condition) => condition == null)) return undefined;
-  return {
-    reference: attrs.ref,
-    caseSensitive: attrs.caseSensitive != null && !["0", "false", "off"].includes(String(attrs.caseSensitive).toLowerCase()),
-    ...(attrs.sortMethod == null ? {} : { sortMethod: attrs.sortMethod }),
-    ...(attrs.columnSort == null ? {} : { columnSort: !["0", "false", "off"].includes(String(attrs.columnSort).toLowerCase()) }),
-    conditions,
-  };
-}
-
-function parseNativeTableSortState(xml, styles) {
-  const autoFilter = /<(?:[A-Za-z_][\w.-]*:)?autoFilter\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?autoFilter\s*>/.exec(String(xml || ""));
-  return autoFilter ? parseNativeSortState(autoFilter[1], styles, { allowColumnSort: false }) : undefined;
-}
-
-function parseNativeQueryTableRefresh(xml, styles) {
-  const matches = [...String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?queryTableRefresh\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?queryTableRefresh>/g)];
-  if (matches.length !== 1) return undefined;
-  const attrs = ooxmlXmlAttributes(matches[0][1] || "");
-  const body = matches[0][2] || "";
-  const refresh = {};
-  for (const field of WORKSHEET_TABLE_QUERY_REFRESH_BOOLEAN_FIELDS) {
-    if (attrs[field] == null) continue;
-    const value = String(attrs[field]).toLowerCase();
-    if (!["0", "1", "false", "true"].includes(value)) return undefined;
-    refresh[field] = value === "1" || value === "true";
-  }
-  for (const field of WORKSHEET_TABLE_QUERY_REFRESH_UINT_FIELDS) {
-    if (attrs[field] == null) continue;
-    const value = Number(attrs[field]);
-    if (!Number.isInteger(value) || value < 0 || value > 0xFFFFFFFF || field === "minimumVersion" && value > 255 || field.startsWith("unboundColumns") && value > 16384)
-      return undefined;
-    refresh[field] = value;
-  }
-  const fieldCollections = [...body.matchAll(/<(?:[A-Za-z_][\w.-]*:)?queryTableFields\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?queryTableFields>/g)];
-  if (fieldCollections.length > 1) return undefined;
-  const fields = [];
-  if (fieldCollections.length === 1) {
-    const collectionAttrs = ooxmlXmlAttributes(fieldCollections[0][1] || "");
-    const fieldTags = [...(fieldCollections[0][2] || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?queryTableField\b([^>]*)\/?>/g)];
-    const count = Number(collectionAttrs.count);
-    if (!Number.isInteger(count) || count < 0 || count !== fieldTags.length || count > 16384) return undefined;
-    const ids = new Set();
-    const names = new Set();
-    const tableColumnIds = new Set();
-    let rowNumberFields = 0;
-    for (const tag of fieldTags) {
-      const fieldAttrs = ooxmlXmlAttributes(tag[1] || "");
-      const id = Number(fieldAttrs.id);
-      if (!Number.isInteger(id) || id <= 0 || ids.has(id)) return undefined;
-      ids.add(id);
-      const field = { id };
-      if (fieldAttrs.name != null) {
-        const name = String(fieldAttrs.name);
-        const key = name.toLowerCase();
-        if (!name.trim() || name.length > 255 || names.has(key)) return undefined;
-        names.add(key);
-        field.name = name;
-      }
-      for (const name of WORKSHEET_TABLE_QUERY_FIELD_BOOLEAN_FIELDS) {
-        if (fieldAttrs[name] == null) continue;
-        const value = String(fieldAttrs[name]).toLowerCase();
-        if (!["0", "1", "false", "true"].includes(value)) return undefined;
-        field[name] = value === "1" || value === "true";
-      }
-      if (field.rowNumbers === true && ++rowNumberFields > 1) return undefined;
-      if (field.fillFormulas === true && field.dataBound !== false) return undefined;
-      if (field.clipped === true && field.dataBound !== true) return undefined;
-      if (fieldAttrs.tableColumnId != null) {
-        const tableColumnId = Number(fieldAttrs.tableColumnId);
-        if (!Number.isInteger(tableColumnId) || tableColumnId <= 0 || tableColumnIds.has(tableColumnId)) return undefined;
-        tableColumnIds.add(tableColumnId);
-        field.tableColumnId = tableColumnId;
-      }
-      fields.push(field);
-    }
-    if (refresh.nextId != null && (refresh.nextId <= 0 || ids.has(refresh.nextId))) return undefined;
-  }
-  refresh.fields = fields;
-  const deletedCollections = [...body.matchAll(/<(?:[A-Za-z_][\w.-]*:)?queryTableDeletedFields\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?queryTableDeletedFields\s*>/g)];
-  if (deletedCollections.length === 1) {
-    const collectionAttrs = ooxmlXmlAttributes(deletedCollections[0][1] || "");
-    const deletedBody = deletedCollections[0][2] || "";
-    const deletedPattern = /<(?:[A-Za-z_][\w.-]*:)?deletedField\b([^>]*?)\/\s*>/g;
-    const deletedTags = [...deletedBody.matchAll(deletedPattern)];
-    const count = Number(collectionAttrs.count);
-    const deletedAttributes = deletedTags.map((tag) => ooxmlXmlAttributes(tag[1] || ""));
-    const names = deletedAttributes.map((attributes) => attributes.name).filter((name) => name != null).map(String);
-    const normalizedNames = new Set(names.map((name) => name.toLowerCase()));
-    if (Object.keys(collectionAttrs).every((name) => name === "count") && !deletedBody.replace(deletedPattern, "").trim() &&
-        deletedAttributes.every((attributes) => Object.keys(attributes).every((name) => name === "name")) &&
-        Number.isInteger(count) && count >= 0 && count === deletedTags.length && count === names.length && count <= 16384 &&
-        names.every((name) => name.trim() && name.length <= 255) && normalizedNames.size === names.length)
-      refresh.deletedFieldNames = names;
-  }
-  const sortState = parseNativeSortState(body, styles);
-  if (sortState) refresh.sortState = sortState;
-  return refresh;
-}
-
-function parseNativeQueryTable(xml, styles) {
-  const opening = /<(?:[A-Za-z_][\w.-]*:)?queryTable\b[^>]*>/.exec(String(xml || ""))?.[0];
-  if (!opening) return undefined;
-  const attrs = ooxmlXmlAttributes(opening);
-  const connectionId = Number(attrs.connectionId);
-  if (!attrs.name || attrs.name.length > 255 || !Number.isInteger(connectionId) || connectionId <= 0) return undefined;
-  const query = { name: attrs.name, connectionId };
-  const booleanFields = {
-    headers: "headers", rowNumbers: "rowNumbers", disableRefresh: "disableRefresh", backgroundRefresh: "backgroundRefresh",
-    firstBackgroundRefresh: "firstBackgroundRefresh", refreshOnLoad: "refreshOnLoad", fillFormulas: "fillFormulas",
-    removeDataOnSave: "removeDataOnSave", disableEdit: "disableEdit", preserveFormatting: "preserveFormatting",
-    adjustColumnWidth: "adjustColumnWidth", intermediate: "intermediate", applyNumberFormats: "applyNumberFormats",
-    applyBorderFormats: "applyBorderFormats", applyFontFormats: "applyFontFormats", applyPatternFormats: "applyPatternFormats",
-    applyAlignmentFormats: "applyAlignmentFormats", applyWidthHeightFormats: "applyWidthHeightFormats",
-  };
-  for (const [attribute, field] of Object.entries(booleanFields)) {
-    if (attrs[attribute] == null) continue;
-    const value = String(attrs[attribute]).toLowerCase();
-    if (!["0", "1", "false", "true"].includes(value)) return undefined;
-    query[field] = value === "1" || value === "true";
-  }
-  if (attrs.growShrinkType != null) {
-    if (!["insertClear", "insertDelete", "overwriteClear"].includes(attrs.growShrinkType)) return undefined;
-    query.growShrinkType = attrs.growShrinkType;
-  }
-  if (attrs.autoFormatId != null) {
-    const autoFormatId = Number(attrs.autoFormatId);
-    if (!Number.isInteger(autoFormatId) || autoFormatId < 0) return undefined;
-    query.autoFormatId = autoFormatId;
-  }
-  const refresh = parseNativeQueryTableRefresh(xml, styles);
-  if (refresh) query.refresh = refresh;
-  return query;
-}
-
-function parseNativeWorkbookConnections(xml) {
-  const connections = [];
-  const ids = new Set();
-  for (const match of String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?connection\b([^>]*)>/g)) {
-    const attrs = ooxmlXmlAttributes(match[1] || "");
-    const connectionId = Number(attrs.id);
-    if (!Number.isInteger(connectionId) || connectionId <= 0 || ids.has(connectionId)) return [];
-    ids.add(connectionId);
-    const type = Number(attrs.type);
-    const refreshedVersion = Number(attrs.refreshedVersion);
-    if (!attrs.name || attrs.name.length > 255 || type !== 5 ||
-        !Number.isInteger(refreshedVersion) || refreshedVersion < 0 || refreshedVersion > 255) continue;
-    const connection = { connectionId, name: attrs.name, type, refreshedVersion };
-    if (attrs.description != null) connection.description = attrs.description;
-    let recognized = true;
-    for (const field of WORKBOOK_CONNECTION_BOOLEAN_FIELDS) {
-      if (attrs[field] == null) continue;
-      const value = String(attrs[field]).toLowerCase();
-      if (!["0", "1", "false", "true"].includes(value)) { recognized = false; break; }
-      connection[field] = value === "1" || value === "true";
-    }
-    if (!recognized) continue;
-    if (attrs.interval != null) {
-      const interval = Number(attrs.interval);
-      if (!Number.isInteger(interval) || interval < 0 || interval > 32_767) continue;
-      connection.intervalMinutes = interval;
-    }
-    connections.push(connection);
-  }
-  return connections;
-}
-
-async function importNativeTableQuery(zip, tablePartPath, styles) {
-  const relationshipPath = ooxmlRelationshipPartPath(tablePartPath, "XLSX");
-  const relationshipFile = zip.file(relationshipPath);
-  if (!relationshipFile) return {};
-  const relationships = parseRelsXml(await relationshipFile.async("text"));
-  const queryRelationships = relationships.filter((item) => item.type.endsWith("/queryTable"));
-  if (queryRelationships.length === 0) return {};
-  if (relationships.length !== 1 || queryRelationships.length !== 1 || String(queryRelationships[0].targetMode || "").toLowerCase() === "external")
-    return { queryTableUnsupported: true };
-  const queryPartPath = ooxmlResolveRelationshipTarget(tablePartPath, queryRelationships[0].target);
-  const queryXml = await zip.file(queryPartPath)?.async("text");
-  if (!queryXml || zip.file(ooxmlRelationshipPartPath(queryPartPath, "XLSX"))) return { queryTableUnsupported: true };
-  const queryTable = parseNativeQueryTable(queryXml, styles);
-  if (!queryTable) return { queryTableUnsupported: true };
-  const workbookRelationships = parseRelsXml(await zip.file("xl/_rels/workbook.xml.rels")?.async("text"));
-  const connectionRelationships = workbookRelationships.filter((item) => item.type.endsWith("/connections") && String(item.targetMode || "").toLowerCase() !== "external");
-  if (connectionRelationships.length !== 1) return { queryTableUnsupported: true };
-  const connectionPath = ooxmlResolveRelationshipTarget("xl/workbook.xml", connectionRelationships[0].target);
-  const connectionsXml = await zip.file(connectionPath)?.async("text");
-  if (!connectionsXml) return { queryTableUnsupported: true };
-  const connectionIds = [...connectionsXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?connection\b([^>]*)>/g)]
-    .map((match) => Number(ooxmlXmlAttributes(match[1] || "").id))
-    .filter((id) => Number.isInteger(id) && id > 0);
-  return connectionIds.includes(queryTable.connectionId) ? { queryTable } : { queryTableUnsupported: true };
-}
-
-async function importNativeWorksheetTables(sheet, zip, worksheetPartPath, styles) {
-  const relationships = parseRelsXml(await zip.file(ooxmlRelationshipPartPath(worksheetPartPath, "XLSX"))?.async("text"));
-  for (const relationship of relationships) {
-    if (!relationship.type.endsWith("/table") || String(relationship.targetMode || "").toLowerCase() === "external") continue;
-    const tablePartPath = ooxmlResolveRelationshipTarget(worksheetPartPath, relationship.target);
-    const xml = await zip.file(tablePartPath)?.async("text");
-    if (!xml) continue;
-    const opening = /<(?:[A-Za-z_][\w.-]*:)?table\b[^>]*>/.exec(xml)?.[0];
-    if (!opening) continue;
-    const attrs = ooxmlXmlAttributes(opening);
-    if (!attrs.ref) continue;
-    const columnDefinitions = [...String(xml).matchAll(/<(?:[A-Za-z_][\w.-]*:)?tableColumn\b([^>]*?)(?:\/\s*>|>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?tableColumn\s*>)/g)].map((match) => {
-      const columnAttrs = ooxmlXmlAttributes(match[1] || "");
-      const body = match[2] || "";
-      const formula = (tag) => {
-        const found = new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${tag}\\b([^>]*)>([\\s\\S]*?)<\\/(?:[A-Za-z_][\\w.-]*:)?${tag}\\s*>`).exec(body);
-        if (!found) return { value: "", array: false };
-        const formulaAttrs = ooxmlXmlAttributes(found[1] || "");
-        return { value: `=${decodeXml(found[2])}`, array: formulaAttrs.array != null && !["0", "false", "off"].includes(String(formulaAttrs.array).toLowerCase()) };
-      };
-      const calculated = formula("calculatedColumnFormula");
-      const totals = formula("totalsRowFormula");
-      return {
-        name: columnAttrs.name,
-        calculatedColumnFormula: calculated.value,
-        calculatedColumnFormulaArray: calculated.array,
-        totalsRowFunction: columnAttrs.totalsRowFunction || "",
-        totalsRowLabel: columnAttrs.totalsRowLabel || "",
-        totalsRowFormula: totals.value,
-        totalsRowFormulaArray: totals.array,
-      };
-    }).filter((column) => column.name != null);
-    const columnNames = columnDefinitions.map((column) => column.name);
-    const styleTag = /<(?:[A-Za-z_][\w.-]*:)?tableStyleInfo\b[^>]*\/?\s*>/.exec(xml)?.[0];
-    const styleAttrs = ooxmlXmlAttributes(styleTag || "");
-    const queryProfile = await importNativeTableQuery(zip, tablePartPath, styles);
-    sheet.tables.add({
-      range: attrs.ref,
-      name: attrs.displayName || attrs.name || `Table${sheet.tables.items.length + 1}`,
-      hasHeaders: attrs.headerRowCount == null || !["0", "false", "off"].includes(String(attrs.headerRowCount).toLowerCase()),
-      showTotals: [attrs.totalsRowShown, attrs.totalsRowCount].some((value) => value != null && !["0", "false", "off"].includes(String(value).toLowerCase())),
-      showFilterButton: /<(?:[A-Za-z_][\w.-]*:)?autoFilter\b/.test(xml),
-      showFirstColumn: styleAttrs.showFirstColumn != null && !["0", "false", "off"].includes(String(styleAttrs.showFirstColumn).toLowerCase()),
-      showLastColumn: styleAttrs.showLastColumn != null && !["0", "false", "off"].includes(String(styleAttrs.showLastColumn).toLowerCase()),
-      showRowStripes: styleAttrs.showRowStripes != null && !["0", "false", "off"].includes(String(styleAttrs.showRowStripes).toLowerCase()),
-      showBandedColumns: styleAttrs.showColumnStripes != null && !["0", "false", "off"].includes(String(styleAttrs.showColumnStripes).toLowerCase()),
-      style: styleAttrs.name || "TableStyleMedium2",
-      columnNames,
-      columnDefinitions,
-      filters: parseNativeTableFilters(xml, styles),
-      sortState: parseNativeTableSortState(xml, styles),
-      ...queryProfile,
-    });
-  }
-}
-
-async function importNativePivotCaches(zip, workbookXmlText, workbookRelationships, sheetNames = []) {
-  const caches = new Map();
-  for (const record of parseWorkbookPivotCaches(workbookXmlText)) {
-    const relationship = workbookRelationships.get(record.relationshipId);
-    if (!relationship || !relationship.type.endsWith("/pivotCacheDefinition") || String(relationship.targetMode || "").toLowerCase() === "external") continue;
-    const partPath = ooxmlResolveRelationshipTarget("xl/workbook.xml", relationship.target);
-    const xml = await zip.file(partPath)?.async("text");
-    if (!xml) continue;
-    const parsed = parsePivotCacheDefinition(xml);
-    if (!parsed.source.sheet && parsed.source.relationshipId) {
-      const relationships = parseRelsXml(await zip.file(ooxmlRelationshipPartPath(partPath, "XLSX"))?.async("text"));
-      const sourceRelationship = relationships.find((item) => item.id === parsed.source.relationshipId && String(item.targetMode || "").toLowerCase() !== "external");
-      const sourcePath = sourceRelationship?.target ? ooxmlResolveRelationshipTarget(partPath, sourceRelationship.target) : undefined;
-      parsed.source.sheet = sheetNames.find((sheet) => sheet.partPath === sourcePath)?.name;
-    }
-    caches.set(record.cacheId, { ...parsed, cacheId: record.cacheId, partPath });
-  }
-  return caches;
-}
-
-async function importNativeWorksheetPivots(sheet, zip, worksheetPartPath, caches, options = {}) {
-  const relationshipRecords = parseRelsXml(await zip.file(ooxmlRelationshipPartPath(worksheetPartPath, "XLSX"))?.async("text"));
-  for (const relationship of relationshipRecords) {
-    if (!relationship || !relationship.type.endsWith("/pivotTable") || String(relationship.targetMode || "").toLowerCase() === "external") continue;
-    const partPath = ooxmlResolveRelationshipTarget(worksheetPartPath, relationship.target);
-    const xml = await zip.file(partPath)?.async("text");
-    if (!xml) continue;
-    const cacheId = Number(ooxmlXmlAttributes(/<(?:[A-Za-z_][\w.-]*:)?pivotTableDefinition\b[^>]*\/?>/.exec(xml)?.[0]).cacheId);
-    const cache = caches.get(cacheId);
-    if (!cache?.source?.ref || !cache.source.sheet) continue;
-    const parsed = parsePivotTableDefinition(xml, cache);
-    if (!parsed.targetRange) continue;
-    sheet.pivotTables.add({
-      name: parsed.name,
-      sourceRange: { sheetName: cache.source.sheet, address: cache.source.ref },
-      sourceFields: cache.sourceFields,
-      targetRange: { sheetName: sheet.name, address: parsed.targetRange },
-      rowFields: parsed.rowFields,
-      columnFields: parsed.columnFields,
-      valueFields: parsed.valueFields,
-      calculatedFields: cache.calculatedFields,
-      allowUnsupportedCalculatedFields: true,
-      groupFields: cache.groupFields,
-      allowUnsupportedGroupFields: true,
-      filters: parsed.filters.map((filter) => PIVOT_RELATIVE_DATE_FILTER_TYPES.has(filter.type) && options.relativeDateAsOf ? { ...filter, asOf: options.relativeDateAsOf } : filter),
-      refreshPolicy: cache.refreshPolicy,
-      validateSource: false,
-    });
-  }
-}
-
-function importedDrawingFrame(sheet, record) {
-  if (record.position) return {
-    left: 40 + Number(record.position.leftPx || 0),
-    top: 40 + Number(record.position.topPx || 0),
-    width: Math.max(1, Number(record.extent?.widthPx || 160)),
-    height: Math.max(1, Number(record.extent?.heightPx || 120)),
-  };
-  const from = record.from || { row: 0, col: 0, rowOffsetPx: 0, colOffsetPx: 0 };
-  const left = 40 + worksheetAxisOffset(sheet, "column", from.col) + Number(from.colOffsetPx || 0);
-  const top = 40 + worksheetAxisOffset(sheet, "row", from.row) + Number(from.rowOffsetPx || 0);
-  if (record.to) {
-    const right = 40 + worksheetAxisOffset(sheet, "column", record.to.col) + Number(record.to.colOffsetPx || 0);
-    const bottom = 40 + worksheetAxisOffset(sheet, "row", record.to.row) + Number(record.to.rowOffsetPx || 0);
-    return { left, top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) };
-  }
-  return { left, top, width: Math.max(1, Number(record.extent?.widthPx || 160)), height: Math.max(1, Number(record.extent?.heightPx || 120)) };
-}
-
-async function importNativeWorksheetDrawings(sheet, zip, worksheetPartPath) {
-  const worksheetRelationships = parseRelsXml(await zip.file(ooxmlRelationshipPartPath(worksheetPartPath, "XLSX"))?.async("text"));
-  for (const drawingRelationship of worksheetRelationships) {
-    if (!drawingRelationship.type.endsWith("/drawing") || String(drawingRelationship.targetMode || "").toLowerCase() === "external") continue;
-    const drawingPartPath = ooxmlResolveRelationshipTarget(worksheetPartPath, drawingRelationship.target);
-    const drawingXmlText = await zip.file(drawingPartPath)?.async("text");
-    if (!drawingXmlText) continue;
-    const drawingRelationships = new Map(parseRelsXml(await zip.file(ooxmlRelationshipPartPath(drawingPartPath, "XLSX"))?.async("text")).map((relationship) => [relationship.id, relationship]));
-    for (const record of parseSpreadsheetDrawing(drawingXmlText)) {
-      const relationship = drawingRelationships.get(record.relationshipId);
-      if (!relationship || String(relationship.targetMode || "").toLowerCase() === "external") continue;
-      const targetPath = ooxmlResolveRelationshipTarget(drawingPartPath, relationship.target);
-      const frame = importedDrawingFrame(sheet, record);
-      if (record.kind === "image" && relationship.type.endsWith("/image")) {
-        const bytes = await zip.file(targetPath)?.async("uint8array");
-        const extension = /\.([A-Za-z0-9+]+)$/.exec(targetPath)?.[1] || "bin";
-        const anchor = record.anchorType === "absoluteAnchor" && record.position
-          ? { type: "absolute", position: record.position, extent: record.extent || { widthPx: frame.width, heightPx: frame.height } }
-          : record.anchorType === "twoCellAnchor" && record.to
-            ? { type: "twoCell", from: record.from || { row: 0, col: 0 }, to: record.to, ...(record.editAs ? { editAs: record.editAs } : {}) }
-            : { from: { row: record.from?.row || 0, col: record.from?.col || 0, rowOffsetPx: record.from?.rowOffsetPx ?? 0, colOffsetPx: record.from?.colOffsetPx ?? 0 }, extent: { widthPx: frame.width, heightPx: frame.height } };
-        sheet.images.add({
-          name: record.name,
-          alt: record.alt,
-          dataUrl: bytes ? `data:${imageContentTypeFromExtension(extension)};base64,${Buffer.from(bytes).toString("base64")}` : undefined,
-          uri: bytes ? undefined : targetPath,
-          anchor,
-          ...(record.crop ? { crop: record.crop } : {}),
-          ...(record.effects ? { effects: record.effects } : {}),
-          ...(record.transform ? { transform: record.transform } : {}),
-        });
-      } else if (record.kind === "chart" && relationship.type.endsWith("/chart")) {
-        const chartXml = await zip.file(targetPath)?.async("text");
-        if (!chartXml) continue;
-        const parsed = parseSpreadsheetChart(chartXml);
-        const chart = sheet.charts.add(parsed.type, { name: record.name, title: parsed.title, titleTextStyle: parsed.titleTextStyle, lineOptions: parsed.lineOptions, dataLabels: parsed.dataLabels, hasLegend: parsed.hasLegend, categories: parsed.categories, xAxis: parsed.xAxis, yAxis: parsed.yAxis, position: frame, series: parsed.series });
-        parsed.series.forEach((series, index) => Object.assign(chart.series.items[index], { formula: series.formula, categoryFormula: series.categoryFormula, fill: series.fill }));
-      }
-    }
-  }
-}
-
-function hydrateImportedWorksheetCharts(workbook) {
-  for (const sheet of workbook.worksheets) {
-    for (const chart of sheet.charts.items) {
-      for (const series of chart.series.items) {
-        if (!series.values.length && series.formula) series.values = (formulaRangeMatrix(sheet, series.formula) || []).flat().map((value) => Number(value) || 0);
-        if (!chart.categories.length && series.categoryFormula) chart.categories = (formulaRangeMatrix(sheet, series.categoryFormula) || []).flat().map((value) => String(value ?? ""));
-      }
-    }
-  }
-}
-
-function parseWorksheetMergeCellsXml(sheet, xml = "") {
-  sheet.mergedRanges = [];
-  for (const match of String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?mergeCell\b[^>]*\/?>/g)) {
-    const ref = ooxmlXmlAttributes(match[0]).ref;
-    if (!ref) continue;
-    try {
-      const bounds = worksheetRangeBounds(ref);
-      if (bounds.rowCount * bounds.colCount <= 1) continue;
-      const canonical = rangeToAddress(bounds);
-      if (!sheet.mergedRanges.includes(canonical)) sheet.mergedRanges.push(canonical);
-    } catch {
-      // Ignore malformed third-party merge references while retaining the editable sheet.
-    }
-  }
-  for (const range of sheet.mergedRanges) clearMergedSubordinateContents(sheet, parseRangeAddress(range));
-}
-
-function parseWorksheetDimensionsXml(sheet, xml = "") {
-  sheet.columnDimensions.clear();
-  sheet.rowDimensions.clear();
-  for (const match of String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?col\b[^>]*\/?>/g)) {
-    const attrs = ooxmlXmlAttributes(match[0]);
-    const min = Math.max(1, Math.trunc(Number(attrs.min || 0)));
-    const max = Math.min(16_384, Math.trunc(Number(attrs.max || attrs.min || 0)));
-    if (max < min) continue;
-    const width = Number(attrs.width);
-    const dimension = {
-      ...(Number.isFinite(width) && width > 0 ? { width } : {}),
-      ...(xlsxBoolean(attrs.hidden) ? { hidden: true } : {}),
-      ...(xlsxBoolean(attrs.bestFit) ? { bestFit: true } : {}),
-    };
-    if (!Object.keys(dimension).length) continue;
-    for (let column = min - 1; column < max; column += 1) sheet.columnDimensions.set(column, { ...dimension });
-  }
-  for (const match of String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?row\b[^>]*>/g)) {
-    const attrs = ooxmlXmlAttributes(match[0]);
-    const row = Math.trunc(Number(attrs.r || 0)) - 1;
-    if (row < 0 || row > XLSX_MAX_FREEZE_ROWS) continue;
-    const height = Number(attrs.ht);
-    const dimension = {
-      ...(Number.isFinite(height) && height > 0 ? { height } : {}),
-      ...(xlsxBoolean(attrs.hidden) ? { hidden: true } : {}),
-    };
-    if (Object.keys(dimension).length) sheet.rowDimensions.set(row, dimension);
-  }
-}
-
-function parseWorksheetViewXml(sheet, xml = "") {
-  sheet.showGridLines = true;
-  sheet.freezePanes.unfreeze();
-  const sheetViews = /<(?:[A-Za-z_][\w.-]*:)?sheetViews\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?sheetViews>/.exec(String(xml || ""))?.[1];
-  if (!sheetViews) return;
-  const viewMatches = [...sheetViews.matchAll(/<(?:[A-Za-z_][\w.-]*:)?sheetView\b([^>]*?)(?:\/\s*>|>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?sheetView>)/g)];
-  if (!viewMatches.length) return;
-  sheet._tabSelectedByWorkbookViewId = new Map();
-  for (const match of viewMatches) {
-    const attrs = ooxmlXmlAttributes(match[1] || "");
-    const workbookViewId = Number(attrs.workbookViewId ?? 0);
-    if (Number.isInteger(workbookViewId) && workbookViewId >= 0)
-      sheet._tabSelectedByWorkbookViewId.set(workbookViewId, xlsxBoolean(attrs.tabSelected));
-  }
-  const viewMatch = viewMatches.find((match) => String(ooxmlXmlAttributes(match[1] || "").workbookViewId ?? "0") === "0") || viewMatches[0];
-  const viewAttrs = ooxmlXmlAttributes(viewMatch[1] || "");
-  if (viewAttrs.showGridLines != null) sheet.showGridLines = !["0", "false", "off"].includes(String(viewAttrs.showGridLines).trim().toLowerCase());
-  const paneMatch = /<(?:[A-Za-z_][\w.-]*:)?pane\b[^>]*\/?>/.exec(viewMatch[2] || "");
-  if (!paneMatch) return;
-  const paneAttrs = ooxmlXmlAttributes(paneMatch[0]);
-  if (!new Set(["frozen", "frozenSplit"]).has(paneAttrs.state)) return;
-  const rows = Number(paneAttrs.ySplit || 0);
-  const columns = Number(paneAttrs.xSplit || 0);
-  if (Number.isInteger(rows) && rows >= 0 && rows <= XLSX_MAX_FREEZE_ROWS) sheet.freezePanes._rows = rows;
-  if (Number.isInteger(columns) && columns >= 0 && columns <= XLSX_MAX_FREEZE_COLUMNS) sheet.freezePanes._columns = columns;
-}
-
 class SlideCollection {
   constructor(presentation) {
     this.presentation = presentation;
@@ -9217,7 +7454,6 @@ class ConnectorElement {
     return `${marker}<line x1="${this.start.x}" y1="${this.start.y}" x2="${this.end.x}" y2="${this.end.y}" stroke="${xmlEscape(stroke)}" stroke-width="${width}" marker-end="${this.line?.endArrow ? `url(#${markerId})` : ""}"/>`;
   }
 
-  toPptxShape(index) { return pptxConnectorXml(index, this); }
 }
 
 class NativePresentationObject {
@@ -9232,7 +7468,7 @@ class NativePresentationObject {
     this.position = normalizeFrame(config, { left: 0, top: 0, width: 1, height: 1 });
     this.rawXml = String(config.rawXml || "");
     this.sourcePart = config.sourcePart;
-    Object.defineProperty(this, "editable", { enumerable: true, value: config.editable === true, writable: false });
+    Object.defineProperty(this, "editable", { enumerable: true, value: false, writable: false });
     this.relationshipReferences = (config.relationshipReferences || []).map((reference) => ({ ...reference }));
     this.rootRelationships = (config.rootRelationships || []).map((relationship) => ({ ...relationship }));
     this.parts = (config.parts || []).map((part) => ({ ...part, bytes: new Uint8Array(part.bytes), relationships: (part.relationships || []).map((relationship) => ({ ...relationship })) }));
@@ -9259,7 +7495,7 @@ class NativePresentationObject {
   }
 
   embeddedWorkbookPart() {
-    if (!this.oleWorkbook) throw new Error(`Native ${this.nativeKind} object ${this.id} has no editable embedded XLSX workbook.`);
+    if (!this.oleWorkbook) throw new Error(`Native ${this.nativeKind} object ${this.id} has no embedded XLSX workbook.`);
     const matches = this.parts.filter((part) => part.path === this.oleWorkbook.partPath && part.contentType === this.oleWorkbook.contentType);
     if (matches.length !== 1) throw new Error(`Native ${this.nativeKind} object ${this.id} no longer resolves to one embedded XLSX workbook part.`);
     return matches[0];
@@ -9273,19 +7509,13 @@ class NativePresentationObject {
     });
   }
 
-  replaceEmbeddedWorkbook(input) {
-    const part = this.embeddedWorkbookPart();
-    const source = input instanceof FileBlob ? input.bytes : toUint8Array(input);
-    const bytes = Uint8Array.from(source);
-    if (!bytes.length || bytes.length > 16 * 1024 * 1024) throw new RangeError("Embedded XLSX workbooks must contain 1 through 16777216 bytes.");
-    if (bytes.length < 4 || bytes[0] !== 0x50 || bytes[1] !== 0x4b || bytes[2] !== 0x03 || bytes[3] !== 0x04) throw new Error("Embedded workbook replacement must be an XLSX OPC ZIP package.");
-    part.bytes = bytes;
-    return this;
+  replaceEmbeddedWorkbook(_input) {
+    throw new Error(`Native ${this.nativeKind} object ${this.id} is source-bound and read-only in OpenChestnut 0.2.`);
   }
 
   inspectRecord() {
     const frame = this.parentGroup ? this.parentGroup.absoluteChildFrame(this) : this.position;
-    const editableFields = [...(this.editable ? ["name", "position"] : []), ...(this.oleWorkbook ? ["embeddedWorkbook"] : [])];
+    const editableFields = [];
     return {
       kind: "nativeObject",
       id: this.id,
@@ -9303,13 +7533,13 @@ class NativePresentationObject {
       embeddedWorkbook: this.oleWorkbook ? { partPath: this.oleWorkbook.partPath, contentType: this.oleWorkbook.contentType, bytes: this.embeddedWorkbookPart().bytes.length, sourceSha256: this.oleWorkbook.sourceSha256 } : undefined,
       bbox: [frame.left, frame.top, frame.width, frame.height],
       bboxUnit: "px",
-      editable: this.editable || Boolean(this.oleWorkbook),
+      editable: false,
       editableFields,
     };
   }
 
   layoutJson() {
-    return { kind: "nativeObject", id: this.id, name: this.name, nativeKind: this.nativeKind, frame: this.position, relationships: this.rootRelationships.length, preservedParts: this.parts.length, embeddedWorkbook: this.oleWorkbook ? { partPath: this.oleWorkbook.partPath, contentType: this.oleWorkbook.contentType, bytes: this.embeddedWorkbookPart().bytes.length } : undefined, editable: this.editable || Boolean(this.oleWorkbook), editableFields: [...(this.editable ? ["name", "position"] : []), ...(this.oleWorkbook ? ["embeddedWorkbook"] : [])] };
+    return { kind: "nativeObject", id: this.id, name: this.name, nativeKind: this.nativeKind, frame: this.position, relationships: this.rootRelationships.length, preservedParts: this.parts.length, embeddedWorkbook: this.oleWorkbook ? { partPath: this.oleWorkbook.partPath, contentType: this.oleWorkbook.contentType, bytes: this.embeddedWorkbookPart().bytes.length } : undefined, editable: false, editableFields: [] };
   }
 
   toSvg() {
@@ -9319,7 +7549,6 @@ class NativePresentationObject {
     return `<g data-native-object-id="${attrEscape(this.id)}" data-native-kind="${attrEscape(this.nativeKind)}"><rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="#f8fafc" fill-opacity="0.72" stroke="#64748b" stroke-dasharray="6 4"/><text x="${p.left + 8}" y="${p.top + 20}" font-family="Arial" font-size="12" fill="#475569">${xmlEscape(label)}</text></g>`;
   }
 
-  toPptxShape(_index, plan) { return plan?.xml || this.rawXml; }
 }
 
 const GroupShape = createPresentationGroupShapeClass({
@@ -9343,7 +7572,6 @@ const GroupShape = createPresentationGroupShapeClass({
   createTextRange: (element, id) => createTextRange(element, id, { parentKind: "shape" }),
   textRangeRecord,
   elementLabel,
-  creationIdExtensionXml: presentationCreationIdExtensionXml,
 });
 export { GroupShape };
 function slideLayoutSlice(slide, layout, options = {}) {
@@ -9623,6 +7851,7 @@ export class Shape {
     this.fill = config.fill || "transparent";
     this.line = config.line || { fill: "#334155", width: 1 };
     this.borderRadius = config.borderRadius;
+    this.shadow = config.shadow ? { ...config.shadow } : undefined;
     this.placeholder = config.placeholder;
     this._text = new TextFrame(config.text ?? "", config.textBodyProperties, { defaultBodyProperties: config.textBodyProperties === undefined });
     this._text.style = { ...(config.textStyle || config.style?.text || {}) };
@@ -9634,10 +7863,10 @@ export class Shape {
   inspectRecord(kind = "shape") {
     const p = this.position;
     const paragraphs = this.text.effectiveParagraphs();
-    return { kind, id: this.id, slide: this.slide.index + 1, name: this.name || undefined, nativeId: this.nativeId, creationId: this.creationId, text: this.text.value || undefined, textPreview: this.text.value || undefined, textChars: this.text.value.length || undefined, textLines: this.text.value ? this.text.value.split("\n").length : undefined, paragraphs: presentationParagraphsNeedSerialization(paragraphs) ? paragraphs : undefined, bodyProperties: this.text.bodyProperties, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px", transform: this.transform, placeholder: this.placeholder || undefined };
+    return { kind, id: this.id, slide: this.slide.index + 1, name: this.name || undefined, nativeId: this.nativeId, creationId: this.creationId, text: this.text.value || undefined, textPreview: this.text.value || undefined, textChars: this.text.value.length || undefined, textLines: this.text.value ? this.text.value.split("\n").length : undefined, paragraphs: presentationParagraphsNeedSerialization(paragraphs) ? paragraphs : undefined, bodyProperties: this.text.bodyProperties, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px", transform: this.transform, shadow: this.shadow, placeholder: this.placeholder || undefined };
   }
 
-  layoutJson() { const paragraphs = this.text.effectiveParagraphs(); return { kind: this.text.value ? "textbox" : "shape", id: this.id, name: this.name, geometry: this.geometry, frame: this.position, transform: this.transform, text: this.text.value, paragraphs: presentationParagraphsNeedSerialization(paragraphs) ? paragraphs : undefined, bodyProperties: this.text.bodyProperties, placeholder: this.placeholder, style: { fill: this.fill, line: this.line, borderRadius: this.borderRadius, text: this.text.style } }; }
+  layoutJson() { const paragraphs = this.text.effectiveParagraphs(); return { kind: this.text.value ? "textbox" : "shape", id: this.id, name: this.name, geometry: this.geometry, frame: this.position, transform: this.transform, text: this.text.value, paragraphs: presentationParagraphsNeedSerialization(paragraphs) ? paragraphs : undefined, bodyProperties: this.text.bodyProperties, placeholder: this.placeholder, style: { fill: this.fill, line: this.line, borderRadius: this.borderRadius, shadow: this.shadow, text: this.text.style } }; }
 
   toSvg() {
     const p = this.position;
@@ -9657,9 +7886,6 @@ export class Shape {
     return `<g transform="translate(${cx} ${cy}) rotate(${rotation}) scale(${flipHorizontal} ${flipVertical}) translate(${-cx} ${-cy})">${rect}${text}</g>`;
   }
 
-  toPptxShape(index, relationshipContext = {}) {
-    return pptxTextShapeXml(index, this.name || this.id, this.geometry, this.position, this.text.value, this.placeholder, { fill: this.fill, line: this.line, transform: this.transform, textStyle: this.text.style, bodyProperties: this.text.bodyProperties, paragraphs: this.text.effectiveParagraphs(), inheritedParagraphStyles: this.text.inheritedParagraphStyles, pictureBulletRelIds: relationshipContext.pictureBulletRelIds, hyperlinkRelIds: relationshipContext.hyperlinkRelIds, hyperlinkCustomShowIds: relationshipContext.hyperlinkCustomShowIds, hyperlinkSlideParts: relationshipContext.hyperlinkSlideParts, nativeId: this.nativeId, creationId: this.creationId });
-  }
 }
 
 class TableCellFacade {
@@ -9718,7 +7944,6 @@ export class TableElement {
     return parts.join("");
   }
 
-  toPptxShape(index) { return pptxTableXml(index, this); }
 }
 
 function normalizeChartSeries(seriesItems = [], chartType = "bar") {
@@ -9995,10 +8220,6 @@ export class ChartElement {
     return `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="#ffffff" stroke="#cbd5e1"/>${title}${axes}${body}${labels}${legend}`;
   }
 
-  toPptxShape(index, relId) {
-    if (relId) return pptxChartFrameXml(index, this.name || this.id, this.position, relId, this);
-    return pptxTextShapeXml(index, this.name || this.id, "rect", this.position, `${this.title || this.chartType}\n${this.series.map((series) => `${series.name || "Series"}: ${(series.values || []).join(", ")}`).join("\n")}`, undefined, { nativeId: this.nativeId, creationId: this.creationId });
-  }
 }
 
 export class ImageElement {
@@ -10048,10 +8269,6 @@ export class ImageElement {
     return transform ? `<g${transform}>${fallback}</g>` : fallback;
   }
 
-  toPptxShape(index, relId) {
-    if (!relId) return pptxTextShapeXml(index, this.name || this.id, this.geometry === "ellipse" ? "ellipse" : "rect", this.position, this.alt || this.prompt || "Image", undefined, { nativeId: this.nativeId, creationId: this.creationId });
-    return pptxPictureXml(index, this.name || this.id, this.alt || this.prompt || "", this.position, relId, this);
-  }
 }
 
 export class PresentationFile {
@@ -10065,442 +8282,14 @@ export class PresentationFile {
   }
 
   static async exportPptx(presentation, options = {}) {
-    if (resolveOfficeCodec(options, "PresentationFile.exportPptx") === "open-chestnut") {
-      const { exportPptxWithOpenChestnut } = await loadOpenChestnutCodec();
-      return exportPptxWithOpenChestnut(presentation, codecDelegateOptions(options));
-    }
-    const zip = new JSZip();
-    planPresentationNativeIdentities(presentation);
-    const { masterParts, layoutParts, themeParts } = collectPresentationMasterGraph(presentation);
-    const imageParts = collectPresentationImageParts(presentation);
-    const chartParts = collectPresentationChartParts(presentation, imageParts);
-    const chartExternalDataParts = planPresentationChartExternalDataParts(chartParts);
-    await validatePresentationChartExternalDataWorkbooks(chartExternalDataParts, (bytes) => SpreadsheetFile.inspectXlsx(bytes));
-    const pictureBulletPlan = planPresentationPictureBulletParts(presentation, { masterParts, layoutParts }, imageParts, chartParts);
-    const allImageParts = [...imageParts, ...pictureBulletPlan.mediaParts];
-    const nativeObjectsBySlide = new Map(presentation.slides.items.map((slide) => [slide, presentationSlideElements(slide).filter((element) => element instanceof NativePresentationObject)]));
-    await validatePresentationOleWorkbookReplacements([...nativeObjectsBySlide.values()].flat(), (bytes) => SpreadsheetFile.inspectXlsx(bytes));
-    const reservedPresentationPaths = new Set([
-      "ppt/presentation.xml",
-      ...presentation.slides.items.map((_, index) => `ppt/slides/slide${index + 1}.xml`),
-      ...allImageParts.map((part) => `ppt/media/image${part.imagePartId}.${part.extension}`),
-      ...chartParts.map((part) => `ppt/charts/chart${part.chartPartId}.xml`),
-      ...chartExternalDataParts.flatMap((part) => [part.outputPath, `ppt/charts/_rels/chart${part.chartPart.chartPartId}.xml.rels`]).filter(Boolean),
-      ...themeParts.map((part) => `ppt/theme/theme${part.themePartId}.xml`),
-      ...masterParts.map((part) => `ppt/slideMasters/slideMaster${part.masterPartId}.xml`),
-      ...layoutParts.map((part) => `ppt/slideLayouts/slideLayout${part.layoutPartId}.xml`),
-    ]);
-    const nativeObjectPlan = planPresentationOpaqueParts(presentation.slides.items, {
-      reservedPaths: reservedPresentationPaths,
-      objectsForSlide: (slide) => nativeObjectsBySlide.get(slide),
-      startRelationshipIndex: (_slide, slideIndex) => pictureBulletPlan.byOwner.get(`slide:${slideIndex}`).nextRelationshipIndex,
-      slidePath: (_slide, slideIndex) => `ppt/slides/slide${slideIndex + 1}.xml`,
-    });
-    const customShowPlan = planPresentationCustomShows(presentation);
-    const hyperlinkPlan = planPresentationHyperlinkParts(presentation, { masterParts, layoutParts }, pictureBulletPlan, nativeObjectPlan, customShowPlan);
-    const useModernComments = presentation.commentFormat === "modern" || presentation.slides.items.some((slide) => slide.comments.items.some((thread) => thread.nativeFormat === "modern"));
-    const commentAuthors = useModernComments ? { entries: [], byName: new Map() } : collectPptxCommentAuthors(presentation);
-    const modernComments = useModernComments ? planPresentationModernComments(presentation.slides.items) : { authors: [], parts: [] };
-    zip.file("[Content_Types].xml", pptxContentTypes(presentation.slides.count, allImageParts, chartParts, presentation, masterParts, layoutParts, commentAuthors.entries, themeParts, modernComments, nativeObjectPlan.contentTypeOverrides, chartExternalDataParts));
-    zip.file("_rels/.rels", relsXml([{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument", target: "ppt/presentation.xml" }]));
-    zip.file("ppt/presentation.xml", presentationXml(presentation, masterParts, customShowPlan));
-    zip.file("ppt/_rels/presentation.xml.rels", pptxPresentationRelsXml(presentation, masterParts, commentAuthors.entries.length > 0, modernComments.authors.length > 0));
-    for (const themePart of themeParts) zip.file(`ppt/theme/theme${themePart.themePartId}.xml`, presentationThemeXml(themePart.theme));
-    for (const masterPart of masterParts) {
-      const masterPictureBulletPlan = pictureBulletPlan.byOwner.get(`master:${masterPart.masterPartId}`);
-      const masterHyperlinkPlan = hyperlinkPlan.byOwner.get(`master:${masterPart.masterPartId}`);
-      const masterPictureBulletRelIds = masterPictureBulletPlan.relationshipIds;
-      const masterPlaceholders = masterPart.master.placeholders.map((placeholder, index) => pptxTextShapeXml(index, placeholder.name, "rect", placeholder.position, placeholder.text ?? "", { type: placeholder.type, idx: placeholder.idx, required: placeholder.required }, { fill: "transparent", line: { fill: "transparent", width: 0 }, transform: placeholder.transform, textStyle: placeholder.style, bodyProperties: placeholder.textBodyProperties, paragraphStyles: placeholder.paragraphStyles, pictureBulletRelIds: masterPictureBulletRelIds, hyperlinkRelIds: masterHyperlinkPlan.relationshipIds, hyperlinkCustomShowIds: masterHyperlinkPlan.customShowIds, hyperlinkSlideParts: hyperlinkPlan.slidePartById })).join("");
-      zip.file(`ppt/slideMasters/slideMaster${masterPart.masterPartId}.xml`, presentationSlideMasterXml(masterPart.layoutParts, masterPart.master.effectiveTheme(), { name: masterPart.master.name, backgroundXml: presentationBackgroundXml(masterPart.master.background), placeholdersXml: masterPlaceholders, textParagraphStyles: masterPart.master.textParagraphStyles, pictureBulletRelationshipId: (bulletImage) => masterPictureBulletRelIds.get(bulletImage.dataUrl || bulletImage.uri) }));
-      zip.file(`ppt/slideMasters/_rels/slideMaster${masterPart.masterPartId}.xml.rels`, pptxSlideMasterRelsXml(masterPart.layoutParts, masterPart.themePartId, masterPictureBulletPlan.relationships, masterHyperlinkPlan.relationships));
-      for (const part of masterPart.layoutParts) {
-        const layoutPictureBulletPlan = pictureBulletPlan.byOwner.get(`layout:${part.layoutPartId}`);
-        const layoutHyperlinkPlan = hyperlinkPlan.byOwner.get(`layout:${part.layoutPartId}`);
-        zip.file(`ppt/slideLayouts/slideLayout${part.layoutPartId}.xml`, pptxSlideLayoutXml(part.layout, layoutPictureBulletPlan.relationshipIds, layoutHyperlinkPlan.relationshipIds, layoutHyperlinkPlan.customShowIds, hyperlinkPlan.slidePartById));
-        zip.file(`ppt/slideLayouts/_rels/slideLayout${part.layoutPartId}.xml.rels`, pptxSlideLayoutRelsXml(masterPart.masterPartId, layoutPictureBulletPlan.relationships, layoutHyperlinkPlan.relationships));
-      }
-    }
-    presentation.slides.items.forEach((slide, i) => {
-      const slideImageParts = imageParts.filter((part) => part.slideIndex === i);
-      const slideChartParts = chartParts.filter((part) => part.slideIndex === i);
-      const slidePictureBulletPlan = pictureBulletPlan.byOwner.get(`slide:${i}`);
-      const slideNativePlan = nativeObjectPlan.bySlide.get(slide);
-      const slideHyperlinkPlan = hyperlinkPlan.byOwner.get(`slide:${i}`);
-      const nextRelIndex = slideHyperlinkPlan.nextRelationshipIndex;
-      const requestedLayoutPart = layoutParts.find((part) => part.layout.id === slide.layoutId || part.layout.name === slide.layoutId);
-      if (slide.layoutId && !requestedLayoutPart) throw new Error(`Presentation slide ${i + 1} references missing layout ${slide.layoutId}.`);
-      const slideLayoutPart = requestedLayoutPart || layoutParts[0];
-      const layoutRelId = slideLayoutPart ? `rId${nextRelIndex}` : undefined;
-      const notesRelId = slide.speakerNotes.text ? `rId${nextRelIndex + (layoutRelId ? 1 : 0)}` : undefined;
-      const commentsRelId = slide.comments.items.length ? `rId${nextRelIndex + (layoutRelId ? 1 : 0) + (notesRelId ? 1 : 0)}` : undefined;
-      const modernCommentPart = modernComments.parts.find((part) => part.slideIndex === i);
-      zip.file(`ppt/slides/slide${i + 1}.xml`, slideXml(slide, slideImageParts, slideChartParts, slideNativePlan.entries, slidePictureBulletPlan.relationshipIds, slideHyperlinkPlan.relationshipIds, slideHyperlinkPlan.customShowIds, hyperlinkPlan.slidePartById));
-      if (slideImageParts.length || slideChartParts.length || slidePictureBulletPlan.relationships.length || slideNativePlan.relationships.length || slideHyperlinkPlan.relationships.length || layoutRelId || notesRelId || commentsRelId) zip.file(`ppt/slides/_rels/slide${i + 1}.xml.rels`, pptxSlideRelsXml(slideImageParts, slideChartParts, { slideIndex: i, pictureBulletRelationships: slidePictureBulletPlan.relationships, nativeRelationships: slideNativePlan.relationships, hyperlinkRelationships: slideHyperlinkPlan.relationships, layoutRelId, layoutPartId: slideLayoutPart?.layoutPartId, notesRelId, commentsRelId, modernComments: Boolean(modernCommentPart) }));
-      if (notesRelId) zip.file(`ppt/notesSlides/notesSlide${i + 1}.xml`, pptxNotesSlideXml(slide));
-      if (commentsRelId) zip.file(`ppt/comments/comment${i + 1}.xml`, modernCommentPart ? presentationModernCommentsXml(modernCommentPart) : pptxCommentsXml(slide, commentAuthors));
-    });
-    if (commentAuthors.entries.length) zip.file("ppt/commentAuthors.xml", pptxCommentAuthorsXml(commentAuthors));
-    if (modernComments.authors.length) zip.file("ppt/authors.xml", presentationModernAuthorsXml(modernComments));
-    allImageParts.forEach((part) => zip.file(`ppt/media/image${part.imagePartId}.${part.extension}`, part.bytes));
-    chartParts.forEach((part) => {
-      const externalDataPart = chartExternalDataParts.find((candidate) => candidate.chartPart === part);
-      zip.file(`ppt/charts/chart${part.chartPartId}.xml`, presentationChartXml(part.chart, { externalDataRelationshipId: externalDataPart?.relationshipId }));
-      if (externalDataPart) zip.file(`ppt/charts/_rels/chart${part.chartPartId}.xml.rels`, relsXml([presentationChartExternalDataRelationship(externalDataPart)]));
-    });
-    chartExternalDataParts.filter((part) => part.outputPath).forEach((part) => zip.file(part.outputPath, part.externalData.bytes));
-    nativeObjectPlan.parts.forEach((part) => {
-      zip.file(part.outputPath, part.bytes);
-      if (part.relationshipsXml) zip.file(ooxmlRelationshipPartPath(part.outputPath, "PPTX"), part.relationshipsXml);
-    });
-    const bytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
-    return new FileBlob(bytes, { type: PPTX_MIME, metadata: { artifactKind: "presentation", codec: "javascript" } });
+    const { exportPptxWithOpenChestnut } = await import("./codecs/open-chestnut.mjs");
+    return exportPptxWithOpenChestnut(presentation, options);
   }
 
   static async importPptx(blobOrBuffer, options = {}) {
-    if (resolveOfficeCodec(options, "PresentationFile.importPptx") === "open-chestnut") {
-      const { importPptxWithOpenChestnut } = await loadOpenChestnutCodec();
-      return importPptxWithOpenChestnut(blobOrBuffer, codecDelegateOptions(options));
-    }
-    const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
-    const zip = await JSZip.loadAsync(bytes);
-    const presentation = Presentation.create();
-    const contentTypesXml = await zip.file("[Content_Types].xml")?.async("text");
-    const presentationRels = parseRelsXml(await zip.file("ppt/_rels/presentation.xml.rels")?.async("text"));
-    const presentationXml = await zip.file("ppt/presentation.xml")?.async("text");
-    const themeRel = presentationRels.find((rel) => rel.type.endsWith("/theme"));
-    let themeTarget = themeRel?.target ? (themeRel.target.replace(/^\//, "").startsWith("ppt/") ? themeRel.target.replace(/^\//, "") : path.posix.normalize(`ppt/${themeRel.target}`).replace(/^\.\//, "")) : undefined;
-    if (!themeTarget) {
-      const firstMasterRelationship = presentationRels.find((relationship) => relationship.type.endsWith("/slideMaster") && relationship.targetMode?.toLowerCase() !== "external");
-      const firstMasterTarget = firstMasterRelationship ? ooxmlSafePartPath(ooxmlResolveRelationshipTarget("ppt/presentation.xml", firstMasterRelationship.target), "PPTX") : undefined;
-      const firstMasterRelationships = firstMasterTarget ? parseRelsXml(await zip.file(ooxmlRelationshipPartPath(firstMasterTarget, "PPTX"))?.async("text")) : [];
-      const masterThemeRelationship = firstMasterRelationships.find((relationship) => relationship.type.endsWith("/theme") && relationship.targetMode?.toLowerCase() !== "external");
-      if (masterThemeRelationship) themeTarget = ooxmlSafePartPath(ooxmlResolveRelationshipTarget(firstMasterTarget, masterThemeRelationship.target), "PPTX");
-    }
-    const themeXml = themeTarget ? await zip.file(themeTarget)?.async("text") : await zip.file("ppt/theme/theme1.xml")?.async("text");
-    if (themeXml) presentation.theme = new PresentationTheme(presentation, parsePresentationThemeXml(themeXml));
-    const commentAuthorsRel = presentationRels.find((rel) => rel.type.endsWith("/commentAuthors") && rel.targetMode?.toLowerCase() !== "external");
-    const commentAuthorsTarget = commentAuthorsRel ? ooxmlSafePartPath(ooxmlResolveRelationshipTarget("ppt/presentation.xml", commentAuthorsRel.target), "PPTX") : undefined;
-    const commentAuthorsById = commentAuthorsTarget ? parsePptxCommentAuthors(await zip.file(commentAuthorsTarget)?.async("text")) : new Map();
-    const modernAuthorsRel = presentationRels.find((rel) => rel.type === PPTX_MODERN_AUTHOR_RELATIONSHIP_TYPE && rel.targetMode?.toLowerCase() !== "external");
-    const modernAuthorsTarget = modernAuthorsRel ? ooxmlSafePartPath(ooxmlResolveRelationshipTarget("ppt/presentation.xml", modernAuthorsRel.target), "PPTX") : undefined;
-    const modernAuthorsById = modernAuthorsTarget ? parsePresentationModernAuthors(await zip.file(modernAuthorsTarget)?.async("text")) : new Map();
-    const layoutByTarget = new Map();
-    const relationshipsById = new Map(presentationRels.map((relationship) => [relationship.id, relationship]));
-    const referencedSlides = [...String(presentationXml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?sldId\b[^>]*\/?\s*>/g)].map((match) => {
-      const relationship = relationshipsById.get(ooxmlTagRelationshipId(match[0]));
-      return relationship?.type.endsWith("/slide") && relationship.targetMode?.toLowerCase() !== "external" ? { file: ooxmlResolveRelationshipTarget("ppt/presentation.xml", relationship.target), nativeSlideId: Number(ooxmlXmlAttributes(match[0]).id) || undefined } : undefined;
-    }).filter(Boolean);
-    const slideEntries = referencedSlides.length ? referencedSlides.filter((entry, index, entries) => entries.findIndex((candidate) => candidate.file === entry.file) === index) : Object.keys(zip.files).filter((name) => /^ppt\/slides\/[^/]+\.xml$/.test(name)).sort().map((file) => ({ file }));
-    const importedSlides = slideEntries.map((slideEntry) => {
-      const slide = presentation.slides.add();
-      slide.nativeSlideId = slideEntry.nativeSlideId;
-      return { slideEntry, slide };
-    });
-    const slideIdByPart = new Map(importedSlides.map(({ slideEntry, slide }) => [slideEntry.file, slide.id]));
-    const importedCustomShows = parsePresentationCustomShowsXml(presentationXml, {
-      relationships: presentationRels,
-      partPath: "ppt/presentation.xml",
-      slideIdByPart,
-      resolveTarget: (partPath, target) => ooxmlSafePartPath(ooxmlResolveRelationshipTarget(partPath, target), "PPTX"),
-    });
-    for (const customShow of importedCustomShows) presentation.customShows.add(customShow);
-    const customShowNameById = new Map(presentation.customShows.items.map((show) => [show.nativeId, show.name]));
-    const referencedMasters = [...String(presentationXml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?sldMasterId\b[^>]*\/?\s*>/g)].map((match) => {
-      const relationship = relationshipsById.get(ooxmlTagRelationshipId(match[0]));
-      if (!relationship?.type.endsWith("/slideMaster") || relationship.targetMode?.toLowerCase() === "external") return undefined;
-      const nativeId = ooxmlXmlAttributes(match[0]).id;
-      return { file: ooxmlSafePartPath(ooxmlResolveRelationshipTarget("ppt/presentation.xml", relationship.target), "PPTX"), masterId: nativeId ? `pptx-master-${nativeId}` : undefined };
-    }).filter(Boolean);
-    const masters = referencedMasters.length
-      ? referencedMasters.filter((master, index, list) => list.findIndex((candidate) => candidate.file === master.file) === index)
-      : presentationRels.filter((relationship) => relationship.type.endsWith("/slideMaster") && relationship.targetMode?.toLowerCase() !== "external").map((relationship) => ({ file: ooxmlSafePartPath(ooxmlResolveRelationshipTarget("ppt/presentation.xml", relationship.target), "PPTX") }));
-    for (const [masterIndex, master] of masters.entries()) {
-      const masterFile = master.file;
-      const masterXml = await zip.file(masterFile)?.async("text");
-      if (!masterXml) continue;
-      const masterRels = parseRelsXml(await zip.file(ooxmlRelationshipPartPath(masterFile, "PPTX"))?.async("text"));
-      const masterThemeRel = masterRels.find((relationship) => relationship.type.endsWith("/theme") && relationship.targetMode?.toLowerCase() !== "external");
-      const masterThemeTarget = masterThemeRel ? ooxmlSafePartPath(ooxmlResolveRelationshipTarget(masterFile, masterThemeRel.target), "PPTX") : undefined;
-      const masterThemeXml = masterThemeTarget ? await zip.file(masterThemeTarget)?.async("text") : undefined;
-      const masterThemeConfig = normalizePresentationThemeConfig(
-        parsePresentationSlideMasterThemeXml(masterXml),
-        masterThemeXml ? parsePresentationThemeXml(masterThemeXml) : presentation.theme,
-      );
-      const masterId = master.masterId || `imported-master-${masterIndex + 1}`;
-      const masterRelationshipContext = { rels: masterRels, zip, partPath: masterFile, slideIdByPart, customShowNameById };
-      const masterPlaceholders = await parsePptxPlaceholderShapes(masterXml, { relationshipContext: masterRelationshipContext });
-      const masterConfig = {
-        id: masterId,
-        name: decodeXml(/<(?:[A-Za-z_][\w.-]*:)?cSld\b[^>]*\bname="([^"]*)"/.exec(masterXml)?.[1] || `Imported Master ${masterIndex + 1}`),
-        background: parsePresentationBackgroundXml(masterXml),
-        placeholders: masterPlaceholders,
-        textParagraphStyles: await resolvePresentationPictureBulletMasterStyles(parsePresentationMasterListStylesXml(masterXml), presentationPictureBulletImportContext(masterRelationshipContext)),
-      };
-      let importedMaster;
-      if (masterIndex === 0) {
-        presentation.theme.update(parsePresentationSlideMasterThemeXml(masterXml));
-        if (masterThemeTarget && themeTarget && masterThemeTarget !== themeTarget) masterConfig.theme = masterThemeConfig;
-        presentation.master.update(masterConfig);
-        importedMaster = presentation.master;
-      } else {
-        if (presentationThemeSemantics(masterThemeConfig) !== presentationThemeSemantics(presentation.theme)) masterConfig.theme = masterThemeConfig;
-        importedMaster = presentation.masters.add(masterConfig);
-      }
-      for (let placeholderIndex = 0; placeholderIndex < masterPlaceholders.length; placeholderIndex += 1) {
-        if (!masterPlaceholders[placeholderIndex].position) importedMaster.placeholders[placeholderIndex].position = undefined;
-      }
-      const masterRelationshipsById = new Map(masterRels.map((relationship) => [relationship.id, relationship]));
-      const referencedLayouts = [...String(masterXml).matchAll(/<(?:[A-Za-z_][\w.-]*:)?sldLayoutId\b[^>]*\/?\s*>/g)].map((match) => {
-        const relationship = masterRelationshipsById.get(ooxmlTagRelationshipId(match[0]));
-        if (!relationship?.type.endsWith("/slideLayout") || relationship.targetMode?.toLowerCase() === "external") return undefined;
-        const nativeId = ooxmlXmlAttributes(match[0]).id;
-        return { relationship, layoutId: nativeId ? `pptx-layout-${nativeId}` : undefined };
-      }).filter(Boolean);
-      const layouts = referencedLayouts.length ? referencedLayouts : masterRels.filter((relationship) => relationship.type.endsWith("/slideLayout") && relationship.targetMode?.toLowerCase() !== "external").map((relationship) => ({ relationship }));
-      for (const [layoutIndex, layoutEntry] of layouts.entries()) {
-        const relationship = layoutEntry.relationship;
-        const layoutTarget = ooxmlSafePartPath(ooxmlResolveRelationshipTarget(masterFile, relationship.target), "PPTX");
-        if (layoutByTarget.has(layoutTarget)) continue;
-        const layoutRels = parseRelsXml(await zip.file(ooxmlRelationshipPartPath(layoutTarget, "PPTX"))?.async("text"));
-        const layout = await parsePptxSlideLayout(presentation, await zip.file(layoutTarget)?.async("text"), layoutEntry.layoutId || `imported-layout-${masterIndex + 1}-${layoutIndex + 1}`, masterId, { rels: layoutRels, zip, partPath: layoutTarget, slideIdByPart, customShowNameById });
-        if (layout) layoutByTarget.set(layoutTarget, layout);
-      }
-    }
-    for (const { slideEntry, slide } of importedSlides) {
-      const file = slideEntry.file;
-      const relsFile = ooxmlRelationshipPartPath(file, "PPTX");
-      const rels = parseRelsXml(await zip.file(relsFile)?.async("text"));
-      const layoutRel = rels.find((rel) => rel.type.endsWith("/slideLayout"));
-      const layoutTarget = layoutRel ? ooxmlSafePartPath(ooxmlResolveRelationshipTarget(file, layoutRel.target), "PPTX") : undefined;
-      if (layoutTarget) {
-        let layout = layoutByTarget.get(layoutTarget);
-        if (!layout) {
-          const layoutRels = parseRelsXml(await zip.file(ooxmlRelationshipPartPath(layoutTarget, "PPTX"))?.async("text"));
-          layout = await parsePptxSlideLayout(presentation, await zip.file(layoutTarget)?.async("text"), `imported-layout-${layoutByTarget.size + 1}`, presentation.master.id, { rels: layoutRels, zip, partPath: layoutTarget, slideIdByPart, customShowNameById });
-          layoutByTarget.set(layoutTarget, layout);
-        }
-        slide.layoutId = layout?.id;
-      }
-      const importedSlideXml = await zip.file(file).async("text");
-      await parseSlideXml(slide, importedSlideXml, { rels, zip, slidePath: file, slideXml: importedSlideXml, contentTypesXml, layout: layoutTarget ? layoutByTarget.get(layoutTarget) : undefined, slideIdByPart, customShowNameById });
-      const notesRel = rels.find((rel) => rel.type.endsWith("/notesSlide"));
-      const modernCommentsRel = rels.find((rel) => rel.type === PPTX_MODERN_COMMENT_RELATIONSHIP_TYPE && rel.targetMode?.toLowerCase() !== "external");
-      const commentsRel = modernCommentsRel || rels.find((rel) => rel.type.endsWith("/comments") && rel.targetMode?.toLowerCase() !== "external");
-      const notesTarget = notesRel ? pptxRelationshipTarget(rels, notesRel.id) : undefined;
-      const commentsTarget = commentsRel ? pptxRelationshipTarget(rels, commentsRel.id) : undefined;
-      if (notesTarget) parsePptxNotes(slide, await zip.file(notesTarget)?.async("text"));
-      if (commentsTarget && modernCommentsRel) {
-        presentation.commentFormat = "modern";
-        const threads = parsePresentationModernComments(await zip.file(commentsTarget)?.async("text"), modernAuthorsById);
-        for (const thread of threads) {
-          const target = resolvePresentationModernCommentAnchor(slide, thread.nativeAnchor);
-          thread.targetId = target?.id;
-          slide.comments.addThread(thread.targetId, thread.comments[0]?.text || "", thread);
-        }
-      } else if (commentsTarget) parsePptxComments(slide, await zip.file(commentsTarget)?.async("text"), commentAuthorsById);
-    }
-    resolveImportedPresentationHyperlinks(presentation, slideIdByPart);
-    return presentation;
+    const { importPptxWithOpenChestnut } = await import("./codecs/open-chestnut.mjs");
+    return importPptxWithOpenChestnut(blobOrBuffer, options);
   }
-}
-
-function resolvePresentationModernCommentAnchor(slide, anchor) {
-  if (!anchor) return undefined;
-  const entries = presentationSlideElementEntries(slide);
-  const requestedPath = Array.isArray(anchor.monikers) && anchor.monikers.length ? anchor.monikers : [{ nativeId: anchor.nativeId, creationId: anchor.creationId, moniker: anchor.moniker }];
-  const byPath = entries.find((entry) => entry.monikerPath?.length === requestedPath.length && entry.monikerPath.every((candidate, index) => {
-    const requested = requestedPath[index];
-    return candidate.moniker === requested.moniker && (requested.creationId ? candidate.creationId === requested.creationId : candidate.nativeId === requested.nativeId);
-  }))?.element;
-  if (byPath) return anchor.type === "textRange" && anchor.moniker === "spMk" ? slide.resolve(`${byPath.id}/text`) : byPath;
-  const sameType = entries.filter((entry) => entry.moniker === anchor.moniker);
-  let element;
-  if (anchor.creationId) {
-    const byCreationId = sameType.find(({ element }) => element.creationId === anchor.creationId);
-    if (byCreationId) element = byCreationId.element;
-  }
-  element ||= sameType.find(({ element }) => element.nativeId === anchor.nativeId)?.element;
-  if (anchor.type === "textRange" && element && anchor.moniker === "spMk") return slide.resolve(`${element.id}/text`);
-  return element;
-}
-
-function collectPresentationImageParts(presentation) {
-  const parts = [];
-  let imagePartId = 1;
-  presentation.slides.items.forEach((slide, slideIndex) => {
-    let relIndex = 1;
-    presentationSlideElements(slide).filter((element) => element instanceof ImageElement).forEach((image, imageIndex) => {
-      const data = imageDataFromDataUrl(image.dataUrl);
-      if (!data) return;
-      parts.push({ slide, slideIndex, image, imageIndex, imagePartId: imagePartId++, slideRelId: `rId${relIndex++}`, source: image.dataUrl, ...data });
-    });
-  });
-  return parts;
-}
-
-function presentationPlaceholderPictureBulletReferences(placeholder) {
-  return [
-    ...presentationPictureBulletReferencesFromStyles(placeholder.paragraphStyles),
-    ...presentationPictureBulletReferencesFromParagraphs(normalizePresentationParagraphs(placeholder.text ?? "")),
-  ];
-}
-
-function planPresentationPictureBulletParts(presentation, graph, imageParts, chartParts) {
-  const owners = presentation.slides.items.map((slide, slideIndex) => ({
-    key: `slide:${slideIndex}`,
-    startRelationshipIndex: imageParts.filter((part) => part.slideIndex === slideIndex).length + chartParts.filter((part) => part.slideIndex === slideIndex).length + 1,
-    existingRelationships: imageParts.filter((part) => part.slideIndex === slideIndex).map((part) => ({ id: part.slideRelId, source: part.source })),
-    references: presentationSlideElements(slide).filter((element) => element instanceof Shape).flatMap((shape) => presentationPictureBulletReferencesFromParagraphs(shape.text.effectiveParagraphs())),
-  }));
-  for (const masterPart of graph.masterParts) owners.push({
-    key: `master:${masterPart.masterPartId}`,
-    startRelationshipIndex: masterPart.layoutParts.length + 2,
-    references: [
-      ...Object.values(masterPart.master.textParagraphStyles || {}).flatMap(presentationPictureBulletReferencesFromStyles),
-      ...masterPart.master.placeholders.flatMap(presentationPlaceholderPictureBulletReferences),
-    ],
-  });
-  for (const layoutPart of graph.layoutParts) owners.push({
-    key: `layout:${layoutPart.layoutPartId}`,
-    startRelationshipIndex: 2,
-    references: layoutPart.layout.placeholders.flatMap(presentationPlaceholderPictureBulletReferences),
-  });
-  return planPresentationPictureBullets({ owners, existingMediaParts: imageParts, decodeDataUrl: imageDataFromDataUrl });
-}
-
-function presentationPlaceholderHyperlinkReferences(placeholder) {
-  return presentationRunHyperlinkReferencesFromParagraphs(normalizePresentationParagraphs(placeholder.text ?? ""));
-}
-
-function planPresentationHyperlinkParts(presentation, graph, pictureBulletPlan, nativeObjectPlan, customShowPlan) {
-  const slidePartById = new Map(presentation.slides.items.map((slide, slideIndex) => [slide.id, `ppt/slides/slide${slideIndex + 1}.xml`]));
-  const owners = presentation.slides.items.map((slide, slideIndex) => ({
-    key: `slide:${slideIndex}`,
-    partPath: `ppt/slides/slide${slideIndex + 1}.xml`,
-    startRelationshipIndex: nativeObjectPlan.bySlide.get(slide).nextRelationshipIndex,
-    references: presentationSlideElements(slide).filter((element) => element instanceof Shape).flatMap((shape) => presentationRunHyperlinkReferencesFromParagraphs(shape.text.effectiveParagraphs())),
-  }));
-  for (const masterPart of graph.masterParts) owners.push({
-    key: `master:${masterPart.masterPartId}`,
-    partPath: `ppt/slideMasters/slideMaster${masterPart.masterPartId}.xml`,
-    startRelationshipIndex: pictureBulletPlan.byOwner.get(`master:${masterPart.masterPartId}`).nextRelationshipIndex,
-    references: masterPart.master.placeholders.flatMap(presentationPlaceholderHyperlinkReferences),
-  });
-  for (const layoutPart of graph.layoutParts) owners.push({
-    key: `layout:${layoutPart.layoutPartId}`,
-    partPath: `ppt/slideLayouts/slideLayout${layoutPart.layoutPartId}.xml`,
-    startRelationshipIndex: pictureBulletPlan.byOwner.get(`layout:${layoutPart.layoutPartId}`).nextRelationshipIndex,
-    references: layoutPart.layout.placeholders.flatMap(presentationPlaceholderHyperlinkReferences),
-  });
-  return planPresentationRunHyperlinks({ owners, slidePartById, customShowIdByName: customShowPlan.idByName });
-}
-
-function resolveImportedPresentationHyperlinks(presentation, slideIdByPart) {
-  const resolvePlaceholder = (placeholder) => {
-    const paragraphs = resolvePresentationRunHyperlinkTargets(normalizePresentationParagraphs(placeholder.text ?? ""), slideIdByPart);
-    placeholder.text = presentationParagraphsNeedSerialization(paragraphs) ? paragraphs : presentationParagraphsText(paragraphs);
-  };
-  for (const master of presentation.masters) for (const placeholder of master.placeholders) resolvePlaceholder(placeholder);
-  for (const layout of presentation.layouts.items) for (const placeholder of layout.placeholders) resolvePlaceholder(placeholder);
-  for (const slide of presentation.slides.items) for (const shape of presentationSlideElements(slide).filter((element) => element instanceof Shape)) {
-    shape.text.paragraphs = resolvePresentationRunHyperlinkTargets(shape.text.paragraphs, slideIdByPart);
-  }
-}
-
-function collectPresentationChartParts(presentation, imageParts = []) {
-  const parts = [];
-  let chartPartId = 1;
-  presentation.slides.items.forEach((slide, slideIndex) => {
-    let relIndex = imageParts.filter((part) => part.slideIndex === slideIndex).length + 1;
-    presentationSlideElements(slide).filter((element) => element instanceof ChartElement).forEach((chart, chartIndex) => {
-      parts.push({ slide, slideIndex, chart, chartIndex, chartPartId: chartPartId++, slideRelId: `rId${relIndex++}` });
-    });
-  });
-  return parts;
-}
-
-function collectPresentationMasterGraph(presentation) {
-  const layouts = [...presentation.layouts.items];
-  for (const master of presentation.masters) {
-    if (master.configured && !layouts.some((layout) => layout.masterId === master.id)) layouts.push(new SlideLayoutTemplate(presentation, { id: `${master.id}/implicit-blank`, name: "Implicit Blank", type: "blank", masterId: master.id }));
-  }
-  return planPresentationMasterGraph(presentation.masters.items, layouts, presentation.theme);
-}
-
-function pptxContentTypes(slideCount, imageParts = [], chartParts = [], presentation, masterParts = [], layoutParts = [], commentAuthors = [], themeParts = [], modernComments = { authors: [], parts: [] }, nativeContentTypes = [], chartExternalDataParts = []) {
-  const slides = Array.from({ length: slideCount }, (_, i) => `<Override PartName="/ppt/slides/slide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>`).join("");
-  const charts = chartParts.map((part) => `<Override PartName="/ppt/charts/chart${part.chartPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`).join("");
-  const notes = presentation?.slides.items.map((slide, i) => slide.speakerNotes.text ? `<Override PartName="/ppt/notesSlides/notesSlide${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"/>` : "").join("") || "";
-  const modernSlides = new Set(modernComments.parts.map((part) => part.slideIndex));
-  const comments = presentation?.slides.items.map((slide, i) => slide.comments.items.length ? `<Override PartName="/ppt/comments/comment${i + 1}.xml" ContentType="${modernSlides.has(i) ? PPTX_MODERN_COMMENT_CONTENT_TYPE : "application/vnd.openxmlformats-officedocument.presentationml.comments+xml"}"/>` : "").join("") || "";
-  const authors = commentAuthors.length ? `<Override PartName="/ppt/commentAuthors.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.commentAuthors+xml"/>` : "";
-  const modernAuthors = modernComments.authors.length ? `<Override PartName="/ppt/authors.xml" ContentType="${PPTX_MODERN_AUTHOR_CONTENT_TYPE}"/>` : "";
-  const theme = (themeParts.length ? themeParts : [{ themePartId: 1 }]).map((part) => `<Override PartName="/ppt/theme/theme${part.themePartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>`).join("");
-  const master = masterParts.map((part) => `<Override PartName="/ppt/slideMasters/slideMaster${part.masterPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>`).join("");
-  const layouts = layoutParts.map((part) => `<Override PartName="/ppt/slideLayouts/slideLayout${part.layoutPartId}.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>`).join("");
-  const imageDefaults = [
-    ["png", "image/png"],
-    ["jpg", "image/jpeg"],
-    ["jpeg", "image/jpeg"],
-    ["gif", "image/gif"],
-    ["svg", "image/svg+xml"],
-  ].filter(([extension]) => imageParts.some((part) => part.extension === extension)).map(([extension, contentType]) => `<Default Extension="${extension}" ContentType="${contentType}"/>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${imageDefaults}<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>${slides}${charts}${presentationChartExternalDataContentTypesXml(chartExternalDataParts)}${theme}${master}${layouts}${notes}${comments}${authors}${modernAuthors}${presentationOpaqueContentTypeXml(nativeContentTypes)}</Types>`;
-}
-
-function pptxSlideRelsXml(imageParts, chartParts = [], extras = {}) {
-  return relsXml([
-    ...imageParts.map((part) => ({ id: part.slideRelId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image", target: `../media/image${part.imagePartId}.${part.extension}` })),
-    ...chartParts.map((part) => ({ id: part.slideRelId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart", target: `../charts/chart${part.chartPartId}.xml` })),
-    ...(extras.pictureBulletRelationships || []),
-    ...(extras.nativeRelationships || []),
-    ...(extras.hyperlinkRelationships || []),
-    ...(extras.layoutRelId ? [{ id: extras.layoutRelId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout", target: `../slideLayouts/slideLayout${extras.layoutPartId}.xml` }] : []),
-    ...(extras.notesRelId ? [{ id: extras.notesRelId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide", target: `../notesSlides/notesSlide${extras.slideIndex + 1}.xml` }] : []),
-    ...(extras.commentsRelId ? [{ id: extras.commentsRelId, type: extras.modernComments ? PPTX_MODERN_COMMENT_RELATIONSHIP_TYPE : "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments", target: `../comments/comment${extras.slideIndex + 1}.xml` }] : []),
-  ]);
-}
-
-function pptxPresentationRelsXml(presentation, masterParts = [], hasCommentAuthors = false, hasModernAuthors = false) {
-  const relationships = presentation.slides.items.map((_, i) => ({ id: `rId${i + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide", target: `slides/slide${i + 1}.xml` }));
-  relationships.push({ id: `rId${relationships.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme", target: "theme/theme1.xml" });
-  for (const masterPart of masterParts) relationships.push({ id: `rId${relationships.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster", target: `slideMasters/slideMaster${masterPart.masterPartId}.xml` });
-  if (hasCommentAuthors) relationships.push({ id: `rId${relationships.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/commentAuthors", target: "commentAuthors.xml" });
-  if (hasModernAuthors) relationships.push({ id: `rId${relationships.length + 1}`, type: PPTX_MODERN_AUTHOR_RELATIONSHIP_TYPE, target: "authors.xml" });
-  return relsXml(relationships);
-}
-
-function pptxColorValue(value, fallback) {
-  return String(value || fallback || "#000000").replace(/^#/, "").slice(0, 6).padEnd(6, "0");
-}
-
-function pptxSlideMasterRelsXml(layoutParts = [], themePartId = 1, pictureBulletRelationships = [], hyperlinkRelationships = []) {
-  return relsXml([
-    ...layoutParts.map((part) => ({ id: part.masterRelId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout", target: `../slideLayouts/slideLayout${part.layoutPartId}.xml` })),
-    { id: `rId${layoutParts.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme", target: `../theme/theme${themePartId}.xml` },
-    ...pictureBulletRelationships,
-    ...hyperlinkRelationships,
-  ]);
-}
-
-function pptxSlideLayoutRelsXml(masterPartId, pictureBulletRelationships = [], hyperlinkRelationships = []) {
-  return relsXml([
-    { id: "rId1", type: `${OOXML_RELATIONSHIP_BASE}/slideMaster`, target: `../slideMasters/slideMaster${masterPartId}.xml` },
-    ...pictureBulletRelationships,
-    ...hyperlinkRelationships,
-  ]);
-}
-
-function pptxSlideLayoutXml(layout, pictureBulletRelIds = new Map(), hyperlinkRelIds = new Map(), hyperlinkCustomShowIds = new Map(), hyperlinkSlideParts = new Map()) {
-  const placeholders = layout.placeholders.map((placeholder, index) => pptxTextShapeXml(index, placeholder.name, "rect", placeholder.position, placeholder.text ?? "", { type: placeholder.type, idx: placeholder.idx, required: placeholder.required }, { fill: "transparent", line: { fill: "transparent", width: 0 }, transform: placeholder.transform, textStyle: placeholder.style, bodyProperties: placeholder.textBodyProperties, paragraphStyles: placeholder.paragraphStyles, pictureBulletRelIds, hyperlinkRelIds, hyperlinkCustomShowIds, hyperlinkSlideParts })).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sldLayout xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" type="${attrEscape(layout.type)}" preserve="1"><p:cSld name="${attrEscape(layout.name)}">${presentationBackgroundXml(layout.background)}<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>${placeholders}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>`;
-}
-
-function presentationXml(presentation, masterParts = [], customShowPlan = { entries: [] }) {
-  const masterIds = masterParts.length ? `<p:sldMasterIdLst>${masterParts.map((part, index) => `<p:sldMasterId id="${part.nativeMasterId}" r:id="rId${presentation.slides.items.length + 2 + index}"/>`).join("")}</p:sldMasterIdLst>` : "";
-  const ids = presentation.slides.items.map((slide, i) => `<p:sldId id="${slide.nativeSlideId || 256 + i}" r:id="rId${i + 1}"/>`).join("");
-  const relationshipIdBySlideId = new Map(presentation.slides.items.map((slide, index) => [slide.id, `rId${index + 1}`]));
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${masterIds}<p:sldIdLst>${ids}</p:sldIdLst><p:sldSz cx="12192000" cy="6858000"/><p:notesSz cx="6858000" cy="9144000"/>${presentationCustomShowsXml(customShowPlan, relationshipIdBySlideId)}</p:presentation>`;
 }
 
 function presentationElementKind(element) {
@@ -10513,452 +8302,10 @@ function presentationElementKind(element) {
   return "shape";
 }
 
-function presentationElementMoniker(element) {
-  if (element instanceof NativePresentationObject) return element.nativeKind === "contentPart" ? "inkMk" : "graphicFrameMk";
-  if (element instanceof ConnectorElement) return "cxnSpMk";
-  if (element instanceof GroupShape) return "grpSpMk";
-  if (element instanceof TableElement || element instanceof ChartElement) return "graphicFrameMk";
-  if (element instanceof ImageElement) return "picMk";
-  return "spMk";
-}
-
 function presentationSlideElements(slide) {
   const direct = [...slide.connectors.items, ...slide.shapes.items, ...slide.tables.items, ...slide.charts.items, ...slide.images.items, ...slide.groups.items, ...slide.nativeObjects.items];
   return direct.flatMap((element) => element instanceof GroupShape ? element.allElements() : [element]);
 }
-
-function presentationSlideElementEntries(slide) {
-  const direct = [
-    ...slide.connectors.items.map((element) => ({ element, moniker: "cxnSpMk" })),
-    ...slide.shapes.items.map((element) => ({ element, moniker: "spMk" })),
-    ...slide.tables.items.map((element) => ({ element, moniker: "graphicFrameMk" })),
-    ...slide.charts.items.map((element) => ({ element, moniker: "graphicFrameMk" })),
-    ...slide.images.items.map((element) => ({ element, moniker: "picMk" })),
-  ];
-  const nested = (group, ancestors = []) => {
-    const groupEntry = { element: group, moniker: "grpSpMk", ancestors };
-    const path = [...ancestors, { element: group, moniker: "grpSpMk" }];
-    return [
-      groupEntry,
-      ...group.children.flatMap((element) => element instanceof GroupShape
-        ? nested(element, path)
-        : element instanceof NativePresentationObject ? [] : [{ element, moniker: presentationElementMoniker(element), ancestors: path }]),
-    ];
-  };
-  return [...direct, ...slide.groups.items.flatMap((group) => nested(group))].map((entry) => {
-    const monikerPath = [...(entry.ancestors || []), { element: entry.element, moniker: entry.moniker }].map((part) => ({ nativeId: part.element.nativeId, creationId: part.element.creationId, moniker: part.moniker }));
-    entry.element.moniker = entry.moniker;
-    entry.element.monikerPath = monikerPath;
-    return { ...entry, monikerPath };
-  });
-}
-
-function planPresentationNativeIdentities(presentation) {
-  const usedSlideIds = new Set();
-  let nextSlideId = 256;
-  for (const slide of presentation.slides.items) {
-    const candidate = Number(slide.nativeSlideId);
-    if (Number.isInteger(candidate) && candidate >= 256 && candidate < 2_147_483_648 && !usedSlideIds.has(candidate)) usedSlideIds.add(candidate);
-    else slide.nativeSlideId = undefined;
-  }
-  for (const slide of presentation.slides.items) {
-    if (!slide.nativeSlideId) {
-      while (usedSlideIds.has(nextSlideId)) nextSlideId += 1;
-      slide.nativeSlideId = nextSlideId;
-      usedSlideIds.add(nextSlideId);
-    }
-    const reservedNativeIds = presentationSlideElements(slide).filter((element) => element instanceof NativePresentationObject).map((element) => element.nativeId).filter((id) => Number.isInteger(id));
-    planPresentationSlideElementIdentities(slide, presentationSlideElementEntries(slide), { reservedNativeIds });
-  }
-}
-
-function pptxDrawingFillXml(value, fallback = "transparent") {
-  const raw = typeof value === "object" ? value?.color || value?.fill : value;
-  const resolved = resolveColorToken(raw || fallback, raw || fallback);
-  if (!resolved || resolved === "transparent" || resolved === "none") return "<a:noFill/>";
-  return `<a:solidFill><a:srgbClr val="${attrEscape(pptxColorValue(resolved, fallback))}"/></a:solidFill>`;
-}
-
-function pptxDrawingLineXml(line = {}) {
-  const width = Math.max(0, Number(line.width ?? 1));
-  const raw = line.fill || line.color || (width > 0 ? "#334155" : "transparent");
-  return `<a:ln w="${Math.round(width * 12700)}">${pptxDrawingFillXml(raw)}</a:ln>`;
-}
-
-function pptxTextRunPropertiesXml(style = {}, options = {}) {
-  const fontSize = Math.max(1, Number(style.fontSize || options.fontSize || 24));
-  const color = style.color || options.color || "#0f172a";
-  const attrs = ` lang="en-US" sz="${Math.round(fontSize * 75)}"${style.bold ? ' b="1"' : ""}${style.italic ? ' i="1"' : ""}`;
-  const typeface = style.fontFamily || style.typeface || options.fontFamily;
-  return `<a:rPr${attrs}>${presentationColorXml(color)}${typeface ? `<a:latin typeface="${attrEscape(typeface)}"/>` : ""}</a:rPr>`;
-}
-
-function pptxNonVisualPropertiesXml(index, name, extraAttributes = "", identity = {}) {
-  const nativeId = Number(identity.nativeId || index + 2);
-  const extension = presentationCreationIdExtensionXml(identity.creationId);
-  return `<p:cNvPr id="${nativeId}" name="${attrEscape(name)}"${extraAttributes}>${extension}</p:cNvPr>`;
-}
-
-function pptxTextShapeXml(index, name, geometry, position, text = "", placeholder, options = {}) {
-  const p = position;
-  const normalizedTransform = normalizePresentationPlaceholderTransform(options.transform, `Presentation shape ${name} transform`);
-  const transformAttributes = normalizedTransform ? [
-    ...(Object.hasOwn(normalizedTransform, "rotationDegrees") ? [`rot="${Math.round(normalizedTransform.rotationDegrees * 60_000)}"`] : []),
-    ...(Object.hasOwn(normalizedTransform, "flipHorizontal") ? [`flipH="${normalizedTransform.flipHorizontal ? 1 : 0}"`] : []),
-    ...(Object.hasOwn(normalizedTransform, "flipVertical") ? [`flipV="${normalizedTransform.flipVertical ? 1 : 0}"`] : []),
-  ].join(" ") : "";
-  const transform = p ? `<a:xfrm${transformAttributes ? ` ${transformAttributes}` : ""}><a:off x="${Math.round(p.left * 9525)}" y="${Math.round(p.top * 9525)}"/><a:ext cx="${Math.round(p.width * 9525)}" cy="${Math.round(p.height * 9525)}"/></a:xfrm>` : "";
-  const textStyle = options.textStyle || {};
-  const paragraphModels = options.paragraphs || normalizePresentationParagraphs(text);
-  const pictureBulletRelIds = options.pictureBulletRelIds || new Map();
-  const hyperlinkRelIds = options.hyperlinkRelIds || new Map();
-  const hyperlinkCustomShowIds = options.hyperlinkCustomShowIds || new Map();
-  const hyperlinkSlideParts = options.hyperlinkSlideParts || new Map();
-  const paragraphs = presentationParagraphsXml(paragraphModels, textStyle, {
-    pictureBulletRelationshipId: (bulletImage) => pictureBulletRelIds.get(bulletImage.dataUrl || bulletImage.uri),
-    hyperlinkRelationshipId: (link) => hyperlinkRelIds.get(presentationRunHyperlinkKey(link, hyperlinkSlideParts)),
-    hyperlinkCustomShowId: (link) => hyperlinkCustomShowIds.get(presentationRunHyperlinkKey(link, hyperlinkSlideParts)),
-  });
-  const listStyle = presentationListStyleXml(options.paragraphStyles || options.inheritedParagraphStyles || {}, { pictureBulletRelationshipId: (bulletImage) => pictureBulletRelIds.get(bulletImage.dataUrl || bulletImage.uri) });
-  const bodyProperties = presentationTextBodyPropertiesXml(options.bodyProperties, { defaults: options.bodyProperties === undefined });
-  const ph = placeholder ? `<p:ph type="${attrEscape(placeholder.type || "obj")}" idx="${Number(placeholder.idx ?? 0)}"/>` : "";
-  const shapeProperties = transform ? `<p:spPr>${transform}<a:prstGeom prst="${attrEscape(geometry === "textbox" ? "rect" : geometry)}"><a:avLst/></a:prstGeom>${pptxDrawingFillXml(options.fill)}${pptxDrawingLineXml(options.line)}</p:spPr>` : "<p:spPr/>";
-  return `<p:sp><p:nvSpPr>${pptxNonVisualPropertiesXml(index, name, "", options)}<p:cNvSpPr/><p:nvPr>${ph}</p:nvPr></p:nvSpPr>${shapeProperties}<p:txBody>${bodyProperties}${listStyle}${paragraphs || "<a:p/>"}</p:txBody></p:sp>`;
-}
-
-function pptxPictureXml(index, name, alt, position, relId, identity = {}) {
-  const p = position;
-  const x = Math.round(p.left * 9525), y = Math.round(p.top * 9525), cx = Math.round(p.width * 9525), cy = Math.round(p.height * 9525);
-  const normalizedTransform = normalizePresentationPlaceholderTransform(identity.transform, `Presentation image ${name} transform`);
-  const transformAttributes = normalizedTransform ? [
-    ...(Object.hasOwn(normalizedTransform, "rotationDegrees") ? [`rot="${Math.round(normalizedTransform.rotationDegrees * 60_000)}"`] : []),
-    ...(Object.hasOwn(normalizedTransform, "flipHorizontal") ? [`flipH="${normalizedTransform.flipHorizontal ? 1 : 0}"`] : []),
-    ...(Object.hasOwn(normalizedTransform, "flipVertical") ? [`flipV="${normalizedTransform.flipVertical ? 1 : 0}"`] : []),
-  ].join(" ") : "";
-  return `<p:pic><p:nvPicPr>${pptxNonVisualPropertiesXml(index, name, ` descr="${attrEscape(alt)}"`, identity)}<p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="${relId}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm${transformAttributes ? ` ${transformAttributes}` : ""}><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`;
-}
-
-function pptxConnectorXml(index, connector) {
-  const x1 = Math.round(connector.start.x * 9525);
-  const y1 = Math.round(connector.start.y * 9525);
-  const x2 = Math.round(connector.end.x * 9525);
-  const y2 = Math.round(connector.end.y * 9525);
-  const x = Math.min(x1, x2), y = Math.min(y1, y2), cx = Math.max(1, Math.abs(x2 - x1)), cy = Math.max(1, Math.abs(y2 - y1));
-  const stroke = String(connector.line?.fill || connector.line?.color || "#334155").replace(/^#/, "");
-  const width = Math.round((connector.line?.width ?? 2) * 12700);
-  const flipH = x2 < x1 ? ` flipH="1"` : "";
-  const flipV = y2 < y1 ? ` flipV="1"` : "";
-  const arrow = connector.line?.endArrow ? `<a:tailEnd type="triangle"/>` : "";
-  return `<p:cxnSp><p:nvCxnSpPr>${pptxNonVisualPropertiesXml(index, connector.name || connector.id, "", connector)}<p:cNvCxnSpPr/><p:nvPr/></p:nvCxnSpPr><p:spPr><a:xfrm${flipH}${flipV}><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="line"><a:avLst/></a:prstGeom><a:ln w="${width}"><a:solidFill><a:srgbClr val="${attrEscape(stroke)}"/></a:solidFill>${arrow}</a:ln></p:spPr><p:extLst><p:ext uri="urn:open-office-artifact:connector" startX="${connector.start.x}" startY="${connector.start.y}" endX="${connector.end.x}" endY="${connector.end.y}" startTargetId="${attrEscape(connector.startTargetId || "")}" endTargetId="${attrEscape(connector.endTargetId || "")}"/></p:extLst></p:cxnSp>`;
-}
-
-function pptxNotesSlideXml(slide) {
-  const paragraphs = String(slide.speakerNotes.text || "").split(/\r?\n/).map((line) => `<a:p><a:r><a:t>${xmlEscape(line)}</a:t></a:r></a:p>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:notes xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/><p:sp><p:nvSpPr><p:cNvPr id="2" name="Notes Placeholder"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/>${paragraphs || "<a:p/>"}</p:txBody></p:sp></p:spTree></p:cSld></p:notes>`;
-}
-
-function pptxCommentInitials(name) {
-  const words = String(name || "User").trim().split(/\s+/).filter(Boolean);
-  return (words.length > 1 ? words.slice(0, 2).map((word) => [...word][0]) : [...(words[0] || "U")].slice(0, 2)).join("").toUpperCase();
-}
-
-function collectPptxCommentAuthors(presentation) {
-  const entries = [];
-  const byName = new Map();
-  for (const slide of presentation.slides.items) for (const thread of slide.comments.items) for (const comment of thread.comments) {
-    const name = String(comment.author || thread.author || "User");
-    if (byName.has(name)) continue;
-    const entry = { id: String(entries.length), name, initials: pptxCommentInitials(name), colorIndex: entries.length % 8, nextIndex: 1, lastIndex: 0 };
-    entries.push(entry);
-    byName.set(name, entry);
-  }
-  return { entries, byName };
-}
-
-function pptxCommentAuthorsXml(registry) {
-  const authors = registry.entries.map((author) => `<p:cmAuthor id="${author.id}" name="${attrEscape(author.name)}" initials="${attrEscape(author.initials)}" lastIdx="${author.lastIndex}" clrIdx="${author.colorIndex}"/>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:cmAuthorLst xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">${authors}</p:cmAuthorLst>`;
-}
-
-function parsePptxCommentAuthors(xml = "") {
-  return new Map([...String(xml || "").matchAll(/<p:cmAuthor\b[^>]*\/?>/g)].map((match) => {
-    const attrs = ooxmlXmlAttributes(match[0]);
-    return [String(attrs.id || ""), attrs.name || attrs.initials || "User"];
-  }));
-}
-
-function pptxCommentsXml(slide, authorRegistry) {
-  const comments = slide.comments.items.flatMap((thread, threadIndex) => thread.comments.map((comment, commentIndex) => {
-    const author = authorRegistry.byName.get(String(comment.author || thread.author || "User"));
-    const idx = author.nextIndex++;
-    author.lastIndex = Math.max(author.lastIndex, idx);
-    const targetName = slide.resolve(thread.targetId)?.name || "";
-    return `<p:cm authorId="${author.id}" dt="${attrEscape(comment.created || thread.created)}" idx="${idx}" ooa:threadId="${attrEscape(thread.id)}" ooa:targetId="${attrEscape(thread.targetId || "")}" ooa:targetName="${attrEscape(targetName)}" ooa:resolved="${thread.resolved ? 1 : 0}" xmlns:ooa="urn:open-office-artifact"><p:pos x="${100 + commentIndex * 24}" y="${100 + threadIndex * 32}"/><p:text>${xmlEscape(comment.text)}</p:text></p:cm>`;
-  })).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:cmLst xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">${comments}</p:cmLst>`;
-}
-
-function parsePptxNotes(slide, xml = "") {
-  const text = [...String(xml || "").matchAll(/<a:t[^>]*>([\s\S]*?)<\/a:t>/g)].map((match) => decodeXml(match[1])).join("\n");
-  if (text) slide.addNotes(text);
-}
-
-function parsePptxComments(slide, xml = "", authorsById = new Map()) {
-  const byThread = new Map();
-  for (const match of String(xml || "").matchAll(/<p:cm\b([^>]*)>([\s\S]*?)<\/p:cm>/g)) {
-    const attrs = match[1];
-    const body = match[2];
-    const parsedAttrs = ooxmlXmlAttributes(`<p:cm ${attrs}>`);
-    const authorId = parsedAttrs.authorId || "0";
-    const author = authorsById.get(authorId) || "User";
-    const threadId = parsedAttrs.threadId || parsedAttrs["ooa:threadId"] || aid("pc");
-    const originalTargetId = parsedAttrs.targetId || parsedAttrs["ooa:targetId"] || undefined;
-    const targetName = parsedAttrs.targetName || parsedAttrs["ooa:targetName"] || "";
-    const namedTarget = targetName ? presentationSlideElements(slide).find((item) => item.name === targetName) : undefined;
-    const targetId = slide.resolve(originalTargetId)?.id || namedTarget?.id || originalTargetId;
-    const resolved = parsedAttrs.resolved === "1" || parsedAttrs["ooa:resolved"] === "1";
-    const created = parsedAttrs.dt || new Date(0).toISOString();
-    const text = decodeXml(/<p:text[^>]*>([\s\S]*?)<\/p:text>/.exec(body)?.[1] || "");
-    const thread = byThread.get(threadId) || { id: threadId, targetId, author, resolved, created, comments: [] };
-    thread.comments.push({ author, text, created });
-    byThread.set(threadId, thread);
-  }
-  for (const thread of byThread.values()) slide.comments.addThread(thread.targetId, thread.comments[0]?.text || "", thread);
-}
-
-function pptxTableXml(index, table) {
-  const p = table.position;
-  const x = Math.round(p.left * 9525), y = Math.round(p.top * 9525), cx = Math.round(p.width * 9525), cy = Math.round(p.height * 9525);
-  const colWidth = Math.max(1, Math.floor(cx / Math.max(1, table.columns)));
-  const rowHeight = Math.max(1, Math.floor(cy / Math.max(1, table.rows)));
-  const grid = Array.from({ length: Math.max(1, table.columns) }, () => `<a:gridCol w="${colWidth}"/>`).join("");
-  const borderXml = `<a:lnL w="12700"><a:solidFill><a:srgbClr val="B8BCC4"/></a:solidFill></a:lnL><a:lnR w="12700"><a:solidFill><a:srgbClr val="B8BCC4"/></a:solidFill></a:lnR><a:lnT w="12700"><a:solidFill><a:srgbClr val="B8BCC4"/></a:solidFill></a:lnT><a:lnB w="12700"><a:solidFill><a:srgbClr val="B8BCC4"/></a:solidFill></a:lnB>`;
-  const rows = Array.from({ length: Math.max(1, table.rows) }, (_, rowIndex) => {
-    const header = table.styleOptions.headerRow && rowIndex === 0;
-    const cells = Array.from({ length: Math.max(1, table.columns) }, (_, colIndex) => {
-      const cellText = table.values[rowIndex]?.[colIndex] ?? "";
-      const textStyle = { fontSize: table.styleOptions.fontSize || 18, bold: header, color: header ? "#000000" : "#0f172a", fontFamily: table.styleOptions.fontFamily };
-      const fill = header ? "EDEDED" : rowIndex % 2 && table.styleOptions.bandedRows ? "F8FAFC" : "FFFFFF";
-      return `<a:tc><a:txBody><a:bodyPr wrap="square" lIns="76200" tIns="45720" rIns="76200" bIns="45720" anchor="ctr"/><a:lstStyle/><a:p><a:r>${pptxTextRunPropertiesXml(textStyle)}<a:t>${xmlEscape(cellText)}</a:t></a:r><a:endParaRPr lang="en-US" sz="${Math.round(textStyle.fontSize * 75)}"/></a:p></a:txBody><a:tcPr marL="76200" marR="76200" marT="45720" marB="45720">${borderXml}<a:solidFill><a:srgbClr val="${fill}"/></a:solidFill></a:tcPr></a:tc>`;
-    }).join("");
-    return `<a:tr h="${rowHeight}">${cells}</a:tr>`;
-  }).join("");
-  const firstRow = table.styleOptions.headerRow ? 1 : 0;
-  const bandRow = table.styleOptions.bandedRows ? 1 : 0;
-  return `<p:graphicFrame><p:nvGraphicFramePr>${pptxNonVisualPropertiesXml(index, table.name || table.id, "", table)}<p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table"><a:tbl><a:tblPr firstRow="${firstRow}" bandRow="${bandRow}"/><a:tblGrid>${grid}</a:tblGrid>${rows}</a:tbl></a:graphicData></a:graphic></p:graphicFrame>`;
-}
-
-function pptxChartFrameXml(index, name, position, relId, identity = {}) {
-  const p = position;
-  const x = Math.round(p.left * 9525), y = Math.round(p.top * 9525), cx = Math.round(p.width * 9525), cy = Math.round(p.height * 9525);
-  return `<p:graphicFrame><p:nvGraphicFramePr>${pptxNonVisualPropertiesXml(index, name, "", identity)}<p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" r:id="${relId}"/></a:graphicData></a:graphic></p:graphicFrame>`;
-}
-
-function slideXml(slide, imageParts = [], chartParts = [], nativeObjectEntries = new Map(), pictureBulletRelIds = new Map(), hyperlinkRelIds = new Map(), hyperlinkCustomShowIds = new Map(), hyperlinkSlideParts = new Map()) {
-  const imageRelById = new Map(imageParts.filter((part) => part.image).map((part) => [part.image.id, part.slideRelId]));
-  const chartRelById = new Map(chartParts.map((part) => [part.chart.id, part.slideRelId]));
-  const pictureBulletRelByOwner = new Map(presentationSlideElements(slide).filter((element) => element instanceof Shape).map((shape) => [shape.id, { pictureBulletRelIds, hyperlinkRelIds, hyperlinkCustomShowIds, hyperlinkSlideParts }]));
-  const relationshipById = new Map([...imageRelById, ...chartRelById, ...pictureBulletRelByOwner, ...nativeObjectEntries]);
-  const elements = [...slide.connectors.items, ...slide.shapes.items, ...slide.tables.items, ...slide.charts.items, ...slide.images.items, ...slide.groups.items, ...slide.nativeObjects.items];
-  const shapes = elements.map((element, index) => element.toPptxShape(index, element instanceof GroupShape ? relationshipById : relationshipById.get(element.id))).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:cSld>${presentationBackgroundXml(slide.background.fill ? slide.background : undefined)}<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>${shapes}</p:spTree></p:cSld></p:sld>`;
-}
-
-function pptxFrameFromXml(part, fallback = { left: 0, top: 0, width: 160, height: 80 }) {
-  const off = /<(?:[A-Za-z_][\w.-]*:)?off\b[^>]*x="(-?\d+)"[^>]*y="(-?\d+)"/.exec(part);
-  const ext = /<(?:[A-Za-z_][\w.-]*:)?ext\b[^>]*cx="(\d+)"[^>]*cy="(\d+)"/.exec(part);
-  return { left: off ? Number(off[1]) / 9525 : fallback.left, top: off ? Number(off[2]) / 9525 : fallback.top, width: ext ? Number(ext[1]) / 9525 : fallback.width, height: ext ? Number(ext[2]) / 9525 : fallback.height };
-}
-
-function parsePresentationPlaceholderTransformXml(part) {
-  const tag = /<(?:[A-Za-z_][\w.-]*:)?xfrm\b[^>]*>/.exec(String(part || ""))?.[0];
-  if (!tag) return undefined;
-  const attributes = ooxmlXmlAttributes(tag);
-  const transform = {};
-  if (Object.hasOwn(attributes, "rot")) {
-    const rotation = Number(attributes.rot);
-    if (!Number.isInteger(rotation) || Math.abs(rotation) > 360 * 60_000) return undefined;
-    transform.rotationDegrees = rotation / 60_000;
-  }
-  for (const [attribute, key] of [["flipH", "flipHorizontal"], ["flipV", "flipVertical"]]) {
-    if (!Object.hasOwn(attributes, attribute)) continue;
-    const token = String(attributes[attribute]).toLowerCase();
-    if (!["0", "1", "false", "true"].includes(token)) return undefined;
-    transform[key] = token === "1" || token === "true";
-  }
-  return Object.keys(transform).length ? transform : undefined;
-}
-
-async function parsePptxPlaceholderShapes(xml = "", options = {}) {
-  const placeholders = [...String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?sp\b[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?sp>/g)].flatMap((match, index) => {
-    const part = match[0];
-    const phTag = /<(?:[A-Za-z_][\w.-]*:)?ph\b[^>]*\/?\s*>/.exec(part)?.[0];
-    if (!phTag) return [];
-    const ph = ooxmlXmlAttributes(phTag);
-    const type = ph.type || "obj";
-    const idx = Number(ph.idx ?? 0);
-    const name = decodeXml(ooxmlXmlAttributes(/<(?:[A-Za-z_][\w.-]*:)?cNvPr\b[^>]*\/?\s*>/.exec(part)?.[0]).name || `${type} placeholder`);
-    const hasPosition = /<(?:[A-Za-z_][\w.-]*:)?xfrm\b/.test(part);
-    return [{ type, idx, name, part, position: hasPosition || options.fallbackPositions ? pptxFrameFromXml(part, { left: 80, top: 80 + index * 80, width: 640, height: 64 }) : undefined, transform: parsePresentationPlaceholderTransformXml(part), style: parsePresentationPlaceholderStyleXml(part), textBodyProperties: parsePresentationTextBodyPropertiesXml(part) }];
-  });
-  const relationshipContext = presentationPictureBulletImportContext(options.relationshipContext || {});
-  return Promise.all(placeholders.map(async ({ part, ...placeholder }) => {
-    const paragraphStyles = await resolvePresentationPictureBulletStyles(parsePresentationListStyleXml(part), relationshipContext);
-    const parsedParagraphs = await resolvePresentationPictureBulletParagraphs(parsePresentationParagraphsXml(part, { inheritedByLevel: paragraphStyles, relationshipContext }), relationshipContext);
-    const text = presentationParagraphsNeedSerialization(parsedParagraphs) ? parsedParagraphs : presentationParagraphsText(parsedParagraphs);
-    return { ...placeholder, text, paragraphStyles };
-  }));
-}
-
-function pptxRelationshipTarget(rels, relId) {
-  const rel = rels.find((item) => item.id === relId);
-  if (!rel?.target) return undefined;
-  const target = rel.target.replace(/^\//, "");
-  return target.startsWith("ppt/") ? target : path.posix.normalize(`ppt/slides/${target}`).replace(/^\.\//, "");
-}
-
-function presentationPictureBulletImportContext(context = {}) {
-  return {
-    relationships: context.rels || [],
-    partPath: context.partPath || context.slidePath || "ppt/slides/slide1.xml",
-    slideIdByPart: context.slideIdByPart,
-    customShowNameById: context.customShowNameById,
-    resolveTarget: (partPath, target) => ooxmlSafePartPath(ooxmlResolveRelationshipTarget(partPath, target), "PPTX"),
-    readPart: (target) => context.zip?.file(target)?.async("uint8array"),
-  };
-}
-
-async function parsePptxSlideLayout(presentation, xml = "", fallbackId = "imported-layout", masterId = "master/default", relationshipContext = {}) {
-  const text = String(xml || "");
-  const name = decodeXml(/<(?:[A-Za-z_][\w.-]*:)?cSld\b[^>]*name="([^"]*)"/.exec(text)?.[1] || fallbackId);
-  const type = /<(?:[A-Za-z_][\w.-]*:)?sldLayout\b[^>]*type="([^"]*)"/.exec(text)?.[1] || "custom";
-  const placeholders = await parsePptxPlaceholderShapes(text, { relationshipContext });
-  const existing = presentation.layouts.getItem(name);
-  if (existing) return existing;
-  return presentation.layouts.add({ id: fallbackId, name, type, masterId, background: parsePresentationBackgroundXml(text), placeholders });
-}
-
-function applyPresentationElementIdentity(element, xml, moniker) {
-  Object.assign(element, parsePresentationElementIdentity(xml, moniker));
-  return element;
-}
-
-function parsePptxTableGraphic(owner, part) {
-  const name = decodeXml(/<(?:[A-Za-z_][\w.-]*:)?cNvPr[^>]*name="([^"]*)"/.exec(part)?.[1] || "");
-  const values = [...part.matchAll(/<(?:[A-Za-z_][\w.-]*:)?tr\b[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?tr>/g)].map((rowMatch) => [...rowMatch[0].matchAll(/<(?:[A-Za-z_][\w.-]*:)?tc\b[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?tc>/g)].map((cellMatch) => decodeXml([...cellMatch[0].matchAll(/<(?:[A-Za-z_][\w.-]*:)?t>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>/g)].map((t) => t[1]).join(""))));
-  if (!values.length) return;
-  return applyPresentationElementIdentity(owner.tables.add({ name, position: pptxFrameFromXml(part, { left: 0, top: 0, width: 320, height: 160 }), values, rows: values.length, columns: Math.max(1, ...values.map((row) => row.length)), styleOptions: { headerRow: /<(?:[A-Za-z_][\w.-]*:)?tblPr\b[^>]*firstRow="1"/.test(part), bandedRows: /<(?:[A-Za-z_][\w.-]*:)?tblPr\b[^>]*bandRow="1"/.test(part) } }), part, "graphicFrameMk");
-}
-
-async function parsePptxChartGraphic(owner, part, context) {
-  const chartTag = /<(?:[A-Za-z_][\w.-]*:)?chart\b[^>]*\/>/.exec(part)?.[0] || "";
-  const relId = ooxmlTagRelationshipId(chartTag);
-  const target = pptxRelationshipTarget(context.rels, relId);
-  const chartXml = target ? await context.zip.file(target)?.async("text") : "";
-  const parsed = parsePresentationChartXml(chartXml);
-  const chartRelationships = target ? parseRelsXml(await context.zip.file(ooxmlRelationshipPartPath(target, "PPTX"))?.async("text")) : [];
-  const externalData = target ? await parsePresentationChartExternalData({
-    chartXml,
-    chartPath: target,
-    relationships: chartRelationships,
-    resolveTarget: (source, rawTarget) => ooxmlSafePartPath(ooxmlResolveRelationshipTarget(source, rawTarget), "PPTX"),
-    readPart: (partPath) => context.zip.file(partPath)?.async("uint8array"),
-  }) : undefined;
-  const name = decodeXml(/<(?:[A-Za-z_][\w.-]*:)?cNvPr[^>]*name="([^"]*)"/.exec(part)?.[1] || parsed.title || "chart");
-  return applyPresentationElementIdentity(owner.charts.add(parsed.chartType, { ...parsed, externalData, name, position: pptxFrameFromXml(part, { left: 0, top: 0, width: 360, height: 220 }) }), part, "graphicFrameMk");
-}
-
-async function parsePptxPicture(owner, part, context) {
-  const attrs = /<(?:[A-Za-z_][\w.-]*:)?cNvPr\b([^>]*)>/.exec(part)?.[1] || /<(?:[A-Za-z_][\w.-]*:)?cNvPr\b([^>]*)\/>/.exec(part)?.[1] || "";
-  const name = decodeXml(/\bname="([^"]*)"/.exec(attrs)?.[1] || "");
-  const alt = decodeXml(/\bdescr="([^"]*)"/.exec(attrs)?.[1] || "");
-  const blipTag = /<(?:[A-Za-z_][\w.-]*:)?blip\b[^>]*\/>/.exec(part)?.[0] || "";
-  const relId = ooxmlTagRelationshipId(blipTag, "embed");
-  const target = pptxRelationshipTarget(context.rels, relId);
-  const bytes = target ? await context.zip.file(target)?.async("uint8array") : undefined;
-  const extension = /\.([A-Za-z0-9+]+)$/.exec(target || "")?.[1] || "png";
-  return applyPresentationElementIdentity(owner.images.add({ name, alt, position: pptxFrameFromXml(part, { left: 0, top: 0, width: 320, height: 180 }), transform: parsePresentationPlaceholderTransformXml(part), dataUrl: bytes ? `data:${imageContentTypeFromExtension(extension)};base64,${Buffer.from(bytes).toString("base64")}` : undefined, uri: bytes ? undefined : target }), part, "picMk");
-}
-
-async function parsePptxGraphicFrame(owner, part, context) {
-  if (part.includes("/drawingml/2006/table")) return parsePptxTableGraphic(owner, part);
-  if (part.includes("/drawingml/2006/chart")) return parsePptxChartGraphic(owner, part, context);
-  return parsePptxNativeObject(owner, part, context);
-}
-
-async function parsePptxNativeObject(owner, part, context, explicitKind) {
-  const nativeKind = explicitKind || (/<(?:[A-Za-z_][\w.-]*:)?oleObj\b/.test(part) ? "oleObject" : /<(?:[A-Za-z_][\w.-]*:)?relIds\b/.test(part) || part.includes("/drawingml/2006/diagram") ? "diagram" : "graphicFrame");
-  const name = decodeXml(/<(?:[A-Za-z_][\w.-]*:)?cNvPr\b[^>]*name="([^"]*)"/.exec(part)?.[1] || nativeKind);
-  const graph = await capturePresentationOpaqueObject({ zip: context.zip, slidePath: context.slidePath, slideXml: context.slideXml, fragment: part, relationships: context.rels, contentTypesXml: context.contentTypesXml });
-  const object = owner.nativeObjects.add({ name, nativeKind, position: pptxFrameFromXml(part, { left: 0, top: 0, width: 1, height: 1 }), ...graph });
-  Object.assign(object, parsePresentationElementIdentity(part));
-  object.moniker = undefined;
-  object.monikerPath = undefined;
-  return object;
-}
-
-function parsePptxConnector(owner, part) {
-  const name = decodeXml(/<(?:[A-Za-z_][\w.-]*:)?cNvPr[^>]*name="([^"]*)"/.exec(part)?.[1] || "");
-  const extAttrs = [...part.matchAll(/<(?:[A-Za-z_][\w.-]*:)?ext\b([^>]*)>/g)].map((match) => match[1]).find((attrs) => attrs.includes("urn:open-office-artifact:connector"));
-  const attrs = extAttrs || "";
-  const startX = Number(/\bstartX="([^"]+)"/.exec(attrs)?.[1]);
-  const startY = Number(/\bstartY="([^"]+)"/.exec(attrs)?.[1]);
-  const endX = Number(/\bendX="([^"]+)"/.exec(attrs)?.[1]);
-  const endY = Number(/\bendY="([^"]+)"/.exec(attrs)?.[1]);
-  const frame = pptxFrameFromXml(part, { left: 0, top: 0, width: 160, height: 1 });
-  const start = Number.isFinite(startX) && Number.isFinite(startY) ? { x: startX, y: startY } : { x: frame.left, y: frame.top };
-  const end = Number.isFinite(endX) && Number.isFinite(endY) ? { x: endX, y: endY } : { x: frame.left + frame.width, y: frame.top + frame.height };
-  const startTargetId = decodeXml(/\bstartTargetId="([^"]*)"/.exec(attrs)?.[1] || "") || undefined;
-  const endTargetId = decodeXml(/\bendTargetId="([^"]*)"/.exec(attrs)?.[1] || "") || undefined;
-  return applyPresentationElementIdentity(owner.connectors.add({ name, start, end, startTargetId, endTargetId, line: { fill: "#334155", width: 2, endArrow: /<(?:[A-Za-z_][\w.-]*:)?tailEnd\b/.test(part) ? "triangle" : undefined } }), part, "cxnSpMk");
-}
-
-async function parsePptxShape(owner, part, context = {}) {
-    const name = decodeXml(/<(?:[A-Za-z_][\w.-]*:)?cNvPr[^>]*name="([^"]*)"/.exec(part)?.[1] || "");
-    const phAttrs = /<(?:[A-Za-z_][\w.-]*:)?ph\b([^>]*)\/?>(?:<\/(?:[A-Za-z_][\w.-]*:)?ph>)?/.exec(part)?.[1];
-    const placeholder = phAttrs ? { type: /\btype="([^"]+)"/.exec(phAttrs)?.[1] || "obj", idx: Number(/\bidx="([^"]+)"/.exec(phAttrs)?.[1] || 0), name } : undefined;
-    // PowerPoint's documented slide-placeholder inheritance key is idx, not
-    // the descriptive placeholder type.
-    const inherited = placeholder ? context.layout?.effectivePlaceholders().find((candidate) => candidate.idx === placeholder.idx) : undefined;
-    const spPr = /<(?:[A-Za-z_][\w.-]*:)?spPr\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?spPr>/.exec(part)?.[1] || "";
-    const hasDirectFrame = /<(?:[A-Za-z_][\w.-]*:)?xfrm\b/.test(spPr);
-    const directTransform = hasDirectFrame ? parsePresentationPlaceholderTransformXml(spPr) : undefined;
-    const effectiveTransform = hasDirectFrame ? directTransform : inherited?.transform;
-    const fill = /<(?:[A-Za-z_][\w.-]*:)?solidFill\b[^>]*>[\s\S]*?<(?:[A-Za-z_][\w.-]*:)?srgbClr[^>]*val="([A-Fa-f0-9]{6})"/.exec(spPr)?.[1];
-    const lineBlock = /<(?:[A-Za-z_][\w.-]*:)?ln\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?ln>/.exec(spPr);
-    const lineColor = /<(?:[A-Za-z_][\w.-]*:)?solidFill\b[^>]*>[\s\S]*?<(?:[A-Za-z_][\w.-]*:)?srgbClr[^>]*val="([A-Fa-f0-9]{6})"/.exec(lineBlock?.[2] || "")?.[1];
-    const lineWidth = Number(/\bw="(\d+)"/.exec(lineBlock?.[1] || "")?.[1] || 0) / 12700;
-    const geometry = /<(?:[A-Za-z_][\w.-]*:)?prstGeom[^>]*prst="([^"]+)"/.exec(spPr)?.[1] || "rect";
-    const rPr = /<(?:[A-Za-z_][\w.-]*:)?rPr\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?rPr>/.exec(part);
-    const localTextStyle = parsePresentationPlaceholderStyleXml(rPr?.[0] || "");
-    const relationshipContext = presentationPictureBulletImportContext(context);
-    const localParagraphStyles = await resolvePresentationPictureBulletStyles(parsePresentationListStyleXml(part), relationshipContext);
-    const paragraphStyles = mergePresentationParagraphStyles(inherited?.paragraphStyles || {}, localParagraphStyles);
-    const paragraphs = await resolvePresentationPictureBulletParagraphs(parsePresentationParagraphsXml(part, { inheritedByLevel: paragraphStyles, relationshipContext }), relationshipContext);
-    const shape = owner.shapes.add({ name: name || inherited?.name, geometry, position: pptxFrameFromXml(part, inherited?.position), transform: effectiveTransform, text: paragraphs, textBodyProperties: parsePresentationTextBodyPropertiesXml(part), placeholder: placeholder ? { ...placeholder, required: inherited?.required, layoutId: context.layout?.id, geometrySource: hasDirectFrame ? "slide" : (inherited?.geometrySource || "unresolved") } : undefined, fill: fill ? `#${fill}` : "transparent", line: lineColor && lineWidth > 0 ? { fill: `#${lineColor}`, width: lineWidth } : { fill: "transparent", width: 0 } });
-    applyPresentationElementIdentity(shape, part, "spMk");
-    shape.text.style = { ...(inherited?.style || {}), ...localTextStyle };
-    shape.text.inheritedParagraphStyles = paragraphStyles;
-    return shape;
-}
-
-async function parsePptxGroup(owner, part, context) {
-  return parsePresentationGroupTree(owner, part, context, { applyIdentity: applyPresentationElementIdentity, parseShape: parsePptxShape, parseConnector: parsePptxConnector, parseGraphicFrame: parsePptxGraphicFrame, parsePicture: parsePptxPicture, parseNativeObject: parsePptxNativeObject });
-}
-
-async function parseSlideXml(slide, xml, context = { rels: [], zip: undefined }) {
-  slide.background = parsePresentationBackgroundXml(xml) || {};
-  for (const child of directPresentationChildren(xml, "spTree")) {
-    const part = child.xml;
-    if (child.localName === "sp") await parsePptxShape(slide, part, context);
-    else if (child.localName === "graphicFrame") await parsePptxGraphicFrame(slide, part, context);
-    else if (child.localName === "pic") await parsePptxPicture(slide, part, context);
-    else if (child.localName === "cxnSp") parsePptxConnector(slide, part);
-    else if (child.localName === "grpSp") await parsePptxGroup(slide, part, context);
-    else if (child.localName === "contentPart") await parsePptxNativeObject(slide, part, context, "contentPart");
-  }
-}
-
 class DocumentStyleCollection {
   constructor(styles = {}) {
     this.items = new Map(Object.entries({
@@ -11091,10 +8438,11 @@ class DocumentParagraphBlock {
     this.text = this.runs.map((run) => run.text).join("") || String(text ?? "");
     this.styleId = config.styleId || config.style || "Normal";
     this.name = config.name || "";
+    this.paragraphFormat = { ...(config.paragraphFormat || config.formatting || {}) };
   }
 
-  inspectRecord(index) { return { kind: "paragraph", id: this.id, index, name: this.name || undefined, styleId: this.styleId, text: this.text, textChars: this.text.length, runs: documentRunsNeedSerialization(this.runs) ? this.runs : undefined }; }
-  toProto() { return { kind: "paragraph", id: this.id, name: this.name, styleId: this.styleId, text: this.text, runs: documentRunsNeedSerialization(this.runs) ? this.runs : undefined }; }
+  inspectRecord(index) { return { kind: "paragraph", id: this.id, index, name: this.name || undefined, styleId: this.styleId, paragraphFormat: Object.keys(this.paragraphFormat).length ? this.paragraphFormat : undefined, text: this.text, textChars: this.text.length, runs: documentRunsNeedSerialization(this.runs) ? this.runs : undefined }; }
+  toProto() { return { kind: "paragraph", id: this.id, name: this.name, styleId: this.styleId, paragraphFormat: Object.keys(this.paragraphFormat).length ? this.paragraphFormat : undefined, text: this.text, runs: documentRunsNeedSerialization(this.runs) ? this.runs : undefined }; }
 }
 
 class DocumentChangeBlock {
@@ -11308,10 +8656,11 @@ class DocumentHeaderFooterBlock {
     this.partPath = config.partPath;
     this.sectionIndex = config.sectionIndex === undefined || config.sectionIndex === null ? undefined : Number(config.sectionIndex);
     this.variantActive = config.variantActive ?? config.activateVariant ?? config.active;
+    this.fieldInstruction = config.fieldInstruction || config.field;
   }
 
-  inspectRecord(index) { return { kind: this.kind, id: this.id, index, name: this.name || undefined, styleId: this.styleId, referenceType: this.referenceType, variantActive: this.variantActive, relationshipId: this.relationshipId, partPath: this.partPath, sectionIndex: this.sectionIndex, text: this.text, textChars: this.text.length }; }
-  toProto() { return { kind: this.kind, id: this.id, name: this.name, styleId: this.styleId, referenceType: this.referenceType, variantActive: this.variantActive, relationshipId: this.relationshipId, partPath: this.partPath, sectionIndex: this.sectionIndex, text: this.text }; }
+  inspectRecord(index) { return { kind: this.kind, id: this.id, index, name: this.name || undefined, styleId: this.styleId, referenceType: this.referenceType, variantActive: this.variantActive, relationshipId: this.relationshipId, partPath: this.partPath, sectionIndex: this.sectionIndex, fieldInstruction: this.fieldInstruction, text: this.text, textChars: this.text.length }; }
+  toProto() { return { kind: this.kind, id: this.id, name: this.name, styleId: this.styleId, referenceType: this.referenceType, variantActive: this.variantActive, relationshipId: this.relationshipId, partPath: this.partPath, sectionIndex: this.sectionIndex, fieldInstruction: this.fieldInstruction, text: this.text }; }
 }
 
 function documentCommentInitials(author) {
@@ -11927,362 +9276,6 @@ export class DocumentModel {
   }
 }
 
-function docxContentTypes({ hasComments, hasCommentsExtended, headerParts = [], footerParts = [], hasNumbering, hasSettings, imageParts = [] }) {
-  const imageDefaults = imageContentTypeDefaults(imageParts);
-  const headers = headerParts.map((part) => `<Override PartName="/${part.partPath}" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>`).join("");
-  const footers = footerParts.map((part) => `<Override PartName="/${part.partPath}" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="json" ContentType="application/json"/>${imageDefaults}<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>${hasNumbering ? `<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>` : ""}${hasComments ? `<Override PartName="/word/comments.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml"/>` : ""}${hasCommentsExtended ? `<Override PartName="/${DOCX_COMMENTS_EXTENDED_PATH}" ContentType="${DOCX_COMMENTS_EXTENDED_CONTENT_TYPE}"/><Override PartName="/${DOCX_COMMENTS_IDS_PATH}" ContentType="${DOCX_COMMENTS_IDS_CONTENT_TYPE}"/><Override PartName="/${DOCX_COMMENTS_EXTENSIBLE_PATH}" ContentType="${DOCX_COMMENTS_EXTENSIBLE_CONTENT_TYPE}"/><Override PartName="/${DOCX_PEOPLE_PATH}" ContentType="${DOCX_PEOPLE_CONTENT_TYPE}"/>` : ""}${hasSettings ? `<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>` : ""}${headers}${footers}</Types>`;
-}
-
-function docxStylesXml(document, numbering) {
-  const defaultRunProperties = docxRunPropertiesXml(document.defaultRunStyle, document.theme);
-  const docDefaults = defaultRunProperties ? `<w:docDefaults><w:rPrDefault>${defaultRunProperties}</w:rPrDefault></w:docDefaults>` : "";
-  const styles = document.styles.values().map((style) => {
-    const type = style.type || "paragraph";
-    const basedOn = style.basedOn || style.parent || style.extends;
-    const outputNumberingId = String(style.numberingId) === "0" ? 0 : style.numberingId === undefined || style.numberingId === null ? undefined : numbering?.numIdBySource?.get(String(style.numberingId));
-    const numberingProperties = outputNumberingId === undefined ? "" : `<w:pPr><w:numPr>${Number.isInteger(Number(style.numberingLevel)) ? `<w:ilvl w:val="${Math.max(0, Math.min(8, Number(style.numberingLevel)))}"/>` : ""}<w:numId w:val="${outputNumberingId}"/></w:numPr></w:pPr>`;
-    const runProperties = docxRunPropertiesXml(style, document.theme);
-    return `<w:style w:type="${attrEscape(type)}" w:styleId="${attrEscape(style.id)}"><w:name w:val="${attrEscape(style.name || style.id)}"/>${basedOn ? `<w:basedOn w:val="${attrEscape(basedOn)}"/>` : ""}${numberingProperties}${runProperties}</w:style>`;
-  }).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${docDefaults}${styles}</w:styles>`;
-}
-
-function docxHeaderFooterXml(kind, blocks) {
-  const tag = kind === "header" ? "hdr" : "ftr";
-  const body = blocks.map((block) => `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr><w:r><w:t>${xmlEscape(block.text)}</w:t></w:r></w:p>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:${tag} xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${body}</w:${tag}>`;
-}
-
-function docxRunXml(run = {}, theme = {}) {
-  return `<w:r>${docxRunPropertiesXml(run.style || run.textStyle || {}, theme)}<w:t>${xmlEscape(run.text ?? "")}</w:t></w:r>`;
-}
-
-function docxParagraphXml(block, commentIndexes, numberingId, theme = {}) {
-  const commentStart = commentIndexes.length ? commentIndexes.map((id) => `<w:commentRangeStart w:id="${id}"/>`).join("") : "";
-  const commentEnd = commentIndexes.length ? commentIndexes.map((id) => `<w:commentRangeEnd w:id="${id}"/>`).join("") : "";
-  const refs = commentIndexes.length ? commentIndexes.map((id) => `<w:r><w:commentReference w:id="${id}"/></w:r>`).join("") : "";
-  const numPr = block.kind === "listItem" ? `<w:numPr><w:ilvl w:val="${Math.max(0, Math.min(8, Math.trunc(block.level || 0)))}"/><w:numId w:val="${numberingId}"/></w:numPr>` : "";
-  const runs = block.runs?.length ? block.runs.map((run) => docxRunXml(run, theme)).join("") : `<w:r><w:t>${xmlEscape(block.text)}</w:t></w:r>`;
-  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/>${numPr}</w:pPr>${commentStart}${runs}${commentEnd}${refs}</w:p>`;
-}
-
-function docxRevisionId(block) {
-  const raw = String(block?.id || block?.name || block?.text || "1");
-  const sum = raw.split("").reduce((acc, ch) => ((acc * 31) + ch.charCodeAt(0)) >>> 0, 17);
-  return Math.max(1, sum % 2147483647);
-}
-
-function docxChangeXml(block, commentIndexes = []) {
-  const commentStart = commentIndexes.length ? commentIndexes.map((id) => `<w:commentRangeStart w:id="${id}"/>`).join("") : "";
-  const commentEnd = commentIndexes.length ? commentIndexes.map((id) => `<w:commentRangeEnd w:id="${id}"/>`).join("") : "";
-  const refs = commentIndexes.length ? commentIndexes.map((id) => `<w:r><w:commentReference w:id="${id}"/></w:r>`).join("") : "";
-  const tag = block.changeType === "delete" ? "del" : "ins";
-  const textTag = block.changeType === "delete" ? "delText" : "t";
-  const date = block.date ? ` w:date="${attrEscape(block.date)}"` : "";
-  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr>${commentStart}<w:${tag} w:id="${docxRevisionId(block)}" w:author="${attrEscape(block.author || "User")}"${date}><w:r><w:${textTag}>${xmlEscape(block.text)}</w:${textTag}></w:r></w:${tag}>${commentEnd}${refs}</w:p>`;
-}
-
-function collectDocxImageParts(document) {
-  const parts = [];
-  let imagePartId = 1;
-  let relIndex = 1;
-  for (const block of document.blocks.filter((item) => item.kind === "image")) {
-    const data = imageDataFromDataUrl(block.dataUrl);
-    if (!data) continue;
-    parts.push({ image: block, imagePartId: imagePartId++, relId: `rIdImage${relIndex++}`, ...data });
-  }
-  return parts;
-}
-
-function docxImageXml(block, relId, commentIndexes = []) {
-  const commentStart = commentIndexes.length ? commentIndexes.map((id) => `<w:commentRangeStart w:id="${id}"/>`).join("") : "";
-  const commentEnd = commentIndexes.length ? commentIndexes.map((id) => `<w:commentRangeEnd w:id="${id}"/>`).join("") : "";
-  const refs = commentIndexes.length ? commentIndexes.map((id) => `<w:r><w:commentReference w:id="${id}"/></w:r>`).join("") : "";
-  if (!relId) return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr>${commentStart}<w:r><w:t>${xmlEscape(block.alt || block.prompt || block.uri || block.name || "image")}</w:t></w:r>${commentEnd}${refs}</w:p>`;
-  const cx = Math.round(Math.max(16, Number(block.widthPx) || 240) * 9525);
-  const cy = Math.round(Math.max(16, Number(block.heightPx) || 160) * 9525);
-  const docPrId = docxRevisionId(block);
-  const name = block.name || `Image ${docPrId}`;
-  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr>${commentStart}<w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${docPrId}" name="${attrEscape(name)}" descr="${attrEscape(block.alt || "")}"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="${docPrId}" name="${attrEscape(name)}" descr="${attrEscape(block.alt || "")}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${relId}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r>${commentEnd}${refs}</w:p>`;
-}
-
-function docxSectionPrXml(section, refs = "", options = {}) {
-  const size = section.pageSize || {};
-  const margins = section.margins || {};
-  const orient = section.orientation === "landscape" ? ` w:orient="landscape"` : "";
-  const type = section.breakType ? `<w:type w:val="${attrEscape(section.breakType)}"/>` : "";
-  return `<w:sectPr>${refs}${type}${options.titlePage ? "<w:titlePg/>" : ""}<w:pgSz w:w="${Math.round(size.widthTwips || 12240)}" w:h="${Math.round(size.heightTwips || 15840)}"${orient}/><w:pgMar w:top="${Math.round(margins.top ?? 1440)}" w:right="${Math.round(margins.right ?? 1440)}" w:bottom="${Math.round(margins.bottom ?? 1440)}" w:left="${Math.round(margins.left ?? 1440)}" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>`;
-}
-
-function docxSectionXml(block, commentIndexes = [], sectionReferences = [], sectionSettings = {}) {
-  const commentStart = commentIndexes.length ? commentIndexes.map((id) => `<w:commentRangeStart w:id="${id}"/>`).join("") : "";
-  const commentEnd = commentIndexes.length ? commentIndexes.map((id) => `<w:commentRangeEnd w:id="${id}"/>`).join("") : "";
-  const refs = commentIndexes.length ? commentIndexes.map((id) => `<w:r><w:commentReference w:id="${id}"/></w:r>`).join("") : "";
-  const sectionRefs = sectionReferences.map((reference) => `<w:${reference.kind}Reference w:type="${attrEscape(reference.referenceType)}" r:id="${attrEscape(reference.relId)}"/>`).join("");
-  return `<w:p><w:pPr>${docxSectionPrXml(block, sectionRefs, { titlePage: Boolean(sectionSettings.differentFirstPage) })}</w:pPr>${commentStart}${commentEnd}${refs}</w:p>`;
-}
-
-function docxHyperlinkXml(block, relId, commentIndexes = []) {
-  const commentStart = commentIndexes.map((id) => `<w:commentRangeStart w:id="${id}"/>`).join("");
-  const commentEnd = commentIndexes.map((id) => `<w:commentRangeEnd w:id="${id}"/>`).join("");
-  const refs = commentIndexes.map((id) => `<w:r><w:commentReference w:id="${id}"/></w:r>`).join("");
-  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr>${commentStart}<w:hyperlink${docxHyperlinkAttributes(block, relId)}><w:r><w:rPr><w:color w:val="0000FF"/><w:u w:val="single"/></w:rPr><w:t>${xmlEscape(block.text)}</w:t></w:r></w:hyperlink>${commentEnd}${refs}</w:p>`;
-}
-
-function docxFieldXml(block, commentIndexes = []) {
-  const commentStart = commentIndexes.map((id) => `<w:commentRangeStart w:id="${id}"/>`).join("");
-  const commentEnd = commentIndexes.map((id) => `<w:commentRangeEnd w:id="${id}"/>`).join("");
-  const refs = commentIndexes.map((id) => `<w:r><w:commentReference w:id="${id}"/></w:r>`).join("");
-  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr>${commentStart}<w:fldSimple w:instr="${attrEscape(block.instruction)}"><w:r><w:t>${xmlEscape(block.display)}</w:t></w:r></w:fldSimple>${commentEnd}${refs}</w:p>`;
-}
-
-function docxCitationXml(block, commentIndexes = []) {
-  const label = block.metadata?.source ? `${block.text} (${block.metadata.source})` : block.text;
-  const commentStart = commentIndexes.map((id) => `<w:commentRangeStart w:id="${id}"/>`).join("");
-  const commentEnd = commentIndexes.map((id) => `<w:commentRangeEnd w:id="${id}"/>`).join("");
-  const refs = commentIndexes.map((id) => `<w:r><w:commentReference w:id="${id}"/></w:r>`).join("");
-  return `<w:p><w:pPr><w:pStyle w:val="${attrEscape(block.styleId || "Normal")}"/></w:pPr>${commentStart}<w:fldSimple w:instr="${docxCitationInstruction(block.metadata?.tag)}"><w:r><w:t>${xmlEscape(label)}</w:t></w:r></w:fldSimple>${commentEnd}${refs}</w:p>`;
-}
-
-function docxTableXml(block, commentIndexes = [], bookmarkPlan = { entries: [] }) {
-  const columns = Math.max(1, block.columns || 1);
-  const widthDxa = Number.isFinite(block.widthDxa) && block.widthDxa > 0 ? Math.round(block.widthDxa) : 9360;
-  const configuredWidths = Array.isArray(block.columnWidthsDxa) && block.columnWidthsDxa.length === columns && block.columnWidthsDxa.every((value) => Number.isFinite(value) && value > 0)
-    ? block.columnWidthsDxa.map(Math.round)
-    : documentTableDefaultColumnWidths(columns, widthDxa);
-  const columnWidths = configuredWidths.reduce((sum, value) => sum + value, 0) === widthDxa ? configuredWidths : documentTableDefaultColumnWidths(columns, widthDxa);
-  const margins = block.cellMarginsDxa || {};
-  const border = `<w:top w:val="single" w:sz="${Math.max(0, Math.round(block.borderSize ?? 4))}" w:space="0" w:color="${attrEscape(block.borderColor || "D9D9D9")}"/><w:left w:val="single" w:sz="${Math.max(0, Math.round(block.borderSize ?? 4))}" w:space="0" w:color="${attrEscape(block.borderColor || "D9D9D9")}"/><w:bottom w:val="single" w:sz="${Math.max(0, Math.round(block.borderSize ?? 4))}" w:space="0" w:color="${attrEscape(block.borderColor || "D9D9D9")}"/><w:right w:val="single" w:sz="${Math.max(0, Math.round(block.borderSize ?? 4))}" w:space="0" w:color="${attrEscape(block.borderColor || "D9D9D9")}"/><w:insideH w:val="single" w:sz="${Math.max(0, Math.round(block.borderSize ?? 4))}" w:space="0" w:color="${attrEscape(block.borderColor || "D9D9D9")}"/><w:insideV w:val="single" w:sz="${Math.max(0, Math.round(block.borderSize ?? 4))}" w:space="0" w:color="${attrEscape(block.borderColor || "D9D9D9")}"/>`;
-  const grid = columnWidths.map((width) => `<w:gridCol w:w="${width}"/>`).join("");
-  const rows = block.values.map((row, rowIndex) => `<w:tr>${Array.from({ length: columns }, (_, column) => {
-    const headerProperties = rowIndex === 0 ? `<w:shd w:val="clear" w:color="auto" w:fill="${attrEscape(block.headerFill || "F2F4F7")}"/>` : "";
-    const runProperties = rowIndex === 0 ? "<w:rPr><w:b/></w:rPr>" : "";
-    const commentStart = rowIndex === 0 && column === 0 ? commentIndexes.map((id) => `<w:commentRangeStart w:id="${id}"/>`).join("") : "";
-    const commentEnd = rowIndex === 0 && column === 0 ? commentIndexes.map((id) => `<w:commentRangeEnd w:id="${id}"/>`).join("") : "";
-    const commentRefs = rowIndex === 0 && column === 0 ? commentIndexes.map((id) => `<w:r><w:commentReference w:id="${id}"/></w:r>`).join("") : "";
-    const paragraph = `<w:p>${commentStart}<w:r>${runProperties}<w:t>${xmlEscape(row[column] ?? "")}</w:t></w:r>${commentEnd}${commentRefs}</w:p>`;
-    const bookmarkedParagraph = wrapDocxParagraphBookmarks(paragraph, docxBookmarkEntriesForTableCell(bookmarkPlan, block.id, rowIndex, column));
-    return `<w:tc><w:tcPr><w:tcW w:w="${columnWidths[column]}" w:type="dxa"/>${headerProperties}</w:tcPr>${bookmarkedParagraph}</w:tc>`;
-  }).join("")}</w:tr>`).join("");
-  return `<w:tbl><w:tblPr><w:tblStyle w:val="${attrEscape(block.styleId || "TableGrid")}"/><w:tblW w:w="${widthDxa}" w:type="dxa"/><w:tblInd w:w="${Math.max(0, Math.round(block.indentDxa ?? 120))}" w:type="dxa"/><w:tblBorders>${border}</w:tblBorders><w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="${Math.max(0, Math.round(margins.top ?? 80))}" w:type="dxa"/><w:start w:w="${Math.max(0, Math.round(margins.start ?? 120))}" w:type="dxa"/><w:bottom w:w="${Math.max(0, Math.round(margins.bottom ?? 80))}" w:type="dxa"/><w:end w:w="${Math.max(0, Math.round(margins.end ?? 120))}" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${grid}</w:tblGrid>${rows}</w:tbl>`;
-}
-
-function docxDocumentXml(document, relIds = {}, bookmarkPlan = planDocxBookmarks(document.bookmarks, document.blocks)) {
-  const commentIndex = new Map(document.comments.map((comment, index) => [comment, index]));
-  const sectionReferences = [...(relIds.headers || []), ...(relIds.footers || [])];
-  const referencesForSection = (sectionIndex) => sectionReferences.filter((reference) => reference.sectionIndex === sectionIndex);
-  let sectionIndex = 0;
-  const body = document.blocks.map((block) => {
-    const indexes = document.comments.filter((comment) => comment.targetId === block.id && !comment.parentId).map((comment) => commentIndex.get(comment));
-    let xml;
-    if (block.kind === "table") xml = docxTableXml(block, indexes, bookmarkPlan);
-    else if (block.kind === "hyperlink") xml = docxHyperlinkXml(block, relIds.hyperlinks?.get(block.id), indexes);
-    else if (block.kind === "field") xml = docxFieldXml(block, indexes);
-    else if (block.kind === "citation") xml = docxCitationXml(block, indexes);
-    else if (block.kind === "image") xml = docxImageXml(block, relIds.images?.get(block.id), indexes);
-    else if (block.kind === "section") {
-      xml = docxSectionXml(block, indexes, referencesForSection(sectionIndex), relIds.sectionPlan?.sections?.[sectionIndex]);
-      sectionIndex += 1;
-    }
-    else if (block.kind === "change") xml = docxChangeXml(block, indexes);
-    else xml = docxParagraphXml(block, indexes, relIds.numbering?.get(block.id), document.theme);
-    return block.kind === "table" ? xml : wrapDocxParagraphBookmarks(xml, docxBookmarkEntriesForBlock(bookmarkPlan, block.id));
-  }).join("");
-  const finalReferences = referencesForSection(sectionIndex);
-  const refs = finalReferences.map((reference) => `<w:${reference.kind}Reference w:type="${attrEscape(reference.referenceType)}" r:id="${attrEscape(reference.relId)}"/>`).join("");
-  const finalSection = docxSectionPrXml({ pageSize: {}, margins: {}, breakType: "" }, refs, { titlePage: Boolean(relIds.sectionPlan?.sections?.[sectionIndex]?.differentFirstPage) });
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${body}${finalSection}</w:body></w:document>`;
-}
-
-function docxCommentIds(part = "") {
-  return [...new Set([...String(part).matchAll(/<(?:[A-Za-z_][\w.-]*:)?(?:commentRangeStart|commentReference)\b[^>]*\/?\s*>/g)].map((match) => docxXmlAttribute(match[0], "id")).filter((id) => id !== undefined))];
-}
-
-function docxElementBlock(xml = "", localName = "") {
-  const escaped = String(localName).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${escaped}\\b[^>]*>[\\s\\S]*?<\\/(?:[A-Za-z_][\\w.-]*:)?${escaped}>`).exec(String(xml || ""))?.[0] || "";
-}
-
-function docxXmlAttribute(tag = "", localName = "") {
-  return Object.entries(ooxmlXmlAttributes(tag)).find(([key]) => key === localName || key.endsWith(`:${localName}`))?.[1];
-}
-
-function docxElementOpening(xml = "", localName = "") {
-  const escaped = String(localName).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${escaped}\\b[^>]*\\/?>`).exec(String(xml || ""))?.[0] || "";
-}
-
-function parseDocxStylesXml(xml = "", theme = {}) {
-  const styles = {};
-  for (const match of String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?style\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?style>/g)) {
-    const opening = match[0].slice(0, match[0].indexOf(">") + 1);
-    const body = match[2] || "";
-    const id = decodeXml(docxXmlAttribute(opening, "styleId") || "");
-    if (!id) continue;
-    const type = docxXmlAttribute(opening, "type") || "paragraph";
-    const name = decodeXml(docxXmlAttribute(docxElementOpening(body, "name"), "val") || id);
-    const basedOn = decodeXml(docxXmlAttribute(docxElementOpening(body, "basedOn"), "val") || "") || undefined;
-    const numberingProperties = parseDocxStyleNumberingPropertiesXml(match[0]);
-    const runProperties = parseDocxRunPropertiesXml(docxElementBlock(body, "rPr"), theme);
-    styles[id] = { id, name, type, ...(basedOn ? { basedOn } : {}), ...numberingProperties, ...runProperties };
-  }
-  return { styles, defaultRunStyle: parseDocxDefaultRunPropertiesXml(xml, theme) };
-}
-
-function docxChildVal(xml, tagName) {
-  const tag = docxElementOpening(xml, tagName);
-  return tag ? docxXmlAttribute(tag, "val") : undefined;
-}
-
-function parseDocxRuns(part = "", context = {}) {
-  const { theme = {}, styles, defaultRunStyle = {}, paragraphStyleId = "Normal" } = context;
-  const paragraphStyles = styles?.cascade(paragraphStyleId) || [];
-  return [...String(part || "").matchAll(/<w:r\b[\s\S]*?<\/w:r>/g)].map((match) => {
-    const runXml = match[0];
-    const text = decodeXml([...runXml.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join(""));
-    if (!text) return undefined;
-    const propertiesXml = docxElementBlock(runXml, "rPr");
-    const runStyleId = parseDocxRunStyleId(propertiesXml);
-    const characterStyles = runStyleId ? styles?.cascade(runStyleId) || [] : [];
-    const directStyle = parseDocxRunPropertiesXml(propertiesXml, theme);
-    const style = mergeDocxRunStyleCascade([defaultRunStyle, ...paragraphStyles, ...characterStyles, directStyle, runStyleId ? { runStyleId } : {}], theme);
-    return { text, style };
-  }).filter(Boolean);
-}
-
-function parseDocxParagraph(part, imageByRelId = new Map(), hyperlinkByRelId = new Map(), numberingById = new Map(), context = {}) {
-  const { theme = {} } = context;
-  const paragraphProperties = docxElementBlock(part, "pPr");
-  const styleId = decodeXml(docxXmlAttribute(docxElementOpening(paragraphProperties, "pStyle"), "val") || "Normal");
-  const commentIds = docxCommentIds(part);
-  const sectionXml = docxElementBlock(part, "sectPr");
-  if (sectionXml) {
-    const type = docxXmlAttribute(docxElementOpening(sectionXml, "type"), "val") || "nextPage";
-    const sizeTag = docxElementOpening(sectionXml, "pgSz");
-    const marginTag = docxElementOpening(sectionXml, "pgMar");
-    const orientation = docxXmlAttribute(sizeTag, "orient") === "landscape" ? "landscape" : "portrait";
-    const readAttr = (tag, name, fallback) => Number(docxXmlAttribute(tag, name) || fallback);
-    return { block: { kind: "section", breakType: type, orientation, pageSize: { widthTwips: readAttr(sizeTag, "w", orientation === "landscape" ? 15840 : 12240), heightTwips: readAttr(sizeTag, "h", orientation === "landscape" ? 12240 : 15840) }, margins: { top: readAttr(marginTag, "top", 1440), right: readAttr(marginTag, "right", 1440), bottom: readAttr(marginTag, "bottom", 1440), left: readAttr(marginTag, "left", 1440) }, styleId }, commentIds };
-  }
-  const imageRelId = /<a:blip[^>]*r:embed="([^"]+)"/.exec(part)?.[1];
-  if (imageRelId) {
-    const image = imageByRelId.get(imageRelId) || {};
-    const docPr = /<wp:docPr\b([^>]*)\/>/.exec(part)?.[1] || /<pic:cNvPr\b([^>]*)\/>/.exec(part)?.[1] || "";
-    const extent = /<wp:extent[^>]*cx="(\d+)"[^>]*cy="(\d+)"/.exec(part);
-    const name = decodeXml(/\bname="([^"]*)"/.exec(docPr)?.[1] || image.name || "");
-    const alt = decodeXml(/\bdescr="([^"]*)"/.exec(docPr)?.[1] || image.alt || name || "image");
-    return { block: { kind: "image", name, alt, dataUrl: image.dataUrl, uri: image.uri, widthPx: extent ? Math.round(Number(extent[1]) / 9525) : image.widthPx, heightPx: extent ? Math.round(Number(extent[2]) / 9525) : image.heightPx, styleId }, commentIds };
-  }
-  const changeMatch = /<w:(ins|del)\b([^>]*)>([\s\S]*?)<\/w:\1>/.exec(part);
-  if (changeMatch) {
-    const changeType = changeMatch[1] === "del" ? "delete" : "insert";
-    const attrs = changeMatch[2] || "";
-    const inner = changeMatch[3] || "";
-    const text = decodeXml([...inner.matchAll(/<w:(?:t|delText)[^>]*>([\s\S]*?)<\/w:(?:t|delText)>/g)].map((t) => t[1]).join(""));
-    const author = decodeXml(/w:author="([^"]*)"/.exec(attrs)?.[1] || "User");
-    const date = decodeXml(/w:date="([^"]*)"/.exec(attrs)?.[1] || "");
-    return { block: { kind: "change", changeType, text, styleId, author, date }, commentIds };
-  }
-  const hyperlinkMatch = /<(?:[A-Za-z_][\w.-]*:)?hyperlink\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?hyperlink>/.exec(part);
-  if (hyperlinkMatch) {
-    const hyperlink = parseDocxHyperlink(hyperlinkMatch[0], hyperlinkByRelId);
-    if (hyperlink.anchor || hyperlink.url) return { block: { kind: "hyperlink", ...hyperlink, styleId }, commentIds };
-  }
-  const simpleFieldMatch = /<w:fldSimple\b[^>]*>[\s\S]*?<\/w:fldSimple>/.exec(part);
-  if (simpleFieldMatch) {
-    const opening = /^<w:fldSimple\b[^>]*>/.exec(simpleFieldMatch[0])?.[0] || "";
-    const instruction = ooxmlXmlAttributes(opening)["w:instr"] || "";
-    const display = decodeXml([...simpleFieldMatch[0].matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((match) => match[1]).join(""));
-    const citationTag = parseDocxCitationInstruction(instruction);
-    if (citationTag) {
-      const source = context.bibliographyByTag?.get(citationTag);
-      const citationBookmark = parseDocxBookmarkMarkers(part).starts.find((bookmark) => bookmark.name.startsWith("OpenOfficeCitation_"));
-      return { block: { kind: "citation", text: display, metadata: { ...(source || {}), tag: citationTag, bookmark: citationBookmark?.name, bookmarkNativeId: citationBookmark?.nativeId }, styleId }, commentIds };
-    }
-    return { block: { kind: "field", instruction, display, styleId }, commentIds };
-  }
-  const complexInstruction = decodeXml([...part.matchAll(/<w:instrText[^>]*>([\s\S]*?)<\/w:instrText>/g)].map((match) => match[1]).join("")).trim();
-  if (complexInstruction && /<w:fldChar\b[^>]*w:fldCharType=["']begin["']/.test(part)) {
-    const display = decodeXml([...part.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((match) => match[1]).join(""));
-    const citationTag = parseDocxCitationInstruction(complexInstruction);
-    if (citationTag) {
-      const source = context.bibliographyByTag?.get(citationTag);
-      const citationBookmark = parseDocxBookmarkMarkers(part).starts.find((bookmark) => bookmark.name.startsWith("OpenOfficeCitation_"));
-      return { block: { kind: "citation", text: display, metadata: { ...(source || {}), tag: citationTag, bookmark: citationBookmark?.name, bookmarkNativeId: citationBookmark?.nativeId }, styleId }, commentIds };
-    }
-    return { block: { kind: "field", instruction: complexInstruction, display, styleId }, commentIds };
-  }
-  const citationBookmark = parseDocxBookmarkMarkers(part).starts.find((bookmark) => bookmark.name.startsWith("OpenOfficeCitation_"));
-  if (citationBookmark) {
-    const text = decodeXml([...part.matchAll(/<(?:[A-Za-z_][\w.-]*:)?t\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>/g)].map((match) => match[1]).join(""));
-    return { block: { kind: "citation", text, metadata: { bookmark: citationBookmark.name, bookmarkNativeId: citationBookmark.nativeId }, styleId }, commentIds };
-  }
-  const runs = parseDocxRuns(part, { ...context, paragraphStyleId: styleId });
-  const text = runs.length ? runs.map((run) => run.text).join("") : decodeXml([...part.matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join(""));
-  const numberingProperties = docxElementBlock(paragraphProperties, "numPr");
-  const directNumberingId = numberingProperties ? docxXmlAttribute(docxElementOpening(numberingProperties, "numId"), "val") : undefined;
-  const directLevel = numberingProperties ? docxXmlAttribute(docxElementOpening(numberingProperties, "ilvl"), "val") : undefined;
-  const resolvedNumbering = resolveDocxParagraphNumbering({ styleId, directNumberingId, directLevel, styles: context.styles, numberingById });
-  if (resolvedNumbering) {
-    const { numbering, numberingId, level } = resolvedNumbering;
-    const levelDefinition = numbering?.levels.get(level) || numbering?.levels.get(0);
-    const numberFormat = levelDefinition?.numberFormat || (String(numberingId) === "2" ? "decimal" : "bullet");
-    return { block: { kind: "listItem", text, styleId, level, listType: levelDefinition?.listType || (numberFormat === "bullet" ? "bullet" : "number"), numberFormat, start: levelDefinition?.start || 1, levelText: levelDefinition?.levelText || (numberFormat === "bullet" ? "•" : `%${level + 1}.`), pictureBullet: levelDefinition?.pictureBullet, numberingId: numbering?.numberingId ?? numberingId, abstractNumberingId: numbering?.abstractNumberingId, numberingStyleId: numbering?.numberingStyleId }, commentIds };
-  }
-  return { block: { kind: "paragraph", text, styleId, runs: runs.length ? runs : undefined }, commentIds };
-}
-
-function parseDocxTable(part) {
-  const values = [...part.matchAll(/<w:tr\b[\s\S]*?<\/w:tr>/g)].map((rowMatch) => [...rowMatch[0].matchAll(/<w:tc\b[\s\S]*?<\/w:tc>/g)].map((cellMatch) => decodeXml([...cellMatch[0].matchAll(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join(""))));
-  const readDxa = (tag, fallback) => Number(new RegExp(`<w:${tag}\\b[^>]*w:w="(\\d+)"`).exec(part)?.[1] ?? fallback);
-  const columns = Math.max(0, ...values.map((row) => row.length));
-  const columnWidthsDxa = [...part.matchAll(/<w:gridCol\b[^>]*w:w="(\d+)"[^>]*\/?\s*>/g)].map((match) => Number(match[1]));
-  const firstRow = /<w:tr[\s\S]*?<\/w:tr>/.exec(part)?.[0] || "";
-  return {
-    kind: "table",
-    styleId: decodeXml(/<w:tblStyle\b[^>]*w:val="([^"]+)"/.exec(part)?.[1] || "TableGrid"),
-    values,
-    rows: values.length,
-    columns,
-    widthDxa: readDxa("tblW", columnWidthsDxa.reduce((sum, value) => sum + value, 0) || 9360),
-    indentDxa: readDxa("tblInd", 0),
-    columnWidthsDxa: columnWidthsDxa.length === columns ? columnWidthsDxa : undefined,
-    cellMarginsDxa: {
-      top: readDxa("top", 80),
-      bottom: readDxa("bottom", 80),
-      start: readDxa("start", readDxa("left", 120)),
-      end: readDxa("end", readDxa("right", 120)),
-    },
-    borderColor: String(/<w:tblBorders>[\s\S]*?<w:(?:top|left|start)\b[^>]*w:color="([^"]+)"/.exec(part)?.[1] || "D9D9D9").toUpperCase(),
-    borderSize: Number(/<w:tblBorders>[\s\S]*?<w:(?:top|left|start)\b[^>]*w:sz="(\d+)"/.exec(part)?.[1] || 4),
-    headerFill: String(/<w:shd\b[^>]*w:fill="([^"]+)"/.exec(firstRow)?.[1] || "F2F4F7").toUpperCase(),
-  };
-}
-
-function parseHeaderFooterXml(xml) {
-  return [...String(xml || "").matchAll(/<w:p[\s\S]*?<\/w:p>/g)].map((match) => ({ text: decodeXml([...match[0].matchAll(/<w:t[^>]*>([\s\S]*?)<\/w:t>/g)].map((t) => t[1]).join("")) })).filter((item) => item.text.length > 0);
-}
-
-function docxHeaderFooterReferences(documentXml, relationships, declarations = parseDocxSectionDeclarations(documentXml)) {
-  const relationshipById = new Map(relationships.map((relationship) => [relationship.id, relationship]));
-  const references = [];
-  const seen = new Set();
-  declarations.forEach((declaration) => {
-    for (const reference of declaration.references) {
-      const { kind, referenceType, relationshipId } = reference;
-      const relationship = relationshipById.get(relationshipId);
-      if (!relationship || relationship.targetMode.toLowerCase() === "external" || !relationship.type.endsWith(`/${kind}`)) continue;
-      const partPath = ooxmlSafePartPath(ooxmlResolveRelationshipTarget("word/document.xml", relationship.target), "DOCX");
-      const key = `${declaration.sectionIndex}\u0000${kind}\u0000${referenceType}\u0000${relationshipId}\u0000${partPath}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      references.push({ kind, referenceType, relationshipId, partPath, sectionIndex: declaration.sectionIndex, differentFirstPage: declaration.differentFirstPage });
-    }
-  });
-  return references;
-}
-
 function ooxmlSafePartPath(partPath, family = "OOXML") {
   const raw = String(partPath || "").replaceAll("\\", "/").trim();
   if (!raw || raw.startsWith("/") || raw.includes("\0")) throw new Error(`Unsafe ${family} part path: ${partPath}`);
@@ -12794,212 +9787,13 @@ export class DocumentFile {
   }
 
   static async exportDocx(document, options = {}) {
-    if (resolveOfficeCodec(options, "DocumentFile.exportDocx") === "open-chestnut") {
-      const { exportDocxWithOpenChestnut } = await loadOpenChestnutCodec();
-      return exportDocxWithOpenChestnut(document, codecDelegateOptions(options));
-    }
-    const zip = new JSZip();
-    const commentPlan = planDocxComments(document.comments);
-    const bookmarkPlan = planDocxBookmarks(document.bookmarks, document.blocks);
-    const bibliographyPlan = planDocxBibliography(document.bibliographySources, document.bibliography);
-    const imageParts = collectDocxImageParts(document);
-    const numbering = collectDocxNumbering(document, { startMediaPartId: imageParts.length + 1 });
-    const allImageParts = [...imageParts, ...numbering.mediaParts];
-    const hasNumbering = numbering.definitions.length > 0;
-    const sectionPlan = planDocxHeaderFooterSections(document);
-    const headerParts = collectDocxHeaderFooterParts(document, "header", sectionPlan);
-    const footerParts = collectDocxHeaderFooterParts(document, "footer", sectionPlan);
-    const settingsXml = docxSettingsXml(document.settings);
-    const hasSettings = Boolean(settingsXml);
-    zip.file("[Content_Types].xml", docxContentTypes({ hasComments: commentPlan.entries.length > 0, hasCommentsExtended: commentPlan.entries.length > 0, headerParts, footerParts, hasNumbering, hasSettings, imageParts: allImageParts }));
-    zip.file("_rels/.rels", relsXml([{ id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument", target: "word/document.xml" }]));
-    const docRels = [
-      { id: "rId1", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles", target: "styles.xml" },
-      { id: "rId2", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme", target: "theme/theme1.xml" },
-    ];
-    const relIds = { numbering: numbering.numIdByBlock, sectionPlan };
-    if (hasNumbering) docRels.push({ id: `rId${docRels.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering", target: "numbering.xml" });
-    if (commentPlan.entries.length) {
-      docRels.push({ id: `rId${docRels.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments", target: "comments.xml" });
-      docRels.push({ id: `rId${docRels.length + 1}`, type: DOCX_COMMENTS_EXTENDED_RELATIONSHIP_TYPE, target: "commentsExtended.xml" });
-      docRels.push({ id: `rId${docRels.length + 1}`, type: DOCX_COMMENTS_IDS_RELATIONSHIP_TYPE, target: "commentsIds.xml" });
-      docRels.push({ id: `rId${docRels.length + 1}`, type: DOCX_COMMENTS_EXTENSIBLE_RELATIONSHIP_TYPE, target: "commentsExtensible.xml" });
-      docRels.push({ id: `rId${docRels.length + 1}`, type: DOCX_PEOPLE_RELATIONSHIP_TYPE, target: "people.xml" });
-    }
-    if (hasSettings) docRels.push({ id: `rId${docRels.length + 1}`, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings", target: "settings.xml" });
-    if (bibliographyPlan.entries.length) docRels.push({ id: `rId${docRels.length + 1}`, type: DOCX_BIBLIOGRAPHY_RELATIONSHIP_TYPE, target: `../${DOCX_BIBLIOGRAPHY_PATH}` });
-    relIds.headers = headerParts.map((part) => {
-      const relId = `rId${docRels.length + 1}`;
-      docRels.push({ id: relId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/header", target: part.target });
-      return { kind: "header", referenceType: part.referenceType, sectionIndex: part.sectionIndex, relId };
-    });
-    relIds.footers = footerParts.map((part) => {
-      const relId = `rId${docRels.length + 1}`;
-      docRels.push({ id: relId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer", target: part.target });
-      return { kind: "footer", referenceType: part.referenceType, sectionIndex: part.sectionIndex, relId };
-    });
-    relIds.hyperlinks = new Map();
-    for (const block of document.blocks.filter((item) => item.kind === "hyperlink" && !item.anchor)) {
-      const relId = `rId${docRels.length + 1}`;
-      relIds.hyperlinks.set(block.id, relId);
-      docRels.push({ id: relId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink", target: block.url, targetMode: "External" });
-    }
-    relIds.images = new Map();
-    for (const part of imageParts) {
-      relIds.images.set(part.image.id, part.relId);
-      docRels.push({ id: part.relId, type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image", target: `media/image${part.imagePartId}.${part.extension}` });
-    }
-    zip.file("word/_rels/document.xml.rels", relsXml(docRels));
-    zip.file("word/styles.xml", docxStylesXml(document, numbering));
-    zip.file("word/theme/theme1.xml", docxThemeXml(document.theme));
-    if (hasNumbering) {
-      zip.file("word/numbering.xml", docxNumberingXml(numbering));
-      if (numbering.relationships.length) zip.file("word/_rels/numbering.xml.rels", relsXml(numbering.relationships));
-    }
-    if (commentPlan.entries.length) {
-      zip.file("word/comments.xml", docxCommentsXml(commentPlan));
-      zip.file(DOCX_COMMENTS_EXTENDED_PATH, docxCommentsExtendedXml(commentPlan));
-      zip.file(DOCX_COMMENTS_IDS_PATH, docxCommentsIdsXml(commentPlan));
-      zip.file(DOCX_COMMENTS_EXTENSIBLE_PATH, docxCommentsExtensibleXml(commentPlan));
-      zip.file(DOCX_PEOPLE_PATH, docxPeopleXml(commentPlan));
-    }
-    if (settingsXml) zip.file("word/settings.xml", settingsXml);
-    if (bibliographyPlan.entries.length) zip.file(DOCX_BIBLIOGRAPHY_PATH, docxBibliographyXml(bibliographyPlan));
-    headerParts.forEach((part) => zip.file(part.partPath, docxHeaderFooterXml("header", part.blocks)));
-    footerParts.forEach((part) => zip.file(part.partPath, docxHeaderFooterXml("footer", part.blocks)));
-    imageParts.forEach((part) => zip.file(`word/media/image${part.imagePartId}.${part.extension}`, part.bytes));
-    numbering.mediaParts.forEach((part) => zip.file(part.outputPath, part.bytes));
-    zip.file("word/open-office-artifact.json", JSON.stringify(document.toProto(), null, 2));
-    zip.file("word/document.xml", docxDocumentXml(document, relIds, bookmarkPlan));
-    return new FileBlob(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: DOCX_MIME, metadata: { artifactKind: "document", codec: "javascript" } });
+    const { exportDocxWithOpenChestnut } = await import("./codecs/open-chestnut.mjs");
+    return exportDocxWithOpenChestnut(document, options);
   }
 
   static async importDocx(blobOrBuffer, options = {}) {
-    if (resolveOfficeCodec(options, "DocumentFile.importDocx") === "open-chestnut") {
-      const { importDocxWithOpenChestnut } = await loadOpenChestnutCodec();
-      return importDocxWithOpenChestnut(blobOrBuffer, codecDelegateOptions(options));
-    }
-    const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
-    const zip = await JSZip.loadAsync(bytes);
-    const metadataText = await zip.file("word/open-office-artifact.json")?.async("text");
-    if (metadataText && options.preferNative !== true) return DocumentModel.create(JSON.parse(metadataText));
-    const xml = await zip.file("word/document.xml")?.async("text");
-    const relsText = await zip.file("word/_rels/document.xml.rels")?.async("text");
-    const documentRelationships = parseRelsXml(relsText);
-    let bibliographyPlan = { entries: [], byTag: new Map(), selectedStyle: "", styleName: "", uri: "" };
-    for (const relationship of documentRelationships.filter((item) => item.type.endsWith("/customXml") && item.targetMode.toLowerCase() !== "external")) {
-      const partPath = ooxmlSafePartPath(ooxmlResolveRelationshipTarget("word/document.xml", relationship.target), "DOCX");
-      const partXml = await zip.file(partPath)?.async("text");
-      const parsed = parseDocxBibliography(partXml);
-      if (parsed.entries.length || /<(?:[A-Za-z_][\w.-]*:)?Sources\b/.test(String(partXml || ""))) { bibliographyPlan = parsed; break; }
-    }
-    const relatedPartPath = (kind, fallback) => {
-      const relationship = documentRelationships.find((item) => item.type.endsWith(`/${kind}`) && item.targetMode.toLowerCase() !== "external");
-      return relationship ? ooxmlSafePartPath(ooxmlResolveRelationshipTarget("word/document.xml", relationship.target), "DOCX") : fallback;
-    };
-    const stylesPartPath = relatedPartPath("styles", "word/styles.xml");
-    const numberingPartPath = relatedPartPath("numbering", "word/numbering.xml");
-    const settingsPartPath = relatedPartPath("settings", "word/settings.xml");
-    const themePartPath = relatedPartPath("theme", "word/theme/theme1.xml");
-    const themeText = await zip.file(themePartPath)?.async("text");
-    const theme = parseDocxThemeXml(themeText);
-    const stylesText = await zip.file(stylesPartPath)?.async("text");
-    const numberingText = await zip.file(numberingPartPath)?.async("text");
-    const numberingRelationships = parseRelsXml(await zip.file(ooxmlRelationshipPartPath(numberingPartPath, "DOCX"))?.async("text"));
-    const settingsText = await zip.file(settingsPartPath)?.async("text");
-    const importedStyleData = parseDocxStylesXml(stylesText, theme);
-    const importedStyles = importedStyleData.styles;
-    const defaultRunStyle = importedStyleData.defaultRunStyle;
-    const importedStyleCollection = new DocumentStyleCollection(importedStyles);
-    const numberingById = await parseDocxNumberingXml(numberingText, {
-      partPath: numberingPartPath,
-      relationships: numberingRelationships,
-      resolveTarget: (partPath, target) => ooxmlSafePartPath(ooxmlResolveRelationshipTarget(partPath, target), "DOCX"),
-      readPart: (target) => zip.file(target)?.async("uint8array"),
-      styles: importedStyles,
-    });
-    const importedSettings = parseDocxSettings(settingsText);
-    const sectionDeclarations = parseDocxSectionDeclarations(xml);
-    const commentsRelationship = documentRelationships.find((relationship) => relationship.type.endsWith("/comments") && relationship.targetMode.toLowerCase() !== "external");
-    const commentsPartPath = commentsRelationship ? ooxmlSafePartPath(ooxmlResolveRelationshipTarget("word/document.xml", commentsRelationship.target), "DOCX") : "word/comments.xml";
-    const commentsXml = await zip.file(commentsPartPath)?.async("text");
-    const commentsExtendedRelationship = documentRelationships.find((relationship) => relationship.type === DOCX_COMMENTS_EXTENDED_RELATIONSHIP_TYPE && relationship.targetMode.toLowerCase() !== "external");
-    const commentsExtendedPartPath = commentsExtendedRelationship ? ooxmlSafePartPath(ooxmlResolveRelationshipTarget("word/document.xml", commentsExtendedRelationship.target), "DOCX") : DOCX_COMMENTS_EXTENDED_PATH;
-    const commentsExtendedXml = await zip.file(commentsExtendedPartPath)?.async("text");
-    const relatedCommentExtensionXml = async (relationshipType, fallback) => {
-      const relationship = documentRelationships.find((item) => item.type === relationshipType && item.targetMode.toLowerCase() !== "external");
-      const partPath = relationship ? ooxmlSafePartPath(ooxmlResolveRelationshipTarget("word/document.xml", relationship.target), "DOCX") : fallback;
-      return zip.file(partPath)?.async("text");
-    };
-    const [commentsIdsXml, commentsExtensibleXml, peopleXml] = await Promise.all([
-      relatedCommentExtensionXml(DOCX_COMMENTS_IDS_RELATIONSHIP_TYPE, DOCX_COMMENTS_IDS_PATH),
-      relatedCommentExtensionXml(DOCX_COMMENTS_EXTENSIBLE_RELATIONSHIP_TYPE, DOCX_COMMENTS_EXTENSIBLE_PATH),
-      relatedCommentExtensionXml(DOCX_PEOPLE_RELATIONSHIP_TYPE, DOCX_PEOPLE_PATH),
-    ]);
-    const commentsById = parseDocxComments(commentsXml, commentsExtendedXml, commentsIdsXml, commentsExtensibleXml, peopleXml);
-    const imageByRelId = new Map();
-    for (const rel of documentRelationships.filter((item) => item.type.endsWith("/image"))) {
-      const target = rel.target.replace(/^\//, "");
-      const packagePath = target.startsWith("word/") ? target : path.posix.normalize(`word/${target}`).replace(/^\.\//, "");
-      const bytes = await zip.file(packagePath)?.async("uint8array");
-      const extension = /\.([A-Za-z0-9+]+)$/.exec(target)?.[1] || "bin";
-      imageByRelId.set(rel.id, bytes ? { dataUrl: `data:${imageContentTypeFromExtension(extension)};base64,${Buffer.from(bytes).toString("base64")}` } : { uri: rel.target });
-    }
-    const hyperlinkByRelId = new Map(documentRelationships.filter((relationship) => relationship.type.endsWith("/hyperlink") && relationship.targetMode.toLowerCase() === "external").map((relationship) => [relationship.id, relationship]));
-    const blocks = [];
-    const pendingComments = [];
-    const pendingBookmarkStarts = new Map();
-    const pendingBookmarkEnds = new Map();
-    for (const match of String(xml || "").matchAll(/<w:tbl[\s\S]*?<\/w:tbl>|<w:p[\s\S]*?<\/w:p>/g)) {
-      const part = match[0];
-      if (part.startsWith("<w:tbl")) {
-        blocks.push(parseDocxTable(part));
-        const markers = parseDocxTableBookmarkMarkers(part);
-        for (const start of markers.starts) if (!pendingBookmarkStarts.has(start.nativeId)) pendingBookmarkStarts.set(start.nativeId, { ...start, blockIndex: blocks.length - 1 });
-        for (const end of markers.ends) if (!pendingBookmarkEnds.has(end.nativeId)) pendingBookmarkEnds.set(end.nativeId, { ...end, blockIndex: blocks.length - 1 });
-      } else {
-        blocks.push(parseDocxParagraph(part, imageByRelId, hyperlinkByRelId, numberingById, { theme, styles: importedStyleCollection, defaultRunStyle, bibliographyByTag: bibliographyPlan.byTag }).block);
-        const markers = parseDocxBookmarkMarkers(part);
-        for (const start of markers.starts) if (!pendingBookmarkStarts.has(start.nativeId)) pendingBookmarkStarts.set(start.nativeId, { ...start, blockIndex: blocks.length - 1 });
-        for (const end of markers.ends) if (!pendingBookmarkEnds.has(end.nativeId)) pendingBookmarkEnds.set(end.nativeId, { ...end, blockIndex: blocks.length - 1 });
-      }
-      for (const commentId of docxCommentIds(part)) pendingComments.push({ blockIndex: blocks.length - 1, commentId });
-    }
-    const document = DocumentModel.create({ theme, defaultRunStyle, settings: importedSettings, bibliography: { selectedStyle: bibliographyPlan.selectedStyle, styleName: bibliographyPlan.styleName, uri: bibliographyPlan.uri }, bibliographySources: bibliographyPlan.entries, sectionSettings: sectionDeclarations, styles: importedStyles, blocks: blocks.length ? blocks : [{ kind: "paragraph", text: "" }] });
-    for (const [nativeId, start] of pendingBookmarkStarts) {
-      const end = pendingBookmarkEnds.get(nativeId) || start;
-      const startBlock = document.blocks[start.blockIndex];
-      const endBlock = document.blocks[end.blockIndex];
-      const target = start.row === undefined ? startBlock : startBlock?.kind === "table" ? startBlock.getCell(start.row, start.column) : undefined;
-      const endTarget = end.row === undefined ? endBlock : endBlock?.kind === "table" ? endBlock.getCell(end.row, end.column) : undefined;
-      if (target && endTarget && start.name) document.addBookmark(target, start.name, { id: `docx-bookmark-${nativeId}`, nativeId, endTarget });
-    }
-    for (const reference of docxHeaderFooterReferences(xml, documentRelationships, sectionDeclarations)) {
-      const partXml = await zip.file(reference.partPath)?.async("text");
-      for (const block of parseHeaderFooterXml(partXml)) {
-        const variantActive = reference.referenceType === "first" ? reference.differentFirstPage : reference.referenceType === "even" ? importedSettings.evenAndOddHeaders : true;
-        const config = { ...block, referenceType: reference.referenceType, variantActive, relationshipId: reference.relationshipId, partPath: reference.partPath, sectionIndex: reference.sectionIndex, _restore: true };
-        if (reference.kind === "header") document.addHeader(block.text, config);
-        else document.addFooter(block.text, config);
-      }
-    }
-    const targetByCommentId = new Map(pendingComments.map((comment) => [comment.commentId, document.blocks[comment.blockIndex]?.id]));
-    const importedByParaId = new Map();
-    const remainingComments = new Map(commentsById);
-    let imported = true;
-    while (remainingComments.size && imported) {
-      imported = false;
-      for (const [commentId, nativeComment] of remainingComments) {
-        const parent = nativeComment.parentParaId ? importedByParaId.get(nativeComment.parentParaId) : undefined;
-        const targetId = parent?.targetId || targetByCommentId.get(commentId);
-        if (!targetId || (nativeComment.parentParaId && !parent)) continue;
-        const comment = document.addComment(targetId, nativeComment.text, { ...nativeComment, parentId: parent?.id });
-        if (nativeComment.paraId) importedByParaId.set(nativeComment.paraId, comment);
-        remainingComments.delete(commentId);
-        imported = true;
-      }
-    }
-    return document;
+    const { importDocxWithOpenChestnut } = await import("./codecs/open-chestnut.mjs");
+    return importDocxWithOpenChestnut(blobOrBuffer, options);
   }
 }
 

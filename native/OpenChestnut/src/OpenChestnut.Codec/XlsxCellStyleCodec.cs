@@ -133,6 +133,93 @@ internal sealed class XlsxCellStyleCodec
         }
     }
 
+    internal bool TryReadDifferentialStyle(uint differentialFormatId, out CellStyleArtifact? artifact)
+    {
+        artifact = null;
+        if (differentialFormatId >= _differentialFormats.Count) return false;
+        try
+        {
+            var differential = _differentialFormats[checked((int)differentialFormatId)];
+            if (!HasOnlyAttributes(differential) || differential.ChildElements.Any(item => item is not Font and not Fill and not Alignment and not Border and not Protection) ||
+                differential.Elements<Font>().Skip(1).Any() || differential.Elements<Fill>().Skip(1).Any() ||
+                differential.Elements<Alignment>().Skip(1).Any() || differential.Elements<Border>().Skip(1).Any() ||
+                differential.Elements<Protection>().Skip(1).Any()) return false;
+
+            var result = new CellStyleArtifact();
+            if (differential.GetFirstChild<Font>() is { } font)
+            {
+                if (!TryReadDifferentialFont(font, out var value) || value is null) return false;
+                result.Font = value;
+            }
+            if (differential.GetFirstChild<Fill>() is { } fill)
+            {
+                if (!IsBoundedDifferentialFill(fill) || ReadFill(fill) is not { } value) return false;
+                result.Fill = value;
+            }
+            if (differential.GetFirstChild<Alignment>() is { } alignment)
+            {
+                if (!IsBoundedDifferentialAlignment(alignment) || ReadAlignment(alignment) is not { } value) return false;
+                result.Alignment = value;
+            }
+            if (differential.GetFirstChild<Border>() is { } border)
+            {
+                if (!IsBoundedDifferentialBorder(border) || ReadBorder(border) is not { } value) return false;
+                result.Border = value;
+            }
+            if (differential.GetFirstChild<Protection>() is { } protection)
+            {
+                if (!IsBoundedDifferentialProtection(protection) || ReadProtection(protection) is not { } value) return false;
+                result.Protection = value;
+            }
+            Validate(result, $"dxf {differentialFormatId}");
+            if (!HasStyle(result)) return false;
+            artifact = result;
+            return true;
+        }
+        catch (CodecException)
+        {
+            artifact = null;
+            return false;
+        }
+    }
+
+    internal uint FindOrCreateDifferentialStyle(CellStyleArtifact source, string location)
+    {
+        Validate(source, location);
+        EnsureWritableStylesheet();
+        var differential = new DifferentialFormat();
+        if (source.Font is not null) differential.Append(ApplyFont(new Font(), source.Font));
+        if (source.Fill is not null) differential.Append(ApplyFill(new Fill(), source.Fill));
+        if (source.Alignment is not null) differential.Append(ApplyAlignment(new Alignment(), source.Alignment));
+        if (source.Border is not null) differential.Append(ApplyBorder(new Border(), source.Border));
+        if (source.Protection is not null) differential.Append(ApplyProtection(new Protection(), source.Protection));
+        var key = differential.OuterXml;
+        if (_differentialFormatIds.TryGetValue(key, out var existing)) return existing;
+        var collection = _stylesheet!.DifferentialFormats;
+        if (collection is null)
+        {
+            collection = new DifferentialFormats();
+            var before = _stylesheet.ChildElements.FirstOrDefault(item => item.LocalName is "tableStyles" or "colors" or "extLst");
+            if (before is null) _stylesheet.Append(collection);
+            else _stylesheet.InsertBefore(collection, before);
+        }
+        collection.Append(differential);
+        _differentialFormats.Add(differential);
+        collection.Count = checked((uint)_differentialFormats.Count);
+        var id = checked((uint)_differentialFormats.Count - 1);
+        _differentialFormatIds[key] = id;
+        _dirty = true;
+        return id;
+    }
+
+    internal static SpreadsheetColor? ReadConditionalColor(DocumentFormat.OpenXml.Spreadsheet.Color color) => ReadColor(color);
+
+    internal static DocumentFormat.OpenXml.Spreadsheet.Color WriteConditionalColor(SpreadsheetColor source, string location)
+    {
+        ValidateColor(source, location, "conditional format");
+        return ApplyColor(new DocumentFormat.OpenXml.Spreadsheet.Color(), source);
+    }
+
     internal uint FindOrCreateTableColor(SpreadsheetTableColorArtifact source, string location)
     {
         ValidateTableColor(source, location);
@@ -348,6 +435,73 @@ internal sealed class XlsxCellStyleCodec
         }
         target.Color = ReadColor(font.GetFirstChild<DocumentFormat.OpenXml.Spreadsheet.Color>());
         return target;
+    }
+
+    private static bool TryReadDifferentialFont(Font font, out SpreadsheetFontStyle? artifact)
+    {
+        artifact = null;
+        if (!HasOnlyAttributes(font) || font.ChildElements.Any(item => item is not Bold and not Italic and not Strike and not Underline and not FontSize and not FontName and not DocumentFormat.OpenXml.Spreadsheet.Color) ||
+            font.Elements<Bold>().Skip(1).Any() || font.Elements<Italic>().Skip(1).Any() || font.Elements<Strike>().Skip(1).Any() ||
+            font.Elements<Underline>().Skip(1).Any() || font.Elements<FontSize>().Skip(1).Any() || font.Elements<FontName>().Skip(1).Any() ||
+            font.Elements<DocumentFormat.OpenXml.Spreadsheet.Color>().Skip(1).Any()) return false;
+        if (font.ChildElements.Any(item => item switch
+            {
+                Bold or Italic or Strike or Underline or FontSize or FontName => item.HasChildren || !HasOnlyAttributes(item, "val"),
+                DocumentFormat.OpenXml.Spreadsheet.Color color => !IsBoundedDifferentialColor(color),
+                _ => true,
+            })) return false;
+        var target = new SpreadsheetFontStyle();
+        if (font.GetFirstChild<Bold>() is { } bold) target.Bold = ElementBoolean(bold);
+        if (font.GetFirstChild<Italic>() is { } italic) target.Italic = ElementBoolean(italic);
+        if (font.GetFirstChild<Strike>() is { } strike) target.Strike = ElementBoolean(strike);
+        if (font.GetFirstChild<Underline>() is { } underline)
+        {
+            var underlineText = underline.Val is { } underlineValue ? (string?)underlineValue : null;
+            target.Underline = underlineText ?? "single";
+        }
+        if (font.GetFirstChild<FontSize>()?.Val?.HasValue == true) target.SizePoints = font.FontSize!.Val!.Value;
+        if (font.GetFirstChild<FontName>()?.Val?.HasValue == true) target.Name = font.FontName!.Val!.Value!;
+        target.Color = ReadColor(font.GetFirstChild<DocumentFormat.OpenXml.Spreadsheet.Color>());
+        artifact = target.HasBold || target.HasItalic || target.HasStrike || target.HasUnderline || target.HasSizePoints || target.HasName || target.Color is not null ? target : null;
+        return true;
+    }
+
+    private static bool IsBoundedDifferentialFill(Fill fill)
+    {
+        if (!HasOnlyAttributes(fill) || fill.ChildElements.Count != 1 || fill.PatternFill is not { } pattern ||
+            !HasOnlyAttributes(pattern, "patternType") || pattern.ChildElements.Any(item => item is not ForegroundColor and not BackgroundColor) ||
+            pattern.Elements<ForegroundColor>().Skip(1).Any() || pattern.Elements<BackgroundColor>().Skip(1).Any()) return false;
+        return pattern.ChildElements.All(item => item is ColorType color && IsBoundedDifferentialColor(color));
+    }
+
+    private static bool IsBoundedDifferentialAlignment(Alignment alignment) =>
+        !alignment.HasChildren && HasOnlyAttributes(alignment, "horizontal", "vertical", "wrapText", "textRotation", "indent", "shrinkToFit", "readingOrder");
+
+    private static bool IsBoundedDifferentialBorder(Border border)
+    {
+        if (!HasOnlyAttributes(border, "diagonalUp", "diagonalDown", "outline")) return false;
+        var allowed = new HashSet<string>(StringComparer.Ordinal) { "left", "right", "top", "bottom", "diagonal", "start", "end", "horizontal", "vertical" };
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var edge in border.ChildElements)
+        {
+            if (edge is not BorderPropertiesType || !allowed.Contains(edge.LocalName) || !names.Add(edge.LocalName) || !HasOnlyAttributes(edge, "style") ||
+                edge.ChildElements.Any(item => item is not DocumentFormat.OpenXml.Spreadsheet.Color) ||
+                edge.Elements<DocumentFormat.OpenXml.Spreadsheet.Color>().Skip(1).Any() ||
+                edge.GetFirstChild<DocumentFormat.OpenXml.Spreadsheet.Color>() is { } color && !IsBoundedDifferentialColor(color)) return false;
+        }
+        return true;
+    }
+
+    private static bool IsBoundedDifferentialProtection(Protection protection) =>
+        !protection.HasChildren && HasOnlyAttributes(protection, "locked", "hidden");
+
+    private static bool IsBoundedDifferentialColor(ColorType color) =>
+        !color.HasChildren && HasOnlyAttributes(color, "rgb", "theme", "indexed", "auto", "tint");
+
+    private static bool HasOnlyAttributes(OpenXmlElement element, params string[] names)
+    {
+        var allowed = new HashSet<string>(names, StringComparer.Ordinal);
+        return element.GetAttributes().All(attribute => allowed.Contains(attribute.LocalName));
     }
 
     private static SpreadsheetFillStyle? ReadFill(Fill fill)

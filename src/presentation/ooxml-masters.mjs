@@ -1,4 +1,3 @@
-import { attributes, attrEscape } from "../ooxml/source-reference-xml.mjs";
 import { resolveColorToken } from "../shared/colors.mjs";
 
 const SCHEME_COLORS = new Set(["dk1", "lt1", "dk2", "lt2", "tx1", "bg1", "tx2", "bg2", "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink", "folHlink"]);
@@ -12,14 +11,6 @@ function colorValue(value) {
   return full.toUpperCase();
 }
 
-function fillXml(fill) {
-  return SCHEME_COLORS.has(fill) ? `<a:schemeClr val="${attrEscape(fill)}"/>` : `<a:srgbClr val="${colorValue(fill)}"/>`;
-}
-
-export function presentationColorXml(value, fallback = "#0f172a") {
-  const fill = String(value || fallback).trim();
-  return `<a:solidFill>${fillXml(fill)}</a:solidFill>`;
-}
 
 export function normalizePresentationBackground(value, fallback) {
   if (value == null) return fallback == null ? undefined : normalizePresentationBackground(fallback);
@@ -35,55 +26,6 @@ export function normalizePresentationBackground(value, fallback) {
   return { fill, mode, ...(index == null ? {} : { index }) };
 }
 
-export function presentationBackgroundXml(background) {
-  if (!background) return "";
-  const normalized = normalizePresentationBackground(background);
-  return normalized.mode === "reference"
-    ? `<p:bg><p:bgRef idx="${normalized.index}">${fillXml(normalized.fill)}</p:bgRef></p:bg>`
-    : `<p:bg><p:bgPr><a:solidFill>${fillXml(normalized.fill)}</a:solidFill><a:effectLst/></p:bgPr></p:bg>`;
-}
-
-function elementBlock(xml, localName) {
-  return new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${localName}\\b[^>]*>[\\s\\S]*?<\\/(?:[A-Za-z_][\\w.-]*:)?${localName}>`).exec(String(xml || ""))?.[0] || "";
-}
-
-function elementOpening(xml, localName) {
-  return new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${localName}\\b[^>]*\\/?>`).exec(String(xml || ""))?.[0] || "";
-}
-
-function parsedFill(xml) {
-  const scheme = attributes(elementOpening(xml, "schemeClr")).val;
-  if (scheme) return scheme;
-  const rgb = attributes(elementOpening(xml, "srgbClr")).val;
-  return rgb ? `#${String(rgb).toLowerCase()}` : undefined;
-}
-
-export function parsePresentationBackgroundXml(xml = "") {
-  const block = elementBlock(xml, "bg");
-  if (!block) return undefined;
-  const reference = elementOpening(block, "bgRef");
-  const fill = parsedFill(block);
-  if (!fill) return undefined;
-  if (reference) return normalizePresentationBackground({ fill, mode: "reference", index: Number(attributes(reference).idx || 1001) });
-  return normalizePresentationBackground({ fill, mode: "solid" });
-}
-
-export function parsePresentationPlaceholderStyleXml(xml = "") {
-  const runBlock = elementBlock(xml, "rPr") || elementBlock(xml, "defRPr");
-  const run = attributes(elementOpening(runBlock || xml, runBlock ? (/defRPr/.test(runBlock) ? "defRPr" : "rPr") : "rPr"));
-  const paragraph = attributes(elementOpening(xml, "pPr"));
-  const fill = parsedFill(runBlock);
-  const fontFamily = attributes(elementOpening(runBlock, "latin")).typeface;
-  const alignment = { l: "left", ctr: "center", r: "right", just: "justify" }[paragraph.algn];
-  return {
-    ...(run.sz && Number.isFinite(Number(run.sz)) ? { fontSize: Number(run.sz) / 75 } : {}),
-    ...(run.b != null ? { bold: ["1", "true", "on"].includes(String(run.b).toLowerCase()) } : {}),
-    ...(run.i != null ? { italic: ["1", "true", "on"].includes(String(run.i).toLowerCase()) } : {}),
-    ...(fill ? { color: fill } : {}),
-    ...(fontFamily ? { fontFamily } : {}),
-    ...(alignment ? { alignment } : {}),
-  };
-}
 
 function placeholderKey(placeholder) {
   return `${placeholder.type || "body"}:${Number(placeholder.idx ?? 0)}`;

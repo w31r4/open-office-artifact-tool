@@ -225,10 +225,6 @@ function parsedPivotFormula(formula, fields) {
   return { tokens, ast };
 }
 
-export function pivotFormulaToOoxml(formula, fields) {
-  return renderPivotFormula(parsedPivotFormula(formula, fields).tokens);
-}
-
 export function normalizeCalculatedFields(value, sourceFields, allowUnsupported = false, options = {}) {
   if (value == null) return [];
   if (!Array.isArray(value)) throw new TypeError("PivotTable calculatedFields must be an array.");

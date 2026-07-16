@@ -15,7 +15,7 @@ internal sealed record XlsxExportResult(byte[] File, IReadOnlyList<Diagnostic> D
 
 internal static class XlsxCodec
 {
-    internal static XlsxExportResult Export(ArtifactEnvelope envelope, EffectiveCodecLimits limits, bool allowLossy)
+    internal static XlsxExportResult Export(ArtifactEnvelope envelope, EffectiveCodecLimits limits)
     {
         if (envelope.ProtocolVersion != CodecProtocol.ProtocolVersion)
             throw new CodecException("unsupported_artifact_version", $"Artifact protocol version {envelope.ProtocolVersion} is unsupported.");
@@ -26,12 +26,10 @@ internal static class XlsxCodec
         var opaqueCount = (envelope.OpaqueOpc?.Parts.Count ?? 0) + (envelope.OpaqueOpc?.PackageRelationships.Count ?? 0);
         if (envelope.OpaqueOpc?.SourcePackage is { Data.IsEmpty: false })
             return ExportPreservingSource(envelope, limits, opaqueCount);
-        if (opaqueCount > 0 && !allowLossy)
-            throw new CodecException("opaque_content_requires_preservation", "Workbook contains opaque OPC parts or relationships but its validated source package snapshot is unavailable; pass allow_lossy only when discarding them is intentional.");
+        if (opaqueCount > 0)
+            throw new CodecException("opaque_content_requires_preservation", "Workbook contains opaque OPC parts or relationships but its validated source package snapshot is unavailable.");
 
         var diagnostics = new List<Diagnostic>();
-        if (opaqueCount > 0)
-            diagnostics.Add(CodecProtocol.Warning("opaque_content_discarded", $"Discarded {opaqueCount} opaque OPC parts or relationships under explicit allow_lossy policy."));
 
         using var stream = new MemoryStream();
         var imageAssets = new XlsxImageAssetCatalog(envelope.Assets, limits);
@@ -46,6 +44,7 @@ internal static class XlsxCodec
             var theme = new XlsxThemeCodec(workbookPart);
             theme.Apply(envelope.Workbook.Theme, sourceBound: false);
             var styles = new XlsxCellStyleCodec(workbookPart);
+            var worksheetFeatures = new XlsxWorksheetFeatureCodec(styles);
             var connections = new XlsxConnectionCodec(workbookPart);
             connections.Apply(envelope.Workbook.Connections, sourceBound: false);
             var calculation = new XlsxCalculationCodec(workbookPart);
@@ -55,12 +54,14 @@ internal static class XlsxCodec
             var drawings = new XlsxDrawingCodec(imageAssets);
             var charts = new XlsxChartCodec();
             var nextTableId = 1U;
+            var worksheetBindings = new List<(WorksheetPart Part, WorksheetArtifact Artifact)>();
 
             for (var index = 0; index < envelope.Workbook.Worksheets.Count; index++)
             {
                 var source = envelope.Workbook.Worksheets[index];
                 var worksheetPart = workbookPart.AddNewPart<WorksheetPart>();
                 worksheetPart.Worksheet = BuildWorksheet(source, styles, dynamicArrays);
+                worksheetFeatures.ApplyRules(worksheetPart.Worksheet, source, sourceBound: false);
                 var tables = new XlsxTableCodec(worksheetPart, workbookPart, styles, connections);
                 tables.Apply(source.Tables, sourceBound: false, ref nextTableId);
                 tables.Save();
@@ -68,7 +69,9 @@ internal static class XlsxCodec
                 charts.Apply(worksheetPart, source.Id, source.Charts, sourceBound: false);
                 worksheetPart.Worksheet.Save();
                 sheets.Append(XlsxWorksheetMetadataCodec.Create(source, checked((uint)index), workbookPart.GetIdOfPart(worksheetPart)));
+                worksheetBindings.Add((worksheetPart, source));
             }
+            worksheetFeatures.ApplyThreadedComments(workbookPart, worksheetBindings, sourceBound: false);
             var workbookView = new XlsxWorkbookViewCodec(workbookPart, envelope.Workbook.Worksheets);
             workbookView.Apply(envelope.Workbook.View, envelope.Workbook.AdditionalViews, sourceBound: false, envelope.Workbook.Worksheets);
             definedNames.Apply(envelope.Workbook.DefinedNames, sourceBound: false, sheetNames);
@@ -106,9 +109,10 @@ internal static class XlsxCodec
         var diagnostics = new List<Diagnostic>();
         var opaqueCount = opaque.Parts.Count + opaque.PackageRelationships.Count;
         if (opaqueCount > 0)
-            diagnostics.Add(CodecProtocol.Warning("opaque_content_retained", $"Retained {opaqueCount} opaque or residual OPC parts or relationships with a hash-bound source package snapshot for loss-aware export.", opaque.Parts.FirstOrDefault()?.Path ?? opaque.PackageRelationships.FirstOrDefault()?.SourcePath));
+            diagnostics.Add(CodecProtocol.Warning("opaque_content_retained", $"Retained {opaqueCount} opaque or residual OPC parts or relationships for source-bound, fail-closed export from the validated package snapshot.", opaque.Parts.FirstOrDefault()?.Path ?? opaque.PackageRelationships.FirstOrDefault()?.SourcePath));
         var sharedStrings = ReadSharedStrings(workbookPart.SharedStringTablePart);
         var styles = new XlsxCellStyleCodec(workbookPart);
+        var worksheetFeatures = new XlsxWorksheetFeatureCodec(styles);
         var sheets = workbookRoot.Sheets?.Elements<Sheet>().ToArray() ?? [];
         if ((uint)sheets.Length > limits.MaxSheets)
             throw new CodecException("sheet_budget_exceeded", $"XLSX workbook has {sheets.Length} sheets and exceeds max_sheets ({limits.MaxSheets}).");
@@ -119,19 +123,23 @@ internal static class XlsxCodec
         if (calculation.Read() is { } importedCalculation) workbook.Calculation = importedCalculation;
 
         ulong cellCount = 0;
+        var worksheetBindings = new List<(WorksheetPart Part, WorksheetArtifact Artifact)>();
         for (var index = 0; index < sheets.Length; index++)
         {
             var sheet = sheets[index];
             if (sheet.Id?.Value is not { Length: > 0 } relationshipId || workbookPart.GetPartById(relationshipId) is not WorksheetPart worksheetPart)
                 throw new CodecException("missing_worksheet_part", $"Worksheet {sheet.Name?.Value ?? index.ToString(CultureInfo.InvariantCulture)} has no readable Worksheet part.");
             var target = ReadWorksheet(worksheetPart, sheet.Name?.Value ?? $"Sheet{index + 1}", index, sharedStrings, styles, dynamicArrays, ref cellCount, limits);
+            worksheetFeatures.ReadRules(worksheetPart.Worksheet!, target);
             worksheetMetadata.ReadInto(target, index);
             var tables = new XlsxTableCodec(worksheetPart, workbookPart, styles, connections);
             target.Tables.Add(tables.Read());
             target.Images.Add(drawings.Read(worksheetPart, target.Id));
             target.Charts.Add(new XlsxChartCodec().Read(worksheetPart, target.Id));
             workbook.Worksheets.Add(target);
+            worksheetBindings.Add((worksheetPart, target));
         }
+        worksheetFeatures.ReadThreadedComments(workbookPart, worksheetBindings);
         var workbookView = new XlsxWorkbookViewCodec(workbookPart, workbook.Worksheets);
         var importedViews = workbookView.Read();
         if (importedViews.Length > 0)
@@ -163,6 +171,7 @@ internal static class XlsxCodec
         var sourceBytes = PackageGuards.ValidateSourcePackage(envelope.OpaqueOpc, envelope.Source, limits, OpcPackageProfile.Xlsx);
         var imageAssets = new XlsxImageAssetCatalog(envelope.Assets, limits);
         var ownsTheme = false;
+        var threadedRelationshipsDirty = false;
         string? themePartPath = null;
         var dirtyModeledPartPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         using var stream = new MemoryStream();
@@ -192,11 +201,13 @@ internal static class XlsxCodec
             var theme = new XlsxThemeCodec(workbookPart);
             theme.Apply(envelope.Workbook.Theme, sourceBound: true);
             var styles = new XlsxCellStyleCodec(workbookPart);
+            var worksheetFeatures = new XlsxWorksheetFeatureCodec(styles);
             var connections = new XlsxConnectionCodec(workbookPart);
             connections.Apply(envelope.Workbook.Connections, sourceBound: true);
             var drawings = new XlsxDrawingCodec(imageAssets);
             var charts = new XlsxChartCodec();
             var nextTableId = 1U;
+            var worksheetBindings = new List<(WorksheetPart Part, WorksheetArtifact Artifact)>();
             for (var index = 0; index < sheets.Length; index++)
             {
                 var sheet = sheets[index];
@@ -204,6 +215,7 @@ internal static class XlsxCodec
                 if (sheet.Id?.Value is not { Length: > 0 } relationshipId || workbookPart.GetPartById(relationshipId) is not WorksheetPart worksheetPart)
                     throw new CodecException("missing_worksheet_part", $"Source worksheet {sheet.Name?.Value ?? index.ToString(CultureInfo.InvariantCulture)} has no readable Worksheet part.");
                 PatchWorksheet(worksheetPart, source, sharedStrings, styles, dynamicArrays);
+                worksheetFeatures.ApplyRules(worksheetPart.Worksheet!, source, sourceBound: true);
                 var tables = new XlsxTableCodec(worksheetPart, workbookPart, styles, connections);
                 tables.Apply(source.Tables, sourceBound: true, ref nextTableId);
                 tables.Save();
@@ -214,7 +226,11 @@ internal static class XlsxCodec
                 charts.Apply(worksheetPart, source.Id, source.Charts, sourceBound: true, originalDrawingXmlSha256);
                 dirtyModeledPartPaths.UnionWith(charts.DirtyPartPaths);
                 worksheetPart.Worksheet!.Save();
+                worksheetBindings.Add((worksheetPart, source));
             }
+            worksheetFeatures.ApplyThreadedComments(workbookPart, worksheetBindings, sourceBound: true);
+            dirtyModeledPartPaths.UnionWith(worksheetFeatures.DirtyPartPaths);
+            threadedRelationshipsDirty = worksheetFeatures.ThreadedRelationshipGraphDirty;
             definedNames.Apply(envelope.Workbook.DefinedNames, sourceBound: true, targetSheetNames);
             calculation.Apply(envelope.Workbook.Calculation, sourceBound: true);
             connections.Save();
@@ -235,7 +251,9 @@ internal static class XlsxCodec
             envelope.OpaqueOpc,
             outputOpaque,
             "opaque_content_not_preserved",
-            ignoreRelationship: ownsTheme ? XlsxThemeCodec.IsThemeRelationship : null,
+            ignoreRelationship: ownsTheme || threadedRelationshipsDirty
+                ? item => ownsTheme && XlsxThemeCodec.IsThemeRelationship(item) || threadedRelationshipsDirty && XlsxWorksheetFeatureCodec.IsThreadedRelationship(item)
+                : null,
             ignorePart: ownsTheme || dirtyModeledPartPaths.Count > 0
                 ? item => (ownsTheme && themePartPath is not null && item.Path.Equals(themePartPath, StringComparison.OrdinalIgnoreCase)) || dirtyModeledPartPaths.Contains(item.Path)
                 : null);
@@ -743,6 +761,7 @@ internal static class XlsxCodec
                 XlsxSortStateCodec.Validate(sheet.SortState, null, sheet.Name, $"Worksheet {sheet.Name}", allowColumnSort: true);
             XlsxDrawingCodec.Validate(sheet.Images, sheet.Id);
             XlsxChartCodec.Validate(sheet.Charts, sheet.Id);
+            XlsxWorksheetFeatureCodec.Validate(sheet);
             XlsxTableCodec.ValidateWorksheet(sheet);
             foreach (var table in sheet.Tables.Where(XlsxTableCodec.HasCompleteSemantics))
                 if (!tableNames.Add(table.Name)) throw new CodecException("invalid_worksheet_table", $"Workbook contains duplicate table name {table.Name}.", sheet.Name);

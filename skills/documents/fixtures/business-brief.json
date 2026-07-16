@@ -1,128 +1,96 @@
 {
   "name": "business-brief",
   "outputName": "business-brief.docx",
-  "roundtripCodec": "open-chestnut",
-  "openChestnutStyleInheritedLists": ["Preserve native numbering definitions."],
-  "openChestnutMergedTables": [
-    { "matchText": "OpenChestnut table", "row": 0, "column": 0, "rows": 2 }
-  ],
-  "openChestnutEdits": [
-    { "kind": "hyperlink", "matchText": "OOXML overview", "url": "https://learn.microsoft.com/office/open-xml/word-processing", "tooltip": "Edited through the source-built OpenChestnut codec", "history": false },
-    { "kind": "field", "matchInstruction": "PAGE", "instruction": "NUMPAGES", "display": "2" },
-    { "kind": "tableCell", "matchText": "OpenChestnut table", "row": 0, "column": 0, "expectColumnSpan": 1, "expectRowSpan": 2, "expectVerticalMerge": "restart", "expectEditable": true, "value": "OpenChestnut merged table" },
-    { "kind": "tableCell", "matchText": "Fixed topology", "row": 0, "column": 1, "value": "Pass" },
-    { "kind": "listItem", "matchText": "Preserve native numbering definitions.", "expectNumberingStyleId": "BriefNumbering", "expectLevel": 0, "text": "Preserve inherited native numbering definitions." }
-  ],
-  "designPreset": "report",
-  "theme": {
-    "name": "Business Brief Theme",
-    "colors": { "accent1": "#336699", "accent2": "#cc3300" },
-    "fonts": { "major": "Source Serif 4", "minor": "Aptos", "majorEastAsia": "Arial Unicode MS", "majorComplexScript": "Geeza Pro" }
+  "defaultRunStyle": {
+    "fontFamily": "Aptos",
+    "fontSize": 22,
+    "color": "#202020"
   },
-  "defaultRunStyle": { "fontFamily": "Default Serif", "fontSize": 19, "italic": true },
-  "bibliography": { "selectedStyle": "\\APA.XSL", "styleName": "APA" },
-  "bibliographySources": [
-    { "tag": "OpenXmlSdk", "sourceType": "InternetSite", "title": "Open XML SDK documentation", "corporateAuthor": "Microsoft", "year": "2026", "url": "https://learn.microsoft.com/office/open-xml/open-xml-sdk" }
-  ],
   "styles": {
-    "BriefParagraphBase": { "name": "Brief Paragraph Base", "basedOn": "Normal", "fontSize": 26, "bold": true },
-    "BriefParagraph": { "name": "Brief Paragraph", "basedOn": "BriefParagraphBase", "themeColor": "accent1" },
-    "BriefCharacterBase": { "name": "Brief Character Base", "type": "character", "italic": true, "themeColor": "accent2" },
-    "BriefCharacter": { "name": "Brief Character", "type": "character", "basedOn": "BriefCharacterBase", "bold": false, "fontTheme": "majorHAnsi" },
-    "BriefNumberedListBase": { "name": "Brief Numbered List Base", "type": "paragraph", "basedOn": "Normal", "numberingId": 77 },
-    "BriefNumberedListNested": { "name": "Brief Numbered List Nested", "type": "paragraph", "basedOn": "BriefNumberedListBase" },
-    "BriefNumbering": { "name": "Brief Numbering", "type": "numbering", "numberingId": 77 }
+    "BriefLead": {
+      "name": "Brief Lead",
+      "type": "paragraph",
+      "basedOn": "Normal",
+      "fontFamily": "Aptos Display",
+      "fontSize": 30,
+      "bold": true,
+      "alignment": "center",
+      "spaceAfterTwips": 240,
+      "keepNext": true
+    }
   },
+  "settings": {
+    "evenAndOddHeaders": true
+  },
+  "sectionSettings": [
+    { "sectionIndex": 0, "differentFirstPage": true }
+  ],
   "headers": [
-    { "name": "inherited-header", "text": "Clean-room document workflow", "sectionIndex": 0 }
+    { "name": "default-header", "text": "Clean-room document workflow", "referenceType": "default", "sectionIndex": 0, "variantActive": true },
+    { "name": "first-header", "text": "Office artifact readiness brief", "referenceType": "first", "sectionIndex": 0, "variantActive": true }
   ],
   "footers": [
-    { "name": "inherited-footer", "text": "Internal QA fixture", "sectionIndex": 0 }
+    { "name": "even-footer", "text": "1", "fieldInstruction": "PAGE", "referenceType": "even", "sectionIndex": 0, "variantActive": true }
   ],
   "blocks": [
     { "kind": "paragraph", "name": "title", "styleId": "Title", "text": "Office artifact readiness brief" },
-    { "kind": "paragraph", "name": "lead", "styleId": "Normal", "text": "This brief verifies an agent can create, inspect, render, and validate a real DOCX." },
-    { "kind": "paragraph", "name": "theme-runs", "styleId": "Normal", "runs": [
-      { "text": "Theme fidelity ", "style": { "fontTheme": "majorHAnsi", "themeColor": "accent1", "themeTint": "80", "bold": true, "boldComplexScript": false, "fontSize": 28, "fontSizeComplexScript": 34 } },
-      { "text": "East Asia", "style": { "fontTheme": "minorHAnsi", "fontFamilyEastAsia": "Arial Unicode MS", "fontThemeEastAsia": "majorEastAsia" } }
-    ] },
-    { "kind": "paragraph", "name": "theme-complex-run", "styleId": "Normal", "runs": [
-      { "text": "العربية", "style": { "fontTheme": "minorHAnsi", "fontFamilyComplexScript": "Geeza Pro", "fontThemeComplexScript": "majorBidi", "bold": false, "boldComplexScript": true, "italic": false, "italicComplexScript": true, "fontSize": 22, "fontSizeComplexScript": 32 } }
-    ] },
-    { "kind": "paragraph", "name": "inherited-run-style", "styleId": "BriefParagraph", "runs": [
-      { "text": "Inherited character style", "style": { "runStyleId": "BriefCharacter", "italic": false } }
-    ] },
-    { "kind": "hyperlink", "name": "recommendation-jump", "styleId": "Normal", "text": "Jump to recommendation", "anchor": "RecommendationSection", "tooltip": "Open the recommendation section", "history": false },
-    { "kind": "paragraph", "name": "recommendation-heading", "styleId": "Heading1", "text": "Recommendation" },
-    { "kind": "paragraph", "name": "recommendation", "styleId": "Normal", "text": "Use semantic verification together with native page rendering before delivery." },
-    { "kind": "listItem", "name": "semantic-step", "styleId": "Normal", "listType": "bullet", "text": "Inspect stable document blocks and comments." },
-    { "kind": "listItem", "name": "render-step", "styleId": "Normal", "listType": "bullet", "text": "Render the exported DOCX through LibreOffice and Poppler." },
-    { "kind": "listItem", "name": "picture-bullet-step", "styleId": "Normal", "pictureBullet": { "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAHUlEQVR4nGNQOhr3nxLMMGrA/9EwiBsNg6PDIgwAUQdEH39xn2wAAAAASUVORK5CYII=", "widthPt": 11, "heightPt": 11, "alt": "Green readiness marker" }, "text": "Retain native picture bullet relationships." },
-    { "kind": "listItem", "name": "lettered-step", "styleId": "BriefNumberedListBase", "listType": "number", "numberFormat": "upperLetter", "start": 2, "levelText": "%1)", "numberingId": 77, "numberingStyleId": "BriefNumbering", "text": "Preserve native numbering definitions." },
-    { "kind": "listItem", "name": "roman-substep", "styleId": "BriefNumberedListNested", "listType": "number", "level": 1, "numberFormat": "lowerRoman", "start": 3, "levelText": "%1.%2)", "numberingId": 77, "numberingStyleId": "BriefNumbering", "text": "Resolve nested numbering levels." },
-    { "kind": "section", "name": "evidence-section", "breakType": "nextPage", "orientation": "portrait" },
+    { "kind": "paragraph", "name": "comment-target", "styleId": "Normal", "text": "Review the delivery evidence before release." },
+    {
+      "kind": "paragraph",
+      "name": "editable-lead",
+      "styleId": "BriefLead",
+      "text": "Create, inspect, render, and verify a real DOCX.",
+      "paragraphFormat": { "alignment": "center", "leftIndentTwips": 360, "spaceAfterTwips": 240, "lineSpacingTwips": 300, "lineSpacingRule": "auto", "keepNext": true },
+      "runs": [
+        { "text": "Create, inspect, render, and verify a real DOCX.", "style": { "fontFamily": "Aptos Display", "fontSize": 30, "color": "#315A83", "characterSpacingTwips": 10, "bold": true, "italic": false, "underline": true } }
+      ]
+    },
+    { "kind": "listItem", "name": "semantic-step", "styleId": "Normal", "listType": "bullet", "numberFormat": "bullet", "levelText": "•", "numberingId": 71, "abstractNumberingId": 7, "text": "Inspect stable document blocks." },
+    { "kind": "listItem", "name": "render-step", "styleId": "Normal", "listType": "number", "numberFormat": "decimal", "start": 1, "levelText": "%1.", "numberingId": 72, "abstractNumberingId": 8, "text": "Render through LibreOffice and Poppler." },
     {
       "kind": "table",
       "name": "readiness-table",
       "styleId": "TableGrid",
-      "widthDxa": 9360,
-      "indentDxa": 120,
-      "columnWidthsDxa": [1800, 5160, 2400],
-      "headerFill": "F2F4F7",
+      "widthDxa": 9000,
+      "columnWidthsDxa": [3000, 3000, 3000],
+      "headerFill": "E2E8F0",
       "values": [
         ["Gate", "Evidence", "Status"],
-        ["Semantic", "inspect + verify", "Pass"],
-        ["Package", "DOCX parts", "Pass"],
+        ["Semantic", "inspect + verify", "Pending"],
         ["Visual", "page PNG", "Required"]
       ]
     },
-    {
-      "kind": "table",
-      "name": "open-chestnut-table",
-      "styleId": "TableGrid",
-      "values": [
-        ["OpenChestnut table", "Pending"],
-        ["Fixed topology", "Preserved"]
-      ]
-    },
-    { "kind": "hyperlink", "name": "readiness-jump", "styleId": "Normal", "text": "Jump to readiness evidence", "url": "#ReadinessEvidence", "tooltip": "Open the readiness table evidence", "history": false },
-    { "kind": "hyperlink", "name": "standards-link", "styleId": "Normal", "text": "OOXML overview", "url": "https://learn.microsoft.com/office/open-xml/open-xml-sdk" },
-    { "kind": "citation", "name": "source-note", "styleId": "Normal", "text": "Source: ECMA-376 Office Open XML", "metadata": { "tag": "ECMA376", "source": "ECMA-376", "sourceType": "DocumentFromInternetSite", "title": "Office Open XML File Formats", "corporateAuthor": "Ecma International", "year": "2021", "standardNumber": "ECMA-376", "url": "https://ecma-international.org/publications-and-standards/standards/ecma-376/" } },
-    { "kind": "image", "name": "status-mark", "styleId": "Normal", "alt": "Green status mark", "widthPx": 40, "heightPx": 40, "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAACXBIWXMAAAsTAAALEwEAmpwYAAADDElEQVR4nO2XS2gTQRjH96ZC9VAz00iFoqh4UerZQ4/uzEJBpLUiVPGBZ+8VfGAU68WLmpjadiahECiIKF58ND2oVCkWQUhPkmilsYraxrZJm5Fv09Qmu8nOPlIU8ocPlt2d2d/OfI/5FKWuuv5TNXJ1C+b0GGL0HmJ0DHGaxpxmweBav8doqIlpXVvD7ZvXDcw3SPZgRvsQJxnMqZAxeBdxEvZFtd01A9se69iEGL2JGc3JgmGjZTEjN1r62zZ6Cgd/jjh57wJMlKwoo698/NA2b+AG1QMr/iU8NUZTeEDd78HK1QCO/4VE/dTvCA78BHPyrmZwvAhJ3oJ/2wbUA8JDkO4Xl8WX3990O/78YplPkktOUombaBVrrfNpj8gu50RRU5mZ8q2etbXVkOe8glOfnBeZ3PwqnClgwW5LVwg7SRhXsYMPz4nvC79K4JbzeXFmNGB4F3E6J1VxoHx5Adc63C1Sc9OiXD1vghXHNEXIUUtAqK1u4fbGusTkj6QBrnciWnUc4iQoAzjmBq5l6LAYS38wwA0kHktVGAlA8tVsMKSGYpo4Fb9q+oHmaLsYmRo3wD34OCr8Ec0akNNpGcBFs8EQeUXl8kvi7Oj1kucAACDlAmAAl1l9xOmCJ4BmkPcTjwxw4zMJsWPoiLR7yAKabjFsK0CZQfZORA1wkz9TerDY8V/JLa4cJABTDrmUXzbAfcqkRevwCdsBJhkkNFRtEjPItYLEDAnaSQZAjNy1BIQewmqiSpCZ3Lxe2pzAFQC1DusVjLU1QNmxmux0PFACCYeBrmcXnMNxOgfftgTUITkJy0x6cuTKam6E45RTuBX/Cyl2TtIrLaSrj2J531vEUW2nYkfQfa0XIGbkmuLkyA9hX/PV4+TlrlvqBsWJ4JSLGE3WcOU+Nw5ozYobQWuot4ie+x1N4gjZp3ghf5+KMCNxL7cVOW03Kwn8BLovmRyJq0UrpwHHPicj+HNocOyAIkjCnARtpxJXoLG2BughoH4iTl7DSQRWSDe4Lty74+O0U7pC1FWX8u/pD18kT6PRhzn+AAAAAElFTkSuQmCC" },
-    { "kind": "field", "name": "page-number", "styleId": "Normal", "instruction": "PAGE", "display": "1" }
-  ],
-  "bookmarks": [
-    { "name": "RecommendationSection", "targetName": "recommendation-heading", "endTargetName": "recommendation", "nativeId": 42 },
-    { "name": "ReadinessEvidence", "targetName": "readiness-table", "targetCell": [1, 0], "endTargetName": "readiness-table", "endTargetCell": [3, 2], "nativeId": 43 }
+    { "kind": "hyperlink", "name": "standards-link", "styleId": "Normal", "text": "OOXML overview", "url": "https://learn.microsoft.com/office/open-xml/open-xml-sdk", "tooltip": "Open the Open XML SDK documentation", "history": true },
+    { "kind": "image", "name": "status-mark", "styleId": "Normal", "alt": "Green status mark", "widthPx": 40, "heightPx": 40, "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=" },
+    { "kind": "field", "name": "page-number", "styleId": "Normal", "instruction": "PAGE", "display": "1" },
+    { "kind": "section", "name": "evidence-section", "breakType": "continuous", "orientation": "landscape", "pageSize": { "widthTwips": 15840, "heightTwips": 12240 }, "margins": { "top": 720, "right": 900, "bottom": 720, "left": 900 } },
+    { "kind": "paragraph", "name": "second-section", "styleId": "Normal", "text": "Second-section evidence remains editable." }
   ],
   "comments": [
-    { "name": "recommendation-review", "targetName": "recommendation-heading", "author": "QA Agent", "initials": "QA", "date": "2026-07-11T00:20:00.000Z", "dateUtc": "2026-07-11T08:20:00+08:00", "durableId": "0010A001", "person": { "providerId": "None", "userId": "qa-agent@example.test" }, "resolved": true, "text": "Confirm this recommendation after native render review." },
-    { "name": "recommendation-reply", "parentName": "recommendation-review", "author": "Maintainer", "initials": "MT", "date": "2026-07-11T00:22:00.000Z", "durableId": "0010A002", "person": { "providerId": "None", "userId": "maintainer@example.test" }, "text": "Recommendation wording is approved." },
-    { "targetName": "readiness-table", "author": "Maintainer", "initials": "MT", "date": "2026-07-11T00:25:00.000Z", "person": { "providerId": "None", "userId": "maintainer@example.test" }, "text": "Confirm the table comment anchor survives native import." }
+    { "name": "delivery-review", "targetName": "comment-target", "author": "QA Agent", "initials": "QA", "date": "2026-07-16T08:00:00Z", "text": "Confirm the delivery evidence." }
+  ],
+  "edits": [
+    { "kind": "paragraph", "matchText": "Create, inspect, render, and verify a real DOCX.", "text": "Create, inspect, render, and verify the canonical DOCX path.", "paragraphFormat": { "alignment": "left" }, "runStyle": { "color": "#9C2B2E" } },
+    { "kind": "listItem", "matchText": "Inspect stable document blocks.", "text": "Inspect stable document blocks and fields." },
+    { "kind": "tableCell", "matchText": "Pending", "row": 1, "column": 2, "value": "Pass" },
+    { "kind": "hyperlink", "matchText": "OOXML overview", "url": "https://learn.microsoft.com/office/open-xml/word-processing", "tooltip": "Edited through the canonical Office path", "history": false },
+    { "kind": "image", "matchAlt": "Green status mark", "alt": "Edited green status mark", "widthPx": 48 },
+    { "kind": "field", "matchInstruction": "PAGE", "instruction": "NUMPAGES", "display": "2" },
+    { "kind": "section", "index": 0, "margins": { "left": 1200 } },
+    { "kind": "comment", "matchText": "Confirm the delivery evidence.", "author": "Lead reviewer", "initials": "LR", "text": "Delivery evidence approved." }
   ],
   "expectInspect": [
     { "kind": "paragraph", "pattern": "Office artifact readiness brief" },
-    { "kind": "paragraph", "pattern": "Theme fidelity" },
-    { "kind": "paragraph", "pattern": "Inherited character style" },
-    { "kind": "hyperlink", "pattern": "RecommendationSection" },
-    { "kind": "bookmark", "pattern": "RecommendationSection" },
-    { "kind": "bookmark", "pattern": "ReadinessEvidence" },
-    { "kind": "bibliographySource", "pattern": "ECMA376" },
-    { "kind": "bibliographySource", "pattern": "OpenXmlSdk" },
-    { "kind": "listItem", "pattern": "LibreOffice and Poppler" },
-    { "kind": "listItem", "pattern": "Green readiness marker" },
-    { "kind": "listItem", "pattern": "nested numbering levels" },
+    { "kind": "listItem", "pattern": "Inspect stable document blocks" },
     { "kind": "table", "pattern": "readiness-table" },
-    { "kind": "table", "pattern": "OpenChestnut table" },
-    { "kind": "comment", "pattern": "native render review" },
-    { "kind": "comment", "pattern": "wording is approved" },
+    { "kind": "comment", "pattern": "Confirm the delivery evidence" },
     { "kind": "header", "pattern": "Clean-room document workflow" },
-    { "kind": "comment", "pattern": "table comment anchor" }
+    { "kind": "image", "pattern": "Green status mark" }
   ],
   "qa": {
     "previewFormat": "svg",
     "nativeRender": "auto",
-    "inspectKind": "document,theme,paragraph,listItem,table,bookmark,bibliographySource,comment,header,footer,hyperlink,field,citation,image,style,layout",
+    "inspectKind": "document,paragraph,listItem,table,comment,header,footer,hyperlink,field,image,section,style,layout",
     "maxChars": 24000
   }
 }

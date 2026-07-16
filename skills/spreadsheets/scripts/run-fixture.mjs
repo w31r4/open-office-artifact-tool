@@ -15,7 +15,10 @@ function parseArgs(argv) {
 
 export async function main(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
-  if (!args.fixture) throw new Error("Usage: run-fixture.mjs --fixture fixture.json [--codec javascript|open-chestnut] [--roundtrip-codec none|open-chestnut] [--output-dir dir] [--render-format svg|png|webp|jpeg|pdf] [--all-sheets true] [--native-render auto|required|off] [--baseline-dir dir] [--write-baseline true]");
+  const allowed = new Set(["fixture", "output-dir", "sheet", "range", "render-format", "baseline-dir", "write-baseline", "pixel-threshold", "diff-alignment", "diff-color", "diff-unchanged-color", "registration-offset", "registration-improvement", "all-sheets", "native-render"]);
+  const unsupported = Object.keys(args).find((key) => !allowed.has(key));
+  if (unsupported) throw new Error(`Unsupported spreadsheet fixture option --${unsupported}.`);
+  if (!args.fixture) throw new Error("Usage: run-fixture.mjs --fixture fixture.json [--output-dir dir] [--render-format svg|png|webp|jpeg|pdf] [--all-sheets true] [--native-render auto|required|off] [--baseline-dir dir] [--write-baseline true]");
   const result = await runSpreadsheetFixture(args.fixture, {
     outputDir: args["output-dir"],
     sheetName: args.sheet,
@@ -29,8 +32,6 @@ export async function main(argv = process.argv.slice(2)) {
     pixelRegistration: args["registration-offset"] ? { maxOffset: Number(args["registration-offset"]), minImprovementRatio: args["registration-improvement"] ? Number(args["registration-improvement"]) : undefined } : undefined,
     allSheets: args["all-sheets"] === "true",
     nativeRender: args["native-render"],
-    codec: args.codec,
-    roundtripCodec: args["roundtrip-codec"],
   });
   console.log(JSON.stringify({ fixture: result.fixture.name, workbook: result.workbookPath, qa: result.qa.summary }));
   return result;

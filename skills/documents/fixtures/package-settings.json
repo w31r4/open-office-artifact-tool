@@ -1,33 +1,31 @@
 {
   "name": "package-settings",
   "outputName": "package-settings.docx",
-  "designPreset": "report",
-  "blocks": [
-    { "kind": "paragraph", "name": "title", "styleId": "Title", "text": "Package settings mutation" },
-    { "kind": "field", "name": "page-count", "styleId": "Normal", "instruction": "NUMPAGES", "display": "1" },
-    { "kind": "paragraph", "name": "review-note", "styleId": "Normal", "text": "Review through comments while fields refresh on open." }
+  "settings": { "evenAndOddHeaders": true },
+  "sectionSettings": [
+    { "sectionIndex": 0, "differentFirstPage": true }
   ],
-  "packageSettingsPart": "word/review/agent-settings.xml",
-  "packageSettingsRelationshipId": "rIdAgentSettings",
-  "packageSettings": {
-    "trackRevisions": true,
-    "updateFields": true,
-    "evenAndOddHeaders": true,
-    "mirrorMargins": true,
-    "documentProtection": {
-      "edit": "comments",
-      "enforcement": true,
-      "formatting": false
-    }
-  },
+  "headers": [
+    { "name": "first-page", "text": "First-page review", "referenceType": "first", "sectionIndex": 0, "variantActive": true },
+    { "name": "even-page", "text": "Even-page review", "referenceType": "even", "sectionIndex": 0, "variantActive": true }
+  ],
+  "footers": [
+    { "name": "page-number", "text": "1", "fieldInstruction": "PAGE", "referenceType": "default", "sectionIndex": 0, "variantActive": true }
+  ],
+  "blocks": [
+    { "kind": "paragraph", "name": "title", "styleId": "Title", "text": "Section and header settings" },
+    { "kind": "field", "name": "page-count", "styleId": "Normal", "instruction": "NUMPAGES", "display": "1" },
+    { "kind": "paragraph", "name": "review-note", "styleId": "Normal", "text": "Review first-page and even-page variants." }
+  ],
   "expectInspect": [
     { "kind": "field", "pattern": "NUMPAGES" },
-    { "kind": "paragraph", "pattern": "Review through comments" }
+    { "kind": "header", "pattern": "First-page review" },
+    { "kind": "footer", "pattern": "PAGE" }
   ],
   "qa": {
     "previewFormat": "svg",
     "nativeRender": "auto",
-    "inspectKind": "document,settings,paragraph,field,style,layout",
+    "inspectKind": "document,settings,paragraph,header,footer,field,style,layout",
     "maxChars": 12000
   }
 }

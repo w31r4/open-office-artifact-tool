@@ -1,25 +1,7 @@
-import { attrEscape, attributes, decodeXml } from "../ooxml/source-reference-xml.mjs";
-
-const EMU_PER_PIXEL = 9525;
+import { attrEscape } from "../ooxml/source-reference-xml.mjs";
 
 function localName(tag = "") {
   return /^<\/?(?:[A-Za-z_][\w.-]*:)?([A-Za-z_][\w.-]*)\b/.exec(tag)?.[1];
-}
-
-function openingTag(xml = "", name) {
-  return new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${name}\\b[^>]*>`).exec(String(xml))?.[0] || "";
-}
-
-function pointTag(xml = "", name) {
-  const tag = new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${name}\\b[^>]*\\/\\s*>`).exec(String(xml))?.[0] || "";
-  const attrs = attributes(tag);
-  return { x: Number(attrs.x || 0) / EMU_PER_PIXEL, y: Number(attrs.y || 0) / EMU_PER_PIXEL };
-}
-
-function sizeTag(xml = "", name) {
-  const tag = new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${name}\\b[^>]*\\/\\s*>`).exec(String(xml))?.[0] || "";
-  const attrs = attributes(tag);
-  return { width: Number(attrs.cx || 0) / EMU_PER_PIXEL, height: Number(attrs.cy || 0) / EMU_PER_PIXEL };
 }
 
 export function directPresentationChildren(xml = "", parentLocalName) {
@@ -78,30 +60,6 @@ export function normalizeGroupGeometry(position = {}, childFrame = {}) {
   return { frame, childFrame: children };
 }
 
-export function parsePresentationGroupGeometry(xml = "") {
-  const transform = /<(?:[A-Za-z_][\w.-]*:)?xfrm\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?xfrm>/.exec(String(xml))?.[0] || "";
-  const off = pointTag(transform, "off");
-  const ext = sizeTag(transform, "ext");
-  const chOff = pointTag(transform, "chOff");
-  const chExt = sizeTag(transform, "chExt");
-  return normalizeGroupGeometry(
-    { left: off.x, top: off.y, width: ext.width || 1, height: ext.height || 1 },
-    { left: chOff.x, top: chOff.y, width: chExt.width || ext.width || 1, height: chExt.height || ext.height || 1 },
-  );
-}
-
-function emu(value) {
-  return Math.round(Number(value) * EMU_PER_PIXEL);
-}
-
-export function presentationGroupShapeXml(group, childrenXml, creationIdExtension = "") {
-  const { frame, childFrame } = normalizeGroupGeometry(group.position, group.childFrame);
-  const nativeId = Number(group.nativeId);
-  if (!Number.isInteger(nativeId) || nativeId < 1 || nativeId > 4_294_967_295) throw new RangeError(`Presentation group ${group.id} requires a valid native drawing ID.`);
-  const transform = `<a:xfrm><a:off x="${emu(frame.left)}" y="${emu(frame.top)}"/><a:ext cx="${emu(frame.width)}" cy="${emu(frame.height)}"/><a:chOff x="${emu(childFrame.left)}" y="${emu(childFrame.top)}"/><a:chExt cx="${emu(childFrame.width)}" cy="${emu(childFrame.height)}"/></a:xfrm>`;
-  return `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="${nativeId}" name="${attrEscape(group.name || group.id)}">${creationIdExtension}</p:cNvPr><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr>${transform}</p:grpSpPr>${childrenXml}</p:grpSp>`;
-}
-
 export function presentationGroupSvgTransform(position, childFrame) {
   const geometry = normalizeGroupGeometry(position, childFrame);
   const scaleX = geometry.frame.width / geometry.childFrame.width;
@@ -119,26 +77,6 @@ export function groupChildAbsoluteFrame(position, childFrame, childPosition) {
     width: Number(childPosition.width) * scaleX,
     height: Number(childPosition.height) * scaleY,
   };
-}
-
-export function presentationGroupName(xml = "") {
-  const cNvPr = openingTag(xml, "cNvPr");
-  return decodeXml(attributes(cNvPr).name || "");
-}
-
-export async function parsePresentationGroupTree(owner, xml, context, adapters) {
-  const geometry = parsePresentationGroupGeometry(xml);
-  const group = owner.groups.add({ name: presentationGroupName(xml), position: geometry.frame, childFrame: geometry.childFrame });
-  adapters.applyIdentity(group, xml, "grpSpMk");
-  for (const child of directPresentationChildren(xml, "grpSp")) {
-    if (child.localName === "sp") await adapters.parseShape(group, child.xml, { ...context, layout: undefined });
-    else if (child.localName === "cxnSp") adapters.parseConnector(group, child.xml);
-    else if (child.localName === "grpSp") await parsePresentationGroupTree(group, child.xml, context, adapters);
-    else if (child.localName === "graphicFrame") await adapters.parseGraphicFrame(group, child.xml, context);
-    else if (child.localName === "pic") await adapters.parsePicture(group, child.xml, context);
-    else if (child.localName === "contentPart") await adapters.parseNativeObject(group, child.xml, context, "contentPart");
-  }
-  return group;
 }
 
 export function createPresentationGroupShapeClass(adapters) {
@@ -241,11 +179,6 @@ export function createPresentationGroupShapeClass(adapters) {
 
     toSvg() {
       return `<g data-group-id="${attrEscape(this.id)}" transform="${presentationGroupSvgTransform(this.position, this.childFrame)}">${this.children.map((child) => child.toSvg()).join("")}</g>`;
-    }
-
-    toPptxShape(index, relationships) {
-      const childrenXml = this.children.map((child, childIndex) => child.toPptxShape(index + childIndex + 1, adapters.isGroup(child) ? relationships : relationships?.get(child.id))).join("");
-      return presentationGroupShapeXml(this, childrenXml, adapters.creationIdExtensionXml(this.creationId));
     }
 
     validateLayout() {

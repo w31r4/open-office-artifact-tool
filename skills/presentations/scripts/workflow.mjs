@@ -8,16 +8,12 @@ import {
   FileBlob,
   Presentation,
   PresentationFile,
-  SpreadsheetFile,
-  Workbook,
   verifyArtifact,
   visualQaArtifact,
 } from "open-office-artifact-tool";
 import { createLibreOfficeRenderer } from "open-office-artifact-tool/renderers/libreoffice";
 import { createPlaywrightRenderer } from "open-office-artifact-tool/renderers/playwright";
 import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppler";
-import { normalizeOpenChestnutCodecName, presentationOpenChestnutConfig } from "../../shared/open-chestnut-compat.mjs";
-import { addOpenChestnutNativeGraphFixture } from "./open-chestnut-native-fixture.mjs";
 import {
   prepareNumberedVisualBaselines,
   runPngVisualQa,
@@ -43,37 +39,17 @@ function addSlideShape(slide, config = {}) {
   return shape;
 }
 
-async function presentationFixtureChartConfig(config = {}) {
-  const workbookConfig = config.externalData?.workbook;
-  if (!workbookConfig?.sheets) return config;
-  const workbook = Workbook.create({ dateSystem: workbookConfig.dateSystem });
-  for (const sheetConfig of workbookConfig.sheets) {
-    const sheet = workbook.worksheets.add(sheetConfig.name);
-    if (sheetConfig.values) sheet.getRange(sheetConfig.range || "A1").values = sheetConfig.values;
-  }
-  const workbookFile = await SpreadsheetFile.exportXlsx(workbook);
-  return { ...config, externalData: { ...config.externalData, workbook: workbookFile } };
-}
-
 async function addFixtureSlide(presentation, config = {}) {
-  const slide = presentation.slides.add({ name: config.name, layoutId: config.layoutId, notes: config.notes });
-  if (config.background) slide.background.fill = config.background;
+  for (const field of ["layoutId", "notes", "background", "applyLayoutPlaceholders", "groups", "comments"]) {
+    if (config[field] != null) throw new Error(`Presentation fixture ${config.name || "slide"} uses unsupported 0.2 field ${field}.`);
+  }
+  const slide = presentation.slides.add({ name: config.name });
   const byName = new Map();
   const remember = (item, name) => { if (name) byName.set(name, item); return item; };
-  if (config.applyLayoutPlaceholders) {
-    const layout = presentation.layouts.getItem(config.layoutId);
-    assert.ok(layout, `Missing presentation fixture layout ${config.layoutId}`);
-    for (const placeholder of layout.apply(slide)) remember(placeholder, placeholder.name);
-  }
   for (const shape of config.shapes || []) remember(addSlideShape(slide, shape), shape.name);
-  for (const group of config.groups || []) {
-    const created = slide.groups.add(group);
-    for (const element of created.allElements()) remember(element, element.name);
-  }
   for (const table of config.tables || []) remember(slide.tables.add(table), table.name);
   for (const chart of config.charts || []) {
-    const resolvedChart = await presentationFixtureChartConfig(chart);
-    remember(slide.charts.add(resolvedChart.chartType || resolvedChart.type || "bar", resolvedChart), chart.name);
+    remember(slide.charts.add(chart.chartType || chart.type || "bar", chart), chart.name);
   }
   for (const image of config.images || []) remember(slide.images.add(image), image.name);
   for (const connector of config.connectors || []) {
@@ -81,35 +57,16 @@ async function addFixtureSlide(presentation, config = {}) {
     const to = byName.get(connector.toName) || connector.to || connector.end;
     remember(slide.connectors.add({ ...connector, from, to }), connector.name);
   }
-  for (const comment of config.comments || []) {
-    const targetElement = byName.get(comment.targetName) || comment.targetId;
-    assert.ok(targetElement, `Missing presentation fixture comment target ${comment.targetName || comment.targetId}`);
-    const target = comment.targetTextRange
-      ? slide.resolve(`${typeof targetElement === "string" ? targetElement : targetElement.id}/text`)
-      : targetElement;
-    assert.ok(target, `Missing presentation fixture text range for ${comment.targetName || comment.targetId}`);
-    const thread = slide.comments.addThread(target, comment.text || "", comment);
-    for (const reply of comment.replies || []) thread.addReply(reply.text || reply, typeof reply === "object" ? reply : {});
-    if (comment.resolved) thread.resolve();
-  }
   return slide;
 }
 
 export async function createPresentationFromFixture(fixture = {}) {
-  const presentation = Presentation.create({ slideSize: fixture.slideSize || { width: 1280, height: 720 }, theme: fixture.theme || {}, master: fixture.master || {}, masters: fixture.masters, commentFormat: fixture.commentFormat });
-  if (fixture.theme?.colors) presentation.theme.setColors(fixture.theme.colors);
-  if (fixture.theme?.fonts) presentation.theme.setFonts(fixture.theme.fonts);
-  if (fixture.theme?.textStyles) presentation.theme.setTextStyles(fixture.theme.textStyles);
-  if (fixture.theme?.colorMap) presentation.theme.setColorMap(fixture.theme.colorMap);
-  for (const layout of fixture.layouts || []) presentation.layouts.add(layout);
-  for (const slide of fixture.slides || []) await addFixtureSlide(presentation, slide);
-  for (const customShow of fixture.customShows || []) {
-    const indexes = customShow.slideIndexes || [];
-    const slides = indexes.map((index) => presentation.slides.getItem(Number(index) - 1));
-    assert.ok(slides.length > 0 && slides.every(Boolean), `Invalid presentation fixture custom show slideIndexes for ${customShow.name}`);
-    presentation.customShows.add({ name: customShow.name, nativeId: customShow.nativeId, slides });
+  for (const field of ["theme", "master", "masters", "layouts", "customShows", "commentFormat", "packageReview", "openChestnut"]) {
+    if (fixture[field] != null) throw new Error(`Presentation fixture ${fixture.name || "fixture"} uses unsupported 0.2 field ${field}.`);
   }
-  const inspectKind = fixture.qa?.inspectKind || "deck,theme,slideMaster,layout,slide,textbox,shape,table,chart,image,connector,notes,comment,textRange";
+  const presentation = Presentation.create({ slideSize: fixture.slideSize || { width: 1280, height: 720 } });
+  for (const slide of fixture.slides || []) await addFixtureSlide(presentation, slide);
+  const inspectKind = fixture.qa?.inspectKind || "deck,slide,textbox,shape,table,chart,image,connector,textRange";
   for (const expected of fixture.expectInspect || []) {
     assert.match(presentation.inspect({ kind: expected.kind || inspectKind, maxChars: fixture.qa?.maxChars || 30_000 }).ndjson, new RegExp(expected.pattern));
   }
@@ -124,10 +81,10 @@ function packageImageBytes(image = {}) {
 
 async function packageChartXml(chart = {}) {
   const source = Presentation.create();
-  const resolvedChart = await presentationFixtureChartConfig(chart);
-  source.slides.add().charts.add(resolvedChart.chartType || resolvedChart.type || "bar", resolvedChart);
+  source.slides.add().charts.add(chart.chartType || chart.type || "bar", chart);
   const zip = await JSZip.loadAsync(new Uint8Array(await (await PresentationFile.exportPptx(source)).arrayBuffer()));
-  const xml = await zip.file("ppt/charts/chart1.xml")?.async("text");
+  const chartPath = Object.keys(zip.files).find((name) => /\/charts\/chart1\.xml$/.test(name));
+  const xml = chartPath ? await zip.file(chartPath)?.async("text") : undefined;
   if (!xml) throw new Error("Could not generate packageDrawing chart XML through the public presentation API.");
   return xml;
 }
@@ -160,36 +117,6 @@ async function applyFixturePackageDrawing(pptx, fixture = {}) {
     },
   });
   return patches.length ? PresentationFile.patchPptx(pptx, patches) : pptx;
-}
-
-async function applyFixturePackageReview(pptx, fixture = {}) {
-  const review = fixture.packageReview;
-  if (!review) return pptx;
-  const slideIndex = Number(review.slideIndex ?? 0);
-  if (!Number.isInteger(slideIndex) || slideIndex < 0 || slideIndex >= (fixture.slides || []).length) throw new RangeError("packageReview.slideIndex is out of range.");
-  const number = slideIndex + 1;
-  const source = `ppt/slides/slide${number}.xml`;
-  const zip = await JSZip.loadAsync(new Uint8Array(await pptx.arrayBuffer()));
-  const notesSource = `ppt/notesSlides/notesSlide${number}.xml`;
-  const commentsSource = `ppt/comments/comment${number}.xml`;
-  const authorsSource = "ppt/commentAuthors.xml";
-  const [notesXml, commentsXml, authorsXml] = await Promise.all([
-    zip.file(notesSource)?.async("text"),
-    zip.file(commentsSource)?.async("text"),
-    zip.file(authorsSource)?.async("text"),
-  ]);
-  if (!notesXml || !commentsXml || !authorsXml) throw new Error("packageReview requires the target slide to contain notes and comments with authors.");
-  const notesPath = review.notesPartPath || `ppt/review/notes/slide-${number}.xml`;
-  const commentsPath = review.commentsPartPath || `ppt/review/comments/slide-${number}.xml`;
-  const authorsPath = review.authorsPartPath || "ppt/review/comments/authors.xml";
-  return PresentationFile.patchPptx(pptx, [
-    { path: notesSource, remove: true },
-    { path: commentsSource, remove: true },
-    { path: authorsSource, remove: true },
-    { path: notesPath, xml: notesXml, recipe: { kind: "notesSlide", source, id: review.notesRelationshipId } },
-    { path: commentsPath, xml: commentsXml, recipe: { kind: "comments", source, id: review.commentsRelationshipId } },
-    { path: authorsPath, xml: authorsXml, recipe: { kind: "commentAuthors", source: "ppt/presentation.xml", id: review.authorsRelationshipId } },
-  ]);
 }
 
 function pdfPageCount(pdfPath) {
@@ -317,6 +244,65 @@ export async function verifyPresentationFile(inputPath, options = {}) {
   return { presentation, inspect, packageInspect, verify, modelRender, nativeRender, summary };
 }
 
+function fixtureItem(items, edit, kind) {
+  const item = items.find((candidate) => candidate.name === edit.sourceName || candidate.id === edit.id);
+  assert.ok(item, `Missing presentation fixture ${kind} ${edit.sourceName || edit.id}`);
+  return item;
+}
+
+function applyPresentationFixtureEdits(presentation, edit = {}) {
+  if (!edit || Object.keys(edit).length === 0) return;
+  const slide = presentation.slides.getItem(Number(edit.slideIndex || 0));
+  assert.ok(slide, `Missing presentation fixture edit slide ${edit.slideIndex || 0}`);
+  for (const change of edit.shapes || []) {
+    const shape = fixtureItem(slide.shapes.items, change, "shape");
+    if (Object.hasOwn(change, "name")) shape.name = change.name;
+    if (Object.hasOwn(change, "text")) shape.text.set(change.text);
+    if (Object.hasOwn(change, "position")) shape.position = { ...change.position };
+    if (Object.hasOwn(change, "transform")) shape.transform = change.transform == null ? undefined : { ...change.transform };
+    if (Object.hasOwn(change, "shadow")) shape.shadow = change.shadow == null ? undefined : { ...change.shadow };
+  }
+  for (const change of edit.tables || []) {
+    const table = fixtureItem(slide.tables.items, change, "table");
+    if (Object.hasOwn(change, "name")) table.name = change.name;
+    if (Object.hasOwn(change, "position")) table.position = { ...change.position };
+    for (const cell of change.cells || []) table.cells.set(Number(cell.row), Number(cell.column), cell.value);
+  }
+  for (const change of edit.images || []) {
+    const image = fixtureItem(slide.images.items, change, "image");
+    if (Object.hasOwn(change, "name")) image.name = change.name;
+    if (Object.hasOwn(change, "alt")) image.alt = change.alt;
+    if (Object.hasOwn(change, "position")) image.position = { ...change.position };
+    if (Object.hasOwn(change, "transform")) image.transform = change.transform == null ? undefined : { ...change.transform };
+    if (Object.hasOwn(change, "dataUrl")) image.dataUrl = change.dataUrl;
+  }
+  for (const change of edit.connectors || []) {
+    const connector = fixtureItem(slide.connectors.items, change, "connector");
+    if (Object.hasOwn(change, "name")) connector.name = change.name;
+    if (Object.hasOwn(change, "start")) connector.start = { ...change.start };
+    if (Object.hasOwn(change, "end")) connector.end = { ...change.end };
+    if (change.line) connector.line = { ...connector.line, ...change.line };
+    for (const arrow of ["startArrow", "endArrow"]) {
+      if (!Object.hasOwn(change, arrow)) continue;
+      if (change[arrow] == null) delete connector.line[arrow];
+      else connector.line[arrow] = change[arrow];
+    }
+  }
+  for (const change of edit.charts || []) {
+    const chart = fixtureItem(slide.charts.items, change, "chart");
+    if (Object.hasOwn(change, "name")) chart.name = change.name;
+    if (Object.hasOwn(change, "title")) chart.title = change.title;
+    if (Object.hasOwn(change, "position")) chart.position = { ...change.position };
+    if (change.seriesValues) {
+      assert.equal(change.seriesValues.length, chart.series.length, `${chart.name || chart.id} edit must preserve series topology`);
+      change.seriesValues.forEach((values, index) => {
+        assert.equal(values.length, chart.series[index].values.length, `${chart.name || chart.id} edit must preserve point topology`);
+        chart.series[index].values = [...values];
+      });
+    }
+  }
+}
+
 export async function runPresentationFixture(fixturePath, options = {}) {
   const absoluteFixture = path.resolve(fixturePath);
   const fixture = JSON.parse(await fs.readFile(absoluteFixture, "utf8"));
@@ -326,139 +312,9 @@ export async function runPresentationFixture(fixturePath, options = {}) {
   const pptxPath = path.join(outputDir, fixture.outputName || `${fixture.name || "presentation"}.pptx`);
   let pptx = await PresentationFile.exportPptx(presentation);
   pptx = await applyFixturePackageDrawing(pptx, fixture);
-  pptx = await applyFixturePackageReview(pptx, fixture);
-  const roundtripCodec = normalizeOpenChestnutCodecName(options.roundtripCodec || fixture.roundtripCodec || "none");
-  if (!new Set(["none", "open-chestnut"]).has(roundtripCodec)) throw new Error(`Unsupported presentation roundtrip codec ${roundtripCodec}; expected none or open-chestnut.`);
-  if (roundtripCodec === "open-chestnut") {
-    const openChestnut = presentationOpenChestnutConfig(fixture);
-    if (openChestnut?.nativeGraphFixture) {
-      const embeddedWorkbook = Workbook.create();
-      embeddedWorkbook.worksheets.add("Embedded").getRange("A1").values = [[openChestnut.embeddedWorkbook?.sourceValue || "OpenChestnut source workbook"]];
-      const embeddedWorkbookFile = await SpreadsheetFile.exportXlsx(embeddedWorkbook);
-      pptx = new FileBlob(await addOpenChestnutNativeGraphFixture(new Uint8Array(await pptx.arrayBuffer()), embeddedWorkbookFile.bytes, {
-        removeMasterPlaceholderFrame: openChestnut.sourcePlaceholderFrames?.master === "absent",
-        removeSlidePlaceholderFrameIndex: openChestnut.sourcePlaceholderFrames?.slideIndex,
-      }), { type: PPTX_MIME });
-    }
-    const imported = await PresentationFile.importPptx(pptx, { codec: "open-chestnut" });
-    if (openChestnut?.inheritedSlidePlaceholder) {
-      const expected = openChestnut.inheritedSlidePlaceholder;
-      const placeholder = imported.slides.getItem(Number(expected.slideIndex || 0))?.shapes.items.find((item) => item.placeholder?.idx === Number(expected.idx));
-      assert.ok(placeholder, `Missing inherited OpenChestnut slide placeholder idx ${expected.idx}`);
-      assert.deepEqual(placeholder.position, expected.position, `Inherited OpenChestnut slide placeholder idx ${expected.idx} effective position`);
-      assert.deepEqual(placeholder.transform, expected.transform, `Inherited OpenChestnut slide placeholder idx ${expected.idx} effective transform`);
-      assert.equal(placeholder.placeholder.geometrySource, expected.geometrySource, `Inherited OpenChestnut slide placeholder idx ${expected.idx} geometry source`);
-    }
-    for (const expected of openChestnut?.nativeObjects || []) {
-      const object = imported.slides.items.flatMap((slide) => slide.nativeObjects.items).find((item) => item.nativeKind === expected.nativeKind);
-      assert.ok(object, `Missing OpenChestnut native object ${expected.nativeKind}`);
-      assert.equal(object.rootRelationships.length, Number(expected.relationships), `${expected.nativeKind} root relationship count`);
-      assert.equal(object.parts.length, Number(expected.parts), `${expected.nativeKind} preserved part count`);
-      assert.equal(object.editable, expected.editable === true, `${expected.nativeKind} placement editability`);
-      assert.equal(imported.resolve(object.id), object, `${expected.nativeKind} must resolve by stable import ID`);
-      const inspected = imported.inspect({ kind: "nativeObject", maxChars: fixture.qa?.maxChars || 30_000 }).ndjson;
-      assert.match(inspected, new RegExp(`"nativeKind":"${expected.nativeKind}"`));
-      assert.match(inspected, new RegExp(`"preservedParts":${Number(expected.parts)}`));
-    }
-    const edit = openChestnut?.edit;
-    if (edit) {
-      if (edit.clearMasterBackground) imported.master.clearBackground();
-      else if (edit.masterBackground) imported.master.setBackground(edit.masterBackground);
-      if (edit.clearLayoutBackground) imported.layouts.items[0].clearBackground();
-      else if (edit.layoutBackground) imported.layouts.items[0].setBackground(edit.layoutBackground);
-      if (edit.masterPlaceholder) {
-        const placeholder = imported.master.placeholders.find((item) => item.type === edit.masterPlaceholder.type && item.idx === Number(edit.masterPlaceholder.idx));
-        assert.ok(placeholder, `Missing OpenChestnut master placeholder ${edit.masterPlaceholder.type}:${edit.masterPlaceholder.idx}`);
-        if (Object.hasOwn(edit.masterPlaceholder, "text")) placeholder.text = edit.masterPlaceholder.text;
-        if (Object.hasOwn(edit.masterPlaceholder, "position")) placeholder.position = edit.masterPlaceholder.position == null ? undefined : { ...edit.masterPlaceholder.position };
-        if (Object.hasOwn(edit.masterPlaceholder, "transform")) placeholder.transform = edit.masterPlaceholder.transform == null ? undefined : { ...edit.masterPlaceholder.transform };
-        if (edit.masterPlaceholder.textBodyProperties) placeholder.textBodyProperties = edit.masterPlaceholder.textBodyProperties;
-      }
-      if (edit.layoutPlaceholder) {
-        const placeholder = imported.layouts.items[0].placeholders.find((item) => item.type === edit.layoutPlaceholder.type && item.idx === Number(edit.layoutPlaceholder.idx));
-        assert.ok(placeholder, `Missing OpenChestnut layout placeholder ${edit.layoutPlaceholder.type}:${edit.layoutPlaceholder.idx}`);
-        if (Object.hasOwn(edit.layoutPlaceholder, "text")) placeholder.text = edit.layoutPlaceholder.text;
-        if (Object.hasOwn(edit.layoutPlaceholder, "position")) placeholder.position = edit.layoutPlaceholder.position == null ? undefined : { ...edit.layoutPlaceholder.position };
-        if (Object.hasOwn(edit.layoutPlaceholder, "transform")) placeholder.transform = edit.layoutPlaceholder.transform == null ? undefined : { ...edit.layoutPlaceholder.transform };
-        if (edit.layoutPlaceholder.textBodyProperties) placeholder.textBodyProperties = edit.layoutPlaceholder.textBodyProperties;
-      }
-      if (edit.masterTextParagraphStyles) imported.master.textParagraphStyles = edit.masterTextParagraphStyles;
-      for (const nativeEdit of edit.nativeObjects || []) {
-        const object = imported.slides.items.flatMap((item) => item.nativeObjects.items).find((item) => item.nativeKind === nativeEdit.nativeKind);
-        assert.ok(object, `Missing OpenChestnut editable native object ${nativeEdit.nativeKind}`);
-        object.setName(nativeEdit.name ?? object.name);
-        if (nativeEdit.position) object.setPosition(nativeEdit.position);
-        if (nativeEdit.embeddedWorkbookValue) {
-          const replacement = Workbook.create();
-          replacement.worksheets.add("Embedded").getRange("A1").values = [[nativeEdit.embeddedWorkbookValue]];
-          object.replaceEmbeddedWorkbook(await SpreadsheetFile.exportXlsx(replacement));
-        }
-      }
-      const slide = imported.slides.getItem(Number(edit.slideIndex || 0));
-      if (edit.image) {
-        const image = slide?.images.items.find((item) => item.name === edit.image.sourceName || item.id === edit.image.id);
-        assert.ok(image, `Missing OpenChestnut editable image ${edit.image.sourceName || edit.image.id}`);
-        if (Object.hasOwn(edit.image, "name")) image.name = edit.image.name;
-        if (Object.hasOwn(edit.image, "alt")) image.alt = edit.image.alt;
-        if (edit.image.position) image.position = { ...edit.image.position };
-        if (Object.hasOwn(edit.image, "transform")) image.transform = edit.image.transform == null ? undefined : { ...edit.image.transform };
-        if (edit.image.dataUrl) image.dataUrl = edit.image.dataUrl;
-      }
-      if (edit.table) {
-        const table = slide?.tables.items.find((item) => item.name === edit.table.sourceName || item.id === edit.table.id);
-        assert.ok(table, `Missing OpenChestnut editable table ${edit.table.sourceName || edit.table.id}`);
-        if (Object.hasOwn(edit.table, "name")) table.name = edit.table.name;
-        if (edit.table.position) table.position = { ...edit.table.position };
-        if (edit.table.cell) table.cells.set(Number(edit.table.cell.row), Number(edit.table.cell.column), edit.table.cell.value);
-      }
-      const shape = slide?.shapes.items.find((item) => item.name === edit.shapeName || item.id === edit.shapeId);
-      assert.ok(shape, `Missing OpenChestnut editable shape ${edit.shapeName || edit.shapeId}`);
-      if (Object.hasOwn(edit, "shapeTransform")) shape.transform = edit.shapeTransform == null ? undefined : { ...edit.shapeTransform };
-      shape.text.set(edit.text ?? shape.text.value);
-      if (edit.textBodyProperties) shape.text.bodyProperties = edit.textBodyProperties;
-      if (edit.paragraphStyles || edit.inheritedParagraphStyles) shape.text.inheritedParagraphStyles = edit.paragraphStyles || edit.inheritedParagraphStyles;
-    }
-    pptx = await PresentationFile.exportPptx(imported, { codec: "open-chestnut" });
-    if (openChestnut?.inheritedSlidePlaceholder) {
-      const expected = openChestnut.inheritedSlidePlaceholder;
-      const roundTrip = await PresentationFile.importPptx(pptx, { codec: "open-chestnut" });
-      const placeholder = roundTrip.slides.getItem(Number(expected.slideIndex || 0))?.shapes.items.find((item) => item.placeholder?.idx === Number(expected.idx));
-      assert.ok(placeholder, `Missing roundtrip inherited OpenChestnut slide placeholder idx ${expected.idx}`);
-      assert.deepEqual(placeholder.position, expected.position, `Roundtrip inherited OpenChestnut slide placeholder idx ${expected.idx} effective position`);
-      assert.deepEqual(placeholder.transform, expected.transform, `Roundtrip inherited OpenChestnut slide placeholder idx ${expected.idx} effective transform`);
-      assert.equal(placeholder.placeholder.geometrySource, expected.geometrySource, `Roundtrip inherited OpenChestnut slide placeholder idx ${expected.idx} geometry source`);
-    }
-    if (openChestnut?.edit?.nativeObjects?.length || openChestnut?.edit?.image || openChestnut?.edit?.table) {
-      const edited = await PresentationFile.importPptx(pptx, { codec: "open-chestnut" });
-      for (const expected of openChestnut.edit.nativeObjects || []) {
-        const object = edited.slides.items.flatMap((slide) => slide.nativeObjects.items).find((item) => item.nativeKind === expected.nativeKind);
-        assert.ok(object, `Missing edited OpenChestnut native object ${expected.nativeKind}`);
-        assert.equal(object.name, expected.name, `${expected.nativeKind} edited name`);
-        assert.deepEqual(object.position, expected.position, `${expected.nativeKind} edited position`);
-        assert.equal(object.editable, true, `${expected.nativeKind} remains placement-editable`);
-        if (expected.embeddedWorkbookValue) {
-          const workbook = await SpreadsheetFile.importXlsx(object.getEmbeddedWorkbook());
-          assert.equal(workbook.worksheets.getItem(0).getRange("A1").values[0][0], expected.embeddedWorkbookValue, `${expected.nativeKind} embedded workbook replacement`);
-        }
-      }
-      if (openChestnut.edit.image) {
-        const expected = openChestnut.edit.image;
-        const image = edited.slides.getItem(Number(openChestnut.edit.slideIndex || 0))?.images.items.find((item) => item.name === expected.name);
-        assert.ok(image, `Missing edited OpenChestnut image ${expected.name}`);
-        assert.equal(image.alt, expected.alt, `${expected.name} edited alternative text`);
-        assert.deepEqual(image.position, expected.position, `${expected.name} edited position`);
-        assert.deepEqual(image.transform, expected.transform, `${expected.name} edited transform`);
-        if (expected.dataUrl) assert.equal(image.dataUrl, expected.dataUrl, `${expected.name} edited bytes`);
-      }
-      if (openChestnut.edit.table) {
-        const expected = openChestnut.edit.table;
-        const table = edited.slides.getItem(Number(openChestnut.edit.slideIndex || 0))?.tables.items.find((item) => item.name === expected.name);
-        assert.ok(table, `Missing edited OpenChestnut table ${expected.name}`);
-        assert.deepEqual(table.position, expected.position, `${expected.name} edited position`);
-        assert.equal(table.values[Number(expected.cell.row)][Number(expected.cell.column)], expected.cell.value, `${expected.name} edited cell text`);
-      }
-    }
-  }
+  const imported = await PresentationFile.importPptx(pptx);
+  applyPresentationFixtureEdits(imported, fixture.edit);
+  pptx = await PresentationFile.exportPptx(imported);
   await pptx.save(pptxPath);
   const qa = await verifyPresentationFile(pptxPath, {
     outputDir: path.join(outputDir, "qa"),
@@ -472,5 +328,5 @@ export async function runPresentationFixture(fixturePath, options = {}) {
     inspectKind: fixture.qa?.inspectKind,
     maxChars: fixture.qa?.maxChars,
   });
-  return { fixture, pptxPath, qa, roundtripCodec };
+  return { fixture, pptxPath, qa };
 }

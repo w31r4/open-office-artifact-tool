@@ -2,19 +2,18 @@
   "name": "package-drawing",
   "outputName": "package-drawing.pptx",
   "slideSize": { "width": 1280, "height": 720 },
-  "theme": {
-    "name": "Package Drawing",
-    "colors": { "accent1": "#2563eb", "accent2": "#16a34a", "tx1": "#0f172a", "bg1": "#ffffff" }
-  },
   "slides": [
     {
       "name": "drawing-target",
       "shapes": [
         {
           "name": "title",
+          "geometry": "textbox",
           "text": "Relationship-backed slide drawing",
           "position": { "left": 60, "top": 40, "width": 860, "height": 70 },
-          "textStyle": { "fontSize": 36, "bold": true }
+          "fill": "transparent",
+          "line": { "fill": "transparent", "width": 0 },
+          "textStyle": { "fontFamily": "Arial", "fontSize": 36, "bold": true, "color": "#0F172A" }
         }
       ]
     }

@@ -12,11 +12,6 @@ const POSITION_ALIASES = new Map([
   ["l", "left"], ["outEnd", "outsideEnd"], ["r", "right"], ["t", "top"],
 ]);
 
-const POSITION_TO_OOXML = new Map([
-  ["bestFit", "bestFit"], ["bottom", "b"], ["center", "ctr"], ["insideBase", "inBase"],
-  ["insideEnd", "inEnd"], ["left", "l"], ["outsideEnd", "outEnd"], ["right", "r"], ["top", "t"],
-]);
-
 export function normalizeSpreadsheetChartDataLabels(value) {
   if (value == null) return undefined;
   if (typeof value === "boolean") return { showValue: value, showCategoryName: false };
@@ -35,11 +30,6 @@ export function normalizeSpreadsheetChartDataLabels(value) {
     ...(value.showSeriesName == null ? {} : { showSeriesName: value.showSeriesName }),
     ...(position == null ? {} : { position }),
   };
-}
-
-export function spreadsheetChartDataLabelPositionXml(dataLabels) {
-  const position = normalizeSpreadsheetChartDataLabels(dataLabels)?.position;
-  return position == null ? "" : `<c:dLblPos val="${POSITION_TO_OOXML.get(position)}"/>`;
 }
 
 export function spreadsheetChartDataLabelText(dataLabels, category, value, context = {}) {

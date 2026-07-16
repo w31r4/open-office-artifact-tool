@@ -15,10 +15,9 @@ function parseArgs(argv) {
 
 export async function main(argv = process.argv.slice(2)) {
   const args = parseArgs(argv);
-  if (!args.input) throw new Error("Usage: verify-document.mjs --input document.docx [--output-dir dir] [--prefer-native true|false] [--preview-format svg|png|webp|jpeg|pdf] [--native-render auto|required|off] [--baseline-dir dir] [--write-baseline true]");
+  if (!args.input) throw new Error("Usage: verify-document.mjs --input document.docx [--output-dir dir] [--preview-format svg|png|webp|jpeg|pdf] [--native-render auto|required|off] [--baseline-dir dir] [--write-baseline true]");
   const result = await verifyDocumentFile(args.input, {
     outputDir: args["output-dir"],
-    preferNative: args["prefer-native"] === "true",
     previewFormat: args["preview-format"],
     nativeRender: args["native-render"],
     baselineDir: args["baseline-dir"],

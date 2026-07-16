@@ -1,9 +1,16 @@
-import { createHash } from "node:crypto";
-import { ImageElement, Presentation, Shape, TableElement } from "../index.mjs";
-import { ArtifactFamily } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
+import { ChartElement, ImageElement, Presentation, Shape, TableElement } from "../index.mjs";
+import {
+  ArtifactFamily,
+  SpreadsheetChartDataLabelPosition,
+  SpreadsheetChartLineDashStyle,
+  SpreadsheetChartMarkerSymbol,
+  SpreadsheetChartType,
+} from "../generated/open_office/artifact/v1/office_artifact_pb.js";
 import { normalizePresentationRunLink } from "../presentation/ooxml-hyperlinks.mjs";
+import { normalizePresentationThemeConfig } from "../presentation/ooxml-theme.mjs";
 import { normalizePresentationTextBodyProperties } from "../presentation/text-body-properties.mjs";
 import { isPresentationAutoNumberType, normalizePresentationParagraphs, normalizePresentationParagraphStyles } from "../presentation/text-paragraphs.mjs";
+import { resolveColorToken } from "../shared/colors.mjs";
 import { createPresentationAssetCatalog, validatePictureBulletUri } from "./open-chestnut-assets.mjs";
 import { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
 import { materializePresentationNativeGraphs, presentationNativeGraphSnapshot } from "./open-chestnut-presentation-native.mjs";
@@ -17,18 +24,60 @@ const MAX_TEXT_BODY_INSET_EMU = 2_147_483_647;
 const ROTATION_UNITS_PER_DEGREE = 60_000;
 const MAX_PARAGRAPH_SPACING_POINTS = 1584;
 const MAX_PARAGRAPH_SPACING_MULTIPLIER = 132;
+const MAX_PRESENTATION_CHART_POINTS = 1_048_576;
 const PRESENTATION_STATE = Symbol.for("open-office-artifact-tool.open-chestnut-presentation-state");
 const PRESENTATION_SCHEME_COLORS = new Set([
   "dk1", "lt1", "dk2", "lt2", "tx1", "bg1", "tx2", "bg2",
   "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink", "folHlink",
 ]);
+const DEFAULT_PRESENTATION_THEME = JSON.stringify(normalizePresentationThemeConfig({}));
 const RUN_STYLE_KEYS = new Set(["bold", "italic", "fontSize", "fontFamily", "color"]);
+const TEXT_FRAME_PARAGRAPH_KEYS = new Set(["alignment", "tabStops", "marginLeft", "indent", "lineSpacing", "spaceBefore", "spaceBeforePercent", "spaceAfter", "spaceAfterPercent"]);
 const PARAGRAPH_KEYS = new Set([
   "runs", "level", "alignment", "style", "bulletCharacter", "autoNumber", "bulletImage", "bulletNone",
   "bulletFont", "bulletFontFollowText", "bulletColor", "bulletColorFollowText",
   "bulletSize", "bulletSizePercent", "bulletSizeFollowText", "tabStops", "marginLeft", "indent",
   "lineSpacing", "spaceBefore", "spaceBeforePercent", "spaceAfter", "spaceAfterPercent",
 ]);
+const PRESENTATION_CHART_TYPES_TO_WIRE = new Map([
+  ["bar", SpreadsheetChartType.BAR],
+  ["line", SpreadsheetChartType.LINE],
+  ["pie", SpreadsheetChartType.PIE],
+]);
+const PRESENTATION_CHART_TYPES_FROM_WIRE = new Map([...PRESENTATION_CHART_TYPES_TO_WIRE].map(([name, value]) => [value, name]));
+const PRESENTATION_CHART_LINE_STYLES_TO_WIRE = new Map([
+  ["solid", SpreadsheetChartLineDashStyle.SOLID],
+  ["dashed", SpreadsheetChartLineDashStyle.DASHED],
+  ["dotted", SpreadsheetChartLineDashStyle.DOTTED],
+  ["dash-dot", SpreadsheetChartLineDashStyle.DASH_DOT],
+  ["dash-dot-dot", SpreadsheetChartLineDashStyle.DASH_DOT_DOT],
+]);
+const PRESENTATION_CHART_LINE_STYLES_FROM_WIRE = new Map([...PRESENTATION_CHART_LINE_STYLES_TO_WIRE].map(([name, value]) => [value, name]));
+const PRESENTATION_CHART_LABEL_POSITIONS_TO_WIRE = new Map([
+  ["bestFit", SpreadsheetChartDataLabelPosition.BEST_FIT],
+  ["bottom", SpreadsheetChartDataLabelPosition.BOTTOM],
+  ["center", SpreadsheetChartDataLabelPosition.CENTER],
+  ["insideBase", SpreadsheetChartDataLabelPosition.INSIDE_BASE],
+  ["insideEnd", SpreadsheetChartDataLabelPosition.INSIDE_END],
+  ["left", SpreadsheetChartDataLabelPosition.LEFT],
+  ["outsideEnd", SpreadsheetChartDataLabelPosition.OUTSIDE_END],
+  ["right", SpreadsheetChartDataLabelPosition.RIGHT],
+  ["top", SpreadsheetChartDataLabelPosition.TOP],
+]);
+const PRESENTATION_CHART_LABEL_POSITIONS_FROM_WIRE = new Map([...PRESENTATION_CHART_LABEL_POSITIONS_TO_WIRE].map(([name, value]) => [value, name]));
+const PRESENTATION_CHART_MARKERS_TO_WIRE = new Map([
+  ["none", SpreadsheetChartMarkerSymbol.NONE],
+  ["dot", SpreadsheetChartMarkerSymbol.DOT],
+  ["circle", SpreadsheetChartMarkerSymbol.CIRCLE],
+  ["square", SpreadsheetChartMarkerSymbol.SQUARE],
+  ["diamond", SpreadsheetChartMarkerSymbol.DIAMOND],
+  ["triangle", SpreadsheetChartMarkerSymbol.TRIANGLE],
+  ["x", SpreadsheetChartMarkerSymbol.X],
+  ["star", SpreadsheetChartMarkerSymbol.STAR],
+  ["plus", SpreadsheetChartMarkerSymbol.PLUS],
+  ["dash", SpreadsheetChartMarkerSymbol.DASH],
+]);
+const PRESENTATION_CHART_MARKERS_FROM_WIRE = new Map([...PRESENTATION_CHART_MARKERS_TO_WIRE].map(([name, value]) => [value, name]));
 
 function emuFromPixels(value, name) {
   const number = Number(value);
@@ -46,7 +95,8 @@ function paragraphEmuFromPixels(value, name, { allowNegative = false } = {}) {
 }
 
 function presentationRgb(value, name) {
-  const raw = typeof value === "string" ? value : value?.color || value?.fill;
+  const source = typeof value === "string" ? value : value?.color || value?.fill;
+  const raw = resolveColorToken(source, source);
   if (raw == null || raw === "transparent" || raw === "none") return "";
   const match = /^#([0-9a-f]{6})$/i.exec(String(raw));
   if (!match) throw new OpenChestnutCodecError(`${name} must be transparent or a six-digit RGB color.`, [], { code: "unsupported_presentation_features" });
@@ -468,8 +518,11 @@ function wireTextBodyProperties(value, original, shapeId) {
 }
 
 function presentationTextBody(shape, original, assetCatalog) {
-  const textStyleUnsupported = unsupportedStyleFields(shape.text?.style);
+  const textStyle = shape.text?.style || {};
+  const textStyleUnsupported = Object.keys(textStyle).filter((key) => !RUN_STYLE_KEYS.has(key) && !TEXT_FRAME_PARAGRAPH_KEYS.has(key));
   if (textStyleUnsupported.length) throw new OpenChestnutCodecError(`Presentation shape ${shape.id} uses unsupported text-frame style fields: ${textStyleUnsupported.join(", ")}.`, [], { code: "unsupported_presentation_features" });
+  const inheritedRunStyle = Object.fromEntries(Object.entries(textStyle).filter(([key]) => RUN_STYLE_KEYS.has(key)));
+  const inheritedParagraph = Object.fromEntries(Object.entries(textStyle).filter(([key]) => TEXT_FRAME_PARAGRAPH_KEYS.has(key)));
   const paragraphs = shape.text?.paragraphs || [];
   if (original?.textBody && (original.textBody.paragraphs.length !== paragraphs.length || original.textBody.paragraphs.some((paragraph, index) => paragraph.runs.length !== (paragraphs[index]?.runs || []).length || paragraph.runs.some((run, runIndex) => run.content?.case !== modelRunCase(paragraphs[index].runs[runIndex]))))) {
     throw new OpenChestnutCodecError(`Presentation shape ${shape.id} changed its source-bound paragraph/inline topology.`, [], { code: "presentation_text_topology_changed" });
@@ -487,7 +540,7 @@ function presentationTextBody(shape, original, assetCatalog) {
   const noListStyles = listStyles.length === 0 && (originalListStyles.size > 0 || original?.textBody?.noListStyles === true);
   const bodyProperties = wireTextBodyProperties(shape.text?.bodyProperties, original?.textBody, shape.id);
   return {
-    paragraphs: paragraphs.map((paragraph, index) => wireParagraph(paragraph, shape.text?.style || {}, original?.textBody?.paragraphs?.[index], shape.id, assetCatalog)),
+    paragraphs: paragraphs.map((paragraph, index) => wireParagraph({ ...inheritedParagraph, ...paragraph }, inheritedRunStyle, original?.textBody?.paragraphs?.[index], shape.id, assetCatalog)),
     ...(listStyles.length ? { listStyles } : {}),
     ...(noListStyles ? { noListStyles: true } : {}),
     ...(bodyProperties ? { bodyProperties } : {}),
@@ -549,30 +602,6 @@ function modelBackground(background) {
     : { fill, mode: "solid" };
 }
 
-function sourceBackground(model, entry, ownerId) {
-  const current = model.background;
-  if (!current) {
-    if (model._backgroundClearRequested && !entry.wire.background && entry.wire.source?.backgroundEditable === false) {
-      throw new OpenChestnutCodecError(`Presentation ${ownerId} background is preserved but not safely removable by this codec slice.`, [], { code: "unsupported_presentation_edit" });
-    }
-    return undefined;
-  }
-  if (!entry.wire.background && JSON.stringify(current) === entry.backgroundSnapshot) return undefined;
-  return wireBackground(current, ownerId);
-}
-
-function placeholderShape(placeholder) {
-  return {
-    id: placeholder.id,
-    text: {
-      paragraphs: normalizePresentationParagraphs(placeholder.text ?? ""),
-      style: { ...(placeholder.style || {}) },
-      inheritedParagraphStyles: normalizePresentationParagraphStyles(placeholder.paragraphStyles || {}),
-      bodyProperties: normalizePresentationTextBodyProperties(placeholder.textBodyProperties || {}),
-    },
-  };
-}
-
 function wirePresentationTransform(transform, ownerLabel) {
   if (transform == null) return {};
   if (typeof transform !== "object" || Array.isArray(transform)) {
@@ -599,69 +628,12 @@ function wirePresentationTransform(transform, ownerLabel) {
   return output;
 }
 
-function wirePlaceholderTransform(transform, placeholderId) {
-  return wirePresentationTransform(transform, `placeholder ${placeholderId}`);
-}
-
-function placeholderDirectFrameEditable(source) {
-  return Boolean(source?.directFrame) || source?.source?.directFramePresenceEditable === true;
-}
-
-function wirePlaceholder(placeholder, original, assetCatalog) {
-  const shape = placeholderShape(placeholder);
-  const directFrameEditable = placeholderDirectFrameEditable(original);
-  if (placeholder.transform != null && !placeholder.position) {
-    throw new OpenChestnutCodecError(`Presentation placeholder ${placeholder.id} cannot define a transform without a direct position.`, [], { code: "invalid_presentation_transform" });
-  }
-  return {
-    id: original.id,
-    name: original.name,
-    type: original.type,
-    index: original.index,
-    textBody: presentationTextBody(shape, { textBody: original.textBody }, assetCatalog),
-    source: original.source,
-    ...(placeholder.position && directFrameEditable ? {
-      directFrame: {
-        leftEmu: emuFromPixels(placeholder.position?.left, `${placeholder.id}.position.left`),
-        topEmu: emuFromPixels(placeholder.position?.top, `${placeholder.id}.position.top`),
-        widthEmu: emuFromPixels(placeholder.position?.width, `${placeholder.id}.position.width`),
-        heightEmu: emuFromPixels(placeholder.position?.height, `${placeholder.id}.position.height`),
-        ...wirePlaceholderTransform(placeholder.transform, placeholder.id),
-      },
-    } : {}),
-  };
-}
-
-function placeholderReadOnlySnapshot(placeholder, { directFrameEditable = false } = {}) {
-  const { text: _text, paragraphStyles: _paragraphStyles, textBodyProperties: _textBodyProperties, ...rest } = placeholder;
-  const { position: _position, transform: _transform, ...withoutDirectTransform } = rest;
-  const readOnly = directFrameEditable ? withoutDirectTransform : rest;
-  return JSON.stringify(readOnly);
-}
-
-function sourcePlaceholders(placeholders, entries, ownerId, assetCatalog) {
-  if (placeholders.length !== entries.length || entries.some((entry, index) => placeholders[index] !== entry.model)) {
-    throw new OpenChestnutCodecError(`Source-preserving PPTX export requires ${ownerId}'s original ${entries.length}-placeholder topology.`, [], { code: "presentation_placeholder_topology_changed" });
-  }
-  return entries.map((entry) => {
-    if (placeholderReadOnlySnapshot(entry.model, { directFrameEditable: entry.directFrameEditable }) !== entry.snapshot) {
-      throw new OpenChestnutCodecError(`Presentation placeholder ${entry.model.id} can edit only local text/paragraph/body properties and an already-present recognized direct frame with bounded rotation/flips in this codec slice.`, [], { code: "unsupported_presentation_edit" });
-    }
-    return wirePlaceholder(entry.model, entry.wire, assetCatalog);
-  });
-}
-
 function masterReadOnlySnapshot(master) {
-  return JSON.stringify({
-    id: master.id,
-    name: master.name,
-    theme: master.theme?.toJSON(),
-  });
+  return JSON.stringify(master.toJSON());
 }
 
 function layoutReadOnlySnapshot(layout) {
-  const { background: _background, placeholders: _placeholders, ...readOnly } = layout.toJSON();
-  return JSON.stringify(readOnly);
+  return JSON.stringify(layout.toJSON());
 }
 
 function presentationMasters(presentation, state, assetCatalog) {
@@ -671,16 +643,9 @@ function presentationMasters(presentation, state, assetCatalog) {
     }
     return state.masters.map((entry) => {
       if (masterReadOnlySnapshot(entry.model) !== entry.snapshot) {
-        throw new OpenChestnutCodecError(`Presentation master ${entry.model.id} changed outside the bounded textParagraphStyles slice.`, [], { code: "unsupported_presentation_edit" });
+        throw new OpenChestnutCodecError(`Presentation master ${entry.model.id} is source-bound and read-only in OpenChestnut 0.2.`, [], { code: "unsupported_presentation_edit" });
       }
-      return {
-        id: entry.wire.id,
-        name: entry.wire.name,
-        source: entry.wire.source,
-        textStyles: wireMasterTextStyles(entry.model, entry.wire, assetCatalog),
-        background: sourceBackground(entry.model, entry, `master ${entry.model.id}`),
-        placeholders: sourcePlaceholders(entry.model.placeholders, entry.placeholders, `master ${entry.model.id}`, assetCatalog),
-      };
+      return entry.wire;
     });
   }
   const master = presentation.master;
@@ -694,29 +659,242 @@ function presentationLayouts(presentation, state, assetCatalog) {
   }
   return state.layouts.map((entry) => {
     if (layoutReadOnlySnapshot(entry.model) !== entry.snapshot) {
-      throw new OpenChestnutCodecError(`Presentation layout ${entry.model.id} is preserved but not editable by this codec slice.`, [], { code: "unsupported_presentation_edit" });
+      throw new OpenChestnutCodecError(`Presentation layout ${entry.model.id} is source-bound and read-only in OpenChestnut 0.2.`, [], { code: "unsupported_presentation_edit" });
+    }
+    return entry.wire;
+  });
+}
+
+function presentationShadow(shadow, shapeId) {
+  if (shadow == null || shadow === false || shadow === "shadow-none") return undefined;
+  const presets = {
+    "shadow-sm": { color: "#000000", blurRadius: 4, distance: 2, direction: 45, opacity: 0.15 },
+    shadow: { color: "#000000", blurRadius: 6, distance: 3, direction: 45, opacity: 0.18 },
+    "shadow-md": { color: "#000000", blurRadius: 10, distance: 4, direction: 45, opacity: 0.2 },
+    "shadow-lg": { color: "#000000", blurRadius: 15, distance: 6, direction: 45, opacity: 0.22 },
+    "shadow-xl": { color: "#000000", blurRadius: 22, distance: 9, direction: 45, opacity: 0.24 },
+    "shadow-2xl": { color: "#000000", blurRadius: 32, distance: 14, direction: 45, opacity: 0.25 },
+  };
+  let source = typeof shadow === "string" ? presets[shadow] : shadow;
+  if (!source && typeof shadow === "string") {
+    const match = /^(-?\d+(?:\.\d+)?)px\s+(-?\d+(?:\.\d+)?)px\s+(\d+(?:\.\d+)?)px\s+(#[0-9a-f]{6})(?:\/(\d+(?:\.\d+)?))?$/i.exec(shadow.trim());
+    if (match) {
+      const offsetX = Number(match[1]);
+      const offsetY = Number(match[2]);
+      source = {
+        color: match[4],
+        blurRadius: Number(match[3]),
+        distance: Math.hypot(offsetX, offsetY),
+        direction: (Math.atan2(offsetY, offsetX) * 180 / Math.PI + 360) % 360,
+        opacity: match[5] == null ? 1 : Number(match[5]) / 100,
+      };
+    }
+  }
+  if (!source || typeof source !== "object") {
+    throw new OpenChestnutCodecError(`Presentation shape ${shapeId} uses an unsupported shadow.`, [], { code: "unsupported_presentation_features" });
+  }
+  const blurRadius = Number(source.blurRadius ?? source.blur ?? 0);
+  const distance = Number(source.distance ?? 0);
+  const direction = Number(source.direction ?? source.angle ?? 0);
+  const opacity = Number(source.opacity ?? 0.2);
+  if (![blurRadius, distance, direction, opacity].every(Number.isFinite) || blurRadius < 0 || distance < 0 || opacity < 0 || opacity > 1) {
+    throw new OpenChestnutCodecError(`Presentation shape ${shapeId} has an invalid shadow.`, [], { code: "invalid_presentation_shadow" });
+  }
+  const normalizedDirection = ((direction % 360) + 360) % 360;
+  return {
+    colorRgb: presentationRgb(source.color || source.fill || "#000000", `${shapeId}.shadow.color`),
+    blurRadiusEmu: emuFromPixels(blurRadius, `${shapeId}.shadow.blurRadius`),
+    distanceEmu: emuFromPixels(distance, `${shapeId}.shadow.distance`),
+    directionAngle60000: Math.round(normalizedDirection * ROTATION_UNITS_PER_DEGREE),
+    opacityThousandthPercent: Math.round(opacity * 100_000),
+  };
+}
+
+function modelPresentationShadow(shadow) {
+  if (!shadow) return undefined;
+  return {
+    color: shadow.colorRgb ? `#${shadow.colorRgb}` : "#000000",
+    blurRadius: Number(shadow.blurRadiusEmu) / EMU_PER_PIXEL,
+    distance: Number(shadow.distanceEmu) / EMU_PER_PIXEL,
+    direction: Number(shadow.directionAngle60000) / ROTATION_UNITS_PER_DEGREE,
+    opacity: Number(shadow.opacityThousandthPercent) / 100_000,
+  };
+}
+
+function presentationConnector(connector, original) {
+  const type = String(connector.connectorType || "straight");
+  if (!new Set(["straight", "elbow"]).has(type)) {
+    throw new OpenChestnutCodecError(`Presentation connector ${connector.id} uses unsupported type ${type}.`, [], { code: "unsupported_presentation_features" });
+  }
+  const line = connector.line || {};
+  if (line.style != null && !new Set(["solid", "none"]).has(String(line.style))) {
+    throw new OpenChestnutCodecError(`Presentation connector ${connector.id} uses an unsupported line style.`, [], { code: "unsupported_presentation_features" });
+  }
+  const width = Number(line.width ?? 2);
+  if (!Number.isFinite(width) || width < 0) throw new OpenChestnutCodecError(`Presentation connector ${connector.id} has an invalid line width.`, [], { code: "invalid_presentation_connector" });
+  const arrow = (value, name) => {
+    if (value == null || value === false || value === "none") return "";
+    if (value === true || value === "triangle") return "triangle";
+    throw new OpenChestnutCodecError(`Presentation connector ${connector.id} uses unsupported ${name} ${value}.`, [], { code: "unsupported_presentation_features" });
+  };
+  return {
+    id: original?.id || connector.id,
+    name: connector.name || original?.name || "",
+    source: original?.source,
+    content: {
+      case: "connector",
+      value: {
+        connectorType: type,
+        startXEmu: emuFromPixels(connector.start?.x, `${connector.id}.start.x`),
+        startYEmu: emuFromPixels(connector.start?.y, `${connector.id}.start.y`),
+        endXEmu: emuFromPixels(connector.end?.x, `${connector.id}.end.x`),
+        endYEmu: emuFromPixels(connector.end?.y, `${connector.id}.end.y`),
+        lineRgb: presentationRgb(line.fill || line.color || (width > 0 ? "#334155" : "transparent"), `${connector.id}.line.fill`),
+        lineWidthEmu: BigInt(Math.round(width * EMU_PER_POINT)),
+        startArrow: arrow(line.startArrow ?? connector.startArrow, "start arrow"),
+        endArrow: arrow(line.endArrow ?? connector.endArrow, "end arrow"),
+        startTargetId: connector.startTargetId || "",
+        endTargetId: connector.endTargetId || "",
+      },
+    },
+  };
+}
+
+function presentationChartColor(value, chart, field) {
+  if (value == null || value === "") return undefined;
+  const rgb = presentationRgb(value, `${chart.id}.${field}`);
+  if (!rgb) throw new OpenChestnutCodecError(`Presentation chart ${chart.id} ${field} cannot be transparent.`, [], { code: "unsupported_presentation_features" });
+  return { source: { case: "rgb", value: rgb } };
+}
+
+function presentationChartLine(line, chart, field) {
+  if (!line) return undefined;
+  const styleName = String(line.style || "solid");
+  const aliases = { dot: "dotted", dash: "dashed", dashDot: "dash-dot", longDashDotDot: "dash-dot-dot" };
+  const dashStyle = PRESENTATION_CHART_LINE_STYLES_TO_WIRE.get(aliases[styleName] || styleName);
+  if (dashStyle == null) throw new OpenChestnutCodecError(`Presentation chart ${chart.id} ${field} uses unsupported line style ${styleName}.`, [], { code: "unsupported_presentation_features" });
+  const width = Number(line.width ?? line.weight ?? 1);
+  if (!Number.isFinite(width) || width < 0 || width > 1584) throw new OpenChestnutCodecError(`Presentation chart ${chart.id} ${field} has an invalid line width.`, [], { code: "invalid_presentation_chart" });
+  return {
+    ...(line.fill || line.color ? { color: presentationChartColor(line.fill || line.color, chart, `${field}.color`) } : {}),
+    dashStyle,
+    widthPoints: width,
+  };
+}
+
+function presentationChartMarker(marker, chart, field) {
+  if (!marker) return undefined;
+  const symbol = PRESENTATION_CHART_MARKERS_TO_WIRE.get(String(marker.symbol || "circle"));
+  if (symbol == null) throw new OpenChestnutCodecError(`Presentation chart ${chart.id} ${field} uses unsupported marker ${marker.symbol}.`, [], { code: "unsupported_presentation_features" });
+  const size = marker.size == null ? undefined : Number(marker.size);
+  if (size !== undefined && (!Number.isInteger(size) || size < 2 || size > 72)) throw new OpenChestnutCodecError(`Presentation chart ${chart.id} ${field} has an invalid marker size.`, [], { code: "invalid_presentation_chart" });
+  return {
+    symbol,
+    ...(size === undefined ? {} : { size }),
+    ...(marker.fill ? { fill: presentationChartColor(marker.fill, chart, `${field}.fill`) } : {}),
+    ...(marker.line || marker.stroke ? { line: presentationChartLine(marker.line || marker.stroke, chart, `${field}.line`) } : {}),
+  };
+}
+
+function presentationChartAxis(axis, chart, field, original) {
+  const title = typeof axis?.title === "object" ? axis.title.text : axis?.title;
+  const result = {
+    title: String(title || ""),
+    numberFormatCode: String(axis?.numberFormatCode || axis?.numberFormat || ""),
+    ...(axis?.tickLabelInterval == null ? {} : { tickLabelInterval: Number(axis.tickLabelInterval) }),
+    ...(axis?.min == null ? {} : { minimum: Number(axis.min) }),
+    ...(axis?.max == null ? {} : { maximum: Number(axis.max) }),
+    ...(axis?.majorUnit == null ? {} : { majorUnit: Number(axis.majorUnit) }),
+  };
+  const hasSemantics = result.title || result.numberFormatCode || result.tickLabelInterval !== undefined || result.minimum !== undefined || result.maximum !== undefined || result.majorUnit !== undefined;
+  if (!hasSemantics && !original) return undefined;
+  for (const [name, value] of Object.entries(result)) {
+    if (typeof value === "number" && !Number.isFinite(value)) throw new OpenChestnutCodecError(`Presentation chart ${chart.id} ${field}.${name} must be finite.`, [], { code: "invalid_presentation_chart" });
+  }
+  return result;
+}
+
+function presentationChartDataLabels(labels, chart, original) {
+  const source = labels || {};
+  const positionName = ({ b: "bottom", ctr: "center", inBase: "insideBase", inEnd: "insideEnd", l: "left", outEnd: "outsideEnd", r: "right", t: "top" })[source.position] || source.position || "bestFit";
+  const position = PRESENTATION_CHART_LABEL_POSITIONS_TO_WIRE.get(positionName);
+  if (position == null) throw new OpenChestnutCodecError(`Presentation chart ${chart.id} uses unsupported data-label position ${source.position}.`, [], { code: "unsupported_presentation_features" });
+  const hasSemantics = Boolean(source.showValue || source.showCategoryName || source.showSeriesName) || (source.position && source.position !== "bestFit");
+  if (!hasSemantics && !original) return undefined;
+  return {
+    showValue: Boolean(source.showValue),
+    showCategoryName: Boolean(source.showCategoryName),
+    ...(source.showSeriesName == null ? {} : { showSeriesName: Boolean(source.showSeriesName) }),
+    ...(source.position == null && !original?.position ? {} : { position }),
+  };
+}
+
+function presentationChart(chart, original) {
+  const originalChart = original?.content?.case === "chart" ? original.content.value : undefined;
+  const type = PRESENTATION_CHART_TYPES_TO_WIRE.get(String(chart.chartType));
+  if (type == null) throw new OpenChestnutCodecError(`Presentation chart ${chart.id} supports only bar, line, or pie.`, [], { code: "unsupported_presentation_features" });
+  if (chart.externalData || chart.series.some((series) => series.categoryFormula || series.valueFormula || series.categoriesFormula || series.valuesFormula)) {
+    throw new OpenChestnutCodecError(`Presentation chart ${chart.id} must use literal categories and values.`, [], { code: "unsupported_presentation_features" });
+  }
+  if (!Array.isArray(chart.categories) || chart.categories.length > MAX_PRESENTATION_CHART_POINTS || chart.series.length < 1 || chart.series.length > 256) {
+    throw new OpenChestnutCodecError(`Presentation chart ${chart.id} exceeds the bounded category or series budget.`, [], { code: "invalid_presentation_chart" });
+  }
+  if (originalChart && (originalChart.type !== type || originalChart.series.length !== chart.series.length || originalChart.categories.length !== chart.categories.length)) {
+    throw new OpenChestnutCodecError(`Presentation chart ${chart.id} cannot change its imported type, series count, or point topology.`, [], { code: "presentation_chart_topology_changed" });
+  }
+  const position = chart.position || {};
+  const series = chart.series.map((item, index) => {
+    if (!Array.isArray(item.values) || item.values.length !== chart.categories.length || item.values.some((value) => !Number.isFinite(Number(value)))) {
+      throw new OpenChestnutCodecError(`Presentation chart ${chart.id} series ${index + 1} must contain one finite value per category.`, [], { code: "invalid_presentation_chart" });
+    }
+    if (item.axisGroup === "secondary" || item.chartType || item.points?.length || item.trendlines?.length || item.errorBars || item.dataLabels || item.smooth != null) {
+      throw new OpenChestnutCodecError(`Presentation chart ${chart.id} series ${index + 1} uses semantics outside the bounded bar/line/pie slice.`, [], { code: "unsupported_presentation_features" });
     }
     return {
-      id: entry.wire.id,
-      name: entry.wire.name,
-      masterId: entry.wire.masterId,
-      type: entry.wire.type,
-      source: entry.wire.source,
-      background: sourceBackground(entry.model, entry, `layout ${entry.model.id}`),
-      placeholders: sourcePlaceholders(entry.model.placeholders, entry.placeholders, `layout ${entry.model.id}`, assetCatalog),
+      name: String(item.name || `Series ${index + 1}`),
+      values: item.values.map(Number),
+      ...(item.fill || item.color ? { fill: presentationChartColor(item.fill || item.color, chart, `series[${index}].fill`) } : {}),
+      ...(item.line || item.stroke ? { line: presentationChartLine(item.line || item.stroke, chart, `series[${index}].line`) } : {}),
+      ...(item.marker ? { marker: presentationChartMarker(item.marker, chart, `series[${index}].marker`) } : {}),
     };
   });
+  const xAxis = type === SpreadsheetChartType.PIE ? undefined : presentationChartAxis(chart.axes?.category, chart, "xAxis", originalChart?.xAxis);
+  const yAxis = type === SpreadsheetChartType.PIE ? undefined : presentationChartAxis(chart.axes?.value, chart, "yAxis", originalChart?.yAxis);
+  const dataLabels = presentationChartDataLabels(chart.dataLabels, chart, originalChart?.dataLabels);
+  return {
+    id: original?.id || chart.id,
+    name: chart.name || original?.name || chart.id,
+    source: original?.source,
+    content: {
+      case: "chart",
+      value: {
+        leftEmu: emuFromPixels(position.left, `${chart.id}.position.left`),
+        topEmu: emuFromPixels(position.top, `${chart.id}.position.top`),
+        widthEmu: emuFromPixels(position.width, `${chart.id}.position.width`),
+        heightEmu: emuFromPixels(position.height, `${chart.id}.position.height`),
+        type,
+        title: String(chart.title || ""),
+        hasLegend: Boolean(chart.legend?.visible ?? chart.hasLegend),
+        categories: chart.categories.map((value) => String(value ?? "")),
+        series,
+        ...(xAxis ? { xAxis } : {}),
+        ...(yAxis ? { yAxis } : {}),
+        ...(dataLabels ? { dataLabels } : {}),
+      },
+    },
+  };
 }
 
 function presentationShape(shape, original, assetCatalog) {
   const originalShape = original?.content?.case === "shape" ? original.content.value : original;
-  if (!new Set(["rect", "ellipse"]).has(shape.geometry)) {
+  if (!new Set(["rect", "ellipse", "roundRect", "textbox"]).has(shape.geometry)) {
     throw new OpenChestnutCodecError(`Presentation shape ${shape.id} uses unsupported geometry ${shape.geometry}.`, [], { code: "unsupported_presentation_features" });
   }
   const position = shape.position || {};
   const lineWidth = Number(shape.line?.width ?? 1);
   if (!Number.isFinite(lineWidth) || lineWidth < 0) throw new OpenChestnutCodecError(`Presentation shape ${shape.id} has an invalid line width.`, [], { code: "invalid_presentation_frame" });
   const textBody = presentationTextBody(shape, originalShape, assetCatalog);
+  const shadow = presentationShadow(shape.shadow, shape.id);
   return {
     id: original?.id || shape.id,
     name: shape.name || original?.name || "",
@@ -735,6 +913,7 @@ function presentationShape(shape, original, assetCatalog) {
         lineRgb: presentationRgb(shape.line?.fill || shape.line?.color || (lineWidth > 0 ? "#334155" : "transparent"), `${shape.id}.line.fill`),
         lineWidthEmu: BigInt(Math.round(lineWidth * EMU_PER_POINT)),
         ...(shape.transform == null ? {} : { transform: wirePresentationTransform(shape.transform, `shape ${shape.id}`) }),
+        ...(shadow ? { shadow } : {}),
       },
     },
   };
@@ -877,11 +1056,36 @@ function directSlideElements(slide) {
   ];
 }
 
+function presentationThemeSnapshot(theme) {
+  return JSON.stringify({
+    name: theme.name,
+    colors: theme.colors,
+    fonts: theme.fonts,
+    textStyles: theme.textStyles,
+    colorMap: theme.colorMap,
+  });
+}
+
+function presentationAdvancedSnapshot(presentation) {
+  return JSON.stringify({
+    theme: JSON.parse(presentationThemeSnapshot(presentation.theme)),
+    commentFormat: presentation.commentFormat,
+    customShows: presentation.customShows.items.map((show) => show.toJSON()),
+    slides: presentation.slides.items.map((slide) => ({
+      speakerNotes: slide.speakerNotes,
+      background: slide.background,
+      comments: slide.comments.items.map((comment) => comment.toJSON()),
+    })),
+  });
+}
+
 function unsupportedPresentationFeatures(presentation) {
   const unsupported = [];
+  if (presentationThemeSnapshot(presentation.theme) !== DEFAULT_PRESENTATION_THEME) unsupported.push("presentation theme customization");
   if (presentation.layouts?.items?.length) unsupported.push("slide layouts");
   if (presentation.masters?.items?.length !== 1) unsupported.push("multiple slide masters");
   const master = presentation.master;
+  if (master?.configured) unsupported.push("slide master authoring");
   if (master?.theme) unsupported.push("master theme override");
   if (master?.placeholders?.length) unsupported.push("master placeholders");
   if (presentation.customShows?.items?.length) unsupported.push("custom shows");
@@ -892,8 +1096,6 @@ function unsupportedPresentationFeatures(presentation) {
     if (slide.speakerNotes?.text) unsupported.push(`${prefix} speaker notes`);
     if (slide.background?.fill) unsupported.push(`${prefix} background`);
     if (slide.comments?.items?.length) unsupported.push(`${prefix} comments`);
-    if (slide.charts?.items?.length) unsupported.push(`${prefix} charts`);
-    if (slide.connectors?.items?.length) unsupported.push(`${prefix} connectors`);
     if (slide.groups?.items?.length) unsupported.push(`${prefix} groups`);
     if (slide.nativeObjects?.items?.length) unsupported.push(`${prefix} native objects`);
     if (slide.shapes?.items?.some((shape) => shape.placeholder)) unsupported.push(`${prefix} source-free placeholder authoring`);
@@ -901,7 +1103,7 @@ function unsupportedPresentationFeatures(presentation) {
   return unsupported;
 }
 
-function opaquePresentationSnapshot(object, { includePlacement = true } = {}) {
+function opaquePresentationSnapshot(object) {
   const oleWorkbook = object.oleWorkbook ? {
     partPath: object.oleWorkbook.partPath,
     contentType: object.oleWorkbook.contentType,
@@ -910,52 +1112,13 @@ function opaquePresentationSnapshot(object, { includePlacement = true } = {}) {
   } : undefined;
   return JSON.stringify({
     id: object.id,
-    ...(includePlacement ? { name: object.name, position: object.position } : {}),
+    name: object.name,
+    position: object.position,
     nativeKind: object.nativeKind,
     rawXml: object.rawXml,
     oleWorkbook,
-    ...presentationNativeGraphSnapshot(object, { ignoredPartPaths: oleWorkbook ? [oleWorkbook.partPath] : [] }),
+    ...presentationNativeGraphSnapshot(object),
   });
-}
-
-function presentationOpaqueElement(object, original, assetCatalog) {
-  const name = String(object.name ?? "");
-  if (name.length > 1_024) throw new OpenChestnutCodecError(`Presentation native object ${object.id} name exceeds 1024 characters.`, [], { code: "invalid_presentation_native_object" });
-  const position = object.position || {};
-  const sourceOleWorkbook = original.content.value.oleWorkbook;
-  let oleWorkbook = sourceOleWorkbook;
-  if (sourceOleWorkbook) {
-    const metadata = object.oleWorkbook;
-    if (!metadata || metadata.partPath !== sourceOleWorkbook.partPath || metadata.contentType !== sourceOleWorkbook.contentType ||
-        metadata.sourceSha256 !== sourceOleWorkbook.sourceSha256 || metadata.relationshipId !== sourceOleWorkbook.relationshipId) {
-      throw new OpenChestnutCodecError(`Presentation OLE workbook ${object.id} changed its source binding.`, [], { code: "presentation_ole_workbook_binding_mismatch" });
-    }
-    const matches = (object.parts || []).filter((part) => part.path === metadata.partPath);
-    if (matches.length !== 1 || matches[0].contentType !== metadata.contentType) {
-      throw new OpenChestnutCodecError(`Presentation OLE workbook ${object.id} no longer resolves to one source-bound XLSX part.`, [], { code: "presentation_ole_workbook_binding_mismatch" });
-    }
-    const digest = createHash("sha256").update(matches[0].bytes).digest("hex");
-    oleWorkbook = {
-      ...sourceOleWorkbook,
-      replacementAssetId: digest === metadata.sourceSha256 ? "" : assetCatalog.addOleWorkbook(matches[0].bytes),
-    };
-  }
-  return {
-    id: original.id,
-    name,
-    source: original.source,
-    content: {
-      case: "opaque",
-      value: {
-        ...original.content.value,
-        ...(oleWorkbook ? { oleWorkbook } : {}),
-        leftEmu: emuFromPixels(position.left, `${object.id}.position.left`),
-        topEmu: emuFromPixels(position.top, `${object.id}.position.top`),
-        widthEmu: emuFromPixels(position.width, `${object.id}.position.width`),
-        heightEmu: emuFromPixels(position.height, `${object.id}.position.height`),
-      },
-    },
-  };
 }
 
 export function presentationEnvelope(presentation, protocolVersion) {
@@ -965,9 +1128,12 @@ export function presentationEnvelope(presentation, protocolVersion) {
   if (!state) {
     const unsupported = unsupportedPresentationFeatures(presentation);
     if (unsupported.length) {
-      throw new OpenChestnutCodecError(`The PPTX WebAssembly vertical slice cannot author: ${unsupported.slice(0, 8).join(", ")}${unsupported.length > 8 ? `, and ${unsupported.length - 8} more` : ""}. Use PresentationFile.exportPptx until parity reaches these features.`, [], { code: "unsupported_presentation_features" });
+      throw new OpenChestnutCodecError(`OpenChestnut cannot author these source-free PPTX features: ${unsupported.slice(0, 8).join(", ")}${unsupported.length > 8 ? `, and ${unsupported.length - 8} more` : ""}. Export fails closed; use supported features or import a trustworthy source package for opaque preservation.`, [], { code: "unsupported_presentation_features" });
     }
   } else {
+    if (presentationAdvancedSnapshot(presentation) !== state.advancedSnapshot) {
+      throw new OpenChestnutCodecError("Imported presentation theme, comments, notes, slide backgrounds, and custom shows are source-bound and read-only in OpenChestnut 0.2.", [], { code: "unsupported_presentation_edit" });
+    }
     if (state.slides.length !== presentation.slides.items.length) throw new OpenChestnutCodecError(`Source-preserving PPTX export requires the original ${state.slides.length}-slide topology.`, [], { code: "presentation_topology_changed" });
     if (Number(state.slideWidthEmu) !== Math.round(Number(presentation.slideSize.width) * EMU_PER_PIXEL) || Number(state.slideHeightEmu) !== Math.round(Number(presentation.slideSize.height) * EMU_PER_PIXEL)) {
       throw new OpenChestnutCodecError("Source-preserving PPTX export does not yet support changing slide dimensions.", [], { code: "unsupported_presentation_edit" });
@@ -1015,18 +1181,22 @@ export function presentationEnvelope(presentation, protocolVersion) {
               }
               return presentationTable(entry.model, entry.wire);
             }
-            const placementEditable = entry.wire.source?.editable === true;
-            if (opaquePresentationSnapshot(entry.model, { includePlacement: !placementEditable }) !== entry.snapshot) throw new OpenChestnutCodecError(`Presentation element ${entry.model.id} changed outside its ${placementEditable ? "name/frame" : "read-only"} native-object boundary.`, [], { code: "unsupported_presentation_edit" });
-            if (placementEditable) return presentationOpaqueElement(entry.model, entry.wire, assetCatalog);
+            if (entry.wire.content.case === "connector") return presentationConnector(entry.model, entry.wire);
+            if (entry.wire.content.case === "chart") return presentationChart(entry.model, entry.wire);
+            if (opaquePresentationSnapshot(entry.model) !== entry.snapshot) throw new OpenChestnutCodecError(`Presentation native element ${entry.model.id} is source-bound and read-only in OpenChestnut 0.2.`, [], { code: "unsupported_presentation_edit" });
             return entry.wire;
           })
         : directSlideElements(slide)
-          .filter((element) => element instanceof Shape || element instanceof ImageElement || element instanceof TableElement)
+          .filter((element) => element instanceof Shape || element instanceof ImageElement || element instanceof TableElement || element instanceof ChartElement || slide.connectors.items.includes(element))
           .map((element) => element instanceof ImageElement
             ? presentationImage(element, undefined, assetCatalog)
             : element instanceof TableElement
               ? presentationTable(element, undefined)
-              : presentationShape(element, undefined, assetCatalog)),
+              : element instanceof ChartElement
+                ? presentationChart(element, undefined)
+                : slide.connectors.items.includes(element)
+                  ? presentationConnector(element, undefined)
+                  : presentationShape(element, undefined, assetCatalog)),
     };
   });
   return {
@@ -1245,6 +1415,90 @@ function slidePlaceholderSnapshot(shape) {
   return JSON.stringify(shape.layoutJson());
 }
 
+function modelPresentationChartColor(color) {
+  if (!color) return undefined;
+  if (color.source?.case !== "rgb") throw new OpenChestnutCodecError("Presentation chart contains a non-RGB color outside the bounded chart slice.", [], { code: "invalid_presentation_chart" });
+  return `#${color.source.value}`;
+}
+
+function modelPresentationChartLine(line) {
+  if (!line) return undefined;
+  const style = PRESENTATION_CHART_LINE_STYLES_FROM_WIRE.get(line.dashStyle);
+  if (!style) throw new OpenChestnutCodecError("Presentation chart contains an unsupported line style.", [], { code: "invalid_presentation_chart" });
+  const presentationStyle = { dashed: "dash", dotted: "dot", "dash-dot": "dashDot", "dash-dot-dot": "longDashDotDot" }[style] || style;
+  return {
+    ...(line.color ? { fill: modelPresentationChartColor(line.color) } : {}),
+    style: presentationStyle,
+    ...(line.widthPoints === undefined ? {} : { width: line.widthPoints }),
+  };
+}
+
+function modelPresentationChartMarker(marker) {
+  if (!marker) return undefined;
+  const symbol = PRESENTATION_CHART_MARKERS_FROM_WIRE.get(marker.symbol);
+  if (!symbol) throw new OpenChestnutCodecError("Presentation chart contains an unsupported series marker.", [], { code: "invalid_presentation_chart" });
+  return {
+    symbol,
+    ...(marker.size === undefined ? {} : { size: marker.size }),
+    ...(marker.fill ? { fill: modelPresentationChartColor(marker.fill) } : {}),
+    ...(marker.line ? { line: modelPresentationChartLine(marker.line) } : {}),
+  };
+}
+
+function modelPresentationChartAxis(axis, category) {
+  if (!axis) return undefined;
+  return {
+    title: axis.title || "",
+    ...(axis.numberFormatCode ? { numberFormatCode: axis.numberFormatCode } : {}),
+    ...(category && axis.tickLabelInterval !== undefined ? { tickLabelInterval: axis.tickLabelInterval } : {}),
+    ...(!category && axis.minimum !== undefined ? { min: axis.minimum } : {}),
+    ...(!category && axis.maximum !== undefined ? { max: axis.maximum } : {}),
+    ...(!category && axis.majorUnit !== undefined ? { majorUnit: axis.majorUnit } : {}),
+  };
+}
+
+function modelPresentationChartDataLabels(labels) {
+  if (!labels) return undefined;
+  const position = labels.position === undefined ? undefined : PRESENTATION_CHART_LABEL_POSITIONS_FROM_WIRE.get(labels.position);
+  if (labels.position !== undefined && !position) throw new OpenChestnutCodecError("Presentation chart contains an unsupported data-label position.", [], { code: "invalid_presentation_chart" });
+  return {
+    showValue: Boolean(labels.showValue),
+    showCategoryName: Boolean(labels.showCategoryName),
+    ...(labels.showSeriesName === undefined ? {} : { showSeriesName: Boolean(labels.showSeriesName) }),
+    ...(position ? { position } : {}),
+  };
+}
+
+function modelPresentationChart(source) {
+  const chartType = PRESENTATION_CHART_TYPES_FROM_WIRE.get(source.type);
+  if (!chartType) throw new OpenChestnutCodecError("Presentation chart contains an unsupported chart type.", [], { code: "invalid_presentation_chart" });
+  const axes = chartType === "pie" ? undefined : {
+    category: modelPresentationChartAxis(source.xAxis, true) || { title: "" },
+    value: modelPresentationChartAxis(source.yAxis, false) || { title: "" },
+  };
+  return {
+    chartType,
+    position: {
+      left: Number(source.leftEmu) / EMU_PER_PIXEL,
+      top: Number(source.topEmu) / EMU_PER_PIXEL,
+      width: Number(source.widthEmu) / EMU_PER_PIXEL,
+      height: Number(source.heightEmu) / EMU_PER_PIXEL,
+    },
+    title: source.title,
+    categories: [...source.categories],
+    series: source.series.map((series) => ({
+      name: series.name,
+      values: [...series.values],
+      ...(series.fill ? { fill: modelPresentationChartColor(series.fill) } : {}),
+      ...(series.line ? { line: modelPresentationChartLine(series.line) } : {}),
+      ...(series.marker ? { marker: modelPresentationChartMarker(series.marker) } : {}),
+    })),
+    hasLegend: source.hasLegend,
+    ...(axes ? { axes } : {}),
+    ...(source.dataLabels ? { dataLabels: modelPresentationChartDataLabels(source.dataLabels) } : {}),
+  };
+}
+
 export async function presentationFromEnvelope(envelope) {
   if (envelope.family !== ArtifactFamily.PRESENTATION || envelope.payload.case !== "presentation") {
     throw new OpenChestnutCodecError("OpenChestnut response does not contain a presentation artifact.", [], { code: "invalid_presentation_artifact" });
@@ -1275,13 +1529,6 @@ export async function presentationFromEnvelope(envelope) {
         wire: sourceMaster,
         model,
         snapshot: masterReadOnlySnapshot(model),
-        backgroundSnapshot: JSON.stringify(model.background),
-        placeholders: (sourceMaster.placeholders || []).map((wire, index) => ({
-          wire,
-          model: model.placeholders[index],
-          directFrameEditable: placeholderDirectFrameEditable(wire),
-          snapshot: placeholderReadOnlySnapshot(model.placeholders[index], { directFrameEditable: placeholderDirectFrameEditable(wire) }),
-        })),
       });
     }
   }
@@ -1299,13 +1546,6 @@ export async function presentationFromEnvelope(envelope) {
       wire: sourceLayout,
       model,
       snapshot: layoutReadOnlySnapshot(model),
-      backgroundSnapshot: JSON.stringify(model.background),
-      placeholders: (sourceLayout.placeholders || []).map((wire, index) => ({
-        wire,
-        model: model.placeholders[index],
-        directFrameEditable: placeholderDirectFrameEditable(wire),
-        snapshot: placeholderReadOnlySnapshot(model.placeholders[index], { directFrameEditable: placeholderDirectFrameEditable(wire) }),
-      })),
     });
   }
   const slideStates = [];
@@ -1360,6 +1600,7 @@ export async function presentationFromEnvelope(envelope) {
           } } : {}),
           fill: shape.fillRgb ? `#${shape.fillRgb}` : "transparent",
           line: { fill: shape.lineRgb ? `#${shape.lineRgb}` : "transparent", width: Number(shape.lineWidthEmu) / EMU_PER_POINT },
+          ...(shape.shadow ? { shadow: modelPresentationShadow(shape.shadow) } : {}),
           text: modelText(shape, assetCatalog),
           textBodyProperties: modelTextBodyProperties(shape),
         });
@@ -1400,6 +1641,29 @@ export async function presentationFromEnvelope(envelope) {
             bandedRows: table.bandedRows === true,
           },
         });
+      } else if (element.content.case === "connector") {
+        const connector = element.content.value;
+        model = slide.connectors.add({
+          id: element.id,
+          name: element.name,
+          connectorType: connector.connectorType || "straight",
+          start: { x: Number(connector.startXEmu) / EMU_PER_PIXEL, y: Number(connector.startYEmu) / EMU_PER_PIXEL },
+          end: { x: Number(connector.endXEmu) / EMU_PER_PIXEL, y: Number(connector.endYEmu) / EMU_PER_PIXEL },
+          startTargetId: connector.startTargetId || undefined,
+          endTargetId: connector.endTargetId || undefined,
+          line: {
+            fill: connector.lineRgb ? `#${connector.lineRgb}` : "transparent",
+            width: Number(connector.lineWidthEmu) / EMU_PER_POINT,
+            ...(connector.startArrow ? { startArrow: connector.startArrow } : {}),
+            ...(connector.endArrow ? { endArrow: connector.endArrow } : {}),
+          },
+        });
+      } else if (element.content.case === "chart") {
+        model = slide.charts.add(element.content.value.type === SpreadsheetChartType.BAR ? "bar" : element.content.value.type === SpreadsheetChartType.LINE ? "line" : "pie", {
+          id: element.id,
+          name: element.name,
+          ...modelPresentationChart(element.content.value),
+        });
       } else if (element.content.case === "opaque") {
         const opaque = element.content.value;
         const sourcePart = sourceSlide.source?.partPath;
@@ -1415,7 +1679,7 @@ export async function presentationFromEnvelope(envelope) {
           },
           rawXml: opaque.rawXml,
           sourcePart,
-          editable: element.source?.editable === true,
+          editable: false,
           ...(opaque.oleWorkbook ? { oleWorkbook: {
             partPath: opaque.oleWorkbook.partPath,
             contentType: opaque.oleWorkbook.contentType,
@@ -1434,7 +1698,7 @@ export async function presentationFromEnvelope(envelope) {
           ? slidePlaceholderSnapshot(model)
           : undefined,
         snapshot: element.content.case === "opaque"
-          ? opaquePresentationSnapshot(model, { includePlacement: element.source?.editable !== true })
+          ? opaquePresentationSnapshot(model)
           : element.content.case === "image"
             ? presentationImageReadOnlySnapshot(model)
             : element.content.case === "table"
@@ -1453,6 +1717,7 @@ export async function presentationFromEnvelope(envelope) {
       name: source.name,
       slideWidthEmu: source.slideWidthEmu,
       slideHeightEmu: source.slideHeightEmu,
+      advancedSnapshot: presentationAdvancedSnapshot(presentation),
       masters: masterStates,
       layouts: layoutStates,
       slides: slideStates,

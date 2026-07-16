@@ -1,5 +1,3 @@
-import { attributes, attrEscape, decodeXml } from "../ooxml/source-reference-xml.mjs";
-
 const MAX_CUSTOM_SHOWS = 4096;
 const MAX_CUSTOM_SHOW_SLIDES = 16384;
 const MAX_CUSTOM_SHOW_NAME = 255;
@@ -107,54 +105,4 @@ export function planPresentationCustomShows(presentation) {
     idByName: new Map(entries.map((show) => [show.name, show.nativeId])),
     nameById: new Map(entries.map((show) => [show.nativeId, show.name])),
   };
-}
-
-export function presentationCustomShowsXml(plan, relationshipIdBySlideId = new Map()) {
-  if (!plan?.entries?.length) return "";
-  const shows = plan.entries.map((show) => {
-    const slides = show.slideIds.map((slideId) => {
-      const relationshipId = relationshipIdBySlideId.get(slideId);
-      if (!relationshipId) throw new Error(`Presentation custom show ${show.name} references missing slide ${slideId}.`);
-      return `<p:sld r:id="${attrEscape(relationshipId)}"/>`;
-    }).join("");
-    return `<p:custShow name="${attrEscape(show.name)}" id="${show.nativeId}"><p:sldLst>${slides}</p:sldLst></p:custShow>`;
-  }).join("");
-  return `<p:custShowLst>${shows}</p:custShowLst>`;
-}
-
-export function parsePresentationCustomShowsXml(xml = "", context = {}) {
-  const list = /<(?:[A-Za-z_][\w.-]*:)?custShowLst\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?custShowLst>/.exec(String(xml))?.[0];
-  if (!list) return [];
-  const relationships = context.relationships || [];
-  const shows = [...list.matchAll(/<(?:[A-Za-z_][\w.-]*:)?custShow\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?custShow>/g)].map((match, index) => {
-    const opening = /<(?:[A-Za-z_][\w.-]*:)?custShow\b[^>]*>/.exec(match[0])?.[0] || "";
-    const attrs = attributes(opening);
-    const name = normalizeName(decodeXml(attrs.name));
-    const nativeId = normalizeNativeId(attrs.id);
-    if (nativeId == null) throw new Error(`Presentation custom show ${name} is missing its native ID.`);
-    const slideIds = [...match[0].matchAll(/<(?:[A-Za-z_][\w.-]*:)?sld\b[^>]*\/?\s*>/g)].map((slideMatch) => {
-      const slideAttrs = attributes(slideMatch[0]);
-      const relationshipId = Object.entries(slideAttrs).find(([key]) => key === "id" || key.endsWith(":id"))?.[1];
-      if (!relationshipId) throw new Error(`Presentation custom show ${name} contains a slide without a relationship ID.`);
-      const relationship = relationships.find((item) => item.id === relationshipId);
-      if (!relationship) throw new Error(`Presentation custom show ${name} references missing relationship ${relationshipId}.`);
-      if (!String(relationship.type || "").endsWith("/slide") || String(relationship.targetMode || "").toLowerCase() === "external") throw new Error(`Presentation custom show ${name} relationship ${relationshipId} must target an internal slide.`);
-      const targetPart = context.resolveTarget?.(context.partPath || "ppt/presentation.xml", relationship.target);
-      const slideId = context.slideIdByPart?.get(targetPart);
-      if (!slideId) throw new Error(`Presentation custom show ${name} targets missing slide part ${targetPart || relationship.target}.`);
-      return slideId;
-    });
-    if (!slideIds.length) throw new Error(`Presentation custom show ${name} requires at least one slide.`);
-    return { id: `custom-show/${index + 1}`, name, nativeId, slideIds };
-  });
-  const names = new Set();
-  const ids = new Set();
-  for (const show of shows) {
-    const name = show.name.toLowerCase();
-    if (names.has(name)) throw new Error(`Presentation custom show name ${show.name} already exists.`);
-    if (ids.has(show.nativeId)) throw new Error(`Presentation custom show nativeId ${show.nativeId} already exists.`);
-    names.add(name);
-    ids.add(show.nativeId);
-  }
-  return shows;
 }

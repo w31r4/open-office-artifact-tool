@@ -120,23 +120,6 @@ export function createPresentationAssetCatalog(initialAssets = []) {
       }
       return id;
     },
-    addOleWorkbook(input) {
-      const bytes = Buffer.from(input || []);
-      validateOleWorkbook(XLSX_CONTENT_TYPE, bytes, "Presentation OLE workbook");
-      const digest = sha256(bytes);
-      const id = `${OLE_WORKBOOK_ASSET_PREFIX}${digest}`;
-      if (!byId.has(id)) {
-        if (byId.size >= MAX_ASSET_COUNT) fail(`Presentation exceeds the ${MAX_ASSET_COUNT}-asset budget.`, "presentation_asset_budget_exceeded");
-        byId.set(id, {
-          id,
-          fileName: `embedded-workbook-${digest.slice(0, 16)}.xlsx`,
-          contentType: XLSX_CONTENT_TYPE,
-          data: bytes,
-          sha256: digest,
-        });
-      }
-      return id;
-    },
     dataUrl(id) {
       const asset = byId.get(String(id));
       if (!asset || !asset.id.startsWith(PICTURE_ASSET_PREFIX)) fail(`Presentation picture bullet references missing asset ${id || "(missing)"}.`);

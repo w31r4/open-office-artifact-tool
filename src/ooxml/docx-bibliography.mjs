@@ -1,9 +1,5 @@
 import path from "node:path";
-import { attrEscape, attributes, decodeXml, rootTag } from "./source-reference-xml.mjs";
-
-export const DOCX_BIBLIOGRAPHY_NAMESPACE = "http://schemas.openxmlformats.org/officeDocument/2006/bibliography";
-export const DOCX_BIBLIOGRAPHY_PATH = "customXml/item1.xml";
-export const DOCX_BIBLIOGRAPHY_RELATIONSHIP_TYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml";
+import { attributes, decodeXml, rootTag } from "./source-reference-xml.mjs";
 
 const SOURCE_TYPES = new Set(["ArticleInAPeriodical", "Book", "BookSection", "JournalArticle", "ConferenceProceedings", "Report", "SoundRecording", "Performance", "Art", "DocumentFromInternetSite", "InternetSite", "Film", "Interview", "Patent", "ElectronicSource", "Case", "Misc"]);
 const FIELD_TAGS = {
@@ -69,40 +65,6 @@ export function normalizeDocxBibliographySource(config = {}, index = 0) {
   return { id: config.id || `bibliography/${tag}`, kind: "bibliographySource", tag, sourceType, authors, corporateAuthor: corporateAuthor || undefined, ...fields };
 }
 
-export function planDocxBibliography(sources = [], options = {}) {
-  const entries = sources.map((source, index) => normalizeDocxBibliographySource(source, index));
-  const byTag = new Map();
-  for (const source of entries) {
-    if (byTag.has(source.tag)) throw new Error(`Duplicate DOCX bibliography source tag ${source.tag}.`);
-    byTag.set(source.tag, source);
-  }
-  return {
-    entries,
-    byTag,
-    selectedStyle: string255(options.selectedStyle, "DOCX bibliography SelectedStyle"),
-    styleName: string255(options.styleName, "DOCX bibliography StyleName"),
-    uri: string255(options.uri, "DOCX bibliography URI"),
-  };
-}
-
-function authorXml(source) {
-  let inner = "";
-  if (source.authors?.length) {
-    const people = source.authors.map((author) => `<b:Person>${author.last ? `<b:Last>${attrEscape(author.last)}</b:Last>` : ""}${author.first ? `<b:First>${attrEscape(author.first)}</b:First>` : ""}${author.middle ? `<b:Middle>${attrEscape(author.middle)}</b:Middle>` : ""}</b:Person>`).join("");
-    inner = `<b:NameList>${people}</b:NameList>`;
-  } else if (source.corporateAuthor) inner = `<b:Corporate>${attrEscape(source.corporateAuthor)}</b:Corporate>`;
-  return inner ? `<b:Author><b:Author>${inner}</b:Author></b:Author>` : "";
-}
-
-export function docxBibliographyXml(plan) {
-  const rootAttributes = `${plan.selectedStyle ? ` SelectedStyle="${attrEscape(plan.selectedStyle)}"` : ""}${plan.styleName ? ` StyleName="${attrEscape(plan.styleName)}"` : ""}${plan.uri ? ` URI="${attrEscape(plan.uri)}"` : ""}`;
-  const body = plan.entries.map((source) => {
-    const fields = Object.entries(FIELD_TAGS).map(([name, tag]) => source[name] ? `<b:${tag}>${attrEscape(source[name])}</b:${tag}>` : "").join("");
-    return `<b:Source><b:Tag>${attrEscape(source.tag)}</b:Tag><b:SourceType>${attrEscape(source.sourceType)}</b:SourceType>${authorXml(source)}${fields}</b:Source>`;
-  }).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><b:Sources xmlns:b="${DOCX_BIBLIOGRAPHY_NAMESPACE}"${rootAttributes}>${body}</b:Sources>`;
-}
-
 function elementText(xml, localName) {
   const escaped = String(localName).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return decodeXml(new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${escaped}\\b[^>]*>([\\s\\S]*?)<\\/(?:[A-Za-z_][\\w.-]*:)?${escaped}>`).exec(xml)?.[1] || "").trim();
@@ -123,18 +85,23 @@ export function parseDocxBibliography(xml = "") {
     config.corporateAuthor = elementText(body, "Corporate") || undefined;
     return normalizeDocxBibliographySource(config, index);
   });
-  const plan = planDocxBibliography(entries, { selectedStyle: decodeXml(localAttribute(opening, "SelectedStyle") || ""), styleName: decodeXml(localAttribute(opening, "StyleName") || ""), uri: decodeXml(localAttribute(opening, "URI") || "") });
-  return plan;
+  const byTag = new Map();
+  for (const entry of entries) {
+    if (byTag.has(entry.tag)) throw new Error(`Duplicate DOCX bibliography source tag ${entry.tag}.`);
+    byTag.set(entry.tag, entry);
+  }
+  return {
+    entries,
+    byTag,
+    selectedStyle: string255(decodeXml(localAttribute(opening, "SelectedStyle") || ""), "DOCX bibliography SelectedStyle"),
+    styleName: string255(decodeXml(localAttribute(opening, "StyleName") || ""), "DOCX bibliography StyleName"),
+    uri: string255(decodeXml(localAttribute(opening, "URI") || ""), "DOCX bibliography URI"),
+  };
 }
 
 export function parseDocxCitationInstruction(instruction = "") {
   const match = /^\s*CITATION\s+(?:"([^"]+)"|'([^']+)'|([^\s\\]+))/i.exec(decodeXml(String(instruction || "")));
   return match ? String(match[1] || match[2] || match[3] || "").trim() : undefined;
-}
-
-export function docxCitationInstruction(tag) {
-  const value = string255(tag, "DOCX citation tag", true);
-  return `CITATION ${/^[A-Za-z0-9_.:-]+$/.test(value) ? value : `&quot;${attrEscape(value)}&quot;`}`;
 }
 
 function issue(type, message, detail = {}) {

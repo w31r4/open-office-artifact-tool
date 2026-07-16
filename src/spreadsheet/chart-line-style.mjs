@@ -1,14 +1,8 @@
 const MAX_WIDTH_POINTS = 1_584;
 
-const STYLE_TO_DRAWINGML = new Map([
-  ["solid", "solid"],
-  ["dashed", "dash"],
-  ["dotted", "dot"],
-  ["dash-dot", "dashDot"],
-  ["dash-dot-dot", "lgDashDotDot"],
-]);
+const SUPPORTED_LINE_STYLES = new Set(["solid", "dashed", "dotted", "dash-dot", "dash-dot-dot"]);
 
-export const SPREADSHEET_CHART_LINE_STYLES = Object.freeze([...STYLE_TO_DRAWINGML.keys()]);
+export const SPREADSHEET_CHART_LINE_STYLES = Object.freeze([...SUPPORTED_LINE_STYLES]);
 export const SPREADSHEET_CHART_LINE_MAX_WIDTH_POINTS = MAX_WIDTH_POINTS;
 
 function lineError(name, message) {
@@ -31,7 +25,7 @@ function normalizedLine(value, name, aliases) {
   const style = value[aliases.style];
   if (style != null) {
     const normalized = String(style).toLowerCase();
-    if (!STYLE_TO_DRAWINGML.has(normalized)) lineError(name, `${aliases.style} must be one of ${SPREADSHEET_CHART_LINE_STYLES.join(", ")}.`);
+    if (!SUPPORTED_LINE_STYLES.has(normalized)) lineError(name, `${aliases.style} must be one of ${SPREADSHEET_CHART_LINE_STYLES.join(", ")}.`);
     output.style = normalized;
   }
   const width = value[aliases.width];
@@ -52,20 +46,6 @@ export function normalizeSpreadsheetChartSeriesLine(series) {
   const stroke = normalizedLine(series?.stroke, "series.stroke", { fill: "color", style: "style", width: "weight" });
   if (line != null && stroke != null && JSON.stringify(line) !== JSON.stringify(stroke)) lineError("series", "line and stroke aliases must describe the same style when both are present.");
   return line ?? stroke;
-}
-
-export function spreadsheetChartLineStyleXml(value, name = "series.line") {
-  const line = normalizeSpreadsheetChartLineStyle(value, name);
-  if (line == null) return "";
-  const width = line.width == null ? "" : ` w="${Math.round(line.width * 12_700)}"`;
-  const fill = line.fill == null ? "" : `<a:solidFill><a:srgbClr val="${line.fill.slice(1)}"/></a:solidFill>`;
-  const dash = line.style == null ? "" : `<a:prstDash val="${STYLE_TO_DRAWINGML.get(line.style)}"/>`;
-  return `<a:ln${width}>${fill}${dash}</a:ln>`;
-}
-
-export function spreadsheetChartSeriesLineXml(series) {
-  const line = normalizeSpreadsheetChartSeriesLine(series);
-  return line == null ? "" : spreadsheetChartLineStyleXml(line);
 }
 
 export function spreadsheetChartLineDashArray(style) {

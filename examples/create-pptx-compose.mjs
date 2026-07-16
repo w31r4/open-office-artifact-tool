@@ -20,10 +20,8 @@ const [headline] = slide.compose(
 const table = slide.tables.add({ name: "roadmap-table", position: { left: 820, top: 120, width: 320, height: 140 }, values: [["Area", "Status"], ["Notes", "Partial"], ["Connectors", "Partial"]], styleOptions: { headerRow: true } });
 slide.charts.add("bar", { name: "coverage-chart", title: "Coverage", position: { left: 820, top: 300, width: 320, height: 200 }, categories: ["DOCX", "XLSX", "PPTX", "PDF"], series: [{ name: "Done", values: [65, 70, 68, 60] }] });
 slide.connectors.add({ name: "headline-to-table", from: headline, to: table, line: { fill: "#0284c7", width: 2, endArrow: "triangle" } });
-slide.addNotes("Mention that this deck uses clean-room compose/layout APIs.");
-slide.comments.addThread(headline, "Check headline tone before sending.").resolve();
 
 const file = await PresentationFile.exportPptx(presentation);
 await file.save(path.join(outputDir, "pptx-compose.pptx"));
-console.log(presentation.inspect({ kind: "slide,textbox,table,chart,connector,notes,comment", maxChars: 6000 }).ndjson);
+console.log(presentation.inspect({ kind: "slide,textbox,table,chart,connector", maxChars: 6000 }).ndjson);
 console.log(`saved ${path.join(outputDir, "pptx-compose.pptx")}`);

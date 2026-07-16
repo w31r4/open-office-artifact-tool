@@ -1,12 +1,12 @@
 import path from "node:path";
 
-import { attrEscape, attributes, decodeXml, rootTag } from "../ooxml/source-reference-xml.mjs";
+import { attributes, decodeXml, rootTag } from "../ooxml/source-reference-xml.mjs";
 
-export const XLSX_PERSON_CONTENT_TYPE = "application/vnd.ms-excel.person+xml";
-export const XLSX_PERSON_RELATIONSHIP_TYPE = "http://schemas.microsoft.com/office/2017/10/relationships/person";
-export const XLSX_THREADED_COMMENTS_CONTENT_TYPE = "application/vnd.ms-excel.threadedcomments+xml";
-export const XLSX_THREADED_COMMENTS_RELATIONSHIP_TYPE = "http://schemas.microsoft.com/office/2017/10/relationships/threadedComment";
-export const XLSX_THREADED_COMMENTS_NAMESPACE = "http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments";
+const XLSX_PERSON_CONTENT_TYPE = "application/vnd.ms-excel.person+xml";
+const XLSX_PERSON_RELATIONSHIP_TYPE = "http://schemas.microsoft.com/office/2017/10/relationships/person";
+const XLSX_THREADED_COMMENTS_CONTENT_TYPE = "application/vnd.ms-excel.threadedcomments+xml";
+const XLSX_THREADED_COMMENTS_RELATIONSHIP_TYPE = "http://schemas.microsoft.com/office/2017/10/relationships/threadedComment";
+const XLSX_THREADED_COMMENTS_NAMESPACE = "http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments";
 
 const GUID = /^\{[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\}$/;
 const decoder = new TextDecoder();
@@ -32,7 +32,7 @@ function hashWords(value) {
   return [first, second, (first ^ Math.imul(second, 33)) >>> 0, (second ^ Math.imul(first, 97)) >>> 0];
 }
 
-export function deterministicSpreadsheetGuid(seed) {
+function deterministicSpreadsheetGuid(seed) {
   const words = hashWords(seed).map((word) => word.toString(16).toUpperCase().padStart(8, "0")).join("");
   return `{${words.slice(0, 8)}-${words.slice(8, 12)}-4${words.slice(13, 16)}-8${words.slice(17, 20)}-${words.slice(20, 32)}}`;
 }
@@ -92,26 +92,6 @@ export function planSpreadsheetThreadedComments(threadParts = []) {
   return { parts, people: [...people.values()] };
 }
 
-export function spreadsheetThreadedCommentsXml(part) {
-  const comments = part.entries.map((entry) => `<threadedComment ref="${attrEscape(entry.ref)}" dT="${attrEscape(entry.date)}" personId="${attrEscape(entry.personId)}" id="${attrEscape(entry.id)}"${entry.parentId ? ` parentId="${attrEscape(entry.parentId)}"` : ""} done="${entry.done ? 1 : 0}"><text>${attrEscape(entry.text)}</text></threadedComment>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><ThreadedComments xmlns="${XLSX_THREADED_COMMENTS_NAMESPACE}">${comments}</ThreadedComments>`;
-}
-
-export function spreadsheetPersonsXml(plan) {
-  const people = plan.people.map((person) => `<person displayName="${attrEscape(person.displayName)}" id="${attrEscape(person.id)}" userId="${attrEscape(person.userId)}" providerId="${attrEscape(person.providerId)}"/>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><personList xmlns="${XLSX_THREADED_COMMENTS_NAMESPACE}">${people}</personList>`;
-}
-
-export function parseSpreadsheetPeople(xml = "") {
-  const people = new Map();
-  for (const match of String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?person\b[^>]*\/?\s*>/g)) {
-    const id = localAttribute(match[0], "id")?.toUpperCase();
-    if (!id || people.has(id)) continue;
-    people.set(id, { id, displayName: localAttribute(match[0], "displayName") || "User", userId: localAttribute(match[0], "userId") || undefined, providerId: localAttribute(match[0], "providerId") || undefined });
-  }
-  return people;
-}
-
 export function parseSpreadsheetThreadedComments(xml = "") {
   const entries = [];
   for (const match of String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?threadedComment\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?threadedComment>/g)) {
@@ -128,26 +108,6 @@ export function parseSpreadsheetThreadedComments(xml = "") {
     });
   }
   return entries;
-}
-
-export function spreadsheetThreadRoots(entries = []) {
-  const byId = new Map(entries.map((entry) => [entry.id, entry]));
-  const rootId = (entry) => {
-    const visited = new Set();
-    let current = entry;
-    while (current?.parentId && byId.has(current.parentId) && !visited.has(current.id)) {
-      visited.add(current.id);
-      current = byId.get(current.parentId);
-    }
-    return current?.id || entry.id;
-  };
-  const groups = new Map();
-  for (const entry of entries) {
-    const key = rootId(entry);
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(entry);
-  }
-  return [...groups.values()].map((group) => group.sort((a, b) => entries.indexOf(a) - entries.indexOf(b)));
 }
 
 function issue(type, message, detail = {}) {

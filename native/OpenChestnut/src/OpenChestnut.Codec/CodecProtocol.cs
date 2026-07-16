@@ -5,7 +5,7 @@ namespace OpenChestnut.Codec;
 
 public static class CodecProtocol
 {
-    public const uint ProtocolVersion = 1;
+    public const uint ProtocolVersion = 2;
     private const int AbsoluteRequestLimit = 128 * 1024 * 1024;
 
     public static byte[] Invoke(byte[] requestBytes)
@@ -32,7 +32,7 @@ public static class CodecProtocol
                 }
                 case CodecOperation.ExportXlsx:
                 {
-                    var result = XlsxCodec.Export(request.Artifact, limits, request.AllowLossy);
+                    var result = XlsxCodec.Export(request.Artifact, limits);
                     response.File = ByteString.CopyFrom(result.File);
                     response.Diagnostics.Add(result.Diagnostics);
                     break;
@@ -46,7 +46,7 @@ public static class CodecProtocol
                 }
                 case CodecOperation.ExportDocx:
                 {
-                    var result = DocxCodec.Export(request.Artifact, limits, request.AllowLossy);
+                    var result = DocxCodec.Export(request.Artifact, limits);
                     response.File = ByteString.CopyFrom(result.File);
                     response.Diagnostics.Add(result.Diagnostics);
                     break;
@@ -60,7 +60,7 @@ public static class CodecProtocol
                 }
                 case CodecOperation.ExportPptx:
                 {
-                    var result = PptxCodec.Export(request.Artifact, limits, request.AllowLossy);
+                    var result = PptxCodec.Export(request.Artifact, limits);
                     response.File = ByteString.CopyFrom(result.File);
                     response.Diagnostics.Add(result.Diagnostics);
                     break;

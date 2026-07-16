@@ -22,7 +22,6 @@ for (const required of [
   "src/codecs/open-chestnut-error.mjs",
   "src/codecs/open-chestnut-assets.mjs",
   "src/codecs/open-chestnut-presentation.mjs",
-  "src/codecs/openxml-wasm.mjs",
   "runtime/open-chestnut/main.mjs",
   "runtime/open-chestnut/manifest.json",
   "runtime/open-chestnut/sbom.cdx.json",
@@ -36,7 +35,6 @@ for (const required of [
   "src/presentation/chart-trendline-svg.mjs",
   "src/presentation/ooxml-chart-data.mjs",
   "src/presentation/ooxml-charts.mjs",
-  "src/presentation/ooxml-picture-bullets.mjs",
   "src/presentation/ooxml-hyperlinks.mjs",
   "src/presentation/ooxml-custom-shows.mjs",
   "src/ooxml/docx-links.mjs",
@@ -54,16 +52,12 @@ for (const required of [
   "src/ooxml/source-references.mjs",
   "src/presentation/ooxml-theme.mjs",
   "src/presentation/group-shapes.mjs",
-  "src/presentation/opaque-objects.mjs",
   "src/presentation/text-paragraphs.mjs",
   "src/presentation/ooxml-masters.mjs",
   "src/presentation/ooxml-modern-comments.mjs",
-  "src/presentation/master-graph.mjs",
   "src/shared/colors.mjs",
   "src/spreadsheet/formula-criteria.mjs",
   "src/spreadsheet/formula-coercion.mjs",
-  "src/spreadsheet/ooxml-drawings.mjs",
-  "src/spreadsheet/ooxml-pivots.mjs",
   "src/spreadsheet/ooxml-styles.mjs",
   "src/spreadsheet/ooxml-threaded-comments.mjs",
   "src/spreadsheet/pivot-dates.mjs",
@@ -74,7 +68,6 @@ for (const required of [
   "src/spreadsheet/structured-references.mjs",
   "native/OfficeBridge/src/OfficeBridge.csproj",
   "skills/spreadsheets/SKILL.md",
-  "skills/shared/open-chestnut-compat.mjs",
   "skills/shared/visual-baselines.mjs",
   "skills/spreadsheets/scripts/verify-workbook.mjs",
   "skills/spreadsheets/fixtures/formula-summary.json",
@@ -103,6 +96,16 @@ for (const required of [
   assert.ok(files.includes(required), `npm package is missing ${required}`);
 }
 assert.ok(files.every((file) => !file.includes("/bin/") && !file.includes("/obj/")), "npm package must exclude dotnet bin/obj build output");
+for (const removed of [
+  "src/codecs/openxml-wasm.mjs",
+  "src/codecs/office-codec-policy.mjs",
+  "skills/shared/open-chestnut-compat.mjs",
+  "src/spreadsheet/ooxml-drawings.mjs",
+  "src/spreadsheet/ooxml-pivots.mjs",
+  "src/presentation/master-graph.mjs",
+  "src/presentation/opaque-objects.mjs",
+  "src/presentation/ooxml-picture-bullets.mjs",
+]) assert.ok(!files.includes(removed), `npm package must not contain removed legacy Office implementation ${removed}`);
 assert.ok(files.every((file) => !file.includes("/tests/") && !file.startsWith("test/")), "npm package must exclude development-only test sources");
 assert.ok(files.every((file) => !file.startsWith("handoff/") && !file.startsWith("reference/")), "npm package must exclude handoff and reference material");
 assert.ok(files.every((file) => !file.startsWith("native/OpenChestnut/") && !file.startsWith("scripts/")), "npm runtime package must not duplicate repository-only OpenChestnut source or build tooling");

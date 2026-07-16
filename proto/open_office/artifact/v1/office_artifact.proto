@@ -60,13 +60,15 @@ message CodecLimits {
 }
 
 message CodecRequest {
+  reserved 7;
+  reserved "allow_lossy";
+
   uint32 protocol_version = 1;
   CodecOperation operation = 2;
   ArtifactFamily family = 3;
   ArtifactEnvelope artifact = 4;
   bytes file = 5;
   CodecLimits limits = 6;
-  bool allow_lossy = 7;
 }
 
 message CodecResponse {
@@ -341,6 +343,50 @@ message WorksheetArtifact {
   // source binding. The first public profile covers one bar, line, or pie plot
   // with title, legend, category/value caches, and optional worksheet formulas.
   repeated SpreadsheetChartArtifact charts = 14;
+  // Bounded worksheet validation rules. Advanced UI prompts, extensions, and
+  // unsupported rule types remain source-preserved and fail closed on edit.
+  repeated SpreadsheetDataValidationArtifact data_validations = 15;
+  // Bounded cellIs/expression/containsText/colorScale rules. Differential
+  // formatting reuses the static style projection instead of a second model.
+  repeated SpreadsheetConditionalFormatArtifact conditional_formats = 16;
+  // One root threaded comment per entry. Replies and mentions are outside the
+  // editable profile and remain source-preserved.
+  repeated SpreadsheetThreadedCommentArtifact threaded_comments = 17;
+}
+
+message SpreadsheetDataValidationArtifact {
+  string id = 1;
+  string range = 2;
+  string type = 3;
+  string operator = 4;
+  string formula1 = 5;
+  string formula2 = 6;
+  repeated string values = 7;
+}
+
+message SpreadsheetConditionalFormatArtifact {
+  string id = 1;
+  string range = 2;
+  string rule_type = 3;
+  string operator = 4;
+  repeated string formulas = 5;
+  string text = 6;
+  CellStyleArtifact format = 7;
+  repeated SpreadsheetColor colors = 8;
+  uint32 priority = 9;
+}
+
+message SpreadsheetThreadedCommentArtifact {
+  string id = 1;
+  string cell_reference = 2;
+  string native_comment_id = 3;
+  string text = 4;
+  string person_id = 5;
+  string author = 6;
+  string user_id = 7;
+  string provider_id = 8;
+  string date_time = 9;
+  bool resolved = 10;
 }
 
 message SpreadsheetWorksheetSourceBinding {
@@ -1078,6 +1124,8 @@ message PresentationElement {
     PresentationOpaqueElement opaque = 11;
     PresentationImage image = 12;
     PresentationTable table = 13;
+    PresentationConnector connector = 14;
+    PresentationChart chart = 15;
   }
 }
 
@@ -1123,6 +1171,44 @@ message PresentationShape {
   // designed message owns only the optional a:xfrm attributes. Unknown or
   // structurally complex native transforms remain source-bound and read-only.
   PresentationShapeTransform transform = 13;
+  PresentationShadow shadow = 14;
+}
+
+message PresentationShadow {
+  string color_rgb = 1;
+  int64 blur_radius_emu = 2;
+  int64 distance_emu = 3;
+  int32 direction_angle_60000 = 4;
+  uint32 opacity_thousandth_percent = 5;
+}
+
+message PresentationConnector {
+  string connector_type = 1;
+  int64 start_x_emu = 2;
+  int64 start_y_emu = 3;
+  int64 end_x_emu = 4;
+  int64 end_y_emu = 5;
+  string line_rgb = 6;
+  int64 line_width_emu = 7;
+  string start_arrow = 8;
+  string end_arrow = 9;
+  string start_target_id = 10;
+  string end_target_id = 11;
+}
+
+message PresentationChart {
+  int64 left_emu = 1;
+  int64 top_emu = 2;
+  int64 width_emu = 3;
+  int64 height_emu = 4;
+  SpreadsheetChartType type = 5;
+  string title = 6;
+  bool has_legend = 7;
+  repeated string categories = 8;
+  repeated SpreadsheetChartSeriesArtifact series = 9;
+  SpreadsheetChartAxisArtifact x_axis = 10;
+  SpreadsheetChartAxisArtifact y_axis = 11;
+  SpreadsheetChartDataLabelsArtifact data_labels = 12;
 }
 
 message PresentationShapeTransform {
@@ -1474,6 +1560,77 @@ message DocumentArtifact {
   // OpenChestnut. Package-local comment IDs and anchor ordinals stay in the
   // source binding rather than becoming authoring identity.
   repeated DocumentComment comments = 4;
+  repeated DocumentStyle styles = 5;
+  DocumentRunFormatting default_run_style = 6;
+  repeated DocumentHeaderFooter headers = 7;
+  repeated DocumentHeaderFooter footers = 8;
+  bool even_and_odd_headers = 9;
+  repeated DocumentSectionSettings section_settings = 10;
+}
+
+enum DocumentStyleType {
+  DOCUMENT_STYLE_TYPE_UNSPECIFIED = 0;
+  DOCUMENT_STYLE_TYPE_PARAGRAPH = 1;
+  DOCUMENT_STYLE_TYPE_CHARACTER = 2;
+  DOCUMENT_STYLE_TYPE_TABLE = 3;
+}
+
+message DocumentStyle {
+  string id = 1;
+  string name = 2;
+  DocumentStyleType type = 3;
+  string based_on = 4;
+  DocumentRunFormatting run_format = 5;
+  DocumentParagraphFormatting paragraph_format = 6;
+}
+
+message DocumentRunFormatting {
+  optional string font_family = 1;
+  optional uint32 font_size_half_points = 2;
+  optional string color_rgb = 3;
+  optional int32 character_spacing_twips = 4;
+  optional bool bold = 5;
+  optional bool italic = 6;
+  optional bool underline = 7;
+}
+
+message DocumentParagraphFormatting {
+  optional string alignment = 1;
+  optional int32 left_indent_twips = 2;
+  optional int32 right_indent_twips = 3;
+  optional int32 first_line_indent_twips = 4;
+  optional int32 hanging_indent_twips = 5;
+  optional int32 space_before_twips = 6;
+  optional int32 space_after_twips = 7;
+  optional int32 line_spacing_twips = 8;
+  optional string line_spacing_rule = 9;
+  optional bool keep_next = 10;
+  optional bool page_break_before = 11;
+}
+
+enum DocumentHeaderFooterReference {
+  DOCUMENT_HEADER_FOOTER_REFERENCE_UNSPECIFIED = 0;
+  DOCUMENT_HEADER_FOOTER_REFERENCE_DEFAULT = 1;
+  DOCUMENT_HEADER_FOOTER_REFERENCE_FIRST = 2;
+  DOCUMENT_HEADER_FOOTER_REFERENCE_EVEN = 3;
+}
+
+message DocumentHeaderFooter {
+  string id = 1;
+  string name = 2;
+  string style_id = 3;
+  string text = 4;
+  DocumentHeaderFooterReference reference = 5;
+  optional uint32 section_index = 6;
+  string relationship_id = 7;
+  string part_path = 8;
+  optional bool variant_active = 9;
+  string field_instruction = 10;
+}
+
+message DocumentSectionSettings {
+  uint32 section_index = 1;
+  optional bool different_first_page = 2;
 }
 
 message DocumentComment {
@@ -1512,10 +1669,12 @@ message DocumentBlock {
     DocumentOpaqueBlock opaque = 12;
     DocumentHyperlink hyperlink = 13;
     DocumentField field = 14;
+    DocumentImage image = 15;
+    DocumentSection section = 16;
   }
 }
 
-// The source binding makes partial semantic coverage loss-aware. Unchanged
+// The source binding makes partial semantic coverage fail closed. Unchanged
 // advanced WordprocessingML can stay in the validated source package, while an
 // attempted edit to a block that is not yet modeled fails closed.
 message DocumentSourceBinding {
@@ -1537,6 +1696,7 @@ message DocumentParagraph {
   // export can edit one complete, directly assigned numId/level paragraph
   // group through an instance-local level override.
   DocumentNumbering numbering = 3;
+  DocumentParagraphFormatting formatting = 4;
 }
 
 message DocumentNumbering {
@@ -1557,6 +1717,33 @@ message DocumentRun {
   bool bold = 3;
   bool italic = 4;
   bool underline = 5;
+  DocumentRunFormatting formatting = 6;
+}
+
+message DocumentImage {
+  string asset_id = 1;
+  string alt_text = 2;
+  int64 width_emu = 3;
+  int64 height_emu = 4;
+}
+
+enum DocumentSectionBreak {
+  DOCUMENT_SECTION_BREAK_UNSPECIFIED = 0;
+  DOCUMENT_SECTION_BREAK_NEXT_PAGE = 1;
+  DOCUMENT_SECTION_BREAK_CONTINUOUS = 2;
+  DOCUMENT_SECTION_BREAK_EVEN_PAGE = 3;
+  DOCUMENT_SECTION_BREAK_ODD_PAGE = 4;
+}
+
+message DocumentSection {
+  DocumentSectionBreak break_type = 1;
+  uint32 page_width_twips = 2;
+  uint32 page_height_twips = 3;
+  bool landscape = 4;
+  uint32 margin_top_twips = 5;
+  uint32 margin_right_twips = 6;
+  uint32 margin_bottom_twips = 7;
+  uint32 margin_left_twips = 8;
 }
 
 message DocumentHyperlink {

@@ -1,4 +1,4 @@
-import { normalizeSpreadsheetChartLineStyle, spreadsheetChartLineDashArray, spreadsheetChartLineStyleXml } from "./chart-line-style.mjs";
+import { normalizeSpreadsheetChartLineStyle, spreadsheetChartLineDashArray } from "./chart-line-style.mjs";
 
 export const SPREADSHEET_CHART_MARKER_SYMBOLS = Object.freeze([
   "none",
@@ -43,17 +43,6 @@ export function normalizeSpreadsheetChartSeriesMarker(value) {
   const line = normalizeSpreadsheetChartLineStyle(value.line, "series.marker.line");
   if (line != null) output.line = line;
   return output;
-}
-
-export function spreadsheetChartSeriesMarkerXml(value) {
-  const marker = normalizeSpreadsheetChartSeriesMarker(value);
-  if (marker == null) return "";
-  const symbol = marker.symbol == null ? "" : `<c:symbol val="${marker.symbol}"/>`;
-  const size = marker.size == null ? "" : `<c:size val="${marker.size}"/>`;
-  const fill = marker.fill == null ? "" : `<a:solidFill><a:srgbClr val="${marker.fill.slice(1)}"/></a:solidFill>`;
-  const line = spreadsheetChartLineStyleXml(marker.line, "series.marker.line");
-  const shapeProperties = fill || line ? `<c:spPr>${fill}${line}</c:spPr>` : "";
-  return `<c:marker>${symbol}${size}${shapeProperties}</c:marker>`;
 }
 
 export function spreadsheetChartMarkerSvg(value, x, y, color) {

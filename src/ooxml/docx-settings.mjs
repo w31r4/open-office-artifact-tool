@@ -111,16 +111,6 @@ function booleanValue(value, label) {
   return value;
 }
 
-function onOffValue(tag) {
-  if (!tag) return false;
-  const value = Object.entries(attributes(tag)).find(([name]) => name === "val" || name.endsWith(":val"))?.[1];
-  return value === undefined || !new Set(["false", "0", "off", "no"]).has(String(value).toLowerCase());
-}
-
-function settingTag(xml, name) {
-  return settingsChildren(xml).children.find((child) => child.name === name)?.tag;
-}
-
 function normalizeProtection(value, { partial = false } = {}) {
   if (value === undefined) return partial ? undefined : null;
   if (value === false || value === null || value === "off") return null;
@@ -181,37 +171,4 @@ export function mutateDocxSettings(xml, config = {}) {
     if (normalized.documentProtection) next = insertOrderedSetting(next, "documentProtection", protectionXml(prefix, normalized.documentProtection));
   }
   return next;
-}
-
-export function parseDocxSettings(xml = "") {
-  if (!String(xml || "").trim()) return normalizeDocxSettings();
-  const state = settingsChildren(xml);
-  const byName = new Map(state.children.map((child) => [child.name, child.tag]));
-  const protectionTag = byName.get("documentProtection");
-  let documentProtection = null;
-  if (protectionTag) {
-    const attrs = attributes(protectionTag);
-    const attr = (name) => Object.entries(attrs).find(([key]) => key === name || key.endsWith(`:${name}`))?.[1];
-    const edit = String(attr("edit") || "none");
-    documentProtection = {
-      edit: PROTECTION_MODES.has(edit) ? edit : "none",
-      enforcement: onOffValue(`<x val="${attrEscape(attr("enforcement") ?? "1")}"/>`),
-      formatting: onOffValue(`<x val="${attrEscape(attr("formatting") ?? "0")}"/>`),
-    };
-  }
-  return {
-    trackRevisions: onOffValue(byName.get("trackRevisions")),
-    updateFields: onOffValue(byName.get("updateFields")),
-    evenAndOddHeaders: onOffValue(byName.get("evenAndOddHeaders")),
-    mirrorMargins: onOffValue(byName.get("mirrorMargins")),
-    documentProtection,
-  };
-}
-
-export function docxSettingsXml(settings = {}) {
-  const normalized = normalizeDocxSettings(settings);
-  if (!BOOLEAN_SETTINGS.some((name) => normalized[name]) && !normalized.documentProtection) return undefined;
-  let xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"></w:settings>';
-  const config = Object.fromEntries([...BOOLEAN_SETTINGS.map((name) => [name, normalized[name]]), ["documentProtection", normalized.documentProtection]]);
-  return mutateDocxSettings(xml, config);
 }

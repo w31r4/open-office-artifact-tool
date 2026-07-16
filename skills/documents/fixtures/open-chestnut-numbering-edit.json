@@ -1,9 +1,7 @@
 {
   "name": "open-chestnut-numbering-edit",
   "outputName": "open-chestnut-numbering-edit.docx",
-  "initialCodec": "open-chestnut",
-  "roundtripCodec": "open-chestnut",
-  "openChestnutEdits": [
+  "edits": [
     {
       "kind": "listItem",
       "matchText": "First grouped item",
@@ -54,8 +52,8 @@
     { "kind": "listItem", "pattern": "upperLetter" }
   ],
   "qa": {
-    "previewFormat": "png",
-    "nativeRender": "required",
+    "previewFormat": "svg",
+    "nativeRender": "auto",
     "inspectKind": "document,paragraph,listItem,layout"
   }
 }

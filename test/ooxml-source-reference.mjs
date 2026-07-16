@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import JSZip from "jszip";
 
 import {
@@ -9,459 +8,99 @@ import {
   PresentationFile,
   SpreadsheetFile,
   Workbook,
-} from "open-office-artifact-tool";
-import { createLibreOfficeRenderer } from "open-office-artifact-tool/renderers/libreoffice";
-import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppler";
+} from "../src/index.mjs";
 
-function commandExists(command) {
-  return spawnSync(process.platform === "win32" ? "where" : "which", [command], { encoding: "utf8", shell: false }).status === 0;
+async function zipOf(file) {
+  return JSZip.loadAsync(new Uint8Array(await file.arrayBuffer()));
 }
 
-const document = DocumentModel.create({ paragraphs: ["Source reference native check", "Second review paragraph"] });
-document.addTable({ values: [["Gate", "Status"], ["Native", "Pass"]], name: "source-reference-table" });
-const commentsPartPath = "word/review/comments-agent.xml";
-const commentsPartXml = '<?xml version="1.0" encoding="UTF-8"?><w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:comment w:id="7" w:author="QA Agent" w:initials="QA"><w:p><w:r><w:t>Review the opening paragraph.</w:t></w:r></w:p></w:comment><w:comment w:id="8" w:author="Maintainer" w:initials="MT"><w:p><w:r><w:t>Confirm the native table cell.</w:t></w:r></w:p></w:comment></w:comments>';
+// Explicit package patching remains a low-level operation. It is never selected
+// by an Office facade as a codec or fallback.
+const document = DocumentModel.create({ blocks: [] });
+document.addParagraph("Patch this DOCX");
 const baseDocx = await DocumentFile.exportDocx(document);
-const docx = await DocumentFile.patchDocx(baseDocx, [
-  {
-    path: "word/headerNative.xml",
-    xml: '<?xml version="1.0" encoding="UTF-8"?><w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>Native header</w:t></w:r></w:p></w:hdr>',
-    recipe: { kind: "header", source: "word/document.xml", sourceReference: { type: "first" } },
-  },
-  {
-    path: commentsPartPath,
-    xml: commentsPartXml,
-    recipe: {
-      kind: "comments",
-      source: "word/document.xml",
-      id: "rIdAgentComments",
-      sourceReference: {
-        anchors: [
-          { commentId: 7, target: { type: "block", index: 0 } },
-          { commentId: 8, target: { type: "tableCell", tableIndex: 0, rowIndex: 1, columnIndex: 1 } },
-        ],
-      },
-    },
-  },
-]);
-assert.equal(docx.metadata.sourceReferencesUpdated, 2);
-assert.equal((await DocumentFile.inspectDocx(docx)).ok, true);
-const importedPatchedDocument = await DocumentFile.importDocx(docx, { preferNative: true });
-const importedNativeHeader = importedPatchedDocument.headers.find((item) => item.text === "Native header");
-assert.ok(importedNativeHeader);
-assert.equal(importedNativeHeader.referenceType, "first");
-assert.equal(importedNativeHeader.partPath, "word/headerNative.xml");
-const importedParagraphComment = importedPatchedDocument.comments.find((comment) => comment.text === "Review the opening paragraph.");
-const importedTableComment = importedPatchedDocument.comments.find((comment) => comment.text === "Confirm the native table cell.");
-assert.equal(importedParagraphComment?.author, "QA Agent");
-assert.equal(importedPatchedDocument.resolve(importedParagraphComment?.targetId)?.text, "Source reference native check");
-assert.equal(importedTableComment?.author, "Maintainer");
-assert.equal(importedPatchedDocument.resolve(importedTableComment?.targetId)?.kind, "table");
-const docxZip = await JSZip.loadAsync(new Uint8Array(await docx.arrayBuffer()));
-assert.match(await docxZip.file("word/document.xml").async("text"), /<w:headerReference\b[^>]*w:type="first"[^>]*\/>[\s\S]*?<w:titlePg\/>/);
-const anchoredDocumentXml = await docxZip.file("word/document.xml").async("text");
-assert.match(anchoredDocumentXml, /<w:commentRangeStart w:id="7"\/>[\s\S]*?<w:commentRangeEnd w:id="7"\/>[\s\S]*?<w:commentReference w:id="7"\/>/);
-assert.match(anchoredDocumentXml, /<w:tc>[\s\S]*?<w:t>Pass<\/w:t>[\s\S]*?<w:commentRangeEnd w:id="8"\/>[\s\S]*?<w:commentReference w:id="8"\/>[\s\S]*?<\/w:tc>/);
-assert.match(await docxZip.file("word/_rels/document.xml.rels").async("text"), /Id="rIdAgentComments"[^>]*relationships\/comments[^>]*Target="review\/comments-agent\.xml"/);
-await assert.rejects(() => DocumentFile.patchDocx(docx, [{ path: "word/review/duplicate-comments.xml", xml: commentsPartXml, recipe: { kind: "comments", source: "word/document.xml", sourceReference: { commentId: 7, target: { type: "block", index: 1 } } } }]), /commentId 7 already exists/);
-await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/missing-id-comments.xml", xml: commentsPartXml, recipe: { kind: "comments", source: "word/document.xml", sourceReference: { target: { type: "block", index: 0 } } } }]), /commentId is required/);
-await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/undeclared-id-comments.xml", xml: commentsPartXml, recipe: { kind: "comments", source: "word/document.xml", sourceReference: { commentId: 99, target: { type: "block", index: 0 } } } }]), /commentId 99 is not declared/);
-await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/duplicate-part-comments.xml", xml: commentsPartXml.replace('w:id="8"', 'w:id="7"'), recipe: { kind: "comments", source: "word/document.xml", sourceReference: { commentId: 7, target: { type: "block", index: 0 } } } }]), /duplicate commentId 7/);
-await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/out-of-range-comments.xml", xml: commentsPartXml, recipe: { kind: "comments", source: "word/document.xml", sourceReference: { commentId: 7, target: { type: "tableCell", tableIndex: 0, rowIndex: 9, columnIndex: 0 } } } }]), /rowIndex 9 is out of range/);
-const commentsRemovedDocx = await DocumentFile.patchDocx(docx, [{ path: commentsPartPath, remove: true, recipe: { kind: "comments", source: "word/document.xml", id: "rIdAgentComments", sourceReference: true } }]);
-assert.equal((await DocumentFile.inspectDocx(commentsRemovedDocx)).ok, true);
-const commentsRemovedZip = await JSZip.loadAsync(new Uint8Array(await commentsRemovedDocx.arrayBuffer()));
-assert.doesNotMatch(await commentsRemovedZip.file("word/document.xml").async("text"), /commentRange|commentReference/);
-assert.equal((await DocumentFile.importDocx(commentsRemovedDocx, { preferNative: true })).comments.length, 0);
+assert.equal((await DocumentFile.inspectDocx(baseDocx)).ok, true);
 
-const numberingPartPath = "word/review/numbering-agent.xml";
-const numberingPartXml = '<?xml version="1.0" encoding="UTF-8"?><w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:abstractNum w:abstractNumId="42"><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl><w:lvl w:ilvl="1"><w:start w:val="3"/><w:numFmt w:val="lowerLetter"/><w:lvlText w:val="%1.%2)"/></w:lvl></w:abstractNum><w:num w:numId="77"><w:abstractNumId w:val="42"/></w:num></w:numbering>';
-const numberingDocx = await DocumentFile.patchDocx(baseDocx, [{
-  path: numberingPartPath,
-  xml: numberingPartXml,
-  recipe: {
-    kind: "numbering",
-    source: "word/document.xml",
-    id: "rIdAgentNumbering",
-    sourceReference: {
-      assignments: [
-        { numId: 77, level: 0, target: { type: "block", index: 0 } },
-        { numId: 77, level: 1, target: { type: "block", index: 1 } },
-      ],
-    },
-  },
+const docxZip = await zipOf(baseDocx);
+const documentXml = await docxZip.file("word/document.xml").async("text");
+assert.match(documentXml, /Patch this DOCX/);
+const patchedDocx = await DocumentFile.patchDocx(baseDocx, [{
+  path: "word/document.xml",
+  xml: documentXml.replace("Patch this DOCX", "Patched DOCX"),
 }]);
-assert.equal(numberingDocx.metadata.sourceReferencesUpdated, 1);
-assert.equal((await DocumentFile.inspectDocx(numberingDocx)).ok, true);
-const numberingZip = await JSZip.loadAsync(new Uint8Array(await numberingDocx.arrayBuffer()));
-const numberedDocumentXml = await numberingZip.file("word/document.xml").async("text");
-assert.match(numberedDocumentXml, /<w:numPr><w:ilvl w:val="0"\/><w:numId w:val="77"\/><\/w:numPr>[\s\S]*?Source reference native check/);
-assert.match(numberedDocumentXml, /<w:numPr><w:ilvl w:val="1"\/><w:numId w:val="77"\/><\/w:numPr>[\s\S]*?Second review paragraph/);
-assert.match(await numberingZip.file("word/_rels/document.xml.rels").async("text"), /Id="rIdAgentNumbering"[^>]*relationships\/numbering[^>]*Target="review\/numbering-agent\.xml"/);
-const importedNumberingDocument = await DocumentFile.importDocx(numberingDocx, { preferNative: true });
-assert.equal(importedNumberingDocument.blocks[0].kind, "listItem");
-assert.equal(importedNumberingDocument.blocks[0].numberFormat, "decimal");
-assert.equal(importedNumberingDocument.blocks[0].numberingId, 77);
-assert.equal(importedNumberingDocument.blocks[1].kind, "listItem");
-assert.equal(importedNumberingDocument.blocks[1].numberFormat, "lowerLetter");
-assert.equal(importedNumberingDocument.blocks[1].level, 1);
-assert.equal(importedNumberingDocument.blocks[1].start, 3);
-const reassignedNumberingDocx = await DocumentFile.patchDocx(numberingDocx, [{ path: numberingPartPath, xml: numberingPartXml, recipe: { kind: "numbering", source: "word/document.xml", id: "rIdAgentNumbering", sourceReference: { numId: 77, level: 1, target: { type: "block", index: 0 } } } }]);
-const reassignedFirstParagraph = /<w:p>[\s\S]*?<\/w:p>/.exec(await (await JSZip.loadAsync(new Uint8Array(await reassignedNumberingDocx.arrayBuffer()))).file("word/document.xml").async("text"))?.[0] || "";
-assert.equal((reassignedFirstParagraph.match(/<w:numPr>/g) || []).length, 1);
-assert.match(reassignedFirstParagraph, /<w:ilvl w:val="1"\/>/);
-await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/undeclared-numbering.xml", xml: numberingPartXml, recipe: { kind: "numbering", source: "word/document.xml", sourceReference: { numId: 99, target: { type: "block", index: 0 } } } }]), /numId 99 is not declared/);
-await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/undeclared-level.xml", xml: numberingPartXml, recipe: { kind: "numbering", source: "word/document.xml", sourceReference: { numId: 77, level: 8, target: { type: "block", index: 0 } } } }]), /level 8 is not declared/);
-await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/duplicate-numbering.xml", xml: numberingPartXml.replace('</w:numbering>', '<w:num w:numId="77"><w:abstractNumId w:val="42"/></w:num></w:numbering>'), recipe: { kind: "numbering", source: "word/document.xml", sourceReference: { numId: 77, target: { type: "block", index: 0 } } } }]), /duplicate numId 77/);
-await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/duplicate-target-numbering.xml", xml: numberingPartXml, recipe: { kind: "numbering", source: "word/document.xml", sourceReference: { assignments: [{ numId: 77, target: { type: "block", index: 0 } }, { numId: 77, level: 1, target: { type: "block", index: 0 } }] } } }]), /target is assigned more than once/);
-await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/out-of-range-numbering.xml", xml: numberingPartXml, recipe: { kind: "numbering", source: "word/document.xml", sourceReference: { numId: 77, target: { type: "block", index: 9 } } } }]), /blockIndex 9 is out of range/);
-const numberingRemovedDocx = await DocumentFile.patchDocx(numberingDocx, [{ path: numberingPartPath, remove: true, recipe: { kind: "numbering", source: "word/document.xml", id: "rIdAgentNumbering", sourceReference: true } }]);
-assert.equal((await DocumentFile.inspectDocx(numberingRemovedDocx)).ok, true);
-assert.doesNotMatch(await (await JSZip.loadAsync(new Uint8Array(await numberingRemovedDocx.arrayBuffer()))).file("word/document.xml").async("text"), /<w:numPr>/);
-assert.equal((await DocumentFile.importDocx(numberingRemovedDocx, { preferNative: true })).blocks[0].kind, "paragraph");
+assert.equal((await DocumentFile.importDocx(patchedDocx)).blocks[0].text, "Patched DOCX");
 
-const settingsPartPath = "word/review/settings-agent.xml";
-const settingsPartXml = '<?xml version="1.0" encoding="UTF-8"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:zoom w:percent="100"/><w:compat><w:compatSetting w:name="compatibilityMode" w:val="15"/></w:compat></w:settings>';
-const settingsDocx = await DocumentFile.patchDocx(baseDocx, [{
-  path: settingsPartPath,
-  xml: settingsPartXml,
+const headerDocx = await DocumentFile.patchDocx(patchedDocx, [{
+  path: "word/headerPatch.xml",
+  xml: '<?xml version="1.0" encoding="UTF-8"?><w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:r><w:t>Patched header</w:t></w:r></w:p></w:hdr>',
   recipe: {
-    kind: "settings",
+    kind: "header",
     source: "word/document.xml",
-    id: "rIdAgentSettings",
-    sourceReference: {
-      trackRevisions: true,
-      updateFields: true,
-      evenAndOddHeaders: true,
-      mirrorMargins: true,
-      documentProtection: { edit: "comments", enforcement: true, formatting: false },
-    },
+    id: "rIdPatchedHeader",
+    sourceReference: { type: "default" },
   },
 }]);
-assert.equal(settingsDocx.metadata.sourceReferencesUpdated, 1);
-assert.equal((await DocumentFile.inspectDocx(settingsDocx)).ok, true);
-const settingsZip = await JSZip.loadAsync(new Uint8Array(await settingsDocx.arrayBuffer()));
-const patchedSettingsXml = await settingsZip.file(settingsPartPath).async("text");
-assert.match(patchedSettingsXml, /<w:trackRevisions\/>[\s\S]*?<w:documentProtection w:edit="comments" w:enforcement="1" w:formatting="0"\/>[\s\S]*?<w:evenAndOddHeaders\/>[\s\S]*?<w:updateFields\/>[\s\S]*?<w:compat>/);
-assert.match(patchedSettingsXml, /<w:zoom w:percent="100"\/>/);
-assert.match(patchedSettingsXml, /<w:compatSetting w:name="compatibilityMode" w:val="15"\/>/);
-assert.match(await settingsZip.file("word/_rels/document.xml.rels").async("text"), /Id="rIdAgentSettings"[^>]*relationships\/settings[^>]*Target="review\/settings-agent\.xml"/);
-const importedSettingsDocument = await DocumentFile.importDocx(settingsDocx, { preferNative: true });
-assert.deepEqual(importedSettingsDocument.settings, {
-  trackRevisions: true,
-  updateFields: true,
-  evenAndOddHeaders: true,
-  mirrorMargins: true,
-  documentProtection: { edit: "comments", enforcement: true, formatting: false },
-});
-assert.match(importedSettingsDocument.inspect({ kind: "settings" }).ndjson, /"edit":"comments"/);
-assert.equal(importedSettingsDocument.resolve(`${importedSettingsDocument.id}/settings`), importedSettingsDocument.settings);
-const clearedSettingsDocx = await DocumentFile.patchDocx(settingsDocx, [{
-  path: settingsPartPath,
-  xml: patchedSettingsXml,
-  recipe: {
-    kind: "settings",
-    source: "word/document.xml",
-    id: "rIdAgentSettings",
-    sourceReference: { trackRevisions: false, updateFields: false, evenAndOddHeaders: false, mirrorMargins: false, documentProtection: false },
-  },
-}]);
-const clearedSettingsXml = await (await JSZip.loadAsync(new Uint8Array(await clearedSettingsDocx.arrayBuffer()))).file(settingsPartPath).async("text");
-assert.doesNotMatch(clearedSettingsXml, /trackRevisions|updateFields|evenAndOddHeaders|mirrorMargins|documentProtection/);
-assert.match(clearedSettingsXml, /<w:compat>/);
-assert.deepEqual((await DocumentFile.importDocx(clearedSettingsDocx, { preferNative: true })).settings, {
-  trackRevisions: false,
-  updateFields: false,
-  evenAndOddHeaders: false,
-  mirrorMargins: false,
-  documentProtection: null,
-});
-await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/settings-empty.xml", xml: settingsPartXml, recipe: { kind: "settings", source: "word/document.xml", sourceReference: {} } }]), /requires at least one supported setting/);
-await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/settings-boolean.xml", xml: settingsPartXml, recipe: { kind: "settings", source: "word/document.xml", sourceReference: { updateFields: "true" } } }]), /updateFields must be a boolean/);
-await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/settings-mode.xml", xml: settingsPartXml, recipe: { kind: "settings", source: "word/document.xml", sourceReference: { documentProtection: "encrypted" } } }]), /edit must be none, readOnly, comments, trackedChanges, or forms/);
-await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/settings-password.xml", xml: settingsPartXml, recipe: { kind: "settings", source: "word/document.xml", sourceReference: { documentProtection: { edit: "readOnly", password: "secret" } } } }]), /Password hashing is intentionally unsupported/);
-await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/settings-root.xml", xml: '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>', recipe: { kind: "settings", source: "word/document.xml", sourceReference: { updateFields: true } } }]), /must have a w:settings root element/);
-await assert.rejects(() => DocumentFile.patchDocx(baseDocx, [{ path: "word/review/settings-namespace.xml", xml: '<w:settings xmlns:w="https://example.invalid/word"/>', recipe: { kind: "settings", source: "word/document.xml", sourceReference: { updateFields: true } } }]), /must use a WordprocessingML namespace/);
-const strictSettingsDocx = await DocumentFile.patchDocx(baseDocx, [{ path: "word/review/settings-strict.xml", xml: '<wx:settings xmlns:wx="http://purl.oclc.org/ooxml/wordprocessingml/main"/>', recipe: { kind: "settings", source: "word/document.xml", sourceReference: { updateFieldsOnOpen: true } } }]);
-assert.match(await (await JSZip.loadAsync(new Uint8Array(await strictSettingsDocx.arrayBuffer()))).file("word/review/settings-strict.xml").async("text"), /<wx:updateFields\/>/);
-const removedSettingsDocx = await DocumentFile.patchDocx(settingsDocx, [{ path: settingsPartPath, remove: true, recipe: { kind: "settings", source: "word/document.xml", id: "rIdAgentSettings", sourceReference: true } }]);
-assert.equal((await DocumentFile.inspectDocx(removedSettingsDocx)).ok, true);
-assert.deepEqual((await DocumentFile.importDocx(removedSettingsDocx, { preferNative: true })).settings, {
-  trackRevisions: false,
-  updateFields: false,
-  evenAndOddHeaders: false,
-  mirrorMargins: false,
-  documentProtection: null,
-});
+const importedHeaderDocument = await DocumentFile.importDocx(headerDocx);
+assert.equal(importedHeaderDocument.headers.find((header) => header.referenceType === "default")?.text, "Patched header");
+assert.equal((await DocumentFile.inspectDocx(headerDocx)).ok, true);
+
+await assert.rejects(
+  () => DocumentFile.patchDocx(baseDocx, [{ path: "../escape.xml", xml: "<escape/>" }]),
+  /unsafe|traversal|outside|invalid/i,
+);
+await assert.rejects(
+  () => DocumentFile.patchDocx(baseDocx, [{ path: "_rels/.rels", remove: true }]),
+  /invalid OOXML package|missingRootRelationships|missing/i,
+);
 
 const workbook = Workbook.create();
 workbook.worksheets.add("Main").getRange("A1:B2").values = [["Metric", "Value"], ["Revenue", 120]];
-const xlsx = await SpreadsheetFile.patchXlsx(await SpreadsheetFile.exportXlsx(workbook), [{
-  path: "xl/worksheets/sheetNative.xml",
-  xml: '<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Native sheet</t></is></c></row></sheetData></worksheet>',
-  recipe: { kind: "worksheet", source: "xl/workbook.xml", sourceReference: { name: "Native Added" } },
+const baseXlsx = await SpreadsheetFile.exportXlsx(workbook);
+assert.equal((await SpreadsheetFile.inspectXlsx(baseXlsx)).ok, true);
+
+const xlsxZip = await zipOf(baseXlsx);
+const sheetXml = await xlsxZip.file("xl/worksheets/sheet1.xml").async("text");
+assert.match(sheetXml, />120</);
+const patchedXlsx = await SpreadsheetFile.patchXlsx(baseXlsx, [{
+  path: "xl/worksheets/sheet1.xml",
+  xml: sheetXml.replace(">120<", ">125<"),
 }]);
-assert.equal(xlsx.metadata.sourceReferencesUpdated, 1);
-assert.equal((await SpreadsheetFile.inspectXlsx(xlsx)).ok, true);
-assert.ok((await SpreadsheetFile.importXlsx(xlsx)).worksheets.getItem("Native Added"));
-const drawingPartPath = "xl/custom/drawings/agent-drawing.xml";
-const drawingXml = '<?xml version="1.0" encoding="UTF-8"?><xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"/>';
-const chartXml = (title) => `<?xml version="1.0" encoding="UTF-8"?><c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><c:chart><c:title><c:tx><c:rich><a:p><a:r><a:t>${title}</a:t></a:r></a:p></c:rich></c:tx></c:title><c:plotArea><c:barChart><c:ser><c:tx><c:v>Value</c:v></c:tx><c:cat><c:strLit><c:pt idx="0"><c:v>Revenue</c:v></c:pt></c:strLit></c:cat><c:val><c:numLit><c:pt idx="0"><c:v>120</c:v></c:pt></c:numLit></c:val></c:ser></c:barChart></c:plotArea></c:chart></c:chartSpace>`;
-const drawingXlsx = await SpreadsheetFile.patchXlsx(xlsx, [
-  { path: "customXml/open-office-artifact.json", remove: true },
-  { path: drawingPartPath, xml: drawingXml, recipe: { kind: "drawing", source: "xl/worksheets/sheet1.xml", id: "rIdAgentDrawing", sourceReference: true } },
-  {
-    path: "xl/custom/media/agent-status.png",
-    bytes: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"),
-    recipe: {
-      kind: "image",
-      source: drawingPartPath,
-      id: "rIdAgentImage",
-      sourceReference: { name: "Agent status", alt: "Green agent status", objectId: 2, anchor: { type: "oneCell", from: { row: 4, col: 0 }, extent: { widthPx: 48, heightPx: 48 } } },
-    },
+assert.equal((await SpreadsheetFile.importXlsx(patchedXlsx)).worksheets.getItem("Main").getRange("B2").values[0][0], 125);
+
+const addedSheetXlsx = await SpreadsheetFile.patchXlsx(patchedXlsx, [{
+  path: "xl/worksheets/patched-sheet.xml",
+  xml: '<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Added</t></is></c></row></sheetData></worksheet>',
+  recipe: {
+    kind: "worksheet",
+    source: "xl/workbook.xml",
+    id: "rIdPatchedSheet",
+    sourceReference: { name: "Patched Added" },
   },
-  {
-    path: "xl/custom/charts/agent-absolute.xml",
-    xml: chartXml("Absolute review"),
-    recipe: {
-      kind: "chart",
-      source: drawingPartPath,
-      id: "rIdAgentAbsoluteChart",
-      sourceReference: { name: "Absolute review chart", objectId: 3, anchor: { type: "absolute", position: { leftPx: 180, topPx: 40 }, extent: { widthPx: 260, heightPx: 160 } } },
-    },
-  },
-  {
-    path: "xl/custom/charts/agent-two-cell.xml",
-    xml: chartXml("Two-cell review"),
-    recipe: {
-      kind: "chart",
-      source: drawingPartPath,
-      id: "rIdAgentTwoCellChart",
-      sourceReference: { name: "Two-cell review chart", objectId: 4, anchor: { type: "twoCell", from: { row: 10, col: 0 }, to: { row: 18, col: 5 }, extent: { widthPx: 320, heightPx: 180 } } },
-    },
-  },
-]);
-assert.equal(drawingXlsx.metadata.sourceReferencesUpdated, 4);
-assert.equal((await SpreadsheetFile.inspectXlsx(drawingXlsx)).ok, true);
-const drawingXlsxZip = await JSZip.loadAsync(new Uint8Array(await drawingXlsx.arrayBuffer()));
-assert.match(await drawingXlsxZip.file("xl/worksheets/sheet1.xml").async("text"), /<drawing r:id="rIdAgentDrawing"\/>/);
-const patchedDrawingXml = await drawingXlsxZip.file(drawingPartPath).async("text");
-assert.match(patchedDrawingXml, /<xdr:oneCellAnchor>/);
-assert.match(patchedDrawingXml, /<xdr:absoluteAnchor>/);
-assert.match(patchedDrawingXml, /<xdr:twoCellAnchor>/);
-assert.match(patchedDrawingXml, /r:embed="rIdAgentImage"/);
-assert.match(patchedDrawingXml, /r:id="rIdAgentAbsoluteChart"/);
-const importedDrawingWorkbook = await SpreadsheetFile.importXlsx(drawingXlsx);
-const importedDrawingSheet = importedDrawingWorkbook.worksheets.getItem("Main");
-assert.equal(importedDrawingSheet.images.items.length, 1);
-assert.equal(importedDrawingSheet.images.items[0].alt, "Green agent status");
-assert.equal(importedDrawingSheet.charts.items.length, 2);
-assert.deepEqual(importedDrawingSheet.charts.items.find((chart) => chart.title === "Absolute review").position, { left: 220, top: 80, width: 260, height: 160 });
-assert.ok(importedDrawingSheet.charts.items.find((chart) => chart.title === "Two-cell review").position.width > 200);
-await assert.rejects(() => SpreadsheetFile.patchXlsx(drawingXlsx, [{ path: "xl/custom/charts/missing-anchor.xml", xml: chartXml("Missing anchor"), recipe: { kind: "chart", source: drawingPartPath, sourceReference: true } }]), /requires an explicit anchor/);
-await assert.rejects(() => SpreadsheetFile.patchXlsx(drawingXlsx, [{ path: "xl/custom/charts/duplicate-object.xml", xml: chartXml("Duplicate object"), recipe: { kind: "chart", source: drawingPartPath, sourceReference: { objectId: 2, anchor: { type: "oneCell", from: { row: 20, col: 0 }, extent: { widthPx: 240, heightPx: 140 } } } } }]), /objectId 2 already exists/);
-await assert.rejects(() => SpreadsheetFile.patchXlsx(drawingXlsx, [{ path: "xl/custom/drawings/second.xml", xml: drawingXml, recipe: { kind: "drawing", source: "xl/worksheets/sheet1.xml", sourceReference: true } }]), /without another drawing reference/);
-const drawingObjectsRemoved = await SpreadsheetFile.patchXlsx(drawingXlsx, [
-  { path: "xl/custom/media/agent-status.png", remove: true, recipe: { kind: "image", source: drawingPartPath, id: "rIdAgentImage", sourceReference: true } },
-  { path: "xl/custom/charts/agent-absolute.xml", remove: true, recipe: { kind: "chart", source: drawingPartPath, id: "rIdAgentAbsoluteChart", sourceReference: true } },
-  { path: "xl/custom/charts/agent-two-cell.xml", remove: true, recipe: { kind: "chart", source: drawingPartPath, id: "rIdAgentTwoCellChart", sourceReference: true } },
-]);
-assert.equal((await SpreadsheetFile.inspectXlsx(drawingObjectsRemoved)).ok, true);
-assert.doesNotMatch(await (await JSZip.loadAsync(new Uint8Array(await drawingObjectsRemoved.arrayBuffer()))).file(drawingPartPath).async("text"), /(?:oneCell|twoCell|absolute)Anchor/);
-const drawingRemoved = await SpreadsheetFile.patchXlsx(drawingObjectsRemoved, [{ path: drawingPartPath, remove: true, recipe: { kind: "drawing", source: "xl/worksheets/sheet1.xml", id: "rIdAgentDrawing", sourceReference: true } }]);
-assert.equal((await SpreadsheetFile.inspectXlsx(drawingRemoved)).ok, true);
-assert.doesNotMatch(await (await JSZip.loadAsync(new Uint8Array(await drawingRemoved.arrayBuffer()))).file("xl/worksheets/sheet1.xml").async("text"), /<drawing\b/);
-const pivotCachePath = "xl/custom/pivots/cache-definition.xml";
-const pivotRecordsPath = "xl/custom/pivots/cache-records.xml";
-const pivotTablePath = "xl/custom/pivots/review-pivot.xml";
-const pivotXlsx = await SpreadsheetFile.patchXlsx(drawingXlsx, [
-  {
-    path: pivotRecordsPath,
-    xml: '<?xml version="1.0" encoding="UTF-8"?><pivotCacheRecords xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1"><r><s v="Revenue"/><n v="120"/></r></pivotCacheRecords>',
-    recipe: { kind: "pivotCacheRecords", source: pivotCachePath, id: "rIdAgentPivotRecords", sourceReference: true },
-  },
-  {
-    path: pivotCachePath,
-    xml: '<?xml version="1.0" encoding="UTF-8"?><pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" refreshOnLoad="1" recordCount="1"><cacheSource type="worksheet"><worksheetSource ref="A1:B2" sheet="Main"/></cacheSource><cacheFields count="2"><cacheField name="Metric" numFmtId="0"><sharedItems containsString="1" count="1"><s v="Revenue"/></sharedItems></cacheField><cacheField name="Value" numFmtId="0"><sharedItems containsNumber="1" count="1"><n v="120"/></sharedItems></cacheField></cacheFields></pivotCacheDefinition>',
-    relationships: [
-      { source: "xl/workbook.xml", id: "rIdAgentPivotCache" },
-      { source: pivotTablePath, id: "rIdAgentPivotTableCache" },
-    ],
-    recipe: { kind: "pivotCacheDefinition", source: "xl/workbook.xml", id: "rIdAgentPivotCache", sourceReference: { cacheId: 17 } },
-  },
-  {
-    path: pivotTablePath,
-    xml: '<?xml version="1.0" encoding="UTF-8"?><pivotTableDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" name="AgentReviewPivot" cacheId="17" dataCaption="Values" updatedVersion="7" minRefreshableVersion="3"><location ref="D1:E2" firstHeaderRow="1" firstDataRow="1" firstDataCol="1"/><pivotFields count="2"><pivotField axis="axisRow" showAll="0"><items count="1"><item t="default"/></items></pivotField><pivotField dataField="1" showAll="0"><items count="1"><item t="default"/></items></pivotField></pivotFields><rowFields count="1"><field x="0"/></rowFields><dataFields count="1"><dataField name="Total value" fld="1" subtotal="sum"/></dataFields></pivotTableDefinition>',
-    recipe: { kind: "pivotTable", source: "xl/worksheets/sheet1.xml", id: "rIdAgentPivotTable" },
-  },
-]);
-assert.equal(pivotXlsx.metadata.sourceReferencesUpdated, 2);
-assert.equal((await SpreadsheetFile.inspectXlsx(pivotXlsx)).ok, true);
-const pivotXlsxZip = await JSZip.loadAsync(new Uint8Array(await pivotXlsx.arrayBuffer()));
-assert.match(await pivotXlsxZip.file("xl/workbook.xml").async("text"), /<pivotCaches><pivotCache cacheId="17" r:id="rIdAgentPivotCache"\/><\/pivotCaches>/);
-assert.match(await pivotXlsxZip.file("xl/worksheets/_rels/sheet1.xml.rels").async("text"), /Id="rIdAgentPivotTable"[^>]*relationships\/pivotTable[^>]*Target="\.\.\/custom\/pivots\/review-pivot\.xml"/);
-assert.match(await pivotXlsxZip.file(pivotCachePath).async("text"), /r:id="rIdAgentPivotRecords"/);
-assert.match(await pivotXlsxZip.file("xl/custom/pivots/_rels/review-pivot.xml.rels").async("text"), /Id="rIdAgentPivotTableCache"[^>]*relationships\/pivotCacheDefinition[^>]*Target="cache-definition\.xml"/);
-const importedPivotWorkbook = await SpreadsheetFile.importXlsx(pivotXlsx);
-const importedPivot = importedPivotWorkbook.resolve("AgentReviewPivot");
-assert.ok(importedPivot);
-assert.deepEqual(importedPivot.computedValues(), [["Metric", "Total value"], ["Revenue", 120]]);
-assert.match(importedPivotWorkbook.inspect({ kind: "pivotTable", target: "AgentReviewPivot", maxChars: 4000 }).ndjson, /Total value/);
-assert.ok(importedPivotWorkbook.worksheets.getItem("Main").layoutJson().pivots.some((pivot) => pivot.name === "AgentReviewPivot"));
-assert.match(importedPivotWorkbook.worksheets.getItem("Main").toSvg(), /AgentReviewPivot/);
-assert.ok(importedPivotWorkbook.verify().issues.every((issue) => !["pivotSourceInvalid", "pivotFieldMissing"].includes(issue.type)));
-await assert.rejects(() => SpreadsheetFile.patchXlsx(pivotXlsx, [{ path: "xl/custom/pivots/duplicate-cache.xml", xml: '<pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>', recipe: { kind: "pivotCacheDefinition", source: "xl/workbook.xml", sourceReference: { cacheId: 17 } } }]), /cacheId 17 already exists/);
-await assert.rejects(() => SpreadsheetFile.patchXlsx(pivotXlsx, [{ path: "xl/custom/pivots/missing-cache-id.xml", xml: '<pivotCacheDefinition xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>', recipe: { kind: "pivotCacheDefinition", source: "xl/workbook.xml", sourceReference: true } }]), /cacheId must be a non-negative integer/);
-const pivotRecordsRemoved = await SpreadsheetFile.patchXlsx(pivotXlsx, [{ path: pivotRecordsPath, remove: true, recipe: { kind: "pivotCacheRecords", source: pivotCachePath, id: "rIdAgentPivotRecords", sourceReference: true } }]);
-assert.doesNotMatch(await (await JSZip.loadAsync(new Uint8Array(await pivotRecordsRemoved.arrayBuffer()))).file(pivotCachePath).async("text"), /r:id=/);
-const pivotRemoved = await SpreadsheetFile.patchXlsx(pivotRecordsRemoved, [
-  { path: pivotTablePath, remove: true, recipe: { kind: "pivotTable", source: "xl/worksheets/sheet1.xml", id: "rIdAgentPivotTable" } },
-  { path: pivotCachePath, remove: true, recipe: { kind: "pivotCacheDefinition", source: "xl/workbook.xml", id: "rIdAgentPivotCache", sourceReference: true } },
-]);
-assert.equal((await SpreadsheetFile.inspectXlsx(pivotRemoved)).ok, true);
-const pivotRemovedZip = await JSZip.loadAsync(new Uint8Array(await pivotRemoved.arrayBuffer()));
-assert.doesNotMatch(await pivotRemovedZip.file("xl/workbook.xml").async("text"), /pivotCaches/);
-assert.doesNotMatch(await pivotRemovedZip.file("xl/worksheets/_rels/sheet1.xml.rels").async("text"), /relationships\/pivotTable/);
-assert.equal((await SpreadsheetFile.importXlsx(pivotRemoved)).worksheets.getItem("Main").pivotTables.items.length, 0);
+}]);
+const importedAddedSheet = (await SpreadsheetFile.importXlsx(addedSheetXlsx)).worksheets.getItem("Patched Added");
+assert.ok(importedAddedSheet);
+assert.equal(importedAddedSheet.getRange("A1").values[0][0], "Added");
+assert.equal((await SpreadsheetFile.inspectXlsx(addedSheetXlsx)).ok, true);
 
 const presentation = Presentation.create();
-presentation.slides.add().shapes.add({ text: "Source reference native check", position: { left: 40, top: 40, width: 400, height: 80 } });
+presentation.slides.add({ name: "Patch slide" }).shapes.add({
+  name: "patch-text",
+  geometry: "textbox",
+  text: "Patch this PPTX",
+  position: { left: 40, top: 40, width: 400, height: 80 },
+});
 const basePptx = await PresentationFile.exportPptx(presentation);
-const pptxImagePartPath = "ppt/custom/media/agent-status.png";
-const pptxChartPartPath = "ppt/custom/charts/agent-chart.xml";
-const pptxImageBytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
-const chartSourcePresentation = Presentation.create();
-chartSourcePresentation.slides.add().charts.add("bar", { name: "Agent source chart", title: "Agent source chart", categories: ["Package"], series: [{ name: "Readiness", values: [100] }], position: { left: 0, top: 0, width: 360, height: 220 } });
-const chartSourceZip = await JSZip.loadAsync(new Uint8Array(await (await PresentationFile.exportPptx(chartSourcePresentation)).arrayBuffer()));
-const pptxChartPartXml = await chartSourceZip.file("ppt/charts/chart1.xml").async("text");
-const drawingPptx = await PresentationFile.patchPptx(basePptx, [
-  {
-    path: pptxImagePartPath,
-    bytes: pptxImageBytes,
-    recipe: { kind: "image", source: "ppt/slides/slide1.xml", id: "rIdAgentSlideImage", sourceReference: { objectId: 3, name: "Agent status", alt: "Green agent status", position: { left: 60, top: 160, width: 96, height: 64 } } },
-  },
-  {
-    path: pptxChartPartPath,
-    xml: pptxChartPartXml,
-    recipe: { kind: "chart", source: "ppt/slides/slide1.xml", id: "rIdAgentSlideChart", sourceReference: { objectId: 4, name: "Agent source chart", alt: "Readiness chart", position: { left: 200, top: 150, width: 360, height: 220 } } },
-  },
-]);
-assert.equal(drawingPptx.metadata.sourceReferencesUpdated, 2);
-assert.equal((await PresentationFile.inspectPptx(drawingPptx)).ok, true);
-const drawingPptxZip = await JSZip.loadAsync(new Uint8Array(await drawingPptx.arrayBuffer()));
-const drawingSlideXml = await drawingPptxZip.file("ppt/slides/slide1.xml").async("text");
-assert.match(drawingSlideXml, /<p:pic>[\s\S]*?<p:cNvPr id="3" name="Agent status" descr="Green agent status"\/>[\s\S]*?<a:blip r:embed="rIdAgentSlideImage"\/>[\s\S]*?<a:off x="571500" y="1524000"\/><a:ext cx="914400" cy="609600"\/>[\s\S]*?<\/p:pic>/);
-assert.match(drawingSlideXml, /<p:graphicFrame>[\s\S]*?<p:cNvPr id="4" name="Agent source chart" descr="Readiness chart"\/>[\s\S]*?<a:off x="1905000" y="1428750"\/><a:ext cx="3429000" cy="2095500"\/>[\s\S]*?<c:chart r:id="rIdAgentSlideChart"\/>[\s\S]*?<\/p:graphicFrame>/);
-const drawingSlideRels = await drawingPptxZip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
-assert.match(drawingSlideRels, /Id="rIdAgentSlideImage"[^>]*relationships\/image[^>]*Target="\.\.\/custom\/media\/agent-status\.png"/);
-assert.match(drawingSlideRels, /Id="rIdAgentSlideChart"[^>]*relationships\/chart[^>]*Target="\.\.\/custom\/charts\/agent-chart\.xml"/);
-const importedDrawingPresentation = await PresentationFile.importPptx(drawingPptx);
-assert.equal(importedDrawingPresentation.slides.items[0].images.items.find((item) => item.name === "Agent status")?.alt, "Green agent status");
-assert.equal(importedDrawingPresentation.slides.items[0].images.items.find((item) => item.name === "Agent status")?.position.left, 60);
-assert.equal(importedDrawingPresentation.slides.items[0].charts.items.find((item) => item.name === "Agent source chart")?.title, "Agent source chart");
-assert.equal(importedDrawingPresentation.slides.items[0].charts.items.find((item) => item.name === "Agent source chart")?.series[0].values[0], 100);
-await assert.rejects(() => PresentationFile.patchPptx(drawingPptx, [{ path: "ppt/custom/media/duplicate.png", bytes: pptxImageBytes, recipe: { kind: "image", source: "ppt/slides/slide1.xml", sourceReference: { objectId: 3, position: { left: 0, top: 0, width: 10, height: 10 } } } }]), /objectId 3 already exists/);
-await assert.rejects(() => PresentationFile.patchPptx(basePptx, [{ path: "ppt/custom/media/missing-position.png", bytes: pptxImageBytes, recipe: { kind: "image", source: "ppt/slides/slide1.xml", sourceReference: true } }]), /requires an explicit position/);
-await assert.rejects(() => PresentationFile.patchPptx(basePptx, [{ path: "ppt/custom/charts/invalid-root.xml", xml: '<c:style xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"/>', recipe: { kind: "chart", source: "ppt/slides/slide1.xml", sourceReference: { position: { left: 0, top: 0, width: 100, height: 80 } } } }]), /must have a chartSpace root element/);
-const strictSlideXml = '<?xml version="1.0" encoding="UTF-8"?><px:sld xmlns:px="http://purl.oclc.org/ooxml/presentationml/main" xmlns:dx="http://purl.oclc.org/ooxml/drawingml/main" xmlns:rx="http://purl.oclc.org/ooxml/officeDocument/relationships"><px:cSld><px:spTree><px:nvGrpSpPr><px:cNvPr id="1" name=""/><px:cNvGrpSpPr/><px:nvPr/></px:nvGrpSpPr><px:grpSpPr/></px:spTree></px:cSld></px:sld>';
-const strictDrawingPptx = await PresentationFile.patchPptx(basePptx, [
-  { path: "ppt/slides/slide1.xml", xml: strictSlideXml },
-  { path: "ppt/custom/media/strict.png", bytes: pptxImageBytes, recipe: { kind: "image", source: "ppt/slides/slide1.xml", id: "rIdStrictImage", sourceReference: { objectId: 2, position: { left: 10, top: 20, width: 30, height: 40 } } } },
-]);
-assert.equal((await PresentationFile.inspectPptx(strictDrawingPptx)).ok, true);
-assert.match(await (await JSZip.loadAsync(new Uint8Array(await strictDrawingPptx.arrayBuffer()))).file("ppt/slides/slide1.xml").async("text"), /<px:pic>[\s\S]*?<dx:blip rx:embed="rIdStrictImage"\/>/);
-const replacedDrawingPptx = await PresentationFile.patchPptx(drawingPptx, [{ path: pptxImagePartPath, bytes: pptxImageBytes, recipe: { kind: "image", source: "ppt/slides/slide1.xml", id: "rIdAgentSlideImage", sourceReference: { objectId: 5, name: "Updated agent status", position: { left: 80, top: 180, width: 120, height: 80 } } } }]);
-const replacedDrawingSlideXml = await (await JSZip.loadAsync(new Uint8Array(await replacedDrawingPptx.arrayBuffer()))).file("ppt/slides/slide1.xml").async("text");
-assert.equal((replacedDrawingSlideXml.match(/rIdAgentSlideImage/g) || []).length, 1);
-assert.doesNotMatch(replacedDrawingSlideXml, /name="Agent status"/);
-assert.match(replacedDrawingSlideXml, /id="5" name="Updated agent status"/);
-const removedDrawingPptx = await PresentationFile.patchPptx(replacedDrawingPptx, [
-  { path: pptxImagePartPath, remove: true, recipe: { kind: "image", source: "ppt/slides/slide1.xml", id: "rIdAgentSlideImage", sourceReference: true } },
-  { path: pptxChartPartPath, remove: true, recipe: { kind: "chart", source: "ppt/slides/slide1.xml", id: "rIdAgentSlideChart", sourceReference: true } },
-]);
-assert.equal((await PresentationFile.inspectPptx(removedDrawingPptx)).ok, true);
-const removedDrawingSlideXml = await (await JSZip.loadAsync(new Uint8Array(await removedDrawingPptx.arrayBuffer()))).file("ppt/slides/slide1.xml").async("text");
-assert.doesNotMatch(removedDrawingSlideXml, /rIdAgentSlideImage|rIdAgentSlideChart/);
-assert.equal((await PresentationFile.importPptx(removedDrawingPptx)).slides.items[0].images.items.length, 0);
-assert.equal((await PresentationFile.importPptx(removedDrawingPptx)).slides.items[0].charts.items.length, 0);
-const masterPartPath = "ppt/custom/masters/agent-master.xml";
-const layoutPartPath = "ppt/custom/layouts/agent-layout.xml";
-const unusedLayoutPartPath = "ppt/custom/layouts/unused-layout.xml";
-const masterPartXml = '<?xml version="1.0" encoding="UTF-8"?><p:sldMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld><p:txStyles/></p:sldMaster>';
-const layoutPartXml = '<?xml version="1.0" encoding="UTF-8"?><p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" type="title" preserve="1"><p:cSld name="Agent Review Layout"><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/><p:sp><p:nvSpPr><p:cNvPr id="2" name="Agent review title"/><p:cNvSpPr/><p:nvPr><p:ph type="title" idx="1"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x="381000" y="381000"/><a:ext cx="6096000" cy="762000"/></a:xfrm></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Agent review</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>';
-const masterLayoutPptx = await PresentationFile.patchPptx(basePptx, [
-  {
-    path: masterPartPath,
-    xml: masterPartXml,
-    recipe: { kind: "slideMaster", source: "ppt/presentation.xml", id: "rIdAgentMaster", sourceReference: { masterId: 2_147_483_648 } },
-  },
-  {
-    path: layoutPartPath,
-    xml: layoutPartXml,
-    relationships: [
-      { source: masterPartPath, id: "rIdAgentLayout" },
-      { source: layoutPartPath, id: "rIdAgentLayoutMaster", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster", target: "../masters/agent-master.xml" },
-      { source: "ppt/slides/slide1.xml", id: "rIdAgentSlideLayout", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout", target: "../custom/layouts/agent-layout.xml" },
-    ],
-    recipe: { kind: "slideLayout", source: masterPartPath, id: "rIdAgentLayout", sourceReference: { layoutId: 2_147_483_649 } },
-  },
-  {
-    path: unusedLayoutPartPath,
-    xml: layoutPartXml.replace("Agent Review Layout", "Unused Review Layout"),
-    relationships: [
-      { source: masterPartPath, id: "rIdUnusedLayout" },
-      { source: unusedLayoutPartPath, id: "rIdUnusedLayoutMaster", type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster", target: "../masters/agent-master.xml" },
-    ],
-    recipe: { kind: "slideLayout", source: masterPartPath, id: "rIdUnusedLayout", sourceReference: { layoutId: 2_147_483_650 } },
-  },
-]);
-assert.equal(masterLayoutPptx.metadata.sourceReferencesUpdated, 3);
-assert.equal((await PresentationFile.inspectPptx(masterLayoutPptx)).ok, true);
-const masterLayoutZip = await JSZip.loadAsync(new Uint8Array(await masterLayoutPptx.arrayBuffer()));
-assert.match(await masterLayoutZip.file("ppt/presentation.xml").async("text"), /<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rIdAgentMaster"\/><\/p:sldMasterIdLst>/);
-assert.match(await masterLayoutZip.file(masterPartPath).async("text"), /<p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rIdAgentLayout"\/><p:sldLayoutId id="2147483650" r:id="rIdUnusedLayout"\/><\/p:sldLayoutIdLst>/);
-assert.match(await masterLayoutZip.file("ppt/custom/layouts/_rels/agent-layout.xml.rels").async("text"), /relationships\/slideMaster" Target="\.\.\/masters\/agent-master\.xml"/);
-const importedMasterLayout = await PresentationFile.importPptx(masterLayoutPptx);
-assert.equal(importedMasterLayout.layouts.items.length, 2);
-assert.equal(importedMasterLayout.layouts.items[0].name, "Agent Review Layout");
-assert.equal(importedMasterLayout.layouts.items[1].name, "Unused Review Layout");
-assert.equal(importedMasterLayout.layouts.items[0].id, "pptx-layout-2147483649");
-assert.equal(importedMasterLayout.layouts.items[0].masterId, "pptx-master-2147483648");
-assert.equal(importedMasterLayout.slides.items[0].layoutId, importedMasterLayout.layouts.items[0].id);
-assert.equal(importedMasterLayout.layouts.items[0].placeholders[0].name, "Agent review title");
-await assert.rejects(() => PresentationFile.patchPptx(masterLayoutPptx, [{ path: "ppt/custom/masters/duplicate.xml", xml: masterPartXml, recipe: { kind: "slideMaster", source: "ppt/presentation.xml", sourceReference: { masterId: 2_147_483_648 } } }]), /masterId 2147483648 already exists/);
-await assert.rejects(() => PresentationFile.patchPptx(masterLayoutPptx, [{ path: "ppt/custom/layouts/duplicate.xml", xml: layoutPartXml, recipe: { kind: "slideLayout", source: masterPartPath, sourceReference: { layoutId: 2_147_483_649 } } }]), /layoutId 2147483649 already exists/);
-const layoutRemovedPptx = await PresentationFile.patchPptx(masterLayoutPptx, [{ path: layoutPartPath, remove: true, recipe: { kind: "slideLayout", source: masterPartPath, id: "rIdAgentLayout", sourceReference: true } }]);
-const layoutRemovedMasterXml = await (await JSZip.loadAsync(new Uint8Array(await layoutRemovedPptx.arrayBuffer()))).file(masterPartPath).async("text");
-assert.doesNotMatch(layoutRemovedMasterXml, /rIdAgentLayout"/);
-assert.match(layoutRemovedMasterXml, /rIdUnusedLayout/);
-const allLayoutsRemovedPptx = await PresentationFile.patchPptx(layoutRemovedPptx, [{ path: unusedLayoutPartPath, remove: true, recipe: { kind: "slideLayout", source: masterPartPath, id: "rIdUnusedLayout", sourceReference: true } }]);
-assert.doesNotMatch(await (await JSZip.loadAsync(new Uint8Array(await allLayoutsRemovedPptx.arrayBuffer()))).file(masterPartPath).async("text"), /sldLayoutId/);
-const masterRemovedPptx = await PresentationFile.patchPptx(allLayoutsRemovedPptx, [{ path: masterPartPath, remove: true, recipe: { kind: "slideMaster", source: "ppt/presentation.xml", id: "rIdAgentMaster", sourceReference: true } }]);
-assert.equal((await PresentationFile.inspectPptx(masterRemovedPptx)).ok, true);
-assert.doesNotMatch(await (await JSZip.loadAsync(new Uint8Array(await masterRemovedPptx.arrayBuffer()))).file("ppt/presentation.xml").async("text"), /sldMasterId/);
+assert.equal((await PresentationFile.inspectPptx(basePptx)).ok, true);
 
-const pptx = await PresentationFile.patchPptx(masterLayoutPptx, [{
-  path: "ppt/slides/slideNative.xml",
-  xml: '<?xml version="1.0" encoding="UTF-8"?><p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/></p:spTree></p:cSld></p:sld>',
-  recipe: { kind: "slide", source: "ppt/presentation.xml", sourceReference: true },
+const pptxZip = await zipOf(basePptx);
+const slideXml = await pptxZip.file("ppt/slides/slide1.xml").async("text");
+assert.match(slideXml, /Patch this PPTX/);
+const patchedPptx = await PresentationFile.patchPptx(basePptx, [{
+  path: "ppt/slides/slide1.xml",
+  xml: slideXml.replace("Patch this PPTX", "Patched PPTX"),
 }]);
-assert.equal(pptx.metadata.sourceReferencesUpdated, 1);
-assert.equal((await PresentationFile.inspectPptx(pptx)).ok, true);
-assert.equal((await PresentationFile.importPptx(pptx)).slides.items.length, 2);
+const importedPresentation = await PresentationFile.importPptx(patchedPptx);
+assert.equal(importedPresentation.slides.getItem(0).shapes.items[0].text.value, "Patched PPTX");
+assert.equal((await PresentationFile.inspectPptx(patchedPptx)).ok, true);
 
-const nativeAvailable = commandExists("soffice") && commandExists("pdftoppm");
-if (nativeAvailable) {
-  const libreOffice = createLibreOfficeRenderer({ timeoutMs: 60_000 });
-  const poppler = createPopplerRenderer({ dpi: 96, timeoutMs: 60_000 });
-  for (const [artifactKind, blob] of [["document", docx], ["document", numberingDocx], ["workbook", pivotXlsx], ["presentation", pptx], ["presentation", drawingPptx]]) {
-    const pdf = await libreOffice({ input: blob, inputType: blob.type, outputType: "application/pdf", format: "pdf", artifactKind });
-    assert.equal(pdf.type, "application/pdf");
-    assert.ok(pdf.bytes.length > 100);
-    const png = await poppler({ input: pdf, inputType: pdf.type, outputType: "image/png", format: "png", artifactKind, pageIndex: 0 });
-    assert.equal(png.type, "image/png");
-    assert.deepEqual([...png.bytes.slice(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-  }
-}
-
-console.log(`OOXML source reference smoke ok${nativeAvailable ? " (native)" : " (native skipped)"}`);
+console.log("OOXML inspect/patch tests passed");

@@ -1,8 +1,6 @@
 {
   "name": "open-chestnut-comments",
   "outputName": "open-chestnut-comments.docx",
-  "initialCodec": "open-chestnut",
-  "roundtripCodec": "open-chestnut",
   "blocks": [
     {
       "kind": "paragraph",
@@ -27,7 +25,7 @@
       "text": "Check the package evidence."
     }
   ],
-  "openChestnutEdits": [
+  "edits": [
     {
       "kind": "comment",
       "matchText": "Check the package evidence.",
@@ -43,8 +41,8 @@
     { "kind": "paragraph", "pattern": "package evidence is ready" }
   ],
   "qa": {
-    "previewFormat": "png",
-    "nativeRender": "required",
+    "previewFormat": "svg",
+    "nativeRender": "auto",
     "inspectKind": "document,paragraph,comment,layout"
   }
 }

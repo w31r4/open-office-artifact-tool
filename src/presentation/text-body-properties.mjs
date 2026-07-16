@@ -9,7 +9,6 @@ const AUTO_FIT_MODES = new Set(["none", "shrinkText", "resizeShape"]);
 const VERTICAL_TEXT_MODES = new Set(["horizontal", "vertical", "vertical270"]);
 const VERTICAL_OVERFLOW_MODES = new Set(["overflow", "ellipsis", "clip"]);
 const HORIZONTAL_OVERFLOW_MODES = new Set(["overflow", "clip"]);
-const ROTATION_UNITS_PER_DEGREE = 60_000;
 const MAX_ROTATION_DEGREES = 360;
 
 export const DEFAULT_PRESENTATION_TEXT_BODY_PROPERTIES = Object.freeze({
@@ -96,76 +95,7 @@ export function normalizePresentationTextBodyProperties(value, { defaults = fals
   return result;
 }
 
-export function presentationTextBodyPropertiesXml(value, options = {}) {
-  const properties = normalizePresentationTextBodyProperties(value, options);
-  const attributes = [];
-  if (properties.rotation != null) attributes.push(`rot="${Math.round(properties.rotation * ROTATION_UNITS_PER_DEGREE)}"`);
-  if (properties.verticalOverflow != null) attributes.push(`vertOverflow="${properties.verticalOverflow}"`);
-  if (properties.horizontalOverflow != null) attributes.push(`horzOverflow="${properties.horizontalOverflow}"`);
-  if (properties.verticalText != null) attributes.push(`vert="${properties.verticalText === "horizontal" ? "horz" : properties.verticalText === "vertical" ? "vert" : "vert270"}"`);
-  if (properties.wrap != null) attributes.push(`wrap="${properties.wrap}"`);
-  for (const [key, attribute] of [["left", "lIns"], ["top", "tIns"], ["right", "rIns"], ["bottom", "bIns"]]) {
-    if (properties.insets?.[key] != null) attributes.push(`${attribute}="${Math.round(properties.insets[key] * EMU_PER_PIXEL)}"`);
-  }
-  if (properties.columns?.count != null) attributes.push(`numCol="${properties.columns.count}"`);
-  if (properties.columns?.spacing != null) attributes.push(`spcCol="${Math.round(properties.columns.spacing * EMU_PER_PIXEL)}"`);
-  if (properties.columns?.rightToLeft != null) attributes.push(`rtlCol="${properties.columns.rightToLeft ? 1 : 0}"`);
-  if (properties.anchor != null) attributes.push(`anchor="${properties.anchor === "center" ? "ctr" : properties.anchor === "bottom" ? "b" : "t"}"`);
-  if (properties.upright != null) attributes.push(`upright="${properties.upright ? 1 : 0}"`);
-  const autoFit = properties.autoFit === "none" ? "<a:noAutofit/>" : properties.autoFit === "shrinkText" ? "<a:normAutofit/>" : properties.autoFit === "resizeShape" ? "<a:spAutoFit/>" : "";
-  return autoFit ? `<a:bodyPr${attributes.length ? ` ${attributes.join(" ")}` : ""}>${autoFit}</a:bodyPr>` : `<a:bodyPr${attributes.length ? ` ${attributes.join(" ")}` : ""}/>`;
-}
-
-export function parsePresentationTextBodyPropertiesXml(xml) {
-  const match = /<(?:[A-Za-z_][\w.-]*:)?bodyPr\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?bodyPr>)/.exec(String(xml || ""));
-  if (!match) return {};
-  const attributes = parseAttributes(match[1]);
-  const properties = {};
-  const rotationUnits = Number(attributes.rot);
-  if (Number.isInteger(rotationUnits) && Math.abs(rotationUnits) <= MAX_ROTATION_DEGREES * ROTATION_UNITS_PER_DEGREE) properties.rotation = rotationUnits / ROTATION_UNITS_PER_DEGREE;
-  if (attributes.vert === "horz") properties.verticalText = "horizontal";
-  else if (attributes.vert === "vert") properties.verticalText = "vertical";
-  else if (attributes.vert === "vert270") properties.verticalText = "vertical270";
-  if (VERTICAL_OVERFLOW_MODES.has(attributes.vertOverflow)) properties.verticalOverflow = attributes.vertOverflow;
-  if (HORIZONTAL_OVERFLOW_MODES.has(attributes.horzOverflow)) properties.horizontalOverflow = attributes.horzOverflow;
-  const insets = {};
-  for (const [key, attribute] of [["left", "lIns"], ["top", "tIns"], ["right", "rIns"], ["bottom", "bIns"]]) {
-    const emu = Number(attributes[attribute]);
-    if (Number.isInteger(emu) && emu >= 0 && emu <= MAX_COORDINATE_EMU) insets[key] = emu / EMU_PER_PIXEL;
-  }
-  if (Object.keys(insets).length) properties.insets = insets;
-  if (attributes.anchor === "t") properties.anchor = "top";
-  else if (attributes.anchor === "ctr") properties.anchor = "center";
-  else if (attributes.anchor === "b") properties.anchor = "bottom";
-  if (WRAPS.has(attributes.wrap)) properties.wrap = attributes.wrap;
-  const columns = {};
-  const columnCount = Number(attributes.numCol);
-  if (Number.isInteger(columnCount) && columnCount >= 1 && columnCount <= 16) columns.count = columnCount;
-  const columnSpacing = Number(attributes.spcCol);
-  if (Number.isInteger(columnSpacing) && columnSpacing >= 0 && columnSpacing <= MAX_COORDINATE_EMU) columns.spacing = columnSpacing / EMU_PER_PIXEL;
-  const rightToLeft = parseBooleanAttribute(attributes.rtlCol);
-  if (rightToLeft !== undefined) columns.rightToLeft = rightToLeft;
-  if (Object.keys(columns).length) properties.columns = columns;
-  const upright = parseBooleanAttribute(attributes.upright);
-  if (upright !== undefined) properties.upright = upright;
-  const children = match[2] || "";
-  if (/<(?:[A-Za-z_][\w.-]*:)?noAutofit\b[^>]*\/>/.test(children)) properties.autoFit = "none";
-  else if (/<(?:[A-Za-z_][\w.-]*:)?normAutofit\b\s*\/>/.test(children)) properties.autoFit = "shrinkText";
-  else if (/<(?:[A-Za-z_][\w.-]*:)?spAutoFit\b[^>]*\/>/.test(children)) properties.autoFit = "resizeShape";
-  return properties;
-}
 
 function cloneDefaults() {
   return { ...DEFAULT_PRESENTATION_TEXT_BODY_PROPERTIES, insets: { ...DEFAULT_PRESENTATION_TEXT_BODY_PROPERTIES.insets } };
-}
-
-function parseAttributes(source) {
-  return Object.fromEntries([...String(source || "").matchAll(/([A-Za-z_][\w.-]*)\s*=\s*"([^"]*)"/g)].map((match) => [match[1], match[2]]));
-}
-
-function parseBooleanAttribute(value) {
-  if (value == null) return undefined;
-  if (value === "1" || value === "true" || value === "on") return true;
-  if (value === "0" || value === "false" || value === "off") return false;
-  return undefined;
 }

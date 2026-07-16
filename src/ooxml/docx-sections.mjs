@@ -1,17 +1,5 @@
-import { attributes } from "./source-reference-xml.mjs";
-
 const REFERENCE_TYPES = ["default", "first", "even"];
 const HEADER_FOOTER_KINDS = ["header", "footer"];
-
-function localAttribute(tag, localName) {
-  return Object.entries(attributes(tag)).find(([name]) => name === localName || name.endsWith(`:${localName}`))?.[1];
-}
-
-function onOffElement(tag) {
-  if (!tag) return false;
-  const value = String(localAttribute(tag, "val") ?? "true").toLowerCase();
-  return !new Set(["0", "false", "off", "no"]).has(value);
-}
 
 export function docxSectionCount(blocks = []) {
   return blocks.filter((block) => block?.kind === "section").length + 1;
@@ -30,28 +18,6 @@ export function normalizeDocxSectionSettings(value = [], blocksOrCount = 1) {
     byIndex.set(sectionIndex, settings);
   }
   return [...byIndex.values()].sort((left, right) => left.sectionIndex - right.sectionIndex);
-}
-
-export function parseDocxSectionDeclarations(xml = "") {
-  const sections = [];
-  const sectionPattern = /<(?:[A-Za-z_][\w.-]*:)?sectPr\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?sectPr>/g;
-  for (const [sectionIndex, match] of [...String(xml || "").matchAll(sectionPattern)].entries()) {
-    const source = match[0];
-    const titlePageTag = /<(?:[A-Za-z_][\w.-]*:)?titlePg\b[^>]*\/?\s*>/.exec(source)?.[0];
-    const references = [];
-    for (const reference of source.matchAll(/<(?:[A-Za-z_][\w.-]*:)?(header|footer)Reference\b[^>]*\/?\s*>/g)) {
-      const relationshipId = localAttribute(reference[0], "id");
-      if (!relationshipId) continue;
-      const referenceType = localAttribute(reference[0], "type");
-      references.push({
-        kind: reference[1],
-        referenceType: REFERENCE_TYPES.includes(referenceType) ? referenceType : "default",
-        relationshipId,
-      });
-    }
-    sections.push({ sectionIndex, differentFirstPage: onOffElement(titlePageTag), references });
-  }
-  return sections;
 }
 
 function headerFooterGroups(document, kind) {
@@ -142,9 +108,4 @@ export function resolveDocxPageHeaderFooter(plan, sectionIndex, pageInSection) {
     header,
     footer,
   };
-}
-
-export function collectDocxHeaderFooterParts(document, kind, plan = planDocxHeaderFooterSections(document)) {
-  const groups = [...plan.groups[kind].values()];
-  return groups.map((group, index) => ({ ...group, partPath: `word/${kind}${index + 1}.xml`, target: `${kind}${index + 1}.xml` }));
 }

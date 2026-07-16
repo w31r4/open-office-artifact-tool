@@ -1,58 +1,91 @@
 {
-  "name": "package-notes-comments",
-  "outputName": "package-notes-comments.pptx",
+  "name": "core-evidence",
+  "outputName": "core-evidence.pptx",
   "slideSize": { "width": 1280, "height": 720 },
-  "theme": {
-    "name": "Package Review",
-    "colors": { "accent1": "#7c3aed", "accent2": "#16a34a", "tx1": "#111827", "bg1": "#ffffff" }
-  },
   "slides": [
     {
-      "name": "review-target",
-      "notes": "Explain why author identity and package relationships are both required evidence.",
+      "name": "Evidence matrix",
       "shapes": [
         {
-          "name": "review-title",
-          "text": "Notes and comments remain editable",
-          "position": { "left": 70, "top": 70, "width": 1000, "height": 100 },
-          "textStyle": { "fontSize": 42, "bold": true }
+          "name": "evidence-title",
+          "geometry": "textbox",
+          "position": { "left": 60, "top": 40, "width": 1160, "height": 72 },
+          "fill": "transparent",
+          "line": { "fill": "transparent", "width": 0 },
+          "text": "Evidence stays structured",
+          "textStyle": { "fontFamily": "Arial", "fontSize": 38, "bold": true, "color": "#0F172A" }
         },
         {
-          "name": "review-evidence",
-          "text": "Arbitrary part paths, stable authors, native rendering",
-          "position": { "left": 70, "top": 230, "width": 960, "height": 160 },
-          "fill": "#ede9fe",
-          "line": { "fill": "#7c3aed", "width": 2 },
-          "textStyle": { "fontSize": 28 }
+          "name": "evidence-copy",
+          "geometry": "textbox",
+          "position": { "left": 70, "top": 150, "width": 580, "height": 220 },
+          "fill": "transparent",
+          "line": { "fill": "transparent", "width": 0 },
+          "text": [
+            {
+              "runs": [
+                { "text": "Inspect", "style": { "fontSize": 26, "bold": true, "color": "#2563EB" } },
+                { "text": " before editing.", "style": { "fontSize": 22, "color": "#334155" } }
+              ]
+            },
+            {
+              "bulletCharacter": "•",
+              "marginLeft": 28,
+              "indent": -14,
+              "runs": [{ "text": "Keep rich text as text", "style": { "fontSize": 20, "color": "#334155" } }]
+            },
+            {
+              "bulletCharacter": "•",
+              "marginLeft": 28,
+              "indent": -14,
+              "runs": [{ "text": "Keep tables as tables", "style": { "fontSize": 20, "color": "#334155" } }]
+            },
+            {
+              "runs": [{ "text": "Open the standard", "style": { "fontSize": 18, "color": "#2563EB" }, "link": { "uri": "https://www.ecma-international.org/publications-and-standards/standards/ecma-376/" } }]
+            }
+          ]
         }
       ],
-      "comments": [
+      "tables": [
         {
-          "targetName": "review-title",
-          "author": "QA Agent",
-          "text": "Verify the relocated review parts before delivery.",
-          "replies": [{ "author": "Maintainer", "text": "Author registry and indexes validated." }],
-          "resolved": true
+          "name": "evidence-table",
+          "position": { "left": 700, "top": 150, "width": 500, "height": 250 },
+          "values": [["Layer", "Evidence"], ["Model", "Inspect"], ["Package", "Validate"], ["Visual", "Render"]],
+          "styleOptions": { "headerRow": true, "bandedRows": true }
+        }
+      ],
+      "images": [
+        {
+          "name": "evidence-image",
+          "alt": "Evidence pixel",
+          "position": { "left": 70, "top": 450, "width": 170, "height": 170 },
+          "fit": "stretch",
+          "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+        }
+      ],
+      "charts": [
+        {
+          "name": "evidence-pie",
+          "chartType": "pie",
+          "title": "Evidence split",
+          "position": { "left": 360, "top": 430, "width": 500, "height": 240 },
+          "categories": ["Semantic", "Visual"],
+          "series": [{ "name": "Share", "values": [60, 40], "color": "#7C3AED" }],
+          "legend": true,
+          "dataLabels": { "showCategoryName": true, "showValue": true }
         }
       ]
     }
   ],
-  "packageReview": {
-    "slideIndex": 0,
-    "notesPartPath": "ppt/review/notes/agent-notes.xml",
-    "commentsPartPath": "ppt/review/comments/agent-review.xml",
-    "authorsPartPath": "ppt/review/comments/agent-authors.xml",
-    "notesRelationshipId": "rIdAgentNotes",
-    "commentsRelationshipId": "rIdAgentComments",
-    "authorsRelationshipId": "rIdAgentAuthors"
-  },
   "expectInspect": [
-    { "kind": "notes", "pattern": "author identity and package relationships" },
-    { "kind": "comment", "pattern": "relocated review parts" }
+    { "kind": "shape", "pattern": "Evidence stays structured" },
+    { "kind": "table", "pattern": "evidence-table" },
+    { "kind": "image", "pattern": "Evidence pixel" },
+    { "kind": "chart", "pattern": "Evidence split" }
   ],
   "qa": {
     "nativeRender": "auto",
-    "inspectKind": "deck,slide,shape,notes,comment,textRange",
-    "maxChars": 16000
+    "inspectKind": "deck,slide,textbox,shape,table,image,chart,textRange",
+    "maxChars": 18000
   }
 }

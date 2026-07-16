@@ -1,4 +1,5 @@
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { DocumentModel, FileBlob, Workbook } from "../index.mjs";
 import { XLSX_THEME_COLOR_NAMES, normalizeXlsxStyle, normalizeXlsxThemeConfig } from "../spreadsheet/ooxml-styles.mjs";
@@ -8,6 +9,9 @@ import {
   CodecOperation,
   CodecRequestSchema,
   CodecResponseSchema,
+  DocumentHeaderFooterReference,
+  DocumentSectionBreak,
+  DocumentStyleType,
   DocumentTableVerticalMerge,
   SpreadsheetCalculationMode,
   SpreadsheetWorksheetVisibility,
@@ -20,7 +24,7 @@ import { spreadsheetImageFromWire, spreadsheetImageSnapshot, wireWorksheetImages
 
 export { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
 
-export const OPEN_CHESTNUT_PROTOCOL_VERSION = 1;
+export const OPEN_CHESTNUT_PROTOCOL_VERSION = 2;
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -152,12 +156,21 @@ function responseFailure(response) {
 }
 
 export async function invokeOpenChestnut(request) {
+  if (Object.hasOwn(request || {}, "allowLossy") || Object.hasOwn(request || {}, "allow_lossy")) {
+    throw new TypeError("invokeOpenChestnut no longer accepts allowLossy/allow_lossy; opaque Office content without a validated source package always fails closed.");
+  }
   const loaded = await runtime();
   const wireRequest = create(CodecRequestSchema, request);
   const wireResponse = bytesFrom(loaded.invoke(toBinary(CodecRequestSchema, wireRequest)));
   const response = fromBinary(CodecResponseSchema, wireResponse);
   if (!response.ok) throw responseFailure(response);
   return response;
+}
+
+function assertCodecOptions(options, allowed, apiName) {
+  if (options == null || typeof options !== "object" || Array.isArray(options)) throw new TypeError(`${apiName} options must be an object.`);
+  const unsupported = Object.keys(options).filter((key) => !allowed.has(key));
+  if (unsupported.length) throw new TypeError(`${apiName} does not accept option${unsupported.length === 1 ? "" : "s"} ${unsupported.join(", ")}. OpenChestnut is the only Office codec and lossy fallback is unavailable.`);
 }
 
 function cellCoordinates(address) {
@@ -487,15 +500,12 @@ function cellStyleFromWire(source) {
 
 function unsupportedWorkbookFeatures(workbook) {
   const unsupported = [];
-  if (workbook.comments?.threads?.length) unsupported.push("threaded comments");
   if (workbook.indexedColors?.length) unsupported.push("custom indexed colors");
   for (const sheet of workbook.worksheets?.items || []) {
     const prefix = `worksheet ${sheet.name}`;
     if (itemCount(sheet.pivotTables)) unsupported.push(`${prefix} pivot tables`);
     if (itemCount(sheet.sparklineGroups)) unsupported.push(`${prefix} sparklines`);
     if (sheet.shapes?.length) unsupported.push(`${prefix} shapes`);
-    if (sheet.dataValidations?.items?.length) unsupported.push(`${prefix} data validations`);
-    if (sheet.conditionalFormattings?.items?.length) unsupported.push(`${prefix} conditional formatting`);
     for (const [address, cell] of sheet.store?.entries?.() || []) {
       if (cell.style && Object.keys(cell.style).some((key) => cell.style[key] != null)) wireCellStyle(cell.style, `${sheet.name}!${address}`);
       const metadata = Object.keys(cell).filter((key) => !["value", "formula", "style"].includes(key) && !XLSX_FORMULA_METADATA_KEYS.has(key));
@@ -503,6 +513,101 @@ function unsupportedWorkbookFeatures(workbook) {
     }
   }
   return unsupported;
+}
+
+const XLSX_DATA_VALIDATION_TYPES = new Set(["list", "whole", "decimal", "date", "time", "textLength", "custom"]);
+const XLSX_CONDITIONAL_FORMAT_TYPES = new Set(["cellIs", "expression", "containsText", "colorScale"]);
+const BRACED_GUID = /^\{[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\}$/i;
+
+function wireDataValidation(item, sheetName) {
+  const rule = item?.rule || item || {};
+  const type = String(rule.type || item?.type || "");
+  if (!XLSX_DATA_VALIDATION_TYPES.has(type)) throw new OpenChestnutCodecError(`Worksheet ${sheetName} data validation ${item?.id || "(unnamed)"} uses unsupported type ${type || "(empty)"}.`, [], { code: "unsupported_data_validation" });
+  const values = Array.isArray(rule.values) ? rule.values.map(String) : [];
+  if (values.length && rule.formula1 != null) throw new OpenChestnutCodecError(`Worksheet ${sheetName} data validation ${item?.id || "(unnamed)"} cannot combine values and formula1.`, [], { code: "invalid_data_validation" });
+  return {
+    id: String(item?.id || ""),
+    range: String(item?.range || "A1"),
+    type,
+    operator: String(rule.operator || item?.operator || ""),
+    formula1: rule.formula1 == null ? "" : String(rule.formula1),
+    formula2: rule.formula2 == null ? "" : String(rule.formula2),
+    values,
+  };
+}
+
+function publicDataValidation(item) {
+  return {
+    id: item.id || undefined,
+    range: item.range || "A1",
+    rule: {
+      type: item.type,
+      ...(item.operator ? { operator: item.operator } : {}),
+      ...(item.formula1 ? { formula1: item.formula1 } : {}),
+      ...(item.formula2 ? { formula2: item.formula2 } : {}),
+      ...(item.values?.length ? { values: [...item.values] } : {}),
+    },
+  };
+}
+
+function wireConditionalFormat(item, sheetName, index) {
+  const rule = item?.rule || item || {};
+  const ruleType = String(item?.ruleType || rule.ruleType || rule.type || "expression");
+  if (!XLSX_CONDITIONAL_FORMAT_TYPES.has(ruleType)) throw new OpenChestnutCodecError(`Worksheet ${sheetName} conditional format ${item?.id || "(unnamed)"} uses unsupported type ${ruleType}.`, [], { code: "unsupported_conditional_format" });
+  const rawFormulas = item?.formulas ?? rule.formulas ?? item?.formula ?? item?.expression ?? rule.formula ?? rule.expression;
+  const formulas = (Array.isArray(rawFormulas) ? rawFormulas : rawFormulas == null ? [] : [rawFormulas]).map(String);
+  const colors = (item?.colors || rule.colors || []).map((color, colorIndex) => wireSpreadsheetColor(color, `${sheetName}!${item?.range || "A1"}`, `conditional format color ${colorIndex + 1}`));
+  if (ruleType === "colorScale" && ![2, 3].includes(colors.length)) throw new OpenChestnutCodecError(`Worksheet ${sheetName} colorScale ${item?.id || "(unnamed)"} requires two or three colors.`, [], { code: "invalid_conditional_format" });
+  if (ruleType !== "colorScale" && formulas.length === 0 && ruleType !== "containsText") throw new OpenChestnutCodecError(`Worksheet ${sheetName} conditional format ${item?.id || "(unnamed)"} requires a formula.`, [], { code: "invalid_conditional_format" });
+  return {
+    id: String(item?.id || ""),
+    range: String(item?.range || "A1"),
+    ruleType,
+    operator: String(item?.operator || rule.operator || ""),
+    formulas,
+    text: String(item?.text || rule.text || ""),
+    format: wireCellStyle(item?.format || rule.format || {}, `${sheetName}!${item?.range || "A1"}`),
+    colors,
+    priority: Number.isInteger(item?.priority) && item.priority > 0 ? item.priority : index + 1,
+  };
+}
+
+function publicConditionalFormat(item) {
+  const formulas = [...(item.formulas || [])];
+  return {
+    id: item.id || undefined,
+    range: item.range || "A1",
+    ruleType: item.ruleType,
+    ...(item.operator ? { operator: item.operator } : {}),
+    ...(formulas.length === 1 ? { formula: formulas[0] } : formulas.length ? { formulas } : {}),
+    ...(item.text ? { text: item.text } : {}),
+    ...(item.format ? { format: cellStyleFromWire(item.format) || {} } : {}),
+    ...(item.colors?.length ? { colors: item.colors.map(spreadsheetColorFromWire) } : {}),
+    ...(item.priority ? { priority: item.priority } : {}),
+  };
+}
+
+function wireThreadedComments(workbook, sheet) {
+  const activeSheetName = workbook.worksheets.getActiveWorksheet().name;
+  return (workbook.comments?.threads || []).filter((thread) => (thread.target?.sheetName || activeSheetName) === sheet.name).map((thread) => {
+    if (thread.comments?.length !== 1) throw new OpenChestnutCodecError(`Worksheet ${sheet.name} threaded comment ${thread.id} has replies; only a single root comment is editable.`, [], { code: "unsupported_threaded_comment_replies" });
+    const comment = thread.comments[0];
+    const address = String(thread.target?.address || "").toUpperCase();
+    if (!/^[A-Z]{1,3}[1-9]\d*$/.test(address)) throw new OpenChestnutCodecError(`Worksheet ${sheet.name} threaded comment ${thread.id} must target one cell.`, [], { code: "invalid_threaded_comment_target" });
+    const person = comment.person || {};
+    return {
+      id: String(thread.id || ""),
+      cellReference: address,
+      nativeCommentId: BRACED_GUID.test(comment.id || "") ? String(comment.id).toUpperCase() : "",
+      text: String(comment.text ?? ""),
+      personId: BRACED_GUID.test(comment.personId || person.id || "") ? String(comment.personId || person.id).toUpperCase() : "",
+      author: String(person.displayName || comment.author || thread.author || "User"),
+      userId: String(person.userId ?? comment.userId ?? ""),
+      providerId: String(person.providerId ?? comment.providerId ?? ""),
+      dateTime: comment.date ? new Date(comment.date).toISOString() : "1970-01-01T00:00:00.000Z",
+      resolved: Boolean(comment.done ?? thread.resolved),
+    };
+  });
 }
 
 function wireWorkbookTheme(theme, source) {
@@ -1029,19 +1134,31 @@ function wireWorksheetTables(sheet, state) {
   return output;
 }
 
-function wireCell(address, cell) {
+function excelSerialFromDate(value, dateSystem, address) {
+  const milliseconds = value.getTime();
+  if (!Number.isFinite(milliseconds)) throw new OpenChestnutCodecError(`Cell ${address} has an invalid Date value.`, [], { code: "invalid_cell_date" });
+  const dayMilliseconds = 86_400_000;
+  if (dateSystem === "1904") return (milliseconds - Date.UTC(1904, 0, 1)) / dayMilliseconds;
+  const serial = (milliseconds - Date.UTC(1899, 11, 31)) / dayMilliseconds;
+  return milliseconds >= Date.UTC(1900, 2, 1) ? serial + 1 : serial;
+}
+
+function wireCell(address, cell, dateSystem) {
   const coordinates = cellCoordinates(address);
+  const dateValue = cell.value instanceof Date;
   const target = {
     row: coordinates.row,
     column: coordinates.column,
     formula: cell.formula ? String(cell.formula) : "",
     formulaMetadata: cellFormulaMetadata(address, cell),
-    numberFormatCode: cellNumberFormatCode(cell, address),
+    numberFormatCode: cellNumberFormatCode(cell, address) || (dateValue ? "yyyy-mm-dd hh:mm:ss" : ""),
     style: wireCellStyle(cell.style, address),
     value: { case: undefined },
   };
   if (cell.value == null) return target;
-  if (typeof cell.value === "string") {
+  if (dateValue) {
+    target.value = { case: "numberValue", value: excelSerialFromDate(cell.value, dateSystem, address) };
+  } else if (typeof cell.value === "string") {
     target.value = EXCEL_ERRORS.has(cell.value) ? { case: "errorValue", value: cell.value } : { case: "stringValue", value: cell.value };
   } else if (typeof cell.value === "number") {
     if (!Number.isFinite(cell.value)) throw new OpenChestnutCodecError(`Cell ${address} has a non-finite numeric value.`, [], { code: "non_finite_cell_value" });
@@ -1060,7 +1177,7 @@ function workbookEnvelope(workbook) {
   if (!workbook.worksheets.items.some((sheet) => sheet.visibility === "visible")) throw new OpenChestnutCodecError("Workbook must contain at least one visible worksheet.", [], { code: "missing_visible_worksheet" });
   const unsupported = unsupportedWorkbookFeatures(workbook);
   if (unsupported.length) {
-    throw new OpenChestnutCodecError(`The XLSX WebAssembly vertical slice cannot encode: ${unsupported.slice(0, 8).join(", ")}${unsupported.length > 8 ? `, and ${unsupported.length - 8} more` : ""}. Use SpreadsheetFile.exportXlsx until parity reaches these features.`, [], { code: "unsupported_workbook_features" });
+    throw new OpenChestnutCodecError(`OpenChestnut cannot encode these XLSX features: ${unsupported.slice(0, 8).join(", ")}${unsupported.length > 8 ? `, and ${unsupported.length - 8} more` : ""}. This operation fails closed; preserve them only through a validated source-bound package.`, [], { code: "unsupported_workbook_features" });
   }
   const state = workbook[WORKBOOK_STATE];
   const theme = state?.themeWire && sameWorkbookTheme(workbook.theme, state.publicTheme)
@@ -1089,8 +1206,11 @@ function workbookEnvelope(workbook) {
       tables: wireWorksheetTables(sheet, state?.tablesBySheet?.get(sheet.id)),
       images: wireWorksheetImages(sheet, state?.imagesBySheet?.get(sheet.id), assets),
       charts: wireWorksheetCharts(sheet, state?.chartsBySheet?.get(sheet.id)),
+      dataValidations: (sheet.dataValidations?.items || []).map((item) => wireDataValidation(item, sheet.name)),
+      conditionalFormats: (sheet.conditionalFormattings?.items || []).map((item, index) => wireConditionalFormat(item, sheet.name, index)),
+      threadedComments: wireThreadedComments(workbook, sheet),
       cells: (() => {
-        const cells = (sheet.store?.entries?.() || []).filter(([, cell]) => cell.value != null || cell.formula || cell.formulaType || Object.keys(cell.style || {}).some((key) => cell.style[key] != null)).map(([address, cell]) => wireCell(address, cell));
+        const cells = (sheet.store?.entries?.() || []).filter(([, cell]) => cell.value != null || cell.formula || cell.formulaType || Object.keys(cell.style || {}).some((key) => cell.style[key] != null)).map(([address, cell]) => wireCell(address, cell, workbook.dateSystem));
         validateFormulaTopology(cells, sheet.name);
         return cells;
       })(),
@@ -1121,6 +1241,7 @@ function workbookEnvelope(workbook) {
 }
 
 export async function exportXlsxWithOpenChestnut(workbook, options = {}) {
+  assertCodecOptions(options, new Set(["limits", "recalculate"]), "exportXlsxWithOpenChestnut");
   if (!(workbook instanceof Workbook)) throw new TypeError("exportXlsxWithOpenChestnut expects a Workbook instance.");
   if (options.recalculate !== false) workbook.recalculate();
   const response = await invokeOpenChestnut({
@@ -1129,7 +1250,6 @@ export async function exportXlsxWithOpenChestnut(workbook, options = {}) {
     family: ArtifactFamily.WORKBOOK,
     artifact: workbookEnvelope(workbook),
     limits: codecLimits(options.limits),
-    allowLossy: options.allowLossy === true,
   });
   return new FileBlob(response.file, {
     type: XLSX_MIME,
@@ -1175,6 +1295,31 @@ function workbookFromEnvelope(envelope) {
     for (const dimension of sourceSheet.rowDimensions) sheet.rowDimensions.set(dimension.row, { height: dimension.height || undefined, hidden: dimension.hidden });
     sheet.mergedRanges = [...sourceSheet.mergedRanges];
     sheet.sortState = publicTableSortState(sourceSheet.sortState);
+    sheet.dataValidations.items = (sourceSheet.dataValidations || []).map(publicDataValidation);
+    sheet.conditionalFormattings.items = (sourceSheet.conditionalFormats || []).map(publicConditionalFormat);
+    for (const sourceComment of sourceSheet.threadedComments || []) {
+      const thread = workbook.comments.addThread(
+        { sheetName: sheet.name, address: sourceComment.cellReference },
+        sourceComment.text,
+        {
+          id: sourceComment.id || undefined,
+          author: sourceComment.author || "User",
+          resolved: sourceComment.resolved,
+          comment: {
+            ...(sourceComment.nativeCommentId ? { id: sourceComment.nativeCommentId } : {}),
+            ...(sourceComment.personId ? { personId: sourceComment.personId } : {}),
+            ...(sourceComment.dateTime ? { date: sourceComment.dateTime } : {}),
+            person: {
+              displayName: sourceComment.author || "User",
+              ...(sourceComment.userId ? { userId: sourceComment.userId } : {}),
+              ...(sourceComment.providerId ? { providerId: sourceComment.providerId } : {}),
+            },
+            done: sourceComment.resolved,
+          },
+        },
+      );
+      if (sourceComment.id) thread.id = sourceComment.id;
+    }
     for (const sourceCell of sourceSheet.cells) {
       const cell = sheet.store.get(cellAddress(sourceCell.row, sourceCell.column));
       cell.formula = sourceCell.formula || null;
@@ -1283,6 +1428,7 @@ function workbookFromEnvelope(envelope) {
 }
 
 export async function importXlsxWithOpenChestnut(input, options = {}) {
+  assertCodecOptions(options, new Set(["limits"]), "importXlsxWithOpenChestnut");
   const response = await invokeOpenChestnut({
     protocolVersion: OPEN_CHESTNUT_PROTOCOL_VERSION,
     operation: CodecOperation.IMPORT_XLSX,
@@ -1293,21 +1439,88 @@ export async function importXlsxWithOpenChestnut(input, options = {}) {
   return workbookFromEnvelope(response.artifact);
 }
 
-const DOCUMENT_RUN_STYLE_KEYS = new Set(["runStyleId", "bold", "italic", "underline"]);
+const DOCUMENT_RUN_STYLE_KEYS = new Set(["runStyleId", "bold", "italic", "underline", "fontFamily", "fontSize", "color", "characterSpacing", "characterSpacingTwips"]);
+const DOCUMENT_RUN_DERIVED_STYLE_KEYS = new Set(["resolvedColor", "resolvedFontFamily", "resolvedFontFamilyEastAsia", "resolvedFontFamilyComplexScript"]);
 const DOCUMENT_FIELD_COMMANDS = new Set(["PAGE", "NUMPAGES", "SECTION", "SECTIONPAGES", "DATE", "TIME", "CREATEDATE", "SAVEDATE", "PRINTDATE", "AUTHOR", "TITLE", "SUBJECT", "COMMENTS", "FILENAME", "FILESIZE", "NUMWORDS", "NUMCHARS"]);
+
+function documentRgb(value, label) {
+  if (value == null || value === "") return undefined;
+  const rgb = String(value).replace(/^#/, "").toUpperCase();
+  if (!/^[0-9A-F]{6}$/.test(rgb)) throw new OpenChestnutCodecError(`${label} color must be a six-digit RGB value.`, [], { code: "invalid_document_formatting" });
+  return rgb;
+}
+
+function documentRunFormatting(style = {}, label = "Document run") {
+  const unsupported = Object.keys(style).filter((key) => !DOCUMENT_RUN_STYLE_KEYS.has(key) && !DOCUMENT_RUN_DERIVED_STYLE_KEYS.has(key));
+  if (unsupported.length) throw new OpenChestnutCodecError(`${label} uses unsupported run style fields: ${unsupported.join(", ")}.`, [], { code: "unsupported_document_features" });
+  const formatting = {};
+  if (Object.hasOwn(style, "fontFamily")) formatting.fontFamily = String(style.fontFamily || "");
+  if (Object.hasOwn(style, "fontSize")) {
+    const points = Number(style.fontSize);
+    if (!Number.isFinite(points) || points <= 0 || points > 1_638) throw new OpenChestnutCodecError(`${label} fontSize must be greater than 0 and no more than 1638 points.`, [], { code: "invalid_document_formatting" });
+    formatting.fontSizeHalfPoints = uint32(Math.round(points * 2), `${label} fontSize`);
+  }
+  if (Object.hasOwn(style, "color")) formatting.colorRgb = documentRgb(style.color, label);
+  if (Object.hasOwn(style, "characterSpacing") || Object.hasOwn(style, "characterSpacingTwips")) {
+    const value = Number(style.characterSpacingTwips ?? style.characterSpacing);
+    if (!Number.isInteger(value) || value < -31_680 || value > 31_680) throw new OpenChestnutCodecError(`${label} character spacing must be an integer from -31680 through 31680 twips.`, [], { code: "invalid_document_formatting" });
+    formatting.characterSpacingTwips = value;
+  }
+  for (const key of ["bold", "italic"]) if (Object.hasOwn(style, key)) formatting[key] = Boolean(style[key]);
+  if (Object.hasOwn(style, "underline")) formatting.underline = style.underline === true || style.underline === "single";
+  return Object.keys(formatting).length ? formatting : undefined;
+}
+
+function publicDocumentRunFormatting(formatting) {
+  if (!formatting) return {};
+  return {
+    ...(formatting.fontFamily !== undefined ? { fontFamily: formatting.fontFamily } : {}),
+    ...(formatting.fontSizeHalfPoints !== undefined ? { fontSize: formatting.fontSizeHalfPoints / 2 } : {}),
+    ...(formatting.colorRgb !== undefined ? { color: `#${formatting.colorRgb}` } : {}),
+    ...(formatting.characterSpacingTwips !== undefined ? { characterSpacingTwips: formatting.characterSpacingTwips } : {}),
+    ...(formatting.bold !== undefined ? { bold: formatting.bold } : {}),
+    ...(formatting.italic !== undefined ? { italic: formatting.italic } : {}),
+    ...(formatting.underline !== undefined ? { underline: formatting.underline } : {}),
+  };
+}
+
+function documentParagraphFormatting(block) {
+  const value = block?.paragraphFormat || block?.formatting || {};
+  const result = {};
+  const text = (model, wire) => { if (value[model] != null) result[wire] = String(value[model]); };
+  const integer = (model, wire) => {
+    if (value[model] == null) return;
+    const number = Number(value[model]);
+    if (!Number.isInteger(number) || number < -1_000_000 || number > 1_000_000) throw new OpenChestnutCodecError(`Document paragraph ${block.id} ${model} must be a bounded integer.`, [], { code: "invalid_document_formatting" });
+    result[wire] = number;
+  };
+  text("alignment", "alignment");
+  for (const [model, wire] of [["leftIndentTwips", "leftIndentTwips"], ["rightIndentTwips", "rightIndentTwips"], ["firstLineIndentTwips", "firstLineIndentTwips"], ["hangingIndentTwips", "hangingIndentTwips"], ["spaceBeforeTwips", "spaceBeforeTwips"], ["spaceAfterTwips", "spaceAfterTwips"], ["lineSpacingTwips", "lineSpacingTwips"]]) integer(model, wire);
+  text("lineSpacingRule", "lineSpacingRule");
+  if (value.keepNext != null) result.keepNext = Boolean(value.keepNext);
+  if (value.pageBreakBefore != null) result.pageBreakBefore = Boolean(value.pageBreakBefore);
+  return Object.keys(result).length ? result : undefined;
+}
+
+function publicDocumentParagraphFormatting(value) {
+  if (!value) return undefined;
+  const result = {};
+  for (const key of ["alignment", "leftIndentTwips", "rightIndentTwips", "firstLineIndentTwips", "hangingIndentTwips", "spaceBeforeTwips", "spaceAfterTwips", "lineSpacingTwips", "lineSpacingRule", "keepNext", "pageBreakBefore"]) {
+    if (value[key] !== undefined) result[key] = value[key];
+  }
+  return Object.keys(result).length ? result : undefined;
+}
 
 function documentRun(run, blockId) {
   const style = run.style || {};
-  const unsupported = Object.keys(style).filter((key) => !DOCUMENT_RUN_STYLE_KEYS.has(key));
-  if (unsupported.length) {
-    throw new OpenChestnutCodecError(`Document block ${blockId} uses unsupported run style fields: ${unsupported.join(", ")}.`, [], { code: "unsupported_document_features" });
-  }
+  const formatting = documentRunFormatting(style, `Document block ${blockId}`);
   return {
     text: String(run.text ?? ""),
     styleId: style.runStyleId || "",
     bold: style.bold === true,
     italic: style.italic === true,
     underline: style.underline === true || style.underline === "single",
+    formatting,
   };
 }
 
@@ -1758,6 +1971,130 @@ function documentComment(comment, slot) {
   };
 }
 
+function documentStyleType(value) {
+  if (value === "character") return DocumentStyleType.CHARACTER;
+  if (value === "table") return DocumentStyleType.TABLE;
+  return DocumentStyleType.PARAGRAPH;
+}
+
+function publicDocumentStyleType(value) {
+  if (value === DocumentStyleType.CHARACTER) return "character";
+  if (value === DocumentStyleType.TABLE) return "table";
+  return "paragraph";
+}
+
+function wireDocumentStyle(style) {
+  const runSource = Object.fromEntries([...DOCUMENT_RUN_STYLE_KEYS].filter((key) => key !== "runStyleId" && Object.hasOwn(style, key)).map((key) => [key, style[key]]));
+  return {
+    id: String(style.id || ""),
+    name: String(style.name || style.id || ""),
+    type: documentStyleType(style.type),
+    basedOn: String(style.basedOn || style.parent || style.extends || ""),
+    runFormat: documentRunFormatting(runSource, `Document style ${style.id || "(unnamed)"}`),
+    paragraphFormat: documentParagraphFormatting({ id: style.id || "(unnamed)", paragraphFormat: style.paragraphFormat || style }),
+  };
+}
+
+function publicDocumentStyle(style) {
+  return {
+    id: style.id,
+    name: style.name || style.id,
+    type: publicDocumentStyleType(style.type),
+    ...(style.basedOn ? { basedOn: style.basedOn } : {}),
+    ...publicDocumentRunFormatting(style.runFormat),
+    ...(publicDocumentParagraphFormatting(style.paragraphFormat) || {}),
+  };
+}
+
+function headerFooterReference(value) {
+  if (value === "first") return DocumentHeaderFooterReference.FIRST;
+  if (value === "even") return DocumentHeaderFooterReference.EVEN;
+  return DocumentHeaderFooterReference.DEFAULT;
+}
+
+function publicHeaderFooterReference(value) {
+  if (value === DocumentHeaderFooterReference.FIRST) return "first";
+  if (value === DocumentHeaderFooterReference.EVEN) return "even";
+  return "default";
+}
+
+function wireHeaderFooter(block) {
+  const instruction = String(block.fieldInstruction || block.field || "");
+  if (instruction && !DOCUMENT_FIELD_COMMANDS.has(instruction.trim().split(/\s+/)[0].toUpperCase())) throw new OpenChestnutCodecError(`Document ${block.kind} ${block.id} uses unsupported field ${instruction}.`, [], { code: "invalid_document_field" });
+  return {
+    id: String(block.id || ""),
+    name: String(block.name || block.kind || ""),
+    styleId: String(block.styleId || "Normal"),
+    text: String(block.text || ""),
+    reference: headerFooterReference(block.referenceType),
+    sectionIndex: block.sectionIndex == null ? undefined : uint32(block.sectionIndex, `Document ${block.kind} ${block.id} sectionIndex`),
+    relationshipId: String(block.relationshipId || ""),
+    partPath: String(block.partPath || ""),
+    variantActive: block.variantActive == null ? undefined : Boolean(block.variantActive),
+    fieldInstruction: instruction,
+  };
+}
+
+function publicHeaderFooter(block) {
+  return {
+    id: block.id || undefined,
+    name: block.name || undefined,
+    styleId: block.styleId || "Normal",
+    text: block.text || "",
+    referenceType: publicHeaderFooterReference(block.reference),
+    sectionIndex: block.sectionIndex,
+    relationshipId: block.relationshipId || undefined,
+    partPath: block.partPath || undefined,
+    variantActive: block.variantActive,
+    fieldInstruction: block.fieldInstruction || undefined,
+  };
+}
+
+function documentSectionBreak(value) {
+  if (value === "continuous") return DocumentSectionBreak.CONTINUOUS;
+  if (value === "evenPage") return DocumentSectionBreak.EVEN_PAGE;
+  if (value === "oddPage") return DocumentSectionBreak.ODD_PAGE;
+  return DocumentSectionBreak.NEXT_PAGE;
+}
+
+function publicDocumentSectionBreak(value) {
+  if (value === DocumentSectionBreak.CONTINUOUS) return "continuous";
+  if (value === DocumentSectionBreak.EVEN_PAGE) return "evenPage";
+  if (value === DocumentSectionBreak.ODD_PAGE) return "oddPage";
+  return "nextPage";
+}
+
+function documentImage(block, assets) {
+  if (!block.dataUrl) throw new OpenChestnutCodecError(`Document image ${block.id} requires embedded PNG or JPEG data.`, [], { code: "unsupported_document_image" });
+  const match = /^data:(image\/(?:png|jpeg));base64,([A-Za-z0-9+/=\s]+)$/i.exec(String(block.dataUrl));
+  if (!match) throw new OpenChestnutCodecError(`Document image ${block.id} must use a base64 PNG/JPEG data URL.`, [], { code: "unsupported_document_image" });
+  const bytes = new Uint8Array(Buffer.from(match[2].replace(/\s/g, ""), "base64"));
+  if (!bytes.length) throw new OpenChestnutCodecError(`Document image ${block.id} contains no image bytes.`, [], { code: "invalid_document_image" });
+  const contentType = match[1].toLowerCase();
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  const assetId = `asset/document/image/${sha256}`;
+  assets.set(assetId, { id: assetId, fileName: `${sha256}.${contentType === "image/png" ? "png" : "jpg"}`, contentType, data: bytes, sha256 });
+  const widthEmu = Math.round(Number(block.widthPx) * 9_525);
+  const heightEmu = Math.round(Number(block.heightPx) * 9_525);
+  if (!Number.isSafeInteger(widthEmu) || !Number.isSafeInteger(heightEmu) || widthEmu <= 0 || heightEmu <= 0) throw new OpenChestnutCodecError(`Document image ${block.id} dimensions must be positive bounded pixels.`, [], { code: "invalid_document_image" });
+  return { assetId, altText: String(block.alt || block.name || "image"), widthEmu, heightEmu };
+}
+
+function wireDocumentSection(block) {
+  const page = block.pageSize || {};
+  const margins = block.margins || {};
+  return {
+    breakType: documentSectionBreak(block.breakType),
+    pageWidthTwips: uint32(Math.round(Number(page.widthTwips)), `Document section ${block.id} page width`),
+    pageHeightTwips: uint32(Math.round(Number(page.heightTwips)), `Document section ${block.id} page height`),
+    landscape: block.orientation === "landscape",
+    marginTopTwips: uint32(Math.round(Number(margins.top)), `Document section ${block.id} top margin`),
+    marginRightTwips: uint32(Math.round(Number(margins.right)), `Document section ${block.id} right margin`),
+    marginBottomTwips: uint32(Math.round(Number(margins.bottom)), `Document section ${block.id} bottom margin`),
+    marginLeftTwips: uint32(Math.round(Number(margins.left)), `Document section ${block.id} left margin`),
+  };
+}
+
 function unchangedSourceBlock(block, original) {
   switch (original.content.case) {
     case "paragraph": {
@@ -1778,6 +2115,11 @@ function unchangedSourceBlock(block, original) {
       return sameDocumentHyperlink(block, original.content.value);
     case "field":
       return block.kind === "field" && block.styleId === (original.styleId || "Normal") && block.instruction === original.content.value.instruction && block.display === original.content.value.display;
+    case "section": {
+      if (block.kind !== "section") return false;
+      const value = wireDocumentSection(block);
+      return JSON.stringify(value) === JSON.stringify(original.content.value);
+    }
     case "opaque":
       return block.kind === "paragraph" && block.text === original.content.value.text && block.runs.every((run) => Object.keys(run.style || {}).length === 0);
     default:
@@ -1785,7 +2127,7 @@ function unchangedSourceBlock(block, original) {
   }
 }
 
-function documentBlock(block, original, directNumbering) {
+function documentBlock(block, original, directNumbering, assets) {
   if (original && unchangedSourceBlock(block, original)) return original;
   const common = {
     id: original?.id || block.id,
@@ -1798,7 +2140,7 @@ function documentBlock(block, original, directNumbering) {
       ...common,
       content: {
         case: "paragraph",
-        value: { text: block.text, runs: block.runs.map((run) => documentRun(run, block.id)) },
+        value: { text: block.text, runs: block.runs.map((run) => documentRun(run, block.id)), formatting: documentParagraphFormatting(block) },
       },
     };
   }
@@ -1890,6 +2232,18 @@ function documentBlock(block, original, directNumbering) {
       content: { case: "field", value: documentField(block, original) },
     };
   }
+  if (block.kind === "image") {
+    return {
+      ...common,
+      content: { case: "image", value: documentImage(block, assets) },
+    };
+  }
+  if (block.kind === "section") {
+    return {
+      ...common,
+      content: { case: "section", value: wireDocumentSection(block) },
+    };
+  }
   throw new OpenChestnutCodecError(`The DOCX WebAssembly vertical slice cannot author document block kind ${block.kind}.`, [], { code: "unsupported_document_features" });
 }
 
@@ -1898,9 +2252,6 @@ function unsupportedDocumentCollections(document) {
   for (const [label, value] of [
     ["bookmarks", document.bookmarks],
     ["bibliography sources", document.bibliographySources],
-    ["headers", document.headers],
-    ["footers", document.footers],
-    ["section settings", document.sectionSettings],
   ]) {
     if (value?.length) unsupported.push(label);
   }
@@ -1914,7 +2265,7 @@ function documentEnvelope(document) {
   if (!state) {
     const unsupported = unsupportedDocumentCollections(document);
     if (unsupported.length) {
-      throw new OpenChestnutCodecError(`The DOCX WebAssembly vertical slice cannot author: ${unsupported.join(", ")}. Use DocumentFile.exportDocx until parity reaches these features.`, [], { code: "unsupported_document_features" });
+      throw new OpenChestnutCodecError(`OpenChestnut cannot author these DOCX features: ${unsupported.join(", ")}. This operation fails closed; preserve them only through a validated source-bound package.`, [], { code: "unsupported_document_features" });
     }
   }
   if (state && state.blocks.length !== document.blocks.length) {
@@ -1923,33 +2274,49 @@ function documentEnvelope(document) {
   if (state && state.comments.length !== document.comments.length) {
     throw new OpenChestnutCodecError(`Source-preserving DOCX export requires the original ${state.comments.length}-comment topology; the document contains ${document.comments.length} comments.`, [], { code: "document_comment_topology_changed" });
   }
+  if (state && (state.headers.length !== document.headers.length || state.footers.length !== document.footers.length)) {
+    throw new OpenChestnutCodecError("Source-preserving DOCX export requires the original header/footer topology.", [], { code: "document_header_footer_topology_changed" });
+  }
   const directNumbering = state ? undefined : directDocumentNumberingPlan(document);
+  const assets = new Map((state?.assets || []).map((asset) => [asset.id, asset]));
+  const defaultRunSource = Object.fromEntries([...DOCUMENT_RUN_STYLE_KEYS].filter((key) => key !== "runStyleId" && Object.hasOwn(document.defaultRunStyle || {}, key)).map((key) => [key, document.defaultRunStyle[key]]));
+  const blocks = document.blocks.map((block, index) => documentBlock(block, state?.blocks[index], directNumbering?.get(block), assets));
   return {
     protocolVersion: OPEN_CHESTNUT_PROTOCOL_VERSION,
     family: ArtifactFamily.DOCUMENT,
     source: state?.source,
     opaqueOpc: state?.opaqueOpc,
+    assets: [...assets.values()],
     diagnostics: state?.diagnostics || [],
     payload: {
       case: "document",
       value: {
         id: document.id,
         name: document.name,
-        blocks: document.blocks.map((block, index) => documentBlock(block, state?.blocks[index], directNumbering?.get(block))),
+        blocks,
         comments: document.comments.map((comment, index) => documentComment(comment, state?.comments[index])),
+        styles: document.styles.values().map(wireDocumentStyle),
+        defaultRunStyle: documentRunFormatting(defaultRunSource, "Document default run style"),
+        headers: document.headers.map(wireHeaderFooter),
+        footers: document.footers.map(wireHeaderFooter),
+        evenAndOddHeaders: Boolean(document.settings?.evenAndOddHeaders),
+        sectionSettings: (document.sectionSettings || []).map((settings) => ({
+          sectionIndex: uint32(settings.sectionIndex, "Document section settings index"),
+          differentFirstPage: settings.differentFirstPage == null ? undefined : Boolean(settings.differentFirstPage),
+        })),
       },
     },
   };
 }
 
 export async function exportDocxWithOpenChestnut(document, options = {}) {
+  assertCodecOptions(options, new Set(["limits"]), "exportDocxWithOpenChestnut");
   const response = await invokeOpenChestnut({
     protocolVersion: OPEN_CHESTNUT_PROTOCOL_VERSION,
     operation: CodecOperation.EXPORT_DOCX,
     family: ArtifactFamily.DOCUMENT,
     artifact: documentEnvelope(document),
     limits: codecLimits(options.limits),
-    allowLossy: options.allowLossy === true,
   });
   return new FileBlob(response.file, {
     type: DOCX_MIME,
@@ -1962,14 +2329,11 @@ function documentFromEnvelope(envelope) {
     throw new OpenChestnutCodecError("OpenChestnut response does not contain a document artifact.", [], { code: "invalid_document_artifact" });
   }
   const source = envelope.payload.value;
-  const styles = {};
-  for (const block of source.blocks) {
+  const assets = new Map((envelope.assets || []).map((asset) => [asset.id, asset]));
+  const styles = Object.fromEntries((source.styles || []).map((style) => [style.id, publicDocumentStyle(style)]));
+  if (!(source.styles || []).length) for (const block of source.blocks) {
     if (block.styleId) styles[block.styleId] = { id: block.styleId, name: block.styleId, type: block.content.case === "table" ? "table" : "paragraph" };
-    if (block.content.case === "paragraph") {
-      for (const run of block.content.value.runs) {
-        if (run.styleId) styles[run.styleId] = { id: run.styleId, name: run.styleId, type: "character" };
-      }
-    }
+    if (block.content.case === "paragraph") for (const run of block.content.value.runs) if (run.styleId) styles[run.styleId] = { id: run.styleId, name: run.styleId, type: "character" };
   }
   const blocks = source.blocks.map((block) => {
     switch (block.content.case) {
@@ -2000,13 +2364,15 @@ function documentFromEnvelope(envelope) {
           name: block.name,
           styleId: block.styleId || "Normal",
           text: block.content.value.text,
+          paragraphFormat: publicDocumentParagraphFormatting(block.content.value.formatting),
           runs: block.content.value.runs.length ? block.content.value.runs.map((run) => ({
             text: run.text,
             style: {
               ...(run.styleId ? { runStyleId: run.styleId } : {}),
-              ...(run.bold ? { bold: true } : {}),
-              ...(run.italic ? { italic: true } : {}),
-              ...(run.underline ? { underline: true } : {}),
+              ...publicDocumentRunFormatting(run.formatting),
+              ...(!run.formatting && run.bold ? { bold: true } : {}),
+              ...(!run.formatting && run.italic ? { italic: true } : {}),
+              ...(!run.formatting && run.underline ? { underline: true } : {}),
             },
           })) : undefined,
         };
@@ -2048,6 +2414,33 @@ function documentFromEnvelope(envelope) {
           instruction: block.content.value.instruction,
           display: block.content.value.display,
         };
+      case "image": {
+        const image = block.content.value;
+        const asset = assets.get(image.assetId);
+        if (!asset || !new Set(["image/png", "image/jpeg"]).has(asset.contentType)) throw new OpenChestnutCodecError(`Document image ${block.id} references a missing or unsupported asset.`, [], { code: "invalid_document_asset" });
+        return {
+          kind: "image",
+          id: block.id,
+          name: block.name,
+          styleId: block.styleId || "Normal",
+          dataUrl: `data:${asset.contentType};base64,${Buffer.from(asset.data).toString("base64")}`,
+          alt: image.altText,
+          widthPx: Number(image.widthEmu) / 9_525,
+          heightPx: Number(image.heightEmu) / 9_525,
+        };
+      }
+      case "section": {
+        const section = block.content.value;
+        return {
+          kind: "section",
+          id: block.id,
+          name: block.name,
+          breakType: publicDocumentSectionBreak(section.breakType),
+          orientation: section.landscape ? "landscape" : "portrait",
+          pageSize: { widthTwips: section.pageWidthTwips, heightTwips: section.pageHeightTwips },
+          margins: { top: section.marginTopTwips, right: section.marginRightTwips, bottom: section.marginBottomTwips, left: section.marginLeftTwips },
+        };
+      }
       case "opaque":
         return {
           kind: "paragraph",
@@ -2068,7 +2461,17 @@ function documentFromEnvelope(envelope) {
     date: comment.createdAt,
     text: comment.text,
   }));
-  const document = DocumentModel.create({ name: source.name || "Imported document", styles, blocks, comments });
+  const document = DocumentModel.create({
+    name: source.name || "Imported document",
+    styles,
+    defaultRunStyle: publicDocumentRunFormatting(source.defaultRunStyle),
+    blocks,
+    comments,
+    headers: (source.headers || []).map(publicHeaderFooter),
+    footers: (source.footers || []).map(publicHeaderFooter),
+    settings: { evenAndOddHeaders: Boolean(source.evenAndOddHeaders) },
+    sectionSettings: (source.sectionSettings || []).map((settings) => ({ sectionIndex: settings.sectionIndex, differentFirstPage: settings.differentFirstPage })),
+  });
   document.id = source.id || document.id;
   const commentSlots = source.comments.map((wire, index) => ({
     wire,
@@ -2076,13 +2479,14 @@ function documentFromEnvelope(envelope) {
   }));
   Object.defineProperty(document, DOCUMENT_STATE, {
     configurable: true,
-    value: { source: envelope.source, opaqueOpc: envelope.opaqueOpc, diagnostics: envelope.diagnostics, blocks: source.blocks, comments: commentSlots },
+    value: { source: envelope.source, opaqueOpc: envelope.opaqueOpc, diagnostics: envelope.diagnostics, assets: envelope.assets || [], blocks: source.blocks, comments: commentSlots, headers: source.headers || [], footers: source.footers || [] },
     writable: true,
   });
   return document;
 }
 
 export async function importDocxWithOpenChestnut(input, options = {}) {
+  assertCodecOptions(options, new Set(["limits"]), "importDocxWithOpenChestnut");
   const response = await invokeOpenChestnut({
     protocolVersion: OPEN_CHESTNUT_PROTOCOL_VERSION,
     operation: CodecOperation.IMPORT_DOCX,
@@ -2094,13 +2498,13 @@ export async function importDocxWithOpenChestnut(input, options = {}) {
 }
 
 export async function exportPptxWithOpenChestnut(presentation, options = {}) {
+  assertCodecOptions(options, new Set(["limits"]), "exportPptxWithOpenChestnut");
   const response = await invokeOpenChestnut({
     protocolVersion: OPEN_CHESTNUT_PROTOCOL_VERSION,
     operation: CodecOperation.EXPORT_PPTX,
     family: ArtifactFamily.PRESENTATION,
     artifact: presentationEnvelope(presentation, OPEN_CHESTNUT_PROTOCOL_VERSION),
     limits: codecLimits(options.limits),
-    allowLossy: options.allowLossy === true,
   });
   return new FileBlob(response.file, {
     type: PPTX_MIME,
@@ -2109,6 +2513,7 @@ export async function exportPptxWithOpenChestnut(presentation, options = {}) {
 }
 
 export async function importPptxWithOpenChestnut(input, options = {}) {
+  assertCodecOptions(options, new Set(["limits"]), "importPptxWithOpenChestnut");
   const response = await invokeOpenChestnut({
     protocolVersion: OPEN_CHESTNUT_PROTOCOL_VERSION,
     operation: CodecOperation.IMPORT_PPTX,

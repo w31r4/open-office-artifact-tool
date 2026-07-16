@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
-import JSZip from "jszip";
 
 import {
   DocumentFile,
@@ -14,7 +13,6 @@ import {
 import { createLibreOfficeRenderer } from "open-office-artifact-tool/renderers/libreoffice";
 import { createPlaywrightRenderer } from "open-office-artifact-tool/renderers/playwright";
 import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppler";
-import { documentOpenChestnutEdits, normalizeOpenChestnutCodecName } from "../../shared/open-chestnut-compat.mjs";
 import {
   loadVisualBaseline,
   prepareNumberedVisualBaselines,
@@ -24,94 +22,6 @@ import {
 
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const PREVIEW_EXTENSION = { svg: "svg", png: "png", webp: "webp", jpeg: "jpg", jpg: "jpg", pdf: "pdf" };
-
-function xmlEscape(value) {
-  return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
-}
-
-function regexEscape(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-async function inheritFixtureListNumberingFromStyle(docx, texts = []) {
-  if (!texts.length) return docx;
-  const zip = await JSZip.loadAsync(docx.bytes);
-  const part = zip.file("word/document.xml");
-  assert.ok(part, "OpenChestnut style-inherited list fixture requires word/document.xml.");
-  let xml = await part.async("text");
-  for (const text of texts) {
-    const pattern = new RegExp(`<w:p>(?:(?!<\\/w:p>)[\\s\\S])*?<w:t>${regexEscape(xmlEscape(text))}<\\/w:t>(?:(?!<\\/w:p>)[\\s\\S])*?<\\/w:p>`);
-    const paragraph = pattern.exec(xml)?.[0];
-    assert.ok(paragraph, `Missing style-inherited list fixture paragraph ${text}.`);
-    const inherited = paragraph.replace(/<w:numPr>[\s\S]*?<\/w:numPr>/, "");
-    assert.notEqual(inherited, paragraph, `List fixture paragraph ${text} has no direct w:numPr to remove.`);
-    xml = xml.replace(paragraph, inherited);
-  }
-  zip.file("word/document.xml", xml);
-  return new FileBlob(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: DOCX_MIME });
-}
-
-async function mergeFixtureTableCells(docx, merges = []) {
-  if (!merges.length) return docx;
-  const zip = await JSZip.loadAsync(docx.bytes);
-  const part = zip.file("word/document.xml");
-  assert.ok(part, "OpenChestnut merged-table fixture requires word/document.xml.");
-  let xml = await part.async("text");
-  const addProperty = (cell, property) => {
-    if (!/<w:tcPr>/.test(cell)) return cell.replace("<w:tc>", `<w:tc><w:tcPr>${property}</w:tcPr>`);
-    const boundary = /<w:(?:tcBorders|shd|noWrap|tcMar|textDirection|tcFitText|vAlign|hideMark|headers)\b/.exec(cell);
-    if (boundary) return `${cell.slice(0, boundary.index)}${property}${cell.slice(boundary.index)}`;
-    return cell.replace("</w:tcPr>", `${property}</w:tcPr>`);
-  };
-  for (const merge of merges) {
-    const tables = [...xml.matchAll(/<w:tbl>[\s\S]*?<\/w:tbl>/g)];
-    const tableMatch = tables.find((item) => item[0].includes(`<w:t>${xmlEscape(merge.matchText)}</w:t>`));
-    assert.ok(tableMatch, `Missing merged-table fixture target ${merge.matchText}.`);
-    const rows = [...tableMatch[0].matchAll(/<w:tr>[\s\S]*?<\/w:tr>/g)].map((item) => item[0]);
-    const startRow = Number(merge.row || 0);
-    const column = Number(merge.column || 0);
-    const rowCount = Number(merge.rows || 2);
-    assert.ok(Number.isInteger(startRow) && Number.isInteger(column) && Number.isInteger(rowCount) && startRow >= 0 && column >= 0 && rowCount >= 2 && startRow + rowCount <= rows.length, `Invalid merged-table fixture range for ${merge.matchText}.`);
-    let updatedTable = tableMatch[0];
-    for (let offset = 0; offset < rowCount; offset += 1) {
-      const row = rows[startRow + offset];
-      const cells = [...row.matchAll(/<w:tc>[\s\S]*?<\/w:tc>/g)].map((item) => item[0]);
-      assert.ok(column < cells.length, `Merged-table fixture column ${column} is outside row ${startRow + offset}.`);
-      const value = offset === 0 ? "restart" : "continue";
-      const updatedCell = addProperty(cells[column], `<w:vMerge w:val="${value}"/>`);
-      updatedTable = updatedTable.replace(cells[column], updatedCell);
-    }
-    xml = `${xml.slice(0, tableMatch.index)}${updatedTable}${xml.slice(tableMatch.index + tableMatch[0].length)}`;
-  }
-  zip.file("word/document.xml", xml);
-  return new FileBlob(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: DOCX_MIME });
-}
-
-function packageCommentsXml(comments = []) {
-  const body = comments.map((comment) => `<w:comment w:id="${xmlEscape(comment.commentId)}" w:author="${xmlEscape(comment.author || "User")}" w:initials="${xmlEscape(comment.initials || "")}"${comment.date ? ` w:date="${xmlEscape(comment.date)}"` : ""}><w:p${comment.paraId ? ` w14:paraId="${xmlEscape(comment.paraId)}"` : ""}><w:r><w:t>${xmlEscape(comment.text || "")}</w:t></w:r></w:p></w:comment>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml">${body}</w:comments>`;
-}
-
-function packageCommentsExtendedXml(comments = []) {
-  const body = comments.map((comment) => `<w15:commentEx w15:paraId="${xmlEscape(comment.paraId)}"${comment.parentParaId ? ` w15:paraIdParent="${xmlEscape(comment.parentParaId)}"` : ""} w15:done="${comment.resolved ? 1 : 0}"/>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w15:commentsEx xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml">${body}</w15:commentsEx>`;
-}
-
-function packageNumberingXml(numbering = {}) {
-  const abstracts = (numbering.abstracts || []).map((abstract) => {
-    const levels = (abstract.levels || []).map((level) => `<w:lvl w:ilvl="${xmlEscape(level.level ?? level.ilvl ?? 0)}"><w:start w:val="${xmlEscape(level.start ?? 1)}"/><w:numFmt w:val="${xmlEscape(level.numberFormat || level.numFmt || "decimal")}"/><w:lvlText w:val="${xmlEscape(level.levelText || level.lvlText || `%${Number(level.level ?? level.ilvl ?? 0) + 1}.`)}"/></w:lvl>`).join("");
-    return `<w:abstractNum w:abstractNumId="${xmlEscape(abstract.abstractNumId)}">${levels}</w:abstractNum>`;
-  }).join("");
-  const instances = (numbering.instances || []).map((instance) => {
-    const overrides = (instance.overrides || []).map((override) => `<w:lvlOverride w:ilvl="${xmlEscape(override.level ?? override.ilvl ?? 0)}"><w:startOverride w:val="${xmlEscape(override.start ?? override.startOverride ?? 1)}"/></w:lvlOverride>`).join("");
-    return `<w:num w:numId="${xmlEscape(instance.numId)}"><w:abstractNumId w:val="${xmlEscape(instance.abstractNumId)}"/>${overrides}</w:num>`;
-  }).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">${abstracts}${instances}</w:numbering>`;
-}
-
-function packageSettingsXml() {
-  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:zoom w:percent="100"/><w:compat><w:compatSetting w:name="compatibilityMode" w:val="15"/></w:compat></w:settings>';
-}
 
 function commandExists(command) {
   const result = spawnSync(process.platform === "win32" ? "where" : "which", [command], {
@@ -139,18 +49,19 @@ function addFixtureBlock(document, block = {}) {
     case "table": return document.addTable(config);
     case "hyperlink": return document.addHyperlink(block.text || "", block.url, config);
     case "field": return document.addField(block.instruction, block.display, config);
-    case "citation": return document.addCitation(block.text || "", block.metadata || {}, config);
     case "image": return document.addImage(config);
     case "section": return document.addSection(config);
-    case "insertion": return document.addInsertion(block.text || "", config);
-    case "deletion": return document.addDeletion(block.text || "", config);
     default: throw new Error(`Unsupported document fixture block kind: ${block.kind}`);
   }
 }
 
 export function createDocumentFromFixture(fixture = {}) {
-  const document = DocumentModel.create({ name: fixture.name || "Fixture document", theme: fixture.theme || {}, defaultRunStyle: fixture.defaultRunStyle || {}, settings: fixture.settings || {}, bibliography: fixture.bibliography || {}, bibliographySources: fixture.bibliographySources || [], blocks: [] });
-  if (fixture.designPreset) document.applyDesignPreset(fixture.designPreset, fixture.designOptions || {});
+  const document = DocumentModel.create({
+    name: fixture.name || "Fixture document",
+    defaultRunStyle: fixture.defaultRunStyle || {},
+    settings: fixture.settings || {},
+    blocks: [],
+  });
   for (const [id, style] of Object.entries(fixture.styles || {})) document.styles.add(id, style);
   const byName = new Map();
   for (const block of fixture.blocks || []) {
@@ -160,26 +71,13 @@ export function createDocumentFromFixture(fixture = {}) {
   for (const settings of fixture.sectionSettings || []) document.setSectionSettings(settings.sectionIndex, settings);
   for (const header of fixture.headers || []) document.addHeader(header.text || "", header);
   for (const footer of fixture.footers || []) document.addFooter(footer.text || "", footer);
-  for (const bookmark of fixture.bookmarks || []) {
-    const targetBlock = byName.get(bookmark.targetName);
-    const endTargetBlock = byName.get(bookmark.endTargetName);
-    const target = bookmark.targetCell ? targetBlock?.getCell(...bookmark.targetCell) : targetBlock || bookmark.targetId;
-    const endTarget = bookmark.endTargetCell ? endTargetBlock?.getCell(...bookmark.endTargetCell) : endTargetBlock || bookmark.endTargetId;
-    assert.ok(target, `Missing document fixture bookmark target ${bookmark.targetName || bookmark.targetId}`);
-    if (bookmark.endTargetName || bookmark.endTargetId) assert.ok(endTarget, `Missing document fixture bookmark end target ${bookmark.endTargetName || bookmark.endTargetId}`);
-    document.addBookmark(target, bookmark.name, { ...bookmark, endTarget });
-  }
-  const commentsByName = new Map();
   for (const comment of fixture.comments || []) {
-    const parent = comment.parentName ? commentsByName.get(comment.parentName) : undefined;
     const target = byName.get(comment.targetName) || comment.targetId;
-    if (comment.parentName) assert.ok(parent, `Missing document fixture parent comment ${comment.parentName}`);
-    else assert.ok(target, `Missing document fixture comment target ${comment.targetName || comment.targetId}`);
-    const created = parent ? document.replyToComment(parent, comment.text || "", comment) : document.addComment(target, comment.text || "", comment);
-    if (comment.name) commentsByName.set(comment.name, created);
+    assert.ok(target, `Missing document fixture comment target ${comment.targetName || comment.targetId}`);
+    document.addComment(target, comment.text || "", comment);
   }
   for (const expected of fixture.expectInspect || []) {
-    assert.match(document.inspect({ kind: expected.kind || "document,paragraph,listItem,table,bookmark,comment,header,footer,hyperlink,field,citation,image,section,change,style", maxChars: 20_000 }).ndjson, new RegExp(expected.pattern));
+    assert.match(document.inspect({ kind: expected.kind || "document,paragraph,listItem,table,comment,header,footer,hyperlink,field,image,section,style", maxChars: 20_000 }).ndjson, new RegExp(expected.pattern));
   }
   return document;
 }
@@ -233,9 +131,9 @@ export async function verifyDocumentFile(inputPath, options = {}) {
   await fs.mkdir(outputDir, { recursive: true });
   const loaded = await FileBlob.load(absoluteInput);
   const docxBlob = new FileBlob(loaded.bytes, { type: DOCX_MIME, name: path.basename(absoluteInput) });
-  const document = await DocumentFile.importDocx(docxBlob, { preferNative: options.preferNative === true });
+  const document = await DocumentFile.importDocx(docxBlob);
   const maxChars = options.maxChars ?? 20_000;
-  const inspect = document.inspect({ kind: options.inspectKind || "document,theme,paragraph,listItem,table,comment,header,footer,hyperlink,field,citation,image,section,change,style,layout", maxChars });
+  const inspect = document.inspect({ kind: options.inspectKind || "document,paragraph,listItem,table,comment,header,footer,hyperlink,field,image,section,style,layout", maxChars });
   const packageInspect = await DocumentFile.inspectDocx(docxBlob, { includeText: options.includePackageText === true, maxChars });
   const verify = verifyArtifact(document, { visualQa: true, maxChars });
   const layoutBlob = await document.render({ format: "layout" });
@@ -320,68 +218,42 @@ export async function runDocumentFixture(fixturePath, options = {}) {
   await fs.mkdir(outputDir, { recursive: true });
   const document = createDocumentFromFixture(fixture);
   const docxPath = path.join(outputDir, fixture.outputName || `${fixture.name || "document"}.docx`);
-  const initialCodec = normalizeOpenChestnutCodecName(options.initialCodec || fixture.initialCodec || "js");
-  if (!new Set(["js", "open-chestnut"]).has(initialCodec)) throw new Error(`Unsupported document initial codec ${initialCodec}; expected js or open-chestnut.`);
-  let docx = initialCodec === "open-chestnut"
-    ? await DocumentFile.exportDocx(document, { codec: "open-chestnut" })
-    : await DocumentFile.exportDocx(document);
-  const packagePatches = [];
-  if (fixture.packageComments?.length) {
-    const partPath = fixture.packageCommentsPart || "word/review/fixture-comments.xml";
-    packagePatches.push({
-      path: partPath,
-      xml: packageCommentsXml(fixture.packageComments),
-      recipe: {
-        kind: "comments",
-        source: "word/document.xml",
-        id: fixture.packageCommentsRelationshipId,
-        sourceReference: { anchors: fixture.packageComments.filter((comment) => !comment.parentParaId).map(({ commentId, target }) => ({ commentId, target })) },
-      },
-    });
-    if (fixture.packageComments.every((comment) => comment.paraId)) {
-      packagePatches.push({
-        path: fixture.packageCommentsExtendedPart || "word/review/fixture-comments-extended.xml",
-        xml: packageCommentsExtendedXml(fixture.packageComments),
-        recipe: {
-          kind: "commentsExtended",
-          source: "word/document.xml",
-          id: fixture.packageCommentsExtendedRelationshipId,
-        },
-      });
-    }
-  }
-  if (fixture.packageNumbering) {
-    packagePatches.push({
-      path: fixture.packageNumberingPart || "word/review/fixture-numbering.xml",
-      xml: packageNumberingXml(fixture.packageNumbering),
-      recipe: {
-        kind: "numbering",
-        source: "word/document.xml",
-        id: fixture.packageNumberingRelationshipId,
-        sourceReference: { assignments: fixture.packageNumbering.assignments || [] },
-      },
-    });
-  }
-  if (fixture.packageSettings) {
-    packagePatches.push({
-      path: fixture.packageSettingsPart || "word/review/fixture-settings.xml",
-      xml: packageSettingsXml(),
-      recipe: {
-        kind: "settings",
-        source: "word/document.xml",
-        id: fixture.packageSettingsRelationshipId,
-        sourceReference: fixture.packageSettings,
-      },
-    });
-  }
-  if (packagePatches.length) docx = await DocumentFile.patchDocx(docx, packagePatches);
-  const roundtripCodec = normalizeOpenChestnutCodecName(options.roundtripCodec || fixture.roundtripCodec || "none");
-  if (!new Set(["none", "open-chestnut"]).has(roundtripCodec)) throw new Error(`Unsupported document roundtrip codec ${roundtripCodec}; expected none or open-chestnut.`);
-  if (roundtripCodec === "open-chestnut") {
-    docx = await inheritFixtureListNumberingFromStyle(docx, fixture.openChestnutStyleInheritedLists || []);
-    docx = await mergeFixtureTableCells(docx, fixture.openChestnutMergedTables || []);
-    const imported = await DocumentFile.importDocx(docx, { codec: "open-chestnut" });
-    for (const edit of documentOpenChestnutEdits(fixture)) {
+  let docx = await DocumentFile.exportDocx(document);
+  const imported = await DocumentFile.importDocx(docx);
+  for (const edit of fixture.edits || []) {
+      if (edit.kind === "paragraph") {
+        const paragraph = imported.blocks.find((block) => block.kind === "paragraph" && (!edit.matchText || block.text === edit.matchText));
+        assert.ok(paragraph, `Missing source-bound paragraph fixture target ${edit.matchText || "(unspecified)"}.`);
+        if (Object.prototype.hasOwnProperty.call(edit, "text")) {
+          paragraph.text = String(edit.text);
+          if (paragraph.runs.length === 1) paragraph.runs[0].text = paragraph.text;
+        }
+        if (edit.paragraphFormat) paragraph.paragraphFormat = { ...(paragraph.paragraphFormat || {}), ...structuredClone(edit.paragraphFormat) };
+        if (edit.runStyle) {
+          assert.equal(paragraph.runs.length, 1, "Run-style fixture edits require one modeled run.");
+          paragraph.runs[0].style = { ...paragraph.runs[0].style, ...structuredClone(edit.runStyle) };
+        }
+        continue;
+      }
+      if (edit.kind === "image") {
+        const image = imported.blocks.find((block) => block.kind === "image" && (!edit.matchAlt || block.alt === edit.matchAlt));
+        assert.ok(image, `Missing source-bound image fixture target ${edit.matchAlt || "(unspecified)"}.`);
+        for (const field of ["alt", "widthPx", "heightPx", "dataUrl"]) {
+          if (Object.prototype.hasOwnProperty.call(edit, field)) image[field] = edit[field];
+        }
+        continue;
+      }
+      if (edit.kind === "section") {
+        const sections = imported.blocks.filter((block) => block.kind === "section");
+        const section = sections[Number(edit.index || 0)];
+        assert.ok(section, `Missing source-bound section fixture index ${edit.index || 0}.`);
+        for (const field of ["breakType", "orientation"]) {
+          if (Object.prototype.hasOwnProperty.call(edit, field)) section[field] = edit[field];
+        }
+        if (edit.pageSize) section.pageSize = { ...section.pageSize, ...structuredClone(edit.pageSize) };
+        if (edit.margins) section.margins = { ...section.margins, ...structuredClone(edit.margins) };
+        continue;
+      }
       if (edit.kind === "hyperlink") {
         const hyperlink = imported.blocks.find((block) => block.kind === "hyperlink" && (!edit.matchText || block.text === edit.matchText));
         assert.ok(hyperlink, `Missing source-bound hyperlink fixture target ${edit.matchText || "(unspecified)"}.`);
@@ -453,10 +325,9 @@ export async function runDocumentFixture(fixturePath, options = {}) {
         if (Object.prototype.hasOwnProperty.call(edit, "date")) comment.date = edit.date == null ? undefined : String(edit.date);
         continue;
       }
-      throw new Error(`Unsupported document OpenChestnut fixture edit kind ${edit.kind}.`);
-    }
-    docx = await DocumentFile.exportDocx(imported, { codec: "open-chestnut" });
+      throw new Error(`Unsupported document fixture edit kind ${edit.kind}.`);
   }
+  docx = await DocumentFile.exportDocx(imported);
   await docx.save(docxPath);
   const qa = await verifyDocumentFile(docxPath, {
     outputDir: path.join(outputDir, "qa"),
@@ -470,7 +341,6 @@ export async function runDocumentFixture(fixturePath, options = {}) {
     pixelRegistration: options.pixelRegistration,
     inspectKind: fixture.qa?.inspectKind,
     maxChars: fixture.qa?.maxChars,
-    preferNative: packagePatches.length > 0 || roundtripCodec === "open-chestnut",
   });
-  return { fixture, docxPath, qa, initialCodec, roundtripCodec };
+  return { fixture, docxPath, qa };
 }

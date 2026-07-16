@@ -1,35 +1,21 @@
 {
   "name": "open-chestnut-query-table",
   "outputName": "open-chestnut-query-table.xlsx",
-  "codec": "open-chestnut",
-  "roundtripCodec": "open-chestnut",
   "sheets": [
     {
       "name": "External Data",
       "ranges": [
         {
           "range": "A1:B3",
-          "values": [
-            ["Region", "Revenue"],
-            ["North", 120],
-            ["South", 80]
-          ]
+          "values": [["Region", "Revenue"], ["North", 120], ["South", 80]]
         },
         {
           "range": "A1:B1",
-          "format": {
-            "fill": "#0F766E",
-            "font": { "bold": true, "color": "#FFFFFF" }
-          }
+          "format": { "fill": "#0F766E", "font": { "bold": true, "color": "#FFFFFF" } }
         }
       ],
       "tables": [
-        {
-          "range": "A1:B3",
-          "name": "ExternalSales",
-          "style": "TableStyleMedium4",
-          "showRowStripes": true
-        }
+        { "range": "A1:B3", "name": "ExternalSales", "style": "TableStyleMedium4", "showRowStripes": true }
       ]
     }
   ],
@@ -41,54 +27,7 @@
     "connectionId": 7,
     "connectionName": "Fixture warehouse",
     "queryName": "Warehouse sales",
-    "fields": ["Region", "Revenue"],
-    "deletedFieldNames": ["Legacy Region", "Legacy Revenue"],
-    "sortState": {
-      "reference": "A2:B3",
-      "caseSensitive": true,
-      "sortMethod": "stroke",
-      "conditions": [
-        { "reference": "B2:B3", "descending": true, "customList": "120,80" },
-        { "reference": "A2:A3", "kind": "icon", "iconSet": "3Arrows", "iconId": 0 }
-      ]
-    },
-    "edit": {
-      "name": "Warehouse sales refreshed",
-      "disableRefresh": true,
-      "backgroundRefresh": false,
-      "refreshOnLoad": false,
-      "autoFormatId": 3,
-      "applyFontFormats": true
-    },
-    "connectionEdit": {
-      "name": "Fixture warehouse curated",
-      "description": "Curated without executing the source",
-      "keepAlive": true,
-      "intervalMinutes": 45,
-      "background": false,
-      "refreshOnLoad": true,
-      "saveData": false
-    },
-    "refreshEdit": {
-      "preserveSortFilterLayout": false,
-      "headersInLastRefresh": false,
-      "minimumVersion": 1,
-      "deletedFieldNames": ["Legacy Territory", "Legacy Revenue"],
-      "sortState": {
-        "reference": "A2:B3",
-        "caseSensitive": false,
-        "sortMethod": "pinYin",
-        "columnSort": true,
-        "conditions": [
-          { "reference": "A3:B3", "descending": false, "customList": "80,120" },
-          { "reference": "A2:B2", "descending": false, "kind": "icon", "iconSet": "3Arrows", "iconId": 1 }
-        ]
-      },
-      "fields": [
-        { "id": 1, "name": "Territory", "dataBound": false, "fillFormulas": true },
-        { "id": 2, "clipped": true }
-      ]
-    }
+    "fields": ["Region", "Revenue"]
   },
   "expectations": [
     { "sheet": "External Data", "range": "A2:B3", "values": [["North", 120], ["South", 80]] }

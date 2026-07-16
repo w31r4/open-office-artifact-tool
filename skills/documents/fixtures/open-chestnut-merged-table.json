@@ -1,9 +1,7 @@
 {
   "name": "open-chestnut-merged-table",
   "outputName": "open-chestnut-merged-table.docx",
-  "initialCodec": "open-chestnut",
-  "roundtripCodec": "open-chestnut",
-  "openChestnutEdits": [
+  "edits": [
     {
       "kind": "tableCell",
       "matchText": "Merged owner",
@@ -65,8 +63,8 @@
     { "kind": "table,tableCell", "pattern": "verticalMerge" }
   ],
   "qa": {
-    "previewFormat": "png",
-    "nativeRender": "required",
+    "previewFormat": "svg",
+    "nativeRender": "auto",
     "inspectKind": "document,paragraph,table,tableCell,layout"
   }
 }

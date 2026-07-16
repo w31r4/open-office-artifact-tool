@@ -11,7 +11,7 @@ import {
 } from "open-office-artifact-tool";
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 259);
+assert.equal(HELP_CATALOG.length, 258);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -42,7 +42,7 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.worksheets.getSele
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.recalculate"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.resolve"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "SpreadsheetFile.inspectXlsx"));
-assert.match(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.importXlsx")?.schema?.returns?.workbook?.description || "", /drawing/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.importXlsx")?.schema?.returns?.workbook?.description || "", /images.*charts/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.images.add")?.schema?.parameters?.transform?.description || "", /rotationDegrees.*flipHorizontal.*flipVertical/);
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.master")?.schema?.parameters?.placeholders?.description || "", /rotationDegrees.*flipHorizontal.*flipVertical/);
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.master")?.schema?.parameters?.placeholders?.description || "", /position to undefined removes the direct frame/);
@@ -54,7 +54,7 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.master.clearBa
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.master.setTheme"));
 assert.match(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.patchXlsx")?.summary || "", /drawing\/image\/chart\/pivot source references/);
 assert.match(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.patchXlsx")?.schema?.parameters?.sourceReference?.description || "", /pivotCacheDefinition requires a unique cacheId/);
-assert.match(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.importXlsx")?.schema?.returns?.workbook?.description || "", /pivots\/caches/);
+assert.doesNotMatch(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.importXlsx")?.schema?.returns?.workbook?.description || "", /pivots\/caches/);
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.MEDIAN"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.MODE.SNGL"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.RANK.EQ"));
@@ -160,7 +160,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "range.format")?.schema?.
 assert.match(HELP_CATALOG.find((item) => item.name === "range.format")?.schema?.parameters?.alignment?.description || "", /textRotation/);
 assert.match(HELP_CATALOG.find((item) => item.name === "range.format")?.schema?.parameters?.border?.description || "", /per-edge/);
 assert.ok(HELP_CATALOG.find((item) => item.name === "DocumentFile.patchDocx")?.schema?.parameters?.patches);
-assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.schema?.parameters?.preferNative?.type, "boolean");
+assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.schema?.parameters?.preferNative, undefined);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addHeader")?.schema?.parameters?.referenceType?.type, "string");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addFooter")?.schema?.parameters?.referenceType?.type, "string");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addHeader")?.schema?.parameters?.activateVariant?.type, "boolean");
@@ -187,7 +187,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "fx.NETWORKDAYS")?.schema
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.NETWORKDAYS.INTL")?.schema?.returns?.value?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.XLOOKUP")?.schema?.returns?.value?.type, "unknown");
 const sharedCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "shared");
-assert.equal(sharedCatalog.length, 11);
+assert.equal(sharedCatalog.length, 10);
 assert.ok(sharedCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "createPopplerRenderer")?.schema?.parameters?.dpi?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "createNativeOfficeRenderer")?.schema?.parameters?.args?.type, "string[]");
@@ -258,15 +258,21 @@ for (const name of [
   "DocumentFile.importDocx",
   "DocumentFile.exportDocx",
 ]) {
-  assert.equal(HELP_CATALOG.find((item) => item.name === name)?.schema?.parameters?.codec?.type, "string");
+  const parameters = HELP_CATALOG.find((item) => item.name === name)?.schema?.parameters || {};
+  assert.equal(parameters.limits?.type, "object");
+  assert.equal(parameters.codec, undefined);
+  assert.equal(parameters.allowLossy, undefined);
+  assert.equal(parameters.preferNative, undefined);
+  assert.equal(parameters.relativeDateAsOf, undefined);
 }
-assert.equal(HELP_CATALOG.find((item) => item.name === "OFFICE_CODEC_IDS")?.schema?.returns?.codecIds?.type, "readonly string[]");
-assert.equal(HELP_CATALOG.find((item) => item.name === "exportXlsxWithOpenChestnut")?.schema?.parameters?.allowLossy?.type, "boolean");
+assert.equal(HELP_CATALOG.find((item) => item.name === "OFFICE_CODEC_IDS"), undefined);
+assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.exportXlsx")?.schema?.parameters?.recalculate?.type, "boolean");
+assert.equal(HELP_CATALOG.find((item) => item.name === "exportXlsxWithOpenChestnut")?.schema?.parameters?.allowLossy, undefined);
 assert.equal(HELP_CATALOG.find((item) => item.name === "exportXlsxWithOpenChestnut")?.schema?.returns?.blob?.type, "FileBlob");
-assert.equal(HELP_CATALOG.find((item) => item.name === "exportDocxWithOpenChestnut")?.schema?.parameters?.allowLossy?.type, "boolean");
+assert.equal(HELP_CATALOG.find((item) => item.name === "exportDocxWithOpenChestnut")?.schema?.parameters?.allowLossy, undefined);
 assert.equal(HELP_CATALOG.find((item) => item.name === "exportDocxWithOpenChestnut")?.schema?.returns?.blob?.type, "FileBlob");
 assert.equal(HELP_CATALOG.find((item) => item.name === "importDocxWithOpenChestnut")?.schema?.returns?.document?.type, "DocumentModel");
-assert.equal(HELP_CATALOG.find((item) => item.name === "exportPptxWithOpenChestnut")?.schema?.parameters?.allowLossy?.type, "boolean");
+assert.equal(HELP_CATALOG.find((item) => item.name === "exportPptxWithOpenChestnut")?.schema?.parameters?.allowLossy, undefined);
 assert.equal(HELP_CATALOG.find((item) => item.name === "importPptxWithOpenChestnut")?.schema?.returns?.presentation?.type, "Presentation");
 assert.equal(HELP_CATALOG.find((item) => item.name === "importXlsxWithOpenChestnut")?.schema?.parameters?.limits?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "openChestnutStatus")?.schema?.returns?.status?.type, "object");

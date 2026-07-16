@@ -1,244 +1,24 @@
 import path from "node:path";
 
-import { attrEscape, attributes, decodeXml, rootTag } from "./source-reference-xml.mjs";
+import { attributes, rootTag } from "./source-reference-xml.mjs";
 
 export const DOCX_COMMENTS_EXTENDED_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml";
 export const DOCX_COMMENTS_EXTENDED_RELATIONSHIP_TYPE = "http://schemas.microsoft.com/office/2011/relationships/commentsExtended";
-export const DOCX_COMMENTS_EXTENDED_PATH = "word/commentsExtended.xml";
 export const DOCX_COMMENTS_IDS_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsIds+xml";
 export const DOCX_COMMENTS_IDS_RELATIONSHIP_TYPE = "http://schemas.microsoft.com/office/2016/09/relationships/commentsIds";
-export const DOCX_COMMENTS_IDS_PATH = "word/commentsIds.xml";
 export const DOCX_COMMENTS_EXTENSIBLE_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtensible+xml";
 export const DOCX_COMMENTS_EXTENSIBLE_RELATIONSHIP_TYPE = "http://schemas.microsoft.com/office/2018/08/relationships/commentsExtensible";
-export const DOCX_COMMENTS_EXTENSIBLE_PATH = "word/commentsExtensible.xml";
 export const DOCX_PEOPLE_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.people+xml";
 export const DOCX_PEOPLE_RELATIONSHIP_TYPE = "http://schemas.microsoft.com/office/2011/relationships/people";
-export const DOCX_PEOPLE_PATH = "word/people.xml";
 
-const WORDPROCESSINGML_NAMESPACE = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
-const WORD_2010_NAMESPACE = "http://schemas.microsoft.com/office/word/2010/wordml";
 const WORD_2012_NAMESPACE = "http://schemas.microsoft.com/office/word/2012/wordml";
 const WORD_2016_COMMENT_ID_NAMESPACE = "http://schemas.microsoft.com/office/word/2016/wordml/cid";
 const WORD_2018_COMMENT_EXTENSIBLE_NAMESPACE = "http://schemas.microsoft.com/office/word/2018/wordml/cex";
-const MARKUP_COMPATIBILITY_NAMESPACE = "http://schemas.openxmlformats.org/markup-compatibility/2006";
 const PARA_ID = /^[0-9A-F]{8}$/;
 const decoder = new TextDecoder();
 
 function localAttribute(tag, localName) {
   return Object.entries(attributes(tag)).find(([name]) => name === localName || name.endsWith(`:${localName}`))?.[1];
-}
-
-function normalizeParaId(value, label) {
-  const normalized = String(value || "").trim().toUpperCase();
-  if (!PARA_ID.test(normalized)) throw new TypeError(`${label} must be exactly eight hexadecimal digits.`);
-  return normalized;
-}
-
-function normalizeDurableId(value, label) {
-  const normalized = normalizeParaId(value, label);
-  const number = Number.parseInt(normalized, 16);
-  if (number <= 0 || number >= 0x7FFFFFFF) throw new RangeError(`${label} must be greater than 0 and less than 7FFFFFFF.`);
-  return normalized;
-}
-
-function parentIdOf(comment) {
-  const parent = comment.parentId ?? comment.replyToId ?? comment.replyTo;
-  return typeof parent === "object" ? parent?.id : parent;
-}
-
-function generatedParaId(index, used) {
-  let value = index + 1;
-  while (value <= 0xFFFFFFFF) {
-    const candidate = value.toString(16).toUpperCase().padStart(8, "0");
-    if (!used.has(candidate)) return candidate;
-    value += 1;
-  }
-  throw new RangeError("DOCX comment paraId space is exhausted.");
-}
-
-function generatedDurableId(index, used) {
-  let value = index + 1;
-  while (value < 0x7FFFFFFF) {
-    const candidate = value.toString(16).toUpperCase().padStart(8, "0");
-    if (!used.has(candidate)) return candidate;
-    value += 1;
-  }
-  throw new RangeError("DOCX comment durableId space is exhausted.");
-}
-
-function commentPerson(comment) {
-  const person = comment.person || {};
-  const author = String(comment.author || "User").trim();
-  const providerId = String(person.providerId ?? comment.providerId ?? "None").trim();
-  const userId = String(person.userId ?? comment.userId ?? author).trim();
-  if (!author) throw new TypeError("DOCX comment person author must be non-empty.");
-  if (!providerId || providerId.length > 100) throw new TypeError(`DOCX comment author ${author} providerId must contain 1 to 100 characters.`);
-  if (!userId || userId.length > 300) throw new TypeError(`DOCX comment author ${author} userId must contain 1 to 300 characters.`);
-  return { author, providerId, userId };
-}
-
-function validateParentGraph(entries, byId) {
-  for (const entry of entries) {
-    const visited = new Set([entry.comment.id]);
-    let parentId = entry.parentId;
-    while (parentId) {
-      const parent = byId.get(parentId);
-      if (!parent) throw new Error(`DOCX comment ${entry.comment.id} references missing parent comment ${parentId}.`);
-      if (visited.has(parentId)) throw new Error(`DOCX comment ${entry.comment.id} has a cyclic parent chain.`);
-      if (parent.targetId !== entry.comment.targetId) throw new Error(`DOCX comment ${entry.comment.id} and parent ${parentId} must target the same block.`);
-      visited.add(parentId);
-      parentId = parentIdOf(parent);
-    }
-  }
-}
-
-export function planDocxComments(comments = []) {
-  if (!Array.isArray(comments)) throw new TypeError("DOCX comments must be an array.");
-  const byId = new Map();
-  for (const comment of comments) {
-    const id = String(comment?.id || "").trim();
-    if (!id) throw new TypeError("DOCX comment IDs must be non-empty strings.");
-    if (byId.has(id)) throw new Error(`Duplicate DOCX comment ID ${id}.`);
-    byId.set(id, comment);
-  }
-  const usedParaIds = new Set();
-  const usedDurableIds = new Set();
-  for (const comment of comments) {
-    if (comment.paraId) {
-      const paraId = normalizeParaId(comment.paraId, `DOCX comment ${comment.id} paraId`);
-      if (usedParaIds.has(paraId)) throw new Error(`Duplicate DOCX comment paraId ${paraId}.`);
-      usedParaIds.add(paraId);
-    }
-    if (comment.durableId) {
-      const durableId = normalizeDurableId(comment.durableId, `DOCX comment ${comment.id} durableId`);
-      if (usedDurableIds.has(durableId)) throw new Error(`Duplicate DOCX comment durableId ${durableId}.`);
-      usedDurableIds.add(durableId);
-    }
-  }
-  const entries = comments.map((comment, index) => {
-    if (comment.date && Number.isNaN(Date.parse(comment.date))) throw new TypeError(`DOCX comment ${comment.id} date must be a valid date string.`);
-    if (comment.dateUtc && Number.isNaN(Date.parse(comment.dateUtc))) throw new TypeError(`DOCX comment ${comment.id} dateUtc must be a valid date string.`);
-    const paraId = comment.paraId ? normalizeParaId(comment.paraId, `DOCX comment ${comment.id} paraId`) : generatedParaId(index, usedParaIds);
-    usedParaIds.add(paraId);
-    const durableId = comment.durableId ? normalizeDurableId(comment.durableId, `DOCX comment ${comment.id} durableId`) : generatedDurableId(index, usedDurableIds);
-    usedDurableIds.add(durableId);
-    const parentId = parentIdOf(comment);
-    if (parentId && comment.intelligentPlaceholder) throw new Error(`DOCX reply comment ${comment.id} must not be an intelligent placeholder.`);
-    const dateUtc = comment.dateUtc ? new Date(comment.dateUtc).toISOString() : (comment.date ? new Date(comment.date).toISOString() : undefined);
-    return { comment, commentId: String(index), paraId, durableId, dateUtc, person: commentPerson(comment), parentId: parentId ? String(parentId) : undefined };
-  });
-  validateParentGraph(entries, byId);
-  const entryByCommentId = new Map(entries.map((entry) => [entry.comment.id, entry]));
-  for (const entry of entries) entry.parentParaId = entry.parentId ? entryByCommentId.get(entry.parentId).paraId : undefined;
-  const peopleByAuthor = new Map();
-  for (const entry of entries) {
-    const previous = peopleByAuthor.get(entry.person.author);
-    if (previous && (previous.providerId !== entry.person.providerId || previous.userId !== entry.person.userId)) throw new Error(`DOCX comment author ${entry.person.author} has conflicting person metadata.`);
-    peopleByAuthor.set(entry.person.author, entry.person);
-  }
-  return { entries, entryByCommentId, people: [...peopleByAuthor.values()] };
-}
-
-export function docxCommentsXml(plan) {
-  const comments = plan.entries.map(({ comment, commentId, paraId }) => `<w:comment w:id="${attrEscape(commentId)}" w:author="${attrEscape(comment.author || "User")}" w:initials="${attrEscape(comment.initials || "")}"${comment.date ? ` w:date="${attrEscape(comment.date)}"` : ""}><w:p w14:paraId="${paraId}"><w:r><w:t>${attrEscape(comment.text || "")}</w:t></w:r></w:p></w:comment>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments xmlns:w="${WORDPROCESSINGML_NAMESPACE}" xmlns:w14="${WORD_2010_NAMESPACE}" xmlns:mc="${MARKUP_COMPATIBILITY_NAMESPACE}" mc:Ignorable="w14">${comments}</w:comments>`;
-}
-
-export function docxCommentsExtendedXml(plan) {
-  const comments = plan.entries.map(({ comment, paraId, parentParaId }) => `<w15:commentEx w15:paraId="${paraId}"${parentParaId ? ` w15:paraIdParent="${parentParaId}"` : ""} w15:done="${comment.resolved ? 1 : 0}"/>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w15:commentsEx xmlns:w15="${WORD_2012_NAMESPACE}">${comments}</w15:commentsEx>`;
-}
-
-export function docxCommentsIdsXml(plan) {
-  const comments = plan.entries.map(({ paraId, durableId }) => `<w16cid:commentId w16cid:paraId="${paraId}" w16cid:durableId="${durableId}"/>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w16cid:commentsIds xmlns:w16cid="${WORD_2016_COMMENT_ID_NAMESPACE}">${comments}</w16cid:commentsIds>`;
-}
-
-export function docxCommentsExtensibleXml(plan) {
-  const comments = plan.entries.map(({ comment, durableId, dateUtc }) => `<w16cex:commentExtensible w16cex:durableId="${durableId}"${dateUtc ? ` w16cex:dateUtc="${attrEscape(dateUtc)}"` : ""}${comment.intelligentPlaceholder ? ` w16cex:intelligentPlaceholder="1"` : ""}/>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w16cex:commentsExtensible xmlns:w16cex="${WORD_2018_COMMENT_EXTENSIBLE_NAMESPACE}">${comments}</w16cex:commentsExtensible>`;
-}
-
-export function docxPeopleXml(plan) {
-  const people = plan.people.map((person) => `<w15:person w15:author="${attrEscape(person.author)}"><w15:presenceInfo w15:providerId="${attrEscape(person.providerId)}" w15:userId="${attrEscape(person.userId)}"/></w15:person>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w15:people xmlns:w15="${WORD_2012_NAMESPACE}">${people}</w15:people>`;
-}
-
-function parseCommentsExtended(xml = "") {
-  const byParaId = new Map();
-  for (const match of String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?commentEx\b[^>]*\/?\s*>/g)) {
-    const paraId = localAttribute(match[0], "paraId")?.toUpperCase();
-    if (!paraId || byParaId.has(paraId)) continue;
-    const done = String(localAttribute(match[0], "done") || "0").trim().toLowerCase();
-    byParaId.set(paraId, { parentParaId: localAttribute(match[0], "paraIdParent")?.toUpperCase(), resolved: new Set(["1", "true", "on"]).has(done) });
-  }
-  return byParaId;
-}
-
-function parseCommentsIds(xml = "") {
-  const byParaId = new Map();
-  for (const match of String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?commentId\b[^>]*\/?\s*>/g)) {
-    const paraId = localAttribute(match[0], "paraId")?.toUpperCase();
-    const durableId = localAttribute(match[0], "durableId")?.toUpperCase();
-    if (paraId && durableId && !byParaId.has(paraId)) byParaId.set(paraId, durableId);
-  }
-  return byParaId;
-}
-
-function parseCommentsExtensible(xml = "") {
-  const byDurableId = new Map();
-  for (const match of String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?commentExtensible\b[^>]*\/?\s*>/g)) {
-    const durableId = localAttribute(match[0], "durableId")?.toUpperCase();
-    if (!durableId || byDurableId.has(durableId)) continue;
-    const intelligent = String(localAttribute(match[0], "intelligentPlaceholder") || "0").trim().toLowerCase();
-    byDurableId.set(durableId, { dateUtc: localAttribute(match[0], "dateUtc"), intelligentPlaceholder: new Set(["1", "true", "on"]).has(intelligent) });
-  }
-  return byDurableId;
-}
-
-function parsePeople(xml = "") {
-  const byAuthor = new Map();
-  for (const match of String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?person\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?person>/g)) {
-    const opening = /^<(?:[A-Za-z_][\w.-]*:)?person\b[^>]*>/.exec(match[0])?.[0] || "";
-    const presence = /<(?:[A-Za-z_][\w.-]*:)?presenceInfo\b[^>]*\/?\s*>/.exec(match[0])?.[0] || "";
-    const author = localAttribute(opening, "author");
-    if (author && !byAuthor.has(author)) byAuthor.set(author, { providerId: localAttribute(presence, "providerId"), userId: localAttribute(presence, "userId") });
-  }
-  return byAuthor;
-}
-
-export function parseDocxComments(classicXml = "", extendedXml = "", idsXml = "", extensibleXml = "", peopleXml = "") {
-  const extensions = parseCommentsExtended(extendedXml);
-  const durableIds = parseCommentsIds(idsXml);
-  const extensible = parseCommentsExtensible(extensibleXml);
-  const people = parsePeople(peopleXml);
-  const comments = new Map();
-  for (const match of String(classicXml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?comment\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?comment>/g)) {
-    const opening = /^<(?:[A-Za-z_][\w.-]*:)?comment\b[^>]*>/.exec(match[0])?.[0] || "";
-    const id = localAttribute(opening, "id");
-    if (id === undefined || comments.has(id)) continue;
-    const paragraphs = [...match[0].matchAll(/<(?:[A-Za-z_][\w.-]*:)?p\b[^>]*>/g)];
-    const paraId = paragraphs.length ? localAttribute(paragraphs.at(-1)[0], "paraId")?.toUpperCase() : undefined;
-    const extension = paraId ? extensions.get(paraId) : undefined;
-    const durableId = paraId ? durableIds.get(paraId) : undefined;
-    const modern = durableId ? extensible.get(durableId) : undefined;
-    const author = localAttribute(opening, "author") || "User";
-    const person = people.get(author);
-    comments.set(id, {
-      text: decodeXml([...match[0].matchAll(/<(?:[A-Za-z_][\w.-]*:)?t\b[^>]*>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?t>/g)].map((textMatch) => textMatch[1]).join("")),
-      author,
-      initials: localAttribute(opening, "initials") || undefined,
-      date: localAttribute(opening, "date") || undefined,
-      paraId,
-      durableId,
-      dateUtc: modern?.dateUtc,
-      intelligentPlaceholder: modern?.intelligentPlaceholder || false,
-      person: person ? { ...person } : undefined,
-      parentParaId: extension?.parentParaId,
-      resolved: extension?.resolved || false,
-    });
-  }
-  return comments;
 }
 
 function issue(type, message, detail = {}) {

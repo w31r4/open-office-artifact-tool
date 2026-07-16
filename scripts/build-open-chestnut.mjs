@@ -33,7 +33,7 @@ const files = listFiles(destination).filter((file) => file !== "manifest.json").
 });
 const manifest = {
   schemaVersion: 1,
-  protocolVersion: 1,
+  protocolVersion: 2,
   targetFramework: "net8.0",
   runtimeIdentifier: "browser-wasm",
   sdkVersion: runText("dotnet", ["--version"]),

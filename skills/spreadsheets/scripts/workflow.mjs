@@ -14,7 +14,6 @@ import {
 import { createPlaywrightRenderer } from "open-office-artifact-tool/renderers/playwright";
 import { createLibreOfficeRenderer } from "open-office-artifact-tool/renderers/libreoffice";
 import { createPopplerRenderer } from "open-office-artifact-tool/renderers/poppler";
-import { normalizeOpenChestnutCodecName } from "../../shared/open-chestnut-compat.mjs";
 import {
   loadVisualBaseline,
   prepareNumberedVisualBaselines,
@@ -458,51 +457,27 @@ export async function runSpreadsheetFixture(fixturePath, options = {}) {
   await fs.mkdir(outputDir, { recursive: true });
   const workbook = createWorkbookFromFixture(fixture);
   const workbookPath = path.join(outputDir, fixture.outputName || `${fixture.name || "workbook"}.xlsx`);
-  const codec = normalizeOpenChestnutCodecName(options.codec || fixture.codec || "javascript");
-  if (!new Set(["javascript", "open-chestnut"]).has(codec)) throw new Error(`Unsupported spreadsheet fixture codec ${codec}; expected javascript or open-chestnut.`);
-  let file = await SpreadsheetFile.exportXlsx(workbook, { codec });
+  const importOptions = options.limits == null ? {} : { limits: options.limits };
+  const exportOptions = options.limits == null ? {} : { limits: options.limits };
+  let file = await SpreadsheetFile.exportXlsx(workbook, exportOptions);
   let sourceQueryTable;
   let sourceConnections;
   if (fixture.sourceQueryTableFixture) {
-    if (codec !== "open-chestnut") throw new Error("sourceQueryTableFixture requires codec=open-chestnut.");
     file = await attachSourceQueryTableFixture(file, fixture.sourceQueryTableFixture);
-    const imported = await SpreadsheetFile.importXlsx(file, { codec: "open-chestnut" });
+    const imported = await SpreadsheetFile.importXlsx(file, importOptions);
     const sourceQuery = fixture.sourceQueryTableFixture;
     const sheet = imported.worksheets.getItem(sourceQuery.sheet);
     const table = sheet?.tables.getItemOrNullObject(sourceQuery.table);
     if (!sheet || !table || table.isNullObject || !table.queryTable)
       throw new Error(`sourceQueryTableFixture could not resolve ${sourceQuery.sheet}!${sourceQuery.table}.`);
-    Object.assign(table.queryTable, sourceQuery.edit || {});
-    if (sourceQuery.connectionEdit) {
-      const connection = imported.connections.find((candidate) => candidate.connectionId === Number(sourceQuery.connectionId));
-      if (!connection) throw new Error(`sourceQueryTableFixture.connectionEdit cannot resolve connection ${sourceQuery.connectionId}.`);
-      const { connectionId: _identity, type: _type, refreshedVersion: _version, ...changes } = sourceQuery.connectionEdit;
-      Object.assign(connection, changes);
-    }
-    if (sourceQuery.refreshEdit) {
-      if (!table.queryTable.refresh) throw new Error("sourceQueryTableFixture.refreshEdit requires a recognized queryTableRefresh profile.");
-      const { fields: fieldEdits = [], ...refreshEdit } = sourceQuery.refreshEdit;
-      Object.assign(table.queryTable.refresh, refreshEdit);
-      const editedIds = new Set();
-      for (const patch of fieldEdits) {
-        const id = Number(patch?.id);
-        if (!Number.isInteger(id) || id <= 0 || editedIds.has(id)) throw new Error("sourceQueryTableFixture.refreshEdit fields require unique positive source IDs.");
-        editedIds.add(id);
-        const field = table.queryTable.refresh.fields.find((candidate) => candidate.id === id);
-        if (!field) throw new Error(`sourceQueryTableFixture.refreshEdit cannot resolve query field ${id}.`);
-        const { id: _identity, tableColumnId: _binding, ...changes } = patch;
-        Object.assign(field, changes);
-      }
-    }
-    file = await SpreadsheetFile.exportXlsx(imported, { codec: "open-chestnut", recalculate: false });
+    if (sourceQuery.edit || sourceQuery.connectionEdit || sourceQuery.refreshEdit)
+      throw new Error("sourceQueryTableFixture is preservation-only; advanced QueryTable and connection edits are outside the canonical Spreadsheet skill boundary.");
+    file = await SpreadsheetFile.exportXlsx(imported, { ...exportOptions, recalculate: false });
     sourceQueryTable = { sheet: sourceQuery.sheet, table: sourceQuery.table, query: structuredClone(table.queryTable) };
     sourceConnections = structuredClone(imported.connections);
   }
-  const roundtripCodec = normalizeOpenChestnutCodecName(options.roundtripCodec || fixture.roundtripCodec || "none");
-  if (!new Set(["none", "open-chestnut"]).has(roundtripCodec)) throw new Error(`Unsupported spreadsheet roundtrip codec ${roundtripCodec}; expected none or open-chestnut.`);
-  if (fixture.roundtripEdits && roundtripCodec !== "open-chestnut") throw new Error("roundtripEdits requires roundtripCodec=open-chestnut.");
-  if (roundtripCodec === "open-chestnut") {
-    const imported = await SpreadsheetFile.importXlsx(file, { codec: "open-chestnut" });
+  {
+    const imported = await SpreadsheetFile.importXlsx(file, importOptions);
     for (const patch of fixture.roundtripEdits?.images || []) {
       const sheet = imported.worksheets.getItem(patch.sheet);
       if (!sheet) throw new Error(`roundtripEdits.images cannot resolve worksheet ${patch.sheet}.`);
@@ -529,7 +504,7 @@ export async function runSpreadsheetFixture(fixturePath, options = {}) {
         if (values) chart.series.items[index].values = [...values];
       }
     }
-    file = await SpreadsheetFile.exportXlsx(imported, { codec: "open-chestnut", recalculate: false });
+    file = await SpreadsheetFile.exportXlsx(imported, { ...exportOptions, recalculate: false });
   }
   await file.save(workbookPath);
   const qa = await verifyWorkbookFile(workbookPath, {
@@ -548,5 +523,5 @@ export async function runSpreadsheetFixture(fixturePath, options = {}) {
     allSheets: options.allSheets,
     nativeRender: options.nativeRender ?? fixture.qa?.nativeRender ?? "auto",
   });
-  return { fixture, workbookPath, qa, codec, roundtripCodec, sourceQueryTable, sourceConnections };
+  return { fixture, workbookPath, qa, sourceQueryTable, sourceConnections };
 }

@@ -2,158 +2,163 @@
   "name": "agent-readiness",
   "outputName": "agent-readiness.pptx",
   "slideSize": { "width": 1280, "height": 720 },
-  "theme": {
-    "name": "Grid Clean Room",
-    "colors": { "accent1": "#3D8DFF", "accent2": "#6DCBF4", "accent3": "#16A34A", "accent4": "#7C3AED", "accent5": "#F97316", "accent6": "#DC2626", "bg1": "#FFFFFF", "tx1": "#000000", "bg2": "#F8FAFC", "tx2": "#334155", "hlink": "#2563EB", "folHlink": "#9333EA" },
-    "fonts": { "major": "Arial", "minor": "Arial", "majorEastAsia": "PingFang SC", "majorComplexScript": "Arial", "minorEastAsia": "Noto Sans CJK SC", "minorComplexScript": "Arial" },
-    "textStyles": {
-      "title": { "fontSize": 42, "bold": true, "color": "accent1", "fontFamily": "+mj-lt", "alignment": "left" },
-      "body": { "fontSize": 20, "color": "tx2", "fontFamily": "+mn-lt", "alignment": "left" },
-      "other": { "fontSize": 16, "color": "#475569", "fontFamily": "+mn-lt", "alignment": "left" }
-    },
-    "colorMap": { "accent1": "accent2", "accent2": "accent1" }
-  },
-  "masters": [
-    {
-      "id": "master/agent-readiness",
-      "name": "Agent Readiness Master",
-      "background": { "fill": "bg1", "mode": "reference", "index": 1001 },
-      "textParagraphStyles": {
-        "body": {
-          "0": { "bulletCharacter": "•", "bulletFont": "Arial", "bulletColor": "accent1", "bulletSizePercent": 1.1, "marginLeft": 28, "indent": -14, "spaceAfter": 4, "style": { "fontSize": 20, "color": "tx2" } },
-          "1": { "bulletCharacter": "–", "bulletFont": "Arial", "bulletColor": "tx2", "bulletSize": 18, "marginLeft": 52, "indent": -18, "spaceBeforePercent": 0.2, "style": { "fontSize": 18, "color": "tx2" } },
-          "2": { "bulletImage": { "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAHUlEQVR4nGNQOhr3nxLMMGrA/9EwiBsNg6PDIgwAUQdEH39xn2wAAAAASUVORK5CYII=", "alt": "Inherited package evidence" }, "bulletSize": 16, "marginLeft": 72, "indent": -20, "style": { "fontSize": 18, "color": "tx2" } }
-        }
-      },
-      "placeholders": [
-        { "id": "master/agent-readiness/title", "type": "title", "idx": 1, "name": "structure-title", "position": { "left": 42, "top": 36, "width": 1196, "height": 80 }, "text": "Native PPTX parts preserve agent-visible structure", "required": true, "style": { "fontSize": 42, "bold": true, "color": "accent1", "fontFamily": "+mj-lt" } }
-      ]
-    },
-    {
-      "id": "master/verification",
-      "name": "Verification Master",
-      "background": { "fill": "accent1", "mode": "reference", "index": 1001 },
-      "theme": {
-        "name": "Verification Theme",
-        "colors": { "accent1": "#EDE9FE", "accent2": "#7C3AED" },
-        "fonts": { "major": "Georgia" },
-        "textStyles": { "title": { "fontSize": 40, "color": "accent2" } },
-        "colorMap": { "accent1": "accent1", "accent2": "accent2" }
-      },
-      "placeholders": [
-        { "id": "master/verification/title", "type": "title", "idx": 1, "name": "Verification Title", "position": { "left": 42, "top": 36, "width": 1196, "height": 80 }, "required": true, "style": { "fontSize": 40, "bold": true, "color": "accent2", "fontFamily": "+mj-lt" } }
-      ]
-    }
-  ],
-  "layouts": [
-    { "id": "layout/blank-grid", "name": "Blank Grid", "type": "blank", "masterId": "master/agent-readiness", "background": "#FFFFFF", "placeholders": [{ "type": "body", "idx": 2, "name": "Inherited Package Evidence", "position": { "left": 42, "top": 604, "width": 760, "height": 70 }, "text": [{ "level": 2, "runs": ["Master-owned picture bullet survives template inheritance"] }] }] },
-    { "id": "layout/verification-grid", "name": "Verification Grid", "type": "blank", "masterId": "master/verification", "placeholders": [] }
-  ],
-  "customShows": [
-    { "name": "QA Evidence", "slideIndexes": [2, 3] }
-  ],
   "slides": [
     {
-      "name": "Opening",
-      "layoutId": "layout/verification-grid",
-      "notes": "Open by framing the deck as evidence that agent-facing PPTX work can be independently implemented and verified.",
+      "name": "Core workflow",
       "shapes": [
-        { "name": "cover-kicker", "position": { "left": 42, "top": 42, "width": 600, "height": 52 }, "fill": "transparent", "line": { "fill": "transparent", "width": 0 }, "text": "OPEN OFFICE ARTIFACT TOOL", "textStyle": { "fontSize": 24, "bold": true, "color": "#3D8DFF" } },
-        { "name": "cover-title", "position": { "left": 42, "top": 184, "width": 1196, "height": 220 }, "fill": "transparent", "line": { "fill": "transparent", "width": 0 }, "text": "PPTX workflows now close the QA loop", "textStyle": { "fontSize": 54, "bold": true, "color": "#000000" } },
-        { "name": "cover-subtitle", "position": { "left": 42, "top": 500, "width": 1000, "height": 92 }, "fill": "transparent", "line": { "fill": "transparent", "width": 0 }, "text": "Create, inspect, roundtrip, render, and verify through public clean-room APIs.", "textStyle": { "fontSize": 26, "color": "#000000" } },
-        { "name": "cover-custom-show", "position": { "left": 42, "top": 628, "width": 280, "height": 44 }, "fill": "transparent", "line": { "fill": "transparent", "width": 0 }, "text": [{ "runs": [{ "run": "Run the QA evidence →", "link": { "customShow": "QA Evidence", "returnToSlide": true, "tooltip": "Return to the cover" } }] }], "textStyle": { "fontSize": 18, "bold": true, "color": "#334155" } }
-      ],
-      "images": [
-        { "name": "verified-mark", "alt": "Verified clean-room workflow", "position": { "left": 1130, "top": 42, "width": 72, "height": 72 }, "fit": "contain", "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAACXBIWXMAAAsTAAALEwEAmpwYAAADDElEQVR4nO2XS2gTQRjH96ZC9VAz00iFoqh4UerZQ4/uzEJBpLUiVPGBZ+8VfGAU68WLmpjadiahECiIKF58ND2oVCkWQUhPkmilsYraxrZJm5Fv09Qmu8nOPlIU8ocPlt2d2d/OfI/5FKWuuv5TNXJ1C+b0GGL0HmJ0DHGaxpxmweBav8doqIlpXVvD7ZvXDcw3SPZgRvsQJxnMqZAxeBdxEvZFtd01A9se69iEGL2JGc3JgmGjZTEjN1r62zZ6Cgd/jjh57wJMlKkoo698/NA2b+AG1QMr/iU8NUZTeEDd78HK1QCO/4VE/dTvCA78BHPyrmZwvAhJ3oJ/2wbUA8JDkO4Xl8WX3990O/78YplPkktOUombaBVrrfNpj8gu50RRU5mZ8q2etbXVkOe8glOfnBeZ3PwqnClgwW5LVwg7SRhXsYMPz4nvC79K4JbzeXFmNGB4F3E6J1VxoHx5Adc63C1Sc9OiXD1vghXHNEXIUUtAqK1u4fbGusTkj6QBrnciWnUc4iQoAzjmBq5l6LAYS38wwA0kHktVGAlA8tVsMKSGYpo4Fb9q+oHmaLsYmRo3wD34OCr8Ec0akNNpGcBFs8EQeUXl8kvi7Oj1kucAACDlAmAAl1l9xOmCJ4BmkPcTjwxw4zMJsWPoiLR7yAKabjFsK0CZQfZORA1wkz9TerDY8V/JLa4cJABTDrmUXzbAfcqkRevwCdsBJhkkNFRtEjPItYLEDAnaSQZAjNy1BIQewmqiSpCZ3Lxe2pzAFQC1DusVjLU1QNmxmux0PFACCYeBrmcXnMNxOgfftgTUITkJy0x6cuTKam6E45RTuBX/Cyl2TtIrLaSrj2J531vEUW2nYkfQfa0XIGbkmuLkyA9hX/PV4+TlrlvqBsWJ4JSLGE3WcOU+Nw5ozYobQWuot4ie+x1N4gjZp3ghf5+KMCNxL7cVOW03Kwn8BLovmRyJq0UrpwHHPicj+HNocOyAIkjCnARtpxJXoLG2BughoH4iTl7DSQRWSDe4Lty74+O0U7pC1FWX8u/pD18kT6PRhzn+AAAAAElFTkSuQmCC" }
-      ]
-    },
-    {
-      "name": "Native structure",
-      "layoutId": "layout/blank-grid",
-      "applyLayoutPlaceholders": true,
-      "background": "#FFFFFF",
-      "notes": "Use the table to distinguish facade evidence from native OOXML package evidence.",
-      "shapes": [
-        { "name": "structure-lead", "position": { "left": 42, "top": 126, "width": 1196, "height": 54 }, "fill": "transparent", "line": { "fill": "transparent", "width": 0 }, "text": [{ "runs": ["Each gate leaves bounded evidence an agent can inspect and resolve through ", { "run": "public Open XML guidance", "link": { "uri": "https://learn.microsoft.com/en-us/office/open-xml/open-xml-sdk", "tooltip": "Open XML SDK guidance" } }, "."] }], "textStyle": { "fontSize": 20, "color": "#334155" } },
-        { "name": "structure-footer", "position": { "left": 1100, "top": 648, "width": 138, "height": 48 }, "fill": "transparent", "line": { "fill": "transparent", "width": 0 }, "text": [{ "runs": [{ "run": "Next: QA →", "link": { "action": "nextSlide", "tooltip": "Continue to visual QA" } }] }], "textStyle": { "fontSize": 16, "color": "#64748B" } }
-      ],
-      "tables": [
-        { "name": "evidence-table", "position": { "left": 42, "top": 220, "width": 1196, "height": 370 }, "rows": 4, "columns": 4, "styleOptions": { "headerRow": true }, "values": [["Gate", "Public API", "Native evidence", "Result"], ["Semantic", "inspect + resolve", "stable objects", "Pass"], ["Package", "inspectPptx", "slides, charts, media", "Pass"], ["Visual", "verify + render", "page PNG baseline", "Required"]] }
-      ],
-      "comments": [
-        { "targetName": "structure-title", "author": "QA Agent", "text": "Confirm all native parts survive roundtrip before delivery.", "replies": [{ "author": "Maintainer", "text": "Verified through package inspection." }], "resolved": true }
-      ]
-    },
-    {
-      "name": "Verification loop",
-      "layoutId": "layout/blank-grid",
-      "background": "#FFFFFF",
-      "notes": "Close by showing that semantic, package, and visual gates are cumulative rather than interchangeable.",
-      "shapes": [
-        { "name": "qa-title", "position": { "left": 42, "top": 36, "width": 1196, "height": 80 }, "fill": "transparent", "line": { "fill": "transparent", "width": 0 }, "text": "Three gates turn a PPTX into evidence", "textStyle": { "fontSize": 42, "bold": true, "color": "#000000" } },
-        { "name": "semantic-callout", "position": { "left": 680, "top": 160, "width": 520, "height": 120 }, "fill": "#EDEDED", "line": { "fill": "#B8BCC4", "width": 1 }, "text": [{ "runs": [{ "run": "Semantic gate", "textStyle": { "bold": true } }] }, { "bulletCharacter": "◆", "bulletFont": "Georgia", "bulletColor": "#DC2626", "bulletSizePercent": 1.25, "marginLeft": 24, "indent": -12, "runs": ["catches broken structure"] }], "textStyle": { "fontSize": 24, "color": "#000000" } },
-        { "name": "package-callout", "position": { "left": 680, "top": 330, "width": 520, "height": 120 }, "fill": "#EDEDED", "line": { "fill": "#B8BCC4", "width": 1 }, "text": [{ "runs": [{ "run": "Package gate", "textStyle": { "bold": true } }] }, { "bulletImage": { "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAHUlEQVR4nGNQOhr3nxLMMGrA/9EwiBsNg6PDIgwAUQdEH39xn2wAAAAASUVORK5CYII=", "alt": "Package evidence" }, "bulletSize": 18, "marginLeft": 26, "indent": -20, "runs": ["proves native parts exist"] }], "textStyle": { "fontSize": 24, "color": "#000000" } },
-        { "name": "visual-callout", "position": { "left": 680, "top": 500, "width": 520, "height": 120 }, "fill": "#EDEDED", "line": { "fill": "#B8BCC4", "width": 1 }, "text": "Visual gate catches what XML cannot", "textStyle": { "fontSize": 24, "bold": true, "color": "#000000" } },
-        { "name": "qa-footer", "position": { "left": 1160, "top": 648, "width": 78, "height": 48 }, "fill": "transparent", "line": { "fill": "transparent", "width": 0 }, "text": "03", "textStyle": { "fontSize": 16, "color": "#64748B" } }
-      ],
-      "charts": [
         {
-          "chartType": "combo",
-          "name": "coverage-chart",
-          "title": "Evidence produced per gate",
-          "position": { "left": 42, "top": 150, "width": 560, "height": 500 },
-          "categories": ["Semantic", "Package", "Visual"],
-          "styleId": 10,
-          "varyColors": true,
-          "barOptions": { "direction": "column", "grouping": "clustered", "gapWidth": 80, "overlap": 0 },
-          "lineOptions": { "grouping": "standard", "marker": { "symbol": "diamond", "size": 8 }, "smooth": false },
-          "externalData": {
-            "autoUpdate": false,
-            "workbook": {
-              "sheets": [{
-                "name": "Sheet1",
-                "range": "A1:E4",
-                "values": [
-                  ["Gate", "Modeled", "Native", "Plus", "Minus"],
-                  ["Semantic", 8, 2, 0.5, 0.25],
-                  ["Package", 2, 9, 0.8, 0.4],
-                  ["Visual", 3, 6, 0.6, 0.3]
-                ]
-              }]
+          "name": "workflow-title",
+          "geometry": "textbox",
+          "position": { "left": 52, "top": 32, "width": 1176, "height": 72 },
+          "fill": "transparent",
+          "line": { "fill": "transparent", "width": 0 },
+          "text": "OpenChestnut closes the presentation loop",
+          "textStyle": { "fontFamily": "Arial", "fontSize": 38, "bold": true, "color": "#0F172A" }
+        },
+        {
+          "name": "author-card",
+          "geometry": "roundRect",
+          "position": { "left": 72, "top": 154, "width": 300, "height": 130 },
+          "fill": "#DBEAFE",
+          "line": { "fill": "#2563EB", "width": 2 },
+          "shadow": { "color": "#000000", "blurRadius": 10, "distance": 5, "direction": 45, "opacity": 0.2 },
+          "text": "Create",
+          "textStyle": { "fontFamily": "Arial", "fontSize": 28, "bold": true, "color": "#1E3A8A" }
+        },
+        {
+          "name": "verify-card",
+          "geometry": "roundRect",
+          "position": { "left": 476, "top": 154, "width": 300, "height": 130 },
+          "fill": "#DCFCE7",
+          "line": { "fill": "#16A34A", "width": 2 },
+          "shadow": { "color": "#000000", "blurRadius": 10, "distance": 5, "direction": 45, "opacity": 0.2 },
+          "text": "Verify",
+          "textStyle": { "fontFamily": "Arial", "fontSize": 28, "bold": true, "color": "#14532D" }
+        },
+        {
+          "name": "deliver-card",
+          "geometry": "roundRect",
+          "position": { "left": 880, "top": 154, "width": 300, "height": 130 },
+          "fill": "#F3E8FF",
+          "line": { "fill": "#7C3AED", "width": 2 },
+          "shadow": { "color": "#000000", "blurRadius": 10, "distance": 5, "direction": 45, "opacity": 0.2 },
+          "text": "Deliver",
+          "textStyle": { "fontFamily": "Arial", "fontSize": 28, "bold": true, "color": "#581C87" }
+        },
+        {
+          "name": "workflow-evidence",
+          "geometry": "textbox",
+          "position": { "left": 72, "top": 350, "width": 720, "height": 220 },
+          "fill": "transparent",
+          "line": { "fill": "transparent", "width": 0 },
+          "text": [
+            {
+              "runs": [
+                { "text": "One canonical Office path", "style": { "fontSize": 25, "bold": true, "color": "#0F172A" } },
+                { "text": " with an ", "style": { "fontSize": 22, "color": "#334155" } },
+                { "text": "inspectable package", "style": { "fontSize": 22, "italic": true, "color": "#2563EB" }, "link": { "uri": "https://www.ecma-international.org/publications-and-standards/standards/ecma-376/" } }
+              ]
+            },
+            {
+              "bulletCharacter": "•",
+              "marginLeft": 28,
+              "indent": -14,
+              "runs": [{ "text": "Semantic verification before visual review", "style": { "fontSize": 20, "color": "#334155" } }]
+            },
+            {
+              "autoNumber": { "type": "arabicPeriod", "startAt": 1 },
+              "marginLeft": 28,
+              "indent": -14,
+              "runs": [{ "text": "Render every slide at full size", "style": { "fontSize": 20, "color": "#334155" } }]
             }
-          },
-          "axes": { "category": { "title": "Gate" }, "value": { "title": "Modeled records" }, "secondary": { "value": { "title": "Native records" } } },
-          "legend": { "visible": true, "position": "b" },
-          "dataLabels": { "showValue": true },
-          "series": [
-            { "chartType": "bar", "name": "Modeled", "values": [8, 2, 3], "color": "#6DCBF4", "line": { "fill": "#0369A1", "width": 1.5, "style": "dash" }, "dataLabels": { "showValue": true, "showCategoryName": true, "position": "insideEnd" } },
-            { "chartType": "line", "name": "Modeled trend", "values": [7, 3, 4], "color": "#16A34A", "line": { "fill": "#16A34A", "width": 2, "style": "dash" }, "dataLabels": false, "trendline": { "type": "polynomial", "order": 2, "name": "Modeled curve", "line": { "fill": "#F97316", "width": 1.5, "style": "longDash" } } },
-            { "chartType": "line", "axisGroup": "secondary", "name": "Native", "values": [2, 9, 6], "color": "#3D8DFF", "line": { "fill": "#3D8DFF", "width": 2, "style": "solid" }, "points": [{ "idx": 1, "fill": "#FACC15", "line": { "fill": "#DC2626", "width": 2, "style": "dot" } }], "dataLabels": { "showValue": true, "position": "right" }, "trendline": { "type": "linear", "name": "Native evidence trend", "line": { "fill": "#7C3AED", "width": 1.5, "style": "dashDot" } }, "errorBars": { "direction": "y", "type": "both", "valueType": "custom", "plusFormula": "Sheet1!$D$2:$D$4", "plusValues": [0.5, 0.8, 0.6], "plusFormatCode": "0.00", "minusFormula": "Sheet1!$E$2:$E$4", "minusValues": [0.25, 0.4, 0.3], "minusFormatCode": "0.00", "line": { "fill": "#DC2626", "width": 1, "style": "dot" } } }
           ]
         }
       ],
-      "connectors": [
-        { "name": "chart-to-semantic", "start": { "x": 602, "y": 280 }, "end": { "x": 680, "y": 220 }, "line": { "fill": "#3D8DFF", "width": 2, "endArrow": "triangle" } }
+      "tables": [
+        {
+          "name": "workflow-matrix",
+          "position": { "left": 840, "top": 350, "width": 340, "height": 220 },
+          "values": [["Gate", "State"], ["Semantic", "Pass"], ["Visual", "Review"]],
+          "styleOptions": { "headerRow": true, "bandedRows": true }
+        }
       ],
-      "comments": [
-        { "targetName": "visual-callout", "author": "QA Agent", "text": "Inspect every rendered slide at full size." }
+      "connectors": [
+        {
+          "name": "create-to-verify",
+          "connectorType": "straight",
+          "fromName": "author-card",
+          "toName": "verify-card",
+          "start": { "x": 372, "y": 219 },
+          "end": { "x": 476, "y": 219 },
+          "line": { "fill": "#475569", "width": 2, "endArrow": "triangle" }
+        },
+        {
+          "name": "verify-to-deliver",
+          "connectorType": "elbow",
+          "fromName": "verify-card",
+          "toName": "deliver-card",
+          "start": { "x": 776, "y": 219 },
+          "end": { "x": 880, "y": 235 },
+          "line": { "fill": "#475569", "width": 2, "startArrow": "triangle", "endArrow": "triangle" }
+        }
+      ]
+    },
+    {
+      "name": "Literal charts",
+      "shapes": [
+        {
+          "name": "charts-title",
+          "geometry": "textbox",
+          "position": { "left": 52, "top": 32, "width": 1176, "height": 64 },
+          "fill": "transparent",
+          "line": { "fill": "transparent", "width": 0 },
+          "text": "Literal-data charts stay editable",
+          "textStyle": { "fontFamily": "Arial", "fontSize": 36, "bold": true, "color": "#0F172A" }
+        }
+      ],
+      "charts": [
+        {
+          "name": "readiness-bar",
+          "chartType": "bar",
+          "title": "Readiness",
+          "position": { "left": 44, "top": 130, "width": 370, "height": 330 },
+          "categories": ["Create", "Inspect", "Render"],
+          "series": [{ "name": "Score", "values": [78, 92, 85], "color": "#2563EB" }],
+          "legend": false,
+          "dataLabels": { "showValue": true, "position": "outsideEnd" },
+          "axes": { "category": { "title": "Gate" }, "value": { "title": "Score", "min": 0, "max": 100, "majorUnit": 20 } }
+        },
+        {
+          "name": "trend-line",
+          "chartType": "line",
+          "title": "Weekly trend",
+          "position": { "left": 454, "top": 130, "width": 370, "height": 330 },
+          "categories": ["W1", "W2", "W3"],
+          "series": [{ "name": "Passes", "values": [6, 9, 12], "color": "#16A34A", "line": { "fill": "#16A34A", "width": 2, "style": "dash" }, "marker": { "symbol": "circle", "size": 7, "fill": "#16A34A" } }],
+          "legend": false
+        },
+        {
+          "name": "coverage-pie",
+          "chartType": "pie",
+          "title": "Coverage mix",
+          "position": { "left": 864, "top": 130, "width": 370, "height": 330 },
+          "categories": ["Modeled", "Opaque"],
+          "series": [{ "name": "Share", "values": [80, 20], "color": "#7C3AED" }],
+          "legend": true,
+          "dataLabels": { "showCategoryName": true, "showValue": true }
+        }
       ]
     }
   ],
   "expectInspect": [
-    { "kind": "customShow", "pattern": "QA Evidence" },
-    { "kind": "slideMaster", "pattern": "Verification Master" },
-    { "kind": "slide,textbox", "pattern": "PPTX workflows now close the QA loop" },
-    { "kind": "table", "pattern": "evidence-table" },
-    { "kind": "chart", "pattern": "Evidence produced per gate" },
-    { "kind": "image", "pattern": "Verified clean-room workflow" },
-    { "kind": "connector", "pattern": "chart-to-semantic" },
-    { "kind": "notes", "pattern": "cumulative rather than interchangeable" },
-    { "kind": "comment", "pattern": "Inspect every rendered slide" }
+    { "kind": "shape", "pattern": "OpenChestnut closes the presentation loop" },
+    { "kind": "table", "pattern": "workflow-matrix" },
+    { "kind": "connector", "pattern": "verify-to-deliver" },
+    { "kind": "chart", "pattern": "Coverage mix" }
   ],
   "qa": {
     "nativeRender": "auto",
-    "inspectKind": "deck,theme,slideMaster,layout,slide,textbox,shape,table,chart,image,connector,notes,comment,textRange",
-    "maxChars": 30000
+    "inspectKind": "deck,slide,textbox,shape,table,chart,connector,textRange",
+    "maxChars": 24000
   }
 }

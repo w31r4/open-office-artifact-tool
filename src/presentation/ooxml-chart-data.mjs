@@ -1,7 +1,6 @@
 import path from "node:path";
 
 export const PRESENTATION_CHART_EXTERNAL_DATA_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-export const PRESENTATION_CHART_EXTERNAL_DATA_RELATIONSHIP_TYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/package";
 
 const CHART_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.drawingml.chart+xml";
 const MAX_WORKBOOK_BYTES = 64 * 1024 * 1024;
@@ -44,13 +43,6 @@ function relationshipId(tag = "") {
   return attrs["r:id"] || Object.entries(attrs).find(([name]) => name.endsWith(":id"))?.[1] || attrs.id;
 }
 
-function autoUpdateFromChartXml(xml = "") {
-  const block = new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?externalData\\b[^>]*>([\\s\\S]*?)<\\/(?:[A-Za-z_][\\w.-]*:)?externalData>`, "i").exec(String(xml))?.[1] || "";
-  const tag = new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?autoUpdate\\b[^>]*/?>`, "i").exec(block)?.[0];
-  if (!tag) return true;
-  const value = xmlAttributes(tag).val;
-  return value == null || !new Set(["0", "false", "off", "no"]).has(String(value).toLowerCase());
-}
 
 function bytesFrom(value) {
   if (value == null) return undefined;
@@ -95,61 +87,6 @@ export function normalizePresentationChartExternalData(value) {
 
 export function presentationChartUsesFormulaReferences(chart) {
   return Boolean(chart?.series?.some((series) => series.errorBars?.plusFormula || series.errorBars?.minusFormula));
-}
-
-export function planPresentationChartExternalDataParts(chartParts = []) {
-  let workbookPartId = 1;
-  return chartParts.flatMap((chartPart) => {
-    const externalData = chartPart.chart.externalData;
-    if (!externalData) return [];
-    if (externalData.uri) return [{ chartPart, externalData, relationshipId: "rId1", target: externalData.uri, targetMode: "External" }];
-    const outputPath = `ppt/embeddings/Microsoft_Excel_Worksheet${workbookPartId++}.xlsx`;
-    return [{ chartPart, externalData, relationshipId: "rId1", outputPath, target: `../embeddings/${path.posix.basename(outputPath)}` }];
-  });
-}
-
-export function presentationChartExternalDataContentTypesXml(parts = []) {
-  return parts.filter((part) => part.outputPath).map((part) => `<Override PartName="/${part.outputPath}" ContentType="${PRESENTATION_CHART_EXTERNAL_DATA_CONTENT_TYPE}"/>`).join("");
-}
-
-export function presentationChartExternalDataRelationship(part) {
-  return {
-    id: part.relationshipId,
-    type: PRESENTATION_CHART_EXTERNAL_DATA_RELATIONSHIP_TYPE,
-    target: part.target,
-    ...(part.targetMode ? { targetMode: part.targetMode } : {}),
-  };
-}
-
-export async function validatePresentationChartExternalDataWorkbooks(parts = [], inspectXlsx) {
-  if (typeof inspectXlsx !== "function") throw new TypeError("Presentation chart embedded-workbook validation requires an XLSX inspector.");
-  for (const part of parts.filter((candidate) => candidate.outputPath)) {
-    let inspection;
-    try {
-      inspection = await inspectXlsx(part.externalData.bytes);
-    } catch (error) {
-      throw new TypeError(`Presentation chart externalData workbook is not a valid XLSX package: ${error.message}`, { cause: error });
-    }
-    if (!inspection?.ok) {
-      const issueTypes = [...new Set((inspection?.issues || []).map((entry) => entry.type).filter(Boolean))].slice(0, 8);
-      throw new TypeError(`Presentation chart externalData workbook is not a valid XLSX package${issueTypes.length ? ` (${issueTypes.join(", ")})` : ""}.`);
-    }
-  }
-}
-
-export async function parsePresentationChartExternalData(options = {}) {
-  const tag = externalDataTag(options.chartXml);
-  if (!tag) return undefined;
-  const id = relationshipId(tag);
-  const relationship = (options.relationships || []).find((item) => item.id === id);
-  if (!id || !relationship) throw new Error("Presentation chart externalData references a missing relationship.");
-  if (!String(relationship.type || "").endsWith("/package")) throw new Error("Presentation chart externalData relationship must use the package relationship type.");
-  const autoUpdate = autoUpdateFromChartXml(options.chartXml);
-  if (String(relationship.targetMode || "").toLowerCase() === "external") return normalizePresentationChartExternalData({ uri: relationship.target, autoUpdate });
-  const target = options.resolveTarget(options.chartPath, relationship.target);
-  const bytes = await options.readPart(target);
-  if (!bytes) throw new Error(`Presentation chart externalData workbook part is missing: ${target}.`);
-  return normalizePresentationChartExternalData({ workbook: bytes, autoUpdate });
 }
 
 function chartRelationshipEntries(bytesByPath, chartPath) {

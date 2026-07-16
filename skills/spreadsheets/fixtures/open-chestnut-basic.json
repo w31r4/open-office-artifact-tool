@@ -1,377 +1,85 @@
 {
   "name": "open-chestnut-basic",
   "outputName": "open-chestnut-basic.xlsx",
-  "codec": "open-chestnut",
-  "roundtripCodec": "open-chestnut",
+  "dateSystem": "1904",
   "roundtripEdits": {
     "charts": [
-      {
-        "sheet": "Summary",
-        "name": "OpenChestnut chart",
-        "title": "OpenChestnut edited trend",
-        "titleTextStyle": { "fontSize": 14 },
-        "lineOptions": { "grouping": "percentStacked", "smooth": false, "varyColors": false },
-        "dataLabels": { "showValue": false, "showCategoryName": true, "showSeriesName": false, "position": "top" },
-        "hasLegend": false,
-        "categories": ["Revenue", "Double actual"],
-        "xAxis": { "axisType": "textAxis", "title": { "text": "Edited metric" }, "textStyle": { "fontSize": 11 }, "numberFormatCode": "@", "tickLabelInterval": 1 },
-        "yAxis": { "axisType": "valueAxis", "title": { "text": "Edited value" }, "textStyle": { "fontSize": 8.5 }, "numberFormatCode": "0.0", "min": 0, "max": 100, "majorUnit": 20 },
-        "series": [{ "index": 0, "name": "Edited value", "values": [42.5, 90], "fill": "#2563EB", "line": { "fill": "#7C3AED", "style": "dash-dot", "width": 2.5 }, "marker": { "symbol": "triangle", "size": 10, "fill": "#DCFCE7", "line": { "fill": "#166534", "style": "dashed", "width": 2 } } }]
-      }
+      { "sheet": "Dashboard", "name": "Line chart", "title": "Edited line trend" }
     ],
     "images": [
-      {
-        "sheet": "Summary",
-        "name": "OpenChestnut mark",
-        "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAQAAABFaP0WAAAADUlEQVR42mNk+M/wHwAF/gL+3c5GAAAAAElFTkSuQmCC"
-      }
+      { "sheet": "Dashboard", "name": "OpenChestnut mark", "alt": "Edited OpenChestnut marker" }
     ]
   },
-  "activeWorksheet": "Icon Rules",
-  "selectedWorksheets": ["Summary", "Icon Rules"],
-  "additionalWindows": [
-    { "activeWorksheet": "Advanced Filters", "selectedWorksheets": ["Summary", "Advanced Filters"] }
-  ],
-  "dateSystem": "1904",
-  "calculation": {
-    "mode": "automaticExceptTables",
-    "calculateOnSave": false,
-    "fullCalculationOnLoad": true,
-    "forceFullCalculation": true,
-    "iteration": { "enabled": true, "maxIterations": 100, "maxChange": 0.001 },
-    "fullPrecision": false
-  },
-  "theme": {
-    "name": "OpenChestnut Fixture",
-    "colors": {
-      "dk1": "#101820", "lt1": "#F8FAFC", "dk2": "#1E3A5F", "lt2": "#E2E8F0",
-      "accent1": "#0F766E", "accent2": "#C2410C", "accent3": "#4D7C0F", "accent4": "#7E22CE",
-      "accent5": "#0369A1", "accent6": "#BE123C", "hlink": "#1D4ED8", "folHlink": "#7E22CE"
-    }
-  },
-  "definedNames": [
-    { "id": "defined-name/summary-values", "name": "SummaryValues", "refersTo": "Summary!$B$2:$B$3", "comment": "Fixture summary values", "hidden": false },
-    { "id": "defined-name/detail-scores", "name": "DetailScores", "refersTo": "Details!$C$2:$C$3", "scope": "Details", "hidden": true }
-  ],
   "sheets": [
     {
-      "name": "Summary",
-      "visibility": "visible",
-      "showGridLines": false,
-      "freezePanes": { "rows": 1, "columns": 1 },
-      "sortState": {
-        "reference": "A1:D3",
-        "caseSensitive": true,
-        "sortMethod": "stroke",
-        "columnSort": true,
-        "conditions": [
-          { "reference": "A3:D3", "descending": true, "customList": "Double,Revenue" },
-          { "reference": "A1:D1", "descending": false }
-        ]
-      },
+      "name": "Dashboard",
+      "freezePanes": { "rows": 1 },
       "ranges": [
         {
-          "range": "A1:B3",
+          "range": "A1:D4",
           "values": [
-            ["Metric", "Value"],
-            ["Revenue", 42.5],
-            ["Double", null]
+            ["Label", "Actual", "Double", "State"],
+            ["A", 10, null, "Ready"],
+            ["B", 20, null, "Review"],
+            ["C", 30, null, "Ready"]
+          ]
+        },
+        { "range": "C2:C4", "formulas": [["=B2*2"], ["=B3*2"], ["=B4*2"]] },
+        {
+          "range": "A1:D1",
+          "format": {
+            "fill": "#0F766E",
+            "font": { "bold": true, "color": "#FFFFFF" },
+            "border": { "bottom": { "style": "double", "color": "#38BDF8" } },
+            "alignment": { "horizontal": "center" }
+          }
+        },
+        { "range": "B2:C4", "format": { "numberFormat": "0.00", "columnWidthPx": 84 } },
+        {
+          "range": "D2:D4",
+          "dataValidation": { "rule": { "type": "list", "values": ["Ready", "Review"] } },
+          "conditionalFormats": [
+            { "ruleType": "containsText", "config": { "text": "Review", "formula": "NOT(ISERROR(SEARCH(\"Review\",D2)))", "format": { "fill": "#FEF3C7" } } }
           ]
         },
         {
-          "range": "B3",
-          "formulas": [["=B2*2"]]
+          "range": "B2:B4",
+          "conditionalFormats": [
+            { "ruleType": "colorScale", "config": { "colors": ["#FEE2E2", "#22C55E"] } }
+          ]
         },
-        {
-          "range": "C1:D1",
-          "values": [["Shared", "Array"]]
-        },
-        {
-          "range": "E1:F1",
-          "values": [["Dynamic", "Spill"]]
-        },
-        {
-          "range": "C2:C3",
-          "formulas": [["=B2*2"], ["=B3*2"]],
-          "formulaMetadata": { "kind": "shared", "sharedIndex": 7, "reference": "C2:C3" }
-        },
-        {
-          "range": "D2",
-          "formulas": [["=SUM(B2:B3)"]],
-          "formulaMetadata": { "kind": "array", "reference": "D2:D3" }
-        },
-        {
-          "range": "E2",
-          "formulas": [["=SEQUENCE(2,2,101,1)"]],
-          "formulaMetadata": { "kind": "dynamicArray", "reference": "E2:F3" }
-        },
-        {
-          "range": "A1:F1",
-          "format": {
-            "fill": { "patternType": "darkGrid", "foreground": { "theme": 4, "tint": 0.4 }, "background": "#E2E8F0" },
-            "font": { "bold": true, "underline": "double", "color": "#FFFFFF", "size": 12, "name": "Aptos Display" },
-            "alignment": { "horizontal": "center", "vertical": "bottom", "wrapText": true, "textRotation": 15, "indent": 1, "readingOrder": 1 },
-            "border": {
-              "left": { "style": "thin", "color": { "indexed": 8 } },
-              "right": { "style": "thin", "color": { "indexed": 8 } },
-              "top": { "style": "thin", "color": { "auto": true } },
-              "bottom": { "style": "double", "color": "#38BDF8" }
-            },
-            "protection": { "locked": false, "hidden": true }
-          }
-        },
-        {
-          "range": "C2:C3",
-          "format": { "fill": "#DCFCE7", "font": { "bold": true, "color": "#166534" }, "alignment": { "horizontal": "right" } }
-        },
-        {
-          "range": "B2",
-          "format": { "numberFormat": "0.000 \"units\"" }
-        },
-        {
-          "range": "B3",
-          "format": { "numberFormat": "0.00%" }
-        },
-        {
-          "range": "A4:B4",
-          "values": [["Ready", true]],
-          "merge": true
-        }
+        { "range": "A6:D6", "values": [["Canonical roundtrip", null, null, null]], "merge": true, "format": { "fill": "#E2E8F0", "font": { "bold": true } } }
+      ],
+      "tables": [
+        { "range": "A1:D4", "name": "CodecTable", "style": "TableStyleMedium4", "showRowStripes": true }
       ],
       "charts": [
-        {
-          "chartType": "line",
-          "name": "OpenChestnut chart",
-          "title": "OpenChestnut trend",
-          "titleTextStyle": { "fontSize": 12.5 },
-          "lineOptions": { "grouping": "stacked", "smooth": true, "varyColors": true },
-          "dataLabels": { "showValue": true, "showCategoryName": false, "showSeriesName": true, "position": "outsideEnd" },
-          "hasLegend": true,
-          "categories": ["Revenue", "Double"],
-          "xAxis": { "axisType": "textAxis", "title": { "text": "Metric" }, "textStyle": { "fontSize": 10 }, "numberFormatCode": "@", "tickLabelInterval": 2 },
-          "yAxis": { "axisType": "valueAxis", "title": { "text": "Value" }, "textStyle": { "fontSize": 9 }, "numberFormatCode": "0.00", "min": 0, "max": 100, "majorUnit": 25 },
-          "series": [
-            {
-              "name": "Value",
-              "values": [42.5, 85],
-              "fill": "#F472B6",
-              "line": { "fill": "#0EA5E9", "style": "dashed", "width": 2 },
-              "marker": { "symbol": "diamond", "size": 8, "fill": "#FDE68A", "line": { "fill": "#BE123C", "style": "dotted", "width": 1.5 } },
-              "categoryFormula": "'Summary'!$A$2:$A$3",
-              "formula": "'Summary'!$B$2:$B$3"
-            }
-          ],
-          "position": { "left": 460, "top": 300, "width": 320, "height": 200 }
-        }
+        { "chartType": "bar", "name": "Bar chart", "title": "Actual values", "sourceRange": "A1:B4", "topLeft": "F1", "bottomRight": "J10" },
+        { "chartType": "line", "name": "Line chart", "title": "Double trend", "sourceRange": "A1:C4", "topLeft": "K1", "bottomRight": "O10" },
+        { "chartType": "pie", "name": "Pie chart", "title": "Actual share", "sourceRange": "A1:B4", "topLeft": "F12", "bottomRight": "J22" }
       ],
       "images": [
         {
           "name": "OpenChestnut mark",
-          "alt": "OpenChestnut worksheet image",
-          "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
-          "crop": { "leftPercent": 10, "topPercent": -5, "rightPercent": 15, "bottomPercent": 20 },
-          "effects": { "grayscale": true, "brightnessPercent": 10, "contrastPercent": -5, "opacityPercent": 80 },
-          "transform": { "rotationDegrees": 12.5, "flipHorizontal": true, "flipVertical": false },
-          "anchor": {
-            "from": { "row": 4, "col": 0, "rowOffsetPx": 6, "colOffsetPx": 4 },
-            "extent": { "widthPx": 96, "heightPx": 64 }
-          }
-        },
-        {
-          "name": "OpenChestnut two-cell mark",
-          "alt": "OpenChestnut move-only two-cell image",
-          "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
-          "anchor": {
-            "type": "twoCell",
-            "from": { "row": 4, "col": 2, "rowOffsetPx": 5, "colOffsetPx": 3 },
-            "to": { "row": 7, "col": 5, "rowOffsetPx": 9, "colOffsetPx": 7 },
-            "editAs": "oneCell"
-          }
-        },
-        {
-          "name": "OpenChestnut absolute mark",
-          "alt": "OpenChestnut page-relative image",
-          "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
-          "anchor": {
-            "type": "absolute",
-            "position": { "leftPx": 350, "topPx": 100 },
-            "extent": { "widthPx": 80, "heightPx": 60 }
-          }
-        }
-      ]
-    },
-    {
-      "name": "Details",
-      "visibility": "hidden",
-      "ranges": [
-        {
-          "range": "A1:C4",
-          "values": [
-            ["Codec", "Runtime", "Score"],
-            ["OpenChestnut", "WebAssembly", 10],
-            ["JS fallback", "Node", 5],
-            ["Total", "", 23]
-          ]
-        },
-        {
-          "range": "C2:C3",
-          "formulas": [["=LEN(A2)"], ["=LEN(A3)"]]
-        },
-        {
-          "range": "C4",
-          "formulas": [["=SUM(C2:C3)"]]
-        }
-      ],
-      "tables": [
-        {
-          "range": "A1:C4",
-          "name": "CodecTable",
-          "style": "TableStyleMedium4",
-          "showTotals": true,
-          "showFirstColumn": true,
-          "showRowStripes": false,
-          "showBandedColumns": true,
-          "filters": [
-            { "columnIndex": 0, "kind": "values", "values": ["OpenChestnut"], "includeBlank": false },
-            {
-              "columnIndex": 2,
-              "kind": "custom",
-              "matchAll": true,
-              "criteria": [
-                { "operator": "greaterThanOrEqual", "value": "5" },
-                { "operator": "lessThanOrEqual", "value": "20" }
-              ]
-            }
-          ],
-          "sortState": {
-            "reference": "A2:C3",
-            "caseSensitive": true,
-            "sortMethod": "stroke",
-            "conditions": [
-              { "reference": "C2:C3", "descending": true, "customList": "20,10" },
-              { "reference": "A2:A3", "descending": false }
-            ]
-          },
-          "columnDefinitions": [
-            { "name": "Codec", "totalsRowFunction": "none", "totalsRowLabel": "Total" },
-            { "name": "Runtime" },
-            { "name": "Score", "calculatedColumnFormula": "=LEN([@Codec])", "totalsRowFunction": "custom", "totalsRowFormula": "=SUBTOTAL(109,[Score])" }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "Advanced Filters",
-      "ranges": [
-        {
-          "range": "A1:C3",
-          "values": [
-            ["Date", "Status", "Score"],
-            [45853, "ready", 95],
-            [45854, "pending", 80]
-          ]
-        },
-        {
-          "range": "A2:A3",
-          "format": { "numberFormat": "yyyy-mm-dd" }
-        }
-      ],
-      "tables": [
-        {
-          "range": "A1:C3",
-          "name": "AdvancedFilterTable",
-          "style": "TableStyleMedium6",
-          "filters": [
-            {
-              "columnIndex": 0,
-              "kind": "values",
-              "values": [],
-              "includeBlank": false,
-              "calendarType": "gregorian",
-              "dateGroups": [{ "grouping": "day", "year": 2026, "month": 7, "day": 15 }]
-            },
-            { "columnIndex": 1, "kind": "dynamic", "type": "today", "value": 45853, "maxValue": 45854 },
-            { "columnIndex": 2, "kind": "top10", "top": true, "percent": true, "value": 10, "filterValue": 95 }
-          ]
-        }
-      ]
-    },
-    {
-      "name": "Icon Rules",
-      "ranges": [
-        {
-          "range": "A1:B3",
-          "values": [
-            ["Trend", "Rating"],
-            [1, 5],
-            [2, 3]
-          ]
-        }
-      ],
-      "tables": [
-        {
-          "range": "A1:B3",
-          "name": "IconRuleTable",
-          "style": "TableStyleMedium7",
-          "filters": [
-            { "columnIndex": 0, "kind": "icon", "iconSet": "3Arrows", "iconId": 0 },
-            { "columnIndex": 1, "kind": "icon", "iconSet": "3Flags" }
-          ],
-          "sortState": {
-            "reference": "A2:B3",
-            "caseSensitive": false,
-            "conditions": [
-              { "reference": "B2:B3", "descending": true, "kind": "icon", "iconSet": "5Rating", "iconId": 4 },
-              { "reference": "A2:A3", "descending": false, "kind": "icon", "iconSet": "3Symbols2" }
-            ]
-          }
-        }
-      ]
-    },
-    {
-      "name": "Color Rules",
-      "visibility": "veryHidden",
-      "ranges": [
-        {
-          "range": "A1:B3",
-          "values": [
-            ["Fill", "Font"],
-            [1, 5],
-            [2, 3]
-          ]
-        }
-      ],
-      "tables": [
-        {
-          "range": "A1:B3",
-          "name": "ColorRuleTable",
-          "style": "TableStyleMedium8",
-          "filters": [
-            { "columnIndex": 0, "kind": "color", "target": "cell", "color": "#E11D48" },
-            { "columnIndex": 1, "kind": "color", "target": "font", "color": { "theme": 4, "tint": -0.25 } }
-          ],
-          "sortState": {
-            "reference": "A2:B3",
-            "caseSensitive": false,
-            "conditions": [
-              { "reference": "B2:B3", "descending": true, "kind": "color", "target": "font", "color": { "theme": 4, "tint": -0.25 } },
-              { "reference": "A2:A3", "descending": false, "kind": "color", "target": "cell", "color": "#E11D48" }
-            ]
-          }
+          "alt": "OpenChestnut worksheet marker",
+          "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAQAAABFaP0WAAAADUlEQVR42mNk+M/wHwAF/gL+3c5GAAAAAElFTkSuQmCC",
+          "anchor": { "from": { "row": 7, "col": 0, "rowOffsetPx": 4, "colOffsetPx": 4 }, "extent": { "widthPx": 72, "heightPx": 48 } }
         }
       ]
     }
   ],
+  "definedNames": [
+    { "name": "ActualValues", "refersTo": "Dashboard!$B$2:$B$4", "comment": "Canonical numeric input" }
+  ],
+  "activeWorksheet": "Dashboard",
   "expectations": [
-    { "sheet": "Summary", "range": "B2:D3", "values": [[42.5, 85, 127.5], [85, 170, null]] },
-    { "sheet": "Summary", "range": "E2:F3", "values": [[101, 102], [103, 104]] }
+    { "sheet": "Dashboard", "range": "C2:C4", "values": [[20], [40], [60]] }
   ],
   "qa": {
-    "sheetName": "Summary",
-    "range": "A1:F8",
+    "sheetName": "Dashboard",
+    "range": "A1:O22",
     "renderFormat": "png",
-    "inspectKind": "workbook,sheet,formula,merge,dimension,drawing",
-    "maxChars": 16000,
-    "nativeRender": "auto"
+    "inspectKind": "workbook,sheet,table,formula,style,computedStyle,drawing",
+    "maxChars": 16000
   }
 }

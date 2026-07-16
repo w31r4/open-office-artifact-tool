@@ -1,159 +1,133 @@
 ---
-name: open-office-documents
-description: Create, edit, inspect, render, and verify DOCX artifacts with open-office-artifact-tool and real LibreOffice/Poppler page QA.
+name: documents
+description: Create, import, edit, inspect, render, and verify DOCX artifacts through the canonical OpenChestnut Office path.
 ---
 
-# Open Office Documents
+# Documents
 
-Use this project skill for standalone `.docx` artifact work. It is the clean-room Documents workflow for `open-office-artifact-tool`; it uses only the package's public facade and legally usable renderers.
+Use this project skill for standalone `.docx` work. `DocumentFile.exportDocx` and `DocumentFile.importDocx` are the only high-level file path; both load the bundled OpenChestnut C# WebAssembly engine. JavaScript remains responsible for the public object model, Compose/JSX, calculation, inspection, rendering, QA, and explicit package patching.
 
-Select OpenChestnut through the normal file facade: `DocumentFile.importDocx(input, { codec: "open-chestnut" })` and `DocumentFile.exportDocx(document, { codec: "open-chestnut" })`. Omission keeps the JavaScript codec. A source-bound document imported through OpenChestnut must use OpenChestnut again for every preservation-sensitive export; direct `codecs/open-chestnut` helpers are advanced equivalents, not a separate implementation.
+Do not select an alternate Office writer. The high-level methods accept no routing flags. Pass only `limits` when a tighter resource budget is needed.
 
-## Contract
+## Supported 0.2 workflow
 
-- Never import or copy the reference package's runtime artifact, runtime module, runtime bindings, or implementation details.
-- Preserve an imported document's content, styles, structure, and review state unless the user requests a redesign.
-- For new documents, choose one coherent design preset before authoring. The current public facade ships `report` and `memo`; broader exact preset fidelity remains tracked in the repository coverage matrix linked below.
-- Use real list items, tables, comments, hyperlinks, fields, tagged bibliography sources/native `CITATION` fields, images, sections, and tracked changes rather than visual text imitations.
-- For style-driven lists, give paragraph styles a shared `numberingId`, use a distinct derived style for each associated level, and give the numbering style the same `numberingId`. Set `numberingStyleId` on authored list items. Native import resolves paragraph-style `numPr`, `pStyle`, `styleLink`, and `numStyleLink` chains; malformed or cyclic chains are package errors.
-- Preserve direct and theme-backed run formatting. Theme fonts/colors and paired complex-script properties must survive a metadata-free native import before delivery.
-- Keep semantic and package inspection bounded. Store QA evidence in a temporary/output directory.
-- The checked-in `business-brief` fixture deliberately crosses the experimental `open-chestnut` DOCX roundtrip. It removes one list item's direct `w:numPr`, requires OpenChestnut to resolve the paragraph style through the level's `w:pStyle` plus `w:styleLink`, asserts the `BriefNumbering` identity and level before editing its text, and also edits one hyperlink, one bounded field, and a vertical-merge origin cell after asserting `vMerge=restart`, `rowSpan=2`, and per-cell editability. The continuation stays read-only, merge topology and the separate bookmark/comment-bearing table stay in the hash-bound source package, and all advanced WordprocessingML is preserved. Numbering identity/level/style chain/style links/definitions and imported table grid/span/merge topology, nested cells, multi-paragraph content, multi-run content, resizing, or restyling remain read-only and must fail closed.
-- The checked-in `open-chestnut-merged-table` fixture starts from `DocumentModel`, uses OpenChestnut as the initial codec, authors a complete three-column physical grid with horizontal `gridSpan`, a two-row `vMerge` chain, a second horizontal span, and the bounded direct table-formatting profile, then reimports and edits both the merge origin and the recognized formatting profile. Every physical value cell needs one geometry record; rows must cover the logical grid without gaps or overlaps; continuation text must be empty; declared row spans must match the exact chain. `columnWidthsDxa` has one entry per logical grid column and must sum to `widthDxa`; OpenChestnut derives each merged `tcW`, writes fixed layout/indent/margins/uniform RGB borders/header fill+bold, and permits imported edits only after recognizing that complete direct profile. Partial/theme/conditional/per-cell formatting remains source-preserved and fails closed on replacement. The fixture must pass Open XML SDK, package/model QA, Chromium, LibreOffice, and Poppler.
-- The checked-in `open-chestnut-comments` fixture authors one classic whole-paragraph comment through bundled OpenChestnut, imports it, edits author/initials/date/text in place, exports a second time, and verifies the same native anchor ID plus real page rendering. The OpenChestnut slice requires one top-level paragraph target, one start/end/reference triplet, and one paragraph/run/text comment body. Comment count/order/target/anchors are source-bound; rich bodies, cross-paragraph ranges, replies, resolved state, durable IDs, and people/extended graphs remain opaque and must fail closed rather than flatten.
-- Do not deliver a DOCX until semantic verification and page-image review pass.
+The canonical path covers the common Documents workflow:
 
-## Authoring workflow
+- paragraphs and runs with bounded direct font, size, RGB color, character spacing, bold, italic, and underline formatting;
+- paragraph alignment, indents, spacing, line rules, keep-with-next, and page-break-before;
+- paragraph, character, and table styles with bounded `basedOn` chains plus document run defaults;
+- direct numbered and bulleted lists;
+- fixed-layout tables, including supported merge geometry and bounded direct table formatting;
+- external/internal hyperlinks and simple safe fields such as `PAGE` and `NUMPAGES`;
+- classic whole-paragraph comments with fixed-topology source-bound edits;
+- PNG/JPEG inline images with alt text and explicit dimensions;
+- page geometry, margins, orientation, section breaks, first/even/default headers and footers, and header/footer fields.
 
-1. Create a `DocumentModel` or import an existing DOCX with `DocumentFile.importDocx`. Choose `{ codec: "open-chestnut" }` for the bundled C# codec. After package-level OOXML patches on the JavaScript path, pass `{ preferNative: true }` so relationship-driven native parts take precedence over stale embedded model metadata.
-2. Inspect the relevant blocks, styles, comments, and layout before editing.
-3. Apply focused changes through public APIs.
-   For clean-room package surgery, `DocumentFile.patchDocx(...)` can create a Comments part and add matching block, paragraph, or table-cell anchors with `recipe: { kind: "comments", source: "word/document.xml", sourceReference: { anchors: [...] } }`. It can also relocate valid `commentsExtended`, `commentsIds`, `commentsExtensible`, and `people` parts with matching recipe kinds; semantic validation rejects orphan/multiple parts, unresolved or duplicate paragraph/durable identities, invalid UTC metadata, reply placeholders, and conflicting people.
-   The same package API can create a Numbering part and assign declared `numId`/level pairs to target paragraphs with `recipe: { kind: "numbering", source: "word/document.xml", sourceReference: { assignments: [...] } }`.
-   A Settings recipe can safely mutate an arbitrary relationship-backed Settings part with `sourceReference: { trackRevisions, updateFields, evenAndOddHeaders, mirrorMargins, documentProtection }`. Protection modes are passwordless `readOnly`, `comments`, `trackedChanges`, or `forms`; they discourage accidental editing but do not encrypt the DOCX.
-4. Run `document.verify({ visualQa: true })` and fix every material issue.
-5. Export DOCX and import the exported file again.
-6. Render the real DOCX through LibreOffice to PDF, then Poppler to page PNGs.
-7. Inspect every page image at full size. Comments also require structural inspection because headless renderers may omit them.
-8. Once a model/native baseline is approved, compare the model preview and every native page on later runs; a page-count change is a visual regression until reviewed.
+Imported constructs outside this profile remain attached to their validated source package. Leave them unchanged to preserve them. Attempts to author or edit unsupported constructs must fail explicitly; never flatten them into approximate content.
+
+## Author or import
+
+Create a document with the public model:
 
 ```js
 import { DocumentFile, DocumentModel } from "open-office-artifact-tool";
 
 const document = DocumentModel.create({
-  name: "Decision brief",
-  blocks: [],
-  theme: {
-    name: "Decision Theme",
-    colors: { accent1: "#336699" },
-    fonts: { major: "Source Serif 4", minor: "Aptos", majorEastAsia: "Noto Serif CJK SC", majorComplexScript: "Noto Naskh Arabic" },
-  },
+  name: "Readiness brief",
   defaultRunStyle: { fontFamily: "Aptos", fontSize: 22 },
 });
-document.applyDesignPreset("report");
-document.styles.add("DecisionEmphasisBase", { type: "character", italic: true, themeColor: "accent1" });
-document.styles.add("DecisionEmphasis", { type: "character", basedOn: "DecisionEmphasisBase", bold: true });
-document.styles.add("DecisionList", { type: "paragraph", basedOn: "Normal", numberingId: 7 });
-document.styles.add("DecisionNumbering", { type: "numbering", numberingId: 7 });
-document.setSettings({ updateFields: true, documentProtection: { edit: "comments" } });
-document.addParagraph("Decision brief", { styleId: "Title", name: "title" });
-document.addParagraph("Recommendation", { styleId: "Heading1", name: "recommendation-heading" });
-document.addParagraph("", { styleId: "Normal", runs: [
-  { text: "Theme-backed decision", style: { runStyleId: "DecisionEmphasis", fontTheme: "majorHAnsi", themeTint: "80" } },
-  { text: " العربية", style: { fontThemeComplexScript: "majorBidi", boldComplexScript: true, italicComplexScript: true, fontSizeComplexScript: 32 } },
-] });
-document.addParagraph("Proceed with the clean-room implementation.", { styleId: "Normal" });
-document.addListItem("Validate the exported DOCX", { styleId: "DecisionList", listType: "number", numberFormat: "upperLetter", start: 1, levelText: "%1)", numberingId: 7, numberingStyleId: "DecisionNumbering" });
-document.setSectionSettings(0, { differentFirstPage: true });
-document.addHeader("Decision brief", { referenceType: "first", sectionIndex: 0 });
-document.addFooter("Confidential", { referenceType: "even" });
-const decisionTable = document.addTable({
-  name: "decision-table",
-  styleId: "TableGrid",
-  values: [["Area", "Status"], ["Semantic QA", "Pass"], ["Native render", "Required"]],
+
+document.addParagraph("Readiness brief", { styleId: "Title" });
+document.addParagraph("All required gates passed.", {
+  styleId: "Normal",
+  paragraphFormat: { alignment: "left", spaceAfterTwips: 240 },
+  runs: [{
+    text: "All required gates passed.",
+    style: { bold: true, color: "#315A83" },
+  }],
 });
-const review = document.addComment(decisionTable, "Verify the evidence table.", {
-  author: "QA Agent",
-  initials: "QA",
-  date: "2026-07-11T00:00:00.000Z",
-  resolved: true,
-});
-document.replyToComment(review, "Verified after native render.", { author: "Maintainer", initials: "MT" });
 
 const output = await DocumentFile.exportDocx(document);
-await output.save("decision-brief.docx");
+await output.save("out/readiness-brief.docx");
 ```
 
-## Verification commands
+Import and make a source-bound edit:
 
-Verify any DOCX and write semantic/package/layout/model-preview/native-page evidence:
+```js
+import { DocumentFile, FileBlob } from "open-office-artifact-tool";
 
-```sh
-node skills/documents/scripts/verify-document.mjs \
-  --input decision-brief.docx \
-  --output-dir tmp/document-qa \
-  --preview-format png \
-  --native-render required
+const document = await DocumentFile.importDocx(
+  await FileBlob.load("in/existing.docx"),
+);
+
+const paragraph = document.blocks.find(
+  (block) => block.kind === "paragraph" && block.text === "Draft",
+);
+paragraph.text = "Approved";
+if (paragraph.runs.length === 1) paragraph.runs[0].text = "Approved";
+
+const output = await DocumentFile.exportDocx(document);
+await output.save("out/approved.docx");
 ```
 
-`--native-render auto` runs LibreOffice + Poppler when available and records a skip otherwise. Use `required` for final local delivery when those runtimes are installed, and `off` only for an explicitly documented structural-only check.
+Keep block count, order, comment anchors, table merge geometry, and unsupported source-owned objects unchanged during preservation-sensitive edits. A rejected edit is a safety result, not a prompt to rebuild the file through another writer.
 
-Run the checked-in fixture end to end:
+## Inspect, patch, and verify
 
-```sh
+Use model inspection for semantic checks and package inspection for OOXML structure:
+
+```js
+const semantic = document.inspect({
+  kind: "document,paragraph,listItem,table,comment,header,footer,hyperlink,field,image,section,style,layout",
+  maxChars: 20_000,
+});
+
+const pkg = await DocumentFile.inspectDocx(output, {
+  includeText: true,
+  maxChars: 20_000,
+});
+```
+
+`DocumentFile.patchDocx` is an explicit low-level operation for deliberate OOXML part changes. It is not called automatically by import or export, and it is not an alternate high-level writer. Reinspect and render every patched package.
+
+Run the checked-in end-to-end fixture:
+
+```bash
 node skills/documents/scripts/run-fixture.mjs \
   --fixture skills/documents/fixtures/business-brief.json \
   --output-dir tmp/document-skill-fixture \
-  --native-render required
+  --native-render auto
 ```
 
-Create an approved model and native-page baseline:
+Verify any DOCX:
 
-```sh
+```bash
 node skills/documents/scripts/verify-document.mjs \
-  --input decision-brief.docx \
-  --output-dir tmp/document-baseline-run \
+  --input out/readiness-brief.docx \
+  --output-dir tmp/readiness-qa \
   --preview-format png \
-  --native-render required \
-  --baseline-dir tmp/document-baselines \
-  --write-baseline true
+  --native-render auto
 ```
 
-Compare a later export against that baseline:
+For visual regression work, add `--baseline-dir DIR --write-baseline true` once, then rerun without `--write-baseline`. The workflow compares the model preview and, when native tools are available, LibreOffice PDF plus Poppler page PNGs.
 
-```sh
-node skills/documents/scripts/verify-document.mjs \
-  --input decision-brief.docx \
-  --output-dir tmp/document-compare \
-  --prefer-native true \
-  --preview-format png \
-  --native-render required \
-  --baseline-dir tmp/document-baselines
-```
+## Checked-in fixtures
 
-## QA gates
+- `business-brief.json` covers styles, run and paragraph formatting, lists, a fixed table, a hyperlink, a field, a PNG image, a section, first/even variants, a classic comment, and source-bound edits.
+- `open-chestnut-merged-table.json` covers supported physical-grid merge geometry and bounded table-format edits.
+- `open-chestnut-numbering-edit.json` covers a fixed direct-numbering group and atomic definition edits.
+- `open-chestnut-comments.json` covers classic comment creation and fixed-topology metadata/text edits.
+- `package-comments.json`, `package-numbering.json`, and `package-settings.json` retain their historical fixture names but now exercise the supported 0.2 classic-comment, direct-numbering, and section/header settings surfaces. They no longer depend on a second Office implementation.
 
-- `DocumentFile.inspectDocx(...)` proves required package parts and relationships exist, including namespace-aware source XML `r:id`/`r:embed`/`r:link` resolution through the corresponding `.rels` part.
-- `document.inspect(...)` proves agent-facing theme, settings, blocks, inspectable bookmark ranges, internal/external hyperlinks, multi-level list formats/start/level text, paragraph/numbering-style identity and picture markers, bibliography sources plus native citation tags/results, styles, classic comment anchors, threaded/resolved state, durable identity, UTC metadata, people presence identity, and default/first/even header/footer references survived roundtrip. Each comment maps through the last classic-comment paragraph's `w14:paraId`; replies use `w15:paraIdParent`, Office 2019 `commentsIds` maps `paraId` to `durableId`, Office 2021 `commentsExtensible` carries UTC/follow-up metadata, and `people` binds author names to provider/user IDs. Native import follows `document.xml.rels` instead of assuming fixed theme/settings/styles/numbering/comment/header/footer/customXml filenames, resolves abstract numbering, overrides, paragraph-style `numPr` inheritance, level `pStyle`, and numbering-style `styleLink`/`numStyleLink` chains, restores bookmark start/end targets, `w:anchor` links, external relationships, tooltip/history state, fields, and prefix-agnostic `b:Sources` entries keyed to `CITATION` fields. Treat a header/footer reference as a declaration, not proof that its variant is active: `differentFirstPage` controls first-page selection, `settings.evenAndOddHeaders` controls even-page selection, and a missing section reference inherits the previous section's same-type reference. `document.layoutJson()` must identify the effective reference type, source section, inherited state, and blank state for every modeled page. Omit `sectionIndex` only when intentionally targeting the final section.
-- The checked-in business brief requires both a multi-block `RecommendationSection` bookmark and a row-major cross-cell `ReadinessEvidence` bookmark from `table.getCell(1, 0)` through `table.getCell(3, 2)`, each with a relationship-free internal jump through model, package, metadata-free import, second export, and real render gates. Its first section declares the running header/footer while its second section omits both references; native-preferred layout and rendered page text must prove that Word's same-type inheritance supplies them on page 2.
-- The checked-in `package-comments.json` fixture creates an arbitrary-path Comments part through the public patch API, anchors one comment to a paragraph block and one to a table cell, then verifies both through native-preferred import and the real render gate.
-- The checked-in `package-numbering.json` fixture creates an arbitrary-path Numbering part, binds two ordinary paragraphs to declared multilevel numbering definitions, and verifies their format/start/level metadata through native-preferred import and the real render gate.
-- The checked-in `open-chestnut-numbering-edit.json` fixture creates two directly assigned items and their text-marker numbering graph through bundled OpenChestnut, reimports them, updates the complete group's `numberFormat`/`start`/`levelText` through an instance-local override, and verifies reimport plus real render output. Source-free direct groups may share multilevel abstract definitions; picture bullets and style-linked graph authoring still use the JavaScript codec. Treat an imported definition-edit group as atomic: partial, nested, style-linked, or cross-part edits must fail closed.
-- `document.addListItem(..., { pictureBullet })` accepts an embedded PNG/JPEG/GIF data URL or a non-fetched absolute URI with bounded point dimensions and alt text. Require `w:numPicBullet` before `w:abstractNum`, a matching `w:lvlPicBulletId`, and an image relationship owned by the Numbering part rather than `document.xml`; when relocating a Numbering part, relocate its `.rels` and adjust relative media targets too. Export uses the ISO-documented VML picture-symbol form for Word/LibreOffice compatibility, while import accepts VML and modern DrawingML forms. The business brief exercises embedded import, second export, SVG evidence, and a visibly colored LibreOffice/Poppler marker.
-- The checked-in `package-settings.json` fixture creates an arbitrary-path Settings part, preserves unrelated compatibility markup, enables revision/field/header/margin settings, applies comments-only editing restrictions, and verifies the agent-facing state through native-preferred import and the real render gate.
-- `document.verify({ visualQa: true })` checks structural and modeled layout issues.
-- Model SVG/Playwright preview catches facade-level layout regressions.
-- LibreOffice PDF plus Poppler page PNGs are the native render gate on non-Windows hosts.
-- PNG baselines compare the modeled preview and every native page through `visualQaArtifact(..., { pixelDiff: true })`; baseline page-count changes fail QA. Supplying `--baseline-dir` is fail-closed: initialize it with `--write-baseline true`, because missing, empty, or non-contiguously numbered page sets are rejected.
-- Changed pages write PNG diff heatmaps into the QA output directory; dimension mismatches require a non-strict alignment mode.
-- Use `--diff-alignment center|top-left|strict`, `--diff-color '#ff1848'`, and `--diff-unchanged-color '#334155'` to make dimension changes and review palettes explicit.
-- For same-size renders with a known platform jitter, opt in to bounded registration with `--registration-offset 2`; use `--registration-improvement 0.1` to require at least 10% sampled mismatch improvement. QA records the chosen baseline translation and ignored edge pixels.
-- Microsoft Office native automation remains the higher-fidelity Windows gate for Word-specific behavior.
-- Deliver only the requested DOCX; previews and QA reports are internal unless requested.
+## Delivery gate
 
-## References
+A document is ready only when:
 
-- Generated public API catalog: `../../docs/api.md`
-- Current implementation coverage: https://github.com/w31r4/open-office-artifact-tool/blob/main/docs/coverage.md
-- Fixture runner: `scripts/run-fixture.mjs`
-- Generic DOCX verifier: `scripts/verify-document.mjs`
+1. semantic inspection contains the intended blocks and values;
+2. package inspection reports valid DOCX relationships and parts;
+3. semantic verification has no blocking issue;
+4. the model preview passes visual QA;
+5. LibreOffice and Poppler rendering passes when those tools are available;
+6. unsupported imported content is either preserved unchanged or rejected on edit.
+
+The fixture runner writes the DOCX, inspection records, verification records, layout JSON, preview, optional pixel diff, native PDF/page PNGs, and a summary JSON into the selected output directory.

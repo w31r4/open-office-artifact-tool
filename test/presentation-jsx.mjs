@@ -132,8 +132,7 @@ const directImage = dataSlide.images.add({
   dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
   prompt: "dashboard product screenshot",
   position: { left: 40, top: 180, width: 300, height: 140 },
-  fit: "cover",
-  borderRadius: "rounded-xl",
+  fit: "stretch",
 });
 assert.equal(presentation.resolve(directTable.id).getCell(1, 1).value, "$12.4M");
 assert.equal(presentation.resolve(directChart.id).title, "ARR trend");
@@ -148,7 +147,7 @@ dataSlide.compose(
   }, [
     tableNode({ name: "jsx-table", rows: 2, columns: 2, values: [["A", "B"], [1, 2]], styleOptions: { headerRow: true } }),
     chartNode({ name: "jsx-chart", chartType: "bar", title: "Pipeline", categories: ["New", "Won"], series: [{ name: "Deals", values: [7, 4] }] }),
-    imageNode({ name: "jsx-image", row: 1, columnSpan: 2, alt: "Generated hero", prompt: "abstract hero image", fit: "cover" }),
+    imageNode({ name: "jsx-image", row: 1, columnSpan: 2, alt: "Generated hero", dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=", fit: "stretch" }),
   ]),
   { frame: { left: 40, top: 340, width: 720, height: 320 } },
 );
@@ -173,29 +172,32 @@ assert.match(await (await dataSlide.export({ format: "svg" })).text(), /ARR tren
 const out = path.join(os.tmpdir(), `open-office-artifact-jsx-${process.pid}.pptx`);
 const pptx = await PresentationFile.exportPptx(presentation);
 const zip = await JSZip.loadAsync(new Uint8Array(await pptx.arrayBuffer()));
-assert.ok(zip.file("ppt/media/image1.png"));
+assert.ok(Object.keys(zip.files).some((part) => /^ppt\/media\/[^/]+\.png$/.test(part)));
 const slide3Xml = await zip.file("ppt/slides/slide3.xml").async("text");
 assert.match(slide3Xml, /<p:graphicFrame>/);
 assert.match(slide3Xml, /<a:tbl>/);
 assert.match(slide3Xml, /direct-kpi-table/);
 assert.match(slide3Xml, /\$12\.4M/);
 assert.match(slide3Xml, /<c:chart/);
-assert.match(slide3Xml, /r:id="rId2"/);
+assert.match(slide3Xml, /<c:chart\b[^>]*r:id="[^"]+"/);
 assert.match(slide3Xml, /<p:pic>/);
 assert.match(slide3Xml, /name="direct-product-image"/);
 assert.match(slide3Xml, /descr="Product screenshot placeholder"/);
-assert.match(slide3Xml, /r:embed="rId1"/);
+assert.match(slide3Xml, /r:embed="[^"]+"/);
 const slide3RelsXml = await zip.file("ppt/slides/_rels/slide3.xml.rels").async("text");
-assert.match(slide3RelsXml, /Target="\.\.\/media\/image1\.png"/);
-assert.match(slide3RelsXml, /Target="\.\.\/charts\/chart1\.xml"/);
-const chartXml = await zip.file("ppt/charts/chart1.xml").async("text");
+assert.match(slide3RelsXml, /relationships\/image/);
+assert.match(slide3RelsXml, /relationships\/chart/);
+const chartParts = Object.keys(zip.files).filter((part) => /^ppt\/(?:slides\/)?charts\/[^/]+\.xml$/.test(part));
+const chartXmls = await Promise.all(chartParts.map((part) => zip.file(part).async("text")));
+const chartXml = chartXmls.find((xml) => />24<\//.test(xml));
+assert.ok(chartXml, `expected ARR chart in ${JSON.stringify(chartParts)}`);
 assert.match(chartXml, /<c:chartSpace/);
 assert.match(chartXml, /ARR trend/);
 assert.match(chartXml, /<c:barChart>/);
 assert.match(chartXml, /<c:v>24<\/c:v>/);
 const contentTypesXml = await zip.file("[Content_Types].xml").async("text");
 assert.match(contentTypesXml, /Default Extension="png" ContentType="image\/png"/);
-assert.match(contentTypesXml, /chart1\.xml" ContentType="application\/vnd\.openxmlformats-officedocument\.drawingml\.chart\+xml"/);
+assert.match(contentTypesXml, /ContentType="application\/vnd\.openxmlformats-officedocument\.drawingml\.chart\+xml"/);
 await pptx.save(out);
 const loaded = await PresentationFile.importPptx(await FileBlob.load(out));
 assert.match(loaded.inspect({ kind: "textbox", maxChars: 10000 }).ndjson, /JSX runtime/);

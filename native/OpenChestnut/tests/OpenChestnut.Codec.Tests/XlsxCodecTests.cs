@@ -10,6 +10,7 @@ using System.Security.Cryptography;
 using System.Xml.Linq;
 using Xunit;
 using A = DocumentFormat.OpenXml.Drawing;
+using TC = DocumentFormat.OpenXml.Office2019.Excel.ThreadedComments;
 using Xdr = DocumentFormat.OpenXml.Drawing.Spreadsheet;
 
 namespace OpenChestnut.Codec.Tests;
@@ -60,6 +61,178 @@ public sealed class XlsxCodecTests
                 Assert.Equal("=B1*2", cell.Formula);
                 Assert.Equal("0.00%", cell.NumberFormatCode);
             });
+    }
+
+    [Fact]
+    public void ProtocolAuthorsImportsAndSourcePreservesWorksheetSkillFeatures()
+    {
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(WorksheetFeatureExportRequest().ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(authored.File.ToByteArray());
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+        {
+            var worksheetPart = Assert.Single(document.WorkbookPart!.WorksheetParts);
+            Assert.Equal(2U, worksheetPart.Worksheet!.GetFirstChild<DataValidations>()!.Count!.Value);
+            Assert.Equal(2, worksheetPart.Worksheet.Elements<ConditionalFormatting>().Count());
+            var people = Assert.Single(document.WorkbookPart.WorkbookPersonParts).PersonList!;
+            Assert.Equal("Analyst", Assert.Single(people.Elements<TC.Person>()).DisplayName!.Value);
+            var comments = Assert.Single(worksheetPart.WorksheetThreadedCommentsParts).ThreadedComments!;
+            var comment = Assert.Single(comments.Elements<TC.ThreadedComment>());
+            Assert.Equal("C2", comment.Ref!.Value);
+            Assert.Equal("Review the revenue total.", comment.ThreadedCommentText!.Text);
+            Assert.Null(comment.ParentId);
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var sheet = Assert.Single(imported.Artifact.Workbook.Worksheets);
+        Assert.Collection(sheet.DataValidations,
+            item =>
+            {
+                Assert.Equal("list", item.Type);
+                Assert.Equal("D2:D8", item.Range);
+                Assert.Equal(["Planned", "In progress", "Done"], item.Values);
+                Assert.Empty(item.Formula1);
+            },
+            item =>
+            {
+                Assert.Equal("whole", item.Type);
+                Assert.Equal("between", item.Operator);
+                Assert.Equal("1", item.Formula1);
+                Assert.Equal("10", item.Formula2);
+            });
+        Assert.Collection(sheet.ConditionalFormats,
+            item =>
+            {
+                Assert.Equal("cellIs", item.RuleType);
+                Assert.Equal("greaterThan", item.Operator);
+                Assert.Equal(["50"], item.Formulas);
+                Assert.Equal("DCFCE7", item.Format.Fill.Foreground.Rgb);
+            },
+            item =>
+            {
+                Assert.Equal("colorScale", item.RuleType);
+                Assert.Equal(["FEE2E2", "FEF3C7", "22C55E"], item.Colors.Select(color => color.Rgb));
+            });
+        var threaded = Assert.Single(sheet.ThreadedComments);
+        Assert.Equal("{11111111-1111-4111-8111-111111111111}", threaded.NativeCommentId);
+        Assert.Equal("analyst@example.com", threaded.UserId);
+        Assert.False(threaded.Resolved);
+
+        sheet.DataValidations[1].Formula2 = "12";
+        sheet.ConditionalFormats[0].Formulas[0] = "60";
+        sheet.ConditionalFormats[0].Format.Fill.Foreground.Rgb = "BBF7D0";
+        threaded.Text = "Revenue total reviewed.";
+        threaded.Author = "Lead analyst";
+        threaded.UserId = "lead@example.com";
+        threaded.DateTime = "2026-07-16T10:30:00.000Z";
+        threaded.Resolved = true;
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(preserved.File.ToByteArray());
+
+        var reimported = Import(preserved.File.ToByteArray());
+        Assert.True(reimported.Ok, string.Join("\n", reimported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var edited = Assert.Single(reimported.Artifact.Workbook.Worksheets);
+        Assert.Equal("12", edited.DataValidations[1].Formula2);
+        Assert.Equal("60", edited.ConditionalFormats[0].Formulas[0]);
+        Assert.Equal("BBF7D0", edited.ConditionalFormats[0].Format.Fill.Foreground.Rgb);
+        var editedComment = Assert.Single(edited.ThreadedComments);
+        Assert.Equal("Revenue total reviewed.", editedComment.Text);
+        Assert.Equal("Lead analyst", editedComment.Author);
+        Assert.Equal("lead@example.com", editedComment.UserId);
+        Assert.Equal("2026-07-16T10:30:00.000Z", editedComment.DateTime);
+        Assert.True(editedComment.Resolved);
+    }
+
+    [Fact]
+    public void UnsupportedWorksheetSkillProfilesStayOpaqueAndRejectReplacement()
+    {
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(WorksheetFeatureExportRequest().ToByteArray()));
+        var source = AddUnsupportedWorksheetSkillProfiles(authored.File.ToByteArray());
+        var validationXml = ReadWorksheetDataValidationXml(source);
+        var commentsXml = ReadWorksheetThreadedCommentsXml(source);
+        var imported = Import(source);
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var sheet = Assert.Single(imported.Artifact.Workbook.Worksheets);
+        Assert.Empty(sheet.DataValidations);
+        Assert.Empty(sheet.ThreadedComments);
+        Assert.Equal(2, sheet.ConditionalFormats.Count);
+
+        var exact = Export(imported.Artifact);
+        Assert.True(exact.Ok, string.Join("\n", exact.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(validationXml, ReadWorksheetDataValidationXml(exact.File.ToByteArray()));
+        Assert.Equal(commentsXml, ReadWorksheetThreadedCommentsXml(exact.File.ToByteArray()));
+
+        sheet.DataValidations.Add(new SpreadsheetDataValidationArtifact { Id = "replacement", Range = "A1", Type = "list", Values = { "Yes", "No" } });
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_data_validation_edit", Assert.Single(rejected.Diagnostics).Code);
+
+        sheet.DataValidations.Clear();
+        sheet.ThreadedComments.Add(new SpreadsheetThreadedCommentArtifact
+        {
+            Id = "replacement-thread",
+            CellReference = "A1",
+            Text = "Replacement",
+            Author = "User",
+            DateTime = "2026-07-16T00:00:00.000Z",
+        });
+        rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_threaded_comment_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void UnsupportedConditionalFormatProfileStaysOpaqueAndRejectsReplacement()
+    {
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(WorksheetFeatureExportRequest().ToByteArray()));
+        var source = AddUnsupportedConditionalFormatProfile(authored.File.ToByteArray());
+        var conditionalXml = ReadWorksheetConditionalFormattingXml(source);
+        var imported = Import(source);
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var sheet = Assert.Single(imported.Artifact.Workbook.Worksheets);
+        Assert.Empty(sheet.ConditionalFormats);
+        Assert.Equal(2, sheet.DataValidations.Count);
+        Assert.Single(sheet.ThreadedComments);
+
+        var exact = Export(imported.Artifact);
+        Assert.True(exact.Ok, string.Join("\n", exact.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(conditionalXml, ReadWorksheetConditionalFormattingXml(exact.File.ToByteArray()));
+
+        sheet.ConditionalFormats.Add(new SpreadsheetConditionalFormatArtifact
+        {
+            Id = "replacement-conditional",
+            Range = "A1",
+            RuleType = "expression",
+            Formulas = { "A1>0" },
+        });
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_conditional_format_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void WorksheetSkillFeaturesRejectInvalidWireProfiles()
+    {
+        var request = ExportRequest();
+        request.Artifact.Workbook.Worksheets[0].DataValidations.Add(new SpreadsheetDataValidationArtifact { Id = "invalid", Range = "A1", Type = "list" });
+        var response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_spreadsheet_data_validation", Assert.Single(response.Diagnostics).Code);
+
+        request = ExportRequest();
+        request.Artifact.Workbook.Worksheets[0].ConditionalFormats.Add(new SpreadsheetConditionalFormatArtifact { Id = "invalid", Range = "A1", RuleType = "cellIs", Operator = "greaterThan" });
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_spreadsheet_conditional_format", Assert.Single(response.Diagnostics).Code);
+
+        request = ExportRequest();
+        request.Artifact.Workbook.Worksheets[0].ThreadedComments.Add(new SpreadsheetThreadedCommentArtifact { Id = "invalid", CellReference = "A1:B2", Text = "Comment", Author = "User", DateTime = "not-a-date" });
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_spreadsheet_threaded_comment", Assert.Single(response.Diagnostics).Code);
     }
 
     [Fact]
@@ -885,16 +1058,6 @@ public sealed class XlsxCodecTests
         Assert.False(rejected.Ok);
         Assert.Equal("opaque_content_requires_preservation", Assert.Single(rejected.Diagnostics).Code);
 
-        var lossy = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
-        {
-            ProtocolVersion = CodecProtocol.ProtocolVersion,
-            Operation = CodecOperation.ExportXlsx,
-            Family = ArtifactFamily.Workbook,
-            Artifact = imported.Artifact,
-            AllowLossy = true,
-        }.ToByteArray()));
-        Assert.True(lossy.Ok);
-        Assert.Equal("opaque_content_discarded", Assert.Single(lossy.Diagnostics).Code);
     }
 
     [Fact]
@@ -3803,6 +3966,71 @@ public sealed class XlsxCodecTests
         };
     }
 
+    private static CodecRequest WorksheetFeatureExportRequest()
+    {
+        var request = ExportRequest();
+        var sheet = request.Artifact.Workbook.Worksheets[0];
+        sheet.DataValidations.Add(new SpreadsheetDataValidationArtifact
+        {
+            Id = "validation/status",
+            Range = "D2:D8",
+            Type = "list",
+            Values = { "Planned", "In progress", "Done" },
+        });
+        sheet.DataValidations.Add(new SpreadsheetDataValidationArtifact
+        {
+            Id = "validation/score",
+            Range = "E2:E8",
+            Type = "whole",
+            Operator = "between",
+            Formula1 = "1",
+            Formula2 = "10",
+        });
+        sheet.ConditionalFormats.Add(new SpreadsheetConditionalFormatArtifact
+        {
+            Id = "conditional/revenue",
+            Range = "B1:B8",
+            RuleType = "cellIs",
+            Operator = "greaterThan",
+            Formulas = { "50" },
+            Priority = 1,
+            Format = new CellStyleArtifact
+            {
+                Fill = new SpreadsheetFillStyle
+                {
+                    PatternType = "solid",
+                    Foreground = new SpreadsheetColor { Rgb = "DCFCE7" },
+                },
+            },
+        });
+        sheet.ConditionalFormats.Add(new SpreadsheetConditionalFormatArtifact
+        {
+            Id = "conditional/scale",
+            Range = "E2:E8",
+            RuleType = "colorScale",
+            Priority = 2,
+            Colors =
+            {
+                new SpreadsheetColor { Rgb = "FEE2E2" },
+                new SpreadsheetColor { Rgb = "FEF3C7" },
+                new SpreadsheetColor { Rgb = "22C55E" },
+            },
+        });
+        sheet.ThreadedComments.Add(new SpreadsheetThreadedCommentArtifact
+        {
+            Id = "thread/revenue",
+            CellReference = "C2",
+            NativeCommentId = "{11111111-1111-4111-8111-111111111111}",
+            Text = "Review the revenue total.",
+            PersonId = "{AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA}",
+            Author = "Analyst",
+            UserId = "analyst@example.com",
+            ProviderId = "None",
+            DateTime = "2026-07-16T09:00:00.000Z",
+        });
+        return request;
+    }
+
     private static CodecRequest PictureExportRequest()
     {
         var request = ExportRequest();
@@ -5469,6 +5697,69 @@ public sealed class XlsxCodecTests
         using var stream = new MemoryStream(bytes);
         using var document = SpreadsheetDocument.Open(stream, false);
         Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+    }
+
+    private static byte[] AddUnsupportedWorksheetSkillProfiles(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var worksheetPart = Assert.Single(document.WorkbookPart!.WorksheetParts);
+            var validation = worksheetPart.Worksheet!.GetFirstChild<DataValidations>()!.Elements<DataValidation>().First();
+            validation.ShowInputMessage = true;
+            worksheetPart.Worksheet.Save();
+
+            var comments = Assert.Single(worksheetPart.WorksheetThreadedCommentsParts).ThreadedComments!;
+            var root = Assert.Single(comments.Elements<TC.ThreadedComment>());
+            comments.Append(new TC.ThreadedComment(new TC.ThreadedCommentText("Reply"))
+            {
+                Ref = root.Ref!.Value,
+                DT = new DateTime(2026, 7, 16, 9, 30, 0, DateTimeKind.Utc),
+                PersonId = root.PersonId!.Value,
+                Id = "{22222222-2222-4222-8222-222222222222}",
+                ParentId = root.Id!.Value,
+                Done = false,
+            });
+            comments.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static string ReadWorksheetDataValidationXml(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes);
+        using var document = SpreadsheetDocument.Open(stream, false);
+        return Assert.Single(document.WorkbookPart!.WorksheetParts).Worksheet!.GetFirstChild<DataValidations>()!.OuterXml;
+    }
+
+    private static string ReadWorksheetThreadedCommentsXml(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes);
+        using var document = SpreadsheetDocument.Open(stream, false);
+        return Assert.Single(Assert.Single(document.WorkbookPart!.WorksheetParts).WorksheetThreadedCommentsParts).ThreadedComments!.OuterXml;
+    }
+
+    private static byte[] AddUnsupportedConditionalFormatProfile(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var worksheet = Assert.Single(document.WorkbookPart!.WorksheetParts).Worksheet!;
+            worksheet.Elements<ConditionalFormatting>().First().GetFirstChild<ConditionalFormattingRule>()!.StopIfTrue = true;
+            worksheet.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static string ReadWorksheetConditionalFormattingXml(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes);
+        using var document = SpreadsheetDocument.Open(stream, false);
+        return string.Join("\n", Assert.Single(document.WorkbookPart!.WorksheetParts).Worksheet!.Elements<ConditionalFormatting>().Select(item => item.OuterXml));
     }
 
     private static byte[] AddExternalWorkbookRelationship(byte[] bytes)

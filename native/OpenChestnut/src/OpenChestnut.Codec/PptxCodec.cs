@@ -30,7 +30,7 @@ internal static class PptxCodec
         if (opaqueCount > 0)
             diagnostics.Add(CodecProtocol.Warning(
                 "opaque_content_retained",
-                $"Retained {opaqueCount} unsupported OPC parts or relationships with a hash-bound source package snapshot for loss-aware export.",
+                $"Retained {opaqueCount} unsupported OPC parts or relationships for source-bound, fail-closed export from the validated package snapshot.",
                 opaque.Parts.FirstOrDefault()?.Path ?? opaque.PackageRelationships.FirstOrDefault()?.SourcePath));
 
         using var stream = new MemoryStream(bytes, writable: false);
@@ -132,6 +132,7 @@ internal static class PptxCodec
             var shapeTree = slideRoot.CommonSlideData?.ShapeTree ??
                 throw new CodecException("missing_shape_tree", $"Presentation slide {slideIndex + 1} has no shape tree.", PartPath(slidePart));
             var elements = ShapeElements(shapeTree);
+            var elementIdsByNativeId = NativeElementIds(elements, slideIndex);
             var target = new PresentationSlide
             {
                 Id = $"presentation/slide/{slideIndex + 1}",
@@ -155,7 +156,7 @@ internal static class PptxCodec
                 semanticItems++;
                 if (semanticItems > limits.MaxCells)
                     throw new CodecException("presentation_item_budget_exceeded", $"PPTX presentation exceeds max_cells semantic-item budget ({limits.MaxCells}).", PartPath(slidePart));
-                var importedElement = ReadElement(elements[elementIndex], slideIndex, elementIndex, slideContext, nativeObjects);
+                var importedElement = ReadElement(elements[elementIndex], slideIndex, elementIndex, slideContext, nativeObjects, elementIdsByNativeId);
                 if (importedElement.ContentCase == PresentationElement.ContentOneofCase.Table)
                 {
                     semanticItems += checked((ulong)importedElement.Table.Rows.Sum(row => row.Cells.Count));
@@ -185,23 +186,19 @@ internal static class PptxCodec
         return new PptxImportResult(envelope, diagnostics);
     }
 
-    internal static PptxExportResult Export(ArtifactEnvelope envelope, EffectiveCodecLimits limits, bool allowLossy)
+    internal static PptxExportResult Export(ArtifactEnvelope envelope, EffectiveCodecLimits limits)
     {
         var assetCatalog = ValidateEnvelope(envelope, limits);
         var opaqueCount = (envelope.OpaqueOpc?.Parts.Count ?? 0) +
                           (envelope.OpaqueOpc?.PackageRelationships.Count ?? 0);
         if (envelope.OpaqueOpc?.SourcePackage is { Data.IsEmpty: false })
             return ExportPreservingSource(envelope, limits, opaqueCount, assetCatalog);
-        if (opaqueCount > 0 && !allowLossy)
+        if (opaqueCount > 0)
             throw new CodecException(
                 "opaque_content_requires_preservation",
-                "Presentation contains opaque OPC parts or relationships but its validated source package snapshot is unavailable; pass allow_lossy only when discarding them is intentional.");
+                "Presentation contains opaque OPC parts or relationships but its validated source package snapshot is unavailable.");
 
         var diagnostics = new List<Diagnostic>();
-        if (opaqueCount > 0)
-            diagnostics.Add(CodecProtocol.Warning(
-                "opaque_content_discarded",
-                $"Discarded {opaqueCount} opaque OPC parts or relationships under explicit allow_lossy policy."));
 
         using var stream = new MemoryStream();
         using (var package = PresentationDocument.Create(stream, PresentationDocumentType.Presentation, autoSave: true))
@@ -405,6 +402,8 @@ internal static class PptxCodec
                 var shapeTree = slideRoot.CommonSlideData?.ShapeTree ??
                     throw new CodecException("missing_shape_tree", $"Presentation slide {slideIndex + 1} has no shape tree.", PartPath(slidePart));
                 var sourceElements = ShapeElements(shapeTree);
+                var elementIdsByNativeId = NativeElementIds(sourceElements, slideIndex);
+                var nativeIdsByElementId = elementIdsByNativeId.ToDictionary(item => item.Value, item => item.Key, StringComparer.Ordinal);
                 if (sourceElements.Length != target.Elements.Count)
                     throw new CodecException(
                         "presentation_element_topology_changed",
@@ -430,7 +429,7 @@ internal static class PptxCodec
                             "presentation_element_binding_mismatch",
                             $"Presentation slide {slideIndex + 1} element {elementIndex + 1} does not match its source element.",
                             PartPath(slidePart));
-                    var original = ReadElement(sourceElement, slideIndex, elementIndex, slideContext, nativeObjects);
+                    var original = ReadElement(sourceElement, slideIndex, elementIndex, slideContext, nativeObjects, elementIdsByNativeId);
                     if (original.ContentCase == PresentationElement.ContentOneofCase.Table)
                     {
                         semanticItems += checked((ulong)original.Table.Rows.Sum(row => row.Cells.Count));
@@ -477,6 +476,22 @@ internal static class PptxCodec
                              PptxTableCodec.TryRead(sourceTable, out _))
                     {
                         PptxTableCodec.Apply(sourceTable, requested);
+                        changed = true;
+                    }
+                    else if (sourceElement is P.ConnectionShape sourceConnector &&
+                             requested.ContentCase == PresentationElement.ContentOneofCase.Connector &&
+                             TryReadConnector(sourceConnector, elementIdsByNativeId, out _))
+                    {
+                        ApplyConnector(sourceConnector, requested, nativeIdsByElementId);
+                        changed = true;
+                    }
+                    else if (sourceElement is P.GraphicFrame sourceChart &&
+                             requested.ContentCase == PresentationElement.ContentOneofCase.Chart &&
+                             PptxChartCodec.TryRead(sourceChart, slideContext, out _, out var chartEditable) && chartEditable)
+                    {
+                        var replacement = PptxChartCodec.Apply(sourceChart, requested, slideContext);
+                        changedParts.Add(replacement.PartPath);
+                        replacedOpaquePartHashes.Add(replacement.PartPath, replacement.Sha256);
                         changed = true;
                     }
                     else if (requested.ContentCase == PresentationElement.ContentOneofCase.Opaque &&
@@ -529,7 +544,8 @@ internal static class PptxCodec
         int slideIndex,
         int elementIndex,
         PptxPartContext slideContext,
-        PptxNativeObjectCatalog? nativeObjects = null)
+        PptxNativeObjectCatalog? nativeObjects = null,
+        IReadOnlyDictionary<uint, string>? elementIdsByNativeId = null)
     {
         var element = new PresentationElement
         {
@@ -541,14 +557,20 @@ internal static class PptxCodec
             P.Shape shape => IsSimpleShape(shape),
             P.Picture picture => PptxPictureCodec.TryRead(picture, slideContext, out _),
             P.GraphicFrame graphicFrame => PptxTableCodec.TryRead(graphicFrame, out _),
+            P.ConnectionShape connector => TryReadConnector(connector, elementIdsByNativeId, out _),
             _ => false,
         };
+        if (source is P.GraphicFrame chartFrame && PptxChartCodec.TryRead(chartFrame, slideContext, out _, out var chartEditable)) editable = chartEditable;
         if (source is P.Shape sourceShape)
             element.Shape = ReadShape(sourceShape, slideContext);
         else if (source is P.Picture sourcePicture && PptxPictureCodec.TryRead(sourcePicture, slideContext, out var image))
             element.Image = image;
         else if (source is P.GraphicFrame sourceTable && PptxTableCodec.TryRead(sourceTable, out var table))
             element.Table = table;
+        else if (source is P.ConnectionShape sourceConnector && TryReadConnector(sourceConnector, elementIdsByNativeId, out var connector))
+            element.Connector = connector;
+        else if (source is P.GraphicFrame sourceChart && PptxChartCodec.TryRead(sourceChart, slideContext, out var chart, out _))
+            element.Chart = chart;
         else
         {
             var frame = ReadFrame(source);
@@ -584,7 +606,7 @@ internal static class PptxCodec
         var transform = properties?.Transform2D;
         return new PresentationShape
         {
-            Geometry = Geometry(properties),
+            Geometry = Geometry(shape),
             LeftEmu = frame.Left,
             TopEmu = frame.Top,
             WidthEmu = frame.Width,
@@ -599,6 +621,7 @@ internal static class PptxCodec
             Transform = placeholder is null && PptxShapeTransformCodec.Supports(transform)
                 ? PptxShapeTransformCodec.Read(transform!)
                 : null,
+            Shadow = ReadShadow(properties),
         };
     }
 
@@ -609,11 +632,12 @@ internal static class PptxCodec
         var properties = shape.ShapeProperties;
         var transform = properties?.Transform2D;
         if (properties is null || properties.Elements<A.Transform2D>().Count() != 1 || !PptxShapeTransformCodec.Supports(transform)) return false;
-        if (Geometry(properties) is not ("rect" or "ellipse")) return false;
+        if (Geometry(shape) is not ("rect" or "ellipse" or "roundRect" or "textbox")) return false;
         if (!SimpleFill(properties)) return false;
         var outline = properties.GetFirstChild<A.Outline>();
         if (outline is not null && !SimpleFill(outline)) return false;
-        if (properties.ChildElements.Any(child => child is not A.Transform2D and not A.PresetGeometry and not A.NoFill and not A.SolidFill and not A.Outline)) return false;
+        if (!SupportsShadow(properties)) return false;
+        if (properties.ChildElements.Any(child => child is not A.Transform2D and not A.PresetGeometry and not A.NoFill and not A.SolidFill and not A.Outline and not A.EffectList)) return false;
         return PptxTextCodec.SupportsEditing(shape.TextBody);
     }
 
@@ -624,6 +648,57 @@ internal static class PptxCodec
         if (fills.Length == 0 || fills[0] is A.NoFill) return true;
         var solid = (A.SolidFill)fills[0];
         return solid.ChildElements.Count == 1 && solid.FirstChild is A.RgbColorModelHex;
+    }
+
+    private static PresentationShadow? ReadShadow(P.ShapeProperties? properties)
+    {
+        if (!SupportsShadow(properties)) return null;
+        var outer = properties?.GetFirstChild<A.EffectList>()?.GetFirstChild<A.OuterShadow>();
+        if (outer?.GetFirstChild<A.RgbColorModelHex>() is not { } color) return null;
+        return new PresentationShadow
+        {
+            ColorRgb = PptxColor.Normalize(color.Val?.Value ?? string.Empty),
+            BlurRadiusEmu = outer.BlurRadius?.Value ?? 0L,
+            DistanceEmu = outer.Distance?.Value ?? 0L,
+            DirectionAngle60000 = outer.Direction?.Value ?? 0,
+            OpacityThousandthPercent = checked((uint)(color.GetFirstChild<A.Alpha>()?.Val?.Value ?? 100_000)),
+        };
+    }
+
+    private static bool SupportsShadow(P.ShapeProperties? properties)
+    {
+        var lists = properties?.Elements<A.EffectList>().ToArray() ?? [];
+        if (lists.Length == 0) return true;
+        if (lists.Length != 1 || lists[0].ChildElements.Count != 1 || lists[0].FirstChild is not A.OuterShadow outer ||
+            !HasOnlyAttributes(outer, "blurRad", "dist", "dir") || outer.BlurRadius?.Value is < 0 || outer.Distance?.Value is < 0 ||
+            outer.Direction?.Value is < 0 or >= 21_600_000 || outer.ChildElements.Count != 1 || outer.FirstChild is not A.RgbColorModelHex color ||
+            color.Val?.Value is not { Length: 6 } rgb || !rgb.All(Uri.IsHexDigit) || !HasOnlyAttributes(color, "val")) return false;
+        var alphas = color.Elements<A.Alpha>().ToArray();
+        return color.ChildElements.Count == alphas.Length && alphas.Length <= 1 &&
+               (alphas.Length == 0 || alphas[0].Val?.Value is >= 0 and <= 100_000 && HasOnlyAttributes(alphas[0], "val"));
+    }
+
+    private static void ApplyShadow(P.ShapeProperties properties, PresentationShadow? shadow)
+    {
+        properties.GetFirstChild<A.EffectList>()?.Remove();
+        if (shadow is null) return;
+        var color = new A.RgbColorModelHex { Val = PptxColor.Normalize(shadow.ColorRgb) };
+        color.Append(new A.Alpha { Val = checked((int)shadow.OpacityThousandthPercent) });
+        var outer = new A.OuterShadow(color)
+        {
+            BlurRadius = shadow.BlurRadiusEmu,
+            Distance = shadow.DistanceEmu,
+            Direction = shadow.DirectionAngle60000,
+        };
+        properties.Append(new A.EffectList(outer));
+    }
+
+    private static void ValidateShadow(PresentationShadow? shadow, string elementId)
+    {
+        if (shadow is null) return;
+        PptxColor.Normalize(shadow.ColorRgb);
+        if (shadow.BlurRadiusEmu < 0 || shadow.DistanceEmu < 0 || shadow.DirectionAngle60000 is < 0 or >= 21_600_000 || shadow.OpacityThousandthPercent > 100_000)
+            throw new CodecException("invalid_presentation_shadow", $"Presentation shape {elementId} has invalid shadow geometry or opacity.");
     }
 
     private static void ApplyShape(P.Shape shape, PresentationElement source, PptxPartContext slideContext)
@@ -644,7 +719,14 @@ internal static class PptxCodec
             geometry = new A.PresetGeometry(new A.AdjustValueList());
             properties.InsertAfter(geometry, transform);
         }
-        geometry.Preset = semantic.Geometry == "ellipse" ? A.ShapeTypeValues.Ellipse : A.ShapeTypeValues.Rectangle;
+        geometry.Preset = semantic.Geometry switch
+        {
+            "ellipse" => A.ShapeTypeValues.Ellipse,
+            "roundRect" => A.ShapeTypeValues.RoundRectangle,
+            _ => A.ShapeTypeValues.Rectangle,
+        };
+        if (shape.NonVisualShapeProperties?.NonVisualShapeDrawingProperties is { } drawingProperties)
+            drawingProperties.TextBox = semantic.Geometry == "textbox" ? true : null;
         if (!FillMatches(properties, semantic.FillRgb)) ReplaceFill(properties, semantic.FillRgb);
         var outline = properties.GetFirstChild<A.Outline>();
         if (outline is null && (semantic.LineWidthEmu > 0 || !string.IsNullOrWhiteSpace(semantic.LineRgb)))
@@ -659,6 +741,7 @@ internal static class PptxCodec
         }
         if (shape.NonVisualShapeProperties?.NonVisualDrawingProperties is { } nonVisual)
             nonVisual.Name = source.Name;
+        ApplyShadow(properties, semantic.Shadow);
         PptxTextCodec.Apply(shape, semantic, slideContext);
     }
 
@@ -823,6 +906,8 @@ internal static class PptxCodec
             var slidePart = slideParts[slideIndex];
             var shapeTree = slidePart.Slide!.CommonSlideData!.ShapeTree!;
             var slideContext = new PptxPartContext(slidePart, slideIdByPartPath, slidePartById, assetCatalog);
+            var nativeIdsByElementId = source.Elements.Select((element, index) => (element.Id, NativeId: checked((uint)(index + 2))))
+                .ToDictionary(item => item.Id, item => item.NativeId, StringComparer.Ordinal);
             uint nativeId = 2;
             foreach (var element in source.Elements)
                 shapeTree.Append(element.ContentCase switch
@@ -830,6 +915,8 @@ internal static class PptxCodec
                     PresentationElement.ContentOneofCase.Shape => BuildShape(element, nativeId++, slideContext),
                     PresentationElement.ContentOneofCase.Image => PptxPictureCodec.Build(element, nativeId++, slideContext),
                     PresentationElement.ContentOneofCase.Table => PptxTableCodec.Build(element, nativeId++),
+                    PresentationElement.ContentOneofCase.Connector => BuildConnector(element, nativeId++, nativeIdsByElementId),
+                    PresentationElement.ContentOneofCase.Chart => PptxChartCodec.Build(element, nativeId++, slidePart),
                     _ => throw new CodecException("unsupported_presentation_element", $"Opaque presentation element {element.Id} requires its validated source package and cannot be authored from scratch."),
                 });
             slidePart.Slide.Save();
@@ -859,7 +946,15 @@ internal static class PptxCodec
         PptxShapeTransformCodec.Apply(transform, semantic.Transform);
         var properties = new P.ShapeProperties(
             transform,
-            new A.PresetGeometry(new A.AdjustValueList()) { Preset = semantic.Geometry == "ellipse" ? A.ShapeTypeValues.Ellipse : A.ShapeTypeValues.Rectangle });
+            new A.PresetGeometry(new A.AdjustValueList())
+            {
+                Preset = semantic.Geometry switch
+                {
+                    "ellipse" => A.ShapeTypeValues.Ellipse,
+                    "roundRect" => A.ShapeTypeValues.RoundRectangle,
+                    _ => A.ShapeTypeValues.Rectangle,
+                },
+            });
         properties.Append(string.IsNullOrWhiteSpace(semantic.FillRgb)
             ? new A.NoFill()
             : new A.SolidFill(new A.RgbColorModelHex { Val = PptxColor.Normalize(semantic.FillRgb) }));
@@ -868,13 +963,159 @@ internal static class PptxCodec
             ? new A.NoFill()
             : new A.SolidFill(new A.RgbColorModelHex { Val = PptxColor.Normalize(semantic.LineRgb) }));
         properties.Append(outline);
+        ApplyShadow(properties, semantic.Shadow);
         return new P.Shape(
             new P.NonVisualShapeProperties(
                 new P.NonVisualDrawingProperties { Id = nativeId, Name = source.Name },
-                new P.NonVisualShapeDrawingProperties(),
+                new P.NonVisualShapeDrawingProperties { TextBox = semantic.Geometry == "textbox" ? true : null },
                 new P.ApplicationNonVisualDrawingProperties()),
             properties,
             PptxTextCodec.Build(semantic, slideContext));
+    }
+
+    private static bool TryReadConnector(P.ConnectionShape source, IReadOnlyDictionary<uint, string>? elementIdsByNativeId, out PresentationConnector connector)
+    {
+        connector = new PresentationConnector();
+        var properties = source.ShapeProperties;
+        var transform = properties?.Transform2D;
+        var geometry = properties?.GetFirstChild<A.PresetGeometry>()?.Preset?.Value;
+        var outline = properties?.GetFirstChild<A.Outline>();
+        if (properties is null || transform?.Offset?.X?.Value is null || transform.Offset.Y?.Value is null ||
+            transform.Extents?.Cx?.Value is null or < 0 || transform.Extents.Cy?.Value is null or < 0 ||
+            geometry is null || (!geometry.Equals(A.ShapeTypeValues.Line) && !geometry.Equals(A.ShapeTypeValues.BentConnector3)) ||
+            outline is null || !SimpleFill(outline) ||
+            outline.ChildElements.Any(child => child is not A.NoFill and not A.SolidFill and not A.HeadEnd and not A.TailEnd) ||
+            properties.ChildElements.Any(child => child is not A.Transform2D and not A.PresetGeometry and not A.Outline)) return false;
+        var head = outline.GetFirstChild<A.HeadEnd>();
+        var tail = outline.GetFirstChild<A.TailEnd>();
+        if (!TryArrow(head?.Type?.Value, out var startArrow) || !TryArrow(tail?.Type?.Value, out var endArrow)) return false;
+        var nonVisual = source.NonVisualConnectionShapeProperties?.NonVisualConnectorShapeDrawingProperties;
+        if (!TryConnectionTarget(nonVisual?.StartConnection, elementIdsByNativeId, out var startTargetId) ||
+            !TryConnectionTarget(nonVisual?.EndConnection, elementIdsByNativeId, out var endTargetId)) return false;
+        var left = transform.Offset.X.Value;
+        var top = transform.Offset.Y.Value;
+        var width = transform.Extents.Cx.Value;
+        var height = transform.Extents.Cy.Value;
+        var flipH = transform.HorizontalFlip?.Value == true;
+        var flipV = transform.VerticalFlip?.Value == true;
+        connector = new PresentationConnector
+        {
+            ConnectorType = geometry.Equals(A.ShapeTypeValues.BentConnector3) ? "elbow" : "straight",
+            StartXEmu = flipH ? left + width : left,
+            StartYEmu = flipV ? top + height : top,
+            EndXEmu = flipH ? left : left + width,
+            EndYEmu = flipV ? top : top + height,
+            LineRgb = PptxColor.SolidRgb(outline.GetFirstChild<A.SolidFill>()),
+            LineWidthEmu = outline.Width?.Value ?? 0,
+            StartArrow = startArrow,
+            EndArrow = endArrow,
+            StartTargetId = startTargetId,
+            EndTargetId = endTargetId,
+        };
+        return true;
+    }
+
+    private static P.ConnectionShape BuildConnector(PresentationElement source, uint nativeId, IReadOnlyDictionary<string, uint> nativeIdsByElementId)
+    {
+        ValidateConnector(source.Connector, source.Id, source.Name, nativeIdsByElementId);
+        var semantic = source.Connector;
+        var drawingProperties = new P.NonVisualConnectorShapeDrawingProperties();
+        ApplyConnectionTargets(drawingProperties, semantic, nativeIdsByElementId);
+        var properties = new P.ShapeProperties();
+        properties.Append(ConnectorTransform(semantic));
+        properties.Append(new A.PresetGeometry(new A.AdjustValueList()) { Preset = semantic.ConnectorType == "elbow" ? A.ShapeTypeValues.BentConnector3 : A.ShapeTypeValues.Line });
+        properties.Append(ConnectorOutline(semantic));
+        return new P.ConnectionShape(
+            new P.NonVisualConnectionShapeProperties(
+                new P.NonVisualDrawingProperties { Id = nativeId, Name = source.Name },
+                drawingProperties,
+                new P.ApplicationNonVisualDrawingProperties()),
+            properties);
+    }
+
+    private static void ApplyConnector(P.ConnectionShape source, PresentationElement requested, IReadOnlyDictionary<string, uint> nativeIdsByElementId)
+    {
+        ValidateConnector(requested.Connector, requested.Id, requested.Name, nativeIdsByElementId);
+        source.NonVisualConnectionShapeProperties!.NonVisualDrawingProperties!.Name = requested.Name;
+        var drawingProperties = source.NonVisualConnectionShapeProperties.NonVisualConnectorShapeDrawingProperties ??= new P.NonVisualConnectorShapeDrawingProperties();
+        ApplyConnectionTargets(drawingProperties, requested.Connector, nativeIdsByElementId);
+        var properties = source.ShapeProperties ??= new P.ShapeProperties();
+        properties.RemoveAllChildren<A.Transform2D>();
+        properties.PrependChild(ConnectorTransform(requested.Connector));
+        var geometry = properties.GetFirstChild<A.PresetGeometry>() ?? properties.InsertAfter(new A.PresetGeometry(new A.AdjustValueList()), properties.Transform2D);
+        geometry.Preset = requested.Connector.ConnectorType == "elbow" ? A.ShapeTypeValues.BentConnector3 : A.ShapeTypeValues.Line;
+        properties.GetFirstChild<A.Outline>()?.Remove();
+        properties.Append(ConnectorOutline(requested.Connector));
+    }
+
+    private static A.Transform2D ConnectorTransform(PresentationConnector source)
+    {
+        var left = Math.Min(source.StartXEmu, source.EndXEmu);
+        var top = Math.Min(source.StartYEmu, source.EndYEmu);
+        return new A.Transform2D(
+            new A.Offset { X = left, Y = top },
+            new A.Extents { Cx = Math.Abs(source.EndXEmu - source.StartXEmu), Cy = Math.Abs(source.EndYEmu - source.StartYEmu) })
+        {
+            HorizontalFlip = source.EndXEmu < source.StartXEmu,
+            VerticalFlip = source.EndYEmu < source.StartYEmu,
+        };
+    }
+
+    private static A.Outline ConnectorOutline(PresentationConnector source)
+    {
+        var outline = new A.Outline { Width = checked((int)source.LineWidthEmu) };
+        outline.Append(string.IsNullOrWhiteSpace(source.LineRgb) ? new A.NoFill() : new A.SolidFill(new A.RgbColorModelHex { Val = PptxColor.Normalize(source.LineRgb) }));
+        if (source.StartArrow.Length > 0) outline.Append(new A.HeadEnd { Type = A.LineEndValues.Triangle });
+        if (source.EndArrow.Length > 0) outline.Append(new A.TailEnd { Type = A.LineEndValues.Triangle });
+        return outline;
+    }
+
+    private static void ValidateConnector(PresentationConnector? source, string elementId, string name, IReadOnlyDictionary<string, uint>? nativeIdsByElementId = null)
+    {
+        if (source is null) throw new CodecException("invalid_presentation_connector", $"Presentation connector {elementId} payload is missing.");
+        if (name.Length > 1_024) throw new CodecException("invalid_presentation_connector", $"Presentation connector {elementId} name exceeds 1024 characters.");
+        if (source.ConnectorType is not ("straight" or "elbow")) throw new CodecException("unsupported_presentation_connector", $"Presentation connector {elementId} uses unsupported type {source.ConnectorType}.");
+        if (source.StartXEmu < 0 || source.StartYEmu < 0 || source.EndXEmu < 0 || source.EndYEmu < 0 ||
+            source.LineWidthEmu < 0 || source.LineWidthEmu > int.MaxValue)
+            throw new CodecException("invalid_presentation_connector", $"Presentation connector {elementId} has invalid endpoints or line width.");
+        if (!string.IsNullOrWhiteSpace(source.LineRgb)) PptxColor.Normalize(source.LineRgb);
+        if (source.StartArrow is not ("" or "triangle") || source.EndArrow is not ("" or "triangle"))
+            throw new CodecException("unsupported_presentation_connector", $"Presentation connector {elementId} uses an unsupported arrowhead.");
+        if (nativeIdsByElementId is not null)
+        {
+            if (source.StartTargetId.Length > 0 && !nativeIdsByElementId.ContainsKey(source.StartTargetId)) throw new CodecException("invalid_presentation_connector", $"Presentation connector {elementId} references missing start target {source.StartTargetId}.");
+            if (source.EndTargetId.Length > 0 && !nativeIdsByElementId.ContainsKey(source.EndTargetId)) throw new CodecException("invalid_presentation_connector", $"Presentation connector {elementId} references missing end target {source.EndTargetId}.");
+        }
+    }
+
+    private static bool TryArrow(A.LineEndValues? source, out string arrow)
+    {
+        arrow = string.Empty;
+        if (source is null || source.Value == A.LineEndValues.None) return true;
+        if (source.Value != A.LineEndValues.Triangle) return false;
+        arrow = "triangle";
+        return true;
+    }
+
+    private static bool TryConnectionTarget(A.StartConnection? source, IReadOnlyDictionary<uint, string>? ids, out string targetId) =>
+        TryConnectionTarget(source?.Id?.Value, ids, out targetId);
+
+    private static bool TryConnectionTarget(A.EndConnection? source, IReadOnlyDictionary<uint, string>? ids, out string targetId) =>
+        TryConnectionTarget(source?.Id?.Value, ids, out targetId);
+
+    private static bool TryConnectionTarget(uint? nativeId, IReadOnlyDictionary<uint, string>? ids, out string targetId)
+    {
+        targetId = string.Empty;
+        if (nativeId is null) return true;
+        return ids is not null && ids.TryGetValue(nativeId.Value, out targetId!);
+    }
+
+    private static void ApplyConnectionTargets(P.NonVisualConnectorShapeDrawingProperties properties, PresentationConnector source, IReadOnlyDictionary<string, uint> nativeIdsByElementId)
+    {
+        properties.RemoveAllChildren<A.StartConnection>();
+        properties.RemoveAllChildren<A.EndConnection>();
+        if (source.StartTargetId.Length > 0) properties.Append(new A.StartConnection { Id = nativeIdsByElementId[source.StartTargetId], Index = 0U });
+        if (source.EndTargetId.Length > 0) properties.Append(new A.EndConnection { Id = nativeIdsByElementId[source.EndTargetId], Index = 0U });
     }
 
     private static P.ShapeTree BasicShapeTree() => new(
@@ -949,6 +1190,17 @@ internal static class PptxCodec
     private static OpenXmlElement[] ShapeElements(P.ShapeTree shapeTree) =>
         shapeTree.ChildElements.Where(child => child is not P.NonVisualGroupShapeProperties and not P.GroupShapeProperties).ToArray();
 
+    private static IReadOnlyDictionary<uint, string> NativeElementIds(IReadOnlyList<OpenXmlElement> elements, int slideIndex)
+    {
+        var output = new Dictionary<uint, string>();
+        for (var index = 0; index < elements.Count; index++)
+        {
+            var nativeId = elements[index].Descendants<P.NonVisualDrawingProperties>().FirstOrDefault()?.Id?.Value;
+            if (nativeId is not null) output[nativeId.Value] = $"presentation/slide/{slideIndex + 1}/element/{index + 1}";
+        }
+        return output;
+    }
+
     private static (long Left, long Top, long Width, long Height) ReadFrame(OpenXmlElement element)
     {
         if (element is P.GraphicFrame graphicFrame && graphicFrame.Transform?.Offset is { } graphicOffset && graphicFrame.Transform.Extents is { } graphicExtents)
@@ -963,11 +1215,14 @@ internal static class PptxCodec
         return (offset?.X?.Value ?? 0, offset?.Y?.Value ?? 0, extents?.Cx?.Value ?? 0, extents?.Cy?.Value ?? 0);
     }
 
-    private static string Geometry(P.ShapeProperties? properties)
+    private static string Geometry(P.Shape shape)
     {
-        var value = properties?.GetFirstChild<A.PresetGeometry>()?.Preset?.Value;
+        if (shape.NonVisualShapeProperties?.NonVisualShapeDrawingProperties?.TextBox?.Value == true) return "textbox";
+        var value = shape.ShapeProperties?.GetFirstChild<A.PresetGeometry>()?.Preset?.Value;
         if (value is null) return "rect";
-        return value.Equals(A.ShapeTypeValues.Ellipse) ? "ellipse" : value.Equals(A.ShapeTypeValues.Rectangle) ? "rect" : value.ToString() ?? "rect";
+        return value.Equals(A.ShapeTypeValues.Ellipse) ? "ellipse" :
+            value.Equals(A.ShapeTypeValues.RoundRectangle) ? "roundRect" :
+            value.Equals(A.ShapeTypeValues.Rectangle) ? "rect" : value.ToString() ?? "rect";
     }
 
     private static string ElementName(OpenXmlElement element, int index) =>
@@ -1073,11 +1328,12 @@ internal static class PptxCodec
                             throw new CodecException("invalid_presentation_placeholder", $"Presentation shape {element.Id} has inconsistent direct placeholder geometry.");
                         PptxPlaceholderCodec.ValidateDirectFrame(element.Shape.DirectFrame, element.Id);
                     }
-                    if (element.Shape.Geometry is not ("rect" or "ellipse"))
+                    if (element.Shape.Geometry is not ("rect" or "ellipse" or "roundRect" or "textbox"))
                         throw new CodecException("unsupported_presentation_geometry", $"Presentation shape {element.Id} uses unsupported geometry {element.Shape.Geometry}.");
                     if (!string.IsNullOrWhiteSpace(element.Shape.FillRgb)) PptxColor.Normalize(element.Shape.FillRgb);
                     if (!string.IsNullOrWhiteSpace(element.Shape.LineRgb)) PptxColor.Normalize(element.Shape.LineRgb);
                     PptxShapeTransformCodec.Validate(element.Shape.Transform, element.Id);
+                    ValidateShadow(element.Shape.Shadow, element.Id);
                     PptxTextCodec.Validate(element.Shape);
                     foreach (var paragraph in element.Shape.TextBody?.Paragraphs ?? [])
                         if (paragraph.BulletCase == PresentationTextParagraph.BulletOneofCase.PictureBullet &&
@@ -1096,6 +1352,17 @@ internal static class PptxCodec
                         throw new CodecException("invalid_presentation_table", $"Presentation table {element.Id} name exceeds 1024 characters.");
                     PptxTableCodec.Validate(element.Table, element.Id);
                     items += checked((ulong)element.Table.Rows.Sum(row => row.Cells.Count));
+                    if (items > limits.MaxCells)
+                        throw new CodecException("presentation_item_budget_exceeded", $"Presentation exceeds max_cells semantic-item budget ({limits.MaxCells}).");
+                }
+                else if (element.ContentCase == PresentationElement.ContentOneofCase.Connector)
+                {
+                    ValidateConnector(element.Connector, element.Id, element.Name);
+                }
+                else if (element.ContentCase == PresentationElement.ContentOneofCase.Chart)
+                {
+                    PptxChartCodec.Validate(element.Chart, element.Id, element.Name);
+                    items += checked((ulong)element.Chart.Series.Sum(series => series.Values.Count));
                     if (items > limits.MaxCells)
                         throw new CodecException("presentation_item_budget_exceeded", $"Presentation exceeds max_cells semantic-item budget ({limits.MaxCells}).");
                 }
@@ -1274,6 +1541,7 @@ internal static class PptxCodec
             var outputContext = new PptxPartContext(outputSlides[slideIndex], outputIdByPartPath, assets: outputAssets);
             var before = ShapeElements(sourceSlides[slideIndex].Slide!.CommonSlideData!.ShapeTree!);
             var after = ShapeElements(outputSlides[slideIndex].Slide!.CommonSlideData!.ShapeTree!);
+            var afterIds = NativeElementIds(after, slideIndex);
             var elements = requested.Slides[slideIndex].Elements;
             if (before.Length != elements.Count || after.Length != elements.Count)
                 throw new CodecException("presentation_postwrite_topology_changed", $"PPTX slide {slideIndex + 1} element topology changed during source-preserving export.", PartPath(outputSlides[slideIndex]));
@@ -1342,6 +1610,28 @@ internal static class PptxCodec
                             PartPath(outputSlides[slideIndex]));
                     continue;
                 }
+                if (request.ContentCase == PresentationElement.ContentOneofCase.Connector)
+                {
+                    if (before[elementIndex] is not P.ConnectionShape beforeConnector || after[elementIndex] is not P.ConnectionShape afterConnector)
+                        throw new CodecException("presentation_postwrite_element_mismatch", $"PPTX slide {slideIndex + 1} edited connector {elementIndex + 1} changed native element type.", PartPath(outputSlides[slideIndex]));
+                    if (!ConnectorResidualHash(beforeConnector).Equals(ConnectorResidualHash(afterConnector), StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException("presentation_unmodeled_connector_content_changed", $"PPTX slide {slideIndex + 1} edited connector {elementIndex + 1} changed unmodeled native content.", PartPath(outputSlides[slideIndex]));
+                    var outputConnectorSemantic = ReadElement(afterConnector, slideIndex, elementIndex, outputContext, elementIdsByNativeId: afterIds);
+                    if (!SemanticHash(outputConnectorSemantic).Equals(SemanticHash(request), StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException("presentation_postwrite_semantics_mismatch", $"PPTX slide {slideIndex + 1} edited connector {elementIndex + 1} does not match requested semantics after export.", PartPath(outputSlides[slideIndex]));
+                    continue;
+                }
+                if (request.ContentCase == PresentationElement.ContentOneofCase.Chart)
+                {
+                    if (before[elementIndex] is not P.GraphicFrame beforeChart || after[elementIndex] is not P.GraphicFrame afterChart)
+                        throw new CodecException("presentation_postwrite_element_mismatch", $"PPTX slide {slideIndex + 1} edited chart {elementIndex + 1} changed native element type.", PartPath(outputSlides[slideIndex]));
+                    if (!ChartFrameResidualHash(beforeChart).Equals(ChartFrameResidualHash(afterChart), StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException("presentation_unmodeled_chart_frame_changed", $"PPTX slide {slideIndex + 1} edited chart {elementIndex + 1} changed unmodeled frame content.", PartPath(outputSlides[slideIndex]));
+                    var outputChartSemantic = ReadElement(afterChart, slideIndex, elementIndex, outputContext, elementIdsByNativeId: afterIds);
+                    if (!SemanticHash(outputChartSemantic).Equals(SemanticHash(request), StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException("presentation_postwrite_semantics_mismatch", $"PPTX slide {slideIndex + 1} edited chart {elementIndex + 1} does not match requested semantics after export.", PartPath(outputSlides[slideIndex]));
+                    continue;
+                }
                 if (before[elementIndex] is not P.Shape beforeShape || after[elementIndex] is not P.Shape afterShape)
                     throw new CodecException("presentation_postwrite_element_mismatch", $"PPTX slide {slideIndex + 1} edited element {elementIndex + 1} changed native element type.", PartPath(outputSlides[slideIndex]));
                 if (!ShapeResidualHash(beforeShape, sourceContext).Equals(ShapeResidualHash(afterShape, outputContext), StringComparison.OrdinalIgnoreCase))
@@ -1349,7 +1639,7 @@ internal static class PptxCodec
                         "presentation_unmodeled_shape_content_changed",
                         $"PPTX slide {slideIndex + 1} edited shape {elementIndex + 1} changed unmodeled native content.",
                         PartPath(outputSlides[slideIndex]));
-                var outputSemantic = ReadElement(afterShape, slideIndex, elementIndex, outputContext);
+                var outputSemantic = ReadElement(afterShape, slideIndex, elementIndex, outputContext, elementIdsByNativeId: afterIds);
                 if (!SemanticHash(outputSemantic).Equals(SemanticHash(request), StringComparison.OrdinalIgnoreCase))
                     throw new CodecException(
                         "presentation_postwrite_semantics_mismatch",
@@ -1619,6 +1909,7 @@ internal static class PptxCodec
     {
         var shape = (P.Shape)source.CloneNode(true);
         if (shape.NonVisualShapeProperties?.NonVisualDrawingProperties is { } nonVisual) nonVisual.Name = string.Empty;
+        if (shape.NonVisualShapeProperties?.NonVisualShapeDrawingProperties is { } drawingProperties) drawingProperties.TextBox = null;
         if (shape.ShapeProperties is { } properties)
         {
             if (properties.Transform2D is { } transform)
@@ -1628,6 +1919,7 @@ internal static class PptxCodec
                 PptxShapeTransformCodec.Scrub(transform);
             }
             if (properties.GetFirstChild<A.PresetGeometry>() is { } geometry) geometry.Preset = A.ShapeTypeValues.Rectangle;
+            properties.GetFirstChild<A.EffectList>()?.Remove();
             foreach (var fill in properties.ChildElements.Where(child => child is A.NoFill or A.SolidFill).ToArray()) fill.Remove();
             if (properties.GetFirstChild<A.Outline>() is { } outline)
             {
@@ -1637,6 +1929,23 @@ internal static class PptxCodec
         }
         PptxTextCodec.ScrubModeledContent(shape.TextBody, slideContext);
         return HashElement(shape);
+    }
+
+    private static string ConnectorResidualHash(P.ConnectionShape source)
+    {
+        var connector = (P.ConnectionShape)source.CloneNode(true);
+        if (connector.NonVisualConnectionShapeProperties?.NonVisualDrawingProperties is { } nonVisual) nonVisual.Name = string.Empty;
+        if (connector.NonVisualConnectionShapeProperties?.NonVisualConnectorShapeDrawingProperties is { } drawingProperties)
+            drawingProperties.RemoveAllChildren();
+        connector.ShapeProperties?.RemoveAllChildren();
+        return HashElement(connector);
+    }
+
+    private static string ChartFrameResidualHash(P.GraphicFrame source)
+    {
+        var chart = (P.GraphicFrame)source.CloneNode(true);
+        PptxChartCodec.ScrubFrame(chart);
+        return HashElement(chart);
     }
 
     private static string PictureResidualHash(P.Picture source)
@@ -1708,6 +2017,12 @@ internal static class PptxCodec
         PptxBackgroundCodec.ScrubModeledContent(layout.CommonSlideData);
         PptxPlaceholderCodec.ScrubModeledContent(layout.CommonSlideData?.ShapeTree, partContext);
         return HashElement(layout);
+    }
+
+    private static bool HasOnlyAttributes(OpenXmlElement element, params string[] names)
+    {
+        var allowed = names.ToHashSet(StringComparer.Ordinal);
+        return element.GetAttributes().All(attribute => allowed.Contains(attribute.LocalName));
     }
 
     private static Dictionary<string, string> PackagePartHashes(byte[] bytes)

@@ -1,54 +1,21 @@
 {
   "name": "package-comments",
   "outputName": "package-comments.docx",
-  "designPreset": "report",
   "blocks": [
-    { "kind": "paragraph", "name": "title", "styleId": "Title", "text": "Package comment anchors" },
-    { "kind": "paragraph", "name": "decision", "styleId": "Normal", "text": "Approve after native package review." },
-    {
-      "kind": "table",
-      "name": "evidence-table",
-      "styleId": "TableGrid",
-      "values": [["Gate", "Status"], ["Native", "Pass"]]
-    }
+    { "kind": "paragraph", "name": "title", "styleId": "Title", "text": "Classic comment review" },
+    { "kind": "paragraph", "name": "decision", "styleId": "Normal", "text": "Approve after document review." },
+    { "kind": "table", "name": "evidence-table", "styleId": "TableGrid", "values": [["Gate", "Status"], ["Document", "Pass"]] }
   ],
-  "packageCommentsPart": "word/review/agent-comments.xml",
-  "packageCommentsRelationshipId": "rIdAgentComments",
-  "packageCommentsExtendedPart": "word/review/agent-comments-extended.xml",
-  "packageCommentsExtendedRelationshipId": "rIdAgentCommentsExtended",
-  "packageComments": [
-    {
-      "commentId": 21,
-      "author": "QA Agent",
-      "initials": "QA",
-      "date": "2026-07-12T09:30:00.000Z",
-      "paraId": "A0000015",
-      "resolved": true,
-      "text": "Confirm the decision paragraph.",
-      "target": { "type": "block", "index": 1 }
-    },
-    {
-      "commentId": 22,
-      "author": "Maintainer",
-      "initials": "MT",
-      "date": "2026-07-12T09:31:00.000Z",
-      "paraId": "A0000016",
-      "text": "Confirm the table-cell anchor.",
-      "target": { "type": "tableCell", "tableIndex": 0, "rowIndex": 1, "columnIndex": 1 }
-    },
-    {
-      "commentId": 23,
-      "author": "QA Lead",
-      "initials": "QL",
-      "date": "2026-07-12T09:32:00.000Z",
-      "paraId": "A0000017",
-      "parentParaId": "A0000015",
-      "text": "The decision paragraph is approved."
-    }
+  "comments": [
+    { "name": "decision-comment", "targetName": "decision", "author": "QA Agent", "initials": "QA", "date": "2026-07-12T09:30:00Z", "text": "Confirm the decision paragraph." }
+  ],
+  "edits": [
+    { "kind": "comment", "matchText": "Confirm the decision paragraph.", "author": "QA Lead", "initials": "QL", "text": "Decision paragraph confirmed." }
   ],
   "expectInspect": [
-    { "kind": "paragraph", "pattern": "Approve after native package review" },
-    { "kind": "table", "pattern": "evidence-table" }
+    { "kind": "paragraph", "pattern": "Approve after document review" },
+    { "kind": "table", "pattern": "evidence-table" },
+    { "kind": "comment", "pattern": "Confirm the decision paragraph" }
   ],
   "qa": {
     "previewFormat": "svg",

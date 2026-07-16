@@ -13,6 +13,7 @@ namespace OpenChestnut.Codec;
 internal sealed class DocxPartContext
 {
     private readonly HashSet<string> _mutatedRelationshipIds = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _mutatedPartPaths = new(StringComparer.OrdinalIgnoreCase);
     private XDocument? _numberingDocument;
     private XDocument? _stylesDocument;
     private bool _numberingDocumentLoaded;
@@ -20,14 +21,32 @@ internal sealed class DocxPartContext
     private string? _mutatedCommentsPartPath;
     private string? _mutatedCommentsRelationshipId;
     private bool _stylesDocumentLoaded;
+    private uint? _nextDrawingId;
 
-    internal DocxPartContext(MainDocumentPart owner)
+    internal DocxPartContext(MainDocumentPart owner, DocxImageAssetCatalog? images = null)
     {
         Owner = owner;
+        Images = images;
     }
 
     internal MainDocumentPart Owner { get; }
+    internal DocxImageAssetCatalog? Images { get; }
     internal IReadOnlyCollection<string> MutatedRelationshipIds => _mutatedRelationshipIds;
+
+    internal uint NextDrawingId()
+    {
+        _nextDrawingId ??= Math.Max(1U, Owner.Document?.Descendants<W.Drawing>()
+            .SelectMany(drawing => drawing.Descendants<DocumentFormat.OpenXml.Drawing.Wordprocessing.DocProperties>())
+            .Select(properties => properties.Id?.Value ?? 0U)
+            .DefaultIfEmpty(0U)
+            .Max() + 1U ?? 1U);
+        var result = _nextDrawingId.Value;
+        _nextDrawingId = result + 1U;
+        return result;
+    }
+
+    internal void MarkPartMutated(OpenXmlPart part) =>
+        _mutatedPartPaths.Add(part.Uri.OriginalString.TrimStart('/'));
 
     // Read semantic support parts without materializing an Open XML SDK root.
     // This prevents AutoSave from normalizing untouched source XML during a
@@ -154,6 +173,7 @@ internal sealed class DocxPartContext
           relationship.Id.Equals(_mutatedCommentsRelationshipId, StringComparison.Ordinal)));
 
     internal bool IgnoresModeledPart(OpenOffice.Artifact.Wire.V1.OpaqueOpcPart part) =>
+        _mutatedPartPaths.Contains(part.Path) ||
         (_mutatedNumberingPartPath is not null &&
          part.Path.Equals(_mutatedNumberingPartPath, StringComparison.OrdinalIgnoreCase)) ||
         (_mutatedCommentsPartPath is not null &&

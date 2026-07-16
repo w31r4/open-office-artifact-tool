@@ -1,319 +1,102 @@
 {
   "name": "formula-summary",
-  "roundtripCodec": "open-chestnut",
-  "dateSystem": "1904",
+  "outputName": "formula-summary.xlsx",
+  "dateSystem": "1900",
   "theme": {
-    "name": "Agent Spreadsheet Theme",
+    "name": "Canonical Spreadsheet Theme",
     "colors": { "accent1": "#0F766E", "accent2": "#7C3AED", "accent3": "#38BDF8" }
   },
-  "outputName": "formula-summary.xlsx",
   "sheets": [
-    {
-      "name": "Inputs",
-      "ranges": [
-        {
-          "range": "A1:C4",
-          "values": [
-            ["Month", "Revenue", "Cost"],
-            ["Jan", 100, 60],
-            ["Feb", 120, 70],
-            ["Mar", 150, 90]
-          ]
-        },
-        {
-          "range": "A1:C1",
-          "format": {
-            "fill": "#0F766E",
-            "font": { "bold": true, "color": "#FFFFFF" },
-            "alignment": { "horizontal": "center" },
-            "rowHeight": 24
-          }
-        },
-        { "range": "A1:A4", "format": { "columnWidth": 12 } },
-        { "range": "B1:C4", "format": { "columnWidth": 14 } },
-        {
-          "range": "B2:C4",
-          "format": { "numberFormat": "$#,##0" }
-        }
-      ],
-      "tables": [
-        { "range": "A1:C4", "name": "InputsTable", "style": "TableStyleMedium4" }
-      ]
-    },
     {
       "name": "Summary",
       "showGridLines": false,
       "freezePanes": { "rows": 1, "columns": 1 },
       "ranges": [
         {
-          "range": "A1:E4",
+          "range": "A1:D4",
           "values": [
-            ["Month", "Revenue", "Cost", "Margin", "Period End"],
-            ["Jan", null, null, null, "2026-01-31T08:00:00Z"],
-            ["Feb", null, null, null, "2026-02-28T12:00:00Z"],
-            ["Mar", null, null, null, "2026-03-31T18:00:00Z"]
+            ["Month", "Revenue", "Cost", "Status"],
+            ["Jan", 100, 60, "Done"],
+            ["Feb", 120, 70, "In progress"],
+            ["Mar", 150, 90, "Planned"]
           ]
         },
         {
-          "range": "B2:D2",
-          "formulas": [
-            ["=Inputs!B2", "=Inputs!C2", "=(B2-C2)/B2"]
-          ]
+          "range": "E1:E4",
+          "values": [["Margin"], [null], [null], [null]],
+          "formulas": [[null], ["=(B2-C2)/B2"], ["=(B3-C3)/B3"], ["=(B4-C4)/B4"]]
         },
-        { "range": "B2:D4", "fillDown": true },
         {
           "range": "A1:E1",
-          "format": {
-            "fill": "#0F172A",
-            "font": { "bold": true, "color": "#FFFFFF" },
-            "alignment": { "horizontal": "center" },
-            "border": {
-              "left": { "style": "thin", "color": "#334155" },
-              "right": { "style": "medium", "color": "#475569" },
-              "top": { "style": "thin", "color": "#64748B" },
-              "bottom": { "style": "double", "color": "#38BDF8" }
-            },
-            "rowHeightPx": 28
-          }
-        },
-        { "range": "A1:A4", "format": { "columnWidth": 12 } },
-        { "range": "B1:C4", "format": { "columnWidthPx": 80 } },
-        { "range": "D1:D4", "format": { "columnWidth": 10 } },
-        { "range": "E1:E4", "format": { "columnWidth": 20 } },
-        { "range": "I1:J22", "format": { "columnWidth": 22 } },
-        {
-          "range": "B2:C4",
-          "format": { "numberFormat": "$#,##0" }
-        },
-        {
-          "range": "D2:D4",
-          "format": { "numberFormat": "0.0%" }
-        },
-        {
-          "range": "F1:G14",
-          "values": [
-            ["Statistic", "Value"],
-            ["Median", null],
-            ["2nd max", null],
-            ["Minimum", null],
-            ["Mar rank", null],
-            ["Rounded", null],
-            ["Margin+", null],
-            ["Margin-", null],
-            ["Mode", null],
-            ["1904=0", null],
-            ["Leap#", null],
-            ["Intl#", null],
-            ["Intl+", null],
-            ["Jan wildcard", null]
-          ]
-        },
-        {
-          "range": "G2:G14",
-          "formulas": [
-            ["=MEDIAN(B2:B4)"],
-            ["=LARGE(B2:B4,2)"],
-            ["=SMALL(B2:B4,1)"],
-            ["=RANK.EQ(B4,B2:B4)"],
-            ["=ROUND(G2,-2)"],
-            ["=ROUNDUP(D3,2)"],
-            ["=ROUNDDOWN(D3,2)"],
-            ["=MODE.SNGL(D2:D4)"],
-            ["=DATE(1904,1,1)"],
-            ["=DATE(2024,2,29)"],
-            ["=NETWORKDAYS.INTL(DATE(1904,1,1),DATE(1904,1,7),7)"],
-            ["=WORKDAY.INTL(DATE(1904,1,1),1,7)"],
-            ["=COUNTIF(A2:A4,\"J*\")"]
-          ]
-        },
-        {
-          "range": "F1:G1",
-          "format": {
-            "fill": "#7C3AED",
-            "font": { "bold": true, "color": "#FFFFFF" }
-          }
-        },
-        {
-          "range": "A14:E14",
-          "format": {
-            "fill": { "patternType": "darkGrid", "foreground": { "theme": 4, "tint": 0.4 }, "background": "#F8FAFC" },
-            "font": { "bold": true, "color": { "theme": 4, "tint": -0.25 } }
-          }
-        },
-        { "range": "F1:G14", "autofitColumns": true },
-        {
-          "range": "A15:G15",
-          "values": [["Prepared by open-office-artifact-tool", null, null, null, null, null, null]],
           "format": {
             "fill": "#0F766E",
             "font": { "bold": true, "color": "#FFFFFF" },
             "alignment": { "horizontal": "center" },
-            "rowHeightPx": 24
-          },
-          "merge": true
-        }
+            "rowHeightPx": 28
+          }
+        },
+        { "range": "B2:C4", "format": { "numberFormat": "$#,##0", "columnWidthPx": 88 } },
+        {
+          "range": "D2:D4",
+          "dataValidation": { "rule": { "type": "list", "values": ["Planned", "In progress", "Done"] } }
+        },
+        {
+          "range": "E2:E4",
+          "format": { "numberFormat": "0.0%" },
+          "conditionalFormats": [
+            { "ruleType": "cellIs", "config": { "operator": "greaterThan", "formula": "0.4", "format": { "fill": "#DCFCE7" } } },
+            { "ruleType": "colorScale", "config": { "colors": ["#FEE2E2", "#FEF3C7", "#22C55E"] } }
+          ]
+        },
+        { "range": "A6:E6", "values": [["Quarter summary", null, null, null, null]], "merge": true, "format": { "fill": "#0F766E", "font": { "bold": true, "color": "#FFFFFF" } } }
       ],
       "tables": [
-        { "range": "A1:E4", "name": "SummaryTable", "style": "TableStyleMedium2" }
+        { "range": "A1:E4", "name": "SummaryTable", "style": "TableStyleMedium4", "showRowStripes": true }
       ],
       "charts": [
-        {
-          "chartType": "bar",
-          "sourceRange": "A1:C4",
-          "name": "Revenue and cost",
-          "title": "Quarter performance",
-          "topLeft": "I2",
-          "bottomRight": "M10"
-        }
-      ],
-      "pivots": [
-        {
-          "name": "RevenuePivot",
-          "sourceRange": "A1:E4",
-          "targetRange": "I18:J22",
-          "groupFields": [
-            { "name": "Period Year", "sourceField": "Period End", "groupBy": "years" },
-            { "name": "Period Quarter", "sourceField": "Period End", "groupBy": "quarters" },
-            { "name": "Period Month", "sourceField": "Period End", "groupBy": "months" }
-          ],
-          "rowFields": ["Period Year", "Period Quarter", "Period Month", "Month", "Period End"],
-          "filters": [
-            { "field": "Month", "include": ["Jan", "Mar"] },
-            { "field": "Period End", "type": "dateBetween", "value1": "2026-03-31T17:00:00Z", "value2": "2026-03-31T19:00:00Z", "useWholeDay": false }
-          ],
-          "refreshPolicy": {
-            "refreshOnLoad": false,
-            "saveData": true,
-            "enableRefresh": true,
-            "missingItemsLimit": 2,
-            "refreshedBy": "Spreadsheet skill",
-            "refreshedDateIso": "2026-07-12T00:00:00Z"
-          },
-          "calculatedFields": [
-            { "name": "Margin Rate", "formula": "=IF(AND(ISNUMBER([Revenue]),[Revenue]>=[Cost],LEN(TRIM(\"  ok  \"))=2,UPPER(LEFT(\"pass\",1))=\"P\",LOWER(RIGHT(\"OK\",1))=\"k\",MID(\"margin\",2,2)=\"ar\"),IFERROR(ROUND(SQRT(POWER([Revenue]-[Cost],2))/[Revenue],2),0),0)" },
-            { "name": "Date Contract", "formula": "=IF(AND(DATE(1904,1,1)=0,YEAR(DATE(2026,3,31))=2026,MONTH(DATE(2026,3,31))=3,DAY(DATE(2026,3,31))=31),[Revenue]-[Cost],0)" },
-            { "name": "Date Shift Contract", "formula": "=IF(AND(DAY(EDATE(DATE(2024,1,31),1))=29,DAY(EOMONTH(DATE(2024,2,10),0))=29,DAYS(DATE(2024,3,1),DATE(2024,2,28))=2,WEEKDAY(DATE(2026,3,31),2)=2),[Revenue]-[Cost],0)" },
-            { "name": "Time Contract", "formula": "=IF(AND(HOUR(TIME(27,0,0))=3,MINUTE(TIME(0,750,0))=30,SECOND(TIME(0,0,2000))=20,HOUR(DATE(2026,3,31)+TIME(18,45,30))=18),[Revenue]-[Cost],0)" },
-            { "name": "Business Day Contract", "formula": "=IF(AND(NETWORKDAYS(DATE(2026,3,30),DATE(2026,4,5),DATE(2026,4,1))=4,DAYS(WORKDAY(DATE(2026,3,30),5,DATE(2026,4,3)),DATE(2026,3,30))=8,NETWORKDAYS.INTL(DATE(2026,3,30),DATE(2026,4,5),11)=6,DAYS(WORKDAY.INTL(DATE(2026,3,30),5,\"0000011\"),DATE(2026,3,30))=7),[Revenue]-[Cost],0)" }
-          ],
-          "valueFields": [
-            { "field": "Revenue", "summarizeBy": "sum", "name": "Revenue total" },
-            { "field": "Margin Rate", "name": "Margin rate" },
-            { "field": "Date Contract", "name": "Date contract" },
-            { "field": "Date Shift Contract", "name": "Date shift contract" },
-            { "field": "Time Contract", "name": "Time contract" },
-            { "field": "Business Day Contract", "name": "Business day contract" }
-          ]
-        }
+        { "chartType": "line", "name": "Revenue trend", "title": "Revenue by month", "sourceRange": "A1:B4", "hasLegend": false, "topLeft": "G1", "bottomRight": "L12" }
       ],
       "images": [
         {
-          "name": "Status marker",
+          "name": "Status mark",
           "alt": "Green status marker",
-          "dataUrl": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MCIgaGVpZ2h0PSI0MCI+PGNpcmNsZSBjeD0iMjAiIGN5PSIyMCIgcj0iMTgiIGZpbGw9IiMyMmM1NWUiLz48cGF0aCBkPSJNMTEgMjBsNiA2IDEyLTE0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjQiLz48L3N2Zz4=",
-          "anchor": {
-            "from": { "row": 11, "col": 8 },
-            "extent": { "widthPx": 48, "heightPx": 48 }
-          }
+          "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAQAAABFaP0WAAAADUlEQVR42mNk+M/wHwAF/gL+3c5GAAAAAElFTkSuQmCC",
+          "anchor": { "from": { "row": 7, "col": 0 }, "extent": { "widthPx": 48, "heightPx": 48 } }
         }
-      ]
-    },
-    {
-      "name": "DateTimeText",
-      "showGridLines": false,
-      "ranges": [
-        {
-          "range": "A1:B9",
-          "values": [
-            ["Conversion", "Result"],
-            ["ISO date", null],
-            ["English date", null],
-            ["Time fraction", null],
-            ["Hour", null],
-            ["Minute", null],
-            ["Second", null],
-            ["Grouped number", null],
-            ["Percent", null]
-          ]
-        },
-        {
-          "range": "B2:B9",
-          "formulas": [
-            ["=DATEVALUE(\"2026-03-31\")"],
-            ["=DATEVALUE(\"31-Mar-2026 6:45 PM\")"],
-            ["=TIMEVALUE(\"6:45 PM\")"],
-            ["=HOUR(TIME(18,45,18))"],
-            ["=MINUTE(\"6:45:18 PM\")"],
-            ["=SECOND(\"6:45:18 PM\")"],
-            ["=VALUE(\"1,234.50\")"],
-            ["=VALUE(\"12.5%\")"]
-          ]
-        },
-        {
-          "range": "A1:B1",
-          "format": { "fill": "#0F766E", "font": { "bold": true, "color": "#FFFFFF" }, "alignment": { "horizontal": "center" } }
-        },
-        { "range": "A1:B9", "autofitColumns": true },
-        { "range": "A1:A9", "format": { "columnWidth": 18 } },
-        { "range": "B1:B9", "format": { "columnWidth": 16 } },
-        { "range": "B2:B3", "format": { "numberFormat": "yyyy-mm-dd" } },
-        { "range": "B4:B4", "format": { "numberFormat": "h:mm AM/PM" } },
-        { "range": "B9:B9", "format": { "numberFormat": "0.0%" } }
       ]
     }
   ],
   "commentSelf": { "displayName": "Spreadsheet Agent" },
   "comments": [
     {
+      "id": "margin-review",
       "sheet": "Summary",
-      "address": "D2",
-      "text": "Verify the modeled margin before delivery.",
+      "address": "E2",
+      "text": "Check the modeled margin.",
+      "author": "Reviewer",
       "resolved": true,
       "comment": {
-        "id": "{44444444-4444-4444-8444-444444444444}",
-        "personId": "{CCCCCCCC-CCCC-4CCC-8CCC-CCCCCCCCCCCC}",
-        "person": { "id": "{CCCCCCCC-CCCC-4CCC-8CCC-CCCCCCCCCCCC}", "displayName": "Spreadsheet Agent", "userId": "agent@example.com", "providerId": "None" },
-        "date": "2026-07-12T10:00:00.000Z"
-      },
-      "replies": [
-        {
-          "text": "Margin evidence is approved.",
-          "author": "QA Reviewer",
-          "id": "{55555555-5555-4555-8555-555555555555}",
-          "parentId": "{44444444-4444-4444-8444-444444444444}",
-          "personId": "{DDDDDDDD-DDDD-4DDD-8DDD-DDDDDDDDDDDD}",
-          "person": { "id": "{DDDDDDDD-DDDD-4DDD-8DDD-DDDDDDDDDDDD}", "displayName": "QA Reviewer", "userId": "reviewer@example.com", "providerId": "None" },
-          "date": "2026-07-12T10:05:00.000Z"
+        "id": "{11111111-1111-4111-8111-111111111111}",
+        "personId": "{AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA}",
+        "date": "2026-07-16T09:00:00.000Z",
+        "person": {
+          "id": "{AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA}",
+          "displayName": "Reviewer",
+          "userId": "reviewer@example.com",
+          "providerId": "None"
         }
-      ]
+      }
     }
   ],
+  "activeWorksheet": "Summary",
   "expectations": [
-    {
-      "sheet": "Summary",
-      "range": "B2:D4",
-      "values": [
-        [100, 60, 0.4],
-        [120, 70, 0.4166666666666667],
-        [150, 90, 0.4]
-      ]
-    },
-    {
-      "sheet": "Summary",
-      "range": "G2:G14",
-      "values": [[120], [120], [100], [1], [100], [0.42], [0.41], [0.4], [0], [43889], [5], [2], [1]]
-    },
-    {
-      "sheet": "DateTimeText",
-      "range": "B2:B9",
-      "values": [[44650], [44650], [0.78125], [18], [45], [18], [1234.5], [0.125]]
-    }
+    { "sheet": "Summary", "range": "E2:E4", "values": [[0.4], [0.4166666666666667], [0.4]] }
   ],
   "qa": {
     "sheetName": "Summary",
-    "range": "A1:G15",
-    "renderFormat": "svg",
-    "inspectKind": "workbook,sheet,table,pivotTable,formula,style,computedStyle,merge,drawing,thread",
-    "maxChars": 30000
+    "range": "A1:L12",
+    "renderFormat": "png",
+    "inspectKind": "workbook,sheet,table,formula,style,computedStyle,drawing,thread",
+    "maxChars": 16000
   }
 }

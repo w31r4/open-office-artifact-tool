@@ -37,8 +37,8 @@ function sha256(bytes) {
 
 // Materialize only the bounded part closure selected by the C# codec. The
 // complete source package remains canonical in opaque_opc; byte extraction is
-// needed solely so the ordinary JS presentation model can preserve/export the
-// same read-only native object through its fallback codec as well.
+// needed solely so the ordinary JS presentation model can retain the same
+// read-only native object until its next canonical OpenChestnut export.
 export async function materializePresentationNativeGraphs(envelope) {
   const opaqueOpc = envelope.opaqueOpc;
   const opaqueElements = envelope.payload?.case === "presentation"

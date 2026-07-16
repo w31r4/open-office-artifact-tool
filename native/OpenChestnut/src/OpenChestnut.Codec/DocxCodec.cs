@@ -28,7 +28,7 @@ internal static class DocxCodec
         if (opaqueCount > 0)
             diagnostics.Add(CodecProtocol.Warning(
                 "opaque_content_retained",
-                $"Retained {opaqueCount} unsupported OPC parts or relationships with a hash-bound source package snapshot for loss-aware export.",
+                $"Retained {opaqueCount} unsupported OPC parts or relationships for source-bound, fail-closed export from the validated package snapshot.",
                 opaque.Parts.FirstOrDefault()?.Path ?? opaque.PackageRelationships.FirstOrDefault()?.SourcePath));
 
         using var stream = new MemoryStream(bytes, writable: false);
@@ -37,9 +37,11 @@ internal static class DocxCodec
             throw new CodecException("missing_document_part", "DOCX package has no Main Document part.", "word/document.xml");
         var body = mainPart.Document?.Body ??
             throw new CodecException("missing_document_body", "DOCX package has no document body.", "word/document.xml");
-        var context = new DocxPartContext(mainPart);
+        var imageAssets = new DocxImageAssetCatalog(null, limits);
+        var context = new DocxPartContext(mainPart, imageAssets);
 
         var document = new DocumentArtifact { Id = "document/1", Name = "Imported document" };
+        DocxDirectStyles.Read(mainPart, document);
         ulong semanticItems = 0;
         var ordinal = 0;
         for (var bodyIndex = 0; bodyIndex < body.ChildElements.Count; bodyIndex++)
@@ -50,6 +52,7 @@ internal static class DocxCodec
             document.Blocks.Add(block);
         }
         DocxClassicCommentCodec.Read(context, body, document, ref semanticItems, limits, diagnostics);
+        DocxHeaderFooterCodec.Read(mainPart, body, document, diagnostics);
 
         var envelope = new ArtifactEnvelope
         {
@@ -64,27 +67,25 @@ internal static class DocxCodec
                 Producer = "open-office-artifact-tool/OpenChestnut",
             },
         };
+        envelope.Assets.Add(imageAssets.ImportedAssets);
         envelope.Diagnostics.Add(diagnostics);
         return new DocxImportResult(envelope, diagnostics);
     }
 
-    internal static DocxExportResult Export(ArtifactEnvelope envelope, EffectiveCodecLimits limits, bool allowLossy)
+    internal static DocxExportResult Export(ArtifactEnvelope envelope, EffectiveCodecLimits limits)
     {
-        ValidateEnvelope(envelope, limits);
+        var imageAssets = new DocxImageAssetCatalog(envelope.Assets, limits);
+        ValidateEnvelope(envelope, limits, imageAssets);
         var opaqueCount = (envelope.OpaqueOpc?.Parts.Count ?? 0) +
                           (envelope.OpaqueOpc?.PackageRelationships.Count ?? 0);
         if (envelope.OpaqueOpc?.SourcePackage is { Data.IsEmpty: false })
             return ExportPreservingSource(envelope, limits, opaqueCount);
-        if (opaqueCount > 0 && !allowLossy)
+        if (opaqueCount > 0)
             throw new CodecException(
                 "opaque_content_requires_preservation",
-                "Document contains opaque OPC parts or relationships but its validated source package snapshot is unavailable; pass allow_lossy only when discarding them is intentional.");
+                "Document contains opaque OPC parts or relationships but its validated source package snapshot is unavailable.");
 
         var diagnostics = new List<Diagnostic>();
-        if (opaqueCount > 0)
-            diagnostics.Add(CodecProtocol.Warning(
-                "opaque_content_discarded",
-                $"Discarded {opaqueCount} opaque OPC parts or relationships under explicit allow_lossy policy."));
 
         var numberingPlan = DocxDirectNumbering.CreatePlan(envelope.Document);
         using var stream = new MemoryStream();
@@ -93,12 +94,27 @@ internal static class DocxCodec
             var mainPart = package.AddMainDocumentPart();
             DocxDirectStyles.AddRequiredStyles(mainPart, envelope.Document);
             DocxDirectNumbering.Apply(mainPart, numberingPlan);
-            var context = new DocxPartContext(mainPart);
+            var context = new DocxPartContext(mainPart, imageAssets);
+            var headerFooterPlan = DocxHeaderFooterCodec.Author(mainPart, envelope.Document);
             var body = new W.Body();
             mainPart.Document = new W.Document(body);
-            foreach (var block in envelope.Document.Blocks) body.Append(BuildBlock(block, context));
+            uint sectionIndex = 0;
+            foreach (var block in envelope.Document.Blocks)
+            {
+                if (block.ContentCase == DocumentBlock.ContentOneofCase.Section)
+                {
+                    body.Append(DocxSectionCodec.BuildBoundary(
+                        block.Section,
+                        headerFooterPlan.References(sectionIndex),
+                        headerFooterPlan.DifferentFirstPage(sectionIndex)));
+                    sectionIndex++;
+                }
+                else body.Append(BuildBlock(block, context));
+            }
             DocxClassicCommentCodec.Author(context, body, envelope.Document);
-            body.Append(new W.SectionProperties());
+            body.Append(DocxSectionCodec.BuildFinal(
+                headerFooterPlan.References(sectionIndex),
+                headerFooterPlan.DifferentFirstPage(sectionIndex)));
             mainPart.Document.Save();
         }
 
@@ -116,6 +132,7 @@ internal static class DocxCodec
             limits,
             OpcPackageProfile.Docx);
         DocxClassicCommentCodec.AssertModeledCommentsWereNotRemoved(sourceBytes, envelope.Document);
+        var imageAssets = new DocxImageAssetCatalog(envelope.Assets, limits);
         using var stream = new MemoryStream();
         stream.Write(sourceBytes);
         stream.Position = 0;
@@ -126,7 +143,9 @@ internal static class DocxCodec
                 throw new CodecException("missing_document_part", "DOCX package has no Main Document part.", "word/document.xml");
             var body = mainPart.Document?.Body ??
                 throw new CodecException("missing_document_body", "DOCX package has no document body.", "word/document.xml");
-            context = new DocxPartContext(mainPart);
+            context = new DocxPartContext(mainPart, imageAssets);
+            DocxDirectStyles.AssertSourceUnchanged(mainPart, envelope.Document);
+            DocxHeaderFooterCodec.AssertSourceUnchanged(mainPart, body, envelope.Document);
             var sourceElements = body.ChildElements.Where(element => element is not W.SectionProperties).ToArray();
             if (sourceElements.Length != envelope.Document.Blocks.Count)
                 throw new CodecException(
@@ -312,6 +331,45 @@ internal static class DocxCodec
                             $"Document numbered paragraph block {ordinal} does not match the requested modeled semantics after editing.",
                             "word/document.xml");
                 }
+                else if (block.ContentCase == DocumentBlock.ContentOneofCase.Image)
+                {
+                    if (element is not W.Paragraph imageParagraph)
+                        throw new CodecException(
+                            "unsupported_document_edit",
+                            $"Document image block {ordinal} source topology is not editable by this codec slice.",
+                            "word/document.xml");
+                    DocxImageCodec.Apply(imageParagraph, block, context);
+                    ulong verificationItems = 0;
+                    var verified = ReadBodyBlock(imageParagraph, ordinal, binding.BodyIndex, ref verificationItems, limits, context);
+                    if (!SemanticHash(verified).Equals(SemanticHash(block), StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "document_semantics_not_applied",
+                            $"Document image block {ordinal} does not match the requested modeled semantics after editing.",
+                            "word/document.xml");
+                }
+                else if (block.ContentCase == DocumentBlock.ContentOneofCase.Section)
+                {
+                    if (element is not W.Paragraph sectionParagraph ||
+                        string.IsNullOrWhiteSpace(binding.ResidualSha256) ||
+                        !DocxSectionCodec.ResidualHash(sectionParagraph).Equals(binding.ResidualSha256, StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "document_source_residual_mismatch",
+                            $"Document section block {ordinal} source content does not match its binding.",
+                            "word/document.xml");
+                    DocxSectionCodec.Apply(sectionParagraph, block.Section);
+                    if (!DocxSectionCodec.ResidualHash(sectionParagraph).Equals(binding.ResidualSha256, StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "document_residual_not_preserved",
+                            $"Document section block {ordinal} changed unmodeled section content.",
+                            "word/document.xml");
+                    ulong verificationItems = 0;
+                    var verified = ReadBodyBlock(sectionParagraph, ordinal, binding.BodyIndex, ref verificationItems, limits, context);
+                    if (!SemanticHash(verified).Equals(SemanticHash(block), StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "document_semantics_not_applied",
+                            $"Document section block {ordinal} does not match the requested modeled semantics after editing.",
+                            "word/document.xml");
+                }
                 else
                 {
                     element.InsertBeforeSelf(BuildBlock(block, context));
@@ -354,6 +412,19 @@ internal static class DocxCodec
         {
             case W.Paragraph paragraph:
                 block.StyleId = paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value ?? string.Empty;
+                if (DocxSectionCodec.TryReadBoundary(paragraph, out var section, out editable))
+                {
+                    block.Section = section;
+                    semanticItems++;
+                    break;
+                }
+                if (DocxImageCodec.TryRead(paragraph, context, out var image))
+                {
+                    block.Image = image;
+                    editable = true;
+                    semanticItems++;
+                    break;
+                }
                 if (DocxNumberedParagraphCodec.TryRead(paragraph, context, out var numberedParagraph, out editable))
                 {
                     block.Paragraph = numberedParagraph;
@@ -373,7 +444,11 @@ internal static class DocxCodec
                     break;
                 }
                 editable = IsSimpleParagraph(paragraph);
-                var paragraphArtifact = new DocumentParagraph { Text = DescendantText(paragraph) };
+                var paragraphArtifact = new DocumentParagraph
+                {
+                    Text = DescendantText(paragraph),
+                    Formatting = DocxFormattingCodec.ReadParagraphFormatting(paragraph.ParagraphProperties),
+                };
                 if (editable)
                 {
                     foreach (var run in paragraph.Elements<W.Run>()) paragraphArtifact.Runs.Add(ReadRun(run));
@@ -415,6 +490,8 @@ internal static class DocxCodec
                 block.Source.ResidualSha256 = DocxFieldCodec.ResidualHash(sourceParagraph);
             else if (block.ContentCase == DocumentBlock.ContentOneofCase.Paragraph && block.Paragraph.Numbering is not null && editable)
                 block.Source.ResidualSha256 = DocxNumberedParagraphCodec.ResidualHash(sourceParagraph);
+            else if (block.ContentCase == DocumentBlock.ContentOneofCase.Section && editable)
+                block.Source.ResidualSha256 = DocxSectionCodec.ResidualHash(sourceParagraph);
         }
         else if (element is W.Table sourceTable && block.ContentCase == DocumentBlock.ContentOneofCase.Table && editable)
         {
@@ -427,7 +504,8 @@ internal static class DocxCodec
     private static DocumentRun ReadRun(W.Run run)
     {
         var properties = run.RunProperties;
-        return new DocumentRun
+        var formatting = DocxFormattingCodec.ReadRunFormatting(properties);
+        var result = new DocumentRun
         {
             Text = DescendantText(run),
             StyleId = properties?.RunStyle?.Val?.Value ?? string.Empty,
@@ -435,16 +513,17 @@ internal static class DocxCodec
             Italic = IsOn(properties?.Italic),
             Underline = IsUnderline(properties?.Underline),
         };
+        if (formatting is not null) result.Formatting = formatting;
+        return result;
     }
 
     private static bool IsSimpleParagraph(W.Paragraph paragraph)
     {
         if (paragraph.ChildElements.Any(child => child is not W.ParagraphProperties and not W.Run)) return false;
-        if (paragraph.ParagraphProperties?.ChildElements.Any(child => child is not W.ParagraphStyleId) == true) return false;
+        if (!DocxFormattingCodec.IsSupportedParagraphProperties(paragraph.ParagraphProperties)) return false;
         return paragraph.Elements<W.Run>().All(run =>
             run.ChildElements.All(child => child is W.RunProperties or W.Text) &&
-            (run.RunProperties?.ChildElements.All(child =>
-                child is W.RunStyle or W.Bold or W.Italic or W.Underline) ?? true));
+            DocxFormattingCodec.IsSupportedRunProperties(run.RunProperties));
     }
 
     private static OpenXmlElement BuildBlock(DocumentBlock block, DocxPartContext context) => block.ContentCase switch
@@ -453,6 +532,10 @@ internal static class DocxCodec
         DocumentBlock.ContentOneofCase.Table => DocxTableCodec.Build(block),
         DocumentBlock.ContentOneofCase.Hyperlink => DocxHyperlinkCodec.Build(block, context),
         DocumentBlock.ContentOneofCase.Field => DocxFieldCodec.Build(block),
+        DocumentBlock.ContentOneofCase.Image => DocxImageCodec.Build(block, context),
+        DocumentBlock.ContentOneofCase.Section => throw new CodecException(
+            "invalid_document_section",
+            $"Document section block {block.Id} must be emitted through the section-aware document writer."),
         DocumentBlock.ContentOneofCase.Opaque => throw new CodecException(
             "unsupported_document_block",
             $"Opaque document block {block.Id} requires its validated source package and cannot be authored from scratch."),
@@ -462,14 +545,11 @@ internal static class DocxCodec
     private static W.Paragraph BuildParagraph(DocumentBlock block)
     {
         var paragraph = new W.Paragraph();
-        var paragraphProperties = new W.ParagraphProperties();
-        if (!string.IsNullOrWhiteSpace(block.StyleId))
-            paragraphProperties.Append(new W.ParagraphStyleId { Val = block.StyleId });
-        if (block.Paragraph.Numbering is { } numbering)
-            paragraphProperties.Append(new W.NumberingProperties(
-                new W.NumberingLevelReference { Val = checked((int)numbering.Level) },
-                new W.NumberingId { Val = checked((int)numbering.NumberingId) }));
-        if (paragraphProperties.ChildElements.Count > 0) paragraph.ParagraphProperties = paragraphProperties;
+        var paragraphProperties = DocxFormattingCodec.BuildParagraphProperties(
+            block.StyleId,
+            block.Paragraph.Formatting,
+            block.Paragraph.Numbering);
+        if (paragraphProperties is not null) paragraph.ParagraphProperties = paragraphProperties;
         if (block.Paragraph.Runs.Count == 0)
         {
             if (block.Paragraph.Text.Length > 0) paragraph.Append(new W.Run(Text(block.Paragraph.Text)));
@@ -478,12 +558,8 @@ internal static class DocxCodec
         foreach (var source in block.Paragraph.Runs)
         {
             var run = new W.Run();
-            var properties = new W.RunProperties();
-            if (!string.IsNullOrWhiteSpace(source.StyleId)) properties.Append(new W.RunStyle { Val = source.StyleId });
-            if (source.Bold) properties.Append(new W.Bold());
-            if (source.Italic) properties.Append(new W.Italic());
-            if (source.Underline) properties.Append(new W.Underline { Val = W.UnderlineValues.Single });
-            if (properties.ChildElements.Count > 0) run.Append(properties);
+            var properties = DocxFormattingCodec.BuildRunProperties(source);
+            if (properties is not null) run.Append(properties);
             run.Append(Text(source.Text));
             paragraph.Append(run);
         }
@@ -520,7 +596,7 @@ internal static class DocxCodec
     private static string HashElement(OpenXmlElement element) => Hash(Encoding.UTF8.GetBytes(element.OuterXml));
     private static string Hash(ReadOnlySpan<byte> bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
-    private static void ValidateEnvelope(ArtifactEnvelope envelope, EffectiveCodecLimits limits)
+    private static void ValidateEnvelope(ArtifactEnvelope envelope, EffectiveCodecLimits limits, DocxImageAssetCatalog images)
     {
         if (envelope.ProtocolVersion != CodecProtocol.ProtocolVersion)
             throw new CodecException("unsupported_artifact_version", $"Artifact protocol version {envelope.ProtocolVersion} is unsupported.");
@@ -529,6 +605,10 @@ internal static class DocxCodec
         if ((ulong)envelope.Document.Blocks.Count > limits.MaxCells)
             throw new CodecException("document_item_budget_exceeded", $"Document has {envelope.Document.Blocks.Count} blocks and exceeds max_cells ({limits.MaxCells}).");
         DocxClassicCommentCodec.Validate(envelope.Document, limits);
+        DocxDirectStyles.Validate(
+            envelope.Document,
+            allowImportedCycles: envelope.OpaqueOpc?.SourcePackage is { Data.IsEmpty: false });
+        DocxHeaderFooterCodec.Validate(envelope.Document);
 
         ulong semanticItems = checked((ulong)envelope.Document.Comments.Count);
         foreach (var block in envelope.Document.Blocks)
@@ -537,6 +617,9 @@ internal static class DocxCodec
             {
                 case DocumentBlock.ContentOneofCase.Paragraph:
                     if (block.Paragraph.Numbering is not null) DocxNumberedParagraphCodec.Validate(block.Paragraph);
+                    DocxFormattingCodec.Validate(block.Paragraph.Formatting, $"Document paragraph {block.Id}");
+                    foreach (var run in block.Paragraph.Runs)
+                        DocxFormattingCodec.Validate(DocxFormattingCodec.MergeLegacy(run), $"Document paragraph {block.Id} run");
                     if (block.Paragraph.Runs.Count > 0 && block.Paragraph.Text != string.Concat(block.Paragraph.Runs.Select(run => run.Text)))
                         throw new CodecException("inconsistent_document_text", $"Document paragraph {block.Id} text does not match its runs.");
                     semanticItems += checked((ulong)Math.Max(1, block.Paragraph.Runs.Count));
@@ -552,6 +635,14 @@ internal static class DocxCodec
                 case DocumentBlock.ContentOneofCase.Field:
                     if (block.Source?.Editable == false) DocxFieldCodec.ValidatePreserved(block.Field);
                     else DocxFieldCodec.Validate(block.Field);
+                    semanticItems++;
+                    break;
+                case DocumentBlock.ContentOneofCase.Image:
+                    DocxImageCodec.Validate(block.Image, block.Id, images);
+                    semanticItems++;
+                    break;
+                case DocumentBlock.ContentOneofCase.Section:
+                    DocxSectionCodec.Validate(block.Section, $"Document section {block.Id}");
                     semanticItems++;
                     break;
                 case DocumentBlock.ContentOneofCase.Opaque:

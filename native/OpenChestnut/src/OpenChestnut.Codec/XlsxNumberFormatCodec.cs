@@ -2,7 +2,7 @@ namespace OpenChestnut.Codec;
 
 // Pure number-format vocabulary shared by XlsxCellStyleCodec. Stylesheet
 // ownership intentionally lives in one codec so a font/fill/border change and
-// a number-format change produce one loss-aware derived cell-format record.
+// a number-format change produce one source-bound derived cell-format record.
 internal static class XlsxNumberFormatCodec
 {
     internal const int MaxFormatCodeLength = 4_096;

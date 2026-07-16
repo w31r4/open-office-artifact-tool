@@ -5,6 +5,7 @@ using Google.Protobuf;
 using System.IO.Compression;
 using OpenOffice.Artifact.Wire.V1;
 using A = DocumentFormat.OpenXml.Drawing;
+using C = DocumentFormat.OpenXml.Drawing.Charts;
 using P = DocumentFormat.OpenXml.Presentation;
 using S = DocumentFormat.OpenXml.Spreadsheet;
 using Xunit;
@@ -34,6 +35,136 @@ public sealed class PptxCodecTests
                     Assert.True(shape.Source.Editable);
                     Assert.Equal("rect", shape.Shape.Geometry);
                 }));
+    }
+
+    [Fact]
+    public void CoreShapesConnectorsAndLiteralChartsAuthorImportAndEdit()
+    {
+        var request = ExportRequest();
+        var slide = request.Artifact.Presentation.Slides[0];
+        var first = slide.Elements[0];
+        first.Shape.Geometry = "roundRect";
+        first.Shape.Shadow = new PresentationShadow
+        {
+            ColorRgb = "000000",
+            BlurRadiusEmu = 38_100,
+            DistanceEmu = 19_050,
+            DirectionAngle60000 = 45 * 60_000,
+            OpacityThousandthPercent = 20_000,
+        };
+        var second = new PresentationElement
+        {
+            Id = "presentation/slide/1/body",
+            Name = "Body textbox",
+            Shape = new PresentationShape
+            {
+                Geometry = "textbox",
+                LeftEmu = 7_000_000,
+                TopEmu = 1_300_000,
+                WidthEmu = 3_000_000,
+                HeightEmu = 800_000,
+                Text = "Bounded textbox",
+                FillRgb = "FFFFFF",
+                LineRgb = "64748B",
+                LineWidthEmu = 12_700,
+            },
+        };
+        slide.Elements.Add(second);
+        slide.Elements.Add(new PresentationElement
+        {
+            Id = "presentation/slide/1/connector",
+            Name = "Evidence flow",
+            Connector = new PresentationConnector
+            {
+                ConnectorType = "elbow",
+                StartXEmu = 2_000_000,
+                StartYEmu = 1_200_000,
+                EndXEmu = 8_000_000,
+                EndYEmu = 1_700_000,
+                LineRgb = "2563EB",
+                LineWidthEmu = 25_400,
+                StartArrow = "triangle",
+                EndArrow = "triangle",
+                StartTargetId = first.Id,
+                EndTargetId = second.Id,
+            },
+        });
+        foreach (var (type, index) in new[] { (SpreadsheetChartType.Bar, 0), (SpreadsheetChartType.Line, 1), (SpreadsheetChartType.Pie, 2) })
+        {
+            var chart = new PresentationChart
+            {
+                LeftEmu = 500_000 + index * 3_600_000L,
+                TopEmu = 2_400_000,
+                WidthEmu = 3_200_000,
+                HeightEmu = 2_500_000,
+                Type = type,
+                Title = $"{type} evidence",
+                HasLegend = true,
+                DataLabels = new SpreadsheetChartDataLabelsArtifact { ShowValue = true, Position = SpreadsheetChartDataLabelPosition.Top },
+            };
+            chart.Categories.Add(["A", "B"]);
+            chart.Series.Add(new SpreadsheetChartSeriesArtifact
+            {
+                Name = "Coverage",
+                Fill = new SpreadsheetColor { Rgb = index == 0 ? "2563EB" : index == 1 ? "16A34A" : "F97316" },
+                Line = type == SpreadsheetChartType.Line ? new SpreadsheetChartLineStyleArtifact { Color = new SpreadsheetColor { Rgb = "16A34A" }, DashStyle = SpreadsheetChartLineDashStyle.Solid, WidthPoints = 2 } : null,
+                Marker = type == SpreadsheetChartType.Line ? new SpreadsheetChartMarkerArtifact { Symbol = SpreadsheetChartMarkerSymbol.Circle, Size = 6 } : null,
+            });
+            chart.Series[0].Values.Add([3, 5]);
+            if (type != SpreadsheetChartType.Pie)
+            {
+                chart.XAxis = new SpreadsheetChartAxisArtifact { Title = "Category" };
+                chart.YAxis = new SpreadsheetChartAxisArtifact { Title = "Score", Minimum = 0, Maximum = 10, MajorUnit = 2 };
+            }
+            slide.Elements.Add(new PresentationElement
+            {
+                Id = $"presentation/slide/1/chart/{index + 1}",
+                Name = $"{type} chart",
+                Chart = chart,
+            });
+        }
+
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var nativeSlide = package.PresentationPart!.SlideParts.Single().Slide!;
+            Assert.Equal(2, nativeSlide.Descendants<P.Shape>().Count());
+            Assert.Single(nativeSlide.Descendants<P.ConnectionShape>());
+            Assert.Equal(3, nativeSlide.Descendants<C.ChartReference>().Count());
+            Assert.Equal(3, package.PresentationPart.SlideParts.Single().ChartParts.Count());
+            Assert.NotNull(nativeSlide.Descendants<A.OuterShadow>().Single());
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var elements = Assert.Single(imported.Artifact.Presentation.Slides).Elements;
+        Assert.Equal("roundRect", elements[0].Shape.Geometry);
+        Assert.Equal("textbox", elements[1].Shape.Geometry);
+        Assert.NotNull(elements[0].Shape.Shadow);
+        var connector = Assert.Single(elements, item => item.ContentCase == PresentationElement.ContentOneofCase.Connector);
+        Assert.True(connector.Source.Editable);
+        Assert.Equal(elements[0].Id, connector.Connector.StartTargetId);
+        var charts = elements.Where(item => item.ContentCase == PresentationElement.ContentOneofCase.Chart).ToArray();
+        Assert.Equal([SpreadsheetChartType.Bar, SpreadsheetChartType.Line, SpreadsheetChartType.Pie], charts.Select(item => item.Chart.Type));
+        Assert.All(charts, item => Assert.True(item.Source.Editable));
+
+        elements[0].Shape.Shadow.OpacityThousandthPercent = 35_000;
+        connector.Connector.EndArrow = string.Empty;
+        charts[0].Chart.Title = "Edited evidence";
+        charts[0].Chart.Series[0].Values[1] = 8;
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var roundTrip = Import(edited.File.ToByteArray());
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        var roundTripElements = Assert.Single(roundTrip.Artifact.Presentation.Slides).Elements;
+        Assert.Equal(35_000U, roundTripElements[0].Shape.Shadow.OpacityThousandthPercent);
+        Assert.Equal(string.Empty, Assert.Single(roundTripElements, item => item.ContentCase == PresentationElement.ContentOneofCase.Connector).Connector.EndArrow);
+        var roundTripChart = roundTripElements.First(item => item.ContentCase == PresentationElement.ContentOneofCase.Chart).Chart;
+        Assert.Equal("Edited evidence", roundTripChart.Title);
+        Assert.Equal(8, roundTripChart.Series[0].Values[1]);
     }
 
     [Fact]

@@ -1,251 +1,119 @@
 {
   "name": "open-chestnut-preservation",
   "outputName": "open-chestnut-preservation.pptx",
-  "roundtripCodec": "open-chestnut",
   "slideSize": { "width": 1280, "height": 720 },
-  "master": {
-    "id": "master/open-chestnut",
-    "name": "OpenChestnut Master",
-    "background": "#FFFFFF",
-    "placeholders": [
-      {
-        "type": "title",
-        "idx": 0,
-        "name": "Master WASM Prompt",
-        "position": { "left": 48, "top": 20, "width": 1184, "height": 80 },
-        "transform": { "rotationDegrees": 1, "flipHorizontal": true, "flipVertical": false },
-        "text": "Before master placeholder",
-        "textBodyProperties": { "anchor": "center" }
-      }
-    ],
-    "textParagraphStyles": {
-      "title": {
-        "0": { "alignment": "center", "style": { "fontSize": 40, "bold": true, "fontFamily": "Aptos Display", "color": "accent1" } }
-      },
-      "body": {
-        "1": { "bulletCharacter": "•", "marginLeft": 72, "indent": -24, "style": { "fontSize": 24, "color": "tx1" } }
-      }
-    }
-  },
-  "layouts": [
-    {
-      "id": "layout/open-chestnut",
-      "name": "OpenChestnut Layout",
-      "type": "blank",
-      "masterId": "master/open-chestnut",
-      "background": "#F0FDF4",
-      "placeholders": [
-        {
-          "type": "body",
-          "idx": 2,
-          "name": "Layout WASM Prompt",
-          "position": { "left": 48, "top": 560, "width": 1184, "height": 44 },
-          "transform": { "rotationDegrees": -2, "flipHorizontal": false },
-          "text": "Before layout placeholder",
-          "textBodyProperties": { "anchor": "top" }
-        },
-        {
-          "type": "body",
-          "idx": 3,
-          "name": "Inherited Slide Geometry",
-          "position": { "left": 920, "top": 670, "width": 300, "height": 48 },
-          "transform": { "rotationDegrees": 4, "flipVertical": true },
-          "text": "Inherited slide frame"
-        }
-      ]
-    }
-  ],
   "slides": [
     {
-      "name": "Loss-aware preservation",
-      "layoutId": "layout/open-chestnut",
-      "notes": "The chart, image, notes, master, theme, parts, and relationships must survive the C# Open XML SDK WebAssembly roundtrip.",
+      "name": "Canonical roundtrip",
       "shapes": [
         {
-          "name": "inherited-slide-geometry",
-          "position": { "left": 920, "top": 670, "width": 300, "height": 48 },
+          "name": "roundtrip-title",
+          "geometry": "textbox",
+          "position": { "left": 52, "top": 28, "width": 1176, "height": 64 },
           "fill": "transparent",
           "line": { "fill": "transparent", "width": 0 },
-          "placeholder": { "layoutId": "layout/open-chestnut", "type": "body", "idx": 3, "name": "Inherited Slide Geometry" },
-          "text": "Inherited slide frame"
+          "text": "Canonical OpenChestnut roundtrip",
+          "textStyle": { "fontFamily": "Arial", "fontSize": 36, "bold": true, "color": "#0F172A" }
         },
         {
-          "name": "wasm-title",
-          "position": { "left": 48, "top": 20, "width": 1184, "height": 200 },
-          "transform": { "rotationDegrees": 3, "flipHorizontal": false },
-          "fill": "#FFFFFF",
-          "line": { "fill": "#334155", "width": 1 },
-          "textBodyProperties": { "insets": { "left": 8, "top": 4, "right": 12, "bottom": 6 }, "anchor": "center", "wrap": "none", "autoFit": "shrinkText", "rotation": 15, "verticalText": "vertical", "verticalOverflow": "ellipsis", "horizontalOverflow": "clip", "columns": { "count": 2, "spacing": 18, "rightToLeft": true }, "upright": true },
-          "paragraphStyles": {
-            "0": { "bulletCharacter": "▪", "bulletColor": "accent3", "marginLeft": 28, "indent": -14, "spaceAfter": 4, "style": { "fontSize": 18, "color": "tx1" } },
-            "2": { "autoNumber": { "type": "romanLcPeriod", "startAt": 2 }, "bulletFontFollowText": true, "lineSpacing": 1.15, "style": { "fontSize": 17, "color": "accent4" } }
-          },
-          "text": [
-            {
-              "tabStops": [{ "position": 760, "alignment": "left" }],
-              "runs": [
-                { "text": "Before OpenChestnut\t", "style": { "fontSize": 28, "bold": true, "color": "#0F172A" }, "link": { "uri": "https://example.com/before", "tooltip": "Original evidence", "history": false } },
-                { "field": { "id": "{11111111-2222-4333-8444-555555555555}", "type": "slidenum", "text": "1" }, "style": { "fontSize": 22, "bold": true, "color": "#2563EB" } },
-                { "break": true, "style": { "fontSize": 18 } },
-                { "text": "Field and line-break evidence", "style": { "fontSize": 18, "color": "#475569" } }
-              ]
-            },
-            { "bulletCharacter": "•", "bulletFont": "Georgia", "bulletColor": "#DC2626", "bulletSizePercent": 1.5, "marginLeft": 32, "indent": -16, "lineSpacing": 1.25, "spaceBefore": 12, "spaceAfterPercent": 0.5, "style": { "fontSize": 18, "color": "accent2" }, "runs": [{ "text": "Character marker", "link": { "action": "nextSlide" } }] },
-            { "autoNumber": { "type": "romanLcPeriod", "startAt": 3 }, "bulletFontFollowText": true, "bulletColorFollowText": true, "bulletSizeFollowText": true, "runs": [{ "text": "Automatic marker", "style": { "fontSize": 18, "color": "#334155" }, "link": { "uri": "https://example.com/remove" } }] },
-            { "bulletImage": { "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAMUlEQVR4nGMQW+z1n5aYYdQCsdEgEhtNRWKjGW3xaFGxeLQ0XTxa4XiNVpleg7tVAQAE34S9d7s/SwAAAABJRU5ErkJggg==" }, "runs": [{ "text": "Picture marker", "style": { "fontSize": 18, "color": "#334155" } }] }
-          ]
+          "name": "source-card",
+          "geometry": "roundRect",
+          "position": { "left": 64, "top": 130, "width": 260, "height": 110 },
+          "fill": "#DBEAFE",
+          "line": { "fill": "#2563EB", "width": 2 },
+          "shadow": { "color": "#000000", "blurRadius": 8, "distance": 4, "direction": 45, "opacity": 0.25 },
+          "text": "Before edit",
+          "textStyle": { "fontFamily": "Arial", "fontSize": 26, "bold": true, "color": "#1E3A8A" }
         },
         {
-          "name": "preservation-note",
-          "position": { "left": 48, "top": 610, "width": 1184, "height": 56 },
-          "fill": "#EFF6FF",
-          "line": { "fill": "#2563EB", "width": 1 },
-          "text": "Native objects keep their payload graph source-bound while bounded placement edits stay explicit.",
-          "textStyle": { "fontSize": 18, "color": "#1E3A8A" }
+          "name": "target-textbox",
+          "geometry": "textbox",
+          "position": { "left": 420, "top": 130, "width": 260, "height": 110 },
+          "fill": "transparent",
+          "line": { "fill": "transparent", "width": 0 },
+          "text": "Target",
+          "textStyle": { "fontFamily": "Arial", "fontSize": 26, "bold": true, "color": "#14532D" }
         }
       ],
-      "images": [
+      "connectors": [
         {
-          "name": "preserved-status",
-          "alt": "Green preservation status",
-          "position": { "left": 70, "top": 230, "width": 210, "height": 210 },
-          "fit": "contain",
-          "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAYAAACM/rhtAAAACXBIWXMAAAsTAAALEwEAmpwYAAADDElEQVR4nO2XS2gTQRjH96ZC9VAz00iFoqh4UerZQ4/uzEJBpLUiVPGBZ+8VfGAU68WLmpjadiahECiIKF58ND2oVCkWQUhPkmilsYraxrZJm5Fv09Qmu8nOPlIU8ocPlt2d2d/OfI/5FKWuuv5TNXJ1C+b0GGL0HmJ0DHGaxpxmweBav8doqIlpXVvD7ZvXDcw3SPZgRvsQJxnMqZAxeBdxEvZFtd01A9se69iEGL2JGc3JgmGjZTEjN1r62zZ6Cgd/jjh57wJMlKkoo698/NA2b+AG1QMr/iU8NUZTeEDd78HK1QCO/4VE/dTvCA78BHPyrmZwvAhJ3oJ/2wbUA8JDkO4Xl8WX3990O/78YplPkktOUombaBVrrfNpj8gu50RRU5mZ8q2etbXVkOe8glOfnBeZ3PwqnClgwW5LVwg7SRhXsYMPz4nvC79K4JbzeXFmNGB4F3E6J1VxoHx5Adc63C1Sc9OiXD1vghXHNEXIUUtAqK1u4fbGusTkj6QBrnciWnUc4iQoAzjmBq5l6LAYS38wwA0kHktVGAlA8tVsMKSGYpo4Fb9q+oHmaLsYmRo3wD34OCr8Ec0akNNpGcBFs8EQeUXl8kvi7Oj1kucAACDlAmAAl1l9xOmCJ4BmkPcTjwxw4zMJsWPoiLR7yAKabjFsK0CZQfZORA1wkz9TerDY8V/JLa4cJABTDrmUXzbAfcqkRevwCdsBJhkkNFRtEjPItYLEDAnaSQZAjNy1BIQewmqiSpCZ3Lxe2pzAFQC1DusVjLU1QNmxmux0PFACCYeBrmcXnMNxOgfftgTUITkJy0x6cuTKam6E45RTuBX/Cyl2TtIrLaSrj2J531vEUW2nYkfQfa0XIGbkmuLkyA9hX/PV4+TlrlvqBsWJ4JSLGE3WcOU+Nw5ozYobQWuot4ie+x1N4gjZp3ghf5+KMCNxL7cVOW03Kwn8BLovmRyJq0UrpwHHPicj+HNocOyAIkjCnARtpxJXoLG2BughoH4iTl7DSQRWSDe4Lty74+O0U7pC1FWX8u/pD18kT6PRhzn+AAAAAElFTkSuQmCC"
+          "name": "editable-connector",
+          "connectorType": "elbow",
+          "fromName": "source-card",
+          "toName": "target-textbox",
+          "start": { "x": 324, "y": 185 },
+          "end": { "x": 420, "y": 200 },
+          "line": { "fill": "#334155", "width": 2, "startArrow": "triangle", "endArrow": "triangle" }
         }
       ],
       "tables": [
         {
-          "name": "preservation-matrix",
-          "position": { "left": 70, "top": 450, "width": 210, "height": 120 },
-          "values": [["Layer", "Status"], ["OpenChestnut", "Before"]],
-          "styleOptions": { "headerRow": true, "bandedRows": false }
+          "name": "roundtrip-table",
+          "position": { "left": 64, "top": 310, "width": 300, "height": 180 },
+          "values": [["Layer", "State"], ["Office", "Before"], ["QA", "Ready"]],
+          "styleOptions": { "headerRow": true, "bandedRows": true }
+        }
+      ],
+      "images": [
+        {
+          "name": "roundtrip-image",
+          "alt": "Roundtrip status before edit",
+          "position": { "left": 420, "top": 310, "width": 180, "height": 180 },
+          "fit": "stretch",
+          "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
         }
       ],
       "charts": [
         {
+          "name": "roundtrip-chart",
           "chartType": "bar",
-          "name": "preserved-chart",
-          "title": "Opaque graph evidence",
-          "position": { "left": 350, "top": 220, "width": 820, "height": 340 },
+          "title": "Before roundtrip",
+          "position": { "left": 680, "top": 130, "width": 520, "height": 360 },
           "categories": ["Semantic", "Package", "Visual"],
-          "series": [
-            { "name": "Checks", "values": [8, 16, 4], "color": "#2563EB" }
-          ],
-          "legend": { "visible": true, "position": "b" },
+          "series": [{ "name": "Checks", "values": [8, 12, 4], "color": "#2563EB" }],
+          "legend": false,
           "dataLabels": { "showValue": true }
         }
       ]
     }
   ],
-  "openChestnut": {
-    "nativeGraphFixture": true,
-    "sourcePlaceholderFrames": { "master": "absent", "layout": "direct", "slideIndex": 3 },
-    "inheritedSlidePlaceholder": { "slideIndex": 0, "idx": 3, "geometrySource": "layout", "position": { "left": 920, "top": 670, "width": 300, "height": 48 }, "transform": { "rotationDegrees": 4, "flipVertical": true } },
-    "embeddedWorkbook": { "sourceValue": "OpenChestnut source workbook" },
-    "nativeObjects": [
-      { "nativeKind": "oleObject", "relationships": 2, "parts": 2, "editable": true },
-      { "nativeKind": "diagram", "relationships": 4, "parts": 4, "editable": true },
-      { "nativeKind": "contentPart", "relationships": 1, "parts": 2, "editable": true }
+  "edit": {
+    "slideIndex": 0,
+    "shapes": [
+      {
+        "sourceName": "source-card",
+        "text": "After edit",
+        "shadow": { "color": "#000000", "blurRadius": 8, "distance": 4, "direction": 45, "opacity": 0.35 }
+      }
     ],
-    "edit": {
-      "slideIndex": 0,
-      "shapeName": "wasm-title",
-      "shapeTransform": { "rotationDegrees": -6, "flipHorizontal": true, "flipVertical": false },
-      "image": {
-        "sourceName": "preserved-status",
-        "name": "edited-status",
-        "alt": "Edited preservation status",
-        "position": { "left": 82, "top": 242, "width": 196, "height": 196 },
-        "transform": { "rotationDegrees": 8, "flipHorizontal": false, "flipVertical": true },
-        "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nGQAAAAASUVORK5CYII="
-      },
-      "table": {
-        "sourceName": "preservation-matrix",
-        "name": "edited-preservation-matrix",
-        "position": { "left": 72, "top": 452, "width": 220, "height": 125 },
-        "cell": { "row": 1, "column": 1, "value": "After" }
-      },
-      "nativeObjects": [
-        { "nativeKind": "oleObject", "name": "Edited embedded workbook", "position": { "left": 1182, "top": 235, "width": 72, "height": 64 }, "embeddedWorkbookValue": "OpenChestnut replacement workbook" },
-        { "nativeKind": "diagram", "name": "Edited SmartArt", "position": { "left": 1180, "top": 340, "width": 74, "height": 66 } },
-        { "nativeKind": "contentPart", "name": "Edited content part", "position": { "left": 1178, "top": 445, "width": 76, "height": 68 } }
-      ],
-      "clearMasterBackground": true,
-      "clearLayoutBackground": true,
-      "masterPlaceholder": { "type": "title", "idx": 0, "position": { "left": 64, "top": 28, "width": 1152, "height": 72 }, "transform": { "rotationDegrees": 12.5, "flipHorizontal": false, "flipVertical": true }, "text": "After master placeholder" },
-      "layoutPlaceholder": {
-        "type": "body",
-        "idx": 2,
-        "position": null,
-        "transform": null,
-        "textBodyProperties": { "anchor": "bottom" },
-        "text": [
-          { "runs": [{ "text": "After layout placeholder", "link": { "uri": "https://example.com/layout-placeholder", "tooltip": "Layout-owned link" } }] }
-        ]
-      },
-      "masterTextParagraphStyles": {
-        "title": {
-          "0": { "alignment": "right", "style": { "fontSize": 42, "bold": true, "fontFamily": "Georgia", "color": "accent2" } }
-        },
-        "other": {
-          "2": { "bulletImage": { "uri": "https://example.com/master-marker.png" }, "bulletColor": "accent3", "style": { "fontSize": 20, "italic": true, "color": "tx2" } }
-        }
-      },
-      "textBodyProperties": { "insets": { "left": 16, "top": 10, "bottom": 7 }, "anchor": "bottom", "wrap": "square", "autoFit": "resizeShape", "rotation": 0, "verticalText": "horizontal", "verticalOverflow": "clip", "horizontalOverflow": "overflow", "columns": { "count": 2, "spacing": 24, "rightToLeft": false }, "upright": false },
-      "paragraphStyles": {
-        "0": { "bulletCharacter": "→", "bulletColor": "accent6", "marginLeft": 36, "indent": -18, "spaceAfterPercent": 0.2, "style": { "fontSize": 19, "bold": true, "color": "#7C3AED" } },
-        "8": { "autoNumber": { "type": "arabicPeriod", "startAt": 9 }, "bulletSizeFollowText": true, "lineSpacing": 16, "style": { "fontSize": 16, "color": "tx2" } }
-      },
-      "text": [
-        {
-          "tabStops": [{ "position": 780, "alignment": "right" }],
-          "runs": [
-            {
-              "text": "After OpenChestnut\t",
-              "style": { "fontSize": 28, "bold": true, "color": "#0F172A" },
-              "link": { "uri": "https://example.com/after", "targetFrame": "_blank", "highlightClick": true }
-            },
-            { "field": { "id": "{11111111-2222-4333-8444-555555555555}", "type": "slidenum", "text": "2" }, "style": { "fontSize": 22, "bold": true, "color": "#2563EB" } },
-            { "break": true, "style": { "fontSize": 18, "italic": true } },
-            { "text": "Field and line-break evidence", "style": { "fontSize": 18, "color": "#475569" } }
-          ]
-        },
-        {
-          "bulletCharacter": "◆",
-          "bulletFontFollowText": true,
-          "bulletColor": "accent1",
-          "bulletSize": 24,
-          "marginLeft": 40,
-          "indent": -20,
-          "lineSpacing": 18,
-          "spaceBeforePercent": 0.25,
-          "spaceAfter": 6,
-          "style": { "fontSize": 20, "bold": true, "color": "#0EA5E9" },
-          "runs": [{ "text": "Character marker", "link": { "action": "lastSlide", "highlightClick": false } }]
-        },
-        {
-          "autoNumber": { "type": "arabicPeriod", "startAt": 5 },
-          "bulletFont": "Aptos",
-          "bulletColor": "#16A34A",
-          "bulletSizePercent": 1.25,
-          "runs": [{ "text": "Automatic marker", "style": { "fontSize": 18, "color": "#334155" } }]
-        },
-        {
-          "bulletImage": { "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAMUlEQVR4nGP4WSz2n5aYYdSCn6NB9HM0Ff0czWjFo0VF8WhpWjxa4YiNVplig7tVAQCYyaKMC7QtnwAAAABJRU5ErkJggg==" },
-          "bulletSizeFollowText": true,
-          "runs": [{ "text": "Picture marker", "style": { "fontSize": 18, "color": "#334155" } }]
-        }
-      ]
-    }
+    "connectors": [
+      { "sourceName": "editable-connector", "endArrow": null }
+    ],
+    "tables": [
+      { "sourceName": "roundtrip-table", "cells": [{ "row": 1, "column": 1, "value": "After" }] }
+    ],
+    "images": [
+      {
+        "sourceName": "roundtrip-image",
+        "name": "edited-roundtrip-image",
+        "alt": "Roundtrip status after edit",
+        "position": { "left": 430, "top": 320, "width": 170, "height": 170 }
+      }
+    ],
+    "charts": [
+      { "sourceName": "roundtrip-chart", "title": "After roundtrip", "seriesValues": [[8, 14, 6]] }
+    ]
   },
   "expectInspect": [
-    { "kind": "shape", "pattern": "Before OpenChestnut" },
-    { "kind": "chart", "pattern": "Opaque graph evidence" },
-    { "kind": "image", "pattern": "Green preservation status" }
+    { "kind": "shape", "pattern": "Before edit" },
+    { "kind": "table", "pattern": "roundtrip-table" },
+    { "kind": "image", "pattern": "Roundtrip status before edit" },
+    { "kind": "chart", "pattern": "Before roundtrip" },
+    { "kind": "connector", "pattern": "editable-connector" }
   ],
   "qa": {
     "nativeRender": "auto",
-    "inspectKind": "deck,slide,shape,chart,image,notes,nativeObject",
-    "maxChars": 30000
+    "inspectKind": "deck,slide,textbox,shape,table,chart,image,connector,textRange",
+    "maxChars": 24000
   }
 }
