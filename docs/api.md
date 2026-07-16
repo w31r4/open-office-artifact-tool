@@ -1030,8 +1030,8 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | --- | --- | --- |
 | `compose.column` | api | Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels. |
 | `compose.paragraph` | api | Create an editable text block with name, className/style text tokens, and stable inspect output. |
-| `exportPptxWithOpenChestnut` | api | Experimentally export bounded rectangle/ellipse shapes and text semantics, source-evidenced Master/Layout placeholder direct-frame add/remove/move/resize/rotation/flip edits, name/outer-frame edits for recognized top-level OLE/diagram/contentPart objects, and validated XLSX payload replacement for uniquely bound OLE packages through the bundled OpenChestnut codec. |
-| `importPptxWithOpenChestnut` | api | Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology shape text, recognized Master/Layout placeholder transform slots, read-only slide-placeholder effective position/rotation/flips/provenance, bounded native-object placement, eligible OLE workbook payload access, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export. |
+| `exportPptxWithOpenChestnut` | api | Experimentally export bounded rectangle/ellipse shapes and text semantics, embedded rectangular pictures, fixed-grid plain-text tables, source-evidenced Master/Layout placeholder direct-frame add/remove/move/resize/rotation/flip edits, name/outer-frame edits for recognized top-level OLE/diagram/contentPart objects, and validated XLSX payload replacement for uniquely bound OLE packages through the bundled OpenChestnut codec. |
+| `importPptxWithOpenChestnut` | api | Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology shape text, recognized embedded pictures and fixed-grid plain-text tables, recognized Master/Layout placeholder transform slots, read-only slide-placeholder effective position/rotation/flips/provenance, bounded native-object placement, eligible OLE workbook payload access, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export. |
 | `nativeObject.getEmbeddedWorkbook` | api | Read a defensive FileBlob copy of the XLSX payload from an eligible source-bound top-level OLE object without exposing arbitrary native-part mutation. |
 | `nativeObject.replaceEmbeddedWorkbook` | api | Replace only the validated XLSX bytes of an eligible source-bound OLE package part; part path, content type, relationship, preview image, raw XML, and every other OPC node remain immutable. |
 | `nativeObject.setName` | api | Rename an OpenChestnut-recognized top-level OLE, SmartArt/diagram, or contentPart group while preserving its raw XML, relationship graph, native payload parts, and topology fail-closed. |
@@ -1071,7 +1071,7 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `slide.groups.add` | api | Add an editable grouped-shape tree with local child coordinates, nested shapes/connectors/groups/tables/charts/images, native p:grpSp roundtrip, relationship parts, and Office 2021 group-aware comment monikers. |
 | `slide.images.add` | api | Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, direct rotation/flips, layout JSON, SVG preview, and PPTX output. OpenChestnut owns a bounded embedded rectangular picture profile. |
 | `slide.shapes.add` | api | Add a shape/textbox with geometry, position, optional center-based rotation/flips, fill, line, text, and bounded DrawingML text-body layout. |
-| `slide.tables.add` | api | Add an inspectable native-style table facade with rows, columns, values, cells, layout JSON, and SVG/PPTX placeholder output. |
+| `slide.tables.add` | api | Add an inspectable table facade with rows, columns, values, cells, layout JSON, SVG preview, native JavaScript PPTX output, and a bounded OpenChestnut fixed-grid plain-text table profile. |
 
 ### presentation details
 
@@ -1108,21 +1108,21 @@ Create an editable text block with name, className/style text tokens, and stable
 
 #### `exportPptxWithOpenChestnut`
 
-Experimentally export bounded rectangle/ellipse shapes and text semantics, source-evidenced Master/Layout placeholder direct-frame add/remove/move/resize/rotation/flip edits, name/outer-frame edits for recognized top-level OLE/diagram/contentPart objects, and validated XLSX payload replacement for uniquely bound OLE packages through the bundled OpenChestnut codec.
+Experimentally export bounded rectangle/ellipse shapes and text semantics, embedded rectangular pictures, fixed-grid plain-text tables, source-evidenced Master/Layout placeholder direct-frame add/remove/move/resize/rotation/flip edits, name/outer-frame edits for recognized top-level OLE/diagram/contentPart objects, and validated XLSX payload replacement for uniquely bound OLE packages through the bundled OpenChestnut codec.
 
 **Schema parameters:**
 
-- `presentation` (Presentation) required — Presentation facade within the bounded shape/text boundary, or carrying validated fixed-topology source bindings whose recognized top-level OLE, SmartArt/diagram, and contentPart groups may change name/outer frame, whose uniquely bound OLE XLSX payload may be replaced, and whose read-only slide-placeholder effective projections must remain unchanged.
+- `presentation` (Presentation) required — Presentation facade within the bounded shape/text/picture/fixed-table boundary, or carrying validated fixed-topology source bindings whose recognized top-level pictures and tables may change only their documented fields, whose OLE/diagram/contentPart groups may change name/outer frame, whose uniquely bound OLE XLSX payload may be replaced, and whose read-only slide-placeholder effective projections must remain unchanged.
 - `allowLossy` (boolean) — Explicitly permit discarding detected opaque OPC content when no validated source snapshot is available; defaults to false.
 - `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets.
 
 **Schema returns:**
 
-- `blob` (FileBlob) — PPTX bytes produced by the bundled Open XML SDK WebAssembly codec, with codec diagnostics in metadata.
+- `blob` (FileBlob) — PPTX bytes produced by the bundled Open XML SDK WebAssembly codec, including bounded top-level embedded-picture and fixed-grid plain-text-table profiles, with codec diagnostics in metadata.
 
 #### `importPptxWithOpenChestnut`
 
-Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology shape text, recognized Master/Layout placeholder transform slots, read-only slide-placeholder effective position/rotation/flips/provenance, bounded native-object placement, eligible OLE workbook payload access, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export.
+Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology shape text, recognized embedded pictures and fixed-grid plain-text tables, recognized Master/Layout placeholder transform slots, read-only slide-placeholder effective position/rotation/flips/provenance, bounded native-object placement, eligible OLE workbook payload access, slide/shape-tree source bindings, and opaque part/relationship evidence for loss-aware second export.
 
 **Schema parameters:**
 
@@ -1131,7 +1131,7 @@ Experimentally import PPTX bytes through OpenChestnut with editable fixed-topolo
 
 **Schema returns:**
 
-- `presentation` (Presentation) — Imported presentation facade with editable bounded shape text, read-only source-bound slide-placeholder effective position/rotation/flips/provenance, recognized native-object name/outer-frame placement, eligible OLE workbook payload access, and source/opaque package evidence for fail-closed second export.
+- `presentation` (Presentation) — Imported presentation facade with editable bounded shape text, recognized top-level embedded pictures and fixed-grid plain-text tables, read-only source-bound slide-placeholder effective position/rotation/flips/provenance, recognized native-object name/outer-frame placement, eligible OLE workbook payload access, and source/opaque package evidence for fail-closed second export.
 
 #### `nativeObject.getEmbeddedWorkbook`
 
@@ -1730,7 +1730,7 @@ Add a shape/textbox with geometry, position, optional center-based rotation/flip
 
 #### `slide.tables.add`
 
-Add an inspectable native-style table facade with rows, columns, values, cells, layout JSON, and SVG/PPTX placeholder output.
+Add an inspectable table facade with rows, columns, values, cells, layout JSON, SVG preview, native JavaScript PPTX output, and a bounded OpenChestnut fixed-grid plain-text table profile.
 
 **Schema parameters:**
 
@@ -1738,10 +1738,11 @@ Add an inspectable native-style table facade with rows, columns, values, cells, 
 - `name` (string) — Inspectable table name.
 - `position` (object) — Pixel left/top/width/height frame.
 - `style` (object) — Table/cell fill, margins, borders, and text style.
+- `styleOptions` (object) — Optional headerRow and bandedRows booleans plus model-rendering font options. OpenChestnut authors the two native flags, but keeps them immutable after source-bound import.
 
 **Schema returns:**
 
-- `table` (TableElement) — Appended editable table facade.
+- `table` (TableElement) — Appended editable table facade. OpenChestnut accepts a non-empty rectangular 1-256-column by 1-2048-row plain-text grid; recognized imports may change name, complete frame, and cell text without changing topology or native style flags.
 
 ## shared
 
