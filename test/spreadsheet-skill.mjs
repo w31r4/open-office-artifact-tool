@@ -5,7 +5,7 @@ import path from "node:path";
 import JSZip from "jszip";
 
 import { FileBlob, SpreadsheetFile } from "open-office-artifact-tool";
-import { runSpreadsheetFixture, verifyWorkbookFile } from "../skills/spreadsheets/scripts/workflow.mjs";
+import { createWorkbookFromFixture, runSpreadsheetFixture, verifyWorkbookFile } from "../skills/spreadsheets/scripts/workflow.mjs";
 
 const repoRoot = path.resolve(new URL("..", import.meta.url).pathname);
 const fixtureDir = path.join(repoRoot, "skills", "spreadsheets", "fixtures");
@@ -30,6 +30,12 @@ async function runFixture(name) {
 }
 
 try {
+  assert.throws(
+    () => createWorkbookFromFixture({
+      sheets: [{ name: "Dynamic", ranges: [{ range: "A1:A2", formulas: [["=SEQUENCE(2)"], [null]], formulaMetadata: { kind: "dynamicArray", reference: "A1:A2" } }] }],
+    }),
+    /must be shared or array.*dynamic arrays are import-only and read-only/i,
+  );
   const formulaResult = await runFixture("formula-summary");
   const formulaBlob = await FileBlob.load(formulaResult.workbookPath);
   const formulaWorkbook = await SpreadsheetFile.importXlsx(formulaBlob);

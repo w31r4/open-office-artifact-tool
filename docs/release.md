@@ -66,11 +66,11 @@ The Office bridge does not participate in normal import/export and must never be
 On 2026-07-16, the 0.2.0 convergence worktree passed the complete local gate on macOS arm64 with Node 26.5.0, npm 11.17.0, and .NET SDK 8.0.128:
 
 - `npm test` passed the OpenChestnut protocol/facade tests, explicit OOXML inspect/patch tests, all four runnable Skills, PDF, render/visual QA, Playwright, examples, release metadata, package contents, and help catalog.
-- OpenChestnut passed `159/159` C# tests; the optional OfficeBridge passed `5/5` protocol tests.
+- OpenChestnut passed `162/162` C# tests; the optional OfficeBridge passed `5/5` protocol tests.
 - Buf lint passed, protobuf generation was byte-idempotent, and `npm run docs:api` regenerated the public API reference.
 - `npm run test:pack` passed the no-local-dotnet clean-install probe for DOCX/XLSX/PPTX and the independent PDF path.
-- The dry-run npm tarball contains 151 files, is 4,843,127 bytes compressed and 16,197,997 bytes unpacked, and contains no removed Office codec path.
-- `npm run verify:open-chestnut-build` compared 39 audited files; both builds produced the same 38-file, 14,004,412-byte runtime.
+- The dry-run npm tarball contains 151 files, is 4,839,761 bytes compressed and 16,193,564 bytes unpacked, and contains no removed Office codec path.
+- `npm run verify:open-chestnut-build` compared 39 audited files; both builds produced the same 38-file, 13,996,220-byte runtime.
 - Render-backed gates ran with LibreOfficeDev 26.8.0.0.alpha0, Poppler 26.05.0, and the installed Playwright Chromium runtime.
 
 Hosted exact-SHA evidence must be recorded after this worktree is committed and pushed; it is not inferred from an earlier commit.

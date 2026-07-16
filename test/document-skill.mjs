@@ -6,6 +6,7 @@ import JSZip from "jszip";
 
 import { DocumentFile, FileBlob } from "open-office-artifact-tool";
 import {
+  createDocumentFromFixture,
   nativeDocumentRenderStatus,
   runDocumentFixture,
   verifyDocumentFile,
@@ -32,6 +33,10 @@ async function runFixture(name, options = {}) {
 }
 
 try {
+  assert.throws(
+    () => createDocumentFromFixture({ settings: { trackRevisions: true }, blocks: [] }),
+    /limited to evenAndOddHeaders.*trackRevisions.*read-only/i,
+  );
   const business = await runFixture("business-brief", {
     nativeRender: nativeStatus.available ? "required" : "auto",
   });

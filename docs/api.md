@@ -6,19 +6,19 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 
 | Name | Kind | Summary |
 | --- | --- | --- |
-| `document.addBibliographySource` | api | Add an inspectable Word bibliography source with a unique tag, native source type, authors or corporate author, and structured publication fields. |
-| `document.addBookmark` | api | Create an inspectable, resolvable Word bookmark range over document blocks or exact table cells with persistent native identity. |
-| `document.addChange` | api | Append a tracked insertion or deletion block backed by native DOCX w:ins/w:del revision markup. |
-| `document.addCitation` | api | Append a native CITATION field whose structured metadata links by tag to a relationship-owned b:Sources entry; metadata-free import restores the source and visible result. |
-| `document.addComment` | api | Attach a Word comment with classic anchors, commentsExtended threads, Office 2019 durable IDs, Office 2021 UTC metadata, and people presence identity. |
-| `document.addDeletion` | api | Append a tracked deletion with author/date metadata and native DOCX w:del/w:delText export. |
+| `document.addBibliographySource` | api | Add a model-level bibliography source for inspect and resolve. OpenChestnut 0.2 does not author bibliography parts; imported bibliography graphs are preserved read-only. |
+| `document.addBookmark` | api | Create a model-level bookmark range for inspect and resolve. OpenChestnut 0.2 does not author bookmarks; imported bookmark markup is preserved read-only and edits fail closed. |
+| `document.addChange` | api | Append a model-level tracked insertion or deletion for inspect and preview. OpenChestnut 0.2 does not author revision markup; imported revisions are opaque and read-only. |
+| `document.addCitation` | api | Add a model-level structured citation. OpenChestnut 0.2 does not author bibliography-backed CITATION graphs; imported citation content remains source-bound and read-only. |
+| `document.addComment` | api | Attach a classic whole-paragraph Word comment with author, initials, date, and text. Replies, resolution metadata, durable IDs, UTC/person data, and other modern comment extensions fail closed. |
+| `document.addDeletion` | api | Append a model-level tracked deletion for inspect and preview. Canonical DOCX export rejects source-free revision markup and imported-revision edits. |
 | `document.addField` | api | Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC; native import restores simple and complex field codes. |
 | `document.addFooter` | api | Add a default, first-page, or even-page DOCX footer, optionally section-scoped; first/even activation is independent from the preserved relationship reference. |
 | `document.addHeader` | api | Add a default, first-page, or even-page DOCX header, optionally section-scoped; first/even activation is independent from the preserved relationship reference. |
 | `document.addHyperlink` | api | Append a native w:hyperlink backed by an external relationship or internal bookmark anchor; native import restores URL/anchor, relationship identity, tooltip, and history state. |
 | `document.addImage` | api | Append an inspectable image block; dataUrl images export as native DOCX media parts with DrawingML inline pictures. |
-| `document.addInsertion` | api | Append a tracked insertion with author/date metadata and native DOCX w:ins export. |
-| `document.addListItem` | api | Append a real numbered, character-bulleted, or relationship-backed picture-bulleted list item using native DOCX numbering definitions. |
+| `document.addInsertion` | api | Append a model-level tracked insertion for inspect and preview. Canonical DOCX export rejects source-free revision markup and imported-revision edits. |
+| `document.addListItem` | api | Append a numbered or character-bulleted list item using native DOCX numbering definitions. Picture bullets remain model-only and make canonical OpenChestnut export fail closed. |
 | `document.addParagraph` | api | Append a styled paragraph with optional run spans, including character-style runStyleId references plus direct/theme and complex-script semantics. |
 | `document.addSection` | api | Append a DOCX section break with page size, orientation, margin, and break-type metadata backed by w:sectPr. |
 | `document.addTable` | api | Append a Word-style table with physical cell values, optional logical merge geometry, and fixed-layout width/margin/border/header formatting. |
@@ -26,18 +26,18 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 | `document.inspect` | api | Emit bounded NDJSON for document blocks, bookmark ranges, bibliography sources, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude. |
 | `document.layoutJson` | api | Return page-aware layout JSON with block bounding boxes, section/page ordinals, effective inherited header/footer selections, styles, and target/search slicing. |
 | `document.render` | api | Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs. |
-| `document.replyToComment` | api | Reply to a document comment on the same target through commentsExtended paraIdParent threading. |
+| `document.replyToComment` | api | Create a model-level comment reply for inspect and preview. OpenChestnut 0.2 does not author modern/extended reply graphs, and imported replies are preservation-only. |
 | `document.resolve` | api | Resolve stable document, block, bookmark, bibliography source ID/tag, header/footer, comment, style, and editable text-range IDs. |
 | `document.setSectionSettings` | api | Set per-section Word behavior such as different-first-page header/footer activation without changing preserved header/footer references. |
-| `document.setSettings` | api | Set agent-facing Word settings for revision tracking, field refresh, even/odd headers, mirrored margins, and passwordless editing restrictions. |
+| `document.setSettings` | api | Set model settings. Only evenAndOddHeaders is inside the OpenChestnut 0.2 DOCX boundary; trackRevisions, updateFields, mirrorMargins, and documentProtection are not authorable or editable through the facade. |
 | `document.styles.effective` | api | Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata. |
 | `document.textRange` | api | Inspect or resolve stable textRange anchors such as blockId/text for editable document block, header/footer, and comment text. |
 | `document.verify` | api | Return QA issues for fake lists, invalid links/citations/bibliography sources, duplicate/dangling/reversed bookmark ranges, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells. |
 | `DocumentFile.exportDocx` | api | Export DocumentModel to DOCX through the single bundled OpenChestnut codec. Only limits is accepted; legacy codec and lossy-fallback options fail explicitly. |
-| `DocumentFile.importDocx` | api | Import relationship-driven DOCX semantics through the single bundled OpenChestnut codec with source-bound opaque preservation. |
+| `DocumentFile.importDocx` | api | Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Advanced bookmarks, bibliography, revisions, modern comments, settings, and unsupported content remain source-bound and read-only. |
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
-| `DocumentModel.create` | api | Create a document with a Word theme, default run properties, basedOn paragraph/character styles, section activation settings, and semantic content blocks. |
+| `DocumentModel.create` | api | Create a document with styles, formatted paragraphs/runs, sections, headers/footers, lists, fixed-geometry tables, links, simple fields, classic comments, and PNG/JPEG images. Bookmarks, bibliography, tracked changes, modern comment graphs, and advanced settings remain model-only or import-preserved read-only. |
 | `exportDocxWithOpenChestnut` | api | Experimentally export bounded DocumentModel paragraphs/runs/tables, classic whole-paragraph comments, validated source-free gridSpan/vMerge tables, and direct text-marker numbering graphs; recognized imports permit fixed-topology classic-comment metadata/text, hyperlink/simple-field/table-text, direct table-formatting, and coherent numbering-definition edits through bundled OpenChestnut. |
 | `importDocxWithOpenChestnut` | api | Experimentally import DOCX bytes through OpenChestnut with source-bound block and exact-profile classic-comment bindings; extended or complex comment graphs and other advanced content remain opaque and fail closed. |
 
@@ -45,7 +45,7 @@ Generated from `HELP_CATALOG` in `src/index.mjs`.
 
 #### `document.addBibliographySource`
 
-Add an inspectable Word bibliography source with a unique tag, native source type, authors or corporate author, and structured publication fields.
+Add a model-level bibliography source for inspect and resolve. OpenChestnut 0.2 does not author bibliography parts; imported bibliography graphs are preserved read-only.
 
 **Schema parameters:**
 
@@ -61,11 +61,11 @@ Add an inspectable Word bibliography source with a unique tag, native source typ
 
 **Schema returns:**
 
-- `source` (DocumentBibliographySource) — Inspectable and resolvable bibliography source.
+- `source` (DocumentBibliographySource) — Model-level bibliography source; canonical DOCX export rejects authoring and imported sources remain read-only.
 
 #### `document.addBookmark`
 
-Create an inspectable, resolvable Word bookmark range over document blocks or exact table cells with persistent native identity.
+Create a model-level bookmark range for inspect and resolve. OpenChestnut 0.2 does not author bookmarks; imported bookmark markup is preserved read-only and edits fail closed.
 
 **Schema parameters:**
 
@@ -76,11 +76,11 @@ Create an inspectable, resolvable Word bookmark range over document blocks or ex
 
 **Schema returns:**
 
-- `bookmark` (DocumentBookmark) — Inspectable and resolvable bookmark range.
+- `bookmark` (DocumentBookmark) — Model-only bookmark range. Canonical DOCX export rejects source-free bookmarks; imported bookmark markup is read-only.
 
 #### `document.addChange`
 
-Append a tracked insertion or deletion block backed by native DOCX w:ins/w:del revision markup.
+Append a model-level tracked insertion or deletion for inspect and preview. OpenChestnut 0.2 does not author revision markup; imported revisions are opaque and read-only.
 
 **Schema parameters:**
 
@@ -92,25 +92,25 @@ Append a tracked insertion or deletion block backed by native DOCX w:ins/w:del r
 
 **Schema returns:**
 
-- `change` (DocumentChangeBlock) — Appended tracked-change block.
+- `change` (DocumentChangeBlock) — Appended model-level tracked-change block; canonical DOCX export rejects source-free revision markup.
 
 #### `document.addCitation`
 
-Append a native CITATION field whose structured metadata links by tag to a relationship-owned b:Sources entry; metadata-free import restores the source and visible result.
+Add a model-level structured citation. OpenChestnut 0.2 does not author bibliography-backed CITATION graphs; imported citation content remains source-bound and read-only.
 
 **Schema parameters:**
 
 - `text` (string) required — Visible citation text.
-- `metadata` (object) — Structured citation metadata including bibliography tag/sourceType/title/authors or corporateAuthor and publication fields; a matching source is created when absent.
+- `metadata` (object) — Model-only structured citation metadata. Bibliography-backed CITATION authoring is outside the OpenChestnut 0.2 boundary.
 - `styleId` (string) — Named paragraph style ID.
 
 **Schema returns:**
 
-- `citation` (DocumentCitationBlock) — Appended citation block.
+- `citation` (DocumentCitationBlock) — Appended model-level citation block; canonical DOCX export rejects it.
 
 #### `document.addComment`
 
-Attach a Word comment with classic anchors, commentsExtended threads, Office 2019 durable IDs, Office 2021 UTC metadata, and people presence identity.
+Attach a classic whole-paragraph Word comment with author, initials, date, and text. Replies, resolution metadata, durable IDs, UTC/person data, and other modern comment extensions fail closed.
 
 **Schema parameters:**
 
@@ -119,21 +119,21 @@ Attach a Word comment with classic anchors, commentsExtended threads, Office 201
 - `author` (string) — Comment author.
 - `initials` (string) — Author initials written to w:initials; derived deterministically from author when omitted.
 - `date` (string) — Optional ISO-style comment timestamp written to w:date.
-- `resolved` (boolean) — Initial resolution state written to commentsExtended w15:done.
-- `parentId` (string) — Optional parent comment ID for a threaded reply; replyTo and replyToId aliases are accepted.
-- `paraId` (string) — Optional preserved eight-digit hexadecimal commentsExtended paragraph identity.
-- `durableId` (string) — Optional preserved Office 2019 eight-digit comment identity; values must be greater than 00000000 and less than 7FFFFFFF.
-- `dateUtc` (string) — Optional Office 2021 UTC timestamp; normalized to an ISO Z timestamp on export.
-- `person` (object) — Optional Word people presence identity with providerId and userId; defaults to provider None and the author name.
-- `intelligentPlaceholder` (boolean) — Office 2021 follow-up placeholder flag; forbidden on replies.
+- `resolved` (boolean) — Model-only modern resolution metadata; setting it makes canonical DOCX export fail closed.
+- `parentId` (string) — Model-only reply identity; extended comment threads are not authored by OpenChestnut 0.2.
+- `paraId` (string) — Import-preserved commentsExtended identity; edits are unsupported.
+- `durableId` (string) — Import-preserved Office durable identity; source-free use or edits are unsupported.
+- `dateUtc` (string) — Import-preserved Office 2021 UTC metadata; source-free use or edits are unsupported.
+- `person` (object) — Import-preserved people metadata; source-free use or edits are unsupported.
+- `intelligentPlaceholder` (boolean) — Unsupported Office 2021 extension metadata.
 
 **Schema returns:**
 
-- `comment` (DocumentComment) — Attached comment with stable ID.
+- `comment` (DocumentComment) — Attached classic whole-paragraph comment. Any modern/extended fields make canonical export fail closed.
 
 #### `document.addDeletion`
 
-Append a tracked deletion with author/date metadata and native DOCX w:del/w:delText export.
+Append a model-level tracked deletion for inspect and preview. Canonical DOCX export rejects source-free revision markup and imported-revision edits.
 
 **Schema parameters:**
 
@@ -144,7 +144,7 @@ Append a tracked deletion with author/date metadata and native DOCX w:del/w:delT
 
 **Schema returns:**
 
-- `change` (DocumentChangeBlock) — Appended tracked deletion.
+- `change` (DocumentChangeBlock) — Appended model-level tracked deletion; canonical DOCX export rejects it.
 
 #### `document.addField`
 
@@ -231,7 +231,7 @@ Append an inspectable image block; dataUrl images export as native DOCX media pa
 
 #### `document.addInsertion`
 
-Append a tracked insertion with author/date metadata and native DOCX w:ins export.
+Append a model-level tracked insertion for inspect and preview. Canonical DOCX export rejects source-free revision markup and imported-revision edits.
 
 **Schema parameters:**
 
@@ -242,11 +242,11 @@ Append a tracked insertion with author/date metadata and native DOCX w:ins expor
 
 **Schema returns:**
 
-- `change` (DocumentChangeBlock) — Appended tracked insertion.
+- `change` (DocumentChangeBlock) — Appended model-level tracked insertion; canonical DOCX export rejects it.
 
 #### `document.addListItem`
 
-Append a real numbered, character-bulleted, or relationship-backed picture-bulleted list item using native DOCX numbering definitions.
+Append a numbered or character-bulleted list item using native DOCX numbering definitions. Picture bullets remain model-only and make canonical OpenChestnut export fail closed.
 
 **Schema parameters:**
 
@@ -259,7 +259,7 @@ Append a real numbered, character-bulleted, or relationship-backed picture-bulle
 - `numberingId` (number|string) — Optional list-instance identity used to group levels during export and preserved by native import.
 - `abstractNumberingId` (number|string) — Optional abstract numbering identity used to share one compatible multilevel definition across list instances; preserved by native import.
 - `numberingStyleId` (string) — Optional Word numbering-style identity resolved through styleLink/numStyleLink and flattened safely on second export.
-- `pictureBullet` (string|object) — Embedded PNG/JPEG/GIF base64 data URL, absolute non-fetched http(s) URI, or { dataUrl|uri, widthPt?, heightPt?, alt? } picture marker owned by the Numbering part.
+- `pictureBullet` (string|object) — Model-only picture marker metadata. OpenChestnut 0.2 authors character and numbered lists, but rejects picture-bullet DOCX export.
 - `styleId` (string) — Named paragraph style ID.
 
 **Schema returns:**
@@ -405,7 +405,7 @@ Render an SVG preview by default, return layout JSON with { format: 'layout' }, 
 
 #### `document.replyToComment`
 
-Reply to a document comment on the same target through commentsExtended paraIdParent threading.
+Create a model-level comment reply for inspect and preview. OpenChestnut 0.2 does not author modern/extended reply graphs, and imported replies are preservation-only.
 
 **Schema parameters:**
 
@@ -421,7 +421,7 @@ Reply to a document comment on the same target through commentsExtended paraIdPa
 
 **Schema returns:**
 
-- `comment` (DocumentComment) — Attached reply sharing the parent comment target.
+- `comment` (DocumentComment) — Model-level reply for inspect/preview; OpenChestnut 0.2 rejects reply authoring and preserves imported reply graphs read-only.
 
 #### `document.resolve`
 
@@ -450,15 +450,15 @@ Set per-section Word behavior such as different-first-page header/footer activat
 
 #### `document.setSettings`
 
-Set agent-facing Word settings for revision tracking, field refresh, even/odd headers, mirrored margins, and passwordless editing restrictions.
+Set model settings. Only evenAndOddHeaders is inside the OpenChestnut 0.2 DOCX boundary; trackRevisions, updateFields, mirrorMargins, and documentProtection are not authorable or editable through the facade.
 
 **Schema parameters:**
 
-- `settings` (object) required — Partial settings object. Boolean fields are trackRevisions, updateFields, evenAndOddHeaders, and mirrorMargins; nested passwordless documentProtection accepts false/off or mode none, readOnly, comments, trackedChanges, or forms plus enforcement/formatting booleans.
+- `settings` (object) required — Partial settings object. Only evenAndOddHeaders is inside the OpenChestnut 0.2 DOCX boundary; trackRevisions, updateFields, mirrorMargins, and documentProtection make export fail closed.
 
 **Schema returns:**
 
-- `document` (DocumentModel) — Document facade with normalized settings.
+- `document` (DocumentModel) — Document facade with normalized settings; unsupported settings remain model-only.
 
 #### `document.styles.effective`
 
@@ -512,7 +512,7 @@ Export DocumentModel to DOCX through the single bundled OpenChestnut codec. Only
 
 #### `DocumentFile.importDocx`
 
-Import relationship-driven DOCX semantics through the single bundled OpenChestnut codec with source-bound opaque preservation.
+Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Advanced bookmarks, bibliography, revisions, modern comments, settings, and unsupported content remain source-bound and read-only.
 
 **Schema parameters:**
 
@@ -521,7 +521,7 @@ Import relationship-driven DOCX semantics through the single bundled OpenChestnu
 
 **Schema returns:**
 
-- `document` (DocumentModel) — Imported editable document facade.
+- `document` (DocumentModel) — Imported document facade with editable core blocks and source-bound read-only advanced content.
 
 #### `DocumentFile.inspectDocx`
 
@@ -569,7 +569,7 @@ Apply DOCX part patches with path traversal validation for settings, classic-com
 
 #### `DocumentModel.create`
 
-Create a document with a Word theme, default run properties, basedOn paragraph/character styles, section activation settings, and semantic content blocks.
+Create a document with styles, formatted paragraphs/runs, sections, headers/footers, lists, fixed-geometry tables, links, simple fields, classic comments, and PNG/JPEG images. Bookmarks, bibliography, tracked changes, modern comment graphs, and advanced settings remain model-only or import-preserved read-only.
 
 **Schema parameters:**
 
@@ -579,14 +579,14 @@ Create a document with a Word theme, default run properties, basedOn paragraph/c
 - `defaultRunStyle` (object) — Document-wide run properties serialized as w:docDefaults/w:rPrDefault and applied before named styles.
 - `styles` (object) — Named paragraph, character, table, or numbering style definitions with optional basedOn inheritance and numberingId/numberingLevel native list linkage.
 - `paragraphs` (string[]) — Convenience paragraph list; the first paragraph uses Title style.
-- `blocks` (object[]) — Ordered paragraph/list/table/link/field/citation/image/section/change block models.
-- `bibliography` (object) — Word bibliography style metadata such as selectedStyle, styleName, and URI.
-- `bibliographySources` (object[]) — Word b:Sources entries with unique tags, source types, contributors, and publication fields.
+- `blocks` (object[]) — Ordered paragraph/list/table/link/field/image/section block models. Citation/change kinds are model-only and rejected by canonical DOCX export.
+- `bibliography` (object) — Model-only Word bibliography metadata; OpenChestnut 0.2 cannot author or edit it.
+- `bibliographySources` (object[]) — Model-only Word bibliography sources; imported b:Sources graphs are source-bound and read-only.
 - `headers` (object[]) — Header block models.
 - `footers` (object[]) — Footer block models.
 - `sectionSettings` (object[]) — Per-section settings with zero-based sectionIndex and differentFirstPage activation state.
-- `comments` (object[]) — Comment models targeting stable block IDs, with optional parentId/paraId/resolved thread metadata.
-- `settings` (object) — Word settings for revision tracking, field refresh, even/odd headers, mirrored margins, and passwordless documentProtection.
+- `comments` (object[]) — Classic whole-paragraph comments. Parent/reply, resolved, durable-ID, UTC/person, and modern extension metadata are outside the OpenChestnut 0.2 boundary.
+- `settings` (object) — Only evenAndOddHeaders is authorable. Revision tracking, field refresh, mirrored margins, and documentProtection are model-only or import-preserved read-only.
 
 **Schema returns:**
 
@@ -616,7 +616,7 @@ Experimentally import DOCX bytes through OpenChestnut with source-bound block an
 
 **Schema returns:**
 
-- `document` (DocumentModel) — Imported document facade carrying source/opaque package evidence and source-bound block bindings for fail-closed second export.
+- `document` (DocumentModel) — Imported document facade carrying source/opaque evidence. Bookmarks, bibliography, revisions, modern comments, non-core settings, and unsupported blocks remain source-bound and read-only.
 
 ## pdf
 
@@ -1025,45 +1025,45 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | --- | --- | --- |
 | `compose.column` | api | Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels. |
 | `compose.paragraph` | api | Create an editable text block with name, className/style text tokens, and stable inspect output. |
-| `exportPptxWithOpenChestnut` | api | Experimentally export bounded rectangle/ellipse shapes and text semantics, embedded rectangular pictures, fixed-grid plain-text tables, source-evidenced Master/Layout placeholder direct-frame add/remove/move/resize/rotation/flip edits, name/outer-frame edits for recognized top-level OLE/diagram/contentPart objects, and validated XLSX payload replacement for uniquely bound OLE packages through the bundled OpenChestnut codec. |
-| `importPptxWithOpenChestnut` | api | Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology shape text, recognized embedded pictures and fixed-grid plain-text tables, recognized Master/Layout placeholder transform slots, read-only slide-placeholder effective position/rotation/flips/provenance, bounded native-object placement, eligible OLE workbook payload access, slide/shape-tree source bindings, and opaque part/relationship evidence for source-bound, fail-closed second export. |
+| `exportPptxWithOpenChestnut` | api | Export bounded textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures, fixed-grid plain-text tables, and source-free bar/line/pie charts. Imported Master/Layout, notes, comments, themes, native OLE/diagram/contentPart, and other advanced package graphs are preserved unchanged and edits fail closed. |
+| `importPptxWithOpenChestnut` | api | Import PPTX bytes with editable bounded shapes, rich text, pictures, tables, connectors, and bar/line/pie charts. Master/Layout graphs, notes, comments, themes, native OLE/diagram/contentPart objects, and unsupported content remain source-bound and read-only; eligible OLE XLSX payloads may be inspected but not replaced. |
 | `nativeObject.getEmbeddedWorkbook` | api | Read a defensive FileBlob copy of the XLSX payload from an eligible source-bound top-level OLE object without exposing arbitrary native-part mutation. |
-| `nativeObject.replaceEmbeddedWorkbook` | api | Replace only the validated XLSX bytes of an eligible source-bound OLE package part; part path, content type, relationship, preview image, raw XML, and every other OPC node remain immutable. |
-| `nativeObject.setName` | api | Rename an OpenChestnut-recognized top-level OLE, SmartArt/diagram, or contentPart group while preserving its raw XML, relationship graph, native payload parts, and topology fail-closed. |
-| `nativeObject.setPosition` | api | Move or resize an OpenChestnut-recognized top-level OLE, SmartArt/diagram, or contentPart group by replacing only its outer pixel frame; nested coordinates and native payload graphs remain source-bound. |
-| `Presentation.create` | api | Create a deck with slide/theme/master/layout configuration, a live customShows collection, and legacy or Office 2021 modern comment serialization. |
-| `presentation.customShows.add` | api | Define a named ordered custom slide show over existing slide facades/IDs; PPTX export writes p:custShowLst and reuses presentation-to-slide relationships. |
-| `presentation.customShows.getItem` | api | Resolve a custom slide show by zero-based index, stable facade ID, or exact name. |
+| `nativeObject.replaceEmbeddedWorkbook` | api | OLE payload replacement is unsupported in OpenChestnut 0.2. The method fails explicitly; getEmbeddedWorkbook remains available for read-only inspection of a uniquely bound XLSX payload. |
+| `nativeObject.setName` | api | Native OLE, SmartArt/diagram, and contentPart objects imported through OpenChestnut are source-bound and read-only; setName rejects instead of mutating the preserved package graph. |
+| `nativeObject.setPosition` | api | Native OLE, SmartArt/diagram, and contentPart objects imported through OpenChestnut are source-bound and read-only; setPosition rejects instead of rewriting their geometry or payload graph. |
+| `Presentation.create` | api | Create a deck model whose canonical OpenChestnut export supports ordinary slides, shapes, rich text, tables, images, connectors, and source-free bar/line/pie charts. Custom themes, Master/Layout authoring, notes, comments, custom shows, and other package-level features are outside the source-free PPTX boundary. |
+| `presentation.customShows.add` | api | Define a model-level custom slide show for inspect and preview. OpenChestnut 0.2 does not author custom shows, and imported custom-show graphs are source-bound and read-only. |
+| `presentation.customShows.getItem` | api | Resolve a model-level or imported read-only custom slide show by zero-based index, stable facade ID, or exact name. |
 | `presentation.export` | api | Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON. |
 | `presentation.inspect` | api | Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, tables, charts, images, and native contentPart/OLE/diagram objects with bounded editability, relationship-reference, root-relationship, preserved-part, and eligible embedded-workbook summaries; narrow with search/target anchors and shape fields with include/exclude. |
-| `presentation.layout.clearBackground` | api | Remove the direct layout background so slides inherit from the linked master; recognized OpenChestnut source bindings delete only p:bg. |
-| `presentation.layout.setBackground` | api | Set a direct layout RGB/scheme background or native style reference without flattening its linked master. |
-| `presentation.layouts.add` | api | Create a reusable slide layout with background and typed placeholder overrides, including relationship-owned paragraph picture bullets; OpenChestnut source-bound placeholders may add/remove/move/resize/rotate/flip only a source-evidenced recognized direct transform slot. |
-| `presentation.master` | api | Backward-compatible alias for the first Slide Master; configure identity, background, theme, typed placeholders, and title/body/other paragraph styles. OpenChestnut source-bound placeholders may add/remove/move/resize/rotate/flip only a source-evidenced recognized direct transform slot. |
-| `presentation.master.clearBackground` | api | Remove the direct Slide Master background so slides inherit the effective theme background; recognized OpenChestnut source bindings delete only p:bg. |
-| `presentation.master.setBackground` | api | Set a direct Slide Master RGB/scheme background or native style reference without flattening theme inheritance. |
-| `presentation.master.setTheme` | api | Set a partial per-master theme override inherited from the deck default, or clear it to resume deck-theme inheritance. |
-| `presentation.masters.add` | api | Add a Slide Master with stable identity, native background, inherited theme override, typed placeholders, and relationship-owned paragraph picture bullets for its bound layouts. |
-| `presentation.masters.getItem` | api | Resolve a Slide Master by stable ID or name. |
-| `presentation.resolve` | api | Map stable inspect anchor IDs back to editable facade objects, including custom shows. |
-| `presentation.slides.add` | api | Append an editable slide with optional name, layout identity, and speaker notes. |
+| `presentation.layout.clearBackground` | api | Clear a model-level layout background for preview only. Canonical PPTX export rejects layout authoring and imported-layout mutation. |
+| `presentation.layout.setBackground` | api | Change a model-level layout background for preview only. Canonical PPTX export rejects layout authoring and imported-layout mutation. |
+| `presentation.layouts.add` | api | Create a model-level slide layout for inspect and preview. OpenChestnut 0.2 does not author Layout graphs, and imported layouts are source-bound and read-only. |
+| `presentation.master` | api | Access the first Slide Master for model inspection. Source-free master configuration is rejected by canonical export; imported Master graphs, placeholders, backgrounds, themes, and styles are preserved read-only. |
+| `presentation.master.clearBackground` | api | Clear the model-level master background for preview only. Canonical PPTX export rejects source-free master authoring and any imported-master mutation. |
+| `presentation.master.setBackground` | api | Change the model-level master background for preview only. Canonical PPTX export rejects source-free master authoring and any imported-master mutation. |
+| `presentation.master.setTheme` | api | Change the model-level master theme for preview only. Canonical PPTX export rejects source-free master authoring and any imported-master mutation. |
+| `presentation.masters.add` | api | Add a model-level Slide Master for inspect and preview. OpenChestnut 0.2 does not author Master graphs, and imported masters are source-bound and read-only. |
+| `presentation.masters.getItem` | api | Resolve a model-level or imported read-only Slide Master by stable ID or name. |
+| `presentation.resolve` | api | Map stable inspect anchor IDs back to facade objects; imported advanced package objects may be read-only. |
+| `presentation.slides.add` | api | Append an editable core slide. Layout identity and speaker notes remain model-only for source-free decks; canonical OpenChestnut export rejects them and preserves imported equivalents read-only. |
 | `presentation.textRange` | api | Inspect or resolve stable textRange anchors such as shapeId/text for editable slide text frames. |
-| `presentation.theme` | api | Configure the deck's inspectable default theme colors, Latin/East-Asian/complex-script fonts, master title/body/other text styles, and color mapping; export/import preserves native Slide Master inheritance and per-master overrides. |
+| `presentation.theme` | api | Inspect the model theme and theme inheritance. Custom source-free themes are not authored by OpenChestnut 0.2, and imported themes are source-bound and read-only. |
 | `presentation.validateLayout` | api | Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow. |
 | `presentation.verify` | api | Return QA issues for layout validation, missing master/layout references, placeholder fidelity, chart/data consistency, table shape, image data, and dangling comments. |
 | `PresentationFile.exportPptx` | api | Serialize PPTX through the single bundled OpenChestnut codec. Only limits is accepted; legacy codec and lossy-fallback options fail explicitly. |
 | `PresentationFile.importPptx` | api | Import PPTX through the single bundled OpenChestnut codec with source-bound opaque preservation and fail-closed edits. |
 | `PresentationFile.inspectPptx` | api | Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets. |
 | `PresentationFile.patchPptx` | api | Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics. |
-| `shape.text.set` | api | Set plain or structured Presentation text with ordered text, field, and styled line-break inlines; paragraph tab stops; external URI, internal slide, relative action, or custom-show hyperlinks; character/picture bullets with RGB or theme marker colors; auto-numbering; levels, indents, and spacing; inspect/layout/SVG output; and native DrawingML roundtrip. |
-| `slide.addNotes` | api | Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' }). |
-| `slide.applyLayout` | api | Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export. |
+| `shape.text.set` | api | Set plain or structured text with ordered text, field, and line-break inlines; bounded run formatting; character, picture-bullet, or auto-numbered lists; levels, indents, spacing; and external URI, internal-slide, or relative-action hyperlinks. Custom-show links and unmodeled text graphs fail closed in canonical PPTX export. |
+| `slide.addNotes` | api | Set model-level speaker notes for inspect and preview. OpenChestnut 0.2 does not author notes; imported notes are source-bound and read-only. |
+| `slide.applyLayout` | api | Materialize layout placeholders in the model for preview. Source-free layout binding is outside the OpenChestnut 0.2 PPTX boundary; imported Layout relationships are preservation-only. |
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
-| `slide.charts.add` | api | Add an inspectable bar/line/pie or bar+line combo chart facade with primary/secondary axis groups, standard chart style IDs, color variation, series fill/line formatting, point overrides, bar direction/grouping/gap/overlap, line markers/smoothing, chart/per-series data labels, six standard native and model-previewed trendline types, error bars including custom formula references and caches, axes, legend, layout JSON, SVG preview, and native PPTX chart output. |
-| `slide.comments.addThread` | api | Attach threaded comments; legacy export uses commentAuthors.xml, while modern export preserves Office 2021 GUID authors, replies, dates, status, typed drawing/group paths, and nested shape text-range monikers through p188 comment parts. |
+| `slide.charts.add` | api | Add a source-free bar, line, or pie chart with literal categories and numeric values, title, legend, basic series fill/line/marker formatting, chart-level data labels, primary axes, layout JSON, SVG preview, and native PPTX output. Combo charts, external data, secondary axes, point overrides, trendlines, error bars, and per-series data labels are model-only and fail closed on export. |
+| `slide.comments.addThread` | api | Create model-level comment threads for inspect and preview. OpenChestnut 0.2 does not author legacy or modern PPTX comments; imported comment graphs are source-bound and read-only. |
 | `slide.compose` | api | Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph, shape, table, chart, image, and rule nodes into editable slide objects. |
 | `slide.connectors.add` | api | Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA. |
-| `slide.groups.add` | api | Add an editable grouped-shape tree with local child coordinates, nested shapes/connectors/groups/tables/charts/images, native p:grpSp roundtrip, relationship parts, and Office 2021 group-aware comment monikers. |
+| `slide.groups.add` | api | Build grouped-shape trees for model inspect, layout, and SVG preview. Source-free p:grpSp authoring is outside the OpenChestnut 0.2 boundary, while imported groups remain opaque and read-only. |
 | `slide.images.add` | api | Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, direct rotation/flips, layout JSON, SVG preview, and PPTX output. OpenChestnut owns a bounded embedded rectangular picture profile. |
 | `slide.shapes.add` | api | Add a shape/textbox with geometry, position, optional center-based rotation/flips, fill, line, text, and bounded DrawingML text-body layout. |
 | `slide.tables.add` | api | Add an inspectable table facade with rows, columns, values, cells, layout JSON, SVG preview, and canonical OpenChestnut fixed-grid plain-text PPTX output. |
@@ -1103,11 +1103,11 @@ Create an editable text block with name, className/style text tokens, and stable
 
 #### `exportPptxWithOpenChestnut`
 
-Experimentally export bounded rectangle/ellipse shapes and text semantics, embedded rectangular pictures, fixed-grid plain-text tables, source-evidenced Master/Layout placeholder direct-frame add/remove/move/resize/rotation/flip edits, name/outer-frame edits for recognized top-level OLE/diagram/contentPart objects, and validated XLSX payload replacement for uniquely bound OLE packages through the bundled OpenChestnut codec.
+Export bounded textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures, fixed-grid plain-text tables, and source-free bar/line/pie charts. Imported Master/Layout, notes, comments, themes, native OLE/diagram/contentPart, and other advanced package graphs are preserved unchanged and edits fail closed.
 
 **Schema parameters:**
 
-- `presentation` (Presentation) required — Presentation facade within the bounded shape/text/picture/fixed-table boundary, or carrying validated fixed-topology source bindings whose recognized top-level pictures and tables may change only their documented fields, whose OLE/diagram/contentPart groups may change name/outer frame, whose uniquely bound OLE XLSX payload may be replaced, and whose read-only slide-placeholder effective projections must remain unchanged.
+- `presentation` (Presentation) required — Presentation facade within the bounded shape/rich-text/picture/fixed-table/connector/source-free bar-line-pie chart boundary. Imported Master/Layout, notes, comments, themes, native OLE/diagram/contentPart, placeholders, and other advanced package graphs must remain unchanged.
 - `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets.
 
 **Schema returns:**
@@ -1116,7 +1116,7 @@ Experimentally export bounded rectangle/ellipse shapes and text semantics, embed
 
 #### `importPptxWithOpenChestnut`
 
-Experimentally import PPTX bytes through OpenChestnut with editable fixed-topology shape text, recognized embedded pictures and fixed-grid plain-text tables, recognized Master/Layout placeholder transform slots, read-only slide-placeholder effective position/rotation/flips/provenance, bounded native-object placement, eligible OLE workbook payload access, slide/shape-tree source bindings, and opaque part/relationship evidence for source-bound, fail-closed second export.
+Import PPTX bytes with editable bounded shapes, rich text, pictures, tables, connectors, and bar/line/pie charts. Master/Layout graphs, notes, comments, themes, native OLE/diagram/contentPart objects, and unsupported content remain source-bound and read-only; eligible OLE XLSX payloads may be inspected but not replaced.
 
 **Schema parameters:**
 
@@ -1125,7 +1125,7 @@ Experimentally import PPTX bytes through OpenChestnut with editable fixed-topolo
 
 **Schema returns:**
 
-- `presentation` (Presentation) — Imported presentation facade with editable bounded shape text, recognized top-level embedded pictures and fixed-grid plain-text tables, read-only source-bound slide-placeholder effective position/rotation/flips/provenance, recognized native-object name/outer-frame placement, eligible OLE workbook payload access, and source/opaque package evidence for fail-closed second export.
+- `presentation` (Presentation) — Imported presentation facade with editable bounded shapes, rich text, pictures, tables, connectors, and bar/line/pie charts; advanced package graphs are read-only, and eligible OLE workbooks are available only through getEmbeddedWorkbook.
 
 #### `nativeObject.getEmbeddedWorkbook`
 
@@ -1137,52 +1137,52 @@ Read a defensive FileBlob copy of the XLSX payload from an eligible source-bound
 
 #### `nativeObject.replaceEmbeddedWorkbook`
 
-Replace only the validated XLSX bytes of an eligible source-bound OLE package part; part path, content type, relationship, preview image, raw XML, and every other OPC node remain immutable.
+OLE payload replacement is unsupported in OpenChestnut 0.2. The method fails explicitly; getEmbeddedWorkbook remains available for read-only inspection of a uniquely bound XLSX payload.
 
 **Schema parameters:**
 
-- `workbook` (FileBlob|Uint8Array|ArrayBuffer) required — Replacement XLSX OPC package, limited to 16 MiB and validated before export.
+- `workbook` (FileBlob|Uint8Array|ArrayBuffer) required — Requested XLSX payload. Replacement is unsupported in OpenChestnut 0.2 and the method fails explicitly.
 
 **Schema returns:**
 
-- `nativeObject` (NativePresentationObject) — The same native-object facade with only its recognized embedded workbook bytes replaced. The source preview image is retained and may be visually stale until an Office host regenerates it.
+- `nativeObject` (NativePresentationObject) — No mutation is performed; getEmbeddedWorkbook is the supported read-only operation.
 
 #### `nativeObject.setName`
 
-Rename an OpenChestnut-recognized top-level OLE, SmartArt/diagram, or contentPart group while preserving its raw XML, relationship graph, native payload parts, and topology fail-closed.
+Native OLE, SmartArt/diagram, and contentPart objects imported through OpenChestnut are source-bound and read-only; setName rejects instead of mutating the preserved package graph.
 
 **Schema parameters:**
 
-- `name` (string) required — Native-object display name, limited to 1,024 characters.
+- `name` (string) required — Requested native-object display name, limited to 1,024 characters. Imported native objects are read-only, so the method rejects.
 
 **Schema returns:**
 
-- `nativeObject` (NativePresentationObject) — The same placement-editable native-object facade; raw XML, relationships, parts, and topology remain source-bound.
+- `nativeObject` (NativePresentationObject) — No mutation is performed; imported native OLE/diagram/contentPart objects are source-bound and read-only.
 
 #### `nativeObject.setPosition`
 
-Move or resize an OpenChestnut-recognized top-level OLE, SmartArt/diagram, or contentPart group by replacing only its outer pixel frame; nested coordinates and native payload graphs remain source-bound.
+Native OLE, SmartArt/diagram, and contentPart objects imported through OpenChestnut are source-bound and read-only; setPosition rejects instead of rewriting their geometry or payload graph.
 
 **Schema parameters:**
 
-- `position` (object) required — Outer pixel frame with non-negative left/top and positive width/height.
+- `position` (object) required — Requested outer pixel frame. Imported native objects are read-only, so the method rejects.
 
 **Schema returns:**
 
-- `nativeObject` (NativePresentationObject) — The same placement-editable native-object facade; contentPart child coordinates and every native payload graph remain source-bound.
+- `nativeObject` (NativePresentationObject) — No mutation is performed; native geometry and payload graphs remain source-bound and read-only.
 
 #### `Presentation.create`
 
-Create a deck with slide/theme/master/layout configuration, a live customShows collection, and legacy or Office 2021 modern comment serialization.
+Create a deck model whose canonical OpenChestnut export supports ordinary slides, shapes, rich text, tables, images, connectors, and source-free bar/line/pie charts. Custom themes, Master/Layout authoring, notes, comments, custom shows, and other package-level features are outside the source-free PPTX boundary.
 
 **Schema parameters:**
 
 - `slideSize` (object) — Slide width and height in pixels; defaults to 1280x720.
-- `theme` (object) — Default deck theme name, colors, fonts, text styles, and color map.
-- `master` (object) — Backward-compatible first Slide Master configuration, including an optional partial theme override, used when masters is omitted.
-- `masters` (object[]) — One or more Slide Master definitions with stable IDs, names, backgrounds, optional partial theme overrides, and typed placeholder defaults.
-- `layouts` (object[]) — Reusable slide layouts bound to a masterId.
-- `commentFormat` (string) — Comment serialization: legacy (default) or Office 2021 modern.
+- `theme` (object) — Model theme metadata. OpenChestnut 0.2 source-free export requires the default theme; imported themes are read-only.
+- `master` (object) — Model-level first Slide Master configuration. Canonical source-free PPTX export rejects configured masters.
+- `masters` (object[]) — Model-level Slide Master definitions. OpenChestnut 0.2 preserves imported masters unchanged but does not author or edit them.
+- `layouts` (object[]) — Model-level slide layouts. OpenChestnut 0.2 preserves imported layouts unchanged but does not author or edit them.
+- `commentFormat` (string) — Model comment format. OpenChestnut 0.2 does not author legacy or modern PPTX comments.
 
 **Schema returns:**
 
@@ -1190,7 +1190,7 @@ Create a deck with slide/theme/master/layout configuration, a live customShows c
 
 #### `presentation.customShows.add`
 
-Define a named ordered custom slide show over existing slide facades/IDs; PPTX export writes p:custShowLst and reuses presentation-to-slide relationships.
+Define a model-level custom slide show for inspect and preview. OpenChestnut 0.2 does not author custom shows, and imported custom-show graphs are source-bound and read-only.
 
 **Schema parameters:**
 
@@ -1200,11 +1200,11 @@ Define a named ordered custom slide show over existing slide facades/IDs; PPTX e
 
 **Schema returns:**
 
-- `customShow` (PresentationCustomShow) — Appended custom-show facade with stable ID, name, nativeId, and ordered slideIds.
+- `customShow` (PresentationCustomShow) — Appended model-level custom show. Canonical PPTX export rejects source-free custom shows and imported changes.
 
 #### `presentation.customShows.getItem`
 
-Resolve a custom slide show by zero-based index, stable facade ID, or exact name.
+Resolve a model-level or imported read-only custom slide show by zero-based index, stable facade ID, or exact name.
 
 **Schema parameters:**
 
@@ -1269,15 +1269,15 @@ Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, t
 
 #### `presentation.layout.clearBackground`
 
-Remove the direct layout background so slides inherit from the linked master; recognized OpenChestnut source bindings delete only p:bg.
+Clear a model-level layout background for preview only. Canonical PPTX export rejects layout authoring and imported-layout mutation.
 
 **Schema returns:**
 
-- `layout` (SlideLayoutTemplate) — The same layout after removing its direct background; effectiveBackground() resolves the linked-master fallback.
+- `layout` (SlideLayoutTemplate) — Model-only change for preview; canonical export rejects Layout authoring and imported-layout edits.
 
 #### `presentation.layout.setBackground`
 
-Set a direct layout RGB/scheme background or native style reference without flattening its linked master.
+Change a model-level layout background for preview only. Canonical PPTX export rejects layout authoring and imported-layout mutation.
 
 **Schema parameters:**
 
@@ -1285,11 +1285,11 @@ Set a direct layout RGB/scheme background or native style reference without flat
 
 **Schema returns:**
 
-- `layout` (SlideLayoutTemplate) — The same layout after setting its direct background.
+- `layout` (SlideLayoutTemplate) — Model-only change for preview; canonical export rejects Layout authoring and imported-layout edits.
 
 #### `presentation.layouts.add`
 
-Create a reusable slide layout with background and typed placeholder overrides, including relationship-owned paragraph picture bullets; OpenChestnut source-bound placeholders may add/remove/move/resize/rotate/flip only a source-evidenced recognized direct transform slot.
+Create a model-level slide layout for inspect and preview. OpenChestnut 0.2 does not author Layout graphs, and imported layouts are source-bound and read-only.
 
 **Schema parameters:**
 
@@ -1297,15 +1297,15 @@ Create a reusable slide layout with background and typed placeholder overrides, 
 - `type` (string) — Layout type.
 - `masterId` (string) — Master identity.
 - `background` (string|object) — Optional layout background overriding the linked master background.
-- `placeholders` (object[]) — Placeholder type/unsigned idx/name/direct-frame/optional rotation-and-flip transform/text/required/style/paragraphStyles/textBodyProperties definitions merged over matching master defaults. effectivePlaceholders() treats a direct frame atomically, preserves idx 0, and reports geometrySource as layout or master. On a recognized OpenChestnut source slot, position may be added or set to undefined for direct-frame removal; picture bullets and links own layout-part relationships.
+- `placeholders` (object[]) — Model-level placeholder definitions; canonical PPTX export does not author or edit Layout graphs.
 
 **Schema returns:**
 
-- `layout` (SlideLayoutTemplate) — Appended reusable layout facade.
+- `layout` (SlideLayoutTemplate) — Appended model-level layout for inspect/preview; canonical PPTX export rejects it.
 
 #### `presentation.master`
 
-Backward-compatible alias for the first Slide Master; configure identity, background, theme, typed placeholders, and title/body/other paragraph styles. OpenChestnut source-bound placeholders may add/remove/move/resize/rotate/flip only a source-evidenced recognized direct transform slot.
+Access the first Slide Master for model inspection. Source-free master configuration is rejected by canonical export; imported Master graphs, placeholders, backgrounds, themes, and styles are preserved read-only.
 
 **Schema parameters:**
 
@@ -1313,24 +1313,24 @@ Backward-compatible alias for the first Slide Master; configure identity, backgr
 - `name` (string) — Native Slide Master name.
 - `background` (string|object) — Solid RGB/scheme background or native background reference with index.
 - `theme` (object) — Optional partial theme override inherited from presentation.theme and exported through the master's own Theme relationship.
-- `placeholders` (object[]) — Typed placeholder defaults with unique type/unsigned idx (including native default 0), direct position, optional transform { rotationDegrees, flipHorizontal, flipVertical }, text, required flag, text style, paragraphStyles, and textBodyProperties. On a recognized OpenChestnut source slot, setting position to undefined removes the direct frame; picture bullets and links own master-part relationships.
+- `placeholders` (object[]) — Model-level placeholder definitions. OpenChestnut 0.2 rejects source-free Master authoring and any mutation of imported placeholders.
 - `textParagraphStyles` (object) — title/body/other level maps (0-8) using the structured paragraph style fields, including embedded or external bulletImage values.
 
 **Schema returns:**
 
-- `master` (PresentationSlideMaster) — Mutable first Slide Master facade.
+- `master` (PresentationSlideMaster) — Model-level first Slide Master; imported masters are source-bound and read-only, and source-free customization is rejected.
 
 #### `presentation.master.clearBackground`
 
-Remove the direct Slide Master background so slides inherit the effective theme background; recognized OpenChestnut source bindings delete only p:bg.
+Clear the model-level master background for preview only. Canonical PPTX export rejects source-free master authoring and any imported-master mutation.
 
 **Schema returns:**
 
-- `master` (PresentationSlideMaster) — The same Slide Master after removing its direct background; effectiveBackground() resolves the theme fallback.
+- `master` (PresentationSlideMaster) — Model-only change for preview; canonical export rejects source-free Master authoring and imported-master edits.
 
 #### `presentation.master.setBackground`
 
-Set a direct Slide Master RGB/scheme background or native style reference without flattening theme inheritance.
+Change the model-level master background for preview only. Canonical PPTX export rejects source-free master authoring and any imported-master mutation.
 
 **Schema parameters:**
 
@@ -1338,11 +1338,11 @@ Set a direct Slide Master RGB/scheme background or native style reference withou
 
 **Schema returns:**
 
-- `master` (PresentationSlideMaster) — The same Slide Master after setting its direct background.
+- `master` (PresentationSlideMaster) — Model-only change for preview; canonical export rejects source-free Master authoring and imported-master edits.
 
 #### `presentation.master.setTheme`
 
-Set a partial per-master theme override inherited from the deck default, or clear it to resume deck-theme inheritance.
+Change the model-level master theme for preview only. Canonical PPTX export rejects source-free master authoring and any imported-master mutation.
 
 **Schema parameters:**
 
@@ -1350,11 +1350,11 @@ Set a partial per-master theme override inherited from the deck default, or clea
 
 **Schema returns:**
 
-- `master` (PresentationSlideMaster) — The same Slide Master after updating its theme inheritance.
+- `master` (PresentationSlideMaster) — Model-only change for preview; canonical export rejects source-free Master authoring and imported-master edits.
 
 #### `presentation.masters.add`
 
-Add a Slide Master with stable identity, native background, inherited theme override, typed placeholders, and relationship-owned paragraph picture bullets for its bound layouts.
+Add a model-level Slide Master for inspect and preview. OpenChestnut 0.2 does not author Master graphs, and imported masters are source-bound and read-only.
 
 **Schema parameters:**
 
@@ -1362,16 +1362,16 @@ Add a Slide Master with stable identity, native background, inherited theme over
 - `name` (string) — Native Slide Master name.
 - `background` (string|object) — Solid RGB/scheme background or native background reference with index.
 - `theme` (object) — Optional partial theme override inherited from presentation.theme and exported through the master's own Theme relationship.
-- `placeholders` (object[]) — Typed placeholder defaults with unique type/unsigned idx (including native default 0), direct position, optional transform { rotationDegrees, flipHorizontal, flipVertical }, text, required flag, text style, paragraphStyles, and textBodyProperties. On a recognized OpenChestnut source slot, setting position to undefined removes the direct frame; picture bullets and links own master-part relationships.
+- `placeholders` (object[]) — Model-level placeholder definitions; canonical PPTX export does not author them.
 - `textParagraphStyles` (object) — title/body/other level maps (0-8) using the structured paragraph style fields, including embedded or external bulletImage values.
 
 **Schema returns:**
 
-- `master` (PresentationSlideMaster) — Appended Slide Master facade.
+- `master` (PresentationSlideMaster) — Appended model-level Slide Master; canonical PPTX export rejects source-free Master authoring.
 
 #### `presentation.masters.getItem`
 
-Resolve a Slide Master by stable ID or name.
+Resolve a model-level or imported read-only Slide Master by stable ID or name.
 
 **Schema parameters:**
 
@@ -1383,7 +1383,7 @@ Resolve a Slide Master by stable ID or name.
 
 #### `presentation.resolve`
 
-Map stable inspect anchor IDs back to editable facade objects, including custom shows.
+Map stable inspect anchor IDs back to facade objects; imported advanced package objects may be read-only.
 
 **Schema parameters:**
 
@@ -1395,13 +1395,13 @@ Map stable inspect anchor IDs back to editable facade objects, including custom 
 
 #### `presentation.slides.add`
 
-Append an editable slide with optional name, layout identity, and speaker notes.
+Append an editable core slide. Layout identity and speaker notes remain model-only for source-free decks; canonical OpenChestnut export rejects them and preserves imported equivalents read-only.
 
 **Schema parameters:**
 
 - `name` (string) — Inspectable slide name.
-- `layout` (string|object) — Layout ID/name or layout facade.
-- `notes` (string) — Initial speaker notes.
+- `layout` (string|object) — Model-only Layout binding; source-free canonical PPTX export rejects it.
+- `notes` (string) — Model-only speaker notes; source-free canonical PPTX export rejects them.
 
 **Schema returns:**
 
@@ -1421,11 +1421,11 @@ Inspect or resolve stable textRange anchors such as shapeId/text for editable sl
 
 #### `presentation.theme`
 
-Configure the deck's inspectable default theme colors, Latin/East-Asian/complex-script fonts, master title/body/other text styles, and color mapping; export/import preserves native Slide Master inheritance and per-master overrides.
+Inspect the model theme and theme inheritance. Custom source-free themes are not authored by OpenChestnut 0.2, and imported themes are source-bound and read-only.
 
 **Schema parameters:**
 
-- `name` (string) — Theme name.
+- `name` (string) — Model theme name. Source-free customization is rejected; imported theme metadata is read-only.
 - `colors` (object) — Complete tx1/bg1/tx2/bg2, accent1-accent6, hlink, and folHlink color scheme; dk1/lt1/dk2/lt2 aliases are accepted.
 - `fonts` (object) — Major/minor Latin plus optional East-Asian and complex-script font families.
 - `textStyles` (object) — Slide Master title/body/other defaults with fontSize, bold, italic, color, fontFamily, and alignment.
@@ -1433,7 +1433,7 @@ Configure the deck's inspectable default theme colors, Latin/East-Asian/complex-
 
 **Schema returns:**
 
-- `theme` (PresentationTheme) — Mutable presentation theme facade.
+- `theme` (PresentationTheme) — Inspectable model theme; canonical export accepts only the default source-free theme and preserves imported themes read-only.
 
 #### `presentation.validateLayout`
 
@@ -1487,7 +1487,7 @@ Import PPTX through the single bundled OpenChestnut codec with source-bound opaq
 
 **Schema returns:**
 
-- `presentation` (Presentation) — Imported presentation facade. Source-bound slide placeholders without a direct a:xfrm expose effective position/rotation/flips plus placeholder.geometrySource from the linked layout/master and remain read-only so export preserves the original wire.
+- `presentation` (Presentation) — Imported presentation facade with editable core objects and source-bound read-only Master/Layout, notes, comments, themes, native objects, placeholders, and unsupported package graphs.
 
 #### `PresentationFile.inspectPptx`
 
@@ -1535,11 +1535,11 @@ Apply path-validated PPTX part patches, including safe slide/master/layout ID li
 
 #### `shape.text.set`
 
-Set plain or structured Presentation text with ordered text, field, and styled line-break inlines; paragraph tab stops; external URI, internal slide, relative action, or custom-show hyperlinks; character/picture bullets with RGB or theme marker colors; auto-numbering; levels, indents, and spacing; inspect/layout/SVG output; and native DrawingML roundtrip.
+Set plain or structured text with ordered text, field, and line-break inlines; bounded run formatting; character, picture-bullet, or auto-numbered lists; levels, indents, spacing; and external URI, internal-slide, or relative-action hyperlinks. Custom-show links and unmodeled text graphs fail closed in canonical PPTX export.
 
 **Schema parameters:**
 
-- `text` (string|string[]|object|object[]) required — Plain text, paragraph strings, inline arrays, or paragraph objects. Ordered inlines are ordinary text, { break: true } with optional style, or { field: { id?, type, text } } with optional style; fields receive a brace-wrapped UUID when id is omitted. Paragraph tabStops use strictly increasing pixel positions and left, center, right, or decimal alignment. Paragraphs also accept level, bulletCharacter/bulletImage/autoNumber/bulletNone, bulletFont/bulletColor/bulletSize/bulletSizePercent and bullet*FollowText semantics, marginLeft, indent, spacing, alignment, and styles. bulletColor accepts a six-digit RGB color or one of the 16 DrawingML theme tokens. An inline link accepts exactly one absolute uri, target slideId, relationship-free action (nextSlide, previousSlide, firstSlide, lastSlide, endShow), or named customShow plus optional returnToSlide, tooltip, targetFrame, history, and highlightClick. bulletImage accepts an embedded base64 PNG/JPEG/GIF/SVG data URL or an external URI.
+- `text` (string|string[]|object|object[]) required — Plain text, paragraph strings, inline arrays, or paragraph objects. Canonical OpenChestnut export supports ordered text, fields, styled line breaks, bounded run/paragraph formatting, character and picture bullets, auto-numbering, levels, indents, spacing, tab stops, and one absolute uri, target slideId, or relative action (nextSlide, previousSlide, firstSlide, lastSlide, endShow) per link. customShow links and other unmodeled text graphs fail closed.
 
 **Schema returns:**
 
@@ -1547,7 +1547,7 @@ Set plain or structured Presentation text with ordered text, field, and styled l
 
 #### `slide.addNotes`
 
-Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced through inspect({ kind: 'notes' }).
+Set model-level speaker notes for inspect and preview. OpenChestnut 0.2 does not author notes; imported notes are source-bound and read-only.
 
 **Schema parameters:**
 
@@ -1555,11 +1555,11 @@ Set speaker notes for a slide; exported as a PPTX notesSlide part and surfaced t
 
 **Schema returns:**
 
-- `notes` (object) — Mutable speaker-notes record.
+- `notes` (object) — Model-level speaker-notes record; canonical PPTX export rejects source-free notes and imported-note edits.
 
 #### `slide.applyLayout`
 
-Apply a slide layout to materialize editable placeholder shapes and preserve layout identity for inspect, verify, and PPTX export.
+Materialize layout placeholders in the model for preview. Source-free layout binding is outside the OpenChestnut 0.2 PPTX boundary; imported Layout relationships are preservation-only.
 
 **Schema parameters:**
 
@@ -1567,7 +1567,7 @@ Apply a slide layout to materialize editable placeholder shapes and preserve lay
 
 **Schema returns:**
 
-- `shapes` (Shape[]) — Materialized editable placeholder shapes.
+- `shapes` (Shape[]) — Materialized model placeholder shapes for preview; source-free Layout binding is rejected by canonical PPTX export.
 
 #### `slide.autoLayout`
 
@@ -1590,24 +1590,24 @@ Place existing shapes inside a frame using horizontal or vertical flow, gap, pad
 
 #### `slide.charts.add`
 
-Add an inspectable bar/line/pie or bar+line combo chart facade with primary/secondary axis groups, standard chart style IDs, color variation, series fill/line formatting, point overrides, bar direction/grouping/gap/overlap, line markers/smoothing, chart/per-series data labels, six standard native and model-previewed trendline types, error bars including custom formula references and caches, axes, legend, layout JSON, SVG preview, and native PPTX chart output.
+Add a source-free bar, line, or pie chart with literal categories and numeric values, title, legend, basic series fill/line/marker formatting, chart-level data labels, primary axes, layout JSON, SVG preview, and native PPTX output. Combo charts, external data, secondary axes, point overrides, trendlines, error bars, and per-series data labels are model-only and fail closed on export.
 
 **Schema parameters:**
 
-- `chartType` (string) — bar, line, pie, or combo; combo series each require chartType bar or line, while bar/line series may bind to primary or secondary axes.
+- `chartType` (string) — bar, line, or pie for canonical OpenChestnut export; combo is model-only and rejected.
 - `title` (string) — Chart title.
 - `categories` (string[]) required — Category labels.
-- `series` (object[]) required — Series with names, numeric values, fill/color, line/stroke width and dash style, indexed point fill/line overrides, line marker/smooth options, optional dataLabels overrides, trendline/trendlines, errorBars, and primary/secondary axisGroup. Linear, exponential, logarithmic, moving-average, polynomial, and power trendlines feed native OOXML plus bounded deterministic SVG curve previews; invalid logarithmic/exponential/power domains are omitted from model preview without changing native data. Error bars support x/y direction, both/minus/plus, fixed/percentage/stdDev/stdErr/custom values, custom plusFormula/minusFormula references with optional cached plusValues/minusValues and format codes, end caps, and line style; combo series require chartType bar or line, and any bar/line plot type may span both axis groups.
-- `externalData` (object|FileBlob|ArrayBuffer|Uint8Array|string) — Embedded XLSX workbook bytes/data URL or an absolute external workbook URI plus autoUpdate. Required when custom error bars use plusFormula/minusFormula; import and second export preserve embedded workbook bytes and chart relationships.
+- `series` (object[]) required — One or more series with a name, one finite numeric value per literal category, and optional basic fill/color, line/stroke, and marker formatting. Point overrides, per-series labels, smooth, trendlines, error bars, secondary axes, and per-series chart types fail closed.
+- `externalData` (object|FileBlob|ArrayBuffer|Uint8Array|string) — Model-only external/embedded workbook metadata. OpenChestnut 0.2 source-free charts require literal categories and values and reject externalData.
 - `position` (object) — Pixel left/top/width/height frame.
-- `axes` (object) — Primary category/value axis titles plus optional secondary.category/secondary.value titles when any bar or line series uses axisGroup secondary.
+- `axes` (object) — Basic primary category/value axis titles, number formats, intervals, bounds, and major units. Secondary axes are unsupported.
 - `legend` (object) — Legend options.
-- `dataLabels` (boolean|object) — Chart-level showValue/showCategoryName and position options. Positions accept bestFit, bottom, center, insideBase, insideEnd, left, outsideEnd, right, top, or their OOXML short names; each series may override or disable them.
-- `styleId` (number) — Standard DrawingML chart style ID from 1 through 48.
-- `styleIndex` (number) — Public-contract alias for styleId, from 1 through 48.
-- `varyColors` (boolean) — Whether categories may use varied colors.
-- `barOptions` (object) — Bar direction (column or bar), grouping (clustered, stacked, percentStacked), gapWidth 0-500, and overlap -100 to 100.
-- `lineOptions` (object) — Line grouping, default marker symbol/size, and smooth-line behavior; series may override marker and smooth.
+- `dataLabels` (boolean|object) — Chart-level showValue/showCategoryName/showSeriesName and a supported bounded position. Per-series overrides are unsupported.
+- `styleId` (number) — Model-only chart style metadata; it is not part of the bounded OpenChestnut chart wire.
+- `styleIndex` (number) — Model-only alias for styleId.
+- `varyColors` (boolean) — Model-only varied-color preference outside the bounded OpenChestnut chart wire.
+- `barOptions` (object) — Model-only advanced bar layout options outside the bounded OpenChestnut chart wire.
+- `lineOptions` (object) — Model-only advanced line grouping/smoothing options; direct per-series marker formatting remains supported.
 
 **Schema returns:**
 
@@ -1615,20 +1615,20 @@ Add an inspectable bar/line/pie or bar+line combo chart facade with primary/seco
 
 #### `slide.comments.addThread`
 
-Attach threaded comments; legacy export uses commentAuthors.xml, while modern export preserves Office 2021 GUID authors, replies, dates, status, typed drawing/group paths, and nested shape text-range monikers through p188 comment parts.
+Create model-level comment threads for inspect and preview. OpenChestnut 0.2 does not author legacy or modern PPTX comments; imported comment graphs are source-bound and read-only.
 
 **Schema parameters:**
 
-- `target` (string|object) required — Stable element/text-range ID or facade; modern PPTX export binds drawing/group moniker paths or nested shapeId/text ranges with persistent creation IDs.
+- `target` (string|object) required — Stable model element/text-range ID or facade. OpenChestnut 0.2 does not author PPTX comment bindings.
 - `text` (string) required — Initial comment text.
 - `author` (string) — Comment author.
 - `resolved` (boolean) — Initial resolution state.
 - `created` (string) — XML date-time for the root comment.
-- `comments` (object[]) — Optional root/reply records with author, text, created, native GUID identity, person metadata, and status.
+- `comments` (object[]) — Model-only root/reply metadata. Imported legacy/modern comment graphs are source-bound and read-only.
 
 **Schema returns:**
 
-- `thread` (SlideCommentThread) — Attached comment thread.
+- `thread` (SlideCommentThread) — Attached model-level thread for inspect/preview; canonical PPTX export rejects comments.
 
 #### `slide.compose`
 
@@ -1662,7 +1662,7 @@ Add an inspectable connector line between points or element IDs with SVG preview
 
 #### `slide.groups.add`
 
-Add an editable grouped-shape tree with local child coordinates, nested shapes/connectors/groups/tables/charts/images, native p:grpSp roundtrip, relationship parts, and Office 2021 group-aware comment monikers.
+Build grouped-shape trees for model inspect, layout, and SVG preview. Source-free p:grpSp authoring is outside the OpenChestnut 0.2 boundary, while imported groups remain opaque and read-only.
 
 **Schema parameters:**
 
@@ -1679,7 +1679,7 @@ Add an editable grouped-shape tree with local child coordinates, nested shapes/c
 
 **Schema returns:**
 
-- `group` (GroupShape) — Appended editable grouped-shape facade with shapes, connectors, groups, tables, charts, images, resolve, inspect, layout, SVG, and PPTX output.
+- `group` (GroupShape) — Appended model-level grouped-shape facade for resolve, inspect, layout, and SVG preview. OpenChestnut 0.2 rejects source-free group export; imported groups are read-only.
 
 #### `slide.images.add`
 
@@ -2024,7 +2024,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 | Name | Kind | Summary |
 | --- | --- | --- |
-| `exportXlsxWithOpenChestnut` | api | Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy/dynamic-array formula topology, worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG pictures, and native bar/line/pie worksheet charts with title, legend, formulas, caches, per-series solid RGB fills, bounded RGB line color/dash/width, direct line-marker symbol/size/RGB fill/bounded outline, chart-level line smoothing, title/tick-label font sizes, and primary-axis semantics, through the bundled C# Open XML SDK WebAssembly codec. |
+| `exportXlsxWithOpenChestnut` | api | Export the bounded Workbook model through the bundled C# Open XML SDK WebAssembly codec: cells, formulas, styles, merges, dimensions, freezes, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, single-layer threaded comments, and bar/line/pie charts. Imported connections, QueryTables, dynamic-array topology, pivots, and sparklines are preservation-only; authoring or editing them fails closed. |
 | `fx.ABS` | formula | Return the absolute value of a number. |
 | `fx.AND` | formula | Return TRUE when all conditions are true. |
 | `fx.AVERAGE` | formula | Average numeric values across arguments and ranges in the clean-room formula engine. |
@@ -2113,7 +2113,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.XLOOKUP` | formula | Look up a value in one range and return the corresponding value from another range. |
 | `fx.XMATCH` | formula | Return a 1-based lookup position with exact, next-smaller, next-larger, wildcard, and forward or reverse search modes. |
 | `fx.YEAR` | formula | Return the year component of a serial in the workbook's 1900 or 1904 date system. |
-| `importXlsxWithOpenChestnut` | api | Experimentally import XLSX bytes, effective cell styles and shared/legacy/dynamic-array formula topology, bounded worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG pictures, native bar/line/pie worksheet charts with recognized solid RGB series fills, bounded direct line styles and line-marker symbol/size/RGB fill/bounded outline, chart-level line smoothing, title/tick-label font sizes, and primary axes, and source-bound database connection-root metadata through the bundled OpenChestnut codec. |
+| `importXlsxWithOpenChestnut` | api | Import XLSX bytes through OpenChestnut with editable core cells, formulas, styles, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, single-layer threaded comments, and bar/line/pie charts. Connections, QueryTables, dynamic-array topology, pivots, sparklines, and other advanced package content remain source-bound and read-only. |
 | `invokeOpenChestnut` | api | Advanced experimental byte-boundary API for invoking the public OpenChestnut codec protocol with generated wire-message objects. |
 | `openChestnutStatus` | api | Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its protocol, assembly, and integrity manifest. |
 | `range.conditionalFormats.add` | api | Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills. |
@@ -2127,9 +2127,9 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `range.unmerge` | api | Remove merged regions intersecting the target range. |
 | `sheet.charts.add` | api | Create an inspectable worksheet chart from a range or config; setData(range) infers categories/series formulas, series.fill sets an explicit #RRGGBB solid color, series.line sets bounded RGB color/dash/width (series.stroke is an alias), line-series marker sets direct symbol/size/RGB fill/bounded outline semantics, lineOptions controls standard/stacked/percent-stacked grouping, smooth interpolation, and direct vary-colors behavior, dataLabels controls plot-level value/category/series-name visibility and bounded position, and xAxis/yAxis configure primary titles, formats, intervals, and linear value bounds. |
 | `sheet.images.add` | api | Create an inspectable worksheet image from a data URL, URI, or prompt with one-cell, two-cell, or absolute pixel geometry plus optional percentage crop, bounded grayscale/luminance/opacity effects, rotation, and horizontal/vertical flips. |
-| `sheet.pivotTables.add` | api | Create a clean-room pivot table facade with cross-tabs, date/time/numeric/discrete grouping, bounded arithmetic/comparison/text/date and lazy IF/IFERROR calculated fields, whole-day or precise absolute date filters, relative date filters, cache policy, and native OOXML roundtrip. |
-| `sheet.sparklineGroups.add` | api | Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand. |
-| `sheet.tables.add` | api | Create an inspectable worksheet table over an A1 range with rich calculated-column/totals metadata, bounded exact/grouped-date/custom/dynamic/Top10/icon filters and row-oriented value/icon/color sort state, rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles. |
+| `sheet.pivotTables.add` | api | Build a model-level pivot facade for calculation, inspect, layout, and preview. OpenChestnut 0.2 does not author pivots; imported pivot package graphs are preserved read-only and any model edit fails closed. |
+| `sheet.sparklineGroups.add` | api | Build line/column/stacked sparklines for model inspection and preview. OpenChestnut 0.2 does not author them; imported sparkline groups are preservation-only and edits fail closed. |
+| `sheet.tables.add` | api | Create an ordinary worksheet table over an A1 range with headers, columns, totals metadata, style, and bounded filtering/sorting. QueryTable bindings are import-only and read-only; adding or editing one makes XLSX export fail closed. |
 | `SpreadsheetFile.exportCsv` | api | Export one worksheet or range as UTF-8 CSV, using calculated values unless formula output is explicitly requested. |
 | `SpreadsheetFile.exportDelimited` | api | Serialize one workbook sheet/range as bounded CSV/TSV text with calculated-value defaults and RFC-style quoting. |
 | `SpreadsheetFile.exportTsv` | api | Export one worksheet or range as UTF-8 tab-separated text with RFC-style quoting where needed. |
@@ -2141,8 +2141,8 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `SpreadsheetFile.inspectDelimited` | api | Inspect bounded CSV/TSV bytes as file/row records with dimensions, delimiter, quoting, and formula-like cell evidence. |
 | `SpreadsheetFile.inspectXlsx` | api | Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `SpreadsheetFile.patchXlsx` | api | Apply path-validated XLSX part patches, build worksheet/table/drawing/image/chart/pivot source references, and atomically reject dangling content types or relationships. |
-| `workbook.comments.addThread` | api | Create Office 2019 threaded comments with GUID identity, people metadata, replies, dates, and resolved state; native import follows workbook/worksheet relationships. |
-| `workbook.connections` | api | Inspect or safely edit the bounded non-secret root metadata of recognized source-bound database connections imported through OpenChestnut. |
+| `workbook.comments.addThread` | api | Create one root Office threaded comment per thread with GUID/person metadata, date, and resolved state. Replies are outside the OpenChestnut 0.2 XLSX boundary and fail closed. |
+| `workbook.connections` | api | Inspect bounded non-secret metadata for imported database connections. Connections are source-bound and read-only: authoring, removal, or mutation makes canonical XLSX export fail closed. |
 | `Workbook.create` | api | Create an empty workbook with an explicit date system and optional native SpreadsheetML theme colors. |
 | `workbook.definedNames.add` | api | Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData). |
 | `workbook.formulaGraph` | api | Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA. |
@@ -2153,7 +2153,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `workbook.resolve` | api | Resolve stable workbook, source-bound connection, worksheet, table, pivot, chart, image, sparkline, rule, comment, and defined-name IDs. |
 | `workbook.setCalculation` | api | Set bounded workbook-level SpreadsheetML calculation mode, on-save/full-recalculation flags, iterative-calculation limits, and full-precision policy. |
 | `workbook.setDateSystem` | api | Select the Excel 1900 or 1904 serial-date system for formula calculation and native workbookPr export. |
-| `workbook.sharedArrayFormulas` | formula | Import and export native XLSX shared formulas (t=shared), legacy arrays, and XLDAPR-marked dynamic-array anchors with explicit formulaType/sharedIndex/sharedRef/arrayRef/dynamicArrayRef metadata; OpenChestnut validates complete topology and preserves formula plus package metadata across safe source-bound edits. |
+| `workbook.sharedArrayFormulas` | formula | Import and export bounded shared and legacy-array formula metadata. XLDAPR dynamic-array anchors are inspectable after import but source-bound and read-only; creating, detaching, or editing their topology makes XLSX export fail closed. |
 | `workbook.structuredReferences` | formula | Evaluate Excel table references including sections, column ranges/unions, space intersections, escaped special-character headers, unqualified calculated-column references, and @/#This Row context while expanding exact table-cell precedents. |
 | `workbook.trace` | api | Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged. |
 | `workbook.verify` | api | Return bounded QA issues for source-bound connections, sheets, formulas, tables, charts, and comments. |
@@ -2180,11 +2180,11 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 #### `exportXlsxWithOpenChestnut`
 
-Experimentally export the bounded Workbook model, including themes, static cell styles, shared/legacy/dynamic-array formula topology, worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG pictures, and native bar/line/pie worksheet charts with title, legend, formulas, caches, per-series solid RGB fills, bounded RGB line color/dash/width, direct line-marker symbol/size/RGB fill/bounded outline, chart-level line smoothing, title/tick-label font sizes, and primary-axis semantics, through the bundled C# Open XML SDK WebAssembly codec.
+Export the bounded Workbook model through the bundled C# Open XML SDK WebAssembly codec: cells, formulas, styles, merges, dimensions, freezes, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, single-layer threaded comments, and bar/line/pie charts. Imported connections, QueryTables, dynamic-array topology, pivots, and sparklines are preservation-only; authoring or editing them fails closed.
 
 **Schema parameters:**
 
-- `workbook` (Workbook) required — Workbook facade within the current bounded feature boundary, including a 12-slot theme, complete static cell styles, validated native shared/legacy/dynamic-array formula metadata, worksheet tables/QueryTables, embedded PNG/JPEG pictures, bounded bar/line/pie charts with title, legend, category/value caches, optional worksheet formulas, per-series solid RGB fills, direct RGB line color/dash/width, direct line-marker symbol/size/RGB fill/bounded outline, chart-level line smoothing, title/tick-label font sizes, and text/value primary-axis titles, number formats, intervals, bounds and major units, plus recognized source-bound database connection-root metadata.
+- `workbook` (Workbook) required — Workbook facade within the core cell/formula/style/merge/dimension/freeze/ordinary-table/image/validation/conditional-format/single-layer-comment/bar-line-pie chart boundary. Imported connections, QueryTables, dynamic-array topology, pivots, sparklines, and other advanced package graphs must remain unchanged; source-free authoring or editing them fails closed.
 - `recalculate` (boolean) — Recalculate formulas before serialization; defaults to true.
 - `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets.
 
@@ -3696,7 +3696,7 @@ Return the year component of a serial in the workbook's 1900 or 1904 date system
 
 #### `importXlsxWithOpenChestnut`
 
-Experimentally import XLSX bytes, effective cell styles and shared/legacy/dynamic-array formula topology, bounded worksheet row/column sort state, tables/QueryTables, embedded PNG/JPEG pictures, native bar/line/pie worksheet charts with recognized solid RGB series fills, bounded direct line styles and line-marker symbol/size/RGB fill/bounded outline, chart-level line smoothing, title/tick-label font sizes, and primary axes, and source-bound database connection-root metadata through the bundled OpenChestnut codec.
+Import XLSX bytes through OpenChestnut with editable core cells, formulas, styles, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, single-layer threaded comments, and bar/line/pie charts. Connections, QueryTables, dynamic-array topology, pivots, sparklines, and other advanced package content remain source-bound and read-only.
 
 **Schema parameters:**
 
@@ -3705,7 +3705,7 @@ Experimentally import XLSX bytes, effective cell styles and shared/legacy/dynami
 
 **Schema returns:**
 
-- `workbook` (Workbook) — Imported bounded workbook facade with effective cell styles, expanded shared/legacy/dynamic-array formula metadata, editable worksheet tables/QueryTables, embedded PNG/JPEG pictures, recognized bar/line/pie worksheet charts with direct series fills/lines, line-marker symbol/size/RGB fill/bounded outline, chart-level line smoothing, title/tick-label font sizes, and primary-axis semantics, database connection-root metadata, and source/opaque package evidence for fail-closed drawing, chart, and image edits.
+- `workbook` (Workbook) — Imported bounded workbook facade with editable core objects and source/opaque package evidence. Connections, QueryTables, dynamic-array topology, pivots, sparklines, and unsupported package graphs are exposed only for inspection or preserved unchanged.
 
 #### `invokeOpenChestnut`
 
@@ -3889,7 +3889,7 @@ Create an inspectable worksheet image from a data URL, URI, or prompt with one-c
 
 #### `sheet.pivotTables.add`
 
-Create a clean-room pivot table facade with cross-tabs, date/time/numeric/discrete grouping, bounded arithmetic/comparison/text/date and lazy IF/IFERROR calculated fields, whole-day or precise absolute date filters, relative date filters, cache policy, and native OOXML roundtrip.
+Build a model-level pivot facade for calculation, inspect, layout, and preview. OpenChestnut 0.2 does not author pivots; imported pivot package graphs are preserved read-only and any model edit fails closed.
 
 **Schema parameters:**
 
@@ -3906,11 +3906,11 @@ Create a clean-room pivot table facade with cross-tabs, date/time/numeric/discre
 
 **Schema returns:**
 
-- `pivot` (WorksheetPivotTable) — Editable clean-room pivot facade.
+- `pivot` (WorksheetPivotTable) — Model-level pivot facade for calculation, inspect, layout, and preview. OpenChestnut 0.2 does not author pivots; imported pivot graphs are preservation-only and read-only.
 
 #### `sheet.sparklineGroups.add`
 
-Create line/column/stacked sparklines from sourceData into a targetRange; range.sparklines.add is a shorthand.
+Build line/column/stacked sparklines for model inspection and preview. OpenChestnut 0.2 does not author them; imported sparkline groups are preservation-only and edits fail closed.
 
 **Schema parameters:**
 
@@ -3924,11 +3924,11 @@ Create line/column/stacked sparklines from sourceData into a targetRange; range.
 
 **Schema returns:**
 
-- `sparkline` (SparklineGroup) — Editable sparkline group facade.
+- `sparkline` (SparklineGroup) — Model-level sparkline facade for inspect/layout/preview. OpenChestnut 0.2 does not author sparklines; imported groups are preservation-only and read-only.
 
 #### `sheet.tables.add`
 
-Create an inspectable worksheet table over an A1 range with rich calculated-column/totals metadata, bounded exact/grouped-date/custom/dynamic/Top10/icon filters and row-oriented value/icon/color sort state, rows.add, getDataRows, getHeaderRowRange, style, and visibility toggles.
+Create an ordinary worksheet table over an A1 range with headers, columns, totals metadata, style, and bounded filtering/sorting. QueryTable bindings are import-only and read-only; adding or editing one makes XLSX export fail closed.
 
 **Schema parameters:**
 
@@ -3944,7 +3944,7 @@ Create an inspectable worksheet table over an A1 range with rich calculated-colu
 
 **Schema returns:**
 
-- `table` (WorksheetTable) — Editable worksheet table facade.
+- `table` (WorksheetTable) — Editable ordinary worksheet table facade. Any QueryTable binding is import-only and read-only; creating or editing one makes XLSX export fail closed.
 
 #### `SpreadsheetFile.exportCsv`
 
@@ -4084,7 +4084,7 @@ Load XLSX through the single bundled OpenChestnut codec into an editable Workboo
 
 **Schema returns:**
 
-- `workbook` (Workbook) — Imported editable workbook facade with cells, formulas, styles, tables, images, basic charts, validation, conditional formatting, and single-layer threaded comments.
+- `workbook` (Workbook) — Imported workbook facade with editable core cells, formulas, styles, ordinary tables, images, basic charts, validation, conditional formatting, and single-layer threaded comments; connections, QueryTables, dynamic arrays, pivots, sparklines, and unsupported package graphs remain read-only.
 
 #### `SpreadsheetFile.inspectDelimited`
 
@@ -4146,7 +4146,7 @@ Apply path-validated XLSX part patches, build worksheet/table/drawing/image/char
 
 #### `workbook.comments.addThread`
 
-Create Office 2019 threaded comments with GUID identity, people metadata, replies, dates, and resolved state; native import follows workbook/worksheet relationships.
+Create one root Office threaded comment per thread with GUID/person metadata, date, and resolved state. Replies are outside the OpenChestnut 0.2 XLSX boundary and fail closed.
 
 **Schema parameters:**
 
@@ -4159,15 +4159,15 @@ Create Office 2019 threaded comments with GUID identity, people metadata, replie
 
 **Schema returns:**
 
-- `thread` (CommentThread) — Attached Office 2019 threaded comment. addReply(text, config) accepts the same native identity/date/person metadata.
+- `thread` (CommentThread) — Attached single-root Office threaded comment. addReply exists on the model but replies are outside OpenChestnut 0.2 and make canonical XLSX export fail closed.
 
 #### `workbook.connections`
 
-Inspect or safely edit the bounded non-secret root metadata of recognized source-bound database connections imported through OpenChestnut.
+Inspect bounded non-secret metadata for imported database connections. Connections are source-bound and read-only: authoring, removal, or mutation makes canonical XLSX export fail closed.
 
 **Schema returns:**
 
-- `connections` (object[]) — Recognized source-bound database/type-5 connection roots. ID, type, version, count, and order are immutable; provider strings, commands, credentials, source paths, children, extensions, and unsupported types remain hidden and preserved.
+- `connections` (object[]) — Recognized imported connection roots exposed for inspection only. All fields, count, and order are source-bound and read-only; provider strings, commands, credentials, source paths, children, extensions, and unsupported types remain hidden and preserved.
 
 #### `Workbook.create`
 
@@ -4368,17 +4368,17 @@ Select the Excel 1900 or 1904 serial-date system for formula calculation and nat
 
 #### `workbook.sharedArrayFormulas`
 
-Import and export native XLSX shared formulas (t=shared), legacy arrays, and XLDAPR-marked dynamic-array anchors with explicit formulaType/sharedIndex/sharedRef/arrayRef/dynamicArrayRef metadata; OpenChestnut validates complete topology and preserves formula plus package metadata across safe source-bound edits.
+Import and export bounded shared and legacy-array formula metadata. XLDAPR dynamic-array anchors are inspectable after import but source-bound and read-only; creating, detaching, or editing their topology makes XLSX export fail closed.
 
 **Schema parameters:**
 
 - `xlsx` (FileBlob|Uint8Array) — XLSX bytes containing shared, legacy-array, or XLDAPR dynamic-array formula records.
-- `formula` (string) — Shared, legacy-array, or dynamic-array formula expression.
-- `ref` (string) — Shared group, legacy array, or dynamic spill A1 range.
+- `formula` (string) — Shared or legacy-array formula expression. Imported dynamic-array expressions are read-only.
+- `ref` (string) — Shared group or legacy-array range; imported dynamic spill ranges are inspection-only.
 
 **Schema returns:**
 
-- `metadata` (object) — formulaType/sharedIndex/sharedRef/arrayRef/dynamicArrayRef/spill inspect metadata; writing a formula into a native group detaches stale topology before recalculation and export.
+- `metadata` (object) — Shared/legacy metadata is bounded and editable. dynamicArrayRef/spill metadata is import-preserved read-only; authoring, detaching, or editing it makes canonical XLSX export fail closed.
 
 #### `workbook.structuredReferences`
 
@@ -4612,7 +4612,7 @@ Get or set bounded worksheet-level row/column sorting; columnSort=true uses uniq
 
 **Schema returns:**
 
-- `sortState` (object) — Bounded worksheet-level sort state. columnSort is legal here and on QueryTable refresh sorts, but never inside a table AutoFilter.
+- `sortState` (object) — Bounded worksheet-level sort state. QueryTable refresh sorts may be inspected after import but QueryTable edits are unsupported.
 
 #### `worksheet.unmergeCells`
 

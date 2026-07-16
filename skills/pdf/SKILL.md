@@ -5,7 +5,7 @@ description: Create, import, inspect, extract, render, baseline, and verify PDF 
 
 # Open Office PDF
 
-Use this project skill for standalone `.pdf` artifact work. It is the clean-room PDF workflow for `open-office-artifact-tool`; it calls the package's public facade and legally usable parser/render adapters only.
+Use this project skill for standalone `.pdf` artifact work. It is the clean-room PDF workflow for `open-office-artifact-tool`; it calls the package's public facade and legally usable parser/render adapters only. The PDF path never loads OpenChestnut and never accepts Office codec options.
 
 ## Contract
 

@@ -105,9 +105,8 @@ internal sealed class XlsxTableCodec
 
     internal IReadOnlyList<SpreadsheetTableArtifact> Read() => _entries.Select(item => item.Artifact.Clone()).ToArray();
     internal IReadOnlySet<string> DirtyPartPaths => _entries
-        .SelectMany(item => item.Query is { Dirty: true } query
-            ? item.Dirty ? new[] { item.Path, query.Path } : new[] { query.Path }
-            : item.Dirty ? new[] { item.Path } : [])
+        .Where(item => item.Dirty)
+        .Select(item => item.Path)
         .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     internal void Apply(IReadOnlyList<SpreadsheetTableArtifact> desired, bool sourceBound, ref uint nextTableId)
@@ -160,7 +159,6 @@ internal sealed class XlsxTableCodec
             using var writer = XmlWriter.Create(stream, new XmlWriterSettings { Encoding = new UTF8Encoding(false), Indent = false, OmitXmlDeclaration = false });
             entry.Document.Save(writer);
         }
-        foreach (var query in _entries.Select(item => item.Query).Where(item => item is not null)) query!.Save();
     }
 
     internal static void ValidateWorksheet(WorksheetArtifact worksheet)

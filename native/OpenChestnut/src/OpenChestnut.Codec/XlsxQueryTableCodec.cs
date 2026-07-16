@@ -22,41 +22,16 @@ internal sealed class XlsxQueryTableCodec
     {
         "insertClear", "insertDelete", "overwriteClear",
     };
-    private readonly QueryTablePart _part;
-    private readonly XDocument _document;
-    private readonly XlsxConnectionCodec _connections;
-    private readonly RefreshProfile _refreshProfile;
-    private readonly XElement? _refreshElement;
-    private readonly NestedProfile _deletedFieldsProfile;
-    private readonly XElement? _deletedFieldsElement;
-    private readonly NestedProfile _sortProfile;
-    private readonly XlsxQuerySortStateCodec? _sort;
     private readonly SpreadsheetTableQueryArtifact _sourceArtifact;
 
     private XlsxQueryTableCodec(
         QueryTablePart part,
         string relationshipId,
-        XDocument document,
         byte[] queryBytes,
         XlsxConnectionCodec connections,
-        RefreshProfile refreshProfile,
-        XElement? refreshElement,
-        NestedProfile deletedFieldsProfile,
-        XElement? deletedFieldsElement,
-        NestedProfile sortProfile,
-        XlsxQuerySortStateCodec? sort,
         SpreadsheetTableQueryArtifact artifact)
     {
-        _part = part;
         RelationshipId = relationshipId;
-        _document = document;
-        _connections = connections;
-        _refreshProfile = refreshProfile;
-        _refreshElement = refreshElement;
-        _deletedFieldsProfile = deletedFieldsProfile;
-        _deletedFieldsElement = deletedFieldsElement;
-        _sortProfile = sortProfile;
-        _sort = sort;
         Path = part.Uri.OriginalString.TrimStart('/');
         artifact.Source = new SpreadsheetTableQuerySourceBinding
         {
@@ -74,8 +49,7 @@ internal sealed class XlsxQueryTableCodec
 
     internal string Path { get; }
     internal string RelationshipId { get; }
-    internal SpreadsheetTableQueryArtifact Artifact { get; private set; }
-    internal bool Dirty { get; private set; }
+    internal SpreadsheetTableQueryArtifact Artifact { get; }
 
     // Returns true when the table owns either no child relationship or exactly
     // one recognized QueryTablePart. False keeps the parent table in its prior
@@ -90,22 +64,15 @@ internal sealed class XlsxQueryTableCodec
             queryPart.Parts.Any() || queryPart.ExternalRelationships.Any()) return false;
         if (!TryReadTableIdentity(tablePart, out var tableColumnIds, out var tableBounds) ||
             !TryReadPart(queryPart, out var queryBytes, out var queryDocument) ||
-            !TryReadQuery(queryDocument!, tableColumnIds, styles, tableBounds, out var artifact, out var refreshProfile, out var refreshElement,
-                out var deletedFieldsProfile, out var deletedFieldsElement, out var sortProfile, out var sort) ||
+            !TryReadQuery(queryDocument!, tableColumnIds, styles, tableBounds, out var artifact, out _, out _,
+                out _, out _, out _, out _) ||
             !connections.Contains(artifact!.ConnectionId)) return false;
 
         codec = new XlsxQueryTableCodec(
             queryPart,
             children[0].RelationshipId,
-            queryDocument!,
             queryBytes!,
             connections,
-            refreshProfile,
-            refreshElement,
-            deletedFieldsProfile,
-            deletedFieldsElement,
-            sortProfile,
-            sort,
             artifact!);
         return true;
     }
@@ -128,19 +95,6 @@ internal sealed class XlsxQueryTableCodec
         throw Unsupported("Imported worksheet QueryTables are read-only and cannot be edited.", Path);
     }
 
-    internal void Save()
-    {
-        if (!Dirty) return;
-        using var stream = _part.GetStream(FileMode.Create, FileAccess.Write);
-        using var writer = XmlWriter.Create(stream, new XmlWriterSettings
-        {
-            Encoding = new UTF8Encoding(false),
-            Indent = false,
-            OmitXmlDeclaration = false,
-        });
-        _document.Save(writer);
-    }
-
     private void ValidateBinding(SpreadsheetTableQuerySourceBinding? binding)
     {
         var source = _sourceArtifact.Source;
@@ -152,42 +106,6 @@ internal sealed class XlsxQueryTableCodec
             !binding.ConnectionXmlSha256.Equals(source.ConnectionXmlSha256, StringComparison.OrdinalIgnoreCase) ||
             binding.Editable != source.Editable)
             throw Unsupported("Worksheet QueryTable source binding does not match the validated source package.", Path);
-    }
-
-    private void ValidateRefreshShape(SpreadsheetTableQueryRefreshArtifact? desired)
-    {
-        if (_refreshProfile != RefreshProfile.Recognized)
-        {
-            if (desired is not null)
-                throw Invalid("Source-preserving XLSX export cannot fabricate or replace an absent/opaque query refresh profile.", Path);
-            return;
-        }
-        var source = _sourceArtifact.Refresh;
-        if (desired is null || source is null)
-            throw Invalid("Source-preserving XLSX export cannot remove a recognized query refresh profile.", Path);
-        if (desired.Fields.Count != source.Fields.Count)
-            throw Invalid("Source-preserving XLSX export cannot add or remove query refresh fields.", Path);
-        for (var index = 0; index < source.Fields.Count; index++)
-        {
-            var before = source.Fields[index];
-            var after = desired.Fields[index];
-            if (after.Id != before.Id || after.HasTableColumnId != before.HasTableColumnId ||
-                after.HasTableColumnId && after.TableColumnId != before.TableColumnId)
-                throw Invalid("Source-preserving XLSX export cannot reorder or rebind query refresh field identity.", Path);
-        }
-        if (_deletedFieldsProfile != NestedProfile.Recognized)
-        {
-            if (desired.DeletedFieldNames.Count != 0)
-                throw Invalid("Source-preserving XLSX export cannot fabricate or replace absent/opaque query refresh deleted fields.", Path);
-        }
-        else if (desired.DeletedFieldNames.Count != source.DeletedFieldNames.Count)
-            throw Invalid("Source-preserving XLSX export cannot add or remove query refresh deleted fields.", Path);
-        if (_sortProfile != NestedProfile.Recognized)
-        {
-            if (desired.SortState is not null)
-                throw Invalid("Source-preserving XLSX export cannot fabricate or replace an absent/opaque query refresh sort state.", Path);
-        }
-        else _sort!.ValidateShape(desired.SortState, Path);
     }
 
     private static void ValidateRefresh(SpreadsheetTableQueryRefreshArtifact refresh, string location)
@@ -220,70 +138,6 @@ internal sealed class XlsxQueryTableCodec
                 throw Invalid("Worksheet query refresh has an invalid or duplicate deleted-field name.", location);
         if (refresh.HasNextId && (refresh.NextId == 0 || ids.Contains(refresh.NextId)))
             throw Invalid("Worksheet query refresh next_id must identify an unused positive field ID.", location);
-    }
-
-    private void PatchRefresh(SpreadsheetTableQueryRefreshArtifact refresh)
-    {
-        var element = _refreshElement!;
-        SetOptional(element, "preserveSortFilterLayout", refresh.HasPreserveSortFilterLayout, refresh.PreserveSortFilterLayout);
-        SetOptional(element, "fieldIdWrapped", refresh.HasFieldIdWrapped, refresh.FieldIdWrapped);
-        SetOptional(element, "headersInLastRefresh", refresh.HasHeadersInLastRefresh, refresh.HeadersInLastRefresh);
-        SetOptional(element, "minimumVersion", refresh.HasMinimumVersion, refresh.MinimumVersion);
-        SetOptional(element, "nextId", refresh.HasNextId, refresh.NextId);
-        SetOptional(element, "unboundColumnsLeft", refresh.HasUnboundColumnsLeft, refresh.UnboundColumnsLeft);
-        SetOptional(element, "unboundColumnsRight", refresh.HasUnboundColumnsRight, refresh.UnboundColumnsRight);
-        var fieldsElement = element.Elements(Spreadsheet + "queryTableFields").SingleOrDefault();
-        if (fieldsElement is not null)
-        {
-            var fieldElements = fieldsElement.Elements(Spreadsheet + "queryTableField").ToArray();
-            for (var index = 0; index < fieldElements.Length; index++)
-            {
-                var field = refresh.Fields[index];
-                var fieldElement = fieldElements[index];
-                fieldElement.SetAttributeValue("name", field.HasName ? field.Name : null);
-                SetOptional(fieldElement, "dataBound", field.HasDataBound, field.DataBound);
-                SetOptional(fieldElement, "rowNumbers", field.HasRowNumbers, field.RowNumbers);
-                SetOptional(fieldElement, "fillFormulas", field.HasFillFormulas, field.FillFormulas);
-                SetOptional(fieldElement, "clipped", field.HasClipped, field.Clipped);
-            }
-        }
-        if (_deletedFieldsProfile == NestedProfile.Recognized)
-        {
-            var deletedElements = _deletedFieldsElement!.Elements(Spreadsheet + "deletedField").ToArray();
-            for (var index = 0; index < deletedElements.Length; index++)
-                deletedElements[index].SetAttributeValue("name", refresh.DeletedFieldNames[index]);
-        }
-        if (_sortProfile == NestedProfile.Recognized) _sort!.Patch(refresh.SortState!, Path);
-    }
-
-    private void Patch(SpreadsheetTableQueryArtifact query)
-    {
-        var root = _document.Root!;
-        root.SetAttributeValue("name", query.Name);
-        root.SetAttributeValue("connectionId", query.ConnectionId.ToString(CultureInfo.InvariantCulture));
-        SetOptional(root, "headers", query.HasHeaders, query.Headers);
-        SetOptional(root, "rowNumbers", query.HasRowNumbers, query.RowNumbers);
-        SetOptional(root, "disableRefresh", query.HasDisableRefresh, query.DisableRefresh);
-        SetOptional(root, "backgroundRefresh", query.HasBackgroundRefresh, query.BackgroundRefresh);
-        SetOptional(root, "firstBackgroundRefresh", query.HasFirstBackgroundRefresh, query.FirstBackgroundRefresh);
-        SetOptional(root, "refreshOnLoad", query.HasRefreshOnLoad, query.RefreshOnLoad);
-        root.SetAttributeValue("growShrinkType", query.HasGrowShrinkType ? query.GrowShrinkType : null);
-        SetOptional(root, "fillFormulas", query.HasFillFormulas, query.FillFormulas);
-        SetOptional(root, "removeDataOnSave", query.HasRemoveDataOnSave, query.RemoveDataOnSave);
-        SetOptional(root, "disableEdit", query.HasDisableEdit, query.DisableEdit);
-        SetOptional(root, "preserveFormatting", query.HasPreserveFormatting, query.PreserveFormatting);
-        SetOptional(root, "adjustColumnWidth", query.HasAdjustColumnWidth, query.AdjustColumnWidth);
-        SetOptional(root, "intermediate", query.HasIntermediate, query.Intermediate);
-        root.SetAttributeValue("autoFormatId", query.HasAutoFormatId ? query.AutoFormatId.ToString(CultureInfo.InvariantCulture) : null);
-        SetOptional(root, "applyNumberFormats", query.HasApplyNumberFormats, query.ApplyNumberFormats);
-        SetOptional(root, "applyBorderFormats", query.HasApplyBorderFormats, query.ApplyBorderFormats);
-        SetOptional(root, "applyFontFormats", query.HasApplyFontFormats, query.ApplyFontFormats);
-        SetOptional(root, "applyPatternFormats", query.HasApplyPatternFormats, query.ApplyPatternFormats);
-        SetOptional(root, "applyAlignmentFormats", query.HasApplyAlignmentFormats, query.ApplyAlignmentFormats);
-        SetOptional(root, "applyWidthHeightFormats", query.HasApplyWidthHeightFormats, query.ApplyWidthHeightFormats);
-        if (_refreshProfile == RefreshProfile.Recognized) PatchRefresh(query.Refresh!);
-        Artifact = query.Clone();
-        Dirty = true;
     }
 
     private static bool TryReadQuery(
@@ -536,12 +390,6 @@ internal sealed class XlsxQueryTableCodec
         parsed = false;
         return false;
     }
-
-    private static void SetOptional(XElement root, string name, bool hasValue, bool value) =>
-        root.SetAttributeValue(name, hasValue ? value ? "1" : "0" : null);
-
-    private static void SetOptional(XElement root, string name, bool hasValue, uint value) =>
-        root.SetAttributeValue(name, hasValue ? value.ToString(CultureInfo.InvariantCulture) : null);
 
     private static string SemanticSha256(SpreadsheetTableQueryArtifact query)
     {

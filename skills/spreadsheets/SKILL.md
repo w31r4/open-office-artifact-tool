@@ -35,7 +35,7 @@ JavaScript `Date` values are converted to the workbook's Excel serial system bef
 
 Imported objects outside this boundary remain in the hash-bound source package. An unchanged source-bound workbook preserves them byte-for-byte where required. Adding or editing an unsupported object fails explicitly; opaque content without its trusted source snapshot also fails. Do not attempt to work around this with a package reconstruction or alternate export path.
 
-Examples of unsupported creation/editing include PivotTables, threaded-comment replies, dynamic-array extension semantics, data-table formulas, grouped shapes, combo or multi-plot charts, external QueryTable creation, and unknown style/chart/comment graphs. A recognized imported QueryTable may be edited only within its fixed source topology.
+Examples of unsupported creation/editing include PivotTables, threaded-comment replies, dynamic-array extension semantics, data-table formulas, grouped shapes, combo or multi-plot charts, QueryTables, workbook connections, and unknown style/chart/comment graphs. QueryTables, connections, and dynamic-array extension semantics are preservation-only: imported graphs must remain semantically unchanged and retain their trusted source snapshot; source-free authoring or any semantic edit fails.
 
 ## Authoring workflow
 
@@ -103,7 +103,7 @@ Do not call `thread.addReply(...)` in an XLSX authoring workflow. Replies are an
 
 ## Tables, pictures, and charts
 
-Use worksheet tables for rectangular data with unique non-empty column names. Keep formulas leading-`=` and keep filter/sort references inside the table range. Table topology in a recognized source-bound QueryTable graph is fixed.
+Use worksheet tables for rectangular data with unique non-empty column names. Keep formulas leading-`=` and keep filter/sort references inside the table range. Do not edit `table.queryTable`, its refresh graph, or `workbook.connections`; those imported semantics are read-only.
 
 Add images with `sheet.images.add({ name, alt, dataUrl, anchor })`. `dataUrl` must be base64 PNG or JPEG. Use one-cell `{ from, extent }`, two-cell `{ type: "twoCell", from, to }`, or absolute `{ type: "absolute", position, extent }` anchors. Imported image replacement must retain the original PNG/JPEG MIME type and fixed topology.
 

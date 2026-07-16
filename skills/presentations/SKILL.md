@@ -29,7 +29,7 @@ OpenChestnut can create, import, edit, and re-export the following top-level pre
 
 For an imported source-bound deck, keep the slide, element, paragraph, run, table, series, and category topology fixed. Existing text, frames, basic styles, connector arrows, image metadata/bytes of the same media type, table cell strings, and literal chart values may be edited only where the imported object reports a modeled boundary.
 
-Advanced native objects remain source-bound and opaque. Masters and layouts are retained from the source package, but new or structurally changed masters/layouts are outside the 0.2 authoring boundary. Combo charts, formula/external-data charts, trendlines, error bars, grouped shapes, SmartArt, OLE, WordArt, modern comments, notes authoring, custom shows, animations, and other advanced objects must be preserved unchanged or rejected.
+Advanced native objects remain source-bound and opaque. Imported masters and layouts are preservation-only and fully read-only in 0.2; any property or topology change, and any source-free Master/Layout authoring, fails closed. Combo charts, formula/external-data charts, trendlines, error bars, grouped shapes, SmartArt, OLE, WordArt, modern comments, notes authoring, custom shows, animations, and other advanced objects must be preserved unchanged or rejected.
 
 PresentationFile.inspectPptx and PresentationFile.patchPptx are explicit low-level package tools, not alternate writers. Use patchPptx only for a caller-requested, bounded image/chart package patch with an exact source reference.
 

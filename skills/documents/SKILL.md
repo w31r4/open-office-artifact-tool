@@ -23,7 +23,7 @@ The canonical path covers the common Documents workflow:
 - PNG/JPEG inline images with alt text and explicit dimensions;
 - page geometry, margins, orientation, section breaks, first/even/default headers and footers, and header/footer fields.
 
-Imported constructs outside this profile remain attached to their validated source package. Leave them unchanged to preserve them. Attempts to author or edit unsupported constructs must fail explicitly; never flatten them into approximate content.
+Imported constructs outside this profile remain attached to their validated source package. Leave them unchanged to preserve them. Bookmarks, bibliography, tracked changes, modern comment graphs, content controls, opaque blocks, and document settings other than modeled section/header behavior and `evenAndOddHeaders` are preservation-only. Attempts to author or edit unsupported constructs must fail explicitly; never flatten them into approximate content.
 
 ## Author or import
 

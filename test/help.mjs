@@ -59,7 +59,7 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "fx.MODE.SNGL"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.RANK.EQ"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.ROUNDUP"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.compose"));
-assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.summary || "", /relative-action hyperlinks.*Custom-show links.*fail closed/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.summary || "", /picture-bullet.*relative-action hyperlinks.*Custom-show links.*fail closed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /nextSlide.*previousSlide.*firstSlide.*lastSlide.*endShow.*customShow links.*fail closed/);
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.groups.add"));
 assert.match(HELP_CATALOG.find((item) => item.name === "nativeObject.setName")?.schema?.parameters?.name?.description || "", /1,024/);
@@ -150,7 +150,7 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "PresentationFile.patchPptx"
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.slides.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.customShows.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.customShows.getItem"));
-assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /customShow links.*model-only and fail closed/);
+assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /fields.*picture bullets.*customShow links.*fail closed/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "PdfFile.inspectPdf"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createNativeOfficeRenderer"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "renderFileWithNativeOffice"));
@@ -234,7 +234,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "nativeObject.getEmbedded
 assert.equal(HELP_CATALOG.find((item) => item.name === "nativeObject.replaceEmbeddedWorkbook")?.schema?.parameters?.workbook?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "nativeObject.replaceEmbeddedWorkbook")?.summary || "", /unsupported.*fails explicitly.*read-only inspection/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.required, true);
-assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /character bullets.*auto-numbering.*levels.*indents.*spacing/);
+assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /character.*picture bullets.*auto-numbering.*levels.*indents.*spacing/);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /absolute uri.*slideId.*relative action/);
 const workbookCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "workbook");
 assert.equal(workbookCatalog.length, 151);

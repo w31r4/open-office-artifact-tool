@@ -48,7 +48,7 @@ Status meanings:
 | Links and simple fields | done | External/internal links and bounded simple field instructions including PAGE. |
 | Images | done | Embedded PNG/JPEG inline images with bounded geometry and alternative text. |
 | Comments | partial | Classic comments and bounded anchors; modern reply/presence graphs are preserved unchanged but not newly authored. |
-| Tracked changes, bibliography, complex fields, content controls, drawings | partial | Preserve opaque imported content when source evidence remains valid; creation/editing is unsupported. |
+| Bookmarks, bibliography, tracked changes, advanced settings, complex fields, content controls, drawings | partial | Preserve imported content when source evidence remains valid; creation/editing is unsupported. Only modeled section/header behavior and `evenAndOddHeaders` are writable settings; `trackRevisions`, `updateFields`, `mirrorMargins`, and `documentProtection` fail closed. |
 
 ## Presentations
 
@@ -61,7 +61,7 @@ Status meanings:
 | Images | done | Embedded PNG/JPEG images with bounded placement and alternative text. |
 | Tables | done | Source-free fixed rectangular tables and fixed-topology imported cell text/geometry edits. |
 | Charts | done | Source-free bar, line, and pie charts with literal categories/values. Complex/combo/external-data chart graphs remain source-bound. |
-| Master/Layout fidelity | partial | Imported Master/Layout source package relationships and unsupported content are preserved. The 0.2 authoring model does not expose arbitrary topology edits. |
+| Master/Layout fidelity | partial | Imported Master/Layout graphs are preservation-only and read-only. Source-free creation and every semantic, property, or topology edit fail closed. |
 | OLE, SmartArt, media, 3D, custom XML | partial | Unchanged imported graphs are opaque-preserved. Source-free creation and semantic editing fail closed. |
 
 ## PDF
