@@ -217,6 +217,8 @@ try {
   const wasmSlide = wasmPreservation.qa.presentation.slides.items[0];
   const wasmTitle = wasmSlide.shapes.items.find((item) => item.name === "wasm-title");
   assert.equal(wasmTitle?.text.value, "After OpenChestnut\t2\nField and line-break evidence\nCharacter marker\nAutomatic marker\nPicture marker");
+  assert.deepEqual(wasmTitle?.transform, { rotationDegrees: -6, flipHorizontal: true, flipVertical: false });
+  assert.match(wasmTitle?.toSvg(), /rotate\(-6\) scale\(-1 1\)/);
   assert.equal(wasmTitle?.text.paragraphs[0].runs[0].style.bold, true);
   assert.equal(wasmTitle?.text.paragraphs[0].runs[0].style.fontSize, 28);
   assert.equal(wasmTitle?.text.paragraphs[0].runs[0].style.color, "#0f172a");

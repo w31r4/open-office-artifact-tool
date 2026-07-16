@@ -397,6 +397,7 @@ export async function runPresentationFixture(fixturePath, options = {}) {
       const slide = imported.slides.getItem(Number(edit.slideIndex || 0));
       const shape = slide?.shapes.items.find((item) => item.name === edit.shapeName || item.id === edit.shapeId);
       assert.ok(shape, `Missing OpenChestnut editable shape ${edit.shapeName || edit.shapeId}`);
+      if (Object.hasOwn(edit, "shapeTransform")) shape.transform = edit.shapeTransform == null ? undefined : { ...edit.shapeTransform };
       shape.text.set(edit.text ?? shape.text.value);
       if (edit.textBodyProperties) shape.text.bodyProperties = edit.textBodyProperties;
       if (edit.paragraphStyles || edit.inheritedParagraphStyles) shape.text.inheritedParagraphStyles = edit.paragraphStyles || edit.inheritedParagraphStyles;

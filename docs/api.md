@@ -1716,7 +1716,7 @@ Add a shape/textbox with geometry, position, optional center-based rotation/flip
 - `name` (string) — Inspectable shape name.
 - `geometry` (string) — Shape geometry such as rect or ellipse.
 - `position` (object) — Pixel left/top/width/height frame.
-- `transform` (object) — Optional { rotationDegrees, flipHorizontal, flipVertical } center transform. Rotation is bounded to -360 through 360 degrees and flip booleans retain explicit false. The JavaScript codec authors/imports this direct DrawingML transform; OpenChestnut currently exposes it only as a read-only source-bound slide-placeholder projection and rejects source-free shape transforms.
+- `transform` (object) — Optional { rotationDegrees, flipHorizontal, flipVertical } center transform. Rotation is bounded to -360 through 360 degrees and flip booleans retain explicit false. Both the JavaScript codec and OpenChestnut author/import this direct DrawingML transform on ordinary rectangle/ellipse shapes. OpenChestnut safely edits or clears recognized source-bound transform attributes; complex or unknown native transform graphs remain read-only. On an inherited slide placeholder, the same property is only an effective read-only projection.
 - `text` (string|string[]|object|object[]) — Plain text or structured paragraphs accepted by shape.text.set, including ordered text/field/line-break inlines, paragraph tab stops, styles, and relationship-backed hyperlinks.
 - `textBodyProperties` (object) — DrawingML text-frame layout: pixel insets; anchor/wrap/AutoFit; -360..360 degree rotation; horizontal/vertical/vertical270 text; horizontal/vertical overflow; 1-16 columns with pixel spacing and RTL flow; and upright text.
 - `fill` (string|object) — Shape fill.

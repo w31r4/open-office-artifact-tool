@@ -37,6 +37,95 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void OrdinaryShapeTransformAuthorsImportsEditsAndClearsWithPresence()
+    {
+        var request = ExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.Transform = new PresentationShapeTransform
+        {
+            RotationAngle60000 = 5 * 60_000,
+            FlipHorizontal = false,
+            FlipVertical = true,
+        };
+
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var presentation = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(presentation));
+            var transform = presentation.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.Transform2D>().First();
+            Assert.Equal(300_000, transform.Rotation!.Value);
+            Assert.False(transform.HorizontalFlip!.Value);
+            Assert.True(transform.VerticalFlip!.Value);
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var shape = Assert.Single(Assert.Single(imported.Artifact.Presentation.Slides).Elements).Shape;
+        Assert.True(shape.Transform.HasRotationAngle60000);
+        Assert.Equal(300_000, shape.Transform.RotationAngle60000);
+        Assert.True(shape.Transform.HasFlipHorizontal);
+        Assert.False(shape.Transform.FlipHorizontal);
+        Assert.True(shape.Transform.HasFlipVertical);
+        Assert.True(shape.Transform.FlipVertical);
+
+        shape.Transform = new PresentationShapeTransform
+        {
+            RotationAngle60000 = -12 * 60_000,
+            FlipHorizontal = true,
+            FlipVertical = false,
+        };
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var editedRoundTrip = Import(edited.File.ToByteArray());
+        Assert.True(editedRoundTrip.Ok, Diagnostics(editedRoundTrip));
+        var editedTransform = Assert.Single(Assert.Single(editedRoundTrip.Artifact.Presentation.Slides).Elements).Shape.Transform;
+        Assert.Equal(-720_000, editedTransform.RotationAngle60000);
+        Assert.True(editedTransform.FlipHorizontal);
+        Assert.False(editedTransform.FlipVertical);
+
+        Assert.Single(Assert.Single(editedRoundTrip.Artifact.Presentation.Slides).Elements).Shape.Transform = null;
+        var cleared = Export(editedRoundTrip.Artifact);
+        Assert.True(cleared.Ok, Diagnostics(cleared));
+        var clearedRoundTrip = Import(cleared.File.ToByteArray());
+        Assert.True(clearedRoundTrip.Ok, Diagnostics(clearedRoundTrip));
+        Assert.Null(Assert.Single(Assert.Single(clearedRoundTrip.Artifact.Presentation.Slides).Elements).Shape.Transform);
+    }
+
+    [Fact]
+    public void OrdinaryShapeTransformValidationAndUnknownNativeAttributesFailClosed()
+    {
+        var empty = ExportRequest();
+        empty.Artifact.Presentation.Slides[0].Elements[0].Shape.Transform = new PresentationShapeTransform();
+        var emptyResponse = Invoke(empty);
+        Assert.False(emptyResponse.Ok);
+        Assert.Equal("invalid_presentation_transform", Assert.Single(emptyResponse.Diagnostics).Code);
+
+        var outOfRange = ExportRequest();
+        outOfRange.Artifact.Presentation.Slides[0].Elements[0].Shape.Transform = new PresentationShapeTransform
+        {
+            RotationAngle60000 = 21_600_001,
+        };
+        var outOfRangeResponse = Invoke(outOfRange);
+        Assert.False(outOfRangeResponse.Ok);
+        Assert.Equal("invalid_presentation_transform", Assert.Single(outOfRangeResponse.Diagnostics).Code);
+
+        var source = Invoke(ExportRequest()).File.ToByteArray();
+        var attributed = ReplaceZipText(source, "ppt/slides/slide1.xml", xml =>
+            xml.Replace("<a:xfrm", "<a:xfrm xmlns:fixture=\"urn:open-office-artifact-tool:shape-transform\" fixture:opaque=\"kept\"", StringComparison.Ordinal));
+        var imported = Import(attributed);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var shape = Assert.Single(Assert.Single(imported.Artifact.Presentation.Slides).Elements);
+        Assert.False(shape.Source.Editable);
+        Assert.Null(shape.Shape.Transform);
+
+        shape.Shape.Transform = new PresentationShapeTransform { RotationAngle60000 = 60_000 };
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void SourceFreeSlidePlaceholderAuthoringFailsClosed()
     {
         var request = ExportRequest();

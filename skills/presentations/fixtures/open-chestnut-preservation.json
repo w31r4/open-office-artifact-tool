@@ -72,6 +72,7 @@
         {
           "name": "wasm-title",
           "position": { "left": 48, "top": 20, "width": 1184, "height": 200 },
+          "transform": { "rotationDegrees": 3, "flipHorizontal": false },
           "fill": "#FFFFFF",
           "line": { "fill": "#334155", "width": 1 },
           "textBodyProperties": { "insets": { "left": 8, "top": 4, "right": 12, "bottom": 6 }, "anchor": "center", "wrap": "none", "autoFit": "shrinkText", "rotation": 15, "verticalText": "vertical", "verticalOverflow": "ellipsis", "horizontalOverflow": "clip", "columns": { "count": 2, "spacing": 18, "rightToLeft": true }, "upright": true },
@@ -141,6 +142,7 @@
     "edit": {
       "slideIndex": 0,
       "shapeName": "wasm-title",
+      "shapeTransform": { "rotationDegrees": -6, "flipHorizontal": true, "flipVertical": false },
       "nativeObjects": [
         { "nativeKind": "oleObject", "name": "Edited embedded workbook", "position": { "left": 1182, "top": 235, "width": 72, "height": 64 }, "embeddedWorkbookValue": "OpenChestnut replacement workbook" },
         { "nativeKind": "diagram", "name": "Edited SmartArt", "position": { "left": 1180, "top": 340, "width": 74, "height": 66 } },
