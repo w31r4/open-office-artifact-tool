@@ -16,12 +16,13 @@ pdftoppm -png -r 144 tmp/pdfs/release-evidence.pdf tmp/pdfs/release-evidence-pag
 ## PyMuPDF imported-PDF edit
 
 ```bash
-python3 scripts/pymupdf_edit.py probe --accept-license agpl
-python3 scripts/pdf_provider.py plan \
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+"$PYTHON_BIN" scripts/pymupdf_edit.py probe --accept-license agpl
+"$PYTHON_BIN" scripts/pdf_provider.py plan \
   --task edit-content --provider pymupdf --strategy rewrite \
   --input input.pdf --output tmp/pdfs/edited.pdf \
   --accept-license agpl --require-provider
-python3 scripts/pymupdf_edit.py edit input.pdf tmp/pdfs/edited.pdf \
+"$PYTHON_BIN" scripts/pymupdf_edit.py edit input.pdf tmp/pdfs/edited.pdf \
   --strategy rewrite \
   --operations examples/pymupdf-edit-operations.json \
   --accept-license agpl
@@ -34,18 +35,27 @@ The sample assumes the exact text `Customer Secret` exists in one horizontal sou
 Before editing, run `pymupdf_edit.py probe` and `pdf_provider.py plan --task redact --provider pymupdf --strategy sanitize ... --invalidate-signatures --require-provider`; both must succeed before mutation.
 
 ```bash
-python3 scripts/pymupdf_edit.py edit input.pdf tmp/pdfs/sanitized.pdf \
+"${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}" scripts/pymupdf_edit.py edit input.pdf tmp/pdfs/sanitized.pdf \
   --strategy sanitize \
   --operations examples/pymupdf-redaction-operations.json \
   --sensitive-term 'Customer Secret' \
   --accept-license agpl \
   --invalidate-signatures
-python3 scripts/residue_scan.py tmp/pdfs/sanitized.pdf \
+"${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}" scripts/residue_scan.py tmp/pdfs/sanitized.pdf \
   --term 'Customer Secret' --require-ocr --require-single-revision
 pdftoppm -png -r 144 tmp/pdfs/sanitized.pdf tmp/pdfs/sanitized-page
 ```
 
 The command itself performs the strict residue scan before promoting its transactional output. The second invocation preserves a standalone JSON-able audit step. Image-bearing files require a working Tesseract installation.
+
+For an active-content public copy without term redaction, use `[ { "type": "scrub" } ]`, plan `--task sanitize --strategy sanitize`, omit placeholder sensitive terms, and run the structural gate after the transactional edit:
+
+```bash
+"${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}" scripts/residue_scan.py tmp/pdfs/public-safe.pdf \
+  --require-inert --require-single-revision
+```
+
+The gate covers active action names, attachments, comments, populated widgets, personal metadata, links, and invisible text. If invisible text overlaps visible content, the typed provider refuses the operation instead of redacting the visible page.
 
 After semantic and Poppler checks, write the canonical audit envelope from [`AUDIT_SCHEMA.md`](../references/AUDIT_SCHEMA.md), then bind it to the delivered bytes:
 

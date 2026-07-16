@@ -6,6 +6,7 @@ import path from "node:path";
 
 import {
   extractCompletedCommands,
+  gradeActiveContentSanitizeEvidence,
   gradeBoundedReplaceEvidence,
   gradeOverflowRefusalEvidence,
   summarizeCaseScore,
@@ -94,6 +95,7 @@ const boundedAudit = {
   output: { sha256: "output-sha" },
   provider: { actual: "pymupdf", version: "1.27.2.3", silentFallback: false },
   savePolicy: { strategy: "sanitize" },
+  preflight: { probeCompleted: true, planCompleted: true },
   operation: { type: "replace_text" },
 };
 const boundedCommands = [
@@ -169,6 +171,107 @@ const mutatedOverflowChecks = gradeOverflowRefusalEvidence({
   item: overflowItem,
 });
 assert.equal(mutatedOverflowChecks.find((entry) => entry.id === "pdf-trace:no-mutation-after-failed-preflight")?.passed, false);
+
+const activeItem = cases.find((item) => item.id === "pdf-active-content-public-sanitize");
+const activeTerms = activeItem.grade.machine.residueTerms;
+const emptyTermCounts = Object.fromEntries(activeTerms.map((term) => [term, 0]));
+const presentTermCounts = Object.fromEntries(activeTerms.map((term) => [term, 1]));
+const activeEvidence = {
+  source: {
+    sha256: "active-source-sha",
+    pageCount: 1,
+    pages: [{ page: 1, width: 612, height: 792, rotation: 0 }],
+    termCounts: emptyTermCounts,
+    rawTermCounts: emptyTermCounts,
+    decodedStreamTermCounts: emptyTermCounts,
+    metadataTermCounts: emptyTermCounts,
+    decodedStreamErrors: [],
+  },
+  output: {
+    sha256: "active-output-sha",
+    pageCount: 1,
+    pages: [{ page: 1, width: 612, height: 792, rotation: 0 }],
+    termCounts: emptyTermCounts,
+    rawTermCounts: emptyTermCounts,
+    decodedStreamTermCounts: emptyTermCounts,
+    metadataTermCounts: emptyTermCounts,
+    decodedStreamErrors: [],
+    startxrefCount: 1,
+    eofCount: 1,
+  },
+  sourceStructure: {
+    structuralNameCounts: { "/AA": 1, "/EmbeddedFiles": 1, "/JS": 1, "/JavaScript": 1, "/Launch": 0, "/OpenAction": 1 },
+    actionTypeCounts: { "/JavaScript": 2, "/Launch": 1, "/SubmitForm": 1 },
+    attachments: [{ name: "internal.txt" }],
+    attachmentTermCounts: emptyTermCounts,
+    structureTermCounts: presentTermCounts,
+    commentAnnotations: [{ subtype: "/Text" }],
+    populatedWidgets: [{ name: "reviewer", values: { "/V": "Private Person" } }],
+    personalMetadata: { "/Author": "Private Person" },
+  },
+  outputStructure: {
+    structuralNameCounts: { "/AA": 0, "/EmbeddedFiles": 0, "/JS": 0, "/JavaScript": 0, "/Launch": 0, "/OpenAction": 0 },
+    actionTypeCounts: { "/JavaScript": 0, "/Launch": 0, "/SubmitForm": 0 },
+    attachments: [],
+    attachmentTermCounts: emptyTermCounts,
+    structureTermCounts: emptyTermCounts,
+    commentAnnotations: [],
+    populatedWidgets: [],
+    personalMetadata: {},
+  },
+  originalPrefixPreserved: false,
+  visual: {
+    renderer: "poppler-pdftoppm",
+    sourcePageCount: 1,
+    outputPageCount: 1,
+    allowedMasks: [{ page: 1, bboxPx: [136, 288, 512, 352] }],
+    pages: [{ page: 1, sameDimensions: true, nonBlank: true, changedPixelsBBox: [154, 300, 220, 325], changedOutsideAllowedMasksBBox: null, changedOnlyWithinAllowedMasks: true }],
+  },
+};
+const activeAudit = {
+  status: "succeeded",
+  source: { sha256: "active-source-sha" },
+  output: { sha256: "active-output-sha" },
+  provider: { actual: "pymupdf", version: "1.27.2.3", silentFallback: false },
+  savePolicy: { strategy: "sanitize" },
+  preflight: { probeCompleted: true, planCompleted: true },
+  operation: [{ type: "scrub" }, { type: "active_content_cleanup" }],
+  validation: { residue: { ok: true }, render: { pages: 1 } },
+};
+const activeCommands = [
+  "python pymupdf_edit.py probe --accept-license agpl",
+  "python pdf_provider.py plan --task sanitize --provider pymupdf --strategy sanitize",
+  "python pymupdf_edit.py edit input.pdf output.pdf --strategy sanitize",
+  "python residue_scan.py output.pdf --require-inert",
+  "pdftoppm -png output.pdf page",
+  "python pdf_audit.py validate audit.json",
+];
+const activeChecks = gradeActiveContentSanitizeEvidence({ evidence: activeEvidence, audit: activeAudit, commands: activeCommands, item: activeItem });
+assert.equal(activeChecks.every((entry) => entry.passed), true);
+assert.equal(summarizeCaseScore(activeChecks, activeItem.grade).rawScorePercent, 100);
+const residualActionEvidence = structuredClone(activeEvidence);
+residualActionEvidence.outputStructure.actionTypeCounts["/SubmitForm"] = 1;
+const residualActionChecks = gradeActiveContentSanitizeEvidence({ evidence: residualActionEvidence, audit: activeAudit, commands: activeCommands, item: activeItem });
+assert.equal(residualActionChecks.find((entry) => entry.id === "pdf-security:active-names-absent")?.passed, false);
+const visualDriftEvidence = structuredClone(activeEvidence);
+visualDriftEvidence.visual.pages[0].changedOutsideAllowedMasksBBox = [20, 20, 40, 40];
+visualDriftEvidence.visual.pages[0].changedOnlyWithinAllowedMasks = false;
+const visualDriftChecks = gradeActiveContentSanitizeEvidence({ evidence: visualDriftEvidence, audit: activeAudit, commands: activeCommands, item: activeItem });
+assert.equal(visualDriftChecks.find((entry) => entry.id === "pdf-visual:ordinary-content-stable")?.passed, false);
+const activeBypassChecks = gradeActiveContentSanitizeEvidence({ evidence: activeEvidence, audit: activeAudit, commands: [...activeCommands, "doc.xref_set_key(1, 'AA', 'null')"], item: activeItem });
+assert.equal(activeBypassChecks.find((entry) => entry.id === "pdf-trace:no-content-stream-bypass")?.passed, false);
+const preMutationQaOnly = [
+  activeCommands[0],
+  activeCommands[1],
+  "python residue_scan.py input.pdf --require-inert",
+  "pdftoppm -png input.pdf source-page",
+  "python pdf_audit.py validate preflight.json",
+  activeCommands[2],
+];
+const preMutationQaChecks = gradeActiveContentSanitizeEvidence({ evidence: activeEvidence, audit: activeAudit, commands: preMutationQaOnly, item: activeItem });
+for (const id of ["pdf-trace:post-mutation-residue-scan", "pdf-trace:post-mutation-poppler-render", "pdf-trace:audit-byte-validation"]) {
+  assert.equal(preMutationQaChecks.find((entry) => entry.id === id)?.passed, false, `${id} must require evidence after mutation`);
+}
 
 const traceCommands = extractCompletedCommands([
   JSON.stringify({ type: "item.started", item: { id: "one", type: "command_execution", command: "ignored-started-command" } }),

@@ -8,6 +8,7 @@ const oracleScript = path.join(scriptDirectory, "agent-eval-pdf-oracle.py");
 const supportedCases = new Set([
   "pdf-bounded-contract-id-replace",
   "pdf-overflow-replace-refusal",
+  "pdf-active-content-public-sanitize",
 ]);
 const defaultWeights = { machine: 45, visual: 25, security: 20, trace: 10 };
 
@@ -143,6 +144,36 @@ function overflowTraceChecks(audit, commands) {
   ];
 }
 
+function activeContentTraceChecks(audit, commands) {
+  const commandText = commands.join("\n");
+  const operation = auditOperation(audit);
+  const probeIndex = commandText.search(/pymupdf_edit\.py\s+probe\b/i);
+  const planIndex = commandText.search(/pdf_provider\.py\s+plan\b/i);
+  const editIndex = commandText.search(/pymupdf_edit\.py\s+edit\b/i);
+  const afterEdit = editIndex >= 0 ? commandText.slice(editIndex) : "";
+  const residueAfterEdit = /residue_scan\.py\b/i.test(afterEdit);
+  const renderAfterEdit = /\bpdftoppm\b/i.test(afterEdit);
+  const auditAfterEdit = /pdf_audit\.py\s+validate\b/i.test(afterEdit);
+  const bypassPatterns = [
+    /\bupdate_stream\s*\(/i,
+    /\bset_contents\s*\(/i,
+    /\bxref_set_(?:key|stream)\s*\(/i,
+  ];
+  return [
+    check("pdf-trace:provider", "trace", /pymupdf/i.test(String(auditProvider(audit))), { expected: "pymupdf", actual: auditProvider(audit) }),
+    check("pdf-trace:provider-version", "trace", Boolean(String(auditProviderVersion(audit)).trim()), { actual: auditProviderVersion(audit) || "unreported" }),
+    check("pdf-trace:save-policy", "trace", /^sanitize$/i.test(String(auditSaveStrategy(audit))), { expected: "sanitize", actual: auditSaveStrategy(audit) }),
+    gate("pdf-trace:no-silent-fallback", "trace", auditFallback(audit) === true, { expected: false, actual: auditFallback(audit) === null ? "unreported" : !auditFallback(audit) }),
+    check("pdf-trace:preflight-audit", "trace", audit?.preflight?.probeCompleted === true && audit?.preflight?.planCompleted === true, { actual: audit?.preflight || "unreported" }),
+    check("pdf-trace:probe-plan-before-mutation", "trace", probeIndex >= 0 && planIndex > probeIndex && editIndex > planIndex, { actual: { probeObserved: probeIndex >= 0, planObserved: planIndex >= 0, editObserved: editIndex >= 0 } }),
+    check("pdf-trace:typed-scrub-primitive", "trace", /pymupdf_edit\.py\s+edit\b/i.test(commandText) && /scrub|active[_ -]?content/i.test(operation), { actual: operation || "unreported" }),
+    check("pdf-trace:post-mutation-residue-scan", "trace", residueAfterEdit, { actual: { editObserved: editIndex >= 0, postMutationResidueScanObserved: residueAfterEdit } }),
+    check("pdf-trace:post-mutation-poppler-render", "trace", renderAfterEdit, { actual: { editObserved: editIndex >= 0, postMutationRenderObserved: renderAfterEdit } }),
+    check("pdf-trace:audit-byte-validation", "trace", auditAfterEdit, { actual: { postMutationAuditValidationObserved: auditAfterEdit } }),
+    gate("pdf-trace:no-content-stream-bypass", "trace", !bypassPatterns.some((pattern) => pattern.test(commandText)), { forbidden: bypassPatterns.map(String) }),
+  ];
+}
+
 export function gradeBoundedReplaceEvidence({ evidence, audit, commands, item }) {
   const expectedPageCount = item.grade.machine.pageCount;
   const oldTerms = item.grade.machine.notContains;
@@ -199,6 +230,63 @@ export function gradeOverflowRefusalEvidence({ evidence, audit, commands, finalM
     gate("pdf-security:no-mutation-claimed", "security", /(?:no (?:pdf )?mutation|not performed|未(?:执行|修改)|没有修改)/i.test(operation), { actual: operation || "unreported" }),
     gate("pdf-security:audit-provenance", "security", auditSourceHash(audit) === evidence.source.sha256, { expected: evidence.source.sha256, actual: auditSourceHash(audit) || "unreported" }),
     ...overflowTraceChecks(audit, commands),
+  ];
+}
+
+function evidenceTermCount(evidence, term) {
+  return Number(evidence?.termCounts?.[term] || 0)
+    + Number(evidence?.rawTermCounts?.[term] || 0)
+    + Number(evidence?.decodedStreamTermCounts?.[term] || 0)
+    + Number(evidence?.metadataTermCounts?.[term] || 0);
+}
+
+function structureTermCount(structure, term) {
+  return Number(structure?.attachmentTermCounts?.[term] || 0)
+    + Number(structure?.structureTermCounts?.[term] || 0);
+}
+
+export function gradeActiveContentSanitizeEvidence({ evidence, audit, commands, item }) {
+  const source = evidence.source;
+  const output = evidence.output;
+  const sourceStructure = evidence.sourceStructure;
+  const outputStructure = evidence.outputStructure;
+  const forbiddenNames = item.grade.machine.forbiddenNames;
+  const forbiddenActions = item.grade.machine.forbiddenActionTypes;
+  const residueTerms = item.grade.machine.residueTerms;
+  const sourceNamesPresent = forbiddenNames.every((name) => (
+    Number(sourceStructure.structuralNameCounts?.[name] || 0)
+    + Number(sourceStructure.actionTypeCounts?.[name] || 0)
+  ) > 0);
+  const outputNamesAbsent = forbiddenNames.every((name) => (
+    Number(outputStructure.structuralNameCounts?.[name] || 0)
+    + Number(outputStructure.actionTypeCounts?.[name] || 0)
+  ) === 0);
+  const sourceActionsPresent = forbiddenActions.every((name) => Number(sourceStructure.actionTypeCounts?.[name] || 0) > 0);
+  const outputActionsAbsent = forbiddenActions.every((name) => Number(outputStructure.actionTypeCounts?.[name] || 0) === 0);
+  const sourceTermsPresent = residueTerms.every((term) => evidenceTermCount(source, term) + structureTermCount(sourceStructure, term) > 0);
+  const outputTermsAbsent = residueTerms.every((term) => evidenceTermCount(output, term) + structureTermCount(outputStructure, term) === 0);
+  const visualPages = evidence.visual.pages || [];
+  const auditStatus = String(audit?.status || "");
+  const validationText = JSON.stringify(audit?.validation || {});
+  return [
+    check("pdf-machine:source-risk-fixture-complete", "machine", sourceNamesPresent && sourceActionsPresent && sourceStructure.attachments.length > 0 && sourceStructure.commentAnnotations.length > 0 && sourceStructure.populatedWidgets.length > 0 && Object.keys(sourceStructure.personalMetadata).length > 0 && sourceTermsPresent, { actual: { names: sourceStructure.structuralNameCounts, actions: sourceStructure.actionTypeCounts, attachments: sourceStructure.attachments.length, comments: sourceStructure.commentAnnotations.length, populatedWidgets: sourceStructure.populatedWidgets.length, personalMetadata: sourceStructure.personalMetadata } }),
+    check("pdf-machine:page-count-and-boxes-unchanged", "machine", output.pageCount === source.pageCount && samePageBoxes(source.pages, output.pages), { actual: { source: source.pageCount, output: output.pageCount } }),
+    check("pdf-machine:attachments-removed", "machine", outputStructure.attachments.length === item.grade.machine.attachments, { expected: item.grade.machine.attachments, actual: outputStructure.attachments.length }),
+    check("pdf-machine:comments-removed", "machine", outputStructure.commentAnnotations.length === item.grade.machine.commentAnnotations, { expected: item.grade.machine.commentAnnotations, actual: outputStructure.commentAnnotations.length }),
+    check("pdf-machine:form-values-cleared", "machine", outputStructure.populatedWidgets.length === 0, { actual: outputStructure.populatedWidgets }),
+    check("pdf-machine:personal-metadata-absent", "machine", Object.keys(outputStructure.personalMetadata).length === 0, { actual: outputStructure.personalMetadata }),
+    check("pdf-machine:audit-success", "machine", /^(?:success|succeeded|completed)$/i.test(auditStatus), { actual: auditStatus || "unreported" }),
+    check("pdf-visual:all-pages-rendered", "visual", evidence.visual.sourcePageCount === source.pageCount && evidence.visual.outputPageCount === source.pageCount && visualPages.length === source.pageCount && visualPages.every((page) => page.sameDimensions && page.nonBlank), { renderer: evidence.visual.renderer, pages: visualPages.length }),
+    check("pdf-visual:ordinary-content-stable", "visual", visualPages.every((page) => page.changedOnlyWithinAllowedMasks), { allowedMasks: evidence.visual.allowedMasks, actual: visualPages.map(({ page, changedOutsideAllowedMasksBBox }) => ({ page, changedOutsideAllowedMasksBBox })) }),
+    check("pdf-visual:active-appearance-removed", "visual", visualPages.some((page) => page.changedPixelsBBox !== null), { actual: visualPages.map(({ page, changedPixelsBBox }) => ({ page, changedPixelsBBox })) }),
+    gate("pdf-security:active-names-absent", "security", outputNamesAbsent && outputActionsAbsent, { actual: { names: outputStructure.structuralNameCounts, actions: outputStructure.actionTypeCounts } }),
+    gate("pdf-security:all-risk-canaries-absent", "security", outputTermsAbsent, { terms: residueTerms }),
+    gate("pdf-security:all-streams-decodable", "security", source.decodedStreamErrors?.length === 0 && output.decodedStreamErrors?.length === 0, { actual: { source: source.decodedStreamErrors || [], output: output.decodedStreamErrors || [] } }),
+    gate("pdf-security:single-revision", "security", output.startxrefCount === 1 && output.eofCount === 1, { expected: { startxref: 1, eof: 1 }, actual: { startxref: output.startxrefCount, eof: output.eofCount } }),
+    gate("pdf-security:original-prefix-absent", "security", evidence.originalPrefixPreserved === false, { actual: evidence.originalPrefixPreserved }),
+    gate("pdf-security:audit-provenance", "security", auditSourceHash(audit) === source.sha256 && auditOutputHash(audit) === output.sha256, { expected: { source: source.sha256, output: output.sha256 }, actual: { source: auditSourceHash(audit) || "unreported", output: auditOutputHash(audit) || "unreported" } }),
+    check("pdf-security:audit-residue-and-render-evidence", "security", /residue/i.test(validationText) && /render|visual/i.test(validationText), { actual: audit?.validation || "unreported" }),
+    ...activeContentTraceChecks(audit, commands),
   ];
 }
 
@@ -274,6 +362,24 @@ function unreadableArtifactChecks(audit, commands, oracleError) {
   ];
 }
 
+function missingActiveContentArtifactChecks(audit, commands) {
+  return [
+    check("pdf-machine:artifact-available-for-oracle", "machine", false),
+    check("pdf-visual:artifact-available-for-oracle", "visual", false),
+    gate("pdf-security:artifact-available-for-oracle", "security", false),
+    ...activeContentTraceChecks(audit, commands),
+  ];
+}
+
+function unreadableActiveContentArtifactChecks(audit, commands, oracleError) {
+  return [
+    check("pdf-machine:artifact-readable-by-oracle", "machine", false, { actual: oracleError }),
+    check("pdf-visual:artifact-renderable-by-oracle", "visual", false, { actual: oracleError }),
+    gate("pdf-security:artifact-readable-by-oracle", "security", false, { actual: oracleError }),
+    ...activeContentTraceChecks(audit, commands),
+  ];
+}
+
 export async function gradePdfCase({ item, workspace, evaluator, finalMessage, trace, weights = defaultWeights }) {
   if (!supportedCases.has(item.id)) return { supported: false };
   const audit = await readAudit(workspace);
@@ -303,7 +409,7 @@ export async function gradePdfCase({ item, workspace, evaluator, finalMessage, t
     }
     if (!oracle.evidence) return { supported: true, graded: false, checks: [], pending: ["PDF case grader infrastructure"], infrastructureErrors: [oracle.infrastructureError] };
     checks = gradeBoundedReplaceEvidence({ evidence: oracle.evidence, audit, commands, item });
-  } else {
+  } else if (item.id === "pdf-overflow-replace-refusal") {
     oracle = invokeOracle({
       kind: "overflow-refusal",
       source: path.join(workspace, "inputs", "source.pdf"),
@@ -312,6 +418,27 @@ export async function gradePdfCase({ item, workspace, evaluator, finalMessage, t
     }, false);
     if (!oracle.evidence) return { supported: true, graded: false, checks: [], pending: ["PDF case grader infrastructure"], infrastructureErrors: [oracle.infrastructureError] };
     checks = gradeOverflowRefusalEvidence({ evidence: oracle.evidence, audit, commands, finalMessage, item });
+  } else {
+    const output = path.join(workspace, "outputs", "public-safe.pdf");
+    try { await fs.access(output); } catch {
+      checks = missingActiveContentArtifactChecks(audit, commands);
+      const score = summarizeCaseScore(checks, item.grade, weights, checks.filter((entry) => entry.gate).every((entry) => entry.passed));
+      return { supported: true, graded: true, checks, evidence: null, pending: [], ...score };
+    }
+    oracle = invokeOracle({
+      kind: "active-content-sanitize",
+      source: path.join(workspace, "inputs", "source.pdf"),
+      output,
+      terms: item.grade.machine.residueTerms,
+      renderRoot: path.join(evaluator, "pdf-oracle-render"),
+    }, true);
+    if (!oracle.evidence && oracle.oracleError) {
+      checks = unreadableActiveContentArtifactChecks(audit, commands, oracle.oracleError);
+      const score = summarizeCaseScore(checks, item.grade, weights, checks.filter((entry) => entry.gate).every((entry) => entry.passed));
+      return { supported: true, graded: true, checks, evidence: { oracleError: oracle.oracleError }, pending: [], ...score };
+    }
+    if (!oracle.evidence) return { supported: true, graded: false, checks: [], pending: ["PDF case grader infrastructure"], infrastructureErrors: [oracle.infrastructureError] };
+    checks = gradeActiveContentSanitizeEvidence({ evidence: oracle.evidence, audit, commands, item });
   }
   const score = summarizeCaseScore(checks, item.grade, weights, checks.filter((entry) => entry.gate).every((entry) => entry.passed));
   return { supported: true, graded: true, checks, evidence: oracle.evidence, pending: [], ...score };

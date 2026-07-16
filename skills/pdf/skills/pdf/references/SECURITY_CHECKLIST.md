@@ -24,7 +24,7 @@ Treat PDFs as untrusted structured programs.
 - Compare page count, page boxes, forms/annotations, attachment count, metadata, and signatures against the intended delta.
 - Run `pdfinfo`, `qpdf --check` where installed, and applicable pyHanko/veraPDF validation.
 - Render every page from final bytes with Poppler; model/SVG preview is not enough.
-- For sanitize/redaction, run the strict residue scan including image OCR and reject any incomplete evidence.
+- For sanitize/redaction, run the strict residue scan including image OCR and reject any incomplete evidence. For an inert public copy, also pass `--require-inert`; zero sensitive terms are valid only for a scrub-only operation.
 
 ## Fail-closed conditions
 
@@ -34,5 +34,6 @@ Treat PDFs as untrusted structured programs.
 - Signed-document policy is unknown or not explicitly accepted.
 - Output overwrites the input.
 - Incremental output does not retain the exact original prefix.
-- Sanitized output retains the original prefix, sensitive residues, unscanned images, or old revisions.
+- Sanitized output retains the original prefix, sensitive residues, active actions, attachments, comments, populated form values, personal metadata, links, invisible text, unscanned images, or old revisions.
+- Invisible text overlaps visible text, so safe rectangle removal cannot preserve ordinary page content.
 - Final page render has clipping, overlap, missing glyphs, blank pages, or unexplained visual changes.

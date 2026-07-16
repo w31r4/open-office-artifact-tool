@@ -7,8 +7,9 @@ Do not route an existing PDF through `PdfArtifact` for mutation. Pass the origin
 Run the exact adapter probe and route plan before any mutation. Do not defer either command until audit generation.
 
 ```bash
-python3 scripts/pymupdf_edit.py probe --accept-license agpl
-python3 scripts/pdf_provider.py plan \
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+"$PYTHON_BIN" scripts/pymupdf_edit.py probe --accept-license agpl
+"$PYTHON_BIN" scripts/pdf_provider.py plan \
   --task edit-content \
   --provider pymupdf \
   --strategy rewrite \
@@ -53,7 +54,7 @@ Prepare an operation list:
 Then run one explicit save policy:
 
 ```bash
-python3 scripts/pymupdf_edit.py edit input.pdf tmp/pdfs/edited.pdf \
+"$PYTHON_BIN" scripts/pymupdf_edit.py edit input.pdf tmp/pdfs/edited.pdf \
   --strategy rewrite \
   --operations tmp/pdfs/edit-operations.json \
   --accept-license agpl

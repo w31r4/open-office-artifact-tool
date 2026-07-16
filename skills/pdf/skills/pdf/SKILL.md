@@ -33,8 +33,9 @@ Read the [provider matrix](references/PROVIDER_MATRIX.md), [save policies](refer
 Probe and validate the route before work. Every mutation needs a provider-specific availability probe and `pdf_provider.py plan`; for a PyMuPDF mutation, both commands below are mandatory preflight and must finish before `pymupdf_edit.py edit`. Running either after mutation only for the audit does not satisfy this contract:
 
 ```bash
-python3 scripts/pymupdf_edit.py probe --accept-license agpl
-python3 scripts/pdf_provider.py plan \
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+"$PYTHON_BIN" scripts/pymupdf_edit.py probe --accept-license agpl
+"$PYTHON_BIN" scripts/pdf_provider.py plan \
   --task edit-content --provider pymupdf --strategy rewrite \
   --input input.pdf --output tmp/pdfs/edited.pdf \
   --accept-license agpl --require-provider
@@ -102,7 +103,7 @@ PyMuPDF is the explicit advanced provider selected for this project. It operates
 Run the mandatory provider probe and route plan above before this mutation command. For `replace_text` under `sanitize`, use `--task redact --strategy sanitize --invalidate-signatures` in the plan.
 
 ```bash
-python3 scripts/pymupdf_edit.py edit input.pdf tmp/pdfs/edited.pdf \
+"${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}" scripts/pymupdf_edit.py edit input.pdf tmp/pdfs/edited.pdf \
   --strategy rewrite \
   --operations tmp/pdfs/edit-operations.json \
   --accept-license agpl
@@ -136,7 +137,7 @@ Validate before and after every later revision. Report separately: cryptographic
 High-trust redaction always uses `sanitize`:
 
 ```bash
-python3 scripts/pymupdf_edit.py edit input.pdf tmp/pdfs/sanitized.pdf \
+"${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}" scripts/pymupdf_edit.py edit input.pdf tmp/pdfs/sanitized.pdf \
   --strategy sanitize \
   --operations tmp/pdfs/redactions.json \
   --sensitive-term 'Customer Secret' \
@@ -145,6 +146,25 @@ python3 scripts/pymupdf_edit.py edit input.pdf tmp/pdfs/sanitized.pdf \
 ```
 
 The script adds/applies real redactions, runs strict PyMuPDF scrub, performs a full garbage-collected rewrite, proves the old byte prefix is absent, and scans raw bytes, decoded objects/streams, extracted text, metadata/XMP, attachments, annotations/widgets, image OCR, and revision pointers. Every `redact_text`/`replace_text` token must also be an explicit residue term.
+
+For an inert public-release copy with no term redaction, use a scrub-only operation and the structural gate:
+
+```bash
+printf '[{"type":"scrub"}]' > tmp/pdfs/scrub.json
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+"$PYTHON_BIN" scripts/pymupdf_edit.py probe --accept-license agpl
+"$PYTHON_BIN" scripts/pdf_provider.py plan \
+  --task sanitize --provider pymupdf --strategy sanitize \
+  --input input.pdf --output tmp/pdfs/public-safe.pdf \
+  --accept-license agpl --invalidate-signatures --require-provider
+"$PYTHON_BIN" scripts/pymupdf_edit.py edit input.pdf tmp/pdfs/public-safe.pdf \
+  --strategy sanitize --operations tmp/pdfs/scrub.json \
+  --accept-license agpl --invalidate-signatures
+"$PYTHON_BIN" scripts/residue_scan.py tmp/pdfs/public-safe.pdf \
+  --require-inert --require-single-revision
+```
+
+This bounded primitive removes root/additional JavaScript, launch/submit actions, attachments, comments, populated widget defaults, personal metadata, and isolated invisible text before the provider scrub. Invisible text that overlaps visible text fails closed because rectangle removal would damage the visible page. A scrub-only job does not invent a fake sensitive term; any redaction/replacement operation still requires explicit `--sensitive-term` values.
 
 Image-bearing pages require Tesseract-backed OCR. If OCR is unavailable or any scan is incomplete, the operation deletes the transactional output and fails closed. Incremental redaction, opaque overlays, and text-extraction-only checks are forbidden. See [redact and sanitize](tasks/redact.md).
 
@@ -176,6 +196,7 @@ The npm package remains MIT licensed and does not bundle Python providers. The s
 
 ```bash
 uv pip install --python "$PYTHON" PyMuPDF==1.27.2.3
+export OPEN_OFFICE_PDF_PROVIDER_PYTHON="$PYTHON"
 export OPEN_OFFICE_PDF_PYMUPDF_LICENSE=AGPL
 "$PYTHON" scripts/pdf_provider.py check --provider pymupdf --require
 ```

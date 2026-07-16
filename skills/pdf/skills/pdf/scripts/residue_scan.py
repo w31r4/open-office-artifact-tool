@@ -16,6 +16,20 @@ class ScanError(RuntimeError):
     pass
 
 
+RISKY_STRUCTURAL_NAMES = (
+    "/AA",
+    "/EmbeddedFiles",
+    "/ImportData",
+    "/JavaScript",
+    "/JS",
+    "/Launch",
+    "/OpenAction",
+    "/RichMedia",
+    "/SubmitForm",
+    "/XFA",
+)
+
+
 def require_pymupdf():
     try:
         import pymupdf
@@ -33,6 +47,28 @@ def serialize(value: Any) -> str:
         return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
     except Exception:
         return str(value)
+
+
+def structural_name_counts(doc) -> dict[str, int]:
+    counts = {name: 0 for name in RISKY_STRUCTURAL_NAMES}
+    action_subtypes = {"/ImportData", "/JavaScript", "/Launch", "/SubmitForm"}
+    for xref in range(1, doc.xref_length()):
+        try:
+            keys = doc.xref_get_keys(xref) or []
+            for key in keys:
+                token = f"/{key}"
+                if token not in counts:
+                    continue
+                value_type, _ = doc.xref_get_key(xref, key)
+                if value_type != "null":
+                    counts[token] += 1
+            obj = doc.xref_object(xref, compressed=False, ascii=False) or ""
+            for subtype in action_subtypes:
+                if re.search(rf"/S\s+{re.escape(subtype)}(?![A-Za-z0-9])", obj):
+                    counts[subtype] += 1
+        except Exception:
+            continue
+    return counts
 
 
 class Findings:
@@ -85,6 +121,7 @@ def scan_pdf(
     *,
     require_ocr: bool = False,
     require_single_revision: bool = False,
+    require_inert: bool = False,
     ocr_language: str = "eng",
     ocr_dpi: int = 150,
     max_bytes: int = 512 * 1024 * 1024,
@@ -103,8 +140,8 @@ def scan_pdf(
             raise ScanError("sensitive terms must not be empty")
         if value not in normalized_terms:
             normalized_terms.append(value)
-    if not normalized_terms:
-        raise ScanError("at least one --term is required for a residue claim")
+    if not normalized_terms and not require_inert:
+        raise ScanError("at least one --term or --require-inert is required")
     payload = source.read_bytes()
     if len(payload) > max_bytes:
         raise ScanError(f"PDF is {len(payload)} bytes; strict max-bytes is {max_bytes}")
@@ -171,6 +208,10 @@ def scan_pdf(
             incomplete.append({"category": "attachments", "error": str(exc)})
 
         pages = []
+        hidden_text_spans = 0
+        comment_annotations = 0
+        links = 0
+        populated_form_values: list[dict[str, Any]] = []
         for page_index in range(doc.page_count):
             page = doc.load_page(page_index)
             page_number = page_index + 1
@@ -196,6 +237,7 @@ def scan_pdf(
             except Exception as exc:
                 incomplete.append({"category": "annotations", "location": f"page:{page_number}", "error": str(exc)})
             page_record["annotations"] = len(annotations)
+            comment_annotations += len(annotations)
             widgets = []
             try:
                 for widget in page.widgets() or []:
@@ -207,9 +249,23 @@ def scan_pdf(
                     }
                     widgets.append(record)
                     findings.text("widget", f"page:{page_number}:{widget.field_name}", serialize(record))
+                    if str(widget.field_value or "").strip().casefold() not in {"", "off", "false", "none"}:
+                        populated_form_values.append({"page": page_number, "name": widget.field_name, "value": str(widget.field_value)})
             except Exception as exc:
                 incomplete.append({"category": "widgets", "location": f"page:{page_number}", "error": str(exc)})
             page_record["widgets"] = len(widgets)
+            try:
+                page_links = list(page.get_links() or [])
+                page_record["links"] = len(page_links)
+                links += len(page_links)
+            except Exception as exc:
+                incomplete.append({"category": "links", "location": f"page:{page_number}", "error": str(exc)})
+            try:
+                page_hidden = [trace for trace in page.get_texttrace() if int(trace.get("type", 0)) == 3 or float(trace.get("opacity", 1)) == 0]
+                page_record["hiddenTextSpans"] = len(page_hidden)
+                hidden_text_spans += len(page_hidden)
+            except Exception as exc:
+                incomplete.append({"category": "hidden-text", "location": f"page:{page_number}", "error": str(exc)})
 
             if images and require_ocr:
                 try:
@@ -234,8 +290,32 @@ def scan_pdf(
             if prev_markers:
                 incomplete.append({"category": "revisions", "error": f"found {prev_markers} /Prev revision pointer(s)"})
 
+        names = structural_name_counts(doc)
+        metadata_fields = {
+            key: str(metadata.get(key) or "")
+            for key in ("title", "author", "subject", "keywords", "creator")
+            if str(metadata.get(key) or "").strip()
+        }
+        inert_violations = []
+        if require_inert:
+            if attachment_names:
+                inert_violations.append({"category": "attachments", "count": len(attachment_names)})
+            if comment_annotations:
+                inert_violations.append({"category": "annotations", "count": comment_annotations})
+            if populated_form_values:
+                inert_violations.append({"category": "form-values", "values": populated_form_values})
+            if metadata_fields:
+                inert_violations.append({"category": "personal-metadata", "fields": metadata_fields})
+            if hidden_text_spans:
+                inert_violations.append({"category": "hidden-text", "count": hidden_text_spans})
+            if links:
+                inert_violations.append({"category": "links", "count": links})
+            remaining_names = {name: count for name, count in names.items() if count}
+            if remaining_names:
+                inert_violations.append({"category": "active-structure", "names": remaining_names})
+
         report = {
-            "ok": findings.total == 0 and not incomplete,
+            "ok": findings.total == 0 and not incomplete and not inert_violations,
             "provider": "pymupdf",
             "providerVersion": pymupdf.__version__,
             "strategy": "read-only",
@@ -248,7 +328,18 @@ def scan_pdf(
                 "xrefs": xref_length,
                 "decodedBytes": decoded_bytes,
                 "attachments": len(attachment_names),
+                "commentAnnotations": comment_annotations,
+                "populatedFormValues": len(populated_form_values),
+                "hiddenTextSpans": hidden_text_spans,
+                "links": links,
                 "incompleteChecks": len(incomplete),
+            },
+            "activeContent": {
+                "required": require_inert,
+                "structuralNames": names,
+                "personalMetadata": metadata_fields,
+                "populatedFormValues": populated_form_values,
+                "violations": inert_violations,
             },
             "revisions": {"eofMarkers": eof_markers, "prevPointers": prev_markers, "singleRevisionRequired": require_single_revision},
             "pages": pages,
@@ -266,6 +357,7 @@ def parser() -> argparse.ArgumentParser:
     root.add_argument("--output", type=Path, help="optional JSON report path")
     root.add_argument("--require-ocr", action="store_true", help="fail if any image-bearing page cannot be OCR scanned")
     root.add_argument("--require-single-revision", action="store_true")
+    root.add_argument("--require-inert", action="store_true", help="fail on active actions, attachments, comments, populated forms, personal metadata, links, or hidden text")
     root.add_argument("--ocr-language", default="eng")
     root.add_argument("--ocr-dpi", type=int, default=150)
     root.add_argument("--max-bytes", type=int, default=512 * 1024 * 1024)
@@ -283,6 +375,7 @@ def main() -> int:
             args.term,
             require_ocr=args.require_ocr,
             require_single_revision=args.require_single_revision,
+            require_inert=args.require_inert,
             ocr_language=args.ocr_language,
             ocr_dpi=args.ocr_dpi,
             max_bytes=args.max_bytes,

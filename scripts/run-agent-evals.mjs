@@ -255,7 +255,8 @@ elif kind == "acroform-profile":
     c.save()
 elif kind in {"attachment-portfolio", "active-content"}:
     from pypdf import PdfReader, PdfWriter
-    from pypdf.generic import create_string_object
+    from pypdf.annotations import Text
+    from pypdf.generic import DictionaryObject, NameObject, TextStringObject, create_string_object
     temporary = out.with_suffix(".base.pdf")
     c = canvas.Canvas(str(temporary), pagesize=letter, invariant=1)
     base_page(c, "Public Release Review", 1)
@@ -263,15 +264,36 @@ elif kind in {"attachment-portfolio", "active-content"}:
     c.drawString(72, 680, "This visible page content must remain stable.")
     if kind == "active-content":
         c.acroForm.textfield(name="reviewer", tooltip="Reviewer", x=72, y=620, width=180, height=24, value="Private Person")
+        hidden = c.beginText(72, 580)
+        hidden.setTextRenderMode(3)
+        hidden.textLine("HIDDEN-REVIEW-CANARY-7A91")
+        c.drawText(hidden)
     c.save()
     reader = PdfReader(str(temporary))
     writer = PdfWriter(clone_from=reader)
     writer.add_metadata({"/Author": "Private Person", "/Subject": "Internal only"})
     attachments = [("report.txt", b"first"), ("report.txt", b"second"), ("unicode-\u6d4b\u8bd5.txt", b"unicode"), ("../escape.exe", b"MZ-not-executable"), ("archive.zip", b"PK-not-opened")]
+    if kind == "active-content":
+        attachments[0] = ("internal-review.txt", b"ATTACHMENT-CANARY-4D27")
     for name, payload in attachments: writer.add_attachment(name, payload)
     if kind == "active-content":
-        writer.add_js("app.alert('must be removed');")
+        writer.add_js("app.alert('JS-CANARY-2F61');")
         writer._root_object["/Names"]["/JavaScript"]["/Names"][0] = create_string_object("00000000-0000-0000-0000-000000000001")
+        writer._root_object[NameObject("/OpenAction")] = DictionaryObject({
+            NameObject("/S"): NameObject("/JavaScript"),
+            NameObject("/JS"): TextStringObject("app.alert('OPENACTION-CANARY-8B03');"),
+        })
+        writer._root_object[NameObject("/AA")] = DictionaryObject({
+            NameObject("/WC"): DictionaryObject({
+                NameObject("/S"): NameObject("/Launch"),
+                NameObject("/F"): TextStringObject("LAUNCH-CANARY-6C42.exe"),
+            }),
+            NameObject("/WP"): DictionaryObject({
+                NameObject("/S"): NameObject("/SubmitForm"),
+                NameObject("/F"): TextStringObject("https://invalid.example/SUBMIT-CANARY-9E18"),
+            }),
+        })
+        writer.add_annotation(0, Text(rect=(500, 680, 520, 700), text="COMMENT-CANARY-3A55", open=False))
     with out.open("wb") as handle: writer.write(handle)
     temporary.unlink()
 else:
@@ -600,7 +622,7 @@ async function scorePrepared(item, prepared, options = {}) {
 }
 
 function help() {
-  return `Agent artifact PromptBench\n\nCommands:\n  validate\n  list [--family pdf] [--status ready] [--json]\n  show <case-id> [--json]\n  prepare <case-id> [--subject candidate|reference] [--trial 1] [--run-root <path>]\n  run <case-id> [prepare options] [--model <model>] [--codex <path>]\n  score <case-id> --trial-root <prepared trial directory>\n\nThe Agent receives only PROMPT.md, declared inputs, the selected Skill, and an installed candidate tarball. Fixture specifications and graders are never copied into its workspace; run.json records integrity evidence and only a fingerprint of the hidden oracle, never the grading specification. The default run root is outside the repository in the OS temp directory. A production benchmark must additionally mount only the trial workspace into a no-network container, because a CLI sandbox alone is not an oracle confidentiality boundary. The bounded-replacement and overflow-refusal PDF pilots have independent semantic, Poppler visual, security, and provider-trace graders. Other cases retain explicit pending evidence and never claim full success from generic gates.\n`;
+  return `Agent artifact PromptBench\n\nCommands:\n  validate\n  list [--family pdf] [--status ready] [--json]\n  show <case-id> [--json]\n  prepare <case-id> [--subject candidate|reference] [--trial 1] [--run-root <path>]\n  run <case-id> [prepare options] [--model <model>] [--codex <path>]\n  score <case-id> --trial-root <prepared trial directory>\n\nThe Agent receives only PROMPT.md, declared inputs, the selected Skill, and an installed candidate tarball. Fixture specifications and graders are never copied into its workspace; run.json records integrity evidence and only a fingerprint of the hidden oracle, never the grading specification. The default run root is outside the repository in the OS temp directory. A production benchmark must additionally mount only the trial workspace into a no-network container, because a CLI sandbox alone is not an oracle confidentiality boundary. The bounded-replacement, overflow-refusal, and active-content sanitize PDF cases have independent semantic, Poppler visual where applicable, security, and provider-trace graders. Other cases retain explicit pending evidence and never claim full success from generic gates.\n`;
 }
 
 export async function main(argv = process.argv.slice(2)) {

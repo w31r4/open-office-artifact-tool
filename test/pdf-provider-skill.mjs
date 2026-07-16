@@ -295,6 +295,77 @@ try {
     assert.doesNotMatch(sanitizedExtraction.pages[0].text, /Customer Secret/);
     assert.match(sanitizedExtraction.pages[0].text, /Public Record/);
 
+    const activeFixtureScript = path.join(tempRoot, "active-fixture.py");
+    await fs.writeFile(activeFixtureScript, [
+      "import pathlib, sys",
+      "from reportlab.lib.pagesizes import letter",
+      "from reportlab.pdfgen import canvas",
+      "from pypdf import PdfReader, PdfWriter",
+      "from pypdf.annotations import Text",
+      "from pypdf.generic import DictionaryObject, NameObject, TextStringObject",
+      "out = pathlib.Path(sys.argv[1])",
+      "base = out.with_suffix('.base.pdf')",
+      "c = canvas.Canvas(str(base), pagesize=letter, invariant=1)",
+      "c.drawString(72, 680, 'Stable public content')",
+      "c.acroForm.textfield(name='reviewer', tooltip='Reviewer', x=72, y=620, width=180, height=24, value='Private Person')",
+      "hidden = c.beginText(72, 580)",
+      "hidden.setTextRenderMode(3)",
+      "hidden.textLine('HIDDEN-ACTIVE-CANARY')",
+      "c.drawText(hidden)",
+      "c.save()",
+      "writer = PdfWriter(clone_from=PdfReader(str(base)))",
+      "writer.add_metadata({'/Author': 'Private Person', '/Subject': 'Internal only'})",
+      "writer.add_attachment('internal.txt', b'ATTACHMENT-ACTIVE-CANARY')",
+      "writer.add_js(\"app.alert('JS-ACTIVE-CANARY');\")",
+      "writer._root_object[NameObject('/OpenAction')] = DictionaryObject({NameObject('/S'): NameObject('/JavaScript'), NameObject('/JS'): TextStringObject(\"app.alert('OPEN-ACTIVE-CANARY');\")})",
+      "writer._root_object[NameObject('/AA')] = DictionaryObject({NameObject('/WC'): DictionaryObject({NameObject('/S'): NameObject('/Launch'), NameObject('/F'): TextStringObject('LAUNCH-ACTIVE-CANARY.exe')}), NameObject('/WP'): DictionaryObject({NameObject('/S'): NameObject('/SubmitForm'), NameObject('/F'): TextStringObject('https://invalid.example/SUBMIT-ACTIVE-CANARY')})})",
+      "writer.add_annotation(0, Text(rect=(500, 680, 520, 700), text='COMMENT-ACTIVE-CANARY'))",
+      "with out.open('wb') as handle: writer.write(handle)",
+      "base.unlink()",
+    ].join("\n"), "utf8");
+    const activeSource = path.join(tempRoot, "active-source.pdf");
+    run(integrationPython, [activeFixtureScript, activeSource], { status: 0 });
+    const activeSourceScan = parseResult(run(integrationPython, [path.join(scriptsRoot, "residue_scan.py"), activeSource, "--require-inert", "--require-single-revision"], { status: 2 }));
+    const activeSourceCategories = new Set(activeSourceScan.activeContent.violations.map((entry) => entry.category));
+    for (const category of ["attachments", "annotations", "form-values", "personal-metadata", "hidden-text", "active-structure"]) assert.ok(activeSourceCategories.has(category), `missing source active-content category ${category}`);
+    const scrubOnlyOps = path.join(tempRoot, "scrub-only.json");
+    await fs.writeFile(scrubOnlyOps, JSON.stringify([{ type: "scrub" }]), "utf8");
+    const activeOutput = path.join(tempRoot, "active-public.pdf");
+    const activeResult = parseResult(run(integrationPython, [path.join(scriptsRoot, "pymupdf_edit.py"), "edit", activeSource, activeOutput, "--strategy", "sanitize", "--operations", scrubOnlyOps, "--accept-license", "agpl", "--invalidate-signatures"], { status: 0 }));
+    const activeCleanup = activeResult.operations.find((operation) => operation.type === "active_content_cleanup");
+    assert.equal(activeResult.residueScan.ok, true);
+    assert.equal(activeResult.originalPrefixPreserved, false);
+    assert.equal(activeCleanup.annotationsRemoved, 1);
+    assert.equal(activeCleanup.widgetsCleared, 1);
+    assert.equal(activeCleanup.hiddenTextSpansRemoved.length, 1);
+    assert.ok(activeCleanup.actionKeysRemoved.length >= 2);
+    assert.ok(activeCleanup.nameTreeKeysRemoved.length >= 2);
+    const activeOutputScan = parseResult(run(integrationPython, [path.join(scriptsRoot, "residue_scan.py"), activeOutput, "--require-inert", "--require-single-revision"], { status: 0 }));
+    assert.equal(activeOutputScan.ok, true);
+    assert.equal(activeOutputScan.summary.attachments, 0);
+    assert.equal(activeOutputScan.summary.commentAnnotations, 0);
+    assert.equal(activeOutputScan.summary.populatedFormValues, 0);
+    assert.equal(activeOutputScan.summary.hiddenTextSpans, 0);
+    assert.deepEqual(activeOutputScan.activeContent.violations, []);
+
+    const overlapSource = path.join(tempRoot, "hidden-overlap.pdf");
+    run(integrationPython, ["-c", [
+      "from reportlab.lib.pagesizes import letter",
+      "from reportlab.pdfgen import canvas",
+      "import sys",
+      "c=canvas.Canvas(sys.argv[1],pagesize=letter,invariant=1)",
+      "c.drawString(72,680,'VISIBLE')",
+      "t=c.beginText(72,680)",
+      "t.setTextRenderMode(3)",
+      "t.textLine('HIDDEN')",
+      "c.drawText(t)",
+      "c.save()",
+    ].join(";"), overlapSource], { status: 0 });
+    const overlapOutput = path.join(tempRoot, "hidden-overlap-output.pdf");
+    const overlap = run(integrationPython, [path.join(scriptsRoot, "pymupdf_edit.py"), "edit", overlapSource, overlapOutput, "--strategy", "sanitize", "--operations", scrubOnlyOps, "--accept-license", "agpl", "--invalidate-signatures"], { status: 2 });
+    assert.match(overlap.stderr, /hidden text .* overlaps visible text/);
+    await assert.rejects(fs.access(overlapOutput));
+
     const sourceResidue = run(integrationPython, [path.join(scriptsRoot, "residue_scan.py"), sourcePath, "--term", "Customer Secret", "--require-single-revision"], { status: 2 });
     const sourceResidueReport = parseResult(sourceResidue, "stdout");
     assert.equal(sourceResidueReport.ok, false);

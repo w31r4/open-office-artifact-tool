@@ -241,6 +241,97 @@ def validate_signed_mutation(policy: dict[str, Any], strategy: str, args: argpar
         raise ProviderError(f"{strategy} on signed/signature-constrained input requires --invalidate-signatures")
 
 
+def sanitize_active_content(pymupdf, doc) -> dict[str, Any]:
+    """Remove the bounded inert-publication surface before PyMuPDF's full scrub.
+
+    PyMuPDF's Document.scrub() is still the package cleanup authority. These
+    explicit steps cover document actions, comments, populated widgets, and
+    isolated invisible text that scrub() does not remove in every supported
+    provider build. Invisible text overlapping visible text fails closed
+    instead of redacting legitimate page content.
+    """
+    hidden_spans = []
+    annotations_removed = 0
+    widgets_cleared = 0
+    action_keys_removed = []
+    name_tree_keys_removed = []
+    for page_index in range(doc.page_count):
+        page = doc.load_page(page_index)
+        try:
+            traces = list(page.get_texttrace() or [])
+        except Exception as exc:
+            raise ProviderError(f"cannot inspect hidden text on page {page_index + 1}: {exc}") from exc
+        visible_rects = [
+            pymupdf.Rect(trace["bbox"])
+            for trace in traces
+            if int(trace.get("type", 0)) != 3 and float(trace.get("opacity", 1)) != 0
+        ]
+        page_hidden = [
+            pymupdf.Rect(trace["bbox"])
+            for trace in traces
+            if int(trace.get("type", 0)) == 3 or float(trace.get("opacity", 1)) == 0
+        ]
+        for bounds in page_hidden:
+            if any((bounds & visible).get_area() > 0.01 for visible in visible_rects):
+                raise ProviderError(
+                    f"hidden text on page {page_index + 1} overlaps visible text; "
+                    "safe removal cannot preserve the visible page"
+                )
+            page.add_redact_annot(bounds, fill=False, cross_out=False)
+            hidden_spans.append({"page": page_index + 1, "rect": list(bounds)})
+        if page_hidden:
+            page.apply_redactions(images=0, graphics=0, text=0)
+
+        for annotation in list(page.annots() or []):
+            page.delete_annot(annotation)
+            annotations_removed += 1
+
+        for widget in list(page.widgets() or []):
+            value = str(widget.field_value or "").strip()
+            if value.casefold() not in {"", "off", "false", "none"}:
+                widget.field_value = ""
+                widget.update()
+                widgets_cleared += 1
+            for key in ("V", "DV"):
+                if key in (doc.xref_get_keys(widget.xref) or []):
+                    doc.xref_set_key(widget.xref, key, "null")
+
+    for xref in range(1, doc.xref_length()):
+        try:
+            keys = doc.xref_get_keys(xref) or []
+        except Exception:
+            continue
+        for key in ("AA", "OpenAction"):
+            if key in keys:
+                value_type, _ = doc.xref_get_key(xref, key)
+                if value_type != "null":
+                    doc.xref_set_key(xref, key, "null")
+                    action_keys_removed.append({"xref": xref, "key": key})
+    catalog = doc.pdf_catalog()
+    if catalog > 0:
+        value_type, value = doc.xref_get_key(catalog, "Names")
+        if value_type == "xref":
+            try:
+                names_xref = int(str(value).split()[0])
+                names_keys = doc.xref_get_keys(names_xref) or []
+                for key in ("EmbeddedFiles", "JavaScript"):
+                    if key in names_keys:
+                        nested_type, _ = doc.xref_get_key(names_xref, key)
+                        if nested_type != "null":
+                            doc.xref_set_key(names_xref, key, "null")
+                            name_tree_keys_removed.append({"xref": names_xref, "key": key})
+            except (TypeError, ValueError):
+                raise ProviderError("catalog /Names reference could not be resolved for active-content cleanup")
+    return {
+        "type": "active_content_cleanup",
+        "hiddenTextSpansRemoved": hidden_spans,
+        "annotationsRemoved": annotations_removed,
+        "widgetsCleared": widgets_cleared,
+        "actionKeysRemoved": action_keys_removed,
+        "nameTreeKeysRemoved": name_tree_keys_removed,
+    }
+
+
 def load_operations(path: Path) -> list[dict[str, Any]]:
     source = path.expanduser().resolve()
     if not source.is_file():
@@ -583,6 +674,9 @@ def save_document(pymupdf, doc, strategy: str, temporary: Path) -> None:
             thumbnails=True,
             xml_metadata=True,
         )
+        catalog = doc.pdf_catalog()
+        if catalog > 0:
+            doc.xref_set_key(catalog, "PageMode", "/UseNone")
         doc.save(
             str(temporary),
             garbage=4,
@@ -621,8 +715,13 @@ def edit(args: argparse.Namespace, pymupdf, license_choice: str) -> dict[str, An
     operations = load_operations(operations_path)
     if args.strategy == "sanitize" and not args.invalidate_signatures:
         raise ProviderError("sanitize requires explicit --invalidate-signatures acknowledgement")
-    if args.strategy == "sanitize" and not args.sensitive_term:
-        raise ProviderError("sanitize requires at least one --sensitive-term for the strict residue gate")
+    residue_sensitive_operations = {
+        "redact_text",
+        "redact_rect",
+        "replace_text",
+    }
+    if args.strategy == "sanitize" and any(operation.get("type") in residue_sensitive_operations for operation in operations) and not args.sensitive_term:
+        raise ProviderError("sanitize redaction/replacement requires at least one --sensitive-term for the strict residue gate")
     if args.strategy == "sanitize":
         operation_terms = {
             str(operation["term"])
@@ -650,6 +749,8 @@ def edit(args: argparse.Namespace, pymupdf, license_choice: str) -> dict[str, An
         before_policy = signature_policy(doc)
         validate_signed_mutation(before_policy, args.strategy, args)
         applied = apply_operations(pymupdf, doc, operations, args.strategy)
+        if args.strategy == "sanitize":
+            applied.append(sanitize_active_content(pymupdf, doc))
         save_document(pymupdf, doc, args.strategy, temporary)
         doc.close()
         doc = None
@@ -671,13 +772,15 @@ def edit(args: argparse.Namespace, pymupdf, license_choice: str) -> dict[str, An
                 args.sensitive_term,
                 require_ocr=True,
                 require_single_revision=True,
+                require_inert=True,
                 ocr_language=args.ocr_language,
                 ocr_dpi=args.ocr_dpi,
             )
             if not residue_report["ok"]:
                 raise ProviderError(
                     f"strict residue scan failed: matches={residue_report['summary']['matches']}, "
-                    f"incomplete={residue_report['summary']['incompleteChecks']}"
+                    f"incomplete={residue_report['summary']['incompleteChecks']}, "
+                    f"inert={residue_report.get('activeContent', {}).get('violations', [])}"
                 )
 
         result_doc = open_document(pymupdf, temporary, args.password_env)

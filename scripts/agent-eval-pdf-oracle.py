@@ -20,8 +20,8 @@ from typing import Any
 import pdfplumber
 import pypdf
 import reportlab
-from PIL import Image, ImageChops
-from pypdf.generic import IndirectObject
+from PIL import Image, ImageChops, ImageDraw
+from pypdf.generic import IndirectObject, NullObject
 from reportlab.pdfbase import pdfmetrics
 
 
@@ -89,6 +89,117 @@ def inspect_pdf(file_path: pathlib.Path, terms: list[str]) -> dict[str, Any]:
         "metadataTermCounts": {term: term_count(metadata_text, term) for term in terms},
         "startxrefCount": len(re.findall(rb"(?m)^startxref\s*$", raw)),
         "eofCount": len(re.findall(rb"%%EOF", raw)),
+    }
+
+
+def resolve_pdf_value(value: Any) -> Any:
+    while isinstance(value, IndirectObject):
+        value = value.get_object()
+    return value
+
+
+def active_structure_evidence(file_path: pathlib.Path, terms: list[str]) -> dict[str, Any]:
+    reader = pypdf.PdfReader(str(file_path), strict=True)
+    forbidden_names = {
+        "/AA",
+        "/EmbeddedFiles",
+        "/JS",
+        "/JavaScript",
+        "/Launch",
+        "/OpenAction",
+    }
+    action_types = {"/ImportData", "/JavaScript", "/Launch", "/SubmitForm"}
+    name_counts = {name: 0 for name in sorted(forbidden_names)}
+    action_type_counts = {name: 0 for name in sorted(action_types)}
+    visited: set[tuple[int, int]] = set()
+    scalar_values: list[str] = []
+
+    def visit(value: Any) -> None:
+        if isinstance(value, IndirectObject):
+            identity = (value.idnum, value.generation)
+            if identity in visited:
+                return
+            visited.add(identity)
+            value = value.get_object()
+        if isinstance(value, dict):
+            for key, child in value.items():
+                token = str(key)
+                resolved = resolve_pdf_value(child)
+                if token in name_counts and not isinstance(resolved, NullObject):
+                    name_counts[token] += 1
+                if token == "/S" and str(resolved) in action_type_counts:
+                    action_type_counts[str(resolved)] += 1
+                visit(child)
+        elif isinstance(value, (list, tuple)):
+            for child in value:
+                visit(child)
+        elif not isinstance(value, NullObject):
+            scalar_values.append(str(value))
+
+    visit(reader.trailer)
+    attachments = []
+    attachment_term_counts = {term: 0 for term in terms}
+    try:
+        attachment_list = list(reader.attachment_list)
+    except TypeError:
+        if name_counts.get("/EmbeddedFiles", 0):
+            raise
+        attachment_list = []
+    for attachment in attachment_list:
+        payload = attachment.content
+        attachments.append({
+            "name": attachment.name,
+            "bytes": len(payload),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        })
+        for term in terms:
+            attachment_term_counts[term] += term_count(payload, term)
+
+    annotations = []
+    widgets = []
+    for page_index, page in enumerate(reader.pages, 1):
+        for reference in page.get("/Annots", []) or []:
+            annotation = resolve_pdf_value(reference)
+            subtype = str(annotation.get("/Subtype", ""))
+            record = {
+                "page": page_index,
+                "subtype": subtype,
+                "contents": str(resolve_pdf_value(annotation.get("/Contents", "")) or ""),
+            }
+            if subtype == "/Widget":
+                values = {}
+                for key in ("/V", "/DV"):
+                    resolved = resolve_pdf_value(annotation.get(key, ""))
+                    values[key] = "" if isinstance(resolved, NullObject) else str(resolved or "")
+                widgets.append({**record, "name": str(resolve_pdf_value(annotation.get("/T", "")) or ""), "values": values})
+            else:
+                annotations.append(record)
+
+    metadata = {str(key): str(value or "") for key, value in (reader.metadata or {}).items()}
+    personal_metadata = {
+        key: value
+        for key, value in metadata.items()
+        if key in {"/Author", "/Creator", "/Keywords", "/Subject", "/Title"}
+        and value.strip()
+        and not (key == "/Title" and value.strip().casefold() == "untitled")
+    }
+    populated_widgets = [
+        widget
+        for widget in widgets
+        if any(value.strip().casefold() not in {"", "off", "false", "none"} for value in widget["values"].values())
+    ]
+    scalar_text = "\n".join(scalar_values)
+    return {
+        "structuralNameCounts": name_counts,
+        "actionTypeCounts": action_type_counts,
+        "attachments": attachments,
+        "attachmentTermCounts": attachment_term_counts,
+        "structureTermCounts": {term: term_count(scalar_text, term) for term in terms},
+        "commentAnnotations": annotations,
+        "widgets": widgets,
+        "populatedWidgets": populated_widgets,
+        "metadata": metadata,
+        "personalMetadata": personal_metadata,
     }
 
 
@@ -197,6 +308,64 @@ def compare_rendered_pages(
     }
 
 
+def compare_rendered_pages_with_masks(
+    source: pathlib.Path,
+    output: pathlib.Path,
+    render_root: pathlib.Path,
+    poppler: str,
+    allowed_masks: list[dict[str, Any]],
+    dpi: int = 144,
+) -> dict[str, Any]:
+    shutil.rmtree(render_root, ignore_errors=True)
+    source_pages = run_poppler(poppler, source, render_root / "source" / "page", dpi)
+    output_pages = run_poppler(poppler, output, render_root / "output" / "page", dpi)
+    scale = dpi / 72.0
+    padding = 8
+    masks_by_page: dict[int, list[list[int]]] = {}
+    for mask in allowed_masks:
+        x0, top, x1, bottom = mask["bbox"]
+        masks_by_page.setdefault(int(mask["page"]), []).append([
+            math.floor(x0 * scale) - padding,
+            math.floor(top * scale) - padding,
+            math.ceil(x1 * scale) + padding,
+            math.ceil(bottom * scale) + padding,
+        ])
+    pages = []
+    for index in range(max(len(source_pages), len(output_pages))):
+        if index >= len(source_pages) or index >= len(output_pages):
+            pages.append({"page": index + 1, "missing": True})
+            continue
+        with Image.open(source_pages[index]) as source_image_raw, Image.open(output_pages[index]) as output_image_raw:
+            source_image = source_image_raw.convert("RGB")
+            output_image = output_image_raw.convert("RGB")
+            same_dimensions = source_image.size == output_image.size
+            difference = ImageChops.difference(source_image, output_image) if same_dimensions else None
+            difference_bbox = difference.getbbox() if difference else None
+            outside = difference.copy() if difference else None
+            if outside:
+                painter = ImageDraw.Draw(outside)
+                for mask in masks_by_page.get(index + 1, []):
+                    painter.rectangle(mask, fill=(0, 0, 0))
+            outside_bbox = outside.getbbox() if outside else None
+            non_white_bbox = ImageChops.difference(output_image, Image.new("RGB", output_image.size, "white")).getbbox()
+            pages.append({
+                "page": index + 1,
+                "sameDimensions": same_dimensions,
+                "nonBlank": non_white_bbox is not None,
+                "changedPixelsBBox": list(difference_bbox) if difference_bbox else None,
+                "changedOutsideAllowedMasksBBox": list(outside_bbox) if outside_bbox else None,
+                "changedOnlyWithinAllowedMasks": outside_bbox is None,
+            })
+    return {
+        "renderer": "poppler-pdftoppm",
+        "dpi": dpi,
+        "sourcePageCount": len(source_pages),
+        "outputPageCount": len(output_pages),
+        "allowedMasks": [{"page": page, "bboxPx": bbox} for page, boxes in masks_by_page.items() for bbox in boxes],
+        "pages": pages,
+    }
+
+
 def bounded_replace(payload: dict[str, Any]) -> dict[str, Any]:
     source = pathlib.Path(payload["source"])
     output = pathlib.Path(payload["output"])
@@ -272,6 +441,32 @@ def overflow_refusal(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def active_content_sanitize(payload: dict[str, Any]) -> dict[str, Any]:
+    source = pathlib.Path(payload["source"])
+    output = pathlib.Path(payload["output"])
+    terms = list(payload.get("terms") or [])
+    source_bytes = source.read_bytes()
+    output_bytes = output.read_bytes()
+    return {
+        "kind": "active-content-sanitize",
+        "source": inspect_pdf(source, terms),
+        "output": inspect_pdf(output, terms),
+        "sourceStructure": active_structure_evidence(source, terms),
+        "outputStructure": active_structure_evidence(output, terms),
+        "originalPrefixPreserved": output_bytes.startswith(source_bytes),
+        "visual": compare_rendered_pages_with_masks(
+            source,
+            output,
+            pathlib.Path(payload["renderRoot"]),
+            payload["poppler"],
+            [
+                {"page": 1, "bbox": [72, 148, 252, 172]},
+                {"page": 1, "bbox": [500, 92, 520, 112]},
+            ],
+        ),
+    }
+
+
 def main() -> None:
     payload = json.load(sys.stdin)
     kind = payload.get("kind")
@@ -279,6 +474,8 @@ def main() -> None:
         evidence = bounded_replace(payload)
     elif kind == "overflow-refusal":
         evidence = overflow_refusal(payload)
+    elif kind == "active-content-sanitize":
+        evidence = active_content_sanitize(payload)
     else:
         raise ValueError(f"unsupported PDF oracle kind: {kind}")
     evidence["toolchain"] = {
