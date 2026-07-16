@@ -10,7 +10,7 @@ This installable Codex plugin is distributed with `open-office-artifact-tool`.
 
 ## Discoverability
 
-Use this plugin for PDF-oriented terms from the file-type naming model: PDF, PDFs, render PDF, review PDF, extract PDF, pdfplumber, pypdf, reportlab, and `.pdf`.
+Use this plugin for PDF-oriented terms from the file-type naming model: PDF, PDFs, render PDF, review PDF, extract PDF, tagged PDF, PDF.js, Poppler, and `.pdf`.
 
 ## Source
 
@@ -18,4 +18,4 @@ The plugin tree is versioned directly under `skills/pdf` in the public repositor
 
 ## Compatibility status
 
-The native plugin package and the project's independent PDF pipeline are available. The reference guide still needs final adapter convergence so its primary workflow consistently exercises the public `open-office-artifact-tool` PDF API.
+The native plugin's primary workflow now runs on the public `open-office-artifact-tool` PDF model/API. Its shipped end-to-end example creates, round-trips, edits, inspects, verifies, and Poppler-renders a tagged PDF. PDF.js remains the explicit parser for arbitrary source files; arbitrary native PDF object-stream editing remains outside the modeled boundary.

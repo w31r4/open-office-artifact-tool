@@ -20,9 +20,9 @@
     "review",
     "extract",
     "extraction",
-    "pypdf",
-    "pdfplumber",
-    "reportlab"
+    "tagged-pdf",
+    "pdfjs",
+    "poppler"
   ],
   "skills": "./skills/",
   "interface": {
