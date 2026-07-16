@@ -31,7 +31,7 @@ assert.strictEqual(text, leafText, "root must re-export the reference-compatible
 assert.strictEqual(FileBlob, LeafFileBlob, "root must re-export the FileBlob constructor binding");
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 276);
+assert.equal(HELP_CATALOG.length, 277);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -115,6 +115,7 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.extractTables"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.addPage"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.page.setReadingOrder"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.addTable"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.addLink"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.addFlowText"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createPdfjsParser"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "verifyArtifact"));
@@ -222,10 +223,13 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.sche
 assert.equal(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.schema?.parameters?.diffAlignment?.type, "string");
 assert.equal(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.schema?.parameters?.pixelRegistration?.type, "boolean|number|object");
 const pdfCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "pdf");
-assert.equal(pdfCatalog.length, 19);
+assert.equal(pdfCatalog.length, 20);
 assert.ok(pdfCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.addText")?.schema?.parameters?.bbox?.type, "number[]");
 assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.addText")?.schema?.parameters?.headingLevel?.type, "number");
+assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.addText")?.schema?.parameters?.artifact?.type, "boolean");
+assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.addLink")?.schema?.parameters?.url?.required, true);
+assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.addTable")?.schema?.parameters?.semanticId?.type, "string");
 assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.addPage")?.schema?.parameters?.readingOrder?.type, "string[]|object[]");
 assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.page.setReadingOrder")?.schema?.parameters?.order?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.addImage")?.schema?.parameters?.decorative?.type, "boolean");

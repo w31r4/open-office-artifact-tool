@@ -626,21 +626,22 @@ Experimentally import DOCX bytes through OpenChestnut with source-bound block an
 | `pdf.addChart` | api | Add a modeled bar/line chart region with categories, series, title, meaningful alternative text or decorative-artifact semantics, bbox, inspect/resolve/layout records, SVG preview, and PDF metadata roundtrip. |
 | `pdf.addFlowText` | api | Wrap long text into positioned lines and automatically append pages when the configured content box is full. |
 | `pdf.addImage` | api | Add a modeled PDF image region with dataUrl/URI/prompt metadata, meaningful alternative text or explicit decorative-artifact semantics, and a page-space bounding box. |
-| `pdf.addPage` | api | Append a modeled PDF page with explicit point dimensions and optional text, positioned items, regions, tables, images, and charts. |
-| `pdf.addTable` | api | Add a modeled table with cell values, row/column spans, TH/TD roles, scopes, header associations, stable cell IDs, and a page-space bounding box. |
-| `pdf.addText` | api | Add positioned PDF text with page-space bbox, font metadata, optional semantic H1-H6 heading level, inspect/resolve/layout records, and SVG preview rendering. |
+| `pdf.addLink` | api | Add a meaningful visible http, https, or mailto link with stable ID, page-space bounding box, tagged Link structure, URI annotation, OBJR association, and explicit reading-order participation. |
+| `pdf.addPage` | api | Append a modeled PDF page with explicit point dimensions and optional text, positioned items, regions, tables, images, charts, and links. |
+| `pdf.addTable` | api | Add a modeled table with cell values, row/column spans, TH/TD roles, scopes, header associations, stable cell IDs, a page-space bounding box, and optional semanticId joining constrained consecutive-page segments into one logical Table. |
+| `pdf.addText` | api | Add positioned PDF text with page-space bbox, font metadata, optional semantic H1-H6 heading level or decorative Artifact semantics, inspect/resolve/layout records, and SVG preview rendering. |
 | `pdf.extractTables` | api | Extract modeled table values, normalized spanning-cell/header records, and bounding boxes across all pages or a selected page. |
 | `pdf.extractText` | api | Extract modeled text across all pages or a selected page. |
-| `pdf.inspect` | api | Emit bounded NDJSON for pages, text, positioned text items, reading-order entries, layout regions, tables/table cells, images, and charts; narrow with search/target anchors and shape fields with include/exclude. |
-| `pdf.layoutJson` | api | Return modeled PDF page layout JSON with page text, positioned text items, explicit/effective reading order, layout regions, normalized table cells/spans/header IDs, images, charts, and target/search context slicing. |
-| `pdf.page.setReadingOrder` | api | Declare the complete logical reading sequence of a page's body text, positioned text, tables, images, and charts by stable ID without changing visual paint order. |
+| `pdf.inspect` | api | Emit bounded NDJSON for pages, text, positioned text items, reading-order entries, layout regions, tables/table cells, images, charts, and links; narrow with search/target anchors and shape fields with include/exclude. |
+| `pdf.layoutJson` | api | Return modeled PDF page layout JSON with page text, positioned text items, explicit/effective reading order, layout regions, normalized table cells/spans/header IDs, images, charts, links, and target/search context slicing. |
+| `pdf.page.setReadingOrder` | api | Declare the complete logical reading sequence of a page's body text, positioned text, tables, images, charts, and links by stable ID without changing visual paint order. |
 | `pdf.render` | api | Render a modeled PDF page to SVG by default, return page layout JSON with { format: 'layout' }, or use { source: 'pdf', renderer } to feed the exported PDF into Poppler/PDF-capable raster adapters. |
-| `pdf.resolve` | api | Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, reading-order entries, layout regions, tables/table cells, images, and charts. |
-| `pdf.verify` | api | Return QA issues for invalid H1-H6 nesting, missing/generic Figure alternative text, incomplete/duplicate/unknown reading-order targets, empty pages, Unicode dashes, text extraction sanity, geometry/bounds, invalid images, table semantics, and chart data. |
-| `PdfArtifact.create` | api | Create a modeled PDF artifact with pages, text, span-aware accessible table regions, image regions, and charts. |
-| `PdfFile.exportPdf` | api | Export a modeled artifact as a real multi-page tagged PDF 1.7 whose logical structure follows explicit page reading order without changing paint order, emits semantic H1-H6 headings, meaningful Figure /Alt text and /Artifact marked content, and preserves language/title, Table/TR/TH/TD hierarchy, optional Unicode TrueType embedding, positioned text, vector charts, and PNG/JPEG images. |
+| `pdf.resolve` | api | Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, reading-order entries, layout regions, tables/table cells, images, charts, and links. |
+| `pdf.verify` | api | Return QA issues for invalid H1-H6 nesting, missing/generic Figure alternative text, meaningless/unsafe links, cross-page logical-table continuity, incomplete/duplicate/unknown reading-order targets, empty pages, text extraction sanity, geometry/bounds, invalid images, table semantics, and chart data. |
+| `PdfArtifact.create` | api | Create a modeled PDF artifact with pages, text, span-aware accessible table regions, image regions, charts, links, and explicit reading order. |
+| `PdfFile.exportPdf` | api | Export a modeled artifact as a real multi-page tagged PDF 1.7 whose logical structure follows explicit page reading order without changing paint order, emits semantic H1-H6 headings, meaningful Figure /Alt text, Link annotations with OBJR associations, /Artifact marked content, and constrained logical Tables spanning consecutive pages, and preserves language/title, Table/TR/TH/TD hierarchy, optional Unicode TrueType embedding, positioned text, vector charts, and PNG/JPEG images. |
 | `PdfFile.importPdf` | api | Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, reconstruct tables from positioned text geometry when explicit tables are absent, or fall back to heuristic visible-text/table extraction. |
-| `PdfFile.inspectPdf` | api | Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, reading-order IDs, H1-H6 role counts, Figure alt-text and Artifact counts, font evidence, structure roles/table attributes, and marked-content count. |
+| `PdfFile.inspectPdf` | api | Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, reading-order IDs, H1-H6 role counts, Figure alt-text, Link annotation/URI/StructParent, Artifact counts, font evidence, structure roles/table attributes, and marked-content count. |
 
 ### pdf details
 
@@ -732,9 +733,28 @@ Add a modeled PDF image region with dataUrl/URI/prompt metadata, meaningful alte
 
 - `image` (PdfImage) — Inspectable image facade with stable ID.
 
+#### `pdf.addLink`
+
+Add a meaningful visible http, https, or mailto link with stable ID, page-space bounding box, tagged Link structure, URI annotation, OBJR association, and explicit reading-order participation.
+
+**Examples:**
+
+- pdf.addLink({ pageIndex: 0, text: 'W3C accessibility guidance', url: 'https://www.w3.org/WAI/', bbox: [72, 700, 240, 18] })
+
+**Schema parameters:**
+
+- `pageIndex` (number) — Zero-based target page index.
+- `text` (string) required — Visible text that meaningfully describes the destination; generic text and raw URLs fail verification.
+- `url` (string) required — Absolute http, https, or mailto destination.
+- `bbox` (number[]) — Page-space [left, top, width, height] in points for visible text and the URI annotation.
+
+**Schema returns:**
+
+- `link` (PdfLink) — Inspectable link facade with stable ID.
+
 #### `pdf.addPage`
 
-Append a modeled PDF page with explicit point dimensions and optional text, positioned items, regions, tables, images, and charts.
+Append a modeled PDF page with explicit point dimensions and optional text, positioned items, regions, tables, images, charts, and links.
 
 **Examples:**
 
@@ -750,6 +770,7 @@ Append a modeled PDF page with explicit point dimensions and optional text, posi
 - `tables` (object[]) — Modeled page tables.
 - `images` (object[]) — Modeled page images.
 - `charts` (object[]) — Modeled page charts.
+- `links` (object[]) — Modeled visible URI links.
 - `readingOrder` (string[]|object[]) — Optional complete logical order of all semantic page items as stable IDs or objects with IDs.
 
 **Schema returns:**
@@ -758,7 +779,7 @@ Append a modeled PDF page with explicit point dimensions and optional text, posi
 
 #### `pdf.addTable`
 
-Add a modeled table with cell values, row/column spans, TH/TD roles, scopes, header associations, stable cell IDs, and a page-space bounding box.
+Add a modeled table with cell values, row/column spans, TH/TD roles, scopes, header associations, stable cell IDs, a page-space bounding box, and optional semanticId joining constrained consecutive-page segments into one logical Table.
 
 **Examples:**
 
@@ -768,6 +789,7 @@ Add a modeled table with cell values, row/column spans, TH/TD roles, scopes, hea
 
 - `name` (string) — Inspectable table name.
 - `values` (unknown[][]) required — Rectangular or ragged cell value matrix.
+- `semanticId` (string) — Optional logical table identity shared by constrained segments on consecutive pages. A continuation must be first and a non-final segment last in page reading order.
 - `cells` (object[]) — Optional zero-based cell overrides with id, row, column, value, rowSpan, columnSpan, TH/TD role, Row/Column/Both scope, and header ID array.
 - `bbox` (number[]) — Page-space [left, top, width, height] in points.
 - `source` (string) — Optional extraction/source provenance.
@@ -778,7 +800,7 @@ Add a modeled table with cell values, row/column spans, TH/TD roles, scopes, hea
 
 #### `pdf.addText`
 
-Add positioned PDF text with page-space bbox, font metadata, optional semantic H1-H6 heading level, inspect/resolve/layout records, and SVG preview rendering.
+Add positioned PDF text with page-space bbox, font metadata, optional semantic H1-H6 heading level or decorative Artifact semantics, inspect/resolve/layout records, and SVG preview rendering.
 
 **Examples:**
 
@@ -795,6 +817,7 @@ Add positioned PDF text with page-space bbox, font metadata, optional semantic H
 - `bold` (boolean) — Bold text flag.
 - `italic` (boolean) — Italic text flag.
 - `headingLevel` (number) — Optional semantic PDF heading level from 1 through 6; visual styling remains independent.
+- `artifact` (boolean) — Mark repeating/decorative text such as running headers and footers as PDF Artifact content and exclude it from reading order. Cannot be combined with headingLevel.
 
 **Schema returns:**
 
@@ -834,11 +857,11 @@ Extract modeled text across all pages or a selected page.
 
 #### `pdf.inspect`
 
-Emit bounded NDJSON for pages, text, positioned text items, reading-order entries, layout regions, tables/table cells, images, and charts; narrow with search/target anchors and shape fields with include/exclude.
+Emit bounded NDJSON for pages, text, positioned text items, reading-order entries, layout regions, tables/table cells, images, charts, and links; narrow with search/target anchors and shape fields with include/exclude.
 
 **Schema parameters:**
 
-- `kind` (string) — Comma-separated page, text, textItem, readingOrder, region, table, tableCell, image, and chart record kinds.
+- `kind` (string) — Comma-separated page, text, textItem, readingOrder, region, table, tableCell, image, chart, and link record kinds.
 - `search` (string) — Case-insensitive record filter.
 - `target` (string) — Stable ID/anchor target; targetId, id, and anchor are aliases.
 - `before` (number) — Records of context before target matches.
@@ -853,7 +876,7 @@ Emit bounded NDJSON for pages, text, positioned text items, reading-order entrie
 
 #### `pdf.layoutJson`
 
-Return modeled PDF page layout JSON with page text, positioned text items, explicit/effective reading order, layout regions, normalized table cells/spans/header IDs, images, charts, and target/search context slicing.
+Return modeled PDF page layout JSON with page text, positioned text items, explicit/effective reading order, layout regions, normalized table cells/spans/header IDs, images, charts, links, and target/search context slicing.
 
 **Examples:**
 
@@ -874,7 +897,7 @@ Return modeled PDF page layout JSON with page text, positioned text items, expli
 
 #### `pdf.page.setReadingOrder`
 
-Declare the complete logical reading sequence of a page's body text, positioned text, tables, images, and charts by stable ID without changing visual paint order.
+Declare the complete logical reading sequence of a page's body text, positioned text, tables, images, charts, and links by stable ID without changing visual paint order.
 
 **Examples:**
 
@@ -882,7 +905,7 @@ Declare the complete logical reading sequence of a page's body text, positioned 
 
 **Schema parameters:**
 
-- `order` (string[]|object[]) required — Complete page sequence containing each semantic body-text, positioned-text, table, image, and chart target exactly once.
+- `order` (string[]|object[]) required — Complete page sequence containing each semantic body-text, positioned-text, table, image, chart, and link target exactly once; artifact text and decorative figures are excluded.
 
 **Schema returns:**
 
@@ -911,7 +934,7 @@ Render a modeled PDF page to SVG by default, return page layout JSON with { form
 
 #### `pdf.resolve`
 
-Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, reading-order entries, layout regions, tables/table cells, images, and charts.
+Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, reading-order entries, layout regions, tables/table cells, images, charts, and links.
 
 **Examples:**
 
@@ -919,7 +942,7 @@ Resolve stable PDF artifact IDs for pages, page text blocks, positioned text ite
 
 **Schema parameters:**
 
-- `id` (string) required — Stable artifact, page, text, text-item, reading-order, region, table, table-cell, image, or chart ID.
+- `id` (string) required — Stable artifact, page, text, text-item, reading-order, region, table, table-cell, image, chart, or link ID.
 
 **Schema returns:**
 
@@ -927,7 +950,7 @@ Resolve stable PDF artifact IDs for pages, page text blocks, positioned text ite
 
 #### `pdf.verify`
 
-Return QA issues for invalid H1-H6 nesting, missing/generic Figure alternative text, incomplete/duplicate/unknown reading-order targets, empty pages, Unicode dashes, text extraction sanity, geometry/bounds, invalid images, table semantics, and chart data.
+Return QA issues for invalid H1-H6 nesting, missing/generic Figure alternative text, meaningless/unsafe links, cross-page logical-table continuity, incomplete/duplicate/unknown reading-order targets, empty pages, text extraction sanity, geometry/bounds, invalid images, table semantics, and chart data.
 
 **Examples:**
 
@@ -943,7 +966,7 @@ Return QA issues for invalid H1-H6 nesting, missing/generic Figure alternative t
 
 #### `PdfArtifact.create`
 
-Create a modeled PDF artifact with pages, text, span-aware accessible table regions, image regions, and charts.
+Create a modeled PDF artifact with pages, text, span-aware accessible table regions, image regions, charts, links, and explicit reading order.
 
 **Examples:**
 
@@ -954,7 +977,7 @@ Create a modeled PDF artifact with pages, text, span-aware accessible table regi
 - `id` (string) — Optional stable artifact ID.
 - `metadata` (object) — Clean-room metadata preserved through generated-PDF roundtrip.
 - `text` (string) — Convenience text for a single default page.
-- `pages` (object[]) — Page models with width, height, text, textItems, regions, tables, images, charts, and optional complete readingOrder ID arrays.
+- `pages` (object[]) — Page models with width, height, text, textItems, regions, tables, images, charts, links, and optional complete readingOrder ID arrays.
 
 **Schema returns:**
 
@@ -962,7 +985,7 @@ Create a modeled PDF artifact with pages, text, span-aware accessible table regi
 
 #### `PdfFile.exportPdf`
 
-Export a modeled artifact as a real multi-page tagged PDF 1.7 whose logical structure follows explicit page reading order without changing paint order, emits semantic H1-H6 headings, meaningful Figure /Alt text and /Artifact marked content, and preserves language/title, Table/TR/TH/TD hierarchy, optional Unicode TrueType embedding, positioned text, vector charts, and PNG/JPEG images.
+Export a modeled artifact as a real multi-page tagged PDF 1.7 whose logical structure follows explicit page reading order without changing paint order, emits semantic H1-H6 headings, meaningful Figure /Alt text, Link annotations with OBJR associations, /Artifact marked content, and constrained logical Tables spanning consecutive pages, and preserves language/title, Table/TR/TH/TD hierarchy, optional Unicode TrueType embedding, positioned text, vector charts, and PNG/JPEG images.
 
 **Examples:**
 
@@ -1003,7 +1026,7 @@ Import clean-room generated PDFs from metadata, use an injected parser adapter f
 
 #### `PdfFile.inspectPdf`
 
-Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, reading-order IDs, H1-H6 role counts, Figure alt-text and Artifact counts, font evidence, structure roles/table attributes, and marked-content count.
+Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, reading-order IDs, H1-H6 role counts, Figure alt-text, Link annotation/URI/StructParent, Artifact counts, font evidence, structure roles/table attributes, and marked-content count.
 
 **Examples:**
 
