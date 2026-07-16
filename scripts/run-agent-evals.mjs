@@ -7,6 +7,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { gradePdfCase } from "./agent-eval-pdf-graders.mjs";
+
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const casesPath = path.join(repoRoot, "evals", "cases.jsonl");
 const families = new Set(["pdf", "documents", "spreadsheets", "presentations"]);
@@ -285,6 +287,14 @@ async function copyTree(source, target) {
   await fs.cp(source, target, { recursive: true, force: true });
 }
 
+async function copySkillTree(source, target) {
+  await fs.cp(source, target, {
+    recursive: true,
+    force: true,
+    filter: (entry) => path.basename(entry) !== "__pycache__" && path.extname(entry).toLowerCase() !== ".pyc",
+  });
+}
+
 async function patchReferenceSkillPackageName(root) {
   const changed = [];
   const textExtensions = new Set([".md", ".mjs", ".js", ".cjs", ".json", ".yaml", ".yml", ".py", ".txt"]);
@@ -385,8 +395,9 @@ async function prepareCase(suite, item, options) {
   await fs.mkdir(evaluator, { recursive: true });
   const sourceSkill = skillSource(item, subject);
   const installedSkill = path.join(workspace, ".agents", "skills", item.skill);
-  await copyTree(sourceSkill, installedSkill);
+  await copySkillTree(sourceSkill, installedSkill);
   const referencePackageNamePatches = subject === "reference" ? await patchReferenceSkillPackageName(installedSkill) : [];
+  await makeReadOnly(installedSkill);
   for (const input of item.inputs || []) await materializeInput(input, workspace);
   const inputHashes = {};
   for (const input of item.inputs || []) {
@@ -423,20 +434,27 @@ async function hashTree(root) {
   async function walk(directory) {
     for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
       const target = path.join(directory, entry.name);
-      if (entry.isDirectory()) await walk(target);
-      else if (entry.isFile()) entries.push({ target, type: "file" });
-      else if (entry.isSymbolicLink()) entries.push({ target, type: "symlink" });
+      const mode = (await fs.lstat(target)).mode & 0o777;
+      if (entry.isDirectory()) {
+        entries.push({ target, type: "directory", mode });
+        await walk(target);
+      }
+      else if (entry.isFile()) entries.push({ target, type: "file", mode });
+      else if (entry.isSymbolicLink()) entries.push({ target, type: "symlink", mode });
       else fail(`hashed trees can contain only regular files and directories: ${target}`);
     }
   }
   await walk(root);
   entries.sort((left, right) => left.target.localeCompare(right.target));
   const digest = crypto.createHash("sha256");
+  digest.update(`root\0${((await fs.lstat(root)).mode & 0o777).toString(8)}\0`);
   for (const entry of entries) {
     digest.update(`${entry.type}\0`);
+    digest.update(`${entry.mode.toString(8)}\0`);
     digest.update(path.relative(root, entry.target).split(path.sep).join("/"));
     digest.update("\0");
-    digest.update(entry.type === "file" ? await fs.readFile(entry.target) : await fs.readlink(entry.target));
+    if (entry.type === "file") digest.update(await fs.readFile(entry.target));
+    else if (entry.type === "symlink") digest.update(await fs.readlink(entry.target));
     digest.update("\0");
   }
   return digest.digest("hex");
@@ -447,14 +465,35 @@ async function runCodex(prepared, options) {
   const args = ["exec", "--ephemeral", "--ignore-user-config", "--ignore-rules", "--json", "--sandbox", "workspace-write", "--skip-git-repo-check", "-C", prepared.workspace, "-o", path.join(prepared.evaluator, "final.txt")];
   if (options.model) args.push("--model", options.model);
   args.push("-");
-  const result = spawnSync(options.codex || "codex", args, { cwd: prepared.workspace, encoding: "utf8", input: prompt, env: process.env, maxBuffer: 256 * 1024 * 1024 });
+  const result = spawnSync(options.codex || "codex", args, {
+    cwd: prepared.workspace,
+    encoding: "utf8",
+    input: prompt,
+    env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" },
+    maxBuffer: 256 * 1024 * 1024,
+  });
   await fs.writeFile(path.join(prepared.evaluator, "trace.jsonl"), result.stdout || "", "utf8");
   await fs.writeFile(path.join(prepared.evaluator, "stderr.txt"), result.stderr || "", "utf8");
   await fs.writeFile(path.join(prepared.evaluator, "exit.json"), JSON.stringify({ status: result.status, signal: result.signal }, null, 2), "utf8");
   return result.status;
 }
 
-async function scorePrepared(item, prepared) {
+async function inventoryRelativeFiles(root) {
+  const files = [];
+  const invalid = [];
+  async function walk(directory) {
+    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+      const target = path.join(directory, entry.name);
+      if (entry.isDirectory()) await walk(target);
+      else if (entry.isFile()) files.push(path.relative(root, target).split(path.sep).join("/"));
+      else invalid.push({ path: path.relative(root, target).split(path.sep).join("/"), type: entry.isSymbolicLink() ? "symlink" : "non-regular" });
+    }
+  }
+  try { await walk(root); } catch (error) { if (error.code !== "ENOENT") throw error; }
+  return { files: files.sort(), invalid: invalid.sort((left, right) => left.path.localeCompare(right.path)) };
+}
+
+async function scorePrepared(item, prepared, options = {}) {
   const runRecord = JSON.parse(await fs.readFile(path.join(prepared.evaluator, "run.json"), "utf8"));
   const checks = [];
   checks.push({ id: "oracle-version", gate: true, passed: runRecord.oracleSha256 === oracleFingerprint(item), expected: runRecord.oracleSha256, actual: oracleFingerprint(item) });
@@ -470,7 +509,9 @@ async function scorePrepared(item, prepared) {
     const after = await fingerprintPath(path.join(prepared.workspace, relative));
     checks.push({ id: `source-immutable:${relative}`, gate: true, passed: before === after, expected: before, actual: after });
   }
-  const outputEntries = await fs.readdir(path.join(prepared.workspace, "outputs")).catch(() => []);
+  const outputInventory = await inventoryRelativeFiles(path.join(prepared.workspace, "outputs"));
+  const outputEntries = outputInventory.files;
+  checks.push({ id: "output-regular-files-only", gate: true, passed: outputInventory.invalid.length === 0, actual: outputInventory.invalid });
   const nonAuditOutputs = outputEntries.filter((entry) => entry !== "audit.json");
   const observedOutcome = item.expectedOutcome === "safe-refusal" || item.expectedOutcome === "success-or-safe-refusal" && nonAuditOutputs.length === 0
     ? "safe-refusal"
@@ -486,6 +527,8 @@ async function scorePrepared(item, prepared) {
     const diagnosticTerms = item.grade?.machine?.diagnosticTerms || [];
     if (diagnosticTerms.length) checks.push({ id: "safe-refusal-diagnostic", gate: false, passed: diagnosticTerms.some((term) => finalMessage.toLowerCase().includes(String(term).toLowerCase())), expectedAny: diagnosticTerms });
   } else {
+    const declaredOutputs = new Set((item.deliverables || []).map((deliverable) => path.relative("outputs", safeRelative(deliverable.path, "deliverable.path")).split(path.sep).join("/")));
+    checks.push({ id: "no-undeclared-deliverables", gate: true, passed: outputEntries.every((entry) => declaredOutputs.has(entry)), expected: [...declaredOutputs].sort(), actual: outputEntries });
     for (const deliverable of item.deliverables || []) {
       const target = path.join(prepared.workspace, safeRelative(deliverable.path, "deliverable.path"));
       let bytes;
@@ -500,21 +543,46 @@ async function scorePrepared(item, prepared) {
       }
     }
   }
+  const caseGrade = await gradePdfCase({
+    item,
+    workspace: prepared.workspace,
+    evaluator: prepared.evaluator,
+    finalMessage,
+    trace,
+    weights: options.weights,
+  });
+  if (caseGrade.supported) checks.push(...caseGrade.checks);
+  const hardGatesPassed = checks.filter((check) => check.gate).every((check) => check.passed);
+  const caseSpecificPassed = caseGrade.supported && caseGrade.graded ? caseGrade.caseSpecificPassed : null;
   const report = {
     case: item.id,
     expectedOutcome: item.expectedOutcome,
     observedOutcome,
     checks,
-    hardGatesPassed: checks.filter((check) => check.gate).every((check) => check.passed),
-    machineScoreStatus: item.expectedOutcome === "safe-refusal" ? "generic-refusal-gates" : "partial-generic-only",
-    pending: ["case-specific semantic oracle", "all-page visual grading", "security/provider trace grading"],
+    hardGatesPassed,
+    taskPassed: caseSpecificPassed === null ? null : hardGatesPassed && caseSpecificPassed,
+    machineScoreStatus: caseGrade.supported
+      ? caseGrade.graded
+        ? hardGatesPassed && caseSpecificPassed ? "case-graded-pass" : "case-graded-fail"
+        : "grader-unavailable"
+      : item.expectedOutcome === "safe-refusal" ? "generic-refusal-gates" : "partial-generic-only",
+    pending: caseGrade.supported
+      ? caseGrade.pending
+      : ["case-specific semantic oracle", "all-page visual grading", "security/provider trace grading"],
   };
+  if (caseGrade.supported) {
+    report.categoryScores = caseGrade.categoryScores || null;
+    report.rawScorePercent = caseGrade.rawScorePercent ?? null;
+    report.scorePercent = caseGrade.graded ? hardGatesPassed ? caseGrade.rawScorePercent : 0 : null;
+    report.graderEvidence = caseGrade.evidence;
+    if (caseGrade.infrastructureErrors?.length) report.infrastructureErrors = caseGrade.infrastructureErrors;
+  }
   await fs.writeFile(path.join(prepared.evaluator, "report.json"), JSON.stringify(report, null, 2), "utf8");
   return report;
 }
 
 function help() {
-  return `Agent artifact PromptBench\n\nCommands:\n  validate\n  list [--family pdf] [--status ready] [--json]\n  show <case-id> [--json]\n  prepare <case-id> [--subject candidate|reference] [--trial 1] [--run-root <path>]\n  run <case-id> [prepare options] [--model <model>] [--codex <path>]\n  score <case-id> --trial-root <prepared trial directory>\n\nThe Agent receives only PROMPT.md, declared inputs, the selected Skill, and an installed candidate tarball. Fixture specifications and graders are never copied into its workspace; run.json records integrity evidence and only a fingerprint of the hidden oracle, never the grading specification. The default run root is outside the repository in the OS temp directory. A production benchmark must additionally mount only the trial workspace into a no-network container, because a CLI sandbox alone is not an oracle confidentiality boundary. Generic scoring never claims full success: case-specific semantic, visual, security, and provider-trace graders remain explicit pending evidence.\n`;
+  return `Agent artifact PromptBench\n\nCommands:\n  validate\n  list [--family pdf] [--status ready] [--json]\n  show <case-id> [--json]\n  prepare <case-id> [--subject candidate|reference] [--trial 1] [--run-root <path>]\n  run <case-id> [prepare options] [--model <model>] [--codex <path>]\n  score <case-id> --trial-root <prepared trial directory>\n\nThe Agent receives only PROMPT.md, declared inputs, the selected Skill, and an installed candidate tarball. Fixture specifications and graders are never copied into its workspace; run.json records integrity evidence and only a fingerprint of the hidden oracle, never the grading specification. The default run root is outside the repository in the OS temp directory. A production benchmark must additionally mount only the trial workspace into a no-network container, because a CLI sandbox alone is not an oracle confidentiality boundary. The bounded-replacement and overflow-refusal PDF pilots have independent semantic, Poppler visual, security, and provider-trace graders. Other cases retain explicit pending evidence and never claim full success from generic gates.\n`;
 }
 
 export async function main(argv = process.argv.slice(2)) {
@@ -542,7 +610,7 @@ export async function main(argv = process.argv.slice(2)) {
     let report = null;
     if (command === "run") {
       exitStatus = await runCodex(prepared, { model: flags.get("model"), codex: flags.get("codex") });
-      report = await scorePrepared(item, prepared);
+      report = await scorePrepared(item, prepared, { weights: suite.weights });
     }
     console.log(JSON.stringify({ prepared, exitStatus, report }, null, 2));
     if (command === "run" && exitStatus !== 0) process.exitCode = exitStatus || 1;
@@ -554,7 +622,7 @@ export async function main(argv = process.argv.slice(2)) {
     if (!trialRootFlag) fail("score requires --trial-root");
     const trialRoot = path.resolve(trialRootFlag);
     const prepared = { trialRoot, workspace: path.join(trialRoot, "workspace"), evaluator: path.join(trialRoot, "evaluator"), promptPath: path.join(trialRoot, "workspace", "PROMPT.md") };
-    console.log(JSON.stringify(await scorePrepared(item, prepared), null, 2));
+    console.log(JSON.stringify(await scorePrepared(item, prepared, { weights: suite.weights }), null, 2));
   } else fail(`unknown command ${command}\n\n${help()}`);
 }
 
