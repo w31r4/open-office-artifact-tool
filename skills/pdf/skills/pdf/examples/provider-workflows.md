@@ -18,6 +18,22 @@ PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
 
 Use only the `savedPath` values in the manifest. Raw display names and internal keys are evidence, never filesystem paths. The command preserves duplicate names as separate files, confines traversal names to the quarantine directory, verifies decoded bytes and hashes, and does not open payloads.
 
+## pypdf merge, reorder, and selective watermark
+
+Copy [`merge-stamp-manifest.json`](merge-stamp-manifest.json) to a task-local path and replace its source paths. The sequence must select each source page exactly once.
+
+```bash
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+"$PYTHON_BIN" scripts/pdf_provider.py check --provider pypdf --require
+"$PYTHON_BIN" scripts/pdf_provider.py plan \
+  --task merge-stamp --provider pypdf --strategy rewrite \
+  --input tmp/pdfs/merge-stamp.json --output outputs/merged.pdf --require-provider
+"$PYTHON_BIN" scripts/pypdf_edit.py merge-stamp \
+  tmp/pdfs/merge-stamp.json outputs/merged.pdf --strategy rewrite
+```
+
+The result JSON proves source hashes, final page mapping/geometry, navigation targets, and watermark text/opacity. Bind the manifest plus every PDF source in the canonical audit, then render all output pages through Poppler.
+
 ## ReportLab greenfield PDF
 
 ```bash

@@ -247,6 +247,14 @@ elif kind.startswith("merge-"):
         c.setFillColorRGB(0, 0, 0)
         c.showPage()
     c.save()
+    from pypdf import PdfReader, PdfWriter
+    source_reader = PdfReader(str(out), strict=True)
+    named_writer = PdfWriter(clone_from=source_reader)
+    for page in range(1, count + 1):
+        named_writer.add_named_destination(f"{label.lower()}-named-{page}", page - 1)
+    named_output = out.with_suffix(".named.pdf")
+    named_writer.write(str(named_output))
+    named_output.replace(out)
 elif kind == "acroform-profile":
     c = canvas.Canvas(str(out), pagesize=letter, invariant=1)
     base_page(c, "Vendor Profile", 1)

@@ -66,6 +66,8 @@ An incremental update preserves the exact old byte prefix by design. It does not
 
 Every mutation audit and security-sensitive read-only extraction audit uses the canonical `open-office-artifact-tool.pdf-audit.v1` envelope. Keep the exact camelCase fields `source`, `output`, `provider.actual`, `provider.version`, `provider.silentFallback`, `savePolicy.strategy`, `preflight`, `operation.type`, and `validation`; do not invent naming aliases. Before delivery, run `scripts/pdf_audit.py validate` against the source and output bytes. See the [audit schema](references/AUDIT_SCHEMA.md).
 
+For a multi-source merge, bind `source` to the exact operation manifest and add canonical `inputs` records for every source PDF. Validate those records with repeated `pdf_audit.py validate --input ...` arguments.
+
 ## Greenfield Creation
 
 Use `PdfArtifact` for a new semantic/tagged document with explicit headings, Table/TR/TH/TD structure, Figure alternative text, meaningful tagged links, running artifacts, reading order, inspect/resolve, and modeled verification. Start with the [API quick start](artifact_tool/API_QUICK_START.md) and [public end-to-end example](examples/public-api-end-to-end.mjs). For a six-page CJK report with a constrained cross-page logical table and separate modeled/veraPDF/human evidence, run [the accessible board report example](examples/accessible-board-report.mjs).
@@ -141,6 +143,22 @@ Run the mandatory provider probe and route plan above before this mutation comma
 The shipped operation contract includes `insert_textbox`, `insert_image`, `replace_image`, `add_text_annotation`, `fill_form`, `rotate_page`, `delete_page`, `redact_text`, `redact_rect`, `replace_text`, and `scrub`. Unsupported operations fail; there is no fallback.
 
 General Word-style reflow is not available for an ordinary imported PDF. `replace_text` is a bounded redaction plus same-box overlay for one horizontal source span: it preserves the source baseline and default style, reports its measured fit evidence, and allows only a fixed sub-millipoint numerical tolerance. Cross-span, rotated, or genuinely overflowing replacements fail closed. Use a trusted source model or explicitly create a reconstructed new document when broad reflow is required. See [edit existing](tasks/edit_existing.md).
+
+## Merge, Reorder, And Stamp
+
+Use the shipped pypdf manifest-driven primitive for a complete-source merge whose page order may split one source into multiple sequence segments while preserving internal links, outlines, named destinations, page boxes, and orientation. Transparent watermark rules select pages by source ID, not fragile output-page guesses.
+
+```bash
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+"$PYTHON_BIN" scripts/pdf_provider.py check --provider pypdf --require
+"$PYTHON_BIN" scripts/pdf_provider.py plan \
+  --task merge-stamp --provider pypdf --strategy rewrite \
+  --input tmp/pdfs/merge-stamp.json --output outputs/merged.pdf --require-provider
+"$PYTHON_BIN" scripts/pypdf_edit.py merge-stamp \
+  tmp/pdfs/merge-stamp.json outputs/merged.pdf --strategy rewrite
+```
+
+The sequence must include every source page exactly once. Encrypted input, ambiguous named-destination collisions, unresolved navigation, duplicate/omitted pages, unsupported rotated-page stamp placement, and unacknowledged signatures fail closed before output promotion. See [merge, reorder, and stamp](tasks/transform.md).
 
 ## Forms And Annotations
 

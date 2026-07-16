@@ -1,6 +1,7 @@
 tasks/create.md
 tasks/read_review.md
 tasks/edit_existing.md
+tasks/transform.md
 tasks/forms_annotations.md
 tasks/sign_verify.md
 tasks/redact.md
@@ -21,6 +22,7 @@ examples/provider-workflows.md
 examples/reportlab-report-spec.json
 examples/pymupdf-edit-operations.json
 examples/pymupdf-redaction-operations.json
+examples/merge-stamp-manifest.json
 scripts/pdf_provider.py
 scripts/reportlab_create.py
 scripts/pdfplumber_extract.py

@@ -49,7 +49,27 @@ def validate_file_evidence(evidence, actual_path: Path, label: str) -> None:
         raise AuditError(f"{label} bytes/hash do not match {actual_path}")
 
 
-def validate_record(record: dict, source: Path, artifact: Path | None, required_operation: str | None) -> dict:
+def validate_input_evidence(evidence, actual_paths: list[Path]) -> int:
+    if evidence is None and not actual_paths:
+        return 0
+    if not isinstance(evidence, list) or not evidence:
+        raise AuditError("audit.inputs must be a non-empty array when --input is used")
+    if not actual_paths:
+        raise AuditError("repeat --input for every audit.inputs record so the validator can recompute bytes")
+    if len(evidence) != len(actual_paths):
+        raise AuditError(f"audit.inputs has {len(evidence)} records but {len(actual_paths)} --input paths were provided")
+    remaining = list(evidence)
+    for actual_path in actual_paths:
+        resolved = actual_path.expanduser().resolve()
+        match = next((item for item in remaining if isinstance(item, dict) and Path(str(item.get("path", ""))).expanduser().resolve() == resolved), None)
+        if match is None:
+            raise AuditError(f"audit.inputs has no record for {resolved}")
+        validate_file_evidence(match, resolved, f"inputs[{evidence.index(match)}]")
+        remaining.remove(match)
+    return len(evidence)
+
+
+def validate_record(record: dict, source: Path, inputs: list[Path], artifact: Path | None, required_operation: str | None) -> dict:
     record = require_object(record, "audit")
     if record.get("schema") != SCHEMA:
         raise AuditError(f"schema must be {SCHEMA!r}")
@@ -57,6 +77,7 @@ def validate_record(record: dict, source: Path, artifact: Path | None, required_
     if status not in {"succeeded", "failed_closed"}:
         raise AuditError("status must be 'succeeded' or 'failed_closed'")
     validate_file_evidence(record.get("source"), source, "source")
+    input_count = validate_input_evidence(record.get("inputs"), inputs)
 
     provider = require_object(record.get("provider"), "provider")
     for field in ("actual", "version"):
@@ -100,6 +121,7 @@ def validate_record(record: dict, source: Path, artifact: Path | None, required_
         "providerVersion": provider["version"],
         "savePolicy": policy["strategy"],
         "operation": operation["type"],
+        "inputs": input_count,
         "silentFallback": False,
     }
 
@@ -110,6 +132,7 @@ def parser() -> argparse.ArgumentParser:
     validate = subparsers.add_parser("validate", help="validate a canonical audit and recompute byte evidence")
     validate.add_argument("audit", type=Path)
     validate.add_argument("--source", type=Path, required=True)
+    validate.add_argument("--input", type=Path, action="append", default=[])
     validate.add_argument("--artifact", type=Path)
     validate.add_argument("--require-operation")
     return root
@@ -121,7 +144,7 @@ def main() -> int:
     args = parser().parse_args()
     try:
         record = json.loads(args.audit.read_text("utf8"))
-        print(json.dumps(validate_record(record, args.source, args.artifact, args.require_operation), indent=2, sort_keys=True))
+        print(json.dumps(validate_record(record, args.source, args.input, args.artifact, args.require_operation), indent=2, sort_keys=True))
         return 0
     except (AuditError, OSError, json.JSONDecodeError) as exc:
         print(json.dumps({"ok": False, "error": str(exc)}), file=sys.stderr)

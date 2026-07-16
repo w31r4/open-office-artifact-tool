@@ -63,6 +63,7 @@ const requiredFiles = [
   "tasks/create.md",
   "tasks/read_review.md",
   "tasks/edit_existing.md",
+  "tasks/transform.md",
   "tasks/forms_annotations.md",
   "tasks/sign_verify.md",
   "tasks/redact.md",
@@ -82,6 +83,7 @@ const requiredFiles = [
   "examples/reportlab-report-spec.json",
   "examples/pymupdf-edit-operations.json",
   "examples/pymupdf-redaction-operations.json",
+  "examples/merge-stamp-manifest.json",
 ];
 for (const file of requiredFiles) assert.ok(manifest.includes(file), `PDF manifest is missing ${file}`);
 
@@ -115,6 +117,7 @@ const compile = run(python, [
 assert.equal(compile.stderr, "");
 const auditSchema = JSON.parse(await fs.readFile(path.join(skillRoot, "references", "pdf-audit-v1.schema.json"), "utf8"));
 assert.equal(auditSchema.properties.schema.const, "open-office-artifact-tool.pdf-audit.v1");
+assert.equal(auditSchema.properties.inputs.type, "array");
 const fitUnit = run(python, ["-c", [
   "import importlib.util,sys",
   "spec=importlib.util.spec_from_file_location('pymupdf_edit',sys.argv[1])",
@@ -193,6 +196,36 @@ try {
     "--source", dummyInput, "--artifact", readOnlyManifest, "--require-operation", "extract-attachments",
   ], { status: 0 }));
   assert.equal(readOnlyAuditValidation.savePolicy, "read-only");
+  const secondInput = path.join(tempRoot, "second-input.pdf");
+  const mergeManifest = path.join(tempRoot, "merge-manifest.json");
+  const mergeArtifact = path.join(tempRoot, "merge-artifact.pdf");
+  await fs.writeFile(secondInput, "%PDF-1.4\nsecond input\n%%EOF\n", "ascii");
+  await fs.writeFile(mergeManifest, JSON.stringify({ schema: "open-office-artifact-tool.pdf-merge-stamp.v1" }), "utf8");
+  await fs.writeFile(mergeArtifact, "%PDF-1.4\nmerged artifact\n%%EOF\n", "ascii");
+  const multiAuditPath = path.join(tempRoot, "multi-audit.json");
+  await fs.writeFile(multiAuditPath, JSON.stringify({
+    schema: "open-office-artifact-tool.pdf-audit.v1",
+    status: "succeeded",
+    source: await evidence(mergeManifest),
+    inputs: [await evidence(dummyInput), await evidence(secondInput)],
+    output: await evidence(mergeArtifact),
+    provider: { actual: "pypdf", version: "test", silentFallback: false },
+    savePolicy: { strategy: "rewrite" },
+    preflight: { probeCompleted: true, planCompleted: true },
+    operation: { type: "merge-stamp" },
+    validation: {},
+  }), "utf8");
+  const multiAuditValidation = parseResult(run(python, [
+    path.join(scriptsRoot, "pdf_audit.py"), "validate", multiAuditPath,
+    "--source", mergeManifest, "--input", secondInput, "--input", dummyInput,
+    "--artifact", mergeArtifact, "--require-operation", "merge-stamp",
+  ], { status: 0 }));
+  assert.equal(multiAuditValidation.inputs, 2);
+  const missingMultiInput = run(python, [
+    path.join(scriptsRoot, "pdf_audit.py"), "validate", multiAuditPath,
+    "--source", mergeManifest, "--input", dummyInput, "--artifact", mergeArtifact,
+  ], { status: 2 });
+  assert.match(missingMultiInput.stderr, /2 records but 1 --input/);
 
   const check = parseResult(run(python, [path.join(scriptsRoot, "pdf_provider.py"), "check", "--provider", "all"], { status: 0 }));
   assert.ok(check.providers.length >= 12);
@@ -297,6 +330,97 @@ try {
     parseResult(run(integrationPython, [path.join(scriptsRoot, "pypdf_edit.py"), "add-note", sourcePath, pypdfIncremental, "--strategy", "incremental", "--page", "1", "--rect", "500,670,524,694", "--text", "Incremental note"], { status: 0 }));
     assert.equal((await fs.readFile(pypdfRewrite)).subarray(0, sourceBytes.length).equals(sourceBytes), false);
     assert.equal((await fs.readFile(pypdfIncremental)).subarray(0, sourceBytes.length).equals(sourceBytes), true);
+
+    const createMergeSource = (target, label, pages, width, height) => run(integrationPython, ["-c", [
+      "import pathlib, sys",
+      "from reportlab.pdfgen import canvas",
+      "from pypdf import PdfReader, PdfWriter",
+      "out = pathlib.Path(sys.argv[1])",
+      "label = sys.argv[2]",
+      "slug = label.lower()",
+      "count = int(sys.argv[3])",
+      "width, height = float(sys.argv[4]), float(sys.argv[5])",
+      "document = canvas.Canvas(str(out), pagesize=(width, height), invariant=1)",
+      "for page in range(1, count + 1):",
+      "    document.setFont('Helvetica-Bold', 14)",
+      "    document.drawString(72, height - 48, f'{label} source page {page}')",
+      "    document.bookmarkPage(f'{slug}-{page}')",
+      "    document.addOutlineEntry(f'{label} {page}', f'{slug}-{page}', 0)",
+      "    target_page = page % count + 1",
+      "    document.drawString(72, height - 96, f'Internal link to {label} page {target_page}')",
+      "    document.linkRect('', f'{slug}-{target_page}', (68, height - 104, 280, height - 80), relative=0, thickness=1)",
+      "    document.showPage()",
+      "document.save()",
+      "reader = PdfReader(str(out), strict=True)",
+      "writer = PdfWriter(clone_from=reader)",
+      "for page in range(1, count + 1):",
+      "    writer.add_named_destination(f'{slug}-named-{page}', page - 1)",
+      "temporary = out.with_suffix('.named.pdf')",
+      "writer.write(str(temporary))",
+      "temporary.replace(out)",
+    ].join("\n"), target, label, String(pages), String(width), String(height)], { status: 0 });
+    const mergeCover = path.join(tempRoot, "merge-cover.pdf");
+    const mergeReport = path.join(tempRoot, "merge-report.pdf");
+    const mergeAppendix = path.join(tempRoot, "merge-appendix.pdf");
+    createMergeSource(mergeCover, "Cover", 1, 612, 792);
+    createMergeSource(mergeReport, "Report", 2, 792, 612);
+    createMergeSource(mergeAppendix, "Appendix", 3, 595.2756, 841.8898);
+    const mergeSourceHashes = await Promise.all([mergeCover, mergeReport, mergeAppendix].map(async (target) => (await evidence(target)).sha256));
+    const mergeSpec = path.join(tempRoot, "merge-stamp.json");
+    await fs.writeFile(mergeSpec, JSON.stringify({
+      schema: "open-office-artifact-tool.pdf-merge-stamp.v1",
+      sources: [
+        { id: "cover", path: mergeCover },
+        { id: "report", path: mergeReport },
+        { id: "appendix", path: mergeAppendix },
+      ],
+      sequence: [
+        { source: "cover", pages: "all" },
+        { source: "appendix", pages: [3] },
+        { source: "report", pages: "all" },
+        { source: "appendix", pages: [1, 2] },
+      ],
+      watermarks: [{ source: "report", text: "CONFIDENTIAL", opacity: 0.2, angle: 45, fontSize: 48 }],
+    }), "utf8");
+    const mergeOutput = path.join(tempRoot, "merge-output.pdf");
+    const mergeResult = parseResult(run(integrationPython, [
+      path.join(scriptsRoot, "pypdf_edit.py"), "merge-stamp", mergeSpec, mergeOutput, "--strategy", "rewrite",
+    ], { status: 0 }));
+    assert.equal(mergeResult.schema, "open-office-artifact-tool.pdf-merge-stamp-result.v1");
+    assert.deepEqual(mergeResult.operation.watermarks[0].outputPages, [3, 4]);
+    assert.deepEqual(mergeResult.validation.pageMap.map((entry) => `${entry.source}:${entry.sourcePage}`), ["cover:1", "appendix:3", "report:1", "report:2", "appendix:1", "appendix:2"]);
+    assert.equal(mergeResult.validation.navigation.outlines.length, 6);
+    assert.equal(Object.keys(mergeResult.validation.navigation.namedDestinations).length, 6);
+    assert.equal(mergeResult.validation.navigation.internalLinks.length, 6);
+    assert.deepEqual(await Promise.all([mergeCover, mergeReport, mergeAppendix].map(async (target) => (await evidence(target)).sha256)), mergeSourceHashes);
+    const mergeEvidence = parseResult(run(integrationPython, ["-c", [
+      "import json, sys",
+      "from pypdf import PdfReader",
+      "reader = PdfReader(sys.argv[1], strict=True)",
+      "print(json.dumps({",
+      "  'pages': len(reader.pages),",
+      "  'named': {name: reader.get_destination_page_number(destination) + 1 for name, destination in reader.named_destinations.items()},",
+      "  'watermarks': [(page.extract_text() or '').count('CONFIDENTIAL') for page in reader.pages],",
+      "  'sizes': [[float(page.mediabox.width), float(page.mediabox.height)] for page in reader.pages],",
+      "}))",
+    ].join("\n"), mergeOutput], { status: 0 }));
+    assert.equal(mergeEvidence.pages, 6);
+    assert.equal(Object.keys(mergeEvidence.named).length, 6);
+    assert.deepEqual(mergeEvidence.watermarks, [0, 0, 1, 1, 0, 0]);
+    assert.deepEqual(mergeEvidence.sizes, [[612, 792], [595.2756, 841.8898], [792, 612], [792, 612], [595.2756, 841.8898], [595.2756, 841.8898]]);
+    const incompleteMergeSpec = path.join(tempRoot, "merge-stamp-incomplete.json");
+    await fs.writeFile(incompleteMergeSpec, JSON.stringify({
+      schema: "open-office-artifact-tool.pdf-merge-stamp.v1",
+      sources: [{ id: "cover", path: mergeCover }, { id: "report", path: mergeReport }],
+      sequence: [{ source: "cover", pages: "all" }, { source: "report", pages: [1] }],
+      watermarks: [{ source: "report", text: "CONFIDENTIAL", opacity: 0.2 }],
+    }), "utf8");
+    const incompleteMergeOutput = path.join(tempRoot, "merge-incomplete.pdf");
+    const incompleteMerge = run(integrationPython, [
+      path.join(scriptsRoot, "pypdf_edit.py"), "merge-stamp", incompleteMergeSpec, incompleteMergeOutput, "--strategy", "rewrite",
+    ], { status: 2 });
+    assert.match(incompleteMerge.stderr, /select every source page exactly once/);
+    await assert.rejects(fs.access(incompleteMergeOutput));
 
     const formSource = path.join(tempRoot, "form-source.pdf");
     run(integrationPython, ["-c", [

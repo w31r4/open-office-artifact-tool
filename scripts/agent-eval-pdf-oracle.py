@@ -907,6 +907,204 @@ def accessible_report(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def oracle_destination_page(reader: pypdf.PdfReader, destination: Any) -> int | None:
+    destination = resolve_pdf_value(destination)
+    if destination is None:
+        return None
+    if isinstance(destination, str):
+        named = reader.named_destinations.get(destination)
+        return reader.get_destination_page_number(named) + 1 if named is not None else None
+    try:
+        page_number = reader.get_destination_page_number(destination)
+        if page_number >= 0:
+            return page_number + 1
+    except Exception:
+        pass
+    if isinstance(destination, (list, tuple)) and destination:
+        target = destination[0]
+        if isinstance(target, IndirectObject):
+            identity = (int(target.idnum), int(target.generation))
+            for page_number, page in enumerate(reader.pages, 1):
+                reference = getattr(page, "indirect_reference", None)
+                if reference is not None and (int(reference.idnum), int(reference.generation)) == identity:
+                    return page_number
+    return None
+
+
+def oracle_navigation(reader: pypdf.PdfReader) -> dict[str, Any]:
+    outlines: list[dict[str, Any]] = []
+
+    def walk(items: list[Any], parents: tuple[str, ...] = ()) -> None:
+        previous_title: str | None = None
+        for item in items:
+            if isinstance(item, list):
+                walk(item, parents + ((previous_title,) if previous_title else ()))
+                continue
+            title = str(getattr(item, "title", item))
+            page = oracle_destination_page(reader, item)
+            if page is None:
+                raise ValueError(f"outline {title!r} has an unresolved destination")
+            outlines.append({"title": title, "page": page, "parentPath": list(parents)})
+            previous_title = title
+
+    walk(list(reader.outline or []))
+    named = {}
+    for name, destination in reader.named_destinations.items():
+        page = oracle_destination_page(reader, destination)
+        if page is None:
+            raise ValueError(f"named destination {name!r} has an unresolved page")
+        named[str(name)] = page
+    links = []
+    for source_page, page in enumerate(reader.pages, 1):
+        for reference in page.get("/Annots", []) or []:
+            annotation = resolve_pdf_value(reference)
+            if not isinstance(annotation, dict) or str(annotation.get("/Subtype", "")) != "/Link":
+                continue
+            destination = annotation.get("/Dest")
+            action = resolve_pdf_value(annotation.get("/A")) if annotation.get("/A") is not None else None
+            if destination is None and isinstance(action, dict) and str(action.get("/S", "")) == "/GoTo":
+                destination = action.get("/D")
+            if destination is None:
+                continue
+            target = oracle_destination_page(reader, destination)
+            if target is None:
+                raise ValueError(f"internal link on page {source_page} has an unresolved destination")
+            links.append({
+                "page": source_page,
+                "targetPage": target,
+                "rect": [float(value) for value in annotation.get("/Rect", [])],
+            })
+    return {"outlines": outlines, "namedDestinations": named, "internalLinks": links}
+
+
+def oracle_page_geometry(page: Any) -> dict[str, Any]:
+    boxes = {}
+    for name in ("mediabox", "cropbox", "trimbox", "bleedbox", "artbox"):
+        box = getattr(page, name)
+        boxes[name] = [float(box.left), float(box.bottom), float(box.right), float(box.top)]
+    return {"boxes": boxes, "rotation": int(page.get("/Rotate", 0) or 0)}
+
+
+def oracle_page_opacities(page: Any) -> list[float]:
+    resources = resolve_pdf_value(page.get("/Resources"))
+    states = resolve_pdf_value(resources.get("/ExtGState")) if isinstance(resources, dict) else None
+    values = []
+    if isinstance(states, dict):
+        for state in states.values():
+            state = resolve_pdf_value(state)
+            if isinstance(state, dict) and state.get("/ca") is not None:
+                values.append(float(state["/ca"]))
+    return sorted(values)
+
+
+def merge_stamp_visual(
+    sources: dict[str, pathlib.Path],
+    sequence: list[dict[str, Any]],
+    output: pathlib.Path,
+    render_root: pathlib.Path,
+    poppler: str,
+    watermark_pages: set[int],
+    dpi: int = 144,
+) -> dict[str, Any]:
+    shutil.rmtree(render_root, ignore_errors=True)
+    source_renders = {
+        source_id: run_poppler(poppler, source_path, render_root / f"source-{source_id}" / "page", dpi)
+        for source_id, source_path in sources.items()
+    }
+    output_renders = run_poppler(poppler, output, render_root / "output" / "page", dpi)
+    pages = []
+    for output_page, mapping in enumerate(sequence, 1):
+        source_page = source_renders[mapping["source"]][mapping["page"] - 1]
+        output_path = output_renders[output_page - 1]
+        with Image.open(source_page) as source_raw, Image.open(output_path) as output_raw:
+            source_image = source_raw.convert("RGB")
+            output_image = output_raw.convert("RGB")
+            same_dimensions = source_image.size == output_image.size
+            difference = ImageChops.difference(source_image, output_image) if same_dimensions else None
+            changed_bbox = difference.getbbox() if difference is not None else None
+            nonblank_bbox = ImageChops.difference(output_image, Image.new("RGB", output_image.size, "white")).getbbox()
+            pages.append({
+                "page": output_page,
+                "source": mapping["source"],
+                "sourcePage": mapping["page"],
+                "sameDimensions": same_dimensions,
+                "nonBlank": nonblank_bbox is not None,
+                "changedPixelsBBox": list(changed_bbox) if changed_bbox else None,
+                "pixelStable": changed_bbox is None,
+                "watermarkExpected": output_page in watermark_pages,
+            })
+    return {"renderer": "poppler-pdftoppm", "dpi": dpi, "pageCount": len(output_renders), "pages": pages}
+
+
+def merge_stamp(payload: dict[str, Any]) -> dict[str, Any]:
+    output = pathlib.Path(payload["output"])
+    manifest_path = pathlib.Path(payload["manifest"])
+    manifest_bytes = manifest_path.read_bytes()
+    manifest_object = json.loads(manifest_bytes.decode("utf-8"))
+    source_paths = {record["id"]: pathlib.Path(record["path"]) for record in payload["sources"]}
+    sequence = payload["sequence"]
+    watermark_text = payload["watermarkText"]
+    watermark_pages = {int(page) for page in payload["watermarkPages"]}
+    source_evidence = {}
+    source_navigation = {}
+    page_map = []
+    output_page_by_source: dict[tuple[str, int], int] = {}
+    for output_page, mapping in enumerate(sequence, 1):
+        output_page_by_source[(mapping["source"], int(mapping["page"]))] = output_page
+    for source_id, source_path in source_paths.items():
+        source_evidence[source_id] = inspect_pdf(source_path, [watermark_text])
+        source_reader = pypdf.PdfReader(str(source_path), strict=True)
+        source_navigation[source_id] = oracle_navigation(source_reader)
+    output_evidence = inspect_pdf(output, [watermark_text])
+    output_reader = pypdf.PdfReader(str(output), strict=True)
+    for output_page, mapping in enumerate(sequence, 1):
+        source_reader = pypdf.PdfReader(str(source_paths[mapping["source"]]), strict=True)
+        source_page = source_reader.pages[int(mapping["page"]) - 1]
+        output_pdf_page = output_reader.pages[output_page - 1]
+        page_map.append({
+            "outputPage": output_page,
+            "source": mapping["source"],
+            "sourcePage": int(mapping["page"]),
+            "sourceGeometry": oracle_page_geometry(source_page),
+            "outputGeometry": oracle_page_geometry(output_pdf_page),
+            "watermarkCount": (output_pdf_page.extract_text() or "").count(watermark_text),
+            "opacities": oracle_page_opacities(output_pdf_page),
+        })
+    expected_navigation = {"outlines": [], "namedDestinations": {}, "internalLinks": []}
+    for source_id, navigation in source_navigation.items():
+        for record in navigation["outlines"]:
+            expected_navigation["outlines"].append({**record, "page": output_page_by_source[(source_id, record["page"])]})
+        for name, page in navigation["namedDestinations"].items():
+            expected_navigation["namedDestinations"][name] = output_page_by_source[(source_id, page)]
+        for record in navigation["internalLinks"]:
+            expected_navigation["internalLinks"].append({
+                **record,
+                "page": output_page_by_source[(source_id, record["page"])],
+                "targetPage": output_page_by_source[(source_id, record["targetPage"])],
+            })
+    return {
+        "kind": "merge-stamp",
+        "manifest": {
+            "path": str(manifest_path),
+            "bytes": len(manifest_bytes),
+            "sha256": hashlib.sha256(manifest_bytes).hexdigest(),
+            "value": manifest_object,
+        },
+        "sources": source_evidence,
+        "output": output_evidence,
+        "pageMap": page_map,
+        "navigation": {"expected": expected_navigation, "actual": oracle_navigation(output_reader)},
+        "visual": merge_stamp_visual(
+            source_paths,
+            sequence,
+            output,
+            pathlib.Path(payload["renderRoot"]),
+            payload["poppler"],
+            watermark_pages,
+        ),
+    }
+
+
 def main() -> None:
     payload = json.load(sys.stdin)
     kind = payload.get("kind")
@@ -922,6 +1120,8 @@ def main() -> None:
         evidence = attachment_quarantine(payload)
     elif kind == "accessible-report":
         evidence = accessible_report(payload)
+    elif kind == "merge-stamp":
+        evidence = merge_stamp(payload)
     else:
         raise ValueError(f"unsupported PDF oracle kind: {kind}")
     evidence["toolchain"] = {

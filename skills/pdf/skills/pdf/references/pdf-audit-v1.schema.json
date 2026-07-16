@@ -8,6 +8,11 @@
     "schema": { "const": "open-office-artifact-tool.pdf-audit.v1" },
     "status": { "enum": ["succeeded", "failed_closed"] },
     "source": { "$ref": "#/$defs/fileEvidence" },
+    "inputs": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/fileEvidence" }
+    },
     "output": { "oneOf": [{ "$ref": "#/$defs/fileEvidence" }, { "type": "null" }] },
     "provider": {
       "type": "object",

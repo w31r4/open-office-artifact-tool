@@ -1,0 +1,23 @@
+{
+  "schema": "open-office-artifact-tool.pdf-merge-stamp.v1",
+  "sources": [
+    { "id": "cover", "path": "../../inputs/cover.pdf" },
+    { "id": "report", "path": "../../inputs/report.pdf" },
+    { "id": "appendix", "path": "../../inputs/appendix.pdf" }
+  ],
+  "sequence": [
+    { "source": "cover", "pages": "all" },
+    { "source": "appendix", "pages": [3] },
+    { "source": "report", "pages": "all" },
+    { "source": "appendix", "pages": [1, 2] }
+  ],
+  "watermarks": [
+    {
+      "source": "report",
+      "text": "CONFIDENTIAL",
+      "opacity": 0.2,
+      "angle": 45,
+      "fontSize": 48
+    }
+  ]
+}

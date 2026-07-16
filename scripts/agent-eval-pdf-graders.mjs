@@ -12,6 +12,7 @@ const supportedCases = new Set([
   "pdf-attachment-quarantine-inventory",
   "pdf-active-content-public-sanitize",
   "pdf-greenfield-accessible-report",
+  "pdf-merge-reorder-stamp-links",
 ]);
 const defaultWeights = { machine: 45, visual: 25, security: 20, trace: 10 };
 
@@ -342,6 +343,93 @@ export function gradeAccessibleReportEvidence({ evidence, audit, commands, final
     check("pdf-security:verapdf-machine-layer-separate", "security", Boolean(validation.veraPdfMachine) && ["not-run", "completed", "completed-with-findings", "probe-failed"].includes(validation.veraPdfMachine.status) && /machine|not.*certification|No veraPDF/i.test(JSON.stringify(validation.veraPdfMachine)), { actual: validation.veraPdfMachine || "unreported" }),
     check("pdf-security:human-pdfua-required", "security", validation.humanPdfUa?.status === "required" && /No complete PDF\/UA certification|不.*完整.*PDF\/UA|人工/i.test(JSON.stringify(validation.humanPdfUa)), { actual: validation.humanPdfUa || "unreported" }),
     ...accessibleReportTraceChecks(audit, commands),
+  ];
+}
+
+function mergeStampTraceChecks(audit, commands) {
+  const operation = auditOperation(audit);
+  const checkProvider = completedInvocation(commands, /pdf_provider\.py\s+check\b/i);
+  const plan = completedInvocation(commands, /pdf_provider\.py\s+plan\b/i);
+  const merge = completedInvocation(commands, /pypdf_edit\.py\s+merge-stamp\b/i);
+  const afterMerge = commandTextAfter(commands, merge);
+  const popplerAfterMerge = /\bpdftoppm\b/i.test(afterMerge);
+  const auditAfterMerge = /pdf_audit\.py\s+validate\b/i.test(afterMerge) && (afterMerge.match(/(?:^|\s)--input(?:=|\s)/g) || []).length >= 3;
+  const manualWriterPatterns = [
+    /\bPdfWriter\s*\(/,
+    /\bmerge_(?:page|transformed_page)\s*\(/,
+    /reportlab\.pdfgen|from\s+reportlab/i,
+    /\b(?:fitz|pymupdf)\b/i,
+    /\/Pages\b[\s\S]{0,80}\/Kids\b/i,
+  ];
+  return [
+    check("pdf-trace:provider", "trace", /^pypdf$/i.test(String(auditProvider(audit))), { expected: "pypdf", actual: auditProvider(audit) }),
+    check("pdf-trace:provider-version", "trace", Boolean(String(auditProviderVersion(audit)).trim()), { actual: auditProviderVersion(audit) || "unreported" }),
+    check("pdf-trace:save-policy", "trace", /^rewrite$/i.test(String(auditSaveStrategy(audit))), { expected: "rewrite", actual: auditSaveStrategy(audit) }),
+    gate("pdf-trace:no-silent-fallback", "trace", auditFallback(audit) === true, { expected: false, actual: auditFallback(audit) === null ? "unreported" : !auditFallback(audit) }),
+    check("pdf-trace:check-plan-before-mutation", "trace", invocationBefore(checkProvider, merge) && invocationBefore(plan, merge), { actual: { checkProvider: checkProvider?.commandIndex ?? -1, plan: plan?.commandIndex ?? -1, merge: merge?.commandIndex ?? -1 } }),
+    check("pdf-trace:typed-merge-stamp-primitive", "trace", Boolean(merge) && /merge[-_ ]?stamp/i.test(operation), { actual: operation || "unreported" }),
+    check("pdf-trace:post-mutation-poppler-render", "trace", popplerAfterMerge, { actual: { mergeObserved: Boolean(merge), postMutationRenderObserved: popplerAfterMerge } }),
+    check("pdf-trace:multi-source-audit-validation", "trace", auditAfterMerge, { actual: { mergeObserved: Boolean(merge), auditWithThreeInputsObserved: auditAfterMerge } }),
+    gate("pdf-trace:no-ad-hoc-pdf-writer", "trace", !manualWriterPatterns.some((pattern) => pattern.test(commands.join("\n"))), { forbidden: manualWriterPatterns.map(String) }),
+  ];
+}
+
+function sortedRecords(records = []) {
+  return [...records].sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+}
+
+export function gradeMergeStampEvidence({ evidence, audit, commands, item }) {
+  const output = evidence.output || {};
+  const pageMap = evidence.pageMap || [];
+  const visualPages = evidence.visual?.pages || [];
+  const watermarkPages = new Set(item.grade.machine.watermarkPages || []);
+  const expectedSequence = item.grade.machine.sequence || [];
+  const actualSequence = pageMap.map((entry) => `${entry.source}:${entry.sourcePage}`);
+  const geometryPreserved = pageMap.length === expectedSequence.length
+    && pageMap.every((entry) => JSON.stringify(entry.sourceGeometry) === JSON.stringify(entry.outputGeometry));
+  const watermarkPlacement = pageMap.every((entry) => (
+    watermarkPages.has(entry.outputPage)
+      ? entry.watermarkCount === 1 && entry.opacities?.some((value) => Math.abs(value - item.grade.machine.watermarkOpacity) <= 0.001)
+      : entry.watermarkCount === 0
+  ));
+  const expectedNavigation = evidence.navigation?.expected || {};
+  const actualNavigation = evidence.navigation?.actual || {};
+  const navigationMatches = JSON.stringify(sortedRecords(expectedNavigation.outlines)) === JSON.stringify(sortedRecords(actualNavigation.outlines))
+    && JSON.stringify(expectedNavigation.namedDestinations || {}) === JSON.stringify(actualNavigation.namedDestinations || {})
+    && JSON.stringify(sortedRecords(expectedNavigation.internalLinks)) === JSON.stringify(sortedRecords(actualNavigation.internalLinks));
+  const expectedInputs = Object.values(evidence.sources || {})
+    .map((source) => ({ path: path.resolve(source.path), bytes: source.bytes, sha256: source.sha256 }))
+    .sort((left, right) => left.path.localeCompare(right.path));
+  const actualInputs = (audit?.inputs || [])
+    .map((source) => ({ path: path.resolve(String(source.path || "")), bytes: source.bytes, sha256: source.sha256 }))
+    .sort((left, right) => left.path.localeCompare(right.path));
+  const manifest = evidence.manifest?.value || {};
+  const manifestSequence = (manifest.sequence || []).flatMap((segment) => {
+    const sourcePageCount = evidence.sources?.[segment.source]?.pageCount || 0;
+    const pages = segment.pages === "all" ? Array.from({ length: sourcePageCount }, (_, index) => index + 1) : segment.pages || [];
+    return pages.map((page) => `${segment.source}:${page}`);
+  });
+  const manifestWatermark = manifest.watermarks?.[0] || {};
+  const sourceTermsAbsent = Object.values(evidence.sources || {}).every((source) => source.termCounts?.[item.grade.machine.watermarkText] === 0);
+  return [
+    check("pdf-machine:page-count", "machine", output.pageCount === item.grade.machine.pageCount, { expected: item.grade.machine.pageCount, actual: output.pageCount }),
+    check("pdf-machine:source-page-order", "machine", JSON.stringify(actualSequence) === JSON.stringify(expectedSequence), { expected: expectedSequence, actual: actualSequence }),
+    check("pdf-machine:page-geometry-preserved", "machine", geometryPreserved, { actual: pageMap.map(({ outputPage, source, sourcePage, sourceGeometry, outputGeometry }) => ({ outputPage, source, sourcePage, sourceGeometry, outputGeometry })) }),
+    check("pdf-machine:selective-watermark-and-opacity", "machine", watermarkPlacement, { expected: { pages: [...watermarkPages], text: item.grade.machine.watermarkText, opacity: item.grade.machine.watermarkOpacity }, actual: pageMap.map(({ outputPage, watermarkCount, opacities }) => ({ outputPage, watermarkCount, opacities })) }),
+    check("pdf-machine:outline-count", "machine", actualNavigation.outlines?.length === item.grade.machine.outlines, { expected: item.grade.machine.outlines, actual: actualNavigation.outlines?.length }),
+    check("pdf-machine:named-destination-count", "machine", Object.keys(actualNavigation.namedDestinations || {}).length === item.grade.machine.namedDestinations, { expected: item.grade.machine.namedDestinations, actual: Object.keys(actualNavigation.namedDestinations || {}).length }),
+    check("pdf-machine:internal-link-count", "machine", actualNavigation.internalLinks?.length === item.grade.machine.internalLinks, { expected: item.grade.machine.internalLinks, actual: actualNavigation.internalLinks?.length }),
+    check("pdf-machine:audit-success", "machine", /^(?:success|succeeded|completed)$/i.test(String(audit?.status || "")), { actual: audit?.status || "unreported" }),
+    check("pdf-visual:all-pages-rendered", "visual", evidence.visual?.pageCount === item.grade.machine.pageCount && visualPages.length === item.grade.machine.pageCount && visualPages.every((page) => page.sameDimensions && page.nonBlank), { renderer: evidence.visual?.renderer, pages: visualPages }),
+    check("pdf-visual:non-watermarked-pages-stable", "visual", visualPages.filter((page) => !page.watermarkExpected).every((page) => page.pixelStable), { actual: visualPages.filter((page) => !page.watermarkExpected) }),
+    check("pdf-visual:watermarked-pages-changed", "visual", visualPages.filter((page) => page.watermarkExpected).length === watermarkPages.size && visualPages.filter((page) => page.watermarkExpected).every((page) => !page.pixelStable && page.changedPixelsBBox), { actual: visualPages.filter((page) => page.watermarkExpected) }),
+    gate("pdf-security:manifest-contract", "security", manifest.schema === "open-office-artifact-tool.pdf-merge-stamp.v1" && JSON.stringify(manifestSequence) === JSON.stringify(expectedSequence) && manifestWatermark.source === "report" && manifestWatermark.text === item.grade.machine.watermarkText && Math.abs(Number(manifestWatermark.opacity) - item.grade.machine.watermarkOpacity) <= 0.001, { actual: manifest }),
+    gate("pdf-security:audit-provenance", "security", auditSourceHash(audit) === evidence.manifest?.sha256 && auditOutputHash(audit) === output.sha256, { expected: { source: evidence.manifest?.sha256, output: output.sha256 }, actual: { source: auditSourceHash(audit) || "unreported", output: auditOutputHash(audit) || "unreported" } }),
+    gate("pdf-security:all-source-bytes-bound", "security", JSON.stringify(actualInputs) === JSON.stringify(expectedInputs), { expected: expectedInputs, actual: actualInputs }),
+    gate("pdf-security:navigation-resolved", "security", navigationMatches, { expected: expectedNavigation, actual: actualNavigation }),
+    gate("pdf-security:single-revision-and-decodable", "security", output.startxrefCount === 1 && output.eofCount === 1 && output.decodedStreamErrors?.length === 0, { actual: { startxref: output.startxrefCount, eof: output.eofCount, decodedStreamErrors: output.decodedStreamErrors || [] } }),
+    check("pdf-security:watermark-absent-from-sources", "security", sourceTermsAbsent, { actual: Object.fromEntries(Object.entries(evidence.sources || {}).map(([id, source]) => [id, source.termCounts?.[item.grade.machine.watermarkText]])) }),
+    ...mergeStampTraceChecks(audit, commands),
   ];
 }
 
@@ -739,6 +827,24 @@ function unreadableAccessibleReportChecks(audit, commands, oracleError) {
   ];
 }
 
+function missingMergeStampChecks(audit, commands) {
+  return [
+    check("pdf-machine:artifact-available-for-oracle", "machine", false),
+    check("pdf-visual:artifact-available-for-oracle", "visual", false),
+    gate("pdf-security:artifact-available-for-oracle", "security", false),
+    ...mergeStampTraceChecks(audit, commands),
+  ];
+}
+
+function unreadableMergeStampChecks(audit, commands, oracleError) {
+  return [
+    check("pdf-machine:artifact-readable-by-oracle", "machine", false, { actual: oracleError }),
+    check("pdf-visual:artifact-renderable-by-oracle", "visual", false, { actual: oracleError }),
+    gate("pdf-security:artifact-readable-by-oracle", "security", false, { actual: oracleError }),
+    ...mergeStampTraceChecks(audit, commands),
+  ];
+}
+
 export async function gradePdfCase({ item, workspace, evaluator, finalMessage, trace, weights = defaultWeights }) {
   if (!supportedCases.has(item.id)) return { supported: false };
   const audit = await readAudit(workspace);
@@ -842,6 +948,46 @@ export async function gradePdfCase({ item, workspace, evaluator, finalMessage, t
     }
     if (!oracle.evidence) return { supported: true, graded: false, checks: [], pending: ["PDF case grader infrastructure"], infrastructureErrors: [oracle.infrastructureError] };
     checks = gradeAccessibleReportEvidence({ evidence: oracle.evidence, audit, commands, finalMessage, item });
+  } else if (item.id === "pdf-merge-reorder-stamp-links") {
+    const output = path.join(workspace, "outputs", "merged.pdf");
+    try { await fs.access(output); } catch {
+      checks = missingMergeStampChecks(audit, commands);
+      const score = summarizeCaseScore(checks, item.grade, weights, checks.filter((entry) => entry.gate).every((entry) => entry.passed));
+      return { supported: true, graded: true, checks, evidence: null, pending: [], ...score };
+    }
+    const manifestPath = path.resolve(String(audit?.source?.path || ""));
+    const workspaceRoot = path.resolve(workspace);
+    if (!manifestPath.startsWith(`${workspaceRoot}${path.sep}`)) {
+      checks = unreadableMergeStampChecks(audit, commands, "audit source manifest must stay inside the isolated workspace");
+      const score = summarizeCaseScore(checks, item.grade, weights, checks.filter((entry) => entry.gate).every((entry) => entry.passed));
+      return { supported: true, graded: true, checks, evidence: null, pending: [], ...score };
+    }
+    try { await fs.access(manifestPath); } catch {
+      checks = unreadableMergeStampChecks(audit, commands, "audit source manifest is unavailable");
+      const score = summarizeCaseScore(checks, item.grade, weights, checks.filter((entry) => entry.gate).every((entry) => entry.passed));
+      return { supported: true, graded: true, checks, evidence: null, pending: [], ...score };
+    }
+    const sequence = item.grade.machine.sequence.map((value) => {
+      const [source, pageNumber] = value.split(":");
+      return { source, page: Number(pageNumber) };
+    });
+    oracle = invokeOracle({
+      kind: "merge-stamp",
+      manifest: manifestPath,
+      sources: ["cover", "report", "appendix"].map((id) => ({ id, path: path.join(workspace, "inputs", `${id}.pdf`) })),
+      sequence,
+      watermarkText: item.grade.machine.watermarkText,
+      watermarkPages: item.grade.machine.watermarkPages,
+      output,
+      renderRoot: path.join(evaluator, "pdf-oracle-render"),
+    }, true);
+    if (!oracle.evidence && oracle.oracleError) {
+      checks = unreadableMergeStampChecks(audit, commands, oracle.oracleError);
+      const score = summarizeCaseScore(checks, item.grade, weights, checks.filter((entry) => entry.gate).every((entry) => entry.passed));
+      return { supported: true, graded: true, checks, evidence: { oracleError: oracle.oracleError }, pending: [], ...score };
+    }
+    if (!oracle.evidence) return { supported: true, graded: false, checks: [], pending: ["PDF case grader infrastructure"], infrastructureErrors: [oracle.infrastructureError] };
+    checks = gradeMergeStampEvidence({ evidence: oracle.evidence, audit, commands, item });
   } else {
     const output = path.join(workspace, "outputs", "public-safe.pdf");
     try { await fs.access(output); } catch {
