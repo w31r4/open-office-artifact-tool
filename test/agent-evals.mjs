@@ -11,6 +11,7 @@ import {
   gradeActiveContentSanitizeEvidence,
   gradeAttachmentQuarantineEvidence,
   gradeBoundedReplaceEvidence,
+  gradeMergeStampEvidence,
   gradeOverflowRefusalEvidence,
   summarizeCaseScore,
 } from "../scripts/agent-eval-pdf-graders.mjs";
@@ -92,6 +93,88 @@ const overclaimChecks = gradeAccessibleReportEvidence({
   item: accessibleItem,
 });
 assert.equal(overclaimChecks.find((entry) => entry.id === "pdf-security:no-pdfua-overclaim")?.passed, false);
+
+const mergeItem = cases.find((item) => item.id === "pdf-merge-reorder-stamp-links");
+const mergeSequence = ["cover:1", "appendix:3", "report:1", "report:2", "appendix:1", "appendix:2"];
+const geometryBySource = {
+  cover: { boxes: { mediabox: [0, 0, 612, 792] }, rotation: 0 },
+  report: { boxes: { mediabox: [0, 0, 792, 612] }, rotation: 0 },
+  appendix: { boxes: { mediabox: [0, 0, 595.2756, 841.8898] }, rotation: 0 },
+};
+const mergePageMap = mergeSequence.map((identity, index) => {
+  const [source, sourcePage] = identity.split(":");
+  return {
+    outputPage: index + 1,
+    source,
+    sourcePage: Number(sourcePage),
+    sourceGeometry: geometryBySource[source],
+    outputGeometry: structuredClone(geometryBySource[source]),
+    watermarkCount: [3, 4].includes(index + 1) ? 1 : 0,
+    opacities: [3, 4].includes(index + 1) ? [0.2] : [],
+  };
+});
+const mergeOutlines = mergeSequence.map((identity, index) => {
+  const [source, sourcePage] = identity.split(":");
+  return { title: `${source}-${sourcePage}`, page: index + 1, parentPath: [] };
+});
+const mergeNamed = Object.fromEntries(mergeOutlines.map((entry) => [`${entry.title}-named`, entry.page]));
+const mergeLinks = mergeOutlines.map((entry, index) => ({ page: entry.page, targetPage: mergeOutlines[(index + 1) % mergeOutlines.length].page, rect: [68, 100, 280, 124] }));
+const mergePathRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-eval-merge-paths-"));
+const mergePathAlias = `${mergePathRoot}-alias`;
+await fs.symlink(mergePathRoot, mergePathAlias);
+const mergeSources = Object.fromEntries([
+  ["cover", 1], ["report", 2], ["appendix", 3],
+].map(([id, pageCount]) => [id, { path: path.join(mergePathRoot, `${id}.pdf`), bytes: 100 + pageCount, sha256: `${id}-sha`, pageCount, termCounts: { CONFIDENTIAL: 0 } }]));
+await Promise.all(Object.values(mergeSources).map((source) => fs.writeFile(source.path, "fixture", "utf8")));
+const mergeEvidence = {
+  manifest: {
+    path: "/tmp/merge-stamp.json",
+    bytes: 400,
+    sha256: "manifest-sha",
+    value: {
+      schema: "open-office-artifact-tool.pdf-merge-stamp.v1",
+      sources: [{ id: "cover" }, { id: "report" }, { id: "appendix" }],
+      sequence: [
+        { source: "cover", pages: "all" },
+        { source: "appendix", pages: [3] },
+        { source: "report", pages: "all" },
+        { source: "appendix", pages: [1, 2] },
+      ],
+      watermarks: [{ source: "report", text: "CONFIDENTIAL", opacity: 0.2 }],
+    },
+  },
+  sources: mergeSources,
+  output: { sha256: "merge-output-sha", pageCount: 6, startxrefCount: 1, eofCount: 1, decodedStreamErrors: [] },
+  pageMap: mergePageMap,
+  navigation: { expected: { outlines: mergeOutlines, namedDestinations: mergeNamed, internalLinks: mergeLinks }, actual: { outlines: structuredClone(mergeOutlines), namedDestinations: Object.fromEntries(Object.entries(mergeNamed).reverse()), internalLinks: structuredClone(mergeLinks) } },
+  visual: { renderer: "poppler-pdftoppm", pageCount: 6, pages: mergePageMap.map((entry) => ({ page: entry.outputPage, source: entry.source, sourcePage: entry.sourcePage, sameDimensions: true, nonBlank: true, pixelStable: ![3, 4].includes(entry.outputPage), changedPixelsBBox: [3, 4].includes(entry.outputPage) ? [400, 300, 800, 700] : null, watermarkExpected: [3, 4].includes(entry.outputPage) })) },
+};
+const mergeAudit = {
+  status: "succeeded",
+  source: { sha256: "manifest-sha" },
+  inputs: Object.values(mergeSources).map(({ path: sourcePath, bytes, sha256 }) => ({ path: path.join(mergePathAlias, path.basename(sourcePath)), bytes, sha256 })),
+  output: { sha256: "merge-output-sha" },
+  provider: { actual: "pypdf", version: "6.10.0", silentFallback: false },
+  savePolicy: { strategy: "rewrite" },
+  preflight: { probeCompleted: true, planCompleted: true },
+  operation: { type: "merge-stamp" },
+};
+const mergeCommands = [
+  "python .agents/skills/pdf/scripts/pdf_provider.py check --provider pypdf --require",
+  "python .agents/skills/pdf/scripts/pdf_provider.py plan --task merge-stamp --provider pypdf --strategy rewrite --input merge-stamp.json --output outputs/merged.pdf --require-provider",
+  "python .agents/skills/pdf/scripts/pypdf_edit.py merge-stamp merge-stamp.json outputs/merged.pdf --strategy rewrite",
+  "pdftoppm -png -r 144 outputs/merged.pdf tmp/pdfs/merged-page",
+  "python .agents/skills/pdf/scripts/pdf_audit.py validate outputs/audit.json --source merge-stamp.json --input inputs/cover.pdf --input inputs/report.pdf --input inputs/appendix.pdf --artifact outputs/merged.pdf --require-operation merge-stamp",
+];
+const mergeChecks = gradeMergeStampEvidence({ evidence: mergeEvidence, audit: mergeAudit, commands: mergeCommands, item: mergeItem });
+assert.equal(mergeChecks.every((entry) => entry.passed), true);
+assert.equal(summarizeCaseScore(mergeChecks, mergeItem.grade).rawScorePercent, 100);
+const danglingMergeEvidence = structuredClone(mergeEvidence);
+danglingMergeEvidence.navigation.actual.internalLinks[0].targetPage = 99;
+const danglingMergeChecks = gradeMergeStampEvidence({ evidence: danglingMergeEvidence, audit: mergeAudit, commands: mergeCommands, item: mergeItem });
+assert.equal(danglingMergeChecks.find((entry) => entry.id === "pdf-security:navigation-resolved")?.passed, false);
+await fs.rm(mergePathAlias);
+await fs.rm(mergePathRoot, { recursive: true, force: true });
 
 const badNetwork = structuredClone(cases);
 badNetwork[0].policy.network = true;

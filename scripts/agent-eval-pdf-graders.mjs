@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -378,6 +379,19 @@ function sortedRecords(records = []) {
   return [...records].sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
 }
 
+function sortedEntries(record = {}) {
+  return Object.entries(record).sort(([left], [right]) => left.localeCompare(right));
+}
+
+function canonicalPath(value) {
+  const resolved = path.resolve(String(value || ""));
+  try {
+    return realpathSync(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
 export function gradeMergeStampEvidence({ evidence, audit, commands, item }) {
   const output = evidence.output || {};
   const pageMap = evidence.pageMap || [];
@@ -395,13 +409,13 @@ export function gradeMergeStampEvidence({ evidence, audit, commands, item }) {
   const expectedNavigation = evidence.navigation?.expected || {};
   const actualNavigation = evidence.navigation?.actual || {};
   const navigationMatches = JSON.stringify(sortedRecords(expectedNavigation.outlines)) === JSON.stringify(sortedRecords(actualNavigation.outlines))
-    && JSON.stringify(expectedNavigation.namedDestinations || {}) === JSON.stringify(actualNavigation.namedDestinations || {})
+    && JSON.stringify(sortedEntries(expectedNavigation.namedDestinations)) === JSON.stringify(sortedEntries(actualNavigation.namedDestinations))
     && JSON.stringify(sortedRecords(expectedNavigation.internalLinks)) === JSON.stringify(sortedRecords(actualNavigation.internalLinks));
   const expectedInputs = Object.values(evidence.sources || {})
-    .map((source) => ({ path: path.resolve(source.path), bytes: source.bytes, sha256: source.sha256 }))
+    .map((source) => ({ path: canonicalPath(source.path), bytes: source.bytes, sha256: source.sha256 }))
     .sort((left, right) => left.path.localeCompare(right.path));
   const actualInputs = (audit?.inputs || [])
-    .map((source) => ({ path: path.resolve(String(source.path || "")), bytes: source.bytes, sha256: source.sha256 }))
+    .map((source) => ({ path: canonicalPath(source.path), bytes: source.bytes, sha256: source.sha256 }))
     .sort((left, right) => left.path.localeCompare(right.path));
   const manifest = evidence.manifest?.value || {};
   const manifestSequence = (manifest.sequence || []).flatMap((segment) => {
@@ -955,15 +969,22 @@ export async function gradePdfCase({ item, workspace, evaluator, finalMessage, t
       const score = summarizeCaseScore(checks, item.grade, weights, checks.filter((entry) => entry.gate).every((entry) => entry.passed));
       return { supported: true, graded: true, checks, evidence: null, pending: [], ...score };
     }
-    const manifestPath = path.resolve(String(audit?.source?.path || ""));
-    const workspaceRoot = path.resolve(workspace);
-    if (!manifestPath.startsWith(`${workspaceRoot}${path.sep}`)) {
-      checks = unreadableMergeStampChecks(audit, commands, "audit source manifest must stay inside the isolated workspace");
+    const manifestPathValue = String(audit?.source?.path || "");
+    let manifestPath;
+    let workspaceRoot;
+    try {
+      [manifestPath, workspaceRoot] = await Promise.all([
+        fs.realpath(path.resolve(workspace, manifestPathValue)),
+        fs.realpath(path.resolve(workspace)),
+      ]);
+    } catch {
+      checks = unreadableMergeStampChecks(audit, commands, "audit source manifest is unavailable");
       const score = summarizeCaseScore(checks, item.grade, weights, checks.filter((entry) => entry.gate).every((entry) => entry.passed));
       return { supported: true, graded: true, checks, evidence: null, pending: [], ...score };
     }
-    try { await fs.access(manifestPath); } catch {
-      checks = unreadableMergeStampChecks(audit, commands, "audit source manifest is unavailable");
+    const manifestRelative = path.relative(workspaceRoot, manifestPath);
+    if (!manifestRelative || manifestRelative.startsWith(`..${path.sep}`) || manifestRelative === ".." || path.isAbsolute(manifestRelative)) {
+      checks = unreadableMergeStampChecks(audit, commands, "audit source manifest must stay inside the isolated workspace");
       const score = summarizeCaseScore(checks, item.grade, weights, checks.filter((entry) => entry.gate).every((entry) => entry.passed));
       return { supported: true, graded: true, checks, evidence: null, pending: [], ...score };
     }
