@@ -1470,6 +1470,34 @@ message DocumentArtifact {
   string id = 1;
   string name = 2;
   repeated DocumentBlock blocks = 3;
+  // Classic WordprocessingML comments whose exact bounded profile is owned by
+  // OpenChestnut. Package-local comment IDs and anchor ordinals stay in the
+  // source binding rather than becoming authoring identity.
+  repeated DocumentComment comments = 4;
+}
+
+message DocumentComment {
+  string id = 1;
+  string target_block_id = 2;
+  string author = 3;
+  string text = 4;
+  optional string initials = 5;
+  // ISO 8601 / XML Schema date-time text. Omission remains distinct from an
+  // authored timestamp so source documents are not assigned synthetic dates.
+  optional string created_at = 6;
+  DocumentCommentSourceBinding source = 7;
+}
+
+// Source-only locators and integrity evidence for a recognized classic DOCX
+// comment. None of these fields are durable agent-facing comment identity.
+message DocumentCommentSourceBinding {
+  string native_comment_id = 1;
+  uint32 target_body_index = 2;
+  string comment_element_sha256 = 3;
+  string semantic_sha256 = 4;
+  string residual_sha256 = 5;
+  string anchor_sha256 = 6;
+  bool editable = 7;
 }
 
 message DocumentBlock {

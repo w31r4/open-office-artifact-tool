@@ -17,6 +17,8 @@ internal sealed class DocxPartContext
     private XDocument? _stylesDocument;
     private bool _numberingDocumentLoaded;
     private string? _mutatedNumberingPartPath;
+    private string? _mutatedCommentsPartPath;
+    private string? _mutatedCommentsRelationshipId;
     private bool _stylesDocumentLoaded;
 
     internal DocxPartContext(MainDocumentPart owner)
@@ -132,14 +134,30 @@ internal sealed class DocxPartContext
         _mutatedRelationshipIds.Add(relationshipId);
     }
 
+    internal void MarkCommentsMutated(WordprocessingCommentsPart part)
+    {
+        var pair = Owner.Parts.FirstOrDefault(item => ReferenceEquals(item.OpenXmlPart, part));
+        if (pair.OpenXmlPart is null)
+            throw new CodecException(
+                "document_comment_source_binding_mismatch",
+                "The modeled Comments part is not related from word/document.xml.",
+                part.Uri.OriginalString.TrimStart('/'));
+        _mutatedCommentsRelationshipId = pair.RelationshipId;
+        _mutatedCommentsPartPath = part.Uri.OriginalString.TrimStart('/');
+    }
+
     internal bool IgnoresModeledRelationship(OpenOffice.Artifact.Wire.V1.OpaqueOpcRelationship relationship) =>
         relationship.SourcePath.Equals("word/document.xml", StringComparison.OrdinalIgnoreCase) &&
-        relationship.Type.EndsWith("/hyperlink", StringComparison.Ordinal) &&
-        _mutatedRelationshipIds.Contains(relationship.Id);
+        ((relationship.Type.EndsWith("/hyperlink", StringComparison.Ordinal) &&
+          _mutatedRelationshipIds.Contains(relationship.Id)) ||
+         (relationship.Type.EndsWith("/comments", StringComparison.Ordinal) &&
+          relationship.Id.Equals(_mutatedCommentsRelationshipId, StringComparison.Ordinal)));
 
     internal bool IgnoresModeledPart(OpenOffice.Artifact.Wire.V1.OpaqueOpcPart part) =>
-        _mutatedNumberingPartPath is not null &&
-        part.Path.Equals(_mutatedNumberingPartPath, StringComparison.OrdinalIgnoreCase);
+        (_mutatedNumberingPartPath is not null &&
+         part.Path.Equals(_mutatedNumberingPartPath, StringComparison.OrdinalIgnoreCase)) ||
+        (_mutatedCommentsPartPath is not null &&
+         part.Path.Equals(_mutatedCommentsPartPath, StringComparison.OrdinalIgnoreCase));
 
     private static XDocument? ReadCachedPart(OpenXmlPart? part, ref bool loaded, ref XDocument? document)
     {
