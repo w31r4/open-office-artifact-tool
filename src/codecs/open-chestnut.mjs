@@ -1735,7 +1735,9 @@ function documentComment(comment, slot) {
   }
   if (slot && JSON.stringify(documentCommentSnapshot(comment)) === JSON.stringify(slot.publicSnapshot)) return slot.wire;
   const author = String(comment.author ?? "");
-  const initials = comment.initials == null ? undefined : String(comment.initials);
+  const initials = slot && comment.initials === slot.publicSnapshot.initials
+    ? slot.wire.initials
+    : comment.initials == null ? undefined : String(comment.initials);
   const text = String(comment.text ?? "");
   if (!author || author.length > 255) throw new OpenChestnutCodecError(`Document comment ${comment.id} author must contain 1 through 255 characters.`, [], { code: "invalid_document_comment" });
   if (initials !== undefined && (!initials || initials.length > 9)) throw new OpenChestnutCodecError(`Document comment ${comment.id} initials must contain 1 through 9 characters when present.`, [], { code: "invalid_document_comment" });

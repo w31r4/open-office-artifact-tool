@@ -76,6 +76,9 @@ public sealed class DocxCodecTests
         });
         Assert.True(imported.Ok, Diagnostics(imported));
         Assert.False(imported.Artifact.Document.Blocks[0].Source.Editable);
+        Assert.Equal(
+            imported.Artifact.Document.Comments[0].Source.ResidualSha256,
+            imported.Artifact.Document.Comments[1].Source.ResidualSha256);
         Assert.Collection(imported.Artifact.Document.Comments,
             comment =>
             {
@@ -191,6 +194,17 @@ public sealed class DocxCodecTests
         });
         Assert.True(unchanged.Ok, Diagnostics(unchanged));
         Assert.Equal(complex.Artifact.OpaqueOpc.SourcePackage.Data.ToByteArray(), unchanged.File.ToByteArray());
+
+        var aliasedIds = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(AliasSecondCommentId(authored.File.ToByteArray())),
+        });
+        Assert.True(aliasedIds.Ok, Diagnostics(aliasedIds));
+        Assert.Empty(aliasedIds.Artifact.Document.Comments);
+        Assert.Contains(aliasedIds.Diagnostics, item => item.Code == "unsupported_document_comments_preserved");
     }
 
     [Fact]
@@ -1870,6 +1884,24 @@ public sealed class DocxCodecTests
             var comment = document.MainDocumentPart!.WordprocessingCommentsPart!.Comments!.Elements<W.Comment>().First();
             comment.Elements<W.Paragraph>().Single().Append(new W.Run(new W.Text(" preserved rich body")));
             document.MainDocumentPart.WordprocessingCommentsPart.Comments.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AliasSecondCommentId(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var mainPart = document.MainDocumentPart!;
+            mainPart.WordprocessingCommentsPart!.Comments!.Elements<W.Comment>().ElementAt(1).Id = "00";
+            foreach (var anchor in mainPart.Document!.Body!.Descendants<W.CommentRangeStart>().Where(item => item.Id?.Value == "1")) anchor.Id = "00";
+            foreach (var anchor in mainPart.Document.Body.Descendants<W.CommentRangeEnd>().Where(item => item.Id?.Value == "1")) anchor.Id = "00";
+            foreach (var reference in mainPart.Document.Body.Descendants<W.CommentReference>().Where(item => item.Id?.Value == "1")) reference.Id = "00";
+            mainPart.WordprocessingCommentsPart.Comments.Save();
+            mainPart.Document.Save();
         }
         return stream.ToArray();
     }

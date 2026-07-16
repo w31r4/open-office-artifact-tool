@@ -66,6 +66,8 @@ internal static class DocxClassicCommentCodec
 
     internal static void Validate(DocumentArtifact document, EffectiveCodecLimits limits)
     {
+        if (document.Comments.Count == 0) return;
+
         var blocks = new Dictionary<string, DocumentBlock>(StringComparer.Ordinal);
         foreach (var block in document.Blocks)
         {
@@ -219,7 +221,7 @@ internal static class DocxClassicCommentCodec
                     $"Document comment {requested.Id} does not resolve to its native source comment.",
                     "word/comments.xml");
             var original = source.Artifact;
-            AssertBindingMatches(requested, binding, source, original);
+            AssertBindingMatches(requested, binding, graph.Part.Comments!, source, original);
 
             var requestedHash = SemanticHash(requested);
             if (requestedHash.Equals(binding.SemanticSha256, StringComparison.OrdinalIgnoreCase)) continue;
@@ -230,7 +232,7 @@ internal static class DocxClassicCommentCodec
                     "word/comments.xml");
 
             ApplyValues(source.Element, requested);
-            if (!ResidualHash(source.Element).Equals(binding.ResidualSha256, StringComparison.OrdinalIgnoreCase))
+            if (!GraphResidualHash(graph.Part.Comments!).Equals(binding.ResidualSha256, StringComparison.OrdinalIgnoreCase))
                 throw new CodecException(
                     "document_comment_residual_not_preserved",
                     $"Document comment {requested.Id} changed unmodeled comment formatting or extension markup.",
@@ -241,6 +243,7 @@ internal static class DocxClassicCommentCodec
                     $"Document comment {requested.Id} changed its source anchor triplet.",
                     "word/document.xml");
             var verified = ReadArtifact(
+                graph.Part.Comments!,
                 source.Element,
                 requested.Id,
                 original.TargetBlockId,
@@ -264,6 +267,7 @@ internal static class DocxClassicCommentCodec
     private static void AssertBindingMatches(
         DocumentComment requested,
         DocumentCommentSourceBinding binding,
+        W.Comments commentsRoot,
         DocxClassicCommentSource source,
         DocumentComment original)
     {
@@ -276,7 +280,7 @@ internal static class DocxClassicCommentCodec
             !binding.AnchorSha256.Equals(actual.AnchorSha256, StringComparison.OrdinalIgnoreCase) ||
             binding.Editable != actual.Editable ||
             !HashElement(source.Element).Equals(binding.CommentElementSha256, StringComparison.OrdinalIgnoreCase) ||
-            !ResidualHash(source.Element).Equals(binding.ResidualSha256, StringComparison.OrdinalIgnoreCase) ||
+            !GraphResidualHash(commentsRoot).Equals(binding.ResidualSha256, StringComparison.OrdinalIgnoreCase) ||
             !AnchorHash(source.Start, source.End, source.ReferenceRun).Equals(binding.AnchorSha256, StringComparison.OrdinalIgnoreCase) ||
             !SemanticHash(original).Equals(binding.SemanticSha256, StringComparison.OrdinalIgnoreCase))
             throw new CodecException(
@@ -313,12 +317,13 @@ internal static class DocxClassicCommentCodec
 
         var elements = part.Comments.Elements<W.Comment>().ToArray();
         var nativeIds = new HashSet<string>(StringComparer.Ordinal);
+        var numericIds = new HashSet<int>();
         foreach (var element in elements)
         {
             var nativeId = element.Id?.Value;
             if (string.IsNullOrWhiteSpace(nativeId) ||
                 !int.TryParse(nativeId, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var numericId) ||
-                numericId < 0 || !nativeIds.Add(nativeId))
+                numericId < 0 || !nativeIds.Add(nativeId) || !numericIds.Add(numericId))
             {
                 reason = "comment IDs must be unique non-negative decimal integers";
                 return false;
@@ -346,9 +351,15 @@ internal static class DocxClassicCommentCodec
             return false;
         }
 
-        var blockByBodyIndex = document.Blocks
-            .Where(block => block.Source is not null)
-            .ToDictionary(block => block.Source.BodyIndex);
+        var blockByBodyIndex = new Dictionary<uint, DocumentBlock>();
+        foreach (var block in document.Blocks.Where(block => block.Source is not null))
+        {
+            if (!blockByBodyIndex.TryAdd(block.Source.BodyIndex, block))
+            {
+                reason = $"multiple modeled blocks claim body index {block.Source.BodyIndex}";
+                return false;
+            }
+        }
         var sources = new List<DocxClassicCommentSource>(elements.Length);
         for (var index = 0; index < elements.Length; index++)
         {
@@ -376,6 +387,7 @@ internal static class DocxClassicCommentCodec
                 return false;
             }
             var artifact = ReadArtifact(
+                part.Comments,
                 element,
                 $"document/comment/{index + 1}",
                 block.Id,
@@ -397,6 +409,7 @@ internal static class DocxClassicCommentCodec
     }
 
     private static DocumentComment ReadArtifact(
+        W.Comments commentsRoot,
         W.Comment element,
         string id,
         string targetBlockId,
@@ -421,7 +434,7 @@ internal static class DocxClassicCommentCodec
             NativeCommentId = element.Id?.Value ?? string.Empty,
             TargetBodyIndex = bodyIndex,
             CommentElementSha256 = HashElement(element),
-            ResidualSha256 = ResidualHash(element),
+            ResidualSha256 = GraphResidualHash(commentsRoot),
             AnchorSha256 = AnchorHash(start, end, referenceRun),
             Editable = true,
         };
@@ -534,15 +547,18 @@ internal static class DocxClassicCommentCodec
         return Hash(semantic.ToByteArray());
     }
 
-    private static string ResidualHash(W.Comment comment)
+    private static string GraphResidualHash(W.Comments comments)
     {
-        var residual = (W.Comment)comment.CloneNode(true);
-        residual.RemoveAttribute("author", WordprocessingNamespace);
-        residual.RemoveAttribute("initials", WordprocessingNamespace);
-        residual.RemoveAttribute("date", WordprocessingNamespace);
-        var text = residual.Descendants<W.Text>().Single();
-        text.Text = string.Empty;
-        text.Space = null;
+        var residual = (W.Comments)comments.CloneNode(true);
+        foreach (var comment in residual.Elements<W.Comment>())
+        {
+            comment.RemoveAttribute("author", WordprocessingNamespace);
+            comment.RemoveAttribute("initials", WordprocessingNamespace);
+            comment.RemoveAttribute("date", WordprocessingNamespace);
+            var text = comment.Descendants<W.Text>().Single();
+            text.Text = string.Empty;
+            text.Space = null;
+        }
         return HashElement(residual);
     }
 

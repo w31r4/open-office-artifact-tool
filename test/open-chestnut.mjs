@@ -2442,6 +2442,16 @@ const editedClassicCommentRoundTrip = await importDocxWithOpenChestnut(editedCla
 assert.equal(editedClassicCommentRoundTrip.comments[0].text, "Approved after source-bound review.");
 assert.equal(editedClassicCommentRoundTrip.comments[0].date, "2026-07-16T09:30:00+08:00");
 
+const absentInitialsZip = await JSZip.loadAsync(classicCommentDocx.bytes);
+absentInitialsZip.file("word/comments.xml", classicCommentXml.replace(' w:initials="RV"', ""));
+const absentInitialsImported = await importDocxWithOpenChestnut(await absentInitialsZip.generateAsync({ type: "uint8array" }));
+assert.equal(absentInitialsImported.comments[0].initials, "RE", "The public model may derive initials for display.");
+absentInitialsImported.comments[0].author = "Different reviewer";
+absentInitialsImported.comments[0].text = "Edit without materializing absent initials.";
+const absentInitialsEdited = await exportDocxWithOpenChestnut(absentInitialsImported);
+const absentInitialsXml = await (await JSZip.loadAsync(absentInitialsEdited.bytes)).file("word/comments.xml").async("text");
+assert.doesNotMatch(absentInitialsXml, /w:initials=/, "An unrelated edit must preserve native initials absence.");
+
 const commentTopologyImported = await importDocxWithOpenChestnut(classicCommentDocx);
 commentTopologyImported.addComment(commentTopologyImported.blocks[0], "Unsafe addition");
 await assert.rejects(
