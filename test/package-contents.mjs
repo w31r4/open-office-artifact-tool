@@ -37,6 +37,7 @@ for (const required of [
   "runtime/open-chestnut/_framework/OpenChestnut.Runtime.wasm",
   "src/ooxml/docx-comments.mjs",
   "src/ooxml/docx-bibliography.mjs",
+  "src/ooxml/package.mjs",
   "src/presentation/chart-trendline-svg.mjs",
   "src/presentation/ooxml-chart-data.mjs",
   "src/presentation/ooxml-charts.mjs",

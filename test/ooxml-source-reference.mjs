@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs/promises";
 import JSZip from "jszip";
 
 import {
@@ -9,6 +10,32 @@ import {
   SpreadsheetFile,
   Workbook,
 } from "../src/index.mjs";
+import {
+  inspectOoxmlPackage,
+  ooxmlResolveRelationshipTarget,
+  ooxmlSafePartPath,
+  patchOoxmlPackage,
+} from "../src/ooxml/package.mjs";
+
+const packageModule = await import("../src/ooxml/package.mjs");
+assert.deepEqual(Object.keys(packageModule).sort(), [
+  "inspectOoxmlPackage",
+  "ooxmlResolveRelationshipTarget",
+  "ooxmlSafePartPath",
+  "patchOoxmlPackage",
+]);
+assert.equal(typeof inspectOoxmlPackage, "function");
+assert.equal(typeof patchOoxmlPackage, "function");
+assert.equal(ooxmlSafePartPath("word\\media/image1.png", "DOCX"), "word/media/image1.png");
+assert.equal(ooxmlResolveRelationshipTarget("ppt/slides/slide1.xml", "../media/image1.png"), "ppt/media/image1.png");
+assert.throws(() => ooxmlSafePartPath("../escape.xml", "DOCX"), /unsafe/i);
+assert.throws(() => ooxmlSafePartPath("/absolute.xml", "DOCX"), /unsafe/i);
+
+const rootSource = await fs.readFile(new URL("../src/index.mjs", import.meta.url), "utf8");
+const packageSource = await fs.readFile(new URL("../src/ooxml/package.mjs", import.meta.url), "utf8");
+assert.doesNotMatch(rootSource, /from ["']jszip["']/, "root compatibility barrel must not own JSZip package mechanics");
+assert.doesNotMatch(rootSource, /function ooxmlPackageRecords\b/, "root compatibility barrel must not own the OOXML package engine");
+assert.doesNotMatch(packageSource, /(?:^|\/)index\.mjs["']/, "OOXML package engine must remain a dependency leaf");
 
 async function zipOf(file) {
   return JSZip.loadAsync(new Uint8Array(await file.arrayBuffer()));

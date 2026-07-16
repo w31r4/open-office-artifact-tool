@@ -92,6 +92,8 @@ Artifact models expose stable `inspect(...)`, `resolve(...)`, layout, render, an
 
 `SpreadsheetFile.inspectXlsx/patchXlsx`, `DocumentFile.inspectDocx/patchDocx`, and `PresentationFile.inspectPptx/patchPptx` are explicit package-level tools. They validate paths, relationships, content types, and source references; the normal facades never call them as a fallback.
 
+These three facades share one dependency-leaf OPC engine in `src/ooxml/package.mjs`. It owns JSZip loading, decompression budgets, safe part paths, content-type and relationship synchronization, recipe/source-reference patching, validation, and transactional package generation; `src/index.mjs` remains the public compatibility barrel rather than a second package implementation.
+
 Renderer adapters are exported for Playwright, sharp, canvas, Poppler, LibreOffice, and the optional native Office bridge. The bridge is a QA/render sidecar, not an Office codec.
 
 ## Reference Skills
