@@ -11,6 +11,7 @@ import {
   visualQaArtifact,
   Workbook,
 } from "open-office-artifact-tool";
+import { createArtifactVisualQaApi } from "../src/qa/artifact-visual.mjs";
 
 function pngChunk(type, data = Buffer.alloc(0)) {
   const length = Buffer.alloc(4);
@@ -42,6 +43,18 @@ const blackPixelPng = makePng(1, 1, [0, 0, 0, 255]);
 const whitePixelPng = makePng(1, 1, [255, 255, 255, 255]);
 const blackPixelPpm = makePpm(1, 1, [0, 0, 0]);
 const whitePixelPpm = makePpm(1, 1, [255, 255, 255]);
+
+assert.throws(() => createArtifactVisualQaApi({}), /requires inferArtifactKind/);
+let inferredArtifactKinds = 0;
+const injectedVisualApi = createArtifactVisualQaApi({
+  inferArtifactKind: () => {
+    inferredArtifactKinds += 1;
+    return "fixture";
+  },
+});
+const injectedPreview = await injectedVisualApi.renderArtifact({ render: () => new FileBlob(whitePixelPng, { type: "image/png" }) });
+assert.equal(inferredArtifactKinds, 1);
+assert.equal(injectedPreview.metadata.artifactKind, "fixture");
 
 const workbook = Workbook.create();
 const sheet = workbook.worksheets.add("Sheet1");
