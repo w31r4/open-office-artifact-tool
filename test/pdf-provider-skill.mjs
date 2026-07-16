@@ -76,6 +76,7 @@ const requiredFiles = [
   "scripts/pymupdf_edit.py",
   "scripts/residue_scan.py",
   "scripts/pdf_audit.py",
+  "scripts/python_runtime.py",
   "examples/provider-workflows.md",
   "examples/reportlab-report-spec.json",
   "examples/pymupdf-edit-operations.json",
@@ -216,6 +217,12 @@ try {
   ], { status: 2 });
   assert.match(unsafeSanitize.stderr, /invalidate-signatures/);
 
+  const invalidConfiguredPython = run(python, [path.join(scriptsRoot, "pdf_provider.py"), "check", "--provider", "all"], {
+    env: { OPEN_OFFICE_PDF_PROVIDER_PYTHON: path.join(tempRoot, "missing-python") },
+    status: 2,
+  });
+  assert.match(invalidConfiguredPython.stderr, /OPEN_OFFICE_PDF_PROVIDER_PYTHON is not an executable file/);
+
   const directNoLicense = run(python, [path.join(scriptsRoot, "pymupdf_edit.py"), "probe"], { status: 2 });
   assert.equal(parseResult(directNoLicense, "stderr").silentFallback, false);
   assert.match(directNoLicense.stderr, /accept-license/);
@@ -233,6 +240,19 @@ try {
         table: [["Gate", "Status"], ["Provider", "Ready"]],
       }],
     }), "utf8");
+    const routedProbe = parseResult(run(python, [path.join(scriptsRoot, "pymupdf_edit.py"), "probe", "--accept-license", "agpl"], {
+      env: { OPEN_OFFICE_PDF_PROVIDER_PYTHON: integrationPython },
+      status: 0,
+    }));
+    assert.equal(routedProbe.available, true);
+    assert.notEqual(routedProbe.providerVersion, "unavailable");
+    const routedPlan = parseResult(run(python, [
+      path.join(scriptsRoot, "pdf_provider.py"), "plan",
+      "--task", "sanitize", "--provider", "pymupdf", "--strategy", "sanitize",
+      "--input", dummyInput, "--output", dummyOutput, "--accept-license", "agpl",
+      "--invalidate-signatures", "--require-provider",
+    ], { env: { OPEN_OFFICE_PDF_PROVIDER_PYTHON: integrationPython }, status: 0 }));
+    assert.equal(routedPlan.providerProbe.available, true);
     parseResult(run(integrationPython, [path.join(scriptsRoot, "reportlab_create.py"), "--spec", specPath, "--output", sourcePath], { status: 0 }));
     const sourceBytes = await fs.readFile(sourcePath);
 

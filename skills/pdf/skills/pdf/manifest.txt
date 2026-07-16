@@ -27,6 +27,7 @@ scripts/pypdf_edit.py
 scripts/pymupdf_edit.py
 scripts/residue_scan.py
 scripts/pdf_audit.py
+scripts/python_runtime.py
 SKILL.md
 agents/openai.yaml
 assets/file-document.png

@@ -917,6 +917,8 @@ def parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    from python_runtime import reexec_configured_provider_python
+    reexec_configured_provider_python()
     args = parser().parse_args()
     output_on_failure = getattr(args, "output", None) if args.command == "edit" else None
     try:

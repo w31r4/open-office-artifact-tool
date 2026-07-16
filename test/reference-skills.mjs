@@ -133,6 +133,7 @@ for (const relativePath of [
   "scripts/pdfplumber_extract.py",
   "scripts/pypdf_edit.py",
   "scripts/pymupdf_edit.py",
+  "scripts/python_runtime.py",
   "scripts/residue_scan.py",
   "tasks/create.md",
   "tasks/read_review.md",

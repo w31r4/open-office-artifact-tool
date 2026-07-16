@@ -13,6 +13,15 @@ This Skill routes explicit operations to mature providers. The project-owned lay
 
 Never catch a provider failure and silently retry through another provider. There is no silent fallback. Never reconstruct an arbitrary PDF through PDF.js or `PdfArtifact`, export it, and describe the result as a fidelity-preserving edit.
 
+## Python Runtime Contract
+
+Treat `OPEN_OFFICE_PDF_PROVIDER_PYTHON` as part of provider identity. When it is non-empty, every shipped Python entry point automatically re-executes through that exact interpreter before probing or importing a provider. Do not unset it, replace it after a failed system-Python probe, or infer availability from `which python3`; use one interpreter for probe, plan, mutation, residue scan, and audit. An invalid configured path fails closed. Only when the variable is absent does the current interpreter remain authoritative.
+
+```bash
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+"$PYTHON_BIN" -c 'import sys; print(sys.executable)'
+```
+
 ## Choose The Route First
 
 Read the [provider matrix](references/PROVIDER_MATRIX.md), [save policies](references/SAVE_POLICIES.md), [audit schema](references/AUDIT_SCHEMA.md), [security checklist](references/SECURITY_CHECKLIST.md), and [product boundaries](references/PRODUCT_BOUNDARIES.md) before mutating an imported file.

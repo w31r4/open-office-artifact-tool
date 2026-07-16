@@ -116,6 +116,8 @@ def parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    from python_runtime import reexec_configured_provider_python
+    reexec_configured_provider_python()
     args = parser().parse_args()
     try:
         record = json.loads(args.audit.read_text("utf8"))

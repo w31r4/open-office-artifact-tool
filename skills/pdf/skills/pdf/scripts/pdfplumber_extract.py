@@ -19,6 +19,8 @@ def sha256(path: Path) -> str:
 
 
 def main() -> int:
+    from python_runtime import reexec_configured_provider_python
+    reexec_configured_provider_python()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", type=Path)
     parser.add_argument("--output", type=Path)

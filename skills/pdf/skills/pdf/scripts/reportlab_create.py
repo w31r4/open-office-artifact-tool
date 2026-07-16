@@ -116,6 +116,8 @@ def build_pdf(spec: dict, output: Path) -> None:
 
 
 def main() -> int:
+    from python_runtime import reexec_configured_provider_python
+    reexec_configured_provider_python()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--spec", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)

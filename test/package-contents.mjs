@@ -144,6 +144,7 @@ for (const required of [
   "skills/pdf/skills/pdf/scripts/pymupdf_edit.py",
   "skills/pdf/skills/pdf/scripts/residue_scan.py",
   "skills/pdf/skills/pdf/scripts/pdf_audit.py",
+  "skills/pdf/skills/pdf/scripts/python_runtime.py",
   "skills/pdf/skills/pdf/tasks/create.md",
   "skills/pdf/skills/pdf/tasks/read_review.md",
   "skills/pdf/skills/pdf/tasks/edit_existing.md",

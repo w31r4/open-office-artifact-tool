@@ -19,9 +19,12 @@ If `uv` is unavailable:
 Record the environment and license choice:
 
 ```bash
+export OPEN_OFFICE_PDF_PROVIDER_PYTHON="$PYTHON"
 export OPEN_OFFICE_PDF_PYMUPDF_LICENSE=AGPL
-"$PYTHON" scripts/pdf_provider.py check --provider pymupdf --require
+"$OPEN_OFFICE_PDF_PROVIDER_PYTHON" scripts/pdf_provider.py check --provider pymupdf --require
 ```
+
+`OPEN_OFFICE_PDF_PROVIDER_PYTHON` is part of provider identity, not a convenience hint. Every shipped Python script automatically re-executes through it when set, so an Agent that invokes `python3 scripts/...` cannot accidentally probe one environment and mutate in another. Do not unset or replace it after a failed probe. A configured path that is missing or non-executable fails closed.
 
 ## Other providers
 
@@ -35,7 +38,7 @@ export OPEN_OFFICE_PDF_PYMUPDF_LICENSE=AGPL
 ## Full probe
 
 ```bash
-python3 scripts/pdf_provider.py check --provider all
+"${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}" scripts/pdf_provider.py check --provider all
 ```
 
 Missing optional providers are reported individually. An operation requiring a missing provider must fail; never route it to a different implementation automatically.
