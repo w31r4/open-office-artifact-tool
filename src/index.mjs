@@ -16,10 +16,33 @@ import { normalizeSpreadsheetChartSeriesLine, spreadsheetChartLineDashArray } fr
 import { normalizeSpreadsheetChartLineOptions, spreadsheetChartSmoothLinePath } from "./spreadsheet/chart-line-options.mjs";
 import { normalizeSpreadsheetChartSeriesMarker, spreadsheetChartMarkerSvg } from "./spreadsheet/chart-marker-style.mjs";
 import { normalizeSpreadsheetChartDataLabels, spreadsheetChartDataLabelSvgPlacement, spreadsheetChartDataLabelText } from "./spreadsheet/chart-data-labels.mjs";
+import { resolvedWorksheetChartCategories, resolvedWorksheetChartSeriesValues } from "./spreadsheet/chart-source-data.mjs";
 import { computePivotValues, normalizePivotConfig } from "./spreadsheet/pivots.mjs";
 import { formatSpreadsheetDisplayValue, normalizeXlsxColor, normalizeXlsxThemeConfig, xlsxColorCss, xlsxFillSvgPaint } from "./spreadsheet/ooxml-styles.mjs";
 import { planSpreadsheetThreadedComments, validateSpreadsheetThreadedCommentPackageSemantics } from "./spreadsheet/ooxml-threaded-comments.mjs";
 import { parseStructuredReference, scanStructuredReferenceIntersections, scanStructuredReferences, splitReferenceIntersectionOperands } from "./spreadsheet/structured-references.mjs";
+import {
+  assertWorksheetBounds,
+  columnLabelToNumber,
+  columnNumberToLabel,
+  formulaA1ToR1C1,
+  formulaR1C1ToA1,
+  makeCellAddress,
+  parseCellAddress,
+  parseRangeAddress,
+  rangeBounds,
+  rangeToAddress,
+  translateA1Formula,
+  XLSX_MAX_COLUMN_INDEX,
+  XLSX_MAX_ROW_INDEX,
+} from "./spreadsheet/range-addressing.mjs";
+import {
+  assertRangeCopyShape,
+  currentRegionBounds,
+  normalizeRangeCopyMode,
+  normalizeRangeWrite,
+  writtenRangeBounds,
+} from "./spreadsheet/range-operations.mjs";
 import { normalizePresentationThemeConfig } from "./presentation/ooxml-theme.mjs";
 import { mergePresentationPlaceholders, normalizePresentationBackground, resolvePresentationBackgroundColor } from "./presentation/ooxml-masters.mjs";
 import { createPresentationGroupShapeClass } from "./presentation/group-shapes.mjs";
@@ -94,55 +117,6 @@ function decodeXml(value) {
     .replaceAll("&apos;", "'")
     .replaceAll("&amp;", "&");
 }
-
-function columnNumberToLabel(index) {
-  let n = index + 1;
-  let label = "";
-  while (n > 0) {
-    const rem = (n - 1) % 26;
-    label = String.fromCharCode(65 + rem) + label;
-    n = Math.floor((n - 1) / 26);
-  }
-  return label;
-}
-
-function columnLabelToNumber(label) {
-  let n = 0;
-  for (const ch of String(label).toUpperCase()) {
-    n = n * 26 + (ch.charCodeAt(0) - 64);
-  }
-  return n - 1;
-}
-
-function parseCellAddress(address) {
-  const match = /^\$?([A-Za-z]+)\$?(\d+)$/.exec(String(address).trim());
-  if (!match) throw new Error(`Invalid cell address: ${address}`);
-  return { col: columnLabelToNumber(match[1]), row: Number(match[2]) - 1 };
-}
-
-function makeCellAddress(row, col) {
-  return `${columnNumberToLabel(col)}${row + 1}`;
-}
-
-function parseRangeAddress(address) {
-  const raw = String(address || "A1").trim();
-  const withoutSheet = raw.includes("!") ? raw.slice(raw.lastIndexOf("!") + 1) : raw;
-  const [startRaw, endRaw = startRaw] = withoutSheet.split(":");
-  const start = parseCellAddress(startRaw);
-  const end = parseCellAddress(endRaw);
-  const top = Math.min(start.row, end.row);
-  const left = Math.min(start.col, end.col);
-  const bottom = Math.max(start.row, end.row);
-  const right = Math.max(start.col, end.col);
-  return { top, left, bottom, right, rowCount: bottom - top + 1, colCount: right - left + 1 };
-}
-
-function rangeToAddress(bounds) {
-  const start = makeCellAddress(bounds.top, bounds.left);
-  const end = makeCellAddress(bounds.bottom, bounds.right);
-  return start === end ? start : `${start}:${end}`;
-}
-
 
 function inferArtifactKind(artifact) {
   if (artifact instanceof Workbook) return "workbook";
@@ -1269,27 +1243,36 @@ class WorksheetChart {
     return this;
   }
 
-  inspectRecord() { return { kind: "drawing", drawingType: "chart", id: this.id, sheet: this.worksheet.name, name: this.name, chartType: this.type, title: this.title, titleTextStyle: this.titleTextStyle, lineOptions: this.lineOptions, dataLabels: normalizeSpreadsheetChartDataLabels(this.dataLabels), categories: this.categories, series: this.series.items.length, seriesItems: this.series.toJSON(), xAxis: this.xAxis, yAxis: this.yAxis, bbox: [this.position.left, this.position.top, this.position.width, this.position.height], bboxUnit: "px" }; }
+  inspectRecord() {
+    const categories = resolvedWorksheetChartCategories(this);
+    const seriesItems = this.series.toJSON().map((series, index) => ({
+      ...series,
+      values: resolvedWorksheetChartSeriesValues(this, this.series.items[index]),
+    }));
+    return { kind: "drawing", drawingType: "chart", id: this.id, sheet: this.worksheet.name, name: this.name, chartType: this.type, title: this.title, titleTextStyle: this.titleTextStyle, lineOptions: this.lineOptions, dataLabels: normalizeSpreadsheetChartDataLabels(this.dataLabels), categories, series: this.series.items.length, seriesItems, xAxis: this.xAxis, yAxis: this.yAxis, bbox: [this.position.left, this.position.top, this.position.width, this.position.height], bboxUnit: "px" };
+  }
 
   toSvg() {
     const p = this.position;
-    const values = this.series.items[0]?.values || [];
+    const categories = resolvedWorksheetChartCategories(this);
+    const seriesItems = this.series.items.map((series) => ({ ...series, values: resolvedWorksheetChartSeriesValues(this, series) }));
+    const values = seriesItems[0]?.values || [];
     const lineOptions = normalizeSpreadsheetChartLineOptions(this.lineOptions);
     const dataLabels = normalizeSpreadsheetChartDataLabels(this.dataLabels);
     const grouping = lineOptions?.grouping || "standard";
-    const lineTotals = values.map((_, pointIndex) => this.series.items.reduce((total, series) => total + (Number(series.values?.[pointIndex]) || 0), 0));
-    const lineValues = this.series.items.map((series, seriesIndex) => (series.values || []).map((value, pointIndex) => {
+    const lineTotals = values.map((_, pointIndex) => seriesItems.reduce((total, series) => total + (Number(series.values?.[pointIndex]) || 0), 0));
+    const lineValues = seriesItems.map((series, seriesIndex) => (series.values || []).map((value, pointIndex) => {
       const raw = Number(value) || 0;
       if (grouping === "standard") return raw;
-      const stacked = this.series.items.slice(0, seriesIndex + 1).reduce((total, item) => total + (Number(item.values?.[pointIndex]) || 0), 0);
+      const stacked = seriesItems.slice(0, seriesIndex + 1).reduce((total, item) => total + (Number(item.values?.[pointIndex]) || 0), 0);
       return grouping === "percentStacked" ? (lineTotals[pointIndex] === 0 ? 0 : stacked / lineTotals[pointIndex]) : stacked;
     }));
     const max = this.type === "line" ? Math.max(1, ...lineValues.flat()) : Math.max(1, ...values.map((value) => Number(value) || 0));
     const plot = { left: p.left + 28, top: p.top + 36, width: Math.max(0, p.width - 44), height: Math.max(0, p.height - 62) };
     const barW = values.length ? plot.width / values.length * 0.65 : 0;
     const gap = values.length ? plot.width / values.length * 0.35 : 0;
-    const previewFill = /^#[0-9a-f]{6}$/i.test(this.series.items[0]?.fill || "") ? this.series.items[0].fill.toUpperCase() : "#38bdf8";
-    const previewLine = normalizeSpreadsheetChartSeriesLine(this.series.items[0]);
+    const previewFill = /^#[0-9a-f]{6}$/i.test(seriesItems[0]?.fill || "") ? seriesItems[0].fill.toUpperCase() : "#38bdf8";
+    const previewLine = normalizeSpreadsheetChartSeriesLine(seriesItems[0]);
     const previewStroke = previewLine?.fill || previewFill;
     const previewStrokeWidth = previewLine?.width ?? (this.type === "line" ? 2 : 0);
     const dashArray = spreadsheetChartLineDashArray(previewLine?.style);
@@ -1298,13 +1281,13 @@ class WorksheetChart {
       const h = plot.height * (Number(value) || 0) / max;
       const x = plot.left + index * (barW + gap) + gap / 2;
       const y = plot.top + plot.height - h;
-      const label = spreadsheetChartDataLabelText(dataLabels, this.categories[index], value, { seriesName: this.series.items[0]?.name });
+      const label = spreadsheetChartDataLabelText(dataLabels, categories[index], value, { seriesName: seriesItems[0]?.name });
       const placement = spreadsheetChartDataLabelSvgPlacement(dataLabels, { x, y, width: barW, height: h, baseY: plot.top + plot.height, plotTop: plot.top });
       return `<rect x="${x}" y="${y}" width="${barW}" height="${h}" fill="${previewFill}"${previewLine == null ? "" : strokeAttributes}/>${label ? `<text x="${placement.x}" y="${placement.y}" text-anchor="${placement.textAnchor}" font-family="Arial" font-size="10" fill="#334155" data-chart-label-position="${placement.position}" data-chart-label-index="${index}">${xmlEscape(label)}</text>` : ""}`;
     }).join("");
     const previewPalette = ["#38BDF8", "#F97316", "#22C55E", "#A855F7", "#E11D48", "#0F766E"];
     const lineMarks = lineValues.map((seriesValues, seriesIndex) => {
-      const series = this.series.items[seriesIndex];
+      const series = seriesItems[seriesIndex];
       const fallback = previewPalette[seriesIndex % previewPalette.length];
       const fill = /^#[0-9a-f]{6}$/i.test(series?.fill || "") ? series.fill.toUpperCase() : fallback;
       const line = normalizeSpreadsheetChartSeriesLine(series);
@@ -1317,7 +1300,7 @@ class WorksheetChart {
         ? `<path d="${spreadsheetChartSmoothLinePath(points)}" fill="none"${attributes} data-series-index="${seriesIndex}"/>`
         : `<polyline points="${points.map((point) => `${point.x},${point.y}`).join(" ")}" fill="none"${attributes} data-series-index="${seriesIndex}"/>`;
       const labels = points.map((point, index) => {
-        const label = spreadsheetChartDataLabelText(dataLabels, this.categories[index], series?.values?.[index], { seriesName: series?.name });
+        const label = spreadsheetChartDataLabelText(dataLabels, categories[index], series?.values?.[index], { seriesName: series?.name });
         const placement = spreadsheetChartDataLabelSvgPlacement(dataLabels, { x: point.x, y: point.y, kind: "point", plotTop: plot.top });
         return label ? `<text x="${placement.x}" y="${placement.y}" text-anchor="${placement.textAnchor}" font-family="Arial" font-size="10" fill="#334155" data-chart-label-position="${placement.position}" data-chart-label-series="${seriesIndex}" data-chart-label-index="${index}">${xmlEscape(label)}</text>` : "";
       }).join("");
@@ -1325,7 +1308,7 @@ class WorksheetChart {
     }).join("");
     const plotMarks = this.type === "line" ? lineMarks : bars;
     const xTickSize = Number(this.xAxis?.textStyle?.fontSize);
-    const xTicks = Number.isFinite(xTickSize) && xTickSize > 0 && values.length ? this.categories.map((category, index) => `<text x="${plot.left + (index + 0.5) * plot.width / values.length}" y="${plot.top + plot.height + xTickSize + 2}" text-anchor="middle" font-family="Arial" font-size="${xTickSize}" fill="#64748b">${xmlEscape(category)}</text>`).join("") : "";
+    const xTicks = Number.isFinite(xTickSize) && xTickSize > 0 && values.length ? categories.map((category, index) => `<text x="${plot.left + (index + 0.5) * plot.width / values.length}" y="${plot.top + plot.height + xTickSize + 2}" text-anchor="middle" font-family="Arial" font-size="${xTickSize}" fill="#64748b">${xmlEscape(category)}</text>`).join("") : "";
     const yTickSize = Number(this.yAxis?.textStyle?.fontSize);
     const yTicks = Number.isFinite(yTickSize) && yTickSize > 0 ? `<text x="${plot.left - 4}" y="${plot.top + yTickSize}" text-anchor="end" font-family="Arial" font-size="${yTickSize}" fill="#64748b">${max}</text><text x="${plot.left - 4}" y="${plot.top + plot.height}" text-anchor="end" font-family="Arial" font-size="${yTickSize}" fill="#64748b">0</text>` : "";
     const xTitle = this.xAxis?.title?.text ? `<text x="${plot.left + plot.width / 2}" y="${p.top + p.height - 6}" text-anchor="middle" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(this.xAxis.title.text)}</text>` : "";
@@ -1445,7 +1428,16 @@ class RangeSparklineFacade {
 
 class RangeConditionalFormatFacade {
   constructor(range) { this.range = range; }
-  add(ruleType, config = {}) { return this.range.worksheet.conditionalFormattings.add({ range: rangeToAddress(this.range.bounds), ruleType, ...config }); }
+  add(ruleType, config = {}) {
+    const normalized = { ...config };
+    if (String(ruleType).toLowerCase() === "containstext" && normalized.formula == null && normalized.formulas == null) {
+      const text = String(normalized.text ?? "");
+      if (!text) throw new Error("Range containsText conditional formatting requires text.");
+      const address = makeCellAddress(this.range.rowIndex, this.range.columnIndex);
+      normalized.formula = `NOT(ISERROR(SEARCH("${text.replaceAll('"', '""')}",${address})))`;
+    }
+    return this.range.worksheet.conditionalFormattings.add({ range: rangeToAddress(this.range.bounds), ruleType, ...normalized });
+  }
   addCustom(expression, format = {}) { return this.add("expression", { formula: expression, format }); }
   addColorScale(config = {}) { return this.add("colorScale", config); }
   deleteAll() { this.range.worksheet.conditionalFormattings.items = this.range.worksheet.conditionalFormattings.items.filter((item) => item.range !== rangeToAddress(this.range.bounds)); }
@@ -2292,8 +2284,8 @@ function worksheetLayoutSlice(layout, options = {}) {
   return sliced;
 }
 
-const XLSX_MAX_FREEZE_ROWS = 1_048_575;
-const XLSX_MAX_FREEZE_COLUMNS = 16_383;
+const XLSX_MAX_FREEZE_ROWS = XLSX_MAX_ROW_INDEX;
+const XLSX_MAX_FREEZE_COLUMNS = XLSX_MAX_COLUMN_INDEX;
 
 function normalizeFreezeCount(value, maximum, axis) {
   const count = Number(value);
@@ -2379,33 +2371,9 @@ function clearMergedSubordinateContents(sheet, bounds) {
   }
 }
 
-function formulaFillTranslation(formula, sourceAddress, targetAddress) {
-  const raw = String(formula || "");
-  const source = parseCellAddress(sourceAddress);
-  const target = parseCellAddress(targetAddress);
-  const rowOffset = target.row - source.row;
-  const columnOffset = target.col - source.col;
-  const protectedParts = [];
-  const protectedFormula = raw.replace(/"(?:[^"]|"")*"|\[[^\]]*\]/g, (part) => {
-    const token = `\uE000${protectedParts.length}\uE001`;
-    protectedParts.push(part);
-    return token;
-  });
-  const shifted = protectedFormula.replace(/(?:(?:'((?:[^']|'')+)'|([A-Za-z_][A-Za-z0-9_. ]*))!)?(\$?)([A-Za-z]{1,3})(\$?)(\d+)/g, (match, quotedSheet, bareSheet, absoluteColumn, columnText, absoluteRow, rowText) => {
-    const column = columnLabelToNumber(columnText);
-    const row = Number(rowText) - 1;
-    const shiftedColumn = absoluteColumn ? column : column + columnOffset;
-    const shiftedRow = absoluteRow ? row : row + rowOffset;
-    const prefix = quotedSheet != null ? `'${quotedSheet}'!` : bareSheet != null ? `${bareSheet}!` : "";
-    if (shiftedColumn < 0 || shiftedRow < 0 || shiftedColumn > XLSX_MAX_FREEZE_COLUMNS || shiftedRow > XLSX_MAX_FREEZE_ROWS) return `${prefix}#REF!`;
-    return `${prefix}${absoluteColumn || ""}${columnNumberToLabel(shiftedColumn)}${absoluteRow || ""}${shiftedRow + 1}`;
-  });
-  return shifted.replace(/\uE000(\d+)\uE001/g, (_, index) => protectedParts[Number(index)] || "");
-}
-
 function cloneCellForFill(source, sourceAddress, targetAddress) {
   const cell = structuredClone(source || { value: null, formula: null, style: {} });
-  if (cell.formula) cell.formula = formulaFillTranslation(cell.formula, sourceAddress, targetAddress);
+  if (cell.formula) cell.formula = translateA1Formula(cell.formula, sourceAddress, targetAddress);
   for (const key of ["formulaType", "sharedIndex", "sharedRef", "arrayRef", "dynamicArrayRef", "spillParent", "spillAnchor", "spillRange", "spillValues", "spillError"]) delete cell[key];
   return cell;
 }
@@ -2528,8 +2496,8 @@ export class Worksheet {
     return this;
   }
 
-  getUsedRange() {
-    return new Range(this, this.usedBounds());
+  getUsedRange(valuesOnly = false) {
+    return new Range(this, this.usedBounds(Boolean(valuesOnly)));
   }
 
   deleteAllDrawings() {
@@ -2538,11 +2506,15 @@ export class Worksheet {
     this.shapes = [];
   }
 
-  usedBounds() {
-    const coords = this.store.entries().map(([address]) => parseCellAddress(address));
-    for (const range of this.mergedRanges) {
-      const bounds = parseRangeAddress(range);
-      coords.push({ row: bounds.top, col: bounds.left }, { row: bounds.bottom, col: bounds.right });
+  usedBounds(valuesOnly = false) {
+    const coords = this.store.entries()
+      .filter(([, cell]) => !valuesOnly || cell.value != null || Boolean(cell.formula))
+      .map(([address]) => parseCellAddress(address));
+    if (!valuesOnly) {
+      for (const range of this.mergedRanges) {
+        const bounds = parseRangeAddress(range);
+        coords.push({ row: bounds.top, col: bounds.left }, { row: bounds.bottom, col: bounds.right });
+      }
     }
     if (coords.length === 0) return { top: 0, left: 0, bottom: 0, right: 0, rowCount: 1, colCount: 1 };
     const top = Math.min(...coords.map((c) => c.row));
@@ -2872,11 +2844,56 @@ function rangeFormatFacade(range) {
   });
 }
 
+function projectedRangeFormula(worksheet, address, cell) {
+  const directAnchor = cell?.spillAnchor || (cell?.spillParent ? String(cell.spillParent).slice(String(cell.spillParent).lastIndexOf("!") + 1) : undefined);
+  if (directAnchor) {
+    const anchorCell = worksheet.store.cells.get(directAnchor);
+    if (anchorCell?.formula) {
+      const reference = cell.spillRange || anchorCell.spillRange || anchorCell.dynamicArrayRef || directAnchor;
+      return { anchorAddress: directAnchor, anchorCell, reference, source: "spill" };
+    }
+  }
+  const position = parseCellAddress(address);
+  for (const [anchorAddress, anchorCell] of worksheet.store.entries()) {
+    if (!anchorCell.formula) continue;
+    const reference = anchorCell.dynamicArrayRef || anchorCell.arrayRef;
+    if (!reference) continue;
+    let bounds;
+    try { bounds = parseRangeAddress(reference); } catch { continue; }
+    if (position.row < bounds.top || position.row > bounds.bottom || position.col < bounds.left || position.col > bounds.right) continue;
+    if (address === anchorAddress) continue;
+    return { anchorAddress, anchorCell, reference, source: anchorCell.formulaType === "array" ? "array" : "spill" };
+  }
+  return undefined;
+}
+
+function rangeFormulaInfo(worksheet, address) {
+  const cell = worksheet.store.cells.get(address);
+  if (cell?.formula) return { kind: "stored", formula: cell.formula, display: cell.formula, isEditable: true };
+  const projected = projectedRangeFormula(worksheet, address, cell);
+  if (!projected) return null;
+  const reference = String(projected.reference).slice(String(projected.reference).lastIndexOf("!") + 1);
+  return {
+    kind: "projected",
+    source: projected.source,
+    display: projected.anchorCell.formula,
+    anchor: `${worksheet.name}!${projected.anchorAddress}`,
+    ref: `${worksheet.name}!${reference}`,
+    isEditable: false,
+  };
+}
+
 export class Range {
   constructor(worksheet, bounds) {
     this.worksheet = worksheet;
-    this.bounds = bounds;
+    this.bounds = assertWorksheetBounds(bounds);
   }
+
+  get address() { return rangeToAddress(this.bounds); }
+  get rowIndex() { return this.bounds.top; }
+  get columnIndex() { return this.bounds.left; }
+  get rowCount() { return this.bounds.rowCount; }
+  get columnCount() { return this.bounds.colCount; }
 
   get values() {
     const out = [];
@@ -2896,7 +2913,7 @@ export class Range {
     const out = [];
     for (let r = this.bounds.top; r <= this.bounds.bottom; r++) {
       const row = [];
-      for (let c = this.bounds.left; c <= this.bounds.right; c++) row.push(this.worksheet.store.get(makeCellAddress(r, c)).formula);
+      for (let c = this.bounds.left; c <= this.bounds.right; c++) row.push(this.worksheet.store.get(makeCellAddress(r, c)).formula || "");
       out.push(row);
     }
     return out;
@@ -2904,6 +2921,43 @@ export class Range {
 
   set formulas(matrix) {
     this.writeMatrix(matrix, "formula");
+  }
+
+  get formulasR1C1() {
+    const out = [];
+    for (let r = this.bounds.top; r <= this.bounds.bottom; r += 1) {
+      const row = [];
+      for (let c = this.bounds.left; c <= this.bounds.right; c += 1) {
+        const address = makeCellAddress(r, c);
+        const formula = this.worksheet.store.get(address).formula;
+        row.push(formula ? formulaA1ToR1C1(formula, address) : "");
+      }
+      out.push(row);
+    }
+    return out;
+  }
+
+  set formulasR1C1(matrix) {
+    const rows = normalizeRangeWrite(matrix, "formulasR1C1").matrix;
+    const formulas = rows.map((row, rowIndex) => row.map((formula, columnIndex) => {
+      if (formula == null || formula === "") return "";
+      return formulaR1C1ToA1(String(formula), makeCellAddress(this.bounds.top + rowIndex, this.bounds.left + columnIndex));
+    }));
+    this.writeMatrix(formulas, "formula");
+  }
+
+  get formulaInfos() {
+    const out = [];
+    for (let r = this.bounds.top; r <= this.bounds.bottom; r += 1) {
+      const row = [];
+      for (let c = this.bounds.left; c <= this.bounds.right; c += 1) row.push(rangeFormulaInfo(this.worksheet, makeCellAddress(r, c)));
+      out.push(row);
+    }
+    return out;
+  }
+
+  get displayFormulas() {
+    return this.formulaInfos.map((row) => row.map((info) => info?.display || ""));
   }
 
   get format() {
@@ -2917,9 +2971,19 @@ export class Range {
   get style() { return this.format; }
   set style(value) { this.format = value; }
   setFormat(style = {}) { this.writeStyle(style); return this; }
+  setNumberFormat(format) { this.writeStyle({ numberFormat: format }); return this; }
 
   writeStyle(style = {}) {
     const cellStyle = { ...(style || {}) };
+    const numberFormats = Array.isArray(cellStyle.numberFormat)
+      ? normalizeRangeWrite(cellStyle.numberFormat, "values").matrix
+      : undefined;
+    if (numberFormats) {
+      if (this.rowCount % numberFormats.length !== 0 || this.columnCount % numberFormats[0].length !== 0) {
+        throw new Error(`Range number-format matrix ${numberFormats.length}x${numberFormats[0].length} must evenly tile ${this.rowCount}x${this.columnCount}.`);
+      }
+      delete cellStyle.numberFormat;
+    }
     const dimensions = {};
     for (const key of RANGE_DIMENSION_FORMAT_KEYS) {
       if (Object.prototype.hasOwnProperty.call(cellStyle, key)) {
@@ -2931,6 +2995,7 @@ export class Range {
       for (let c = this.bounds.left; c <= this.bounds.right; c++) {
         const cell = this.worksheet.store.get(makeCellAddress(r, c));
         cell.style = { ...(cell.style || {}), ...cellStyle };
+        if (numberFormats) cell.style.numberFormat = numberFormats[(r - this.rowIndex) % numberFormats.length][(c - this.columnIndex) % numberFormats[0].length];
       }
     }
     const facade = rangeFormatFacade(this);
@@ -2938,25 +3003,128 @@ export class Range {
   }
 
   writeMatrix(matrix, field) {
-    const rows = Array.isArray(matrix) ? matrix : [[matrix]];
+    const rows = normalizeRangeWrite(matrix, field === "formula" ? "formulas" : "values").matrix;
     for (let r = 0; r < rows.length; r++) {
       for (let c = 0; c < (rows[r]?.length ?? 0); c++) {
         const address = makeCellAddress(this.bounds.top + r, this.bounds.left + c);
-        if (field === "formula") detachNativeFormulaTopology(this.worksheet, address);
+        detachNativeFormulaTopology(this.worksheet, address);
         const cell = this.worksheet.store.get(address);
         delete cell.spillParent;
         delete cell.spillAnchor;
         delete cell.spillRange;
         delete cell.spillValues;
         delete cell.spillError;
-        cell[field] = rows[r][c];
+        if (field === "formula") {
+          const formula = rows[r][c] == null ? "" : String(rows[r][c]);
+          cell.formula = formula || null;
+          if (!formula) cell.value = null;
+        } else {
+          cell.value = rows[r][c];
+          cell.formula = null;
+        }
       }
     }
     this.worksheet.recalculate();
   }
 
-  clear() {
-    for (let r = this.bounds.top; r <= this.bounds.bottom; r++) for (let c = this.bounds.left; c <= this.bounds.right; c++) this.worksheet.store.cells.delete(makeCellAddress(r, c));
+  write(value) {
+    const normalized = normalizeRangeWrite(value);
+    const bounds = writtenRangeBounds(this.bounds, normalized.matrix);
+    const result = new Range(this.worksheet, bounds);
+    if (normalized.field === "formulasR1C1") result.formulasR1C1 = normalized.matrix;
+    else if (normalized.field === "formulas") result.writeMatrix(normalized.matrix, "formula");
+    else if (normalized.field === "values") result.writeMatrix(normalized.matrix, "value");
+    else {
+      for (let row = 0; row < normalized.matrix.length; row += 1) {
+        for (let column = 0; column < normalized.matrix[row].length; column += 1) {
+          const valueAtCell = normalized.matrix[row][column];
+          const address = makeCellAddress(bounds.top + row, bounds.left + column);
+          detachNativeFormulaTopology(this.worksheet, address);
+          const cell = this.worksheet.store.get(address);
+          for (const key of ["formulaType", "sharedIndex", "sharedRef", "arrayRef", "dynamicArrayRef", "spillParent", "spillAnchor", "spillRange", "spillValues", "spillError"]) delete cell[key];
+          if (typeof valueAtCell === "string" && valueAtCell.startsWith("=")) {
+            cell.formula = valueAtCell;
+            cell.value = null;
+          } else {
+            cell.value = valueAtCell;
+            cell.formula = null;
+          }
+        }
+      }
+      this.worksheet.recalculate();
+    }
+    return result;
+  }
+
+  writeValues(value) {
+    this.write({ values: value });
+  }
+
+  clear(options = {}) {
+    const applyTo = options?.applyTo || "all";
+    if (!["contents", "formats", "all"].includes(applyTo)) throw new Error("Range.clear applyTo must be contents, formats, or all.");
+    for (let r = this.bounds.top; r <= this.bounds.bottom; r += 1) {
+      for (let c = this.bounds.left; c <= this.bounds.right; c += 1) {
+        const address = makeCellAddress(r, c);
+        if (applyTo === "all") {
+          detachNativeFormulaTopology(this.worksheet, address);
+          this.worksheet.store.cells.delete(address);
+          continue;
+        }
+        const cell = this.worksheet.store.get(address);
+        if (applyTo === "contents") {
+          detachNativeFormulaTopology(this.worksheet, address);
+          cell.value = null;
+          cell.formula = null;
+          for (const key of ["formulaType", "sharedIndex", "sharedRef", "arrayRef", "dynamicArrayRef", "spillParent", "spillAnchor", "spillRange", "spillValues", "spillError"]) delete cell[key];
+        } else cell.style = {};
+      }
+    }
+    this.worksheet.recalculate();
+  }
+
+  copyFrom(sourceRange, mode = "all") {
+    if (!(sourceRange instanceof Range)) throw new Error("Range.copyFrom requires a source Range.");
+    const copyMode = normalizeRangeCopyMode(mode);
+    assertRangeCopyShape(sourceRange.bounds, this.bounds);
+    const sourceCells = new Map();
+    for (let row = 0; row < sourceRange.rowCount; row += 1) {
+      for (let column = 0; column < sourceRange.columnCount; column += 1) {
+        const address = makeCellAddress(sourceRange.rowIndex + row, sourceRange.columnIndex + column);
+        sourceCells.set(`${row}:${column}`, { address, cell: structuredClone(sourceRange.worksheet.store.get(address)) });
+      }
+    }
+    for (let row = 0; row < this.rowCount; row += 1) {
+      for (let column = 0; column < this.columnCount; column += 1) {
+        const source = sourceCells.get(`${row % sourceRange.rowCount}:${column % sourceRange.columnCount}`);
+        const targetAddress = makeCellAddress(this.rowIndex + row, this.columnIndex + column);
+        detachNativeFormulaTopology(this.worksheet, targetAddress);
+        const target = this.worksheet.store.get(targetAddress);
+        if (copyMode === "values") {
+          target.value = structuredClone(source.cell.value);
+          target.formula = null;
+          for (const key of ["formulaType", "sharedIndex", "sharedRef", "arrayRef", "dynamicArrayRef", "spillParent", "spillAnchor", "spillRange", "spillValues", "spillError"]) delete target[key];
+          continue;
+        }
+        const translatedFormula = source.cell.formula ? translateA1Formula(source.cell.formula, source.address, targetAddress) : null;
+        if (copyMode === "formulas") {
+          target.formula = translatedFormula;
+          target.value = translatedFormula ? null : structuredClone(source.cell.value);
+          for (const key of ["formulaType", "sharedIndex", "sharedRef", "arrayRef", "dynamicArrayRef", "spillParent", "spillAnchor", "spillRange", "spillValues", "spillError"]) delete target[key];
+          continue;
+        }
+        const copy = structuredClone(source.cell);
+        copy.formula = translatedFormula;
+        for (const key of ["formulaType", "sharedIndex", "sharedRef", "arrayRef", "dynamicArrayRef", "spillParent", "spillAnchor", "spillRange", "spillValues", "spillError"]) delete copy[key];
+        this.worksheet.store.cells.set(targetAddress, copy);
+      }
+    }
+    this.worksheet.recalculate();
+  }
+
+  copyTo(destinationRange, mode = "all") {
+    if (!(destinationRange instanceof Range)) throw new Error("Range.copyTo requires a destination Range.");
+    destinationRange.copyFrom(this, mode);
   }
 
   get dataValidation() {
@@ -3010,10 +3178,39 @@ export class Range {
     this.worksheet.recalculate();
     return this;
   }
-  getCell(row, col) { return this.worksheet.getCell(this.bounds.top + row, this.bounds.left + col); }
+  getCell(row, col) { return this.getRangeByIndexes(row, col, 1, 1); }
   getRange(address) { return this.worksheet.getRange(address); }
-  getOffsetRange(rowOffset, colOffset) { return this.worksheet.getRangeByIndexes(this.bounds.top + rowOffset, this.bounds.left + colOffset, this.bounds.rowCount, this.bounds.colCount); }
-  getResizedRange(rowCount, colCount) { return this.worksheet.getRangeByIndexes(this.bounds.top, this.bounds.left, rowCount, colCount); }
+  getRangeByIndexes(startRow, startCol, rowCount, colCount) {
+    const relative = rangeBounds(startRow, startCol, startRow + rowCount - 1, startCol + colCount - 1);
+    if (!Number.isInteger(startRow) || !Number.isInteger(startCol) || !Number.isInteger(rowCount) || !Number.isInteger(colCount)
+      || rowCount < 1 || colCount < 1 || relative.top < 0 || relative.left < 0
+      || relative.bottom >= this.rowCount || relative.right >= this.columnCount) {
+      throw new Error(`Range.getRangeByIndexes(${startRow}, ${startCol}, ${rowCount}, ${colCount}) is outside the bounds of ${this.address}.`);
+    }
+    return this.worksheet.getRangeByIndexes(this.rowIndex + startRow, this.columnIndex + startCol, rowCount, colCount);
+  }
+  getRow(index) { return this.getRangeByIndexes(index, 0, 1, this.columnCount); }
+  getColumn(index) { return this.getRangeByIndexes(0, index, this.rowCount, 1); }
+  getCurrentRegion() {
+    const populated = (row, column) => {
+      const cell = this.worksheet.store.cells.get(makeCellAddress(row, column));
+      return Boolean(cell && (cell.value != null || cell.formula));
+    };
+    return new Range(this.worksheet, currentRegionBounds(this.bounds, populated));
+  }
+  getOffsetRange(rowOffset, colOffset) {
+    const top = this.rowIndex + Number(rowOffset);
+    const left = this.columnIndex + Number(colOffset);
+    const bounds = rangeBounds(top, left, top + this.rowCount - 1, left + this.columnCount - 1);
+    return new Range(this.worksheet, assertWorksheetBounds(bounds, "Range.getOffsetRange"));
+  }
+  getResizedRange(rowCount, colCount) {
+    if (!Number.isInteger(rowCount) || !Number.isInteger(colCount) || rowCount < 1 || colCount < 1) throw new Error("Range.getResizedRange requires positive integer row and column counts.");
+    const bounds = rangeBounds(this.rowIndex, this.columnIndex, this.rowIndex + rowCount - 1, this.columnIndex + colCount - 1);
+    return new Range(this.worksheet, assertWorksheetBounds(bounds, "Range.getResizedRange"));
+  }
+  offset(rowOffset, colOffset) { return this.getOffsetRange(rowOffset, colOffset); }
+  resize(rowCount, colCount) { return this.getResizedRange(rowCount, colCount); }
 }
 
 function parseWorkbookReference(workbook, reference) {
@@ -4459,6 +4656,8 @@ function evaluateFormula(sheet, formula, address, context = {}) {
   if (functionMatch) {
     return evaluateFormulaFunction(sheet, functionMatch[1].toUpperCase(), splitFormulaArgs(functionMatch[2]), evaluationContext);
   }
+  const directReference = formulaRefParts(expr);
+  if (directReference && directReference.start === directReference.end) return formulaScalar(sheet, expr, evaluationContext);
 
   let replacementError;
   const structuredReferences = scanStructuredReferences(expr);

@@ -267,6 +267,17 @@ try {
   const csvWorkbook = await Workbook.fromCSV("Name,Value\nOpenChestnut,1", { sheetName: "Data" });
   assert.deepEqual(csvWorkbook.worksheets.getItem("Data").getRange("A1:B2").values, [["Name", "Value"], ["OpenChestnut", "1"]]);
 
+  const { createWorkbook: createReferenceWorkbook } = await import(
+    "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-range-workflow.mjs"
+  );
+  const spreadsheetPath = path.join(tempRoot, "openchestnut-range-workflow.xlsx");
+  const authoredWorkbook = await createReferenceWorkbook(spreadsheetPath);
+  assert.equal(authoredWorkbook.verification.ok, true);
+  assert.match(authoredWorkbook.inspection.ndjson, /Revenue trend/);
+  const spreadsheetRoundTrip = await SpreadsheetFile.importXlsx(await FileBlob.load(spreadsheetPath));
+  assert.equal(spreadsheetRoundTrip.worksheets.getItem("Forecast").getRange("D3").format.numberFormat, "0.00%");
+  assert.equal(spreadsheetRoundTrip.worksheets.getItem("Forecast").getRange("B3").formulasR1C1[0][0], "=R[-1]C*(1+'Assumptions'!R2C2)");
+
   const { createPdf } = await import(
     "../skills/pdf/skills/pdf/examples/public-api-end-to-end.mjs"
   );

@@ -31,7 +31,7 @@ assert.strictEqual(text, leafText, "root must re-export the reference-compatible
 assert.strictEqual(FileBlob, LeafFileBlob, "root must re-export the FileBlob constructor binding");
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 259);
+assert.equal(HELP_CATALOG.length, 276);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -258,7 +258,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /character.*picture bullets.*auto-numbering.*levels.*indents.*spacing/);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /absolute uri.*slideId.*relative action/);
 const workbookCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "workbook");
-assert.equal(workbookCatalog.length, 151);
+assert.equal(workbookCatalog.length, 168);
 assert.ok(workbookCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "workbook.trace")?.schema?.parameters?.reference?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "Workbook.create")?.schema?.parameters?.dateSystem?.type, "string");
@@ -317,6 +317,15 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.importDe
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.exportCsv")?.schema?.parameters?.formulas?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.inspectDelimited")?.schema?.returns?.inspection?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.type, "object[]");
+assert.equal(HELP_CATALOG.find((item) => item.name === "range.formulasR1C1")?.schema?.parameters?.formulas?.type, "string[][]");
+assert.equal(HELP_CATALOG.find((item) => item.name === "range.formulaInfos")?.schema?.returns?.formulaInfos?.type, "Array<Array<object|null>>");
+assert.equal(HELP_CATALOG.find((item) => item.name === "range.write")?.schema?.returns?.range?.type, "Range");
+assert.equal(HELP_CATALOG.find((item) => item.name === "range.copyFrom")?.schema?.parameters?.mode?.type, "string");
+assert.equal(HELP_CATALOG.find((item) => item.name === "range.getRangeByIndexes")?.schema?.parameters?.rowCount?.required, true);
+assert.equal(HELP_CATALOG.find((item) => item.name === "worksheet.getUsedRange")?.schema?.parameters?.valuesOnly?.type, "boolean");
+assert.equal(HELP_CATALOG.find((item) => item.name === "range.setNumberFormat")?.schema?.parameters?.format?.type, "string|string[][]");
+assert.equal(HELP_CATALOG.find((item) => item.name === "range.conditionalFormats.add")?.schema?.parameters?.text?.type, "string");
+assert.match(HELP_CATALOG.find((item) => item.name === "range.conditionalFormats.add")?.schema?.parameters?.formula?.description || "", /derives.*SEARCH formula/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.description || "", /lazy IF\/IFERROR/);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.description || "", /LEN\/LEFT\/RIGHT\/MID/);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.description || "", /DATE\/YEAR\/MONTH\/DAY/);
@@ -343,6 +352,9 @@ const pdf = PdfArtifact.create({ text: "PDF" });
 
 assert.match(workbook.help("sheet.charts.add").ndjson, /worksheet chart/);
 assert.match(workbook.help("workbook.formulaGraph").ndjson, /dependency graph/);
+assert.match(workbook.help("range.formulasR1C1").ndjson, /R1C1 formulas/);
+assert.match(workbook.help("range.write").ndjson, /actual written range/i);
+assert.match(workbook.help("range.formulaInfos").ndjson, /projected/);
 assert.match(workbook.help("fx.AVERAGE").ndjson, /Average numeric values/);
 assert.match(workbook.help("fx.XLOOKUP").ndjson, /lookup/);
 assert.match(workbook.help("fx.TEXTJOIN").ndjson, /delimiter/);

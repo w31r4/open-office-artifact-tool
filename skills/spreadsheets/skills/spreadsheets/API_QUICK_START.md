@@ -192,12 +192,15 @@ await fs.writeFile(`${outputDir}/preview.svg`, previewBytes);
 - To read: `range.values` / `range.formulas` / `range.displayFormulas` / `range.formulaInfos` (for spill/array formulas)
 - `range.write(matrixOrPayload)` (auto-sizes/spills from anchor as needed)
 - `range.writeValues(matrixOrRows)`
+- `range.write({ values })`, `range.write({ formulas })`, and `range.write({ formulasR1C1 })` accept exactly one explicit field. A raw mixed matrix treats strings beginning with `=` as formulas. The returned `Range` is the actual written rectangle.
+- `displayFormulas` repeats a dynamic-array/legacy-array anchor formula across projected result cells; `formulaInfos` identifies those cells as non-editable and reports their source, anchor, and reference.
 - `range.fillDown()`, `range.fillRight()`
   - `sheet.getRange("D2").formulas = [["=..."]]`
   - `sheet.getRange("D2:D200").fillDown()`
 - `range.clear({ applyTo: "contents" | "formats" | "all" })`
-- `range.copyFrom(sourceRange, "values" | "formulas" | "all")` source and destination must have the same shape
+- `range.copyFrom(sourceRange, "values" | "formulas" | "all")` source must match or evenly tile the destination shape
 - `range.copyTo(destRange, "values" | "formulas" | "all")`
+- A smaller source may evenly tile the destination; relative A1 formulas are translated per copied cell. Incompatible dimensions fail explicitly.
 - `range.offset(...)`, `range.resize(...)`, `range.getCurrentRegion()`, `range.getRow(i)`, `range.getColumn(j)`
 - `range.getRangeByIndexes(...)`, `range.getCell(...)`
 - `range.merge()`, `range.merge(true)` to merge across, `range.unmerge()`
@@ -238,6 +241,7 @@ range.format.borders = {
 ### Conditional formatting
 - Use `range.conditionalFormats.add(ruleType, ConditionalFormatConfig);`.
 - Use `range.conditionalFormats.add(ruleType, {operator, formula, format});`. Choose ruleType, operator, color, and style strings from the inline types below.
+- For `containsText`, provide `text` and `format`; the Range API derives the relative SEARCH formula required by SpreadsheetML/OpenChestnut. Supplying an explicit formula remains supported.
 ```
 type ConditionalFormatRuleType =
   | "cellIs" | "CellValue" | "Custom" | "expression"
@@ -350,6 +354,7 @@ series.categoryFormula = "'Scores'!$A$2:$A$10"; // string
 series.formula = "'Scores'!$E$2:$E$10"; // string
 series.fill = "#F472B6";
 ```
+- For internal A1 range formulas, inspect, SVG render, and OpenChestnut export resolve the current category/value caches from the referenced cells. This makes the formula-only series pattern above runnable; external-workbook references or invalid ranges are not silently substituted.
 - After creating a chart with data, specify position, title, axis via the following:
 ```js
 chart.setPosition("J4", "Q20");

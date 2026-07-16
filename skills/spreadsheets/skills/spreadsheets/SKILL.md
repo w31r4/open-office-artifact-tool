@@ -34,6 +34,7 @@ Other documents:
 - `style_guidelines.md`: REQUIRED for formatting requirements
 - `API_QUICK_START.md`: REQUIRED API documentation for `artifact_tool` JS library, which exposes methods to read, manipulate, edit, recalculate, render, import and save spreadsheets. You must read it entirely to get started.
 - `charts.md`: Read when creating or editing charts.
+- `examples/openchestnut-range-workflow.mjs`: Run or adapt this public-package example for R1C1 formulas, block writes, range navigation, formula inspection, OpenChestnut roundtrip, and SVG verification.
 
 ## Domain Requirements
 You must read these domain rules when the request clearly relates to the domain, but do not load domain guidance for unrelated tasks unless asked:

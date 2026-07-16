@@ -19,19 +19,20 @@ Status meanings:
 | Opaque Office preservation | done | Imported unmodeled parts are content-type/hash/source bound. Unchanged content is preserved; unsupported edits and missing source snapshots fail closed. |
 | Low-level OOXML inspect/patch | done | Explicit, bounded package inspection and patching remain available and are never invoked automatically as a fallback. |
 | Wire protocol | done | `open_office.artifact.v1`, protocol version 2; removed `allow_lossy` field name and number are reserved. |
-| JavaScript source layering | partial | The root entry preserves the 36-symbol public API while Help, Compose, binary/image/PNG/render primitives, `FileBlob`, inspection, and the complete PDF domain live in dependency-leaf modules. Root `PdfArtifact`/`PdfFile` bindings are strict-identical re-exports and the cross-format ID allocator remains a single shared module. Spreadsheet, Presentation, Document, and the shared OOXML package engine remain to be extracted atomically. |
+| JavaScript source layering | partial | The root entry preserves the 36-symbol public API while Help, Compose, binary/image/PNG/render primitives, `FileBlob`, inspection, the complete PDF domain, and pure Spreadsheet range-address/translation/copy-shape/chart-source projection rules live in dependency-leaf modules. Root `PdfArtifact`/`PdfFile` bindings are strict-identical re-exports and the cross-format ID allocator remains a single shared module. Stateful Worksheet/Range/Chart behavior, Presentation, Document, and the shared OOXML package engine remain to be extracted only at cohesive ownership boundaries. |
 
 ## Spreadsheets
 
 | Capability | Status | Notes |
 | --- | --- | --- |
 | Cells and scalar values | done | Text, number, boolean, blank, error, formulas, cached values, and Date-to-Excel-serial conversion. |
+| Range Quick API | done | A1/R1C1 formulas, stored/projected formula evidence, anchor-sized block writes, values/formulas/all copy with relative translation and even tiling, clear modes, used/current regions, bounded navigation aliases, and scalar/matrix number formats. The shipped workflow exercises these through canonical OpenChestnut export/import/edit/re-export. |
 | Formula calculation | partial | JavaScript model evaluates the bounded catalog; OpenChestnut writes/reads formulas and honors the XLSX export `recalculate` option. Unsupported Excel functions remain host-calculated or explicit model errors. |
 | Static cell styles | done | Number format, font, fill, border, alignment, and protection within the modeled profile. |
 | Geometry and views | done | Merges, row heights, column widths, hidden state, and frozen rows/columns. |
 | Tables | done | Basic fixed-range worksheet tables and styles. |
 | Images | done | Embedded PNG/JPEG worksheet images within the bounded anchor profile. |
-| Charts | done | Source-free and recognized imported bar, line, and pie charts with bounded series/categories/title/legend/axis behavior. |
+| Charts | done | Source-free and recognized imported bar, line, and pie charts with bounded series/categories/title/legend/axis behavior. Formula-only internal series bindings resolve live category/value caches for inspect, SVG preview, and OpenChestnut export; direct text-reference formulas retain text labels. |
 | Data validation | partial | Basic list, whole-number, decimal, date, time, and text-length profiles; complex extension graphs remain source-bound. |
 | Conditional formatting | partial | Basic cell/value/formula/color-scale style profiles represented by the public model; complex differential-style and extension graphs remain source-bound. |
 | Threaded comments | partial | One root comment per modeled thread. Replies and unsupported identity graphs are preserved only when unchanged and cannot be newly authored. |
@@ -89,7 +90,7 @@ The published layout is four native plugin bundles and five Skills; `test/skill-
 | Skill | Status | Main workflow |
 | --- | --- | --- |
 | Documents | partial | Native packaging plus the ordinary public-API create/import/edit/export workflow are runnable and tested through canonical OpenChestnut, semantic assertions, and real LibreOffice page QA. Python/OOXML helpers are explicit advanced package-patch or audit tools only. The broader reference tasks for tracked revisions, content controls, complex fields, and other source-bound features remain partial. |
-| Spreadsheets | partial | The native plugin and reference-style core workbook example pass canonical XLSX export/import. Extended Quick API parity remains incomplete. |
+| Spreadsheets | partial | The native plugin, reference-style core workbook example, shipped Range/R1C1 workflow, and independent three-sheet operating-forecast forward test pass canonical XLSX export/import/edit/re-export plus semantic/render verification. The named high-value Range Quick API slice and formula-only internal chart binding are compatible; broader chart families, sparklines, data tables, and other extended reference surfaces remain incomplete. |
 | Excel live control | partial | Native routing Skill and connector declaration are present; execution depends on a host-provided connected Excel session outside the npm package. |
 | Presentations | partial | The native plugin and complete 26-slide built-in template pass canonical OpenChestnut export/import, including bounded custom geometry. The broader reference API guide exceeds the current fail-closed PPTX boundary. |
 | PDF | partial | The native plugin is now a reference-compatible provider-routing superset: greenfield `PdfArtifact`, ReportLab creation, pdfplumber/pypdf basics, direct-original PyMuPDF imported-PDF edits and sanitize, explicit rewrite/incremental/sanitize policy, residue scanning, and Poppler QA. Local real-provider tests cover those shipped adapters. qpdf/pyHanko/veraPDF external execution, OCRmyPDF/pikepdf adapters, hosted optional-provider tests, and broader corpus QA remain open. |

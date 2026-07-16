@@ -37,6 +37,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.exportTsv", summary: "Export one worksheet or range as UTF-8 tab-separated text with RFC-style quoting where needed." },
   { artifactKind: "workbook", kind: "api", name: "SpreadsheetFile.inspectDelimited", summary: "Inspect bounded CSV/TSV bytes as file/row records with dimensions, delimiter, quoting, and formula-like cell evidence." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.getRange", summary: "Select an A1 range for values, formulas, formatting, merge, fill, and copy operations." },
+  { artifactKind: "workbook", kind: "api", name: "worksheet.getUsedRange", summary: "Return the worksheet used rectangle, optionally excluding formatting-only cells with valuesOnly=true." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.sortState", summary: "Get or set bounded worksheet-level row/column sorting; columnSort=true uses unique single-row conditions across the sort range." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.mergeCells", summary: "Merge an A1 range as one region or merge each row separately with across=true, retaining only upper-left content." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.unmergeCells", summary: "Remove every merged region intersecting an A1 range without discarding the retained upper-left content." },
@@ -44,6 +45,21 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "range.unmerge", summary: "Remove merged regions intersecting the target range." },
   { artifactKind: "workbook", kind: "api", name: "range.fillDown", summary: "Copy top-row contents and formatting down the range while translating relative A1 formula references." },
   { artifactKind: "workbook", kind: "api", name: "range.fillRight", summary: "Copy left-column contents and formatting right across the range while translating relative A1 formula references." },
+  { artifactKind: "workbook", kind: "api", name: "range.formulasR1C1", summary: "Read or assign R1C1 formulas relative to each target cell while storing canonical A1 formulas." },
+  { artifactKind: "workbook", kind: "api", name: "range.displayFormulas", summary: "Read displayed A1 formulas, including the anchor formula projected across non-editable dynamic-array or legacy-array result cells." },
+  { artifactKind: "workbook", kind: "api", name: "range.formulaInfos", summary: "Read per-cell stored/projected formula metadata with editability, spill/array source, anchor, and reference evidence." },
+  { artifactKind: "workbook", kind: "api", name: "range.write", summary: "Write a mixed matrix or one explicit values/formulas/formulasR1C1 payload from the range anchor and return the actual written range." },
+  { artifactKind: "workbook", kind: "api", name: "range.writeValues", summary: "Write a one- or two-dimensional value matrix from the range anchor." },
+  { artifactKind: "workbook", kind: "api", name: "range.clear", summary: "Clear range contents, formats, or both without silently changing validations, dimensions, or other package graphs." },
+  { artifactKind: "workbook", kind: "api", name: "range.copyFrom", summary: "Copy values, formulas, or complete cells from an equally sized or evenly tiling source range with relative A1 translation." },
+  { artifactKind: "workbook", kind: "api", name: "range.copyTo", summary: "Copy this range to an equally sized or evenly tiled destination range." },
+  { artifactKind: "workbook", kind: "api", name: "range.offset", summary: "Return an equally sized range shifted by zero-based row and column offsets, rejecting worksheet overflow." },
+  { artifactKind: "workbook", kind: "api", name: "range.resize", summary: "Return a range at the same upper-left cell with explicit positive row and column counts." },
+  { artifactKind: "workbook", kind: "api", name: "range.getCurrentRegion", summary: "Expand to the contiguous data region bounded by fully blank rows and columns." },
+  { artifactKind: "workbook", kind: "api", name: "range.getRangeByIndexes", summary: "Select a bounded zero-based subrange relative to the current range." },
+  { artifactKind: "workbook", kind: "api", name: "range.getCell", summary: "Select one zero-based cell relative to the current range." },
+  { artifactKind: "workbook", kind: "api", name: "range.getRow", summary: "Select one zero-based row relative to the current range." },
+  { artifactKind: "workbook", kind: "api", name: "range.getColumn", summary: "Select one zero-based column relative to the current range." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.freezePanes.freezeRows", summary: "Freeze a leading row count in the worksheet view while preserving any frozen columns." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.freezePanes.freezeColumns", summary: "Freeze a leading column count in the worksheet view while preserving any frozen rows." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.freezePanes.unfreeze", summary: "Remove all frozen worksheet panes and restore a single scrollable view." },
@@ -61,6 +77,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.setCalculation", summary: "Set bounded workbook-level SpreadsheetML calculation mode, on-save/full-recalculation flags, iterative-calculation limits, and full-precision policy." },
   { artifactKind: "workbook", kind: "api", name: "range.dataValidation", summary: "Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule })." },
   { artifactKind: "workbook", kind: "api", name: "range.format", summary: "Assign cell styles, symbolic theme/tint/indexed colors, patterned fills, native dimensions, pixel sizing, and hidden axes through a live range format facade." },
+  { artifactKind: "workbook", kind: "api", name: "range.setNumberFormat", summary: "Assign one number format or an evenly tiling matrix of Excel-invariant number-format codes." },
   { artifactKind: "workbook", kind: "api", name: "range.format.autofitColumns", summary: "Measure displayed range values deterministically and set native best-fit widths on each selected column." },
   { artifactKind: "workbook", kind: "api", name: "range.format.autofitRows", summary: "Measure explicit/wrapped range text deterministically and set native custom heights on each selected row." },
   { artifactKind: "workbook", kind: "api", name: "range.conditionalFormats.add", summary: "Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills." },
@@ -389,11 +406,12 @@ const HELP_DETAIL_OVERRIDES = {
     },
   },
   "range.conditionalFormats.add": {
-    examples: ["range.conditionalFormats.add('cellIs', { operator: 'greaterThan', formula: 10, format: { fill: 'green' } })", "range.conditionalFormats.addColorScale({ colors: ['#fee2e2', '#fef3c7', '#22c55e'] })"],
+    examples: ["range.conditionalFormats.add('cellIs', { operator: 'greaterThan', formula: 10, format: { fill: 'green' } })", "range.conditionalFormats.add('containsText', { text: 'Review', format: { fill: '#fef3c7' } })", "range.conditionalFormats.addColorScale({ colors: ['#fee2e2', '#fef3c7', '#22c55e'] })"],
     schema: {
       parameters: {
         ruleType: { type: "string", required: true, description: "cellIs, expression, containsText, or colorScale." },
-        formula: { type: "string|number", description: "Rule formula or scalar threshold." },
+        formula: { type: "string|number", description: "Rule formula or scalar threshold. Omit for containsText; the range facade derives the required relative SEARCH formula." },
+        text: { type: "string", description: "Required search text for containsText rules." },
         operator: { type: "string", description: "Comparison operator for cellIs rules." },
         format: { type: "object", description: "Style patch applied when the rule matches." },
         colors: { type: "string[]", description: "Two or three colors for colorScale rules." },
@@ -1323,6 +1341,9 @@ const WORKBOOK_HELP_SCHEMAS = {
   "worksheet.visibility": helpSchema({
     visibility: { type: "string", required: true, description: "visible, hidden, or veryHidden." },
   }, "visibility", "string", "Normalized worksheet visibility; workbook verification/export rejects an all-hidden workbook."),
+  "worksheet.getUsedRange": helpSchema({
+    valuesOnly: { type: "boolean", description: "When true, exclude cells represented only by formatting or other non-value state." },
+  }, "range", "Range", "Used worksheet rectangle, or A1 for an empty worksheet."),
   "worksheet.mergeCells": helpSchema({
     address: { type: "string|Range", required: true, description: "A1 range to merge." },
     across: { type: "boolean", description: "Merge each row as a separate region instead of one rectangular region." },
@@ -1336,6 +1357,56 @@ const WORKBOOK_HELP_SCHEMAS = {
   "range.unmerge": helpSchema({}, "range", "Range", "The same range after intersecting merges are removed."),
   "range.fillDown": helpSchema({}, "range", "Range", "The same range after top-row contents/formats are filled down with relative formula translation."),
   "range.fillRight": helpSchema({}, "range", "Range", "The same range after left-column contents/formats are filled right with relative formula translation."),
+  "range.formulasR1C1": helpSchema({
+    formulas: { type: "string[][]", description: "R1C1 formulas relative to each target cell; blank strings clear formulas." },
+  }, "formulas", "string[][]", "R1C1 formula matrix; stored formulas remain canonical A1."),
+  "range.displayFormulas": helpSchema({}, "formulas", "string[][]", "A1 display-formula matrix, projecting spill/array anchors into non-editable result cells."),
+  "range.formulaInfos": helpSchema({}, "formulaInfos", "Array<Array<object|null>>", "Stored or projected per-cell formula evidence with kind, display, editability, source, anchor, and ref where applicable."),
+  "range.write": helpSchema({
+    value: { type: "unknown[][]|unknown[]|object", required: true, description: "Mixed values/formulas matrix, or exactly one of { values }, { formulas }, or { formulasR1C1 }." },
+  }, "range", "Range", "Actual rectangular range written from the receiver's upper-left cell."),
+  "range.writeValues": helpSchema({
+    values: { type: "unknown[][]|unknown[]", required: true, description: "One row or a rectangular value matrix written from the range anchor." },
+  }, "result", "undefined", "No return value; inspect the target range after writing."),
+  "range.clear": helpSchema({
+    applyTo: { type: "string", description: "contents, formats, or all (default)." },
+  }, "result", "undefined", "No return value. Formula/spill topology is detached when contents are cleared."),
+  "range.copyFrom": helpSchema({
+    sourceRange: { type: "Range", required: true, description: "Source range whose row/column dimensions must evenly tile the destination." },
+    mode: { type: "string", description: "values, formulas, or all (default). Relative A1 formulas translate per destination cell." },
+  }, "result", "undefined", "No return value; the destination range is updated transactionally in memory."),
+  "range.copyTo": helpSchema({
+    destinationRange: { type: "Range", required: true, description: "Destination range evenly tiled by this source range." },
+    mode: { type: "string", description: "values, formulas, or all (default)." },
+  }, "result", "undefined", "No return value; equivalent to destinationRange.copyFrom(sourceRange, mode)."),
+  "range.offset": helpSchema({
+    rowOffset: { type: "number", required: true, description: "Signed row offset." },
+    columnOffset: { type: "number", required: true, description: "Signed column offset." },
+  }, "range", "Range", "Equally sized shifted range within XLSX bounds."),
+  "range.resize": helpSchema({
+    rowCount: { type: "number", required: true, description: "Positive output row count." },
+    columnCount: { type: "number", required: true, description: "Positive output column count." },
+  }, "range", "Range", "Resized range with the same upper-left cell."),
+  "range.getCurrentRegion": helpSchema({}, "range", "Range", "Contiguous region bounded by fully blank rows and columns."),
+  "range.getRangeByIndexes": helpSchema({
+    startRow: { type: "number", required: true, description: "Zero-based row offset within the current range." },
+    startColumn: { type: "number", required: true, description: "Zero-based column offset within the current range." },
+    rowCount: { type: "number", required: true, description: "Positive subrange row count." },
+    columnCount: { type: "number", required: true, description: "Positive subrange column count." },
+  }, "range", "Range", "Bounded relative subrange."),
+  "range.getCell": helpSchema({
+    row: { type: "number", required: true, description: "Zero-based row offset within the current range." },
+    column: { type: "number", required: true, description: "Zero-based column offset within the current range." },
+  }, "range", "Range", "One-cell relative range."),
+  "range.getRow": helpSchema({
+    row: { type: "number", required: true, description: "Zero-based row offset within the current range." },
+  }, "range", "Range", "One-row relative range spanning the current columns."),
+  "range.getColumn": helpSchema({
+    column: { type: "number", required: true, description: "Zero-based column offset within the current range." },
+  }, "range", "Range", "One-column relative range spanning the current rows."),
+  "range.setNumberFormat": helpSchema({
+    format: { type: "string|string[][]", required: true, description: "Excel-invariant number-format code or an evenly tiling format matrix." },
+  }, "range", "Range", "The same range after number-format assignment."),
   "worksheet.freezePanes.freezeRows": helpSchema({
     rowCount: { type: "number", required: true, description: "Integer number of leading rows to freeze; zero clears only the row freeze." },
   }, "freezePanes", "object", "Worksheet frozen-pane facade with rows, columns, topLeftCell, activePane, and frozen state."),
@@ -1562,7 +1633,7 @@ const WORKBOOK_HELP_SCHEMAS = {
     lineOptions: { type: "object", description: "Line-chart-only { grouping?, smooth?, varyColors? }. grouping is standard, stacked, or percentStacked; omission authors the standard default. smooth preserves explicit false as native c:smooth val=0. varyColors=true authors direct c:varyColors val=1; false or omission removes that optional node." },
     dataLabels: { type: "boolean|object", description: "Optional plot-level labels. A boolean controls showValue; an object accepts boolean showValue/showCategoryName, optional presence-aware showSeriesName, and position: bestFit, bottom, center, insideBase, insideEnd, left, outsideEnd, right, or top. Per-series/per-point labels, number formats, and label text styles remain outside this bounded profile." },
     categories: { type: "string[]", description: "Explicit categories." },
-    series: { type: "object[]", description: "Explicit series definitions with name, numeric values, optional categoryFormula/formula, optional #RRGGBB solid fill, optional line { fill, style, width }, and line-chart-only marker { symbol, size, fill, line }. line.fill and marker.fill are #RRGGBB; both line objects use style solid, dashed, dotted, dash-dot, or dash-dot-dot and width 0 through 1584 points. marker.symbol is none, dot, circle, square, diamond, triangle, x, star, plus, or dash; marker.size is an integer from 2 through 72. stroke { color, style, weight } is a series-line compatibility alias and must not conflict with line." },
+    series: { type: "object[]", description: "Explicit series definitions with name, optional numeric values, optional categoryFormula/formula, optional #RRGGBB solid fill, optional line { fill, style, width }, and line-chart-only marker { symbol, size, fill, line }. When internal range formulas are present, inspect/render/OpenChestnut export resolve live category/value caches from those cells. line.fill and marker.fill are #RRGGBB; both line objects use style solid, dashed, dotted, dash-dot, or dash-dot-dot and width 0 through 1584 points. marker.symbol is none, dot, circle, square, diamond, triangle, x, star, plus, or dash; marker.size is an integer from 2 through 72. stroke { color, style, weight } is a series-line compatibility alias and must not conflict with line." },
     xAxis: { type: "object", description: "Primary text category axis with title.text, tick-label textStyle.fontSize, numberFormatCode, and tickLabelInterval." },
     yAxis: { type: "object", description: "Primary numeric value axis with title.text, tick-label textStyle.fontSize, numberFormatCode, min, max, and majorUnit; tickLabelInterval is accepted as a compatibility alias for majorUnit." },
     position: { type: "object", description: "Pixel chart frame." },

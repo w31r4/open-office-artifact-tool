@@ -3,6 +3,7 @@ import { normalizeSpreadsheetChartLineOptions } from "../spreadsheet/chart-line-
 import { normalizeSpreadsheetChartSeriesLine, SPREADSHEET_CHART_LINE_MAX_WIDTH_POINTS } from "../spreadsheet/chart-line-style.mjs";
 import { normalizeSpreadsheetChartSeriesMarker } from "../spreadsheet/chart-marker-style.mjs";
 import { normalizeSpreadsheetChartDataLabels } from "../spreadsheet/chart-data-labels.mjs";
+import { resolvedWorksheetChartCategories, resolvedWorksheetChartSeriesValues } from "../spreadsheet/chart-source-data.mjs";
 import { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
 
 const EMU_PER_PIXEL = 9525;
@@ -200,8 +201,11 @@ function axisSnapshot(axis, kind, chart) {
   };
 }
 
-export function spreadsheetChartSnapshot(chart) {
+export function spreadsheetChartSnapshot(chart, options = {}) {
   const position = chart?.position || {};
+  const categories = options.resolveSourceData
+    ? resolvedWorksheetChartCategories(chart)
+    : [...(chart?.categories || [])].map((value) => String(value));
   return {
     id: String(chart?.id || ""),
     name: String(chart?.name || ""),
@@ -211,7 +215,7 @@ export function spreadsheetChartSnapshot(chart) {
     dataLabels: dataLabelsSnapshot(chart?.dataLabels, chart),
     type: String(chart?.type || chart?.chartType || "bar").toLowerCase(),
     hasLegend: chart?.hasLegend !== false,
-    categories: [...(chart?.categories || [])].map((value) => String(value)),
+    categories,
     xAxis: axisSnapshot(chart?.xAxis, "x", chart),
     yAxis: axisSnapshot(chart?.yAxis, "y", chart),
     position: {
@@ -222,7 +226,7 @@ export function spreadsheetChartSnapshot(chart) {
     },
     series: chartSeries(chart).map((series) => ({
       name: String(series?.name || ""),
-      values: [...(series?.values || [])].map(Number),
+      values: options.resolveSourceData ? resolvedWorksheetChartSeriesValues(chart, series) : [...(series?.values || [])].map(Number),
       categoryFormula: series?.categoryFormula == null ? "" : String(series.categoryFormula),
       formula: series?.formula == null ? "" : String(series.formula),
       fill: series?.fill == null ? null : String(series.fill),
@@ -303,7 +307,7 @@ function wireAxis(axis) {
 }
 
 function wireChart(chart, original) {
-  const snapshot = spreadsheetChartSnapshot(chart);
+  const snapshot = spreadsheetChartSnapshot(chart, { resolveSourceData: original == null });
   const type = validateSnapshot(snapshot, chart);
   const output = {
     id: snapshot.id,

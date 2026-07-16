@@ -2131,15 +2131,31 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `importXlsxWithOpenChestnut` | api | Import XLSX bytes through OpenChestnut with editable core cells, formulas, styles, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, single-layer threaded comments, and bar/line/pie charts. Connections, QueryTables, dynamic-array topology, pivots, sparklines, and other advanced package content remain source-bound and read-only. |
 | `invokeOpenChestnut` | api | Advanced experimental byte-boundary API for invoking the public OpenChestnut codec protocol with generated wire-message objects. |
 | `openChestnutStatus` | api | Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its protocol, assembly, and integrity manifest. |
+| `range.clear` | api | Clear range contents, formats, or both without silently changing validations, dimensions, or other package graphs. |
 | `range.conditionalFormats.add` | api | Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills. |
+| `range.copyFrom` | api | Copy values, formulas, or complete cells from an equally sized or evenly tiling source range with relative A1 translation. |
+| `range.copyTo` | api | Copy this range to an equally sized or evenly tiled destination range. |
 | `range.dataValidation` | api | Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule }). |
+| `range.displayFormulas` | api | Read displayed A1 formulas, including the anchor formula projected across non-editable dynamic-array or legacy-array result cells. |
 | `range.fillDown` | api | Copy top-row contents and formatting down the range while translating relative A1 formula references. |
 | `range.fillRight` | api | Copy left-column contents and formatting right across the range while translating relative A1 formula references. |
 | `range.format` | api | Assign cell styles, symbolic theme/tint/indexed colors, patterned fills, native dimensions, pixel sizing, and hidden axes through a live range format facade. |
 | `range.format.autofitColumns` | api | Measure displayed range values deterministically and set native best-fit widths on each selected column. |
 | `range.format.autofitRows` | api | Measure explicit/wrapped range text deterministically and set native custom heights on each selected row. |
+| `range.formulaInfos` | api | Read per-cell stored/projected formula metadata with editability, spill/array source, anchor, and reference evidence. |
+| `range.formulasR1C1` | api | Read or assign R1C1 formulas relative to each target cell while storing canonical A1 formulas. |
+| `range.getCell` | api | Select one zero-based cell relative to the current range. |
+| `range.getColumn` | api | Select one zero-based column relative to the current range. |
+| `range.getCurrentRegion` | api | Expand to the contiguous data region bounded by fully blank rows and columns. |
+| `range.getRangeByIndexes` | api | Select a bounded zero-based subrange relative to the current range. |
+| `range.getRow` | api | Select one zero-based row relative to the current range. |
 | `range.merge` | api | Merge the target range as one region or as separate row-wise regions when across=true. |
+| `range.offset` | api | Return an equally sized range shifted by zero-based row and column offsets, rejecting worksheet overflow. |
+| `range.resize` | api | Return a range at the same upper-left cell with explicit positive row and column counts. |
+| `range.setNumberFormat` | api | Assign one number format or an evenly tiling matrix of Excel-invariant number-format codes. |
 | `range.unmerge` | api | Remove merged regions intersecting the target range. |
+| `range.write` | api | Write a mixed matrix or one explicit values/formulas/formulasR1C1 payload from the range anchor and return the actual written range. |
+| `range.writeValues` | api | Write a one- or two-dimensional value matrix from the range anchor. |
 | `sheet.charts.add` | api | Create an inspectable worksheet chart from a range or config; setData(range) infers categories/series formulas, series.fill sets an explicit #RRGGBB solid color, series.line sets bounded RGB color/dash/width (series.stroke is an alias), line-series marker sets direct symbol/size/RGB fill/bounded outline semantics, lineOptions controls standard/stacked/percent-stacked grouping, smooth interpolation, and direct vary-colors behavior, dataLabels controls plot-level value/category/series-name visibility and bounded position, and xAxis/yAxis configure primary titles, formats, intervals, and linear value bounds. |
 | `sheet.images.add` | api | Create an inspectable worksheet image from a data URL, URI, or prompt with one-cell, two-cell, or absolute pixel geometry plus optional percentage crop, bounded grayscale/luminance/opacity effects, rotation, and horizontal/vertical flips. |
 | `sheet.pivotTables.add` | api | Build a model-level pivot facade for calculation, inspect, layout, and preview. OpenChestnut 0.2 does not author pivots; imported pivot package graphs are preserved read-only and any model edit fails closed. |
@@ -2186,6 +2202,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `worksheet.freezePanes.freezeRows` | api | Freeze a leading row count in the worksheet view while preserving any frozen columns. |
 | `worksheet.freezePanes.unfreeze` | api | Remove all frozen worksheet panes and restore a single scrollable view. |
 | `worksheet.getRange` | api | Select an A1 range for values, formulas, formatting, merge, fill, and copy operations. |
+| `worksheet.getUsedRange` | api | Return the worksheet used rectangle, optionally excluding formatting-only cells with valuesOnly=true. |
 | `worksheet.mergeCells` | api | Merge an A1 range as one region or merge each row separately with across=true, retaining only upper-left content. |
 | `worksheet.sortState` | api | Get or set bounded worksheet-level row/column sorting; columnSort=true uses unique single-row conditions across the sort range. |
 | `worksheet.unmergeCells` | api | Remove every merged region intersecting an A1 range without discarding the retained upper-left content. |
@@ -3742,6 +3759,18 @@ Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its pr
 
 - `status` (object) — Bundled OpenChestnut runtime status with protocolVersion, assemblyName, and integrity manifest.
 
+#### `range.clear`
+
+Clear range contents, formats, or both without silently changing validations, dimensions, or other package graphs.
+
+**Schema parameters:**
+
+- `applyTo` (string) — contents, formats, or all (default).
+
+**Schema returns:**
+
+- `result` (undefined) — No return value. Formula/spill topology is detached when contents are cleared.
+
 #### `range.conditionalFormats.add`
 
 Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills.
@@ -3749,12 +3778,14 @@ Add a conditional formatting rule; cellIs/expression/containsText/colorScale rul
 **Examples:**
 
 - range.conditionalFormats.add('cellIs', { operator: 'greaterThan', formula: 10, format: { fill: 'green' } })
+- range.conditionalFormats.add('containsText', { text: 'Review', format: { fill: '#fef3c7' } })
 - range.conditionalFormats.addColorScale({ colors: ['#fee2e2', '#fef3c7', '#22c55e'] })
 
 **Schema parameters:**
 
 - `ruleType` (string) required — cellIs, expression, containsText, or colorScale.
-- `formula` (string|number) — Rule formula or scalar threshold.
+- `formula` (string|number) — Rule formula or scalar threshold. Omit for containsText; the range facade derives the required relative SEARCH formula.
+- `text` (string) — Required search text for containsText rules.
 - `operator` (string) — Comparison operator for cellIs rules.
 - `format` (object) — Style patch applied when the rule matches.
 - `colors` (string[]) — Two or three colors for colorScale rules.
@@ -3762,6 +3793,32 @@ Add a conditional formatting rule; cellIs/expression/containsText/colorScale rul
 **Schema returns:**
 
 - `conditionalFormat` (object) — Inspectable conditional-format rule with stable id.
+
+#### `range.copyFrom`
+
+Copy values, formulas, or complete cells from an equally sized or evenly tiling source range with relative A1 translation.
+
+**Schema parameters:**
+
+- `sourceRange` (Range) required — Source range whose row/column dimensions must evenly tile the destination.
+- `mode` (string) — values, formulas, or all (default). Relative A1 formulas translate per destination cell.
+
+**Schema returns:**
+
+- `result` (undefined) — No return value; the destination range is updated transactionally in memory.
+
+#### `range.copyTo`
+
+Copy this range to an equally sized or evenly tiled destination range.
+
+**Schema parameters:**
+
+- `destinationRange` (Range) required — Destination range evenly tiled by this source range.
+- `mode` (string) — values, formulas, or all (default).
+
+**Schema returns:**
+
+- `result` (undefined) — No return value; equivalent to destinationRange.copyFrom(sourceRange, mode).
 
 #### `range.dataValidation`
 
@@ -3779,6 +3836,14 @@ Assign a validation rule to a range or use sheet.dataValidations.add({ range, ru
 **Schema returns:**
 
 - `validation` (object) — Inspectable data-validation rule anchored to the range.
+
+#### `range.displayFormulas`
+
+Read displayed A1 formulas, including the anchor formula projected across non-editable dynamic-array or legacy-array result cells.
+
+**Schema returns:**
+
+- `formulas` (string[][]) — A1 display-formula matrix, projecting spill/array anchors into non-editable result cells.
 
 #### `range.fillDown`
 
@@ -3840,6 +3905,86 @@ Measure explicit/wrapped range text deterministically and set native custom heig
 
 - `range` (Range) — The same range after deterministic custom row heights are applied.
 
+#### `range.formulaInfos`
+
+Read per-cell stored/projected formula metadata with editability, spill/array source, anchor, and reference evidence.
+
+**Schema returns:**
+
+- `formulaInfos` (Array<Array<object|null>>) — Stored or projected per-cell formula evidence with kind, display, editability, source, anchor, and ref where applicable.
+
+#### `range.formulasR1C1`
+
+Read or assign R1C1 formulas relative to each target cell while storing canonical A1 formulas.
+
+**Schema parameters:**
+
+- `formulas` (string[][]) — R1C1 formulas relative to each target cell; blank strings clear formulas.
+
+**Schema returns:**
+
+- `formulas` (string[][]) — R1C1 formula matrix; stored formulas remain canonical A1.
+
+#### `range.getCell`
+
+Select one zero-based cell relative to the current range.
+
+**Schema parameters:**
+
+- `row` (number) required — Zero-based row offset within the current range.
+- `column` (number) required — Zero-based column offset within the current range.
+
+**Schema returns:**
+
+- `range` (Range) — One-cell relative range.
+
+#### `range.getColumn`
+
+Select one zero-based column relative to the current range.
+
+**Schema parameters:**
+
+- `column` (number) required — Zero-based column offset within the current range.
+
+**Schema returns:**
+
+- `range` (Range) — One-column relative range spanning the current rows.
+
+#### `range.getCurrentRegion`
+
+Expand to the contiguous data region bounded by fully blank rows and columns.
+
+**Schema returns:**
+
+- `range` (Range) — Contiguous region bounded by fully blank rows and columns.
+
+#### `range.getRangeByIndexes`
+
+Select a bounded zero-based subrange relative to the current range.
+
+**Schema parameters:**
+
+- `startRow` (number) required — Zero-based row offset within the current range.
+- `startColumn` (number) required — Zero-based column offset within the current range.
+- `rowCount` (number) required — Positive subrange row count.
+- `columnCount` (number) required — Positive subrange column count.
+
+**Schema returns:**
+
+- `range` (Range) — Bounded relative subrange.
+
+#### `range.getRow`
+
+Select one zero-based row relative to the current range.
+
+**Schema parameters:**
+
+- `row` (number) required — Zero-based row offset within the current range.
+
+**Schema returns:**
+
+- `range` (Range) — One-row relative range spanning the current columns.
+
 #### `range.merge`
 
 Merge the target range as one region or as separate row-wise regions when across=true.
@@ -3852,6 +3997,44 @@ Merge the target range as one region or as separate row-wise regions when across
 
 - `range` (Range) — The same range after merge creation.
 
+#### `range.offset`
+
+Return an equally sized range shifted by zero-based row and column offsets, rejecting worksheet overflow.
+
+**Schema parameters:**
+
+- `rowOffset` (number) required — Signed row offset.
+- `columnOffset` (number) required — Signed column offset.
+
+**Schema returns:**
+
+- `range` (Range) — Equally sized shifted range within XLSX bounds.
+
+#### `range.resize`
+
+Return a range at the same upper-left cell with explicit positive row and column counts.
+
+**Schema parameters:**
+
+- `rowCount` (number) required — Positive output row count.
+- `columnCount` (number) required — Positive output column count.
+
+**Schema returns:**
+
+- `range` (Range) — Resized range with the same upper-left cell.
+
+#### `range.setNumberFormat`
+
+Assign one number format or an evenly tiling matrix of Excel-invariant number-format codes.
+
+**Schema parameters:**
+
+- `format` (string|string[][]) required — Excel-invariant number-format code or an evenly tiling format matrix.
+
+**Schema returns:**
+
+- `range` (Range) — The same range after number-format assignment.
+
 #### `range.unmerge`
 
 Remove merged regions intersecting the target range.
@@ -3859,6 +4042,30 @@ Remove merged regions intersecting the target range.
 **Schema returns:**
 
 - `range` (Range) — The same range after intersecting merges are removed.
+
+#### `range.write`
+
+Write a mixed matrix or one explicit values/formulas/formulasR1C1 payload from the range anchor and return the actual written range.
+
+**Schema parameters:**
+
+- `value` (unknown[][]|unknown[]|object) required — Mixed values/formulas matrix, or exactly one of { values }, { formulas }, or { formulasR1C1 }.
+
+**Schema returns:**
+
+- `range` (Range) — Actual rectangular range written from the receiver's upper-left cell.
+
+#### `range.writeValues`
+
+Write a one- or two-dimensional value matrix from the range anchor.
+
+**Schema parameters:**
+
+- `values` (unknown[][]|unknown[]) required — One row or a rectangular value matrix written from the range anchor.
+
+**Schema returns:**
+
+- `result` (undefined) — No return value; inspect the target range after writing.
 
 #### `sheet.charts.add`
 
@@ -3873,7 +4080,7 @@ Create an inspectable worksheet chart from a range or config; setData(range) inf
 - `lineOptions` (object) — Line-chart-only { grouping?, smooth?, varyColors? }. grouping is standard, stacked, or percentStacked; omission authors the standard default. smooth preserves explicit false as native c:smooth val=0. varyColors=true authors direct c:varyColors val=1; false or omission removes that optional node.
 - `dataLabels` (boolean|object) — Optional plot-level labels. A boolean controls showValue; an object accepts boolean showValue/showCategoryName, optional presence-aware showSeriesName, and position: bestFit, bottom, center, insideBase, insideEnd, left, outsideEnd, right, or top. Per-series/per-point labels, number formats, and label text styles remain outside this bounded profile.
 - `categories` (string[]) — Explicit categories.
-- `series` (object[]) — Explicit series definitions with name, numeric values, optional categoryFormula/formula, optional #RRGGBB solid fill, optional line { fill, style, width }, and line-chart-only marker { symbol, size, fill, line }. line.fill and marker.fill are #RRGGBB; both line objects use style solid, dashed, dotted, dash-dot, or dash-dot-dot and width 0 through 1584 points. marker.symbol is none, dot, circle, square, diamond, triangle, x, star, plus, or dash; marker.size is an integer from 2 through 72. stroke { color, style, weight } is a series-line compatibility alias and must not conflict with line.
+- `series` (object[]) — Explicit series definitions with name, optional numeric values, optional categoryFormula/formula, optional #RRGGBB solid fill, optional line { fill, style, width }, and line-chart-only marker { symbol, size, fill, line }. When internal range formulas are present, inspect/render/OpenChestnut export resolve live category/value caches from those cells. line.fill and marker.fill are #RRGGBB; both line objects use style solid, dashed, dotted, dash-dot, or dash-dot-dot and width 0 through 1584 points. marker.symbol is none, dot, circle, square, diamond, triangle, x, star, plus, or dash; marker.size is an integer from 2 through 72. stroke { color, style, weight } is a series-line compatibility alias and must not conflict with line.
 - `xAxis` (object) — Primary text category axis with title.text, tick-label textStyle.fontSize, numberFormatCode, and tickLabelInterval.
 - `yAxis` (object) — Primary numeric value axis with title.text, tick-label textStyle.fontSize, numberFormatCode, min, max, and majorUnit; tickLabelInterval is accepted as a compatibility alias for majorUnit.
 - `position` (object) — Pixel chart frame.
@@ -4599,6 +4806,18 @@ Select an A1 range for values, formulas, formatting, merge, fill, and copy opera
 **Schema returns:**
 
 - `range` (Range) — Editable range facade for values, formulas, formatting, and rules.
+
+#### `worksheet.getUsedRange`
+
+Return the worksheet used rectangle, optionally excluding formatting-only cells with valuesOnly=true.
+
+**Schema parameters:**
+
+- `valuesOnly` (boolean) — When true, exclude cells represented only by formatting or other non-value state.
+
+**Schema returns:**
+
+- `range` (Range) — Used worksheet rectangle, or A1 for an empty worksheet.
 
 #### `worksheet.mergeCells`
 
