@@ -1,0 +1,18 @@
+[
+  {
+    "type": "insert_textbox",
+    "page": 1,
+    "rect": [72, 640, 420, 690],
+    "text": "Reviewed and approved",
+    "font_size": 11,
+    "font_name": "helv",
+    "color": [0.05, 0.35, 0.42]
+  },
+  {
+    "type": "add_text_annotation",
+    "page": 1,
+    "point": [520, 72],
+    "text": "Provider contract verified.",
+    "title": "QA"
+  }
+]

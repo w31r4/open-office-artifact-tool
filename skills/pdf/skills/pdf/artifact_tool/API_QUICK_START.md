@@ -1,6 +1,6 @@
 # PDF API quick start
 
-Use `open-office-artifact-tool` for modeled PDF creation, semantic editing, import/export, inspect, resolve, render, and verification. The PDF pipeline is independent from OpenChestnut and does not require Microsoft Office, LibreOffice, or a local .NET SDK.
+Use `open-office-artifact-tool` for greenfield modeled PDF creation, semantic editing of a trusted internal model, tagged export, inspect, resolve, render, and verification. The PDF pipeline is independent from OpenChestnut and does not require Microsoft Office, LibreOffice, or a local .NET SDK. Do not use this model as a fidelity-preserving mutation path for an arbitrary imported PDF.
 
 ## Startup
 
@@ -78,6 +78,12 @@ await output.save("readiness-report.pdf");
 
 Use explicit H1-H6 `headingLevel` values, meaningful figure `alt` text or `decorative: true`, semantic table cells/spans, and a complete page reading order. `verify()` detects missing or duplicate reading-order targets, invalid heading nesting, inaccessible figures, malformed tables, geometry errors, and other modeled defects.
 
+Current model details that matter in authoring:
+
+- Non-empty `page.text` is painted and contributes an implicit H1. Do not add another H1 unless two top-level headings are intended.
+- `${page.id}/text` exists as a reading-order target only when `page.text` is non-empty.
+- `addText(...)` is positioned and does not wrap. Use `addFlowText(...)` for wrapped paragraphs and automatic pagination.
+
 ## Import, inspect, and edit
 
 PDFs exported by this package carry a clean-room model envelope and round-trip directly:
@@ -121,7 +127,7 @@ console.log(parsed.extractText());
 console.log(parsed.extractTables());
 ```
 
-Parser-backed import reconstructs a modeled view for extraction, inspect, render, and bounded edits. It is not a native PDF object-stream editor and cannot promise lossless arbitrary-file rewrite. If a requested edit depends on unsupported native content-stream, form, signature, annotation, or incremental-update semantics, report the boundary instead of silently flattening the file.
+Parser-backed import reconstructs a modeled view for extraction, inspect, and QA. It is not a native PDF object-stream editor and must not be exported as an edit to the arbitrary source file. Table reconstruction is heuristic and requires text/geometry/render review. Route mutations directly from original bytes to the explicitly selected pypdf or PyMuPDF provider; route signatures to pyHanko.
 
 ## Render and visual QA
 
@@ -147,4 +153,4 @@ for (let pageIndex = 0; pageIndex < pdf.pages.length; pageIndex += 1) {
 
 `PdfFile.inspectPdf(...)` verifies byte-level evidence such as PDF version, page/object counts, EOF, tagged structure, reading-order IDs, headings, Figure alternative text, Table/TR/TH/TD roles, spans, and font evidence. It complements semantic `pdf.verify()` and visual page review; none of the three replaces the others.
 
-Use `pdftoppm`/`pdfinfo` only as explicit native render and file QA tools. Python PDF libraries may be useful for a user-selected comparison or unsupported low-level investigation, but they are not the default creation or editing path for this Skill.
+Use `pdftoppm`/`pdfinfo` as explicit native render and file QA tools. The surrounding PDF Skill defines the ReportLab, pdfplumber, pypdf, PyMuPDF, qpdf, pyHanko, veraPDF, and OCR routing contract for capabilities outside this greenfield model API.

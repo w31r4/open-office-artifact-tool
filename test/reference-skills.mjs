@@ -8,6 +8,7 @@ import JSZip from "jszip";
 import {
   DocumentFile,
   FileBlob,
+  PdfFile,
   PresentationFile,
   SpreadsheetFile,
   Workbook,
@@ -101,6 +102,47 @@ for (const entry of documentsManifest) {
 assert.ok(documentsManifest.includes("artifact_tool/API_QUICK_START.md"));
 assert.ok(documentsManifest.includes("examples/openchestnut-end-to-end.mjs"));
 assert.ok(!documentsManifest.includes("examples/end_to_end_smoke_test.md"));
+
+const pdfSkillRoot = path.join(skillsRoot, "pdf", "skills", "pdf");
+const pdfSkillText = await fs.readFile(path.join(pdfSkillRoot, "SKILL.md"), "utf8");
+assert.match(pdfSkillText, /open-office-artifact-tool/);
+assert.match(pdfSkillText, /PdfArtifact/);
+assert.match(pdfSkillText, /createPdfjsParser/);
+assert.match(pdfSkillText, /Poppler/);
+assert.match(pdfSkillText, /ReportLab/);
+assert.match(pdfSkillText, /pdfplumber/);
+assert.match(pdfSkillText, /pypdf/);
+assert.match(pdfSkillText, /PyMuPDF/);
+assert.match(pdfSkillText, /pyHanko/);
+assert.match(pdfSkillText, /veraPDF/);
+assert.match(pdfSkillText, /rewrite/);
+assert.match(pdfSkillText, /incremental/);
+assert.match(pdfSkillText, /sanitize/);
+assert.match(pdfSkillText, /silent fallback/i);
+assert.match(pdfSkillText, /original bytes/i);
+assert.ok(await exists(path.join(pdfSkillRoot, "artifact_tool", "API_QUICK_START.md")));
+assert.ok(await exists(path.join(pdfSkillRoot, "examples", "public-api-end-to-end.mjs")));
+for (const relativePath of [
+  "manifest.txt",
+  "references/PROVIDER_MATRIX.md",
+  "references/SAVE_POLICIES.md",
+  "references/SECURITY_CHECKLIST.md",
+  "references/PRODUCT_BOUNDARIES.md",
+  "scripts/pdf_provider.py",
+  "scripts/reportlab_create.py",
+  "scripts/pdfplumber_extract.py",
+  "scripts/pypdf_edit.py",
+  "scripts/pymupdf_edit.py",
+  "scripts/residue_scan.py",
+  "tasks/create.md",
+  "tasks/read_review.md",
+  "tasks/edit_existing.md",
+  "tasks/forms_annotations.md",
+  "tasks/sign_verify.md",
+  "tasks/redact.md",
+  "tasks/accessibility.md",
+  "tasks/render_review.md",
+]) assert.ok(await exists(path.join(pdfSkillRoot, relativePath)), `PDF Skill is missing ${relativePath}`);
 
 const spreadsheetApp = JSON.parse(await fs.readFile(path.join(skillsRoot, "spreadsheets", ".app.json"), "utf8"));
 assert.equal(
@@ -224,6 +266,28 @@ try {
   ]);
   const csvWorkbook = await Workbook.fromCSV("Name,Value\nOpenChestnut,1", { sheetName: "Data" });
   assert.deepEqual(csvWorkbook.worksheets.getItem("Data").getRange("A1:B2").values, [["Name", "Value"], ["OpenChestnut", "1"]]);
+
+  const { createPdf } = await import(
+    "../skills/pdf/skills/pdf/examples/public-api-end-to-end.mjs"
+  );
+  const pdfPath = path.join(tempRoot, "release-readiness-scorecard.pdf");
+  const pdfRenderDir = path.join(tempRoot, "release-readiness-scorecard-pages");
+  const authoredPdf = await createPdf(pdfPath, { renderDir: pdfRenderDir });
+  assert.equal(authoredPdf.verification.ok, true);
+  assert.equal(authoredPdf.fileInspection.summary.tagged, true);
+  assert.equal(authoredPdf.fileInspection.summary.figures, 2);
+  assert.equal(authoredPdf.renderedPages.length, authoredPdf.pdf.pages.length);
+  assert.ok(authoredPdf.renderedPages.every((page) => page.bytes > 1_000));
+  const pdfRoundTrip = await PdfFile.importPdf(await FileBlob.load(pdfPath));
+  assert.equal(pdfRoundTrip.pages[0].tables[0].getCell(3, 2).value, "Verified");
+  assert.match(pdfRoundTrip.extractText(), /Release readiness scorecard/);
+  const { createPdfjsParser } = await import("open-office-artifact-tool/pdf/pdfjs");
+  const parsedPdf = await PdfFile.importPdf(await FileBlob.load(pdfPath), {
+    parser: createPdfjsParser(),
+    preferParser: true,
+    parserName: "pdfjs",
+  });
+  assert.match(parsedPdf.extractText(), /Release readiness scorecard/);
 } finally {
   if (previousPackageDir === undefined) delete process.env.OPEN_OFFICE_ARTIFACT_TOOL_PACKAGE_DIR;
   else process.env.OPEN_OFFICE_ARTIFACT_TOOL_PACKAGE_DIR = previousPackageDir;

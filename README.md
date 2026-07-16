@@ -4,7 +4,7 @@ Clean-room Office and PDF artifact toolkit for agent workflows.
 
 Version 0.2 has one Office codec: **OpenChestnut**, the repository's C# Open XML SDK implementation compiled to bundled .NET WebAssembly. `SpreadsheetFile`, `DocumentFile`, and `PresentationFile` always use it for XLSX, DOCX, and PPTX import/export. Installed consumers do not need `dotnet` on `PATH`.
 
-PDF is the fourth, independent format pipeline. It does not use the Office wire codec and keeps its JavaScript creation/import, inspect, render, and verification workflow.
+PDF is the fourth, independent format pipeline. It never enters OpenChestnut or the Office protobuf/WASM wire. The JavaScript model handles greenfield semantic/tagged authoring and QA; the native PDF Skill routes existing-file work directly from original bytes to explicit mature providers with provenance, save-policy, security, and render gates.
 
 ## Format boundary
 
@@ -13,7 +13,7 @@ PDF is the fourth, independent format pipeline. It does not use the Office wire 
 | XLSX | OpenChestnut C# WASM | Cells, formulas, static styles, merged cells, row/column sizes, frozen panes, tables, PNG/JPEG images, bar/line/pie charts, dates as Excel serials, basic data validation, basic conditional formatting, and one-level threaded comments. |
 | DOCX | OpenChestnut C# WASM | Styles, paragraphs and runs, page/section settings, headers and footers, PAGE/simple fields, PNG/JPEG images, lists, fixed-geometry tables, links, classic comments, and fixed-topology edits of modeled objects. Bookmarks, bibliography, unsupported settings, and opaque blocks are imported read-only. |
 | PPTX | OpenChestnut C# WASM | Text boxes and round rectangles, basic fill/line/shadow, line/polyline connectors and arrows, source-free bar/line/pie charts, images, tables, rich text, lists, links, and read-only source-bound Master/Layout preservation. |
-| PDF | Independent PDF pipeline | Creation/import, text/table/image extraction and modeling, page geometry, reading order, accessibility metadata, inspect, render, and verify. Optional PDF.js, Poppler, and Playwright adapters extend import/render QA. |
+| PDF | Independent provider-routed pipeline | Greenfield tagged authoring, extraction/inspect/QA, and bounded native imported-PDF edits. The Skill preserves ReportLab, pdfplumber/pypdf, and Poppler workflows and adds an explicit optional PyMuPDF provider for direct page/content/image/form/annotation edits and sanitize. pyHanko and veraPDF retain signature/conformance roles. |
 
 Imported Office objects outside the modeled boundary remain hash-bound to their source package. Leaving them unchanged preserves them; trying to create or semantically edit an unsupported object fails explicitly. If a source-bound opaque object no longer has a trustworthy source snapshot, export fails. There is no lossy fallback.
 
@@ -84,7 +84,7 @@ const imported = await PdfFile.importPdf(file);
 console.log(imported.extractText(), inspection.summary);
 ```
 
-`open-office-artifact-tool/pdf/pdfjs` supplies the optional PDF.js parser. Poppler and Playwright renderer adapters are exposed separately so runtime behavior remains explicit.
+This example is a greenfield/trusted-model workflow. `open-office-artifact-tool/pdf/pdfjs` supplies an optional reconstructed view of arbitrary PDFs for extraction, inspect, and QA; it must not be exported as a fidelity-preserving edit to the original file. Existing files go directly to the explicitly selected pypdf or PyMuPDF Skill provider, and signatures go to pyHanko. Poppler and Playwright renderer adapters remain explicit.
 
 ## Inspect, patch, render, and QA
 
@@ -98,7 +98,7 @@ Renderer adapters are exported for Playwright, sharp, canvas, Poppler, LibreOffi
 
 The repository ships four native Codex plugin bundles under `skills/{documents,spreadsheets,presentations,pdf}`. Each bundle contains `.codex-plugin/plugin.json`, plugin assets, a README, and its native `skills/...` tree. Spreadsheets intentionally includes both `Spreadsheets` for local artifact authoring and `excel-live-control` for host-provided live Excel sessions, so the published surface contains five Skills in four plugins.
 
-The 26-slide built-in Presentation template, core Spreadsheet example, and ordinary Documents create/import/edit/export example execute directly against `open-office-artifact-tool`; the Office workflows use canonical OpenChestnut I/O. Full reference-instruction compatibility is tracked independently from plugin packaging: advanced Documents tasks, the extended Spreadsheet/Presentation guides, PDF adapter usage, and live Excel host execution remain partial rather than being hidden behind the older flat fixture Skills.
+The 26-slide built-in Presentation template, core Spreadsheet example, ordinary Documents create/import/edit/export example, and tagged PDF create/edit/verify/Poppler-render example execute directly against `open-office-artifact-tool`; the Office workflows use canonical OpenChestnut I/O. The PDF plugin is a richer provider-routing superset with shipped thin ReportLab, pdfplumber, pypdf, and optional PyMuPDF scripts, explicit rewrite/incremental/sanitize policy, and fail-closed residue gates. Full reference-instruction compatibility is tracked independently from packaging: advanced Documents tasks, the extended Spreadsheet/Presentation guides, live Excel host execution, and external PDF signature/conformance/OCR providers remain partial.
 
 The development-only fixture runners live under `test/skill-harness` and are not included in npm. See [reference Skill compatibility](docs/reference-skills.md) for the audited boundary.
 

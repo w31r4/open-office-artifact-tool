@@ -6,6 +6,10 @@ import { inflateSync } from "node:zlib";
 import sharp from "sharp";
 import { createPdfjsParser } from "open-office-artifact-tool/pdf/pdfjs";
 import { FileBlob, PdfArtifact, PdfFile, renderArtifact } from "../src/index.mjs";
+import { PdfArtifact as PdfArtifactModule, PdfFile as PdfFileModule } from "../src/pdf/index.mjs";
+
+assert.equal(PdfArtifact, PdfArtifactModule, "the root package must re-export the PDF domain class without wrapping it");
+assert.equal(PdfFile, PdfFileModule, "the root package must re-export the PDF file facade without wrapping it");
 
 const pdf = PdfArtifact.create({
   pages: [

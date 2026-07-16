@@ -14,11 +14,12 @@ Status meanings:
 | --- | --- | --- |
 | XLSX/DOCX/PPTX facade path | done | All six Office facade methods lazily load the canonical OpenChestnut C# WASM adapter. There is no codec selector or JS Office fallback. |
 | PDF path | done | Independent PDF implementation; never enters the OpenChestnut OOXML wire. |
+| PDF provider routing | partial | The native Skill ships explicit contracts and thin scripts for ReportLab, pdfplumber, pypdf, and the project-approved optional PyMuPDF provider, plus Poppler QA. qpdf, pyHanko, and veraPDF are documented/probed external tools; pikepdf and OCRmyPDF remain planned without shipped adapters. No provider failure silently falls back. |
 | Legacy options | done | `codec`, `allowLossy`, `preferNative`, and `relativeDateAsOf` are rejected explicitly. |
 | Opaque Office preservation | done | Imported unmodeled parts are content-type/hash/source bound. Unchanged content is preserved; unsupported edits and missing source snapshots fail closed. |
 | Low-level OOXML inspect/patch | done | Explicit, bounded package inspection and patching remain available and are never invoked automatically as a fallback. |
 | Wire protocol | done | `open_office.artifact.v1`, protocol version 2; removed `allow_lossy` field name and number are reserved. |
-| JavaScript source layering | partial | The root entry preserves the 36-symbol public API while Help, Compose, binary conversion, `FileBlob`, and inspection primitives live in dependency-leaf modules. Format models and the shared OOXML package engine remain to be extracted atomically without changing class identity or facade behavior. |
+| JavaScript source layering | partial | The root entry preserves the 36-symbol public API while Help, Compose, binary/image/PNG/render primitives, `FileBlob`, inspection, and the complete PDF domain live in dependency-leaf modules. Root `PdfArtifact`/`PdfFile` bindings are strict-identical re-exports and the cross-format ID allocator remains a single shared module. Spreadsheet, Presentation, Document, and the shared OOXML package engine remain to be extracted atomically. |
 
 ## Spreadsheets
 
@@ -70,13 +71,16 @@ Status meanings:
 
 | Capability | Status | Notes |
 | --- | --- | --- |
-| Creation and import | done | Multi-page modeled PDF creation and clean-room metadata roundtrip; optional PDF.js parser supports arbitrary-file extraction. |
+| Greenfield creation and trusted-model roundtrip | done | `PdfArtifact`/`PdfFile` provide multi-page semantic/tagged authoring and clean-room model roundtrip. ReportLab is an optional layout-oriented greenfield provider through the shipped Skill script. |
+| Arbitrary-file reading and extraction | done | PDF.js, pdfplumber, pypdf, PyMuPDF, pdfinfo, and Poppler have explicit read/review roles. Parser reconstruction is evidence for inspect/QA, never an edit representation. |
 | Text and tables | done | Positioned/flow text, extraction, modeled tables, spans, headers, and geometry. |
 | Images and charts | done | PNG/JPEG images, vector charts, alternative text, and extraction/model records. |
 | Page geometry and reading order | done | Stable IDs, explicit logical reading order, inspect, resolve, and layout JSON. |
 | Accessibility | partial | Tagged structure, headings, language/title, table semantics, figures/alt text, and artifact marking. This is not a claim of full PDF/UA conformance. |
 | Render and visual QA | done | SVG/layout preview plus optional Poppler/Playwright/sharp/canvas render paths and visual comparison. |
-| Arbitrary PDF editing | unsupported | Arbitrary native object-stream/content-stream editing is outside the modeled PDF boundary. |
+| Existing-PDF native editing | partial | The optional PyMuPDF thin adapter operates directly on original bytes for bounded page, positioned-text, image, annotation, and AcroForm edits with transactional `rewrite`/`incremental` policy. pypdf covers basic form/annotation edits. General Word-style reflow, dynamic XFA, complex Acrobat JavaScript, 3D, and RichMedia are explicitly outside the universal contract. |
+| Redaction and sanitize | partial | PyMuPDF applies real redactions, strict scrub, full rewrite, original-prefix removal, decoded/raw/metadata/attachment/annotation/OCR residue scans, and single-revision checks. Text-only paths are integration-tested; image-bearing high-trust delivery requires separately installed Tesseract and fails closed without it. |
+| Signatures and conformance | partial | Signature/DocMDP evidence is checked before mutation, but creation/trust/LTV validation remains an external pyHanko workflow. PDF/A/UA machine validation remains external veraPDF; neither provider is bundled or fully hosted-tested. |
 
 ## Reference Skills
 
@@ -88,4 +92,4 @@ The published layout is four native plugin bundles and five Skills; `test/skill-
 | Spreadsheets | partial | The native plugin and reference-style core workbook example pass canonical XLSX export/import. Extended Quick API parity remains incomplete. |
 | Excel live control | partial | Native routing Skill and connector declaration are present; execution depends on a host-provided connected Excel session outside the npm package. |
 | Presentations | partial | The native plugin and complete 26-slide built-in template pass canonical OpenChestnut export/import, including bounded custom geometry. The broader reference API guide exceeds the current fail-closed PPTX boundary. |
-| PDF | partial | Native plugin packaging and the independent project PDF pipeline pass; the reference guide still needs full public-API adapter convergence. |
+| PDF | partial | The native plugin is now a reference-compatible provider-routing superset: greenfield `PdfArtifact`, ReportLab creation, pdfplumber/pypdf basics, direct-original PyMuPDF imported-PDF edits and sanitize, explicit rewrite/incremental/sanitize policy, residue scanning, and Poppler QA. Local real-provider tests cover those shipped adapters. qpdf/pyHanko/veraPDF external execution, OCRmyPDF/pikepdf adapters, hosted optional-provider tests, and broader corpus QA remain open. |

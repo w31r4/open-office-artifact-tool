@@ -1,0 +1,14 @@
+[
+  {
+    "type": "replace_text",
+    "term": "Customer Secret",
+    "replacement": "Public Record",
+    "font_name": "helv",
+    "font_size": 9,
+    "fill": [1, 1, 1],
+    "color": [0, 0, 0]
+  },
+  {
+    "type": "scrub"
+  }
+]

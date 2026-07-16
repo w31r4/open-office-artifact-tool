@@ -16,8 +16,12 @@ flowchart LR
   D --> C
   C --> A
 
-  P["PDF artifact model"] --> Q["Independent PDF import/export"]
+  P["Greenfield PDF artifact model"] --> Q["Independent PDF writer / QA"]
   Q --> R["PDF bytes"]
+  S["Imported PDF original bytes"] --> T["Explicit PDF provider route"]
+  T --> U["pypdf / PyMuPDF / pyHanko / qpdf / veraPDF"]
+  U --> V["Transactional PDF output"]
+  V --> W["Poppler / residue / conformance QA"]
 
   I["Explicit OOXML inspect/patch"] -. "manual only" .-> E
 ```
@@ -53,7 +57,15 @@ The implementation uses the Open XML SDK because its strongly typed package and 
 
 ### PDF
 
-PDF never enters the Office codec request, has no codec selector, and does not load the C# runtime. It keeps PDF creation/import, inspect/extract, geometry, reading order, accessibility, render, and verification in its existing pipeline. PDF.js import and Poppler/Playwright rendering are optional adapters.
+PDF never enters the Office codec request, has no Office protobuf payload, and does not load the C# runtime. The project does not create `OpenChestnut.Pdf` or maintain a general C# PDF parser/writer.
+
+The JavaScript `PdfArtifact`/`PdfFile` domain owns greenfield semantic/tagged authoring, trusted-model roundtrip, reading order, accessibility metadata, inspect/verify, and modeled render QA. PDF.js creates a reconstructed read/inspect view for arbitrary PDFs; that reconstruction is not an edit representation.
+
+The native PDF Skill owns a separate capability router. Imported original bytes go directly to an explicitly selected provider. Shipped thin adapters cover ReportLab creation, pdfplumber extraction, pypdf basics, and the project-approved optional PyMuPDF path for bounded page/content/image/form/annotation edits and sanitize. Poppler is the final native renderer. qpdf, pyHanko, and veraPDF are documented/probed external tools; pikepdf and OCRmyPDF are planned without shipped adapters.
+
+The router has no silent fallback. Mutation records source hashes and uses a distinct transactional output plus one explicit strategy: `rewrite`, byte-prefix-preserving `incremental`, or destructive `sanitize`. Signature/DocMDP evidence is checked first. High-trust redaction applies real redactions, scrubs, fully rewrites, scans raw/decoded/metadata/attachment/annotation/OCR residue and old revisions, then requires Poppler review.
+
+The npm package remains MIT and does not bundle PyMuPDF/MuPDF. Provider use requires separate installation and explicit GNU AGPL or commercial-license acknowledgement.
 
 ## Facade contract
 
@@ -129,15 +141,15 @@ It excludes C# source/build output, repository-only scripts/tests, and removed l
 The target dependency direction is intentionally one-way:
 
 ```text
-shared binary / FileBlob / inspection
-  -> Help and presentation Compose
-  -> format models and shared OOXML package tools
+shared binary / FileBlob / inspection / image / render primitives
+  -> Help, presentation Compose, and PDF domain
+  -> Office format models and shared OOXML package tools
   -> root compatibility barrel
 ```
 
 New leaf modules must not import the root entry. The root re-exports the original binding instead of wrapping or copying classes and functions, so `instanceof` and strict identity checks remain stable. Renderer, native-bridge, and JSX internals now import their leaf dependencies directly. The OpenChestnut adapters still temporarily import root model bindings; that dependency will be removed only after the corresponding format models move as atomic clusters. Office facade methods retain their dynamic OpenChestnut imports to avoid a model/adapter cycle.
 
-The first extraction phase moves Help, presentation Compose, binary conversion, `FileBlob`, and inspection primitives out of the root. Later phases will move the shared OOXML package engine, then the Spreadsheet, Presentation, Document, and PDF domains as atomic dependency clusters. Each phase is behavior-preserving: moving and rewiring are kept separate from feature changes and renaming.
+The first extraction phase moved Help, presentation Compose, binary conversion, `FileBlob`, and inspection primitives out of the root. The PDF phase then moved the complete PDF model, writer/parser facade, SVG preview, and tagged-file serializer as one domain cluster; the root re-exports the exact `PdfArtifact` and `PdfFile` bindings. Cross-format IDs still come from one shared allocator, while image, PNG, XML, and render-output primitives are dependency leaves used by both the root and PDF domain. Later phases will move the shared OOXML package engine, then Spreadsheet, Presentation, and Document as atomic clusters. Each phase is behavior-preserving: public binding identity, root export names, and facade behavior are regression-tested before further decomposition.
 
 ## Verification layers
 

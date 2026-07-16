@@ -1,7 +1,7 @@
 {
   "name": "pdf",
   "version": "0.2.0",
-  "description": "Read, create, inspect, render, and verify PDF files in Codex.",
+  "description": "Create, read, edit, sign, redact, render, and verify PDFs through explicit providers.",
   "author": {
     "name": "w31r4",
     "email": "w31r4@users.noreply.github.com",
@@ -22,13 +22,22 @@
     "extraction",
     "tagged-pdf",
     "pdfjs",
-    "poppler"
+    "poppler",
+    "reportlab",
+    "pdfplumber",
+    "pypdf",
+    "pymupdf",
+    "forms",
+    "annotations",
+    "redaction",
+    "signatures",
+    "accessibility"
   ],
   "skills": "./skills/",
   "interface": {
     "displayName": "PDF",
-    "shortDescription": "Read, create, and verify PDF files",
-    "longDescription": "Read, create, inspect, render, verify, and extract content from PDF files locally. Use PDF when the durable output or target is a PDF file and visual layout fidelity matters.",
+    "shortDescription": "Create, edit, redact, and verify PDFs",
+    "longDescription": "Create, read, review, edit, sign, redact, render, and verify PDF files through explicit capability-routed providers, save policies, provenance, and visual QA.",
     "developerName": "w31r4",
     "category": "Productivity",
     "capabilities": [
@@ -43,7 +52,8 @@
     "defaultPrompt": [
       "Review this PDF and verify its layout",
       "Create a polished PDF from this content",
-      "Extract tables and text from this PDF"
+      "Extract tables and text from this PDF",
+      "Redact sensitive content and verify no residue remains"
     ],
     "brandColor": "#DC2626",
     "screenshots": []

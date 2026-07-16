@@ -1,0 +1,19 @@
+{
+  "title": "Release evidence brief",
+  "subtitle": "Provider-routed PDF workflow",
+  "author": "Artifact Platform",
+  "sections": [
+    {
+      "heading": "Decision",
+      "paragraphs": [
+        "Ship only after semantic, structural, security, and visual gates agree."
+      ],
+      "table": [
+        ["Gate", "Provider", "Status"],
+        ["Extraction", "pdfplumber", "Ready"],
+        ["Native render", "Poppler", "Required"]
+      ]
+    }
+  ],
+  "footer": "Release evidence"
+}

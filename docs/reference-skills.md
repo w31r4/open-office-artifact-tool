@@ -25,7 +25,7 @@ There are therefore four plugin packages and five Skills. The old fixture runner
 | Excel live control | partial | Routing content, Skill metadata, icon, and `.app.json` connector declaration are present. Execution requires the host-provided connected-document app plus an active Excel add-in session; the npm package does not implement that service. |
 | Documents | partial | The ordinary native workflow now runs a shipped `DocumentModel` create → OpenChestnut export → import/edit → export → second-import example, with semantic verification and render-backed QA. Python/OOXML helpers are explicitly limited to advanced package patches and audits. Full status remains partial because the broader reference task set includes tracked revisions, content controls, complex fields, and other source-bound features outside the public semantic model. |
 | Full Presentation API guide | partial | The built-in source-free template is compatible. Broader reference instructions for advanced Master/Layout, notes/comments, custom shows, groups, and other package graphs exceed the current canonical export boundary and remain fail-closed or preservation-only. |
-| PDF | partial | The native PDF plugin content is packaged and the project PDF model/inspect/render/verify tests pass independently. The reference guide still needs a project-API adapter audit so its primary workflow consistently uses the public PDF surface instead of unrelated helper stacks. |
+| PDF | partial | The native guide is a reference-compatible capability router rather than a flattened single-backend Skill. Its shipped paths cover greenfield `PdfArtifact` tagged authoring, ReportLab creation, pdfplumber extraction, pypdf forms/annotations, PyMuPDF direct-original page/text/image/form/annotation edits, explicit rewrite/incremental/sanitize policy, real redaction/scrub/residue scans, and Poppler QA. The public model example still round-trips and renders a tagged scorecard. qpdf, pyHanko, and veraPDF remain documented/probed external workflows; pikepdf and OCRmyPDF have no shipped adapter; image OCR requires separately installed Tesseract. |
 
 ## Compatibility discipline
 
@@ -40,5 +40,7 @@ For each remaining Skill, convergence requires:
 5. render and inspect representative output where the environment supports it;
 6. record unsupported reference calls and either implement them or narrow the published instruction honestly;
 7. add the workflow to `test/reference-skills.mjs` before promoting its coverage status.
+
+For PDF, “compatible” means preserving the reference foundation while routing advanced work to explicit mature providers. It does not mean forcing every operation through `PdfArtifact`: arbitrary-file extraction models are never exported as fidelity-preserving edits, and provider absence or unsupported capability fails closed.
 
 `test/reference-skills.mjs` is the publication-contract smoke test. The older format-specific tests under `test/*-skill.mjs` continue to exercise the deeper development fixtures under `test/skill-harness`.

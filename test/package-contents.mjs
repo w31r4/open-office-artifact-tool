@@ -1,8 +1,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import fs from "node:fs/promises";
 import path from "node:path";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
+const skillsNpmIgnore = await fs.readFile(path.join(repoRoot, "skills", ".npmignore"), "utf8");
+assert.match(skillsNpmIgnore, /__pycache__/);
+assert.match(skillsNpmIgnore, /\*\.pyc/);
 const result = spawnSync("npm", ["pack", "--dry-run", "--json", "--ignore-scripts"], {
   cwd: repoRoot,
   encoding: "utf8",
@@ -44,6 +48,7 @@ for (const required of [
   "src/pdf/table-grid.mjs",
   "src/pdf/reading-order.mjs",
   "src/pdf/accessibility.mjs",
+  "src/pdf/index.mjs",
   "src/help/index.mjs",
   "src/index.mjs",
   "src/ooxml/docx-source-references.mjs",
@@ -62,7 +67,12 @@ for (const required of [
   "src/shared/colors.mjs",
   "src/shared/binary.mjs",
   "src/shared/file-blob.mjs",
+  "src/shared/ids.mjs",
+  "src/shared/images.mjs",
   "src/shared/inspection.mjs",
+  "src/shared/png.mjs",
+  "src/shared/render-output.mjs",
+  "src/shared/xml.mjs",
   "src/spreadsheet/formula-criteria.mjs",
   "src/spreadsheet/formula-coercion.mjs",
   "src/spreadsheet/ooxml-styles.mjs",
@@ -108,6 +118,32 @@ for (const required of [
   "skills/pdf/README.md",
   "skills/pdf/skills/pdf/SKILL.md",
   "skills/pdf/skills/pdf/agents/openai.yaml",
+  "skills/pdf/skills/pdf/manifest.txt",
+  "skills/pdf/skills/pdf/artifact_tool/API_QUICK_START.md",
+  "skills/pdf/skills/pdf/examples/public-api-end-to-end.mjs",
+  "skills/pdf/skills/pdf/examples/provider-workflows.md",
+  "skills/pdf/skills/pdf/examples/reportlab-report-spec.json",
+  "skills/pdf/skills/pdf/examples/pymupdf-edit-operations.json",
+  "skills/pdf/skills/pdf/examples/pymupdf-redaction-operations.json",
+  "skills/pdf/skills/pdf/references/PROVIDER_MATRIX.md",
+  "skills/pdf/skills/pdf/references/SAVE_POLICIES.md",
+  "skills/pdf/skills/pdf/references/SECURITY_CHECKLIST.md",
+  "skills/pdf/skills/pdf/references/PRODUCT_BOUNDARIES.md",
+  "skills/pdf/skills/pdf/scripts/pdf_provider.py",
+  "skills/pdf/skills/pdf/scripts/reportlab_create.py",
+  "skills/pdf/skills/pdf/scripts/pdfplumber_extract.py",
+  "skills/pdf/skills/pdf/scripts/pypdf_edit.py",
+  "skills/pdf/skills/pdf/scripts/pymupdf_edit.py",
+  "skills/pdf/skills/pdf/scripts/residue_scan.py",
+  "skills/pdf/skills/pdf/tasks/create.md",
+  "skills/pdf/skills/pdf/tasks/read_review.md",
+  "skills/pdf/skills/pdf/tasks/edit_existing.md",
+  "skills/pdf/skills/pdf/tasks/forms_annotations.md",
+  "skills/pdf/skills/pdf/tasks/sign_verify.md",
+  "skills/pdf/skills/pdf/tasks/redact.md",
+  "skills/pdf/skills/pdf/tasks/accessibility.md",
+  "skills/pdf/skills/pdf/tasks/render_review.md",
+  "skills/pdf/skills/pdf/tasks/provider_setup.md",
 ]) {
   assert.ok(files.includes(required), `npm package is missing ${required}`);
 }
