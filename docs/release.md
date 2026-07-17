@@ -65,6 +65,75 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### XLSX What-If data tables
+
+On 2026-07-18, the Spreadsheet public model, protocol-2 wire, OpenChestnut C#
+codec, bundled WASM runtime, generated Help/API reference, and native
+Spreadsheet plugin converged on canonical Excel What-If data tables.
+`sheet.dataTables.add(range, { rowInput, columnInput })` authors row-oriented
+and column-oriented one-variable tables plus two-variable tables as native
+`<f t="dataTable">` formulas. Import exposes defensive result-range, anchor,
+input, orientation, and display-formula evidence without projecting the native
+anchor as an ordinary editable cell formula.
+
+The bounded profile is loss-aware: source-free authoring rejects missing
+top-left formulas, cross-sheet or out-of-bounds input cells, undersized grids,
+and overlapping result ranges. Recognized imports retain fixed count, order,
+result range, inputs, and orientation; ordinary surrounding-cell edits and a
+second export/import work, while topology or semantic data-table mutation fails
+closed. Noncanonical attributes remain source-bound and unchanged. Excel,
+LibreOffice, or another compatible host calculates the result values; the
+JavaScript evaluator does not pretend to simulate `TABLE`.
+
+The complete candidate at commit
+`94f1d2234c93078b0782a52fd95c115be9df86f8` passed the hosted Linux `ci`
+workflow in [GitHub Actions run 29594786964](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29594786964)
+in 5m07s. The run covered deterministic protocol/runtime verification,
+Chromium/LibreOffice/Poppler setup, the full npm suite including the runnable
+What-If Skill workflow and fail-closed topology corpus, generated API-doc
+cleanliness, offline release metadata, clean-install packing, OfficeBridge
+`5/5`, and OpenChestnut `185/185`.
+
+### Neutral template library and Template Creator sync
+
+On 2026-07-18, the observable Skill delta from the local reference worktree's
+`207ce094a55d82a37efdca42a1c5e9656f696962` was adapted into the public
+package. The Presentation asset/support trees now use the neutral
+`grid-layout-library` identity throughout. Its model-facing registry, 26 exact
+plain-JavaScript Compose builders, 27 preview PNGs, content/design tokens, and
+reconstruction runner remain unflattened and pass a complete 26-slide
+OpenChestnut export. Because the reference commit is not yet on its remote, the
+submodule deliberately stays at the reproducibly obtainable 2.8.24 commit
+`2d0e249ea6b62f55cca22a343b832a38e8f7537c`; no unreachable pointer is
+recorded.
+
+The new fifth plugin contains the sixth published Skill, Template Creator. It
+creates numbered local `artifact-template-*` Skills from one DOCX/PPTX/XLSX
+reference and a structurally validated PNG, or updates exactly one named
+same-kind template. The retained Office reference and preview are byte-exact.
+The implementation performs no network fetch, writes only beneath
+`${OFFICE_ARTIFACT_HOME:-~/.office-artifact-tool}/skills`, enforces 512 MiB
+reference and 64 MiB preview budgets, rejects symlink-bearing update trees,
+serializes writers, recovers interrupted replacements, preserves extra
+template-owned files, rolls back failed placement, and proves there is no
+stage/backup/lock residue. All five native plugin manifests pass the official
+validator, while the reference-compatible versioned Template Creator manifest
+is retained alongside the native manifest.
+
+The complete local gate passed `npm test`, `npm run docs:api`,
+`npm run proto:check`, `npm run test:pack`, serial
+`npm run verify:open-chestnut-build`, OpenChestnut `185/185`, and OfficeBridge
+`5/5`. Two clean WASM builds produced the same 39 audited files and the same
+manifest-bound 38-file, 14,324,412-byte runtime. The clean-install tarball
+contains 434 files, is 9,297,469 bytes compressed and 23,178,713 bytes
+unpacked. The final candidate at commit
+`4f3dbbb4f95081e1c86747e88c10b4b16722ad0d` passed the hosted Linux `ci`
+workflow in [GitHub Actions run 29596412072](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29596412072)
+in 4m40s, covering npm installation, deterministic OpenChestnut verification,
+Chromium/native-tool setup, the complete npm/Skill/security suite, generated
+API-doc cleanliness, offline release metadata, clean-install packing,
+OfficeBridge `5/5`, and OpenChestnut `185/185`.
+
 ### XLSX standard-area and fixed-doughnut chart families
 
 On 2026-07-17, the Spreadsheet public model, protocol-2 wire, OpenChestnut C#
