@@ -186,18 +186,28 @@ function returnRate(cashFlows, exponents, guess) {
   return newtonRoot(evaluate, initialLogRate) ?? bracketedRoot(evaluate, initialLogRate) ?? "#NUM!";
 }
 
-function paymentTerms({ rate, nper, pv, fv = 0, type = 0 }, helpers) {
-  const [safeRate, safeNper, safePv, safeFv, safeType] = [rate, nper, pv, fv, type].map((value) => finiteNumber(value, helpers));
-  const error = [safeRate, safeNper, safePv, safeFv, safeType].find((item) => item.error)?.error;
+function fixedCashFlowTerms({ rate, nper, pmt = 0, pv = 0, fv = 0, type = 0 }, helpers) {
+  const values = nper === undefined ? [rate, pmt, pv, fv, type] : [rate, nper, pmt, pv, fv, type];
+  const safeValues = values.map((value) => finiteNumber(value, helpers));
+  const error = safeValues.find((item) => item.error)?.error;
   if (error) return { error };
-  if (safeRate.value <= -1 || safeNper.value <= 0 || ![0, 1].includes(safeType.value)) return { error: "#NUM!" };
+
+  const [safeRate, safeNper, safePmt, safePv, safeFv, safeType] = nper === undefined
+    ? [safeValues[0], undefined, safeValues[1], safeValues[2], safeValues[3], safeValues[4]]
+    : safeValues;
+  if (safeRate.value <= -1 || (safeNper && safeNper.value <= 0) || ![0, 1].includes(safeType.value)) return { error: "#NUM!" };
   return {
     rate: safeRate.value,
-    nper: safeNper.value,
+    ...(safeNper ? { nper: safeNper.value } : {}),
+    pmt: safePmt.value,
     pv: safePv.value,
     fv: safeFv.value,
     type: safeType.value,
   };
+}
+
+function paymentTerms({ rate, nper, pv, fv = 0, type = 0 }, helpers) {
+  return fixedCashFlowTerms({ rate, nper, pv, fv, type }, helpers);
 }
 
 function paymentFromTerms({ rate, nper, pv, fv, type }) {
@@ -269,6 +279,61 @@ export function calculatePpmt(rawTerms, helpers) {
   if (typeof payment !== "number") return payment;
   const interest = calculateIpmt(rawTerms, helpers);
   return typeof interest === "number" ? payment - interest : interest;
+}
+
+export function calculatePv(rawTerms, helpers) {
+  const terms = fixedCashFlowTerms(rawTerms, helpers);
+  if (terms.error) return terms.error;
+  if (terms.rate === 0) {
+    const presentValue = -(terms.pmt * terms.nper + terms.fv);
+    return Number.isFinite(presentValue) ? presentValue : "#NUM!";
+  }
+
+  const logRate = Math.log1p(terms.rate);
+  const growth = Math.exp(terms.nper * logRate);
+  const annuity = Math.expm1(terms.nper * logRate) / terms.rate;
+  const presentValue = -(terms.fv + terms.pmt * (1 + terms.rate * terms.type) * annuity) / growth;
+  return Number.isFinite(logRate) && Number.isFinite(growth) && growth !== 0 && Number.isFinite(annuity) && Number.isFinite(presentValue)
+    ? presentValue
+    : "#NUM!";
+}
+
+export function calculateFv(rawTerms, helpers) {
+  const terms = fixedCashFlowTerms(rawTerms, helpers);
+  if (terms.error) return terms.error;
+  if (terms.rate === 0) {
+    const futureValue = -(terms.pv + terms.pmt * terms.nper);
+    return Number.isFinite(futureValue) ? futureValue : "#NUM!";
+  }
+
+  const logRate = Math.log1p(terms.rate);
+  const growth = Math.exp(terms.nper * logRate);
+  const annuity = Math.expm1(terms.nper * logRate) / terms.rate;
+  const futureValue = -(terms.pv * growth + terms.pmt * (1 + terms.rate * terms.type) * annuity);
+  return Number.isFinite(logRate) && Number.isFinite(growth) && Number.isFinite(annuity) && Number.isFinite(futureValue)
+    ? futureValue
+    : "#NUM!";
+}
+
+export function calculateNper(rawTerms, helpers) {
+  const terms = fixedCashFlowTerms(rawTerms, helpers);
+  if (terms.error) return terms.error;
+  if (terms.rate === 0) {
+    if (terms.pmt === 0) return "#NUM!";
+    const periods = -(terms.pv + terms.fv) / terms.pmt;
+    return Number.isFinite(periods) ? periods : "#NUM!";
+  }
+
+  const paymentFactor = 1 + terms.rate * terms.type;
+  const numerator = terms.pmt * paymentFactor - terms.fv * terms.rate;
+  const denominator = terms.pv * terms.rate + terms.pmt * paymentFactor;
+  const ratio = numerator / denominator;
+  const logRate = Math.log1p(terms.rate);
+  const periods = Math.log(ratio) / logRate;
+  return Number.isFinite(paymentFactor) && Number.isFinite(numerator) && Number.isFinite(denominator)
+    && denominator !== 0 && Number.isFinite(ratio) && ratio > 0 && Number.isFinite(logRate) && logRate !== 0 && Number.isFinite(periods)
+    ? periods
+    : "#NUM!";
 }
 
 export function calculateSln({ cost, salvage, life }, helpers) {
