@@ -25,6 +25,7 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.addSection` | api | Append a DOCX section break with page size, orientation, margin, and break-type metadata backed by w:sectPr. |
 | `document.addTable` | api | Append a Word-style table with physical cell values, optional logical merge geometry, and fixed-layout width/margin/border/header formatting. |
 | `document.applyDesignPreset` | api | Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews. |
+| `document.fontFamilies` | api | Return a fresh sorted, case-insensitively deduplicated list of document theme and explicit run/style font families. |
 | `document.inspect` | api | Emit bounded NDJSON for document blocks including tracked changes, bookmark ranges, footnotes/endnotes, bibliography sources, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude. |
 | `document.layoutJson` | api | Return page-aware layout JSON with block bounding boxes, section/page ordinals, effective inherited header/footer selections, styles, and target/search slicing. |
 | `document.render` | api | Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs. |
@@ -363,6 +364,14 @@ Apply a clean-room report or memo design preset that updates named styles for co
 **Schema returns:**
 
 - `document` (DocumentModel) — The mutated document facade.
+
+#### `document.fontFamilies`
+
+Return a fresh sorted, case-insensitively deduplicated list of document theme and explicit run/style font families.
+
+**Schema returns:**
+
+- `families` (string[]) — Font-family inventory; mutating the returned array does not mutate the document.
 
 #### `document.inspect`
 
@@ -1144,6 +1153,7 @@ Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or 
 | `presentation.customShows.add` | api | Define a model-level custom slide show for inspect and preview. OpenChestnut 0.2 does not author custom shows, and imported custom-show graphs are source-bound and read-only. |
 | `presentation.customShows.getItem` | api | Resolve a model-level or imported read-only custom slide show by zero-based index, stable facade ID, or exact name. |
 | `presentation.export` | api | Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON. |
+| `presentation.fontFamilies` | api | Return a fresh sorted, case-insensitively deduplicated list of explicitly used presentation text and bullet font families. |
 | `presentation.inspect` | api | Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, tables, charts, images, and native contentPart/OLE/diagram objects with bounded editability, relationship-reference, root-relationship, preserved-part, and eligible embedded-workbook summaries; narrow with search/target anchors and shape fields with include/exclude. |
 | `presentation.layout.clearBackground` | api | Clear a model-level layout background for preview only. Canonical PPTX export rejects layout authoring and imported-layout mutation. |
 | `presentation.layout.setBackground` | api | Change a model-level layout background for preview only. Canonical PPTX export rejects layout authoring and imported-layout mutation. |
@@ -1166,6 +1176,7 @@ Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or 
 | `PresentationFile.inspectPptx` | api | Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets. |
 | `PresentationFile.patchPptx` | api | Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics. |
 | `shape.text.set` | api | Set plain or structured text with ordered text, field, and line-break inlines; bounded run formatting; character, picture-bullet, or auto-numbered lists; levels, indents, spacing; and external URI, internal-slide, or relative-action hyperlinks. Custom-show links and unmodeled text graphs fail closed in canonical PPTX export. |
+| `shape.useBackgroundFill` | api | Read the presence-aware imported PresentationML p:sp useBgFill flag. It affects preview paint but remains source-bound and read-only; source-free authoring or wire mutation fails closed. |
 | `slide.addNotes` | api | Set plain-text speaker notes for inspect, preview, and canonical PPTX output. OpenChestnut authors source-free notes and edits hash-bound simple imported notes bodies; rich or irregular imported notes fail closed instead of losing formatting. |
 | `slide.applyLayout` | api | Materialize layout placeholders in the model for preview. Source-free layout binding is outside the OpenChestnut 0.2 PPTX boundary; imported Layout relationships are preservation-only. |
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
@@ -1354,6 +1365,14 @@ Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or targe
 **Schema returns:**
 
 - `blob` (FileBlob) — SVG montage/slide preview or layout JSON.
+
+#### `presentation.fontFamilies`
+
+Return a fresh sorted, case-insensitively deduplicated list of explicitly used presentation text and bullet font families.
+
+**Schema returns:**
+
+- `families` (string[]) — Explicit font-family inventory; theme tokens such as +mj-lt are excluded.
 
 #### `presentation.inspect`
 
@@ -1681,6 +1700,14 @@ Set plain or structured text with ordered text, field, and line-break inlines; b
 
 - `textFrame` (TextFrame) — The same live text frame with normalized paragraphs and a backward-compatible flattened value.
 
+#### `shape.useBackgroundFill`
+
+Read the presence-aware imported PresentationML p:sp useBgFill flag. It affects preview paint but remains source-bound and read-only; source-free authoring or wire mutation fails closed.
+
+**Schema returns:**
+
+- `useBackgroundFill` (boolean|undefined) — True/false only when the native attribute was present; otherwise undefined.
+
 #### `slide.addNotes`
 
 Set plain-text speaker notes for inspect, preview, and canonical PPTX output. OpenChestnut authors source-free notes and edits hash-bound simple imported notes bodies; rich or irregular imported notes fail closed instead of losing formatting.
@@ -1897,18 +1924,31 @@ Add an inspectable table facade with rows, columns, values, cells, layout JSON, 
 
 | Name | Kind | Summary |
 | --- | --- | --- |
+| `clearOfficeFontDesignMetrics` | api | Clear process-level and scoped Office font design metrics. |
 | `createCanvasRenderer` | api | Create an optional node-canvas renderer adapter from open-office-artifact-tool/renderers/canvas for SVG/PNG/JPEG/WebP FileBlob raster conversion to PNG or JPEG. |
 | `createLibreOfficeRenderer` | api | Create a LibreOffice CLI renderer adapter from open-office-artifact-tool/renderers/libreoffice for DOCX/XLSX/PPTX/HTML/PDF FileBlob conversion, typically to PDF. |
 | `createNativeOfficeRenderer` | api | Create a native Office renderer adapter from open-office-artifact-tool/native/office-bridge that calls a JSON stdin/stdout sidecar command with timeout, temp-file isolation, cleanup, and structured errors. |
 | `createPlaywrightRenderer` | api | Create an optional Playwright renderer adapter from open-office-artifact-tool/renderers/playwright for deterministic SVG/HTML to PNG, WebP, JPEG, or PDF conversion with network blocked by default. |
 | `createPopplerRenderer` | api | Create a Poppler CLI renderer adapter from open-office-artifact-tool/renderers/poppler for application/pdf FileBlob page rasterization to PNG, PPM, or TIFF. |
 | `createSharpRenderer` | api | Create an optional sharp renderer adapter from open-office-artifact-tool/renderers/sharp for SVG/PNG/JPEG/WebP FileBlob raster conversion to PNG, WebP, or JPEG. |
+| `registerScopedOfficeFontDesignMetrics` | api | Register a last-in-first-resolved scoped font design-metric collection and return an idempotent disposer. |
 | `renderArtifact` | api | Render an artifact through its render/export method, attach normalized FileBlob metadata, and optionally pass SVG output through a caller-provided renderer adapter for PNG/WebP/JPEG/PDF output. |
 | `renderFileWithNativeOffice` | api | Render or convert a DOCX/XLSX/PPTX/PDF FileBlob through a configured native Office bridge command, returning a FileBlob for PDF/PNG/WebP or other requested output. |
+| `resolveOfficeFontDesignMetrics` | api | Resolve the requested primary family, style, and nearest numeric weight from scoped then process-level font design metrics without silently skipping to later family fallbacks. |
+| `setOfficeFontDesignMetrics` | api | Replace the process-level Office font design-metric registry with normalized public metric records used by deterministic layout integrations. |
+| `skiaPaintBaselineCompensationPx` | api | Return the signed subpixel residual between a finite paint baseline and its nearest integer pixel, or zero for non-finite input. |
 | `verifyArtifact` | api | Run an artifact's verify() method and return a bounded NDJSON QA report. |
 | `visualQaArtifact` | api | Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline render, optionally register small translations, and return a configurable aligned PNG diff heatmap. |
 
 ### shared details
+
+#### `clearOfficeFontDesignMetrics`
+
+Clear process-level and scoped Office font design metrics.
+
+**Schema returns:**
+
+- `result` (undefined) — All registered metrics are removed synchronously.
 
 #### `createCanvasRenderer`
 
@@ -2051,6 +2091,18 @@ Create an optional sharp renderer adapter from open-office-artifact-tool/rendere
 
 - `renderer` (function) — SVG/PNG/JPEG/WebP raster renderer adapter.
 
+#### `registerScopedOfficeFontDesignMetrics`
+
+Register a last-in-first-resolved scoped font design-metric collection and return an idempotent disposer.
+
+**Schema parameters:**
+
+- `entries` (object[]) required — Iterable normalized font design-metric candidates.
+
+**Schema returns:**
+
+- `dispose` (function) — Idempotently removes only this scoped registration.
+
 #### `renderArtifact`
 
 Render an artifact through its render/export method, attach normalized FileBlob metadata, and optionally pass SVG output through a caller-provided renderer adapter for PNG/WebP/JPEG/PDF output.
@@ -2106,6 +2158,42 @@ Render or convert a DOCX/XLSX/PPTX/PDF FileBlob through a configured native Offi
 **Schema returns:**
 
 - `blob` (FileBlob) — Native Office bridge output bytes and renderer metadata.
+
+#### `resolveOfficeFontDesignMetrics`
+
+Resolve the requested primary family, style, and nearest numeric weight from scoped then process-level font design metrics without silently skipping to later family fallbacks.
+
+**Schema parameters:**
+
+- `request` (object) required — { family: string[], weight?, style? }; the first family is the explicit lookup target.
+
+**Schema returns:**
+
+- `metric` (object|undefined) — A defensive normalized metric record or undefined.
+
+#### `setOfficeFontDesignMetrics`
+
+Replace the process-level Office font design-metric registry with normalized public metric records used by deterministic layout integrations.
+
+**Schema parameters:**
+
+- `entries` (object[]) required — Iterable records with family, weight, unitsPerEm, ascent, non-negative descent, and optional lineGap/style/width.
+
+**Schema returns:**
+
+- `result` (undefined) — Registry replacement is synchronous.
+
+#### `skiaPaintBaselineCompensationPx`
+
+Return the signed subpixel residual between a finite paint baseline and its nearest integer pixel, or zero for non-finite input.
+
+**Schema parameters:**
+
+- `value` (number) required — Baseline coordinate in CSS pixels.
+
+**Schema returns:**
+
+- `compensation` (number) — A finite residual in the interval [-0.5, 0.5).
 
 #### `verifyArtifact`
 
@@ -2319,6 +2407,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `workbook.connections` | api | Inspect bounded non-secret metadata for imported database connections. Connections are source-bound and read-only: authoring, removal, or mutation makes canonical XLSX export fail closed. |
 | `Workbook.create` | api | Create an empty workbook with an explicit date system and optional native SpreadsheetML theme colors. |
 | `workbook.definedNames.add` | api | Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData). |
+| `workbook.fontFamilies` | api | Return a fresh sorted, case-insensitively deduplicated list of workbook default and explicit cell font families. |
 | `workbook.formulaGraph` | api | Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA. |
 | `workbook.inspect` | api | Emit bounded NDJSON records for workbook, connections, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude. |
 | `workbook.layoutJson` | api | Return workbook/worksheet layout JSON with cell, table, chart, image, sparkline, rule bounding boxes, and target/search context slicing. |
@@ -4591,6 +4680,14 @@ Create a workbook or sheet-scoped defined name over an A1 range; exported as nat
 **Returns:**
 
 DefinedName facade with id/name/refersTo/scope
+
+#### `workbook.fontFamilies`
+
+Return a fresh sorted, case-insensitively deduplicated list of workbook default and explicit cell font families.
+
+**Schema returns:**
+
+- `families` (string[]) — Font-family inventory; mutating the returned array does not mutate the workbook.
 
 #### `workbook.formulaGraph`
 
