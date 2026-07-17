@@ -2,6 +2,27 @@
 
 `slide.charts` creates chart elements with slide placement and chart configuration.
 
+## Canonical OpenChestnut PPTX Boundary
+
+The model and reference-shaped API describe many chart families, but native
+OpenChestnut PPTX creation/import/edit is deliberately narrower:
+
+- `bar`, `line`, and `pie` accept literal categories and finite values.
+- `combo` is native only for clustered bar plus standard line plots sharing one
+  primary category/value axis pair. Every series declares `chartType: "bar"`
+  or `chartType: "line"`, with at least one of each.
+- The combo profile permits title, legend, basic fill/line/marker styling, and
+  chart-level data labels. Its plot/series/point topology is fixed after
+  import.
+- External data, secondary axes, point overrides, per-series data labels,
+  smooth lines, trendlines, error bars, and other chart families fail closed or
+  remain source-bound. Do not re-create an irregular imported chart from its
+  visible values and claim it was preserved.
+
+Use `inspect` before editing an imported chart, make the smallest supported
+change, export to a distinct output, import once more, and render the final
+slide for visual QA.
+
 ## Resolved From Inspect
 
 ```ts

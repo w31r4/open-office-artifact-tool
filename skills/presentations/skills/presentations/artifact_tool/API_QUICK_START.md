@@ -137,6 +137,38 @@ main().catch((error) => {
 });
 ```
 
+## Bounded Native Combo Chart
+
+`combo` is native PPTX output only for one intentionally narrow profile: literal
+clustered columns plus literal lines, one shared primary category/value axis
+pair, at least one series of each kind, and no topology changes after import.
+
+```ts
+slide.charts.add("combo", {
+  name: "revenue-margin",
+  title: "Revenue and margin",
+  position: { left: 90, top: 120, width: 1080, height: 420 },
+  categories: ["Q1", "Q2", "Q3"],
+  series: [
+    { name: "Revenue", chartType: "bar", values: [42, 48, 57], color: "#2563EB" },
+    {
+      name: "Margin",
+      chartType: "line",
+      values: [12, 15, 18],
+      line: { fill: "#16A34A", width: 2 },
+      marker: { symbol: "circle", size: 7 },
+    },
+  ],
+  axes: { category: { title: "Quarter" }, value: { title: "Percent" } },
+  dataLabels: { showValue: true, position: "top" },
+});
+```
+
+Do not use `axisGroup: "secondary"`, external/embedded workbook data, smooth
+lines, point overrides, per-series labels, trendlines, or error bars in this
+profile. Those combinations fail closed rather than being flattened or
+silently rebuilt.
+
 ## JSX Compose Equivalent
 
 Use JSX when the slide is naturally rows, columns, grids, or overlays.

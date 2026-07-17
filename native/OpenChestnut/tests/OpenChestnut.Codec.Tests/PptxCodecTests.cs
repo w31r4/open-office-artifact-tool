@@ -4,6 +4,7 @@ using DocumentFormat.OpenXml.Validation;
 using Google.Protobuf;
 using System.IO.Compression;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using OpenOffice.Artifact.Wire.V1;
 using A = DocumentFormat.OpenXml.Drawing;
 using C = DocumentFormat.OpenXml.Drawing.Charts;
@@ -545,6 +546,124 @@ public sealed class PptxCodecTests
         var roundTripChart = roundTripElements.First(item => item.ContentCase == PresentationElement.ContentOneofCase.Chart).Chart;
         Assert.Equal("Edited evidence", roundTripChart.Title);
         Assert.Equal(8, roundTripChart.Series[0].Values[1]);
+    }
+
+    [Fact]
+    public void LiteralPrimaryAxisBarLineComboAuthorsImportsAndEdits()
+    {
+        var request = ExportRequest();
+        var chart = new PresentationChart
+        {
+            LeftEmu = 800_000,
+            TopEmu = 1_400_000,
+            WidthEmu = 7_200_000,
+            HeightEmu = 3_800_000,
+            Type = SpreadsheetChartType.Combo,
+            Title = "Revenue and margin",
+            HasLegend = true,
+            DataLabels = new SpreadsheetChartDataLabelsArtifact { ShowValue = true, Position = SpreadsheetChartDataLabelPosition.Top },
+            XAxis = new SpreadsheetChartAxisArtifact { Title = "Quarter" },
+            YAxis = new SpreadsheetChartAxisArtifact { Title = "Percent" },
+        };
+        chart.Categories.Add(["Q1", "Q2", "Q3"]);
+        chart.ComboSeries.Add(new PresentationComboSeriesArtifact
+        {
+            Type = SpreadsheetChartType.Bar,
+            Series = new SpreadsheetChartSeriesArtifact
+            {
+                Name = "Revenue",
+                Fill = new SpreadsheetColor { Rgb = "2563EB" },
+            },
+        });
+        chart.ComboSeries[0].Series.Values.Add([42, 48, 57]);
+        chart.ComboSeries.Add(new PresentationComboSeriesArtifact
+        {
+            Type = SpreadsheetChartType.Line,
+            Series = new SpreadsheetChartSeriesArtifact
+            {
+                Name = "Margin",
+                Line = new SpreadsheetChartLineStyleArtifact
+                {
+                    Color = new SpreadsheetColor { Rgb = "16A34A" },
+                    DashStyle = SpreadsheetChartLineDashStyle.Solid,
+                    WidthPoints = 2,
+                },
+                Marker = new SpreadsheetChartMarkerArtifact { Symbol = SpreadsheetChartMarkerSymbol.Circle, Size = 6 },
+            },
+        });
+        chart.ComboSeries[1].Series.Values.Add([12, 15, 18]);
+        request.Artifact.Presentation.Slides[0].Elements.Add(new PresentationElement
+        {
+            Id = "presentation/slide/1/chart/combo",
+            Name = "Revenue and margin combo",
+            Chart = chart,
+        });
+
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var chartPart = Assert.Single(package.PresentationPart!.SlideParts.Single().ChartParts);
+            var document = XDocument.Load(chartPart.GetStream(FileMode.Open, FileAccess.Read));
+            XNamespace chartNs = "http://schemas.openxmlformats.org/drawingml/2006/chart";
+            var plotArea = document.Root!.Element(chartNs + "chart")!.Element(chartNs + "plotArea")!;
+            var barPlot = Assert.Single(plotArea.Elements(chartNs + "barChart"));
+            var linePlot = Assert.Single(plotArea.Elements(chartNs + "lineChart"));
+            Assert.Equal("clustered", barPlot.Element(chartNs + "grouping")!.Attribute("val")!.Value);
+            Assert.Equal("standard", linePlot.Element(chartNs + "grouping")!.Attribute("val")!.Value);
+            Assert.Equal(
+                barPlot.Elements(chartNs + "axId").Select(item => item.Attribute("val")!.Value),
+                linePlot.Elements(chartNs + "axId").Select(item => item.Attribute("val")!.Value));
+            Assert.Single(barPlot.Elements(chartNs + "ser"));
+            Assert.Single(linePlot.Elements(chartNs + "ser"));
+            Assert.NotNull(barPlot.Element(chartNs + "dLbls"));
+            Assert.NotNull(linePlot.Element(chartNs + "dLbls"));
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedElement = Assert.Single(Assert.Single(imported.Artifact.Presentation.Slides).Elements, item => item.ContentCase == PresentationElement.ContentOneofCase.Chart);
+        Assert.True(importedElement.Source.Editable);
+        Assert.Equal(SpreadsheetChartType.Combo, importedElement.Chart.Type);
+        Assert.Empty(importedElement.Chart.Series);
+        Assert.Collection(importedElement.Chart.ComboSeries,
+            bar =>
+            {
+                Assert.Equal(SpreadsheetChartType.Bar, bar.Type);
+                Assert.Equal("Revenue", bar.Series.Name);
+                Assert.Equal(57, bar.Series.Values[2]);
+            },
+            line =>
+            {
+                Assert.Equal(SpreadsheetChartType.Line, line.Type);
+                Assert.Equal("Margin", line.Series.Name);
+                Assert.Equal(15, line.Series.Values[1]);
+            });
+
+        importedElement.Chart.Title = "Updated revenue and margin";
+        importedElement.Chart.ComboSeries[1].Series.Values[1] = 16;
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var roundTrip = Import(edited.File.ToByteArray());
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        var roundTripChart = Assert.Single(Assert.Single(roundTrip.Artifact.Presentation.Slides).Elements, item => item.ContentCase == PresentationElement.ContentOneofCase.Chart).Chart;
+        Assert.Equal("Updated revenue and margin", roundTripChart.Title);
+        Assert.Equal(16, roundTripChart.ComboSeries[1].Series.Values[1]);
+
+        var invalid = ExportRequest();
+        var barOnly = chart.Clone();
+        barOnly.ComboSeries.RemoveAt(1);
+        invalid.Artifact.Presentation.Slides[0].Elements.Add(new PresentationElement
+        {
+            Id = "presentation/slide/1/chart/invalid-combo",
+            Name = "Invalid combo",
+            Chart = barOnly,
+        });
+        var rejected = Invoke(invalid);
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_presentation_chart", Assert.Single(rejected.Diagnostics).Code);
     }
 
     [Fact]

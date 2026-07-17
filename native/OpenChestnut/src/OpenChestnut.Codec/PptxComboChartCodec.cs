@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Xml;
 using System.Xml.Linq;
 using OpenOffice.Artifact.Wire.V1;
 

@@ -378,6 +378,8 @@ assert.match(HELP_CATALOG.find((item) => item.name === "sheet.sparklineGroups.ad
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.charts.add")?.schema?.parameters?.chartType?.description || "", /bar, line, pie, area, doughnut, scatter, or bubble.*fail closed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.charts.add")?.schema?.parameters?.series?.description || "", /xValues\/xFormula/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.charts.add")?.schema?.parameters?.series?.description || "", /bubbleSizes\/bubbleSizeFormula.*aligned/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.chartType?.description || "", /bar, line, pie, or combo.*primary-axis clustered bar\+line/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.description || "", /combo.*at least one of each.*secondary axes/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "openChestnutStatus")?.schema?.returns?.status?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "invokeOpenChestnut")?.schema?.parameters?.request?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.inspectXlsx")?.schema?.parameters?.maxTotalBytes?.type, "number");

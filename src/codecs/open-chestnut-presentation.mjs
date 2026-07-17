@@ -2044,10 +2044,11 @@ export async function presentationFromEnvelope(envelope) {
           },
         });
       } else if (element.content.case === "chart") {
-        model = slide.charts.add(element.content.value.type === SpreadsheetChartType.BAR ? "bar" : element.content.value.type === SpreadsheetChartType.LINE ? "line" : "pie", {
+        const chart = modelPresentationChart(element.content.value);
+        model = slide.charts.add(chart.chartType, {
           id: element.id,
           name: element.name,
-          ...modelPresentationChart(element.content.value),
+          ...chart,
         });
       } else if (element.content.case === "group") {
         model = slide.groups.add(modelPresentationGroup(element, assetCatalog));

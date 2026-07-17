@@ -413,6 +413,38 @@ chartSlide.charts.add("pie", {
   dataLabels: { showCategoryName: true, showValue: true },
 });
 
+const comboSlide = deck.slides.add({ name: "Literal combo chart" });
+comboSlide.charts.add("combo", {
+  name: "revenue-margin-combo",
+  title: "Revenue and margin",
+  position: { left: 90, top: 120, width: 1080, height: 480 },
+  categories: ["Q1", "Q2", "Q3"],
+  series: [
+    { name: "Revenue", chartType: "bar", values: [42, 48, 57], color: "#2563EB" },
+    {
+      name: "Margin",
+      chartType: "line",
+      values: [12, 15, 18],
+      color: "#16A34A",
+      line: { fill: "#16A34A", width: 2 },
+      marker: { symbol: "circle", size: 7, fill: "#16A34A" },
+    },
+  ],
+  legend: true,
+  axes: { category: { title: "Quarter" }, value: { title: "Percent" } },
+  dataLabels: { showValue: true, position: "top" },
+});
+const secondaryAxisCombo = Presentation.create({ slideSize: { width: 640, height: 360 } });
+secondaryAxisCombo.slides.add({ name: "Rejected combo" }).charts.add("combo", {
+  name: "secondary-axis-combo",
+  categories: ["Q1", "Q2"],
+  series: [
+    { name: "Revenue", chartType: "bar", values: [42, 48] },
+    { name: "Margin", chartType: "line", axisGroup: "secondary", values: [12, 15] },
+  ],
+});
+await assert.rejects(PresentationFile.exportPptx(secondaryAxisCombo), /outside the bounded native chart slice/i);
+
 assert.equal(deck.verify().ok, true);
 assert.equal(deck.validateLayout().ok, true);
 assert.equal(deck.resolve(rounded.id), rounded);
@@ -435,6 +467,15 @@ const firstZip = await JSZip.loadAsync(new Uint8Array(await firstExport.arrayBuf
 const firstSlideXml = await firstZip.file("ppt/slides/slide1.xml").async("text");
 assert.match(firstSlideXml, /<a:srcRect[^>]*l="25000"/);
 assert.match(firstSlideXml, /<a:srcRect[^>]*r="25000"/);
+const authoredChartXml = await Promise.all(Object.keys(firstZip.files)
+  .filter((name) => /\/charts\/chart\d+\.xml$/.test(name))
+  .map((name) => firstZip.file(name).async("text")));
+const comboChartXml = authoredChartXml.find((xml) => xml.includes("Revenue and margin"));
+assert.ok(comboChartXml);
+assert.match(comboChartXml, /<c:barChart>/);
+assert.match(comboChartXml, /<c:lineChart>/);
+assert.match(comboChartXml, /<c:barChart>[\s\S]*?<c:axId val="1"\s*\/><c:axId val="2"\s*\/><\/c:barChart>/);
+assert.match(comboChartXml, /<c:lineChart>[\s\S]*?<c:axId val="1"\s*\/><c:axId val="2"\s*\/><\/c:lineChart>/);
 
 // Reference 2.8.24 exposes imported PowerPoint grid spacing, snap settings,
 // and guides through presentation.view plus read-only master/layout projections.
@@ -642,6 +683,12 @@ const importedCharts = imported.slides.getItem(1).charts.items;
 assert.deepEqual(importedCharts.map((chart) => chart.chartType), ["bar", "line", "pie"]);
 assert.equal(importedCharts[1].series[0].marker.symbol, "circle");
 assert.equal(importedCharts[2].dataLabels.showCategoryName, true);
+const importedCombo = itemByName(imported.slides.getItem(2).charts.items, "revenue-margin-combo");
+assert.equal(importedCombo.chartType, "combo");
+assert.deepEqual(importedCombo.series.map((series) => series.chartType), ["bar", "line"]);
+assert.equal(importedCombo.series[1].marker.symbol, "circle");
+assert.equal(importedCombo.dataLabels.showValue, true);
+assert.equal(importedCombo.dataLabels.position, "t");
 
 const importedCard = itemByName(importedCore.shapes.items, "rounded-card");
 importedCard.text.set("After edit");
@@ -659,6 +706,8 @@ importedRich.text.paragraphs = editedParagraphs;
 const importedBar = itemByName(importedCharts, "bar-chart");
 importedBar.title = "Updated readiness";
 importedBar.series[0].values = [80, 94, 88];
+importedCombo.title = "Updated revenue and margin";
+importedCombo.series[1].values = [12, 16, 18];
 
 const secondExport = await PresentationFile.exportPptx(imported);
 assert.equal(secondExport.metadata.codec, "open-chestnut");
@@ -683,7 +732,7 @@ assert.match(secondSlideXml, /<a:headEnd type="triangle"/);
 assert.match(secondSlideXml, /<a:tailEnd type="triangle"/);
 assert.ok(Object.keys(secondZip.files).some((name) => /\/media\/.+\.png$/.test(name)));
 assert.ok(Object.keys(secondZip.files).some((name) => /\/media\/.+\.jpe?g$/.test(name)));
-assert.equal(Object.keys(secondZip.files).filter((name) => /\/charts\/chart\d+\.xml$/.test(name)).length, 3);
+assert.equal(Object.keys(secondZip.files).filter((name) => /\/charts\/chart\d+\.xml$/.test(name)).length, 4);
 assert.match(await secondZip.file("ppt/notesSlides/notesSlide1.xml").async("text"), /Lead with evidence/);
 
 const roundTrip = await PresentationFile.importPptx(secondExport);
@@ -705,6 +754,10 @@ assert.equal(itemByName(roundTripCore.shapes.items, "rich-copy").text.paragraphs
 const roundTripBar = itemByName(roundTrip.slides.getItem(1).charts.items, "bar-chart");
 assert.equal(roundTripBar.title, "Updated readiness");
 assert.deepEqual(roundTripBar.series[0].values, [80, 94, 88]);
+const roundTripCombo = itemByName(roundTrip.slides.getItem(2).charts.items, "revenue-margin-combo");
+assert.equal(roundTripCombo.title, "Updated revenue and margin");
+assert.deepEqual(roundTripCombo.series.map((series) => series.chartType), ["bar", "line"]);
+assert.deepEqual(roundTripCombo.series[1].values, [12, 16, 18]);
 assert.equal(roundTrip.verify().ok, true);
 
 assert.equal(roundTripCore.clearBackground(), roundTripCore);
