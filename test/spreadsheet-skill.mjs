@@ -95,7 +95,13 @@ try {
   assert.ok(Math.abs(fixtureAmortization.getRange("F13").values[0][0]) < 1e-7);
   assert.equal(fixtureLoanChecks.getRange("B7").formulas[0][0], "=RATE('Inputs'!$B$8,'Amortization'!$C$2,'Inputs'!$B$2,0,'Inputs'!$B$6,'Inputs'!$B$7)");
   assert.ok(Math.abs(fixtureLoanChecks.getRange("B7").values[0][0] - 0.01) < 1e-10);
-  assert.deepEqual(fixtureLoanChecks.getRange("E2:E8").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
+  assert.equal(fixtureLoanChecks.getRange("B8").formulas[0][0], "=PV('Inputs'!$B$7,'Inputs'!$B$8,'Amortization'!$C$2,0,'Inputs'!$B$6)");
+  assert.equal(fixtureLoanChecks.getRange("B9").formulas[0][0], "=FV('Inputs'!$B$7,'Inputs'!$B$8,'Amortization'!$C$2,'Inputs'!$B$2,'Inputs'!$B$6)");
+  assert.equal(fixtureLoanChecks.getRange("B10").formulas[0][0], "=NPER('Inputs'!$B$7,'Amortization'!$C$2,'Inputs'!$B$2,0,'Inputs'!$B$6)");
+  assert.ok(Math.abs(fixtureLoanChecks.getRange("B8").values[0][0] - 100000) < 1e-7);
+  assert.ok(Math.abs(fixtureLoanChecks.getRange("B9").values[0][0]) < 1e-7);
+  assert.ok(Math.abs(fixtureLoanChecks.getRange("B10").values[0][0] - 12) < 1e-10);
+  assert.deepEqual(fixtureLoanChecks.getRange("E2:E11").values, Array.from({ length: 10 }, () => ["OK"]));
   assert.equal(fixtureLoanChecks.conditionalFormattings.items.length, 2);
 
   const assetFixture = await runFixture("asset-depreciation");
@@ -185,6 +191,9 @@ try {
   assert.equal(loanAmortizationResult.verification.ok, true);
   assert.match(loanAmortizationResult.inspection.ndjson, /IPMT/);
   assert.match(loanAmortizationResult.inspection.ndjson, /PPMT/);
+  assert.match(loanAmortizationResult.checksInspection.ndjson, /PV/);
+  assert.match(loanAmortizationResult.checksInspection.ndjson, /FV/);
+  assert.match(loanAmortizationResult.checksInspection.ndjson, /NPER/);
   const loanAmortizationWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(loanAmortizationPath));
   loanAmortizationWorkbook.recalculate();
   const loanAmortization = loanAmortizationWorkbook.worksheets.getItem("Amortization");
@@ -194,7 +203,13 @@ try {
   assert.ok(Math.abs(loanAmortization.getRange("F16").values[0][0]) < 1e-7);
   assert.equal(loanAmortizationChecks.getRange("B9").formulas[0][0], "=RATE('Inputs'!$B$11,'Amortization'!$C$5,'Inputs'!$B$5,0,'Inputs'!$B$9,'Inputs'!$B$10)");
   assert.ok(Math.abs(loanAmortizationChecks.getRange("B9").values[0][0] - 0.01) < 1e-10);
-  assert.deepEqual(loanAmortizationChecks.getRange("E4:E10").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
+  assert.equal(loanAmortizationChecks.getRange("B10").formulas[0][0], "=PV('Inputs'!$B$10,'Inputs'!$B$11,'Amortization'!$C$5,0,'Inputs'!$B$9)");
+  assert.equal(loanAmortizationChecks.getRange("B11").formulas[0][0], "=FV('Inputs'!$B$10,'Inputs'!$B$11,'Amortization'!$C$5,'Inputs'!$B$5,'Inputs'!$B$9)");
+  assert.equal(loanAmortizationChecks.getRange("B12").formulas[0][0], "=NPER('Inputs'!$B$10,'Amortization'!$C$5,'Inputs'!$B$5,0,'Inputs'!$B$9)");
+  assert.ok(Math.abs(loanAmortizationChecks.getRange("B10").values[0][0] - 100000) < 1e-7);
+  assert.ok(Math.abs(loanAmortizationChecks.getRange("B11").values[0][0]) < 1e-7);
+  assert.ok(Math.abs(loanAmortizationChecks.getRange("B12").values[0][0] - 12) < 1e-10);
+  assert.deepEqual(loanAmortizationChecks.getRange("E4:E13").values, Array.from({ length: 10 }, () => ["OK"]));
   const loanAmortizationQa = await verifyWorkbookFile(loanAmortizationPath, {
     outputDir: path.join(outputDir, "openchestnut-loan-amortization-native-qa"),
     sheetName: "Amortization",
