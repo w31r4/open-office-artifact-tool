@@ -458,6 +458,43 @@ export function calculateNpv({ rate, cashFlows }, helpers) {
   return discountedSum(safeCashFlows.values, safeCashFlows.values.map((_, index) => index + 1), safeRate.value);
 }
 
+export function calculateMirr({ cashFlows, financeRate, reinvestRate }, helpers) {
+  const safeCashFlows = finiteSeries(cashFlows, helpers);
+  if (safeCashFlows.error) return safeCashFlows.error;
+  if (safeCashFlows.values.length < 2 || !hasReturnSignPattern(safeCashFlows.values)) return "#NUM!";
+  const safeFinanceRate = validRate(financeRate, helpers);
+  if (safeFinanceRate.error) return safeFinanceRate.error;
+  const safeReinvestRate = validRate(reinvestRate, helpers);
+  if (safeReinvestRate.error) return safeReinvestRate.error;
+
+  const finalPeriod = safeCashFlows.values.length - 1;
+  const financeLogRate = Math.log1p(safeFinanceRate.value);
+  const reinvestLogRate = Math.log1p(safeReinvestRate.value);
+  if (!Number.isFinite(financeLogRate) || !Number.isFinite(reinvestLogRate)) return "#NUM!";
+
+  let negativePresentValue = 0;
+  let positiveFutureValue = 0;
+  for (let index = 0; index <= finalPeriod; index += 1) {
+    const cashFlow = safeCashFlows.values[index];
+    if (cashFlow < 0) {
+      const discount = Math.exp(-index * financeLogRate);
+      const presentValue = cashFlow * discount;
+      if (!Number.isFinite(discount) || !Number.isFinite(presentValue)) return "#NUM!";
+      negativePresentValue += presentValue;
+    } else if (cashFlow > 0) {
+      const growth = Math.exp((finalPeriod - index) * reinvestLogRate);
+      const futureValue = cashFlow * growth;
+      if (!Number.isFinite(growth) || !Number.isFinite(futureValue)) return "#NUM!";
+      positiveFutureValue += futureValue;
+    }
+    if (!Number.isFinite(negativePresentValue) || !Number.isFinite(positiveFutureValue)) return "#NUM!";
+  }
+
+  const ratio = -positiveFutureValue / negativePresentValue;
+  const result = Math.pow(ratio, 1 / finalPeriod) - 1;
+  return Number.isFinite(ratio) && ratio > 0 && Number.isFinite(result) ? result : "#NUM!";
+}
+
 export function calculateXnpv({ rate, cashFlows, dates }, helpers) {
   const safeRate = validRate(rate, helpers);
   if (safeRate.error) return safeRate.error;

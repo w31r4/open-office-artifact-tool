@@ -228,6 +228,28 @@ assert.ok(Math.abs(cumulativePaymentValues[4] + 52.3809523809524) < 1e-10);
 assert.ok(Math.abs(cumulativePaymentValues[5] + 995.238095238095) < 1e-10);
 assert.deepEqual(cumulativePaymentValues.slice(6, 14), Array.from({ length: 8 }, () => "#NUM!"));
 assert.equal(cumulativePaymentValues[14], "#VALUE!");
+financialSheet.getRange("AA1:AA8").values = [[-100000], [30000], [35000], [40000], [45000], [-100], [0], [100]];
+financialSheet.getRange("AB1:AB11").formulas = [
+  ["=MIRR(AA1:AA5,0.1,0.12)"],
+  ["=MIRR(AA1:AA5,0,0)"],
+  ["=MIRR(AA1:AA5,-0.5,-0.25)"],
+  ["=MIRR(AA1:AA5,-1,0.1)"],
+  ["=MIRR(AA1:AA5,0.1,-1)"],
+  ["=MIRR(AA6:AA8,0.1,0.1)"],
+  ["=MIRR(AA7:AA8,0.1,0.1)"],
+  ["=MIRR(AA3:AA5,0.1,0.1)"],
+  ["=MIRR(AA1:AA5,0.1,0.1,1)"],
+  ["=MIRR(AA1:AA5,0.1)"],
+  ["=MIRR(AA1:AA5,\"bad\",0.1)"],
+];
+const mirrValues = financialSheet.getRange("AB1:AB11").values.flat();
+assert.ok(Math.abs(mirrValues[0] - 0.151560419415717) < 1e-12);
+assert.ok(Math.abs(mirrValues[1] - 0.106681919700321) < 1e-12);
+assert.ok(Math.abs(mirrValues[2] - 0.0178743975830735) < 1e-12);
+assert.equal(mirrValues[5], 0);
+assert.deepEqual(mirrValues.slice(3, 5), ["#NUM!", "#NUM!"]);
+assert.deepEqual(mirrValues.slice(6, 8), ["#NUM!", "#NUM!"]);
+assert.deepEqual(mirrValues.slice(8), ["#VALUE!", "#VALUE!", "#VALUE!"]);
 financialSheet.getRange("G1:G2").values = [[-100], [110]];
 financialSheet.getRange("H1:H2").formulas = [
   ["=DATE(2017,1,1)"],
@@ -267,11 +289,14 @@ assert.deepEqual(financialRoundTrip.worksheets.getItem("Cash Flows").getRange("P
 assert.deepEqual(financialRoundTrip.worksheets.getItem("Cash Flows").getRange("U1:U8").formulas, financialSheet.getRange("U1:U8").formulas);
 assert.deepEqual(financialRoundTrip.worksheets.getItem("Cash Flows").getRange("V1:X10").formulas, financialSheet.getRange("V1:X10").formulas);
 assert.deepEqual(financialRoundTrip.worksheets.getItem("Cash Flows").getRange("Y1:Z15").formulas, financialSheet.getRange("Y1:Z15").formulas);
+assert.deepEqual(financialRoundTrip.worksheets.getItem("Cash Flows").getRange("AB1:AB11").formulas, financialSheet.getRange("AB1:AB11").formulas);
 const financialLimitWorkbook = Workbook.create();
 const financialLimitSheet = financialLimitWorkbook.worksheets.add("Cash flow limit");
 financialLimitSheet.getRange("A1:A10001").values = Array.from({ length: 10_001 }, (_, index) => [index === 0 ? -100 : 1]);
 financialLimitSheet.getRange("B1").formulas = [["=NPV(0.1,A1:A10001)"]];
+financialLimitSheet.getRange("C1").formulas = [["=MIRR(A1:A10001,0.1,0.1)"]];
 assert.equal(financialLimitSheet.getRange("B1").values[0][0], "#NUM!");
+assert.equal(financialLimitSheet.getRange("C1").values[0][0], "#NUM!");
 
 sheet.getRange("T2").formulas = [["=SEQUENCE(2,2,10,1)"]];
 const spill = sheet.getRange("T2:U3");

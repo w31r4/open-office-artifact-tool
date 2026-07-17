@@ -35,7 +35,7 @@ import {
 } from "./range-operations.mjs";
 import { createSpreadsheetSparklineClasses } from "./sparklines.mjs";
 import { formulaTimeParts, formulaTimeSerial, parseFormulaDateText, parseFormulaNumberText, parseFormulaTimeText } from "./formula-coercion.mjs";
-import { calculateCumipmt, calculateCumprinc, calculateDb, calculateDdb, calculateFv, calculateIpmt, calculateIrr, calculateNper, calculateNpv, calculatePmt, calculatePpmt, calculatePv, calculateRate, calculateSln, calculateXirr, calculateXnpv } from "./financial-formulas.mjs";
+import { calculateCumipmt, calculateCumprinc, calculateDb, calculateDdb, calculateFv, calculateIpmt, calculateIrr, calculateMirr, calculateNper, calculateNpv, calculatePmt, calculatePpmt, calculatePv, calculateRate, calculateSln, calculateXirr, calculateXnpv } from "./financial-formulas.mjs";
 import { createWorkbookWindowCollection, worksheetWindowMemberships } from "./workbook-windows.mjs";
 import { decoder, encoder, toUint8Array } from "../shared/binary.mjs";
 import { FileBlob } from "../shared/file-blob.mjs";
@@ -3768,6 +3768,9 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
       : "#VALUE!";
     case "NPV": return args.length >= 2
       ? calculateNpv({ rate: scalar(0), cashFlows: values(args.slice(1)) }, financialHelpers)
+      : "#VALUE!";
+    case "MIRR": return args.length === 3
+      ? calculateMirr({ cashFlows: values([args[0]]), financeRate: scalar(1), reinvestRate: scalar(2) }, financialHelpers)
       : "#VALUE!";
     case "XNPV": return args.length === 3
       ? calculateXnpv({ rate: scalar(0), cashFlows: values([args[1]]), dates: values([args[2]]) }, financialHelpers)
