@@ -51,7 +51,7 @@ The release candidate is acceptable only when all of the following are true:
 - when explicitly configured, the real optional-provider test covers ReportLab creation, pdfplumber extraction, type-aware pypdf text/radio/checkbox forms and annotations, typed pypdf merge/reorder/selective watermarking, PyMuPDF rewrite/incremental/page/text/image/form/annotation edits, real redaction/scrub/residue scans, capped numerical text-fit behavior, canonical audit byte binding, and typed Poppler source/output comparison;
 - Open XML SDK validation passes for generated Office fixtures;
 - configured LibreOffice/Poppler/Playwright/native render gates pass where available;
-- a packed clean install completes all three Office roundtrips and PDF smoke while `dotnet` is absent from `PATH`;
+- a production-only packed clean install completes all three Office roundtrips, PDF smoke, and a real packaged Template Creator invocation while `dotnet` is absent from `PATH`;
 - two clean OpenChestnut builds produce the same runtime file set and hashes;
 - package contents contain no legacy Office codec files, C# build output, tests, or repository-only scripts;
 - package metadata, version `0.2.0`, licenses, third-party notices, SBOM, and integrity manifest agree;
@@ -126,7 +126,10 @@ The complete local gate passed `npm test`, `npm run docs:api`,
 `5/5`. Two clean WASM builds produced the same 39 audited files and the same
 manifest-bound 38-file, 14,324,412-byte runtime. The clean-install tarball
 contains 434 files, is 9,297,469 bytes compressed and 23,178,713 bytes
-unpacked. The final candidate at commit
+unpacked. The pack gate now also invokes Template Creator from that offline,
+production-only installation, validates the generated spreadsheet-template
+sidecar, and proves the retained XLSX and PNG bytes exactly match its inputs.
+The final candidate at commit
 `4f3dbbb4f95081e1c86747e88c10b4b16722ad0d` passed the hosted Linux `ci`
 workflow in [GitHub Actions run 29596412072](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29596412072)
 in 4m40s, covering npm installation, deterministic OpenChestnut verification,
