@@ -1206,6 +1206,34 @@ function opaquePresentationSnapshot(object) {
   });
 }
 
+function presentationOpaque(object, original, snapshot, assetCatalog) {
+  if (opaquePresentationSnapshot(object) !== snapshot) {
+    const message = object.oleWorkbook
+      ? `Presentation native element ${object.id} changed outside its bounded embedded-workbook replacement boundary.`
+      : `Presentation native element ${object.id} is source-bound and read-only in OpenChestnut 0.2.`;
+    throw new OpenChestnutCodecError(message, [], { code: "unsupported_presentation_edit" });
+  }
+  const replacement = object._embeddedWorkbookReplacementBytes?.();
+  if (!replacement) return original;
+  const originalOpaque = original?.content?.case === "opaque" ? original.content.value : undefined;
+  if (!object.oleWorkbook || !originalOpaque?.oleWorkbook) {
+    throw new OpenChestnutCodecError(`Presentation native element ${object.id} has no source-bound embedded XLSX workbook.`, [], { code: "unsupported_presentation_edit" });
+  }
+  return {
+    ...original,
+    content: {
+      case: "opaque",
+      value: {
+        ...originalOpaque,
+        oleWorkbook: {
+          ...originalOpaque.oleWorkbook,
+          replacementAssetId: assetCatalog.addOleWorkbook(replacement),
+        },
+      },
+    },
+  };
+}
+
 export function presentationEnvelope(presentation, protocolVersion) {
   if (!(presentation instanceof Presentation)) throw new TypeError("exportPptxWithOpenChestnut expects a Presentation instance.");
   if (!presentation.slides?.items?.length) throw new OpenChestnutCodecError("Presentation must contain at least one slide.", [], { code: "missing_slides" });
@@ -1279,8 +1307,7 @@ export function presentationEnvelope(presentation, protocolVersion) {
             if (entry.wire.content.case === "connector") return presentationConnector(entry.model, entry.wire);
             if (entry.wire.content.case === "chart") return presentationChart(entry.model, entry.wire);
             if (entry.wire.content.case === "group") return presentationGroup(entry.model, entry.wire, assetCatalog);
-            if (opaquePresentationSnapshot(entry.model) !== entry.snapshot) throw new OpenChestnutCodecError(`Presentation native element ${entry.model.id} is source-bound and read-only in OpenChestnut 0.2.`, [], { code: "unsupported_presentation_edit" });
-            return entry.wire;
+            return presentationOpaque(entry.model, entry.wire, entry.snapshot, assetCatalog);
           })
         : directSlideElements(slide)
           .filter((element) => element instanceof Shape || element instanceof ImageElement || element instanceof TableElement || element instanceof ChartElement || element instanceof GroupShape || slide.connectors.items.includes(element))

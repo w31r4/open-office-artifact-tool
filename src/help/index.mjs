@@ -193,7 +193,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "nativeObject.setName", summary: "Native OLE, SmartArt/diagram, and contentPart objects imported through OpenChestnut are source-bound and read-only; setName rejects instead of mutating the preserved package graph." },
   { artifactKind: "presentation", kind: "api", name: "nativeObject.setPosition", summary: "Native OLE, SmartArt/diagram, and contentPart objects imported through OpenChestnut are source-bound and read-only; setPosition rejects instead of rewriting their geometry or payload graph." },
   { artifactKind: "presentation", kind: "api", name: "nativeObject.getEmbeddedWorkbook", summary: "Read a defensive FileBlob copy of the XLSX payload from an eligible source-bound top-level OLE object without exposing arbitrary native-part mutation." },
-  { artifactKind: "presentation", kind: "api", name: "nativeObject.replaceEmbeddedWorkbook", summary: "OLE payload replacement is unsupported in OpenChestnut 0.2. The method fails explicitly; getEmbeddedWorkbook remains available for read-only inspection of a uniquely bound XLSX payload." },
+  { artifactKind: "presentation", kind: "api", name: "nativeObject.replaceEmbeddedWorkbook", summary: "Replace only the XLSX payload of an eligible imported top-level OLE object. OpenChestnut validates the new workbook and immutable source binding, preserves the OLE shell, relationships, preview, and all other native parts, and fails closed for malformed or ambiguous graphs." },
   { artifactKind: "presentation", kind: "api", name: "slide.groups.add", summary: "Author recursive native DrawingML p:grpSp trees with outer off/ext and local chOff/chExt coordinates. The bounded profile supports modeled shapes, connectors, images, tables, charts, and nested groups; canonical imported groups allow fixed-topology semantic edits, while group-level fills/effects, locks, transforms, extensions, or unsupported descendants remain opaque and read-only." },
   { artifactKind: "presentation", kind: "api", name: "slide.compose", summary: "Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph/text, shape, table, chart, image, and rule nodes into editable slide objects." },
   { artifactKind: "presentation", kind: "api", name: "slide.autoLayout", summary: "Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options." },
@@ -217,9 +217,9 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.inspectPptx", summary: "Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.exportPptx", summary: "Serialize PPTX through the single bundled OpenChestnut codec. Only limits is accepted; legacy codec and lossy-fallback options fail explicitly." },
-  { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import PPTX through the single bundled OpenChestnut codec with source-bound opaque preservation and fail-closed edits." },
-  { artifactKind: "presentation", kind: "api", name: "exportPptxWithOpenChestnut", summary: "Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures with native crop/contain/cover semantics, fixed-grid plain-text tables, recursive native p:grpSp trees, plain-text speaker notes, and source-free bar/line/pie charts. Recognized imported direct backgrounds, picture source rectangles, canonical fixed-topology groups, and simple notes bodies are hash-bound and editable; inherited or complex graphs remain preserved and fail closed on unsupported mutation." },
-  { artifactKind: "presentation", kind: "api", name: "importPptxWithOpenChestnut", summary: "Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich text, rectangular pictures and native source rectangles, tables, connectors, recursive canonical p:grpSp groups, bar/line/pie charts, and plain-text speaker notes. Complex backgrounds/blips/groups, rich notes, and other unsupported content remain source-bound and read-only." },
+  { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import PPTX through the single bundled OpenChestnut codec with source-bound opaque preservation, eligible OLE workbook payload access/replacement, and fail-closed edits." },
+  { artifactKind: "presentation", kind: "api", name: "exportPptxWithOpenChestnut", summary: "Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures with native crop/contain/cover semantics, fixed-grid plain-text tables, recursive native p:grpSp trees, plain-text speaker notes, source-free bar/line/pie charts, and validated payload-only replacement for eligible imported OLE workbooks. Recognized imported direct backgrounds, picture source rectangles, canonical fixed-topology groups, simple notes bodies, and eligible OLE bindings are hash-bound and editable; inherited or complex graphs remain preserved and fail closed on unsupported mutation." },
+  { artifactKind: "presentation", kind: "api", name: "importPptxWithOpenChestnut", summary: "Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich text, rectangular pictures and native source rectangles, tables, connectors, recursive canonical p:grpSp groups, bar/line/pie charts, plain-text speaker notes, and defensive payload access for eligible OLE workbooks. Complex backgrounds/blips/groups, rich notes, ambiguous OLE graphs, and other unsupported content remain source-bound and read-only." },
   { artifactKind: "presentation", kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
   { artifactKind: "presentation", kind: "api", name: "compose.paragraph", summary: "Create an editable text block with name, className/style text tokens, and stable inspect output." },
   { artifactKind: "presentation", kind: "api", name: "compose.text", summary: "Create the same editable paragraph node through the reference-template-compatible children-first text(children, props) helper." },
@@ -276,8 +276,10 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "pdf.layoutJson", summary: "Return modeled PDF page layout JSON with page text, positioned text items, explicit/effective reading order, layout regions, normalized table cells/spans/header IDs, images, charts, links, and target/search context slicing." },
   { artifactKind: "pdf", kind: "api", name: "pdf.verify", summary: "Return QA issues for invalid H1-H6 nesting, missing/generic Figure alternative text, meaningless/unsafe links, cross-page logical-table continuity, incomplete/duplicate/unknown reading-order targets, empty pages, text extraction sanity, geometry/bounds, invalid images, table semantics, and chart data." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled artifact as a real multi-page tagged PDF 1.7 whose logical structure follows explicit page reading order without changing paint order, emits semantic H1-H6 headings, meaningful Figure /Alt text, Link annotations with OBJR associations, /Artifact marked content, and constrained logical Tables spanning consecutive pages, and preserves language/title, Table/TR/TH/TD hierarchy, optional Unicode TrueType embedding, positioned text, vector charts, and PNG/JPEG images." },
-  { artifactKind: "pdf", kind: "api", name: "PdfFile.inspectPdf", summary: "Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, reading-order IDs, H1-H6 role counts, Figure alt-text, Link annotation/URI/StructParent, Artifact counts, font evidence, structure roles/table attributes, and marked-content count." },
-  { artifactKind: "pdf", kind: "api", name: "PdfFile.importPdf", summary: "Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, reconstruct tables from positioned text geometry when explicit tables are absent, or fall back to heuristic visible-text/table extraction." },
+  { artifactKind: "pdf", kind: "api", name: "PdfFile.inspectPdf", summary: "Inspect a path or PDF bytes after a pre-WASM input budget, combining native MuPDF page/object/annotation/widget/link facts with bounded tagged-PDF, language, reading-order, heading, Figure, Link, Artifact, font, and table-structure evidence." },
+  { artifactKind: "pdf", kind: "api", name: "PdfFile.importPdf", summary: "Reopen package-generated metadata losslessly or lazily use required MuPDF.js for arbitrary PDFs, producing a bounded reconstructed extraction/QA view with text geometry, raster placements and transforms, links, annotations, widgets, and heuristic table candidates; the view is never an edit representation." },
+  { artifactKind: "pdf", kind: "api", name: "PdfFile.renderPdf", summary: "Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or JPEG, enforcing input, page/object, DPI, and preallocation pixel budgets before returning a FileBlob." },
+  { artifactKind: "pdf", kind: "api", name: "PdfFile.editPdf", summary: "Apply bounded direct-original MuPDF.js operations with explicit rewrite or byte-prefix-verified incremental save, object-level signature detection, atomic caller-controlled output, and fail-closed rejection of incremental redaction/deletion, signed incremental edits, radio export ambiguity, and unsupported operations." },
   { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter to extract page geometry, positioned text, heuristic tables, and bounded embedded raster or stencil-mask PNG images with placement boxes." },
 
   { artifactKind: "shared", kind: "api", name: "verifyArtifact", summary: "Run an artifact's verify() method and return a bounded NDJSON QA report." },
@@ -423,13 +425,16 @@ const HELP_DETAIL_OVERRIDES = {
     },
   },
   "PdfFile.importPdf": {
-    examples: ["await PdfFile.importPdf(blob, { parser: createPdfjsParser() })"],
+    examples: ["await PdfFile.importPdf('third-party.pdf', { limits: { maxBytes: 64 * 1024 * 1024 }, includeImages: true })", "await PdfFile.importPdf(blob, { parser: createPdfjsParser(), preferParser: true })"],
     schema: {
       parameters: {
-        blob: { type: "FileBlob|Uint8Array", required: true, description: "PDF input bytes." },
+        blob: { type: "string|FileBlob|Uint8Array|ArrayBuffer", required: true, description: "PDF path or input bytes. Paths and Blob-like inputs are size-checked before materialization." },
         parser: { type: "function", description: "Optional parser adapter returning pages/textItems/tables/images." },
         preferParser: { type: "boolean", description: "Use parser even if clean-room metadata is embedded." },
         parserName: { type: "string", description: "Name recorded in artifact metadata." },
+        password: { type: "string", description: "Password for an encrypted PDF." },
+        includeImages: { type: "boolean", description: "Extract bounded raster placements; defaults to true." },
+        limits: { type: "object", description: "maxBytes, maxPages, maxObjects, maxImages, maxImagePixels, maxTotalImagePixels, and maxTotalImageBytes budgets." },
       },
       returns: { pdf: { type: "PdfArtifact", description: "Modeled PDF artifact with inspect/resolve/render/verify APIs." } },
     },
@@ -472,11 +477,42 @@ const HELP_DETAIL_OVERRIDES = {
     examples: ["await PdfFile.inspectPdf(pdf, { maxObjects: 200, maxChars: 12000 })"],
     schema: {
       parameters: {
-        pdf: { type: "FileBlob|Uint8Array", required: true, description: "PDF file bytes." },
+        pdf: { type: "string|FileBlob|Uint8Array|ArrayBuffer", required: true, description: "PDF path or bytes." },
+        limits: { type: "object", description: "Input, page, and object budgets applied before or during native inspection." },
         maxObjects: { type: "number", description: "Maximum indirect object records to inspect." },
         maxChars: { type: "number", description: "Maximum bounded NDJSON output size." },
       },
       returns: { inspection: { type: "object", description: "PDF file summary with tagged/language/structure evidence plus bounded indirect object records." } },
+    },
+  },
+  "PdfFile.renderPdf": {
+    examples: ["await PdfFile.renderPdf(pdf, { page: 1, dpi: 144, format: 'png' })"],
+    schema: {
+      parameters: {
+        pdf: { type: "string|FileBlob|Uint8Array|ArrayBuffer", required: true, description: "Original PDF path or bytes." },
+        page: { type: "number", description: "One-based page number; defaults to 1." },
+        dpi: { type: "number", description: "Resolution greater than 0 and no more than 1200; defaults to 144." },
+        format: { type: "string", description: "png or jpeg." },
+        quality: { type: "number", description: "JPEG quality from 1 through 100." },
+        password: { type: "string", description: "Password for an encrypted PDF." },
+        limits: { type: "object", description: "Input/page/object and maxRenderPixels budgets." },
+      },
+      returns: { blob: { type: "FileBlob", description: "Native PNG or JPEG page bytes with provider, page, DPI, and dimensions metadata." } },
+    },
+  },
+  "PdfFile.editPdf": {
+    examples: ["await PdfFile.editPdf(pdf, { savePolicy: 'rewrite', operations: [{ type: 'add_text_annotation', page: 1, text: 'Review' }] })"],
+    schema: {
+      parameters: {
+        pdf: { type: "string|FileBlob|Uint8Array|ArrayBuffer", required: true, description: "Original PDF path or bytes." },
+        operations: { type: "object[]", required: true, description: "Typed MuPDF operations: add_text_annotation, fill_form, delete_page, rearrange_pages, set_metadata, delete_embedded_file, delete_link, redact_text, or redact_rect." },
+        savePolicy: { type: "string", description: "rewrite or incremental. Incremental is forbidden for redaction, delete operations, and signed input." },
+        allowSigned: { type: "boolean", description: "Acknowledge signed input after external review; never bypasses the incremental prohibition." },
+        invalidateSignatures: { type: "boolean", description: "Required with allowSigned for a deliberate signed-PDF rewrite." },
+        password: { type: "string", description: "Password for an encrypted PDF." },
+        limits: { type: "object", description: "Input/page/object budgets." },
+      },
+      returns: { blob: { type: "FileBlob", description: "Edited PDF bytes with provider, save policy, signature state, byte counts, and applied-operation evidence." } },
     },
   },
   "PdfArtifact.create": {
@@ -1143,8 +1179,8 @@ const PRESENTATION_HELP_SCHEMAS = {
   }, "nativeObject", "NativePresentationObject", "No mutation is performed; native geometry and payload graphs remain source-bound and read-only."),
   "nativeObject.getEmbeddedWorkbook": helpSchema({}, "workbook", "FileBlob", "Defensive XLSX FileBlob copy with source part-path and SHA-256 metadata. Available only for a uniquely bound top-level OLE package relationship."),
   "nativeObject.replaceEmbeddedWorkbook": helpSchema({
-    workbook: { type: "FileBlob|Uint8Array|ArrayBuffer", required: true, description: "Requested XLSX payload. Replacement is unsupported in OpenChestnut 0.2 and the method fails explicitly." },
-  }, "nativeObject", "NativePresentationObject", "No mutation is performed; getEmbeddedWorkbook is the supported read-only operation."),
+    workbook: { type: "FileBlob|Uint8Array|ArrayBuffer|ArrayBufferView", required: true, description: "Replacement XLSX bytes, copied defensively and limited to 16 MiB before canonical export validation." },
+  }, "nativeObject", "NativePresentationObject", "Queues one payload-only replacement on an eligible source-bound top-level OLE object. Export preserves the OLE shell, relationship topology, preview image, and other native parts; invalid XLSX or changed source bindings fail closed."),
   "slide.groups.add": helpSchema({
     name: { type: "string", description: "Inspectable group name." },
     position: { type: "object", required: true, description: "Group frame in parent or slide pixel coordinates." },
@@ -1308,7 +1344,7 @@ const PRESENTATION_HELP_SCHEMAS = {
   "PresentationFile.importPptx": helpSchema({
     pptx: { type: "FileBlob|Uint8Array", required: true, description: "PPTX package bytes." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
-  }, "presentation", "Presentation", "Imported presentation facade with editable core objects, recognized direct slide backgrounds, canonical fixed-topology recursive groups, and simple plain-text speaker notes; complex backgrounds/groups, rich notes, Master/Layout, comments, themes, native objects, placeholders, and unsupported package graphs remain source-bound."),
+  }, "presentation", "Presentation", "Imported presentation facade with editable core objects, recognized direct slide backgrounds, canonical fixed-topology recursive groups, simple plain-text speaker notes, and payload-only replacement for eligible source-bound OLE workbooks; complex backgrounds/groups, rich notes, Master/Layout, comments, themes, other native objects, placeholders, and unsupported package graphs remain source-bound."),
   "exportPptxWithOpenChestnut": helpSchema({
     presentation: { type: "Presentation", required: true, description: "Presentation facade within the bounded direct-slide-background/shape/rich-text/picture/fixed-table/connector/recursive-group/plain-text-notes/source-free bar-line-pie chart boundary. Complex backgrounds or groups, rich notes, and other imported advanced package graphs must remain unchanged." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
@@ -1316,7 +1352,7 @@ const PRESENTATION_HELP_SCHEMAS = {
   "importPptxWithOpenChestnut": helpSchema({
     input: { type: "FileBlob|Uint8Array|ArrayBuffer", required: true, description: "PPTX package bytes." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
-  }, "presentation", "Presentation", "Imported presentation facade with editable bounded direct slide backgrounds, shapes, rich text, pictures, tables, connectors, recursive canonical groups, and bar/line/pie charts; advanced package graphs are read-only, and eligible OLE workbooks are available only through getEmbeddedWorkbook."),
+  }, "presentation", "Presentation", "Imported presentation facade with editable bounded direct slide backgrounds, shapes, rich text, pictures, tables, connectors, recursive canonical groups, and bar/line/pie charts; advanced package graphs are read-only except for validated payload-only replacement on eligible OLE workbooks through getEmbeddedWorkbook and replaceEmbeddedWorkbook."),
 };
 
 const WORKBOOK_HELP_SCHEMAS = {

@@ -20,6 +20,7 @@ Use the presentation facades to create PowerPoint-style decks in TypeScript.
 - JSX node props and sizing mechanics: [`references/jsx.md`](./references/jsx.md).
 - Tailwind-like visual strings: [`references/tokens.md`](./references/tokens.md).
 - Inspect, resolve, edit, preview, and re-inspect loops: [`references/cookbook/imported-deck.md`](./references/cookbook/imported-deck.md).
+- Read or replace a uniquely bound embedded XLSX payload without rewriting its OLE shell: [`references/ole-workbooks.spec.md`](./references/ole-workbooks.spec.md).
 
 ## Quick start
 

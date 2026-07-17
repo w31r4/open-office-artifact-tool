@@ -189,6 +189,13 @@ try {
   assert.match(groupingReferenceText, /a:chOff\/a:chExt/);
   assert.match(groupingReferenceText, /presentation_group_topology_changed/);
   assert.match(groupingReferenceText, /one opaque, read-only native object/i);
+  const oleWorkbookReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/ole-workbooks.spec.md", "utf8");
+  assert.match(skillText, /artifact_tool\/api\/references\/ole-workbooks\.spec\.md/);
+  assert.match(oleWorkbookReferenceText, /getEmbeddedWorkbook\(\).*replaceEmbeddedWorkbook/s);
+  assert.match(oleWorkbookReferenceText, /preserving the OLE\s+shell, relationship topology, preview image/is);
+  assert.match(oleWorkbookReferenceText, /Microsoft Open XML\s+SDK/);
+  assert.match(oleWorkbookReferenceText, /shared, external, ambiguous, or non-XLSX/);
+  assert.match(oleWorkbookReferenceText, /no lossy reconstruction or silent fallback/i);
 
   console.log("presentation skill smoke ok");
 } finally {

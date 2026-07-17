@@ -31,7 +31,7 @@ assert.strictEqual(text, leafText, "root must re-export the reference-compatible
 assert.strictEqual(FileBlob, LeafFileBlob, "root must re-export the FileBlob constructor binding");
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 279);
+assert.equal(HELP_CATALOG.length, 281);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -230,7 +230,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.sche
 assert.equal(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.schema?.parameters?.diffAlignment?.type, "string");
 assert.equal(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.schema?.parameters?.pixelRegistration?.type, "boolean|number|object");
 const pdfCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "pdf");
-assert.equal(pdfCatalog.length, 20);
+assert.equal(pdfCatalog.length, 22);
 assert.ok(pdfCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.addText")?.schema?.parameters?.bbox?.type, "number[]");
 assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.addText")?.schema?.parameters?.headingLevel?.type, "number");
@@ -248,6 +248,9 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.exportPdf")?.sch
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.exportPdf")?.schema?.parameters?.font?.type || "", /Uint8Array/);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.exportPdf")?.schema?.parameters?.maxFontBytes?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.exportPdf")?.schema?.parameters?.subsetFont?.type, "boolean");
+assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.renderPdf")?.schema?.returns?.blob?.type, "FileBlob");
+assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schema?.parameters?.operations?.required, true);
+assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.summary || "", /MuPDF/);
 const documentCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "document");
 assert.equal(documentCatalog.length, 34);
 assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
@@ -264,7 +267,8 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.sche
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.importPptx")?.schema?.returns?.presentation?.type, "Presentation");
 assert.equal(HELP_CATALOG.find((item) => item.name === "nativeObject.getEmbeddedWorkbook")?.schema?.returns?.workbook?.type, "FileBlob");
 assert.equal(HELP_CATALOG.find((item) => item.name === "nativeObject.replaceEmbeddedWorkbook")?.schema?.parameters?.workbook?.required, true);
-assert.match(HELP_CATALOG.find((item) => item.name === "nativeObject.replaceEmbeddedWorkbook")?.summary || "", /unsupported.*fails explicitly.*read-only inspection/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "nativeObject.replaceEmbeddedWorkbook")?.schema?.parameters?.workbook?.type || "", /ArrayBufferView/);
+assert.match(HELP_CATALOG.find((item) => item.name === "nativeObject.replaceEmbeddedWorkbook")?.summary || "", /replace only the XLSX payload.*preserves the OLE shell.*fails closed/is);
 assert.equal(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /character.*picture bullets.*auto-numbering.*levels.*indents.*spacing/);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /absolute uri.*slideId.*relative action/);

@@ -125,6 +125,23 @@ export function createPresentationAssetCatalog(initialAssets = []) {
       if (!asset || !asset.id.startsWith(PICTURE_ASSET_PREFIX)) fail(`Presentation picture bullet references missing asset ${id || "(missing)"}.`);
       return `data:${asset.contentType};base64,${asset.data.toString("base64")}`;
     },
+    addOleWorkbook(data) {
+      const bytes = Buffer.from(data || []);
+      validateOleWorkbook(XLSX_CONTENT_TYPE, bytes, "Presentation embedded workbook replacement");
+      const digest = sha256(bytes);
+      const id = `${OLE_WORKBOOK_ASSET_PREFIX}${digest}`;
+      if (!byId.has(id)) {
+        if (byId.size >= MAX_ASSET_COUNT) fail(`Presentation exceeds the ${MAX_ASSET_COUNT}-asset budget.`, "presentation_asset_budget_exceeded");
+        byId.set(id, {
+          id,
+          fileName: `embedded-workbook-${digest.slice(0, 16)}.xlsx`,
+          contentType: XLSX_CONTENT_TYPE,
+          data: bytes,
+          sha256: digest,
+        });
+      }
+      return id;
+    },
     assets() {
       return [...byId.values()].map((asset) => ({ ...asset, data: Uint8Array.from(asset.data) }));
     },

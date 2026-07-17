@@ -639,9 +639,11 @@ Experimentally import DOCX bytes through OpenChestnut with source-bound block an
 | `pdf.resolve` | api | Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, reading-order entries, layout regions, tables/table cells, images, charts, and links. |
 | `pdf.verify` | api | Return QA issues for invalid H1-H6 nesting, missing/generic Figure alternative text, meaningless/unsafe links, cross-page logical-table continuity, incomplete/duplicate/unknown reading-order targets, empty pages, text extraction sanity, geometry/bounds, invalid images, table semantics, and chart data. |
 | `PdfArtifact.create` | api | Create a modeled PDF artifact with pages, text, span-aware accessible table regions, image regions, charts, links, and explicit reading order. |
+| `PdfFile.editPdf` | api | Apply bounded direct-original MuPDF.js operations with explicit rewrite or byte-prefix-verified incremental save, object-level signature detection, atomic caller-controlled output, and fail-closed rejection of incremental redaction/deletion, signed incremental edits, radio export ambiguity, and unsupported operations. |
 | `PdfFile.exportPdf` | api | Export a modeled artifact as a real multi-page tagged PDF 1.7 whose logical structure follows explicit page reading order without changing paint order, emits semantic H1-H6 headings, meaningful Figure /Alt text, Link annotations with OBJR associations, /Artifact marked content, and constrained logical Tables spanning consecutive pages, and preserves language/title, Table/TR/TH/TD hierarchy, optional Unicode TrueType embedding, positioned text, vector charts, and PNG/JPEG images. |
-| `PdfFile.importPdf` | api | Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, reconstruct tables from positioned text geometry when explicit tables are absent, or fall back to heuristic visible-text/table extraction. |
-| `PdfFile.inspectPdf` | api | Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, reading-order IDs, H1-H6 role counts, Figure alt-text, Link annotation/URI/StructParent, Artifact counts, font evidence, structure roles/table attributes, and marked-content count. |
+| `PdfFile.importPdf` | api | Reopen package-generated metadata losslessly or lazily use required MuPDF.js for arbitrary PDFs, producing a bounded reconstructed extraction/QA view with text geometry, raster placements and transforms, links, annotations, widgets, and heuristic table candidates; the view is never an edit representation. |
+| `PdfFile.inspectPdf` | api | Inspect a path or PDF bytes after a pre-WASM input budget, combining native MuPDF page/object/annotation/widget/link facts with bounded tagged-PDF, language, reading-order, heading, Figure, Link, Artifact, font, and table-structure evidence. |
+| `PdfFile.renderPdf` | api | Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or JPEG, enforcing input, page/object, DPI, and preallocation pixel budgets before returning a FileBlob. |
 
 ### pdf details
 
@@ -983,6 +985,28 @@ Create a modeled PDF artifact with pages, text, span-aware accessible table regi
 
 - `pdf` (PdfArtifact) — Editable modeled PDF artifact.
 
+#### `PdfFile.editPdf`
+
+Apply bounded direct-original MuPDF.js operations with explicit rewrite or byte-prefix-verified incremental save, object-level signature detection, atomic caller-controlled output, and fail-closed rejection of incremental redaction/deletion, signed incremental edits, radio export ambiguity, and unsupported operations.
+
+**Examples:**
+
+- await PdfFile.editPdf(pdf, { savePolicy: 'rewrite', operations: [{ type: 'add_text_annotation', page: 1, text: 'Review' }] })
+
+**Schema parameters:**
+
+- `pdf` (string|FileBlob|Uint8Array|ArrayBuffer) required — Original PDF path or bytes.
+- `operations` (object[]) required — Typed MuPDF operations: add_text_annotation, fill_form, delete_page, rearrange_pages, set_metadata, delete_embedded_file, delete_link, redact_text, or redact_rect.
+- `savePolicy` (string) — rewrite or incremental. Incremental is forbidden for redaction, delete operations, and signed input.
+- `allowSigned` (boolean) — Acknowledge signed input after external review; never bypasses the incremental prohibition.
+- `invalidateSignatures` (boolean) — Required with allowSigned for a deliberate signed-PDF rewrite.
+- `password` (string) — Password for an encrypted PDF.
+- `limits` (object) — Input/page/object budgets.
+
+**Schema returns:**
+
+- `blob` (FileBlob) — Edited PDF bytes with provider, save policy, signature state, byte counts, and applied-operation evidence.
+
 #### `PdfFile.exportPdf`
 
 Export a modeled artifact as a real multi-page tagged PDF 1.7 whose logical structure follows explicit page reading order without changing paint order, emits semantic H1-H6 headings, meaningful Figure /Alt text, Link annotations with OBJR associations, /Artifact marked content, and constrained logical Tables spanning consecutive pages, and preserves language/title, Table/TR/TH/TD hierarchy, optional Unicode TrueType embedding, positioned text, vector charts, and PNG/JPEG images.
@@ -1007,18 +1031,22 @@ Export a modeled artifact as a real multi-page tagged PDF 1.7 whose logical stru
 
 #### `PdfFile.importPdf`
 
-Import clean-room generated PDFs from metadata, use an injected parser adapter for arbitrary PDFs, normalize parser image bytes/base64 into data URLs, reconstruct tables from positioned text geometry when explicit tables are absent, or fall back to heuristic visible-text/table extraction.
+Reopen package-generated metadata losslessly or lazily use required MuPDF.js for arbitrary PDFs, producing a bounded reconstructed extraction/QA view with text geometry, raster placements and transforms, links, annotations, widgets, and heuristic table candidates; the view is never an edit representation.
 
 **Examples:**
 
-- await PdfFile.importPdf(blob, { parser: createPdfjsParser() })
+- await PdfFile.importPdf('third-party.pdf', { limits: { maxBytes: 64 * 1024 * 1024 }, includeImages: true })
+- await PdfFile.importPdf(blob, { parser: createPdfjsParser(), preferParser: true })
 
 **Schema parameters:**
 
-- `blob` (FileBlob|Uint8Array) required — PDF input bytes.
+- `blob` (string|FileBlob|Uint8Array|ArrayBuffer) required — PDF path or input bytes. Paths and Blob-like inputs are size-checked before materialization.
 - `parser` (function) — Optional parser adapter returning pages/textItems/tables/images.
 - `preferParser` (boolean) — Use parser even if clean-room metadata is embedded.
 - `parserName` (string) — Name recorded in artifact metadata.
+- `password` (string) — Password for an encrypted PDF.
+- `includeImages` (boolean) — Extract bounded raster placements; defaults to true.
+- `limits` (object) — maxBytes, maxPages, maxObjects, maxImages, maxImagePixels, maxTotalImagePixels, and maxTotalImageBytes budgets.
 
 **Schema returns:**
 
@@ -1026,7 +1054,7 @@ Import clean-room generated PDFs from metadata, use an injected parser adapter f
 
 #### `PdfFile.inspectPdf`
 
-Inspect PDF bytes as bounded file/object records including page/object counts, embedded model/EOF integrity, tagged status, language, reading-order IDs, H1-H6 role counts, Figure alt-text, Link annotation/URI/StructParent, Artifact counts, font evidence, structure roles/table attributes, and marked-content count.
+Inspect a path or PDF bytes after a pre-WASM input budget, combining native MuPDF page/object/annotation/widget/link facts with bounded tagged-PDF, language, reading-order, heading, Figure, Link, Artifact, font, and table-structure evidence.
 
 **Examples:**
 
@@ -1034,13 +1062,36 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 
 **Schema parameters:**
 
-- `pdf` (FileBlob|Uint8Array) required — PDF file bytes.
+- `pdf` (string|FileBlob|Uint8Array|ArrayBuffer) required — PDF path or bytes.
+- `limits` (object) — Input, page, and object budgets applied before or during native inspection.
 - `maxObjects` (number) — Maximum indirect object records to inspect.
 - `maxChars` (number) — Maximum bounded NDJSON output size.
 
 **Schema returns:**
 
 - `inspection` (object) — PDF file summary with tagged/language/structure evidence plus bounded indirect object records.
+
+#### `PdfFile.renderPdf`
+
+Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or JPEG, enforcing input, page/object, DPI, and preallocation pixel budgets before returning a FileBlob.
+
+**Examples:**
+
+- await PdfFile.renderPdf(pdf, { page: 1, dpi: 144, format: 'png' })
+
+**Schema parameters:**
+
+- `pdf` (string|FileBlob|Uint8Array|ArrayBuffer) required — Original PDF path or bytes.
+- `page` (number) — One-based page number; defaults to 1.
+- `dpi` (number) — Resolution greater than 0 and no more than 1200; defaults to 144.
+- `format` (string) — png or jpeg.
+- `quality` (number) — JPEG quality from 1 through 100.
+- `password` (string) — Password for an encrypted PDF.
+- `limits` (object) — Input/page/object and maxRenderPixels budgets.
+
+**Schema returns:**
+
+- `blob` (FileBlob) — Native PNG or JPEG page bytes with provider, page, DPI, and dimensions metadata.
 
 ## presentation
 
@@ -1049,10 +1100,10 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `compose.column` | api | Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels. |
 | `compose.paragraph` | api | Create an editable text block with name, className/style text tokens, and stable inspect output. |
 | `compose.text` | api | Create the same editable paragraph node through the reference-template-compatible children-first text(children, props) helper. |
-| `exportPptxWithOpenChestnut` | api | Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures with native crop/contain/cover semantics, fixed-grid plain-text tables, recursive native p:grpSp trees, plain-text speaker notes, and source-free bar/line/pie charts. Recognized imported direct backgrounds, picture source rectangles, canonical fixed-topology groups, and simple notes bodies are hash-bound and editable; inherited or complex graphs remain preserved and fail closed on unsupported mutation. |
-| `importPptxWithOpenChestnut` | api | Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich text, rectangular pictures and native source rectangles, tables, connectors, recursive canonical p:grpSp groups, bar/line/pie charts, and plain-text speaker notes. Complex backgrounds/blips/groups, rich notes, and other unsupported content remain source-bound and read-only. |
+| `exportPptxWithOpenChestnut` | api | Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures with native crop/contain/cover semantics, fixed-grid plain-text tables, recursive native p:grpSp trees, plain-text speaker notes, source-free bar/line/pie charts, and validated payload-only replacement for eligible imported OLE workbooks. Recognized imported direct backgrounds, picture source rectangles, canonical fixed-topology groups, simple notes bodies, and eligible OLE bindings are hash-bound and editable; inherited or complex graphs remain preserved and fail closed on unsupported mutation. |
+| `importPptxWithOpenChestnut` | api | Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich text, rectangular pictures and native source rectangles, tables, connectors, recursive canonical p:grpSp groups, bar/line/pie charts, plain-text speaker notes, and defensive payload access for eligible OLE workbooks. Complex backgrounds/blips/groups, rich notes, ambiguous OLE graphs, and other unsupported content remain source-bound and read-only. |
 | `nativeObject.getEmbeddedWorkbook` | api | Read a defensive FileBlob copy of the XLSX payload from an eligible source-bound top-level OLE object without exposing arbitrary native-part mutation. |
-| `nativeObject.replaceEmbeddedWorkbook` | api | OLE payload replacement is unsupported in OpenChestnut 0.2. The method fails explicitly; getEmbeddedWorkbook remains available for read-only inspection of a uniquely bound XLSX payload. |
+| `nativeObject.replaceEmbeddedWorkbook` | api | Replace only the XLSX payload of an eligible imported top-level OLE object. OpenChestnut validates the new workbook and immutable source binding, preserves the OLE shell, relationships, preview, and all other native parts, and fails closed for malformed or ambiguous graphs. |
 | `nativeObject.setName` | api | Native OLE, SmartArt/diagram, and contentPart objects imported through OpenChestnut are source-bound and read-only; setName rejects instead of mutating the preserved package graph. |
 | `nativeObject.setPosition` | api | Native OLE, SmartArt/diagram, and contentPart objects imported through OpenChestnut are source-bound and read-only; setPosition rejects instead of rewriting their geometry or payload graph. |
 | `Presentation.create` | api | Create a deck model whose canonical OpenChestnut export supports ordinary slides, direct solid/style-reference slide backgrounds, shapes, rich text, tables, images, connectors, recursive native p:grpSp groups, plain-text speaker notes, and source-free bar/line/pie charts. Custom themes, Master/Layout authoring, comments, custom shows, and other package-level features remain outside the source-free PPTX boundary. |
@@ -1076,7 +1127,7 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `presentation.validateLayout` | api | Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow. |
 | `presentation.verify` | api | Return QA issues for layout validation, missing master/layout references, placeholder fidelity, chart/data consistency, table shape, image data, and dangling comments. |
 | `PresentationFile.exportPptx` | api | Serialize PPTX through the single bundled OpenChestnut codec. Only limits is accepted; legacy codec and lossy-fallback options fail explicitly. |
-| `PresentationFile.importPptx` | api | Import PPTX through the single bundled OpenChestnut codec with source-bound opaque preservation and fail-closed edits. |
+| `PresentationFile.importPptx` | api | Import PPTX through the single bundled OpenChestnut codec with source-bound opaque preservation, eligible OLE workbook payload access/replacement, and fail-closed edits. |
 | `PresentationFile.inspectPptx` | api | Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets. |
 | `PresentationFile.patchPptx` | api | Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics. |
 | `shape.text.set` | api | Set plain or structured text with ordered text, field, and line-break inlines; bounded run formatting; character, picture-bullet, or auto-numbered lists; levels, indents, spacing; and external URI, internal-slide, or relative-action hyperlinks. Custom-show links and unmodeled text graphs fail closed in canonical PPTX export. |
@@ -1142,7 +1193,7 @@ Create the same editable paragraph node through the reference-template-compatibl
 
 #### `exportPptxWithOpenChestnut`
 
-Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures with native crop/contain/cover semantics, fixed-grid plain-text tables, recursive native p:grpSp trees, plain-text speaker notes, and source-free bar/line/pie charts. Recognized imported direct backgrounds, picture source rectangles, canonical fixed-topology groups, and simple notes bodies are hash-bound and editable; inherited or complex graphs remain preserved and fail closed on unsupported mutation.
+Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures with native crop/contain/cover semantics, fixed-grid plain-text tables, recursive native p:grpSp trees, plain-text speaker notes, source-free bar/line/pie charts, and validated payload-only replacement for eligible imported OLE workbooks. Recognized imported direct backgrounds, picture source rectangles, canonical fixed-topology groups, simple notes bodies, and eligible OLE bindings are hash-bound and editable; inherited or complex graphs remain preserved and fail closed on unsupported mutation.
 
 **Schema parameters:**
 
@@ -1155,7 +1206,7 @@ Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse sha
 
 #### `importPptxWithOpenChestnut`
 
-Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich text, rectangular pictures and native source rectangles, tables, connectors, recursive canonical p:grpSp groups, bar/line/pie charts, and plain-text speaker notes. Complex backgrounds/blips/groups, rich notes, and other unsupported content remain source-bound and read-only.
+Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich text, rectangular pictures and native source rectangles, tables, connectors, recursive canonical p:grpSp groups, bar/line/pie charts, plain-text speaker notes, and defensive payload access for eligible OLE workbooks. Complex backgrounds/blips/groups, rich notes, ambiguous OLE graphs, and other unsupported content remain source-bound and read-only.
 
 **Schema parameters:**
 
@@ -1164,7 +1215,7 @@ Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich t
 
 **Schema returns:**
 
-- `presentation` (Presentation) — Imported presentation facade with editable bounded direct slide backgrounds, shapes, rich text, pictures, tables, connectors, recursive canonical groups, and bar/line/pie charts; advanced package graphs are read-only, and eligible OLE workbooks are available only through getEmbeddedWorkbook.
+- `presentation` (Presentation) — Imported presentation facade with editable bounded direct slide backgrounds, shapes, rich text, pictures, tables, connectors, recursive canonical groups, and bar/line/pie charts; advanced package graphs are read-only except for validated payload-only replacement on eligible OLE workbooks through getEmbeddedWorkbook and replaceEmbeddedWorkbook.
 
 #### `nativeObject.getEmbeddedWorkbook`
 
@@ -1176,15 +1227,15 @@ Read a defensive FileBlob copy of the XLSX payload from an eligible source-bound
 
 #### `nativeObject.replaceEmbeddedWorkbook`
 
-OLE payload replacement is unsupported in OpenChestnut 0.2. The method fails explicitly; getEmbeddedWorkbook remains available for read-only inspection of a uniquely bound XLSX payload.
+Replace only the XLSX payload of an eligible imported top-level OLE object. OpenChestnut validates the new workbook and immutable source binding, preserves the OLE shell, relationships, preview, and all other native parts, and fails closed for malformed or ambiguous graphs.
 
 **Schema parameters:**
 
-- `workbook` (FileBlob|Uint8Array|ArrayBuffer) required — Requested XLSX payload. Replacement is unsupported in OpenChestnut 0.2 and the method fails explicitly.
+- `workbook` (FileBlob|Uint8Array|ArrayBuffer|ArrayBufferView) required — Replacement XLSX bytes, copied defensively and limited to 16 MiB before canonical export validation.
 
 **Schema returns:**
 
-- `nativeObject` (NativePresentationObject) — No mutation is performed; getEmbeddedWorkbook is the supported read-only operation.
+- `nativeObject` (NativePresentationObject) — Queues one payload-only replacement on an eligible source-bound top-level OLE object. Export preserves the OLE shell, relationship topology, preview image, and other native parts; invalid XLSX or changed source bindings fail closed.
 
 #### `nativeObject.setName`
 
@@ -1518,7 +1569,7 @@ Serialize PPTX through the single bundled OpenChestnut codec. Only limits is acc
 
 #### `PresentationFile.importPptx`
 
-Import PPTX through the single bundled OpenChestnut codec with source-bound opaque preservation and fail-closed edits.
+Import PPTX through the single bundled OpenChestnut codec with source-bound opaque preservation, eligible OLE workbook payload access/replacement, and fail-closed edits.
 
 **Schema parameters:**
 
@@ -1527,7 +1578,7 @@ Import PPTX through the single bundled OpenChestnut codec with source-bound opaq
 
 **Schema returns:**
 
-- `presentation` (Presentation) — Imported presentation facade with editable core objects, recognized direct slide backgrounds, canonical fixed-topology recursive groups, and simple plain-text speaker notes; complex backgrounds/groups, rich notes, Master/Layout, comments, themes, native objects, placeholders, and unsupported package graphs remain source-bound.
+- `presentation` (Presentation) — Imported presentation facade with editable core objects, recognized direct slide backgrounds, canonical fixed-topology recursive groups, simple plain-text speaker notes, and payload-only replacement for eligible source-bound OLE workbooks; complex backgrounds/groups, rich notes, Master/Layout, comments, themes, other native objects, placeholders, and unsupported package graphs remain source-bound.
 
 #### `PresentationFile.inspectPptx`
 

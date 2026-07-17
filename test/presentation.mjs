@@ -9,6 +9,8 @@ import {
   row,
   run,
   shape as composeShape,
+  SpreadsheetFile,
+  Workbook,
 } from "../src/index.mjs";
 import {
   effectivePresentationImageCrop,
@@ -414,6 +416,94 @@ const firstZip = await JSZip.loadAsync(new Uint8Array(await firstExport.arrayBuf
 const firstSlideXml = await firstZip.file("ppt/slides/slide1.xml").async("text");
 assert.match(firstSlideXml, /<a:srcRect[^>]*l="25000"/);
 assert.match(firstSlideXml, /<a:srcRect[^>]*r="25000"/);
+
+// Eligible imported top-level OLE objects expose one deliberately narrow edit:
+// replacing the uniquely bound XLSX payload. The OLE shell, preview image,
+// relationships, source package, and every other native part stay source-owned.
+const embeddedSourceWorkbook = Workbook.create();
+embeddedSourceWorkbook.worksheets.add("Embedded").getRange("A1").values = [["Original embedded workbook"]];
+const embeddedSourceXlsx = await SpreadsheetFile.exportXlsx(embeddedSourceWorkbook);
+const embeddedPreviewBytes = Buffer.from(PNG.split(",")[1], "base64");
+const oleFrame = '<p:graphicFrame xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:nvGraphicFramePr><p:cNvPr id="100" name="Embedded workbook"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="914400" y="914400"/><a:ext cx="3657600" cy="2286000"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/presentationml/2006/ole"><p:oleObj showAsIcon="1" r:id="rIdEmbeddedWorkbook" imgW="965200" imgH="609600" progId="Excel.Sheet.12"><p:embed/><p:pic><p:nvPicPr><p:cNvPr id="0" name=""/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="rIdEmbeddedPreview"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="914400" y="914400"/><a:ext cx="3657600" cy="2286000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic></p:oleObj></a:graphicData></a:graphic></p:graphicFrame>';
+const firstSlideRelationships = await firstZip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
+const oleSource = await PresentationFile.patchPptx(firstExport, [
+  { path: "ppt/slides/slide1.xml", xml: firstSlideXml.replace("</p:spTree>", `${oleFrame}</p:spTree>`) },
+  { path: "ppt/slides/_rels/slide1.xml.rels", xml: firstSlideRelationships.replace("</Relationships>", '<Relationship Id="rIdEmbeddedWorkbook" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="../embeddings/agent-workbook.xlsx"/><Relationship Id="rIdEmbeddedPreview" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/agent-workbook-preview.png"/></Relationships>') },
+  { path: "ppt/embeddings/agent-workbook.xlsx", bytes: embeddedSourceXlsx.bytes, contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+  { path: "ppt/media/agent-workbook-preview.png", bytes: embeddedPreviewBytes, contentType: "image/png" },
+]);
+const oleSourceSnapshot = Uint8Array.from(oleSource.bytes);
+const olePresentation = await PresentationFile.importPptx(oleSource);
+const oleObject = itemByName(olePresentation.slides.getItem(0).nativeObjects.items, "Embedded workbook");
+assert.equal(oleObject.nativeKind, "oleObject");
+assert.equal(oleObject.editable, false);
+assert.deepEqual(oleObject.inspectRecord().editableFields, ["embeddedWorkbook"]);
+assert.throws(() => { oleObject.oleWorkbook = undefined; }, TypeError);
+assert.throws(() => oleObject.setName("Unsafe shell rename"), /read-only/);
+assert.throws(() => oleObject.replaceEmbeddedWorkbook("not bytes"), /FileBlob, Uint8Array, ArrayBuffer/);
+assert.throws(() => oleObject.replaceEmbeddedWorkbook(new Uint8Array()), /1 through 16777216 bytes/);
+assert.throws(() => oleObject.replaceEmbeddedWorkbook(new Uint8Array(16 * 1024 * 1024 + 1)), /1 through 16777216 bytes/);
+const extractedSourceWorkbook = await SpreadsheetFile.importXlsx(oleObject.getEmbeddedWorkbook());
+assert.equal(extractedSourceWorkbook.worksheets.getItem("Embedded").getRange("A1").values[0][0], "Original embedded workbook");
+
+const embeddedReplacementWorkbook = Workbook.create();
+embeddedReplacementWorkbook.worksheets.add("Embedded").getRange("A1:B2").values = [["Replacement workbook", 42], ["Verified", true]];
+const embeddedReplacementXlsx = await SpreadsheetFile.exportXlsx(embeddedReplacementWorkbook);
+const mutableReplacement = Uint8Array.from(embeddedReplacementXlsx.bytes);
+assert.equal(oleObject.replaceEmbeddedWorkbook(mutableReplacement), oleObject);
+mutableReplacement.fill(0);
+const pendingWorkbookFile = oleObject.getEmbeddedWorkbook();
+assert.equal(pendingWorkbookFile.metadata.pendingReplacement, true);
+pendingWorkbookFile.bytes.fill(0);
+const pendingWorkbook = await SpreadsheetFile.importXlsx(oleObject.getEmbeddedWorkbook());
+assert.deepEqual(pendingWorkbook.worksheets.getItem("Embedded").getRange("A1:B2").values, [["Replacement workbook", 42], ["Verified", true]]);
+const replacementView = new DataView(embeddedReplacementXlsx.bytes.buffer, embeddedReplacementXlsx.bytes.byteOffset, embeddedReplacementXlsx.bytes.byteLength);
+assert.equal(oleObject.replaceEmbeddedWorkbook(replacementView), oleObject);
+assert.match(olePresentation.inspect({ kind: "nativeObject", target: oleObject.id, maxChars: 4000 }).ndjson, /"replacementPending":true/);
+
+const oleExport = await PresentationFile.exportPptx(olePresentation);
+assert.deepEqual(oleSource.bytes, oleSourceSnapshot);
+const oleSourceZipForComparison = await JSZip.loadAsync(oleSource.bytes);
+const oleOutputZip = await JSZip.loadAsync(oleExport.bytes);
+assert.deepEqual(Object.keys(oleOutputZip.files).sort(), Object.keys(oleSourceZipForComparison.files).sort());
+for (const partPath of Object.keys(oleSourceZipForComparison.files)) {
+  if (oleSourceZipForComparison.files[partPath].dir || partPath === "ppt/embeddings/agent-workbook.xlsx") continue;
+  assert.deepEqual(
+    await oleOutputZip.file(partPath).async("uint8array"),
+    await oleSourceZipForComparison.file(partPath).async("uint8array"),
+    `OLE payload replacement must preserve ${partPath} byte-for-byte`,
+  );
+}
+assert.deepEqual(await oleOutputZip.file("ppt/embeddings/agent-workbook.xlsx").async("uint8array"), embeddedReplacementXlsx.bytes);
+assert.deepEqual(await oleOutputZip.file("ppt/media/agent-workbook-preview.png").async("uint8array"), Uint8Array.from(embeddedPreviewBytes));
+assert.match(await oleOutputZip.file("ppt/slides/slide1.xml").async("text"), /r:id="rIdEmbeddedWorkbook"/);
+const oleRoundTrip = await PresentationFile.importPptx(oleExport);
+const reboundOleObject = itemByName(oleRoundTrip.slides.getItem(0).nativeObjects.items, "Embedded workbook");
+assert.equal(reboundOleObject.inspectRecord().embeddedWorkbook.replacementPending, false);
+assert.notEqual(reboundOleObject.oleWorkbook.sourceSha256, oleObject.oleWorkbook.sourceSha256);
+const reboundWorkbook = await SpreadsheetFile.importXlsx(reboundOleObject.getEmbeddedWorkbook());
+assert.deepEqual(reboundWorkbook.worksheets.getItem("Embedded").getRange("A1:B2").values, [["Replacement workbook", 42], ["Verified", true]]);
+
+const invalidOlePresentation = await PresentationFile.importPptx(oleSource);
+const invalidOleObject = itemByName(invalidOlePresentation.slides.getItem(0).nativeObjects.items, "Embedded workbook");
+invalidOleObject.replaceEmbeddedWorkbook(Uint8Array.from([0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4]));
+await assert.rejects(
+  () => PresentationFile.exportPptx(invalidOlePresentation),
+  (error) => new Set(["invalid_opc_package", "invalid_presentation_ole_workbook"]).has(error?.code),
+);
+
+const oleSourceZip = await JSZip.loadAsync(oleSource.bytes);
+const oleSourceRelationships = await oleSourceZip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
+const sharedOleSource = await PresentationFile.patchPptx(oleSource, [{
+  path: "ppt/slides/_rels/slide1.xml.rels",
+  xml: oleSourceRelationships.replace("</Relationships>", '<Relationship Id="rIdSharedEmbeddedWorkbook" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="../embeddings/agent-workbook.xlsx"/></Relationships>'),
+}]);
+const sharedOlePresentation = await PresentationFile.importPptx(sharedOleSource);
+const sharedOleObject = itemByName(sharedOlePresentation.slides.getItem(0).nativeObjects.items, "Embedded workbook");
+assert.equal(sharedOleObject.oleWorkbook, undefined);
+assert.deepEqual(sharedOleObject.inspectRecord().editableFields, []);
+assert.throws(() => sharedOleObject.getEmbeddedWorkbook(), /has no embedded XLSX workbook/);
+
 const masterPath = "ppt/slideMasters/slideMaster1.xml";
 const layoutPath = "ppt/slideLayouts/slideLayout1.xml";
 const masterXml = await firstZip.file(masterPath).async("text");

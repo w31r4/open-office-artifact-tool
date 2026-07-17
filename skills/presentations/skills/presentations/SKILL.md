@@ -181,6 +181,15 @@ space, use native `slide.groups.add(...)` and read
 cross the OpenChestnut PPTX path; imported topology is fixed, and complex group
 shells remain one opaque read-only object rather than being flattened.
 
+When an imported top-level OLE object contains one uniquely bound XLSX package,
+read `artifact_tool/api/references/ole-workbooks.spec.md` before changing it.
+Only `getEmbeddedWorkbook()` and `replaceEmbeddedWorkbook(...)` are allowed:
+the latter replaces the validated workbook bytes while preserving the OLE
+shell, relationship topology, preview image, and every unrelated native part.
+Do not patch an embedding part directly or present a reconstructed OLE object
+as equivalent; ambiguous, shared, malformed, or source-tampered graphs must
+fail closed.
+
 Before running any generated presentation module, initialize its workspace so
 Node.js can resolve the bundled `open-office-artifact-tool` package:
 
