@@ -13,6 +13,9 @@ assert.equal(packageMetadata.scripts.postinstall, undefined, "MuPDF must not req
 const pdfFacadeSource = await fs.readFile(path.join(repoRoot, "src", "pdf", "index.mjs"), "utf8");
 assert.match(pdfFacadeSource, /await import\("\.\/mupdf\.mjs"\)/, "MuPDF must load only when a PDF operation needs it");
 assert.doesNotMatch(pdfFacadeSource, /from\s+["']mupdf["']/, "the root PDF facade must not initialize MuPDF eagerly");
+const presentationCodecSource = await fs.readFile(path.join(repoRoot, "src", "codecs", "open-chestnut-presentation.mjs"), "utf8");
+assert.match(presentationCodecSource, /from "\.\.\/presentation\/index\.mjs";/, "the Presentation codec must depend on the Presentation leaf module");
+assert.doesNotMatch(presentationCodecSource, /from "\.\.\/index\.mjs";/, "the Presentation codec must not create a back-edge to the root entry");
 const skillsNpmIgnore = await fs.readFile(path.join(repoRoot, "skills", ".npmignore"), "utf8");
 assert.match(skillsNpmIgnore, /__pycache__/);
 assert.match(skillsNpmIgnore, /\*\.pyc/);
@@ -51,6 +54,7 @@ for (const required of [
   "src/ooxml/docx-bibliography.mjs",
   "src/ooxml/package.mjs",
   "src/presentation/chart-trendline-svg.mjs",
+  "src/presentation/index.mjs",
   "src/presentation/ooxml-chart-data.mjs",
   "src/presentation/ooxml-charts.mjs",
   "src/presentation/ooxml-hyperlinks.mjs",

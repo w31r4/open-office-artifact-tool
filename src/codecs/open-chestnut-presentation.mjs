@@ -1,4 +1,4 @@
-import { ChartElement, GroupShape, ImageElement, Presentation, Shape, TableElement } from "../index.mjs";
+import { ChartElement, GroupShape, ImageElement, Presentation, Shape, TableElement } from "../presentation/index.mjs";
 import {
   ArtifactFamily,
   SpreadsheetChartDataLabelPosition,

@@ -15,6 +15,7 @@ import {
 } from "open-office-artifact-tool";
 import { HELP_CATALOG as LEAF_HELP_CATALOG } from "../src/help/index.mjs";
 import { node as leafNode, text as leafText } from "../src/presentation/compose.mjs";
+import * as presentationApi from "../src/presentation/index.mjs";
 import { FileBlob as LeafFileBlob } from "../src/shared/file-blob.mjs";
 
 assert.deepEqual(Object.keys(rootApi).sort(), [
@@ -29,6 +30,9 @@ assert.strictEqual(HELP_CATALOG, LEAF_HELP_CATALOG, "root must re-export the hel
 assert.strictEqual(node, leafNode, "root must re-export the Compose binding");
 assert.strictEqual(text, leafText, "root must re-export the reference-compatible text Compose binding");
 assert.strictEqual(FileBlob, LeafFileBlob, "root must re-export the FileBlob constructor binding");
+for (const name of ["Presentation", "PresentationFile", "Slide", "Shape", "TableElement", "ChartElement", "ImageElement", "GroupShape"]) {
+  assert.strictEqual(rootApi[name], presentationApi[name], `root must re-export the ${name} constructor binding`);
+}
 
 assert.ok(HELP_CATALOG.length >= 40);
 assert.equal(HELP_CATALOG.length, 281);
