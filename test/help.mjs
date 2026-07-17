@@ -23,7 +23,7 @@ assert.deepEqual(Object.keys(rootApi).sort(), [
   "ChartElement", "DocumentFile", "DocumentModel", "FileBlob", "GroupShape",
   "HELP_CATALOG", "ImageElement", "PdfArtifact", "PdfFile", "Presentation",
   "PresentationFile", "Range", "Shape", "Slide", "SpreadsheetFile",
-  "TableElement", "Workbook", "Worksheet", "box", "chart", "column", "grid",
+  "TableElement", "Workbook", "Worksheet", "WorksheetDataTableCollection", "box", "chart", "column", "grid",
   "clearOfficeFontDesignMetrics", "helpArtifact", "image", "layers", "node", "paragraph",
   "registerScopedOfficeFontDesignMetrics", "renderArtifact", "resolveOfficeFontDesignMetrics",
   "row", "rule", "run", "setOfficeFontDesignMetrics", "shape", "skiaPaintBaselineCompensationPx",
@@ -36,12 +36,12 @@ assert.strictEqual(FileBlob, LeafFileBlob, "root must re-export the FileBlob con
 for (const name of ["Presentation", "PresentationFile", "Slide", "Shape", "TableElement", "ChartElement", "ImageElement", "GroupShape"]) {
   assert.strictEqual(rootApi[name], presentationApi[name], `root must re-export the ${name} constructor binding`);
 }
-for (const name of ["Workbook", "Worksheet", "Range", "SpreadsheetFile"]) {
+for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Range", "SpreadsheetFile"]) {
   assert.strictEqual(rootApi[name], spreadsheetApi[name], `root must re-export the ${name} constructor binding`);
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 300);
+assert.equal(HELP_CATALOG.length, 302);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -51,6 +51,10 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.freezePanes.freez
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.freezePanes.freezeColumns"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.freezePanes.unfreeze"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.visibility"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "sheet.dataTables.add"));
+assert.equal(HELP_CATALOG.find((item) => item.name === "sheet.dataTables.add")?.schema?.parameters?.range?.required, true);
+assert.match(HELP_CATALOG.find((item) => item.name === "sheet.dataTables.add")?.schema?.returns?.result?.description || "", /source-free.*native.*imported topology.*source-bound.*read-only/i);
+assert.equal(HELP_CATALOG.find((item) => item.name === "sheet.dataTables.__getDefinitions")?.schema?.returns?.definitions?.type, "object[]");
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.windows.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbookWindow.setSelectedWorksheets"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.sortState"));
