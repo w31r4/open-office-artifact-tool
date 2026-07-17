@@ -168,6 +168,13 @@ Read the local docs before coding:
 - `artifact_tool/API_QUICK_START.md`
 - `artifact_tool/api/API_DOCS.md`
 
+For slide backgrounds, use the typed `slide.setBackground(...)` and
+`slide.clearBackground()` primitives documented in
+`artifact_tool/api/references/slide.spec.md`. Direct solid/style-reference
+backgrounds cross the canonical OpenChestnut PPTX path. Never flatten an
+inherited Layout/Master background or silently replace an advanced imported
+background graph; preserve it unchanged or let the export fail closed.
+
 Before running any generated presentation module, initialize its workspace so
 Node.js can resolve the bundled `open-office-artifact-tool` package:
 

@@ -1,8 +1,15 @@
 # Fill And Line Configs
 
-Fill configs style shapes, chart regions, table cells, slide backgrounds, lines,
-and text fills. Text outlines use `LineConfig`, so their `fill`/`color` fields
-accept the same fill forms.
+Fill configs style shapes, chart regions, table cells, lines, and text fills.
+Text outlines use `LineConfig`, so their `fill`/`color` fields accept the same
+fill forms. Slide backgrounds have a deliberately narrower canonical PPTX
+contract described in `slide.spec.md`.
+
+Do not apply the general gradient/pattern/image `FillConfig` union to
+`slide.background`. OpenChestnut authors direct slide backgrounds only through
+`slide.setBackground({ fill, mode, index? })`, where `fill` is a six-digit RGB
+or theme color and `mode` is `solid` or `reference`. Advanced imported
+background graphs are preserved unchanged and reject semantic mutation.
 
 ## Fill Forms
 
@@ -157,8 +164,8 @@ type LineConfig = {
 ## Cookbook
 
 ```ts
-// Linear background wash.
-slide.background.fill = "linear(0deg, #020617 0%, #2563eb 100%)";
+// Canonical direct slide background.
+slide.setBackground({ fill: "#020617", mode: "solid" });
 ```
 
 ```ts

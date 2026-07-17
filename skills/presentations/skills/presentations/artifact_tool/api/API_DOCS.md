@@ -29,7 +29,7 @@ const presentation = Presentation.create({
 });
 
 const slide = presentation.slides.add();
-slide.background.fill = "slate-50";
+slide.setBackground({ fill: "#f8fafc", mode: "solid" });
 
 const headline = slide.shapes.add({
   geometry: "textbox",

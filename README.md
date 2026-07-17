@@ -12,7 +12,7 @@ PDF is the fourth, independent format pipeline. It never enters OpenChestnut or 
 | --- | --- | --- |
 | XLSX | OpenChestnut C# WASM | Cells, formulas, static styles, merged cells, row/column sizes, frozen panes, tables, PNG/JPEG images, bar/line/pie charts, standard Office 2010 line/column/stacked sparklines, dates as Excel serials, basic data validation, basic conditional formatting, and one-level threaded comments. |
 | DOCX | OpenChestnut C# WASM | Styles, paragraphs and runs, page/section settings, headers and footers, PAGE/simple fields, PNG/JPEG images, lists, fixed-geometry tables, links, classic comments, and fixed-topology edits of modeled objects. Bookmarks, bibliography, unsupported settings, and opaque blocks are imported read-only. |
-| PPTX | OpenChestnut C# WASM | Text boxes and round rectangles, basic fill/line/shadow, line/polyline connectors and arrows, source-free bar/line/pie charts, images, tables, rich text, lists, links, plain-text speaker notes, and source-bound Master/Layout preservation. Simple imported notes bodies are hash-bound and editable; rich notes remain preservation-only. |
+| PPTX | OpenChestnut C# WASM | Direct solid/style-reference slide backgrounds, text boxes and round rectangles, basic fill/line/shadow, line/polyline connectors and arrows, source-free bar/line/pie charts, images, tables, rich text, lists, links, plain-text speaker notes, and source-bound Master/Layout preservation. Recognized imported direct backgrounds and simple notes bodies are hash-bound and editable; complex backgrounds and rich notes remain preservation-only. |
 | PDF | Independent provider-routed pipeline | Greenfield tagged authoring, extraction/inspect/QA, and bounded native imported-PDF edits. The Skill preserves ReportLab, pdfplumber/pypdf, and Poppler workflows and adds an explicit optional PyMuPDF provider for direct page/content/image/form/annotation edits and sanitize. pyHanko and veraPDF retain signature/conformance roles. |
 
 Imported Office objects outside the modeled boundary remain hash-bound to their source package. Leaving them unchanged preserves them; trying to create or semantically edit an unsupported object fails explicitly. If a source-bound opaque object no longer has a trustworthy source snapshot, export fails. There is no lossy fallback.
@@ -51,7 +51,8 @@ const docx = await DocumentFile.exportDocx(document);
 const importedDocument = await DocumentFile.importDocx(docx);
 
 const deck = Presentation.create();
-deck.slides.add({ name: "Overview" }).shapes.add({
+const overview = deck.slides.add({ name: "Overview", background: { fill: "#F8FAFC", mode: "solid" } });
+overview.shapes.add({
   name: "Title",
   type: "roundRect",
   text: "OpenChestnut presentation",

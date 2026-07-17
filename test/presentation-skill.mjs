@@ -158,6 +158,10 @@ try {
   assert.match(quickStartText, /PresentationFile\.exportPptx/);
   assert.match(quickStartText, /open-office-artifact-tool/);
   assert.match(skillText, /slides_test\.py/);
+  assert.match(skillText, /slide\.setBackground.*slide\.clearBackground/s);
+  const slideReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/slide.spec.md", "utf8");
+  assert.match(slideReferenceText, /never flattens the\s+inherited color/i);
+  assert.match(slideReferenceText, /Gradient,\s+pattern, image.*opaque-preserved/is);
 
   console.log("presentation skill smoke ok");
 } finally {

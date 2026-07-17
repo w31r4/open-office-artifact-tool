@@ -1049,13 +1049,13 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `compose.column` | api | Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels. |
 | `compose.paragraph` | api | Create an editable text block with name, className/style text tokens, and stable inspect output. |
 | `compose.text` | api | Create the same editable paragraph node through the reference-template-compatible children-first text(children, props) helper. |
-| `exportPptxWithOpenChestnut` | api | Export bounded textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures, fixed-grid plain-text tables, plain-text speaker notes, and source-free bar/line/pie charts. Imported simple notes bodies are hash-bound and editable; complex notes and other advanced package graphs remain preserved and fail closed on mutation. |
-| `importPptxWithOpenChestnut` | api | Import PPTX bytes with editable bounded shapes, rich text, pictures, tables, connectors, bar/line/pie charts, and plain-text speaker notes. Simple notes bodies are hash-bound and editable; rich or irregular notes plus other unsupported content remain source-bound and read-only. |
+| `exportPptxWithOpenChestnut` | api | Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures, fixed-grid plain-text tables, plain-text speaker notes, and source-free bar/line/pie charts. Recognized imported direct backgrounds and simple notes bodies are hash-bound and editable; inherited or complex graphs remain preserved and fail closed on unsupported mutation. |
+| `importPptxWithOpenChestnut` | api | Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich text, pictures, tables, connectors, bar/line/pie charts, and plain-text speaker notes. Complex backgrounds, rich notes, and other unsupported content remain source-bound and read-only. |
 | `nativeObject.getEmbeddedWorkbook` | api | Read a defensive FileBlob copy of the XLSX payload from an eligible source-bound top-level OLE object without exposing arbitrary native-part mutation. |
 | `nativeObject.replaceEmbeddedWorkbook` | api | OLE payload replacement is unsupported in OpenChestnut 0.2. The method fails explicitly; getEmbeddedWorkbook remains available for read-only inspection of a uniquely bound XLSX payload. |
 | `nativeObject.setName` | api | Native OLE, SmartArt/diagram, and contentPart objects imported through OpenChestnut are source-bound and read-only; setName rejects instead of mutating the preserved package graph. |
 | `nativeObject.setPosition` | api | Native OLE, SmartArt/diagram, and contentPart objects imported through OpenChestnut are source-bound and read-only; setPosition rejects instead of rewriting their geometry or payload graph. |
-| `Presentation.create` | api | Create a deck model whose canonical OpenChestnut export supports ordinary slides, shapes, rich text, tables, images, connectors, plain-text speaker notes, and source-free bar/line/pie charts. Custom themes, Master/Layout authoring, comments, custom shows, and other package-level features remain outside the source-free PPTX boundary. |
+| `Presentation.create` | api | Create a deck model whose canonical OpenChestnut export supports ordinary slides, direct solid/style-reference slide backgrounds, shapes, rich text, tables, images, connectors, plain-text speaker notes, and source-free bar/line/pie charts. Custom themes, Master/Layout authoring, comments, custom shows, and other package-level features remain outside the source-free PPTX boundary. |
 | `presentation.customShows.add` | api | Define a model-level custom slide show for inspect and preview. OpenChestnut 0.2 does not author custom shows, and imported custom-show graphs are source-bound and read-only. |
 | `presentation.customShows.getItem` | api | Resolve a model-level or imported read-only custom slide show by zero-based index, stable facade ID, or exact name. |
 | `presentation.export` | api | Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON. |
@@ -1070,7 +1070,7 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `presentation.masters.add` | api | Add a model-level Slide Master for inspect and preview. OpenChestnut 0.2 does not author Master graphs, and imported masters are source-bound and read-only. |
 | `presentation.masters.getItem` | api | Resolve a model-level or imported read-only Slide Master by stable ID or name. |
 | `presentation.resolve` | api | Map stable inspect anchor IDs back to facade objects; imported advanced package objects may be read-only. |
-| `presentation.slides.add` | api | Append an editable core slide with optional plain-text speaker notes. OpenChestnut authors the canonical notes graph; source-bound slides can edit an existing simple notes body but cannot add a new notes part. |
+| `presentation.slides.add` | api | Append an editable core slide with an optional direct solid/style-reference background and plain-text speaker notes. OpenChestnut authors only the direct slide background; effective Layout/Master inheritance is never flattened. |
 | `presentation.textRange` | api | Inspect or resolve stable textRange anchors such as shapeId/text for editable slide text frames. |
 | `presentation.theme` | api | Inspect the model theme and theme inheritance. Custom source-free themes are not authored by OpenChestnut 0.2, and imported themes are source-bound and read-only. |
 | `presentation.validateLayout` | api | Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow. |
@@ -1084,11 +1084,13 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `slide.applyLayout` | api | Materialize layout placeholders in the model for preview. Source-free layout binding is outside the OpenChestnut 0.2 PPTX boundary; imported Layout relationships are preservation-only. |
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
 | `slide.charts.add` | api | Add a source-free bar, line, or pie chart with literal categories and numeric values, title, legend, basic series fill/line/marker formatting, chart-level data labels, primary axes, layout JSON, SVG preview, and native PPTX output. Combo charts, external data, secondary axes, point overrides, trendlines, error bars, and per-series data labels are model-only and fail closed on export. |
+| `slide.clearBackground` | api | Remove the direct slide background so preview and PPTX output inherit from the preserved Layout/Master chain. Unsupported imported background graphs fail closed rather than being flattened or discarded. |
 | `slide.comments.addThread` | api | Create model-level comment threads for inspect and preview. OpenChestnut 0.2 does not author legacy or modern PPTX comments; imported comment graphs are source-bound and read-only. |
 | `slide.compose` | api | Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph/text, shape, table, chart, image, and rule nodes into editable slide objects. |
 | `slide.connectors.add` | api | Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA. |
 | `slide.groups.add` | api | Build grouped-shape trees for model inspect, layout, and SVG preview. Source-free p:grpSp authoring is outside the OpenChestnut 0.2 boundary, while imported groups remain opaque and read-only. |
 | `slide.images.add` | api | Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, direct rotation/flips, layout JSON, SVG preview, and PPTX output. OpenChestnut owns a bounded embedded rectangular picture profile. |
+| `slide.setBackground` | api | Set a direct slide background to a six-digit RGB/theme color solid fill or a native style reference. Recognized imported direct backgrounds are hash-bound and editable; inherited Layout/Master backgrounds remain inherited. |
 | `slide.shapes.add` | api | Add a shape/textbox with preset or bounded literal custom geometry, position, optional center-based rotation/flips, fill, line, text, and DrawingML text-body layout. |
 | `slide.tables.add` | api | Add an inspectable table facade with rows, columns, values, cells, layout JSON, SVG preview, and canonical OpenChestnut fixed-grid plain-text PPTX output. |
 
@@ -1140,11 +1142,11 @@ Create the same editable paragraph node through the reference-template-compatibl
 
 #### `exportPptxWithOpenChestnut`
 
-Export bounded textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures, fixed-grid plain-text tables, plain-text speaker notes, and source-free bar/line/pie charts. Imported simple notes bodies are hash-bound and editable; complex notes and other advanced package graphs remain preserved and fail closed on mutation.
+Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures, fixed-grid plain-text tables, plain-text speaker notes, and source-free bar/line/pie charts. Recognized imported direct backgrounds and simple notes bodies are hash-bound and editable; inherited or complex graphs remain preserved and fail closed on unsupported mutation.
 
 **Schema parameters:**
 
-- `presentation` (Presentation) required — Presentation facade within the bounded shape/rich-text/picture/fixed-table/connector/plain-text-notes/source-free bar-line-pie chart boundary. Rich notes and other imported advanced package graphs must remain unchanged.
+- `presentation` (Presentation) required — Presentation facade within the bounded direct-slide-background/shape/rich-text/picture/fixed-table/connector/plain-text-notes/source-free bar-line-pie chart boundary. Complex backgrounds, rich notes, and other imported advanced package graphs must remain unchanged.
 - `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets.
 
 **Schema returns:**
@@ -1153,7 +1155,7 @@ Export bounded textbox/rectangle/roundRect/ellipse shapes, rich text and lists, 
 
 #### `importPptxWithOpenChestnut`
 
-Import PPTX bytes with editable bounded shapes, rich text, pictures, tables, connectors, bar/line/pie charts, and plain-text speaker notes. Simple notes bodies are hash-bound and editable; rich or irregular notes plus other unsupported content remain source-bound and read-only.
+Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich text, pictures, tables, connectors, bar/line/pie charts, and plain-text speaker notes. Complex backgrounds, rich notes, and other unsupported content remain source-bound and read-only.
 
 **Schema parameters:**
 
@@ -1162,7 +1164,7 @@ Import PPTX bytes with editable bounded shapes, rich text, pictures, tables, con
 
 **Schema returns:**
 
-- `presentation` (Presentation) — Imported presentation facade with editable bounded shapes, rich text, pictures, tables, connectors, and bar/line/pie charts; advanced package graphs are read-only, and eligible OLE workbooks are available only through getEmbeddedWorkbook.
+- `presentation` (Presentation) — Imported presentation facade with editable bounded direct slide backgrounds, shapes, rich text, pictures, tables, connectors, and bar/line/pie charts; advanced package graphs are read-only, and eligible OLE workbooks are available only through getEmbeddedWorkbook.
 
 #### `nativeObject.getEmbeddedWorkbook`
 
@@ -1210,7 +1212,7 @@ Native OLE, SmartArt/diagram, and contentPart objects imported through OpenChest
 
 #### `Presentation.create`
 
-Create a deck model whose canonical OpenChestnut export supports ordinary slides, shapes, rich text, tables, images, connectors, plain-text speaker notes, and source-free bar/line/pie charts. Custom themes, Master/Layout authoring, comments, custom shows, and other package-level features remain outside the source-free PPTX boundary.
+Create a deck model whose canonical OpenChestnut export supports ordinary slides, direct solid/style-reference slide backgrounds, shapes, rich text, tables, images, connectors, plain-text speaker notes, and source-free bar/line/pie charts. Custom themes, Master/Layout authoring, comments, custom shows, and other package-level features remain outside the source-free PPTX boundary.
 
 **Schema parameters:**
 
@@ -1432,12 +1434,13 @@ Map stable inspect anchor IDs back to facade objects; imported advanced package 
 
 #### `presentation.slides.add`
 
-Append an editable core slide with optional plain-text speaker notes. OpenChestnut authors the canonical notes graph; source-bound slides can edit an existing simple notes body but cannot add a new notes part.
+Append an editable core slide with an optional direct solid/style-reference background and plain-text speaker notes. OpenChestnut authors only the direct slide background; effective Layout/Master inheritance is never flattened.
 
 **Schema parameters:**
 
 - `name` (string) — Inspectable slide name.
 - `layout` (string|object) — Model-only Layout binding; source-free canonical PPTX export rejects it.
+- `background` (string|object) — Optional direct slide background: RGB/theme color or { fill, mode: 'solid'|'reference', index? }. Gradient, pattern, image, transform, and effect-bearing backgrounds are preview-only/source-preserved and fail closed on canonical mutation.
 - `notes` (string) — Optional plain-text speaker notes authored into the canonical PresentationML notes graph.
 
 **Schema returns:**
@@ -1524,7 +1527,7 @@ Import PPTX through the single bundled OpenChestnut codec with source-bound opaq
 
 **Schema returns:**
 
-- `presentation` (Presentation) — Imported presentation facade with editable core objects and simple plain-text speaker notes; rich notes, Master/Layout, comments, themes, native objects, placeholders, and unsupported package graphs remain source-bound.
+- `presentation` (Presentation) — Imported presentation facade with editable core objects, recognized direct slide backgrounds, and simple plain-text speaker notes; complex backgrounds, rich notes, Master/Layout, comments, themes, native objects, placeholders, and unsupported package graphs remain source-bound.
 
 #### `PresentationFile.inspectPptx`
 
@@ -1650,6 +1653,14 @@ Add a source-free bar, line, or pie chart with literal categories and numeric va
 
 - `chart` (ChartElement) — Appended editable native-chart facade.
 
+#### `slide.clearBackground`
+
+Remove the direct slide background so preview and PPTX output inherit from the preserved Layout/Master chain. Unsupported imported background graphs fail closed rather than being flattened or discarded.
+
+**Schema returns:**
+
+- `slide` (Slide) — The same slide with no direct background, inheriting from its preserved Layout/Master chain.
+
 #### `slide.comments.addThread`
 
 Create model-level comment threads for inspect and preview. OpenChestnut 0.2 does not author legacy or modern PPTX comments; imported comment graphs are source-bound and read-only.
@@ -1735,6 +1746,18 @@ Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit
 **Schema returns:**
 
 - `image` (ImageElement) — Appended editable image facade. OpenChestnut authors/imports embedded PNG/JPEG/GIF/safe-SVG rectangular stretch pictures and permits same-format byte, name/alt, frame, and direct-transform edits; crop, effects, external sources, complex blips, and non-rectangular geometry remain opaque.
+
+#### `slide.setBackground`
+
+Set a direct slide background to a six-digit RGB/theme color solid fill or a native style reference. Recognized imported direct backgrounds are hash-bound and editable; inherited Layout/Master backgrounds remain inherited.
+
+**Schema parameters:**
+
+- `background` (string|object) required — Direct RGB/theme color or { fill, mode: 'solid'|'reference', index? }; reference index must be an unsigned 32-bit integer.
+
+**Schema returns:**
+
+- `slide` (Slide) — The same slide with a normalized direct background; canonical PPTX export never flattens inherited Layout/Master backgrounds.
 
 #### `slide.shapes.add`
 

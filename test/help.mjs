@@ -31,7 +31,7 @@ assert.strictEqual(text, leafText, "root must re-export the reference-compatible
 assert.strictEqual(FileBlob, LeafFileBlob, "root must re-export the FileBlob constructor binding");
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 277);
+assert.equal(HELP_CATALOG.length, 279);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -86,6 +86,9 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "slide.groups.add"));
 assert.match(HELP_CATALOG.find((item) => item.name === "nativeObject.setName")?.schema?.parameters?.name?.description || "", /1,024/);
 assert.match(HELP_CATALOG.find((item) => item.name === "nativeObject.setPosition")?.schema?.returns?.nativeObject?.description || "", /No mutation.*source-bound and read-only/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.addNotes"));
+assert.match(HELP_CATALOG.find((item) => item.name === "presentation.slides.add")?.schema?.parameters?.background?.description || "", /direct slide background.*Gradient.*fail closed/i);
+assert.ok(HELP_CATALOG.some((item) => item.name === "slide.setBackground"));
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.clearBackground")?.schema?.returns?.slide?.description || "", /no direct background.*Layout\/Master/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.comments.addThread"));
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.comments.addThread")?.summary || "", /does not author legacy or modern PPTX comments.*read-only/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.comments.addThread")?.schema?.parameters?.target?.description || "", /does not author PPTX comment bindings/i);
@@ -251,7 +254,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.
 assert.match(HELP_CATALOG.find((item) => item.name === "DocumentModel.create")?.schema?.parameters?.styles?.description || "", /numberingId\/numberingLevel/);
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.schema?.returns?.document?.type, "DocumentModel");
 const presentationCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "presentation");
-assert.equal(presentationCatalog.length, 45);
+assert.equal(presentationCatalog.length, 47);
 assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.importPptx")?.schema?.returns?.presentation?.type, "Presentation");

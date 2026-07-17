@@ -26,10 +26,28 @@ type ChartConfig = {
 ## Background
 
 ```ts
-slide.background.fill = fillConfig;
+slide.setBackground({ fill: "#f8fafc", mode: "solid" });
+slide.setBackground({ fill: "accent2", mode: "reference", index: 1002 });
+slide.clearBackground();
 ```
 
-`fillConfig` accepts theme color strings, hex strings, solid configs, gradient configs, pattern configs, and image-fill configs.
+The canonical OpenChestnut PPTX boundary owns only a direct `p:cSld/p:bg` with
+one six-digit RGB/theme color. `mode: "solid"` authors a direct solid fill;
+`mode: "reference"` authors a native background-style reference with an
+unsigned 32-bit `index`. Passing `background` to `presentation.slides.add(...)`
+uses the same shape.
+
+`slide.background` is the direct slide override. `slide.effectiveBackground()`
+resolves that override or the preserved Layout/Master inheritance chain.
+`clearBackground()` removes only the direct override and never flattens the
+inherited color into the slide part.
+
+Recognized imported direct backgrounds are source/hash-bound and may be
+changed or removed. A slide with no direct background may gain one. Gradient,
+pattern, image, transform-bearing, effect-bearing, or otherwise irregular
+imported background graphs are opaque-preserved; leave them unchanged or
+OpenChestnut fails closed. Do not replace an advanced imported background with
+a simple solid and describe that as a faithful edit.
 
 ## Layouts And Placeholders
 
@@ -166,8 +184,8 @@ export or inspect output for stable `name` values on important nodes.
 ## Cookbook
 
 ```ts
-// Gradient background plus editable content.
-slide.background.fill = "linear(180deg, slate-950 0%, blue-950 100%)";
+// Canonical direct background plus editable content.
+slide.setBackground({ fill: "#0f172a", mode: "solid" });
 const title = slide.shapes.add({
   geometry: "textbox",
   name: "title",
@@ -177,6 +195,16 @@ const title = slide.shapes.add({
 });
 title.text = "Editable headline";
 title.text.style = { fontSize: 44, bold: true, color: "white" };
+```
+
+```ts
+// Imported deck: inspect direct versus inherited state before mutation.
+const record = JSON.parse((await deck.inspect({ kind: "slide", target: slide.id })).ndjson);
+if (record.background) slide.setBackground({ fill: "accent1", mode: "reference", index: 1001 });
+else slide.setBackground("#f8fafc");
+
+// Restore inheritance when the direct override is no longer wanted.
+slide.clearBackground();
 ```
 
 ```ts

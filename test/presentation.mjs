@@ -367,6 +367,13 @@ assert.equal(roundTripBar.title, "Updated readiness");
 assert.deepEqual(roundTripBar.series[0].values, [80, 94, 88]);
 assert.equal(roundTrip.verify().ok, true);
 
+assert.equal(roundTripCore.clearBackground(), roundTripCore);
+const clearedBackgroundExport = await PresentationFile.exportPptx(roundTrip);
+const clearedBackgroundZip = await JSZip.loadAsync(new Uint8Array(await clearedBackgroundExport.arrayBuffer()));
+assert.doesNotMatch(await clearedBackgroundZip.file("ppt/slides/slide1.xml").async("text"), /<p:bg(?:Pr|Ref)\b/);
+const clearedBackgroundRoundTrip = await PresentationFile.importPptx(clearedBackgroundExport);
+assert.deepEqual(clearedBackgroundRoundTrip.slides.getItem(0).background, {});
+
 const importedWithoutSourceSnapshot = await PresentationFile.importPptx(firstExport);
 const presentationState = importedWithoutSourceSnapshot[Symbol.for("open-office-artifact-tool.open-chestnut-presentation-state")];
 presentationState.opaqueOpc.sourcePackage = undefined;
