@@ -364,6 +364,18 @@ try {
     ["{=TABLE(D1)}", "{=TABLE(D1,D2)}"],
   );
 
+  const { createScatterWorkbook } = await import(
+    "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-scatter-chart-workflow.mjs"
+  );
+  const scatterPath = path.join(tempRoot, "openchestnut-scatter-chart-workflow.xlsx");
+  const authoredScatter = await createScatterWorkbook(scatterPath);
+  assert.equal(authoredScatter.verification.ok, true);
+  assert.match(authoredScatter.inspection.ndjson, /"chartType":"scatter"/);
+  const scatterRoundTrip = await SpreadsheetFile.importXlsx(await FileBlob.load(scatterPath));
+  const scatterChart = scatterRoundTrip.worksheets.getItem("Relationship Analysis").charts.items[0];
+  assert.equal(scatterChart.type, "scatter");
+  assert.deepEqual(scatterChart.series.items[0].xValues, [10, 20, 25, 34, 45]);
+
   const { createPdf } = await import(
     "../skills/pdf/skills/pdf/examples/public-api-end-to-end.mjs"
   );

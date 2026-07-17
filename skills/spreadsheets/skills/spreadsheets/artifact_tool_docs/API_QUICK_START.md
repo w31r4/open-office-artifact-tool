@@ -365,7 +365,7 @@ cross-cell parents are source-bound and fail closed instead of being flattened.
 ### Charts
 - When adding or moving charts, do not cover existing data. Put charts in a reserved rectangle with blank gutter columns/rows around the chart area.
 - If chart data comes from editable/source data, ensure data/series is formula-backed instead of literal values.
-- Fast chart path: If you already have a continuous range with text categories and one column per series, directly chart that range via `sheet.charts.add(chartType, range)`:
+- Fast chart path: If you already have a continuous range with one X/category column and one column per series, directly chart that range via `sheet.charts.add(chartType, range)`:
 ```js
 sheet.getRange("F4:H7").values = [
   ["Month", "Revenue", "EBITDA"],
@@ -375,7 +375,7 @@ sheet.getRange("F4:H7").values = [
 ];
 const chart = sheet.charts.add("line", sheet.getRange("F4:H7"));
 ```
-Setting a range will auto-populate series information (series.formula, series.categoryFormula) with A1 range-reference strings internally. The first column is treated as categories (x-axis labels) and remaining columns are treated as series values (one series per column). First row will only be treated as headers if it's text and not numeric.
+Setting a range will auto-populate series information with A1 range-reference strings internally. Category charts use the first column as shared categories and set `series.categoryFormula`; scatter charts require a numeric first column, copy it into each series' `xValues`, and set `series.xFormula`. Remaining columns become Y/value series with `series.formula`. The first row is treated as headers.
 - For advanced chart creation where you might want to define each series, you can do the following:
 ```js
 const chartConfig = {
@@ -390,6 +390,20 @@ series.categoryFormula = "'Scores'!$A$2:$A$10"; // string
 series.formula = "'Scores'!$E$2:$E$10"; // string
 series.fill = "#F472B6";
 ```
+- A scatter chart has a genuinely different numeric X/Y topology. Do not encode X values as string categories:
+```js
+const scatter = sheet.charts.add("scatter", {
+  title: "Conversion rises with response time",
+  series: [{
+    name: "Observed",
+    xValues: [1.2, 2.1, 3.4],
+    values: [42, 55, 71],
+    marker: { symbol: "circle", size: 7, fill: "#0EA5E9" },
+  }],
+  xAxis: { title: { text: "Response time (s)" }, min: 0, max: 4, majorUnit: 1 },
+  yAxis: { title: { text: "Conversion (%)" }, min: 0, max: 100, majorUnit: 20 },
+});
+```
 - For internal A1 range formulas, inspect, SVG render, and OpenChestnut export resolve the current category/value caches from the referenced cells. This makes the formula-only series pattern above runnable; external-workbook references or invalid ranges are not silently substituted.
 - After creating a chart with data, specify position, title, axis via the following:
 ```js
@@ -397,7 +411,7 @@ chart.setPosition("J4", "Q20");
 chart.title = "Revenue and EBITDA Trend";
 chart.titleTextStyle.fontSize = 12;
 chart.hasLegend = true;
-chart.xAxis = { axisType: "textAxis", textStyle: { fontSize: 10} };
+chart.xAxis = { axisType: "textAxis", textStyle: { fontSize: 10} }; // scatter uses valueAxis
 // Number formatting on chart axis must be set separately even if the source range is already formatted.
 chart.yAxis = { numberFormatCode: "$#,##0", tickLabelInterval: 2, min: 20000, max:1000000 };
 chart.xAxis.title.text = "Month"; // Set axis titles
@@ -408,7 +422,7 @@ chart.yAxis.title.text = "Revenue and EBITDA";
 - If using compat positioning, always set position: `chart.setPosition("F2", "M20")`.
 - `sheet.charts.getItemOrNullObject("Chart 1")`, `sheet.charts.deleteAll()`
 - For month/date x-axes, prefer a chart helper range with text labels such as `Jan 2025` or `2025-01`. Do not rely on date axis number formats alone; rendered previews can show Excel serial numbers.
-- Canonical OpenChestnut XLSX types are `"bar" | "line" | "area" | "pie" | "doughnut"`. Area uses the standard grouping; doughnut uses a 50% hole. Scatter, bubble, radar, stock, treemap, sunburst, histogram, box-whisker, waterfall, funnel, map, stacked-area variants, custom doughnut holes, and exploded points are not silently substituted: imported graphs remain source-bound, while unsupported source-free creation fails closed.
+- Canonical OpenChestnut XLSX types are `"bar" | "line" | "area" | "pie" | "doughnut" | "scatter"`. Area uses the standard grouping; doughnut uses a 50% hole; scatter uses marker-only `xVal/yVal` series and two numeric value axes. Imported scatter line/smooth variants remain source-bound. Bubble, radar, stock, treemap, sunburst, histogram, box-whisker, waterfall, funnel, map, stacked-area variants, custom doughnut holes, and exploded points are not silently substituted: imported graphs remain source-bound, while unsupported source-free creation fails closed.
 
 ### Sparklines
 ```

@@ -118,6 +118,24 @@ try {
   const dataTableXml = await dataTableZip.file("xl/worksheets/sheet1.xml").async("text");
   assert.equal((dataTableXml.match(/<x:f\b[^>]*t="dataTable"/g) || []).length, 2);
 
+  const { createScatterWorkbook } = await import(
+    "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-scatter-chart-workflow.mjs"
+  );
+  const scatterPath = path.join(outputDir, "openchestnut-scatter-chart-workflow.xlsx");
+  const scatterResult = await createScatterWorkbook(scatterPath);
+  assert.equal(scatterResult.verification.ok, true);
+  const scatterWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(scatterPath));
+  const scatterChart = scatterWorkbook.worksheets.getItem("Relationship Analysis").charts.items[0];
+  assert.equal(scatterChart.type, "scatter");
+  assert.deepEqual(scatterChart.series.items[0].xValues, [10, 20, 25, 34, 45]);
+  const scatterZip = await JSZip.loadAsync(await fs.readFile(scatterPath));
+  const scatterChartPath = Object.keys(scatterZip.files).find((name) => /\/charts\/chart\d+\.xml$/i.test(name));
+  assert.ok(scatterChartPath);
+  const scatterXml = await scatterZip.file(scatterChartPath).async("text");
+  assert.match(scatterXml, /<c:scatterChart>/);
+  assert.match(scatterXml, /<c:scatterStyle val="marker"/);
+  assert.equal((scatterXml.match(/<c:valAx>/g) || []).length, 2);
+
   const queryResult = await runFixture("open-chestnut-query-table");
   assert.equal(queryResult.sourceQueryTable.sheet, "External Data");
   assert.equal(queryResult.sourceQueryTable.table, "ExternalSales");
