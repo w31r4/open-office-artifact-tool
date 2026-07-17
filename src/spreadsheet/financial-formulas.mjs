@@ -2,6 +2,7 @@
 // helpers only accept finite numeric cash-flow vectors so an agent never gets a
 // plausible-looking answer after a coercion or an unbounded root search.
 export const FINANCIAL_MAX_CASH_FLOWS = 10_000;
+const FINANCIAL_MAX_RATE_PERIODS = FINANCIAL_MAX_CASH_FLOWS - 1;
 
 const ROOT_LOG_RATE_MIN = -20;
 const ROOT_LOG_RATE_MAX = 20;
@@ -258,6 +259,28 @@ export function calculatePpmt(rawTerms, helpers) {
   if (typeof payment !== "number") return payment;
   const interest = calculateIpmt(rawTerms, helpers);
   return typeof interest === "number" ? payment - interest : interest;
+}
+
+export function calculateRate({ nper, pmt, pv, fv = 0, type = 0, guess }, helpers) {
+  const [safeNper, safePmt, safePv, safeFv, safeType] = [nper, pmt, pv, fv, type].map((value) => finiteNumber(value, helpers));
+  const error = [safeNper, safePmt, safePv, safeFv, safeType].find((item) => item.error)?.error;
+  if (error) return error;
+  if (!Number.isInteger(safeNper.value) || safeNper.value < 1 || safeNper.value > FINANCIAL_MAX_RATE_PERIODS || ![0, 1].includes(safeType.value)) return "#NUM!";
+  const safeGuess = validGuess(guess, helpers);
+  if (safeGuess.error) return safeGuess.error;
+
+  // RATE solves the same present/future-value equation as PMT.  Expressing
+  // it as dated cash flows lets it reuse the bounded log-rate root search and
+  // preserves the distinct beginning-of-period payment timing semantics.
+  const cashFlows = Array(safeNper.value + 1).fill(safePmt.value);
+  if (safeType.value === 0) {
+    cashFlows[0] = safePv.value;
+    cashFlows[safeNper.value] += safeFv.value;
+  } else {
+    cashFlows[0] = safePv.value + safePmt.value;
+    cashFlows[safeNper.value] = safeFv.value;
+  }
+  return returnRate(cashFlows, cashFlows.map((_, index) => index), safeGuess.value);
 }
 
 export function calculateNpv({ rate, cashFlows }, helpers) {

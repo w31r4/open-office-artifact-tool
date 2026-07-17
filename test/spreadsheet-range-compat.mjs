@@ -108,6 +108,22 @@ assert.ok(Math.abs(duePaymentValues[3] + 471.42857142857144) < 1e-10);
 assert.equal(duePaymentValues[4], 0);
 assert.equal(duePaymentValues[5], -50);
 assert.deepEqual(duePaymentValues.slice(6), ["#NUM!", "#NUM!", "#NUM!", "#NUM!", "#VALUE!"]);
+financialSheet.getRange("U1:U8").formulas = [
+  ["=RATE(12,-8884.878867834168,100000)"],
+  ["=RATE(2,-523.8095238095239,1000,0,1)"],
+  ["=RATE(12,-100,1200)"],
+  ["=RATE(12,-800,8000,-1000,0)"],
+  ["=RATE(10000,-10,1000)"],
+  ["=RATE(12,-100,1200,0,2)"],
+  ["=RATE(12,-100,1200,0,0,-1)"],
+  ["=RATE(12,100,1000)"],
+];
+const rateValues = financialSheet.getRange("U1:U8").values.flat();
+assert.ok(Math.abs(rateValues[0] - 0.01) < 1e-10);
+assert.ok(Math.abs(rateValues[1] - 0.1) < 1e-10);
+assert.ok(Math.abs(rateValues[2]) < 1e-10);
+assert.ok(Math.abs(rateValues[3] - 0.0426446765858793) < 1e-10);
+assert.deepEqual(rateValues.slice(4), ["#NUM!", "#NUM!", "#NUM!", "#NUM!"]);
 financialSheet.getRange("G1:G2").values = [[-100], [110]];
 financialSheet.getRange("H1:H2").formulas = [
   ["=DATE(2017,1,1)"],
@@ -144,6 +160,7 @@ assert.ok(Math.abs(dateObjectReturns[1] - 0.2106338215370842) < 1e-10);
 const financialRoundTrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(financialWorkbook, { recalculate: false }));
 assert.deepEqual(financialRoundTrip.worksheets.getItem("Cash Flows").getRange("C1:C6").formulas, financialSheet.getRange("C1:C6").formulas);
 assert.deepEqual(financialRoundTrip.worksheets.getItem("Cash Flows").getRange("P1:R12").formulas, financialSheet.getRange("P1:R12").formulas);
+assert.deepEqual(financialRoundTrip.worksheets.getItem("Cash Flows").getRange("U1:U8").formulas, financialSheet.getRange("U1:U8").formulas);
 const financialLimitWorkbook = Workbook.create();
 const financialLimitSheet = financialLimitWorkbook.worksheets.add("Cash flow limit");
 financialLimitSheet.getRange("A1:A10001").values = Array.from({ length: 10_001 }, (_, index) => [index === 0 ? -100 : 1]);
