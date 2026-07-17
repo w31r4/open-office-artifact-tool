@@ -165,16 +165,16 @@ cleanliness, offline release metadata, clean-install packing, OfficeBridge
 
 ### Neutral template library and Template Creator sync
 
-On 2026-07-18, the observable Skill delta from the local reference worktree's
-`207ce094a55d82a37efdca42a1c5e9656f696962` was adapted into the public
+On 2026-07-18, the observable Skill delta from the remotely reachable reference
+revision `207ce094a55d82a37efdca42a1c5e9656f696962`
+(`origin/feat/sync-grid-layout-library-template-creator`, based on the
+`office-artifact-tool@2.8.24` runtime-sync revision) was adapted into the public
 package. The Presentation asset/support trees now use the neutral
 `grid-layout-library` identity throughout. Its model-facing registry, 26 exact
 plain-JavaScript Compose builders, 27 preview PNGs, content/design tokens, and
 reconstruction runner remain unflattened and pass a complete 26-slide
-OpenChestnut export. Because the reference commit is not yet on its remote, the
-submodule deliberately stays at the reproducibly obtainable 2.8.24 commit
-`2d0e249ea6b62f55cca22a343b832a38e8f7537c`; no unreachable pointer is
-recorded.
+OpenChestnut export. The submodule now pins that exact reachable revision; no
+unreachable pointer is recorded.
 
 The new fifth plugin contains the sixth published Skill, Template Creator. It
 creates numbered local `artifact-template-*` Skills from one DOCX/PPTX/XLSX
