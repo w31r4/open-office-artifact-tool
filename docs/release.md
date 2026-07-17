@@ -65,6 +65,49 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### DOCX inline plain-text content-control public workflow
+
+On 2026-07-17, the already integrated inline plain-text content-control codec
+was completed as a truthful public Documents workflow. The generated Help/API
+surface now documents `paragraph.addTextContentControl(...)`,
+`document.contentControls`, and transactional
+`document.fillContentControls(...)`; the coverage and architecture records no
+longer describe every content control as unsupported. The native Documents
+Skill routes source-free and recognized imported body-inline plain-text SDTs
+through the public JavaScript model and OpenChestnut, while retaining the
+Python package helper only for explicit existing-template wrapping,
+headers/footers, and controls outside the bounded model.
+
+The shipped `openchestnut-end-to-end.mjs` example now authors an `OWNER`
+control, exports canonical `w:sdt` markup, imports it, fills it by tag, exports
+again, and proves the final tag/alias/text through semantic import, inspect,
+native XML, and verification assertions. Unknown tags fail before mutation by
+default; duplicate tags fill every match. Imported text/tag/alias edits are
+permitted only with fixed run topology and native identity. Rich, block, cell,
+nested, data-bound, dropdown, date, checkbox, placeholder-document, locked,
+header/footer, and extension-bearing controls remain opaque/source-bound and
+fail closed rather than being flattened.
+
+The complete local gate passed `npm test` including Playwright and all five
+published Skills, `npm run docs:api`, `npm run proto:check`,
+`npm run test:pack`, offline `npm run release:check -- --skip-network
+--allow-dirty`, serial `npm run verify:open-chestnut-build`, OpenChestnut
+`179/179`, and OfficeBridge `5/5`. Two clean WASM builds produced the same 39
+audited files and the same manifest-bound 38-file, 14,250,684-byte runtime. The
+clean-install tarball contains 422 files, is 9,245,399 bytes compressed and
+23,000,796 bytes unpacked. No npm publish, tag, or GitHub release operation was
+attempted.
+
+The completed public-workflow candidate at commit
+`6231544c88dd5eee461c2b3e4950425807c8add9` passed the hosted Linux `ci`
+workflow in [GitHub Actions run 29575996251](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29575996251)
+on 2026-07-17. The run completed with conclusion `success` in 4m30s and covered
+protocol/runtime determinism, Chromium/LibreOffice/Poppler tool checks, the
+complete npm suite including the published Documents Skill example and native
+content-control assertions, generated API-doc cleanliness, offline release
+metadata, the 422-file clean-install tarball, OfficeBridge `5/5`, and
+OpenChestnut `179/179`.
+
 ### XLSX direct threaded-comment replies
 
 On 2026-07-17, the Spreadsheet public model, versioned protobuf wire, OpenChestnut C# codec, bundled WASM runtime, Help catalog, and native Spreadsheet Skill converged on the reference workflow's `thread.addReply()` primitive. One root may now carry multiple direct replies with independent native comment/person GUIDs, display/user/provider identity, ISO date, done state, semantic inspect evidence, and fixed-cell parent binding. Source-free replies author native Office 2019 `parentId`; canonical imports expose the replies for text/state edits and a second export/import; unchanged imported threaded-comment parts remain byte-preserved.
