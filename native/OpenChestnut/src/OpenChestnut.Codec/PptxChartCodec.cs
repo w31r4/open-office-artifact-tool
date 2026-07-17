@@ -15,7 +15,7 @@ namespace OpenChestnut.Codec;
 // Owns the bounded literal-data p:graphicFrame -> ChartPart projection. The
 // chart semantic atoms deliberately reuse the worksheet-chart wire messages;
 // PresentationML contributes only its page-relative frame.
-internal static class PptxChartCodec
+internal static partial class PptxChartCodec
 {
     private const string ChartGraphicDataUri = "http://schemas.openxmlformats.org/drawingml/2006/chart";
     private const int MaxSeries = 256;
@@ -47,7 +47,16 @@ internal static class PptxChartCodec
             {
                 return false;
             }
-            if (!TryReadChart(ReadXml(part), out var semantic, out _, out editable)) return false;
+            var xml = ReadXml(part);
+            if (TryReadComboChart(xml, out chart, out _, out editable))
+            {
+                chart.LeftEmu = left;
+                chart.TopEmu = top;
+                chart.WidthEmu = width;
+                chart.HeightEmu = height;
+                return true;
+            }
+            if (!TryReadChart(xml, out var semantic, out _, out editable)) return false;
             chart = FromSpreadsheet(semantic, left, top, width, height);
             return true;
         }
@@ -63,7 +72,7 @@ internal static class PptxChartCodec
     {
         Validate(element.Chart, element.Id, element.Name);
         var chartPart = slidePart.AddNewPart<ChartPart>();
-        WriteXml(chartPart, BuildChartDocument(ToSpreadsheet(element.Chart, element.Id, element.Name)));
+        WriteXml(chartPart, BuildPresentationChartDocument(element.Chart, element.Id, element.Name));
         var relationshipId = slidePart.GetIdOfPart(chartPart);
         return new P.GraphicFrame(
             new P.NonVisualGraphicFrameProperties(
@@ -81,16 +90,13 @@ internal static class PptxChartCodec
         if (!TryRead(source, context, out var original, out var editable) || !editable)
             throw new CodecException("unsupported_presentation_edit", $"Presentation chart {requested.Id} no longer matches the editable literal-data chart profile.");
         Validate(requested.Chart, requested.Id, requested.Name);
-        if (requested.Chart.Type != original.Type || requested.Chart.Series.Count != original.Series.Count || requested.Chart.Categories.Count != original.Categories.Count)
+        if (!PresentationChartTopologyMatches(requested.Chart, original))
             throw new CodecException("presentation_chart_topology_changed", $"Presentation chart {requested.Id} cannot change chart type, series count, or point topology.");
-        for (var index = 0; index < requested.Chart.Series.Count; index++)
-            if (requested.Chart.Series[index].Values.Count != original.Series[index].Values.Count)
-                throw new CodecException("presentation_chart_topology_changed", $"Presentation chart {requested.Id} series {index + 1} cannot change point topology.");
 
         var relationshipId = source.Graphic!.GraphicData!.Elements<C.ChartReference>().Single().Id!.Value!;
         var part = (ChartPart)context.Owner.GetPartById(relationshipId);
         var document = XDocument.Parse(ReadXml(part), LoadOptions.PreserveWhitespace);
-        PatchChart(document, ToSpreadsheet(requested.Chart, requested.Id, requested.Name));
+        PatchPresentationChart(document, requested.Chart, requested.Id, requested.Name);
         WriteXml(part, document);
         source.NonVisualGraphicFrameProperties!.NonVisualDrawingProperties!.Name = requested.Name;
         SetFrame(source.Transform!, requested.Chart);
@@ -104,6 +110,12 @@ internal static class PptxChartCodec
         if (string.IsNullOrWhiteSpace(name) || name.Length > 255 || HasControls(name)) throw Invalid(elementId, "name must contain 1 through 255 characters without controls");
         if (chart.LeftEmu < 0 || chart.TopEmu < 0 || chart.WidthEmu <= 0 || chart.HeightEmu <= 0)
             throw Invalid(elementId, "frame must have non-negative coordinates and positive dimensions");
+        if (chart.Type == SpreadsheetChartType.Combo)
+        {
+            ValidateComboChart(chart, elementId, name);
+            return;
+        }
+        if (chart.ComboSeries.Count != 0) throw Invalid(elementId, "must not carry combo_series unless type is combo");
         if (chart.Series.Any(series => !string.IsNullOrWhiteSpace(series.CategoryFormula) || !string.IsNullOrWhiteSpace(series.ValueFormula)))
             throw Invalid(elementId, "must use literal categories and values without workbook formulas");
         var spreadsheet = ToSpreadsheet(chart, elementId, name);

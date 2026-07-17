@@ -514,6 +514,9 @@ enum SpreadsheetChartType {
   SPREADSHEET_CHART_TYPE_DOUGHNUT = 5;
   SPREADSHEET_CHART_TYPE_SCATTER = 6;
   SPREADSHEET_CHART_TYPE_BUBBLE = 7;
+  // PresentationML uses this only with PresentationChart.combo_series. XLSX
+  // charts do not yet own mixed plots and reject this enum value explicitly.
+  SPREADSHEET_CHART_TYPE_COMBO = 8;
 }
 
 // One worksheet chart graphic frame and its relationship-backed ChartPart.
@@ -1452,6 +1455,19 @@ message PresentationChart {
   SpreadsheetChartAxisArtifact x_axis = 10;
   SpreadsheetChartAxisArtifact y_axis = 11;
   SpreadsheetChartDataLabelsArtifact data_labels = 12;
+  // A bounded literal primary-axis bar+line composition. When type is COMBO,
+  // `series` must be empty and this collection must contain at least one BAR
+  // and one LINE entry. The wrapper keeps Presentation-only plot identity out
+  // of the reusable Worksheet chart series contract.
+  repeated PresentationComboSeriesArtifact combo_series = 13;
+}
+
+// One series in a bounded PresentationML combo chart. The embedded series
+// keeps normal literal values and style semantics; type may only be BAR or
+// LINE and all entries share the owning chart's primary category/value axes.
+message PresentationComboSeriesArtifact {
+  SpreadsheetChartType type = 1;
+  SpreadsheetChartSeriesArtifact series = 2;
 }
 
 message PresentationShapeTransform {

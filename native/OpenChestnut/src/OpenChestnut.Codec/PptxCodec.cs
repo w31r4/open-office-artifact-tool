@@ -1667,7 +1667,9 @@ internal static class PptxCodec
         else if (element.ContentCase == PresentationElement.ContentOneofCase.Chart)
         {
             PptxChartCodec.Validate(element.Chart, element.Id, element.Name);
-            items += checked((ulong)element.Chart.Series.Sum(series => series.Values.Count));
+            items += checked((ulong)(
+                element.Chart.Series.Sum(series => series.Values.Count) +
+                element.Chart.ComboSeries.Sum(entry => entry.Series?.Values.Count ?? 0)));
             if (items > limits.MaxCells)
                 throw new CodecException("presentation_item_budget_exceeded", $"Presentation exceeds max_cells semantic-item budget ({limits.MaxCells}).");
         }

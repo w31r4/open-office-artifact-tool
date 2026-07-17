@@ -45,6 +45,7 @@ const PRESENTATION_CHART_TYPES_TO_WIRE = new Map([
   ["bar", SpreadsheetChartType.BAR],
   ["line", SpreadsheetChartType.LINE],
   ["pie", SpreadsheetChartType.PIE],
+  ["combo", SpreadsheetChartType.COMBO],
 ]);
 const PRESENTATION_CHART_TYPES_FROM_WIRE = new Map([...PRESENTATION_CHART_TYPES_TO_WIRE].map(([name, value]) => [value, name]));
 const PRESENTATION_CHART_LINE_STYLES_TO_WIRE = new Map([
@@ -869,14 +870,16 @@ function presentationChartDataLabels(labels, chart, original) {
 function presentationChart(chart, original) {
   const originalChart = original?.content?.case === "chart" ? original.content.value : undefined;
   const type = PRESENTATION_CHART_TYPES_TO_WIRE.get(String(chart.chartType));
-  if (type == null) throw new OpenChestnutCodecError(`Presentation chart ${chart.id} supports only bar, line, or pie.`, [], { code: "unsupported_presentation_features" });
+  if (type == null) throw new OpenChestnutCodecError(`Presentation chart ${chart.id} supports only bar, line, pie, or bounded combo.`, [], { code: "unsupported_presentation_features" });
+  const combo = type === SpreadsheetChartType.COMBO;
   if (chart.externalData || chart.series.some((series) => series.categoryFormula || series.valueFormula || series.categoriesFormula || series.valuesFormula)) {
     throw new OpenChestnutCodecError(`Presentation chart ${chart.id} must use literal categories and values.`, [], { code: "unsupported_presentation_features" });
   }
   if (!Array.isArray(chart.categories) || chart.categories.length > MAX_PRESENTATION_CHART_POINTS || chart.series.length < 1 || chart.series.length > 256) {
     throw new OpenChestnutCodecError(`Presentation chart ${chart.id} exceeds the bounded category or series budget.`, [], { code: "invalid_presentation_chart" });
   }
-  if (originalChart && (originalChart.type !== type || originalChart.series.length !== chart.series.length || originalChart.categories.length !== chart.categories.length)) {
+  const originalSeries = originalChart?.type === SpreadsheetChartType.COMBO ? originalChart.comboSeries || [] : originalChart?.series || [];
+  if (originalChart && (originalChart.type !== type || originalSeries.length !== chart.series.length || originalChart.categories.length !== chart.categories.length)) {
     throw new OpenChestnutCodecError(`Presentation chart ${chart.id} cannot change its imported type, series count, or point topology.`, [], { code: "presentation_chart_topology_changed" });
   }
   const position = chart.position || {};
@@ -884,8 +887,12 @@ function presentationChart(chart, original) {
     if (!Array.isArray(item.values) || item.values.length !== chart.categories.length || item.values.some((value) => !Number.isFinite(Number(value)))) {
       throw new OpenChestnutCodecError(`Presentation chart ${chart.id} series ${index + 1} must contain one finite value per category.`, [], { code: "invalid_presentation_chart" });
     }
-    if (item.axisGroup === "secondary" || item.chartType || item.points?.length || item.trendlines?.length || item.errorBars || item.dataLabels || item.smooth != null) {
-      throw new OpenChestnutCodecError(`Presentation chart ${chart.id} series ${index + 1} uses semantics outside the bounded bar/line/pie slice.`, [], { code: "unsupported_presentation_features" });
+    const seriesType = combo ? PRESENTATION_CHART_TYPES_TO_WIRE.get(String(item.chartType || "")) : undefined;
+    if (combo && seriesType !== SpreadsheetChartType.BAR && seriesType !== SpreadsheetChartType.LINE) {
+      throw new OpenChestnutCodecError(`Presentation combo chart ${chart.id} series ${index + 1} must be bar or line.`, [], { code: "unsupported_presentation_features" });
+    }
+    if (item.axisGroup === "secondary" || (!combo && item.chartType) || item.points?.length || item.trendlines?.length || item.errorBars || item.dataLabels || item.smooth != null) {
+      throw new OpenChestnutCodecError(`Presentation chart ${chart.id} series ${index + 1} uses semantics outside the bounded native chart slice.`, [], { code: "unsupported_presentation_features" });
     }
     return {
       name: String(item.name || `Series ${index + 1}`),
@@ -893,8 +900,16 @@ function presentationChart(chart, original) {
       ...(item.fill || item.color ? { fill: presentationChartColor(item.fill || item.color, chart, `series[${index}].fill`) } : {}),
       ...(item.line || item.stroke ? { line: presentationChartLine(item.line || item.stroke, chart, `series[${index}].line`) } : {}),
       ...(item.marker ? { marker: presentationChartMarker(item.marker, chart, `series[${index}].marker`) } : {}),
+      ...(seriesType == null ? {} : { _comboType: seriesType }),
     };
   });
+  if (combo && (!series.some((item) => item._comboType === SpreadsheetChartType.BAR) || !series.some((item) => item._comboType === SpreadsheetChartType.LINE))) {
+    throw new OpenChestnutCodecError(`Presentation combo chart ${chart.id} requires at least one bar series and one line series.`, [], { code: "invalid_presentation_chart" });
+  }
+  if (combo && originalChart?.type === SpreadsheetChartType.COMBO && originalSeries.some((item, index) => item.type !== series[index]?._comboType)) {
+    throw new OpenChestnutCodecError(`Presentation chart ${chart.id} cannot change an imported combo series type.`, [], { code: "presentation_chart_topology_changed" });
+  }
+  const nativeSeries = series.map(({ _comboType, ...item }) => item);
   const xAxis = type === SpreadsheetChartType.PIE ? undefined : presentationChartAxis(chart.axes?.category, chart, "xAxis", originalChart?.xAxis);
   const yAxis = type === SpreadsheetChartType.PIE ? undefined : presentationChartAxis(chart.axes?.value, chart, "yAxis", originalChart?.yAxis);
   const dataLabels = presentationChartDataLabels(chart.dataLabels, chart, originalChart?.dataLabels);
@@ -913,7 +928,8 @@ function presentationChart(chart, original) {
         title: String(chart.title || ""),
         hasLegend: Boolean(chart.legend?.visible ?? chart.hasLegend),
         categories: chart.categories.map((value) => String(value ?? "")),
-        series,
+        series: combo ? [] : nativeSeries,
+        ...(combo ? { comboSeries: series.map(({ _comboType, ...item }) => ({ type: _comboType, series: item })) } : {}),
         ...(xAxis ? { xAxis } : {}),
         ...(yAxis ? { yAxis } : {}),
         ...(dataLabels ? { dataLabels } : {}),
@@ -1714,6 +1730,11 @@ function modelPresentationChartDataLabels(labels) {
 function modelPresentationChart(source) {
   const chartType = PRESENTATION_CHART_TYPES_FROM_WIRE.get(source.type);
   if (!chartType) throw new OpenChestnutCodecError("Presentation chart contains an unsupported chart type.", [], { code: "invalid_presentation_chart" });
+  const combo = source.type === SpreadsheetChartType.COMBO;
+  const sourceSeries = combo ? source.comboSeries || [] : source.series;
+  if (combo && (!sourceSeries.some((item) => item.type === SpreadsheetChartType.BAR) || !sourceSeries.some((item) => item.type === SpreadsheetChartType.LINE))) {
+    throw new OpenChestnutCodecError("Presentation combo chart must contain at least one bar and one line series.", [], { code: "invalid_presentation_chart" });
+  }
   const axes = chartType === "pie" ? undefined : {
     category: modelPresentationChartAxis(source.xAxis, true) || { title: "" },
     value: modelPresentationChartAxis(source.yAxis, false) || { title: "" },
@@ -1728,13 +1749,19 @@ function modelPresentationChart(source) {
     },
     title: source.title,
     categories: [...source.categories],
-    series: source.series.map((series) => ({
-      name: series.name,
-      values: [...series.values],
-      ...(series.fill ? { fill: modelPresentationChartColor(series.fill) } : {}),
-      ...(series.line ? { line: modelPresentationChartLine(series.line) } : {}),
-      ...(series.marker ? { marker: modelPresentationChartMarker(series.marker) } : {}),
-    })),
+    series: sourceSeries.map((entry) => {
+      const series = combo ? entry.series : entry;
+      const seriesType = combo ? PRESENTATION_CHART_TYPES_FROM_WIRE.get(entry.type) : undefined;
+      if (combo && !new Set(["bar", "line"]).has(seriesType)) throw new OpenChestnutCodecError("Presentation combo chart contains an unsupported series type.", [], { code: "invalid_presentation_chart" });
+      return {
+        name: series.name,
+        values: [...series.values],
+        ...(series.fill ? { fill: modelPresentationChartColor(series.fill) } : {}),
+        ...(series.line ? { line: modelPresentationChartLine(series.line) } : {}),
+        ...(series.marker ? { marker: modelPresentationChartMarker(series.marker) } : {}),
+        ...(seriesType ? { chartType: seriesType } : {}),
+      };
+    }),
     hasLegend: source.hasLegend,
     ...(axes ? { axes } : {}),
     ...(source.dataLabels ? { dataLabels: modelPresentationChartDataLabels(source.dataLabels) } : {}),
