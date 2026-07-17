@@ -1,0 +1,4 @@
+interface:
+  display_name: "Template Creator"
+  short_description: "Create or update reusable local Office templates"
+  default_prompt: "Create a reusable Office template from my reference file."

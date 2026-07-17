@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "name": "template-creator",
+  "description": "Create and update reusable local Office artifact templates.",
+  "owner": "w31r4",
+  "skills": [
+    "skills/template-creator"
+  ],
+  "assets": {
+    "icon": "assets/icon.svg"
+  },
+  "interface": {
+    "displayName": "Template Creator",
+    "shortDescription": "Create or update reusable Office templates"
+  }
+}
