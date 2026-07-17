@@ -65,6 +65,47 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### DOCX canonical bibliography and citation public workflow
+
+On 2026-07-17, the Documents public model, versioned protobuf wire,
+OpenChestnut C# codec, bundled WASM runtime, Help catalog, and native Documents
+plugin converged on one reversible bibliography/citation profile. Source-free
+documents may author one canonical bibliography Custom XML catalog plus
+whole-paragraph `w:fldSimple` `CITATION <tag>` fields. Ordinary Author name
+lists or one corporate author, the bounded scalar source catalog, bibliography
+settings, and multiple sources survive export, import, fixed-topology content
+edits, second export, and second import through the Microsoft Open XML SDK.
+
+Imported source order, GUIDs, tags, citation tags, and field topology remain
+source-bound. Other contributor roles, complex field switches/results,
+multiple or irregular bibliography parts, bibliography output fields, and
+extension graphs stay opaque/read-only and fail closed on semantic mutation.
+The package inspector recognizes SDK-authored package-root bibliography
+relationship targets without weakening OPC path validation. The shipped
+Documents example and fixture author a source and citation, edit the imported
+title/author/display result, resolve the final semantic objects, assert native
+bibliography and field markup, verify the model, and complete two OpenChestnut
+round trips.
+
+The complete local gate passed `npm test` including Playwright and all five
+published Skills, `npm run docs:api`, `npm run proto:check`,
+`npm run test:pack`, serial `npm run verify:open-chestnut-build`, OpenChestnut
+`180/180`, and OfficeBridge `5/5`. Two clean WASM builds produced the same 39
+audited files and the same manifest-bound 38-file, 14,297,788-byte runtime. The
+clean-install tarball contains 422 files, is 9,265,073 bytes compressed and
+23,061,507 bytes unpacked. No npm publish, tag, or GitHub release operation was
+attempted.
+
+The completed public-workflow candidate at commit
+`cec9628f8429934e48820bdbae064d5a2ff32fd5` passed the hosted Linux `ci`
+workflow in [GitHub Actions run 29580505711](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29580505711)
+on 2026-07-17. The run completed with conclusion `success` in 4m11s and covered
+protocol/runtime determinism, Chromium/LibreOffice/Poppler tool checks, the
+complete npm suite including the canonical bibliography/citation Documents
+workflow and fail-closed irregular-graph regressions, generated API-doc
+cleanliness, offline release metadata, the 422-file clean-install tarball,
+OfficeBridge `5/5`, and OpenChestnut `180/180`.
+
 ### DOCX inline plain-text content-control public workflow
 
 On 2026-07-17, the already integrated inline plain-text content-control codec
