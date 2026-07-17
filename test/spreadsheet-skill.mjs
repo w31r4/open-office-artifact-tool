@@ -134,7 +134,7 @@ try {
   const scatterXml = await scatterZip.file(scatterChartPath).async("text");
   assert.match(scatterXml, /<c:scatterChart>/);
   assert.match(scatterXml, /<c:scatterStyle val="marker"/);
-  assert.equal((scatterXml.match(/<a:ln><a:noFill\/><\/a:ln>/g) || []).length, 2);
+  assert.equal((scatterXml.match(/<a:ln><a:noFill\s*\/><\/a:ln>/g) || []).length, 2);
   assert.equal((scatterXml.match(/<c:valAx>/g) || []).length, 2);
   const scatterQa = await verifyWorkbookFile(scatterPath, {
     outputDir: path.join(outputDir, "openchestnut-scatter-native-qa"),
