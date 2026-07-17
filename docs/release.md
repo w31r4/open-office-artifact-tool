@@ -65,6 +65,46 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### DOCX canonical complex TOC and field-refresh workflow
+
+On 2026-07-17, the Documents public model, versioned protobuf wire,
+OpenChestnut C# codec, bundled WASM runtime, Help catalog, and native Documents
+plugin converged on one bounded complex-field profile. Source-free documents may
+author a canonical one-paragraph TOC field with configurable ascending heading
+levels and the `\\h`, `\\z`, and `\\u` switches. The public
+`document.addTableOfContents(...)` primitive emits native
+`w:fldChar`/`w:instrText` topology and enables the `w:updateFields` open-time
+refresh hint by default. The hint is modeled explicitly and never asserts that
+the cached TOC result is current.
+
+Canonical unrefreshed one-paragraph TOCs survive export, import,
+fixed-topology instruction/display edits, second export, and second import.
+Refreshed cross-paragraph TOCs, including otherwise plain-looking paragraphs
+inside the field span, remain opaque/source-bound and read-only as one graph.
+Arbitrary complex REF/PAGEREF/SEQ/external-content fields remain outside the
+semantic profile. The shipped Documents fixture proves the public workflow,
+native field/settings XML, semantic inspect evidence, LibreOffice rendering,
+and fail-closed irregular-graph preservation.
+
+The complete local gate passed `npm test` including Playwright and all five
+published Skills, `npm run docs:api`, `npm run proto:check`,
+`npm run test:pack`, isolated `npm run verify:open-chestnut-build`,
+OpenChestnut `182/182`, and OfficeBridge `5/5`. Two isolated clean WASM builds
+produced the same 39 audited files and the same manifest-bound 38-file,
+14,303,420-byte runtime. The clean-install tarball contains 422 files, is
+9,268,734 bytes compressed and 23,076,840 bytes unpacked. No npm publish, tag,
+or GitHub release operation was attempted.
+
+The completed TOC/field-refresh candidate at commit
+`f7c83de4fbb83ddade81542cb95df86d01be4939` passed the hosted Linux `ci`
+workflow in [GitHub Actions run 29582981065](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29582981065)
+on 2026-07-17. The run completed with conclusion `success` in 4m28s and covered
+protocol/runtime determinism, Chromium/LibreOffice/Poppler tool checks, the
+complete npm suite including the native TOC Documents workflow and
+cross-paragraph fail-closed regression, generated API-doc cleanliness, offline
+release metadata, the 422-file clean-install tarball, OfficeBridge `5/5`, and
+OpenChestnut `182/182`.
+
 ### DOCX canonical bibliography and citation public workflow
 
 On 2026-07-17, the Documents public model, versioned protobuf wire,
