@@ -363,14 +363,43 @@ await assert.rejects(
   (error) => error?.code === "unsupported_document_edit" && /insertion\/deletion kind/i.test(error.message),
 );
 
-const unsupported = DocumentModel.create({
-  name: "Unsupported advanced authoring",
-  blocks: [{ kind: "paragraph", styleId: "Normal", text: "Advanced source" }],
+const bibliographyDocument = DocumentModel.create({
+  name: "Bounded bibliography and citation",
+  bibliography: { selectedStyle: "\\APASixthEditionOfficeOnline.xsl", styleName: "APA" },
+  blocks: [],
 });
-unsupported.addCitation("Unsupported citation", { tag: "AdvancedSource", title: "Advanced source" });
+bibliographyDocument.addBibliographySource({
+  id: "bibliography/AgentSource",
+  tag: "AgentSource",
+  sourceType: "Book",
+  title: "Sketch of the Analytical Engine",
+  year: "1843",
+  publisher: "Scientific Memoirs",
+  authors: [{ first: "Ada", last: "Lovelace" }],
+});
+bibliographyDocument.addCitation("(Lovelace, 1843)", { tag: "AgentSource" }, { id: "citation/agent-source" });
+const bibliographyDocx = await DocumentFile.exportDocx(bibliographyDocument);
+const importedBibliography = await DocumentFile.importDocx(bibliographyDocx);
+assert.equal(importedBibliography.bibliography.styleName, "APA");
+assert.equal(importedBibliography.bibliographySources.length, 1);
+assert.equal(importedBibliography.bibliographySources[0].title, "Sketch of the Analytical Engine");
+assert.deepEqual(importedBibliography.bibliographySources[0].authors, [{ first: "Ada", middle: "", last: "Lovelace" }]);
+assert.equal(importedBibliography.blocks[0].kind, "citation");
+assert.equal(importedBibliography.blocks[0].metadata.tag, "AgentSource");
+assert.equal(importedBibliography.bookmarks[0].targetId, importedBibliography.blocks[0].id);
+importedBibliography.bibliographySources[0].title = "Notes on the Analytical Engine";
+importedBibliography.bibliographySources[0].authors[0].first = "Augusta Ada";
+importedBibliography.blocks[0].text = "(Lovelace, 1843, revised)";
+const roundTripBibliography = await DocumentFile.importDocx(await DocumentFile.exportDocx(importedBibliography));
+assert.equal(roundTripBibliography.bibliographySources[0].title, "Notes on the Analytical Engine");
+assert.equal(roundTripBibliography.bibliographySources[0].authors[0].first, "Augusta Ada");
+assert.equal(roundTripBibliography.blocks[0].text, "(Lovelace, 1843, revised)");
+
+roundTripBibliography.bibliographySources[0].tag = "RenamedSource";
+roundTripBibliography.blocks[0].metadata.tag = "RenamedSource";
 await assert.rejects(
-  () => DocumentFile.exportDocx(unsupported),
-  /cannot author or edit these DOCX features:/i,
+  () => DocumentFile.exportDocx(roundTripBibliography),
+  (error) => new Set(["unsupported_document_bibliography_edit", "unsupported_document_edit"]).has(error?.code) && /source-bound/i.test(error.message),
 );
 
 const unsupportedSettings = DocumentModel.create({

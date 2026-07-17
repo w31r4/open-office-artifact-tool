@@ -111,6 +111,20 @@ internal static class DocxBibliographyCodec
         Save(part, document.Bibliography);
     }
 
+    internal static IReadOnlySet<string> SourceTags(MainDocumentPart mainPart, DocumentBibliography? requested)
+    {
+        if (requested?.Source is not { } binding)
+            return requested?.Sources.Select(source => source.Tag).ToHashSet(StringComparer.Ordinal) ??
+                   new HashSet<string>(StringComparer.Ordinal);
+        var pair = mainPart.Parts.SingleOrDefault(item =>
+            item.RelationshipId.Equals(binding.RelationshipId, StringComparison.Ordinal) &&
+            item.OpenXmlPart is CustomXmlPart &&
+            Path(item.OpenXmlPart).Equals(binding.PartPath, StringComparison.OrdinalIgnoreCase));
+        if (pair.OpenXmlPart is not CustomXmlPart part)
+            throw Unsupported("Imported DOCX bibliography relationship or part locator no longer matches its source binding.", binding.PartPath);
+        return Parse(part, pair.RelationshipId).Sources.Select(source => source.Tag).ToHashSet(StringComparer.Ordinal);
+    }
+
     internal static void ApplySource(DocxPartContext context, DocumentArtifact requested)
     {
         var bibliography = requested.Bibliography;

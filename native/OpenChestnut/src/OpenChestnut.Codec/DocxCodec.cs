@@ -38,11 +38,12 @@ internal static class DocxCodec
         var body = mainPart.Document?.Body ??
             throw new CodecException("missing_document_body", "DOCX package has no document body.", "word/document.xml");
         var imageAssets = new DocxImageAssetCatalog(null, limits);
-        var context = new DocxPartContext(mainPart, imageAssets);
 
         var document = new DocumentArtifact { Id = "document/1", Name = "Imported document" };
         DocxDirectStyles.Read(mainPart, document);
         ulong semanticItems = 0;
+        var bibliographyTags = DocxBibliographyCodec.Read(mainPart, document, ref semanticItems, limits, diagnostics);
+        var context = new DocxPartContext(mainPart, imageAssets, bibliographyTags: bibliographyTags);
         var ordinal = 0;
         for (var bodyIndex = 0; bodyIndex < body.ChildElements.Count; bodyIndex++)
         {
@@ -104,7 +105,11 @@ internal static class DocxCodec
             var mainPart = package.AddMainDocumentPart();
             DocxDirectStyles.AddRequiredStyles(mainPart, envelope.Document);
             DocxDirectNumbering.Apply(mainPart, numberingPlan);
-            var context = new DocxPartContext(mainPart, imageAssets, envelope.Document.Bookmarks.Select(bookmark => bookmark.Name));
+            var context = new DocxPartContext(
+                mainPart,
+                imageAssets,
+                envelope.Document.Bookmarks.Select(bookmark => bookmark.Name),
+                envelope.Document.Bibliography?.Sources.Select(source => source.Tag));
             var headerFooterPlan = DocxHeaderFooterCodec.Author(mainPart, envelope.Document);
             var body = new W.Body();
             mainPart.Document = new W.Document(body);
@@ -125,6 +130,7 @@ internal static class DocxCodec
             DocxNoteCodec.Author(context, body, envelope.Document);
             DocxBookmarkCodec.Author(body, envelope.Document);
             DocxClassicCommentCodec.Author(context, body, envelope.Document);
+            DocxBibliographyCodec.Author(mainPart, envelope.Document);
             body.Append(DocxSectionCodec.BuildFinal(
                 headerFooterPlan.References(sectionIndex),
                 headerFooterPlan.DifferentFirstPage(sectionIndex)));
@@ -148,7 +154,8 @@ internal static class DocxCodec
                    block.Source is not null || block.ContentCase == DocumentBlock.ContentOneofCase.Opaque) ||
                envelope.Document.Comments.Any(comment => comment.Source is not null) ||
                envelope.Document.Bookmarks.Any(bookmark => bookmark.Source is not null) ||
-               envelope.Document.Notes.Any(note => note.Source is not null);
+               envelope.Document.Notes.Any(note => note.Source is not null) ||
+               envelope.Document.Bibliography?.Source is not null;
     }
 
     private static DocxExportResult ExportPreservingSource(ArtifactEnvelope envelope, EffectiveCodecLimits limits, int opaqueCount)
@@ -171,7 +178,10 @@ internal static class DocxCodec
                 throw new CodecException("missing_document_part", "DOCX package has no Main Document part.", "word/document.xml");
             var body = mainPart.Document?.Body ??
                 throw new CodecException("missing_document_body", "DOCX package has no document body.", "word/document.xml");
-            context = new DocxPartContext(mainPart, imageAssets);
+            context = new DocxPartContext(
+                mainPart,
+                imageAssets,
+                bibliographyTags: DocxBibliographyCodec.SourceTags(mainPart, envelope.Document.Bibliography));
             DocxDirectStyles.AssertSourceUnchanged(mainPart, envelope.Document);
             DocxHeaderFooterCodec.AssertSourceUnchanged(mainPart, body, envelope.Document);
             var sourceElements = body.ChildElements.Where(element => element is not W.SectionProperties).ToArray();
@@ -220,6 +230,13 @@ internal static class DocxCodec
                     throw new CodecException(
                         "document_source_binding_mismatch",
                         $"Document tracked-change block {ordinal} revision locator does not match its source element.",
+                        "word/document.xml");
+                if (block.ContentCase == DocumentBlock.ContentOneofCase.Citation &&
+                    original.ContentCase == DocumentBlock.ContentOneofCase.Citation &&
+                    !block.Citation.Tag.Equals(original.Citation.Tag, StringComparison.Ordinal))
+                    throw new CodecException(
+                        "unsupported_document_edit",
+                        $"Document citation block {ordinal} source tag is source-bound and cannot be changed.",
                         "word/document.xml");
                 if (block.ContentCase == DocumentBlock.ContentOneofCase.Paragraph &&
                     original.ContentCase == DocumentBlock.ContentOneofCase.Paragraph)
@@ -310,6 +327,34 @@ internal static class DocxCodec
                         throw new CodecException(
                             "document_semantics_not_applied",
                             $"Document field block {ordinal} does not match the requested modeled semantics after editing.",
+                            "word/document.xml");
+                }
+                else if (block.ContentCase == DocumentBlock.ContentOneofCase.Citation)
+                {
+                    if (!block.StyleId.Equals(original.StyleId, StringComparison.Ordinal))
+                        throw new CodecException(
+                            "unsupported_document_edit",
+                            $"Document citation block {ordinal} paragraph style is source-bound and cannot be edited by this codec slice.",
+                            "word/document.xml");
+                    if (element is not W.Paragraph citationParagraph ||
+                        string.IsNullOrWhiteSpace(binding.ResidualSha256) ||
+                        !DocxCitationCodec.ResidualHash(citationParagraph).Equals(binding.ResidualSha256, StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "document_source_residual_mismatch",
+                            $"Document citation block {ordinal} unmodeled source formatting or bookmark topology does not match its binding.",
+                            "word/document.xml");
+                    DocxCitationCodec.Apply(citationParagraph, block.Citation, original.Citation);
+                    if (!DocxCitationCodec.ResidualHash(citationParagraph).Equals(binding.ResidualSha256, StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "document_residual_not_preserved",
+                            $"Document citation block {ordinal} changed source-bound formatting or bookmark topology.",
+                            "word/document.xml");
+                    ulong verificationItems = 0;
+                    var verified = ReadBodyBlock(citationParagraph, ordinal, binding.BodyIndex, ref verificationItems, limits, context);
+                    if (!SemanticHash(verified).Equals(SemanticHash(block), StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "document_semantics_not_applied",
+                            $"Document citation block {ordinal} does not match the requested modeled semantics after editing.",
                             "word/document.xml");
                 }
                 else if (block.ContentCase == DocumentBlock.ContentOneofCase.Change)
@@ -444,6 +489,7 @@ internal static class DocxCodec
             }
             DocxNoteCodec.ApplySource(context, body, envelope.Document);
             DocxClassicCommentCodec.ApplySource(context, body, envelope.Document);
+            DocxBibliographyCodec.ApplySource(context, envelope.Document);
             mainPart.Document!.Save();
         }
 
@@ -502,6 +548,12 @@ internal static class DocxCodec
                 if (DocxHyperlinkCodec.TryRead(paragraph, context, out var hyperlink, out editable))
                 {
                     block.Hyperlink = hyperlink;
+                    semanticItems++;
+                    break;
+                }
+                if (DocxCitationCodec.TryRead(paragraph, context.BibliographyTags, out var citation, out editable))
+                {
+                    block.Citation = citation;
                     semanticItems++;
                     break;
                 }
@@ -569,6 +621,8 @@ internal static class DocxCodec
                 block.Source.ResidualSha256 = DocxHyperlinkCodec.ResidualHash(sourceParagraph);
             else if (block.ContentCase == DocumentBlock.ContentOneofCase.Field)
                 block.Source.ResidualSha256 = DocxFieldCodec.ResidualHash(sourceParagraph);
+            else if (block.ContentCase == DocumentBlock.ContentOneofCase.Citation)
+                block.Source.ResidualSha256 = DocxCitationCodec.ResidualHash(sourceParagraph);
             else if (block.ContentCase == DocumentBlock.ContentOneofCase.Change && editable)
                 block.Source.ResidualSha256 = DocxTrackedChangeCodec.ResidualHash(sourceParagraph);
             else if (block.ContentCase == DocumentBlock.ContentOneofCase.Paragraph && block.Paragraph.Numbering is not null && editable)
@@ -616,6 +670,7 @@ internal static class DocxCodec
         DocumentBlock.ContentOneofCase.Table => DocxTableCodec.Build(block),
         DocumentBlock.ContentOneofCase.Hyperlink => DocxHyperlinkCodec.Build(block, context),
         DocumentBlock.ContentOneofCase.Field => DocxFieldCodec.Build(block),
+        DocumentBlock.ContentOneofCase.Citation => DocxCitationCodec.Build(block),
         DocumentBlock.ContentOneofCase.Change => DocxTrackedChangeCodec.Build(
             block,
             revisionId ?? throw new CodecException("missing_document_revision_id", $"Document tracked-change block {block.Id} requires a revision ID.")),
@@ -709,6 +764,7 @@ internal static class DocxCodec
             allowImportedCycles: envelope.OpaqueOpc?.SourcePackage is { Data.IsEmpty: false });
         DocxHeaderFooterCodec.Validate(envelope.Document);
         DocxTextContentControlCodec.Validate(envelope.Document);
+        DocxBibliographyCodec.Validate(envelope.Document);
 
         ulong semanticItems = checked((ulong)envelope.Document.Comments.Count + (ulong)envelope.Document.Bookmarks.Count + (ulong)envelope.Document.Notes.Count);
         foreach (var block in envelope.Document.Blocks)
@@ -735,6 +791,10 @@ internal static class DocxCodec
                 case DocumentBlock.ContentOneofCase.Field:
                     if (block.Source?.Editable == false) DocxFieldCodec.ValidatePreserved(block.Field);
                     else DocxFieldCodec.Validate(block.Field);
+                    semanticItems++;
+                    break;
+                case DocumentBlock.ContentOneofCase.Citation:
+                    DocxCitationCodec.Validate(block.Citation);
                     semanticItems++;
                     break;
                 case DocumentBlock.ContentOneofCase.Change:

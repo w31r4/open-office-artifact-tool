@@ -1,7 +1,7 @@
 {
   "mainAssemblyName": "OpenChestnut.Runtime.dll",
   "resources": {
-    "hash": "sha256-KyfpHuAL5goZ5Ld71dkbJTY9s6IlVSNsBzOw4Q9TW7U=",
+    "hash": "sha256-bzQApuBkFonvoHD3Zg6GOwvQ6Iq9E3JiefFDqxUMqCU=",
     "jsModuleNative": {
       "dotnet.native.js": "sha256-3M5CDym93zeieNAd2KEOcVjqHuLUxjPt+6MeEvdx80A="
     },
@@ -13,11 +13,11 @@
     },
     "wasmSymbols": {},
     "assembly": {
-      "DocumentFormat.OpenXml.wasm": "sha256-W10sYRRPT7ICUw5Ipgn5EtuQDDlgmt2GfSp+3hf3tAY=",
-      "DocumentFormat.OpenXml.Framework.wasm": "sha256-fXTFNypiw2F7VpOdpPUOtNTKM2Y0pQ+2sdLnZJz1AFA=",
+      "DocumentFormat.OpenXml.wasm": "sha256-EecDNDZw2VXmJpkG0ijIp/PKb7jbhqVCpgS9t2u1ryc=",
+      "DocumentFormat.OpenXml.Framework.wasm": "sha256-iiSEuZY4d/u3X8sDIqcATEeldhijcBWCkTPj+aZof3U=",
       "Google.Protobuf.wasm": "sha256-LaUnlro/BaTjo5uX14WD9B/KbmOUu/LVQ4W+EwbReK8=",
-      "OpenChestnut.Codec.wasm": "sha256-zOFVjqyjTp9JDJFU0MP3CE2en0fKGLgZm2JQpXxXXYo=",
-      "OpenChestnut.Runtime.wasm": "sha256-twdd1+rFg93Et0g8wkUtkZ+XWB5v2zQ+AQ38rtUoadc=",
+      "OpenChestnut.Codec.wasm": "sha256-TYxNuh5vT82Ujbsry+l3PJI81OELOS1XEEsOlHgM4hA=",
+      "OpenChestnut.Runtime.wasm": "sha256-5mLqhT2ElWhm0bK7sagzoK0+vtkRWbWlG/Buil6C95k=",
       "System.Collections.Concurrent.wasm": "sha256-PjS0IHC3cqACW1NWl9PL//B936Cs32qXpBxz+YgUeGk=",
       "System.Collections.wasm": "sha256-zWQh+9awRirAjopZmiOPwQi9SGIi5TXMbJ/bsxjcCiA=",
       "System.Collections.NonGeneric.wasm": "sha256-b/yvU1wtbcaFYB93+JgQ4mmHJ6HOFRe4TOlEl5ABtr8=",
@@ -37,7 +37,7 @@
       "System.Private.Xml.Linq.wasm": "sha256-NMsSCsnKdPTzaK0wz5vX/MBNozEg43P/OI8yrTEkAoY=",
       "System.Runtime.InteropServices.JavaScript.wasm": "sha256-FUm8fwFoVd+a6NbqGbY9yTh1tPSH4kFqVtOxD4aJgtE=",
       "System.Security.Cryptography.wasm": "sha256-q0w+T1G8FCY6I+QoPs1+NCpk/JvqKNz5J+aj+9MyU90=",
-      "System.Text.RegularExpressions.wasm": "sha256-B6JaiIuPf3u08N7WbYRnNaajET3k46mYl02g6JQUc8c=",
+      "System.Text.RegularExpressions.wasm": "sha256-leinss7gnChEGdHj066JIpWWJLV5SPvxU4VFXKBRuvE=",
       "System.Xml.Linq.wasm": "sha256-edtxQtoay6zlrx/GNfnTYtQMJFCctPzjm0k0pitvJDw="
     },
     "vfs": {

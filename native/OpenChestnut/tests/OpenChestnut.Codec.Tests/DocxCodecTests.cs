@@ -1,10 +1,12 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
+using System.Xml.Linq;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Validation;
 using Google.Protobuf;
 using OpenOffice.Artifact.Wire.V1;
+using B = DocumentFormat.OpenXml.Bibliography;
 using W = DocumentFormat.OpenXml.Wordprocessing;
 using Xunit;
 
@@ -2014,6 +2016,110 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void BibliographyCitationSliceAuthorsImportsEditsAndFailsClosedForIrregularGraphs()
+    {
+        var authored = Invoke(BibliographyExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var mainPart = package.MainDocumentPart!;
+            var part = Assert.Single(mainPart.CustomXmlParts);
+            var sources = new B.Sources();
+            sources.Load(part);
+            Assert.Contains("AgentSource", sources.OuterXml);
+            var field = Assert.Single(mainPart.Document!.Descendants<W.SimpleField>());
+            Assert.Equal(" CITATION AgentSource ", field.Instruction?.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var bibliography = Assert.IsType<DocumentBibliography>(imported.Artifact.Document.Bibliography);
+        Assert.True(bibliography.Source.Editable);
+        Assert.NotEmpty(bibliography.Source.PartSha256);
+        Assert.Equal("AgentSource", Assert.Single(bibliography.Sources).Tag);
+        var citation = Assert.Single(imported.Artifact.Document.Blocks);
+        Assert.Equal(DocumentBlock.ContentOneofCase.Citation, citation.ContentCase);
+        Assert.True(citation.Source.Editable);
+        Assert.NotEmpty(citation.Source.ResidualSha256);
+        Assert.Equal("(Lovelace, 1843)", citation.Citation.Display);
+        Assert.Single(imported.Artifact.Document.Bookmarks);
+
+        bibliography.Sources[0].Fields["title"] = "Notes on the Analytical Engine";
+        bibliography.Sources[0].Authors[0].First = "Augusta Ada";
+        citation.Citation.Display = "(Lovelace, 1843, revised)";
+        var edited = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var roundTrip = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = edited.File,
+        });
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        Assert.Equal("Notes on the Analytical Engine", roundTrip.Artifact.Document.Bibliography.Sources[0].Fields["title"]);
+        Assert.Equal("Augusta Ada", roundTrip.Artifact.Document.Bibliography.Sources[0].Authors[0].First);
+        Assert.Equal("(Lovelace, 1843, revised)", roundTrip.Artifact.Document.Blocks[0].Citation.Display);
+
+        roundTrip.Artifact.Document.Bibliography.Sources[0].Tag = "RenamedSource";
+        roundTrip.Artifact.Document.Blocks[0].Citation.Tag = "RenamedSource";
+        var renamed = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = roundTrip.Artifact,
+        });
+        Assert.False(renamed.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(renamed.Diagnostics).Code);
+
+        var irregularBytes = MakeBibliographyContributorRoleIrregular(authored.File.ToByteArray());
+        var irregular = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(irregularBytes),
+        });
+        Assert.True(irregular.Ok, Diagnostics(irregular));
+        Assert.Null(irregular.Artifact.Document.Bibliography);
+        Assert.Equal(DocumentBlock.ContentOneofCase.Paragraph, irregular.Artifact.Document.Blocks[0].ContentCase);
+        Assert.False(irregular.Artifact.Document.Blocks[0].Source.Editable);
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = irregular.Artifact,
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        irregular.Artifact.Document.Blocks[0].Paragraph.Text = "Unsafe reconstruction";
+        var rejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = irregular.Artifact,
+        });
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void SourcePreservingExportEditsBoundedSimpleFieldAndKeepsFormatting()
     {
         var authored = Invoke(FieldExportRequest());
@@ -2323,6 +2429,78 @@ public sealed class DocxCodecTests
             var insertion = document.MainDocumentPart!.Document!.Descendants<W.InsertedRun>().Single();
             insertion.Append(new W.Run(new W.Text(" continuation") { Space = SpaceProcessingModeValues.Preserve }));
             document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static CodecRequest BibliographyExportRequest()
+    {
+        var document = new DocumentArtifact
+        {
+            Id = "document/bibliography",
+            Name = "Bibliography fixture",
+            Bibliography = new DocumentBibliography
+            {
+                SelectedStyle = "\\APASixthEditionOfficeOnline.xsl",
+                StyleName = "APA",
+                Uri = "https://example.test/styles/apa",
+            },
+        };
+        var source = new DocumentBibliographySource
+        {
+            Id = "bibliography/AgentSource",
+            Tag = "AgentSource",
+            SourceType = "Book",
+        };
+        source.Authors.Add(new DocumentBibliographyPerson { First = "Ada", Last = "Lovelace" });
+        source.Fields["title"] = "Sketch of the Analytical Engine";
+        source.Fields["year"] = "1843";
+        source.Fields["publisher"] = "Scientific Memoirs";
+        source.Fields["guid"] = "{4D325651-1414-4D44-8BE3-4D44450E6C91}";
+        document.Bibliography.Sources.Add(source);
+        var citation = new DocumentBlock
+        {
+            Id = "document/citation",
+            StyleId = "Normal",
+            Citation = new DocumentCitation { Tag = source.Tag, Display = "(Lovelace, 1843)" },
+        };
+        document.Blocks.Add(citation);
+        document.Bookmarks.Add(new DocumentBookmark
+        {
+            Id = "document/citation/bookmark",
+            Name = "OpenOfficeCitation_AgentSource",
+            TargetBlockId = citation.Id,
+            EndTargetBlockId = citation.Id,
+        });
+        return new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = new ArtifactEnvelope
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Family = ArtifactFamily.Document,
+                Document = document,
+            },
+        };
+    }
+
+    private static byte[] MakeBibliographyContributorRoleIrregular(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var part = Assert.Single(document.MainDocumentPart!.CustomXmlParts);
+            XNamespace bibliography = "http://schemas.openxmlformats.org/officeDocument/2006/bibliography";
+            XDocument xml;
+            using (var input = part.GetStream(FileMode.Open, FileAccess.Read)) xml = XDocument.Load(input);
+            var role = xml.Descendants(bibliography + "Author").Skip(1).First();
+            role.Name = bibliography + "Editor";
+            using var output = part.GetStream(FileMode.Create, FileAccess.Write);
+            xml.Save(output, SaveOptions.DisableFormatting);
         }
         return stream.ToArray();
     }

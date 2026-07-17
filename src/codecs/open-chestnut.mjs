@@ -1533,6 +1533,13 @@ export async function importXlsxWithOpenChestnut(input, options = {}) {
 
 const DOCUMENT_RUN_STYLE_KEYS = new Set(["runStyleId", "bold", "italic", "underline", "fontFamily", "fontSize", "color", "characterSpacing", "characterSpacingTwips"]);
 const DOCUMENT_RUN_DERIVED_STYLE_KEYS = new Set(["resolvedColor", "resolvedFontFamily", "resolvedFontFamilyEastAsia", "resolvedFontFamilyComplexScript"]);
+const DOCUMENT_BIBLIOGRAPHY_FIELD_KEYS = [
+  "title", "year", "city", "stateProvince", "countryRegion", "publisher", "bookTitle", "journalName", "periodicalTitle", "publicationTitle", "internetSiteTitle",
+  "conferenceName", "institution", "department", "volume", "issue", "pages", "edition", "numberVolumes", "chapterNumber", "standardNumber", "shortTitle", "comments", "medium",
+  "month", "day", "yearAccessed", "monthAccessed", "dayAccessed", "url", "guid", "lcid", "reporter", "caseNumber", "abbreviatedCaseNumber", "court", "patentNumber", "patentType",
+  "broadcaster", "broadcastTitle", "station", "theater", "productionCompany", "distributor", "recordingNumber", "albumTitle", "thesisType", "version", "referenceOrder",
+];
+const DOCUMENT_CITATION_TAG = /^[A-Za-z0-9_.:-]{1,255}$/;
 const DOCUMENT_FIELD_COMMANDS = new Set(["PAGE", "NUMPAGES", "SECTION", "SECTIONPAGES", "DATE", "TIME", "CREATEDATE", "SAVEDATE", "PRINTDATE", "AUTHOR", "TITLE", "SUBJECT", "COMMENTS", "FILENAME", "FILESIZE", "NUMWORDS", "NUMCHARS"]);
 
 function documentRgb(value, label) {
@@ -2084,6 +2091,75 @@ function documentBookmarkSnapshot(bookmark) {
   };
 }
 
+function wireDocumentBibliographySource(source) {
+  const tag = String(source?.tag || "");
+  if (!DOCUMENT_CITATION_TAG.test(tag)) {
+    throw new OpenChestnutCodecError(`Document bibliography source ${source?.id || "(unknown)"} tag must contain 1 through 255 ASCII letters, digits, periods, underscores, colons, or hyphens.`, [], { code: "invalid_document_bibliography" });
+  }
+  const authors = (source.authors || []).map((author) => ({
+    first: String(author?.first || ""),
+    middle: String(author?.middle || ""),
+    last: String(author?.last || ""),
+  }));
+  const fields = Object.fromEntries(DOCUMENT_BIBLIOGRAPHY_FIELD_KEYS.flatMap((key) =>
+    source[key] === undefined || source[key] === null || source[key] === "" ? [] : [[key, String(source[key])]]));
+  return {
+    id: String(source.id || `bibliography/${tag}`),
+    tag,
+    sourceType: String(source.sourceType || "Misc"),
+    authors,
+    corporateAuthor: String(source.corporateAuthor || ""),
+    fields,
+  };
+}
+
+function publicDocumentBibliographySource(source) {
+  return {
+    id: source.id,
+    tag: source.tag,
+    sourceType: source.sourceType,
+    authors: (source.authors || []).map((author) => ({ first: author.first, middle: author.middle, last: author.last })),
+    corporateAuthor: source.corporateAuthor || undefined,
+    ...(source.fields || {}),
+  };
+}
+
+function wireDocumentBibliography(document, original) {
+  const settings = {
+    selectedStyle: String(document.bibliography?.selectedStyle || ""),
+    styleName: String(document.bibliography?.styleName || ""),
+    uri: String(document.bibliography?.uri || ""),
+  };
+  const sources = document.bibliographySources.map(wireDocumentBibliographySource);
+  if (!sources.length && !Object.values(settings).some(Boolean)) return undefined;
+  if (original) {
+    if (sources.length !== original.sources.length) {
+      throw new OpenChestnutCodecError(`Source-preserving DOCX export requires the original ${original.sources.length}-source bibliography topology; the document contains ${sources.length} sources.`, [], { code: "document_bibliography_topology_changed" });
+    }
+    for (let index = 0; index < sources.length; index += 1) {
+      if (sources[index].id !== original.sources[index].id || sources[index].tag !== original.sources[index].tag) {
+        throw new OpenChestnutCodecError(`Imported document bibliography source ${index} ID, tag, and order are source-bound.`, [], { code: "unsupported_document_bibliography_edit" });
+      }
+    }
+  }
+  return { ...settings, sources, source: original?.source };
+}
+
+function wireDocumentCitation(block, original) {
+  const tag = String(block.metadata?.tag ?? block.metadata?.bibliographyTag ?? "");
+  if (!DOCUMENT_CITATION_TAG.test(tag)) {
+    throw new OpenChestnutCodecError(`Document citation ${block.id} tag must contain 1 through 255 ASCII letters, digits, periods, underscores, colons, or hyphens.`, [], { code: "invalid_document_citation" });
+  }
+  if (original && tag !== original.tag) {
+    throw new OpenChestnutCodecError(`Imported document citation ${block.id} source tag is source-bound.`, [], { code: "unsupported_document_edit" });
+  }
+  const display = String(block.text ?? "");
+  if (display.length > 1_000_000) {
+    throw new OpenChestnutCodecError(`Document citation ${block.id} display text exceeds 1,000,000 characters.`, [], { code: "invalid_document_citation" });
+  }
+  return { tag, display };
+}
+
 function documentNoteSnapshot(note) {
   return {
     id: note.id,
@@ -2164,8 +2240,8 @@ function documentBookmark(bookmark, slot, document) {
     throw new OpenChestnutCodecError(`Document bookmark ${bookmark.id} must wrap exactly one block in protocol 2.`, [], { code: "invalid_document_bookmark" });
   }
   const target = document.blocks.find((block) => block.id === bookmark.targetId);
-  if (!target || !new Set(["paragraph", "hyperlink", "field", "change", "image"]).has(target.kind)) {
-    throw new OpenChestnutCodecError(`Document bookmark ${bookmark.id} target must be a paragraph, hyperlink, field, tracked change, or image block.`, [], { code: "invalid_document_bookmark" });
+  if (!target || !new Set(["paragraph", "hyperlink", "field", "citation", "change", "image"]).has(target.kind)) {
+    throw new OpenChestnutCodecError(`Document bookmark ${bookmark.id} target must be a paragraph, hyperlink, field, citation, tracked change, or image block.`, [], { code: "invalid_document_bookmark" });
   }
   let nativeId = "";
   if (bookmark.nativeId !== undefined) {
@@ -2391,6 +2467,9 @@ function unchangedSourceBlock(block, original) {
       return sameDocumentHyperlink(block, original.content.value);
     case "field":
       return block.kind === "field" && block.styleId === (original.styleId || "Normal") && block.instruction === original.content.value.instruction && block.display === original.content.value.display;
+    case "citation":
+      return block.kind === "citation" && block.styleId === (original.styleId || "Normal") &&
+        String(block.metadata?.tag || "") === original.content.value.tag && block.text === original.content.value.display;
     case "change": {
       if (block.kind !== "change" || block.styleId !== (original.styleId || "Normal")) return false;
       const value = original.content.value;
@@ -2529,6 +2608,12 @@ function documentBlock(block, original, directNumbering, assets, contentControlN
       content: { case: "field", value: documentField(block, original) },
     };
   }
+  if (block.kind === "citation") {
+    return {
+      ...common,
+      content: { case: "citation", value: wireDocumentCitation(block, original?.content.case === "citation" ? original.content.value : undefined) },
+    };
+  }
   if (block.kind === "change") {
     return {
       ...common,
@@ -2552,12 +2637,6 @@ function documentBlock(block, original, directNumbering, assets, contentControlN
 
 function unsupportedDocumentCollections(document) {
   const unsupported = [];
-  for (const [label, value] of [
-    ["bibliography sources", document.bibliographySources],
-  ]) {
-    if (value?.length) unsupported.push(label);
-  }
-  if (document.bibliography && Object.values(document.bibliography).some(Boolean)) unsupported.push("bibliography settings");
   if (document.settings?.trackRevisions) unsupported.push("revision tracking");
   if (document.settings?.updateFields) unsupported.push("automatic field refresh");
   if (document.settings?.mirrorMargins) unsupported.push("mirrored margins");
@@ -2584,6 +2663,9 @@ function documentEnvelope(document) {
   }
   if (state && state.notes.length !== document.notes.length) {
     throw new OpenChestnutCodecError(`Source-preserving DOCX export requires the original ${state.notes.length}-note topology; the document contains ${document.notes.length} notes.`, [], { code: "document_note_topology_changed" });
+  }
+  if (state && Boolean(state.bibliography) !== Boolean(document.bibliographySources.length || Object.values(document.bibliography || {}).some(Boolean))) {
+    throw new OpenChestnutCodecError("Source-preserving DOCX export cannot add or remove the modeled bibliography catalog.", [], { code: "document_bibliography_topology_changed" });
   }
   if (state && (state.headers.length !== document.headers.length || state.footers.length !== document.footers.length)) {
     throw new OpenChestnutCodecError("Source-preserving DOCX export requires the original header/footer topology.", [], { code: "document_header_footer_topology_changed" });
@@ -2623,6 +2705,7 @@ function documentEnvelope(document) {
           sectionIndex: uint32(settings.sectionIndex, "Document section settings index"),
           differentFirstPage: settings.differentFirstPage == null ? undefined : Boolean(settings.differentFirstPage),
         })),
+        bibliography: wireDocumentBibliography(document, state?.bibliography),
       },
     },
   };
@@ -2739,6 +2822,16 @@ function documentFromEnvelope(envelope) {
           instruction: block.content.value.instruction,
           display: block.content.value.display,
         };
+      case "citation":
+        return {
+          kind: "citation",
+          id: block.id,
+          name: block.name,
+          styleId: block.styleId || "Normal",
+          text: block.content.value.display,
+          metadata: { tag: block.content.value.tag },
+          _restore: true,
+        };
       case "change": {
         const change = block.content.value;
         return {
@@ -2822,6 +2915,12 @@ function documentFromEnvelope(envelope) {
     comments,
     bookmarks,
     notes,
+    bibliography: source.bibliography ? {
+      selectedStyle: source.bibliography.selectedStyle,
+      styleName: source.bibliography.styleName,
+      uri: source.bibliography.uri,
+    } : undefined,
+    bibliographySources: (source.bibliography?.sources || []).map(publicDocumentBibliographySource),
     headers: (source.headers || []).map(publicHeaderFooter),
     footers: (source.footers || []).map(publicHeaderFooter),
     settings: { evenAndOddHeaders: Boolean(source.evenAndOddHeaders) },
@@ -2847,7 +2946,7 @@ function documentFromEnvelope(envelope) {
   });
   Object.defineProperty(document, DOCUMENT_STATE, {
     configurable: true,
-    value: { source: envelope.source, opaqueOpc: envelope.opaqueOpc, diagnostics: envelope.diagnostics, assets: envelope.assets || [], blocks: source.blocks, readOnlyBlockSlots, comments: commentSlots, bookmarks: bookmarkSlots, notes: noteSlots, headers: source.headers || [], footers: source.footers || [] },
+    value: { source: envelope.source, opaqueOpc: envelope.opaqueOpc, diagnostics: envelope.diagnostics, assets: envelope.assets || [], blocks: source.blocks, readOnlyBlockSlots, comments: commentSlots, bookmarks: bookmarkSlots, notes: noteSlots, bibliography: source.bibliography, headers: source.headers || [], footers: source.footers || [] },
     writable: true,
   });
   return document;
