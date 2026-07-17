@@ -85,7 +85,22 @@
           "userId": "reviewer@example.com",
           "providerId": "None"
         }
-      }
+      },
+      "replies": [
+        {
+          "text": "Confirmed against the modeled source data.",
+          "id": "{22222222-2222-4222-8222-222222222222}",
+          "personId": "{BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB}",
+          "author": "Lead reviewer",
+          "date": "2026-07-16T09:30:00.000Z",
+          "person": {
+            "id": "{BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB}",
+            "displayName": "Lead reviewer",
+            "userId": "lead@example.com",
+            "providerId": "None"
+          }
+        }
+      ]
     }
   ],
   "activeWorksheet": "Summary",

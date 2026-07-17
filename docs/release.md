@@ -65,6 +65,14 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### XLSX direct threaded-comment replies
+
+On 2026-07-17, the Spreadsheet public model, versioned protobuf wire, OpenChestnut C# codec, bundled WASM runtime, Help catalog, and native Spreadsheet Skill converged on the reference workflow's `thread.addReply()` primitive. One root may now carry multiple direct replies with independent native comment/person GUIDs, display/user/provider identity, ISO date, done state, semantic inspect evidence, and fixed-cell parent binding. Source-free replies author native Office 2019 `parentId`; canonical imports expose the replies for text/state edits and a second export/import; unchanged imported threaded-comment parts remain byte-preserved.
+
+The bounded topology is deliberately loss-aware: a reply may point only to its thread root and must target the same cell. Reply-of-reply or branched graphs, orphan/self/cross-cell parents, mentions, invalid GUID/person graphs, and other extensions remain opaque/source-bound; attempts to replace them fail closed. The shipped Spreadsheet fixture now exercises two authors, one direct reply, native XML evidence, semantic import, and the public Skill workflow instead of documenting a model-only method that the codec rejects.
+
+The complete local gate passed `npm test` including Playwright, `npm run docs:api`, `npm run proto:check`, `npm run test:pack`, serial `npm run verify:open-chestnut-build`, OpenChestnut `178/178`, and OfficeBridge `5/5`. Two clean WASM builds produced the same 39 audited files and the same manifest-bound 38-file, 14,238,396-byte runtime. The clean-install tarball contains 422 files, is 9,234,762 bytes compressed and 22,965,796 bytes unpacked. No npm publish or tag operation was attempted.
+
 ### Reference 2.8.24 public API completion
 
 On 2026-07-17, a public-surface comparison between the previously pinned 2.8.22 package and the synchronized 2.8.24 reference found five additional named exports: `setOfficeFontDesignMetrics`, `registerScopedOfficeFontDesignMetrics`, `resolveOfficeFontDesignMetrics`, `clearOfficeFontDesignMetrics`, and `skiaPaintBaselineCompensationPx`. The clean-room implementation independently provides replacement and scoped metric registries, defensive normalized results, primary-family and exact-style selection, nearest numeric weight selection, idempotent scope disposal, invalid-record filtering, and deterministic finite baseline compensation. It also exposes fresh, sorted, case-insensitively deduplicated `fontFamilies` inventories on Document, Workbook, and Presentation models.

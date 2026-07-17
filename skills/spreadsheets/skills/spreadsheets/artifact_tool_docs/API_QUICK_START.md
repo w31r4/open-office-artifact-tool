@@ -329,6 +329,11 @@ This is the API to create a threaded comment in Excel, which requires a user-vis
 - To reply to a threaded comment: `thread.addReply("This is a reply to the comment")`
 - To resolve/re-open a thread: `thread.resolve()`, `thread.reopen()`
 
+Canonical OpenChestnut XLSX supports one root plus multiple direct replies with
+independent author/person/date/done metadata. Do not set a reply's `parentId`
+to another reply: nested/branched graphs, mentions, orphan parents, and
+cross-cell parents are source-bound and fail closed instead of being flattened.
+
 ### Charts
 - When adding or moving charts, do not cover existing data. Put charts in a reserved rectangle with blank gutter columns/rows around the chart area.
 - If chart data comes from editable/source data, ensure data/series is formula-backed instead of literal values.

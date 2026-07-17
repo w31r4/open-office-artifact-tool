@@ -2270,7 +2270,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 | Name | Kind | Summary |
 | --- | --- | --- |
-| `exportXlsxWithOpenChestnut` | api | Export the bounded Workbook model through the bundled C# Open XML SDK WebAssembly codec: cells, formulas, styles, merges, dimensions, freezes, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, single-layer threaded comments, bar/line/pie charts, and standard Office 2010 line/column/stacked sparklines. Imported connections, QueryTables, dynamic-array topology, pivots, and unsupported extension graphs are preservation-only; authoring or editing them fails closed. |
+| `exportXlsxWithOpenChestnut` | api | Export the bounded Workbook model through the bundled C# Open XML SDK WebAssembly codec: cells, formulas, styles, merges, dimensions, freezes, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie charts, and standard Office 2010 line/column/stacked sparklines. Nested/branched replies, mentions, imported connections, QueryTables, dynamic-array topology, pivots, and unsupported extension graphs are preservation-only; authoring or editing them fails closed. |
 | `fx.ABS` | formula | Return the absolute value of a number. |
 | `fx.AND` | formula | Return TRUE when all conditions are true. |
 | `fx.AVERAGE` | formula | Average numeric values across arguments and ranges in the clean-room formula engine. |
@@ -2359,7 +2359,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.XLOOKUP` | formula | Look up a value in one range and return the corresponding value from another range. |
 | `fx.XMATCH` | formula | Return a 1-based lookup position with exact, next-smaller, next-larger, wildcard, and forward or reverse search modes. |
 | `fx.YEAR` | formula | Return the year component of a serial in the workbook's 1900 or 1904 date system. |
-| `importXlsxWithOpenChestnut` | api | Import XLSX bytes through OpenChestnut with editable core cells, formulas, styles, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, single-layer threaded comments, bar/line/pie charts, and canonical Office 2010 line/column/stacked sparkline groups. Connections, QueryTables, dynamic-array topology, pivots, non-reversible sparkline graphs, and other advanced package content remain source-bound and read-only. |
+| `importXlsxWithOpenChestnut` | api | Import XLSX bytes through OpenChestnut with editable core cells, formulas, styles, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie charts, and canonical Office 2010 line/column/stacked sparkline groups. Nested/branched replies, mentions, connections, QueryTables, dynamic-array topology, pivots, non-reversible sparkline graphs, and other advanced package content remain source-bound and read-only. |
 | `invokeOpenChestnut` | api | Advanced experimental byte-boundary API for invoking the public OpenChestnut codec protocol with generated wire-message objects. |
 | `openChestnutStatus` | api | Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its protocol, assembly, and integrity manifest. |
 | `range.clear` | api | Clear range contents, formats, or both without silently changing validations, dimensions, or other package graphs. |
@@ -2403,7 +2403,8 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `SpreadsheetFile.inspectDelimited` | api | Inspect bounded CSV/TSV bytes as file/row records with dimensions, delimiter, quoting, and formula-like cell evidence. |
 | `SpreadsheetFile.inspectXlsx` | api | Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `SpreadsheetFile.patchXlsx` | api | Apply path-validated XLSX part patches, build worksheet/table/drawing/image/chart/pivot source references, and atomically reject dangling content types or relationships. |
-| `workbook.comments.addThread` | api | Create one root Office threaded comment per thread with GUID/person metadata, date, and resolved state. Replies are outside the OpenChestnut 0.2 XLSX boundary and fail closed. |
+| `thread.addReply` | api | Append a direct reply to an Office threaded-comment root with independent author/person/date/done metadata. Nested or branched reply graphs and mentions fail closed. |
+| `workbook.comments.addThread` | api | Create one root Office threaded comment per thread with GUID/person metadata, date, and resolved state; attach bounded direct replies with thread.addReply(). |
 | `workbook.connections` | api | Inspect bounded non-secret metadata for imported database connections. Connections are source-bound and read-only: authoring, removal, or mutation makes canonical XLSX export fail closed. |
 | `Workbook.create` | api | Create an empty workbook with an explicit date system and optional native SpreadsheetML theme colors. |
 | `workbook.definedNames.add` | api | Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData). |
@@ -2444,11 +2445,11 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 #### `exportXlsxWithOpenChestnut`
 
-Export the bounded Workbook model through the bundled C# Open XML SDK WebAssembly codec: cells, formulas, styles, merges, dimensions, freezes, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, single-layer threaded comments, bar/line/pie charts, and standard Office 2010 line/column/stacked sparklines. Imported connections, QueryTables, dynamic-array topology, pivots, and unsupported extension graphs are preservation-only; authoring or editing them fails closed.
+Export the bounded Workbook model through the bundled C# Open XML SDK WebAssembly codec: cells, formulas, styles, merges, dimensions, freezes, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie charts, and standard Office 2010 line/column/stacked sparklines. Nested/branched replies, mentions, imported connections, QueryTables, dynamic-array topology, pivots, and unsupported extension graphs are preservation-only; authoring or editing them fails closed.
 
 **Schema parameters:**
 
-- `workbook` (Workbook) required — Workbook facade within the core cell/formula/style/merge/dimension/freeze/ordinary-table/image/validation/conditional-format/single-layer-comment/bar-line-pie-chart/standard-sparkline boundary. Imported connections, QueryTables, dynamic-array topology, pivots, non-reversible sparkline graphs, and other advanced package graphs must remain unchanged; source-free authoring or editing them fails closed.
+- `workbook` (Workbook) required — Workbook facade within the core cell/formula/style/merge/dimension/freeze/ordinary-table/image/validation/conditional-format/root-plus-direct-reply-comment/bar-line-pie-chart/standard-sparkline boundary. Nested reply graphs, mentions, imported connections, QueryTables, dynamic-array topology, pivots, non-reversible sparkline graphs, and other advanced package graphs must remain unchanged; source-free authoring or editing them fails closed.
 - `recalculate` (boolean) — Recalculate formulas before serialization; defaults to true.
 - `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets.
 
@@ -3960,7 +3961,7 @@ Return the year component of a serial in the workbook's 1900 or 1904 date system
 
 #### `importXlsxWithOpenChestnut`
 
-Import XLSX bytes through OpenChestnut with editable core cells, formulas, styles, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, single-layer threaded comments, bar/line/pie charts, and canonical Office 2010 line/column/stacked sparkline groups. Connections, QueryTables, dynamic-array topology, pivots, non-reversible sparkline graphs, and other advanced package content remain source-bound and read-only.
+Import XLSX bytes through OpenChestnut with editable core cells, formulas, styles, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie charts, and canonical Office 2010 line/column/stacked sparkline groups. Nested/branched replies, mentions, connections, QueryTables, dynamic-array topology, pivots, non-reversible sparkline graphs, and other advanced package content remain source-bound and read-only.
 
 **Schema parameters:**
 
@@ -4548,7 +4549,7 @@ Load XLSX through the single bundled OpenChestnut codec into an editable Workboo
 
 **Schema returns:**
 
-- `workbook` (Workbook) — Imported workbook facade with editable core cells, formulas, styles, ordinary tables, images, basic charts, validation, conditional formatting, single-layer threaded comments, and canonical Office 2010 sparkline groups; connections, QueryTables, dynamic arrays, pivots, non-reversible sparkline graphs, and unsupported package graphs remain read-only.
+- `workbook` (Workbook) — Imported workbook facade with editable core cells, formulas, styles, ordinary tables, images, basic charts, validation, conditional formatting, threaded-comment roots/direct replies, and canonical Office 2010 sparkline groups; nested reply graphs, mentions, connections, QueryTables, dynamic arrays, pivots, non-reversible sparkline graphs, and unsupported package graphs remain read-only.
 
 #### `SpreadsheetFile.inspectDelimited`
 
@@ -4608,9 +4609,27 @@ Apply path-validated XLSX part patches, build worksheet/table/drawing/image/char
 
 - `blob` (FileBlob) — Patched XLSX FileBlob with part/relationship/content-type/source-reference update counts and validation metadata.
 
+#### `thread.addReply`
+
+Append a direct reply to an Office threaded-comment root with independent author/person/date/done metadata. Nested or branched reply graphs and mentions fail closed.
+
+**Schema parameters:**
+
+- `text` (string) required — Direct reply text.
+- `author` (string) — Reply author; defaults to comments.setSelf or the root author.
+- `id` (string) — Optional brace-delimited native comment GUID; otherwise OpenChestnut derives one deterministically.
+- `personId` (string) — Optional brace-delimited native person GUID.
+- `person` (object) — Optional displayName/userId/providerId identity record.
+- `date` (string) — Optional ISO-8601 reply timestamp.
+- `done` (boolean) — Optional native reply done state.
+
+**Schema returns:**
+
+- `thread` (CommentThread) — The same thread with one appended direct reply. Setting parentId to another reply, adding mentions, or creating a branched/nested graph makes canonical export fail closed.
+
 #### `workbook.comments.addThread`
 
-Create one root Office threaded comment per thread with GUID/person metadata, date, and resolved state. Replies are outside the OpenChestnut 0.2 XLSX boundary and fail closed.
+Create one root Office threaded comment per thread with GUID/person metadata, date, and resolved state; attach bounded direct replies with thread.addReply().
 
 **Schema parameters:**
 
@@ -4623,7 +4642,7 @@ Create one root Office threaded comment per thread with GUID/person metadata, da
 
 **Schema returns:**
 
-- `thread` (CommentThread) — Attached single-root Office threaded comment. addReply exists on the model but replies are outside OpenChestnut 0.2 and make canonical XLSX export fail closed.
+- `thread` (CommentThread) — Attached Office threaded-comment root. Direct replies added through addReply cross canonical OpenChestnut export/import; nested/branched replies and mentions fail closed.
 
 #### `workbook.connections`
 

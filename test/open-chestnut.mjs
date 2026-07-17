@@ -44,7 +44,8 @@ sheet.tables.add({ range: "A1:D3", name: "CoreTable", style: "TableStyleMedium4"
 sheet.getRange("D2:D3").dataValidation = { rule: { type: "list", values: ["Ready", "Review", "Done"] } };
 sheet.getRange("C2:C3").conditionalFormats.add("cellIs", { operator: "greaterThan", formula: 9, format: { fill: "#DCFCE7" } });
 workbook.comments.setSelf({ displayName: "Analyst" });
-workbook.comments.addThread({ cell: sheet.getRange("D2") }, "Canonical threaded comment");
+const canonicalThread = workbook.comments.addThread({ cell: sheet.getRange("D2") }, "Canonical threaded comment");
+canonicalThread.addReply("Canonical direct reply", { author: "Reviewer", date: "2026-07-17T09:30:00.000Z" });
 sheet.images.add({ name: "Logo", dataUrl: png, alt: "One pixel logo", anchor: { from: { row: 6, col: 0 }, extent: { widthPx: 32, heightPx: 32 } } });
 sheet.charts.add("bar", {
   name: "Values",
@@ -57,6 +58,12 @@ sheet.charts.add("bar", {
 const xlsx = await exportXlsxWithOpenChestnut(workbook);
 assert.equal(xlsx.metadata.codec, "open-chestnut");
 assert.deepEqual([...xlsx.bytes.slice(0, 4)], [0x50, 0x4b, 0x03, 0x04]);
+const xlsxZip = await JSZip.loadAsync(xlsx.bytes);
+const threadedPart = Object.keys(xlsxZip.files).find((name) => /^xl\/threadedcomments\/[^/]+\.xml$/i.test(name));
+assert.ok(threadedPart);
+const threadedXml = await xlsxZip.file(threadedPart).async("text");
+assert.match(threadedXml, /parentId="\{[0-9A-F-]+\}"/);
+assert.match(threadedXml, /Canonical direct reply/);
 const importedWorkbook = await importXlsxWithOpenChestnut(xlsx);
 const importedSheet = importedWorkbook.worksheets.getItem("Core");
 assert.equal(importedSheet.getRange("B3").values[0][0], "B");
@@ -64,6 +71,13 @@ assert.ok(importedSheet.getRange("A2").values[0][0] > 40_000, "Date must cross t
 assert.equal(importedSheet.getRange("D2:D3").dataValidation.type, "list");
 assert.equal(importedSheet.conditionalFormattings.items.length, 1);
 assert.equal(importedWorkbook.comments.threads.length, 1);
+assert.equal(importedWorkbook.comments.threads[0].comments.length, 2);
+assert.equal(importedWorkbook.comments.threads[0].comments[1].text, "Canonical direct reply");
+const importedReply = importedWorkbook.comments.threads[0].comments[1];
+const rootParentId = importedReply.parentId;
+importedReply.parentId = importedReply.id;
+await assert.rejects(exportXlsxWithOpenChestnut(importedWorkbook), /nested or branched reply graph/i);
+importedReply.parentId = rootParentId;
 assert.equal(importedSheet.images.items.length, 1);
 assert.equal(importedSheet.charts.items[0].type, "bar");
 assert.equal(importedSheet.freezePanes.frozen, true);

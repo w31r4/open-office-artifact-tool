@@ -90,7 +90,7 @@ sheet.images.add({
 });
 
 workbook.comments.setSelf({ displayName: "Spreadsheet Agent" });
-workbook.comments.addThread(
+const marginReviewThread = workbook.comments.addThread(
   { cell: sheet.getRange("F2") },
   "Check the calculated margin.",
   {
@@ -110,6 +110,19 @@ workbook.comments.addThread(
     },
   },
 );
+marginReviewThread.addReply("Confirmed against the source workbook.", {
+  id: "{22222222-2222-4222-8222-222222222222}",
+  personId: "{BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB}",
+  author: "Lead reviewer",
+  date: "2026-07-16T09:30:00.000Z",
+  person: {
+    id: "{BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB}",
+    displayName: "Lead reviewer",
+    userId: "lead@example.com",
+    providerId: "None",
+  },
+  done: true,
+});
 
 workbook.recalculate();
 assert.deepEqual(sheet.getRange("F2:F4").values, [[0.4], [0.4166666666666667], [0.4]]);
@@ -149,6 +162,10 @@ const firstWorksheetXml = await firstZip.file("xl/worksheets/sheet1.xml").async(
 assert.match(firstWorksheetXml, /<x:mergeCell ref="A6:F6"/);
 assert.match(firstWorksheetXml, /<x:dataValidations count="2">/);
 assert.equal((firstWorksheetXml.match(/<x:conditionalFormatting\b/g) || []).length, 4);
+const firstThreadedPart = Object.keys(firstZip.files).find((name) => /^xl\/threadedcomments\/[^/]+\.xml$/i.test(name));
+const firstThreadedXml = await firstZip.file(firstThreadedPart).async("text");
+assert.match(firstThreadedXml, /parentId="\{11111111-1111-4111-8111-111111111111\}"/);
+assert.match(firstThreadedXml, /Confirmed against the source workbook\./);
 
 const imported = await SpreadsheetFile.importXlsx(firstXlsx);
 const importedSheet = imported.worksheets.getItem("Summary");
@@ -176,8 +193,9 @@ assert.deepEqual(importedSheet.charts.items.map((chart) => chart.type), ["bar", 
 assert.deepEqual(importedSheet.dataValidations.items.map((item) => item.rule.type), ["list", "whole"]);
 assert.deepEqual(importedSheet.conditionalFormattings.items.map((item) => item.ruleType), ["cellIs", "expression", "containsText", "colorScale"]);
 assert.equal(imported.comments.threads.length, 1);
-assert.equal(imported.comments.threads[0].comments.length, 1);
+assert.equal(imported.comments.threads[0].comments.length, 2);
 assert.equal(imported.comments.threads[0].comments[0].text, "Check the calculated margin.");
+assert.equal(imported.comments.threads[0].comments[1].text, "Confirmed against the source workbook.");
 assert.equal(imported.comments.threads[0].resolved, true);
 
 importedSheet.getRange("B2").values = [[110]];
@@ -199,6 +217,7 @@ marginConditional.formula = "0.45";
 marginConditional.format.fill = "#BBF7D0";
 const importedThread = imported.comments.threads[0];
 importedThread.comments[0].text = "Margin reviewed after edit.";
+importedThread.comments[1].text = "Reply reviewed after edit.";
 importedThread.reopen();
 imported.recalculate();
 assert.equal(importedSheet.getRange("F2").values[0][0], 50 / 110);
@@ -217,8 +236,9 @@ assert.equal(secondSheet.images.items[0].alt, "Edited green status marker");
 assert.equal(secondSheet.charts.items[1].title, "Edited revenue trend");
 assert.deepEqual(secondSheet.dataValidations.items.find((item) => item.rule.type === "list").rule.values, ["Planned", "Review", "Done", "Blocked"]);
 assert.equal(secondSheet.conditionalFormattings.items.find((item) => item.ruleType === "cellIs").formula, "0.45");
-assert.equal(second.comments.threads[0].comments.length, 1);
+assert.equal(second.comments.threads[0].comments.length, 2);
 assert.equal(second.comments.threads[0].comments[0].text, "Margin reviewed after edit.");
+assert.equal(second.comments.threads[0].comments[1].text, "Reply reviewed after edit.");
 assert.equal(second.comments.threads[0].resolved, false);
 
 const secondInspect = second.inspect({ kind: "workbook,sheet,table,formula,style,drawing,dataValidation,conditionalFormat,thread", maxChars: 32_000 });

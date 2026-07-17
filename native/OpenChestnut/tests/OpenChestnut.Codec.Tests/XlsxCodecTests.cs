@@ -161,6 +161,9 @@ public sealed class XlsxCodecTests
                 Assert.Equal("{11111111-1111-4111-8111-111111111111}", reply.ParentNativeCommentId);
                 Assert.Equal("lead@example.com", reply.UserId);
             });
+        var exact = Export(imported.Artifact);
+        Assert.True(exact.Ok, string.Join("\n", exact.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(ReadWorksheetThreadedCommentsXml(authored.File.ToByteArray()), ReadWorksheetThreadedCommentsXml(exact.File.ToByteArray()));
         var threaded = sheet.ThreadedComments[0];
         var threadedReply = sheet.ThreadedComments[1];
 

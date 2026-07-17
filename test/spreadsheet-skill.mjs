@@ -57,8 +57,9 @@ try {
   assert.deepEqual(summary.conditionalFormattings.items.map((item) => item.ruleType), ["cellIs", "colorScale"]);
   assert.equal(formulaWorkbook.comments.threads.length, 1);
   const [review] = formulaWorkbook.comments.threads;
-  assert.equal(review.comments.length, 1);
+  assert.equal(review.comments.length, 2);
   assert.equal(review.comments[0].text, "Check the modeled margin.");
+  assert.equal(review.comments[1].text, "Confirmed against the modeled source data.");
   assert.equal(review.resolved, true);
 
   const formulaZip = await JSZip.loadAsync(await fs.readFile(formulaResult.workbookPath));
@@ -70,9 +71,11 @@ try {
   assert.ok(threadedPath);
   assert.ok(personPath);
   const threadedXml = await formulaZip.file(threadedPath).async("text");
-  assert.doesNotMatch(threadedXml, /parentId=/);
+  assert.match(threadedXml, /parentId="\{11111111-1111-4111-8111-111111111111\}"/);
   assert.match(threadedXml, /Check the modeled margin\./);
+  assert.match(threadedXml, /Confirmed against the modeled source data\./);
   assert.match(await formulaZip.file(personPath).async("text"), /displayName="Reviewer"/);
+  assert.match(await formulaZip.file(personPath).async("text"), /displayName="Lead reviewer"/);
 
   const basicResult = await runFixture("open-chestnut-basic");
   const basicWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(basicResult.workbookPath));

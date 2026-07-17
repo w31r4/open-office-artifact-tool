@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "Range", "SpreadsheetFile"]) {
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 293);
+assert.equal(HELP_CATALOG.length, 294);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -293,7 +293,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /character.*picture bullets.*auto-numbering.*levels.*indents.*spacing/);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /absolute uri.*slideId.*relative action/);
 const workbookCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "workbook");
-assert.equal(workbookCatalog.length, 169);
+assert.equal(workbookCatalog.length, 170);
 assert.ok(workbookCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "workbook.trace")?.schema?.parameters?.reference?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "Workbook.create")?.schema?.parameters?.dateSystem?.type, "string");
@@ -338,7 +338,9 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "importPptxWithOpenChestn
 assert.equal(HELP_CATALOG.find((item) => item.name === "importXlsxWithOpenChestnut")?.schema?.parameters?.limits?.type, "object");
 assert.match(HELP_CATALOG.find((item) => item.name === "importXlsxWithOpenChestnut")?.schema?.returns?.workbook?.description || "", /canonical Office 2010 sparkline groups.*non-reversible sparkline graphs.*preserved unchanged/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "workbook.sharedArrayFormulas")?.summary || "", /dynamic-array anchors.*source-bound and read-only/i);
-assert.match(HELP_CATALOG.find((item) => item.name === "workbook.comments.addThread")?.schema?.returns?.thread?.description || "", /single-root.*replies.*fail closed/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "workbook.comments.addThread")?.schema?.returns?.thread?.description || "", /direct replies.*OpenChestnut export\/import.*nested\/branched.*fail closed/i);
+assert.equal(HELP_CATALOG.find((item) => item.name === "thread.addReply")?.schema?.parameters?.text?.required, true);
+assert.match(HELP_CATALOG.find((item) => item.name === "thread.addReply")?.schema?.returns?.thread?.description || "", /direct reply.*nested graph.*fail closed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.tables.add")?.schema?.returns?.table?.description || "", /QueryTable.*import-only and read-only/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.returns?.pivot?.description || "", /does not author pivots.*read-only/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.sparklineGroups.add")?.schema?.returns?.sparkline?.description || "", /Editable standard Office 2010 x14 sparkline group.*without topology changes.*opaque and unchanged/i);
