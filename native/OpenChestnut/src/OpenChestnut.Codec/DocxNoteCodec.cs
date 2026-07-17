@@ -181,10 +181,12 @@ internal static class DocxNoteCodec
                 : endnoteReferences[0];
             if (reference.Parent is not W.Run anchorRun || !ReferenceEquals(anchorRun.Parent, paragraph) ||
                 !IsCanonicalAnchor(anchorRun, kind) || !HasNoBodyContentAfter(paragraph, anchorRun)) continue;
-            var nativeId = kind == DocumentNoteKind.Footnote
+            var nativeValue = kind == DocumentNoteKind.Footnote
                 ? footnoteReferences[0].Id?.Value
                 : endnoteReferences[0].Id?.Value;
-            if (!int.TryParse(nativeId, out var numericId) || numericId < 1) continue;
+            if (nativeValue is null or < 1 or > int.MaxValue) continue;
+            var numericId = checked((int)nativeValue.Value);
+            var nativeId = numericId.ToString();
             var part = kind == DocumentNoteKind.Footnote
                 ? context.Owner.FootnotesPart as OpenXmlPart
                 : context.Owner.EndnotesPart;
@@ -205,7 +207,7 @@ internal static class DocxNoteCodec
                 Kind = kind,
                 TargetBlockId = block.Id,
                 Text = text,
-                NativeId = nativeId!,
+                NativeId = nativeId,
             };
             yield return new CanonicalNote(note, matches[0], anchorRun, part, relationshipId, partPath, checked((uint)bodyIndex));
         }

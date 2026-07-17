@@ -14,6 +14,7 @@ internal sealed class DocxPartContext
 {
     private readonly HashSet<string> _mutatedRelationshipIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _mutatedPartPaths = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _mutatedNoteRelationshipIds = new(StringComparer.Ordinal);
     private XDocument? _numberingDocument;
     private XDocument? _stylesDocument;
     private bool _numberingDocumentLoaded;
@@ -168,12 +169,27 @@ internal sealed class DocxPartContext
         _mutatedCommentsPartPath = part.Uri.OriginalString.TrimStart('/');
     }
 
+    internal void MarkNotesMutated(OpenXmlPart part)
+    {
+        var pair = Owner.Parts.FirstOrDefault(item => ReferenceEquals(item.OpenXmlPart, part));
+        if (pair.OpenXmlPart is null)
+            throw new CodecException(
+                "document_note_source_binding_mismatch",
+                "The modeled footnote/endnote part is not related from word/document.xml.",
+                part.Uri.OriginalString.TrimStart('/'));
+        _mutatedNoteRelationshipIds.Add(pair.RelationshipId);
+        _mutatedPartPaths.Add(part.Uri.OriginalString.TrimStart('/'));
+    }
+
     internal bool IgnoresModeledRelationship(OpenOffice.Artifact.Wire.V1.OpaqueOpcRelationship relationship) =>
         relationship.SourcePath.Equals("word/document.xml", StringComparison.OrdinalIgnoreCase) &&
         ((relationship.Type.EndsWith("/hyperlink", StringComparison.Ordinal) &&
           _mutatedRelationshipIds.Contains(relationship.Id)) ||
          (relationship.Type.EndsWith("/comments", StringComparison.Ordinal) &&
-          relationship.Id.Equals(_mutatedCommentsRelationshipId, StringComparison.Ordinal)));
+          relationship.Id.Equals(_mutatedCommentsRelationshipId, StringComparison.Ordinal)) ||
+         ((relationship.Type.EndsWith("/footnotes", StringComparison.Ordinal) ||
+           relationship.Type.EndsWith("/endnotes", StringComparison.Ordinal)) &&
+          _mutatedNoteRelationshipIds.Contains(relationship.Id)));
 
     internal bool IgnoresModeledPart(OpenOffice.Artifact.Wire.V1.OpaqueOpcPart part) =>
         _mutatedPartPaths.Contains(part.Path) ||

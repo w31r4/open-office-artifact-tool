@@ -91,6 +91,10 @@ const hyperlink = document.addHyperlink(
 const field = document.addField("PAGE", "1", { name: "page-field", styleId: "Normal" });
 const insertion = document.addInsertion("Added wording", { name: "tracked-insertion", styleId: "Normal", author: "Reviewer", date: "2026-07-17T08:00:00Z" });
 const deletion = document.addDeletion("Removed wording", { name: "tracked-deletion", styleId: "Normal", author: "Reviewer", date: "2026-07-17T08:05:00Z" });
+const footnoteTarget = document.addParagraph("Paragraph with a source-free footnote.", { name: "footnote-target", styleId: "Normal" });
+const endnoteTarget = document.addParagraph("Paragraph with a source-free endnote.", { name: "endnote-target", styleId: "Normal" });
+const footnote = document.addFootnote(footnoteTarget, "Source-free footnote", { name: "footnote-evidence" });
+const endnote = document.addEndnote(endnoteTarget, "Source-free endnote", { name: "endnote-evidence" });
 const pngImage = document.addImage({
   name: "png-mark",
   styleId: "Normal",
@@ -163,7 +167,7 @@ const comment = document.addComment(commentTarget, "Confirm the release evidence
 });
 
 const inspect = document.inspect({
-  kind: "document,paragraph,listItem,table,comment,bookmark,header,footer,hyperlink,field,change,image,section,style,layout",
+  kind: "document,paragraph,listItem,table,comment,bookmark,note,header,footer,hyperlink,field,change,image,section,style,layout",
   maxChars: 24_000,
 }).ndjson;
 for (const expected of [
@@ -181,6 +185,8 @@ for (const expected of [
   "Removed wording",
   "Confirm the release evidence",
   "SecondSection",
+  "Source-free footnote",
+  "Source-free endnote",
 ]) assert.match(inspect, new RegExp(expected));
 assert.equal(document.resolve(formatted.id), formatted);
 assert.equal(document.resolve(table.id).getCell(1, 1).value, "Pending");
@@ -193,6 +199,8 @@ assert.equal(document.resolve(evenHeader.id).referenceType, "even");
 assert.equal(document.resolve(defaultFooter.id).fieldInstruction, "PAGE");
 assert.equal(document.resolve(insertion.id).changeType, "insert");
 assert.equal(document.resolve(deletion.id).changeType, "delete");
+assert.equal(document.resolve(footnote.id).targetId, footnoteTarget.id);
+assert.equal(document.resolve(endnote.id).targetId, endnoteTarget.id);
 assert.equal(document.resolve(secondSectionBookmark.id).targetId, secondSection.id);
 assert.equal(internalLink.anchor, "SecondSection");
 assert.equal(document.resolve(firstFooter.id).referenceType, "first");
@@ -237,6 +245,11 @@ assert.equal(imported.bookmarks.length, 1);
 assert.equal(imported.bookmarks[0].name, "SecondSection");
 assert.equal(imported.bookmarks[0].targetId, imported.blocks.find((block) => block.text === "Second-section evidence.")?.id);
 assert.equal(imported.blocks.find((block) => block.kind === "hyperlink" && block.anchor === "SecondSection")?.text, "Jump to second-section evidence");
+assert.deepEqual(imported.notes.map((note) => [note.kind, note.text, note.nativeId]), [
+  ["footnote", "Source-free footnote", 1],
+  ["endnote", "Source-free endnote", 1],
+]);
+assert.equal(imported.notes.every((note) => imported.resolve(note.id) === note), true);
 
 importedFormatted.text = "Bold and edited";
 importedFormatted.runs[0].text = "Bold ";
@@ -265,6 +278,8 @@ importedSection.margins.left = 1200;
 imported.comments[0].author = "Lead reviewer";
 imported.comments[0].initials = "LR";
 imported.comments[0].text = "Release evidence approved.";
+imported.notes[0].text = "Edited footnote";
+imported.notes[1].text = "Edited endnote";
 
 const secondDocx = await DocumentFile.exportDocx(imported);
 const roundTrip = await DocumentFile.importDocx(secondDocx);
@@ -287,6 +302,10 @@ assert.equal(roundTrip.comments[0].author, "Lead reviewer");
 assert.equal(roundTrip.comments[0].text, "Release evidence approved.");
 assert.equal(roundTrip.bookmarks[0].name, "SecondSection");
 assert.equal(roundTrip.blocks.some((block) => block.kind === "hyperlink" && block.anchor === "SecondSection"), true);
+assert.deepEqual(roundTrip.notes.map((note) => [note.kind, note.text]), [
+  ["footnote", "Edited footnote"],
+  ["endnote", "Edited endnote"],
+]);
 assert.equal(roundTrip.verify({ visualQa: true }).ok, true);
 
 const importedWithRenamedBookmark = await DocumentFile.importDocx(firstDocx);
@@ -349,6 +368,27 @@ importedWithAddedBookmark.addBookmark(importedWithAddedBookmark.blocks[0], "Adde
 await assert.rejects(
   () => DocumentFile.exportDocx(importedWithAddedBookmark),
   (error) => error?.code === "document_bookmark_topology_changed" && /bookmark topology/i.test(error.message),
+);
+
+const importedWithMovedNote = await DocumentFile.importDocx(firstDocx);
+importedWithMovedNote.notes[0].targetId = importedWithMovedNote.notes[1].targetId;
+await assert.rejects(
+  () => DocumentFile.exportDocx(importedWithMovedNote),
+  (error) => error?.code === "unsupported_document_note_edit" && /source-bound/i.test(error.message),
+);
+
+const importedWithoutEndnote = await DocumentFile.importDocx(firstDocx);
+importedWithoutEndnote.notes.pop();
+await assert.rejects(
+  () => DocumentFile.exportDocx(importedWithoutEndnote),
+  (error) => error?.code === "document_note_topology_changed" && /note topology/i.test(error.message),
+);
+
+const invalidNoteTarget = DocumentModel.create({ blocks: [{ kind: "table", values: [["Not a paragraph"]] }] });
+invalidNoteTarget.addFootnote(invalidNoteTarget.blocks[0], "Invalid target");
+await assert.rejects(
+  () => DocumentFile.exportDocx(invalidNoteTarget),
+  (error) => error?.code === "invalid_document_note" && /paragraph or list item/i.test(error.message),
 );
 
 const importedWithoutSourceSnapshot = await DocumentFile.importDocx(firstDocx);

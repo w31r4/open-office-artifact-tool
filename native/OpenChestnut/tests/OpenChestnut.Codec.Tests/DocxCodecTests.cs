@@ -1640,6 +1640,110 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void PlainTextFootnotesAndEndnotesAuthorImportEditAndFailClosed()
+    {
+        var authored = Invoke(NoteExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var owner = package.MainDocumentPart!;
+            Assert.Single(owner.Document!.Body!.Descendants<W.FootnoteReference>());
+            Assert.Single(owner.Document.Body.Descendants<W.EndnoteReference>());
+            Assert.Equal("Source-free footnote", owner.FootnotesPart!.Footnotes!
+                .Elements<W.Footnote>().Single(note => note.Id?.Value == 1).InnerText.Trim());
+            Assert.Equal("Source-free endnote", owner.EndnotesPart!.Endnotes!
+                .Elements<W.Endnote>().Single(note => note.Id?.Value == 1).InnerText.Trim());
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.Collection(imported.Artifact.Document.Notes,
+            note =>
+            {
+                Assert.Equal(DocumentNoteKind.Footnote, note.Kind);
+                Assert.Equal("Source-free footnote", note.Text);
+                Assert.Equal("1", note.NativeId);
+                Assert.True(note.Source.Editable);
+                Assert.Equal("word/footnotes.xml", note.Source.PartPath);
+                Assert.NotEmpty(note.Source.RelationshipId);
+                Assert.NotEmpty(note.Source.NoteElementSha256);
+                Assert.NotEmpty(note.Source.AnchorSha256);
+            },
+            note =>
+            {
+                Assert.Equal(DocumentNoteKind.Endnote, note.Kind);
+                Assert.Equal("Source-free endnote", note.Text);
+                Assert.Equal("1", note.NativeId);
+                Assert.True(note.Source.Editable);
+                Assert.Equal("word/endnotes.xml", note.Source.PartPath);
+            });
+        Assert.All(imported.Artifact.Document.Blocks, block => Assert.False(block.Source.Editable));
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact.Clone(),
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(authored.File.ToByteArray(), unchanged.File.ToByteArray());
+
+        var editedArtifact = imported.Artifact.Clone();
+        editedArtifact.Document.Notes[0].Text = "Edited footnote";
+        editedArtifact.Document.Notes[1].Text = "Edited endnote";
+        var edited = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = editedArtifact,
+        });
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var reimported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = edited.File,
+        });
+        Assert.True(reimported.Ok, Diagnostics(reimported));
+        Assert.Equal(["Edited footnote", "Edited endnote"], reimported.Artifact.Document.Notes.Select(note => note.Text));
+
+        var moved = imported.Artifact.Clone();
+        moved.Document.Notes[0].TargetBlockId = moved.Document.Notes[1].TargetBlockId;
+        var rejectedMove = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = moved,
+        });
+        Assert.False(rejectedMove.Ok);
+        Assert.Equal("invalid_document_note", Assert.Single(rejectedMove.Diagnostics).Code);
+
+        var removed = imported.Artifact.Clone();
+        removed.Document.Notes.RemoveAt(1);
+        var rejectedTopology = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = removed,
+        });
+        Assert.False(rejectedTopology.Ok);
+        Assert.Equal("document_note_topology_changed", Assert.Single(rejectedTopology.Diagnostics).Code);
+    }
+
+    [Fact]
     public void HyperlinkSliceRejectsUnsupportedTopologyAndUnsafeUri()
     {
         var authored = Invoke(HyperlinkExportRequest());
@@ -2367,6 +2471,52 @@ public sealed class DocxCodecTests
             Name = "TargetBookmark",
             TargetBlockId = target.Id,
             EndTargetBlockId = target.Id,
+        });
+        return new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = new ArtifactEnvelope
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Family = ArtifactFamily.Document,
+                Document = document,
+            },
+        };
+    }
+
+    private static CodecRequest NoteExportRequest()
+    {
+        var document = new DocumentArtifact { Id = "document/notes", Name = "Note fixture" };
+        foreach (var (id, text) in new[]
+                 {
+                     ("document/note-target/footnote", "Paragraph with a footnote."),
+                     ("document/note-target/endnote", "Paragraph with an endnote."),
+                 })
+        {
+            var block = new DocumentBlock
+            {
+                Id = id,
+                StyleId = "Normal",
+                Paragraph = new DocumentParagraph { Text = text },
+            };
+            block.Paragraph.Runs.Add(new DocumentRun { Text = text });
+            document.Blocks.Add(block);
+        }
+        document.Notes.Add(new DocumentNote
+        {
+            Id = "document/note/footnote",
+            Kind = DocumentNoteKind.Footnote,
+            TargetBlockId = document.Blocks[0].Id,
+            Text = "Source-free footnote",
+        });
+        document.Notes.Add(new DocumentNote
+        {
+            Id = "document/note/endnote",
+            Kind = DocumentNoteKind.Endnote,
+            TargetBlockId = document.Blocks[1].Id,
+            Text = "Source-free endnote",
         });
         return new CodecRequest
         {
