@@ -65,6 +65,52 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### DOCX caption-number inline bookmark workflow
+
+On 2026-07-17, the public Documents run model, protocol-2 wire, OpenChestnut
+C# codec, bundled WASM runtime, Help catalog, and native Documents plugin
+closed the bounded caption-target gap. A source-free canonical `SEQ` run may
+now set `bookmarkName` through `paragraph.addField(...)`; OpenChestnut writes
+one paired `w:bookmarkStart`/`w:bookmarkEnd` around only that field's cached
+result run. Canonical `REF` and `PAGEREF` runs can therefore target the native
+caption number without an OOXML patch helper.
+
+Whole-block and inline-field bookmarks share one case-insensitive name and
+unsigned native-ID space. The two bounded profiles cannot nest in the same
+paragraph. Import collapses the seven-child bookmarked field graph back into
+one logical run, preserves name/native identity, permits cached-result and
+ordinary-text edits, and rejects any field position, instruction, bookmark
+name, or native-ID change. Unsupported placement and duplicate identity fail
+closed; automatic field calculation/materialization remains an explicit host
+or package-helper workflow rather than a codec claim.
+
+The shipped Documents fixture authors `SEQ Figure \\* ARABIC` with `fig1`, then
+targets it with both `REF fig1 \\h` and `PAGEREF fig1 \\h`. It completes two
+OpenChestnut round trips, edits all three cached results, asserts that the
+native bookmark encloses only the SEQ result run, and passes real
+LibreOffice/Poppler page QA. C# and JavaScript regressions cover semantic
+roundtrip, source-bound identity, invalid non-SEQ bookmark use, case-insensitive
+duplicate names, and bounded-profile nesting rejection.
+
+The complete local gate passed `npm test` including Playwright and all five
+published Skills, `npm run docs:api`, `npm run proto:check`,
+`npm run test:pack`, isolated `npm run verify:open-chestnut-build`,
+OpenChestnut `183/183`, OfficeBridge `5/5`, and the Documents Skill validator.
+Two isolated clean WASM builds produced the same 39 audited files and the same
+manifest-bound 38-file, 14,317,244-byte runtime. The clean-install tarball
+contains 422 files, is 9,273,020 bytes compressed and 23,105,625 bytes
+unpacked. No npm publish, tag, or GitHub release operation was attempted.
+
+The completed candidate at commit
+`206712aef6691490318e42bfa26553d27b4d1fc9` passed the hosted Linux `ci`
+workflow in [GitHub Actions run 29586820145](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29586820145)
+on 2026-07-17. The run completed with conclusion `success` in 4m36s and covered
+protocol/runtime determinism, Chromium/LibreOffice/Poppler tool checks, the
+complete npm suite including the native caption/cross-reference workflow and
+fail-closed identity regressions, generated API-doc cleanliness, offline
+release metadata, the 422-file clean-install tarball, OfficeBridge `5/5`, and
+OpenChestnut `183/183`.
+
 ### DOCX canonical inline SEQ/REF/PAGEREF field runs
 
 On 2026-07-17, the Documents paragraph/run model, versioned protobuf wire,
@@ -80,8 +126,9 @@ Source-free cached results and ordinary text survive export, import, edits,
 second export, and second import. On imported paragraphs, field positions and
 instructions remain source-bound while cached display text remains editable;
 topology or target changes fail closed. Non-canonical switches, partial or rich
-field graphs, inline bookmarks around only a caption number, and automatic
-SEQ/REF materialization remain opaque or explicit advanced package workflows.
+field graphs and automatic SEQ/REF materialization remained opaque or explicit
+advanced package workflows at that milestone; the later bounded caption-number
+bookmark slice is recorded above.
 The shipped native fixture covers all three commands, native XML evidence,
 semantic inspection, cache edits, and real LibreOffice/Poppler page QA.
 
