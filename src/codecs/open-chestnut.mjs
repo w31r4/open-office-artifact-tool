@@ -1603,7 +1603,43 @@ function publicDocumentParagraphFormatting(value) {
   return Object.keys(result).length ? result : undefined;
 }
 
-function documentRun(run, blockId) {
+function planDocumentTextContentControls(document) {
+  const controls = document.blocks.flatMap((block) => block.kind === "paragraph"
+    ? block.runs.filter((run) => run.contentControl).map((run) => ({ block, run, control: run.contentControl }))
+    : []);
+  const used = new Set();
+  for (const { block, control } of controls) {
+    if (!control.id || !String(control.id).trim()) throw new OpenChestnutCodecError(`Document block ${block.id} content control requires a non-empty model ID.`, [], { code: "invalid_document_content_control" });
+    const nativeId = control.nativeId == null ? undefined : Number(control.nativeId);
+    if (nativeId === undefined) continue;
+    if (!Number.isInteger(nativeId) || nativeId < 1 || nativeId > 0x7fffffff || used.has(nativeId)) throw new OpenChestnutCodecError(`Document block ${block.id} content control ${control.id} has an invalid or duplicate nativeId.`, [], { code: "invalid_document_content_control" });
+    used.add(nativeId);
+  }
+  const result = new Map();
+  let next = 1;
+  for (const { run, control } of controls) {
+    if (control.nativeId != null) {
+      result.set(run, Number(control.nativeId));
+      continue;
+    }
+    while (used.has(next)) next += 1;
+    if (next > 0x7fffffff) throw new OpenChestnutCodecError("Document content controls exhausted the positive native ID range.", [], { code: "invalid_document_content_control" });
+    result.set(run, next);
+    used.add(next);
+    next += 1;
+  }
+  return result;
+}
+
+function wireDocumentTextContentControl(control, nativeId, blockId) {
+  const id = String(control?.id || "").trim();
+  const tag = String(control?.tag || "").trim();
+  const alias = String(control?.alias ?? tag);
+  if (!id || !tag || tag.length > 64 || alias.length > 255 || /[\u0000-\u001f\u007f]/.test(tag + alias)) throw new OpenChestnutCodecError(`Document block ${blockId} has an invalid plain-text content control.`, [], { code: "invalid_document_content_control" });
+  return { id, tag, alias, nativeId };
+}
+
+function documentRun(run, blockId, contentControlNativeId) {
   const style = run.style || {};
   const formatting = documentRunFormatting(style, `Document block ${blockId}`);
   return {
@@ -1613,7 +1649,23 @@ function documentRun(run, blockId) {
     italic: style.italic === true,
     underline: style.underline === true || style.underline === "single",
     formatting,
+    textContentControl: run.contentControl ? wireDocumentTextContentControl(run.contentControl, contentControlNativeId, blockId) : undefined,
   };
+}
+
+function documentContentControlTopology(runs = []) {
+  return runs.flatMap((run, index) => run.textContentControl || run.contentControl
+    ? [{ index, nativeId: Number((run.textContentControl || run.contentControl).nativeId) }]
+    : []);
+}
+
+function assertDocumentContentControlTopology(block, original) {
+  if (!original || original.content.case !== "paragraph") return;
+  const requested = documentContentControlTopology(block.runs || []);
+  const source = documentContentControlTopology(original.content.value.runs || []);
+  if (JSON.stringify(requested) !== JSON.stringify(source)) {
+    throw new OpenChestnutCodecError(`Imported document paragraph ${block.id} plain-text content-control topology is source-bound.`, [], { code: "document_content_control_topology_changed" });
+  }
 }
 
 function sameTableValues(block, original) {
@@ -2366,12 +2418,12 @@ function documentBlockSnapshot(block) {
       text: block?.text,
     },
     runs: Array.isArray(block?.runs)
-      ? block.runs.map((run) => ({ text: String(run?.text ?? ""), style: { ...(run?.style || {}) } }))
+      ? block.runs.map((run) => ({ text: String(run?.text ?? ""), style: { ...(run?.style || {}) }, contentControl: run?.contentControl ? { ...run.contentControl } : undefined }))
       : undefined,
   });
 }
 
-function documentBlock(block, original, directNumbering, assets) {
+function documentBlock(block, original, directNumbering, assets, contentControlNativeIds) {
   if (original && unchangedSourceBlock(block, original)) return original;
   const common = {
     id: original?.id || block.id,
@@ -2380,11 +2432,12 @@ function documentBlock(block, original, directNumbering, assets) {
     source: original?.source,
   };
   if (block.kind === "paragraph") {
+    assertDocumentContentControlTopology(block, original);
     return {
       ...common,
       content: {
         case: "paragraph",
-        value: { text: block.text, runs: block.runs.map((run) => documentRun(run, block.id)), formatting: documentParagraphFormatting(block) },
+        value: { text: block.text, runs: block.runs.map((run) => documentRun(run, block.id, contentControlNativeIds.get(run))), formatting: documentParagraphFormatting(block) },
       },
     };
   }
@@ -2541,9 +2594,10 @@ function documentEnvelope(document) {
     }
   }
   const directNumbering = state ? undefined : directDocumentNumberingPlan(document);
+  const contentControlNativeIds = planDocumentTextContentControls(document);
   const assets = new Map((state?.assets || []).map((asset) => [asset.id, asset]));
   const defaultRunSource = Object.fromEntries([...DOCUMENT_RUN_STYLE_KEYS].filter((key) => key !== "runStyleId" && Object.hasOwn(document.defaultRunStyle || {}, key)).map((key) => [key, document.defaultRunStyle[key]]));
-  const blocks = document.blocks.map((block, index) => documentBlock(block, state?.blocks[index], directNumbering?.get(block), assets));
+  const blocks = document.blocks.map((block, index) => documentBlock(block, state?.blocks[index], directNumbering?.get(block), assets, contentControlNativeIds));
   return {
     protocolVersion: OPEN_CHESTNUT_PROTOCOL_VERSION,
     family: ArtifactFamily.DOCUMENT,
@@ -2639,6 +2693,12 @@ function documentFromEnvelope(envelope) {
               ...(!run.formatting && run.italic ? { italic: true } : {}),
               ...(!run.formatting && run.underline ? { underline: true } : {}),
             },
+            ...(run.textContentControl ? { contentControl: {
+              id: run.textContentControl.id,
+              tag: run.textContentControl.tag,
+              alias: run.textContentControl.alias,
+              nativeId: run.textContentControl.nativeId,
+            } } : {}),
           })) : undefined,
         };
       case "table":

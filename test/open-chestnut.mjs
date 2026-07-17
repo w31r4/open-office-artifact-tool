@@ -101,6 +101,10 @@ const heading = document.addParagraph("Quarterly brief", {
 });
 const bodyParagraph = document.addParagraph("Canonical OpenChestnut document.");
 document.addParagraph("Editable paragraph.");
+document.addParagraph("", { runs: [
+  { text: "Owner: " },
+  { text: "Ada", contentControl: { id: "owner-control", tag: "OWNER", alias: "Owner" } },
+] });
 document.addHeader("Confidential", { referenceType: "default", sectionIndex: 0 });
 document.addFooter("Page ", { referenceType: "default", sectionIndex: 0, fieldInstruction: "PAGE" });
 document.addField("PAGE", "1");
@@ -117,6 +121,7 @@ assert.deepEqual([...docx.bytes.slice(0, 4)], [0x50, 0x4b, 0x03, 0x04]);
 const docxZip = await JSZip.loadAsync(docx.bytes);
 assert.ok(docxZip.file("word/document.xml"));
 assert.ok(docxZip.file("word/styles.xml"));
+assert.match(await docxZip.file("word/document.xml").async("text"), /<w:sdt>[\s\S]*<w:tag w:val="OWNER"\s*\/>[\s\S]*<w:text\s*\/>[\s\S]*Ada[\s\S]*<\/w:sdt>/);
 assert.ok(Object.keys(docxZip.files).some((part) => /(?:^|\/)media\/[^/]+\.png$/.test(part)));
 const importedDocument = await importDocxWithOpenChestnut(docx);
 assert.equal(importedDocument.defaultRunStyle.fontFamily, "Aptos");
@@ -126,10 +131,14 @@ assert.equal(importedDocument.blocks[0].runs[1].style.italic, true);
 assert.equal(importedDocument.headers[0].text, "Confidential");
 assert.equal(importedDocument.footers[0].fieldInstruction, "PAGE");
 assert.equal(importedDocument.comments.length, 1);
+assert.equal(importedDocument.contentControls[0].tag, "OWNER");
+assert.deepEqual(importedDocument.fillContentControls({ OWNER: "Grace" }), { updated: 1, matchedTags: ["OWNER"], missingTags: [] });
 importedDocument.blocks[2].text = "Edited through OpenChestnut.";
 importedDocument.blocks[2].runs = [{ text: importedDocument.blocks[2].text, style: {} }];
 const docx2 = await exportDocxWithOpenChestnut(importedDocument);
-assert.equal((await importDocxWithOpenChestnut(docx2)).blocks[2].text, "Edited through OpenChestnut.");
+const importedDocument2 = await importDocxWithOpenChestnut(docx2);
+assert.equal(importedDocument2.blocks[2].text, "Edited through OpenChestnut.");
+assert.equal(importedDocument2.contentControls[0].text, "Grace");
 await assert.rejects(exportDocxWithOpenChestnut(document, { allowLossy: true }), /does not accept option/i);
 
 // PPTX: source-free roundRect/textbox, basic effect styling, connector arrows,

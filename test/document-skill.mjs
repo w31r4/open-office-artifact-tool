@@ -118,6 +118,19 @@ try {
   assert.equal(commentsDocument.comments[0].initials, "LR");
   assert.equal(commentsDocument.comments[0].text, "Approved after source-bound review.");
 
+  const controls = await runFixture("open-chestnut-content-controls");
+  const controlsDocument = await DocumentFile.importDocx(await FileBlob.load(controls.docxPath));
+  assert.deepEqual(controlsDocument.contentControls.map((control) => [control.tag, control.text]), [
+    ["CUSTOMER_NAME", "Grace Hopper"],
+    ["ACCOUNT_ID", "AC-2048"],
+  ]);
+  assert.equal(controlsDocument.inspect({ kind: "contentControl" }).ndjson.includes("Customer name"), true);
+  const controlsZip = await JSZip.loadAsync(await fs.readFile(controls.docxPath));
+  const controlsXml = await controlsZip.file("word/document.xml").async("text");
+  assert.equal((controlsXml.match(/<w:sdt>/g) || []).length, 2);
+  assert.match(controlsXml, /<w:tag w:val="CUSTOMER_NAME"\s*\/>/);
+  assert.match(controlsXml, /<w:tag w:val="ACCOUNT_ID"\s*\/>/);
+
   const classicFixture = await runFixture("package-comments");
   const classicDocument = await DocumentFile.importDocx(await FileBlob.load(classicFixture.docxPath));
   assert.equal(classicDocument.comments.length, 1);

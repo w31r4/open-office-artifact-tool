@@ -51,6 +51,15 @@ const formatted = document.addParagraph("Bold and colored", {
     { text: "and colored", style: { italic: true, underline: true, color: "#CC0000", characterSpacingTwips: 10 } },
   ],
 });
+const contentControlParagraph = document.addParagraph("", {
+  name: "customer-template-field",
+  styleId: "Normal",
+  runs: [
+    { text: "Customer: " },
+    { text: "Ada Lovelace", contentControl: { id: "customer-name-control", tag: "CUSTOMER_NAME", alias: "Customer name" } },
+    { text: "." },
+  ],
+});
 const bullet = document.addListItem("Inspect the semantic model.", {
   name: "bullet-item",
   styleId: "Normal",
@@ -174,6 +183,7 @@ for (const expected of [
   "OpenChestnut document profile",
   "BodyAccent",
   "Bold and colored",
+  "CUSTOMER_NAME",
   "readiness-table",
   "Default header",
   "First-page header",
@@ -188,6 +198,11 @@ for (const expected of [
   "Source-free footnote",
   "Source-free endnote",
 ]) assert.match(inspect, new RegExp(expected));
+const contentControl = document.contentControls[0];
+assert.equal(contentControl.tag, "CUSTOMER_NAME");
+assert.equal(contentControl.text, "Ada Lovelace");
+assert.equal(document.resolve(contentControl.id).targetId, contentControlParagraph.id);
+assert.throws(() => document.fillContentControls({ UNKNOWN_FIELD: "value" }), /Unknown document content-control tag/);
 assert.equal(document.resolve(formatted.id), formatted);
 assert.equal(document.resolve(table.id).getCell(1, 1).value, "Pending");
 assert.equal(document.resolve(pngImage.id).alt, "PNG approval mark");
@@ -223,6 +238,11 @@ assert.equal(importedFormatted?.runs[0].style.fontSize, 15);
 assert.equal(importedFormatted?.runs[1].style.italic, true);
 assert.equal(importedFormatted?.runs[1].style.underline, true);
 assert.equal(importedFormatted?.runs[1].style.color, "#cc0000");
+assert.equal(imported.contentControls.length, 1);
+assert.equal(imported.contentControls[0].tag, "CUSTOMER_NAME");
+assert.equal(imported.contentControls[0].alias, "Customer name");
+assert.equal(imported.contentControls[0].text, "Ada Lovelace");
+assert.ok(Number.isInteger(imported.contentControls[0].nativeId));
 assert.equal(imported.blocks.filter((block) => block.kind === "listItem").length, 2);
 assert.equal(imported.blocks.find((block) => block.kind === "table")?.values[1][1], "Pending");
 assert.equal(imported.blocks.find((block) => block.kind === "hyperlink")?.url, hyperlink.url);
@@ -280,6 +300,7 @@ imported.comments[0].initials = "LR";
 imported.comments[0].text = "Release evidence approved.";
 imported.notes[0].text = "Edited footnote";
 imported.notes[1].text = "Edited endnote";
+assert.deepEqual(imported.fillContentControls({ CUSTOMER_NAME: "Grace Hopper" }), { updated: 1, matchedTags: ["CUSTOMER_NAME"], missingTags: [] });
 
 const secondDocx = await DocumentFile.exportDocx(imported);
 const roundTrip = await DocumentFile.importDocx(secondDocx);
@@ -306,7 +327,17 @@ assert.deepEqual(roundTrip.notes.map((note) => [note.kind, note.text]), [
   ["footnote", "Edited footnote"],
   ["endnote", "Edited endnote"],
 ]);
+assert.equal(roundTrip.contentControls[0].text, "Grace Hopper");
+assert.equal(roundTrip.resolve(roundTrip.contentControls[0].targetId)?.text, "Customer: Grace Hopper.");
 assert.equal(roundTrip.verify({ visualQa: true }).ok, true);
+
+const importedWithChangedContentControlTopology = await DocumentFile.importDocx(firstDocx);
+const removedControl = importedWithChangedContentControlTopology.contentControls[0];
+delete importedWithChangedContentControlTopology.resolve(removedControl.targetId).runs[removedControl.runIndex].contentControl;
+await assert.rejects(
+  () => DocumentFile.exportDocx(importedWithChangedContentControlTopology),
+  (error) => error?.code === "document_content_control_topology_changed" && /source-bound/i.test(error.message),
+);
 
 const importedWithRenamedBookmark = await DocumentFile.importDocx(firstDocx);
 importedWithRenamedBookmark.bookmarks[0].name = "RenamedSection";

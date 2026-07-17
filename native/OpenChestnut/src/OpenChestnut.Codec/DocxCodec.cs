@@ -76,6 +76,8 @@ internal static class DocxCodec
 
     internal static DocxExportResult Export(ArtifactEnvelope envelope, EffectiveCodecLimits limits)
     {
+        if (envelope.PayloadCase == ArtifactEnvelope.PayloadOneofCase.Document)
+            DocxTextContentControlCodec.AssignNativeIds(envelope.Document);
         var requiresSourcePreservation =
             envelope.ProtocolVersion == CodecProtocol.ProtocolVersion &&
             envelope.Family == ArtifactFamily.Document &&
@@ -219,6 +221,9 @@ internal static class DocxCodec
                         "document_source_binding_mismatch",
                         $"Document tracked-change block {ordinal} revision locator does not match its source element.",
                         "word/document.xml");
+                if (block.ContentCase == DocumentBlock.ContentOneofCase.Paragraph &&
+                    original.ContentCase == DocumentBlock.ContentOneofCase.Paragraph)
+                    DocxTextContentControlCodec.AssertTopology(block.Paragraph, original.Paragraph, block.Id);
 
                 sourceBlocks.Add(new DocxSourceBlock(ordinal, element, block, original, binding));
             }
@@ -520,7 +525,13 @@ internal static class DocxCodec
                 };
                 if (editable)
                 {
-                    foreach (var run in paragraph.Elements<W.Run>()) paragraphArtifact.Runs.Add(ReadRun(run));
+                    var runIndex = 0;
+                    foreach (var child in paragraph.ChildElements)
+                    {
+                        if (child is W.Run run) paragraphArtifact.Runs.Add(ReadRun(run));
+                        else if (child is W.SdtRun control) paragraphArtifact.Runs.Add(DocxTextContentControlCodec.Read(control, $"{block.Id}/content-control/{++runIndex}"));
+                        if (child is W.Run) runIndex++;
+                    }
                 }
                 block.Paragraph = paragraphArtifact;
                 semanticItems += checked((ulong)Math.Max(1, paragraphArtifact.Runs.Count));
@@ -573,7 +584,7 @@ internal static class DocxCodec
         return block;
     }
 
-    private static DocumentRun ReadRun(W.Run run)
+    internal static DocumentRun ReadRun(W.Run run)
     {
         var properties = run.RunProperties;
         var formatting = DocxFormattingCodec.ReadRunFormatting(properties);
@@ -591,11 +602,12 @@ internal static class DocxCodec
 
     private static bool IsSimpleParagraph(W.Paragraph paragraph)
     {
-        if (paragraph.ChildElements.Any(child => child is not W.ParagraphProperties and not W.Run)) return false;
+        if (paragraph.ChildElements.Any(child => child is not W.ParagraphProperties and not W.Run and not W.SdtRun)) return false;
         if (!DocxFormattingCodec.IsSupportedParagraphProperties(paragraph.ParagraphProperties)) return false;
         return paragraph.Elements<W.Run>().All(run =>
             run.ChildElements.All(child => child is W.RunProperties or W.Text) &&
-            DocxFormattingCodec.IsSupportedRunProperties(run.RunProperties));
+            DocxFormattingCodec.IsSupportedRunProperties(run.RunProperties)) &&
+            paragraph.Elements<W.SdtRun>().All(DocxTextContentControlCodec.IsSupported);
     }
 
     private static OpenXmlElement BuildBlock(DocumentBlock block, DocxPartContext context, string? revisionId = null) => block.ContentCase switch
@@ -632,13 +644,18 @@ internal static class DocxCodec
         }
         foreach (var source in block.Paragraph.Runs)
         {
-            var run = new W.Run();
-            var properties = DocxFormattingCodec.BuildRunProperties(source);
-            if (properties is not null) run.Append(properties);
-            run.Append(Text(source.Text));
-            paragraph.Append(run);
+            paragraph.Append(source.TextContentControl is null ? BuildRun(source) : DocxTextContentControlCodec.Build(source));
         }
         return paragraph;
+    }
+
+    internal static W.Run BuildRun(DocumentRun source)
+    {
+        var run = new W.Run();
+        var properties = DocxFormattingCodec.BuildRunProperties(source);
+        if (properties is not null) run.Append(properties);
+        run.Append(Text(source.Text));
+        return run;
     }
 
     private static W.Text Text(string value) => new(value)
@@ -667,6 +684,9 @@ internal static class DocxCodec
             semantic.Hyperlink.RelationshipId = string.Empty;
         if (semantic.ContentCase == DocumentBlock.ContentOneofCase.Change && semantic.Change.HasDate)
             semantic.Change.Date = DateTimeOffset.Parse(semantic.Change.Date).UtcDateTime.ToString("O");
+        if (semantic.ContentCase == DocumentBlock.ContentOneofCase.Paragraph)
+            foreach (var run in semantic.Paragraph.Runs)
+                if (run.TextContentControl is not null) run.TextContentControl.Id = string.Empty;
         return Hash(semantic.ToByteArray());
     }
 
@@ -688,6 +708,7 @@ internal static class DocxCodec
             envelope.Document,
             allowImportedCycles: envelope.OpaqueOpc?.SourcePackage is { Data.IsEmpty: false });
         DocxHeaderFooterCodec.Validate(envelope.Document);
+        DocxTextContentControlCodec.Validate(envelope.Document);
 
         ulong semanticItems = checked((ulong)envelope.Document.Comments.Count + (ulong)envelope.Document.Bookmarks.Count + (ulong)envelope.Document.Notes.Count);
         foreach (var block in envelope.Document.Blocks)

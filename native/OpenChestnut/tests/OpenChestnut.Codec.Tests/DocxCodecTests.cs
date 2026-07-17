@@ -93,6 +93,141 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void InlinePlainTextContentControlAuthorsImportsEditsAndRejectsComplexTopology()
+    {
+        var document = new DocumentArtifact { Id = "document/content-controls", Name = "Content-control template" };
+        var paragraph = new DocumentBlock
+        {
+            Id = "document/content-controls/customer",
+            StyleId = "Normal",
+            Paragraph = new DocumentParagraph { Text = "Customer: Ada Lovelace." },
+        };
+        paragraph.Paragraph.Runs.Add(new DocumentRun { Text = "Customer: " });
+        paragraph.Paragraph.Runs.Add(new DocumentRun
+        {
+            Text = "Ada Lovelace",
+            TextContentControl = new DocumentTextContentControl
+            {
+                Id = "customer-name",
+                Tag = "CUSTOMER_NAME",
+                Alias = "Customer name",
+            },
+        });
+        paragraph.Paragraph.Runs.Add(new DocumentRun { Text = "." });
+        document.Blocks.Add(paragraph);
+
+        var authored = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = new ArtifactEnvelope
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Family = ArtifactFamily.Document,
+                Document = document,
+            },
+        });
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var control = Assert.Single(package.MainDocumentPart!.Document!.Descendants<W.SdtRun>());
+            Assert.Equal("CUSTOMER_NAME", control.SdtProperties!.GetFirstChild<W.Tag>()!.Val!.Value);
+            Assert.Equal("Customer name", control.SdtProperties.GetFirstChild<W.SdtAlias>()!.Val!.Value);
+            Assert.True(control.SdtProperties.GetFirstChild<W.SdtId>()!.Val!.Value > 0);
+            Assert.NotNull(control.SdtProperties.GetFirstChild<W.SdtContentText>());
+            Assert.Equal("Ada Lovelace", control.InnerText);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedParagraph = Assert.Single(imported.Artifact.Document.Blocks).Paragraph;
+        var importedControlRun = Assert.Single(importedParagraph.Runs, run => run.TextContentControl is not null);
+        Assert.Equal("CUSTOMER_NAME", importedControlRun.TextContentControl.Tag);
+        Assert.True(importedControlRun.TextContentControl.HasNativeId);
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact.Clone(),
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(authored.File, unchanged.File);
+
+        importedControlRun.Text = "Grace Hopper";
+        importedControlRun.TextContentControl.Tag = "CONTACT_NAME";
+        importedControlRun.TextContentControl.Alias = "Contact name";
+        importedParagraph.Text = "Customer: Grace Hopper.";
+        var edited = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var roundTrip = DocxCodec.Import(edited.File.ToByteArray(), EffectiveCodecLimits.From(null)).Artifact;
+        var editedRun = Assert.Single(Assert.Single(roundTrip.Document.Blocks).Paragraph.Runs, run => run.TextContentControl is not null);
+        Assert.Equal("Grace Hopper", editedRun.Text);
+        Assert.Equal("CONTACT_NAME", editedRun.TextContentControl.Tag);
+        Assert.Equal("Contact name", editedRun.TextContentControl.Alias);
+
+        var changedTopology = roundTrip.Clone();
+        Assert.Single(changedTopology.Document.Blocks).Paragraph.Runs[1].TextContentControl = null;
+        var rejectedTopology = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = changedTopology,
+        });
+        Assert.False(rejectedTopology.Ok);
+        Assert.Equal("document_content_control_topology_changed", Assert.Single(rejectedTopology.Diagnostics).Code);
+
+        var complexBytes = AddDatePickerContentControl(authored.File.ToByteArray());
+        var complex = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(complexBytes),
+        });
+        Assert.True(complex.Ok, Diagnostics(complex));
+        var preserved = Assert.Single(complex.Artifact.Document.Blocks);
+        Assert.False(preserved.Source.Editable);
+        Assert.Empty(preserved.Paragraph.Runs);
+        var preservedExport = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = complex.Artifact,
+        });
+        Assert.True(preservedExport.Ok, Diagnostics(preservedExport));
+        Assert.Equal(ByteString.CopyFrom(complexBytes), preservedExport.File);
+        preserved.Paragraph.Text = "Unsafe date-picker edit";
+        var rejectedComplex = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = complex.Artifact,
+        });
+        Assert.False(rejectedComplex.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(rejectedComplex.Diagnostics).Code);
+    }
+
+    [Fact]
     public void OfficeSkillProfileRoundTripsFormattingImagesSectionsAndHeaders()
     {
         var authored = Invoke(OfficeSkillProfileExportRequest());
@@ -3131,6 +3266,20 @@ public sealed class DocxCodecTests
             var replacement = archive.CreateEntry("word/document.xml");
             using var writer = new StreamWriter(replacement.Open());
             writer.Write(xml.Insert(closing, "<w:notARealParagraphChild/>"));
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddDatePickerContentControl(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var properties = document.MainDocumentPart!.Document!.Descendants<W.SdtRun>().Single().SdtProperties!;
+            properties.Append(new W.SdtContentDate());
+            document.MainDocumentPart.Document.Save();
         }
         return stream.ToArray();
     }

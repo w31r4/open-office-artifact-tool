@@ -1,0 +1,42 @@
+{
+  "name": "open-chestnut-content-controls",
+  "outputName": "open-chestnut-content-controls.docx",
+  "blocks": [
+    {
+      "kind": "paragraph",
+      "styleId": "Title",
+      "text": "Agent-fillable customer template"
+    },
+    {
+      "kind": "paragraph",
+      "name": "customer-fields",
+      "styleId": "Normal",
+      "runs": [
+        { "text": "Customer: " },
+        { "text": "{{CUSTOMER_NAME}}", "contentControl": { "id": "customer-name", "tag": "CUSTOMER_NAME", "alias": "Customer name" } },
+        { "text": " / Account: " },
+        { "text": "{{ACCOUNT_ID}}", "contentControl": { "id": "account-id", "tag": "ACCOUNT_ID", "alias": "Account ID" } }
+      ]
+    }
+  ],
+  "edits": [
+    {
+      "kind": "contentControls",
+      "values": {
+        "CUSTOMER_NAME": "Grace Hopper",
+        "ACCOUNT_ID": "AC-2048"
+      },
+      "expectUpdated": 2
+    }
+  ],
+  "expectInspect": [
+    { "kind": "contentControl", "pattern": "CUSTOMER_NAME" },
+    { "kind": "contentControl", "pattern": "ACCOUNT_ID" }
+  ],
+  "qa": {
+    "previewFormat": "svg",
+    "nativeRender": "auto",
+    "inspectKind": "document,paragraph,contentControl,layout",
+    "maxChars": 12000
+  }
+}

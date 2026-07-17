@@ -683,6 +683,7 @@ export class DocumentModel {
 
   static create(options = {}) { return new DocumentModel(options); }
   get paragraphs() { return this.blocks.filter((block) => block.kind === "paragraph").map((block) => block.text); }
+  get contentControls() { return documentTextContentControls(this); }
   get fontFamilies() {
     return officeFontFamilies(
       [this.toProto()],
@@ -721,6 +722,21 @@ export class DocumentModel {
   }
 
   addParagraph(text, config = {}) { const block = new DocumentParagraphBlock(this, text, config); this.blocks.push(block); return block; }
+  fillContentControls(values = {}, options = {}) {
+    const entries = values instanceof Map ? [...values.entries()] : Object.entries(values || {});
+    const requested = new Map(entries.map(([tag, value]) => [String(tag), String(value ?? "")]));
+    const controls = this.contentControls;
+    const matched = new Set(controls.filter((control) => requested.has(control.tag)).map((control) => control.tag));
+    const missingTags = [...requested.keys()].filter((tag) => !matched.has(tag));
+    if (options.strict !== false && missingTags.length) throw new Error(`Unknown document content-control tag(s): ${missingTags.join(", ")}`);
+    let updated = 0;
+    for (const control of controls) {
+      if (!requested.has(control.tag)) continue;
+      control.text = requested.get(control.tag);
+      updated += 1;
+    }
+    return { updated, matchedTags: [...matched], missingTags };
+  }
   addListItem(text, config = {}) { const block = new DocumentListItemBlock(this, text, config); this.blocks.push(block); return block; }
   addList(items = [], config = {}) { return items.map((item) => this.addListItem(typeof item === "string" ? item : item.text, { ...config, ...(typeof item === "string" ? {} : item) })); }
   addHyperlink(text, url, config = {}) { const block = new DocumentHyperlinkBlock(this, text, url, config); this.blocks.push(block); return block; }
@@ -782,6 +798,8 @@ export class DocumentModel {
   resolve(id) {
     const token = String(id || "");
     if (token.endsWith("/text")) return documentTextRange(this, token);
+    const contentControl = this.contentControls.find((control) => control.id === token);
+    if (contentControl) return contentControl;
     const cellMatch = /^(.+)\/cell\/(\d+)\/(\d+)$/.exec(token);
     if (cellMatch) {
       const table = this.blocks.find((block) => block.kind === "table" && block.id === cellMatch[1]);
@@ -796,13 +814,14 @@ export class DocumentModel {
   toProto() { return { id: this.id, name: this.name, designPreset: this.designPreset, theme: this.theme, defaultRunStyle: this.defaultRunStyle, settings: this.settings, bibliography: this.bibliography, bibliographySources: this.bibliographySources.map((source) => source.toProto()), sectionSettings: this.sectionSettings, styles: Object.fromEntries(this.styles.values().map((style) => [style.id, style])), blocks: this.blocks.map((block) => block.toProto()), headers: this.headers.map((block) => block.toProto()), footers: this.footers.map((block) => block.toProto()), bookmarks: this.bookmarks.map((bookmark) => bookmark.toProto()), notes: this.notes.map((note) => note.toProto()), comments: this.comments.map((comment) => comment.toProto()) }; }
 
   inspect(options = {}) {
-    const kinds = normalizeKinds(options.kind, ["paragraph", "table", "listItem", "hyperlink", "field", "citation", "bibliographySource", "image", "section", "change", "bookmark", "footnote", "endnote", "comment", "header", "footer"]);
+    const kinds = normalizeKinds(options.kind, ["paragraph", "contentControl", "table", "listItem", "hyperlink", "field", "citation", "bibliographySource", "image", "section", "change", "bookmark", "footnote", "endnote", "comment", "header", "footer"]);
     const records = [];
-    if (kinds.has("document")) records.push({ kind: "document", id: this.id, name: this.name, blocks: this.blocks.length, sections: this.blocks.filter((block) => block.kind === "section").length + 1, bookmarks: this.bookmarks.length, notes: this.notes.length, footnotes: this.notes.filter((note) => note.kind === "footnote").length, endnotes: this.notes.filter((note) => note.kind === "endnote").length, bibliographySources: this.bibliographySources.length, designPreset: this.designPreset, defaultRunStyle: this.defaultRunStyle, settings: this.settings, sectionSettings: this.sectionSettings });
+    if (kinds.has("document")) records.push({ kind: "document", id: this.id, name: this.name, blocks: this.blocks.length, contentControls: this.contentControls.length, sections: this.blocks.filter((block) => block.kind === "section").length + 1, bookmarks: this.bookmarks.length, notes: this.notes.length, footnotes: this.notes.filter((note) => note.kind === "footnote").length, endnotes: this.notes.filter((note) => note.kind === "endnote").length, bibliographySources: this.bibliographySources.length, designPreset: this.designPreset, defaultRunStyle: this.defaultRunStyle, settings: this.settings, sectionSettings: this.sectionSettings });
     if (kinds.has("theme")) records.push({ kind: "theme", id: `${this.id}/theme`, ...this.theme });
     if (kinds.has("settings")) records.push({ kind: "settings", id: `${this.id}/settings`, ...this.settings });
     if (kinds.has("layout")) records.push(...documentLayoutRecords(this, options));
     this.blocks.forEach((block, index) => { if (kinds.has(block.kind)) records.push(documentInspectRecord(this, block, index)); });
+    if (kinds.has("contentControl")) records.push(...this.contentControls.map((control) => control.inspectRecord()));
     if (kinds.has("tableCell")) for (const table of this.blocks.filter((block) => block.kind === "table")) for (let row = 0; row < table.rows; row += 1) for (let column = 0; column < table.columns; column += 1) records.push(table.getCell(row, column).inspectRecord());
     if (kinds.has("header")) records.push(...this.headers.map((block, index) => documentInspectRecord(this, block, index)));
     if (kinds.has("footer")) records.push(...this.footers.map((block, index) => documentInspectRecord(this, block, index)));
@@ -825,6 +844,16 @@ export class DocumentModel {
     };
     if (this.blocks.length === 0) issues.push(verificationIssue("document", "emptyDocument", "Document has no body blocks."));
     for (const block of [...this.blocks, ...this.headers, ...this.footers]) checkStyle(block);
+    const contentControlIds = new Set();
+    const nativeContentControlIds = new Set();
+    for (const control of this.contentControls) {
+      if (!control.id || contentControlIds.has(control.id)) issues.push(verificationIssue("document", "invalidContentControlId", `Content control ${control.tag || "(untagged)"} requires a unique non-empty ID.`, { id: control.id, targetId: control.targetId }));
+      else contentControlIds.add(control.id);
+      if (!control.tag || control.tag.length > 64 || /[\u0000-\u001f\u007f]/.test(control.tag)) issues.push(verificationIssue("document", "invalidContentControlTag", `Content control ${control.id} tag must contain 1 to 64 characters without controls.`, { id: control.id, tag: control.tag }));
+      if (control.alias.length > 255 || /[\u0000-\u001f\u007f]/.test(control.alias)) issues.push(verificationIssue("document", "invalidContentControlAlias", `Content control ${control.id} alias must contain at most 255 characters without controls.`, { id: control.id, alias: control.alias }));
+      if (control.nativeId !== undefined && (!Number.isInteger(control.nativeId) || control.nativeId < 1 || control.nativeId > 0x7fffffff || nativeContentControlIds.has(control.nativeId))) issues.push(verificationIssue("document", "invalidContentControlNativeId", `Content control ${control.id} has an invalid or duplicate nativeId.`, { id: control.id, nativeId: control.nativeId }));
+      if (control.nativeId !== undefined) nativeContentControlIds.add(control.nativeId);
+    }
     const bookmarkByName = new Map();
     for (const bookmark of this.bookmarks) {
       if (!bookmark.name || bookmark.name.length > 40) issues.push(verificationIssue("document", "invalidBookmarkName", `Bookmark ${bookmark.id} name must contain 1 to 40 characters.`, { id: bookmark.id, name: bookmark.name }));
