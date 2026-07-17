@@ -10,7 +10,27 @@ Word implements captions/cross-references using fields:
 - `SEQ` for numbering (e.g., `SEQ Table` / `SEQ Figure`)
 - `REF` to reference a bookmark (cross-reference target)
 
-`python-docx` does not provide a high-level API for these fields, so this bundle uses OOXML-level helpers:
+For source-free or recognized canonical paragraphs, use the public OpenChestnut
+run primitive first:
+
+```js
+const caption = document.addParagraph("", { styleId: "Caption" });
+caption.addRun("Figure ");
+caption.addField("SEQ Figure \\* ARABIC", "0");
+caption.addRun(": Revenue by category");
+
+const reference = document.addParagraph("See figure ");
+reference.addField("REF fig1 \\h", "0");
+reference.addRun(" for details.");
+```
+
+`paragraph.addField(...)` authors/imports canonical inline `SEQ`, `REF`, and
+`PAGEREF` five-run fields. Imported field positions and instructions are
+source-bound; cached display text and ordinary runs are editable.
+
+The public slice does not yet wrap a bookmark around only the caption-number
+result or materialize counters. For those explicit advanced needs this bundle
+uses OOXML-level helpers:
 - `scripts/captions_and_crossrefs.py` — insert caption paragraphs + optional bookmarks around the caption number
 - `scripts/insert_ref_fields.py` — replace `[[REF:bookmark]]` markers with real `REF` fields
 - `scripts/fields_materialize.py` — materialize `SEQ/REF` *display text* so headless renders show the correct numbers
@@ -28,7 +48,7 @@ A human can still open the document later and update fields, but for automation 
 
 ## Workflow
 
-### 1) Add captions (and bookmarks)
+### 1) Add captions and number-only bookmarks when the public slice is insufficient
 This adds captions for tables and/or figures that don't already have a `Caption` paragraph immediately after them.
 
 ```bash

@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "Range", "SpreadsheetFile"]) {
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 298);
+assert.equal(HELP_CATALOG.length, 299);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -119,6 +119,7 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "slide.applyLayout"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.addHyperlink"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.addBibliographySource"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.addTableOfContents"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "paragraph.addField"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.replyToComment"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.applyDesignPreset"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.setSettings"));
@@ -275,7 +276,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.renderPdf")?.sch
 assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schema?.parameters?.operations?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.summary || "", /MuPDF/);
 const documentCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "document");
-assert.equal(documentCatalog.length, 41);
+assert.equal(documentCatalog.length, 42);
 assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.schema?.parameters?.pictureBullet?.type, "string|object");
@@ -284,6 +285,8 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.
 assert.match(HELP_CATALOG.find((item) => item.name === "DocumentModel.create")?.schema?.parameters?.styles?.description || "", /numberingId\/numberingLevel/);
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.schema?.returns?.document?.type, "DocumentModel");
 assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addTextContentControl")?.schema?.parameters?.tag?.required, true);
+assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addField")?.schema?.parameters?.instruction?.required, true);
+assert.match(HELP_CATALOG.find((item) => item.name === "paragraph.addField")?.summary || "", /five-run native graph.*source-bound.*cached display text is editable/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.contentControls")?.schema?.returns?.controls?.type, "DocumentTextContentControlHandle[]");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.fillContentControls")?.schema?.parameters?.values?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.fillContentControls")?.schema?.returns?.result?.description || "", /updated.*matchedTags.*missingTags/);
@@ -419,6 +422,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "presentation.theme")?.su
 assert.match(presentation.help("presentation.layouts.add").ndjson, /slide layout/);
 assert.match(document.help("document.addField").ndjson, /fldSimple/);
 assert.match(document.help("document.addTableOfContents").ndjson, /complex TOC field/);
+assert.match(document.help("paragraph.addField").ndjson, /inline field run/);
 assert.match(document.help("document.addBookmark").ndjson, /native Word bookmark/);
 assert.match(document.help("document.addFootnote").ndjson, /native bounded footnote/i);
 assert.match(document.help("document.addEndnote").ndjson, /native bounded endnote/i);

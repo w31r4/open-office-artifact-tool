@@ -30,6 +30,18 @@ For a source-free native TOC, prefer the public OpenChestnut path:
 document.addTableOfContents({ levels: "1-3" });
 ```
 
+For canonical inline numbering and references, also prefer the public run path:
+
+```js
+paragraph.addField("SEQ Figure \\* ARABIC", "0");
+paragraph.addField("REF fig1 \\h", "0");
+paragraph.addField("PAGEREF fig1 \\h", "0");
+```
+
+The second argument is only cached display text. After importing a canonical
+field paragraph, the cache and ordinary run text may change, but field position
+and instruction remain source-bound.
+
 This sets `document.settings.updateFields = true` and emits native
 `w:updateFields`. Treat it only as a host-refresh request. It never means the
 cached result is current, and headless export alone is not proof that page

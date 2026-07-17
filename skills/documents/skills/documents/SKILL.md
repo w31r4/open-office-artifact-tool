@@ -12,7 +12,7 @@ them visually.
 ## Tools + Contract
 
 - Use host-provided workspace dependencies for DOCX artifact work: resolve them through the workspace dependency loader or runtime skill, then treat the returned Node/Python runtimes and package directory as authoritative. Do not use system `node`, system `python`, global npm packages, or repo-local installs.
-- For ordinary DOCX creation, import, semantic editing, bounded whole-block bookmarks/internal links, plain-text footnotes/endnotes, canonical bibliography-backed citations, canonical native TOC placeholders with explicit field-refresh intent, and export, **MUST** use the public `open-office-artifact-tool` `DocumentModel`/`DocumentFile` surface and its bundled OpenChestnut codec. Read `artifact_tool/API_QUICK_START.md`, then use `tasks/create_edit.md` for the task workflow.
+- For ordinary DOCX creation, import, semantic editing, bounded whole-block bookmarks/internal links, plain-text footnotes/endnotes, canonical bibliography-backed citations, canonical inline `SEQ`/`REF`/`PAGEREF` field runs, canonical native TOC placeholders with explicit field-refresh intent, and export, **MUST** use the public `open-office-artifact-tool` `DocumentModel`/`DocumentFile` surface and its bundled OpenChestnut codec. Read `artifact_tool/API_QUICK_START.md`, then use `tasks/create_edit.md` for the task workflow.
 - Python and direct OOXML helpers are reserved for explicit low-level package patches, specialized audits, and render/QA operations documented by this Skill. They are never an automatic authoring fallback. If an imported construct cannot be edited through the supported model, narrow the edit or report the fail-closed boundary.
 - Run any builder or helper file from a writable workspace or temp directory, not from the managed dependency directory itself.
 - Final user-facing responses should describe only the requested document result. Do not link QA intermediates unless the user explicitly asks for them.
@@ -429,7 +429,7 @@ Then inspect the generated `page-<N>.png` files.
 - If you need **forms / content controls (SDTs)**: use the public API for inline plain-text controls, then follow `tasks/forms_content_controls.md` for import, strict tag filling, advanced package routes, and fail-closed boundaries
 - If you need **bibliography-backed citations**: use `document.addBibliographySource(...)` and `document.addCitation(...)` for the canonical source catalog plus whole-paragraph `CITATION` profile; keep imported source order/tags and citation tags fixed
 - If you need a **native Table of Contents field** in a new or canonical document: use `document.addTableOfContents(...)`, preserve the resulting `settings.updateFields` refresh hint, then follow `tasks/toc_workflow.md` for host refresh and page-level verification
-- If you need **captions + cross-references**: `tasks/captions_crossrefs.md`
+- If you need **inline numbering/cross-reference fields** in a new or canonical paragraph: use `paragraph.addField(...)`, then follow `tasks/captions_crossrefs.md`; use the explicit package helper only when the task requires a bookmark wrapped around the caption number or deterministic materialization
 - If you need **redaction/anonymization**: `tasks/redaction_anonymization.md`
 - If the task is **verification/raster review**: `tasks/verify_render.md`
 - If your render looks wrong but content is right (stale fields): `tasks/fields_update.md`

@@ -127,6 +127,37 @@ placeholder-document, locked, or extension-bearing SDTs remain opaque and
 source-bound. Do not flatten them; follow `tasks/forms_content_controls.md` for
 explicit advanced routing and render-backed QA.
 
+## Inline SEQ, REF, and PAGEREF fields
+
+Use `paragraph.addField(...)` when a field must be mixed with ordinary text in
+one paragraph. The visible argument is the cached result used before a
+compatible host refreshes fields:
+
+```js
+const caption = document.addParagraph("", { styleId: "Caption" });
+caption.addRun("Figure ");
+caption.addField("SEQ Figure \\* ARABIC", "0", { style: { bold: true } });
+caption.addRun(": Revenue. See figure ");
+caption.addField("REF fig1 \\h", "0");
+caption.addRun(" on page ");
+caption.addField("PAGEREF fig1 \\h", "0");
+caption.addRun(".");
+```
+
+OpenChestnut writes each logical field run as the canonical five-run native
+`begin` / `instrText` / `separate` / cached-result / `end` graph. It imports
+that exact profile back into one `run.inlineField` object. Source-free authoring
+accepts only `SEQ <label> \\* ARABIC`, `REF <bookmark> \\h`, and `PAGEREF
+<bookmark> \\h`, with bounded Word-compatible names. On an imported paragraph,
+ordinary text and cached field results may change, but field positions and
+instructions are source-bound.
+
+This slice does not create a bookmark around only the caption-number result.
+Use `tasks/captions_crossrefs.md` and its explicit package helper when the task
+needs that exact caption-target topology or deterministic SEQ/REF
+materialization. Never claim a cached result is current without host refresh or
+materialization plus render review.
+
 ## Bibliography-backed citations
 
 Use a canonical Word bibliography catalog plus a whole-paragraph citation field
