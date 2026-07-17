@@ -189,7 +189,7 @@ internal sealed class XlsxCellStyleCodec
         EnsureWritableStylesheet();
         var differential = new DifferentialFormat();
         if (source.Font is not null) differential.Append(ApplyFont(new Font(), source.Font));
-        if (source.Fill is not null) differential.Append(ApplyFill(new Fill(), source.Fill));
+        if (source.Fill is not null) differential.Append(ApplyDifferentialFill(new Fill(), source.Fill));
         if (source.Alignment is not null) differential.Append(ApplyAlignment(new Alignment(), source.Alignment));
         if (source.Border is not null) differential.Append(ApplyBorder(new Border(), source.Border));
         if (source.Protection is not null) differential.Append(ApplyProtection(new Protection(), source.Protection));
@@ -511,12 +511,14 @@ internal sealed class XlsxCellStyleCodec
         var patternText = pattern.PatternType is { } patternValue ? (string?)patternValue : null;
         var patternType = patternText ?? "none";
         if (patternType == "none") return null;
+        var foreground = ReadColor(pattern.ForegroundColor);
         var background = ReadColor(pattern.BackgroundColor);
-        if (patternType == "solid" && background?.SourceCase == SpreadsheetColor.SourceOneofCase.Indexed && background.Indexed == 64) background = null;
+        if (patternType == "solid" && (background?.SourceCase == SpreadsheetColor.SourceOneofCase.Indexed && background.Indexed == 64 ||
+            foreground is not null && background is not null && foreground.Equals(background))) background = null;
         return new SpreadsheetFillStyle
         {
             PatternType = patternType,
-            Foreground = ReadColor(pattern.ForegroundColor),
+            Foreground = foreground,
             Background = background,
         };
     }
@@ -629,6 +631,18 @@ internal sealed class XlsxCellStyleCodec
         else if (source.PatternType == "solid") pattern.BackgroundColor = new BackgroundColor { Indexed = 64U };
         target.Append(pattern);
         return target;
+    }
+
+    // LibreOffice applies a differential solid fill's background color when
+    // printing/rendering. Duplicate an otherwise implicit foreground color
+    // only in DXFs, then normalize it again on import so the public model
+    // retains the conventional single-color solid-fill representation.
+    private static Fill ApplyDifferentialFill(Fill target, SpreadsheetFillStyle source)
+    {
+        var fill = ApplyFill(target, source);
+        if (source.PatternType == "solid" && source.Foreground is not null && source.Background is null && fill.PatternFill is { } pattern)
+            pattern.BackgroundColor = ApplyColor(new BackgroundColor(), source.Foreground);
+        return fill;
     }
 
     private static Border ApplyBorder(Border target, SpreadsheetBorderStyle source)

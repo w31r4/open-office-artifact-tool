@@ -98,6 +98,11 @@ public sealed class XlsxCodecTests
             var worksheetPart = Assert.Single(document.WorkbookPart!.WorksheetParts);
             Assert.Equal(2U, worksheetPart.Worksheet!.GetFirstChild<DataValidations>()!.Count!.Value);
             Assert.Equal(2, worksheetPart.Worksheet.Elements<ConditionalFormatting>().Count());
+            var revenueRule = worksheetPart.Worksheet.Elements<ConditionalFormatting>().First().GetFirstChild<ConditionalFormattingRule>()!;
+            var revenueFormat = document.WorkbookPart.WorkbookStylesPart!.Stylesheet!.DifferentialFormats!.Elements<DifferentialFormat>()
+                .ElementAt(checked((int)revenueRule.FormatId!.Value!));
+            Assert.Equal("FFDCFCE7", revenueFormat.Fill!.PatternFill!.ForegroundColor!.Rgb!.Value);
+            Assert.Equal("FFDCFCE7", revenueFormat.Fill.PatternFill.BackgroundColor!.Rgb!.Value);
             var people = Assert.Single(document.WorkbookPart.WorkbookPersonParts).PersonList!;
             Assert.Equal(["Analyst", "Lead analyst"], people.Elements<TC.Person>().Select(item => item.DisplayName?.Value ?? string.Empty).Order().ToArray());
             var comments = Assert.Single(worksheetPart.WorksheetThreadedCommentsParts).ThreadedComments!;
@@ -141,6 +146,7 @@ public sealed class XlsxCodecTests
                 Assert.Equal("greaterThan", item.Operator);
                 Assert.Equal(["50"], item.Formulas);
                 Assert.Equal("DCFCE7", item.Format.Fill.Foreground.Rgb);
+                Assert.Null(item.Format.Fill.Background);
             },
             item =>
             {
