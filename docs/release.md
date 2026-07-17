@@ -65,6 +65,49 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### XLSX standard-area and fixed-doughnut chart families
+
+On 2026-07-17, the Spreadsheet public model, protocol-2 wire, OpenChestnut C#
+codec, bundled WASM runtime, generated Help/API reference, and native
+Spreadsheet plugin converged on two additional canonical worksheet-chart
+families. Source-free and recognized imported standard-area charts now carry
+the existing primary category/value axes; 50%-hole doughnut charts author and
+import as circular plots without axes. Both families support bounded
+categories, series, titles, legends, source formulas/caches, semantic edits,
+second import, and type-aware SVG QA. The worksheet chart preview moved from
+the large Spreadsheet domain leaf into its own focused module while preserving
+the public `WorksheetChart.toSvg()` contract.
+
+The slice remains deliberately loss-aware. Stacked and percent-stacked area,
+non-50% doughnut geometry, exploded points, scatter/bubble/radar/stock/modern
+families, and other unmodeled plot options are never substituted. Recognized
+advanced area/doughnut graphs import as source-bound and read-only, preserve
+their native chart XML unchanged, and reject semantic edits with
+`unsupported_spreadsheet_chart_edit`; unsupported source-free types and
+illegal axis/line-option combinations fail before crossing the wire. The
+regressions also closed two existing chart-patch defects: valid imported
+pie/doughnut topology is now editable, and editing a non-line chart cannot
+inject line grouping markup.
+
+The complete local gate passed `npm test` including Playwright and all five
+published Skills, `npm run docs:api`, `npm run proto:check`,
+`npm run test:pack`, isolated `npm run verify:open-chestnut-build`,
+OpenChestnut `184/184`, and OfficeBridge `5/5`. Two isolated clean WASM builds
+produced the same 39 audited files and the same manifest-bound 38-file,
+14,318,780-byte runtime. The clean-install tarball contains 423 files, is
+9,276,398 bytes compressed and 23,122,542 bytes unpacked. No npm publish, tag,
+or GitHub release operation was attempted.
+
+The completed candidate at commit
+`e61bb1ff143f27a9d4afc1ecdd6490634c3dfa4a` passed the hosted Linux `ci`
+workflow in [GitHub Actions run 29590185608](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29590185608)
+on 2026-07-17. The run completed with conclusion `success` in 4m31s and covered
+protocol/runtime determinism, Chromium/LibreOffice/Poppler tool checks, the
+complete npm suite including five-family chart author/import/edit/preservation
+and native Spreadsheet Skill regressions, generated API-doc cleanliness,
+offline release metadata, the 423-file clean-install tarball, OfficeBridge
+`5/5`, and OpenChestnut `184/184`.
+
 ### DOCX transactional SEQ/REF cached-result materialization
 
 On 2026-07-17, the public Documents model and native Documents plugin closed
