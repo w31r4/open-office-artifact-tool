@@ -140,8 +140,14 @@ main().catch((error) => {
 ## Bounded Native Combo Chart
 
 `combo` is native PPTX output only for one intentionally narrow profile: literal
-clustered columns plus literal lines, one shared primary category/value axis
-pair, at least one series of each kind, and no topology changes after import.
+clustered columns plus literal lines, at least one primary bar and one line, and
+no topology changes after import. There are two canonical axis variants:
+
+- Leave every line on the default primary axis group to use one shared
+  category/value pair.
+- Put **every** line at `axisGroup: "secondary"`, keep every bar primary, and
+  provide `axes.secondary.category` plus `axes.secondary.value`. OpenChestnut
+  writes that second pair at the top and right of the chart.
 
 ```ts
 slide.charts.add("combo", {
@@ -154,20 +160,29 @@ slide.charts.add("combo", {
     {
       name: "Margin",
       chartType: "line",
+      axisGroup: "secondary",
       values: [12, 15, 18],
       line: { fill: "#16A34A", width: 2 },
       marker: { symbol: "circle", size: 7 },
     },
   ],
-  axes: { category: { title: "Quarter" }, value: { title: "Percent" } },
+  axes: {
+    category: { title: "Quarter" },
+    value: { title: "Revenue ($M)" },
+    secondary: {
+      category: { title: "Quarter" },
+      value: { title: "Margin (%)", minimum: 0, maximum: 25 },
+    },
+  },
   dataLabels: { showValue: true, position: "top" },
 });
 ```
 
-Do not use `axisGroup: "secondary"`, external/embedded workbook data, smooth
-lines, point overrides, per-series labels, trendlines, or error bars in this
-profile. Those combinations fail closed rather than being flattened or
-silently rebuilt.
+Do not mix primary and secondary line series, put a bar on `axisGroup:
+"secondary"`, omit either secondary axis when using secondary lines, or use
+external/embedded workbook data, smooth lines, point overrides, per-series
+labels, trendlines, or error bars. Those combinations fail closed rather than
+being flattened or silently rebuilt.
 
 ## JSX Compose Equivalent
 

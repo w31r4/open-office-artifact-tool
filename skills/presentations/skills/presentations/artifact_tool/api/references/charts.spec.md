@@ -8,20 +8,47 @@ The model and reference-shaped API describe many chart families, but native
 OpenChestnut PPTX creation/import/edit is deliberately narrower:
 
 - `bar`, `line`, and `pie` accept literal categories and finite values.
-- `combo` is native only for clustered bar plus standard line plots sharing one
-  primary category/value axis pair. Every series declares `chartType: "bar"`
-  or `chartType: "line"`, with at least one of each.
+- `combo` is native only for clustered bar plus standard line plots. Every
+  series declares `chartType: "bar"` or `chartType: "line"`, with at least
+  one primary bar and one line. Bars always use the primary category/value
+  pair. Lines are either all primary, or every line declares
+  `axisGroup: "secondary"` and uses the canonical secondary category/value
+  pair at the top and right of the chart.
 - The combo profile permits title, legend, basic fill/line/marker styling, and
   chart-level data labels. Its plot/series/point topology is fixed after
   import.
-- External data, secondary axes, point overrides, per-series data labels,
-  smooth lines, trendlines, error bars, and other chart families fail closed or
-  remain source-bound. Do not re-create an irregular imported chart from its
-  visible values and claim it was preserved.
+- External data, mixed primary/secondary line groups, secondary bars, point
+  overrides, per-series data labels, smooth lines, trendlines, error bars, and
+  other chart families fail closed or remain source-bound. Do not re-create an
+  irregular imported chart from its visible values and claim it was preserved.
 
 Use `inspect` before editing an imported chart, make the smallest supported
 change, export to a distinct output, import once more, and render the final
 slide for visual QA.
+
+### Canonical secondary-line combo
+
+```ts
+slide.charts.add("combo", {
+  categories: ["Q1", "Q2", "Q3"],
+  series: [
+    { name: "Revenue", chartType: "bar", values: [42, 48, 57] },
+    { name: "Margin", chartType: "line", axisGroup: "secondary", values: [12, 15, 18] },
+  ],
+  axes: {
+    category: { title: "Quarter" },
+    value: { title: "Revenue ($M)" },
+    secondary: {
+      category: { title: "Quarter" },
+      value: { title: "Margin (%)", minimum: 0, maximum: 25 },
+    },
+  },
+});
+```
+
+Use the secondary form only when every line is secondary and both secondary
+axes are present. Otherwise omit `axisGroup` and `axes.secondary` to use the
+shared-primary form.
 
 ## Resolved From Inspect
 

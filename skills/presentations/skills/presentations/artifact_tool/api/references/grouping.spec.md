@@ -80,9 +80,10 @@ const group = slide.groups.add({
 
 The bounded native profile supports recursive groups containing modeled
 shapes/textboxes, straight or polyline connectors, embedded images, fixed-grid
-tables, literal bar/line/pie charts, and the same bounded literal primary-axis
-bar+line combo profile supported at slide level. Child IDs are owner-local in
-the wire, but remain globally resolvable through the presentation facade.
+tables, literal bar/line/pie charts, and the same bounded literal clustered
+bar+line combo profile supported at slide level, including its all-primary or
+canonical all-secondary-line axis choice. Child IDs are owner-local in the
+wire, but remain globally resolvable through the presentation facade.
 
 ## Inspect, resolve, and edit
 

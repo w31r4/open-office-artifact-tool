@@ -26,10 +26,12 @@ Protocol version 2 removes `allow_lossy`; the removed field name and number are 
 - PPTX: direct RGB/theme solid and native style-reference slide backgrounds, text boxes/round rectangles, basic fill/line/shadow, straight/polyline connectors and arrows, source-free bar/line/pie charts, bounded embedded rectangular images with signed DrawingML `a:srcRect` crop, fixed tables, recursive native `p:grpSp` trees with local `chOff/chExt` coordinates, rich text/lists/links, canonical plain-text speaker notes, source-bound Master/Layout preservation, and read-only presentation view metadata (grid spacing, snap flags, and horizontal/vertical guides). Recognized imported direct backgrounds, source rectangles, canonical fixed-topology groups, and the presence-aware `p:sp/@useBgFill` flag are projected without flattening inheritance or surrounding package graphs; `useBgFill` is preview-visible but read-only and source-bound. Eligible top-level OLE objects also allow one source/hash/relationship-bound XLSX payload replacement: the replacement workbook is budgeted, opened by the Open XML SDK, and Office 2021 validated while the OLE shell, preview, and unrelated native graph remain unchanged. JavaScript computes `contain`/`cover` into the native source rectangle before crossing the wire and owns local gridline/guide visibility; the native `viewProps.xml` graph remains source/hash-bound. Advanced background/group/view graphs, shared or ambiguous OLE payloads, external or masked/effect-bearing pictures, and rich or irregular notes remain opaque-preserved and fail closed on mutation.
 
 The PPTX combo profile is intentionally small: literal clustered bars plus literal
-lines, globally ordered series, one shared primary category/value axis pair,
-and duplicated chart-level data labels. Secondary axes, external data,
-per-series labels/point overrides, smooth lines, trendlines, error bars, and
-irregular mixed plots remain opaque-preserved or fail closed.
+lines, globally ordered series, duplicated chart-level data labels, and either
+one shared primary category/value axis pair or one canonical secondary top/right
+pair for every line. Bars stay primary; all lines must share one axis group.
+External data, mixed line groups, secondary bars, per-series labels/point
+overrides, smooth lines, trendlines, error bars, and irregular mixed plots remain
+opaque-preserved or fail closed.
 
 Imported objects outside these modeled profiles remain opaque and unchanged. They do not become permission for lossy rewriting.
 
