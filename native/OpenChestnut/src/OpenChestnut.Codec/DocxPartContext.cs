@@ -21,20 +21,29 @@ internal sealed class DocxPartContext
     private string? _mutatedNumberingPartPath;
     private string? _mutatedCommentsPartPath;
     private string? _mutatedCommentsRelationshipId;
+    private string? _mutatedBibliographyPartPath;
+    private string? _mutatedBibliographyRelationshipId;
     private bool _stylesDocumentLoaded;
     private uint? _nextDrawingId;
     private readonly HashSet<string> _plannedBookmarks;
+    private readonly HashSet<string> _bibliographyTags;
 
-    internal DocxPartContext(MainDocumentPart owner, DocxImageAssetCatalog? images = null, IEnumerable<string>? plannedBookmarks = null)
+    internal DocxPartContext(
+        MainDocumentPart owner,
+        DocxImageAssetCatalog? images = null,
+        IEnumerable<string>? plannedBookmarks = null,
+        IEnumerable<string>? bibliographyTags = null)
     {
         Owner = owner;
         Images = images;
         _plannedBookmarks = new HashSet<string>(plannedBookmarks ?? [], StringComparer.Ordinal);
+        _bibliographyTags = new HashSet<string>(bibliographyTags ?? [], StringComparer.Ordinal);
     }
 
     internal MainDocumentPart Owner { get; }
     internal DocxImageAssetCatalog? Images { get; }
     internal IReadOnlyCollection<string> MutatedRelationshipIds => _mutatedRelationshipIds;
+    internal IReadOnlySet<string> BibliographyTags => _bibliographyTags;
 
     internal uint NextDrawingId()
     {
@@ -181,12 +190,26 @@ internal sealed class DocxPartContext
         _mutatedPartPaths.Add(part.Uri.OriginalString.TrimStart('/'));
     }
 
+    internal void MarkBibliographyMutated(CustomXmlPart part, string relationshipId)
+    {
+        var pair = Owner.Parts.FirstOrDefault(item => ReferenceEquals(item.OpenXmlPart, part));
+        if (pair.OpenXmlPart is null || !pair.RelationshipId.Equals(relationshipId, StringComparison.Ordinal))
+            throw new CodecException(
+                "document_bibliography_source_binding_mismatch",
+                "The modeled bibliography Custom XML part is not related from word/document.xml by its bound relationship.",
+                part.Uri.OriginalString.TrimStart('/'));
+        _mutatedBibliographyRelationshipId = relationshipId;
+        _mutatedBibliographyPartPath = part.Uri.OriginalString.TrimStart('/');
+    }
+
     internal bool IgnoresModeledRelationship(OpenOffice.Artifact.Wire.V1.OpaqueOpcRelationship relationship) =>
         relationship.SourcePath.Equals("word/document.xml", StringComparison.OrdinalIgnoreCase) &&
         ((relationship.Type.EndsWith("/hyperlink", StringComparison.Ordinal) &&
           _mutatedRelationshipIds.Contains(relationship.Id)) ||
          (relationship.Type.EndsWith("/comments", StringComparison.Ordinal) &&
           relationship.Id.Equals(_mutatedCommentsRelationshipId, StringComparison.Ordinal)) ||
+         (relationship.Type.EndsWith("/customXml", StringComparison.Ordinal) &&
+          relationship.Id.Equals(_mutatedBibliographyRelationshipId, StringComparison.Ordinal)) ||
          ((relationship.Type.EndsWith("/footnotes", StringComparison.Ordinal) ||
            relationship.Type.EndsWith("/endnotes", StringComparison.Ordinal)) &&
           _mutatedNoteRelationshipIds.Contains(relationship.Id)));
@@ -196,7 +219,9 @@ internal sealed class DocxPartContext
         (_mutatedNumberingPartPath is not null &&
          part.Path.Equals(_mutatedNumberingPartPath, StringComparison.OrdinalIgnoreCase)) ||
         (_mutatedCommentsPartPath is not null &&
-         part.Path.Equals(_mutatedCommentsPartPath, StringComparison.OrdinalIgnoreCase));
+         part.Path.Equals(_mutatedCommentsPartPath, StringComparison.OrdinalIgnoreCase)) ||
+        (_mutatedBibliographyPartPath is not null &&
+         part.Path.Equals(_mutatedBibliographyPartPath, StringComparison.OrdinalIgnoreCase));
 
     private static XDocument? ReadCachedPart(OpenXmlPart? part, ref bool loaded, ref XDocument? document)
     {

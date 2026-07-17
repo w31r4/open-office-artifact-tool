@@ -141,7 +141,7 @@ internal static class DocxBookmarkCodec
             if (!targets.Add(bookmark.TargetBlockId))
                 throw Invalid($"Document bookmark target {bookmark.TargetBlockId} already has a bounded bookmark.");
             if (!blocks.TryGetValue(bookmark.TargetBlockId, out var block) || !IsParagraphLike(block))
-                throw Invalid($"Document bookmark {bookmark.Id} target must be a paragraph, hyperlink, field, tracked change, or image block.");
+                throw Invalid($"Document bookmark {bookmark.Id} target must be a paragraph, hyperlink, field, citation, tracked change, or image block.");
             if (bookmark.NativeId.Length > 0 && !uint.TryParse(bookmark.NativeId, out _))
                 throw Invalid($"Document bookmark {bookmark.Id} native ID must be an unsigned decimal integer when present.");
             if (bookmark.Source is not null && bookmark.Source.Editable)
@@ -178,6 +178,7 @@ internal static class DocxBookmarkCodec
         DocumentBlock.ContentOneofCase.Paragraph or
         DocumentBlock.ContentOneofCase.Hyperlink or
         DocumentBlock.ContentOneofCase.Field or
+        DocumentBlock.ContentOneofCase.Citation or
         DocumentBlock.ContentOneofCase.Change or
         DocumentBlock.ContentOneofCase.Image;
 

@@ -1775,6 +1775,45 @@ message DocumentArtifact {
   // reference to one paragraph/list block; recognized imports retain their
   // package-local part, relationship, note ID, and anchor integrity evidence.
   repeated DocumentNote notes = 12;
+  // One canonical Word bibliography source catalog. OpenChestnut owns only a
+  // bounded b:Sources profile with ordinary Author names and scalar fields.
+  // Imported catalogs keep their part/relationship identity and fixed source
+  // topology in the source binding; irregular custom XML remains opaque.
+  DocumentBibliography bibliography = 13;
+}
+
+message DocumentBibliography {
+  string selected_style = 1;
+  string style_name = 2;
+  string uri = 3;
+  repeated DocumentBibliographySource sources = 4;
+  DocumentBibliographySourceBinding source = 5;
+}
+
+message DocumentBibliographySource {
+  string id = 1;
+  string tag = 2;
+  string source_type = 3;
+  repeated DocumentBibliographyPerson authors = 4;
+  string corporate_author = 5;
+  // Keys are the independently documented JavaScript field names (for
+  // example title, year, publisher, journalName, and url), not native element
+  // names. Values are bounded strings; unknown native fields stay opaque.
+  map<string, string> fields = 6;
+}
+
+message DocumentBibliographyPerson {
+  string first = 1;
+  string middle = 2;
+  string last = 3;
+}
+
+message DocumentBibliographySourceBinding {
+  string part_path = 1;
+  string relationship_id = 2;
+  string part_sha256 = 3;
+  string semantic_sha256 = 4;
+  bool editable = 5;
 }
 
 message DocumentBookmark {
@@ -1924,6 +1963,9 @@ message DocumentBlock {
     DocumentImage image = 15;
     DocumentSection section = 16;
     DocumentChange change = 17;
+    // One whole-paragraph simple CITATION field whose source tag resolves in
+    // DocumentArtifact.bibliography. Complex fields and switches stay opaque.
+    DocumentCitation citation = 18;
   }
 }
 
@@ -2030,6 +2072,11 @@ message DocumentHyperlink {
 
 message DocumentField {
   string instruction = 1;
+  string display = 2;
+}
+
+message DocumentCitation {
+  string tag = 1;
   string display = 2;
 }
 
