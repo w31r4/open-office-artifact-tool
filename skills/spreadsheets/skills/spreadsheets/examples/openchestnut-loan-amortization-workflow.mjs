@@ -119,7 +119,7 @@ export function buildLoanAmortizationWorkbook() {
   styleTitle(checks, "A1:F1", 6, "Model Checks");
   checks.getRange("A3:F3").values = [["Check", "Actual", "Expected / minimum", "Difference", "Status", "Notes"]];
   checks.getRange("A3:F3").format = { fill: HEADER_FILL, font: { bold: true, color: "#FFFFFF" }, alignment: { horizontal: "center" } };
-  checks.getRange("A4:F13").values = [
+  checks.getRange("A4:F15").values = [
     ["Payment identity", null, 0, null, null, "Payment equals interest plus principal."],
     ["First-period interest", null, null, null, null, "Uses the selected payment timing."],
     ["Final closing balance", null, 0, null, null, "Fully amortized balance should be zero."],
@@ -129,9 +129,11 @@ export function buildLoanAmortizationWorkbook() {
     ["Solved original principal", null, null, null, null, "PV reverses the payment stream back to the visible opening balance."],
     ["Solved ending balance", null, 0, null, null, "FV confirms the modeled payment stream ends at zero."],
     ["Solved payment periods", null, null, null, null, "NPER reverses the payment stream back to the visible term."],
+    ["Cumulative interest reconciliation", null, null, null, null, "CUMIPMT agrees with the visible interest schedule."],
+    ["Cumulative principal reconciliation", null, null, null, null, "CUMPRINC agrees with the visible principal schedule."],
     ["Overall model status", null, 0, null, null, "Zero failed checks required."],
   ];
-  checks.getRange("B4:B13").formulas = [
+  checks.getRange("B4:B15").formulas = [
     ["=SUM('Amortization'!$C$5:$C$16)-SUM('Amortization'!$D$5:$D$16)-SUM('Amortization'!$E$5:$E$16)"],
     ["='Amortization'!$D$5"],
     ["='Amortization'!$F$16"],
@@ -141,7 +143,9 @@ export function buildLoanAmortizationWorkbook() {
     ["=PV('Inputs'!$B$10,'Inputs'!$B$11,'Amortization'!$C$5,0,'Inputs'!$B$9)"],
     ["=FV('Inputs'!$B$10,'Inputs'!$B$11,'Amortization'!$C$5,'Inputs'!$B$5,'Inputs'!$B$9)"],
     ["=NPER('Inputs'!$B$10,'Amortization'!$C$5,'Inputs'!$B$5,0,'Inputs'!$B$9)"],
-    ["=COUNTIF(E4:E12,\"CHECK\")"],
+    ["=CUMIPMT('Inputs'!$B$10,'Inputs'!$B$11,'Inputs'!$B$5,1,'Inputs'!$B$11,'Inputs'!$B$9)"],
+    ["=CUMPRINC('Inputs'!$B$10,'Inputs'!$B$11,'Inputs'!$B$5,1,'Inputs'!$B$11,'Inputs'!$B$9)"],
+    ["=COUNTIF(E4:E14,\"CHECK\")"],
   ];
   checks.getRange("C5").formulas = [["=-'Inputs'!$B$5*'Inputs'!$B$10*(1-'Inputs'!$B$9)"]];
   checks.getRange("C7").formulas = [["=-'Inputs'!$B$5"]];
@@ -149,7 +153,9 @@ export function buildLoanAmortizationWorkbook() {
   checks.getRange("C9").formulas = [["='Inputs'!$B$10"]];
   checks.getRange("C10").formulas = [["='Inputs'!$B$5"]];
   checks.getRange("C12").formulas = [["='Inputs'!$B$11"]];
-  checks.getRange("D4:D13").formulas = [
+  checks.getRange("C13").formulas = [["=SUM('Amortization'!$D$5:$D$16)"]];
+  checks.getRange("C14").formulas = [["=SUM('Amortization'!$E$5:$E$16)"]];
+  checks.getRange("D4:D15").formulas = [
     ["=B4-C4"],
     ["=B5-C5"],
     ["=B6-C6"],
@@ -160,8 +166,10 @@ export function buildLoanAmortizationWorkbook() {
     ["=B11-C11"],
     ["=B12-C12"],
     ["=B13-C13"],
+    ["=B14-C14"],
+    ["=B15-C15"],
   ];
-  checks.getRange("E4:E13").formulas = [
+  checks.getRange("E4:E15").formulas = [
     ["=IF(ABS(D4)<0.01,\"OK\",\"CHECK\")"],
     ["=IF(ABS(D5)<0.01,\"OK\",\"CHECK\")"],
     ["=IF(ABS(D6)<0.01,\"OK\",\"CHECK\")"],
@@ -171,28 +179,32 @@ export function buildLoanAmortizationWorkbook() {
     ["=IF(ABS(D10)<0.01,\"OK\",\"CHECK\")"],
     ["=IF(ABS(D11)<0.01,\"OK\",\"CHECK\")"],
     ["=IF(ABS(D12)<0.0000001,\"OK\",\"CHECK\")"],
-    ["=IF(B13=C13,\"OK\",\"CHECK\")"],
+    ["=IF(ABS(D13)<0.01,\"OK\",\"CHECK\")"],
+    ["=IF(ABS(D14)<0.01,\"OK\",\"CHECK\")"],
+    ["=IF(B15=C15,\"OK\",\"CHECK\")"],
   ];
-  checks.getRange("B4:C13").format = { font: { color: "#008000" } };
-  checks.getRange("B13:C13").format = { font: { color: "#000000" } };
-  checks.getRange("D4:D13").format = { font: { color: "#000000" } };
+  checks.getRange("B4:C15").format = { font: { color: "#008000" } };
+  checks.getRange("B15:C15").format = { font: { color: "#000000" } };
+  checks.getRange("D4:D15").format = { font: { color: "#000000" } };
   checks.getRange("B4:D7").format.numberFormat = MONEY_FORMAT;
   checks.getRange("B8:D8").format.numberFormat = COUNT_FORMAT;
   checks.getRange("B9:D9").format.numberFormat = RATE_FORMAT;
   checks.getRange("B10:D11").format.numberFormat = MONEY_FORMAT;
-  checks.getRange("B12:D13").format.numberFormat = COUNT_FORMAT;
-  checks.getRange("E4:E13").conditionalFormats.add("containsText", {
+  checks.getRange("B12:D12").format.numberFormat = COUNT_FORMAT;
+  checks.getRange("B13:D14").format.numberFormat = MONEY_FORMAT;
+  checks.getRange("B15:D15").format.numberFormat = COUNT_FORMAT;
+  checks.getRange("E4:E15").conditionalFormats.add("containsText", {
     text: "OK",
     format: { fill: "#DCFCE7", font: { bold: true, color: "#166534" } },
   });
-  checks.getRange("E4:E13").conditionalFormats.add("containsText", {
+  checks.getRange("E4:E15").conditionalFormats.add("containsText", {
     text: "CHECK",
     format: { fill: "#FEE2E2", font: { bold: true, color: "#B91C1C" } },
   });
-  checks.getRange("A1:A13").format.columnWidthPx = 198;
-  checks.getRange("B1:D13").format.columnWidthPx = 136;
-  checks.getRange("E1:E13").format.columnWidthPx = 94;
-  checks.getRange("F1:F13").format.columnWidthPx = 292;
+  checks.getRange("A1:A15").format.columnWidthPx = 198;
+  checks.getRange("B1:D15").format.columnWidthPx = 136;
+  checks.getRange("E1:E15").format.columnWidthPx = 94;
+  checks.getRange("F1:F15").format.columnWidthPx = 292;
   checks.freezePanes.freezeRows(3);
 
   workbook.worksheets.setActiveWorksheet("Amortization");
@@ -214,7 +226,9 @@ export async function createLoanAmortizationWorkbook(outputPath) {
   assertClose(checks.getRange("B10").values[0][0], 100000, 1e-7);
   assertClose(checks.getRange("B11").values[0][0], 0, 1e-7);
   assertClose(checks.getRange("B12").values[0][0], 12, 1e-10);
-  assert.deepEqual(checks.getRange("E4:E13").values, Array.from({ length: 10 }, () => ["OK"]));
+  assertClose(checks.getRange("B13").values[0][0], -6618.54641401005, 1e-8);
+  assertClose(checks.getRange("B14").values[0][0], -100000, 1e-8);
+  assert.deepEqual(checks.getRange("E4:E15").values, Array.from({ length: 12 }, () => ["OK"]));
 
   const inspection = workbook.inspect({
     kind: "workbook,sheet,formula",
@@ -226,13 +240,15 @@ export async function createLoanAmortizationWorkbook(outputPath) {
   assert.match(inspection.ndjson, /PPMT/);
   const checksInspection = workbook.inspect({
     kind: "formula",
-    target: "Checks!B10,Checks!B11,Checks!B12",
+    target: "Checks!B10,Checks!B11,Checks!B12,Checks!B13,Checks!B14",
     include: "formula,value",
     maxChars: 2_000,
   });
   assert.match(checksInspection.ndjson, /PV/);
   assert.match(checksInspection.ndjson, /FV/);
   assert.match(checksInspection.ndjson, /NPER/);
+  assert.match(checksInspection.ndjson, /CUMIPMT/);
+  assert.match(checksInspection.ndjson, /CUMPRINC/);
   const verification = workbook.verify({ visualQa: true });
   assert.equal(verification.ok, true, verification.ndjson);
   const previewSvg = await workbook.render({ sheetName: "Amortization", range: "A1:F16", autoCrop: "all", format: "svg" });
@@ -251,10 +267,14 @@ export async function createLoanAmortizationWorkbook(outputPath) {
   assert.equal(imported.worksheets.getItem("Checks").getRange("B10").formulas[0][0], "=PV('Inputs'!$B$10,'Inputs'!$B$11,'Amortization'!$C$5,0,'Inputs'!$B$9)");
   assert.equal(imported.worksheets.getItem("Checks").getRange("B11").formulas[0][0], "=FV('Inputs'!$B$10,'Inputs'!$B$11,'Amortization'!$C$5,'Inputs'!$B$5,'Inputs'!$B$9)");
   assert.equal(imported.worksheets.getItem("Checks").getRange("B12").formulas[0][0], "=NPER('Inputs'!$B$10,'Amortization'!$C$5,'Inputs'!$B$5,0,'Inputs'!$B$9)");
+  assert.equal(imported.worksheets.getItem("Checks").getRange("B13").formulas[0][0], "=CUMIPMT('Inputs'!$B$10,'Inputs'!$B$11,'Inputs'!$B$5,1,'Inputs'!$B$11,'Inputs'!$B$9)");
+  assert.equal(imported.worksheets.getItem("Checks").getRange("B14").formulas[0][0], "=CUMPRINC('Inputs'!$B$10,'Inputs'!$B$11,'Inputs'!$B$5,1,'Inputs'!$B$11,'Inputs'!$B$9)");
   assertClose(imported.worksheets.getItem("Checks").getRange("B10").values[0][0], 100000, 1e-7);
   assertClose(imported.worksheets.getItem("Checks").getRange("B11").values[0][0], 0, 1e-7);
   assertClose(imported.worksheets.getItem("Checks").getRange("B12").values[0][0], 12, 1e-10);
-  assert.deepEqual(imported.worksheets.getItem("Checks").getRange("E4:E13").values, Array.from({ length: 10 }, () => ["OK"]));
+  assertClose(imported.worksheets.getItem("Checks").getRange("B13").values[0][0], -6618.54641401005, 1e-8);
+  assertClose(imported.worksheets.getItem("Checks").getRange("B14").values[0][0], -100000, 1e-8);
+  assert.deepEqual(imported.worksheets.getItem("Checks").getRange("E4:E15").values, Array.from({ length: 12 }, () => ["OK"]));
   const final = await SpreadsheetFile.exportXlsx(imported, { recalculate: false });
   const roundTrip = await SpreadsheetFile.importXlsx(final);
   roundTrip.recalculate();
@@ -263,7 +283,9 @@ export async function createLoanAmortizationWorkbook(outputPath) {
   assertClose(roundTrip.worksheets.getItem("Checks").getRange("B10").values[0][0], 100000, 1e-7);
   assertClose(roundTrip.worksheets.getItem("Checks").getRange("B11").values[0][0], 0, 1e-7);
   assertClose(roundTrip.worksheets.getItem("Checks").getRange("B12").values[0][0], 12, 1e-10);
-  assert.deepEqual(roundTrip.worksheets.getItem("Checks").getRange("E4:E13").values, Array.from({ length: 10 }, () => ["OK"]));
+  assertClose(roundTrip.worksheets.getItem("Checks").getRange("B13").values[0][0], -6618.54641401005, 1e-8);
+  assertClose(roundTrip.worksheets.getItem("Checks").getRange("B14").values[0][0], -100000, 1e-8);
+  assert.deepEqual(roundTrip.worksheets.getItem("Checks").getRange("E4:E15").values, Array.from({ length: 12 }, () => ["OK"]));
 
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
   await final.save(outputPath);

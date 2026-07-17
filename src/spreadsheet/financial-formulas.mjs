@@ -228,6 +228,19 @@ function paymentPeriod(per, nper, helpers) {
   return { value: safePer.value };
 }
 
+function cumulativePaymentTerms(rawTerms, helpers) {
+  const terms = paymentTerms(rawTerms, helpers);
+  if (terms.error) return terms;
+  const startPeriod = paymentPeriod(rawTerms.startPeriod, terms.nper, helpers);
+  const endPeriod = paymentPeriod(rawTerms.endPeriod, terms.nper, helpers);
+  if (startPeriod.error) return startPeriod;
+  if (endPeriod.error) return endPeriod;
+  if (terms.rate <= 0 || terms.pv <= 0 || endPeriod.value < startPeriod.value || endPeriod.value > FINANCIAL_MAX_RATE_PERIODS) {
+    return { error: "#NUM!" };
+  }
+  return { ...terms, startPeriod: startPeriod.value, endPeriod: endPeriod.value };
+}
+
 function depreciationTerms({ cost, salvage, life, period }, helpers) {
   const [safeCost, safeSalvage, safeLife, safePeriod] = [cost, salvage, life, period].map((value) => finiteNumber(value, helpers));
   const error = [safeCost, safeSalvage, safeLife, safePeriod].find((item) => item.error)?.error;
@@ -279,6 +292,27 @@ export function calculatePpmt(rawTerms, helpers) {
   if (typeof payment !== "number") return payment;
   const interest = calculateIpmt(rawTerms, helpers);
   return typeof interest === "number" ? payment - interest : interest;
+}
+
+function calculateCumulativePayment(rawTerms, helpers, calculateComponent) {
+  const terms = cumulativePaymentTerms(rawTerms, helpers);
+  if (terms.error) return terms.error;
+  let total = 0;
+  for (let per = terms.startPeriod; per <= terms.endPeriod; per += 1) {
+    const component = calculateComponent({ ...terms, per }, helpers);
+    if (typeof component !== "number") return component;
+    total += component;
+    if (!Number.isFinite(total)) return "#NUM!";
+  }
+  return total;
+}
+
+export function calculateCumipmt(rawTerms, helpers) {
+  return calculateCumulativePayment(rawTerms, helpers, calculateIpmt);
+}
+
+export function calculateCumprinc(rawTerms, helpers) {
+  return calculateCumulativePayment(rawTerms, helpers, calculatePpmt);
 }
 
 export function calculatePv(rawTerms, helpers) {
