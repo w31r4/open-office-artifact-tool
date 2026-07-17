@@ -7,6 +7,13 @@ import { createArtifactVisualQaApi } from "./qa/artifact-visual.mjs";
 import { ndjson, verificationIssue, verificationResult } from "./shared/inspection.mjs";
 
 export { FileBlob } from "./shared/file-blob.mjs";
+export {
+  clearOfficeFontDesignMetrics,
+  registerScopedOfficeFontDesignMetrics,
+  resolveOfficeFontDesignMetrics,
+  setOfficeFontDesignMetrics,
+  skiaPaintBaselineCompensationPx,
+} from "./shared/font-design-metrics.mjs";
 export { HELP_CATALOG } from "./help/index.mjs";
 export { box, chart, column, grid, image, layers, node, paragraph, row, rule, run, shape, table, text } from "./presentation/compose.mjs";
 export { ChartElement, DocumentFile, DocumentModel, GroupShape, ImageElement, PdfArtifact, PdfFile, Presentation, PresentationFile, Range, Shape, Slide, SpreadsheetFile, TableElement, Workbook, Worksheet };

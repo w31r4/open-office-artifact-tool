@@ -36,6 +36,7 @@ import { formulaTimeParts, formulaTimeSerial, parseFormulaDateText, parseFormula
 import { createWorkbookWindowCollection, worksheetWindowMemberships } from "./workbook-windows.mjs";
 import { decoder, encoder, toUint8Array } from "../shared/binary.mjs";
 import { FileBlob } from "../shared/file-blob.mjs";
+import { officeFontFamilies } from "../shared/font-design-metrics.mjs";
 import { aid } from "../shared/ids.mjs";
 import { imageDataFromDataUrl } from "../shared/images.mjs";
 import { filterInspectRecords, inspectRecordMatchesTarget, inspectTargetTokens, ndjson, normalizeKinds, verificationIssue, verificationResult } from "../shared/inspection.mjs";
@@ -1244,6 +1245,12 @@ export class Workbook {
 
   static create(options = {}) {
     return new Workbook(options);
+  }
+
+  get fontFamilies() {
+    const cells = this.worksheets.items.flatMap((sheet) => sheet.store.entries().map(([, cell]) => cell));
+    const conditionalFormats = this.worksheets.items.flatMap((sheet) => sheet.conditionalFormattings.items.map((rule) => rule.format));
+    return officeFontFamilies([cells, conditionalFormats], ["Aptos"]);
   }
 
   setDateSystem(value) {

@@ -31,6 +31,9 @@ const workbook = Workbook.create();
 const sheet = workbook.worksheets.add("Inputs");
 ```
 
+Use `workbook.fontFamilies` for a fresh sorted inventory of the workbook
+default and explicit cell fonts before render or handoff QA.
+
 Final export:
 ```js
 await fs.mkdir(outputDir, { recursive: true });

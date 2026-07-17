@@ -754,6 +754,8 @@ internal static class PptxCodec
                 : null,
             Shadow = ReadShadow(properties),
         };
+        if (shape.UseBackgroundFill?.HasValue == true)
+            result.UseBackgroundFill = shape.UseBackgroundFill.Value;
         result.CustomPaths.Add(PptxCustomGeometryCodec.Read(properties?.GetFirstChild<A.CustomGeometry>()));
         return result;
     }
@@ -839,6 +841,12 @@ internal static class PptxCodec
     private static void ApplyShape(P.Shape shape, PresentationElement source, PptxPartContext slideContext)
     {
         var semantic = source.Shape;
+        var sourceHasBackgroundFill = shape.UseBackgroundFill?.HasValue == true;
+        if (sourceHasBackgroundFill != semantic.HasUseBackgroundFill ||
+            sourceHasBackgroundFill && shape.UseBackgroundFill!.Value != semantic.UseBackgroundFill)
+            throw new CodecException(
+                "unsupported_presentation_edit",
+                $"Presentation shape {source.Id} cannot change its source-bound useBgFill attribute.");
         var properties = shape.ShapeProperties ??= new P.ShapeProperties();
         var transform = properties.Transform2D ??= new A.Transform2D();
         var offset = transform.Offset ??= new A.Offset();
@@ -1610,6 +1618,8 @@ internal static class PptxCodec
 
         if (element.ContentCase == PresentationElement.ContentOneofCase.Shape)
         {
+            if (element.Shape.HasUseBackgroundFill && !hasSourcePackage)
+                throw new CodecException("unsupported_presentation_features", $"Presentation shape {element.Id} cannot author useBgFill without a validated source package.");
             if (element.Shape.Placeholder is not null && !hasSourcePackage)
                 throw new CodecException("unsupported_presentation_features", $"Presentation shape {element.Id} uses source-free slide placeholder authoring, which is not supported by this codec slice.");
             if (element.Shape.Placeholder is not null && element.Shape.Transform is not null)

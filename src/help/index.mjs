@@ -285,6 +285,23 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "PdfFile.editPdf", summary: "Apply bounded direct-original MuPDF.js operations with explicit rewrite or byte-prefix-verified incremental save, object-level signature detection, atomic caller-controlled output, and fail-closed rejection of incremental redaction/deletion, signed incremental edits, radio export ambiguity, and unsupported operations." },
   { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter to extract page geometry, positioned text, heuristic tables, and bounded embedded raster or stencil-mask PNG images with placement boxes." },
 
+  {
+    artifactKind: "document", kind: "api", name: "document.fontFamilies", summary: "Return a fresh sorted, case-insensitively deduplicated list of document theme and explicit run/style font families.",
+    schema: { parameters: {}, returns: { families: { type: "string[]", description: "Font-family inventory; mutating the returned array does not mutate the document." } } },
+  },
+  {
+    artifactKind: "workbook", kind: "api", name: "workbook.fontFamilies", summary: "Return a fresh sorted, case-insensitively deduplicated list of workbook default and explicit cell font families.",
+    schema: { parameters: {}, returns: { families: { type: "string[]", description: "Font-family inventory; mutating the returned array does not mutate the workbook." } } },
+  },
+  {
+    artifactKind: "presentation", kind: "api", name: "presentation.fontFamilies", summary: "Return a fresh sorted, case-insensitively deduplicated list of explicitly used presentation text and bullet font families.",
+    schema: { parameters: {}, returns: { families: { type: "string[]", description: "Explicit font-family inventory; theme tokens such as +mj-lt are excluded." } } },
+  },
+  {
+    artifactKind: "presentation", kind: "api", name: "shape.useBackgroundFill", summary: "Read the presence-aware imported PresentationML p:sp useBgFill flag. It affects preview paint but remains source-bound and read-only; source-free authoring or wire mutation fails closed.",
+    schema: { parameters: {}, returns: { useBackgroundFill: { type: "boolean|undefined", description: "True/false only when the native attribute was present; otherwise undefined." } } },
+  },
+
   { artifactKind: "shared", kind: "api", name: "verifyArtifact", summary: "Run an artifact's verify() method and return a bounded NDJSON QA report." },
   { artifactKind: "shared", kind: "api", name: "visualQaArtifact", summary: "Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline render, optionally register small translations, and return a configurable aligned PNG diff heatmap." },
   { artifactKind: "shared", kind: "api", name: "renderArtifact", summary: "Render an artifact through its render/export method, attach normalized FileBlob metadata, and optionally pass SVG output through a caller-provided renderer adapter for PNG/WebP/JPEG/PDF output." },
@@ -295,6 +312,26 @@ export const HELP_CATALOG = [
   { artifactKind: "shared", kind: "api", name: "createLibreOfficeRenderer", summary: "Create a LibreOffice CLI renderer adapter from open-office-artifact-tool/renderers/libreoffice for DOCX/XLSX/PPTX/HTML/PDF FileBlob conversion, typically to PDF." },
   { artifactKind: "shared", kind: "api", name: "createNativeOfficeRenderer", summary: "Create a native Office renderer adapter from open-office-artifact-tool/native/office-bridge that calls a JSON stdin/stdout sidecar command with timeout, temp-file isolation, cleanup, and structured errors." },
   { artifactKind: "shared", kind: "api", name: "renderFileWithNativeOffice", summary: "Render or convert a DOCX/XLSX/PPTX/PDF FileBlob through a configured native Office bridge command, returning a FileBlob for PDF/PNG/WebP or other requested output." },
+  {
+    artifactKind: "shared", kind: "api", name: "setOfficeFontDesignMetrics", summary: "Replace the process-level Office font design-metric registry with normalized public metric records used by deterministic layout integrations.",
+    schema: { parameters: { entries: { type: "object[]", required: true, description: "Iterable records with family, weight, unitsPerEm, ascent, non-negative descent, and optional lineGap/style/width." } }, returns: { result: { type: "undefined", description: "Registry replacement is synchronous." } } },
+  },
+  {
+    artifactKind: "shared", kind: "api", name: "registerScopedOfficeFontDesignMetrics", summary: "Register a last-in-first-resolved scoped font design-metric collection and return an idempotent disposer.",
+    schema: { parameters: { entries: { type: "object[]", required: true, description: "Iterable normalized font design-metric candidates." } }, returns: { dispose: { type: "function", description: "Idempotently removes only this scoped registration." } } },
+  },
+  {
+    artifactKind: "shared", kind: "api", name: "resolveOfficeFontDesignMetrics", summary: "Resolve the requested primary family, style, and nearest numeric weight from scoped then process-level font design metrics without silently skipping to later family fallbacks.",
+    schema: { parameters: { request: { type: "object", required: true, description: "{ family: string[], weight?, style? }; the first family is the explicit lookup target." } }, returns: { metric: { type: "object|undefined", description: "A defensive normalized metric record or undefined." } } },
+  },
+  {
+    artifactKind: "shared", kind: "api", name: "clearOfficeFontDesignMetrics", summary: "Clear process-level and scoped Office font design metrics.",
+    schema: { parameters: {}, returns: { result: { type: "undefined", description: "All registered metrics are removed synchronously." } } },
+  },
+  {
+    artifactKind: "shared", kind: "api", name: "skiaPaintBaselineCompensationPx", summary: "Return the signed subpixel residual between a finite paint baseline and its nearest integer pixel, or zero for non-finite input.",
+    schema: { parameters: { value: { type: "number", required: true, description: "Baseline coordinate in CSS pixels." } }, returns: { compensation: { type: "number", description: "A finite residual in the interval [-0.5, 0.5)." } } },
+  },
 ];
 
 const HELP_DETAIL_OVERRIDES = {

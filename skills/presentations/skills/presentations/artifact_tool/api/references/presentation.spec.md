@@ -85,6 +85,16 @@ type PresentationHelpOptions = {
 };
 ```
 
+## Font Inventory
+
+`presentation.fontFamilies` returns a fresh sorted, case-insensitively
+deduplicated array of explicitly used text and bullet font families. Theme
+tokens such as `+mj-lt` are not reported as installed font names.
+
+```ts
+const typefaces = presentation.fontFamilies;
+```
+
 ## Presentation View
 
 Use `presentation.view` to control gridlines and imported PowerPoint guides in

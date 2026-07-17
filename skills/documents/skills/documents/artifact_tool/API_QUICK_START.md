@@ -14,6 +14,9 @@ import {
 } from "open-office-artifact-tool";
 ```
 
+Use `document.fontFamilies` when you need a fresh sorted inventory of theme and
+explicit run/style fonts before render or handoff QA.
+
 ## Create and export
 
 ```js

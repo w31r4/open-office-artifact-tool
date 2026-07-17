@@ -1330,6 +1330,10 @@ message PresentationShape {
   // handles, connection sites, arcs, quadratic curves, and per-path fill or
   // stroke overrides remain source-bound.
   repeated PresentationCustomGeometryPath custom_paths = 15;
+  // Presence-aware imported p:sp/@useBgFill. This affects preview paint but is
+  // read-only and source-bound: source-free authoring and value/presence edits
+  // fail closed rather than flattening slide-background inheritance.
+  optional bool use_background_fill = 16;
 }
 
 message PresentationCustomGeometryPath {

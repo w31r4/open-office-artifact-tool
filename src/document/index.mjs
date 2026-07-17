@@ -7,6 +7,7 @@ import { normalizeDocxBibliographySource, validateDocxBibliographyPackageSemanti
 import { normalizeDocxSectionSettings, planDocxHeaderFooterSections, resolveDocxPageHeaderFooter } from "../ooxml/docx-sections.mjs";
 import { normalizeDocumentPictureBullet } from "../ooxml/docx-numbering.mjs";
 import { FileBlob } from "../shared/file-blob.mjs";
+import { officeFontFamilies } from "../shared/font-design-metrics.mjs";
 import { aid } from "../shared/ids.mjs";
 import { imageDataFromDataUrl } from "../shared/images.mjs";
 import { filterInspectRecords, inspectRecordMatchesTarget, inspectTargetTokens, ndjson, normalizeKinds, verificationIssue, verificationResult } from "../shared/inspection.mjs";
@@ -630,6 +631,12 @@ export class DocumentModel {
 
   static create(options = {}) { return new DocumentModel(options); }
   get paragraphs() { return this.blocks.filter((block) => block.kind === "paragraph").map((block) => block.text); }
+  get fontFamilies() {
+    return officeFontFamilies(
+      [this.toProto()],
+      Object.values(this.theme?.fonts || {}),
+    );
+  }
 
   applyDesignPreset(name = "report", options = {}) {
     const presetName = String(name || "report");

@@ -2,6 +2,7 @@ import { inspectOoxmlPackage, ooxmlResolveRelationshipTarget, ooxmlSafePartPath,
 import { validatePptxPackageSemantics } from "../ooxml/pptx-package-semantics.mjs";
 import { queryHelpRecords } from "../help/index.mjs";
 import { FileBlob } from "../shared/file-blob.mjs";
+import { officeFontFamilies } from "../shared/font-design-metrics.mjs";
 import { resolveColorToken } from "../shared/colors.mjs";
 import { aid } from "../shared/ids.mjs";
 import { imageDataFromDataUrl } from "../shared/images.mjs";
@@ -25,6 +26,7 @@ import { normalizePresentationImageCrop, normalizePresentationImageFit, presenta
 import { planPresentationModernComments } from "./ooxml-modern-comments.mjs";
 
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+const importedShapeBackgroundFill = new WeakMap();
 
 const PPTX_PACKAGE_CONFIG = {
   family: "PPTX",
@@ -377,6 +379,7 @@ export class Presentation {
   }
 
   static create(options = {}) { return new Presentation(options); }
+  get fontFamilies() { return officeFontFamilies([this.toProto()]); }
   get master() { return this.masters.items[0]; }
   set master(value) {
     const master = value instanceof PresentationSlideMaster ? value : new PresentationSlideMaster(this, value || {});
@@ -985,24 +988,28 @@ export class Shape {
     this.borderRadius = config.borderRadius;
     this.shadow = config.shadow ? { ...config.shadow } : undefined;
     this.placeholder = config.placeholder;
+    if (config._openChestnutUseBackgroundFill !== undefined) importedShapeBackgroundFill.set(this, Boolean(config._openChestnutUseBackgroundFill));
     this._text = new TextFrame(config.text ?? "", config.textBodyProperties, { defaultBodyProperties: config.textBodyProperties === undefined });
     this._text.style = { ...(config.textStyle || config.style?.text || {}) };
   }
 
   get text() { return this._text; }
   set text(value) { this._text.set(value); }
+  get useBackgroundFill() { return importedShapeBackgroundFill.get(this); }
 
   inspectRecord(kind = "shape") {
     const p = this.position;
     const paragraphs = this.text.effectiveParagraphs();
-    return { kind, id: this.id, slide: this.slide.index + 1, name: this.name || undefined, nativeId: this.nativeId, creationId: this.creationId, text: this.text.value || undefined, textPreview: this.text.value || undefined, textChars: this.text.value.length || undefined, textLines: this.text.value ? this.text.value.split("\n").length : undefined, paragraphs: presentationParagraphsNeedSerialization(paragraphs) ? paragraphs : undefined, bodyProperties: this.text.bodyProperties, customPathCount: this.customPaths.length || undefined, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px", transform: this.transform, shadow: this.shadow, placeholder: this.placeholder || undefined };
+    return { kind, id: this.id, slide: this.slide.index + 1, name: this.name || undefined, nativeId: this.nativeId, creationId: this.creationId, text: this.text.value || undefined, textPreview: this.text.value || undefined, textChars: this.text.value.length || undefined, textLines: this.text.value ? this.text.value.split("\n").length : undefined, paragraphs: presentationParagraphsNeedSerialization(paragraphs) ? paragraphs : undefined, bodyProperties: this.text.bodyProperties, customPathCount: this.customPaths.length || undefined, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px", transform: this.transform, shadow: this.shadow, placeholder: this.placeholder || undefined, useBackgroundFill: this.useBackgroundFill };
   }
 
-  layoutJson() { const paragraphs = this.text.effectiveParagraphs(); return { kind: this.text.value ? "textbox" : "shape", id: this.id, name: this.name, geometry: this.geometry, customPaths: this.customPaths.length ? this.customPaths : undefined, frame: this.position, transform: this.transform, text: this.text.value, paragraphs: presentationParagraphsNeedSerialization(paragraphs) ? paragraphs : undefined, bodyProperties: this.text.bodyProperties, placeholder: this.placeholder, style: { fill: this.fill, line: this.line, borderRadius: this.borderRadius, shadow: this.shadow, text: this.text.style } }; }
+  layoutJson() { const paragraphs = this.text.effectiveParagraphs(); return { kind: this.text.value ? "textbox" : "shape", id: this.id, name: this.name, geometry: this.geometry, customPaths: this.customPaths.length ? this.customPaths : undefined, frame: this.position, transform: this.transform, text: this.text.value, paragraphs: presentationParagraphsNeedSerialization(paragraphs) ? paragraphs : undefined, bodyProperties: this.text.bodyProperties, placeholder: this.placeholder, style: { fill: this.fill, line: this.line, borderRadius: this.borderRadius, shadow: this.shadow, text: this.text.style, useBackgroundFill: this.useBackgroundFill } }; }
 
   toSvg() {
     const p = this.position;
-    const fill = typeof this.fill === "string" ? resolveColorToken(this.fill, this.fill) : this.fill?.color || "transparent";
+    const fill = this.useBackgroundFill === true
+      ? resolvePresentationBackgroundColor(this.slide.effectiveBackground(), this.slide.effectiveTheme())
+      : typeof this.fill === "string" ? resolveColorToken(this.fill, this.fill) : this.fill?.color || "transparent";
     const stroke = resolveColorToken(this.line?.fill || this.line?.color || "#334155", "#334155");
     const sw = this.line?.width ?? 1;
     const visual = this.geometry === "custom"

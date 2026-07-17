@@ -977,6 +977,7 @@ function presentationShape(shape, original, assetCatalog) {
         ...(shape.transform == null ? {} : { transform: wirePresentationTransform(shape.transform, `shape ${shape.id}`) }),
         ...(shadow ? { shadow } : {}),
         ...(customPaths.length ? { customPaths } : {}),
+        ...(shape.useBackgroundFill === undefined ? {} : { useBackgroundFill: shape.useBackgroundFill }),
       },
     },
   };
@@ -1677,6 +1678,7 @@ function modelPresentationGroupChild(element, assetCatalog) {
       fill: shape.fillRgb ? `#${shape.fillRgb}` : "transparent",
       line: { fill: shape.lineRgb ? `#${shape.lineRgb}` : "transparent", width: Number(shape.lineWidthEmu) / EMU_PER_POINT },
       ...(shape.shadow ? { shadow: modelPresentationShadow(shape.shadow) } : {}),
+      ...(shape.useBackgroundFill === undefined ? {} : { _openChestnutUseBackgroundFill: shape.useBackgroundFill }),
       text: modelText(shape, assetCatalog),
       textBodyProperties: modelTextBodyProperties(shape),
     };
@@ -1872,6 +1874,7 @@ export async function presentationFromEnvelope(envelope) {
           fill: shape.fillRgb ? `#${shape.fillRgb}` : "transparent",
           line: { fill: shape.lineRgb ? `#${shape.lineRgb}` : "transparent", width: Number(shape.lineWidthEmu) / EMU_PER_POINT },
           ...(shape.shadow ? { shadow: modelPresentationShadow(shape.shadow) } : {}),
+          ...(shape.useBackgroundFill === undefined ? {} : { _openChestnutUseBackgroundFill: shape.useBackgroundFill }),
           text: modelText(shape, assetCatalog),
           textBodyProperties: modelTextBodyProperties(shape),
         });

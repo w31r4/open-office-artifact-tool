@@ -24,8 +24,10 @@ assert.deepEqual(Object.keys(rootApi).sort(), [
   "HELP_CATALOG", "ImageElement", "PdfArtifact", "PdfFile", "Presentation",
   "PresentationFile", "Range", "Shape", "Slide", "SpreadsheetFile",
   "TableElement", "Workbook", "Worksheet", "box", "chart", "column", "grid",
-  "helpArtifact", "image", "layers", "node", "paragraph", "renderArtifact",
-  "row", "rule", "run", "shape", "table", "text", "verifyArtifact", "visualQaArtifact",
+  "clearOfficeFontDesignMetrics", "helpArtifact", "image", "layers", "node", "paragraph",
+  "registerScopedOfficeFontDesignMetrics", "renderArtifact", "resolveOfficeFontDesignMetrics",
+  "row", "rule", "run", "setOfficeFontDesignMetrics", "shape", "skiaPaintBaselineCompensationPx",
+  "table", "text", "verifyArtifact", "visualQaArtifact",
 ].sort(), "root public export contract changed");
 assert.strictEqual(HELP_CATALOG, LEAF_HELP_CATALOG, "root must re-export the help catalog binding");
 assert.strictEqual(node, leafNode, "root must re-export the Compose binding");
@@ -39,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "Range", "SpreadsheetFile"]) {
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 284);
+assert.equal(HELP_CATALOG.length, 293);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -234,8 +236,12 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "fx.NETWORKDAYS")?.schema
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.NETWORKDAYS.INTL")?.schema?.returns?.value?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.XLOOKUP")?.schema?.returns?.value?.type, "unknown");
 const sharedCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "shared");
-assert.equal(sharedCatalog.length, 10);
+assert.equal(sharedCatalog.length, 15);
 assert.ok(sharedCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
+assert.equal(HELP_CATALOG.find((item) => item.name === "setOfficeFontDesignMetrics")?.schema?.parameters?.entries?.required, true);
+assert.equal(HELP_CATALOG.find((item) => item.name === "registerScopedOfficeFontDesignMetrics")?.schema?.returns?.dispose?.type, "function");
+assert.match(HELP_CATALOG.find((item) => item.name === "resolveOfficeFontDesignMetrics")?.summary || "", /primary family.*nearest numeric weight.*without silently skipping/i);
+assert.equal(HELP_CATALOG.find((item) => item.name === "shape.useBackgroundFill")?.schema?.returns?.useBackgroundFill?.type, "boolean|undefined");
 assert.equal(HELP_CATALOG.find((item) => item.name === "createPopplerRenderer")?.schema?.parameters?.dpi?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "createNativeOfficeRenderer")?.schema?.parameters?.args?.type, "string[]");
 assert.equal(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.schema?.parameters?.pixelDiff?.type, "boolean|object");
@@ -266,7 +272,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.renderPdf")?.sch
 assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schema?.parameters?.operations?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.summary || "", /MuPDF/);
 const documentCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "document");
-assert.equal(documentCatalog.length, 36);
+assert.equal(documentCatalog.length, 37);
 assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.schema?.parameters?.pictureBullet?.type, "string|object");
@@ -275,7 +281,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.
 assert.match(HELP_CATALOG.find((item) => item.name === "DocumentModel.create")?.schema?.parameters?.styles?.description || "", /numberingId\/numberingLevel/);
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.schema?.returns?.document?.type, "DocumentModel");
 const presentationCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "presentation");
-assert.equal(presentationCatalog.length, 48);
+assert.equal(presentationCatalog.length, 50);
 assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.importPptx")?.schema?.returns?.presentation?.type, "Presentation");
@@ -287,7 +293,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /character.*picture bullets.*auto-numbering.*levels.*indents.*spacing/);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /absolute uri.*slideId.*relative action/);
 const workbookCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "workbook");
-assert.equal(workbookCatalog.length, 168);
+assert.equal(workbookCatalog.length, 169);
 assert.ok(workbookCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "workbook.trace")?.schema?.parameters?.reference?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "Workbook.create")?.schema?.parameters?.dateSystem?.type, "string");

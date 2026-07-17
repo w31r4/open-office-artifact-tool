@@ -44,6 +44,17 @@ Use `presentation.inspect({ kind: "shape,textbox", search })` to find the
 `sh/...` anchor id. Keep the resolved facade type-aware; do not rebuild an
 imported shape unless the task requires a new object.
 
+## Imported Background Fill
+
+`shape.useBackgroundFill` is `true` or `false` only when imported native
+PresentationML carried `p:sp/@useBgFill`; otherwise it is `undefined`. The
+property is read-only. It affects preview paint, while OpenChestnut preserves
+the native attribute unchanged and rejects source-free authoring or mutation.
+
+```ts
+const inheritsSlideBackgroundPaint = shape.useBackgroundFill;
+```
+
 ## Preset Shape Inline Type
 
 ```ts

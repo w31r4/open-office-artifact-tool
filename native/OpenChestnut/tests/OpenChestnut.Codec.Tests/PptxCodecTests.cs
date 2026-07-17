@@ -116,6 +116,52 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void ImportedShapeBackgroundFillFlagIsVisiblePreservedAndReadOnly()
+    {
+        var authored = Invoke(ExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        byte[] sourceBytes;
+        using (var stream = new MemoryStream())
+        {
+            stream.Write(authored.File.Span);
+            stream.Position = 0;
+            using (var package = PresentationDocument.Open(stream, true))
+            {
+                var slidePart = Assert.Single(package.PresentationPart!.SlideParts);
+                var shape = Assert.Single(slidePart.Slide!.Descendants<P.Shape>());
+                shape.UseBackgroundFill = true;
+                slidePart.Slide.Save();
+            }
+            sourceBytes = stream.ToArray();
+        }
+        var sourceSlideXml = ZipBytes(sourceBytes, "ppt/slides/slide1.xml");
+
+        var imported = Import(sourceBytes);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedShape = Assert.Single(Assert.Single(imported.Artifact.Presentation.Slides).Elements).Shape;
+        Assert.True(importedShape.HasUseBackgroundFill);
+        Assert.True(importedShape.UseBackgroundFill);
+
+        var unchanged = Export(imported.Artifact);
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(sourceSlideXml, ZipBytes(unchanged.File.ToByteArray(), "ppt/slides/slide1.xml"));
+        using (var stream = new MemoryStream(unchanged.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+
+        importedShape.UseBackgroundFill = false;
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(rejected.Diagnostics).Code);
+
+        var sourceFree = ExportRequest();
+        sourceFree.Artifact.Presentation.Slides[0].Elements[0].Shape.UseBackgroundFill = true;
+        rejected = Invoke(sourceFree);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_presentation_features", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void SpeakerNotesAuthorImportEditAndFailClosedForRichSourceText()
     {
         var request = ExportRequest();
