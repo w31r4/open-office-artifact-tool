@@ -65,6 +65,12 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### Composition root and Spreadsheet domain layering
+
+On 2026-07-17, the remaining stateful Spreadsheet domain moved from the public root entry into `src/spreadsheet/index.mjs`: workbook/worksheet/range ownership, tables/pivots/charts/images/sparklines, formulas and dependency graphs, conditional formatting, inspect/resolve/verify/help, layout/SVG rendering, delimited-file support, metadata restoration, and the `SpreadsheetFile` facade now share one cohesive owner. The root retains exact re-exports rather than wrappers; all four public Spreadsheet bindings are strict-identical between the root and leaf entry. The OpenChestnut Spreadsheet adapter imports the leaf directly, and a source-level regression prevents a back-edge to `src/index.mjs`.
+
+This completed the public-entry decomposition: `src/index.mjs` is now a 42-line composition root, or 0.1% of the 28,109 JavaScript source lines, while preserving all 36 public exports and the cross-format verify/render/visual-QA/help surface. The complete local gate passed `npm test`, `npm run docs:api`, `npm run proto:check`, `npm run test:pack`, `npm run verify:open-chestnut-build`, OpenChestnut `173/173`, and OfficeBridge `5/5`. Two clean WASM builds produced the same 39 audited files and the same manifest-bound 38-file, 14,166,204-byte runtime. The clean-install tarball contains 421 files, is 9,196,227 bytes compressed and 22,828,311 bytes unpacked.
+
 ### Presentation domain layering
 
 On 2026-07-17, the complete JavaScript Presentation domain moved from the public root entry into `src/presentation/index.mjs`: model collections, themes/masters/layouts/placeholders, shapes/connectors/groups/images/tables/charts/native objects, inspect/resolve/verify/help, layout/SVG rendering, and the `PresentationFile` facade now share one cohesive owner. The root retains exact re-exports rather than wrappers; all eight public Presentation bindings are strict-identical between the root and leaf entry. The OpenChestnut Presentation adapter imports the leaf directly, and a source-level regression prevents a back-edge to `src/index.mjs`.
@@ -108,6 +114,8 @@ On 2026-07-17, the native reference-plugin/OpenChestnut compatibility worktree p
 - LibreOffice opened the shipped 26-slide reference template and produced a 26-page PDF; bounded custom-geometry icons rendered visibly. This local LibreOffice build substituted `Helvetica Neue`, so pixel parity with the checked-in preview images is not claimed and remains a visual-fidelity gap.
 
 ## Hosted evidence
+
+The composition-root and complete Spreadsheet-domain layering candidate at commit `f8a4241a40448cc21ad1dce449edb6747d491473` passed the hosted Linux `ci` workflow in [GitHub Actions run 29563335625](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29563335625) on 2026-07-17. The run completed with conclusion `success` in 4m26s and covered protocol plus deterministic bundled-runtime verification, Chromium/native-tool checks, the complete npm suite including root/leaf Spreadsheet binding identity and codec dependency-direction regressions, generated API-doc cleanliness, offline release metadata, the 421-file clean-install tarball, OfficeBridge `5/5`, and OpenChestnut `173/173`.
 
 The complete Presentation-domain layering candidate at commit `f8d50cad14ae74ee6cef7610ba58a52ea0438514` passed the hosted Linux `ci` workflow in [GitHub Actions run 29562292218](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29562292218) on 2026-07-17. The run completed with conclusion `success` in 4m18s and covered protocol plus deterministic bundled-runtime verification, Chromium/native-tool checks, the complete npm suite including root/leaf Presentation binding identity and codec dependency-direction regressions, generated API-doc cleanliness, offline release metadata, the 420-file clean-install tarball, OfficeBridge `5/5`, and OpenChestnut `173/173`.
 
