@@ -121,7 +121,8 @@ assert.match(HELP_CATALOG.find((item) => item.name === "DocumentFile.patchDocx")
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.layoutJson"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.resolve"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "DocumentFile.importDocx"));
-assert.match(HELP_CATALOG.find((item) => item.name === "document.addBookmark")?.summary || "", /does not author bookmarks.*read-only/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "document.addBookmark")?.summary || "", /native Word bookmark.*fixed-topology\/read-only/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "document.addBookmark")?.schema?.parameters?.name?.description || "", /ASCII letter.*40 characters/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addBibliographySource")?.summary || "", /does not author bibliography parts.*read-only/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addChange")?.summary || "", /native w:ins\/w:del.*fixed-topology/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.replyToComment")?.summary || "", /does not author modern\/extended reply graphs.*preservation-only/i);
@@ -208,7 +209,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "document.addHeader")?.sc
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addFooter")?.schema?.parameters?.activateVariant?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.setSectionSettings")?.schema?.parameters?.differentFirstPage?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addBookmark")?.schema?.parameters?.endTarget?.type, "string|object");
-assert.match(HELP_CATALOG.find((item) => item.name === "document.addBookmark")?.schema?.parameters?.target?.description || "", /table\.getCell/);
+assert.match(HELP_CATALOG.find((item) => item.name === "document.addBookmark")?.schema?.parameters?.target?.description || "", /does not accept table cells or multi-block ranges/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addBibliographySource")?.schema?.parameters?.tag?.required, true);
 assert.ok(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.schema?.returns?.pdf);
 assert.ok(HELP_CATALOG.find((item) => item.name === "renderArtifact")?.returns?.includes("FileBlob"));
@@ -397,7 +398,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "presentation.theme")?.sc
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.theme")?.summary || "", /not authored.*read-only/i);
 assert.match(presentation.help("presentation.layouts.add").ndjson, /slide layout/);
 assert.match(document.help("document.addField").ndjson, /fldSimple/);
-assert.match(document.help("document.addBookmark").ndjson, /bookmark range/);
+assert.match(document.help("document.addBookmark").ndjson, /native Word bookmark/);
 assert.match(document.help("document.addBibliographySource").ndjson, /bibliography source/);
 assert.match(document.help("document.applyDesignPreset").ndjson, /design preset/);
 assert.match(document.help("document.layoutJson").ndjson, /layout JSON/);

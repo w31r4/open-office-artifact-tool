@@ -119,7 +119,8 @@ export function buildDocument(spec = DEFAULT_BRIEF) {
     styleId: "BriefMeta",
   });
 
-  document.addParagraph("Decision", { styleId: "BriefHeading1" });
+  const decisionHeading = document.addParagraph("Decision", { styleId: "BriefHeading1" });
+  const decisionBookmark = document.addBookmark(decisionHeading, "DecisionSection");
   const recommendation = document.addParagraph(`Recommendation: ${spec.recommendation}`, {
     name: "recommendation",
     styleId: "BriefCallout",
@@ -182,6 +183,12 @@ export function buildDocument(spec = DEFAULT_BRIEF) {
     tooltip: "Open project evidence",
     history: true,
   });
+  document.addHyperlink("Back to decision", decisionBookmark, {
+    name: "decision-jump",
+    styleId: "Normal",
+    tooltip: "Jump to the decision section",
+    history: true,
+  });
 
   document.addComment(recommendation, "Confirm the recommendation wording before publication.", {
     author: "Release reviewer",
@@ -207,6 +214,16 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
 
   const firstDocx = await DocumentFile.exportDocx(authored);
   const imported = await DocumentFile.importDocx(firstDocx);
+  assert.equal(imported.bookmarks.length, 1);
+  assert.equal(imported.bookmarks[0].name, "DecisionSection");
+  assert.equal(
+    imported.resolve(imported.bookmarks[0].id).targetId,
+    imported.blocks.find((block) => block.text === "Decision")?.id,
+  );
+  assert.equal(
+    imported.blocks.some((block) => block.kind === "hyperlink" && block.anchor === "DecisionSection"),
+    true,
+  );
   const recommendation = imported.blocks.find(
     (block) => block.kind === "paragraph" && block.text.startsWith("Recommendation:"),
   );
@@ -231,6 +248,11 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
   assert.equal(finalReport.ok, true, finalReport.ndjson || JSON.stringify(finalReport.issues));
   assert.equal(finalDocument.blocks.find((block) => block.kind === "table")?.getCell(1, 1).value, "Verified");
   assert.equal(finalDocument.comments[0]?.text, "Recommendation wording verified for the release record.");
+  assert.equal(finalDocument.bookmarks[0]?.name, "DecisionSection");
+  assert.equal(
+    finalDocument.blocks.some((block) => block.kind === "hyperlink" && block.anchor === "DecisionSection"),
+    true,
+  );
   assert.deepEqual(
     finalDocument.blocks.filter((block) => block.kind === "change").map(
       (block) => [block.changeType, block.text, block.author],
@@ -242,10 +264,10 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
   );
 
   const inspection = finalDocument.inspect({
-    kind: "document,paragraph,listItem,table,comment,header,footer,hyperlink,change,layout",
+    kind: "document,paragraph,listItem,table,comment,bookmark,header,footer,hyperlink,change,layout",
     maxChars: 24_000,
   });
-  for (const expected of [spec.title, "Verified", "Recommendation wording verified", "application-compatibility", "LAUNCH READINESS"]) {
+  for (const expected of [spec.title, "Verified", "Recommendation wording verified", "application-compatibility", "DecisionSection", "LAUNCH READINESS"]) {
     assert.match(inspection.ndjson, new RegExp(expected));
   }
 

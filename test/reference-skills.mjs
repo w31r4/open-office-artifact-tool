@@ -183,6 +183,10 @@ try {
   assert.equal(documentRoundTrip.blocks.find((block) => block.kind === "table")?.getCell(1, 1).value, "Verified");
   assert.equal(documentRoundTrip.blocks.filter((block) => block.kind === "listItem").length, 3);
   assert.equal(documentRoundTrip.comments[0]?.text, "Recommendation wording verified for the release record.");
+  assert.equal(documentRoundTrip.bookmarks[0]?.name, "DecisionSection");
+  assert.equal(documentRoundTrip.blocks.some(
+    (block) => block.kind === "hyperlink" && block.anchor === "DecisionSection",
+  ), true);
   assert.equal(documentRoundTrip.headers[0]?.text, "LAUNCH READINESS | DECISION BRIEF");
   assert.equal(documentRoundTrip.footers[0]?.fieldInstruction, "PAGE");
   assert.deepEqual(documentRoundTrip.blocks.filter((block) => block.kind === "change").map(
@@ -196,6 +200,9 @@ try {
   assert.match(documentXml, /<w:ins\b/);
   assert.match(documentXml, /<w:del\b/);
   assert.match(documentXml, /<w:delText\b/);
+  assert.match(documentXml, /<w:bookmarkStart\b[^>]*w:name="DecisionSection"/);
+  assert.match(documentXml, /<w:bookmarkEnd\b/);
+  assert.match(documentXml, /<w:hyperlink\b[^>]*w:anchor="DecisionSection"/);
 
   const { ensureArtifactToolWorkspace, importArtifactTool } = await import(
     "../skills/presentations/skills/presentations/container_tools/artifact_tool_utils.mjs"

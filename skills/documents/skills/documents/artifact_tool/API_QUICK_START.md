@@ -34,7 +34,8 @@ document.styles.add("BriefTitle", {
   spaceAfterTwips: 120,
 });
 
-document.addParagraph("Decision brief", { styleId: "BriefTitle" });
+const title = document.addParagraph("Decision brief", { styleId: "BriefTitle" });
+const titleBookmark = document.addBookmark(title, "DecisionBrief");
 const recommendation = document.addParagraph("Approve the proposed rollout.", {
   styleId: "Normal",
   paragraphFormat: { spaceAfterTwips: 180 },
@@ -71,6 +72,9 @@ document.addInsertion("Added release condition.", {
 document.addDeletion("Superseded release condition.", {
   author: "Reviewer",
   date: "2026-07-17T08:05:00Z",
+});
+document.addHyperlink("Back to decision brief", titleBookmark, {
+  tooltip: "Jump to the decision brief heading",
 });
 
 const output = await DocumentFile.exportDocx(document);
@@ -131,12 +135,12 @@ For final visual QA, export the DOCX and use the packaged `render_docx.py` workf
 - Numbered and character-bulleted lists
 - Fixed-geometry tables
 - Sections, headers, footers, and PAGE/simple fields
-- External/internal hyperlinks
+- External/internal hyperlinks and source-free bookmarks around one paragraph-like block
 - PNG/JPEG inline images
 - Classic whole-paragraph comments
 - Standalone whole-paragraph tracked insertions/deletions with one text run, author, and optional ISO timestamp
 
-In-paragraph tracked replacements, mixed accepted/revision runs, nested revisions, moves, property changes, and automatic future-change tracking are advanced package workflows, not ordinary public-model authoring. Bookmarks, bibliography-backed citations, modern comment replies, content controls, complex fields, floating drawings, and other advanced graphs are likewise not source-free authoring features. Imported versions are preserved only while their source evidence remains valid.
+In-paragraph tracked replacements, mixed accepted/revision runs, nested revisions, moves, property changes, and automatic future-change tracking are advanced package workflows, not ordinary public-model authoring. Bookmarks spanning multiple blocks, table cells, nested/crossing ranges, bibliography-backed citations, modern comment replies, content controls, complex fields, floating drawings, and other advanced graphs are likewise not source-free authoring features. Recognized imported whole-block bookmarks are inspectable/resolvable but fixed-topology and read-only; other imported advanced graphs are preserved only while their source evidence remains valid.
 
 Use `DocumentFile.inspectDocx` or `DocumentFile.patchDocx` only when the user explicitly requests package-level inspection or patching. These are deliberate low-level operations, never an automatic fallback for ordinary authoring.
 
