@@ -1076,6 +1076,10 @@ message PresentationSlide {
   // Stable public locator for the source layout, not an inherited style
   // snapshot. Changing this binding is outside the current bounded slice.
   string layout_id = 5;
+  // Plain-text speaker notes. Source-free authoring creates the canonical
+  // PresentationML notes graph; imported notes remain hash-bound so complex
+  // notes content can be preserved without pretending it is safely editable.
+  PresentationSpeakerNotes speaker_notes = 6;
 }
 
 message PresentationSlideSourceBinding {
@@ -1084,6 +1088,19 @@ message PresentationSlideSourceBinding {
   string relationship_id = 3;
   string slide_xml_sha256 = 4;
   string layout_relationship_id = 5;
+}
+
+message PresentationSpeakerNotes {
+  string text = 1;
+  PresentationSpeakerNotesSourceBinding source = 2;
+}
+
+message PresentationSpeakerNotesSourceBinding {
+  string part_path = 1;
+  string relationship_id = 2;
+  string notes_xml_sha256 = 3;
+  string semantic_sha256 = 4;
+  bool editable = 5;
 }
 
 // The first bounded package-level PresentationML slice exposes every source
