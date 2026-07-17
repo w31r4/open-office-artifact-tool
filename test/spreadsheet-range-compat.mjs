@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import JSZip from "jszip";
 
 import { SpreadsheetFile, Workbook } from "../src/index.mjs";
 
@@ -399,8 +400,14 @@ assert.throws(
   () => conditionalSheet.getRange("D2:D3").conditionalFormats.add("containsText", { format: { fill: "#FEF3C7" } }),
   /requires text/,
 );
-const conditionalRoundTrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(conditionalWorkbook));
+const conditionalFile = await SpreadsheetFile.exportXlsx(conditionalWorkbook);
+const conditionalZip = await JSZip.loadAsync(conditionalFile.bytes);
+const conditionalStyles = await conditionalZip.file("xl/styles.xml").async("text");
+const conditionalDxfs = conditionalStyles.match(/<x:dxfs\b[\s\S]*?<\/x:dxfs>/)?.[0] || "";
+assert.match(conditionalDxfs, /<x:fgColor rgb="FFFEF3C7"\s*\/><x:bgColor rgb="FFFEF3C7"\s*\/>/);
+const conditionalRoundTrip = await SpreadsheetFile.importXlsx(conditionalFile);
 assert.equal(conditionalRoundTrip.worksheets.getItem("Status").conditionalFormattings.items[0].formula, 'NOT(ISERROR(SEARCH("Review",D2)))');
+assert.equal(conditionalRoundTrip.worksheets.getItem("Status").conditionalFormattings.items[0].format.fill, "#FEF3C7");
 
 const chartWorkbook = Workbook.create();
 const chartData = chartWorkbook.worksheets.add("Chart Data");
