@@ -2395,6 +2395,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.IFNA` | formula | Return a fallback only when an expression evaluates to #N/A; preserve every other result or error. |
 | `fx.INDEX` | formula | Return a value from a range by 1-based row and optional column index. |
 | `fx.INT` | formula | Round a number down to the nearest integer. |
+| `fx.IPMT` | formula | Calculate the interest component of one constant-payment loan period from finite rate, period, term, present value, optional future value, and payment-timing inputs. |
 | `fx.IRR` | formula | Return a bounded-convergence periodic return rate for a finite cash-flow vector. |
 | `fx.ISBLANK` | formula | Return TRUE when a referenced value is empty. |
 | `fx.ISERR` | formula | Return TRUE for recognized formula errors other than #N/A. |
@@ -2421,6 +2422,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.NPV` | formula | Discount a finite periodic cash-flow vector beginning one period after the present value date. |
 | `fx.OR` | formula | Return TRUE when any condition is true. |
 | `fx.PMT` | formula | Calculate a constant-period loan payment from finite rate, term, present value, optional future value, and payment-timing inputs. |
+| `fx.PPMT` | formula | Calculate the principal component of one constant-payment loan period using the same bounded inputs as IPMT. |
 | `fx.RANK.EQ` | formula | Return a number's equal rank in a numeric range, descending by default or ascending when order is nonzero. |
 | `fx.RIGHT` | formula | Return characters from the end of a text value. |
 | `fx.ROUND` | formula | Round a numeric value to decimal places or, with negative digits, positions left of the decimal point. |
@@ -3067,6 +3069,28 @@ Round a number down to the nearest integer.
 
 - `value` (number) — Calculated cell value or an Excel-style formula error string.
 
+#### `fx.IPMT`
+
+Calculate the interest component of one constant-payment loan period from finite rate, period, term, present value, optional future value, and payment-timing inputs.
+
+**Examples:**
+
+- =IPMT(B1,A2,B2,B3)
+- =IPMT(B1,A2,B2,B3,B4,1)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =IPMT(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+**Notes:**
+
+- The bounded evaluator requires rate > -1, a positive term, an integer period from 1 through the term, and payment type 0 or 1. Period-one interest is zero for payment type 1; invalid inputs return #VALUE! or #NUM!.
+
 #### `fx.IRR`
 
 Return a bounded-convergence periodic return rate for a finite cash-flow vector.
@@ -3523,6 +3547,28 @@ Calculate a constant-period loan payment from finite rate, term, present value, 
 **Notes:**
 
 - The bounded evaluator requires rate > -1, a positive term, and payment type 0 or 1. Invalid numeric inputs return #VALUE! or #NUM!.
+
+#### `fx.PPMT`
+
+Calculate the principal component of one constant-payment loan period using the same bounded inputs as IPMT.
+
+**Examples:**
+
+- =PPMT(B1,A2,B2,B3)
+- =PPMT(B1,A2,B2,B3,B4,1)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =PPMT(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+**Notes:**
+
+- For every supported period, PMT equals IPMT plus PPMT. The evaluator rejects an out-of-range or non-integer period and invalid payment timing with #NUM! rather than coercing them.
 
 #### `fx.RANK.EQ`
 

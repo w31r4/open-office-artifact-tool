@@ -43,6 +43,14 @@ sheet.getRange("D4").formulasR1C1 = [[sheet.getRange("D4").formulasR1C1[0][0]]];
 assert.equal(sheet.getRange("D4").formulas[0][0], "=SUM($A1,B$2,$C$3,A1:B2,\"A1\")");
 assert.throws(() => { sheet.getRange("A1").formulasR1C1 = [["=R[-1]C"]]; }, /outside worksheet/);
 
+const arithmeticWorkbook = Workbook.create();
+const arithmeticSheet = arithmeticWorkbook.worksheets.add("Arithmetic");
+arithmeticSheet.getRange("A1:B2").values = [[-1000, -1000], [2.7e-11, 0]];
+arithmeticSheet.getRange("C1:C3").formulas = [["=A1-B1"], ["=A2-B2"], ["=1E-7"]];
+assert.equal(arithmeticSheet.getRange("C1").values[0][0], 0);
+assert.equal(arithmeticSheet.getRange("C2").values[0][0], 2.7e-11);
+assert.equal(arithmeticSheet.getRange("C3").values[0][0], 1e-7);
+
 const financialWorkbook = Workbook.create();
 const financialSheet = financialWorkbook.worksheets.add("Cash Flows");
 financialSheet.getRange("A1:A3").values = [[-100], [60], [60]];

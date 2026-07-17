@@ -120,11 +120,11 @@ export function buildLoanAmortizationWorkbook() {
   checks.getRange("A3:F3").values = [["Check", "Actual", "Expected / minimum", "Difference", "Status", "Notes"]];
   checks.getRange("A3:F3").format = { fill: HEADER_FILL, font: { bold: true, color: "#FFFFFF" }, alignment: { horizontal: "center" } };
   checks.getRange("A4:F9").values = [
-    ["Payment identity", null, 0, null, null, "Total payment equals total interest plus total principal."],
-    ["First-period interest", null, null, null, null, "Uses the selected payment-timing convention."],
-    ["Final closing balance", null, 0, null, null, "A fully amortized balance should be zero."],
-    ["Total principal repaid", null, null, null, null, "Total principal should equal the negative original principal."],
-    ["Modeled period count", null, null, null, null, "Schedule rows must equal the visible total-period input."],
+    ["Payment identity", null, 0, null, null, "Payment equals interest plus principal."],
+    ["First-period interest", null, null, null, null, "Uses the selected payment timing."],
+    ["Final closing balance", null, 0, null, null, "Fully amortized balance should be zero."],
+    ["Total principal repaid", null, null, null, null, "Principal total equals original principal."],
+    ["Modeled period count", null, null, null, null, "Rows match the visible period input."],
     ["Overall model status", null, 0, null, null, "Zero failed checks required."],
   ];
   checks.getRange("B4:B9").formulas = [
@@ -139,18 +139,18 @@ export function buildLoanAmortizationWorkbook() {
   checks.getRange("C7").formulas = [["=-'Inputs'!$B$5"]];
   checks.getRange("C8").formulas = [["='Inputs'!$B$11"]];
   checks.getRange("D4:D9").formulas = [
-    ["=ABS(B4-C4)"],
-    ["=ABS(B5-C5)"],
-    ["=ABS(B6-C6)"],
-    ["=ABS(B7-C7)"],
-    ["=ABS(B8-C8)"],
-    ["=ABS(B9-C9)"],
+    ["=B4-C4"],
+    ["=B5-C5"],
+    ["=B6-C6"],
+    ["=B7-C7"],
+    ["=B8-C8"],
+    ["=B9-C9"],
   ];
   checks.getRange("E4:E9").formulas = [
-    ["=IF(D4<0.01,\"OK\",\"CHECK\")"],
-    ["=IF(D5<0.01,\"OK\",\"CHECK\")"],
-    ["=IF(D6<0.01,\"OK\",\"CHECK\")"],
-    ["=IF(D7<0.01,\"OK\",\"CHECK\")"],
+    ["=IF(ABS(D4)<0.01,\"OK\",\"CHECK\")"],
+    ["=IF(ABS(D5)<0.01,\"OK\",\"CHECK\")"],
+    ["=IF(ABS(D6)<0.01,\"OK\",\"CHECK\")"],
+    ["=IF(ABS(D7)<0.01,\"OK\",\"CHECK\")"],
     ["=IF(B8=C8,\"OK\",\"CHECK\")"],
     ["=IF(B9=C9,\"OK\",\"CHECK\")"],
   ];

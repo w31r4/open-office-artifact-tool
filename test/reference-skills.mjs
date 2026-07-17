@@ -102,6 +102,7 @@ const spreadsheetSkillText = await fs.readFile(path.join(skillsRoot, "spreadshee
 assert.match(spreadsheetSkillText, /artifact_tool_docs\/API_QUICK_START\.md/);
 assert.match(spreadsheetSkillText, /features\/charts\.md/);
 assert.match(spreadsheetSkillText, /openchestnut-financial-returns-workflow\.mjs/);
+assert.match(spreadsheetSkillText, /openchestnut-loan-amortization-workflow\.mjs/);
 
 const presentationApiRoot = path.join(skillsRoot, "presentations", "skills", "presentations", "artifact_tool", "api");
 const presentationApiDocs = await fs.readFile(path.join(presentationApiRoot, "API_DOCS.md"), "utf8");
@@ -376,6 +377,19 @@ try {
   financialReturnsRoundTrip.recalculate();
   assert.equal(financialReturnsRoundTrip.worksheets.getItem("Returns").getRange("B8").formulas[0][0], "=XIRR('Inputs'!$C$14:$C$18,'Inputs'!$B$14:$B$18,'Inputs'!$B$7)");
   assert.deepEqual(financialReturnsRoundTrip.worksheets.getItem("Checks").getRange("E4:E9").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
+
+  const { createLoanAmortizationWorkbook } = await import(
+    "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-loan-amortization-workflow.mjs"
+  );
+  const loanAmortizationPath = path.join(tempRoot, "openchestnut-loan-amortization-workflow.xlsx");
+  const authoredLoanAmortization = await createLoanAmortizationWorkbook(loanAmortizationPath);
+  assert.equal(authoredLoanAmortization.verification.ok, true);
+  assert.match(authoredLoanAmortization.inspection.ndjson, /PPMT/);
+  const loanAmortizationRoundTrip = await SpreadsheetFile.importXlsx(await FileBlob.load(loanAmortizationPath));
+  loanAmortizationRoundTrip.recalculate();
+  assert.equal(loanAmortizationRoundTrip.worksheets.getItem("Amortization").getRange("D5").formulas[0][0], "=IPMT('Inputs'!$B$10,A5,'Inputs'!$B$11,'Inputs'!$B$5,0,'Inputs'!$B$9)");
+  assert.ok(Math.abs(loanAmortizationRoundTrip.worksheets.getItem("Amortization").getRange("F16").values[0][0]) < 1e-7);
+  assert.deepEqual(loanAmortizationRoundTrip.worksheets.getItem("Checks").getRange("E4:E9").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
 
   const { createScatterWorkbook } = await import(
     "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-scatter-chart-workflow.mjs"

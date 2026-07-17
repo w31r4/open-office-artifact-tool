@@ -3147,13 +3147,15 @@ function formulaReferenceValues(sheet, refText, context = {}) {
   return scalar === undefined ? [] : [scalar];
 }
 
+const FORMULA_NUMERIC_LITERAL = /^-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+
 function formulaScalar(sheet, expr, context = {}) {
   const text = String(expr ?? "").trim();
   const quoted = formulaUnquote(text);
   if (quoted !== undefined) return quoted;
   const error = formulaErrorCode(text);
   if (error) return error;
-  if (/^-?\d+(?:\.\d+)?$/.test(text)) return Number(text);
+  if (FORMULA_NUMERIC_LITERAL.test(text)) return Number(text);
   if (/^TRUE$/i.test(text)) return true;
   if (/^FALSE$/i.test(text)) return false;
   const matrix = formulaRangeMatrix(sheet, text, context);
@@ -3184,6 +3186,23 @@ function formulaTruthy(value) {
   if (/^TRUE$/i.test(text)) return true;
   if (/^FALSE$/i.test(text) || text === "") return false;
   return Boolean(Number(text));
+}
+
+function formulaArithmeticNumberLiteral(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "0";
+  const text = String(number);
+  if (!/[eE]/.test(text)) return text;
+  const negative = text.startsWith("-");
+  const [mantissa, exponentText] = (negative ? text.slice(1) : text).toLowerCase().split("e");
+  const exponent = Number(exponentText);
+  const digits = mantissa.replace(".", "");
+  const decimalIndex = 1 + exponent;
+  let decimal;
+  if (decimalIndex <= 0) decimal = `0.${"0".repeat(-decimalIndex)}${digits}`;
+  else if (decimalIndex >= digits.length) decimal = `${digits}${"0".repeat(decimalIndex - digits.length)}`;
+  else decimal = `${digits.slice(0, decimalIndex)}.${digits.slice(decimalIndex)}`;
+  return negative ? `-${decimal}` : decimal;
 }
 
 function isFormulaMatrix(value) {
@@ -4096,6 +4115,7 @@ function evaluateFormula(sheet, formula, address, context = {}) {
   if (functionMatch) {
     return evaluateFormulaFunction(sheet, functionMatch[1].toUpperCase(), splitFormulaArgs(functionMatch[2]), evaluationContext);
   }
+  if (FORMULA_NUMERIC_LITERAL.test(expr)) return Number(expr);
   const directReference = formulaRefParts(expr);
   if (directReference && directReference.start === directReference.end) return formulaScalar(sheet, expr, evaluationContext);
 
@@ -4116,7 +4136,11 @@ function evaluateFormula(sheet, formula, address, context = {}) {
     const value = evaluationContext.getValue ? evaluationContext.getValue({ sheetName: refSheetName, address: refAddress }) : (targetSheet ? targetSheet.store.get(refAddress).value : "#REF!");
     const error = formulaErrorCode(value);
     if (error) replacementError = error;
-    return Number(value) || 0;
+    // Parenthesize numeric replacements so a negative referenced value cannot
+    // accidentally combine with a binary minus as JavaScript's `--` token.
+    // Scientific notation is expanded because the constrained evaluator only
+    // accepts decimal arithmetic literals after reference substitution.
+    return `(${formulaArithmeticNumberLiteral(value)})`;
   });
   if (replacementError) return replacementError;
   if (!/^[0-9+\-*/().\s]+$/.test(safe)) return "#NAME?";

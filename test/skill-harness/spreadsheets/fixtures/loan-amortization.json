@@ -1,0 +1,142 @@
+{
+  "name": "loan-amortization",
+  "outputName": "loan-amortization.xlsx",
+  "sheets": [
+    {
+      "name": "Inputs",
+      "showGridLines": false,
+      "ranges": [
+        {
+          "range": "A1:D1",
+          "values": [["Assumption", "Value", "Units", "Purpose"]],
+          "format": { "fill": "#0F172A", "font": { "bold": true, "color": "#FFFFFF" } }
+        },
+        {
+          "range": "A2:D8",
+          "values": [
+            ["Original principal", 100000, "$", "Opening borrowing balance"],
+            ["Annual interest rate", 0.12, "%", "Nominal annual rate"],
+            ["Payments per year", 12, "payments/year", "Monthly cadence"],
+            ["Term", 1, "years", "Illustrative one-year term"],
+            ["Payment timing", 0, "0 = end / 1 = begin", "End-of-period example"],
+            ["Periodic interest rate", null, "%", "Annual rate divided by payment cadence"],
+            ["Total modeled periods", null, "periods", "Term multiplied by payment cadence"]
+          ]
+        },
+        { "range": "B7", "formulas": [["=B3/B4"]] },
+        { "range": "B8", "formulas": [["=B4*B5"]] },
+        { "range": "B2", "format": { "numberFormat": "$#,##0;[Red]($#,##0);-", "font": { "color": "#0000FF" } } },
+        { "range": "B3:B3", "format": { "numberFormat": "0.0%;[Red](0.0%);-", "font": { "color": "#0000FF" } } },
+        { "range": "B4:B6", "format": { "numberFormat": "#,##0;[Red](#,##0);-", "font": { "color": "#0000FF" } } },
+        { "range": "B7", "format": { "numberFormat": "0.0%;[Red](0.0%);-", "font": { "color": "#000000" } } },
+        { "range": "B8", "format": { "numberFormat": "#,##0;[Red](#,##0);-", "font": { "color": "#000000" } } }
+      ]
+    },
+    {
+      "name": "Amortization",
+      "showGridLines": false,
+      "ranges": [
+        {
+          "range": "A1:F1",
+          "values": [["Period", "Opening balance", "Payment", "Interest", "Principal", "Closing balance"]],
+          "format": { "fill": "#0F172A", "font": { "bold": true, "color": "#FFFFFF" } }
+        },
+        {
+          "range": "A2:A13",
+          "values": [[1], [2], [3], [4], [5], [6], [7], [8], [9], [10], [11], [12]]
+        },
+        {
+          "range": "B2:F13",
+          "formulas": [
+            ["='Inputs'!$B$2", "=PMT('Inputs'!$B$7,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=IPMT('Inputs'!$B$7,A2,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=PPMT('Inputs'!$B$7,A2,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=B2+E2"],
+            ["=F2", "=PMT('Inputs'!$B$7,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=IPMT('Inputs'!$B$7,A3,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=PPMT('Inputs'!$B$7,A3,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=B3+E3"],
+            ["=F3", "=PMT('Inputs'!$B$7,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=IPMT('Inputs'!$B$7,A4,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=PPMT('Inputs'!$B$7,A4,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=B4+E4"],
+            ["=F4", "=PMT('Inputs'!$B$7,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=IPMT('Inputs'!$B$7,A5,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=PPMT('Inputs'!$B$7,A5,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=B5+E5"],
+            ["=F5", "=PMT('Inputs'!$B$7,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=IPMT('Inputs'!$B$7,A6,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=PPMT('Inputs'!$B$7,A6,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=B6+E6"],
+            ["=F6", "=PMT('Inputs'!$B$7,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=IPMT('Inputs'!$B$7,A7,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=PPMT('Inputs'!$B$7,A7,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=B7+E7"],
+            ["=F7", "=PMT('Inputs'!$B$7,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=IPMT('Inputs'!$B$7,A8,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=PPMT('Inputs'!$B$7,A8,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=B8+E8"],
+            ["=F8", "=PMT('Inputs'!$B$7,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=IPMT('Inputs'!$B$7,A9,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=PPMT('Inputs'!$B$7,A9,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=B9+E9"],
+            ["=F9", "=PMT('Inputs'!$B$7,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=IPMT('Inputs'!$B$7,A10,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=PPMT('Inputs'!$B$7,A10,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=B10+E10"],
+            ["=F10", "=PMT('Inputs'!$B$7,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=IPMT('Inputs'!$B$7,A11,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=PPMT('Inputs'!$B$7,A11,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=B11+E11"],
+            ["=F11", "=PMT('Inputs'!$B$7,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=IPMT('Inputs'!$B$7,A12,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=PPMT('Inputs'!$B$7,A12,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=B12+E12"],
+            ["=F12", "=PMT('Inputs'!$B$7,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=IPMT('Inputs'!$B$7,A13,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=PPMT('Inputs'!$B$7,A13,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)", "=B13+E13"]
+          ]
+        },
+        { "range": "B2:F13", "format": { "numberFormat": "$#,##0;[Red]($#,##0);-", "font": { "color": "#008000" } } },
+        { "range": "B3:B13", "format": { "numberFormat": "$#,##0;[Red]($#,##0);-", "font": { "color": "#000000" } } },
+        { "range": "F2:F13", "format": { "numberFormat": "$#,##0;[Red]($#,##0);-", "font": { "color": "#000000" } } }
+      ]
+    },
+    {
+      "name": "Checks",
+      "showGridLines": false,
+      "ranges": [
+        {
+          "range": "A1:E1",
+          "values": [["Check", "Actual", "Expected", "Difference", "Status"]],
+          "format": { "fill": "#0F172A", "font": { "bold": true, "color": "#FFFFFF" } }
+        },
+        {
+          "range": "A2:E7",
+          "values": [
+            ["Payment identity", null, 0, null, null],
+            ["First-period interest", null, null, null, null],
+            ["Final closing balance", null, 0, null, null],
+            ["Total principal repaid", null, null, null, null],
+            ["Modeled period count", null, null, null, null],
+            ["Overall model status", null, 0, null, null]
+          ]
+        },
+        {
+          "range": "B2:B7",
+          "formulas": [
+            ["=SUM('Amortization'!$C$2:$C$13)-SUM('Amortization'!$D$2:$D$13)-SUM('Amortization'!$E$2:$E$13)"],
+            ["='Amortization'!$D$2"],
+            ["='Amortization'!$F$13"],
+            ["=SUM('Amortization'!$E$2:$E$13)"],
+            ["=COUNTIF('Amortization'!$A$2:$A$13,\">0\")"],
+            ["=COUNTIF(E2:E6,\"CHECK\")"]
+          ]
+        },
+        { "range": "C3", "formulas": [["=-'Inputs'!$B$2*'Inputs'!$B$7*(1-'Inputs'!$B$6)"]] },
+        { "range": "C5", "formulas": [["=-'Inputs'!$B$2"]] },
+        { "range": "C6", "formulas": [["='Inputs'!$B$8"]] },
+        {
+          "range": "D2:D7",
+          "formulas": [["=B2-C2"], ["=B3-C3"], ["=B4-C4"], ["=B5-C5"], ["=B6-C6"], ["=B7-C7"]]
+        },
+        {
+          "range": "E2:E7",
+          "formulas": [["=IF(ABS(D2)<0.01,\"OK\",\"CHECK\")"], ["=IF(ABS(D3)<0.01,\"OK\",\"CHECK\")"], ["=IF(ABS(D4)<0.01,\"OK\",\"CHECK\")"], ["=IF(ABS(D5)<0.01,\"OK\",\"CHECK\")"], ["=IF(B6=C6,\"OK\",\"CHECK\")"], ["=IF(B7=C7,\"OK\",\"CHECK\")"]]
+        },
+        {
+          "range": "E2:E7",
+          "conditionalFormats": [
+            { "ruleType": "containsText", "config": { "text": "OK", "format": { "fill": "#DCFCE7", "font": { "bold": true, "color": "#166534" } } } },
+            { "ruleType": "containsText", "config": { "text": "CHECK", "format": { "fill": "#FEE2E2", "font": { "bold": true, "color": "#B91C1C" } } } }
+          ]
+        }
+      ]
+    }
+  ],
+  "activeWorksheet": "Amortization",
+  "expectations": [
+    {
+      "sheet": "Amortization",
+      "range": "C2:E2",
+      "values": [[-8884.878867834168, -1000, -7884.878867834168]]
+    },
+    {
+      "sheet": "Checks",
+      "range": "E2:E7",
+      "values": [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]
+    }
+  ],
+  "qa": {
+    "sheetName": "Amortization",
+    "range": "A1:F13",
+    "renderFormat": "svg",
+    "inspectKind": "workbook,sheet,formula",
+    "maxChars": 16000
+  }
+}

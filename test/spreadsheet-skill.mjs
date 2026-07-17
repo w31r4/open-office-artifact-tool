@@ -86,6 +86,16 @@ try {
   assert.deepEqual(fixtureChecks.getRange("E2:E7").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
   assert.equal(fixtureChecks.conditionalFormattings.items.length, 2);
 
+  const loanFixture = await runFixture("loan-amortization");
+  const loanFixtureWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(loanFixture.workbookPath));
+  const fixtureAmortization = loanFixtureWorkbook.worksheets.getItem("Amortization");
+  const fixtureLoanChecks = loanFixtureWorkbook.worksheets.getItem("Checks");
+  assert.deepEqual(fixtureAmortization.getRange("C2:E2").values, [[-8884.878867834168, -1000, -7884.878867834168]]);
+  assert.equal(fixtureAmortization.getRange("D2").formulas[0][0], "=IPMT('Inputs'!$B$7,A2,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)");
+  assert.ok(Math.abs(fixtureAmortization.getRange("F13").values[0][0]) < 1e-7);
+  assert.deepEqual(fixtureLoanChecks.getRange("E2:E7").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
+  assert.equal(fixtureLoanChecks.conditionalFormattings.items.length, 2);
+
   const basicResult = await runFixture("open-chestnut-basic");
   const basicWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(basicResult.workbookPath));
   const dashboard = basicWorkbook.worksheets.getItem("Dashboard");
@@ -152,6 +162,34 @@ try {
   if (nativeSpreadsheetRenderStatus().available) {
     assert.equal(financialReturnsQa.summary.nativeRender.status, "passed");
     assert.equal(financialReturnsQa.summary.nativeRender.ok, true);
+  }
+
+  const { createLoanAmortizationWorkbook } = await import(
+    "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-loan-amortization-workflow.mjs"
+  );
+  const loanAmortizationPath = path.join(outputDir, "openchestnut-loan-amortization-workflow.xlsx");
+  const loanAmortizationResult = await createLoanAmortizationWorkbook(loanAmortizationPath);
+  assert.equal(loanAmortizationResult.verification.ok, true);
+  assert.match(loanAmortizationResult.inspection.ndjson, /IPMT/);
+  assert.match(loanAmortizationResult.inspection.ndjson, /PPMT/);
+  const loanAmortizationWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(loanAmortizationPath));
+  loanAmortizationWorkbook.recalculate();
+  const loanAmortization = loanAmortizationWorkbook.worksheets.getItem("Amortization");
+  const loanAmortizationChecks = loanAmortizationWorkbook.worksheets.getItem("Checks");
+  assert.equal(loanAmortization.getRange("D5").formulas[0][0], "=IPMT('Inputs'!$B$10,A5,'Inputs'!$B$11,'Inputs'!$B$5,0,'Inputs'!$B$9)");
+  assert.equal(loanAmortization.getRange("E5").format.numberFormat, "$#,##0;[Red]($#,##0);-");
+  assert.ok(Math.abs(loanAmortization.getRange("F16").values[0][0]) < 1e-7);
+  assert.deepEqual(loanAmortizationChecks.getRange("E4:E9").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
+  const loanAmortizationQa = await verifyWorkbookFile(loanAmortizationPath, {
+    outputDir: path.join(outputDir, "openchestnut-loan-amortization-native-qa"),
+    sheetName: "Amortization",
+    renderFormat: "svg",
+    nativeRender: "auto",
+    allSheets: true,
+  });
+  if (nativeSpreadsheetRenderStatus().available) {
+    assert.equal(loanAmortizationQa.summary.nativeRender.status, "passed");
+    assert.equal(loanAmortizationQa.summary.nativeRender.ok, true);
   }
 
   const { createScatterWorkbook } = await import(
