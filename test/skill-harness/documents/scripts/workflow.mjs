@@ -229,7 +229,15 @@ export async function runDocumentFixture(fixturePath, options = {}) {
   const docxPath = path.join(outputDir, fixture.outputName || `${fixture.name || "document"}.docx`);
   let docx = await DocumentFile.exportDocx(document);
   const imported = await DocumentFile.importDocx(docx);
-  for (const edit of fixture.edits || []) {
+    for (const edit of fixture.edits || []) {
+      if (edit.kind === "materializeFields") {
+        const result = imported.materializeFields(edit.options || {});
+        if (Object.prototype.hasOwnProperty.call(edit, "expectUpdated")) assert.equal(result.updated, edit.expectUpdated);
+        if (Object.prototype.hasOwnProperty.call(edit, "expectSeqFields")) assert.equal(result.seqFields, edit.expectSeqFields);
+        if (Object.prototype.hasOwnProperty.call(edit, "expectRefFields")) assert.equal(result.refFields, edit.expectRefFields);
+        if (Object.prototype.hasOwnProperty.call(edit, "expectSkippedPageReferences")) assert.equal(result.skippedPageReferences, edit.expectSkippedPageReferences);
+        continue;
+      }
       if (edit.kind === "paragraph") {
         const paragraph = imported.blocks.find((block) => block.kind === "paragraph" && (!edit.matchText || block.text === edit.matchText));
         assert.ok(paragraph, `Missing source-bound paragraph fixture target ${edit.matchText || "(unspecified)"}.`);

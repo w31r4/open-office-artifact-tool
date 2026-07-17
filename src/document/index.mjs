@@ -667,6 +667,110 @@ async function renderDocumentFromDocx(document, options = {}) {
   return blob;
 }
 
+const DOCUMENT_MATERIALIZE_SEQ = /^SEQ ([A-Za-z][A-Za-z0-9_]{0,39}) \\[*] ARABIC$/;
+const DOCUMENT_MATERIALIZE_REF = /^REF ([A-Za-z][A-Za-z0-9_]{0,39}) \\h$/;
+const DOCUMENT_MATERIALIZE_PAGEREF = /^PAGEREF ([A-Za-z][A-Za-z0-9_]{0,39}) \\h$/;
+
+function materializeDocumentFields(document, options = {}) {
+  const requestedTypes = options.types == null
+    ? new Set(["SEQ", "REF"])
+    : new Set((Array.isArray(options.types) ? options.types : [options.types]).map((value) => String(value).trim().toUpperCase()));
+  const unsupportedTypes = [...requestedTypes].filter((type) => !new Set(["SEQ", "REF"]).has(type));
+  if (unsupportedTypes.length) throw new TypeError(`Document field materialization supports only SEQ and REF cached results; unsupported type(s): ${unsupportedTypes.join(", ")}. PAGEREF requires a real pagination host.`);
+
+  const fields = document.blocks.flatMap((block) => block.kind === "paragraph"
+    ? block.runs.flatMap((run, runIndex) => run.inlineField ? [{ block, run, runIndex, instruction: String(run.inlineField.instruction || "").trim() }] : [])
+    : []);
+  const counters = new Map();
+  const plannedValues = new Map();
+  const seqFields = [];
+  const refFields = [];
+  let skippedPageReferences = 0;
+  for (const field of fields) {
+    const seq = DOCUMENT_MATERIALIZE_SEQ.exec(field.instruction);
+    const ref = DOCUMENT_MATERIALIZE_REF.exec(field.instruction);
+    if (seq) {
+      if (!requestedTypes.has("SEQ")) continue;
+      const counterKey = seq[1].toLowerCase();
+      const value = (counters.get(counterKey) || 0) + 1;
+      counters.set(counterKey, value);
+      plannedValues.set(field.run, String(value));
+      seqFields.push(field);
+      continue;
+    }
+    if (ref) {
+      if (requestedTypes.has("REF")) refFields.push({ ...field, bookmarkName: ref[1] });
+      continue;
+    }
+    if (DOCUMENT_MATERIALIZE_PAGEREF.test(field.instruction)) {
+      skippedPageReferences += 1;
+      continue;
+    }
+    throw new TypeError(`Document field materialization encountered unsupported inline instruction: ${field.instruction || "(empty)"}.`);
+  }
+
+  const targetValues = new Map();
+  const registerTarget = (name, value, source) => {
+    const key = String(name || "").toLowerCase();
+    if (!key) return;
+    if (targetValues.has(key)) throw new Error(`Document field materialization found duplicate bookmark target ${name}.`);
+    targetValues.set(key, { name, value: String(value ?? ""), source });
+  };
+  for (const field of fields) {
+    if (!field.run.inlineField?.bookmarkName) continue;
+    registerTarget(field.run.inlineField.bookmarkName, plannedValues.get(field.run) ?? field.run.text, `${field.block.id}/run/${field.runIndex}`);
+  }
+  for (const bookmark of document.bookmarks) {
+    const target = document.blocks.find((block) => block.id === bookmark.targetId);
+    const value = target?.kind === "paragraph"
+      ? target.runs.map((run) => plannedValues.get(run) ?? String(run.text ?? "")).join("")
+      : target?.text ?? target?.display;
+    if (value === undefined) {
+      if (options.strict !== false) throw new Error(`Document field materialization cannot resolve bookmark ${bookmark.name} target ${bookmark.targetId}.`);
+      continue;
+    }
+    registerTarget(bookmark.name, value, bookmark.id);
+  }
+
+  const missingBookmarks = [];
+  for (const field of refFields) {
+    const target = targetValues.get(field.bookmarkName.toLowerCase());
+    if (!target) {
+      missingBookmarks.push(field.bookmarkName);
+      continue;
+    }
+    plannedValues.set(field.run, target.value);
+  }
+  const uniqueMissingBookmarks = [...new Set(missingBookmarks)];
+  if (options.strict !== false && uniqueMissingBookmarks.length) throw new Error(`Document field materialization cannot resolve bookmark(s): ${uniqueMissingBookmarks.join(", ")}.`);
+
+  const changes = fields.flatMap((field) => {
+    if (!plannedValues.has(field.run)) return [];
+    const value = plannedValues.get(field.run);
+    if (String(field.run.text ?? "") === value) return [];
+    return [{ blockId: field.block.id, runIndex: field.runIndex, instruction: field.instruction, from: String(field.run.text ?? ""), to: value }];
+  });
+  if (!options.dryRun) {
+    const changedBlocks = new Set();
+    for (const change of changes) {
+      const block = document.blocks.find((item) => item.id === change.blockId);
+      block.runs[change.runIndex].text = change.to;
+      changedBlocks.add(block);
+    }
+    for (const block of changedBlocks) block._syncText();
+  }
+  return {
+    dryRun: Boolean(options.dryRun),
+    updated: options.dryRun ? 0 : changes.length,
+    wouldUpdate: changes.length,
+    seqFields: seqFields.length,
+    refFields: refFields.length,
+    skippedPageReferences,
+    missingBookmarks: uniqueMissingBookmarks,
+    changes,
+  };
+}
+
 export class DocumentModel {
   constructor(options = {}) {
     this.id = aid("doc");
@@ -769,6 +873,7 @@ export class DocumentModel {
     }
     return { updated, matchedTags: [...matched], missingTags };
   }
+  materializeFields(options = {}) { return materializeDocumentFields(this, options); }
   addListItem(text, config = {}) { const block = new DocumentListItemBlock(this, text, config); this.blocks.push(block); return block; }
   addList(items = [], config = {}) { return items.map((item) => this.addListItem(typeof item === "string" ? item : item.text, { ...config, ...(typeof item === "string" ? {} : item) })); }
   addHyperlink(text, url, config = {}) { const block = new DocumentHyperlinkBlock(this, text, url, config); this.blocks.push(block); return block; }

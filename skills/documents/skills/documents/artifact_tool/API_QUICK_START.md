@@ -159,8 +159,19 @@ instructions, bookmark names, and native bookmark IDs are source-bound.
 
 Use `tasks/captions_crossrefs.md` for the full workflow. Its explicit package
 helper remains useful for bulk caption discovery/insertion and deterministic
-SEQ/REF materialization. Never claim a cached result is current without host
-refresh or materialization plus render review.
+work on arbitrary packages. For the canonical model, dry-run and materialize
+bounded caches directly:
+
+```js
+const plan = document.materializeFields({ dryRun: true });
+const result = document.materializeFields();
+```
+
+Both results report `seqFields`, `refFields`, `skippedPageReferences`, missing
+targets, and exact cache changes. Strict mode fails before mutation. `PAGEREF`
+is never fabricated because trustworthy page numbers require a real pagination
+host. Never claim a cached result is current without host refresh or
+materialization plus render review.
 
 ## Bibliography-backed citations
 

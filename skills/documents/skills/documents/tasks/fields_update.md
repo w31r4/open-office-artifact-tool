@@ -69,7 +69,20 @@ LibreOffice (GUI) can also update fields, but Word is the reference implementati
 
 ## Deterministic rendering workaround (when you can't update fields)
 If your goal is **stable PNG regression testing** (not perfect Word semantics), you can
-*materialize* some field results into literal text so headless renders won't omit them:
+*materialize* some field cached results so headless renders won't omit them:
+
+For canonical `DocumentModel` inline fields, prefer the public transactional
+path:
+
+```js
+const plan = document.materializeFields({ dryRun: true });
+if (plan.missingBookmarks.length) throw new Error("Unresolved REF target");
+document.materializeFields();
+```
+
+This computes only bounded `SEQ` and `REF` caches. It reports but does not
+invent `PAGEREF` values. For an arbitrary existing package, use the explicit
+helpers:
 
 ```bash
 # Replace REF/PAGEREF blocks with their currently cached visible text
@@ -80,7 +93,7 @@ python scripts/fields_materialize.py ref_flattened.docx --out fields_materialize
 ```
 
 Notes:
-- This does **not** refresh TOC/PAGE/NUMPAGES; those still typically require Word/LO GUI.
+- Neither route refreshes TOC/PAGE/NUMPAGES/PAGEREF; those still require a real pagination host.
 - Always render and visually verify after materialization.
 
 ## Render → PNG review checklist (fields)

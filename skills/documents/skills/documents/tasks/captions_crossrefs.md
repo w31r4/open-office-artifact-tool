@@ -31,9 +31,10 @@ the caption number. Imported field positions, instructions, bookmark name, and
 native bookmark ID are source-bound; cached display text and ordinary runs are
 editable.
 
-The public slice does not calculate field results. For deterministic counters
-or bulk discovery/insertion into an existing package, this bundle keeps
-explicit OOXML-level helpers:
+The public model transactionally calculates canonical `SEQ` counters and `REF`
+cached text with `document.materializeFields()`. It deliberately does not
+invent `PAGEREF` page numbers. For real pagination or bulk discovery/insertion
+inside an arbitrary package, this bundle keeps explicit host/OOXML routes:
 - `scripts/captions_and_crossrefs.py` — insert caption paragraphs + optional bookmarks around the caption number
 - `scripts/insert_ref_fields.py` — replace `[[REF:bookmark]]` markers with real `REF` fields
 - `scripts/fields_materialize.py` — materialize `SEQ/REF` *display text* so headless renders show the correct numbers
@@ -43,7 +44,8 @@ Fields **do not reliably update** in headless environments. If you only insert f
 
 For deterministic automation / QA, the reliable pattern is:
 1) insert field codes, then
-2) **materialize** the field display text
+2) dry-run and **materialize** bounded `SEQ`/`REF` display text, then
+3) render every page
 
 A human can still open the document later and update fields, but for automation you want deterministic visuals.
 
@@ -88,14 +90,30 @@ Notes:
 - Multiple `[[REF:...]]` markers inside a single text run are supported.
 - **Limitation:** the marker must be fully contained in a single text run (`<w:t>`). If Word split the marker across runs, retype it as a single contiguous token.
 
-### 3) Materialize (freeze) SEQ/REF results for deterministic renders
+### 3) Materialize SEQ/REF cached results for deterministic renders
+For a `DocumentModel`, use the public transactional primitive before export:
+
+```js
+const plan = document.materializeFields({ dryRun: true });
+if (plan.missingBookmarks.length) throw new Error("Unresolved cross-reference");
+const result = document.materializeFields();
+console.log(result.updated, result.skippedPageReferences);
+```
+
+It resolves all SEQ counters first, then REF targets, and fails before mutation
+when a target is missing or duplicated. `PAGEREF` is reported in
+`skippedPageReferences`; refresh it in a real pagination host.
+
+For an arbitrary existing DOCX outside the canonical model, use the explicit
+package helper:
+
 ```bash
 python scripts/fields_materialize.py \
   /mnt/data/with_refs.docx \
   --out /mnt/data/with_refs_materialized.docx
 ```
 
-Implementation note: `fields_materialize.py` materializes `SEQ` values before `REF` values so cross-references see the updated caption numbers.
+Both routes materialize `SEQ` values before `REF` values so cross-references see the updated caption numbers.
 
 If you only want to materialize one type:
 ```bash
@@ -113,7 +131,7 @@ Inspect the PNGs.
 ## Pitfalls / tips
 - **Caption style availability:** if the document doesn’t define a `Caption` style, captions may appear as Normal text. If the user cares, apply a template/style pack first.
 - **Figures detection:** this script treats paragraphs containing a `<w:drawing>`/`<w:pict>` as a "figure paragraph".
-- **Edits after materializing:** if you insert/remove figures/tables later, re-run `fields_materialize.py` to recompute numbering.
+- **Edits after materializing:** if you insert/remove figures/tables later, re-run `document.materializeFields()` (or the package helper for an arbitrary DOCX) to recompute numbering.
 
 ## Deliverables
 - Deliver **only the final DOCX** requested by the user.

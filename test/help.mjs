@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "Range", "SpreadsheetFile"]) {
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 299);
+assert.equal(HELP_CATALOG.length, 300);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -276,7 +276,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.renderPdf")?.sch
 assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schema?.parameters?.operations?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.summary || "", /MuPDF/);
 const documentCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "document");
-assert.equal(documentCatalog.length, 42);
+assert.equal(documentCatalog.length, 43);
 assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.schema?.parameters?.pictureBullet?.type, "string|object");
@@ -292,6 +292,8 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addField")?.sc
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.contentControls")?.schema?.returns?.controls?.type, "DocumentTextContentControlHandle[]");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.fillContentControls")?.schema?.parameters?.values?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.fillContentControls")?.schema?.returns?.result?.description || "", /updated.*matchedTags.*missingTags/);
+assert.equal(HELP_CATALOG.find((item) => item.name === "document.materializeFields")?.schema?.parameters?.dryRun?.type, "boolean");
+assert.match(HELP_CATALOG.find((item) => item.name === "document.materializeFields")?.summary || "", /SEQ counters.*REF cached results.*PAGEREF.*pagination host/i);
 const presentationCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "presentation");
 assert.equal(presentationCatalog.length, 50);
 assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.schema?.returns));

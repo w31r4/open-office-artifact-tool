@@ -450,9 +450,23 @@ assert.equal(importedInlineFieldParagraph.runs[1].inlineField.instruction, "SEQ 
 assert.equal(importedInlineFieldParagraph.runs[1].inlineField.bookmarkName, "fig1");
 assert.equal(importedInlineFieldParagraph.runs[1].inlineField.bookmarkNativeId, 0);
 assert.equal(importedInlineFieldParagraph.runs[3].inlineField.instruction, "REF fig1 \\h");
-importedInlineFieldParagraph.runs[1].text = "1";
+const inlineMaterializationDryRun = importedInlineFieldDocument.materializeFields({ dryRun: true });
+assert.equal(inlineMaterializationDryRun.updated, 0);
+assert.equal(inlineMaterializationDryRun.wouldUpdate, 2);
+assert.equal(inlineMaterializationDryRun.seqFields, 1);
+assert.equal(inlineMaterializationDryRun.refFields, 1);
+assert.equal(importedInlineFieldParagraph.text, "Figure 0: Revenue. See 0.");
+assert.deepEqual(importedInlineFieldDocument.materializeFields(), {
+  dryRun: false,
+  updated: 2,
+  wouldUpdate: 2,
+  seqFields: 1,
+  refFields: 1,
+  skippedPageReferences: 0,
+  missingBookmarks: [],
+  changes: inlineMaterializationDryRun.changes,
+});
 importedInlineFieldParagraph.runs[2].text = ": Updated revenue. See ";
-importedInlineFieldParagraph.runs[3].text = "1";
 importedInlineFieldParagraph.text = importedInlineFieldParagraph.runs.map((run) => run.text).join("");
 const editedInlineFieldDocx = await DocumentFile.exportDocx(importedInlineFieldDocument);
 const roundTripInlineFieldDocument = await DocumentFile.importDocx(editedInlineFieldDocx);
@@ -489,6 +503,24 @@ await assert.rejects(
   () => DocumentFile.exportDocx(duplicateInlineBookmarkDocument),
   (error) => error?.code === "invalid_document_bookmark" && /duplicated/i.test(error.message),
 );
+const unresolvedFieldDocument = DocumentModel.create({ blocks: [] });
+const unresolvedFieldParagraph = unresolvedFieldDocument.addParagraph("");
+unresolvedFieldParagraph.addField("SEQ Figure \\* ARABIC", "0", { bookmarkName: "fig1" });
+unresolvedFieldParagraph.addField("REF missingTarget \\h", "0");
+assert.throws(() => unresolvedFieldDocument.materializeFields(), /cannot resolve bookmark.*missingTarget/i);
+assert.equal(unresolvedFieldParagraph.text, "00", "strict field materialization must be transactional");
+assert.deepEqual(unresolvedFieldDocument.materializeFields({ strict: false }).missingBookmarks, ["missingTarget"]);
+assert.equal(unresolvedFieldParagraph.text, "10", "non-strict materialization may update resolvable fields while reporting missing targets");
+assert.throws(() => unresolvedFieldDocument.materializeFields({ types: ["PAGEREF"] }), /requires a real pagination host/i);
+const multiSequenceDocument = DocumentModel.create({ blocks: [] });
+const firstFigure = multiSequenceDocument.addParagraph("");
+firstFigure.addField("SEQ Figure \\* ARABIC", "0", { bookmarkName: "fig1" });
+const secondFigure = multiSequenceDocument.addParagraph("");
+secondFigure.addField("SEQ Figure \\* ARABIC", "0", { bookmarkName: "fig2" });
+const secondFigureReference = multiSequenceDocument.addParagraph("");
+secondFigureReference.addField("REF FIG2 \\h", "0");
+assert.equal(multiSequenceDocument.materializeFields().updated, 3);
+assert.deepEqual([firstFigure.text, secondFigure.text, secondFigureReference.text], ["1", "2", "2"]);
 
 const invalidComplexField = DocumentModel.create({ blocks: [] });
 invalidComplexField.addField('TOC \\o "1-3" \\p "custom separator"', "Unsafe switches", { complex: true });

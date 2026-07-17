@@ -31,6 +31,7 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.fontFamilies` | api | Return a fresh sorted, case-insensitively deduplicated list of document theme and explicit run/style font families. |
 | `document.inspect` | api | Emit bounded NDJSON for document blocks including inline plain-text content controls and fields, tracked changes, bookmark ranges, footnotes/endnotes, bibliography sources, comments, styles, headers/footers, and layout; narrow with search/target anchors and fields with include/exclude. |
 | `document.layoutJson` | api | Return page-aware layout JSON with block bounding boxes, section/page ordinals, effective inherited header/footer selections, styles, and target/search slicing. |
+| `document.materializeFields` | api | Transactionally compute canonical inline SEQ counters and REF cached results from native bookmark targets, with dry-run evidence and strict missing-target failure. PAGEREF remains skipped because trustworthy page numbers require a real pagination host. |
 | `document.render` | api | Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs. |
 | `document.replyToComment` | api | Create a model-level comment reply for inspect and preview. OpenChestnut 0.2 does not author modern/extended reply graphs, and imported replies are preservation-only. |
 | `document.resolve` | api | Resolve stable document, block, content-control, bookmark, footnote/endnote, bibliography source ID/tag, header/footer, comment, style, and editable text-range IDs. |
@@ -473,6 +474,20 @@ Return page-aware layout JSON with block bounding boxes, section/page ordinals, 
 **Schema returns:**
 
 - `layout` (object) — Page-aware document layout tree.
+
+#### `document.materializeFields`
+
+Transactionally compute canonical inline SEQ counters and REF cached results from native bookmark targets, with dry-run evidence and strict missing-target failure. PAGEREF remains skipped because trustworthy page numbers require a real pagination host.
+
+**Schema parameters:**
+
+- `types` (string|string[]) — SEQ and/or REF cached-result types; defaults to both. PAGEREF is rejected when requested.
+- `dryRun` (boolean) — Plan and report every cache change without mutating the document.
+- `strict` (boolean) — Reject unresolved or duplicate bookmark targets before any mutation; defaults to true.
+
+**Schema returns:**
+
+- `result` (object) — Structured { dryRun, updated, wouldUpdate, seqFields, refFields, skippedPageReferences, missingBookmarks, changes } result.
 
 #### `document.render`
 

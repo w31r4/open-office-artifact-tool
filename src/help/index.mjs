@@ -231,6 +231,7 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "paragraph.addTextContentControl", summary: "Append one inline plain-text Word content-control run with agent ID, tag, alias, text, and optional run formatting. OpenChestnut assigns native w:id identity and authors canonical w:sdt markup." },
   { artifactKind: "document", kind: "api", name: "document.contentControls", summary: "List mutable handles for recognized inline plain-text controls with stable model ID, target paragraph, run index, tag, alias, native w:id, and text." },
   { artifactKind: "document", kind: "api", name: "document.fillContentControls", summary: "Transactionally fill every recognized inline plain-text control matching an object or Map of tag-to-value entries. Unknown tags fail before mutation by default." },
+  { artifactKind: "document", kind: "api", name: "document.materializeFields", summary: "Transactionally compute canonical inline SEQ counters and REF cached results from native bookmark targets, with dry-run evidence and strict missing-target failure. PAGEREF remains skipped because trustworthy page numbers require a real pagination host." },
   { artifactKind: "document", kind: "api", name: "document.addListItem", summary: "Append a numbered or character-bulleted list item using native DOCX numbering definitions. Picture bullets remain model-only and make canonical OpenChestnut export fail closed." },
   { artifactKind: "document", kind: "api", name: "document.addHeader", summary: "Add a default, first-page, or even-page DOCX header, optionally section-scoped; first/even activation is independent from the preserved relationship reference." },
   { artifactKind: "document", kind: "api", name: "document.addFooter", summary: "Add a default, first-page, or even-page DOCX footer, optionally section-scoped; first/even activation is independent from the preserved relationship reference." },
@@ -949,6 +950,11 @@ const DOCUMENT_HELP_SCHEMAS = {
     values: { type: "object|Map", required: true, description: "Tag-to-string value mapping. Duplicate tags fill every matching control." },
     strict: { type: "boolean", description: "Reject all unknown tags before mutation; defaults to true." },
   }, "result", "object", "Structured { updated, matchedTags, missingTags } result."),
+  "document.materializeFields": helpSchema({
+    types: { type: "string|string[]", description: "SEQ and/or REF cached-result types; defaults to both. PAGEREF is rejected when requested." },
+    dryRun: { type: "boolean", description: "Plan and report every cache change without mutating the document." },
+    strict: { type: "boolean", description: "Reject unresolved or duplicate bookmark targets before any mutation; defaults to true." },
+  }, "result", "object", "Structured { dryRun, updated, wouldUpdate, seqFields, refFields, skippedPageReferences, missingBookmarks, changes } result."),
   "document.addListItem": helpSchema({
     text: { type: "string", required: true, description: "List item text." },
     listType: { type: "string", description: "bullet or numbered." },

@@ -23,12 +23,19 @@
   ],
   "edits": [
     {
+      "kind": "materializeFields",
+      "expectUpdated": 2,
+      "expectSeqFields": 1,
+      "expectRefFields": 1,
+      "expectSkippedPageReferences": 1
+    },
+    {
       "kind": "paragraphRuns",
-      "matchText": "Figure 0: Revenue. See figure 0 on page 0.",
+      "matchText": "Figure 1: Revenue. See figure 1 on page 0.",
       "runs": [
-        { "index": 1, "expectInstruction": "SEQ Figure \\* ARABIC", "expectBookmarkName": "fig1", "text": "1" },
+        { "index": 1, "expectInstruction": "SEQ Figure \\* ARABIC", "expectBookmarkName": "fig1" },
         { "index": 2, "text": ": Updated revenue. See figure " },
-        { "index": 3, "expectInstruction": "REF fig1 \\h", "text": "1" },
+        { "index": 3, "expectInstruction": "REF fig1 \\h" },
         { "index": 5, "expectInstruction": "PAGEREF fig1 \\h", "text": "1" }
       ]
     }
