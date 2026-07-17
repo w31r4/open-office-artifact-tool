@@ -65,6 +65,14 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### DOCX whole-paragraph tracked-change vertical slice
+
+On 2026-07-17, the Documents public model, versioned protobuf wire, OpenChestnut C# codec, bundled WASM runtime, Help catalog, and native plugin workflow converged on one bounded tracked-change profile. `document.addInsertion(...)` and `document.addDeletion(...)` author native whole-paragraph `w:ins`/`w:del` markup containing one text run; import exposes type, text, author, and optional timestamp; source-preserving export permits fixed-topology text/author/date edits while retaining native revision identity and unmodeled formatting. In-paragraph replacements, mixed or nested revisions, moves, property changes, and automatic future-change tracking remain explicit advanced workflows.
+
+The edge-case corpus proves that a multi-run revision is still semantically visible but marked read-only, carries no editable-topology residual hash, round-trips with byte-identical source-package output when unchanged, and rejects semantic mutation with `unsupported_document_edit`. This closes the irregular-topology exception path without weakening fail-closed preservation.
+
+The complete local gate passed `npm test`, `npm run docs:api`, `npm run proto:check`, `npm run test:pack`, `npm run verify:open-chestnut-build`, OpenChestnut `173/173`, and OfficeBridge `5/5`. Two clean WASM builds produced the same 39 audited files and the same manifest-bound 38-file, 14,166,204-byte runtime. The clean-install tarball contains 419 files, is 9,196,284 bytes compressed and 22,827,449 bytes unpacked. The shipped Documents example completed create, export, import, tracked-change edit, second export/import, semantic/XML assertions, and LibreOffice/Poppler rendering; both rendered pages were reviewed, with the insertion and deletion visibly represented and no clipping or overlap.
+
 ### AGPL and default MuPDF.js vertical slice
 
 On 2026-07-17, the focused PDF vertical slice passed `node test/pdf.mjs`, `node test/pdf-provider-skill.mjs`, `node test/reference-skills.mjs`, `node test/release-check.mjs`, and the package-contents gate. The checks cover root-import laziness, first-use MuPDF initialization, arbitrary-PDF import/inspect, native PNG/JPEG render, bounded direct-original editing, input/render/image/object limits, exact-prefix incremental saves, rewrite redaction, signed/redaction/deletion incremental fail-closed behavior, real link and raster extraction, CLI atomic output, nested output creation, and direct/symlink source-overwrite rejection.
