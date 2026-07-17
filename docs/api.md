@@ -6,10 +6,10 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 
 | Name | Kind | Summary |
 | --- | --- | --- |
-| `document.addBibliographySource` | api | Add a model-level bibliography source for inspect and resolve. OpenChestnut 0.2 does not author bibliography parts; imported bibliography graphs are preserved read-only. |
+| `document.addBibliographySource` | api | Add a canonical Word bibliography source for inspect, resolve, and native b:Sources authoring. Recognized imports allow bounded source content edits while source order, IDs, and tags remain source-bound. |
 | `document.addBookmark` | api | Wrap exactly one paragraph-like block in a native Word bookmark for inspect, resolve, and internal hyperlinks. Recognized imported whole-block bookmarks are exposed with source identity but remain fixed-topology/read-only; cross-block, nested, crossing, table-cell, and otherwise complex ranges stay opaque-preserved and fail closed on mutation. |
 | `document.addChange` | api | Append one bounded whole-paragraph tracked insertion or deletion. OpenChestnut authors native w:ins/w:del markup and permits fixed-topology imported text/author/date edits; mixed or nested revision graphs remain source-bound. |
-| `document.addCitation` | api | Add a model-level structured citation. OpenChestnut 0.2 does not author bibliography-backed CITATION graphs; imported citation content remains source-bound and read-only. |
+| `document.addCitation` | api | Add a whole-paragraph bibliography-backed citation exported as a native w:fldSimple CITATION field plus a bounded bookmark. Recognized imports allow display-text edits while source tags and topology remain fixed. |
 | `document.addComment` | api | Attach a classic whole-paragraph Word comment with author, initials, date, and text. Replies, resolution metadata, durable IDs, UTC/person data, and other modern comment extensions fail closed. |
 | `document.addDeletion` | api | Append one bounded whole-paragraph tracked deletion using native w:del/w:delText markup. In-paragraph replacements, mixed normal/revision runs, moves, and property changes require an explicit advanced package workflow. |
 | `document.addEndnote` | api | Append one native plain-text endnote at the end of one paragraph or list item. Recognized imported canonical endnotes permit body-text edits only; anchor, kind, native ID, and note topology remain source-bound. |
@@ -39,23 +39,23 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.textRange` | api | Inspect or resolve stable textRange anchors such as blockId/text for editable document block, header/footer, and comment text. |
 | `document.verify` | api | Return QA issues for invalid/duplicate content-control IDs and native IDs, malformed tags/aliases, fake lists, invalid links/citations/bibliography sources, malformed tracked changes, duplicate/dangling/reversed bookmark ranges, invalid footnotes/endnotes, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells. |
 | `DocumentFile.exportDocx` | api | Export DocumentModel to DOCX through the single bundled OpenChestnut codec. Only limits is accepted; legacy codec and lossy-fallback options fail explicitly. |
-| `DocumentFile.importDocx` | api | Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Recognized inline plain-text content controls, whole-paragraph tracked revisions, whole-block bookmarks, and canonical plain-text footnotes/endnotes are semantic; bounded controls and note bodies are fixed-topology editable while richer graphs stay source-bound. |
+| `DocumentFile.importDocx` | api | Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Recognized inline plain-text content controls, whole-paragraph tracked revisions, whole-block bookmarks, canonical plain-text footnotes/endnotes, and bounded bibliography/citation graphs are semantic and fixed-topology editable while richer graphs stay source-bound. |
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
-| `DocumentModel.create` | api | Create a document with paragraph/character styles, formatted paragraphs/runs, inline plain-text content controls, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, bounded whole-block bookmarks, plain-text footnotes/endnotes, simple fields, bounded whole-paragraph tracked insertions/deletions, classic comments, and PNG/JPEG images. Rich/block/data-bound/dropdown/date/checkbox SDTs, arbitrary table-style graphs, bibliography, complex bookmark/note/revision graphs, modern comment graphs, and advanced settings remain unsupported or import-preserved read-only. |
-| `exportDocxWithOpenChestnut` | api | Export bounded DocumentModel paragraphs/runs with inline plain-text w:sdt controls, tables, whole-block bookmarks and internal links, plain-text footnotes/endnotes, whole-paragraph tracked insertions/deletions, classic comments, validated source-free gridSpan/vMerge tables, and direct text-marker numbering graphs; recognized imports permit fixed-topology content-control, note-body, tracked-change, comment, hyperlink, simple-field, table-formatting/text, and coherent numbering-definition edits through bundled OpenChestnut. |
-| `importDocxWithOpenChestnut` | api | Import DOCX bytes through OpenChestnut with source-bound blocks plus exact-profile inline plain-text content controls, classic comments, whole-paragraph tracked changes, canonical whole-block bookmarks, and canonical plain-text footnote/endnote bindings; imported control tag/alias/text may change without changing SDT topology, while rich/block/data-bound/dropdown/date/checkbox controls remain opaque-preserved. |
+| `DocumentModel.create` | api | Create a document with paragraph/character styles, formatted paragraphs/runs, inline plain-text content controls, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, bounded whole-block bookmarks, plain-text footnotes/endnotes, canonical bibliography-backed citations, simple fields, bounded whole-paragraph tracked insertions/deletions, classic comments, and PNG/JPEG images. Rich/block/data-bound/dropdown/date/checkbox SDTs, complex bibliography/field graphs, arbitrary table-style graphs, complex bookmark/note/revision graphs, modern comment graphs, and advanced settings remain unsupported or import-preserved read-only. |
+| `exportDocxWithOpenChestnut` | api | Export bounded DocumentModel paragraphs/runs with inline plain-text w:sdt controls, tables, whole-block bookmarks and internal links, plain-text footnotes/endnotes, canonical b:Sources plus whole-paragraph CITATION fields, whole-paragraph tracked insertions/deletions, classic comments, validated source-free gridSpan/vMerge tables, and direct text-marker numbering graphs; recognized imports permit bounded fixed-topology content edits through bundled OpenChestnut. |
+| `importDocxWithOpenChestnut` | api | Import DOCX bytes through OpenChestnut with source-bound blocks plus exact-profile inline plain-text content controls, classic comments, whole-paragraph tracked changes, canonical whole-block bookmarks, canonical plain-text footnote/endnote bindings, and bounded bibliography/citation semantics; complex contributor roles, field switches, multiple catalogs, and rich result runs remain opaque-preserved. |
 | `paragraph.addTextContentControl` | api | Append one inline plain-text Word content-control run with agent ID, tag, alias, text, and optional run formatting. OpenChestnut assigns native w:id identity and authors canonical w:sdt markup. |
 
 ### document details
 
 #### `document.addBibliographySource`
 
-Add a model-level bibliography source for inspect and resolve. OpenChestnut 0.2 does not author bibliography parts; imported bibliography graphs are preserved read-only.
+Add a canonical Word bibliography source for inspect, resolve, and native b:Sources authoring. Recognized imports allow bounded source content edits while source order, IDs, and tags remain source-bound.
 
 **Schema parameters:**
 
-- `tag` (string) required — Unique Word source tag used by CITATION fields, at most 255 characters.
+- `tag` (string) required — Unique Word source tag used by CITATION fields: 1 through 255 ASCII letters, digits, periods, underscores, colons, or hyphens.
 - `sourceType` (string) required — Word bibliography source type such as Book, Report, JournalArticle, InternetSite, or Misc.
 - `title` (string) — Source title.
 - `authors` (object[]|string[]) — Personal contributors with first/middle/last names.
@@ -67,7 +67,7 @@ Add a model-level bibliography source for inspect and resolve. OpenChestnut 0.2 
 
 **Schema returns:**
 
-- `source` (DocumentBibliographySource) — Model-level bibliography source; canonical DOCX export rejects authoring and imported sources remain read-only.
+- `source` (DocumentBibliographySource) — Canonical b:Source entry. Recognized imports permit bounded field/author edits with fixed source order, ID, and tag.
 
 #### `document.addBookmark`
 
@@ -102,17 +102,17 @@ Append one bounded whole-paragraph tracked insertion or deletion. OpenChestnut a
 
 #### `document.addCitation`
 
-Add a model-level structured citation. OpenChestnut 0.2 does not author bibliography-backed CITATION graphs; imported citation content remains source-bound and read-only.
+Add a whole-paragraph bibliography-backed citation exported as a native w:fldSimple CITATION field plus a bounded bookmark. Recognized imports allow display-text edits while source tags and topology remain fixed.
 
 **Schema parameters:**
 
 - `text` (string) required — Visible citation text.
-- `metadata` (object) — Model-only structured citation metadata. Bibliography-backed CITATION authoring is outside the OpenChestnut 0.2 boundary.
+- `metadata` (object) required — Structured citation metadata containing a bounded ASCII tag that resolves to document.bibliographySources.
 - `styleId` (string) — Named paragraph style ID.
 
 **Schema returns:**
 
-- `citation` (DocumentCitationBlock) — Appended model-level citation block; canonical DOCX export rejects it.
+- `citation` (DocumentCitationBlock) — Native whole-paragraph w:fldSimple CITATION block. Imported display text is editable while its tag and topology remain source-bound.
 
 #### `document.addComment`
 
@@ -577,7 +577,7 @@ Export DocumentModel to DOCX through the single bundled OpenChestnut codec. Only
 
 #### `DocumentFile.importDocx`
 
-Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Recognized inline plain-text content controls, whole-paragraph tracked revisions, whole-block bookmarks, and canonical plain-text footnotes/endnotes are semantic; bounded controls and note bodies are fixed-topology editable while richer graphs stay source-bound.
+Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Recognized inline plain-text content controls, whole-paragraph tracked revisions, whole-block bookmarks, canonical plain-text footnotes/endnotes, and bounded bibliography/citation graphs are semantic and fixed-topology editable while richer graphs stay source-bound.
 
 **Schema parameters:**
 
@@ -634,7 +634,7 @@ Apply DOCX part patches with path traversal validation for settings, classic-com
 
 #### `DocumentModel.create`
 
-Create a document with paragraph/character styles, formatted paragraphs/runs, inline plain-text content controls, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, bounded whole-block bookmarks, plain-text footnotes/endnotes, simple fields, bounded whole-paragraph tracked insertions/deletions, classic comments, and PNG/JPEG images. Rich/block/data-bound/dropdown/date/checkbox SDTs, arbitrary table-style graphs, bibliography, complex bookmark/note/revision graphs, modern comment graphs, and advanced settings remain unsupported or import-preserved read-only.
+Create a document with paragraph/character styles, formatted paragraphs/runs, inline plain-text content controls, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, bounded whole-block bookmarks, plain-text footnotes/endnotes, canonical bibliography-backed citations, simple fields, bounded whole-paragraph tracked insertions/deletions, classic comments, and PNG/JPEG images. Rich/block/data-bound/dropdown/date/checkbox SDTs, complex bibliography/field graphs, arbitrary table-style graphs, complex bookmark/note/revision graphs, modern comment graphs, and advanced settings remain unsupported or import-preserved read-only.
 
 **Schema parameters:**
 
@@ -644,11 +644,11 @@ Create a document with paragraph/character styles, formatted paragraphs/runs, in
 - `defaultRunStyle` (object) — Document-wide run properties serialized as w:docDefaults/w:rPrDefault and applied before named styles.
 - `styles` (object) — Named paragraph/character styles plus imported table/numbering style records with optional basedOn inheritance and numberingId/numberingLevel linkage. Source-free table blocks may select TableGrid; arbitrary custom table-style graphs are not materialized.
 - `paragraphs` (string[]) — Convenience paragraph list; the first paragraph uses Title style.
-- `blocks` (object[]) — Ordered paragraph/list/table/link/field/image/section/change block models. Bibliography-backed citations remain model-only and are rejected by canonical DOCX export.
+- `blocks` (object[]) — Ordered paragraph/list/table/link/field/citation/image/section/change block models. Canonical bibliography-backed citation blocks cross OpenChestnut; complex field graphs remain source-bound.
 - `bookmarks` (object[]) — Whole-block bookmark ranges. Source-free authoring requires one unique valid Word name around exactly one paragraph-like block; imported bookmarks are fixed-topology/read-only.
 - `notes` (object[]) — Plain-text footnote/endnote records. The bounded profile permits one note at the end of each paragraph or list item; imported note text may change, but kind, anchor, native ID, and topology are source-bound.
-- `bibliography` (object) — Model-only Word bibliography metadata; OpenChestnut 0.2 cannot author or edit it.
-- `bibliographySources` (object[]) — Model-only Word bibliography sources; imported b:Sources graphs are source-bound and read-only.
+- `bibliography` (object) — Canonical Word bibliography SelectedStyle, StyleName, and URI metadata authored in one b:Sources Custom XML part.
+- `bibliographySources` (object[]) — Bounded Word bibliography sources with ordinary personal or corporate Author data and supported scalar fields. Imported source order, IDs, and tags remain source-bound.
 - `headers` (object[]) — Header block models.
 - `footers` (object[]) — Footer block models.
 - `sectionSettings` (object[]) — Per-section settings with zero-based sectionIndex and differentFirstPage activation state.
@@ -661,7 +661,7 @@ Create a document with paragraph/character styles, formatted paragraphs/runs, in
 
 #### `exportDocxWithOpenChestnut`
 
-Export bounded DocumentModel paragraphs/runs with inline plain-text w:sdt controls, tables, whole-block bookmarks and internal links, plain-text footnotes/endnotes, whole-paragraph tracked insertions/deletions, classic comments, validated source-free gridSpan/vMerge tables, and direct text-marker numbering graphs; recognized imports permit fixed-topology content-control, note-body, tracked-change, comment, hyperlink, simple-field, table-formatting/text, and coherent numbering-definition edits through bundled OpenChestnut.
+Export bounded DocumentModel paragraphs/runs with inline plain-text w:sdt controls, tables, whole-block bookmarks and internal links, plain-text footnotes/endnotes, canonical b:Sources plus whole-paragraph CITATION fields, whole-paragraph tracked insertions/deletions, classic comments, validated source-free gridSpan/vMerge tables, and direct text-marker numbering graphs; recognized imports permit bounded fixed-topology content edits through bundled OpenChestnut.
 
 **Schema parameters:**
 
@@ -674,7 +674,7 @@ Export bounded DocumentModel paragraphs/runs with inline plain-text w:sdt contro
 
 #### `importDocxWithOpenChestnut`
 
-Import DOCX bytes through OpenChestnut with source-bound blocks plus exact-profile inline plain-text content controls, classic comments, whole-paragraph tracked changes, canonical whole-block bookmarks, and canonical plain-text footnote/endnote bindings; imported control tag/alias/text may change without changing SDT topology, while rich/block/data-bound/dropdown/date/checkbox controls remain opaque-preserved.
+Import DOCX bytes through OpenChestnut with source-bound blocks plus exact-profile inline plain-text content controls, classic comments, whole-paragraph tracked changes, canonical whole-block bookmarks, canonical plain-text footnote/endnote bindings, and bounded bibliography/citation semantics; complex contributor roles, field switches, multiple catalogs, and rich result runs remain opaque-preserved.
 
 **Schema parameters:**
 

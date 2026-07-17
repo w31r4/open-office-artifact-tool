@@ -127,6 +127,40 @@ placeholder-document, locked, or extension-bearing SDTs remain opaque and
 source-bound. Do not flatten them; follow `tasks/forms_content_controls.md` for
 explicit advanced routing and render-backed QA.
 
+## Bibliography-backed citations
+
+Use a canonical Word bibliography catalog plus a whole-paragraph citation field
+when the source must remain machine-addressable in Word:
+
+```js
+document.addBibliographySource({
+  id: "bibliography/AgentSource",
+  tag: "AgentSource",
+  sourceType: "Book",
+  title: "Sketch of the Analytical Engine",
+  year: "1843",
+  publisher: "Scientific Memoirs",
+  authors: [{ first: "Ada", last: "Lovelace" }],
+});
+document.addCitation("(Lovelace, 1843)", { tag: "AgentSource" });
+
+const imported = await DocumentFile.importDocx(await DocumentFile.exportDocx(document));
+imported.bibliographySources[0].title = "Notes on the Analytical Engine";
+imported.blocks.find((block) => block.kind === "citation").text = "(Lovelace, 1843, revised)";
+```
+
+OpenChestnut authors one `b:Sources` Custom XML part and canonical
+`w:fldSimple` `CITATION <tag>` blocks. Source-free catalogs may contain one or
+more supported source types, scalar fields, ordinary personal authors, or one
+corporate author. Recognized imports permit settings, source-type, author, and
+scalar-field edits plus citation display-text edits. Imported source count,
+order, IDs, tags, and citation tags remain source-bound.
+
+Contributor roles other than ordinary Author, complex field switches, multiple
+or irregular bibliography parts, nested/mixed result runs, and bibliography
+output fields remain opaque/read-only. Never rebuild those graphs to claim a
+lossless edit; report the boundary or use an explicit narrow package workflow.
+
 Use real `addListItem` calls for lists and exact `widthDxa`, `indentDxa`, `columnWidthsDxa`, and `cellMarginsDxa` values for tables. Do not fake lists with text markers or use tables as prose layout containers.
 
 `document.addSection(...)` inserts a section break before the blocks that follow it. Use it only when the document actually changes section geometry or header/footer behavior; never append an otherwise unused section block at the end of a document.
@@ -190,8 +224,9 @@ For final visual QA, export the DOCX and use the packaged `render_docx.py` workf
 - Classic whole-paragraph comments
 - Standalone whole-paragraph tracked insertions/deletions with one text run, author, and optional ISO timestamp
 - Inline plain-text content-control runs with tag/alias identity, transactional fill-by-tag, and fixed-topology imported edits
+- Canonical bibliography source catalogs and whole-paragraph `CITATION` fields with fixed imported source/tag topology
 
-In-paragraph tracked replacements, mixed accepted/revision runs, nested revisions, moves, property changes, and automatic future-change tracking are advanced package workflows, not ordinary public-model authoring. Bookmarks spanning multiple blocks or table cells, nested/crossing ranges, multi-paragraph or reused note graphs, bibliography-backed citations, modern comment replies, rich/block/cell/data-bound/dropdown/date/checkbox content controls, complex fields, floating drawings, and other advanced graphs are likewise not source-free authoring features. Recognized imported whole-block bookmarks are inspectable/resolvable but fixed-topology and read-only. Canonical imported footnote/endnote text and bounded inline plain-text control text/tag/alias may change, but their anchors, native IDs, and topology remain source-bound; other imported advanced graphs are preserved only while their source evidence remains valid.
+In-paragraph tracked replacements, mixed accepted/revision runs, nested revisions, moves, property changes, and automatic future-change tracking are advanced package workflows, not ordinary public-model authoring. Bookmarks spanning multiple blocks or table cells, nested/crossing ranges, multi-paragraph or reused note graphs, complex bibliography contributor roles/field switches/output fields, modern comment replies, rich/block/cell/data-bound/dropdown/date/checkbox content controls, complex fields, floating drawings, and other advanced graphs are likewise outside source-free authoring. Recognized imported whole-block bookmarks are inspectable/resolvable but fixed-topology and read-only. Canonical imported footnote/endnote text, bounded citation/source content, and bounded inline plain-text control text/tag/alias may change, but their anchors, native IDs, tags, and topology remain source-bound; other imported advanced graphs are preserved only while their source evidence remains valid.
 
 Use `DocumentFile.inspectDocx` or `DocumentFile.patchDocx` only when the user explicitly requests package-level inspection or patching. These are deliberate low-level operations, never an automatic fallback for ordinary authoring.
 

@@ -130,7 +130,8 @@ assert.match(HELP_CATALOG.find((item) => item.name === "document.addBookmark")?.
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addFootnote")?.summary || "", /native plain-text footnote.*text edits only/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addEndnote")?.summary || "", /native plain-text endnote.*text edits only/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addBookmark")?.schema?.parameters?.name?.description || "", /ASCII letter.*40 characters/i);
-assert.match(HELP_CATALOG.find((item) => item.name === "document.addBibliographySource")?.summary || "", /does not author bibliography parts.*read-only/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "document.addBibliographySource")?.summary || "", /native b:Sources authoring.*source order.*tags.*source-bound/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "document.addCitation")?.summary || "", /w:fldSimple CITATION.*display-text edits.*topology remain fixed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addChange")?.summary || "", /native w:ins\/w:del.*fixed-topology/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.replyToComment")?.summary || "", /does not author modern\/extended reply graphs.*preservation-only/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.setSettings")?.summary || "", /Only evenAndOddHeaders.*not authorable or editable/i);
@@ -218,6 +219,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "document.setSectionSetti
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addBookmark")?.schema?.parameters?.endTarget?.type, "string|object");
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addBookmark")?.schema?.parameters?.target?.description || "", /does not accept table cells or multi-block ranges/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addBibliographySource")?.schema?.parameters?.tag?.required, true);
+assert.equal(HELP_CATALOG.find((item) => item.name === "document.addCitation")?.schema?.parameters?.metadata?.required, true);
 assert.ok(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.schema?.returns?.pdf);
 assert.ok(HELP_CATALOG.find((item) => item.name === "renderArtifact")?.returns?.includes("FileBlob"));
 assert.ok(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.examples?.some((example) => example.includes("pixelDiff")));

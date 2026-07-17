@@ -1,0 +1,52 @@
+{
+  "name": "open-chestnut-bibliography",
+  "outputName": "open-chestnut-bibliography.docx",
+  "bibliography": {
+    "selectedStyle": "\\APASixthEditionOfficeOnline.xsl",
+    "styleName": "APA"
+  },
+  "bibliographySources": [
+    {
+      "id": "bibliography/AgentSource",
+      "tag": "AgentSource",
+      "sourceType": "Book",
+      "title": "Sketch of the Analytical Engine",
+      "year": "1843",
+      "publisher": "Scientific Memoirs",
+      "authors": [{ "first": "Ada", "last": "Lovelace" }]
+    }
+  ],
+  "blocks": [
+    { "kind": "paragraph", "styleId": "Title", "text": "Research evidence" },
+    {
+      "kind": "citation",
+      "id": "citation/agent-source",
+      "styleId": "Normal",
+      "text": "(Lovelace, 1843)",
+      "metadata": { "tag": "AgentSource" }
+    }
+  ],
+  "edits": [
+    {
+      "kind": "bibliographySource",
+      "matchTag": "AgentSource",
+      "fields": { "title": "Notes on the Analytical Engine" },
+      "authors": [{ "first": "Augusta Ada", "middle": "", "last": "Lovelace" }]
+    },
+    {
+      "kind": "citation",
+      "matchTag": "AgentSource",
+      "text": "(Lovelace, 1843, revised)"
+    }
+  ],
+  "expectInspect": [
+    { "kind": "bibliographySource", "pattern": "AgentSource" },
+    { "kind": "citation", "pattern": "Lovelace, 1843" }
+  ],
+  "qa": {
+    "previewFormat": "svg",
+    "nativeRender": "auto",
+    "inspectKind": "document,paragraph,citation,bibliographySource,bookmark,layout",
+    "maxChars": 12000
+  }
+}

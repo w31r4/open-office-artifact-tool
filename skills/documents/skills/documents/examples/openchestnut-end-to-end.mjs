@@ -216,6 +216,19 @@ export function buildDocument(spec = DEFAULT_BRIEF) {
     tooltip: "Jump to the decision section",
     history: true,
   });
+  document.addBibliographySource({
+    id: "bibliography/ProjectEvidence",
+    tag: "ProjectEvidence",
+    sourceType: "InternetSite",
+    title: spec.sourceLabel,
+    year: "2026",
+    url: spec.sourceUrl,
+    corporateAuthor: spec.owner,
+  });
+  document.addCitation(`(${spec.owner}, 2026)`, { tag: "ProjectEvidence" }, {
+    id: "citation/project-evidence",
+    styleId: "Normal",
+  });
 
   document.addComment(recommendation, "Confirm the recommendation wording before publication.", {
     author: "Release reviewer",
@@ -246,10 +259,11 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
     matchedTags: ["OWNER"],
     missingTags: [],
   });
-  assert.equal(imported.bookmarks.length, 1);
-  assert.equal(imported.bookmarks[0].name, "DecisionSection");
+  assert.equal(imported.bookmarks.length, 2);
+  const importedDecisionBookmark = imported.bookmarks.find((bookmark) => bookmark.name === "DecisionSection");
+  assert.ok(importedDecisionBookmark);
   assert.equal(
-    imported.resolve(imported.bookmarks[0].id).targetId,
+    imported.resolve(importedDecisionBookmark.id).targetId,
     imported.blocks.find((block) => block.text === "Decision")?.id,
   );
   assert.equal(
@@ -279,6 +293,8 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
   trackedInsertion.date = "2026-07-16T09:00:00Z";
   imported.notes[0].text = "The final gate includes native rendering, package validation, and semantic re-import.";
   imported.notes[1].text = "Evidence snapshot dated 2026-07-17; retained with the release record.";
+  imported.bibliographySources[0].title = `${spec.sourceLabel} — verified`;
+  imported.blocks.find((block) => block.kind === "citation").text = `(${spec.owner}, 2026, verified)`;
 
   const finalDocx = await DocumentFile.exportDocx(imported);
   const finalDocument = await DocumentFile.importDocx(finalDocx);
@@ -286,7 +302,9 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
   assert.equal(finalReport.ok, true, finalReport.ndjson || JSON.stringify(finalReport.issues));
   assert.equal(finalDocument.blocks.find((block) => block.kind === "table")?.getCell(1, 1).value, "Verified");
   assert.equal(finalDocument.comments[0]?.text, "Recommendation wording verified for the release record.");
-  assert.equal(finalDocument.bookmarks[0]?.name, "DecisionSection");
+  assert.equal(finalDocument.bookmarks.some((bookmark) => bookmark.name === "DecisionSection"), true);
+  assert.equal(finalDocument.bibliographySources[0]?.title, `${spec.sourceLabel} — verified`);
+  assert.equal(finalDocument.blocks.find((block) => block.kind === "citation")?.text, `(${spec.owner}, 2026, verified)`);
   assert.deepEqual(finalDocument.contentControls.map((control) => [control.tag, control.alias, control.text]), [
     ["OWNER", "Brief owner", spec.owner],
   ]);
@@ -309,10 +327,10 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
   );
 
   const inspection = finalDocument.inspect({
-    kind: "document,paragraph,listItem,table,comment,bookmark,note,contentControl,header,footer,hyperlink,change,layout",
-    maxChars: 24_000,
+    kind: "document,paragraph,listItem,table,comment,bookmark,note,contentControl,header,footer,hyperlink,citation,bibliographySource,change,layout",
+    maxChars: 32_000,
   });
-  for (const expected of [spec.title, "Verified", "Recommendation wording verified", "application-compatibility", "semantic re-import", "Evidence snapshot", "DecisionSection", "OWNER", "LAUNCH READINESS"]) {
+  for (const expected of [spec.title, "Verified", "Recommendation wording verified", "application-compatibility", "semantic re-import", "Evidence snapshot", "DecisionSection", "ProjectEvidence", "2026, verified", "OWNER", "LAUNCH READINESS"]) {
     assert.match(inspection.ndjson, new RegExp(expected));
   }
 

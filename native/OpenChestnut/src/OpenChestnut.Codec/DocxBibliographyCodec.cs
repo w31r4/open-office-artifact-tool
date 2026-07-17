@@ -93,7 +93,7 @@ internal static class DocxBibliographyCodec
             document.Bibliography = bibliography;
             return bibliography.Sources.Select(source => source.Tag).ToHashSet(StringComparer.Ordinal);
         }
-        catch (CodecException error) when (error.Code == "unsupported_document_bibliography")
+        catch (CodecException error) when (error.Code is "unsupported_document_bibliography" or "invalid_document_bibliography")
         {
             diagnostics.Add(CodecProtocol.Warning(
                 "document_bibliography_not_modeled",

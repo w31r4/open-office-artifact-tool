@@ -131,6 +131,19 @@ try {
   assert.match(controlsXml, /<w:tag w:val="CUSTOMER_NAME"\s*\/>/);
   assert.match(controlsXml, /<w:tag w:val="ACCOUNT_ID"\s*\/>/);
 
+  const bibliography = await runFixture("open-chestnut-bibliography");
+  const bibliographyDocument = await DocumentFile.importDocx(await FileBlob.load(bibliography.docxPath));
+  assert.equal(bibliographyDocument.bibliography.styleName, "APA");
+  assert.deepEqual(bibliographyDocument.bibliographySources.map((source) => [source.tag, source.title, source.authors[0].first]), [
+    ["AgentSource", "Notes on the Analytical Engine", "Augusta Ada"],
+  ]);
+  assert.equal(bibliographyDocument.blocks.find((block) => block.kind === "citation")?.text, "(Lovelace, 1843, revised)");
+  const bibliographyZip = await JSZip.loadAsync(await fs.readFile(bibliography.docxPath));
+  const bibliographyParts = Object.keys(bibliographyZip.files).filter((name) => /^customXml\/item\d*\.xml$/.test(name));
+  assert.equal(bibliographyParts.length, 1);
+  assert.match(await bibliographyZip.file(bibliographyParts[0]).async("text"), /<Sources\b[^>]*xmlns="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/bibliography"/);
+  assert.match(await bibliographyZip.file("word/document.xml").async("text"), /w:instr=" CITATION AgentSource "/);
+
   const classicFixture = await runFixture("package-comments");
   const classicDocument = await DocumentFile.importDocx(await FileBlob.load(classicFixture.docxPath));
   assert.equal(classicDocument.comments.length, 1);
@@ -184,6 +197,8 @@ try {
   assert.match(skillText, /document\.addDeletion/);
   assert.match(skillText, /paragraph\.addTextContentControl/);
   assert.match(skillText, /document\.fillContentControls/);
+  assert.match(skillText, /document\.addBibliographySource/);
+  assert.match(skillText, /document\.addCitation/);
   assert.doesNotMatch(skillText, /Author\/edit with `python-docx`|Default tool: python-docx/);
   const commentsGuide = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "tasks", "comments_manage.md"), "utf8");
   assert.match(commentsGuide, /document\.addComment/);

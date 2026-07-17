@@ -49,6 +49,7 @@ function addFixtureBlock(document, block = {}) {
     case "table": return document.addTable(config);
     case "hyperlink": return document.addHyperlink(block.text || "", block.url, config);
     case "field": return document.addField(block.instruction, block.display, config);
+    case "citation": return document.addCitation(block.text || "", block.metadata || {}, config);
     case "image": return document.addImage(config);
     case "section": return document.addSection(config);
     default: throw new Error(`Unsupported document fixture block kind: ${block.kind}`);
@@ -65,9 +66,11 @@ export function createDocumentFromFixture(fixture = {}) {
     name: fixture.name || "Fixture document",
     defaultRunStyle: fixture.defaultRunStyle || {},
     settings,
+    bibliography: fixture.bibliography || {},
     blocks: [],
   });
   for (const [id, style] of Object.entries(fixture.styles || {})) document.styles.add(id, style);
+  for (const source of fixture.bibliographySources || []) document.addBibliographySource(source);
   const byName = new Map();
   for (const block of fixture.blocks || []) {
     const created = addFixtureBlock(document, block);
@@ -82,7 +85,7 @@ export function createDocumentFromFixture(fixture = {}) {
     document.addComment(target, comment.text || "", comment);
   }
   for (const expected of fixture.expectInspect || []) {
-    assert.match(document.inspect({ kind: expected.kind || "document,paragraph,listItem,table,comment,header,footer,hyperlink,field,image,section,style", maxChars: 20_000 }).ndjson, new RegExp(expected.pattern));
+    assert.match(document.inspect({ kind: expected.kind || "document,paragraph,listItem,table,comment,header,footer,hyperlink,field,citation,bibliographySource,image,section,style", maxChars: 20_000 }).ndjson, new RegExp(expected.pattern));
   }
   return document;
 }
@@ -138,7 +141,7 @@ export async function verifyDocumentFile(inputPath, options = {}) {
   const docxBlob = new FileBlob(loaded.bytes, { type: DOCX_MIME, name: path.basename(absoluteInput) });
   const document = await DocumentFile.importDocx(docxBlob);
   const maxChars = options.maxChars ?? 20_000;
-  const inspect = document.inspect({ kind: options.inspectKind || "document,paragraph,listItem,table,comment,header,footer,hyperlink,field,image,section,style,layout", maxChars });
+  const inspect = document.inspect({ kind: options.inspectKind || "document,paragraph,listItem,table,comment,header,footer,hyperlink,field,citation,bibliographySource,image,section,style,layout", maxChars });
   const packageInspect = await DocumentFile.inspectDocx(docxBlob, { includeText: options.includePackageText === true, maxChars });
   const verify = verifyArtifact(document, { visualQa: true, maxChars });
   const layoutBlob = await document.render({ format: "layout" });
@@ -285,6 +288,20 @@ export async function runDocumentFixture(fixturePath, options = {}) {
         assert.ok(field, `Missing source-bound field fixture target ${edit.matchInstruction || "(unspecified)"}.`);
         if (Object.prototype.hasOwnProperty.call(edit, "instruction")) field.instruction = String(edit.instruction);
         if (Object.prototype.hasOwnProperty.call(edit, "display")) field.display = String(edit.display);
+        continue;
+      }
+      if (edit.kind === "citation") {
+        const citation = imported.blocks.find((block) => block.kind === "citation" && (!edit.matchTag || block.metadata?.tag === edit.matchTag));
+        assert.ok(citation, `Missing source-bound citation fixture target ${edit.matchTag || "(unspecified)"}.`);
+        if (Object.prototype.hasOwnProperty.call(edit, "text")) citation.text = String(edit.text);
+        continue;
+      }
+      if (edit.kind === "bibliographySource") {
+        const source = imported.bibliographySources.find((item) => !edit.matchTag || item.tag === edit.matchTag);
+        assert.ok(source, `Missing source-bound bibliography fixture target ${edit.matchTag || "(unspecified)"}.`);
+        for (const [field, value] of Object.entries(edit.fields || {})) source[field] = structuredClone(value);
+        if (Array.isArray(edit.authors)) source.authors = structuredClone(edit.authors);
+        if (Object.prototype.hasOwnProperty.call(edit, "corporateAuthor")) source.corporateAuthor = String(edit.corporateAuthor || "") || undefined;
         continue;
       }
       if (edit.kind === "tableCell") {

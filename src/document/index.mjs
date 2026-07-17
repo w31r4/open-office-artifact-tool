@@ -756,7 +756,7 @@ export class DocumentModel {
     }
     this.blocks.push(block);
     if (!config._restore) {
-      const bookmarkName = block.metadata.bookmark || `OpenOfficeCitation_${block.id.replace(/[^A-Za-z0-9_]/g, "_")}`;
+      const bookmarkName = block.metadata.bookmark || `OpenOfficeCitation_${block.id.replace(/[^A-Za-z0-9_]/g, "_")}`.slice(0, 40);
       const bookmark = this.addBookmark(block, bookmarkName, { id: block.metadata.bookmarkId || `${block.id}/bookmark`, nativeId: block.metadata.bookmarkNativeId });
       block.metadata.bookmark = bookmark.name;
       block.metadata.bookmarkId = bookmark.id;

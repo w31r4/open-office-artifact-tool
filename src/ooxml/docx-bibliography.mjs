@@ -109,7 +109,9 @@ function issue(type, message, detail = {}) {
 }
 
 function resolveTarget(sourcePath, target) {
-  return path.posix.normalize(path.posix.join(path.posix.dirname(sourcePath), String(target || "").replace(/^\//, ""))).replace(/^\.\//, "");
+  const value = String(target || "");
+  if (value.startsWith("/")) return path.posix.normalize(value.slice(1)).replace(/^\.\//, "");
+  return path.posix.normalize(path.posix.join(path.posix.dirname(sourcePath), value)).replace(/^\.\//, "");
 }
 
 export function validateDocxBibliographyPackageSemantics({ bytesByPath }) {
