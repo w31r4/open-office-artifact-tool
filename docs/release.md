@@ -65,6 +65,42 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### XLSX marker-only scatter charts
+
+On 2026-07-18, the Spreadsheet public model, protocol-2 wire, OpenChestnut C#
+codec, bundled WASM runtime, generated Help/API reference, and native
+Spreadsheet plugin converged on real numeric-X/Y marker-only scatter charts.
+Range-backed creation treats the first numeric column as each series' X source
+and the remaining columns as Y series; explicit series carry `xValues/xFormula`
+and `values/formula`. OpenChestnut authors native `c:scatterChart`, `c:xVal`,
+`c:yVal`, and two value axes instead of substituting a category line chart.
+
+Marker-only is a cross-host contract, not only a chart-style label. Every
+authored or edited series now carries an explicit DrawingML no-fill outline so
+LibreOffice and Microsoft Office do not synthesize connecting lines.
+Series-level `line`/`stroke` is rejected; `marker.line` remains the supported
+marker-border control. Imported scatter line/smooth variants and marker-style
+graphs with an explicit series line remain source-bound/read-only and are exact
+preserved until a broader semantic profile exists.
+
+The runnable Skill example creates two formula-bound series, imports, edits,
+re-exports, re-imports, inspects, verifies, and renders SVG. Its real local
+LibreOffice-to-PDF plus Poppler run produced one complete page with separate
+circle/diamond points and no connecting lines; package, semantic, SVG, native
+page-count, and raster QA all passed. The package test also exercises scatter
+create/import from a production-only clean install with no `dotnet` on `PATH`.
+
+Final candidate `77706e52e72a22a6ff76bc11ca7dda29e9434b01` passed hosted
+[CI run 29600831755](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29600831755)
+in 4m43s. The run passed deterministic protocol/runtime verification, installed
+Chromium/LibreOffice/Poppler, the complete `npm test`, regenerated API-doc diff,
+offline release check, clean-install pack gate, OfficeBridge, and OpenChestnut.
+Local evidence for the same candidate includes OpenChestnut `186/186`,
+OfficeBridge `5/5`, a reproducible 39-file build audit, a 38-file bundled runtime
+of 14,329,020 bytes, and a 435-file npm tarball of 9,301,407 compressed bytes /
+23,199,173 unpacked bytes. Offline release metadata reports `publishReady: true`;
+real npm authentication/publication remains an external release action.
+
 ### XLSX What-If data tables
 
 On 2026-07-18, the Spreadsheet public model, protocol-2 wire, OpenChestnut C#
