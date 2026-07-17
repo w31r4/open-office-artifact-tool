@@ -135,10 +135,11 @@ internal static class PptxCodec
                 throw new CodecException("missing_shape_tree", $"Presentation slide {slideIndex + 1} has no shape tree.", PartPath(slidePart));
             var slideBackground = PptxBackgroundCodec.Read(slideCommon);
             var elements = ShapeElements(shapeTree);
-            var elementIdsByNativeId = NativeElementIds(elements, slideIndex);
+            var slideArtifactId = $"presentation/slide/{slideIndex + 1}";
+            var elementIdsByNativeId = NativeElementIds(elements, slideArtifactId);
             var target = new PresentationSlide
             {
-                Id = $"presentation/slide/{slideIndex + 1}",
+                Id = slideArtifactId,
                 Name = slideRoot.CommonSlideData?.Name?.Value ?? $"Slide {slideIndex + 1}",
                 LayoutId = slidePart.SlideLayoutPart is { } layoutPart
                     ? layoutIdByPartPath.GetValueOrDefault(PartPath(layoutPart)) ??
@@ -453,7 +454,7 @@ internal static class PptxCodec
                     changed = true;
                 }
                 var sourceElements = ShapeElements(shapeTree);
-                var elementIdsByNativeId = NativeElementIds(sourceElements, slideIndex);
+                var elementIdsByNativeId = NativeElementIds(sourceElements, target.Id);
                 var nativeIdsByElementId = elementIdsByNativeId.ToDictionary(item => item.Value, item => item.Key, StringComparer.Ordinal);
                 if (sourceElements.Length != target.Elements.Count)
                     throw new CodecException(
@@ -601,10 +602,19 @@ internal static class PptxCodec
         PptxPartContext slideContext,
         PptxNativeObjectCatalog? nativeObjects = null,
         IReadOnlyDictionary<uint, string>? elementIdsByNativeId = null)
+        => ReadElement(source, $"presentation/slide/{slideIndex + 1}", elementIndex, slideContext, nativeObjects, elementIdsByNativeId);
+
+    private static PresentationElement ReadElement(
+        OpenXmlElement source,
+        string ownerId,
+        int elementIndex,
+        PptxPartContext slideContext,
+        PptxNativeObjectCatalog? nativeObjects = null,
+        IReadOnlyDictionary<uint, string>? elementIdsByNativeId = null)
     {
         var element = new PresentationElement
         {
-            Id = $"presentation/slide/{slideIndex + 1}/element/{elementIndex + 1}",
+            Id = $"{ownerId}/element/{elementIndex + 1}",
             Name = ElementName(source, elementIndex),
         };
         var editable = source switch
@@ -613,6 +623,7 @@ internal static class PptxCodec
             P.Picture picture => PptxPictureCodec.TryRead(picture, slideContext, out _),
             P.GraphicFrame graphicFrame => PptxTableCodec.TryRead(graphicFrame, out _),
             P.ConnectionShape connector => TryReadConnector(connector, elementIdsByNativeId, out _),
+            P.GroupShape group => TryReadGroup(group, element.Id, slideContext, elementIdsByNativeId, out _),
             _ => false,
         };
         if (source is P.GraphicFrame chartFrame && PptxChartCodec.TryRead(chartFrame, slideContext, out _, out var chartEditable)) editable = chartEditable;
@@ -626,6 +637,8 @@ internal static class PptxCodec
             element.Connector = connector;
         else if (source is P.GraphicFrame sourceChart && PptxChartCodec.TryRead(sourceChart, slideContext, out var chart, out _))
             element.Chart = chart;
+        else if (source is P.GroupShape sourceGroup && TryReadGroup(sourceGroup, element.Id, slideContext, elementIdsByNativeId, out var group))
+            element.Group = group;
         else
         {
             var frame = ReadFrame(source);
@@ -650,6 +663,58 @@ internal static class PptxCodec
         };
         element.Source.SemanticSha256 = SemanticHash(element);
         return element;
+    }
+
+    private static bool TryReadGroup(
+        P.GroupShape source,
+        string groupId,
+        PptxPartContext slideContext,
+        IReadOnlyDictionary<uint, string>? elementIdsByNativeId,
+        out PresentationGroup group)
+    {
+        group = new PresentationGroup();
+        var nonVisual = source.GetFirstChild<P.NonVisualGroupShapeProperties>();
+        var properties = source.GetFirstChild<P.GroupShapeProperties>();
+        var transform = properties?.GetFirstChild<A.TransformGroup>();
+        if (nonVisual is null || properties is null || transform is null ||
+            source.Elements<P.NonVisualGroupShapeProperties>().Count() != 1 ||
+            source.Elements<P.GroupShapeProperties>().Count() != 1 ||
+            nonVisual.ChildElements.Count != 3 ||
+            nonVisual.ChildElements[0] is not P.NonVisualDrawingProperties drawing ||
+            nonVisual.ChildElements[1] is not P.NonVisualGroupShapeDrawingProperties groupDrawing ||
+            nonVisual.ChildElements[2] is not P.ApplicationNonVisualDrawingProperties application ||
+            drawing.ChildElements.Count != 0 || groupDrawing.ChildElements.Count != 0 || application.ChildElements.Count != 0 ||
+            !HasOnlyAttributes(drawing, "id", "name") || !HasOnlyAttributes(groupDrawing) || !HasOnlyAttributes(application) ||
+            properties.ChildElements.Count != 1 || properties.FirstChild != transform || !HasOnlyAttributes(properties) ||
+            !HasOnlyAttributes(transform) || transform.ChildElements.Count != 4 ||
+            transform.ChildElements[0] is not A.Offset offset ||
+            transform.ChildElements[1] is not A.Extents extents ||
+            transform.ChildElements[2] is not A.ChildOffset childOffset ||
+            transform.ChildElements[3] is not A.ChildExtents childExtents ||
+            !HasOnlyAttributes(offset, "x", "y") || !HasOnlyAttributes(extents, "cx", "cy") ||
+            !HasOnlyAttributes(childOffset, "x", "y") || !HasOnlyAttributes(childExtents, "cx", "cy") ||
+            extents.Cx?.Value <= 0 || extents.Cy?.Value <= 0 || childExtents.Cx?.Value <= 0 || childExtents.Cy?.Value <= 0 ||
+            offset.X?.Value < 0 || offset.Y?.Value < 0)
+            return false;
+
+        group.LeftEmu = offset.X?.Value ?? 0;
+        group.TopEmu = offset.Y?.Value ?? 0;
+        group.WidthEmu = extents.Cx?.Value ?? 0;
+        group.HeightEmu = extents.Cy?.Value ?? 0;
+        group.ChildLeftEmu = childOffset.X?.Value ?? 0;
+        group.ChildTopEmu = childOffset.Y?.Value ?? 0;
+        group.ChildWidthEmu = childExtents.Cx?.Value ?? 0;
+        group.ChildHeightEmu = childExtents.Cy?.Value ?? 0;
+        var children = GroupElements(source);
+        if (children.Length == 0) return false;
+        for (var index = 0; index < children.Length; index++)
+        {
+            var child = ReadElement(children[index], groupId, index, slideContext, elementIdsByNativeId: elementIdsByNativeId);
+            if (child.ContentCase is PresentationElement.ContentOneofCase.Opaque or PresentationElement.ContentOneofCase.None || child.Source?.Editable != true)
+                return false;
+            group.Children.Add(child);
+        }
+        return true;
     }
 
     private static PresentationShape ReadShape(P.Shape shape, PptxPartContext slideContext)
@@ -1236,15 +1301,26 @@ internal static class PptxCodec
     private static OpenXmlElement[] ShapeElements(P.ShapeTree shapeTree) =>
         shapeTree.ChildElements.Where(child => child is not P.NonVisualGroupShapeProperties and not P.GroupShapeProperties).ToArray();
 
-    private static IReadOnlyDictionary<uint, string> NativeElementIds(IReadOnlyList<OpenXmlElement> elements, int slideIndex)
+    private static OpenXmlElement[] GroupElements(P.GroupShape group) =>
+        group.ChildElements.Where(child => child is not P.NonVisualGroupShapeProperties and not P.GroupShapeProperties).ToArray();
+
+    private static IReadOnlyDictionary<uint, string> NativeElementIds(IReadOnlyList<OpenXmlElement> elements, string ownerId)
     {
         var output = new Dictionary<uint, string>();
+        CollectNativeElementIds(elements, ownerId, output);
+        return output;
+    }
+
+    private static void CollectNativeElementIds(IReadOnlyList<OpenXmlElement> elements, string ownerId, IDictionary<uint, string> output)
+    {
         for (var index = 0; index < elements.Count; index++)
         {
+            var elementId = $"{ownerId}/element/{index + 1}";
             var nativeId = elements[index].Descendants<P.NonVisualDrawingProperties>().FirstOrDefault()?.Id?.Value;
-            if (nativeId is not null) output[nativeId.Value] = $"presentation/slide/{slideIndex + 1}/element/{index + 1}";
+            if (nativeId is not null) output[nativeId.Value] = elementId;
+            if (elements[index] is P.GroupShape group)
+                CollectNativeElementIds(GroupElements(group), elementId, output);
         }
-        return output;
     }
 
     private static (long Left, long Top, long Width, long Height) ReadFrame(OpenXmlElement element)
@@ -1282,11 +1358,18 @@ internal static class PptxCodec
     {
         var semantic = element.Clone();
         var placementEditable = semantic.ContentCase == PresentationElement.ContentOneofCase.Opaque && semantic.Source?.Editable == true;
-        semantic.Id = string.Empty;
-        semantic.Source = null;
+        ClearElementIdentity(semantic);
         if (semantic.ContentCase == PresentationElement.ContentOneofCase.Shape) PptxTextCodec.NormalizeSemantics(semantic.Shape);
         else if (placementEditable) semantic.Opaque.RawXml = string.Empty;
         return Hash(semantic.ToByteArray());
+    }
+
+    private static void ClearElementIdentity(PresentationElement element)
+    {
+        element.Id = string.Empty;
+        element.Source = null;
+        if (element.ContentCase != PresentationElement.ContentOneofCase.Group) return;
+        foreach (var child in element.Group.Children) ClearElementIdentity(child);
     }
 
     private static string PartPath(OpenXmlPart part) => part.Uri.OriginalString.TrimStart('/');
@@ -1591,7 +1674,7 @@ internal static class PptxCodec
             var outputContext = new PptxPartContext(outputSlides[slideIndex], outputIdByPartPath, assets: outputAssets);
             var before = ShapeElements(sourceSlides[slideIndex].Slide!.CommonSlideData!.ShapeTree!);
             var after = ShapeElements(outputSlides[slideIndex].Slide!.CommonSlideData!.ShapeTree!);
-            var afterIds = NativeElementIds(after, slideIndex);
+            var afterIds = NativeElementIds(after, requested.Slides[slideIndex].Id);
             var elements = requested.Slides[slideIndex].Elements;
             if (before.Length != elements.Count || after.Length != elements.Count)
                 throw new CodecException("presentation_postwrite_topology_changed", $"PPTX slide {slideIndex + 1} element topology changed during source-preserving export.", PartPath(outputSlides[slideIndex]));

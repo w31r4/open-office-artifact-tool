@@ -1230,12 +1230,14 @@ message PresentationElement {
     PresentationTable table = 13;
     PresentationConnector connector = 14;
     PresentationChart chart = 15;
+    PresentationGroup group = 16;
   }
 }
 
-// Shape-tree indexes refer to top-level children after the required group
-// non-visual and group transform records. They bind semantic objects to the
-// exact source element without exposing a private implementation contract.
+// Shape-tree indexes are local to the owning p:spTree or p:grpSp after its
+// required non-visual and group-transform records. A nested PresentationGroup
+// therefore owns the bindings and identity of its children instead of
+// flattening their coordinate space into the slide.
 message PresentationElementSourceBinding {
   uint32 shape_tree_index = 1;
   string element_sha256 = 2;
@@ -1245,6 +1247,23 @@ message PresentationElementSourceBinding {
   // either absent or a fully recognized owned transform, so message presence
   // may safely change without flattening a complex native graph.
   bool direct_frame_presence_editable = 5;
+}
+
+// Bounded recursive p:grpSp projection. The outer frame maps the local child
+// coordinate rectangle through a:xfrm off/ext/chOff/chExt. Children retain
+// their ordinary element semantics and relationship-backed assets. Rotation,
+// flips, group-level effects, locks, extension records, unsupported children,
+// and topology changes remain source-bound opaque content.
+message PresentationGroup {
+  int64 left_emu = 1;
+  int64 top_emu = 2;
+  int64 width_emu = 3;
+  int64 height_emu = 4;
+  int64 child_left_emu = 5;
+  int64 child_top_emu = 6;
+  int64 child_width_emu = 7;
+  int64 child_height_emu = 8;
+  repeated PresentationElement children = 9;
 }
 
 message PresentationShape {
