@@ -114,10 +114,23 @@ export function buildDocument(spec = DEFAULT_BRIEF) {
     name: "brief-subtitle",
     styleId: "BriefSubtitle",
   });
-  document.addParagraph(`OWNER  ${spec.owner}    |    DATE  ${spec.date}`, {
+  const metadata = document.addParagraph("", {
     name: "brief-metadata",
     styleId: "BriefMeta",
+    runs: [
+      { text: "OWNER  " },
+      {
+        text: "{{OWNER}}",
+        contentControl: {
+          id: "brief-owner",
+          tag: "OWNER",
+          alias: "Brief owner",
+        },
+      },
+      { text: `    |    DATE  ${spec.date}` },
+    ],
   });
+  assert.equal(metadata.text.includes("{{OWNER}}"), true);
 
   const decisionHeading = document.addParagraph("Decision", { styleId: "BriefHeading1" });
   const decisionBookmark = document.addBookmark(decisionHeading, "DecisionSection");
@@ -228,6 +241,11 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
 
   const firstDocx = await DocumentFile.exportDocx(authored);
   const imported = await DocumentFile.importDocx(firstDocx);
+  assert.deepEqual(imported.fillContentControls({ OWNER: spec.owner }), {
+    updated: 1,
+    matchedTags: ["OWNER"],
+    missingTags: [],
+  });
   assert.equal(imported.bookmarks.length, 1);
   assert.equal(imported.bookmarks[0].name, "DecisionSection");
   assert.equal(
@@ -269,6 +287,9 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
   assert.equal(finalDocument.blocks.find((block) => block.kind === "table")?.getCell(1, 1).value, "Verified");
   assert.equal(finalDocument.comments[0]?.text, "Recommendation wording verified for the release record.");
   assert.equal(finalDocument.bookmarks[0]?.name, "DecisionSection");
+  assert.deepEqual(finalDocument.contentControls.map((control) => [control.tag, control.alias, control.text]), [
+    ["OWNER", "Brief owner", spec.owner],
+  ]);
   assert.equal(
     finalDocument.blocks.some((block) => block.kind === "hyperlink" && block.anchor === "DecisionSection"),
     true,
@@ -288,10 +309,10 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
   );
 
   const inspection = finalDocument.inspect({
-    kind: "document,paragraph,listItem,table,comment,bookmark,note,header,footer,hyperlink,change,layout",
+    kind: "document,paragraph,listItem,table,comment,bookmark,note,contentControl,header,footer,hyperlink,change,layout",
     maxChars: 24_000,
   });
-  for (const expected of [spec.title, "Verified", "Recommendation wording verified", "application-compatibility", "semantic re-import", "Evidence snapshot", "DecisionSection", "LAUNCH READINESS"]) {
+  for (const expected of [spec.title, "Verified", "Recommendation wording verified", "application-compatibility", "semantic re-import", "Evidence snapshot", "DecisionSection", "OWNER", "LAUNCH READINESS"]) {
     assert.match(inspection.ndjson, new RegExp(expected));
   }
 

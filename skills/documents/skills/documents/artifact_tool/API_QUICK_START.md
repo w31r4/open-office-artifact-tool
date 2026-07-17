@@ -88,6 +88,45 @@ const output = await DocumentFile.exportDocx(document);
 await output.save("output.docx");
 ```
 
+## Inline plain-text content controls
+
+Use a paragraph run-level content control when an Agent must fill a bounded
+plain-text template field by tag:
+
+```js
+const customer = document.addParagraph("Customer: ");
+customer.addTextContentControl("{{CUSTOMER_NAME}}", {
+  id: "customer-name",
+  tag: "CUSTOMER_NAME",
+  alias: "Customer name",
+  style: { bold: true },
+});
+
+const template = await DocumentFile.exportDocx(document);
+await template.save("template.docx");
+
+const importedTemplate = await DocumentFile.importDocx(template);
+const fill = importedTemplate.fillContentControls({
+  CUSTOMER_NAME: "Ada Lovelace",
+});
+if (fill.missingTags.length) throw new Error("Required template field missing");
+
+const filled = await DocumentFile.exportDocx(importedTemplate);
+await filled.save("filled.docx");
+```
+
+`document.contentControls` returns fresh handles with `id`, `targetId`,
+`runIndex`, `tag`, `alias`, read-only `nativeId`, and mutable `text`.
+`fillContentControls()` fills every duplicate tag and rejects all unknown tags
+before mutation unless `{ strict: false }` is explicit. Re-resolve controls
+after each independent import because model IDs are object-lifetime locators.
+
+OpenChestnut authors and imports only the bounded run-level plain-text profile.
+Rich, block, cell, nested, data-bound, dropdown, date, checkbox,
+placeholder-document, locked, or extension-bearing SDTs remain opaque and
+source-bound. Do not flatten them; follow `tasks/forms_content_controls.md` for
+explicit advanced routing and render-backed QA.
+
 Use real `addListItem` calls for lists and exact `widthDxa`, `indentDxa`, `columnWidthsDxa`, and `cellMarginsDxa` values for tables. Do not fake lists with text markers or use tables as prose layout containers.
 
 `document.addSection(...)` inserts a section break before the blocks that follow it. Use it only when the document actually changes section geometry or header/footer behavior; never append an otherwise unused section block at the end of a document.
@@ -150,8 +189,9 @@ For final visual QA, export the DOCX and use the packaged `render_docx.py` workf
 - PNG/JPEG inline images
 - Classic whole-paragraph comments
 - Standalone whole-paragraph tracked insertions/deletions with one text run, author, and optional ISO timestamp
+- Inline plain-text content-control runs with tag/alias identity, transactional fill-by-tag, and fixed-topology imported edits
 
-In-paragraph tracked replacements, mixed accepted/revision runs, nested revisions, moves, property changes, and automatic future-change tracking are advanced package workflows, not ordinary public-model authoring. Bookmarks spanning multiple blocks or table cells, nested/crossing ranges, multi-paragraph or reused note graphs, bibliography-backed citations, modern comment replies, content controls, complex fields, floating drawings, and other advanced graphs are likewise not source-free authoring features. Recognized imported whole-block bookmarks are inspectable/resolvable but fixed-topology and read-only. Canonical imported footnote/endnote text may change, but the target paragraph becomes source-bound and the note kind, anchor, native ID, and topology cannot move; other imported advanced graphs are preserved only while their source evidence remains valid.
+In-paragraph tracked replacements, mixed accepted/revision runs, nested revisions, moves, property changes, and automatic future-change tracking are advanced package workflows, not ordinary public-model authoring. Bookmarks spanning multiple blocks or table cells, nested/crossing ranges, multi-paragraph or reused note graphs, bibliography-backed citations, modern comment replies, rich/block/cell/data-bound/dropdown/date/checkbox content controls, complex fields, floating drawings, and other advanced graphs are likewise not source-free authoring features. Recognized imported whole-block bookmarks are inspectable/resolvable but fixed-topology and read-only. Canonical imported footnote/endnote text and bounded inline plain-text control text/tag/alias may change, but their anchors, native IDs, and topology remain source-bound; other imported advanced graphs are preserved only while their source evidence remains valid.
 
 Use `DocumentFile.inspectDocx` or `DocumentFile.patchDocx` only when the user explicitly requests package-level inspection or patching. These are deliberate low-level operations, never an automatic fallback for ordinary authoring.
 

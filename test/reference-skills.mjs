@@ -188,7 +188,7 @@ const previousPackageDir = process.env.OPEN_OFFICE_ARTIFACT_TOOL_PACKAGE_DIR;
 try {
   process.env.OPEN_OFFICE_ARTIFACT_TOOL_PACKAGE_DIR = repoRoot;
 
-  const { createDocument } = await import(
+  const { createDocument, DEFAULT_BRIEF } = await import(
     "../skills/documents/skills/documents/examples/openchestnut-end-to-end.mjs"
   );
   const docxPath = path.join(tempRoot, "openchestnut-decision-brief.docx");
@@ -200,6 +200,9 @@ try {
   assert.equal(documentRoundTrip.blocks.filter((block) => block.kind === "listItem").length, 3);
   assert.equal(documentRoundTrip.comments[0]?.text, "Recommendation wording verified for the release record.");
   assert.equal(documentRoundTrip.bookmarks[0]?.name, "DecisionSection");
+  assert.deepEqual(documentRoundTrip.contentControls.map((control) => [control.tag, control.alias, control.text]), [
+    ["OWNER", "Brief owner", DEFAULT_BRIEF.owner],
+  ]);
   assert.deepEqual(documentRoundTrip.notes.map((note) => [note.kind, note.text]), [
     ["footnote", "The final gate includes native rendering, package validation, and semantic re-import."],
     ["endnote", "Evidence snapshot dated 2026-07-17; retained with the release record."],
@@ -225,6 +228,9 @@ try {
   assert.match(documentXml, /<w:hyperlink\b[^>]*w:anchor="DecisionSection"/);
   assert.match(documentXml, /<w:footnoteReference\b[^>]*w:id="1"/);
   assert.match(documentXml, /<w:endnoteReference\b[^>]*w:id="1"/);
+  assert.match(documentXml, /<w:sdt>/);
+  assert.match(documentXml, /<w:tag w:val="OWNER"\s*\/>/);
+  assert.match(documentXml, /<w:t>Artifact Platform<\/w:t>/);
   const footnotesXml = await documentPackage.file("word/footnotes.xml").async("text");
   const endnotesXml = await documentPackage.file("word/endnotes.xml").async("text");
   for (const id of ["-1", "0", "1"]) assert.match(footnotesXml, new RegExp(`<w:footnote\\b[^>]*w:id="${id}"`));
