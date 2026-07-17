@@ -5,6 +5,8 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { PdfArtifact, PdfFile } from "../src/index.mjs";
+
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const skillRoot = path.join(repoRoot, "skills", "pdf", "skills", "pdf");
 const scriptsRoot = path.join(skillRoot, "scripts");
@@ -70,6 +72,7 @@ const requiredFiles = [
   "tasks/accessibility.md",
   "tasks/render_review.md",
   "tasks/provider_setup.md",
+  "scripts/mupdf.mjs",
   "scripts/pdf_provider.py",
   "scripts/reportlab_create.py",
   "scripts/pdfplumber_extract.py",
@@ -89,6 +92,8 @@ const requiredFiles = [
 for (const file of requiredFiles) assert.ok(manifest.includes(file), `PDF manifest is missing ${file}`);
 
 const skillText = await fs.readFile(path.join(skillRoot, "SKILL.md"), "utf8");
+assert.match(skillText, /scripts\/mupdf\.mjs/);
+assert.match(skillText, /MuPDF\.js/);
 for (const pattern of [
   /ReportLab/,
   /pdfplumber/,
@@ -110,6 +115,10 @@ for (const pattern of [
 const pythonScripts = (await fs.readdir(scriptsRoot))
   .filter((file) => file.endsWith(".py"))
   .map((file) => path.join(scriptsRoot, file));
+const mupdfCliText = await fs.readFile(path.join(scriptsRoot, "mupdf.mjs"), "utf8");
+assert.match(mupdfCliText, /open-office-artifact-tool\/pdf\/mupdf/);
+assert.match(mupdfCliText, /PdfFile\.editPdf/);
+assert.doesNotMatch(mupdfCliText, /postinstall/);
 const compile = run(python, [
   "-c",
   "import pathlib,sys; [compile(pathlib.Path(p).read_text('utf-8'), p, 'exec') for p in sys.argv[1:]]",
@@ -137,6 +146,33 @@ assert.equal(fitUnit.stderr, "");
 
 const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-pdf-provider-skill-"));
 try {
+  const mupdfCli = path.join(scriptsRoot, "mupdf.mjs");
+  const mupdfInput = path.join(tempRoot, "mupdf-input.pdf");
+  const mupdfRender = path.join(tempRoot, "mupdf-render.png");
+  const mupdfOperations = path.join(tempRoot, "mupdf-operations.json");
+  const mupdfOutput = path.join(tempRoot, "mupdf-output.pdf");
+  const mupdfFixture = await PdfFile.exportPdf(PdfArtifact.create({ text: "MuPDF Skill CLI fixture" }));
+  await fs.writeFile(mupdfInput, mupdfFixture.bytes);
+  const mupdfProbe = parseResult(run(process.execPath, [mupdfCli, "probe"], { status: 0 }));
+  assert.deepEqual({ provider: mupdfProbe.provider, version: mupdfProbe.version, license: mupdfProbe.license }, { provider: "mupdf", version: "1.28.0", license: "AGPL-3.0-or-later" });
+  const mupdfInspection = parseResult(run(process.execPath, [mupdfCli, "inspect", mupdfInput], { status: 0 }));
+  assert.equal(mupdfInspection.summary.nativeProvider, "mupdf");
+  assert.equal(mupdfInspection.summary.pages, 1);
+  const mupdfRendered = parseResult(run(process.execPath, [mupdfCli, "render", mupdfInput, mupdfRender, "--page", "1", "--dpi", "72"], { status: 0 }));
+  assert.equal(mupdfRendered.provider, "mupdf");
+  assert.deepEqual([...new Uint8Array(await fs.readFile(mupdfRender)).subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  const mupdfNestedRender = path.join(tempRoot, "nested", "qa", "mupdf-render.png");
+  run(process.execPath, [mupdfCli, "render", mupdfInput, mupdfNestedRender, "--page", "1", "--dpi", "72"], { status: 0 });
+  assert.deepEqual([...new Uint8Array(await fs.readFile(mupdfNestedRender)).subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  await fs.writeFile(mupdfOperations, JSON.stringify({ operations: [{ type: "add_text_annotation", page: 1, bbox: [40, 40, 24, 24], text: "CLI review" }], savePolicy: "incremental" }), "utf8");
+  const mupdfEdited = parseResult(run(process.execPath, [mupdfCli, "edit", mupdfInput, mupdfOperations, mupdfOutput], { status: 0 }));
+  assert.equal(mupdfEdited.savePolicy, "incremental");
+  assert.equal((await PdfFile.inspectPdf(await fs.readFile(mupdfOutput))).records.find((record) => record.kind === "mupdfPage").annotations, 1);
+  const mupdfInputAlias = path.join(tempRoot, "mupdf-input-alias.pdf");
+  await fs.symlink(mupdfInput, mupdfInputAlias);
+  const sourceOverwrite = run(process.execPath, [mupdfCli, "edit", mupdfInputAlias, mupdfOperations, mupdfInput], { status: 2 });
+  assert.match(sourceOverwrite.stderr, /Refusing to overwrite the source PDF.*symlink alias/);
+
   const dummyInput = path.join(tempRoot, "input.pdf");
   const dummyOutput = path.join(tempRoot, "output.pdf");
   await fs.writeFile(dummyInput, "%PDF-1.4\n%%EOF\n", "ascii");

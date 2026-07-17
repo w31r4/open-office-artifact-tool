@@ -55,7 +55,7 @@ for (const pluginName of pluginNames) {
   const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8"));
   assert.equal(manifest.name, pluginName);
   assert.equal(manifest.version, "0.2.0");
-  assert.equal(manifest.license, "MIT");
+  assert.equal(manifest.license, "AGPL-3.0-or-later");
   assert.equal(manifest.skills, "./skills/");
   assert.match(manifest.repository, /open-office-artifact-tool/);
   assert.ok(await exists(path.join(pluginRoot, "README.md")));
@@ -130,6 +130,7 @@ for (const relativePath of [
   "references/SECURITY_CHECKLIST.md",
   "references/PRODUCT_BOUNDARIES.md",
   "scripts/pdf_provider.py",
+  "scripts/mupdf.mjs",
   "scripts/reportlab_create.py",
   "scripts/pdfplumber_extract.py",
   "scripts/pypdf_edit.py",

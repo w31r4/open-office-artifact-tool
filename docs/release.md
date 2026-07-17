@@ -5,7 +5,8 @@
 0.2.0 is a breaking convergence release:
 
 - OpenChestnut is the only DOCX/XLSX/PPTX codec.
-- PDF remains an independent fourth provider-routed pipeline and never enters OpenChestnut.
+- PDF remains an independent fourth pipeline and never enters OpenChestnut. Required `mupdf@1.28.0` is the runtime-lazy default for arbitrary-file parse, native inspect/render, and bounded direct-original edits; specialist Python/system providers remain explicit task routes.
+- The project is licensed under GNU AGPL-3.0-or-later. Normal npm installation resolves MuPDF.js as a direct dependency; there is no PDF postinstall hook or standalone dependency downloader.
 - Wire protocol is version 2.
 - `allow_lossy` is removed and reserved in the proto.
 - `OFFICE_CODEC_IDS`, `office-codec-policy.mjs`, and the `codecs/openxml-wasm` export are removed.
@@ -19,7 +20,7 @@ There is no compatibility window or fallback mode.
 
 The repository is the authoritative source distribution. It contains OpenChestnut C# source, locked dependencies, protocol definitions, build scripts, tests, Skills, and reproducibility gates.
 
-The npm tarball is the consumer distribution. It contains the JavaScript object models, OpenChestnut adapter, generated wire binding, public proto, bundled runtime, integrity manifest, SBOM, license notices, render/QA helpers, PDF pipeline, and four native plugin bundles containing five Skills. It excludes C# source, test sources, build output, repository-only build scripts, and the development-only `test/skill-harness` fixtures.
+The npm tarball is the consumer distribution. It contains the JavaScript object models, OpenChestnut adapter, generated wire binding, public proto, bundled runtime, integrity manifest, SBOM, license notices, render/QA helpers, PDF pipeline, and four native plugin bundles containing five Skills. It excludes C# source, test sources, build output, repository-only build scripts, and the development-only `test/skill-harness` fixtures. MuPDF.js is declared in the required npm dependency graph rather than copied into this project's own tarball, and its WASM runtime is initialized only by a PDF operation.
 
 Installed consumers do not need `dotnet` on `PATH`.
 
@@ -46,7 +47,7 @@ The release candidate is acceptable only when all of the following are true:
 - default facade create/import/edit/re-export roundtrips pass for all three Office formats;
 - legacy options, old subpath, missing runtime, and opaque-without-source cases fail explicitly;
 - all four native plugin manifests validate, the published five-Skill topology is complete, and every workflow promoted to compatible in `docs/reference-skills.md` passes from the public package surface;
-- PDF greenfield create/import/inspect/verify/render plus provider registry/save-policy/fail-closed contract tests pass independently;
+- PDF greenfield authoring plus default MuPDF.js import/inspect/render/bounded-edit, lazy-load, pre-WASM budget, exact-prefix incremental-save, signature/redaction/deletion fail-closed, Skill CLI source-protection, and specialist-provider contract tests pass independently;
 - when explicitly configured, the real optional-provider test covers ReportLab creation, pdfplumber extraction, type-aware pypdf text/radio/checkbox forms and annotations, typed pypdf merge/reorder/selective watermarking, PyMuPDF rewrite/incremental/page/text/image/form/annotation edits, real redaction/scrub/residue scans, capped numerical text-fit behavior, canonical audit byte binding, and typed Poppler source/output comparison;
 - Open XML SDK validation passes for generated Office fixtures;
 - configured LibreOffice/Poppler/Playwright/native render gates pass where available;
@@ -63,6 +64,12 @@ LibreOffice, Poppler, Playwright, and the Windows Office bridge are validation/r
 The Office bridge does not participate in normal import/export and must never be used to hide a codec failure.
 
 ## Current local evidence
+
+### AGPL and default MuPDF.js vertical slice
+
+On 2026-07-17, the focused PDF vertical slice passed `node test/pdf.mjs`, `node test/pdf-provider-skill.mjs`, `node test/reference-skills.mjs`, `node test/release-check.mjs`, and the package-contents gate. The checks cover root-import laziness, first-use MuPDF initialization, arbitrary-PDF import/inspect, native PNG/JPEG render, bounded direct-original editing, input/render/image/object limits, exact-prefix incremental saves, rewrite redaction, signed/redaction/deletion incremental fail-closed behavior, real link and raster extraction, CLI atomic output, nested output creation, and direct/symlink source-overwrite rejection.
+
+This focused record intentionally does not assign the combined worktree's final package file count, tarball size, complete Office/PPTX gate, or hosted CI result to the MuPDF-only change. Those integration measurements belong to the subsequent combined release-evidence update.
 
 On 2026-07-17, the native reference-plugin/OpenChestnut compatibility worktree passed the complete local gate on macOS arm64 with Node 26.5.0, npm 11.17.0, and .NET SDK 8.0.128:
 

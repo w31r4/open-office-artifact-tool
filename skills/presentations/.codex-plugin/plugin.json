@@ -1,7 +1,7 @@
 {
   "name": "presentations",
   "version": "0.2.0",
-  "description": "Create, edit, render, verify, and export presentation slide decks. Use when Codex needs to build or modify a deck, slidedeck, presentation deck, slide deck, slides, PowerPoint, Google Slides, PPT, PPTX, .ppt, or .pptx file.",
+  "description": "Create, edit, render, verify, and export presentation slide decks for agent workflows, including PowerPoint, Google Slides, PPT, PPTX, .ppt, and .pptx files.",
   "author": {
     "name": "w31r4",
     "email": "w31r4@users.noreply.github.com",
@@ -9,7 +9,7 @@
   },
   "homepage": "https://github.com/w31r4/open-office-artifact-tool",
   "repository": "https://github.com/w31r4/open-office-artifact-tool",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "keywords": [
     "slides",
     "slide",

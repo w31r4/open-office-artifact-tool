@@ -3,6 +3,7 @@
     "0BSD",
     "ISC",
     "MIT",
+    "AGPL-3.0-or-later",
     "(MIT AND Zlib)",
     "(MIT OR GPL-3.0-or-later)",
     "Apache-2.0",
@@ -14,6 +15,7 @@
   "declaredPackages": {
     "@bufbuild/protobuf": "(Apache-2.0 AND BSD-3-Clause)",
     "jszip": "(MIT OR GPL-3.0-or-later)",
+    "mupdf": "AGPL-3.0-or-later",
     "pdfjs-dist": "Apache-2.0",
     "playwright": "Apache-2.0",
     "sharp": "Apache-2.0",

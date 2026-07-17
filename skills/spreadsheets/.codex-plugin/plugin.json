@@ -1,7 +1,7 @@
 {
   "name": "spreadsheets",
   "version": "0.2.0",
-  "description": "Create, edit, analyze, visualize, render, and export spreadsheets, Microsoft Excel or Google Sheets-ready workbooks in Codex.",
+  "description": "Create, edit, analyze, visualize, render, and export spreadsheets, Microsoft Excel or Google Sheets-ready workbooks for agent workflows.",
   "author": {
     "name": "w31r4",
     "email": "w31r4@users.noreply.github.com",
@@ -9,7 +9,7 @@
   },
   "homepage": "https://github.com/w31r4/open-office-artifact-tool",
   "repository": "https://github.com/w31r4/open-office-artifact-tool",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "keywords": [
     "sheet",
     "sheets",

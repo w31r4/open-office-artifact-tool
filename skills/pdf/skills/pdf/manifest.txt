@@ -24,6 +24,7 @@ examples/pymupdf-edit-operations.json
 examples/pymupdf-redaction-operations.json
 examples/merge-stamp-manifest.json
 scripts/pdf_provider.py
+scripts/mupdf.mjs
 scripts/reportlab_create.py
 scripts/pdfplumber_extract.py
 scripts/pypdf_edit.py

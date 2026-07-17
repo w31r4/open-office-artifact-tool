@@ -1,6 +1,6 @@
 # Forms and annotations
 
-Use pypdf for basic AcroForm and annotation operations, or PyMuPDF when widget/appearance/page integration requires its advanced provider. Always open the original PDF directly.
+Use MuPDF.js for bounded text/choice/checkbox form values and text annotations. Use pypdf when radio export values, appearance-state validation, flattening, or more complex AcroForm handling is required. Always open the original PDF directly.
 
 ## Inspect first
 
@@ -10,6 +10,17 @@ python3 scripts/pypdf_edit.py inspect input.pdf \
 ```
 
 Check field hierarchy, widget pages, current values, annotations, encryption, signatures, and DocMDP before mutation.
+
+For a supported MuPDF.js field or text note:
+
+```bash
+node scripts/mupdf.mjs probe
+node scripts/mupdf.mjs inspect input.pdf
+node scripts/mupdf.mjs edit input.pdf tmp/pdfs/form-operations.json tmp/pdfs/filled.pdf \
+  --save-policy rewrite
+```
+
+Radio buttons fail closed in this path because the API does not expose a trustworthy widget-to-export-value mapping. Signed-PDF incremental edits are also rejected.
 
 Before a pypdf mutation, probe and bind the exact route. Change `--task` to `annotate` for notes:
 
@@ -42,7 +53,7 @@ python3 scripts/pypdf_edit.py add-note input.pdf tmp/pdfs/annotated.pdf \
   --text 'Review this assumption.'
 ```
 
-For PyMuPDF, use `add_text_annotation` or `fill_form` operations with `scripts/pymupdf_edit.py`.
+The optional PyMuPDF specialist script also exposes `add_text_annotation` and `fill_form`, but it is selected explicitly rather than used as a fallback.
 
 ## Signed forms
 

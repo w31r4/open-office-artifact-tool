@@ -18,9 +18,11 @@ flowchart LR
 
   P["Greenfield PDF artifact model"] --> Q["Independent PDF writer / QA"]
   Q --> R["PDF bytes"]
-  S["Imported PDF original bytes"] --> T["Explicit PDF provider route"]
-  T --> U["pypdf / PyMuPDF / pyHanko / qpdf / veraPDF"]
+  S["Imported PDF original bytes"] --> T["Runtime-lazy MuPDF.js"]
+  T --> U["Native inspect / render / bounded edit"]
+  S -. "specialist route" .-> X["pypdf / PyMuPDF / pyHanko / qpdf / veraPDF"]
   U --> V["Transactional PDF output"]
+  X --> V
   V --> W["Poppler / residue / conformance QA"]
 
   I["Explicit OOXML inspect/patch"] -. "manual only" .-> E
@@ -59,13 +61,13 @@ The implementation uses the Open XML SDK because its strongly typed package and 
 
 PDF never enters the Office codec request, has no Office protobuf payload, and does not load the C# runtime. The project does not create `OpenChestnut.Pdf` or maintain a general C# PDF parser/writer.
 
-The JavaScript `PdfArtifact`/`PdfFile` domain owns greenfield semantic/tagged authoring, trusted-model roundtrip, reading order, accessibility metadata, inspect/verify, and modeled render QA. PDF.js creates a reconstructed read/inspect view for arbitrary PDFs; that reconstruction is not an edit representation.
+The JavaScript `PdfArtifact`/`PdfFile` domain owns greenfield semantic/tagged authoring, trusted-model roundtrip, reading order, accessibility metadata, inspect/verify, and modeled render QA. The required `mupdf@1.28.0` dependency is loaded only when a PDF operation needs it; arbitrary PDFs use MuPDF.js by default for native parsing, structured-text/image/link evidence, inspection, raster rendering, and bounded direct-original edits. PDF.js remains an optional reconstructed read/inspect adapter, never an edit representation.
 
-The native PDF Skill owns a separate capability router. Imported original bytes go directly to an explicitly selected provider. Shipped thin adapters cover ReportLab creation, pdfplumber extraction, pypdf basics, and the project-approved optional PyMuPDF path for bounded page/content/image/form/annotation edits and sanitize. Poppler is the final native renderer. qpdf, pyHanko, and veraPDF are documented/probed external tools; pikepdf and OCRmyPDF are planned without shipped adapters.
+The native PDF Skill calls the same `PdfFile` MuPDF.js primitives through a thin JavaScript CLI. Supported operations include read/inspect, PNG/JPEG render, annotations, bounded text/choice/checkbox form values, page delete/reorder, metadata, embedded-file/link deletion, and rewrite redaction. Python adapters remain for capabilities without a trustworthy JavaScript equivalent: strict scrub/residue/OCR, typed pypdf attachment/forms/merge/stamp workflows, and complex table extraction. Poppler remains independent final render QA. qpdf, pyHanko, and veraPDF are documented/probed specialist tools; pikepdf and OCRmyPDF are planned without shipped adapters.
 
 The router has no silent fallback. Mutation records source hashes and uses a distinct transactional output plus one explicit strategy: `rewrite`, byte-prefix-preserving `incremental`, or destructive `sanitize`. Signature/DocMDP evidence is checked first. High-trust redaction applies real redactions, scrubs, fully rewrites, scans raw/decoded/metadata/attachment/annotation/OCR residue and old revisions, then requires Poppler review.
 
-The npm package remains MIT and does not bundle PyMuPDF/MuPDF. Provider use requires separate installation and explicit GNU AGPL or commercial-license acknowledgement.
+The project and official MuPDF.js dependency are GNU AGPL-3.0-or-later. Normal npm installation resolves MuPDF.js as a required direct dependency; it remains in its own dependency tarball and is not copied into this project's `.tgz`. No lifecycle hook or standalone dependency installer is used.
 
 ## Facade contract
 

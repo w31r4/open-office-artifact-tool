@@ -46,6 +46,21 @@ const gitStatus = run("git", ["status", "--short", "--untracked-files=normal"]);
 checks.push(summarizeCheck("git status clean", { ...gitStatus, ok: gitStatus.ok && (allowDirty || !gitStatus.stdout), stdout: gitStatus.stdout || "clean" }, !allowDirty));
 if (gitStatus.stdout && !allowDirty) blockers.push("Working tree is not clean.");
 
+const projectLicensePath = path.join(repoRoot, "LICENSE");
+const projectLicenseText = fs.existsSync(projectLicensePath) ? fs.readFileSync(projectLicensePath, "utf8") : "";
+const projectLicenseOk = pkg.license === "AGPL-3.0-or-later"
+  && lock.packages?.[""]?.license === pkg.license
+  && pkg.files?.includes("LICENSE")
+  && /GNU AFFERO GENERAL PUBLIC LICENSE/.test(projectLicenseText)
+  && /Version 3, 19 November 2007/.test(projectLicenseText);
+checks.push(summarizeCheck("project license", {
+  ok: projectLicenseOk,
+  stdout: projectLicenseOk ? pkg.license : "project license audit failed",
+  stderr: projectLicenseOk ? "" : "package, lockfile, shipped LICENSE, and canonical GNU AGPL v3 text must agree",
+  command: "audit project license metadata + LICENSE",
+}));
+if (!projectLicenseOk) blockers.push("Project license metadata or GNU AGPL v3 text is incomplete.");
+
 checks.push(summarizeCheck("package metadata", {
   ok: Boolean(pkg.name && pkg.version && pkg.type === "module" && pkg.exports?.["."] && pkg.files?.includes("src/**")),
   stdout: `${pkg.name}@${pkg.version}`,

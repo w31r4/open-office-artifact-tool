@@ -1,7 +1,7 @@
 {
   "name": "documents",
   "version": "0.2.0",
-  "description": "Create and edit document artifacts in Codex, including Word files and Google Docs.",
+  "description": "Create and edit document artifacts for agent workflows, including Word files and Google Docs.",
   "author": {
     "name": "w31r4",
     "email": "w31r4@users.noreply.github.com",
@@ -9,7 +9,7 @@
   },
   "homepage": "https://github.com/w31r4/open-office-artifact-tool",
   "repository": "https://github.com/w31r4/open-office-artifact-tool",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "keywords": [
     "doc",
     "docs",

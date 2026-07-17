@@ -8,7 +8,8 @@ Read-only review never needs model re-export.
 - `pdftoppm`: final visual truth for every page.
 - pdfplumber: text, words with geometry, tables, lines, and rectangles.
 - pypdf: metadata, fields, annotations, outlines, attachments, encryption, and object-level quick checks.
-- PyMuPDF: advanced page/object/font/image/annotation/widget inspection.
+- MuPDF.js through `scripts/mupdf.mjs inspect`: default native page/object/text/image/link/annotation/widget evidence.
+- PyMuPDF: optional specialist inspection when its separate workflow is selected.
 - qpdf: xref/object-stream structure, warnings, JSON/QDF inspection, and repair diagnosis.
 - pyHanko: signature and trust validation.
 - veraPDF: PDF/A or PDF/UA machine-verifiable rules.
@@ -23,7 +24,7 @@ python3 scripts/pdfplumber_extract.py input.pdf \
 
 Extraction is not layout fidelity. Compare extracted text/table candidates against rendered pages, especially multi-column layouts, rotated text, merged cells, OCR layers, and scanned pages.
 
-`PdfFile.importPdf(..., { parser: createPdfjsParser(), preferParser: true })` is useful for agent-facing inspect/QA of an arbitrary PDF, but the result is a reconstructed model. Never export that model as an edit to the original file.
+`PdfFile.importPdf(...)` uses MuPDF.js by default for agent-facing extraction/QA of an arbitrary PDF; the result remains a reconstructed view. Never export that model as an edit to the original file. Use `PdfFile.editPdf(...)` or `scripts/mupdf.mjs edit` on the original bytes for supported mutations. PDF.js is an optional explicitly injected independent parser.
 
 ## Attachment quarantine
 

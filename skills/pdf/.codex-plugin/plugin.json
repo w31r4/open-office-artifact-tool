@@ -9,7 +9,7 @@
   },
   "homepage": "https://github.com/w31r4/open-office-artifact-tool",
   "repository": "https://github.com/w31r4/open-office-artifact-tool",
-  "license": "MIT",
+  "license": "AGPL-3.0-or-later",
   "keywords": [
     "pdf",
     "pdfs",

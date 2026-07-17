@@ -18,6 +18,36 @@ import { analyzePdfReadingOrder, inspectPdfReadingOrderIds, normalizePdfReadingO
 import { normalizePdfTableGrid, pdfTableCellBBox, serializePdfTableCells } from "./table-grid.mjs";
 
 const PDF_MIME = "application/pdf";
+const DEFAULT_PDF_MAX_BYTES = 256 * 1024 * 1024;
+
+function pdfInputMaxBytes(options = {}) {
+  const maxBytes = Number(options.limits?.maxBytes ?? options.maxBytes ?? DEFAULT_PDF_MAX_BYTES);
+  if (!Number.isFinite(maxBytes) || maxBytes <= 0) throw new Error("PDF maxBytes must be a positive finite number.");
+  return maxBytes;
+}
+
+function assertPdfInputBudget(bytes, options = {}) {
+  const maxBytes = pdfInputMaxBytes(options);
+  if (bytes.byteLength > maxBytes) throw new Error(`PDF exceeds maxBytes (${bytes.byteLength} > ${maxBytes}).`);
+}
+
+async function readPdfInputBytes(input, options = {}) {
+  const maxBytes = pdfInputMaxBytes(options);
+  if (typeof input === "string") {
+    const stat = await fs.stat(input);
+    if (stat.size > maxBytes) throw new Error(`PDF exceeds maxBytes (${stat.size} > ${maxBytes}).`);
+    return new Uint8Array(await fs.readFile(input));
+  }
+  if (input instanceof FileBlob || (input && typeof input.arrayBuffer === "function")) {
+    if (Number.isFinite(input.size) && input.size > maxBytes) throw new Error(`PDF exceeds maxBytes (${input.size} > ${maxBytes}).`);
+    const bytes = new Uint8Array(await input.arrayBuffer());
+    assertPdfInputBudget(bytes, options);
+    return bytes;
+  }
+  const bytes = toUint8Array(input);
+  assertPdfInputBudget(bytes, options);
+  return bytes;
+}
 
 class PdfTableCell {
   constructor(table, row, column) {
@@ -113,12 +143,15 @@ class PdfImage {
     this.fillColor = config.fillColor;
     this.pixelWidth = config.pixelWidth;
     this.pixelHeight = config.pixelHeight;
+    this.transform = Array.isArray(config.transform) ? config.transform.map(Number) : undefined;
+    this.hasSoftMask = Boolean(config.hasSoftMask);
+    this.colorSpace = config.colorSpace;
     this.sourceObject = config.sourceObject;
     this.sourceOperator = config.sourceOperator;
   }
 
-  inspectRecord(pageIndex) { return { kind: "image", id: this.id, page: pageIndex + 1, name: this.name || undefined, alt: this.alt, decorative: this.decorative, uri: this.uri, prompt: this.prompt, bbox: this.bbox, fit: this.fit, hasDataUrl: Boolean(this.dataUrl), isMask: this.isMask || undefined, fillColor: this.fillColor, pixelWidth: this.pixelWidth, pixelHeight: this.pixelHeight, sourceObject: this.sourceObject, sourceOperator: this.sourceOperator }; }
-  toJSON() { return { id: this.id, name: this.name, dataUrl: this.dataUrl, uri: this.uri, prompt: this.prompt, alt: this.alt, decorative: this.decorative, bbox: this.bbox, fit: this.fit, isMask: this.isMask || undefined, fillColor: this.fillColor, pixelWidth: this.pixelWidth, pixelHeight: this.pixelHeight, sourceObject: this.sourceObject, sourceOperator: this.sourceOperator }; }
+  inspectRecord(pageIndex) { return { kind: "image", id: this.id, page: pageIndex + 1, name: this.name || undefined, alt: this.alt, decorative: this.decorative, uri: this.uri, prompt: this.prompt, bbox: this.bbox, fit: this.fit, hasDataUrl: Boolean(this.dataUrl), isMask: this.isMask || undefined, hasSoftMask: this.hasSoftMask || undefined, colorSpace: this.colorSpace, fillColor: this.fillColor, pixelWidth: this.pixelWidth, pixelHeight: this.pixelHeight, transform: this.transform, sourceObject: this.sourceObject, sourceOperator: this.sourceOperator }; }
+  toJSON() { return { id: this.id, name: this.name, dataUrl: this.dataUrl, uri: this.uri, prompt: this.prompt, alt: this.alt, decorative: this.decorative, bbox: this.bbox, fit: this.fit, isMask: this.isMask || undefined, hasSoftMask: this.hasSoftMask || undefined, colorSpace: this.colorSpace, fillColor: this.fillColor, pixelWidth: this.pixelWidth, pixelHeight: this.pixelHeight, transform: this.transform, sourceObject: this.sourceObject, sourceOperator: this.sourceOperator }; }
 }
 
 class PdfChart {
@@ -551,7 +584,9 @@ export class PdfArtifact {
 
 export class PdfFile {
   static async inspectPdf(blobOrBuffer, options = {}) {
-    const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
+    const bytes = await readPdfInputBytes(blobOrBuffer, options);
+    const { inspectPdfWithMuPdf } = await import("./mupdf.mjs");
+    const native = await inspectPdfWithMuPdf(bytes, options);
     const text = decoder.decode(bytes);
     const version = /^%PDF-(\d+\.\d+)/.exec(text)?.[1];
     const pages = [...text.matchAll(/\/Type\s*\/Page\b/g)].length;
@@ -566,6 +601,18 @@ export class PdfFile {
       { kind: "pdfFile", bytes: bytes.byteLength, version, pages, objects, hasEmbeddedModel: /%OPEN_OFFICE_ARTIFACT [A-Za-z0-9+/=]+/.test(text), hasEof: /%%EOF\s*$/.test(text), tagged: /\/StructTreeRoot\s+\d+\s+0\s+R/.test(text) && /\/MarkInfo\s*<<[^>]*\/Marked\s+true/.test(text), language: /\/Lang\s*\(([^)]*)\)/.exec(text)?.[1], embeddedFonts: [...text.matchAll(/\/Subtype\s*\/Type0\b/g)].length, subsetFonts: new Set([...text.matchAll(/\/BaseFont\s*\/([A-Z]{6}\+[A-Za-z0-9_-]+)/g)].map((match) => match[1])).size, toUnicodeMaps: [...text.matchAll(/\/ToUnicode\s+\d+\s+0\s+R/g)].length, structureElements: [...text.matchAll(/\/Type\s*\/StructElem\b/g)].length, structureRoles, headings: Object.values(headingLevels).reduce((sum, count) => sum + count, 0), headingLevels, readingOrderIds, readingOrderItems: readingOrderIds.length, ...figureAccessibility, ...linkAccessibility, tableStructures: structureRoles.Table || 0, tableRows: structureRoles.TR || 0, tableHeaders: structureRoles.TH || 0, tableDataCells: structureRoles.TD || 0, tableCellIds: [...text.matchAll(/\/S\s*\/(?:TH|TD)\b[\s\S]*?\/ID\s*(?:\([^)]*\)|<[A-Fa-f0-9]+>)/g)].length, rowSpans: [...text.matchAll(/\/RowSpan\s+[2-9]\d*/g)].length, columnSpans: [...text.matchAll(/\/ColSpan\s+[2-9]\d*/g)].length, headerAssociations: [...text.matchAll(/\/Headers\s*\[[^\]]+\]/g)].length, markedContentItems: [...text.matchAll(/\/MCID\s+\d+/g)].length },
       ...[...text.matchAll(/(\d+)\s+0\s+obj\s*<<([\s\S]*?)>>/g)].slice(0, Math.max(0, Number(options.maxObjects ?? 200) || 0)).map((match) => ({ kind: "pdfObject", object: Number(match[1]), type: /\/Type\s*\/([A-Za-z0-9]+)/.exec(match[2])?.[1], subtype: /\/Subtype\s*\/([A-Za-z0-9]+)/.exec(match[2])?.[1], stream: /\bstream\b/.test(match[0]) })),
     ];
+    records[0] = {
+      ...records[0],
+      pages: native.summary.pages,
+      nativeProvider: native.summary.provider,
+      nativeProviderVersion: native.summary.providerVersion,
+      nativeObjects: native.summary.objects,
+      repaired: native.summary.repaired,
+      versions: native.summary.versions,
+      canSaveIncrementally: native.summary.canSaveIncrementally,
+      embeddedFiles: native.summary.embeddedFiles,
+    };
+    records.push(...native.records.slice(1));
     return { records, summary: records[0], ...ndjson(records, options.maxChars ?? Infinity) };
   }
 
@@ -578,7 +625,7 @@ export class PdfFile {
   }
 
   static async importPdf(blobOrBuffer, options = {}) {
-    const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
+    const bytes = await readPdfInputBytes(blobOrBuffer, options);
     const text = decoder.decode(bytes);
     const metadata = /%OPEN_OFFICE_ARTIFACT ([A-Za-z0-9+/=]+)/.exec(text)?.[1];
     if (metadata && options.preferParser !== true) return PdfArtifact.create(JSON.parse(Buffer.from(metadata, "base64").toString("utf8")));
@@ -587,11 +634,21 @@ export class PdfFile {
       const parsed = await parser({ input: new FileBlob(bytes, { type: options.inputType || blobOrBuffer?.type || PDF_MIME }), bytes, inputType: options.inputType || blobOrBuffer?.type || PDF_MIME, artifactKind: "pdf", options });
       return pdfArtifactFromParserOutput(parsed, { parser: options.parserName || parsed?.parser || parsed?.metadata?.parser || "custom" });
     }
-    const strings = [...text.matchAll(/\(([^()]*)\)\s*Tj/g)].map((m) => m[1].replaceAll("\\)", ")").replaceAll("\\(", "("));
-    const plain = strings.join("\n");
-    const tableRows = strings.filter((line) => line.includes("|")).map((line) => line.split("|").map((cell) => cell.trim()));
-    const images = strings.filter((line) => /^\[Image: .+\]$/.test(line)).map((line, index) => ({ name: `extracted-image-${index + 1}`, alt: line.replace(/^\[Image: |\]$/g, ""), bbox: [72, 280 + index * 140, 180, 120] }));
-    return PdfArtifact.create({ metadata: { parser: "heuristic" }, pages: [{ text: plain, tables: tableRows.length ? [{ name: "extracted-table", values: tableRows }] : [], images }] });
+    const { parsePdfWithMuPdf } = await import("./mupdf.mjs");
+    const parsed = await parsePdfWithMuPdf({ input: new FileBlob(bytes, { type: options.inputType || blobOrBuffer?.type || PDF_MIME }), bytes, options });
+    return pdfArtifactFromParserOutput(parsed, { parser: "mupdf", provider: "mupdf" });
+  }
+
+  static async renderPdf(blobOrBuffer, options = {}) {
+    const bytes = await readPdfInputBytes(blobOrBuffer, options);
+    const { renderPdfWithMuPdf } = await import("./mupdf.mjs");
+    return renderPdfWithMuPdf(bytes, options);
+  }
+
+  static async editPdf(blobOrBuffer, options = {}) {
+    const bytes = await readPdfInputBytes(blobOrBuffer, options);
+    const { editPdfWithMuPdf } = await import("./mupdf.mjs");
+    return editPdfWithMuPdf(bytes, options);
   }
 }
 
@@ -676,8 +733,9 @@ function pdfArtifactFromParserOutput(parsed, metadata = {}) {
     textItems: page.textItems || page.items || [],
     regions: page.regions || [],
     tables: ((page.tables || []).length ? (page.tables || []) : reconstructPdfTablesFromTextGeometry(page, index)).map((table, tableIndex) => ({ id: table.id, name: table.name || `parsed-table-${index + 1}-${tableIndex + 1}`, values: table.values || table.rows || [], cells: table.cells || table.cellConfigs, bbox: table.bbox || table.bounds || [72, 140 + tableIndex * 120, 468, 96], source: table.source })),
-    images: (page.images || []).map((image, imageIndex) => ({ name: image.name || `parsed-image-${index + 1}-${imageIndex + 1}`, alt: image.alt || image.altText || image.name || "Parsed raster content", decorative: image.decorative, dataUrl: pdfImageDataUrl(image), uri: image.uri, prompt: image.prompt, bbox: image.bbox || image.bounds || [72, 280 + imageIndex * 140, 180, 120], isMask: image.isMask, fillColor: image.fillColor, pixelWidth: image.pixelWidth, pixelHeight: image.pixelHeight, sourceObject: image.sourceObject, sourceOperator: image.sourceOperator })),
+    images: (page.images || []).map((image, imageIndex) => ({ name: image.name || `parsed-image-${index + 1}-${imageIndex + 1}`, alt: image.alt || image.altText || image.name || "Parsed raster content", decorative: image.decorative, dataUrl: pdfImageDataUrl(image), uri: image.uri, prompt: image.prompt, bbox: image.bbox || image.bounds || [72, 280 + imageIndex * 140, 180, 120], isMask: image.isMask, hasSoftMask: image.hasSoftMask, colorSpace: image.colorSpace, fillColor: image.fillColor, pixelWidth: image.pixelWidth, pixelHeight: image.pixelHeight, transform: image.transform, sourceObject: image.sourceObject, sourceOperator: image.sourceOperator })),
     charts: (page.charts || []).map((chart, chartIndex) => ({ name: chart.name || `parsed-chart-${index + 1}-${chartIndex + 1}`, title: chart.title || chart.name || `Parsed chart ${chartIndex + 1}`, alt: chart.alt || chart.altText || chart.title || chart.name || `Parsed chart ${chartIndex + 1}`, decorative: chart.decorative, chartType: chart.chartType || chart.type || "bar", categories: chart.categories || chart.labels || [], series: chart.series || [{ name: chart.seriesName || "Series 1", values: chart.values || chart.data || [] }], bbox: chart.bbox || chart.bounds || [72, 430 + chartIndex * 180, 468, 160] })),
+    links: (page.links || []).map((link, linkIndex) => ({ id: link.id || `parsed-link-${index + 1}-${linkIndex + 1}`, text: link.text || link.label || link.url || link.uri || "Imported link", url: link.url || link.uri || link.href, bbox: link.bbox || link.bounds || [72, 700 + linkIndex * 20, 240, 16] })),
   }));
   return PdfArtifact.create({ metadata: { ...metadata, ...(source.metadata || parsed?.metadata || {}) }, pages: pages.length ? pages : [{ text: "" }] });
 }

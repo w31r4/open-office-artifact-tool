@@ -4,6 +4,15 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
+const packageMetadata = JSON.parse(await fs.readFile(path.join(repoRoot, "package.json"), "utf8"));
+assert.equal(packageMetadata.license, "AGPL-3.0-or-later");
+assert.equal(packageMetadata.dependencies.mupdf, "1.28.0");
+assert.equal(packageMetadata.exports["./pdf/mupdf"], "./src/pdf/mupdf.mjs");
+assert.equal(packageMetadata.bin, undefined, "MuPDF must not require an installer command");
+assert.equal(packageMetadata.scripts.postinstall, undefined, "MuPDF must not require npm lifecycle hooks");
+const pdfFacadeSource = await fs.readFile(path.join(repoRoot, "src", "pdf", "index.mjs"), "utf8");
+assert.match(pdfFacadeSource, /await import\("\.\/mupdf\.mjs"\)/, "MuPDF must load only when a PDF operation needs it");
+assert.doesNotMatch(pdfFacadeSource, /from\s+["']mupdf["']/, "the root PDF facade must not initialize MuPDF eagerly");
 const skillsNpmIgnore = await fs.readFile(path.join(repoRoot, "skills", ".npmignore"), "utf8");
 assert.match(skillsNpmIgnore, /__pycache__/);
 assert.match(skillsNpmIgnore, /\*\.pyc/);
@@ -15,9 +24,10 @@ assert.equal(result.status, 0, `npm pack manifest failed\nSTDOUT:\n${result.stdo
 const report = JSON.parse(result.stdout)[0];
 const files = report.files.map((item) => item.path);
 const maxPackedBytes = 9_500_000;
-const maxUnpackedBytes = 22_750_000;
+const maxUnpackedBytes = 22_850_000;
 
 for (const required of [
+  "LICENSE",
   "README.md",
   "README.en.md",
   "THIRD_PARTY_NOTICES.md",
@@ -52,6 +62,7 @@ for (const required of [
   "src/pdf/reading-order.mjs",
   "src/pdf/accessibility.mjs",
   "src/pdf/index.mjs",
+  "src/pdf/mupdf.mjs",
   "src/help/index.mjs",
   "src/index.mjs",
   "src/ooxml/docx-source-references.mjs",
@@ -141,6 +152,7 @@ for (const required of [
   "skills/pdf/skills/pdf/references/AUDIT_SCHEMA.md",
   "skills/pdf/skills/pdf/references/pdf-audit-v1.schema.json",
   "skills/pdf/skills/pdf/scripts/pdf_provider.py",
+  "skills/pdf/skills/pdf/scripts/mupdf.mjs",
   "skills/pdf/skills/pdf/scripts/reportlab_create.py",
   "skills/pdf/skills/pdf/scripts/pdfplumber_extract.py",
   "skills/pdf/skills/pdf/scripts/pypdf_edit.py",

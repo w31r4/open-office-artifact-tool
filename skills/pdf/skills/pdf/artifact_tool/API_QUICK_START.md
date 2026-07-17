@@ -6,7 +6,7 @@ For an executable six-page accessible report with H1-H3, a Figure alt descriptio
 
 ## Startup
 
-Resolve Node.js and the package directory through the Codex workspace dependency loader. Work in a writable task directory, link that loader-provided package directory into the task workspace when necessary, and use ES modules.
+Use a supported Node.js runtime and resolve the installed package through standard Node.js module resolution. Work in a writable task directory and use ES modules.
 
 ```js
 import {
@@ -111,25 +111,23 @@ await edited.save("readiness-report-final.pdf");
 
 Model IDs are locators for the current object graph, not durable identities across unrelated imports. Locate targets again by bounded text, kind, name, page, or table position after importing a different file.
 
-## Arbitrary PDF extraction with PDF.js
+## Arbitrary PDF extraction and native operations
 
-For PDFs not created by this package, inject the optional public PDF.js parser explicitly:
+For PDFs not created by this package, MuPDF.js is the default runtime-lazy parser:
 
 ```js
-import { createPdfjsParser } from "open-office-artifact-tool/pdf/pdfjs";
-
 const input = await FileBlob.load("third-party.pdf");
-const parsed = await PdfFile.importPdf(input, {
-  parser: createPdfjsParser(),
-  preferParser: true,
-  parserName: "pdfjs",
-});
+const parsed = await PdfFile.importPdf(input);
 
 console.log(parsed.extractText());
 console.log(parsed.extractTables());
+
+const inspection = await PdfFile.inspectPdf(input);
+const page = await PdfFile.renderPdf(input, { page: 1, dpi: 144 });
+await page.save("third-party-page-1.png");
 ```
 
-Parser-backed import reconstructs a modeled view for extraction, inspect, and QA. It is not a native PDF object-stream editor and must not be exported as an edit to the arbitrary source file. Table reconstruction is heuristic and requires text/geometry/render review. Route mutations directly from original bytes to the explicitly selected pypdf or PyMuPDF provider; route signatures to pyHanko.
+Parser-backed import reconstructs a modeled view for extraction, inspect, and QA. It is not the edit representation and must not be exported as a faithful edit. Table reconstruction is heuristic. Direct-original mutations use `PdfFile.editPdf(input, { operations, savePolicy })`; signatures still route to pyHanko, and strict sanitize/OCR or complex forms/merge route to the documented specialist tools. Inject `createPdfjsParser()` only when an independent PDF.js read adapter is specifically required.
 
 ## Render and visual QA
 
@@ -155,4 +153,4 @@ for (let pageIndex = 0; pageIndex < pdf.pages.length; pageIndex += 1) {
 
 `PdfFile.inspectPdf(...)` verifies byte-level evidence such as PDF version, page/object counts, EOF, tagged structure, reading-order IDs, headings, Figure alternative text, Table/TR/TH/TD roles, spans, and font evidence. It complements semantic `pdf.verify()` and visual page review; none of the three replaces the others.
 
-Use `pdftoppm`/`pdfinfo` as explicit native render and file QA tools. The surrounding PDF Skill defines the ReportLab, pdfplumber, pypdf, PyMuPDF, qpdf, pyHanko, veraPDF, and OCR routing contract for capabilities outside this greenfield model API.
+Use `pdftoppm`/`pdfinfo` as independent native render and file QA tools. The surrounding PDF Skill defines the MuPDF.js, ReportLab, pdfplumber, pypdf, PyMuPDF, qpdf, pyHanko, veraPDF, and OCR routing contract.

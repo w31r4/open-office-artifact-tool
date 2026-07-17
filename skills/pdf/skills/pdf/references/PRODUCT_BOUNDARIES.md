@@ -6,7 +6,7 @@ These are format and trust boundaries, not a backlog disguised as unsupported co
 
 OpenChestnut and its protobuf/WASM protocol remain limited to DOCX, XLSX, and PPTX. PDF uses an independent provider-routing layer. This project does not maintain a general-purpose C# PDF parser/writer, `OpenChestnut.Pdf`, or a second universal PDF object model.
 
-The project-owned layer is deliberately narrow: provider registry, capability probes, raw-source provenance, transactional output, save policy, signature-policy checks, residue scans, audit records, and semantic/structural/visual/security regression fixtures.
+The project-owned layer exposes agent-usable primitives: greenfield authoring, runtime-lazy MuPDF.js parsing/inspection/rendering/bounded edits, raw-source provenance, transactional output, save-policy and signature fail-closed rules, plus shared semantic/structural/visual/security QA. Specialist tools remain explicit routes rather than a second universal PDF model.
 
 ## Reflow and text replacement
 
@@ -24,8 +24,8 @@ Dynamic XFA, complex Acrobat JavaScript, 3D annotations, and RichMedia require a
 
 ## Signed documents
 
-An incremental update can retain byte-identical data covered by an earlier signature and can be validated as a later revision. It cannot make the earlier signer endorse arbitrary new edits. ByteRange, DocMDP, FieldMDP, field locks, and the exact modification class must be checked before and after. Broad edits should produce a new unsigned version and then be signed again.
+An incremental update can retain byte-identical data covered by an earlier signature. It cannot make the earlier signer endorse arbitrary new edits. The MuPDF.js primitive does not validate cryptographic trust, DocMDP, FieldMDP, or field locks, so it rejects signed-PDF incremental editing. A deliberate rewrite requires explicit signature invalidation; specialist validation and re-signing happen outside this primitive.
 
 ## License boundary
 
-The npm package and its JavaScript/C# implementation remain MIT licensed. PyMuPDF is an optional, separately installed GNU AGPL or commercial provider. The user has approved the AGPL route for this project, but installation, deployment, and redistribution still have to comply with the selected license. Provider absence or missing license acknowledgement is an explicit capability error, never a reason to fall back to lossy model reconstruction.
+The project and required `mupdf` npm dependency are GNU AGPL-3.0-or-later. Normal npm installation resolves MuPDF.js; its WASM runtime is lazy and no lifecycle installer is used. Optional Python and system providers are installed separately under their own terms. Missing capability or provider evidence is an explicit error, never a reason to fall back to lossy model reconstruction.

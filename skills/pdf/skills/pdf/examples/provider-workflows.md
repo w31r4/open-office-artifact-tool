@@ -2,6 +2,20 @@
 
 Run these from the PDF Skill directory. Always substitute task-local source/output paths and inspect the operation JSON before execution.
 
+## Default MuPDF.js inspect, render, and bounded edit
+
+The normal npm installation includes required `mupdf@1.28.0`; the root facade loads its WASM runtime only when the first MuPDF-backed PDF operation runs. Explicit provider probing imports the MuPDF subpath intentionally. Use the thin Skill CLI for the default arbitrary-file path:
+
+```bash
+node scripts/mupdf.mjs probe
+node scripts/mupdf.mjs inspect input.pdf
+node scripts/mupdf.mjs render input.pdf tmp/pdfs/page-1.png --page 1 --dpi 144
+node scripts/mupdf.mjs edit input.pdf tmp/pdfs/edit-operations.json tmp/pdfs/edited.pdf \
+  --save-policy rewrite
+```
+
+The CLI rejects direct or symlink-alias source overwrite and writes output atomically. `incremental` is limited to unsigned, non-destructive operations and must preserve the exact source byte prefix. A MuPDF.js rewrite redaction is real page-content redaction, but it is not the strict metadata/attachment/hidden-layer/OCR sanitization workflow below.
+
 ## pypdf attachment quarantine
 
 ```bash
@@ -48,7 +62,9 @@ python3 scripts/pdfplumber_extract.py tmp/pdfs/release-evidence.pdf \
 pdftoppm -png -r 144 tmp/pdfs/release-evidence.pdf tmp/pdfs/release-evidence-page
 ```
 
-## PyMuPDF imported-PDF edit
+## PyMuPDF specialist positioned-text and image edit
+
+Select this optional specialist route only when the requested operation, such as `insert_textbox`, `insert_image`, or `replace_image`, is outside the default MuPDF.js primitive set.
 
 ```bash
 PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"

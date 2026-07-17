@@ -4,7 +4,25 @@ Do not route an existing PDF through `PdfArtifact` for mutation. Pass the origin
 
 ## Mandatory preflight
 
-Run the exact adapter probe and route plan before any mutation. Do not defer either command until audit generation.
+The default MuPDF.js path probes and inspects before mutation:
+
+```bash
+node scripts/mupdf.mjs probe
+node scripts/mupdf.mjs inspect input.pdf
+```
+
+Its typed operations are `add_text_annotation`, text/choice/checkbox `fill_form`, `delete_page`, complete `rearrange_pages`, `set_metadata`, `delete_embedded_file`, `delete_link`, `redact_text`, and `redact_rect`. Run with one explicit save policy:
+
+```bash
+node scripts/mupdf.mjs edit input.pdf tmp/pdfs/edit-operations.json tmp/pdfs/edited.pdf \
+  --save-policy rewrite
+```
+
+The CLI refuses source overwrite, writes atomically, and rejects incremental redaction/deletion and signed-PDF incremental edits. Unsupported operations do not route elsewhere.
+
+## Optional PyMuPDF specialist path
+
+For a capability outside the JavaScript contract, run the exact specialist adapter probe and route plan before any mutation. Do not defer either command until audit generation.
 
 ```bash
 PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
@@ -21,7 +39,7 @@ PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
 
 For `replace_text` with the required `sanitize` policy, plan `--task redact --strategy sanitize --invalidate-signatures` instead. The adapter probe proves that `replace_text` is in the installed operation surface; the plan binds provider, save policy, source, destination, license, availability, and signature-invalidating acknowledgement. If either fails, stop before `pymupdf_edit.py edit`.
 
-## PyMuPDF operations
+## Specialist operations
 
 Prepare an operation list:
 

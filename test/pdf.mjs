@@ -1,15 +1,31 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { inflateSync } from "node:zlib";
 import sharp from "sharp";
 import { createPdfjsParser } from "open-office-artifact-tool/pdf/pdfjs";
+import { MUPDF_VERSION, createMuPdfParser, parsePdfWithMuPdf, renderPdfWithMuPdf } from "open-office-artifact-tool/pdf/mupdf";
 import { FileBlob, PdfArtifact, PdfFile, renderArtifact } from "../src/index.mjs";
 import { PdfArtifact as PdfArtifactModule, PdfFile as PdfFileModule } from "../src/pdf/index.mjs";
 
 assert.equal(PdfArtifact, PdfArtifactModule, "the root package must re-export the PDF domain class without wrapping it");
 assert.equal(PdfFile, PdfFileModule, "the root package must re-export the PDF file facade without wrapping it");
+
+const lazyMuPdfProbe = spawnSync(process.execPath, ["--input-type=module", "-e", [
+  "const loaded=()=>Object.keys(globalThis).some((key)=>key.startsWith('$libmupdf'));",
+  "const api=await import('./src/index.mjs');",
+  "if(loaded()) throw new Error('root import initialized MuPDF');",
+  "for(const method of ['renderPdf','editPdf']){try{await api.PdfFile[method](new Uint8Array(4),{limits:{maxBytes:3}})}catch(error){if(!/exceeds maxBytes/.test(error.message)) throw error}}",
+  "if(loaded()) throw new Error('budget rejection initialized MuPDF');",
+  "const file=await api.PdfFile.exportPdf(api.PdfArtifact.create({text:'lazy MuPDF probe'}));",
+  "await api.PdfFile.inspectPdf(file);",
+  "if(!loaded()) throw new Error('first PDF operation did not initialize MuPDF');",
+].join("\n")], { cwd: path.resolve(import.meta.dirname, ".."), encoding: "utf8" });
+assert.equal(lazyMuPdfProbe.status, 0, `MuPDF lazy-load probe failed\n${lazyMuPdfProbe.stdout}\n${lazyMuPdfProbe.stderr}`);
+await assert.rejects(PdfFile.inspectPdf(new Uint8Array(4), { limits: { maxBytes: 3 } }), /exceeds maxBytes/);
+await assert.rejects(PdfFile.importPdf(new Uint8Array(4), { limits: { maxBytes: 3 } }), /exceeds maxBytes/);
 
 const pdf = PdfArtifact.create({
   pages: [
@@ -193,6 +209,53 @@ assert.equal(blob.type, "application/pdf");
 assert.equal(blob.metadata.tagged, true);
 assert.equal(blob.metadata.language, "en-US");
 assert.equal(blob.metadata.title, "PDF research artifact");
+
+// Arbitrary imported PDFs use the required MuPDF.js dependency by default,
+// while the package root keeps loading it lazily until a PDF operation asks.
+const ownedPdfText = Buffer.from(blob.bytes).toString("latin1");
+const arbitraryPdfBytes = Buffer.from(ownedPdfText.replace(/%OPEN_OFFICE_ARTIFACT [A-Za-z0-9+/=]+/, (match) => `%${"X".repeat(match.length - 1)}`), "latin1");
+const arbitraryPdf = new FileBlob(arbitraryPdfBytes, { type: "application/pdf" });
+const mupdfParsed = await PdfFile.importPdf(arbitraryPdf);
+assert.equal(mupdfParsed.metadata.parser, "mupdf");
+assert.equal(mupdfParsed.metadata.provider, "mupdf");
+assert.equal(mupdfParsed.metadata.providerVersion, MUPDF_VERSION);
+assert.equal(mupdfParsed.pages.length, 2);
+assert.match(mupdfParsed.extractText(), /PDF research artifact/);
+assert.ok(mupdfParsed.pages[0].textItems.some((item) => item.text.includes("PDF research artifact")));
+assert.ok(mupdfParsed.pages[0].images.some((item) => item.dataUrl?.startsWith("data:image\/png;base64,")));
+assert.equal(mupdfParsed.pages[0].images[0].transform.length, 6);
+assert.equal((await parsePdfWithMuPdf({ bytes: arbitraryPdf.bytes, options: { includeImages: false } })).pages[0].images.length, 0);
+await assert.rejects(parsePdfWithMuPdf(arbitraryPdf.bytes, { limits: { maxPages: Number.NaN } }), /limit maxPages must be a positive finite number/);
+const mupdfInspect = await PdfFile.inspectPdf(arbitraryPdf, { maxChars: 20_000 });
+assert.equal(mupdfInspect.summary.nativeProvider, "mupdf");
+assert.equal(mupdfInspect.summary.nativeProviderVersion, MUPDF_VERSION);
+assert.equal(mupdfInspect.summary.pages, 2);
+assert.equal(mupdfInspect.records.filter((record) => record.kind === "mupdfPage").length, 2);
+const mupdfPng = await PdfFile.renderPdf(arbitraryPdf, { page: 1, dpi: 72 });
+assert.equal(mupdfPng.type, "image/png");
+assert.deepEqual([...mupdfPng.bytes.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+assert.equal(mupdfPng.metadata.provider, "mupdf");
+await assert.rejects(renderPdfWithMuPdf(arbitraryPdf.bytes, { dpi: 72, limits: { maxRenderPixels: 1 } }), /exceeds maxRenderPixels/);
+const mupdfIncremental = await PdfFile.editPdf(arbitraryPdf, {
+  savePolicy: "incremental",
+  operations: [{ type: "add_text_annotation", page: 1, bbox: [40, 40, 24, 24], text: "Agent review" }],
+});
+assert.equal(mupdfIncremental.metadata.savePolicy, "incremental");
+assert.equal(Buffer.from(mupdfIncremental.bytes.subarray(0, arbitraryPdf.bytes.length)).equals(Buffer.from(arbitraryPdf.bytes)), true);
+assert.equal((await PdfFile.inspectPdf(mupdfIncremental)).records.find((record) => record.kind === "mupdfPage" && record.page === 1).annotations, 1);
+const mupdfRedacted = await PdfFile.editPdf(arbitraryPdf, {
+  savePolicy: "rewrite",
+  operations: [{ type: "redact_text", page: 2, term: "Second page notes" }],
+});
+assert.doesNotMatch((await PdfFile.importPdf(mupdfRedacted)).extractText(), /Second page notes/);
+assert.doesNotMatch(Buffer.from(mupdfRedacted.bytes).toString("latin1"), /Second page notes/);
+await assert.rejects(PdfFile.editPdf(arbitraryPdf, { savePolicy: "incremental", operations: [{ type: "redact_text", page: 2, term: "Second page notes" }] }), /redaction cannot save incrementally.*prior revisions/is);
+await assert.rejects(PdfFile.editPdf(arbitraryPdf, { savePolicy: "incremental", operations: [{ type: "delete_page", page: 2 }] }), /destructive operation delete_page cannot save incrementally.*prior revisions/is);
+await assert.rejects(PdfFile.editPdf(arbitraryPdf, { operations: [{ type: "replace_text", page: 1, term: "PDF", replacement: "Document" }] }), /Unsupported MuPDF edit operation/);
+const signatureLiteralPdf = await PdfFile.exportPdf(PdfArtifact.create({ text: "Literal /ByteRange [ text is not a signature" }));
+const signatureLiteralEdited = await PdfFile.editPdf(signatureLiteralPdf, { operations: [{ type: "add_text_annotation", page: 1, text: "Not signed" }] });
+assert.equal(signatureLiteralEdited.metadata.signedInput, false);
+assert.equal(typeof createMuPdfParser(), "function");
 const fileInspect = await PdfFile.inspectPdf(blob, { maxChars: 12000 });
 assert.equal(fileInspect.summary.version, "1.7");
 assert.equal(fileInspect.summary.pages, 2);
@@ -322,6 +385,10 @@ assert.match(accessibleLinkText, /\/StructParent \d+/);
 assert.match(accessibleLinkText, /\/S \/Link/);
 assert.match(accessibleLinkText, /\/Type \/OBJR/);
 assert.equal((await PdfFile.importPdf(accessibleLinkBlob)).pages[0].links[0].url, "https://www.w3.org/WAI/");
+const arbitraryLinkBytes = Buffer.from(Buffer.from(accessibleLinkBlob.bytes).toString("latin1").replace(/%OPEN_OFFICE_ARTIFACT [A-Za-z0-9+/=]+/, (match) => `%${"X".repeat(match.length - 1)}`), "latin1");
+const mupdfLinkParsed = await PdfFile.importPdf(new FileBlob(arbitraryLinkBytes, { type: "application/pdf" }));
+assert.equal(mupdfLinkParsed.metadata.parser, "mupdf");
+assert.equal(mupdfLinkParsed.pages[0].links[0].url, "https://www.w3.org/WAI/");
 
 const invalidLinkPdf = PdfArtifact.create({ pages: [{ text: "Unsafe link" }] });
 invalidLinkPdf.addLink({ text: "click here", url: "javascript:alert(1)" });
@@ -549,7 +616,7 @@ assert.match(parsed.resolve(parsedPage.images[0].id).dataUrl, /^data:image\/png;
 assert.equal(parsed.resolve(parsedPage.images[0].id).prompt, undefined);
 const parsedImageLayout = parsed.layoutJson({ target: parsedPage.images[0].id });
 assert.equal(parsedImageLayout.pages[0].images[0].hasDataUrl, true);
-assert.match(parsed.help("PdfFile.importPdf").ndjson, /image bytes/);
+assert.match(parsed.help("PdfFile.importPdf").ndjson, /image bytes|raster placements/i);
 assert.match(parsed.help("pdf.resolve").ndjson, /stable PDF artifact IDs/);
 assert.equal(parsed.verify().ok, true);
 
@@ -578,7 +645,7 @@ assert.deepEqual(geometryTables[0].values, [["Metric", "Value"], ["Revenue", "12
 assert.equal(geometryTables[0].name, "geometry-table-1");
 const geometryInspect = geometryParsed.inspect({ kind: "table", maxChars: 8000 }).ndjson;
 assert.match(geometryInspect, /textGeometry/);
-assert.match(geometryParsed.help("PdfFile.importPdf").ndjson, /positioned text geometry/);
+assert.match(geometryParsed.help("PdfFile.importPdf").ndjson, /text geometry|page geometry.*positioned text/s);
 
 const badGeometryPdf = PdfArtifact.create({
   pages: [{

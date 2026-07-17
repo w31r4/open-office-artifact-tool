@@ -1,6 +1,6 @@
 # Third-party notices
 
-`open-office-artifact-tool` is an MIT-licensed implementation. It does not contain or redistribute the reference package's private runtime artifacts, compiled implementation modules, WebAssembly payloads, or native bindings. The npm package does include adapted MIT-licensed reference Skill workflow text, scripts, and assets under `skills/`; the Office codec itself is independently source-built as OpenChestnut.
+`open-office-artifact-tool` is licensed under GNU AGPL-3.0-or-later. It does not contain or redistribute the reference package's private runtime artifacts, compiled implementation modules, WebAssembly payloads, or native bindings. The npm package includes adapted reference Skill workflow text, scripts, and assets under `skills/`; their retained upstream MIT notices remain in force for the original material, while this project's modifications and combined distribution use the repository's AGPL license. The Office codec itself is independently source-built as OpenChestnut.
 
 The npm package declares or optionally integrates the following public libraries. Versions are pinned by `package-lock.json`; consult each installed package's `LICENSE` file for complete license text.
 
@@ -8,6 +8,7 @@ The npm package declares or optionally integrates the following public libraries
 | --- | --- | --- |
 | Buf Protobuf (`@bufbuild/protobuf`) | Public protobuf wire-schema runtime for JavaScript | Apache-2.0 AND BSD-3-Clause |
 | JSZip | OOXML ZIP package reading/writing | MIT option from `(MIT OR GPL-3.0-or-later)` |
+| MuPDF.js (`mupdf`) | Required, runtime-lazy arbitrary-PDF parsing, inspection, rendering, and bounded native editing | GNU AGPL-3.0-or-later |
 | PDF.js (`pdfjs-dist`) | Optional arbitrary-PDF parsing | Apache-2.0 |
 | Playwright | Optional deterministic browser rendering | Apache-2.0 |
 | sharp | Optional raster conversion and JPEG/WebP pixel decoding | Apache-2.0 |
@@ -15,7 +16,7 @@ The npm package declares or optionally integrates the following public libraries
 | Microsoft Open XML SDK (`DocumentFormat.OpenXml`) | OOXML package codec compiled from source into the bundled WebAssembly runtime | MIT |
 | Google Protobuf for .NET | Public protobuf wire-schema runtime compiled from source into the bundled WebAssembly runtime | BSD-3-Clause |
 | .NET 8 WebAssembly runtime | Bundled execution runtime for the OpenChestnut codec | MIT plus the upstream third-party notices shipped under `runtime/open-chestnut/` |
-| Reference file-type Skill bundles | Agent workflow text, helper scripts, and visual assets adapted for the public package | MIT, covered by the repository license and retained Documents Skill license copy |
+| Reference file-type Skill bundles | Agent workflow text, helper scripts, and visual assets adapted for the public package | Retained upstream MIT notices for original material; project modifications and combined distribution are AGPL-3.0-or-later |
 
 The PDF Skill also ships thin Python scripts that can call the following separately installed providers. These Python packages and binaries are not npm dependencies, are not copied into this repository, and are not included in the npm tarball:
 
@@ -24,9 +25,9 @@ The PDF Skill also ships thin Python scripts that can call the following separat
 | ReportLab | Greenfield layout-oriented PDF creation | BSD |
 | pdfplumber | Read-only text/geometry/table extraction | MIT |
 | pypdf | Basic PDF structure, AcroForm, annotation, rewrite, and incremental operations | BSD-3-Clause |
-| PyMuPDF / MuPDF | Advanced imported-PDF editing, redaction, scrub, and strict residue inspection | GNU AGPL-3.0 or an Artifex commercial license |
+| PyMuPDF | Optional specialist strict scrub, legacy high-level imported-PDF edits, and residue inspection not yet covered by the JavaScript path | GNU AGPL-3.0 or an Artifex commercial license |
 
-This project has explicitly approved the PyMuPDF GNU AGPL provider route for its own workflow. The npm package itself remains MIT licensed because it does not contain, link, install, or redistribute PyMuPDF/MuPDF; the Skill requires a separately selected Python environment and an explicit `agpl` or `commercial` acknowledgement before invoking that provider. Downstream installation, network deployment, modification, and redistribution must comply with the selected PyMuPDF/MuPDF license. This notice is not a substitute for the upstream license text or legal advice.
+The official `mupdf` npm package is a required direct dependency. A normal npm installation resolves it alongside this package, although its bytes remain in its own dependency tarball rather than being copied into this project's `.tgz`; the WASM runtime initializes lazily on the first PDF operation. There is no lifecycle hook or standalone downloader. Optional Python providers remain separately installed tools. Downstream installation, network deployment, modification, and redistribution must comply with the applicable GNU AGPL v3-or-later obligations. This notice is not a substitute for the upstream license text or legal advice.
 
 Buf CLI, `protoc-gen-es`, `Grpc.Tools`, and the .NET SDK/WebAssembly workload are build-only tools. Their generated protocol bindings or compiled outputs are shipped, but the tools themselves are not included in the npm tarball.
 

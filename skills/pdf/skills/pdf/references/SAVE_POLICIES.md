@@ -29,7 +29,8 @@ Consequences:
 
 - Old revisions remain in the file by design. Never use this mode for deletion, redaction, privacy scrubbing, or claims that prior content is gone.
 - A prior cryptographic signature may remain mathematically verifiable while the new revision is still forbidden by DocMDP or the signer's modification policy. Validate before and after with pyHanko and review the policy.
-- `pypdf` and PyMuPDF can write incrementally, but provider support does not itself authorize the change.
+- The default MuPDF.js primitive permits byte-prefix-verified incremental save only for its bounded unsigned, non-destructive operations. It rejects redaction, delete operations, and every signed input in incremental mode; provider support never proves that a signature policy authorizes the change.
+- Optional specialist providers may expose other incremental workflows, but they must prove the identical source prefix and satisfy the same signature-policy gate independently.
 
 ## `sanitize`
 

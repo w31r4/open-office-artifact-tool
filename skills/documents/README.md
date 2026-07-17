@@ -2,7 +2,7 @@
 
 Documents is the file-type wrapper plugin for document artifact workflows.
 
-This installable Codex plugin is distributed with `open-office-artifact-tool`.
+This installable Skill bundle is distributed with `open-office-artifact-tool`.
 
 ## Included Skills
 

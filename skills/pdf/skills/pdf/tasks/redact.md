@@ -2,6 +2,8 @@
 
 High-trust redaction is a destructive security workflow, never a visual overlay.
 
+MuPDF.js can apply `redact_text` or `redact_rect` during a full rewrite and refuses incremental output. That is useful for bounded ordinary editing, but it is not a complete sanitize claim. The high-trust workflow below additionally scrubs active content and metadata, removes old revisions, scans decoded/raw/OCR residue, and renders independently.
+
 ## Requirements
 
 - Use PyMuPDF directly on the original PDF.

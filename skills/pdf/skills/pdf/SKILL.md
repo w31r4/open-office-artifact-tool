@@ -9,11 +9,22 @@ description: "Create, read, review, edit, sign, redact, render, and verify PDF f
 
 PDF is independent from the OpenChestnut DOCX/XLSX/PPTX codec. Do not create an OpenChestnut PDF codec, put PDF into the Office protobuf/WASM wire, or build another universal PDF parser/writer here.
 
-This Skill routes explicit operations to mature providers. The project-owned layer is deliberately thin: capability probes, raw-source provenance, transactional output, save policy, signature constraints, residue scanning, audit evidence, and semantic/structural/visual/security QA.
+This Skill exposes agent-usable PDF primitives. `PdfArtifact` owns greenfield semantic/tagged authoring. The required, runtime-lazy MuPDF.js dependency owns arbitrary-file parsing, native inspection, raster rendering, and bounded direct-original edits. Specialist providers remain explicit routes for strict sanitize/OCR, complex forms/merge, signatures, conformance, and independent QA.
 
 Never catch a provider failure and silently retry through another provider. There is no silent fallback. Never reconstruct an arbitrary PDF through PDF.js or `PdfArtifact`, export it, and describe the result as a fidelity-preserving edit.
 
-## Python Runtime Contract
+The default native CLI is `scripts/mupdf.mjs`. It calls `PdfFile` rather than copying PDF logic into the Skill:
+
+```bash
+node scripts/mupdf.mjs probe
+node scripts/mupdf.mjs inspect input.pdf
+node scripts/mupdf.mjs render input.pdf tmp/pdfs/page-1.png --page 1 --dpi 144
+node scripts/mupdf.mjs edit input.pdf tmp/pdfs/operations.json tmp/pdfs/edited.pdf --save-policy rewrite
+```
+
+The CLI budgets input/page/object/render work, refuses source overwrite including symlink aliases, writes output atomically, and never falls back. `PdfFile.importPdf` additionally enforces per-image and cumulative decoded/retained-image budgets.
+
+## Specialist Python Runtime Contract
 
 Treat `OPEN_OFFICE_PDF_PROVIDER_PYTHON` as part of provider identity. When it is non-empty, every shipped Python entry point automatically re-executes through that exact interpreter before probing or importing a provider. Do not unset it, replace it after a failed system-Python probe, or infer availability from `which python3`; use one interpreter for probe, plan, mutation, residue scan, and audit. An invalid configured path fails closed. Only when the variable is absent does the current interpreter remain authoritative.
 
@@ -32,14 +43,22 @@ Read the [provider matrix](references/PROVIDER_MATRIX.md), [save policies](refer
 | Greenfield visual/layout PDF | ReportLab |
 | Text, words, geometry, table candidates | pdfplumber |
 | Basic structure, path-safe attachment quarantine, forms, annotations, merge/split/stamp | pypdf |
-| Existing-PDF page/content/image edits, forms, annotations, redaction/scrub | PyMuPDF |
+| Default arbitrary-PDF read/inspect/render and bounded native edit | `PdfFile` + MuPDF.js through `scripts/mupdf.mjs` |
+| Strict scrub/residue/OCR and retained high-level edits not yet migrated | optional PyMuPDF specialist path |
 | Native page/file evidence and final raster QA | Poppler |
 | Structural diagnosis/recovery/rewrite | qpdf; pikepdf is planned but has no shipped adapter |
 | Signing, timestamps/LTV, DocMDP/FieldMDP, signature validation | pyHanko |
 | PDF/A or PDF/UA machine rules | veraPDF |
 | Scanned-PDF OCR | OCRmyPDF is planned; strict image residue OCR currently uses separately installed Tesseract through PyMuPDF |
 
-Probe and validate the route before work. Every mutation needs a provider-specific availability probe and `pdf_provider.py plan`; for a PyMuPDF mutation, both commands below are mandatory preflight and must finish before `pymupdf_edit.py edit`. Running either after mutation only for the audit does not satisfy this contract:
+Probe and validate the route before work. The default MuPDF.js path uses this mandatory preflight:
+
+```bash
+node scripts/mupdf.mjs probe
+node scripts/mupdf.mjs inspect input.pdf
+```
+
+For an optional Python specialist mutation, the provider-specific probe and `pdf_provider.py plan` remain mandatory and must finish before mutation:
 
 ```bash
 PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
@@ -107,7 +126,7 @@ python3 scripts/pdfplumber_extract.py input.pdf \
 pdftoppm -png -r 144 input.pdf tmp/pdfs/pages/page
 ```
 
-PDF.js through `createPdfjsParser()` is useful for agent-facing extraction, inspect, layout, and QA. Its result is a reconstructed view, not an editable native object graph. Extracted tables are heuristic candidates and must be checked against rendered geometry. See [read and review](tasks/read_review.md).
+MuPDF.js is the default arbitrary-file parser and native inspector. It returns structured text geometry, raster placements, links, annotations, and widgets without turning that reconstruction into an edit graph. PDF.js through `createPdfjsParser()` remains an optional independent read adapter. Extracted tables are heuristic candidates and must be checked against rendered geometry. See [read and review](tasks/read_review.md).
 
 For untrusted embedded files, use the typed read-only quarantine primitive. It inventories document-level and page-level attachments separately, keeps duplicate display names as distinct files, neutralizes path traversal and portable reserved names, enforces count/decoded-byte budgets, verifies every extracted SHA-256, and rechecks that the source PDF did not change. It never opens or executes a payload:
 
@@ -129,9 +148,18 @@ Bind the canonical audit `output` to `attachments.json`, set `savePolicy.strateg
 
 ## Edit An Existing PDF
 
-PyMuPDF is the explicit advanced provider selected for this project. It operates directly on the original bytes/file or a byte-identical transactional copy and supports bounded page operations, positioned text, image insertion/replacement, annotations, AcroForm values, real redactions, scrub, rewrite, and incremental save.
+MuPDF.js is the default native provider. It operates directly on original bytes and currently supports `add_text_annotation`, typed text/choice/checkbox `fill_form`, `delete_page`, complete `rearrange_pages`, `set_metadata`, `delete_embedded_file`, `delete_link`, `redact_text`, and `redact_rect`. Unsupported operations, untrusted radio export-value mapping, invalid limits, and unsafe save policies fail closed.
 
-Run the mandatory provider probe and route plan above before this mutation command. For `replace_text` under `sanitize`, use `--task redact --strategy sanitize --invalidate-signatures` in the plan.
+Use JSON operations with the thin CLI:
+
+```bash
+node scripts/mupdf.mjs edit input.pdf tmp/pdfs/edit-operations.json tmp/pdfs/edited.pdf \
+  --save-policy rewrite
+```
+
+`incremental` preserves the exact source-byte prefix but is forbidden for redaction, delete operations, and any signed input. A signed rewrite requires deliberate invalidation, and the API reports signature validity as unknown; use pyHanko for actual trust and policy validation.
+
+The optional PyMuPDF specialist script remains available for operations not yet migrated, including bounded positioned text/image workflows and the strict sanitize path. Run its provider probe and route plan above before use. For `replace_text` under `sanitize`, use `--task redact --strategy sanitize --invalidate-signatures` in the plan.
 
 ```bash
 "${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}" scripts/pymupdf_edit.py edit input.pdf tmp/pdfs/edited.pdf \
@@ -140,7 +168,7 @@ Run the mandatory provider probe and route plan above before this mutation comma
   --accept-license agpl
 ```
 
-The shipped operation contract includes `insert_textbox`, `insert_image`, `replace_image`, `add_text_annotation`, `fill_form`, `rotate_page`, `delete_page`, `redact_text`, `redact_rect`, `replace_text`, and `scrub`. Unsupported operations fail; there is no fallback.
+The specialist Python operation contract includes `insert_textbox`, `insert_image`, `replace_image`, `add_text_annotation`, `fill_form`, `rotate_page`, `delete_page`, `redact_text`, `redact_rect`, `replace_text`, and `scrub`. It is not a fallback from MuPDF.js; select it only when the task requires that explicit capability.
 
 General Word-style reflow is not available for an ordinary imported PDF. `replace_text` is a bounded redaction plus same-box overlay for one horizontal source span: it preserves the source baseline and default style, reports its measured fit evidence, and allows only a fixed sub-millipoint numerical tolerance. Cross-span, rotated, or genuinely overflowing replacements fail closed. Use a trusted source model or explicitly create a reconstructed new document when broad reflow is required. See [edit existing](tasks/edit_existing.md).
 
@@ -165,7 +193,7 @@ The sequence must include every source page exactly once. The typed Poppler comp
 
 ## Forms And Annotations
 
-Use pypdf for basic AcroForm/annotation operations and PyMuPDF for advanced widget/page integration:
+Use MuPDF.js for bounded text, choice, and checkbox values plus text annotations. Radio buttons currently fail closed because the JavaScript API does not expose a trustworthy widget-to-export-value mapping. Use the typed pypdf workflow for radio/checkbox appearance-state validation and more complex AcroForms:
 
 ```bash
 python3 scripts/pypdf_edit.py inspect input.pdf \
@@ -184,7 +212,7 @@ Validate before and after every later revision. Report separately: cryptographic
 
 ## Redact And Sanitize
 
-High-trust redaction always uses `sanitize`:
+MuPDF.js can apply a real text/rectangle redaction during a full rewrite, but that primitive does not claim complete metadata, attachment, hidden-layer, OCR, or revision sanitization. High-trust redaction always uses the explicit specialist `sanitize` workflow:
 
 ```bash
 "${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}" scripts/pymupdf_edit.py edit input.pdf tmp/pdfs/sanitized.pdf \
@@ -242,16 +270,9 @@ Dynamic XFA, complex Acrobat JavaScript, 3D annotations, and RichMedia need appl
 
 ## Dependencies And License Boundary
 
-The npm package remains MIT licensed and does not bundle Python providers. The selected PyMuPDF provider is separately installed under GNU AGPL or a commercial license. The user has approved the AGPL path for this project, but deployment and redistribution must still satisfy its terms.
+The project and required `mupdf@1.28.0` dependency are GNU AGPL-3.0-or-later. A normal npm installation resolves MuPDF.js; the root facade initializes its WASM runtime only on the first MuPDF-backed PDF operation, while an explicit `open-office-artifact-tool/pdf/mupdf` import intentionally initializes that provider. There is no PDF lifecycle hook, standalone downloader, or implicit Python installation.
 
-```bash
-uv pip install --python "$PYTHON" PyMuPDF==1.27.2.3
-export OPEN_OFFICE_PDF_PROVIDER_PYTHON="$PYTHON"
-export OPEN_OFFICE_PDF_PYMUPDF_LICENSE=AGPL
-"$PYTHON" scripts/pdf_provider.py check --provider pymupdf --require
-```
-
-See [provider setup](tasks/provider_setup.md). Do not add MuPDF.NET alongside PyMuPDF; both wrap the same MuPDF engine. A future .NET-only provider such as iText would be a separate evaluated integration, not the default architecture.
+Optional Python and system providers are installed separately only for a selected specialist workflow and keep their own upstream terms. See [provider setup](tasks/provider_setup.md). Do not install the unrelated Python `fitz` package. A future .NET-only provider would be a separately evaluated integration, not the default architecture.
 
 ## Temp And Output Conventions
 

@@ -14,6 +14,7 @@ const report = JSON.parse(result.stdout);
 assert.equal(report.package.name, "open-office-artifact-tool");
 assert.equal(report.publishReady, true);
 assert.ok(report.checks.some((check) => check.name === "package metadata" && check.ok));
+assert.ok(report.checks.some((check) => check.name === "project license" && check.ok));
 assert.ok(report.checks.some((check) => check.name === "third-party license policy" && check.ok));
 assert.ok(report.checks.some((check) => check.name === "npm auth" && check.skipped));
 assert.match(report.nextPublishCommand, /npm publish/);
