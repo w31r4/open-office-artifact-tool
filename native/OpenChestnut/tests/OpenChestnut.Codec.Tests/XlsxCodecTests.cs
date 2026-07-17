@@ -2755,12 +2755,12 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
-    public void ImportRejectsDataTableFormulaAndFormulaEditRejectsUnmodeledAttributes()
+    public void MalformedDataTableFormulaAndFormulaEditRejectUnmodeledAttributes()
     {
         var first = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(FormulaExportRequest().ToByteArray()));
         var dataTable = Import(SetFormulaType(first.File.ToByteArray(), "C1", CellFormulaValues.DataTable));
         Assert.False(dataTable.Ok);
-        Assert.Equal("unsupported_cell_formula", Assert.Single(dataTable.Diagnostics).Code);
+        Assert.Equal("invalid_cell_formula", Assert.Single(dataTable.Diagnostics).Code);
 
         var nestedArrayFormula = Import(AddFormulaCell(first.File.ToByteArray(), "E2", "1+1"));
         Assert.False(nestedArrayFormula.Ok);
@@ -2780,6 +2780,76 @@ public sealed class XlsxCodecTests
         }.ToByteArray()));
         Assert.False(rejected.Ok);
         Assert.Equal("unsupported_cell_formula_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void ProtocolAuthorsImportsAndSourcePreservesWhatIfDataTables()
+    {
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(DataTableExportRequest().ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(authored.File.ToByteArray());
+        var formulaXml = ReadFormulaXml(authored.File.ToByteArray());
+        Assert.Contains("t=\"dataTable\"", formulaXml["B2"], StringComparison.Ordinal);
+        Assert.Contains("ref=\"B2:B3\"", formulaXml["B2"], StringComparison.Ordinal);
+        Assert.Contains("dt2D=\"0\"", formulaXml["B2"], StringComparison.Ordinal);
+        Assert.Contains("dtr=\"1\"", formulaXml["B2"], StringComparison.Ordinal);
+        Assert.Contains("r1=\"D1\"", formulaXml["B2"], StringComparison.Ordinal);
+        Assert.Contains("r2=\"D1\"", formulaXml["F2"], StringComparison.Ordinal);
+        Assert.Contains("dt2D=\"1\"", formulaXml["J2"], StringComparison.Ordinal);
+        Assert.Contains("r1=\"M1\"", formulaXml["J2"], StringComparison.Ordinal);
+        Assert.Contains("r2=\"M2\"", formulaXml["J2"], StringComparison.Ordinal);
+        Assert.DoesNotContain("dtr=", formulaXml["J2"], StringComparison.Ordinal);
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var cells = imported.Artifact.Workbook.Worksheets[0].Cells.ToDictionary(cell => $"{cell.Row}:{cell.Column}");
+        var rowTable = cells["1:1"].FormulaMetadata;
+        Assert.Equal(CellFormulaKind.DataTable, rowTable.Kind);
+        Assert.Equal("B2:B3", rowTable.Reference);
+        Assert.Equal("D1", rowTable.RowInput);
+        Assert.True(rowTable.RowOriented);
+        Assert.False(rowTable.TwoVariable);
+        Assert.True(rowTable.Editable);
+        var columnTable = cells["1:5"].FormulaMetadata;
+        Assert.Equal("F2:F3", columnTable.Reference);
+        Assert.Equal("D1", columnTable.ColumnInput);
+        Assert.False(columnTable.RowOriented);
+        Assert.False(columnTable.TwoVariable);
+        var twoVariable = cells["1:9"].FormulaMetadata;
+        Assert.Equal("J2:K3", twoVariable.Reference);
+        Assert.Equal("M1", twoVariable.RowInput);
+        Assert.Equal("M2", twoVariable.ColumnInput);
+        Assert.True(twoVariable.TwoVariable);
+        Assert.True(twoVariable.Editable);
+
+        cells["0:0"].NumberValue = 12;
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, string.Join("\n", edited.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(edited.File.ToByteArray());
+        var second = Import(edited.File.ToByteArray());
+        Assert.True(second.Ok, string.Join("\n", second.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(12, second.Artifact.Workbook.Worksheets[0].Cells.Single(cell => cell.Row == 0 && cell.Column == 0).NumberValue);
+        Assert.Equal(3, second.Artifact.Workbook.Worksheets[0].Cells.Count(cell => cell.FormulaMetadata?.Kind == CellFormulaKind.DataTable));
+
+        var advancedSource = SetFormulaCalculateCell(authored.File.ToByteArray(), "B2");
+        var advancedXml = ReadFormulaXml(advancedSource)["B2"];
+        var advanced = Import(advancedSource);
+        Assert.True(advanced.Ok, string.Join("\n", advanced.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var advancedCell = advanced.Artifact.Workbook.Worksheets[0].Cells.Single(cell => cell.Row == 1 && cell.Column == 1);
+        Assert.False(advancedCell.FormulaMetadata.Editable);
+        var preserved = Export(advanced.Artifact);
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(advancedXml, ReadFormulaXml(preserved.File.ToByteArray())["B2"]);
+        advancedCell.NumberValue = 99;
+        var rejected = Export(advanced.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_cell_formula_edit", Assert.Single(rejected.Diagnostics).Code);
+
+        var invalid = DataTableExportRequest();
+        invalid.Artifact.Workbook.Worksheets[0].Cells.First(cell => cell.FormulaMetadata?.Kind == CellFormulaKind.DataTable).FormulaMetadata.RowInput = string.Empty;
+        rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(invalid.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_cell_formula", Assert.Single(rejected.Diagnostics).Code);
     }
 
     [Fact]
@@ -4219,6 +4289,83 @@ public sealed class XlsxCodecTests
             FormulaMetadata = new CellFormulaMetadata { Kind = CellFormulaKind.Shared, SharedIndex = 7, Reference = "C1:C2" },
         });
         var workbook = new WorkbookArtifact { Id = "workbook/formulas", DateSystem = WorkbookDateSystem._1900 };
+        workbook.Worksheets.Add(sheet);
+        return new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = new ArtifactEnvelope
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Family = ArtifactFamily.Workbook,
+                Workbook = workbook,
+            },
+        };
+    }
+
+    private static CodecRequest DataTableExportRequest()
+    {
+        var sheet = new WorksheetArtifact { Id = "worksheet/data-tables", Name = "WhatIf", ShowGridLines = true };
+        sheet.Cells.Add(new CellArtifact { Row = 0, Column = 0, Formula = "=D1*2", NumberValue = 10 });
+        sheet.Cells.Add(new CellArtifact { Row = 0, Column = 1, NumberValue = 10 });
+        sheet.Cells.Add(new CellArtifact { Row = 1, Column = 0, NumberValue = 1 });
+        sheet.Cells.Add(new CellArtifact { Row = 2, Column = 0, NumberValue = 2 });
+        sheet.Cells.Add(new CellArtifact { Row = 0, Column = 3, NumberValue = 5 });
+        sheet.Cells.Add(new CellArtifact
+        {
+            Row = 1,
+            Column = 1,
+            FormulaMetadata = new CellFormulaMetadata
+            {
+                Kind = CellFormulaKind.DataTable,
+                Reference = "B2:B3",
+                RowInput = "D1",
+                RowOriented = true,
+                Editable = true,
+            },
+        });
+
+        sheet.Cells.Add(new CellArtifact { Row = 0, Column = 4, Formula = "=D1*3", NumberValue = 15 });
+        sheet.Cells.Add(new CellArtifact { Row = 0, Column = 5, NumberValue = 15 });
+        sheet.Cells.Add(new CellArtifact { Row = 1, Column = 4, NumberValue = 1 });
+        sheet.Cells.Add(new CellArtifact { Row = 2, Column = 4, NumberValue = 2 });
+        sheet.Cells.Add(new CellArtifact
+        {
+            Row = 1,
+            Column = 5,
+            FormulaMetadata = new CellFormulaMetadata
+            {
+                Kind = CellFormulaKind.DataTable,
+                Reference = "F2:F3",
+                ColumnInput = "D1",
+                Editable = true,
+            },
+        });
+
+        sheet.Cells.Add(new CellArtifact { Row = 0, Column = 8, Formula = "=M1*M2", NumberValue = 35 });
+        sheet.Cells.Add(new CellArtifact { Row = 0, Column = 9, NumberValue = 10 });
+        sheet.Cells.Add(new CellArtifact { Row = 0, Column = 10, NumberValue = 20 });
+        sheet.Cells.Add(new CellArtifact { Row = 1, Column = 8, NumberValue = 1 });
+        sheet.Cells.Add(new CellArtifact { Row = 2, Column = 8, NumberValue = 2 });
+        sheet.Cells.Add(new CellArtifact { Row = 0, Column = 12, NumberValue = 5 });
+        sheet.Cells.Add(new CellArtifact { Row = 1, Column = 12, NumberValue = 7 });
+        sheet.Cells.Add(new CellArtifact
+        {
+            Row = 1,
+            Column = 9,
+            FormulaMetadata = new CellFormulaMetadata
+            {
+                Kind = CellFormulaKind.DataTable,
+                Reference = "J2:K3",
+                RowInput = "M1",
+                ColumnInput = "M2",
+                TwoVariable = true,
+                Editable = true,
+            },
+        });
+
+        var workbook = new WorkbookArtifact { Id = "workbook/data-tables", DateSystem = WorkbookDateSystem._1900 };
         workbook.Worksheets.Add(sheet);
         return new CodecRequest
         {
