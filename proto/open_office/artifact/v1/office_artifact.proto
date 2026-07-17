@@ -959,14 +959,31 @@ enum CellFormulaKind {
   // distinct from the legacy Ctrl+Shift+Enter array formula represented by
   // CELL_FORMULA_KIND_ARRAY even though both serialize as f@t="array".
   CELL_FORMULA_KIND_DYNAMIC_ARRAY = 3;
+  // A native SpreadsheetML What-If Analysis table anchored by
+  // f@t="dataTable". The formula body is intentionally empty; reference and
+  // input-cell semantics live in CellFormulaMetadata.
+  CELL_FORMULA_KIND_DATA_TABLE = 4;
 }
 
 message CellFormulaMetadata {
   CellFormulaKind kind = 1;
   uint32 shared_index = 2;
   // Shared-group range, legacy-array range, or dynamic spill range according
-  // to kind. The formula cell must be the top-left anchor for array kinds.
+  // to kind. For data tables this is the result range and the formula cell is
+  // its top-left anchor.
   string reference = 3;
+  // Data-table input cells. A one-variable table sets exactly one; a
+  // two-variable table sets both. Addresses are local, unqualified A1 cells.
+  string row_input = 4;
+  string column_input = 5;
+  // Mirrors SpreadsheetML dtr for a one-variable row-input table.
+  bool row_oriented = 6;
+  // Mirrors SpreadsheetML dt2D. It must agree with the presence of both input
+  // cells and is false for a one-variable table.
+  bool two_variable = 7;
+  // False when imported formula attributes exceed the canonical profile.
+  // Such data tables are visible but source-bound and read-only.
+  bool editable = 8;
 }
 
 // A clean-room semantic projection of the SpreadsheetML cell style record.

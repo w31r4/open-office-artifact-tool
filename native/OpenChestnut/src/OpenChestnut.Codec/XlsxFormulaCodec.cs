@@ -62,7 +62,13 @@ internal sealed class XlsxFormulaCodec
         {
             var type = FormulaType(entry.Formula);
             if (type == CellFormulaValues.DataTable)
-                throw Unsupported(entry.Cell, sheetName, "data-table formulas are outside the current OpenChestnut XLSX formula slice");
+            {
+                var metadata = ReadDataTableMetadata(entry.Formula, entry.Cell, entry.Coordinate, sheetName);
+                var bounds = ParseRange(metadata.Reference, sheetName);
+                records.Add(entry.Coordinate, new FormulaRecord(string.Empty, metadata, entry.Formula));
+                topologyRanges.Add((bounds, $"data table {metadata.Reference}", entry.Coordinate, CellFormulaKind.DataTable));
+                continue;
+            }
             if (type != CellFormulaValues.Normal)
                 throw Unsupported(entry.Cell, sheetName, $"formula type {entry.Formula.FormulaType?.InnerText ?? "unknown"} is unsupported");
             var body = ValidateFormulaBody(entry.Formula.Text, entry.Cell.CellReference?.Value ?? "cell", required: true);
@@ -138,8 +144,8 @@ internal sealed class XlsxFormulaCodec
                     if (occupied.TryGetValue(coordinate, out var previous) && previous != topology.Owner)
                         throw new CodecException("invalid_cell_formula", $"Worksheet {sheetName} formula range owned by {topology.Owner} overlaps {previous} at {CellReference(row, column)}.", sheetName);
                     occupied[coordinate] = topology.Owner;
-                    if ((topology.Kind is CellFormulaKind.Array or CellFormulaKind.DynamicArray) && coordinate != topology.Anchor && formulasByCoordinate.TryGetValue(coordinate, out var nested))
-                        throw Invalid(nested.Cell, sheetName, $"must not contain another formula inside array range owned by {topology.Owner}");
+                    if ((topology.Kind is CellFormulaKind.Array or CellFormulaKind.DynamicArray or CellFormulaKind.DataTable) && coordinate != topology.Anchor && formulasByCoordinate.TryGetValue(coordinate, out var nested))
+                        throw Invalid(nested.Cell, sheetName, $"must not contain another formula inside range owned by {topology.Owner}");
                 }
             }
         }
@@ -154,14 +160,15 @@ internal sealed class XlsxFormulaCodec
         {
             if (!coordinates.Add((cell.Row, cell.Column)))
                 throw new CodecException("duplicate_cell", $"Worksheet {sheet.Name} contains duplicate cell {CellReference(cell.Row, cell.Column)}.", sheet.Name);
-            ValidateFormulaBody(cell.Formula, $"{sheet.Name}!{CellReference(cell.Row, cell.Column)}", required: cell.FormulaMetadata is not null);
+            ValidateFormulaBody(cell.Formula, $"{sheet.Name}!{CellReference(cell.Row, cell.Column)}", required: cell.FormulaMetadata is not null && cell.FormulaMetadata.Kind != CellFormulaKind.DataTable);
             if (cell.FormulaMetadata is null) continue;
             if (cell.FormulaMetadata.Kind == CellFormulaKind.Unspecified)
-                throw Invalid(cell, sheet.Name, "formula_metadata.kind must be shared, array, or dynamic_array");
-            if (cell.FormulaMetadata.Kind is not (CellFormulaKind.Shared or CellFormulaKind.Array or CellFormulaKind.DynamicArray))
+                throw Invalid(cell, sheet.Name, "formula_metadata.kind must be shared, array, dynamic_array, or data_table");
+            if (cell.FormulaMetadata.Kind is not (CellFormulaKind.Shared or CellFormulaKind.Array or CellFormulaKind.DynamicArray or CellFormulaKind.DataTable))
                 throw Invalid(cell, sheet.Name, "formula_metadata.kind is unsupported");
             if (string.IsNullOrWhiteSpace(cell.FormulaMetadata.Reference))
                 throw Invalid(cell, sheet.Name, "formula metadata requires reference");
+            if (cell.FormulaMetadata.Kind == CellFormulaKind.DataTable) ValidateDataTableMetadata(cell, sheet.Name);
         }
         var cellsByCoordinate = sheet.Cells.ToDictionary(cell => (cell.Row, cell.Column));
 
@@ -197,7 +204,7 @@ internal sealed class XlsxFormulaCodec
             .Where(cell => cell.FormulaMetadata?.Kind == CellFormulaKind.Shared)
             .GroupBy(cell => cell.FormulaMetadata!.SharedIndex)
             .Select(group => group.First())
-            .Concat(sheet.Cells.Where(cell => cell.FormulaMetadata?.Kind is CellFormulaKind.Array or CellFormulaKind.DynamicArray));
+            .Concat(sheet.Cells.Where(cell => cell.FormulaMetadata?.Kind is CellFormulaKind.Array or CellFormulaKind.DynamicArray or CellFormulaKind.DataTable));
         ulong topologyCellCount = 0;
         foreach (var cell in topologyRoots)
         {
@@ -207,10 +214,11 @@ internal sealed class XlsxFormulaCodec
             if (topologyCellCount > MaxFormulaTopologyCells)
                 throw Invalid(cell, sheet.Name, $"native formula topology exceeds {MaxFormulaTopologyCells} cells");
             var arrayKind = metadata.Kind is CellFormulaKind.Array or CellFormulaKind.DynamicArray;
+            var dataTable = metadata.Kind == CellFormulaKind.DataTable;
             var label = metadata.Kind == CellFormulaKind.DynamicArray ? "dynamic array" : "legacy array";
-            var owner = metadata.Kind == CellFormulaKind.Shared ? $"shared si={metadata.SharedIndex}" : $"{label} {CellReference(cell.Row, cell.Column)}";
-            if (arrayKind && (cell.Row != bounds.Top || cell.Column != bounds.Left))
-                throw Invalid(cell, sheet.Name, $"{label} formula must be anchored at the top-left cell of {metadata.Reference}");
+            var owner = metadata.Kind == CellFormulaKind.Shared ? $"shared si={metadata.SharedIndex}" : dataTable ? $"data table {metadata.Reference}" : $"{label} {CellReference(cell.Row, cell.Column)}";
+            if ((arrayKind || dataTable) && (cell.Row != bounds.Top || cell.Column != bounds.Left))
+                throw Invalid(cell, sheet.Name, $"{(dataTable ? "data table" : label)} formula must be anchored at the top-left cell of {metadata.Reference}");
             if (arrayKind && metadata.SharedIndex != 0)
                 throw Invalid(cell, sheet.Name, $"{label} formula must not set shared_index");
             for (var row = bounds.Top; row <= bounds.Bottom; row++)
@@ -220,9 +228,9 @@ internal sealed class XlsxFormulaCodec
                     if (topology.TryGetValue((row, column), out var previous) && previous != owner)
                         throw Invalid(cell, sheet.Name, $"formula range {metadata.Reference} overlaps {previous}");
                     topology[(row, column)] = owner;
-                    if (arrayKind && (row != cell.Row || column != cell.Column) &&
+                    if ((arrayKind || dataTable) && (row != cell.Row || column != cell.Column) &&
                         cellsByCoordinate.TryGetValue((row, column), out var nested) && !string.IsNullOrWhiteSpace(nested.Formula))
-                        throw Invalid(nested, sheet.Name, $"must not contain another formula inside {label} range {metadata.Reference}");
+                        throw Invalid(nested, sheet.Name, $"must not contain another formula inside {(dataTable ? "data table" : label)} range {metadata.Reference}");
                 }
             }
         }
@@ -237,8 +245,8 @@ internal sealed class XlsxFormulaCodec
 
     internal static CellFormula? Build(CellArtifact source)
     {
-        if (string.IsNullOrWhiteSpace(source.Formula)) return null;
-        var body = ValidateFormulaBody(source.Formula, CellReference(source.Row, source.Column), required: true);
+        if (string.IsNullOrWhiteSpace(source.Formula) && source.FormulaMetadata?.Kind != CellFormulaKind.DataTable) return null;
+        var body = ValidateFormulaBody(source.Formula, CellReference(source.Row, source.Column), required: source.FormulaMetadata?.Kind != CellFormulaKind.DataTable);
         if (source.FormulaMetadata is null) return new CellFormula(body);
         var metadata = source.FormulaMetadata;
         var bounds = ParseRange(metadata.Reference, "worksheet");
@@ -265,7 +273,17 @@ internal sealed class XlsxFormulaCodec
                 FormulaType = CellFormulaValues.Array,
                 Reference = metadata.Reference,
             },
-            _ => throw Invalid(source, "worksheet", "formula_metadata.kind must be shared, array, or dynamic_array"),
+            CellFormulaKind.DataTable when metadata.Editable => new CellFormula
+            {
+                FormulaType = CellFormulaValues.DataTable,
+                Reference = metadata.Reference,
+                DataTable2D = metadata.TwoVariable,
+                DataTableRow = metadata.TwoVariable ? null : metadata.RowOriented,
+                R1 = string.IsNullOrEmpty(metadata.RowInput) ? null : metadata.RowInput,
+                R2 = string.IsNullOrEmpty(metadata.ColumnInput) ? null : metadata.ColumnInput,
+            },
+            CellFormulaKind.DataTable => throw new CodecException("unsupported_cell_formula_edit", $"Cell worksheet!{CellReference(source.Row, source.Column)} data table is source-bound and read-only."),
+            _ => throw Invalid(source, "worksheet", "formula_metadata.kind must be shared, array, dynamic_array, or data_table"),
         };
     }
 
@@ -285,7 +303,11 @@ internal sealed class XlsxFormulaCodec
         var rightMetadata = right.FormulaMetadata;
         if (leftMetadata is null || rightMetadata is null) return leftMetadata is null && rightMetadata is null;
         return leftMetadata.Kind == rightMetadata.Kind && leftMetadata.SharedIndex == rightMetadata.SharedIndex &&
-               string.Equals(leftMetadata.Reference, rightMetadata.Reference, StringComparison.OrdinalIgnoreCase);
+               string.Equals(leftMetadata.Reference, rightMetadata.Reference, StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(leftMetadata.RowInput, rightMetadata.RowInput, StringComparison.OrdinalIgnoreCase) &&
+               string.Equals(leftMetadata.ColumnInput, rightMetadata.ColumnInput, StringComparison.OrdinalIgnoreCase) &&
+               leftMetadata.RowOriented == rightMetadata.RowOriented && leftMetadata.TwoVariable == rightMetadata.TwoVariable &&
+               leftMetadata.Editable == rightMetadata.Editable;
     }
 
     private static bool HasUnmodeledAttributes(CellFormula formula)
@@ -295,8 +317,92 @@ internal sealed class XlsxFormulaCodec
             ? new HashSet<string>(["t", "si", "ref"], StringComparer.Ordinal)
             : type == CellFormulaValues.Array
                 ? new HashSet<string>(["t", "ref"], StringComparer.Ordinal)
+                : type == CellFormulaValues.DataTable
+                    ? new HashSet<string>(["t", "ref", "dt2D", "dtr", "r1", "r2"], StringComparer.Ordinal)
                 : new HashSet<string>(["t"], StringComparer.Ordinal);
         return formula.GetAttributes().Any(attribute => !allowed.Contains(attribute.LocalName));
+    }
+
+    private static CellFormulaMetadata ReadDataTableMetadata(CellFormula formula, Cell cell, (uint Row, uint Column) coordinate, string sheetName)
+    {
+        if (formula.Reference?.Value is not { Length: > 0 } reference)
+            throw Invalid(cell, sheetName, "data table requires ref");
+        var bounds = ParseRange(reference, sheetName);
+        if (coordinate != (bounds.Top, bounds.Left))
+            throw Invalid(cell, sheetName, $"data table must be anchored at the top-left cell of {reference}");
+        var twoVariable = formula.DataTable2D?.Value == true;
+        var rowOriented = formula.DataTableRow?.Value == true;
+        var rowInput = NormalizeDataTableInput(formula.R1?.Value, sheetName);
+        var columnInput = NormalizeDataTableInput(formula.R2?.Value, sheetName);
+        ValidateDataTableInputs(cell, sheetName, rowInput, columnInput, rowOriented, twoVariable);
+        return new CellFormulaMetadata
+        {
+            Kind = CellFormulaKind.DataTable,
+            Reference = reference,
+            RowInput = rowInput,
+            ColumnInput = columnInput,
+            RowOriented = rowOriented,
+            TwoVariable = twoVariable,
+            Editable = string.IsNullOrWhiteSpace(formula.Text) && !HasUnmodeledAttributes(formula) &&
+                       formula.Input1Deleted?.Value != true && formula.Input2Deleted?.Value != true,
+        };
+    }
+
+    private static void ValidateDataTableMetadata(CellArtifact cell, string sheetName)
+    {
+        var metadata = cell.FormulaMetadata!;
+        if (!string.IsNullOrWhiteSpace(cell.Formula)) throw Invalid(cell, sheetName, "data table formula body must be empty");
+        var bounds = ParseRange(metadata.Reference, sheetName);
+        if (cell.Row != bounds.Top || cell.Column != bounds.Left)
+            throw Invalid(cell, sheetName, $"data table must be anchored at the top-left cell of {metadata.Reference}");
+        var rowInput = NormalizeDataTableInput(metadata.RowInput, sheetName);
+        var columnInput = NormalizeDataTableInput(metadata.ColumnInput, sheetName);
+        if (!string.Equals(rowInput, metadata.RowInput, StringComparison.Ordinal) || !string.Equals(columnInput, metadata.ColumnInput, StringComparison.Ordinal))
+            throw Invalid(cell, sheetName, "data table input addresses must be normalized local A1 cells");
+        ValidateDataTableInputs(cell, sheetName, rowInput, columnInput, metadata.RowOriented, metadata.TwoVariable);
+    }
+
+    private static void ValidateDataTableInputs(Cell cell, string sheetName, string rowInput, string columnInput, bool rowOriented, bool twoVariable)
+    {
+        if (twoVariable)
+        {
+            if (rowInput.Length == 0 || columnInput.Length == 0 || rowOriented)
+                throw Invalid(cell, sheetName, "two-variable data table requires row and column inputs and must not set dtr");
+            return;
+        }
+        if (rowOriented)
+        {
+            if (rowInput.Length == 0 || columnInput.Length != 0)
+                throw Invalid(cell, sheetName, "row-oriented data table requires r1 only");
+            return;
+        }
+        if (rowInput.Length != 0 || columnInput.Length == 0)
+            throw Invalid(cell, sheetName, "column-oriented data table requires r2 only");
+    }
+
+    private static void ValidateDataTableInputs(CellArtifact cell, string sheetName, string rowInput, string columnInput, bool rowOriented, bool twoVariable)
+    {
+        if (twoVariable)
+        {
+            if (rowInput.Length == 0 || columnInput.Length == 0 || rowOriented)
+                throw Invalid(cell, sheetName, "two-variable data table requires row and column inputs and must not set row_oriented");
+            return;
+        }
+        if (rowOriented)
+        {
+            if (rowInput.Length == 0 || columnInput.Length != 0)
+                throw Invalid(cell, sheetName, "row-oriented data table requires row_input only");
+            return;
+        }
+        if (rowInput.Length != 0 || columnInput.Length == 0)
+            throw Invalid(cell, sheetName, "column-oriented data table requires column_input only");
+    }
+
+    private static string NormalizeDataTableInput(string? value, string sheetName)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+        var coordinate = ParseCellReference(value, sheetName);
+        return CellReference(coordinate.Row, coordinate.Column);
     }
 
     private static CellFormulaValues FormulaType(CellFormula formula) => formula.FormulaType?.Value ?? CellFormulaValues.Normal;
