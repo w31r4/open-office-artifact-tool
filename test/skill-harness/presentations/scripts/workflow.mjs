@@ -40,10 +40,10 @@ function addSlideShape(slide, config = {}) {
 }
 
 async function addFixtureSlide(presentation, config = {}) {
-  for (const field of ["layoutId", "notes", "background", "applyLayoutPlaceholders", "groups", "comments"]) {
+  for (const field of ["layoutId", "notes", "applyLayoutPlaceholders", "groups", "comments"]) {
     if (config[field] != null) throw new Error(`Presentation fixture ${config.name || "slide"} uses unsupported 0.2 field ${field}.`);
   }
-  const slide = presentation.slides.add({ name: config.name });
+  const slide = presentation.slides.add({ name: config.name, ...(config.background ? { background: config.background } : {}) });
   const byName = new Map();
   const remember = (item, name) => { if (name) byName.set(name, item); return item; };
   for (const shape of config.shapes || []) remember(addSlideShape(slide, shape), shape.name);

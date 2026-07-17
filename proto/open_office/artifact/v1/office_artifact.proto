@@ -1080,6 +1080,9 @@ message PresentationSlide {
   // PresentationML notes graph; imported notes remain hash-bound so complex
   // notes content can be preserved without pretending it is safely editable.
   PresentationSpeakerNotes speaker_notes = 6;
+  // Direct p:cSld/p:bg only. Effective layout/master inheritance stays in the
+  // JavaScript model and is never flattened into the slide part.
+  PresentationBackground background = 7;
 }
 
 message PresentationSlideSourceBinding {
@@ -1088,6 +1091,8 @@ message PresentationSlideSourceBinding {
   string relationship_id = 3;
   string slide_xml_sha256 = 4;
   string layout_relationship_id = 5;
+  string background_semantic_sha256 = 6;
+  bool background_editable = 7;
 }
 
 message PresentationSpeakerNotes {

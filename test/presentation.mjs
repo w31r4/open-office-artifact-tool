@@ -84,7 +84,7 @@ assert.throws(
 
 // The canonical file facade always crosses the OpenChestnut C# WASM layer.
 const deck = Presentation.create({ slideSize: { width: 1280, height: 720 } });
-const coreSlide = deck.slides.add({ name: "Core objects" });
+const coreSlide = deck.slides.add({ name: "Core objects", background: { fill: "#F1F5F9", mode: "solid" } });
 coreSlide.addNotes("Lead with the customer outcome.\nThen explain the operating model.");
 coreSlide.shapes.add({
   name: "core-title",
@@ -228,7 +228,9 @@ assert.equal(deck.verify().ok, true);
 assert.equal(deck.validateLayout().ok, true);
 assert.equal(deck.resolve(rounded.id), rounded);
 assert.equal(deck.resolve(rounded.id + "/text").text, "Before edit");
-assert.match(deck.inspect({ kind: "deck,slide,textbox,shape,table,chart,image,connector,textRange,notes", maxChars: 24_000 }).ndjson, /Lead with the customer outcome/);
+const deckInspect = deck.inspect({ kind: "deck,slide,textbox,shape,table,chart,image,connector,textRange,notes", maxChars: 24_000 }).ndjson;
+assert.match(deckInspect, /Lead with the customer outcome/);
+assert.match(deckInspect, /"background":\{"fill":"#F1F5F9","mode":"solid"\}/);
 assert.equal(deck.resolve(coreSlide.speakerNotes.id), coreSlide.speakerNotes);
 coreSlide.speakerNotes.textFrame.setText("Lead with the customer outcome.\nThen explain the operating model.");
 assert.equal(coreSlide.speakerNotes.append("").text, "Lead with the customer outcome.\nThen explain the operating model.");
@@ -278,6 +280,7 @@ await assert.rejects(
 );
 imported.slides.getItem(1).addNotes("");
 const importedCore = imported.slides.getItem(0);
+assert.deepEqual(importedCore.background, { fill: "#f1f5f9", mode: "solid" });
 assert.equal(itemByName(importedCore.shapes.items, "rounded-card").geometry, "roundRect");
 assert.equal(itemByName(importedCore.shapes.items, "target-textbox").geometry, "textbox");
 assert.deepEqual(itemByName(importedCore.shapes.items, "rounded-card").shadow, {
@@ -310,6 +313,8 @@ assert.equal(importedCharts[2].dataLabels.showCategoryName, true);
 const importedCard = itemByName(importedCore.shapes.items, "rounded-card");
 importedCard.text.set("After edit");
 importedCard.shadow.opacity = 0.35;
+assert.equal(importedCore.setBackground({ fill: "accent2", mode: "reference", index: 1002 }), importedCore);
+assert.equal(imported.slides.getItem(1).setBackground({ fill: "#FFF7ED", mode: "solid" }), imported.slides.getItem(1));
 itemByName(importedCore.tables.items, "fixed-table").cells.set(1, 1, "After");
 itemByName(importedCore.images.items, "png-image").alt = "Updated PNG evidence";
 delete importedElbow.line.endArrow;
@@ -329,6 +334,10 @@ assert.equal(await secondZip.file(layoutPath).async("text"), sourceLayoutXml);
 assert.match(await secondZip.file("ppt/slides/_rels/slide1.xml.rels").async("text"), /relationships\/slideLayout/);
 assert.match(await secondZip.file("ppt/slideLayouts/_rels/slideLayout1.xml.rels").async("text"), /relationships\/slideMaster/);
 const secondSlideXml = await secondZip.file("ppt/slides/slide1.xml").async("text");
+const secondChartSlideXml = await secondZip.file("ppt/slides/slide2.xml").async("text");
+assert.match(secondSlideXml, /<p:bgRef idx="1002">/);
+assert.match(secondSlideXml, /<a:schemeClr val="accent2"/);
+assert.match(secondChartSlideXml, /<a:srgbClr val="FFF7ED"/);
 assert.match(secondSlideXml, /prst="roundRect"/);
 assert.match(secondSlideXml, /txBox="1"/);
 assert.match(secondSlideXml, /prst="line"/);
@@ -345,6 +354,8 @@ assert.equal(roundTrip.master.name, "Source Master Marker");
 assert.equal(roundTrip.layouts.items[0].name, "Source Layout Marker");
 const roundTripCore = roundTrip.slides.getItem(0);
 assert.equal(roundTripCore.speakerNotes.text, "Lead with evidence.\nClose with the decision.");
+assert.deepEqual(roundTripCore.background, { fill: "accent2", mode: "reference", index: 1002 });
+assert.deepEqual(roundTrip.slides.getItem(1).background, { fill: "#fff7ed", mode: "solid" });
 assert.equal(itemByName(roundTripCore.shapes.items, "rounded-card").text.value, "After edit");
 assert.equal(itemByName(roundTripCore.shapes.items, "rounded-card").shadow.opacity, 0.35);
 assert.equal(itemByName(roundTripCore.tables.items, "fixed-table").values[1][1], "After");

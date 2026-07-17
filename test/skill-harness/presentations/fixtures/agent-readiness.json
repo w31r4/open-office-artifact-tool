@@ -5,6 +5,7 @@
   "slides": [
     {
       "name": "Core workflow",
+      "background": { "fill": "#F1F5F9", "mode": "solid" },
       "shapes": [
         {
           "name": "workflow-title",
@@ -105,6 +106,7 @@
     },
     {
       "name": "Literal charts",
+      "background": { "fill": "#FFF7ED", "mode": "solid" },
       "shapes": [
         {
           "name": "charts-title",

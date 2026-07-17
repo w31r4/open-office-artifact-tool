@@ -1108,7 +1108,6 @@ function presentationAdvancedSnapshot(presentation) {
     commentFormat: presentation.commentFormat,
     customShows: presentation.customShows.items.map((show) => show.toJSON()),
     slides: presentation.slides.items.map((slide) => ({
-      background: slide.background,
       comments: slide.comments.items.map((comment) => comment.toJSON()),
     })),
   });
@@ -1128,7 +1127,6 @@ function unsupportedPresentationFeatures(presentation) {
   for (const slide of presentation.slides?.items || []) {
     const prefix = `slide ${slide.index + 1}`;
     if (slide.layoutId) unsupported.push(`${prefix} layout binding`);
-    if (slide.background?.fill) unsupported.push(`${prefix} background`);
     if (slide.comments?.items?.length) unsupported.push(`${prefix} comments`);
     if (slide.groups?.items?.length) unsupported.push(`${prefix} groups`);
     if (slide.nativeObjects?.items?.length) unsupported.push(`${prefix} native objects`);
@@ -1167,7 +1165,7 @@ export function presentationEnvelope(presentation, protocolVersion) {
     }
   } else {
     if (presentationAdvancedSnapshot(presentation) !== state.advancedSnapshot) {
-      throw new OpenChestnutCodecError("Imported presentation theme, comments, slide backgrounds, and custom shows are source-bound and read-only in OpenChestnut 0.2.", [], { code: "unsupported_presentation_edit" });
+      throw new OpenChestnutCodecError("Imported presentation theme, comments, and custom shows are source-bound and read-only in OpenChestnut 0.2.", [], { code: "unsupported_presentation_edit" });
     }
     if (state.slides.length !== presentation.slides.items.length) throw new OpenChestnutCodecError(`Source-preserving PPTX export requires the original ${state.slides.length}-slide topology.`, [], { code: "presentation_topology_changed" });
     if (Number(state.slideWidthEmu) !== Math.round(Number(presentation.slideSize.width) * EMU_PER_PIXEL) || Number(state.slideHeightEmu) !== Math.round(Number(presentation.slideSize.height) * EMU_PER_PIXEL)) {
@@ -1196,6 +1194,7 @@ export function presentationEnvelope(presentation, protocolVersion) {
       name: slide.name,
       source: sourceState?.wire.source,
       ...(slide.layoutId ? { layoutId: slide.layoutId } : {}),
+      ...(slide.background?.fill ? { background: wireBackground(slide.background, `slide ${slideIndex + 1}`) } : {}),
       ...(sourceState?.wire.speakerNotes
         ? { speakerNotes: { text: slide.speakerNotes?.text || "", source: sourceState.wire.speakerNotes.source } }
         : slide.speakerNotes?.text
@@ -1615,7 +1614,10 @@ export async function presentationFromEnvelope(envelope) {
   }
   const slideStates = [];
   for (const sourceSlide of source.slides) {
-    const slide = presentation.slides.add({ name: sourceSlide.name });
+    const slide = presentation.slides.add({
+      name: sourceSlide.name,
+      ...(sourceSlide.background ? { background: modelBackground(sourceSlide.background) } : {}),
+    });
     slide.id = sourceSlide.id || slide.id;
     slide.layoutId = sourceSlide.layoutId || undefined;
     slide.addNotes(sourceSlide.speakerNotes?.text || "");

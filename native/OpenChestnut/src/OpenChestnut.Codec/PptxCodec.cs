@@ -129,8 +129,11 @@ internal static class PptxCodec
             var slidePart = slideParts[slideIndex];
             var slideRoot = slidePart.Slide ??
                 throw new CodecException("missing_slide_root", $"Presentation slide {slideIndex + 1} has no slide root.", PartPath(slidePart));
-            var shapeTree = slideRoot.CommonSlideData?.ShapeTree ??
+            var slideCommon = slideRoot.CommonSlideData ??
+                throw new CodecException("missing_common_slide_data", $"Presentation slide {slideIndex + 1} has no common slide data.", PartPath(slidePart));
+            var shapeTree = slideCommon.ShapeTree ??
                 throw new CodecException("missing_shape_tree", $"Presentation slide {slideIndex + 1} has no shape tree.", PartPath(slidePart));
+            var slideBackground = PptxBackgroundCodec.Read(slideCommon);
             var elements = ShapeElements(shapeTree);
             var elementIdsByNativeId = NativeElementIds(elements, slideIndex);
             var target = new PresentationSlide
@@ -148,8 +151,11 @@ internal static class PptxCodec
                     RelationshipId = relationshipId,
                     SlideXmlSha256 = HashElement(slideRoot),
                     LayoutRelationshipId = slidePart.SlideLayoutPart is { } boundLayout ? slidePart.GetIdOfPart(boundLayout) : string.Empty,
+                    BackgroundSemanticSha256 = BackgroundSemanticHash(slideBackground),
+                    BackgroundEditable = PptxBackgroundCodec.Supports(slideCommon),
                 },
             };
+            if (slideBackground is not null) target.Background = slideBackground;
             if (PptxSpeakerNotesCodec.Read(slidePart) is { } speakerNotes)
                 target.SpeakerNotes = speakerNotes;
             var slideContext = new PptxPartContext(slidePart, slideIdByPartPath, assets: assetCatalog);
@@ -424,8 +430,28 @@ internal static class PptxCodec
                         $"Source-preserving PPTX export cannot change slide {slideIndex + 1}'s layout binding.",
                         PartPath(slidePart));
 
-                var shapeTree = slideRoot.CommonSlideData?.ShapeTree ??
+                var slideCommon = slideRoot.CommonSlideData ??
+                    throw new CodecException("missing_common_slide_data", $"Presentation slide {slideIndex + 1} has no common slide data.", PartPath(slidePart));
+                var shapeTree = slideCommon.ShapeTree ??
                     throw new CodecException("missing_shape_tree", $"Presentation slide {slideIndex + 1} has no shape tree.", PartPath(slidePart));
+                var originalBackground = PptxBackgroundCodec.Read(slideCommon);
+                var originalBackgroundHash = BackgroundSemanticHash(originalBackground);
+                if (!binding.BackgroundSemanticSha256.Equals(originalBackgroundHash, StringComparison.OrdinalIgnoreCase))
+                    throw new CodecException(
+                        "presentation_slide_source_background_mismatch",
+                        $"Presentation slide {slideIndex + 1} background does not match its source binding.",
+                        PartPath(slidePart));
+                var changed = false;
+                if (!BackgroundSemanticHash(target.Background).Equals(originalBackgroundHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!binding.BackgroundEditable || !PptxBackgroundCodec.Supports(slideCommon))
+                        throw new CodecException(
+                            "unsupported_presentation_edit",
+                            $"Presentation slide {slideIndex + 1} background is preserved but not safely editable by this codec slice.",
+                            PartPath(slidePart));
+                    PptxBackgroundCodec.Apply(slideCommon, target.Background);
+                    changed = true;
+                }
                 var sourceElements = ShapeElements(shapeTree);
                 var elementIdsByNativeId = NativeElementIds(sourceElements, slideIndex);
                 var nativeIdsByElementId = elementIdsByNativeId.ToDictionary(item => item.Value, item => item.Key, StringComparer.Ordinal);
@@ -435,7 +461,6 @@ internal static class PptxCodec
                         $"Source-preserving PPTX export requires slide {slideIndex + 1}'s original {sourceElements.Length}-element topology; the artifact contains {target.Elements.Count} elements.",
                         PartPath(slidePart));
 
-                var changed = false;
                 var slideContext = new PptxPartContext(slidePart, slideIdByPartPath, slidePartById, assetCatalog);
                 for (var elementIndex = 0; elementIndex < sourceElements.Length; elementIndex++)
                 {
@@ -927,7 +952,9 @@ internal static class PptxCodec
         {
             var source = artifact.Slides[slideIndex];
             var slidePart = slideParts[slideIndex];
-            var shapeTree = slidePart.Slide!.CommonSlideData!.ShapeTree!;
+            var slideCommon = slidePart.Slide!.CommonSlideData!;
+            PptxBackgroundCodec.Build(slideCommon, source.Background);
+            var shapeTree = slideCommon.ShapeTree!;
             var slideContext = new PptxPartContext(slidePart, slideIdByPartPath, slidePartById, assetCatalog);
             var nativeIdsByElementId = source.Elements.Select((element, index) => (element.Id, NativeId: checked((uint)(index + 2))))
                 .ToDictionary(item => item.Id, item => item.NativeId, StringComparer.Ordinal);
@@ -1325,6 +1352,7 @@ internal static class PptxCodec
         foreach (var slide in envelope.Presentation.Slides)
         {
             PptxSpeakerNotesCodec.Validate(slide.SpeakerNotes);
+            PptxBackgroundCodec.Validate(slide.Background);
             if (!string.IsNullOrWhiteSpace(slide.LayoutId) && !layoutIds.Contains(slide.LayoutId))
                 throw new CodecException("invalid_presentation_layout", $"Presentation slide {slide.Id} references missing layout {slide.LayoutId}.");
             foreach (var element in slide.Elements)

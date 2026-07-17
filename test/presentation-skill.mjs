@@ -40,6 +40,8 @@ try {
   if (nativeStatus.available) assert.equal(readiness.qa.nativeRender.pageCount, 2);
 
   const workflowSlide = readiness.qa.presentation.slides.getItem(0);
+  assert.deepEqual(workflowSlide.background, { fill: "#f1f5f9", mode: "solid" });
+  assert.deepEqual(readiness.qa.presentation.slides.getItem(1).background, { fill: "#fff7ed", mode: "solid" });
   const authoredCard = itemByName(workflowSlide.shapes.items, "author-card");
   assert.equal(authoredCard.geometry, "roundRect");
   assert.deepEqual(authoredCard.shadow, { color: "#000000", blurRadius: 10, distance: 5, direction: 45, opacity: 0.2 });
@@ -60,6 +62,7 @@ try {
 
   const readinessZip = await JSZip.loadAsync(await fs.readFile(readiness.pptxPath));
   const firstSlideXml = await readinessZip.file("ppt/slides/slide1.xml").async("text");
+  assert.match(firstSlideXml, /<a:srgbClr val="F1F5F9"/);
   assert.match(firstSlideXml, /<a:prstGeom prst="roundRect"[^>]*>/);
   assert.match(firstSlideXml, /<p:cNvSpPr txBox="1"\s*\/>/);
   assert.match(firstSlideXml, /<p:cxnSp>/);

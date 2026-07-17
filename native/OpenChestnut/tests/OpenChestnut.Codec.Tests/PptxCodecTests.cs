@@ -109,6 +109,69 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void SlideBackgroundAuthorsImportsEditsClearsAndPreservesUnsupportedSource()
+    {
+        var request = ExportRequest();
+        request.Artifact.Presentation.Slides[0].Background = new PresentationBackground
+        {
+            ColorRgb = "F1F5F9",
+            Solid = true,
+        };
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var slide = Assert.Single(package.PresentationPart!.SlideParts).Slide!;
+            Assert.Equal("F1F5F9", slide.CommonSlideData!.Background!.Descendants<A.RgbColorModelHex>().Single().Val!.Value);
+            Assert.Null(package.PresentationPart.SlideMasterParts.Single().SlideLayoutParts.Single().SlideLayout!.CommonSlideData!.Background);
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var slideArtifact = Assert.Single(imported.Artifact.Presentation.Slides);
+        Assert.True(slideArtifact.Source.BackgroundEditable);
+        Assert.Equal("F1F5F9", slideArtifact.Background.ColorRgb);
+        slideArtifact.Background = new PresentationBackground
+        {
+            ColorScheme = "accent2",
+            StyleReferenceIndex = 1002,
+        };
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var roundTrip = Import(edited.File.ToByteArray());
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        var editedSlide = Assert.Single(roundTrip.Artifact.Presentation.Slides);
+        Assert.Equal("accent2", editedSlide.Background.ColorScheme);
+        Assert.Equal(1002U, editedSlide.Background.StyleReferenceIndex);
+
+        editedSlide.Background = null;
+        var cleared = Export(roundTrip.Artifact);
+        Assert.True(cleared.Ok, Diagnostics(cleared));
+        using (var stream = new MemoryStream(cleared.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Null(Assert.Single(package.PresentationPart!.SlideParts).Slide!.CommonSlideData!.Background);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+        var clearedRoundTrip = Import(cleared.File.ToByteArray());
+        Assert.Null(Assert.Single(clearedRoundTrip.Artifact.Presentation.Slides).Background);
+
+        var unsupported = Import(AddUnsupportedSlideBackground(authored.File.ToByteArray()));
+        Assert.True(unsupported.Ok, Diagnostics(unsupported));
+        var unsupportedSlide = Assert.Single(unsupported.Artifact.Presentation.Slides);
+        Assert.False(unsupportedSlide.Source.BackgroundEditable);
+        Assert.Null(unsupportedSlide.Background);
+        var preserved = Export(unsupported.Artifact);
+        Assert.True(preserved.Ok, Diagnostics(preserved));
+        unsupportedSlide.Background = new PresentationBackground { ColorRgb = "FFFFFF", Solid = true };
+        var rejected = Export(unsupported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void LiteralCustomGeometryAuthorsImportsEditsAndValidates()
     {
         var request = ExportRequest();
@@ -2787,6 +2850,21 @@ public sealed class PptxCodecTests
             Assert.Equal(2, runs.Length);
             runs[0].RunProperties = new A.RunProperties { Bold = true };
             runs[1].RunProperties = new A.RunProperties { Italic = true };
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddUnsupportedSlideBackground(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var package = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var common = OrderedSlides(package)[0].Slide!.CommonSlideData!;
+            common.Background!.Remove();
+            common.AddChild(new P.Background(
+                new P.BackgroundProperties(new A.NoFill(), new A.EffectList())), true);
         }
         return stream.ToArray();
     }
