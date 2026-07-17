@@ -65,6 +65,47 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### DOCX transactional SEQ/REF cached-result materialization
+
+On 2026-07-17, the public Documents model and native Documents plugin closed
+the bounded automatic cached-result gap for canonical inline `SEQ` and `REF`
+fields. `document.materializeFields()` computes independent, case-insensitive
+SEQ counters in document order, resolves REF targets from the shared native
+bookmark namespace, and updates only cached display text. The operation
+supports dry-run evidence and defaults to strict transactional failure before
+mutation when a bookmark target is missing, duplicated, or dangling. An
+explicit non-strict mode may update resolvable fields while reporting missing
+targets.
+
+The primitive does not remove or flatten native field topology. PAGEREF is
+reported but never fabricated; explicitly requesting it fails closed because
+trustworthy page numbers require a real pagination host. Imported field
+positions, instructions, and bookmark identity remain source-bound. The
+shipped Documents fixture now materializes one caption SEQ and its REF through
+the public model before two OpenChestnut round trips, while retaining an
+explicit PAGEREF cache for native-host refresh. JavaScript regressions cover
+dry-run immutability, strict rollback, opt-in partial materialization,
+case-insensitive targets, multiple counters, and the PAGEREF boundary.
+
+The complete local gate passed `npm test` including Playwright and all five
+published Skills, `npm run docs:api`, `npm run proto:check`,
+`npm run test:pack`, isolated `npm run verify:open-chestnut-build`,
+OpenChestnut `183/183`, OfficeBridge `5/5`, and the Documents Skill validator.
+Two isolated clean WASM builds produced the same 39 audited files and the same
+manifest-bound 38-file, 14,317,244-byte runtime. The clean-install tarball
+contains 422 files, is 9,274,329 bytes compressed and 23,114,497 bytes
+unpacked. No npm publish, tag, or GitHub release operation was attempted.
+
+The completed candidate at commit
+`fbe86f197850f2bc297c6a95c5b5d5d19e442ab2` passed the hosted Linux `ci`
+workflow in [GitHub Actions run 29588303966](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29588303966)
+on 2026-07-17. The run completed with conclusion `success` in 4m29s and covered
+protocol/runtime determinism, Chromium/LibreOffice/Poppler tool checks, the
+complete npm suite including the native field-materialization workflow and
+transactional fail-closed regressions, generated API-doc cleanliness, offline
+release metadata, the 422-file clean-install tarball, OfficeBridge `5/5`, and
+OpenChestnut `183/183`.
+
 ### DOCX caption-number inline bookmark workflow
 
 On 2026-07-17, the public Documents run model, protocol-2 wire, OpenChestnut
