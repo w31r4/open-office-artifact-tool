@@ -10,6 +10,8 @@
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <PublishTrimmed>true</PublishTrimmed>
     <InvariantGlobalization>true</InvariantGlobalization>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../OpenChestnut.Codec/OpenChestnut.Codec.csproj" />

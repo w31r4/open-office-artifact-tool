@@ -43,12 +43,12 @@
     {
       "path": "_framework/OpenChestnut.Codec.wasm",
       "bytes": 1850133,
-      "sha256": "f514aba242e27c9250fa47865a6431229aacc62e521db2f174bac48f05fe51ad"
+      "sha256": "b5f479b71c40cc50881fa07c3b287d2807876a033a418f3a7427f8beefdb6fd8"
     },
     {
       "path": "_framework/OpenChestnut.Runtime.wasm",
       "bytes": 6421,
-      "sha256": "ea819401422cde3149f0cc9b2d80a0f8cf23f7469bc1586e12fa46da410b9aa7"
+      "sha256": "c5959f51cfe5004ca9f2d528765968e820ccc1ae131a29858a0b87af09111915"
     },
     {
       "path": "_framework/System.Collections.Concurrent.wasm",
@@ -118,7 +118,7 @@
     {
       "path": "_framework/System.Private.CoreLib.wasm",
       "bytes": 1958165,
-      "sha256": "dfcf4193ec9a3492da652e54d456983c2de331585856ad1ec02b38c297e7aa34"
+      "sha256": "6c97dfc63ec7b3a792e4be887785a9afc61d4f501f3fc74bac457bcfc5c23d66"
     },
     {
       "path": "_framework/System.Private.Uri.wasm",
@@ -137,8 +137,8 @@
     },
     {
       "path": "_framework/System.Runtime.InteropServices.JavaScript.wasm",
-      "bytes": 46357,
-      "sha256": "1549bc7f016855df9ae8d6ea19b63dc93875b4f487e2416a56d3b10f868982d1"
+      "bytes": 45845,
+      "sha256": "f7066c34e851c86e5c89b0d13415a07a55065e5d12a6ffe4ef3f140a63a075bb"
     },
     {
       "path": "_framework/System.Security.Cryptography.wasm",
@@ -158,7 +158,7 @@
     {
       "path": "_framework/blazor.boot.json",
       "bytes": 3140,
-      "sha256": "35f71532943667caaf731bceefe5f573f276dc7c36b664632624a029f7b1e6ff"
+      "sha256": "3a54fcfa62af2a52c78f5a0ae06aad7e5e50b9ba36992e7733593c8bc19cbfaa"
     },
     {
       "path": "_framework/dotnet.js",
@@ -173,7 +173,7 @@
     {
       "path": "_framework/dotnet.native.wasm",
       "bytes": 1417190,
-      "sha256": "d59a69b950b1df27b8705ef244efdd24f2f0a5f42910223aa875afeb5fd0c717"
+      "sha256": "bce53e4c41b5a7d171b68de3250df587e91897786c80c7303f2c7ebad9000ff2"
     },
     {
       "path": "_framework/dotnet.runtime.js",
@@ -201,5 +201,5 @@
       "sha256": "b93bc9918b522c7dce87c13a82d0fa1b9f9b21627909578d12539592a4cb0c1b"
     }
   ],
-  "totalBytes": 14332604
+  "totalBytes": 14332092
 }

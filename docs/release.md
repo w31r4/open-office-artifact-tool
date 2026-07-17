@@ -57,6 +57,13 @@ The release candidate is acceptable only when all of the following are true:
 - package metadata, version `0.2.0`, licenses, third-party notices, SBOM, and integrity manifest agree;
 - hosted Linux runs the same required non-optional gates.
 
+The single byte-array managed entry point uses a checked-in, small JavaScript
+interop registration shim rather than .NET 8's `[JSExport]` source generator.
+That generator derives a wrapper name from the process-random
+`String.GetHashCode()` and cannot satisfy the clean-build hash gate. The shim
+uses the equivalent stable type-name hash and remains covered by the actual
+bundled-WASM protocol smoke.
+
 ## Optional native validation
 
 LibreOffice, Poppler, Playwright, and the Windows Office bridge are validation/render tools. Absence of an optional host may skip only the explicitly environment-gated native rendering branch; it must not skip codec, semantic, package, Skill, PDF, or clean-install gates.

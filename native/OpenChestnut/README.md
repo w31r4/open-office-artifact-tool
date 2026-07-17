@@ -10,6 +10,13 @@ It is the only Office codec used by version 0.2. The JavaScript package supplies
 - `OpenChestnut.Runtime` exposes the byte-in/byte-out WebAssembly entry point.
 - `OpenChestnut.Tests` covers supported creation/import/edit/export profiles, opaque preservation, and fail-closed cases.
 
+`OpenChestnut.Runtime` keeps its one `byte[] -> byte[]` JavaScript entry point
+as a small explicit registration shim in `OpenChestnutJavaScriptInterop.cs`. This avoids
+the .NET 8 `[JSExport]` generator's process-random wrapper-name hash while
+retaining the same public WASM ABI. The paired clean-build gate verifies the
+generated runtime file inventory and hashes rather than merely trusting an
+incremental build.
+
 Protocol version 2 removes `allow_lossy`; the removed field name and number are reserved. Opaque content can be exported only from a validated, hash-bound source package. Unsupported edits, source-evidence mismatch, unsafe OPC paths, invalid relationships/content types, and missing runtime data return structured failures.
 
 ## Supported 0.2 slices
