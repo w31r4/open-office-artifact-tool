@@ -17,6 +17,14 @@ blob-managed static assets.
 system, layout vocabulary, typography, and adaptation rules of one built-in
 template and should not be reused verbatim for a different source deck.
 
+## Grid Layout Library
+
+`grid-layout-library` is the built-in 26-layout presentation library. Select a
+candidate layout from its registry by `templateUse`, `layoutFamily`, `slots`,
+`densityBudget`, and `typographyBudget`, then inspect only the selected preview
+and plain `.mjs` Compose builder. Keep the builder route JSX-free: use
+`slide.compose(...)` directly and do not add a transpilation step.
+
 ## Adding a template
 
 1. Add a template-specific folder containing `ARTIFACT.md`, `presentation.md`,

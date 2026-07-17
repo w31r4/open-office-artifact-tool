@@ -258,7 +258,7 @@ try {
     "presentations",
     "assets",
     "builtin_templates",
-    "codex-grid-layout-library",
+    "grid-layout-library",
   );
   const { buildPresentation, exportPresentation } = await import(
     "../skills/presentations/skills/presentations/builtin_templates_support/scripts/create-presentation.mjs"

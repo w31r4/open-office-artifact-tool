@@ -36,7 +36,7 @@ Contents of the `slides/` skill folder:
 - `template_following_scripts/`: Helper scripts for exact source-deck/template following.
 - `artifact_tool/`: API documentation and coding examples for the artifact tool library.
 - `builtin_templates_support/`: Checked-in guidance, manifests, prompts, and reusable scripts for built-in templates. Each template owns its `ARTIFACT.md`; shared runners live once under `builtin_templates_support/scripts/`.
-- `assets/builtin_templates/codex-grid-layout-library/`: Blob-managed static assets for the built-in Codex Grid template, including 26 rendered previews, a model-facing registry, structured content tokens, and 26 exact plain-JavaScript artifact-tool Compose reconstructions with no JSX. This directory contains no Markdown, prompts, or reusable runners.
+- `assets/builtin_templates/grid-layout-library/`: Blob-managed static assets for the built-in Grid Layout template, including 26 rendered previews, a model-facing registry, structured content tokens, and 26 exact plain-JavaScript artifact-tool Compose reconstructions with no JSX. This directory contains no Markdown, prompts, or reusable runners.
 
 ## Container Tools
 
@@ -47,15 +47,15 @@ The following helper scripts are located in the `container_tools/` directory:
 - `create_montage.py`: Build a tiled montage from images in a directory (for viewing multiple image assets or rendered slides at once); quick usage: `--input_dir <imgs_dir> --output_file <montage.png>`. It supports most image formats with auto conversion under the hood.
 - `slides_test.py`: Detect content overflowing the original slide canvas; usage: `<input.pptx>`.
 
-## Codex Grid Artifact-Tool Compose Layout Reference
+## Grid Layout Artifact-Tool Compose Layout Reference
 
 This skill variant does not include the Office template file. Use the distilled layout library as initial design and composition guidance when the user has not supplied a stronger template or brand system.
 
 Before planning slides:
 
-1. Read `builtin_templates_support/codex-grid-layout-library/ARTIFACT.md`, `assets/builtin_templates/codex-grid-layout-library/design_tokens.json`, and `assets/builtin_templates/codex-grid-layout-library/artifact-tool-compose/template-registry.json`.
-2. Inspect `assets/builtin_templates/codex-grid-layout-library/assets/previews/layout-library.png`, then shortlist layouts by `templateUse`, `layoutFamily`, `slots`, `densityBudget`, and `typographyBudget`. Do not open all 26 implementation modules by default.
-3. For each selected layout, inspect its generated preview and exact `assets/builtin_templates/codex-grid-layout-library/artifact-tool-compose/slide-XX.mjs` reconstruction.
+1. Read `builtin_templates_support/grid-layout-library/ARTIFACT.md`, `assets/builtin_templates/grid-layout-library/design_tokens.json`, and `assets/builtin_templates/grid-layout-library/artifact-tool-compose/template-registry.json`.
+2. Inspect `assets/builtin_templates/grid-layout-library/assets/previews/layout-library.png`, then shortlist layouts by `templateUse`, `layoutFamily`, `slots`, `densityBudget`, and `typographyBudget`. Do not open all 26 implementation modules by default.
+3. For each selected layout, inspect its generated preview and exact `assets/builtin_templates/grid-layout-library/artifact-tool-compose/slide-XX.mjs` reconstruction.
 4. Use the selected module's `layers(...)`, `text(...)`, `shape(...)`, `image(...)`, and `table(...)` helper calls as the implementation reference. Keep the output as plain `.mjs` and use `slide.compose(...)`; do not introduce JSX or a transpilation step.
 5. Preserve the selected layout's content ownership, spacing, hierarchy, and media frames while replacing instructional sample text with the user's content. Vary silhouettes across the deck instead of repeating one pattern.
 
@@ -129,16 +129,16 @@ matching route wins:
 1. **User reference or template skill**: if the user supplies a reference deck,
    asks to follow an existing deck, or invokes a template skill, use only that
    file as the visual source. An existing PPTX being edited also counts as the
-   reference. Do not mix in Codex Grid or another template.
+   reference. Do not mix in Grid Layout or another template.
 2. **Explicit custom formatting**: if there is no reference and the user asks
    for a theme, brand treatment, visual style, mood, or custom formatting,
-   create the deck from scratch. Do not use Codex Grid.
-3. **No visual direction**: use the bundled Codex Grid Artifact.md layout
+   create the deck from scratch. Do not use Grid Layout.
+3. **No visual direction**: use the bundled Grid Layout Artifact.md layout
    library as the composition reference. Select and adapt layouts using the
-   Codex Grid instructions above; do not run PPTX template-following mode.
+   Grid Layout instructions above; do not run PPTX template-following mode.
 
 User-provided references and explicit visual direction always take precedence
-over Codex Grid.
+over Grid Layout.
 
 ## Google Slides-Targeted Output
 
