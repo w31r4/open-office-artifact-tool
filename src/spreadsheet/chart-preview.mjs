@@ -2,7 +2,7 @@ import { normalizeSpreadsheetChartDataLabels, spreadsheetChartDataLabelSvgPlacem
 import { normalizeSpreadsheetChartLineOptions, spreadsheetChartSmoothLinePath } from "./chart-line-options.mjs";
 import { normalizeSpreadsheetChartSeriesLine, spreadsheetChartLineDashArray } from "./chart-line-style.mjs";
 import { normalizeSpreadsheetChartSeriesMarker, spreadsheetChartMarkerSvg } from "./chart-marker-style.mjs";
-import { resolvedWorksheetChartCategories, resolvedWorksheetChartSeriesValues } from "./chart-source-data.mjs";
+import { resolvedWorksheetChartCategories, resolvedWorksheetChartSeriesValues, resolvedWorksheetChartSeriesXValues } from "./chart-source-data.mjs";
 import { xmlEscape } from "../shared/xml.mjs";
 
 const PREVIEW_PALETTE = ["#38BDF8", "#F97316", "#22C55E", "#A855F7", "#E11D48", "#0F766E"];
@@ -85,6 +85,41 @@ function areaMarks(seriesItems, plot, geometry) {
   }).join("");
 }
 
+function scatterGeometry(chart, seriesItems, plot) {
+  const xValues = seriesItems.flatMap((series) => series.xValues || []);
+  const yValues = seriesItems.flatMap((series) => series.values || []);
+  let xMinimum = chart.xAxis?.min == null ? Math.min(...xValues) : Number(chart.xAxis.min);
+  let xMaximum = chart.xAxis?.max == null ? Math.max(...xValues) : Number(chart.xAxis.max);
+  let yMinimum = chart.yAxis?.min == null ? Math.min(...yValues) : Number(chart.yAxis.min);
+  let yMaximum = chart.yAxis?.max == null ? Math.max(...yValues) : Number(chart.yAxis.max);
+  if (!Number.isFinite(xMinimum) || !Number.isFinite(xMaximum)) [xMinimum, xMaximum] = [0, 1];
+  if (!Number.isFinite(yMinimum) || !Number.isFinite(yMaximum)) [yMinimum, yMaximum] = [0, 1];
+  if (xMinimum === xMaximum) [xMinimum, xMaximum] = [xMinimum - 0.5, xMaximum + 0.5];
+  if (yMinimum === yMaximum) [yMinimum, yMaximum] = [yMinimum - 0.5, yMaximum + 0.5];
+  return {
+    xMinimum,
+    xMaximum,
+    minimum: yMinimum,
+    maximum: yMaximum,
+    x: (value) => plot.left + (Number(value) - xMinimum) / (xMaximum - xMinimum) * plot.width,
+    y: (value) => plot.top + plot.height - (Number(value) - yMinimum) / (yMaximum - yMinimum) * plot.height,
+  };
+}
+
+function scatterMarks(seriesItems, dataLabels, geometry, plot) {
+  return seriesItems.map((series, seriesIndex) => {
+    const style = lineAttributes(series, seriesIndex);
+    return (series.values || []).map((value, pointIndex) => {
+      const xValue = series.xValues?.[pointIndex];
+      const point = { x: geometry.x(xValue), y: geometry.y(value) };
+      const marker = spreadsheetChartMarkerSvg(series.marker || { symbol: "circle", size: 5 }, point.x, point.y, style.stroke);
+      const label = spreadsheetChartDataLabelText(dataLabels, String(xValue), value, { seriesName: series.name });
+      const placement = spreadsheetChartDataLabelSvgPlacement(dataLabels, { x: point.x, y: point.y, kind: "point", plotTop: plot.top });
+      return `${marker}${label ? `<text x="${placement.x}" y="${placement.y}" text-anchor="${placement.textAnchor}" font-family="Arial" font-size="10" fill="#334155" data-chart-label-position="${placement.position}" data-chart-label-series="${seriesIndex}" data-chart-label-index="${pointIndex}">${xmlEscape(label)}</text>` : ""}`;
+    }).join("");
+  }).join("");
+}
+
 function polarPoint(cx, cy, radius, angle) {
   return { x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius };
 }
@@ -130,21 +165,32 @@ function circularMarks(chart, categories, seriesItems, dataLabels, plot) {
 export function renderWorksheetChartSvg(chart) {
   const frame = chart.position;
   const categories = resolvedWorksheetChartCategories(chart);
-  const seriesItems = chart.series.items.map((series) => ({ ...series, values: resolvedWorksheetChartSeriesValues(chart, series) }));
+  const seriesItems = chart.series.items.map((series) => ({
+    ...series,
+    ...(chart.type === "scatter" ? { xValues: resolvedWorksheetChartSeriesXValues(chart, series) } : {}),
+    values: resolvedWorksheetChartSeriesValues(chart, series),
+  }));
   const dataLabels = normalizeSpreadsheetChartDataLabels(chart.dataLabels);
   const plot = { left: frame.left + 28, top: frame.top + 36, width: Math.max(0, frame.width - 44), height: Math.max(0, frame.height - 62) };
   const circular = CIRCULAR_TYPES.has(chart.type);
-  const geometry = circular ? null : cartesianGeometry(chart, seriesItems, plot);
+  const scatter = chart.type === "scatter";
+  const geometry = circular ? null : scatter ? scatterGeometry(chart, seriesItems, plot) : cartesianGeometry(chart, seriesItems, plot);
   const marks = circular
     ? circularMarks(chart, categories, seriesItems, dataLabels, plot)
-    : chart.type === "line"
+    : scatter
+      ? scatterMarks(seriesItems, dataLabels, geometry, plot)
+      : chart.type === "line"
       ? lineMarks(chart, categories, seriesItems, dataLabels, plot, geometry)
       : chart.type === "area"
         ? areaMarks(seriesItems, plot, geometry)
         : barMarks(chart, categories, seriesItems, dataLabels, plot, geometry);
   const pointCount = seriesItems[0]?.values?.length || 0;
   const xTickSize = Number(chart.xAxis?.textStyle?.fontSize);
-  const xTicks = !circular && Number.isFinite(xTickSize) && xTickSize > 0 && pointCount ? categories.map((category, index) => `<text x="${plot.left + (index + 0.5) * plot.width / pointCount}" y="${plot.top + plot.height + xTickSize + 2}" text-anchor="middle" font-family="Arial" font-size="${xTickSize}" fill="#64748b">${xmlEscape(category)}</text>`).join("") : "";
+  const xTicks = !circular && Number.isFinite(xTickSize) && xTickSize > 0
+    ? scatter
+      ? `<text x="${plot.left}" y="${plot.top + plot.height + xTickSize + 2}" text-anchor="start" font-family="Arial" font-size="${xTickSize}" fill="#64748b">${geometry.xMinimum}</text><text x="${plot.left + plot.width}" y="${plot.top + plot.height + xTickSize + 2}" text-anchor="end" font-family="Arial" font-size="${xTickSize}" fill="#64748b">${geometry.xMaximum}</text>`
+      : pointCount ? categories.map((category, index) => `<text x="${plot.left + (index + 0.5) * plot.width / pointCount}" y="${plot.top + plot.height + xTickSize + 2}" text-anchor="middle" font-family="Arial" font-size="${xTickSize}" fill="#64748b">${xmlEscape(category)}</text>`).join("") : ""
+    : "";
   const yTickSize = Number(chart.yAxis?.textStyle?.fontSize);
   const yTicks = !circular && Number.isFinite(yTickSize) && yTickSize > 0 ? `<text x="${plot.left - 4}" y="${plot.top + yTickSize}" text-anchor="end" font-family="Arial" font-size="${yTickSize}" fill="#64748b">${geometry.maximum}</text><text x="${plot.left - 4}" y="${plot.top + plot.height}" text-anchor="end" font-family="Arial" font-size="${yTickSize}" fill="#64748b">${geometry.minimum}</text>` : "";
   const xTitle = !circular && chart.xAxis?.title?.text ? `<text x="${plot.left + plot.width / 2}" y="${frame.top + frame.height - 6}" text-anchor="middle" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(chart.xAxis.title.text)}</text>` : "";

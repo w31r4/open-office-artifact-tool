@@ -96,7 +96,7 @@ internal sealed class XlsxChartCodec
             if (!ids.Add(chart.Id)) throw InvalidChart(worksheetId, chart.Id, "ID must be unique within its worksheet.");
             if (string.IsNullOrWhiteSpace(chart.Name) || chart.Name.Length > 255 || HasControls(chart.Name)) throw InvalidChart(worksheetId, chart.Id, "name must contain 1 through 255 characters without controls.");
             if (chart.Title.Length > 32_767 || HasControls(chart.Title)) throw InvalidChart(worksheetId, chart.Id, "title must contain at most 32767 characters without controls.");
-            if (chart.Type is not (SpreadsheetChartType.Bar or SpreadsheetChartType.Line or SpreadsheetChartType.Pie or SpreadsheetChartType.Area or SpreadsheetChartType.Doughnut)) throw InvalidChart(worksheetId, chart.Id, "type must be bar, line, pie, area, or doughnut.");
+            if (chart.Type is not (SpreadsheetChartType.Bar or SpreadsheetChartType.Line or SpreadsheetChartType.Pie or SpreadsheetChartType.Area or SpreadsheetChartType.Doughnut or SpreadsheetChartType.Scatter)) throw InvalidChart(worksheetId, chart.Id, "type must be bar, line, pie, area, doughnut, or scatter.");
             XlsxChartAxisCodec.Validate(chart, worksheetId);
             XlsxChartTextStyleCodec.Validate(chart, worksheetId);
             XlsxChartLineOptionsCodec.Validate(chart, worksheetId);
@@ -105,6 +105,7 @@ internal sealed class XlsxChartCodec
             ValidateAnchor(chart, worksheetId);
             if (chart.Categories.Count > MaxPoints) throw InvalidChart(worksheetId, chart.Id, $"exceeds the {MaxPoints}-category budget.");
             if (chart.Categories.Any(value => value.Length > 32_767 || HasControls(value))) throw InvalidChart(worksheetId, chart.Id, "contains a category longer than 32767 characters or with controls.");
+            if (chart.Type == SpreadsheetChartType.Scatter && chart.Categories.Count != 0) throw InvalidChart(worksheetId, chart.Id, "scatter charts use per-series numeric x_values rather than shared text categories.");
             if (chart.Series.Count is < 1 or > MaxSeries) throw InvalidChart(worksheetId, chart.Id, $"must contain 1 through {MaxSeries} series.");
             var pointCount = 0L;
             foreach (var series in chart.Series)
@@ -113,9 +114,18 @@ internal sealed class XlsxChartCodec
                 XlsxChartSeriesStyleCodec.Validate(series, worksheetId, chart.Id);
                 XlsxChartSeriesLineStyleCodec.Validate(series, worksheetId, chart.Id);
                 XlsxChartSeriesMarkerCodec.Validate(series, chart.Type, worksheetId, chart.Id);
-                if (series.CategoryFormula.Length > 8_192 || series.ValueFormula.Length > 8_192 || HasControls(series.CategoryFormula) || HasControls(series.ValueFormula) || series.CategoryFormula.StartsWith('=') || series.ValueFormula.StartsWith('=')) throw InvalidChart(worksheetId, chart.Id, "contains an invalid category/value formula.");
-                if (series.Values.Count != chart.Categories.Count) throw InvalidChart(worksheetId, chart.Id, $"series {series.Name} has {series.Values.Count} values for {chart.Categories.Count} categories.");
-                if (series.Values.Any(value => double.IsNaN(value) || double.IsInfinity(value))) throw InvalidChart(worksheetId, chart.Id, $"series {series.Name} contains a non-finite value.");
+                if (series.CategoryFormula.Length > 8_192 || series.XValueFormula.Length > 8_192 || series.ValueFormula.Length > 8_192 || HasControls(series.CategoryFormula) || HasControls(series.XValueFormula) || HasControls(series.ValueFormula) || series.CategoryFormula.StartsWith('=') || series.XValueFormula.StartsWith('=') || series.ValueFormula.StartsWith('=')) throw InvalidChart(worksheetId, chart.Id, "contains an invalid category/x-value/value formula.");
+                if (chart.Type == SpreadsheetChartType.Scatter)
+                {
+                    if (series.CategoryFormula.Length != 0) throw InvalidChart(worksheetId, chart.Id, $"scatter series {series.Name} cannot carry category_formula.");
+                    if (series.XValues.Count != series.Values.Count) throw InvalidChart(worksheetId, chart.Id, $"scatter series {series.Name} has {series.XValues.Count} x values for {series.Values.Count} y values.");
+                }
+                else
+                {
+                    if (series.XValues.Count != 0 || series.XValueFormula.Length != 0) throw InvalidChart(worksheetId, chart.Id, $"series {series.Name} x values require a scatter chart.");
+                    if (series.Values.Count != chart.Categories.Count) throw InvalidChart(worksheetId, chart.Id, $"series {series.Name} has {series.Values.Count} values for {chart.Categories.Count} categories.");
+                }
+                if (series.XValues.Any(value => double.IsNaN(value) || double.IsInfinity(value)) || series.Values.Any(value => double.IsNaN(value) || double.IsInfinity(value))) throw InvalidChart(worksheetId, chart.Id, $"series {series.Name} contains a non-finite coordinate value.");
                 pointCount += series.Values.Count;
                 if (pointCount > MaxPoints) throw InvalidChart(worksheetId, chart.Id, $"exceeds the {MaxPoints}-value budget.");
             }
@@ -297,10 +307,10 @@ internal sealed class XlsxChartCodec
         var nativeChart = root?.Element(ChartNs + "chart");
         var plotArea = nativeChart?.Element(ChartNs + "plotArea");
         if (root?.Name != ChartNs + "chartSpace" || nativeChart is null || plotArea is null || root.Element(ChartNs + "externalData") is not null) return false;
-        var plots = plotArea.Elements().Where(item => item.Name == ChartNs + "barChart" || item.Name == ChartNs + "lineChart" || item.Name == ChartNs + "pieChart" || item.Name == ChartNs + "areaChart" || item.Name == ChartNs + "doughnutChart").ToArray();
+        var plots = plotArea.Elements().Where(item => item.Name == ChartNs + "barChart" || item.Name == ChartNs + "lineChart" || item.Name == ChartNs + "pieChart" || item.Name == ChartNs + "areaChart" || item.Name == ChartNs + "doughnutChart" || item.Name == ChartNs + "scatterChart").ToArray();
         if (plots.Length != 1 || plotArea.Elements().Any(item => item.Name.LocalName.EndsWith("Chart", StringComparison.Ordinal) && !plots.Contains(item))) return false;
         var plot = plots[0];
-        chart.Type = plot.Name.LocalName switch { "barChart" => SpreadsheetChartType.Bar, "lineChart" => SpreadsheetChartType.Line, "pieChart" => SpreadsheetChartType.Pie, "areaChart" => SpreadsheetChartType.Area, "doughnutChart" => SpreadsheetChartType.Doughnut, _ => SpreadsheetChartType.Unspecified };
+        chart.Type = plot.Name.LocalName switch { "barChart" => SpreadsheetChartType.Bar, "lineChart" => SpreadsheetChartType.Line, "pieChart" => SpreadsheetChartType.Pie, "areaChart" => SpreadsheetChartType.Area, "doughnutChart" => SpreadsheetChartType.Doughnut, "scatterChart" => SpreadsheetChartType.Scatter, _ => SpreadsheetChartType.Unspecified };
         if (chart.Type == SpreadsheetChartType.Unspecified) return false;
         editable &= PlotProfileEditable(plot, chart.Type);
         var title = nativeChart.Element(ChartNs + "title");
@@ -320,11 +330,14 @@ internal sealed class XlsxChartCodec
         {
             if (!TrySeries(seriesElement, chart.Type, out var series, out var categories, out var seriesEditable)) return false;
             editable &= seriesEditable;
-            if (commonCategories is null) commonCategories = categories;
-            else if (!commonCategories.SequenceEqual(categories, StringComparer.Ordinal)) return false;
+            if (chart.Type != SpreadsheetChartType.Scatter)
+            {
+                if (commonCategories is null) commonCategories = categories;
+                else if (!commonCategories.SequenceEqual(categories, StringComparer.Ordinal)) return false;
+            }
             chart.Series.Add(series);
         }
-        chart.Categories.Add(commonCategories ?? []);
+        if (chart.Type != SpreadsheetChartType.Scatter) chart.Categories.Add(commonCategories ?? []);
         editable &= XlsxChartLineOptionsCodec.TryRead(plot, chart);
         editable &= XlsxChartDataLabelsCodec.TryRead(plot, chart);
         if (!XlsxChartAxisCodec.TryRead(plotArea, plot, chart, out var axesEditable)) editable = false;
@@ -339,6 +352,8 @@ internal sealed class XlsxChartCodec
         if (type == SpreadsheetChartType.Doughnut)
             return ScalarEquals(plot, "firstSliceAng", "0", required: false) &&
                    ScalarEquals(plot, "holeSize", "50", required: true);
+        if (type == SpreadsheetChartType.Scatter)
+            return ScalarEquals(plot, "scatterStyle", "marker", required: true);
         return true;
     }
 
@@ -368,12 +383,25 @@ internal sealed class XlsxChartCodec
             editable = false;
         }
         if (series.Name.Length > 255 || HasControls(series.Name)) return false;
-        var category = source.Element(ChartNs + "cat") ?? source.Element(ChartNs + "xVal");
-        var value = source.Element(ChartNs + "val") ?? source.Element(ChartNs + "yVal");
-        if (category is null || value is null || !TryStringData(category, out categories, out var categoryFormula) || !TryNumericData(value, out var values, out var valueFormula) || categories.Length != values.Length || categories.Length > MaxPoints) return false;
-        series.CategoryFormula = categoryFormula;
-        series.ValueFormula = valueFormula;
-        series.Values.Add(values);
+        if (chartType == SpreadsheetChartType.Scatter)
+        {
+            var xValue = source.Element(ChartNs + "xVal");
+            var yValue = source.Element(ChartNs + "yVal");
+            if (xValue is null || yValue is null || !TryNumericData(xValue, out var xValues, out var xFormula) || !TryNumericData(yValue, out var values, out var valueFormula) || xValues.Length != values.Length || values.Length > MaxPoints) return false;
+            series.XValueFormula = xFormula;
+            series.ValueFormula = valueFormula;
+            series.XValues.Add(xValues);
+            series.Values.Add(values);
+        }
+        else
+        {
+            var category = source.Element(ChartNs + "cat");
+            var value = source.Element(ChartNs + "val");
+            if (category is null || value is null || !TryStringData(category, out categories, out var categoryFormula) || !TryNumericData(value, out var values, out var valueFormula) || categories.Length != values.Length || categories.Length > MaxPoints) return false;
+            series.CategoryFormula = categoryFormula;
+            series.ValueFormula = valueFormula;
+            series.Values.Add(values);
+        }
         editable &= XlsxChartSeriesStyleCodec.TryRead(source, series);
         editable &= XlsxChartSeriesLineStyleCodec.TryRead(source, series);
         editable &= XlsxChartSeriesMarkerCodec.TryRead(source, series, chartType);

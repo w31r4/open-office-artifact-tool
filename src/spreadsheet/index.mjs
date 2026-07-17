@@ -4,7 +4,7 @@ import { normalizeSpreadsheetChartSeriesLine } from "./chart-line-style.mjs";
 import { normalizeSpreadsheetChartLineOptions } from "./chart-line-options.mjs";
 import { normalizeSpreadsheetChartSeriesMarker } from "./chart-marker-style.mjs";
 import { normalizeSpreadsheetChartDataLabels } from "./chart-data-labels.mjs";
-import { resolvedWorksheetChartCategories, resolvedWorksheetChartSeriesValues } from "./chart-source-data.mjs";
+import { resolvedWorksheetChartCategories, resolvedWorksheetChartSeriesValues, resolvedWorksheetChartSeriesXValues } from "./chart-source-data.mjs";
 import { renderWorksheetChartSvg } from "./chart-preview.mjs";
 import { WorksheetDataTableCollection } from "./data-tables.mjs";
 import { computePivotValues, normalizePivotConfig } from "./pivots.mjs";
@@ -599,7 +599,7 @@ class WorksheetPivotTableCollection {
 
 class WorksheetChartSeriesCollection {
   constructor(chart) { this.chart = chart; this.items = []; }
-  add(name, values = []) { const series = { name, values, categoryFormula: undefined, formula: undefined, fill: undefined }; this.items.push(series); return series; }
+  add(name, values = []) { const series = { name, values, xValues: undefined, categoryFormula: undefined, xFormula: undefined, formula: undefined, fill: undefined }; this.items.push(series); return series; }
   getItemAt(index) { return this.items[index]; }
   toJSON() {
     return this.items.map((item) => {
@@ -611,12 +611,12 @@ class WorksheetChartSeriesCollection {
   }
 }
 
-function normalizeWorksheetChartAxis(value, kind) {
+function normalizeWorksheetChartAxis(value, kind, chartType) {
   if (value == null) return undefined;
   if (typeof value !== "object" || Array.isArray(value)) throw new TypeError(`Worksheet chart ${kind}Axis must be an object.`);
   const title = typeof value.title === "string" ? value.title : value.title?.text;
   return {
-    axisType: value.axisType || (kind === "x" ? "textAxis" : "valueAxis"),
+    axisType: value.axisType || (kind === "x" && chartType !== "scatter" ? "textAxis" : "valueAxis"),
     title: {
       text: title == null ? "" : String(title),
       ...(typeof value.title === "object" && value.title?.textStyle != null ? { textStyle: value.title.textStyle } : {}),
@@ -651,7 +651,9 @@ class WorksheetChart {
     if (!circular || sourceOrConfig.yAxis != null) this.yAxis = sourceOrConfig.yAxis || {};
     this.series = new WorksheetChartSeriesCollection(this);
     if (sourceOrConfig.series) sourceOrConfig.series.forEach((series) => Object.assign(this.series.add(series.name, series.values || []), {
+      xValues: series.xValues == null ? undefined : [...series.xValues],
       categoryFormula: series.categoryFormula,
+      xFormula: series.xFormula,
       formula: series.formula,
       fill: series.fill,
       ...(series.line == null ? {} : { line: series.line }),
@@ -663,23 +665,29 @@ class WorksheetChart {
   }
 
   get xAxis() { return this._xAxis; }
-  set xAxis(value) { this._xAxis = normalizeWorksheetChartAxis(value, "x"); }
+  set xAxis(value) { this._xAxis = normalizeWorksheetChartAxis(value, "x", this.type); }
   get yAxis() { return this._yAxis; }
-  set yAxis(value) { this._yAxis = normalizeWorksheetChartAxis(value, "y"); }
+  set yAxis(value) { this._yAxis = normalizeWorksheetChartAxis(value, "y", this.type); }
 
   setData(range) {
     const values = range.values;
     if (!values.length || !values[0]?.length) return this;
     const header = values[0];
     const dataRows = values.slice(1);
-    this.categories = dataRows.map((row) => String(row[0] ?? ""));
+    const scatter = this.type === "scatter";
+    const xValues = scatter ? dataRows.map((row) => Number(row[0])) : undefined;
+    this.categories = scatter ? [] : dataRows.map((row) => String(row[0] ?? ""));
     this.series.items = [];
     for (let column = 1; column < header.length; column++) {
       const series = this.series.add(String(header[column] || `Series ${column}`), dataRows.map((row) => Number(row[column]) || 0));
       const start = makeCellAddress(range.bounds.top + 1, range.bounds.left + column);
       const end = makeCellAddress(range.bounds.bottom, range.bounds.left + column);
       series.formula = `'${range.worksheet.name}'!${start}:${end}`;
-      series.categoryFormula = `'${range.worksheet.name}'!${makeCellAddress(range.bounds.top + 1, range.bounds.left)}:${makeCellAddress(range.bounds.bottom, range.bounds.left)}`;
+      const horizontalFormula = `'${range.worksheet.name}'!${makeCellAddress(range.bounds.top + 1, range.bounds.left)}:${makeCellAddress(range.bounds.bottom, range.bounds.left)}`;
+      if (scatter) {
+        series.xValues = [...xValues];
+        series.xFormula = horizontalFormula;
+      } else series.categoryFormula = horizontalFormula;
     }
     return this;
   }
@@ -696,6 +704,7 @@ class WorksheetChart {
     const categories = resolvedWorksheetChartCategories(this);
     const seriesItems = this.series.toJSON().map((series, index) => ({
       ...series,
+      ...(this.type === "scatter" ? { xValues: resolvedWorksheetChartSeriesXValues(this, this.series.items[index]) } : {}),
       values: resolvedWorksheetChartSeriesValues(this, this.series.items[index]),
     }));
     return { kind: "drawing", drawingType: "chart", id: this.id, sheet: this.worksheet.name, name: this.name, chartType: this.type, title: this.title, titleTextStyle: this.titleTextStyle, lineOptions: this.lineOptions, dataLabels: normalizeSpreadsheetChartDataLabels(this.dataLabels), categories, series: this.series.items.length, seriesItems, xAxis: this.xAxis, yAxis: this.yAxis, bbox: [this.position.left, this.position.top, this.position.width, this.position.height], bboxUnit: "px" };

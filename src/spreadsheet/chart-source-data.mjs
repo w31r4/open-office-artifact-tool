@@ -40,3 +40,12 @@ export function resolvedWorksheetChartSeriesValues(chart, series) {
   }
   return [...(series?.values || [])].map(Number);
 }
+
+export function resolvedWorksheetChartSeriesXValues(chart, series) {
+  const referenced = worksheetChartRangeValues(chart?.worksheet, series?.xFormula);
+  if (referenced.length) {
+    const numeric = referenced.map(Number);
+    if (numeric.every(Number.isFinite)) return numeric;
+  }
+  return [...(series?.xValues || [])].map(Number);
+}

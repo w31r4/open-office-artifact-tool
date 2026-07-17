@@ -3,7 +3,7 @@ import { normalizeSpreadsheetChartLineOptions } from "../spreadsheet/chart-line-
 import { normalizeSpreadsheetChartSeriesLine, SPREADSHEET_CHART_LINE_MAX_WIDTH_POINTS } from "../spreadsheet/chart-line-style.mjs";
 import { normalizeSpreadsheetChartSeriesMarker } from "../spreadsheet/chart-marker-style.mjs";
 import { normalizeSpreadsheetChartDataLabels } from "../spreadsheet/chart-data-labels.mjs";
-import { resolvedWorksheetChartCategories, resolvedWorksheetChartSeriesValues } from "../spreadsheet/chart-source-data.mjs";
+import { resolvedWorksheetChartCategories, resolvedWorksheetChartSeriesValues, resolvedWorksheetChartSeriesXValues } from "../spreadsheet/chart-source-data.mjs";
 import { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
 
 const EMU_PER_PIXEL = 9525;
@@ -18,6 +18,7 @@ const TYPES_TO_WIRE = new Map([
   ["pie", SpreadsheetChartType.PIE],
   ["area", SpreadsheetChartType.AREA],
   ["doughnut", SpreadsheetChartType.DOUGHNUT],
+  ["scatter", SpreadsheetChartType.SCATTER],
 ]);
 const TYPES_FROM_WIRE = new Map([...TYPES_TO_WIRE].map(([name, value]) => [value, name]));
 const CIRCULAR_TYPES = new Set(["pie", "doughnut"]);
@@ -188,12 +189,13 @@ function textStyleFromWire(value, name, chart) {
   return textStyleSnapshot({ fontSize: value.fontSizePoints }, name, chart) || undefined;
 }
 
-function axisSnapshot(axis, kind, chart) {
+function axisSnapshot(axis, kind, chartType, chart) {
   if (axis == null) return null;
   const title = typeof axis.title === "string" ? axis.title : axis.title?.text;
   const aliasMajorUnit = kind === "y" && axis.majorUnit == null ? axis.tickLabelInterval : axis.majorUnit;
+  const numeric = kind === "y" || chartType === "scatter";
   return {
-    axisType: String(axis.axisType || (kind === "x" ? "textAxis" : "valueAxis")),
+    axisType: String(axis.axisType || (numeric ? "valueAxis" : "textAxis")),
     title: String(title ?? ""),
     textStyle: textStyleSnapshot(axis.textStyle, `${kind}Axis.textStyle`, chart),
     numberFormatCode: axis.numberFormatCode == null ? "" : String(axis.numberFormatCode),
@@ -206,6 +208,7 @@ function axisSnapshot(axis, kind, chart) {
 
 export function spreadsheetChartSnapshot(chart, options = {}) {
   const position = chart?.position || {};
+  const type = String(chart?.type || chart?.chartType || "bar").toLowerCase();
   const categories = options.resolveSourceData
     ? resolvedWorksheetChartCategories(chart)
     : [...(chart?.categories || [])].map((value) => String(value));
@@ -216,11 +219,11 @@ export function spreadsheetChartSnapshot(chart, options = {}) {
     titleTextStyle: textStyleSnapshot(chart?.titleTextStyle, "titleTextStyle", chart),
     lineOptions: lineOptionsSnapshot(chart?.lineOptions, chart),
     dataLabels: dataLabelsSnapshot(chart?.dataLabels, chart),
-    type: String(chart?.type || chart?.chartType || "bar").toLowerCase(),
+    type,
     hasLegend: chart?.hasLegend !== false,
     categories,
-    xAxis: axisSnapshot(chart?.xAxis, "x", chart),
-    yAxis: axisSnapshot(chart?.yAxis, "y", chart),
+    xAxis: axisSnapshot(chart?.xAxis, "x", type, chart),
+    yAxis: axisSnapshot(chart?.yAxis, "y", type, chart),
     position: {
       left: Number(position.left ?? 420),
       top: Number(position.top ?? 40),
@@ -229,8 +232,10 @@ export function spreadsheetChartSnapshot(chart, options = {}) {
     },
     series: chartSeries(chart).map((series) => ({
       name: String(series?.name || ""),
+      xValues: options.resolveSourceData ? resolvedWorksheetChartSeriesXValues(chart, series) : [...(series?.xValues || [])].map(Number),
       values: options.resolveSourceData ? resolvedWorksheetChartSeriesValues(chart, series) : [...(series?.values || [])].map(Number),
       categoryFormula: series?.categoryFormula == null ? "" : String(series.categoryFormula),
+      xFormula: series?.xFormula == null ? "" : String(series.xFormula),
       formula: series?.formula == null ? "" : String(series.formula),
       fill: series?.fill == null ? null : String(series.fill),
       line: seriesLineSnapshot(series, chart),
@@ -245,32 +250,41 @@ function validateSnapshot(snapshot, chart) {
   text(snapshot.title, "title", chart);
   if (snapshot.titleTextStyle != null && snapshot.title.length === 0) fail(chart, "titleTextStyle requires a non-empty title.");
   const type = TYPES_TO_WIRE.get(snapshot.type);
-  if (type == null) fail(chart, `type must be bar, line, pie, area, or doughnut; received ${snapshot.type}.`, "unsupported_spreadsheet_chart");
+  if (type == null) fail(chart, `type must be bar, line, pie, area, doughnut, or scatter; received ${snapshot.type}.`, "unsupported_spreadsheet_chart");
   if (snapshot.lineOptions != null && snapshot.type !== "line") fail(chart, "lineOptions require a line chart.", "unsupported_spreadsheet_chart");
   if (CIRCULAR_TYPES.has(snapshot.type)) {
     if (snapshot.xAxis != null || snapshot.yAxis != null) fail(chart, `${snapshot.type} charts cannot carry category/value axes in the bounded native profile.`, "unsupported_spreadsheet_chart");
   } else {
-    if (snapshot.xAxis == null || snapshot.yAxis == null) fail(chart, "bar, line, and area charts require primary xAxis and yAxis objects.");
+    if (snapshot.xAxis == null || snapshot.yAxis == null) fail(chart, "bar, line, area, and scatter charts require primary xAxis and yAxis objects.");
     if ([chart?.xAxis, chart?.yAxis].some((axis) => axis?.title?.textStyle != null)) fail(chart, "axis-title text styling is outside the bounded native chart profile.", "unsupported_spreadsheet_chart");
-    validateAxis(snapshot.xAxis, "x", chart);
-    validateAxis(snapshot.yAxis, "y", chart);
+    validateAxis(snapshot.xAxis, "x", snapshot.type, chart);
+    validateAxis(snapshot.yAxis, "y", snapshot.type, chart);
     if (chart?.yAxis?.majorUnit != null && chart?.yAxis?.tickLabelInterval != null && Number(chart.yAxis.majorUnit) !== Number(chart.yAxis.tickLabelInterval)) {
       fail(chart, "yAxis.majorUnit and compatibility alias yAxis.tickLabelInterval must match when both are set.");
     }
   }
   if (snapshot.series.length < 1 || snapshot.series.length > MAX_SERIES) fail(chart, `must contain 1 through ${MAX_SERIES} series.`);
   if (snapshot.categories.length > MAX_POINTS) fail(chart, `exceeds the ${MAX_POINTS}-category budget.`);
+  if (snapshot.type === "scatter" && snapshot.categories.length > 0) fail(chart, "scatter charts use per-series numeric xValues rather than shared text categories.", "unsupported_spreadsheet_chart");
   snapshot.categories.forEach((value, index) => text(value, `category ${index + 1}`, chart));
   let points = 0;
   snapshot.series.forEach((series, seriesIndex) => {
     text(series.name, `series ${seriesIndex + 1} name`, chart, 255);
     formula(series.categoryFormula, `series ${seriesIndex + 1} categoryFormula`, chart);
+    formula(series.xFormula, `series ${seriesIndex + 1} xFormula`, chart);
     formula(series.formula, `series ${seriesIndex + 1} formula`, chart);
     series.fill = seriesFill(series.fill, `series ${seriesIndex + 1} fill`, chart);
-    if (series.marker != null && snapshot.type !== "line") fail(chart, `series ${seriesIndex + 1} markers require a line chart.`, "unsupported_spreadsheet_chart");
+    if (series.marker != null && snapshot.type !== "line" && snapshot.type !== "scatter") fail(chart, `series ${seriesIndex + 1} markers require a line or scatter chart.`, "unsupported_spreadsheet_chart");
     points += series.values.length;
     if (points > MAX_POINTS) fail(chart, `exceeds the ${MAX_POINTS}-value budget.`);
-    if (series.values.length !== snapshot.categories.length) fail(chart, `series ${seriesIndex + 1} has ${series.values.length} values for ${snapshot.categories.length} categories.`);
+    if (snapshot.type === "scatter") {
+      if (series.categoryFormula) fail(chart, `series ${seriesIndex + 1} scatter data cannot carry categoryFormula; use xFormula.`, "unsupported_spreadsheet_chart");
+      if (series.xValues.length !== series.values.length) fail(chart, `series ${seriesIndex + 1} has ${series.xValues.length} xValues for ${series.values.length} y values.`);
+      series.xValues.forEach((value, pointIndex) => finite(value, `series ${seriesIndex + 1} xValue ${pointIndex + 1}`, chart));
+    } else {
+      if (series.xValues.length > 0 || series.xFormula) fail(chart, `series ${seriesIndex + 1} xValues/xFormula require a scatter chart.`, "unsupported_spreadsheet_chart");
+      if (series.values.length !== snapshot.categories.length) fail(chart, `series ${seriesIndex + 1} has ${series.values.length} values for ${snapshot.categories.length} categories.`);
+    }
     series.values.forEach((value, pointIndex) => finite(value, `series ${seriesIndex + 1} value ${pointIndex + 1}`, chart));
   });
   for (const [name, value] of Object.entries(snapshot.position)) {
@@ -280,17 +294,18 @@ function validateSnapshot(snapshot, chart) {
   return type;
 }
 
-function validateAxis(axis, kind, chart) {
-  const expectedType = kind === "x" ? "textAxis" : "valueAxis";
+function validateAxis(axis, kind, chartType, chart) {
+  const numeric = kind === "y" || chartType === "scatter";
+  const expectedType = numeric ? "valueAxis" : "textAxis";
   if (axis.axisType !== expectedType) fail(chart, `${kind}Axis.axisType must be ${expectedType}; received ${axis.axisType}.`, "unsupported_spreadsheet_chart");
   text(axis.title, `${kind}Axis.title.text`, chart);
   text(axis.numberFormatCode, `${kind}Axis.numberFormatCode`, chart, 255);
-  if (kind === "x") {
+  if (!numeric) {
     if (axis.minimum != null || axis.maximum != null || axis.majorUnit != null) fail(chart, "xAxis supports title, numberFormatCode, and tickLabelInterval only.", "unsupported_spreadsheet_chart");
     if (axis.tickLabelInterval != null && (!Number.isInteger(axis.tickLabelInterval) || axis.tickLabelInterval < 1 || axis.tickLabelInterval > MAX_POINTS)) fail(chart, `xAxis.tickLabelInterval must be an integer from 1 through ${MAX_POINTS}.`);
     return;
   }
-  if (axis.tickLabelInterval != null) fail(chart, "yAxis.tickLabelInterval is normalized to majorUnit and cannot remain a category-axis interval.");
+  if (axis.tickLabelInterval != null) fail(chart, `${kind}Axis.tickLabelInterval is not valid on a numeric value axis; use majorUnit.`, "unsupported_spreadsheet_chart");
   for (const [name, value] of [["min", axis.minimum], ["max", axis.maximum], ["majorUnit", axis.majorUnit]]) if (value != null) finite(value, `yAxis.${name}`, chart);
   if (axis.minimum != null && axis.maximum != null && axis.minimum >= axis.maximum) fail(chart, "yAxis.min must be less than yAxis.max.");
   if (axis.majorUnit != null && axis.majorUnit <= 0) fail(chart, "yAxis.majorUnit must be positive.");
@@ -335,8 +350,10 @@ function wireChart(chart, original) {
     yAxis: wireAxis(snapshot.yAxis),
     series: snapshot.series.map((series) => ({
       name: series.name,
+      xValues: series.xValues,
       values: series.values,
       categoryFormula: series.categoryFormula,
+      xValueFormula: series.xFormula,
       valueFormula: series.formula,
       fill: series.fill == null ? undefined : { source: { case: "rgb", value: series.fill.slice(1) } },
       line: series.line == null ? undefined : {
@@ -445,10 +462,10 @@ function positionFromWire(sheet, source) {
   };
 }
 
-function axisFromWire(axis, kind) {
+function axisFromWire(axis, kind, chartType) {
   if (axis == null) return undefined;
   return {
-    axisType: kind === "x" ? "textAxis" : "valueAxis",
+    axisType: kind === "x" && chartType !== "scatter" ? "textAxis" : "valueAxis",
     title: { text: axis.title || "" },
     ...(axis.textStyle == null ? {} : { textStyle: textStyleFromWire(axis.textStyle, `${kind}Axis.textStyle`, axis) }),
     ...(axis.numberFormatCode ? { numberFormatCode: axis.numberFormatCode } : {}),
@@ -466,7 +483,7 @@ export function spreadsheetChartFromWire(sheet, source) {
   const importedFills = sourceSeries.map((series, index) => seriesFillFromWire(series.fill, `series ${index + 1} fill`, source));
   const importedLines = sourceSeries.map((series, index) => seriesLineFromWire(series.line, `series ${index + 1} line`, source));
   const importedMarkers = sourceSeries.map((series, index) => seriesMarkerFromWire(series.marker, `series ${index + 1} marker`, source));
-  if (type !== "line" && importedMarkers.some((marker) => marker != null)) fail(source, "series markers require a line chart.", "unsupported_spreadsheet_chart");
+  if (type !== "line" && type !== "scatter" && importedMarkers.some((marker) => marker != null)) fail(source, "series markers require a line or scatter chart.", "unsupported_spreadsheet_chart");
   const titleTextStyle = textStyleFromWire(source.titleTextStyle, "titleTextStyle", source);
   let lineOptionsInput = null;
   if (source.lineOptions != null) {
@@ -504,12 +521,13 @@ export function spreadsheetChartFromWire(sheet, source) {
     ...(dataLabels == null ? {} : { dataLabels }),
     hasLegend: source.hasLegend,
     categories: [...(source.categories || [])],
-    xAxis: axisFromWire(source.xAxis, "x"),
-    yAxis: axisFromWire(source.yAxis, "y"),
+    xAxis: axisFromWire(source.xAxis, "x", type),
+    yAxis: axisFromWire(source.yAxis, "y", type),
     position: positionFromWire(sheet, source),
     series: sourceSeries.map((series, index) => {
       return {
         name: series.name,
+        ...(type === "scatter" ? { xValues: [...series.xValues] } : {}),
         values: [...series.values],
         ...(importedFills[index] == null ? {} : { fill: importedFills[index] }),
         ...(importedLines[index] == null ? {} : { line: importedLines[index] }),
@@ -520,6 +538,7 @@ export function spreadsheetChartFromWire(sheet, source) {
   chart.id = source.id || chart.id;
   sourceSeries.forEach((series, index) => Object.assign(chart.series.items[index], {
     categoryFormula: series.categoryFormula || undefined,
+    xFormula: series.xValueFormula || undefined,
     formula: series.valueFormula || undefined,
     fill: importedFills[index],
     ...(importedLines[index] == null ? {} : { line: importedLines[index] }),

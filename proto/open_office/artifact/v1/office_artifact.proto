@@ -512,6 +512,7 @@ enum SpreadsheetChartType {
   SPREADSHEET_CHART_TYPE_PIE = 3;
   SPREADSHEET_CHART_TYPE_AREA = 4;
   SPREADSHEET_CHART_TYPE_DOUGHNUT = 5;
+  SPREADSHEET_CHART_TYPE_SCATTER = 6;
 }
 
 // One worksheet chart graphic frame and its relationship-backed ChartPart.
@@ -561,6 +562,12 @@ message SpreadsheetChartSeriesArtifact {
   // fill, and a bounded direct outline are modeled; picture and other complex
   // marker graphs stay source-owned.
   SpreadsheetChartMarkerArtifact marker = 7;
+  // Scatter charts own one numeric X cache/formula per series. Category charts
+  // leave both fields empty and continue to use chart.categories plus
+  // category_formula. Keeping this on the series preserves legal scatter
+  // plots whose series do not share an X range.
+  repeated double x_values = 8;
+  string x_value_formula = 9;
 }
 
 // Bounded primary-axis semantics for category/value worksheet charts. The x
