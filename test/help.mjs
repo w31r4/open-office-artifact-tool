@@ -286,7 +286,9 @@ assert.match(HELP_CATALOG.find((item) => item.name === "DocumentModel.create")?.
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.schema?.returns?.document?.type, "DocumentModel");
 assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addTextContentControl")?.schema?.parameters?.tag?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addField")?.schema?.parameters?.instruction?.required, true);
-assert.match(HELP_CATALOG.find((item) => item.name === "paragraph.addField")?.summary || "", /five-run native graph.*source-bound.*cached display text is editable/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "paragraph.addField")?.summary || "", /bookmark around only its cached result.*source-bound.*cached display text is editable/i);
+assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addField")?.schema?.parameters?.bookmarkName?.type, "string");
+assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addField")?.schema?.parameters?.bookmarkNativeId?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.contentControls")?.schema?.returns?.controls?.type, "DocumentTextContentControlHandle[]");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.fillContentControls")?.schema?.parameters?.values?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.fillContentControls")?.schema?.returns?.result?.description || "", /updated.*matchedTags.*missingTags/);
