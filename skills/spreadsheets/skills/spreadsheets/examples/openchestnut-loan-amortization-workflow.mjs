@@ -126,11 +126,11 @@ export function buildLoanAmortizationWorkbook() {
     ["Total principal repaid", null, null, null, null, "Principal total equals original principal."],
     ["Modeled period count", null, null, null, null, "Rows match the visible period input."],
     ["Solved periodic rate", null, null, null, null, "RATE reverses the payment terms back to the visible input rate."],
-    ["Solved original principal", null, null, null, null, "PV reverses the payment stream back to the visible opening balance."],
+    ["Solved original principal", null, null, null, null, "PV reverses payments to the opening balance."],
     ["Solved ending balance", null, 0, null, null, "FV confirms the modeled payment stream ends at zero."],
     ["Solved payment periods", null, null, null, null, "NPER reverses the payment stream back to the visible term."],
-    ["Cumulative interest reconciliation", null, null, null, null, "CUMIPMT agrees with the visible interest schedule."],
-    ["Cumulative principal reconciliation", null, null, null, null, "CUMPRINC agrees with the visible principal schedule."],
+    ["Cumulative interest check", null, null, null, null, "CUMIPMT matches scheduled interest."],
+    ["Cumulative principal check", null, null, null, null, "CUMPRINC matches scheduled principal."],
     ["Overall model status", null, 0, null, null, "Zero failed checks required."],
   ];
   checks.getRange("B4:B15").formulas = [

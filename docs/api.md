@@ -2377,6 +2377,8 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.COUNT` | formula | Count numeric values across arguments and ranges. |
 | `fx.COUNTIF` | formula | Count values using case-insensitive numeric/text criteria and Excel ?, *, and ~ wildcard semantics. |
 | `fx.COUNTIFS` | formula | Count rows where multiple criteria ranges of the same size match case-insensitive comparison or wildcard criteria. |
+| `fx.CUMIPMT` | formula | Calculate cumulative interest paid across a bounded inclusive range of constant-payment loan periods. |
+| `fx.CUMPRINC` | formula | Calculate cumulative principal paid across a bounded inclusive range of constant-payment loan periods. |
 | `fx.DATE` | formula | Return an Excel serial in the workbook's 1900 or 1904 date system, with overflow and 1900 serial-60 compatibility. |
 | `fx.DATEVALUE` | formula | Convert deterministic ISO or English month-name date text to a serial in the workbook's 1900 or 1904 date system; ambiguous locale-numeric dates return #VALUE!. |
 | `fx.DAY` | formula | Return the day component of a serial in the workbook's date system, including 1900 compatibility serial 60. |
@@ -2769,6 +2771,48 @@ Count rows where multiple criteria ranges of the same size match case-insensitiv
 **Schema returns:**
 
 - `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.CUMIPMT`
+
+Calculate cumulative interest paid across a bounded inclusive range of constant-payment loan periods.
+
+**Examples:**
+
+- =CUMIPMT(B1,B2,B3,1,12,0)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =CUMIPMT(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+**Notes:**
+
+- All six arguments are required. The bounded evaluator requires positive rate and present value, payment type 0 or 1, and integer start/end periods ordered from 1 through the term; the ending period is capped at 9,999. Invalid inputs return #VALUE! or #NUM! rather than coercing a range.
+
+#### `fx.CUMPRINC`
+
+Calculate cumulative principal paid across a bounded inclusive range of constant-payment loan periods.
+
+**Examples:**
+
+- =CUMPRINC(B1,B2,B3,1,12,0)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =CUMPRINC(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+**Notes:**
+
+- All six arguments are required. The bounded evaluator shares CUMIPMT's positive-rate, positive-present-value, integer-period, bounded-end, and payment-timing contract; it returns the signed principal cash flow.
 
 #### `fx.DATE`
 

@@ -98,10 +98,14 @@ try {
   assert.equal(fixtureLoanChecks.getRange("B8").formulas[0][0], "=PV('Inputs'!$B$7,'Inputs'!$B$8,'Amortization'!$C$2,0,'Inputs'!$B$6)");
   assert.equal(fixtureLoanChecks.getRange("B9").formulas[0][0], "=FV('Inputs'!$B$7,'Inputs'!$B$8,'Amortization'!$C$2,'Inputs'!$B$2,'Inputs'!$B$6)");
   assert.equal(fixtureLoanChecks.getRange("B10").formulas[0][0], "=NPER('Inputs'!$B$7,'Amortization'!$C$2,'Inputs'!$B$2,0,'Inputs'!$B$6)");
+  assert.equal(fixtureLoanChecks.getRange("B11").formulas[0][0], "=CUMIPMT('Inputs'!$B$7,'Inputs'!$B$8,'Inputs'!$B$2,1,'Inputs'!$B$8,'Inputs'!$B$6)");
+  assert.equal(fixtureLoanChecks.getRange("B12").formulas[0][0], "=CUMPRINC('Inputs'!$B$7,'Inputs'!$B$8,'Inputs'!$B$2,1,'Inputs'!$B$8,'Inputs'!$B$6)");
   assert.ok(Math.abs(fixtureLoanChecks.getRange("B8").values[0][0] - 100000) < 1e-7);
   assert.ok(Math.abs(fixtureLoanChecks.getRange("B9").values[0][0]) < 1e-7);
   assert.ok(Math.abs(fixtureLoanChecks.getRange("B10").values[0][0] - 12) < 1e-10);
-  assert.deepEqual(fixtureLoanChecks.getRange("E2:E11").values, Array.from({ length: 10 }, () => ["OK"]));
+  assert.ok(Math.abs(fixtureLoanChecks.getRange("B11").values[0][0] + 6618.54641401005) < 1e-8);
+  assert.ok(Math.abs(fixtureLoanChecks.getRange("B12").values[0][0] + 100000) < 1e-8);
+  assert.deepEqual(fixtureLoanChecks.getRange("E2:E13").values, Array.from({ length: 12 }, () => ["OK"]));
   assert.equal(fixtureLoanChecks.conditionalFormattings.items.length, 2);
 
   const assetFixture = await runFixture("asset-depreciation");
@@ -206,10 +210,14 @@ try {
   assert.equal(loanAmortizationChecks.getRange("B10").formulas[0][0], "=PV('Inputs'!$B$10,'Inputs'!$B$11,'Amortization'!$C$5,0,'Inputs'!$B$9)");
   assert.equal(loanAmortizationChecks.getRange("B11").formulas[0][0], "=FV('Inputs'!$B$10,'Inputs'!$B$11,'Amortization'!$C$5,'Inputs'!$B$5,'Inputs'!$B$9)");
   assert.equal(loanAmortizationChecks.getRange("B12").formulas[0][0], "=NPER('Inputs'!$B$10,'Amortization'!$C$5,'Inputs'!$B$5,0,'Inputs'!$B$9)");
+  assert.equal(loanAmortizationChecks.getRange("B13").formulas[0][0], "=CUMIPMT('Inputs'!$B$10,'Inputs'!$B$11,'Inputs'!$B$5,1,'Inputs'!$B$11,'Inputs'!$B$9)");
+  assert.equal(loanAmortizationChecks.getRange("B14").formulas[0][0], "=CUMPRINC('Inputs'!$B$10,'Inputs'!$B$11,'Inputs'!$B$5,1,'Inputs'!$B$11,'Inputs'!$B$9)");
   assert.ok(Math.abs(loanAmortizationChecks.getRange("B10").values[0][0] - 100000) < 1e-7);
   assert.ok(Math.abs(loanAmortizationChecks.getRange("B11").values[0][0]) < 1e-7);
   assert.ok(Math.abs(loanAmortizationChecks.getRange("B12").values[0][0] - 12) < 1e-10);
-  assert.deepEqual(loanAmortizationChecks.getRange("E4:E13").values, Array.from({ length: 10 }, () => ["OK"]));
+  assert.ok(Math.abs(loanAmortizationChecks.getRange("B13").values[0][0] + 6618.54641401005) < 1e-8);
+  assert.ok(Math.abs(loanAmortizationChecks.getRange("B14").values[0][0] + 100000) < 1e-8);
+  assert.deepEqual(loanAmortizationChecks.getRange("E4:E15").values, Array.from({ length: 12 }, () => ["OK"]));
   const loanAmortizationQa = await verifyWorkbookFile(loanAmortizationPath, {
     outputDir: path.join(outputDir, "openchestnut-loan-amortization-native-qa"),
     sheetName: "Amortization",

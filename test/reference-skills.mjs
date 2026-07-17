@@ -389,6 +389,8 @@ try {
   assert.match(authoredLoanAmortization.checksInspection.ndjson, /PV/);
   assert.match(authoredLoanAmortization.checksInspection.ndjson, /FV/);
   assert.match(authoredLoanAmortization.checksInspection.ndjson, /NPER/);
+  assert.match(authoredLoanAmortization.checksInspection.ndjson, /CUMIPMT/);
+  assert.match(authoredLoanAmortization.checksInspection.ndjson, /CUMPRINC/);
   const loanAmortizationRoundTrip = await SpreadsheetFile.importXlsx(await FileBlob.load(loanAmortizationPath));
   loanAmortizationRoundTrip.recalculate();
   assert.equal(loanAmortizationRoundTrip.worksheets.getItem("Amortization").getRange("D5").formulas[0][0], "=IPMT('Inputs'!$B$10,A5,'Inputs'!$B$11,'Inputs'!$B$5,0,'Inputs'!$B$9)");
@@ -398,10 +400,14 @@ try {
   assert.equal(loanAmortizationRoundTrip.worksheets.getItem("Checks").getRange("B10").formulas[0][0], "=PV('Inputs'!$B$10,'Inputs'!$B$11,'Amortization'!$C$5,0,'Inputs'!$B$9)");
   assert.equal(loanAmortizationRoundTrip.worksheets.getItem("Checks").getRange("B11").formulas[0][0], "=FV('Inputs'!$B$10,'Inputs'!$B$11,'Amortization'!$C$5,'Inputs'!$B$5,'Inputs'!$B$9)");
   assert.equal(loanAmortizationRoundTrip.worksheets.getItem("Checks").getRange("B12").formulas[0][0], "=NPER('Inputs'!$B$10,'Amortization'!$C$5,'Inputs'!$B$5,0,'Inputs'!$B$9)");
+  assert.equal(loanAmortizationRoundTrip.worksheets.getItem("Checks").getRange("B13").formulas[0][0], "=CUMIPMT('Inputs'!$B$10,'Inputs'!$B$11,'Inputs'!$B$5,1,'Inputs'!$B$11,'Inputs'!$B$9)");
+  assert.equal(loanAmortizationRoundTrip.worksheets.getItem("Checks").getRange("B14").formulas[0][0], "=CUMPRINC('Inputs'!$B$10,'Inputs'!$B$11,'Inputs'!$B$5,1,'Inputs'!$B$11,'Inputs'!$B$9)");
   assert.ok(Math.abs(loanAmortizationRoundTrip.worksheets.getItem("Checks").getRange("B10").values[0][0] - 100000) < 1e-7);
   assert.ok(Math.abs(loanAmortizationRoundTrip.worksheets.getItem("Checks").getRange("B11").values[0][0]) < 1e-7);
   assert.ok(Math.abs(loanAmortizationRoundTrip.worksheets.getItem("Checks").getRange("B12").values[0][0] - 12) < 1e-10);
-  assert.deepEqual(loanAmortizationRoundTrip.worksheets.getItem("Checks").getRange("E4:E13").values, Array.from({ length: 10 }, () => ["OK"]));
+  assert.ok(Math.abs(loanAmortizationRoundTrip.worksheets.getItem("Checks").getRange("B13").values[0][0] + 6618.54641401005) < 1e-8);
+  assert.ok(Math.abs(loanAmortizationRoundTrip.worksheets.getItem("Checks").getRange("B14").values[0][0] + 100000) < 1e-8);
+  assert.deepEqual(loanAmortizationRoundTrip.worksheets.getItem("Checks").getRange("E4:E15").values, Array.from({ length: 12 }, () => ["OK"]));
 
   const { createAssetDepreciationWorkbook } = await import(
     "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-asset-depreciation-workflow.mjs"

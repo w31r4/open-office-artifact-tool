@@ -88,8 +88,8 @@
             ["Solved original principal", null, null, null, null],
             ["Solved ending balance", null, 0, null, null],
             ["Solved payment periods", null, null, null, null],
-            ["Cumulative interest reconciliation", null, null, null, null],
-            ["Cumulative principal reconciliation", null, null, null, null],
+            ["Cumulative interest check", null, null, null, null],
+            ["Cumulative principal check", null, null, null, null],
             ["Overall model status", null, 0, null, null]
           ]
         },
