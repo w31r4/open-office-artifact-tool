@@ -2,6 +2,32 @@
 
 Presentation comments use people, threads, replies, reactions, and thread state.
 
+## OpenChestnut codec boundary
+
+The richer workflow below remains useful for model-side review planning, but
+canonical PPTX export has one deliberately narrow interoperable profile:
+standard legacy PresentationML comments. Use it only when one slide-level
+annotation can be represented as one author, one text item, and one explicit
+slide coordinate.
+
+```ts
+const slide = presentation.slides.add();
+slide.comments.addThread(undefined, "Confirm the source before delivery.", {
+  author: "Presentation Reviewer",
+  created: "2026-07-18T09:30:00.000Z",
+  position: { x: 1040, y: 84, unit: "px" },
+});
+```
+
+Pass `undefined` as the target. A legacy `p:cm` has no element or text-range
+anchor, reply graph, reaction, or resolved state. Imported comments that match
+this profile are visible to `inspect`/`resolve` and are byte-preserved only
+while unchanged. Do not add replies, resolve/reopen a thread, attach it to an
+element or text range, or replace imported content: those requests fail closed.
+Modern threaded-comment graphs remain opaque and source-bound. The remaining
+reference examples describe richer workflow material; they do not claim that
+the narrow legacy codec can serialize modern comment semantics.
+
 ## Current Author
 
 ```ts

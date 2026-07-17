@@ -82,6 +82,22 @@ async function addFixtureSlide(presentation, config = {}) {
     const to = byName.get(connector.toName) || connector.to || connector.end;
     remember(slide.connectors.add({ ...connector, from, to }), connector.name);
   }
+  for (const comment of config.legacyComments || []) {
+    const allowed = new Set(["text", "author", "created", "position"]);
+    const unexpected = Object.keys(comment || {}).filter((key) => !allowed.has(key));
+    if (unexpected.length || typeof comment?.text !== "string" || !comment.text.trim() || typeof comment?.author !== "string" || !comment.author.trim()) {
+      throw new Error(`Presentation fixture ${config.name || "slide"} legacy comment must have only non-empty text and author plus optional created/position fields.`);
+    }
+    const position = comment.position;
+    if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y) || (position.unit != null && position.unit !== "px" && position.unit !== "emu")) {
+      throw new Error(`Presentation fixture ${config.name || "slide"} legacy comment requires position { x, y, unit?: 'px'|'emu' }.`);
+    }
+    slide.comments.addThread(undefined, comment.text, {
+      author: comment.author,
+      ...(comment.created == null ? {} : { created: comment.created }),
+      position: { x: Number(position.x), y: Number(position.y), ...(position.unit == null ? {} : { unit: position.unit }) },
+    });
+  }
   return slide;
 }
 

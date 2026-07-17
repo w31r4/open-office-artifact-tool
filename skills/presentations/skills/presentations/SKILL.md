@@ -190,6 +190,13 @@ Do not patch an embedding part directly or present a reconstructed OLE object
 as equivalent; ambiguous, shared, malformed, or source-tampered graphs must
 fail closed.
 
+For review annotations, read `artifact_tool/api/references/comments.md` before
+calling `slide.comments.addThread(...)`. Canonical PPTX export supports only
+one legacy slide-level comment with `undefined` target, one author, one text
+item, and an explicit coordinate. Modern threads, replies, reactions, resolved
+state, and element/text anchors must stay opaque/source-bound or fail closed;
+never flatten them into a legacy comment.
+
 Before running any generated presentation module, initialize its workspace so
 Node.js can resolve the bundled `open-office-artifact-tool` package:
 

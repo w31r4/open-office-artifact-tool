@@ -1,0 +1,37 @@
+{
+  "name": "open-chestnut-legacy-comments",
+  "outputName": "open-chestnut-legacy-comments.pptx",
+  "slideSize": { "width": 1280, "height": 720 },
+  "slides": [
+    {
+      "name": "Legacy review comment",
+      "shapes": [
+        {
+          "name": "comment-boundary-title",
+          "geometry": "textbox",
+          "position": { "left": 72, "top": 64, "width": 820, "height": 64 },
+          "fill": "transparent",
+          "line": { "fill": "transparent", "width": 0 },
+          "text": "Inspectable legacy review annotation",
+          "textStyle": { "fontFamily": "Arial", "fontSize": 36, "bold": true, "color": "#0F172A" }
+        }
+      ],
+      "legacyComments": [
+        {
+          "text": "Confirm the source before delivery.",
+          "author": "Presentation Reviewer",
+          "created": "2026-07-18T09:30:00.000Z",
+          "position": { "x": 1040, "y": 84, "unit": "px" }
+        }
+      ]
+    }
+  ],
+  "expectInspect": [
+    { "kind": "comment", "pattern": "Confirm the source before delivery" }
+  ],
+  "qa": {
+    "nativeRender": "auto",
+    "inspectKind": "deck,slide,textbox,comment,textRange",
+    "maxChars": 12000
+  }
+}

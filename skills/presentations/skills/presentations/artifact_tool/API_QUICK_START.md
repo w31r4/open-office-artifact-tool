@@ -249,6 +249,38 @@ const pptx = await PresentationFile.exportPptx(presentation);
 await pptx.save("output/edited-deck.pptx");
 ```
 
+## Bounded Legacy Slide Comments
+
+For a simple slide-level review annotation, use the standard legacy PPTX
+profile directly. It has one author, one text item, and one explicit slide
+coordinate; it is not a substitute for modern threaded comments.
+
+```ts
+const review = slide.comments.addThread(
+  undefined,
+  "Confirm the source before delivery.",
+  {
+    author: "Presentation Reviewer",
+    created: "2026-07-18T09:30:00.000Z",
+    position: { x: 1040, y: 84, unit: "px" },
+  },
+);
+
+const evidence = presentation.inspect({
+  kind: "comment",
+  target: review.id,
+  maxChars: 2000,
+});
+console.log(evidence.ndjson);
+```
+
+Use `undefined` for the target. Replies, resolution state, reactions, and
+element/text-range anchors cannot be represented by legacy PresentationML and
+therefore fail closed on canonical export. Recognized imported legacy comments
+are visible for inspection but must remain unchanged; modern comment graphs
+remain opaque and source-bound. See `api/references/comments.md` for the
+complete boundary.
+
 ## Local Image Bytes
 
 Use byte-backed images for embedded PPTX assets.

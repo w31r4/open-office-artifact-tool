@@ -1167,6 +1167,84 @@ function directSlideElements(slide) {
   ];
 }
 
+function legacyCommentCoordinate(value, unit, name) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    throw new OpenChestnutCodecError(`${name} must be a finite coordinate.`, [], { code: "invalid_presentation_legacy_comment" });
+  }
+  if (unit === "emu") return Math.round(number);
+  if (unit === undefined || unit === "px") return emuFromPixels(number, name);
+  throw new OpenChestnutCodecError(`${name}.unit must be "px" or "emu".`, [], { code: "invalid_presentation_legacy_comment" });
+}
+
+function legacyCommentTimestamp(value, name) {
+  const text = String(value ?? "");
+  if (!text || Number.isNaN(Date.parse(text))) {
+    throw new OpenChestnutCodecError(`${name} must be an ISO-8601 timestamp.`, [], { code: "invalid_presentation_legacy_comment" });
+  }
+  return text;
+}
+
+function legacyCommentInteger(value) {
+  const number = Number(value);
+  return Number.isSafeInteger(number) ? number : undefined;
+}
+
+// Keep native legacy-comment evidence only on the imported model. It is used
+// to prove an unchanged source-bound export, never exposed as cross-file
+// identity and never used to turn an element/thread API into a fake native
+// anchor. New legacy comments are slide-level annotations at a fixed position.
+function presentationLegacyComments(slide, slideIndex) {
+  return slide.comments.items.map((thread, index) => {
+    const label = `slide ${slideIndex + 1} legacy comment ${index + 1}`;
+    if (thread.nativeFormat && thread.nativeFormat !== "legacy") {
+      throw new OpenChestnutCodecError(`${label} uses ${thread.nativeFormat} comments, which are outside the legacy PPTX profile.`, [], { code: "unsupported_presentation_comment" });
+    }
+    if (thread.targetId) {
+      throw new OpenChestnutCodecError(`${label} targets an element or text range. Legacy PPTX comments are slide-level only.`, [], { code: "unsupported_presentation_comment" });
+    }
+    if (thread.resolved) {
+      throw new OpenChestnutCodecError(`${label} is resolved. Legacy PPTX comments do not encode thread state.`, [], { code: "unsupported_presentation_comment" });
+    }
+    if (!Array.isArray(thread.comments) || thread.comments.length !== 1) {
+      throw new OpenChestnutCodecError(`${label} must contain exactly one root comment and no replies.`, [], { code: "unsupported_presentation_comment" });
+    }
+    const comment = thread.comments[0];
+    const author = String(comment.author ?? thread.author ?? "").trim();
+    if (!author) {
+      throw new OpenChestnutCodecError(`${label} requires a non-empty author.`, [], { code: "invalid_presentation_legacy_comment" });
+    }
+    const position = thread.position;
+    if (!position || typeof position !== "object") {
+      throw new OpenChestnutCodecError(`${label} requires an explicit { x, y, unit? } position.`, [], { code: "invalid_presentation_legacy_comment" });
+    }
+    const anchor = thread.nativeFormat === "legacy" && thread.nativeAnchor && typeof thread.nativeAnchor === "object"
+      ? thread.nativeAnchor
+      : undefined;
+    const anchorPositionXEmu = legacyCommentInteger(anchor?.positionXEmu);
+    const anchorPositionYEmu = legacyCommentInteger(anchor?.positionYEmu);
+    const positionXEmu = anchorPositionXEmu !== undefined
+      ? anchorPositionXEmu
+      : legacyCommentCoordinate(position.x, position.unit, `${label}.position.x`);
+    const positionYEmu = anchorPositionYEmu !== undefined
+      ? anchorPositionYEmu
+      : legacyCommentCoordinate(position.y, position.unit, `${label}.position.y`);
+    const result = {
+      id: thread.id,
+      author,
+      text: String(comment.text ?? ""),
+      createdAt: legacyCommentTimestamp(comment.created ?? thread.created, `${label}.created`),
+      positionXEmu,
+      positionYEmu,
+    };
+    const nativeAuthorId = legacyCommentInteger(anchor?.nativeAuthorId);
+    const nativeIndex = legacyCommentInteger(anchor?.nativeIndex);
+    if (nativeAuthorId !== undefined && nativeAuthorId >= 0) result.nativeAuthorId = nativeAuthorId;
+    if (nativeIndex !== undefined && nativeIndex >= 0) result.nativeIndex = nativeIndex;
+    return result;
+  });
+}
+
 function presentationThemeSnapshot(theme) {
   return JSON.stringify({
     name: theme.name,
@@ -1202,7 +1280,10 @@ function unsupportedPresentationFeatures(presentation) {
   for (const slide of presentation.slides?.items || []) {
     const prefix = `slide ${slide.index + 1}`;
     if (slide.layoutId) unsupported.push(`${prefix} layout binding`);
-    if (slide.comments?.items?.length) unsupported.push(`${prefix} comments`);
+    if (slide.comments?.items?.length) {
+      try { presentationLegacyComments(slide, slide.index); }
+      catch (error) { unsupported.push(`${prefix} comments (${error.message})`); }
+    }
     if (slide.nativeObjects?.items?.length) unsupported.push(`${prefix} native objects`);
     if (slide.shapes?.items?.some((shape) => shape.placeholder)) unsupported.push(`${prefix} source-free placeholder authoring`);
   }
@@ -1291,6 +1372,7 @@ export function presentationEnvelope(presentation, protocolVersion) {
         throw new OpenChestnutCodecError(`Source-preserving PPTX export cannot add speaker notes to slide ${slideIndex + 1} because the source slide has no notes part.`, [], { code: "unsupported_presentation_edit" });
       }
     }
+    const legacyComments = presentationLegacyComments(slide, slideIndex);
     return {
       id: sourceState?.wire.id || slide.id,
       name: slide.name,
@@ -1302,6 +1384,7 @@ export function presentationEnvelope(presentation, protocolVersion) {
         : slide.speakerNotes?.text
           ? { speakerNotes: { text: slide.speakerNotes.text } }
           : {}),
+      ...(legacyComments.length ? { legacyComments } : {}),
       elements: sourceState
           ? sourceState.entries.map((entry) => {
             if (entry.wire.content.case === "shape") {
@@ -1981,6 +2064,33 @@ export async function presentationFromEnvelope(envelope) {
             : element.content.case === "table"
               ? presentationTableReadOnlySnapshot(model)
             : undefined,
+      });
+    }
+    for (const sourceComment of sourceSlide.legacyComments || []) {
+      const created = sourceComment.createdAt || new Date(0).toISOString();
+      const nativeAuthorId = Number(sourceComment.nativeAuthorId || 0);
+      const nativeIndex = Number(sourceComment.nativeIndex || 0);
+      const positionXEmu = Number(sourceComment.positionXEmu || 0);
+      const positionYEmu = Number(sourceComment.positionYEmu || 0);
+      slide.comments.addThread(undefined, sourceComment.text, {
+        id: sourceComment.id,
+        author: sourceComment.author,
+        created,
+        nativeFormat: "legacy",
+        nativeAnchor: {
+          format: "legacy",
+          nativeAuthorId,
+          nativeIndex,
+          positionXEmu,
+          positionYEmu,
+        },
+        position: { x: positionXEmu / EMU_PER_PIXEL, y: positionYEmu / EMU_PER_PIXEL, unit: "px" },
+        comments: [{
+          nativeId: `legacy:${nativeAuthorId}:${nativeIndex}`,
+          author: sourceComment.author,
+          text: sourceComment.text,
+          created,
+        }],
       });
     }
     slideStates.push({ wire: sourceSlide, name: slide.name, entries });

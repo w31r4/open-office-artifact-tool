@@ -726,4 +726,57 @@ await assert.rejects(
   (error) => error?.code === "missing_source_package",
 );
 
+// OpenChestnut owns a deliberately narrow legacy PPTX comment profile: one
+// slide-level text item at an explicit coordinate. It never turns the richer
+// JS thread facade into a fake element anchor, reply graph, or resolved state.
+const legacyCommentDeck = Presentation.create({ slideSize: { width: 1280, height: 720 } });
+const legacyCommentSlide = legacyCommentDeck.slides.add({ name: "Legacy comments" });
+const legacyCommentThread = legacyCommentSlide.comments.addThread(undefined, "Confirm the source before delivery.", {
+  author: "Review Owner",
+  created: "2026-07-18T03:05:00Z",
+  position: { x: 360, y: 240 },
+});
+assert.match(legacyCommentDeck.inspect({ kind: "comment" }).ndjson, /Confirm the source before delivery/);
+const legacyCommentExport = await PresentationFile.exportPptx(legacyCommentDeck);
+const legacyCommentZip = await JSZip.loadAsync(new Uint8Array(await legacyCommentExport.arrayBuffer()));
+assert.ok(legacyCommentZip.file("ppt/comments/comment1.xml"));
+assert.ok(legacyCommentZip.file("ppt/commentAuthors.xml"));
+assert.match(await legacyCommentZip.file("ppt/comments/comment1.xml").async("text"), /Confirm the source before delivery/);
+const legacyCommentImported = await PresentationFile.importPptx(legacyCommentExport);
+assert.equal(legacyCommentImported.slides.getItem(0).comments.items.length, 1);
+const importedLegacyThread = legacyCommentImported.slides.getItem(0).comments.items[0];
+assert.equal(importedLegacyThread.nativeFormat, "legacy");
+assert.equal(importedLegacyThread.targetId, undefined);
+assert.equal(importedLegacyThread.comments.length, 1);
+assert.equal(importedLegacyThread.comments[0].author, "Review Owner");
+assert.equal(importedLegacyThread.comments[0].text, "Confirm the source before delivery.");
+assert.deepEqual(importedLegacyThread.position, { x: 360, y: 240, unit: "px" });
+const legacyCommentRoundTrip = await PresentationFile.exportPptx(legacyCommentImported);
+const legacyCommentRoundTripZip = await JSZip.loadAsync(new Uint8Array(await legacyCommentRoundTrip.arrayBuffer()));
+assert.equal(
+  await legacyCommentRoundTripZip.file("ppt/comments/comment1.xml").async("text"),
+  await legacyCommentZip.file("ppt/comments/comment1.xml").async("text"),
+);
+importedLegacyThread.addReply("Replies are not part of the legacy profile.");
+await assert.rejects(
+  () => PresentationFile.exportPptx(legacyCommentImported),
+  (error) => error?.code === "unsupported_presentation_edit",
+);
+
+const invalidLegacyCommentDeck = Presentation.create({ slideSize: { width: 1280, height: 720 } });
+const invalidLegacyCommentSlide = invalidLegacyCommentDeck.slides.add();
+const invalidLegacyTarget = invalidLegacyCommentSlide.shapes.add({
+  geometry: "rect",
+  position: { left: 40, top: 40, width: 160, height: 80 },
+});
+invalidLegacyCommentSlide.comments.addThread(invalidLegacyTarget, "An element anchor is not a legacy comment.", {
+  author: "Reviewer",
+  position: { x: 120, y: 80 },
+});
+await assert.rejects(
+  () => PresentationFile.exportPptx(invalidLegacyCommentDeck),
+  (error) => error?.code === "unsupported_presentation_features",
+);
+assert.equal(legacyCommentThread.id.startsWith("pc"), true);
+
 console.log("presentation smoke ok");

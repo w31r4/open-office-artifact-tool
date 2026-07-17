@@ -111,8 +111,9 @@ assert.match(HELP_CATALOG.find((item) => item.name === "presentation.slides.add"
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.setBackground"));
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.clearBackground")?.schema?.returns?.slide?.description || "", /no direct background.*Layout\/Master/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.comments.addThread"));
-assert.match(HELP_CATALOG.find((item) => item.name === "slide.comments.addThread")?.summary || "", /does not author legacy or modern PPTX comments.*read-only/i);
-assert.match(HELP_CATALOG.find((item) => item.name === "slide.comments.addThread")?.schema?.parameters?.target?.description || "", /does not author PPTX comment bindings/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.comments.addThread")?.summary || "", /bounded legacy PPTX annotation.*source-bound and read-only/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.comments.addThread")?.schema?.parameters?.target?.description || "", /must be omitted.*legacy PPTX export/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.comments.addThread")?.schema?.parameters?.position?.description || "", /Explicit slide coordinate/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.connectors.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.theme"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.master"));

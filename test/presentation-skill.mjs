@@ -139,6 +139,28 @@ try {
   assert.equal(itemByName(coreReview.qa.presentation.slides.getItem(0).images.items, "review-status").alt, "Green review status");
   assert.equal(itemByName(coreReview.qa.presentation.slides.getItem(0).connectors.items, "visual-to-delivery").line.endArrow, "triangle");
 
+  const legacyComments = await runPresentationFixture(path.join(fixtureDir, "open-chestnut-legacy-comments.json"), {
+    outputDir: path.join(root, "legacy-comments"),
+    nativeRender,
+  });
+  assert.equal(legacyComments.qa.verify.ok, true);
+  assert.equal(legacyComments.qa.summary.packageOk, true);
+  const legacyComment = legacyComments.qa.presentation.slides.getItem(0).comments.items[0];
+  assert.ok(legacyComment, "legacy comment fixture must survive canonical import/export");
+  assert.equal(legacyComment.nativeFormat, "legacy");
+  assert.equal(legacyComment.targetId, undefined);
+  assert.equal(legacyComment.author, "Presentation Reviewer");
+  assert.equal(legacyComment.comments.length, 1);
+  assert.equal(legacyComment.comments[0].text, "Confirm the source before delivery.");
+  assert.deepEqual(legacyComment.position, { x: 1040, y: 84, unit: "px" });
+  assert.match(legacyComments.qa.inspect.ndjson, /Confirm the source before delivery\./);
+  const legacyZip = await JSZip.loadAsync(await fs.readFile(legacyComments.pptxPath));
+  const commentAuthorsXml = await legacyZip.file("ppt/commentAuthors.xml").async("text");
+  const commentXml = await legacyZip.file("ppt/comments/comment1.xml").async("text");
+  assert.match(commentAuthorsXml, /<p:cmAuthor[^>]*name="Presentation Reviewer"/);
+  assert.match(commentXml, /<p:cm[^>]*authorId="0"[^>]*idx="0"/);
+  assert.match(commentXml, /Confirm the source before delivery\./);
+
   const coreEvidence = await runPresentationFixture(path.join(fixtureDir, "package-notes-comments.json"), {
     outputDir: path.join(root, "core-evidence"),
     nativeRender,
@@ -159,6 +181,7 @@ try {
     ...[
       "agent-readiness.json",
       "modern-comments.json",
+      "open-chestnut-legacy-comments.json",
       "open-chestnut-preservation.json",
       "package-drawing.json",
       "package-notes-comments.json",
@@ -175,6 +198,11 @@ try {
   assert.match(quickStartText, /open-office-artifact-tool/);
   assert.match(skillText, /slides_test\.py/);
   assert.match(skillText, /slide\.setBackground.*slide\.clearBackground/s);
+  assert.match(skillText, /artifact_tool\/api\/references\/comments\.md/);
+  const commentsReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/comments.md", "utf8");
+  assert.match(commentsReferenceText, /Pass `undefined` as the target/);
+  assert.match(commentsReferenceText, /one author, one text item, and one explicit\s+slide coordinate/is);
+  assert.match(commentsReferenceText, /Modern threaded-comment graphs remain opaque and source-bound/);
   const slideReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/slide.spec.md", "utf8");
   assert.match(slideReferenceText, /never flattens the\s+inherited color/i);
   assert.match(slideReferenceText, /Gradient,\s+pattern, image.*opaque-preserved/is);
