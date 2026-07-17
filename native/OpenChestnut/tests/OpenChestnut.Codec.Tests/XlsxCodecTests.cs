@@ -3584,6 +3584,98 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ProtocolAuthorsImportsAndEditsBubbleWorksheetCharts()
+    {
+        var request = ChartExportRequest();
+        var chart = request.Artifact.Workbook.Worksheets[0].Charts[0];
+        chart.Type = SpreadsheetChartType.Bubble;
+        chart.Title = "Revenue opportunity";
+        chart.Categories.Clear();
+        chart.LineOptions = null;
+        chart.DataLabels = null;
+        chart.XAxis = new SpreadsheetChartAxisArtifact { Title = "Customers", NumberFormatCode = "0", Minimum = 0, Maximum = 30, MajorUnit = 5 };
+        chart.YAxis = new SpreadsheetChartAxisArtifact { Title = "Revenue", NumberFormatCode = "$0", Minimum = 0, Maximum = 100, MajorUnit = 20 };
+        var series = chart.Series[0];
+        series.CategoryFormula = string.Empty;
+        series.XValueFormula = "'Summary'!$A$1:$A$2";
+        series.ValueFormula = "'Summary'!$B$1:$B$2";
+        series.BubbleSizeFormula = "'Summary'!$C$1:$C$2";
+        series.Marker = null;
+        series.XValues.Add([10, 20]);
+        series.BubbleSizes.Add([4, 9]);
+
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(authored.File.ToByteArray());
+        var authoredXml = ReadChartXml(authored.File.ToByteArray());
+        Assert.Contains("<c:bubbleChart>", authoredXml, StringComparison.Ordinal);
+        Assert.Contains("<c:xVal>", authoredXml, StringComparison.Ordinal);
+        Assert.Contains("<c:yVal>", authoredXml, StringComparison.Ordinal);
+        Assert.Contains("<c:bubbleSize>", authoredXml, StringComparison.Ordinal);
+        Assert.DoesNotContain("<c:cat>", authoredXml, StringComparison.Ordinal);
+        Assert.Equal(2, authoredXml.Split("<c:valAx>", StringSplitOptions.None).Length - 1);
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var importedChart = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Charts);
+        Assert.Equal(SpreadsheetChartType.Bubble, importedChart.Type);
+        Assert.Empty(importedChart.Categories);
+        Assert.True(importedChart.Source.Editable);
+        Assert.Equal([10, 20], importedChart.Series[0].XValues);
+        Assert.Equal([42.5, 85], importedChart.Series[0].Values);
+        Assert.Equal([4, 9], importedChart.Series[0].BubbleSizes);
+        Assert.Equal("'Summary'!$C$1:$C$2", importedChart.Series[0].BubbleSizeFormula);
+
+        importedChart.Title = "Edited opportunity";
+        importedChart.Series[0].XValues[1] = 22;
+        importedChart.Series[0].Values[1] = 88;
+        importedChart.Series[0].BubbleSizes[1] = 12;
+        importedChart.XAxis.Maximum = 40;
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, string.Join("\n", edited.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(edited.File.ToByteArray());
+        var second = Import(edited.File.ToByteArray());
+        var secondChart = Assert.Single(second.Artifact.Workbook.Worksheets[0].Charts);
+        Assert.Equal("Edited opportunity", secondChart.Title);
+        Assert.Equal([10, 22], secondChart.Series[0].XValues);
+        Assert.Equal([42.5, 88], secondChart.Series[0].Values);
+        Assert.Equal([4, 12], secondChart.Series[0].BubbleSizes);
+        Assert.Equal(40, secondChart.XAxis.Maximum);
+
+        var customScaleSource = SetChartScalar(authored.File.ToByteArray(), "bubbleChart", "bubbleScale", "80");
+        AssertOffice2021Valid(customScaleSource);
+        var customScaleXml = ReadChartXml(customScaleSource);
+        var importedCustomScale = Import(customScaleSource);
+        Assert.True(importedCustomScale.Ok, string.Join("\n", importedCustomScale.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var customScale = Assert.Single(importedCustomScale.Artifact.Workbook.Worksheets[0].Charts);
+        Assert.Equal(SpreadsheetChartType.Bubble, customScale.Type);
+        Assert.False(customScale.Source.Editable);
+        var preserved = Export(importedCustomScale.Artifact);
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(customScaleXml, ReadChartXml(preserved.File.ToByteArray()));
+        customScale.Title = "Rejected scale edit";
+        var rejected = Export(importedCustomScale.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_chart_edit", Assert.Single(rejected.Diagnostics).Code);
+
+        var invalidSize = ChartExportRequest();
+        var invalidChart = invalidSize.Artifact.Workbook.Worksheets[0].Charts[0];
+        invalidChart.Type = SpreadsheetChartType.Bubble;
+        invalidChart.Categories.Clear();
+        invalidChart.LineOptions = null;
+        invalidChart.DataLabels = null;
+        invalidChart.XAxis = new SpreadsheetChartAxisArtifact();
+        invalidChart.YAxis = new SpreadsheetChartAxisArtifact();
+        invalidChart.Series[0].Marker = null;
+        invalidChart.Series[0].CategoryFormula = string.Empty;
+        invalidChart.Series[0].XValues.Add([1, 2]);
+        invalidChart.Series[0].BubbleSizes.Add([0, 1]);
+        rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(invalidSize.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_spreadsheet_chart", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void ProtocolRejectsInvalidWorksheetChartAxes()
     {
         var reversed = ChartExportRequest();

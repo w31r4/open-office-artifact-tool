@@ -285,6 +285,56 @@ const secondPackageInspect = await SpreadsheetFile.inspectXlsx(secondXlsx, { max
 assert.equal(secondPackageInspect.ok, true, secondPackageInspect.ndjson);
 assert.equal(secondPackageInspect.records[0].semanticIssues, 0);
 
+const bubbleWorkbook = Workbook.create();
+const bubbleSheet = bubbleWorkbook.worksheets.add("Opportunities");
+bubbleSheet.getRange("A1:C4").values = [
+  ["Customers", "Revenue", "Pipeline"],
+  [10, 42, 4],
+  [20, 68, 9],
+  [30, 85, 16],
+];
+const bubble = bubbleSheet.charts.add("bubble", bubbleSheet.getRange("A1:C4"));
+bubble.name = "Opportunity bubble";
+bubble.title = "Revenue opportunity";
+bubble.xAxis = { title: { text: "Customers" }, min: 0, max: 40, majorUnit: 10, numberFormatCode: "0" };
+bubble.yAxis = { title: { text: "Revenue" }, min: 0, max: 100, majorUnit: 20, numberFormatCode: "$0" };
+bubble.series.items[0].fill = "#0EA5E9";
+bubble.series.items[0].line = { fill: "#0369A1", width: 1.5 };
+bubble.setPosition("E2", "L18");
+assert.deepEqual(bubble.categories, []);
+assert.deepEqual(bubble.series.items[0].xValues, [10, 20, 30]);
+assert.deepEqual(bubble.series.items[0].values, [42, 68, 85]);
+assert.deepEqual(bubble.series.items[0].bubbleSizes, [4, 9, 16]);
+assert.equal(bubble.series.items[0].xFormula, "'Opportunities'!A2:A4");
+assert.equal(bubble.series.items[0].formula, "'Opportunities'!B2:B4");
+assert.equal(bubble.series.items[0].bubbleSizeFormula, "'Opportunities'!C2:C4");
+assert.match(bubble.toSvg(), /data-bubble-size="16"/);
+assert.equal(bubbleWorkbook.verify().ok, true);
+const bubbleXlsx = await SpreadsheetFile.exportXlsx(bubbleWorkbook);
+const bubbleZip = await JSZip.loadAsync(new Uint8Array(await bubbleXlsx.arrayBuffer()));
+const bubbleChartPath = Object.keys(bubbleZip.files).find((name) => /\/charts\/chart\d+\.xml$/i.test(name));
+assert.ok(bubbleChartPath);
+const bubbleXml = await bubbleZip.file(bubbleChartPath).async("text");
+assert.match(bubbleXml, /<c:bubbleChart>/);
+assert.match(bubbleXml, /<c:xVal>[\s\S]*<c:yVal>[\s\S]*<c:bubbleSize>/);
+assert.equal((bubbleXml.match(/<c:valAx>/g) || []).length, 2);
+assert.doesNotMatch(bubbleXml, /<c:cat>/);
+const importedBubbleWorkbook = await SpreadsheetFile.importXlsx(bubbleXlsx);
+const importedBubble = importedBubbleWorkbook.worksheets.getItem("Opportunities").charts.items[0];
+assert.equal(importedBubble.type, "bubble");
+assert.equal(importedBubble.xAxis.axisType, "valueAxis");
+assert.deepEqual(importedBubble.series.items[0].bubbleSizes, [4, 9, 16]);
+importedBubble.title = "Edited revenue opportunity";
+importedBubble.series.items[0].xValues[1] = 22;
+importedBubble.series.items[0].values[1] = 70;
+importedBubble.series.items[0].bubbleSizes[1] = 12;
+const editedBubbleWorkbook = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(importedBubbleWorkbook));
+const editedBubble = editedBubbleWorkbook.worksheets.getItem("Opportunities").charts.items[0];
+assert.equal(editedBubble.title, "Edited revenue opportunity");
+assert.deepEqual(editedBubble.series.items[0].xValues, [10, 22, 30]);
+assert.deepEqual(editedBubble.series.items[0].values, [42, 70, 85]);
+assert.deepEqual(editedBubble.series.items[0].bubbleSizes, [4, 12, 16]);
+
 function chartBoundaryWorkbook(type) {
   const candidate = Workbook.create();
   const candidateSheet = candidate.worksheets.add("Chart boundary");
@@ -323,10 +373,30 @@ await assert.rejects(
   (error) => error?.code === "unsupported_spreadsheet_chart" && /marker-only scatter.*marker\.line/i.test(error.message),
 );
 
-const unsupportedBubble = chartBoundaryWorkbook("bubble");
+const bubbleShortcutBoundary = Workbook.create();
+const bubbleShortcutBoundarySheet = bubbleShortcutBoundary.worksheets.add("Bubble boundary");
+bubbleShortcutBoundarySheet.getRange("A1:D3").values = [["X", "Y", "Size", "Unexpected"], [1, 2, 3, 4], [2, 4, 6, 8]];
+assert.throws(
+  () => bubbleShortcutBoundarySheet.charts.add("bubble", bubbleShortcutBoundarySheet.getRange("A1:D3")),
+  /requires exactly three columns ordered X \| Y \| Size/i,
+);
+const nonPositiveBubble = Workbook.create();
+const nonPositiveBubbleSheet = nonPositiveBubble.worksheets.add("Non-positive bubble");
+nonPositiveBubbleSheet.getRange("A1:C3").values = [["X", "Y", "Size"], [1, 2, 0], [2, 4, 6]];
+assert.throws(
+  () => nonPositiveBubbleSheet.charts.add("bubble", nonPositiveBubbleSheet.getRange("A1:C3")),
+  /Size value.*finite and positive/i,
+);
+const mismatchedBubble = Workbook.create();
+const mismatchedBubbleSheet = mismatchedBubble.worksheets.add("Mismatched bubble");
+const mismatchedBubbleChart = mismatchedBubbleSheet.charts.add("bubble", {
+  name: "Mismatched bubble",
+  series: [{ name: "Series", xValues: [1, 2], values: [2, 4], bubbleSizes: [5] }],
+});
+assert.equal(mismatchedBubbleChart.type, "bubble");
 await assert.rejects(
-  () => SpreadsheetFile.exportXlsx(unsupportedBubble.candidate),
-  (error) => error?.code === "unsupported_spreadsheet_chart" && /bar, line, pie, area, doughnut, or scatter/i.test(error.message),
+  () => SpreadsheetFile.exportXlsx(mismatchedBubble),
+  (error) => error?.code === "invalid_spreadsheet_chart" && /bubbleSizes.*y values/i.test(error.message),
 );
 
 const connectionWorkbook = Workbook.create({

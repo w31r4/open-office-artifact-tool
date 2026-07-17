@@ -4,7 +4,7 @@ using OpenOffice.Artifact.Wire.V1;
 
 namespace OpenChestnut.Codec;
 
-// Owns the bounded primary category/value or scatter value/value-axis projection for worksheet charts.
+// Owns the bounded primary category/value or numeric-X value/value-axis projection for worksheet charts.
 // Axis identity and all unmodeled formatting remain in the ChartPart; this
 // module reads and patches only titles, number formats, category label interval,
 // linear value-axis bounds/unit, and the delegated bounded tick-label style.
@@ -25,7 +25,7 @@ internal static class XlsxChartAxisCodec
         if ((chart.XAxis is null) != (chart.YAxis is null))
             throw Invalid(worksheetId, chart.Id, "must carry both x_axis and y_axis or neither for backward-compatible default authoring.");
         if (chart.XAxis is null) return;
-        ValidateAxis(chart.XAxis, chart.Type != SpreadsheetChartType.Scatter, "x", worksheetId, chart.Id);
+        ValidateAxis(chart.XAxis, !UsesNumericXAxis(chart.Type), "x", worksheetId, chart.Id);
         ValidateAxis(chart.YAxis!, false, "y", worksheetId, chart.Id);
     }
 
@@ -37,9 +37,9 @@ internal static class XlsxChartAxisCodec
             editable = !plotArea.Elements().Any(IsAxis);
             return editable;
         }
-        var scatter = chart.Type == SpreadsheetChartType.Scatter;
-        if (!TryLocate(plotArea, plot, scatter, out var horizontalAxis, out var verticalAxis)) return false;
-        if (!TryReadAxis(horizontalAxis, !scatter, "b", out var xAxis, out var xEditable) ||
+        var numericX = UsesNumericXAxis(chart.Type);
+        if (!TryLocate(plotArea, plot, numericX, out var horizontalAxis, out var verticalAxis)) return false;
+        if (!TryReadAxis(horizontalAxis, !numericX, "b", out var xAxis, out var xEditable) ||
             !TryReadAxis(verticalAxis, false, "l", out var yAxis, out var yEditable)) return false;
         chart.XAxis = xAxis;
         chart.YAxis = yAxis;
@@ -52,7 +52,7 @@ internal static class XlsxChartAxisCodec
         if (chart.Type is SpreadsheetChartType.Pie or SpreadsheetChartType.Doughnut) return;
         var xAxis = chart.XAxis ?? new SpreadsheetChartAxisArtifact();
         var yAxis = chart.YAxis ?? new SpreadsheetChartAxisArtifact();
-        if (chart.Type == SpreadsheetChartType.Scatter)
+        if (UsesNumericXAxis(chart.Type))
             plotArea.Add(BuildValueAxis(xAxis, "1", "2", "b"), BuildValueAxis(yAxis, "2", "1", "l"));
         else
             plotArea.Add(BuildCategoryAxis(xAxis), BuildValueAxis(yAxis, "2", "1", "l"));
@@ -61,10 +61,10 @@ internal static class XlsxChartAxisCodec
     internal static void Patch(XElement plotArea, XElement plot, SpreadsheetChartArtifact target)
     {
         if (target.Type is SpreadsheetChartType.Pie or SpreadsheetChartType.Doughnut) return;
-        var scatter = target.Type == SpreadsheetChartType.Scatter;
-        if (target.XAxis is null || target.YAxis is null || !TryLocate(plotArea, plot, scatter, out var horizontalAxis, out var verticalAxis))
+        var numericX = UsesNumericXAxis(target.Type);
+        if (target.XAxis is null || target.YAxis is null || !TryLocate(plotArea, plot, numericX, out var horizontalAxis, out var verticalAxis))
             throw new CodecException("unsupported_spreadsheet_chart_edit", $"Worksheet chart {target.Id} cannot change its primary-axis topology.");
-        PatchAxis(horizontalAxis, target.XAxis, !scatter);
+        PatchAxis(horizontalAxis, target.XAxis, !numericX);
         PatchAxis(verticalAxis, target.YAxis, false);
     }
 
@@ -87,7 +87,7 @@ internal static class XlsxChartAxisCodec
         if (axis.HasMajorUnit && (!double.IsFinite(axis.MajorUnit) || axis.MajorUnit <= 0)) throw Invalid(worksheetId, chartId, $"{axisName}-axis major unit must be finite and positive.");
     }
 
-    private static bool TryLocate(XElement plotArea, XElement plot, bool scatter, out XElement horizontalAxis, out XElement verticalAxis)
+    private static bool TryLocate(XElement plotArea, XElement plot, bool numericX, out XElement horizontalAxis, out XElement verticalAxis)
     {
         horizontalAxis = null!;
         verticalAxis = null!;
@@ -95,7 +95,7 @@ internal static class XlsxChartAxisCodec
         var categories = axes.Where(item => item.Name == ChartNs + "catAx").ToArray();
         var values = axes.Where(item => item.Name == ChartNs + "valAx").ToArray();
         if (axes.Length != 2) return false;
-        if (scatter)
+        if (numericX)
         {
             if (categories.Length != 0 || values.Length != 2) return false;
             var horizontal = values.Where(item => AxisValue(item.Element(ChartNs + "axPos")) == "b").ToArray();
@@ -118,6 +118,9 @@ internal static class XlsxChartAxisCodec
             !plotIds.Contains(horizontalId, StringComparer.Ordinal) || !plotIds.Contains(verticalId, StringComparer.Ordinal)) return false;
         return AxisValue(horizontalAxis.Element(ChartNs + "crossAx")) == verticalId && AxisValue(verticalAxis.Element(ChartNs + "crossAx")) == horizontalId;
     }
+
+    private static bool UsesNumericXAxis(SpreadsheetChartType type) =>
+        type is SpreadsheetChartType.Scatter or SpreadsheetChartType.Bubble;
 
     private static bool TryReadAxis(XElement source, bool category, string expectedPosition, out SpreadsheetChartAxisArtifact axis, out bool editable)
     {

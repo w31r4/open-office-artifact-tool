@@ -2,11 +2,12 @@ import { normalizeSpreadsheetChartDataLabels, spreadsheetChartDataLabelSvgPlacem
 import { normalizeSpreadsheetChartLineOptions, spreadsheetChartSmoothLinePath } from "./chart-line-options.mjs";
 import { normalizeSpreadsheetChartSeriesLine, spreadsheetChartLineDashArray } from "./chart-line-style.mjs";
 import { normalizeSpreadsheetChartSeriesMarker, spreadsheetChartMarkerSvg } from "./chart-marker-style.mjs";
-import { resolvedWorksheetChartCategories, resolvedWorksheetChartSeriesValues, resolvedWorksheetChartSeriesXValues } from "./chart-source-data.mjs";
+import { resolvedWorksheetChartCategories, resolvedWorksheetChartSeriesBubbleSizes, resolvedWorksheetChartSeriesValues, resolvedWorksheetChartSeriesXValues } from "./chart-source-data.mjs";
 import { xmlEscape } from "../shared/xml.mjs";
 
 const PREVIEW_PALETTE = ["#38BDF8", "#F97316", "#22C55E", "#A855F7", "#E11D48", "#0F766E"];
 const CIRCULAR_TYPES = new Set(["pie", "doughnut"]);
+const NUMERIC_X_TYPES = new Set(["scatter", "bubble"]);
 
 function seriesColor(series, index) {
   return /^#[0-9a-f]{6}$/i.test(series?.fill || "")
@@ -120,6 +121,25 @@ function scatterMarks(seriesItems, dataLabels, geometry, plot) {
   }).join("");
 }
 
+function bubbleMarks(seriesItems, dataLabels, geometry, plot) {
+  const allSizes = seriesItems.flatMap((series) => series.bubbleSizes || []);
+  const maximumSize = Math.max(1, ...allSizes.map(Number).filter((value) => Number.isFinite(value) && value > 0));
+  const maximumRadius = Math.max(6, Math.min(plot.width, plot.height) * 0.14);
+  const minimumRadius = Math.min(4, maximumRadius);
+  return seriesItems.map((series, seriesIndex) => {
+    const style = lineAttributes(series, seriesIndex, 1.25);
+    return (series.values || []).map((value, pointIndex) => {
+      const xValue = series.xValues?.[pointIndex];
+      const size = Number(series.bubbleSizes?.[pointIndex]);
+      const radius = minimumRadius + Math.sqrt(Math.max(0, size) / maximumSize) * (maximumRadius - minimumRadius);
+      const point = { x: geometry.x(xValue), y: geometry.y(value) };
+      const label = spreadsheetChartDataLabelText(dataLabels, String(xValue), value, { seriesName: series.name });
+      const placement = spreadsheetChartDataLabelSvgPlacement(dataLabels, { x: point.x, y: point.y, kind: "point", plotTop: plot.top });
+      return `<circle cx="${point.x}" cy="${point.y}" r="${radius}" fill="${style.fill}" fill-opacity="0.55"${style.attributes} data-series-index="${seriesIndex}" data-point-index="${pointIndex}" data-bubble-size="${size}"/>${label ? `<text x="${placement.x}" y="${placement.y}" text-anchor="${placement.textAnchor}" font-family="Arial" font-size="10" fill="#334155" data-chart-label-position="${placement.position}" data-chart-label-series="${seriesIndex}" data-chart-label-index="${pointIndex}">${xmlEscape(label)}</text>` : ""}`;
+    }).join("");
+  }).join("");
+}
+
 function polarPoint(cx, cy, radius, angle) {
   return { x: cx + Math.cos(angle) * radius, y: cy + Math.sin(angle) * radius };
 }
@@ -167,17 +187,22 @@ export function renderWorksheetChartSvg(chart) {
   const categories = resolvedWorksheetChartCategories(chart);
   const seriesItems = chart.series.items.map((series) => ({
     ...series,
-    ...(chart.type === "scatter" ? { xValues: resolvedWorksheetChartSeriesXValues(chart, series) } : {}),
+    ...(NUMERIC_X_TYPES.has(chart.type) ? { xValues: resolvedWorksheetChartSeriesXValues(chart, series) } : {}),
+    ...(chart.type === "bubble" ? { bubbleSizes: resolvedWorksheetChartSeriesBubbleSizes(chart, series) } : {}),
     values: resolvedWorksheetChartSeriesValues(chart, series),
   }));
   const dataLabels = normalizeSpreadsheetChartDataLabels(chart.dataLabels);
   const plot = { left: frame.left + 28, top: frame.top + 36, width: Math.max(0, frame.width - 44), height: Math.max(0, frame.height - 62) };
   const circular = CIRCULAR_TYPES.has(chart.type);
   const scatter = chart.type === "scatter";
-  const geometry = circular ? null : scatter ? scatterGeometry(chart, seriesItems, plot) : cartesianGeometry(chart, seriesItems, plot);
+  const bubble = chart.type === "bubble";
+  const numericX = scatter || bubble;
+  const geometry = circular ? null : numericX ? scatterGeometry(chart, seriesItems, plot) : cartesianGeometry(chart, seriesItems, plot);
   const marks = circular
     ? circularMarks(chart, categories, seriesItems, dataLabels, plot)
-    : scatter
+    : bubble
+      ? bubbleMarks(seriesItems, dataLabels, geometry, plot)
+      : scatter
       ? scatterMarks(seriesItems, dataLabels, geometry, plot)
       : chart.type === "line"
       ? lineMarks(chart, categories, seriesItems, dataLabels, plot, geometry)
@@ -187,7 +212,7 @@ export function renderWorksheetChartSvg(chart) {
   const pointCount = seriesItems[0]?.values?.length || 0;
   const xTickSize = Number(chart.xAxis?.textStyle?.fontSize);
   const xTicks = !circular && Number.isFinite(xTickSize) && xTickSize > 0
-    ? scatter
+    ? numericX
       ? `<text x="${plot.left}" y="${plot.top + plot.height + xTickSize + 2}" text-anchor="start" font-family="Arial" font-size="${xTickSize}" fill="#64748b">${geometry.xMinimum}</text><text x="${plot.left + plot.width}" y="${plot.top + plot.height + xTickSize + 2}" text-anchor="end" font-family="Arial" font-size="${xTickSize}" fill="#64748b">${geometry.xMaximum}</text>`
       : pointCount ? categories.map((category, index) => `<text x="${plot.left + (index + 0.5) * plot.width / pointCount}" y="${plot.top + plot.height + xTickSize + 2}" text-anchor="middle" font-family="Arial" font-size="${xTickSize}" fill="#64748b">${xmlEscape(category)}</text>`).join("") : ""
     : "";

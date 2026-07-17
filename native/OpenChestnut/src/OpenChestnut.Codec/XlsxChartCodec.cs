@@ -96,7 +96,7 @@ internal sealed class XlsxChartCodec
             if (!ids.Add(chart.Id)) throw InvalidChart(worksheetId, chart.Id, "ID must be unique within its worksheet.");
             if (string.IsNullOrWhiteSpace(chart.Name) || chart.Name.Length > 255 || HasControls(chart.Name)) throw InvalidChart(worksheetId, chart.Id, "name must contain 1 through 255 characters without controls.");
             if (chart.Title.Length > 32_767 || HasControls(chart.Title)) throw InvalidChart(worksheetId, chart.Id, "title must contain at most 32767 characters without controls.");
-            if (chart.Type is not (SpreadsheetChartType.Bar or SpreadsheetChartType.Line or SpreadsheetChartType.Pie or SpreadsheetChartType.Area or SpreadsheetChartType.Doughnut or SpreadsheetChartType.Scatter)) throw InvalidChart(worksheetId, chart.Id, "type must be bar, line, pie, area, doughnut, or scatter.");
+            if (chart.Type is not (SpreadsheetChartType.Bar or SpreadsheetChartType.Line or SpreadsheetChartType.Pie or SpreadsheetChartType.Area or SpreadsheetChartType.Doughnut or SpreadsheetChartType.Scatter or SpreadsheetChartType.Bubble)) throw InvalidChart(worksheetId, chart.Id, "type must be bar, line, pie, area, doughnut, scatter, or bubble.");
             XlsxChartAxisCodec.Validate(chart, worksheetId);
             XlsxChartTextStyleCodec.Validate(chart, worksheetId);
             XlsxChartLineOptionsCodec.Validate(chart, worksheetId);
@@ -105,7 +105,7 @@ internal sealed class XlsxChartCodec
             ValidateAnchor(chart, worksheetId);
             if (chart.Categories.Count > MaxPoints) throw InvalidChart(worksheetId, chart.Id, $"exceeds the {MaxPoints}-category budget.");
             if (chart.Categories.Any(value => value.Length > 32_767 || HasControls(value))) throw InvalidChart(worksheetId, chart.Id, "contains a category longer than 32767 characters or with controls.");
-            if (chart.Type == SpreadsheetChartType.Scatter && chart.Categories.Count != 0) throw InvalidChart(worksheetId, chart.Id, "scatter charts use per-series numeric x_values rather than shared text categories.");
+            if (UsesNumericXAxis(chart.Type) && chart.Categories.Count != 0) throw InvalidChart(worksheetId, chart.Id, $"{ChartTypeName(chart.Type)} charts use per-series numeric x_values rather than shared text categories.");
             if (chart.Series.Count is < 1 or > MaxSeries) throw InvalidChart(worksheetId, chart.Id, $"must contain 1 through {MaxSeries} series.");
             var pointCount = 0L;
             foreach (var series in chart.Series)
@@ -115,15 +115,23 @@ internal sealed class XlsxChartCodec
                 if (chart.Type == SpreadsheetChartType.Scatter && series.Line is not null) throw InvalidChart(worksheetId, chart.Id, $"marker-only scatter series {series.Name} cannot carry a series line; use marker.line to style the marker border.");
                 XlsxChartSeriesLineStyleCodec.Validate(series, worksheetId, chart.Id);
                 XlsxChartSeriesMarkerCodec.Validate(series, chart.Type, worksheetId, chart.Id);
-                if (series.CategoryFormula.Length > 8_192 || series.XValueFormula.Length > 8_192 || series.ValueFormula.Length > 8_192 || HasControls(series.CategoryFormula) || HasControls(series.XValueFormula) || HasControls(series.ValueFormula) || series.CategoryFormula.StartsWith('=') || series.XValueFormula.StartsWith('=') || series.ValueFormula.StartsWith('=')) throw InvalidChart(worksheetId, chart.Id, "contains an invalid category/x-value/value formula.");
-                if (chart.Type == SpreadsheetChartType.Scatter)
+                if (series.CategoryFormula.Length > 8_192 || series.XValueFormula.Length > 8_192 || series.ValueFormula.Length > 8_192 || series.BubbleSizeFormula.Length > 8_192 || HasControls(series.CategoryFormula) || HasControls(series.XValueFormula) || HasControls(series.ValueFormula) || HasControls(series.BubbleSizeFormula) || series.CategoryFormula.StartsWith('=') || series.XValueFormula.StartsWith('=') || series.ValueFormula.StartsWith('=') || series.BubbleSizeFormula.StartsWith('=')) throw InvalidChart(worksheetId, chart.Id, "contains an invalid category/x-value/value/bubble-size formula.");
+                if (UsesNumericXAxis(chart.Type))
                 {
-                    if (series.CategoryFormula.Length != 0) throw InvalidChart(worksheetId, chart.Id, $"scatter series {series.Name} cannot carry category_formula.");
-                    if (series.XValues.Count != series.Values.Count) throw InvalidChart(worksheetId, chart.Id, $"scatter series {series.Name} has {series.XValues.Count} x values for {series.Values.Count} y values.");
+                    if (series.CategoryFormula.Length != 0) throw InvalidChart(worksheetId, chart.Id, $"{ChartTypeName(chart.Type)} series {series.Name} cannot carry category_formula.");
+                    if (series.XValues.Count != series.Values.Count) throw InvalidChart(worksheetId, chart.Id, $"{ChartTypeName(chart.Type)} series {series.Name} has {series.XValues.Count} x values for {series.Values.Count} y values.");
+                    if (chart.Type == SpreadsheetChartType.Bubble)
+                    {
+                        if (series.BubbleSizes.Count != series.Values.Count) throw InvalidChart(worksheetId, chart.Id, $"bubble series {series.Name} has {series.BubbleSizes.Count} sizes for {series.Values.Count} y values.");
+                        if (series.BubbleSizes.Any(value => !double.IsFinite(value) || value <= 0)) throw InvalidChart(worksheetId, chart.Id, $"bubble series {series.Name} sizes must be finite and positive.");
+                    }
+                    else if (series.BubbleSizes.Count != 0 || series.BubbleSizeFormula.Length != 0)
+                        throw InvalidChart(worksheetId, chart.Id, $"scatter series {series.Name} cannot carry bubble sizes.");
                 }
                 else
                 {
-                    if (series.XValues.Count != 0 || series.XValueFormula.Length != 0) throw InvalidChart(worksheetId, chart.Id, $"series {series.Name} x values require a scatter chart.");
+                    if (series.XValues.Count != 0 || series.XValueFormula.Length != 0) throw InvalidChart(worksheetId, chart.Id, $"series {series.Name} x values require a scatter or bubble chart.");
+                    if (series.BubbleSizes.Count != 0 || series.BubbleSizeFormula.Length != 0) throw InvalidChart(worksheetId, chart.Id, $"series {series.Name} bubble sizes require a bubble chart.");
                     if (series.Values.Count != chart.Categories.Count) throw InvalidChart(worksheetId, chart.Id, $"series {series.Name} has {series.Values.Count} values for {chart.Categories.Count} categories.");
                 }
                 if (series.XValues.Any(value => double.IsNaN(value) || double.IsInfinity(value)) || series.Values.Any(value => double.IsNaN(value) || double.IsInfinity(value))) throw InvalidChart(worksheetId, chart.Id, $"series {series.Name} contains a non-finite coordinate value.");
@@ -308,10 +316,10 @@ internal sealed class XlsxChartCodec
         var nativeChart = root?.Element(ChartNs + "chart");
         var plotArea = nativeChart?.Element(ChartNs + "plotArea");
         if (root?.Name != ChartNs + "chartSpace" || nativeChart is null || plotArea is null || root.Element(ChartNs + "externalData") is not null) return false;
-        var plots = plotArea.Elements().Where(item => item.Name == ChartNs + "barChart" || item.Name == ChartNs + "lineChart" || item.Name == ChartNs + "pieChart" || item.Name == ChartNs + "areaChart" || item.Name == ChartNs + "doughnutChart" || item.Name == ChartNs + "scatterChart").ToArray();
+        var plots = plotArea.Elements().Where(item => item.Name == ChartNs + "barChart" || item.Name == ChartNs + "lineChart" || item.Name == ChartNs + "pieChart" || item.Name == ChartNs + "areaChart" || item.Name == ChartNs + "doughnutChart" || item.Name == ChartNs + "scatterChart" || item.Name == ChartNs + "bubbleChart").ToArray();
         if (plots.Length != 1 || plotArea.Elements().Any(item => item.Name.LocalName.EndsWith("Chart", StringComparison.Ordinal) && !plots.Contains(item))) return false;
         var plot = plots[0];
-        chart.Type = plot.Name.LocalName switch { "barChart" => SpreadsheetChartType.Bar, "lineChart" => SpreadsheetChartType.Line, "pieChart" => SpreadsheetChartType.Pie, "areaChart" => SpreadsheetChartType.Area, "doughnutChart" => SpreadsheetChartType.Doughnut, "scatterChart" => SpreadsheetChartType.Scatter, _ => SpreadsheetChartType.Unspecified };
+        chart.Type = plot.Name.LocalName switch { "barChart" => SpreadsheetChartType.Bar, "lineChart" => SpreadsheetChartType.Line, "pieChart" => SpreadsheetChartType.Pie, "areaChart" => SpreadsheetChartType.Area, "doughnutChart" => SpreadsheetChartType.Doughnut, "scatterChart" => SpreadsheetChartType.Scatter, "bubbleChart" => SpreadsheetChartType.Bubble, _ => SpreadsheetChartType.Unspecified };
         if (chart.Type == SpreadsheetChartType.Unspecified) return false;
         editable &= PlotProfileEditable(plot, chart.Type);
         var title = nativeChart.Element(ChartNs + "title");
@@ -331,14 +339,14 @@ internal sealed class XlsxChartCodec
         {
             if (!TrySeries(seriesElement, chart.Type, out var series, out var categories, out var seriesEditable)) return false;
             editable &= seriesEditable;
-            if (chart.Type != SpreadsheetChartType.Scatter)
+            if (!UsesNumericXAxis(chart.Type))
             {
                 if (commonCategories is null) commonCategories = categories;
                 else if (!commonCategories.SequenceEqual(categories, StringComparer.Ordinal)) return false;
             }
             chart.Series.Add(series);
         }
-        if (chart.Type != SpreadsheetChartType.Scatter) chart.Categories.Add(commonCategories ?? []);
+        if (!UsesNumericXAxis(chart.Type)) chart.Categories.Add(commonCategories ?? []);
         editable &= XlsxChartLineOptionsCodec.TryRead(plot, chart);
         editable &= XlsxChartDataLabelsCodec.TryRead(plot, chart);
         if (!XlsxChartAxisCodec.TryRead(plotArea, plot, chart, out var axesEditable)) editable = false;
@@ -355,6 +363,12 @@ internal sealed class XlsxChartCodec
                    ScalarEquals(plot, "holeSize", "50", required: true);
         if (type == SpreadsheetChartType.Scatter)
             return ScalarEquals(plot, "scatterStyle", "marker", required: true);
+        if (type == SpreadsheetChartType.Bubble)
+            return ScalarEquals(plot, "varyColors", "0", required: false) &&
+                   ScalarEquals(plot, "bubble3D", "0", required: false) &&
+                   ScalarEquals(plot, "bubbleScale", "100", required: false) &&
+                   ScalarEquals(plot, "showNegBubbles", "0", required: false) &&
+                   ScalarEquals(plot, "sizeRepresents", "area", required: false);
         return true;
     }
 
@@ -384,7 +398,7 @@ internal sealed class XlsxChartCodec
             editable = false;
         }
         if (series.Name.Length > 255 || HasControls(series.Name)) return false;
-        if (chartType == SpreadsheetChartType.Scatter)
+        if (UsesNumericXAxis(chartType))
         {
             var xValue = source.Element(ChartNs + "xVal");
             var yValue = source.Element(ChartNs + "yVal");
@@ -393,6 +407,14 @@ internal sealed class XlsxChartCodec
             series.ValueFormula = valueFormula;
             series.XValues.Add(xValues);
             series.Values.Add(values);
+            if (chartType == SpreadsheetChartType.Bubble)
+            {
+                var bubbleSize = source.Element(ChartNs + "bubbleSize");
+                if (bubbleSize is null || !TryNumericData(bubbleSize, out var bubbleSizes, out var bubbleSizeFormula) || bubbleSizes.Length != values.Length || bubbleSizes.Any(value => value <= 0)) return false;
+                series.BubbleSizeFormula = bubbleSizeFormula;
+                series.BubbleSizes.Add(bubbleSizes);
+                editable &= ScalarEquals(source, "bubble3D", "0", required: false);
+            }
         }
         else
         {
@@ -479,6 +501,8 @@ internal sealed class XlsxChartCodec
             plot = new XElement(ChartNs + "doughnutChart", new XElement(ChartNs + "varyColors", new XAttribute("val", "1")), series, XlsxChartDataLabelsCodec.Element(chart.DataLabels), new XElement(ChartNs + "firstSliceAng", new XAttribute("val", "0")), new XElement(ChartNs + "holeSize", new XAttribute("val", "50")));
         else if (chart.Type == SpreadsheetChartType.Scatter)
             plot = new XElement(ChartNs + "scatterChart", new XElement(ChartNs + "scatterStyle", new XAttribute("val", "marker")), new XElement(ChartNs + "varyColors", new XAttribute("val", "0")), series, XlsxChartDataLabelsCodec.Element(chart.DataLabels), new XElement(ChartNs + "axId", new XAttribute("val", "1")), new XElement(ChartNs + "axId", new XAttribute("val", "2")));
+        else if (chart.Type == SpreadsheetChartType.Bubble)
+            plot = new XElement(ChartNs + "bubbleChart", new XElement(ChartNs + "varyColors", new XAttribute("val", "0")), series, XlsxChartDataLabelsCodec.Element(chart.DataLabels), new XElement(ChartNs + "bubble3D", new XAttribute("val", "0")), new XElement(ChartNs + "bubbleScale", new XAttribute("val", "100")), new XElement(ChartNs + "showNegBubbles", new XAttribute("val", "0")), new XElement(ChartNs + "sizeRepresents", new XAttribute("val", "area")), new XElement(ChartNs + "axId", new XAttribute("val", "1")), new XElement(ChartNs + "axId", new XAttribute("val", "2")));
         else plot = new XElement(ChartNs + "pieChart", new XElement(ChartNs + "varyColors", new XAttribute("val", "1")), series, XlsxChartDataLabelsCodec.Element(chart.DataLabels));
         var plotArea = new XElement(ChartNs + "plotArea", new XElement(ChartNs + "layout"), plot);
         XlsxChartAxisCodec.AppendAuthored(plotArea, chart);
@@ -499,7 +523,10 @@ internal sealed class XlsxChartCodec
             XlsxChartSeriesStyleCodec.PropertiesElement(series, markerOnly: chartType == SpreadsheetChartType.Scatter),
             XlsxChartSeriesMarkerCodec.Element(series.Marker));
         if (series.XValues.Count > 0 || series.XValueFormula.Length > 0)
+        {
             output.Add(new XElement(ChartNs + "xVal", NumericData(series.XValues, series.XValueFormula)), new XElement(ChartNs + "yVal", NumericData(series.Values, series.ValueFormula)));
+            if (chartType == SpreadsheetChartType.Bubble) output.Add(new XElement(ChartNs + "bubbleSize", NumericData(series.BubbleSizes, series.BubbleSizeFormula)));
+        }
         else
             output.Add(new XElement(ChartNs + "cat", StringData(categories, series.CategoryFormula)), new XElement(ChartNs + "val", NumericData(series.Values, series.ValueFormula)));
         return output;
@@ -570,13 +597,13 @@ internal sealed class XlsxChartCodec
         {
             var requested = target.Series[index];
             var original = record.Artifact.Series[index];
-            if (requested.Values.Count != original.Values.Count || requested.XValues.Count != original.XValues.Count || string.IsNullOrEmpty(requested.CategoryFormula) != string.IsNullOrEmpty(original.CategoryFormula) || string.IsNullOrEmpty(requested.XValueFormula) != string.IsNullOrEmpty(original.XValueFormula) || string.IsNullOrEmpty(requested.ValueFormula) != string.IsNullOrEmpty(original.ValueFormula)) throw new CodecException("unsupported_spreadsheet_chart_edit", $"Worksheet chart {target.Id} series {index + 1} cannot change cache count or literal/reference topology.", Path(record.ChartPart));
+            if (requested.Values.Count != original.Values.Count || requested.XValues.Count != original.XValues.Count || requested.BubbleSizes.Count != original.BubbleSizes.Count || string.IsNullOrEmpty(requested.CategoryFormula) != string.IsNullOrEmpty(original.CategoryFormula) || string.IsNullOrEmpty(requested.XValueFormula) != string.IsNullOrEmpty(original.XValueFormula) || string.IsNullOrEmpty(requested.ValueFormula) != string.IsNullOrEmpty(original.ValueFormula) || string.IsNullOrEmpty(requested.BubbleSizeFormula) != string.IsNullOrEmpty(original.BubbleSizeFormula)) throw new CodecException("unsupported_spreadsheet_chart_edit", $"Worksheet chart {target.Id} series {index + 1} cannot change cache count or literal/reference topology.", Path(record.ChartPart));
         }
         var nativeChart = record.ChartDocument.Root!.Element(ChartNs + "chart")!;
         PatchTitle(nativeChart, target.Title, target.TitleTextStyle);
         PatchLegend(nativeChart, target.HasLegend);
         var plotArea = nativeChart.Element(ChartNs + "plotArea")!;
-        var plotName = target.Type switch { SpreadsheetChartType.Bar => "barChart", SpreadsheetChartType.Line => "lineChart", SpreadsheetChartType.Pie => "pieChart", SpreadsheetChartType.Area => "areaChart", SpreadsheetChartType.Doughnut => "doughnutChart", SpreadsheetChartType.Scatter => "scatterChart", _ => throw new InvalidOperationException() };
+        var plotName = target.Type switch { SpreadsheetChartType.Bar => "barChart", SpreadsheetChartType.Line => "lineChart", SpreadsheetChartType.Pie => "pieChart", SpreadsheetChartType.Area => "areaChart", SpreadsheetChartType.Doughnut => "doughnutChart", SpreadsheetChartType.Scatter => "scatterChart", SpreadsheetChartType.Bubble => "bubbleChart", _ => throw new InvalidOperationException() };
         var plot = plotArea.Element(ChartNs + plotName)!;
         var nativeSeries = plot.Elements(ChartNs + "ser").ToArray();
         for (var index = 0; index < nativeSeries.Length; index++) PatchSeries(nativeSeries[index], target.Series[index], target.Categories, target.Type);
@@ -618,10 +645,11 @@ internal sealed class XlsxChartCodec
         XlsxChartSeriesStyleCodec.Patch(native, target);
         XlsxChartSeriesLineStyleCodec.Patch(native, target, markerOnly: chartType == SpreadsheetChartType.Scatter);
         XlsxChartSeriesMarkerCodec.Patch(native, target);
-        if (chartType == SpreadsheetChartType.Scatter)
+        if (UsesNumericXAxis(chartType))
         {
             PatchNumericData(native.Element(ChartNs + "xVal")!, target.XValues, target.XValueFormula);
             PatchNumericData(native.Element(ChartNs + "yVal")!, target.Values, target.ValueFormula);
+            if (chartType == SpreadsheetChartType.Bubble) PatchNumericData(native.Element(ChartNs + "bubbleSize")!, target.BubbleSizes, target.BubbleSizeFormula);
         }
         else
         {
@@ -653,7 +681,13 @@ internal sealed class XlsxChartCodec
         for (var index = 0; index < points.Length; index++) points[index].Element(ChartNs + "v")!.Value = format(requested[index]);
     }
 
-    private static string SemanticHash(SpreadsheetChartArtifact chart) => Hash(string.Join('\0', chart.Id, chart.Name, chart.Title, XlsxChartTextStyleCodec.Semantics(chart.TitleTextStyle), XlsxChartLineOptionsCodec.Semantics(chart.LineOptions), XlsxChartDataLabelsCodec.Semantics(chart.DataLabels), ((int)chart.Type).ToString(CultureInfo.InvariantCulture), chart.HasLegend ? "1" : "0", AnchorSemantics(chart), XlsxChartAxisCodec.Semantics(chart), string.Join('\u001e', chart.Categories), string.Join('\u001d', chart.Series.Select(series => string.Join('\u001f', series.Name, series.CategoryFormula, series.XValueFormula, series.ValueFormula, XlsxChartSeriesStyleCodec.Semantics(series), XlsxChartSeriesLineStyleCodec.Semantics(series.Line), XlsxChartSeriesMarkerCodec.Semantics(series.Marker), string.Join(',', series.XValues.Select(value => value.ToString("R", CultureInfo.InvariantCulture))), string.Join(',', series.Values.Select(value => value.ToString("R", CultureInfo.InvariantCulture))))))));
+    private static string SemanticHash(SpreadsheetChartArtifact chart) => Hash(string.Join('\0', chart.Id, chart.Name, chart.Title, XlsxChartTextStyleCodec.Semantics(chart.TitleTextStyle), XlsxChartLineOptionsCodec.Semantics(chart.LineOptions), XlsxChartDataLabelsCodec.Semantics(chart.DataLabels), ((int)chart.Type).ToString(CultureInfo.InvariantCulture), chart.HasLegend ? "1" : "0", AnchorSemantics(chart), XlsxChartAxisCodec.Semantics(chart), string.Join('\u001e', chart.Categories), string.Join('\u001d', chart.Series.Select(series => string.Join('\u001f', series.Name, series.CategoryFormula, series.XValueFormula, series.ValueFormula, series.BubbleSizeFormula, XlsxChartSeriesStyleCodec.Semantics(series), XlsxChartSeriesLineStyleCodec.Semantics(series.Line), XlsxChartSeriesMarkerCodec.Semantics(series.Marker), string.Join(',', series.XValues.Select(value => value.ToString("R", CultureInfo.InvariantCulture))), string.Join(',', series.Values.Select(value => value.ToString("R", CultureInfo.InvariantCulture))), string.Join(',', series.BubbleSizes.Select(value => value.ToString("R", CultureInfo.InvariantCulture))))))));
+
+    private static bool UsesNumericXAxis(SpreadsheetChartType type) =>
+        type is SpreadsheetChartType.Scatter or SpreadsheetChartType.Bubble;
+
+    private static string ChartTypeName(SpreadsheetChartType type) =>
+        type == SpreadsheetChartType.Bubble ? "bubble" : "scatter";
 
     private static string AnchorSemantics(SpreadsheetChartArtifact chart)
     {
