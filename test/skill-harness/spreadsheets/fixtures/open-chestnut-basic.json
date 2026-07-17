@@ -56,7 +56,9 @@
       "charts": [
         { "chartType": "bar", "name": "Bar chart", "title": "Actual values", "sourceRange": "A1:B4", "topLeft": "F1", "bottomRight": "J10" },
         { "chartType": "line", "name": "Line chart", "title": "Double trend", "sourceRange": "A1:C4", "topLeft": "K1", "bottomRight": "O10" },
-        { "chartType": "pie", "name": "Pie chart", "title": "Actual share", "sourceRange": "A1:B4", "topLeft": "F12", "bottomRight": "J22" }
+        { "chartType": "pie", "name": "Pie chart", "title": "Actual share", "sourceRange": "A1:B4", "topLeft": "F12", "bottomRight": "J22" },
+        { "chartType": "area", "name": "Area chart", "title": "Actual area", "sourceRange": "A1:B4", "topLeft": "K12", "bottomRight": "O22" },
+        { "chartType": "doughnut", "name": "Doughnut chart", "title": "Actual mix", "sourceRange": "A1:B4", "topLeft": "F24", "bottomRight": "J34" }
       ],
       "images": [
         {
@@ -77,7 +79,7 @@
   ],
   "qa": {
     "sheetName": "Dashboard",
-    "range": "A1:O22",
+    "range": "A1:O34",
     "renderFormat": "png",
     "inspectKind": "workbook,sheet,table,formula,style,computedStyle,drawing",
     "maxChars": 16000

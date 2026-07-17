@@ -82,6 +82,14 @@ const pie = sheet.charts.add("pie", sheet.getRange("A1:B4"));
 pie.name = "Pie chart";
 pie.title = "Revenue share";
 pie.setPosition("H12", "L22");
+const area = sheet.charts.add("area", sheet.getRange("A1:C4"));
+area.name = "Area chart";
+area.title = "Revenue and cost area";
+area.setPosition("M12", "Q22");
+const doughnut = sheet.charts.add("doughnut", sheet.getRange("A1:B4"));
+doughnut.name = "Doughnut chart";
+doughnut.title = "Revenue mix";
+doughnut.setPosition("H24", "L34");
 sheet.images.add({
   name: "Status mark",
   alt: "Green status marker",
@@ -130,7 +138,7 @@ assert.equal(sheet.getRange("E2").values[0][0] instanceof Date, true);
 const modelInspect = workbook.inspect({
   kind: "workbook,sheet,table,formula,style,drawing,dataValidation,conditionalFormat,thread",
   sheetName: "Summary",
-  range: "A1:Q22",
+  range: "A1:Q34",
   maxChars: 32_000,
 });
 assert.match(modelInspect.ndjson, /"name":"SummaryTable"/);
@@ -153,7 +161,7 @@ assert.ok(firstZip.file("xl/workbook.xml"));
 assert.ok(firstZip.file("xl/worksheets/sheet1.xml"));
 assert.ok(firstZip.file("xl/tables/table1.xml"));
 assert.ok(firstZip.file("xl/drawings/drawing1.xml"));
-assert.equal(Object.keys(firstZip.files).filter((name) => /\/charts\/chart\d+\.xml$/i.test(name)).length, 3);
+assert.equal(Object.keys(firstZip.files).filter((name) => /\/charts\/chart\d+\.xml$/i.test(name)).length, 5);
 assert.equal(Object.keys(firstZip.files).filter((name) => /^xl\/media\//i.test(name)).length, 1);
 assert.equal(Object.keys(firstZip.files).filter((name) => /^xl\/threadedcomments\/[^/]+\.xml$/i.test(name)).length, 1);
 assert.equal(Object.keys(firstZip.files).filter((name) => /^xl\/persons\/[^/]+\.xml$/i.test(name)).length, 1);
@@ -189,7 +197,9 @@ assert.equal(importedSheet.getRange("A8:F8").format.rowHidden, true);
 assert.deepEqual(importedSheet.freezePanes.toJSON(), { rows: 1, columns: 1, frozen: true, topLeftCell: "B2", activePane: "bottomRight" });
 assert.equal(importedSheet.tables.items[0].name, "SummaryTable");
 assert.equal(importedSheet.images.items[0].alt, "Green status marker");
-assert.deepEqual(importedSheet.charts.items.map((chart) => chart.type), ["bar", "line", "pie"]);
+assert.deepEqual(importedSheet.charts.items.map((chart) => chart.type), ["bar", "line", "pie", "area", "doughnut"]);
+assert.match(importedSheet.charts.items[3].toSvg(), /data-series-index="0"/);
+assert.match(importedSheet.charts.items[4].toSvg(), /data-point-index="0"/);
 assert.deepEqual(importedSheet.dataValidations.items.map((item) => item.rule.type), ["list", "whole"]);
 assert.deepEqual(importedSheet.conditionalFormattings.items.map((item) => item.ruleType), ["cellIs", "expression", "containsText", "colorScale"]);
 assert.equal(imported.comments.threads.length, 1);

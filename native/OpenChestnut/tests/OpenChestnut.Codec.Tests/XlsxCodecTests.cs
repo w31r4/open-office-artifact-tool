@@ -3328,6 +3328,78 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ProtocolAuthorsImportsAndEditsAreaAndDoughnutWorksheetCharts()
+    {
+        var areaRequest = ChartExportRequest();
+        var area = areaRequest.Artifact.Workbook.Worksheets[0].Charts[0];
+        area.Type = SpreadsheetChartType.Area;
+        area.Title = "Quarter area";
+        area.LineOptions = null;
+        area.DataLabels = null;
+        area.Series[0].Marker = null;
+        var authoredArea = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(areaRequest.ToByteArray()));
+        Assert.True(authoredArea.Ok, string.Join("\n", authoredArea.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(authoredArea.File.ToByteArray());
+        using (var stream = new MemoryStream(authoredArea.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+        {
+            var xml = ReadPartText(document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.ChartParts.Single());
+            Assert.Contains("<c:areaChart>", xml, StringComparison.Ordinal);
+            Assert.Contains("<c:grouping val=\"standard\"", xml, StringComparison.Ordinal);
+        }
+        var importedArea = Import(authoredArea.File.ToByteArray());
+        Assert.True(importedArea.Ok, string.Join("\n", importedArea.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var areaChart = Assert.Single(importedArea.Artifact.Workbook.Worksheets[0].Charts);
+        Assert.Equal(SpreadsheetChartType.Area, areaChart.Type);
+        Assert.True(areaChart.Source.Editable);
+        areaChart.Title = "Edited quarter area";
+        areaChart.Series[0].Values[1] = 91;
+        var editedArea = Export(importedArea.Artifact);
+        Assert.True(editedArea.Ok, string.Join("\n", editedArea.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(editedArea.File.ToByteArray());
+        var secondArea = Import(editedArea.File.ToByteArray());
+        Assert.Equal("Edited quarter area", secondArea.Artifact.Workbook.Worksheets[0].Charts[0].Title);
+        Assert.Equal(91, secondArea.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Values[1]);
+
+        var doughnutRequest = ChartExportRequest();
+        var doughnut = doughnutRequest.Artifact.Workbook.Worksheets[0].Charts[0];
+        doughnut.Type = SpreadsheetChartType.Doughnut;
+        doughnut.Title = "Quarter mix";
+        doughnut.XAxis = null;
+        doughnut.YAxis = null;
+        doughnut.LineOptions = null;
+        doughnut.DataLabels = null;
+        doughnut.Series[0].Marker = null;
+        var authoredDoughnut = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(doughnutRequest.ToByteArray()));
+        Assert.True(authoredDoughnut.Ok, string.Join("\n", authoredDoughnut.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(authoredDoughnut.File.ToByteArray());
+        using (var stream = new MemoryStream(authoredDoughnut.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+        {
+            var xml = ReadPartText(document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.ChartParts.Single());
+            Assert.Contains("<c:doughnutChart>", xml, StringComparison.Ordinal);
+            Assert.Contains("<c:holeSize val=\"50\"", xml, StringComparison.Ordinal);
+            Assert.DoesNotContain("<c:catAx>", xml, StringComparison.Ordinal);
+            Assert.DoesNotContain("<c:valAx>", xml, StringComparison.Ordinal);
+        }
+        var importedDoughnut = Import(authoredDoughnut.File.ToByteArray());
+        Assert.True(importedDoughnut.Ok, string.Join("\n", importedDoughnut.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var doughnutChart = Assert.Single(importedDoughnut.Artifact.Workbook.Worksheets[0].Charts);
+        Assert.Equal(SpreadsheetChartType.Doughnut, doughnutChart.Type);
+        Assert.True(doughnutChart.Source.Editable);
+        Assert.Null(doughnutChart.XAxis);
+        Assert.Null(doughnutChart.YAxis);
+        doughnutChart.Title = "Edited quarter mix";
+        doughnutChart.Series[0].Values[0] = 55;
+        var editedDoughnut = Export(importedDoughnut.Artifact);
+        Assert.True(editedDoughnut.Ok, string.Join("\n", editedDoughnut.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(editedDoughnut.File.ToByteArray());
+        var secondDoughnut = Import(editedDoughnut.File.ToByteArray());
+        Assert.Equal("Edited quarter mix", secondDoughnut.Artifact.Workbook.Worksheets[0].Charts[0].Title);
+        Assert.Equal(55, secondDoughnut.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Values[0]);
+    }
+
+    [Fact]
     public void ProtocolRejectsInvalidWorksheetChartAxes()
     {
         var reversed = ChartExportRequest();

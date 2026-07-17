@@ -82,14 +82,17 @@ try {
   const dashboard = basicWorkbook.worksheets.getItem("Dashboard");
   assert.deepEqual(dashboard.getRange("C2:C4").values, [[20], [40], [60]]);
   assert.deepEqual(dashboard.mergedRanges, ["A6:D6"]);
-  assert.deepEqual(dashboard.charts.items.map((chart) => chart.type), ["bar", "line", "pie"]);
+  assert.deepEqual(dashboard.charts.items.map((chart) => chart.type), ["bar", "line", "pie", "area", "doughnut"]);
   assert.equal(dashboard.charts.items[1].title, "Edited line trend");
   assert.equal(dashboard.images.items[0].alt, "Edited OpenChestnut marker");
   assert.equal(dashboard.dataValidations.items.length, 1);
   assert.deepEqual(dashboard.conditionalFormattings.items.map((item) => item.ruleType), ["containsText", "colorScale"]);
   assert.equal(basicWorkbook.definedNames.getItem("ActualValues").refersTo, "Dashboard!$B$2:$B$4");
   const basicZip = await JSZip.loadAsync(await fs.readFile(basicResult.workbookPath));
-  assert.equal(Object.keys(basicZip.files).filter((name) => /\/charts\/chart\d+\.xml$/i.test(name)).length, 3);
+  assert.equal(Object.keys(basicZip.files).filter((name) => /\/charts\/chart\d+\.xml$/i.test(name)).length, 5);
+  const chartXml = await Promise.all(Object.keys(basicZip.files).filter((name) => /\/charts\/chart\d+\.xml$/i.test(name)).map((name) => basicZip.file(name).async("text")));
+  assert.equal(chartXml.filter((xml) => /<c:areaChart>/.test(xml)).length, 1);
+  assert.equal(chartXml.filter((xml) => /<c:doughnutChart>/.test(xml)).length, 1);
 
   const sparklineResult = await runFixture("open-chestnut-sparklines");
   const sparklineWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(sparklineResult.workbookPath));

@@ -96,7 +96,7 @@ internal sealed class XlsxChartCodec
             if (!ids.Add(chart.Id)) throw InvalidChart(worksheetId, chart.Id, "ID must be unique within its worksheet.");
             if (string.IsNullOrWhiteSpace(chart.Name) || chart.Name.Length > 255 || HasControls(chart.Name)) throw InvalidChart(worksheetId, chart.Id, "name must contain 1 through 255 characters without controls.");
             if (chart.Title.Length > 32_767 || HasControls(chart.Title)) throw InvalidChart(worksheetId, chart.Id, "title must contain at most 32767 characters without controls.");
-            if (chart.Type is not (SpreadsheetChartType.Bar or SpreadsheetChartType.Line or SpreadsheetChartType.Pie)) throw InvalidChart(worksheetId, chart.Id, "type must be bar, line, or pie.");
+            if (chart.Type is not (SpreadsheetChartType.Bar or SpreadsheetChartType.Line or SpreadsheetChartType.Pie or SpreadsheetChartType.Area or SpreadsheetChartType.Doughnut)) throw InvalidChart(worksheetId, chart.Id, "type must be bar, line, pie, area, or doughnut.");
             XlsxChartAxisCodec.Validate(chart, worksheetId);
             XlsxChartTextStyleCodec.Validate(chart, worksheetId);
             XlsxChartLineOptionsCodec.Validate(chart, worksheetId);
@@ -297,11 +297,12 @@ internal sealed class XlsxChartCodec
         var nativeChart = root?.Element(ChartNs + "chart");
         var plotArea = nativeChart?.Element(ChartNs + "plotArea");
         if (root?.Name != ChartNs + "chartSpace" || nativeChart is null || plotArea is null || root.Element(ChartNs + "externalData") is not null) return false;
-        var plots = plotArea.Elements().Where(item => item.Name == ChartNs + "barChart" || item.Name == ChartNs + "lineChart" || item.Name == ChartNs + "pieChart").ToArray();
+        var plots = plotArea.Elements().Where(item => item.Name == ChartNs + "barChart" || item.Name == ChartNs + "lineChart" || item.Name == ChartNs + "pieChart" || item.Name == ChartNs + "areaChart" || item.Name == ChartNs + "doughnutChart").ToArray();
         if (plots.Length != 1 || plotArea.Elements().Any(item => item.Name.LocalName.EndsWith("Chart", StringComparison.Ordinal) && !plots.Contains(item))) return false;
         var plot = plots[0];
-        chart.Type = plot.Name.LocalName switch { "barChart" => SpreadsheetChartType.Bar, "lineChart" => SpreadsheetChartType.Line, "pieChart" => SpreadsheetChartType.Pie, _ => SpreadsheetChartType.Unspecified };
+        chart.Type = plot.Name.LocalName switch { "barChart" => SpreadsheetChartType.Bar, "lineChart" => SpreadsheetChartType.Line, "pieChart" => SpreadsheetChartType.Pie, "areaChart" => SpreadsheetChartType.Area, "doughnutChart" => SpreadsheetChartType.Doughnut, _ => SpreadsheetChartType.Unspecified };
         if (chart.Type == SpreadsheetChartType.Unspecified) return false;
+        editable &= PlotProfileEditable(plot, chart.Type);
         var title = nativeChart.Element(ChartNs + "title");
         if (title is not null)
         {
@@ -329,6 +330,27 @@ internal sealed class XlsxChartCodec
         if (!XlsxChartAxisCodec.TryRead(plotArea, plot, chart, out var axesEditable)) editable = false;
         else editable &= axesEditable;
         return chart.Title.Length <= 32_767 && !HasControls(chart.Title) && chart.Categories.Count <= MaxPoints;
+    }
+
+    private static bool PlotProfileEditable(XElement plot, SpreadsheetChartType type)
+    {
+        if (type == SpreadsheetChartType.Area)
+            return ScalarEquals(plot, "grouping", "standard", required: true);
+        if (type == SpreadsheetChartType.Doughnut)
+            return ScalarEquals(plot, "firstSliceAng", "0", required: false) &&
+                   ScalarEquals(plot, "holeSize", "50", required: true);
+        return true;
+    }
+
+    private static bool ScalarEquals(XElement owner, string name, string expected, bool required)
+    {
+        var matches = owner.Elements(ChartNs + name).Take(2).ToArray();
+        if (matches.Length == 0) return !required;
+        if (matches.Length != 1) return false;
+        var element = matches[0];
+        return (string?)element.Attribute("val") == expected &&
+               !element.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration && attribute.Name != "val") &&
+               !element.Nodes().Any(node => node is XText text ? !string.IsNullOrWhiteSpace(text.Value) : true);
     }
 
     private static bool TrySeries(XElement source, SpreadsheetChartType chartType, out SpreadsheetChartSeriesArtifact series, out string[] categories, out bool editable)
@@ -422,6 +444,10 @@ internal sealed class XlsxChartCodec
             plot = new XElement(ChartNs + "barChart", new XElement(ChartNs + "barDir", new XAttribute("val", "col")), new XElement(ChartNs + "grouping", new XAttribute("val", "clustered")), series, XlsxChartDataLabelsCodec.Element(chart.DataLabels), new XElement(ChartNs + "axId", new XAttribute("val", "1")), new XElement(ChartNs + "axId", new XAttribute("val", "2")));
         else if (chart.Type == SpreadsheetChartType.Line)
             plot = new XElement(ChartNs + "lineChart", XlsxChartLineOptionsCodec.GroupingElement(chart.LineOptions), XlsxChartLineOptionsCodec.VaryColorsElement(chart.LineOptions), series, XlsxChartDataLabelsCodec.Element(chart.DataLabels), XlsxChartLineOptionsCodec.SmoothElement(chart.LineOptions), new XElement(ChartNs + "axId", new XAttribute("val", "1")), new XElement(ChartNs + "axId", new XAttribute("val", "2")));
+        else if (chart.Type == SpreadsheetChartType.Area)
+            plot = new XElement(ChartNs + "areaChart", new XElement(ChartNs + "grouping", new XAttribute("val", "standard")), series, XlsxChartDataLabelsCodec.Element(chart.DataLabels), new XElement(ChartNs + "axId", new XAttribute("val", "1")), new XElement(ChartNs + "axId", new XAttribute("val", "2")));
+        else if (chart.Type == SpreadsheetChartType.Doughnut)
+            plot = new XElement(ChartNs + "doughnutChart", new XElement(ChartNs + "varyColors", new XAttribute("val", "1")), series, XlsxChartDataLabelsCodec.Element(chart.DataLabels), new XElement(ChartNs + "firstSliceAng", new XAttribute("val", "0")), new XElement(ChartNs + "holeSize", new XAttribute("val", "50")));
         else plot = new XElement(ChartNs + "pieChart", new XElement(ChartNs + "varyColors", new XAttribute("val", "1")), series, XlsxChartDataLabelsCodec.Element(chart.DataLabels));
         var plotArea = new XElement(ChartNs + "plotArea", new XElement(ChartNs + "layout"), plot);
         XlsxChartAxisCodec.AppendAuthored(plotArea, chart);
@@ -514,11 +540,11 @@ internal sealed class XlsxChartCodec
         PatchTitle(nativeChart, target.Title, target.TitleTextStyle);
         PatchLegend(nativeChart, target.HasLegend);
         var plotArea = nativeChart.Element(ChartNs + "plotArea")!;
-        var plotName = target.Type switch { SpreadsheetChartType.Bar => "barChart", SpreadsheetChartType.Line => "lineChart", SpreadsheetChartType.Pie => "pieChart", _ => throw new InvalidOperationException() };
+        var plotName = target.Type switch { SpreadsheetChartType.Bar => "barChart", SpreadsheetChartType.Line => "lineChart", SpreadsheetChartType.Pie => "pieChart", SpreadsheetChartType.Area => "areaChart", SpreadsheetChartType.Doughnut => "doughnutChart", _ => throw new InvalidOperationException() };
         var plot = plotArea.Element(ChartNs + plotName)!;
         var nativeSeries = plot.Elements(ChartNs + "ser").ToArray();
         for (var index = 0; index < nativeSeries.Length; index++) PatchSeries(nativeSeries[index], target.Series[index], target.Categories);
-        XlsxChartLineOptionsCodec.Patch(plot, target.LineOptions);
+        if (target.Type == SpreadsheetChartType.Line) XlsxChartLineOptionsCodec.Patch(plot, target.LineOptions);
         XlsxChartDataLabelsCodec.Patch(plot, target.DataLabels);
         XlsxChartAxisCodec.Patch(plotArea, plot, target);
         WriteXml(record.ChartPart, record.ChartDocument);

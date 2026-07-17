@@ -16,8 +16,11 @@ const TYPES_TO_WIRE = new Map([
   ["bar", SpreadsheetChartType.BAR],
   ["line", SpreadsheetChartType.LINE],
   ["pie", SpreadsheetChartType.PIE],
+  ["area", SpreadsheetChartType.AREA],
+  ["doughnut", SpreadsheetChartType.DOUGHNUT],
 ]);
 const TYPES_FROM_WIRE = new Map([...TYPES_TO_WIRE].map(([name, value]) => [value, name]));
+const CIRCULAR_TYPES = new Set(["pie", "doughnut"]);
 const LINE_STYLES_TO_WIRE = new Map([
   ["solid", SpreadsheetChartLineDashStyle.SOLID],
   ["dashed", SpreadsheetChartLineDashStyle.DASHED],
@@ -242,12 +245,12 @@ function validateSnapshot(snapshot, chart) {
   text(snapshot.title, "title", chart);
   if (snapshot.titleTextStyle != null && snapshot.title.length === 0) fail(chart, "titleTextStyle requires a non-empty title.");
   const type = TYPES_TO_WIRE.get(snapshot.type);
-  if (type == null) fail(chart, `type must be bar, line, or pie; received ${snapshot.type}.`, "unsupported_spreadsheet_chart");
+  if (type == null) fail(chart, `type must be bar, line, pie, area, or doughnut; received ${snapshot.type}.`, "unsupported_spreadsheet_chart");
   if (snapshot.lineOptions != null && snapshot.type !== "line") fail(chart, "lineOptions require a line chart.", "unsupported_spreadsheet_chart");
-  if (snapshot.type === "pie") {
-    if (snapshot.xAxis != null || snapshot.yAxis != null) fail(chart, "pie charts cannot carry category/value axes in the bounded native profile.", "unsupported_spreadsheet_chart");
+  if (CIRCULAR_TYPES.has(snapshot.type)) {
+    if (snapshot.xAxis != null || snapshot.yAxis != null) fail(chart, `${snapshot.type} charts cannot carry category/value axes in the bounded native profile.`, "unsupported_spreadsheet_chart");
   } else {
-    if (snapshot.xAxis == null || snapshot.yAxis == null) fail(chart, "bar and line charts require primary xAxis and yAxis objects.");
+    if (snapshot.xAxis == null || snapshot.yAxis == null) fail(chart, "bar, line, and area charts require primary xAxis and yAxis objects.");
     if ([chart?.xAxis, chart?.yAxis].some((axis) => axis?.title?.textStyle != null)) fail(chart, "axis-title text styling is outside the bounded native chart profile.", "unsupported_spreadsheet_chart");
     validateAxis(snapshot.xAxis, "x", chart);
     validateAxis(snapshot.yAxis, "y", chart);

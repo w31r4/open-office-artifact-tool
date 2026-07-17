@@ -16,10 +16,10 @@ internal static class XlsxChartAxisCodec
 
     internal static void Validate(SpreadsheetChartArtifact chart, string worksheetId)
     {
-        if (chart.Type == SpreadsheetChartType.Pie)
+        if (chart.Type is SpreadsheetChartType.Pie or SpreadsheetChartType.Doughnut)
         {
             if (chart.XAxis is not null || chart.YAxis is not null)
-                throw Invalid(worksheetId, chart.Id, "pie charts cannot carry category/value axes in the bounded profile.");
+                throw Invalid(worksheetId, chart.Id, "pie and doughnut charts cannot carry category/value axes in the bounded profile.");
             return;
         }
         if ((chart.XAxis is null) != (chart.YAxis is null))
@@ -32,8 +32,11 @@ internal static class XlsxChartAxisCodec
     internal static bool TryRead(XElement plotArea, XElement plot, SpreadsheetChartArtifact chart, out bool editable)
     {
         editable = false;
-        if (chart.Type == SpreadsheetChartType.Pie)
-            return !plotArea.Elements().Any(IsAxis);
+        if (chart.Type is SpreadsheetChartType.Pie or SpreadsheetChartType.Doughnut)
+        {
+            editable = !plotArea.Elements().Any(IsAxis);
+            return editable;
+        }
         if (!TryLocate(plotArea, plot, out var categoryAxis, out var valueAxis)) return false;
         if (!TryReadAxis(categoryAxis, true, out var xAxis, out var xEditable) ||
             !TryReadAxis(valueAxis, false, out var yAxis, out var yEditable)) return false;
@@ -45,7 +48,7 @@ internal static class XlsxChartAxisCodec
 
     internal static void AppendAuthored(XElement plotArea, SpreadsheetChartArtifact chart)
     {
-        if (chart.Type == SpreadsheetChartType.Pie) return;
+        if (chart.Type is SpreadsheetChartType.Pie or SpreadsheetChartType.Doughnut) return;
         var xAxis = chart.XAxis ?? new SpreadsheetChartAxisArtifact();
         var yAxis = chart.YAxis ?? new SpreadsheetChartAxisArtifact();
         plotArea.Add(BuildCategoryAxis(xAxis), BuildValueAxis(yAxis));
@@ -53,7 +56,7 @@ internal static class XlsxChartAxisCodec
 
     internal static void Patch(XElement plotArea, XElement plot, SpreadsheetChartArtifact target)
     {
-        if (target.Type == SpreadsheetChartType.Pie) return;
+        if (target.Type is SpreadsheetChartType.Pie or SpreadsheetChartType.Doughnut) return;
         if (target.XAxis is null || target.YAxis is null || !TryLocate(plotArea, plot, out var categoryAxis, out var valueAxis))
             throw new CodecException("unsupported_spreadsheet_chart_edit", $"Worksheet chart {target.Id} cannot change its primary-axis topology.");
         PatchAxis(categoryAxis, target.XAxis, true);

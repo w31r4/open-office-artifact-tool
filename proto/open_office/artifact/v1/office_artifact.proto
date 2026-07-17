@@ -510,6 +510,8 @@ enum SpreadsheetChartType {
   SPREADSHEET_CHART_TYPE_BAR = 1;
   SPREADSHEET_CHART_TYPE_LINE = 2;
   SPREADSHEET_CHART_TYPE_PIE = 3;
+  SPREADSHEET_CHART_TYPE_AREA = 4;
+  SPREADSHEET_CHART_TYPE_DOUGHNUT = 5;
 }
 
 // One worksheet chart graphic frame and its relationship-backed ChartPart.
