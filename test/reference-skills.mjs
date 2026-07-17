@@ -101,6 +101,7 @@ assert.equal(await exists(path.join(skillsRoot, "spreadsheets", "skills", "sprea
 const spreadsheetSkillText = await fs.readFile(path.join(skillsRoot, "spreadsheets", "skills", "spreadsheets", "SKILL.md"), "utf8");
 assert.match(spreadsheetSkillText, /artifact_tool_docs\/API_QUICK_START\.md/);
 assert.match(spreadsheetSkillText, /features\/charts\.md/);
+assert.match(spreadsheetSkillText, /openchestnut-financial-returns-workflow\.mjs/);
 
 const presentationApiRoot = path.join(skillsRoot, "presentations", "skills", "presentations", "artifact_tool", "api");
 const presentationApiDocs = await fs.readFile(path.join(presentationApiRoot, "API_DOCS.md"), "utf8");
@@ -363,6 +364,18 @@ try {
     dataTableRoundTrip.worksheets.getItem("Scenario Analysis").dataTables.__getDefinitions().map((item) => item.displayFormula),
     ["{=TABLE(D1)}", "{=TABLE(D1,D2)}"],
   );
+
+  const { createFinancialReturnsWorkbook } = await import(
+    "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-financial-returns-workflow.mjs"
+  );
+  const financialReturnsPath = path.join(tempRoot, "openchestnut-financial-returns-workflow.xlsx");
+  const authoredFinancialReturns = await createFinancialReturnsWorkbook(financialReturnsPath);
+  assert.equal(authoredFinancialReturns.verification.ok, true);
+  assert.match(authoredFinancialReturns.inspection.ndjson, /XIRR/);
+  const financialReturnsRoundTrip = await SpreadsheetFile.importXlsx(await FileBlob.load(financialReturnsPath));
+  financialReturnsRoundTrip.recalculate();
+  assert.equal(financialReturnsRoundTrip.worksheets.getItem("Returns").getRange("B8").formulas[0][0], "=XIRR('Inputs'!$C$14:$C$18,'Inputs'!$B$14:$B$18,'Inputs'!$B$7)");
+  assert.deepEqual(financialReturnsRoundTrip.worksheets.getItem("Checks").getRange("E4:E9").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
 
   const { createScatterWorkbook } = await import(
     "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-scatter-chart-workflow.mjs"

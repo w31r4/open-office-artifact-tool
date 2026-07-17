@@ -37,6 +37,7 @@ Other documents:
 - `examples/openchestnut-range-workflow.mjs`: Run or adapt this public-package example for R1C1 formulas, block writes, range navigation, formula inspection, OpenChestnut roundtrip, and SVG verification.
 - `examples/openchestnut-sparkline-workflow.mjs`: Run or adapt this canonical example for line/column sparkline authoring, Range aliases, inspect/render/verify, and source-bound OpenChestnut edits.
 - `examples/openchestnut-data-table-workflow.mjs`: Run or adapt this canonical example for one-variable and two-variable What-If data-table authoring, inspect, OpenChestnut roundtrip, and source-bound imported topology.
+- `examples/openchestnut-financial-returns-workflow.mjs`: Run or adapt this three-sheet `Inputs` / `Returns` / `Checks` example for visible financial assumptions, finance color conventions, NPV/XNPV/IRR/XIRR/PMT outputs, guarded return checks, SVG review, and canonical OpenChestnut roundtrip.
 - `examples/openchestnut-scatter-chart-workflow.mjs`: Run or adapt this canonical example for formula-backed numeric X/Y scatter series, dual value axes, marker styling, SVG verification, and fixed-topology OpenChestnut edits.
 - `examples/openchestnut-bubble-chart-workflow.mjs`: Run or adapt this canonical example for one formula-backed numeric X/Y/Size bubble series, dual value axes, proportional SVG/native bubbles, and fixed-topology OpenChestnut edits.
 

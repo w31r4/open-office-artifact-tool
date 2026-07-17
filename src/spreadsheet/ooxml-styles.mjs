@@ -286,8 +286,10 @@ export function formatSpreadsheetDisplayValue(value, style = {}, options = {}) {
   if (typeof value === "string") return section.includes("@") ? literalCleanup(section).replace("@", value) : value;
   const number = Number(value);
   if (!Number.isFinite(number)) return String(value);
-  if (/[yd]/i.test(section) || /(?:h+|s+|\[h\])(?=:|\b)/i.test(section)) return dateDisplay(number, section, options.dateSystem || "1900");
   const cleaned = literalCleanup(section);
+  // Remove color/condition brackets before deciding whether this is a date.
+  // `[Red]($#,##0)` otherwise looks like a date only because "Red" has `d`.
+  if (/[yd]/i.test(cleaned) || /(?:h+|s+|\[h\])(?=:|\b)/i.test(cleaned)) return dateDisplay(number, section, options.dateSystem || "1900");
   if (/@/.test(cleaned)) return cleaned.replace("@", String(value));
   const percent = cleaned.includes("%"), scaled = (percent ? 100 : 1) * Math.abs(number);
   const exponent = /E[+-]0+/i.test(cleaned), decimals = /[0#?]+\.([0#?]+)/.exec(cleaned)?.[1]?.length || 0;

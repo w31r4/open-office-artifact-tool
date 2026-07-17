@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import JSZip from "jszip";
 
 import { SpreadsheetFile, Workbook, verifyArtifact } from "../src/index.mjs";
+import { formatSpreadsheetDisplayValue } from "../src/spreadsheet/ooxml-styles.mjs";
 
 const PNG_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAQAAABFaP0WAAAADUlEQVR42mNk+M/wHwAF/gL+3c5GAAAAAElFTkSuQmCC";
+
+assert.equal(formatSpreadsheetDisplayValue(-8884.878867834168, { numberFormat: "$#,##0;[Red]($#,##0);-" }), "($8,885)");
 
 const workbook = Workbook.create({ dateSystem: "1900" });
 const sheet = workbook.worksheets.add("Summary");
