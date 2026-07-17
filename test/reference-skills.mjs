@@ -376,6 +376,18 @@ try {
   assert.equal(scatterChart.type, "scatter");
   assert.deepEqual(scatterChart.series.items[0].xValues, [10, 20, 25, 34, 45]);
 
+  const { createBubbleWorkbook } = await import(
+    "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-bubble-chart-workflow.mjs"
+  );
+  const bubblePath = path.join(tempRoot, "openchestnut-bubble-chart-workflow.xlsx");
+  const authoredBubble = await createBubbleWorkbook(bubblePath);
+  assert.equal(authoredBubble.verification.ok, true);
+  assert.match(authoredBubble.inspection.ndjson, /"chartType":"bubble"/);
+  const bubbleRoundTrip = await SpreadsheetFile.importXlsx(await FileBlob.load(bubblePath));
+  const bubbleChart = bubbleRoundTrip.worksheets.getItem("Opportunity Analysis").charts.items[0];
+  assert.equal(bubbleChart.type, "bubble");
+  assert.deepEqual(bubbleChart.series.items[0].bubbleSizes, [4, 10, 12, 18, 27]);
+
   const { createPdf } = await import(
     "../skills/pdf/skills/pdf/examples/public-api-end-to-end.mjs"
   );

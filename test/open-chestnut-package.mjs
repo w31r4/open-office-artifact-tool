@@ -45,6 +45,10 @@ try {
     const scatter = sheet.charts.add("scatter", sheet.getRange("D1:E3"));
     scatter.title = "Packed scatter";
     scatter.series.items[0].marker = { symbol: "circle", size: 6, fill: "#0EA5E9" };
+    sheet.getRange("G1:I3").values = [["X", "Y", "Size"], [1, 3, 4], [2, 8, 9]];
+    const bubble = sheet.charts.add("bubble", sheet.getRange("G1:I3"));
+    bubble.title = "Packed bubble";
+    bubble.series.items[0].fill = "#38BDF8";
     const xlsx = await SpreadsheetFile.exportXlsx(workbook);
     if (xlsx.metadata.codec !== "open-chestnut" || xlsx.bytes[0] !== 0x50 || xlsx.bytes[1] !== 0x4b) process.exit(1);
     const importedWorkbook = await SpreadsheetFile.importXlsx(xlsx);
@@ -52,6 +56,9 @@ try {
     const importedScatter = importedWorkbook.worksheets.getItem("Packaged").charts.items[0];
     if (importedScatter.type !== "scatter" || importedScatter.xAxis.axisType !== "valueAxis") process.exit(4);
     if (JSON.stringify(importedScatter.series.items[0].xValues) !== "[1,2]") process.exit(5);
+    const importedBubble = importedWorkbook.worksheets.getItem("Packaged").charts.items[1];
+    if (importedBubble.type !== "bubble" || importedBubble.xAxis.axisType !== "valueAxis") process.exit(6);
+    if (JSON.stringify(importedBubble.series.items[0].bubbleSizes) !== "[4,9]") process.exit(7);
     const xlsx2 = await SpreadsheetFile.exportXlsx(importedWorkbook, { recalculate: false });
     if ((await SpreadsheetFile.importXlsx(xlsx2)).worksheets.getItem("Packaged").getRange("A2").values[0][0] !== "clean install") process.exit(3);
 

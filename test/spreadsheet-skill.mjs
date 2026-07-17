@@ -147,6 +147,35 @@ try {
     assert.equal(scatterQa.summary.nativeRender.pageCount, 1);
   }
 
+  const { createBubbleWorkbook } = await import(
+    "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-bubble-chart-workflow.mjs"
+  );
+  const bubblePath = path.join(outputDir, "openchestnut-bubble-chart-workflow.xlsx");
+  const bubbleResult = await createBubbleWorkbook(bubblePath);
+  assert.equal(bubbleResult.verification.ok, true);
+  const bubbleWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(bubblePath));
+  const bubbleChart = bubbleWorkbook.worksheets.getItem("Opportunity Analysis").charts.items[0];
+  assert.equal(bubbleChart.type, "bubble");
+  assert.deepEqual(bubbleChart.series.items[0].xValues, [10, 20, 25, 34, 45]);
+  assert.deepEqual(bubbleChart.series.items[0].bubbleSizes, [4, 10, 12, 18, 27]);
+  const bubbleZip = await JSZip.loadAsync(await fs.readFile(bubblePath));
+  const bubbleChartPath = Object.keys(bubbleZip.files).find((name) => /\/charts\/chart\d+\.xml$/i.test(name));
+  assert.ok(bubbleChartPath);
+  const bubbleXml = await bubbleZip.file(bubbleChartPath).async("text");
+  assert.match(bubbleXml, /<c:bubbleChart>/);
+  assert.match(bubbleXml, /<c:bubbleSize>/);
+  assert.equal((bubbleXml.match(/<c:valAx>/g) || []).length, 2);
+  const bubbleQa = await verifyWorkbookFile(bubblePath, {
+    outputDir: path.join(outputDir, "openchestnut-bubble-native-qa"),
+    sheetName: "Opportunity Analysis",
+    renderFormat: "svg",
+    nativeRender: "auto",
+  });
+  if (nativeSpreadsheetRenderStatus().available) {
+    assert.equal(bubbleQa.summary.nativeRender.status, "passed");
+    assert.equal(bubbleQa.summary.nativeRender.pageCount, 1);
+  }
+
   const queryResult = await runFixture("open-chestnut-query-table");
   assert.equal(queryResult.sourceQueryTable.sheet, "External Data");
   assert.equal(queryResult.sourceQueryTable.table, "ExternalSales");

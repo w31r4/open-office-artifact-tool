@@ -13,9 +13,12 @@ Use a chart only when it makes a KPI, comparison, trend, distribution, ranking, 
 Optimize for one clear takeaway and prioritize the data. Use color only for meaning, and keep labels, units, and comparisons easy to read.
 
 The canonical OpenChestnut path supports native bar, line, pie, standard-area,
-50%-hole doughnut, and marker-only numeric-X/Y scatter charts. Scatter line and
-smooth variants remain source-bound. Other reference chart names and advanced
-plot options require a separately verified provider or must fail closed; never
+50%-hole doughnut, marker-only numeric-X/Y scatter, and bounded numeric-X/Y/Size
+bubble charts. Scatter line and smooth variants remain source-bound. Bubble
+requires positive, count-aligned sizes and is authored as 2D, 100%-scale,
+area-based sizing; `bubble3D`, negative bubbles, custom scale, and non-area
+sizing remain source-bound. Other reference chart names and advanced plot
+options require a separately verified provider or must fail closed; never
 substitute a different chart family without telling the user.
 
 For marker-only scatter, do not set the series-level `line` or `stroke` fields:
@@ -27,6 +30,7 @@ Examples below are guidance, not hard rules:
 - For category comparison or ranking, consider a sorted bar/column chart.
 - For trends over time, consider a line chart; use area charts only when the filled volume adds meaning.
 - For relationships between two numeric measures, consider a scatter chart. Keep X values numeric and auditable; do not turn them into category labels.
+- For relationships where a third positive magnitude matters, consider a bubble chart. Keep exact numeric `X | Y | Size` vectors aligned; do not guess a fourth range column's meaning.
 - For part-to-whole, consider a sorted bar chart, compact table, or pie/doughnut when there are only a few slices and the rough share is the point.
 - For distributions, consider a histogram; use boxWhisker when median, spread, and outliers are the point.
 - For exact values across a small number of items, consider a table instead of a chart.

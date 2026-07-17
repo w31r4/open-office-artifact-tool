@@ -65,6 +65,32 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### XLSX bounded 2D bubble charts
+
+On 2026-07-18, the Spreadsheet public model, protocol-2 wire, OpenChestnut C#
+codec, bundled WASM runtime, generated Help/API reference, clean-install pack
+probe, and native Spreadsheet Skill converged on real 2D bubble charts.
+`sheet.charts.add("bubble", range)` accepts exactly `X | Y | Size` and creates
+one unambiguous formula-bound series; a multi-series bubble chart must instead
+use explicit `xValues/xFormula`, `values/formula`, and
+`bubbleSizes/bubbleSizeFormula` fields. The three vectors must have equal point
+counts, and sizes must be finite and positive.
+
+OpenChestnut authors native `c:bubbleChart`, `c:xVal`, `c:yVal`,
+`c:bubbleSize`, and two numeric value axes. It uses an explicit 2D,
+100%-scale, area-sizing profile. Imported `bubble3D`, negative-bubble,
+custom-scale, or non-area-size graphs are detected as source-bound/read-only;
+unchanged export retains them exactly and mutation fails closed. Bubble SVG
+preview maps the positive size vector proportionally to visible circles rather
+than pretending a bubble plot is a scatter plot.
+
+The runnable Skill workflow creates, inspects, verifies, exports, imports,
+edits, re-exports, and re-imports one formula-backed bubble chart. Its real
+LibreOffice-to-PDF plus Poppler QA passes in one page. The production-only
+tarball smoke also creates/imports the bubble chart while `dotnet` is absent
+from `PATH`; C# tests validate Office 2021 XML, fixed-topology edits, and
+exact preservation/rejection of a noncanonical `bubbleScale` profile.
+
 ### XLSX marker-only scatter charts
 
 On 2026-07-18, the Spreadsheet public model, protocol-2 wire, OpenChestnut C#

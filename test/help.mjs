@@ -362,8 +362,9 @@ assert.match(HELP_CATALOG.find((item) => item.name === "thread.addReply")?.schem
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.tables.add")?.schema?.returns?.table?.description || "", /QueryTable.*import-only and read-only/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.returns?.pivot?.description || "", /does not author pivots.*read-only/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.sparklineGroups.add")?.schema?.returns?.sparkline?.description || "", /Editable standard Office 2010 x14 sparkline group.*without topology changes.*opaque and unchanged/i);
-assert.match(HELP_CATALOG.find((item) => item.name === "sheet.charts.add")?.schema?.parameters?.chartType?.description || "", /bar, line, pie, area, doughnut, or scatter.*fail closed/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "sheet.charts.add")?.schema?.parameters?.chartType?.description || "", /bar, line, pie, area, doughnut, scatter, or bubble.*fail closed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.charts.add")?.schema?.parameters?.series?.description || "", /xValues\/xFormula/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "sheet.charts.add")?.schema?.parameters?.series?.description || "", /bubbleSizes\/bubbleSizeFormula.*aligned/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "openChestnutStatus")?.schema?.returns?.status?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "invokeOpenChestnut")?.schema?.parameters?.request?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.inspectXlsx")?.schema?.parameters?.maxTotalBytes?.type, "number");
