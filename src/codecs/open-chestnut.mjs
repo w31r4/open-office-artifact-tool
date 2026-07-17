@@ -1541,6 +1541,7 @@ const DOCUMENT_BIBLIOGRAPHY_FIELD_KEYS = [
 ];
 const DOCUMENT_CITATION_TAG = /^[A-Za-z0-9_.:-]{1,255}$/;
 const DOCUMENT_FIELD_COMMANDS = new Set(["PAGE", "NUMPAGES", "SECTION", "SECTIONPAGES", "DATE", "TIME", "CREATEDATE", "SAVEDATE", "PRINTDATE", "AUTHOR", "TITLE", "SUBJECT", "COMMENTS", "FILENAME", "FILESIZE", "NUMWORDS", "NUMCHARS"]);
+const DOCUMENT_INLINE_FIELD_INSTRUCTION = /^(?:SEQ [A-Za-z][A-Za-z0-9_]{0,39} \\[*] ARABIC|(?:REF|PAGEREF) [A-Za-z][A-Za-z0-9_]{0,39} \\h)$/;
 
 function documentRgb(value, label) {
   if (value == null || value === "") return undefined;
@@ -1649,6 +1650,11 @@ function wireDocumentTextContentControl(control, nativeId, blockId) {
 function documentRun(run, blockId, contentControlNativeId) {
   const style = run.style || {};
   const formatting = documentRunFormatting(style, `Document block ${blockId}`);
+  const inlineInstruction = run.inlineField ? String(run.inlineField.instruction || "").trim() : undefined;
+  if (inlineInstruction !== undefined && !DOCUMENT_INLINE_FIELD_INSTRUCTION.test(inlineInstruction)) {
+    throw new OpenChestnutCodecError(`Document block ${blockId} inline field must be canonical SEQ <label> \\* ARABIC, REF <bookmark> \\h, or PAGEREF <bookmark> \\h.`, [], { code: "invalid_document_inline_field" });
+  }
+  if (run.contentControl && inlineInstruction !== undefined) throw new OpenChestnutCodecError(`Document block ${blockId} run cannot combine a content control and an inline field.`, [], { code: "invalid_document_inline_field" });
   return {
     text: String(run.text ?? ""),
     styleId: style.runStyleId || "",
@@ -1657,6 +1663,7 @@ function documentRun(run, blockId, contentControlNativeId) {
     underline: style.underline === true || style.underline === "single",
     formatting,
     textContentControl: run.contentControl ? wireDocumentTextContentControl(run.contentControl, contentControlNativeId, blockId) : undefined,
+    inlineField: inlineInstruction === undefined ? undefined : { instruction: inlineInstruction },
   };
 }
 
@@ -1672,6 +1679,22 @@ function assertDocumentContentControlTopology(block, original) {
   const source = documentContentControlTopology(original.content.value.runs || []);
   if (JSON.stringify(requested) !== JSON.stringify(source)) {
     throw new OpenChestnutCodecError(`Imported document paragraph ${block.id} plain-text content-control topology is source-bound.`, [], { code: "document_content_control_topology_changed" });
+  }
+}
+
+function documentInlineFieldTopology(runs = []) {
+  return runs.flatMap((run, index) => {
+    const field = run.inlineField || run.field;
+    return field ? [{ index, instruction: String(field.instruction || "").trim() }] : [];
+  });
+}
+
+function assertDocumentInlineFieldTopology(block, original) {
+  if (!original || original.content.case !== "paragraph") return;
+  const requested = documentInlineFieldTopology(block.runs || []);
+  const source = documentInlineFieldTopology(original.content.value.runs || []);
+  if (JSON.stringify(requested) !== JSON.stringify(source)) {
+    throw new OpenChestnutCodecError(`Imported document paragraph ${block.id} inline-field positions and instructions are source-bound.`, [], { code: "document_inline_field_topology_changed" });
   }
 }
 
@@ -2501,7 +2524,7 @@ function documentBlockSnapshot(block) {
       text: block?.text,
     },
     runs: Array.isArray(block?.runs)
-      ? block.runs.map((run) => ({ text: String(run?.text ?? ""), style: { ...(run?.style || {}) }, contentControl: run?.contentControl ? { ...run.contentControl } : undefined }))
+      ? block.runs.map((run) => ({ text: String(run?.text ?? ""), style: { ...(run?.style || {}) }, contentControl: run?.contentControl ? { ...run.contentControl } : undefined, inlineField: run?.inlineField ? { ...run.inlineField } : undefined }))
       : undefined,
   });
 }
@@ -2516,6 +2539,7 @@ function documentBlock(block, original, directNumbering, assets, contentControlN
   };
   if (block.kind === "paragraph") {
     assertDocumentContentControlTopology(block, original);
+    assertDocumentInlineFieldTopology(block, original);
     return {
       ...common,
       content: {
@@ -2786,6 +2810,7 @@ function documentFromEnvelope(envelope) {
               alias: run.textContentControl.alias,
               nativeId: run.textContentControl.nativeId,
             } } : {}),
+            ...(run.inlineField ? { inlineField: { instruction: run.inlineField.instruction } } : {}),
           })) : undefined,
         };
       case "table":

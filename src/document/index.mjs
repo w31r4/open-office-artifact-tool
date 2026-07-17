@@ -157,17 +157,29 @@ function normalizeDocumentTextContentControl(value) {
   };
 }
 
+function normalizeDocumentInlineField(value) {
+  if (value == null || value === false) return undefined;
+  const source = typeof value === "string" ? { instruction: value } : value;
+  if (!source || typeof source !== "object") throw new TypeError("Document inline field must be an instruction string or object.");
+  const instruction = String(source.instruction ?? source.code ?? "").trim();
+  if (!instruction) throw new TypeError("Document inline field requires a non-empty instruction.");
+  return { instruction };
+}
+
 function normalizeDocumentRun(run = {}, theme = {}) {
   const contentControl = normalizeDocumentTextContentControl(run.contentControl ?? run.textContentControl ?? run.control);
+  const inlineField = normalizeDocumentInlineField(run.inlineField ?? run.field);
+  if (contentControl && inlineField) throw new TypeError("Document run cannot be both a content control and an inline field.");
   return {
     text: String(run.text ?? run.value ?? ""),
     style: normalizeDocxRunStyle(run.style || run.textStyle || {}, theme),
     ...(contentControl ? { contentControl } : {}),
+    ...(inlineField ? { inlineField } : {}),
   };
 }
 
 function normalizeDocumentRuns(text, config = {}, theme = {}) {
-  const runs = (config.runs || config.textRuns || []).map((run) => normalizeDocumentRun(run, theme)).filter((run) => run.text.length > 0 || run.contentControl);
+  const runs = (config.runs || config.textRuns || []).map((run) => normalizeDocumentRun(run, theme)).filter((run) => run.text.length > 0 || run.contentControl || run.inlineField);
   if (runs.length) return runs;
   const rawText = String(text ?? "");
   return rawText ? [{ text: rawText, style: normalizeDocxRunStyle({}, theme) }] : [];
@@ -180,7 +192,7 @@ function documentEffectiveRunStyle(document, block, run) {
 }
 
 function documentRunsNeedSerialization(runs = []) {
-  return runs.length > 1 || runs.some((run) => Object.keys(run.style || {}).length > 0 || run.contentControl);
+  return runs.length > 1 || runs.some((run) => Object.keys(run.style || {}).length > 0 || run.contentControl || run.inlineField);
 }
 
 class DocumentParagraphBlock {
@@ -198,6 +210,7 @@ class DocumentParagraphBlock {
   _syncText() { this.text = this.runs.map((run) => String(run.text ?? "")).join(""); return this.text; }
   addRun(text, config = {}) { const run = normalizeDocumentRun({ ...config, text }, this.document.theme); this.runs.push(run); this._syncText(); return run; }
   addTextContentControl(text, config = {}) { return this.addRun(text, { ...config, contentControl: config.contentControl || config }); }
+  addField(instruction, display = "0", config = {}) { return this.addRun(display, { ...config, inlineField: { instruction } }); }
   inspectRecord(index) { return { kind: "paragraph", id: this.id, index, name: this.name || undefined, styleId: this.styleId, paragraphFormat: Object.keys(this.paragraphFormat).length ? this.paragraphFormat : undefined, text: this.text, textChars: this.text.length, runs: documentRunsNeedSerialization(this.runs) ? this.runs : undefined }; }
   toProto() { return { kind: "paragraph", id: this.id, name: this.name, styleId: this.styleId, paragraphFormat: Object.keys(this.paragraphFormat).length ? this.paragraphFormat : undefined, text: this.text, runs: documentRunsNeedSerialization(this.runs) ? this.runs : undefined }; }
 }

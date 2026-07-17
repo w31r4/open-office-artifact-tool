@@ -257,7 +257,10 @@ internal static class DocxCodec
                         "word/document.xml");
                 if (block.ContentCase == DocumentBlock.ContentOneofCase.Paragraph &&
                     original.ContentCase == DocumentBlock.ContentOneofCase.Paragraph)
+                {
                     DocxTextContentControlCodec.AssertTopology(block.Paragraph, original.Paragraph, block.Id);
+                    DocxInlineFieldCodec.AssertTopology(block.Paragraph, original.Paragraph, block.Id);
+                }
 
                 sourceBlocks.Add(new DocxSourceBlock(ordinal, element, block, original, binding));
             }
@@ -596,7 +599,7 @@ internal static class DocxCodec
                     semanticItems++;
                     break;
                 }
-                editable = IsSimpleParagraph(paragraph);
+                editable = TryReadSimpleParagraphRuns(paragraph, block.Id, out var paragraphRuns);
                 var paragraphArtifact = new DocumentParagraph
                 {
                     Text = DescendantText(paragraph),
@@ -604,13 +607,7 @@ internal static class DocxCodec
                 };
                 if (editable)
                 {
-                    var runIndex = 0;
-                    foreach (var child in paragraph.ChildElements)
-                    {
-                        if (child is W.Run run) paragraphArtifact.Runs.Add(ReadRun(run));
-                        else if (child is W.SdtRun control) paragraphArtifact.Runs.Add(DocxTextContentControlCodec.Read(control, $"{block.Id}/content-control/{++runIndex}"));
-                        if (child is W.Run) runIndex++;
-                    }
+                    paragraphArtifact.Runs.AddRange(paragraphRuns);
                 }
                 block.Paragraph = paragraphArtifact;
                 semanticItems += checked((ulong)Math.Max(1, paragraphArtifact.Runs.Count));
@@ -681,14 +678,41 @@ internal static class DocxCodec
         return result;
     }
 
-    private static bool IsSimpleParagraph(W.Paragraph paragraph)
+    private static bool TryReadSimpleParagraphRuns(W.Paragraph paragraph, string blockId, out List<DocumentRun> runs)
     {
-        if (paragraph.ChildElements.Any(child => child is not W.ParagraphProperties and not W.Run and not W.SdtRun)) return false;
+        runs = [];
         if (!DocxFormattingCodec.IsSupportedParagraphProperties(paragraph.ParagraphProperties)) return false;
-        return paragraph.Elements<W.Run>().All(run =>
-            run.ChildElements.All(child => child is W.RunProperties or W.Text) &&
-            DocxFormattingCodec.IsSupportedRunProperties(run.RunProperties)) &&
-            paragraph.Elements<W.SdtRun>().All(DocxTextContentControlCodec.IsSupported);
+        var children = paragraph.ChildElements.Where(child => child is not W.ParagraphProperties).ToArray();
+        var logicalIndex = 0;
+        for (var index = 0; index < children.Length;)
+        {
+            if (DocxInlineFieldCodec.TryRead(children, index, out var fieldRun, out var consumed))
+            {
+                runs.Add(fieldRun);
+                logicalIndex++;
+                index += consumed;
+                continue;
+            }
+            if (children[index] is W.Run run &&
+                run.ChildElements.All(child => child is W.RunProperties or W.Text) &&
+                DocxFormattingCodec.IsSupportedRunProperties(run.RunProperties))
+            {
+                runs.Add(ReadRun(run));
+                logicalIndex++;
+                index++;
+                continue;
+            }
+            if (children[index] is W.SdtRun control && DocxTextContentControlCodec.IsSupported(control))
+            {
+                runs.Add(DocxTextContentControlCodec.Read(control, $"{blockId}/content-control/{logicalIndex + 1}"));
+                logicalIndex++;
+                index++;
+                continue;
+            }
+            runs = [];
+            return false;
+        }
+        return true;
     }
 
     private static HashSet<uint> IrregularComplexFieldBodyIndexes(W.Body body)
@@ -716,7 +740,8 @@ internal static class DocxCodec
             var canonicalSingleParagraph =
                 !startedInside && !malformed && depth == 0 &&
                 element is W.Paragraph paragraph &&
-                DocxFieldCodec.TryRead(paragraph, out var field, out _) && field.Complex;
+                ((DocxFieldCodec.TryRead(paragraph, out var field, out _) && field.Complex) ||
+                 (TryReadSimpleParagraphRuns(paragraph, "document/inline-field-probe", out var runs) && DocxInlineFieldCodec.HasInlineField(runs)));
             if (!canonicalSingleParagraph) result.Add(checked((uint)bodyIndex));
         }
         return result;
@@ -757,7 +782,8 @@ internal static class DocxCodec
         }
         foreach (var source in block.Paragraph.Runs)
         {
-            paragraph.Append(source.TextContentControl is null ? BuildRun(source) : DocxTextContentControlCodec.Build(source));
+            if (source.InlineField is not null) paragraph.Append(DocxInlineFieldCodec.Build(source));
+            else paragraph.Append(source.TextContentControl is null ? BuildRun(source) : DocxTextContentControlCodec.Build(source));
         }
         return paragraph;
     }
@@ -833,7 +859,10 @@ internal static class DocxCodec
                     if (block.Paragraph.Numbering is not null) DocxNumberedParagraphCodec.Validate(block.Paragraph);
                     DocxFormattingCodec.Validate(block.Paragraph.Formatting, $"Document paragraph {block.Id}");
                     foreach (var run in block.Paragraph.Runs)
+                    {
                         DocxFormattingCodec.Validate(DocxFormattingCodec.MergeLegacy(run), $"Document paragraph {block.Id} run");
+                        if (run.InlineField is not null) DocxInlineFieldCodec.Validate(run);
+                    }
                     if (block.Paragraph.Runs.Count > 0 && block.Paragraph.Text != string.Concat(block.Paragraph.Runs.Select(run => run.Text)))
                         throw new CodecException("inconsistent_document_text", $"Document paragraph {block.Id} text does not match its runs.");
                     semanticItems += checked((ulong)Math.Max(1, block.Paragraph.Runs.Count));

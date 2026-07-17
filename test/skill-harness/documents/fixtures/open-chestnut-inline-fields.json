@@ -1,0 +1,46 @@
+{
+  "name": "open-chestnut-inline-fields",
+  "outputName": "open-chestnut-inline-fields.docx",
+  "styles": {
+    "Caption": { "name": "Caption", "type": "paragraph", "italic": true }
+  },
+  "blocks": [
+    { "kind": "paragraph", "styleId": "Title", "text": "Native inline field workflow" },
+    {
+      "kind": "paragraph",
+      "name": "field-caption",
+      "styleId": "Caption",
+      "runs": [
+        { "text": "Figure " },
+        { "text": "0", "style": { "bold": true }, "inlineField": { "instruction": "SEQ Figure \\* ARABIC" } },
+        { "text": ": Revenue. See figure " },
+        { "text": "0", "inlineField": { "instruction": "REF fig1 \\h" } },
+        { "text": " on page " },
+        { "text": "0", "inlineField": { "instruction": "PAGEREF fig1 \\h" } },
+        { "text": "." }
+      ]
+    }
+  ],
+  "edits": [
+    {
+      "kind": "paragraphRuns",
+      "matchText": "Figure 0: Revenue. See figure 0 on page 0.",
+      "runs": [
+        { "index": 1, "expectInstruction": "SEQ Figure \\* ARABIC", "text": "1" },
+        { "index": 2, "text": ": Updated revenue. See figure " },
+        { "index": 3, "expectInstruction": "REF fig1 \\h", "text": "1" },
+        { "index": 5, "expectInstruction": "PAGEREF fig1 \\h", "text": "1" }
+      ]
+    }
+  ],
+  "expectInspect": [
+    { "kind": "paragraph", "pattern": "SEQ Figure" },
+    { "kind": "paragraph", "pattern": "PAGEREF fig1" }
+  ],
+  "qa": {
+    "previewFormat": "svg",
+    "nativeRender": "auto",
+    "inspectKind": "document,paragraph,layout",
+    "maxChars": 12000
+  }
+}

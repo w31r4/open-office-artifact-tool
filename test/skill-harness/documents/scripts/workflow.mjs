@@ -244,6 +244,18 @@ export async function runDocumentFixture(fixturePath, options = {}) {
         }
         continue;
       }
+      if (edit.kind === "paragraphRuns") {
+        const paragraph = imported.blocks.find((block) => block.kind === "paragraph" && (!edit.matchText || block.text === edit.matchText));
+        assert.ok(paragraph, `Missing source-bound paragraph-runs fixture target ${edit.matchText || "(unspecified)"}.`);
+        for (const change of edit.runs || []) {
+          const run = paragraph.runs[Number(change.index)];
+          assert.ok(run, `Missing source-bound paragraph run ${change.index}.`);
+          if (Object.prototype.hasOwnProperty.call(change, "expectInstruction")) assert.equal(run.inlineField?.instruction, change.expectInstruction);
+          if (Object.prototype.hasOwnProperty.call(change, "text")) run.text = String(change.text);
+        }
+        paragraph.text = paragraph.runs.map((run) => String(run.text || "")).join("");
+        continue;
+      }
       if (edit.kind === "contentControls") {
         const result = imported.fillContentControls(edit.values || {}, { strict: edit.strict !== false });
         if (Object.prototype.hasOwnProperty.call(edit, "expectUpdated")) assert.equal(result.updated, edit.expectUpdated);

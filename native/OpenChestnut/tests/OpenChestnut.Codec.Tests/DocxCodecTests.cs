@@ -95,6 +95,119 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void InlineSeqAndRefFieldsAuthorImportEditAndProtectSourceTopology()
+    {
+        var document = new DocumentArtifact { Id = "document/inline-fields", Name = "Inline fields" };
+        var paragraph = new DocumentBlock
+        {
+            Id = "document/inline-fields/caption",
+            StyleId = "Caption",
+            Paragraph = new DocumentParagraph { Text = "Figure 0: Revenue. See 0." },
+        };
+        paragraph.Paragraph.Runs.Add(new DocumentRun { Text = "Figure " });
+        paragraph.Paragraph.Runs.Add(new DocumentRun
+        {
+            Text = "0",
+            InlineField = new DocumentInlineField { Instruction = "SEQ Figure \\* ARABIC" },
+            Formatting = new DocumentRunFormatting { Bold = true },
+        });
+        paragraph.Paragraph.Runs.Add(new DocumentRun { Text = ": Revenue. See " });
+        paragraph.Paragraph.Runs.Add(new DocumentRun
+        {
+            Text = "0",
+            InlineField = new DocumentInlineField { Instruction = "REF fig1 \\h" },
+        });
+        paragraph.Paragraph.Runs.Add(new DocumentRun { Text = "." });
+        document.Blocks.Add(paragraph);
+
+        var authored = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = new ArtifactEnvelope
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Family = ArtifactFamily.Document,
+                Document = document,
+            },
+        });
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var word = WordprocessingDocument.Open(stream, false))
+        {
+            var nativeParagraph = word.MainDocumentPart!.Document!.Body!.Elements<W.Paragraph>().Single();
+            Assert.Equal(13, nativeParagraph.Elements<W.Run>().Count());
+            Assert.Equal(
+                [" SEQ Figure \\* ARABIC ", " REF fig1 \\h "],
+                nativeParagraph.Descendants<W.FieldCode>().Select(code => code.Text).ToArray());
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(word));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedBlock = Assert.Single(imported.Artifact.Document.Blocks);
+        Assert.True(importedBlock.Source.Editable);
+        Assert.Equal(5, importedBlock.Paragraph.Runs.Count);
+        Assert.Equal("SEQ Figure \\* ARABIC", importedBlock.Paragraph.Runs[1].InlineField.Instruction);
+        Assert.Equal("REF fig1 \\h", importedBlock.Paragraph.Runs[3].InlineField.Instruction);
+
+        importedBlock.Paragraph.Runs[1].Text = "1";
+        importedBlock.Paragraph.Runs[2].Text = ": Updated revenue. See ";
+        importedBlock.Paragraph.Runs[3].Text = "1";
+        importedBlock.Paragraph.Text = string.Concat(importedBlock.Paragraph.Runs.Select(run => run.Text));
+        var edited = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var secondImport = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = edited.File,
+        });
+        Assert.Equal("Figure 1: Updated revenue. See 1.", secondImport.Artifact.Document.Blocks[0].Paragraph.Text);
+
+        importedBlock.Paragraph.Runs[3].InlineField.Instruction = "REF fig2 \\h";
+        var topologyRejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.False(topologyRejected.Ok);
+        Assert.Equal("document_inline_field_topology_changed", Assert.Single(topologyRejected.Diagnostics).Code);
+
+        paragraph.Paragraph.Runs[1].InlineField.Instruction = "SEQ Figure \\* ROMAN";
+        var invalid = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = new ArtifactEnvelope
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Family = ArtifactFamily.Document,
+                Document = document,
+            },
+        });
+        Assert.False(invalid.Ok);
+        Assert.Equal("invalid_document_inline_field", Assert.Single(invalid.Diagnostics).Code);
+    }
+
+    [Fact]
     public void InlinePlainTextContentControlAuthorsImportsEditsAndRejectsComplexTopology()
     {
         var document = new DocumentArtifact { Id = "document/content-controls", Name = "Content-control template" };

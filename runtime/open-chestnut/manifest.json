@@ -28,7 +28,7 @@
     {
       "path": "_framework/DocumentFormat.OpenXml.Framework.wasm",
       "bytes": 355093,
-      "sha256": "8a2484b9963877fbb75fcb0322a7004c47a57618a37015829133e3f9a6687f75"
+      "sha256": "2a6aece60c931493d20f6d766b39b9172b29e55fb1d7d6e7179ffc9a98d67adc"
     },
     {
       "path": "_framework/DocumentFormat.OpenXml.wasm",
@@ -42,13 +42,13 @@
     },
     {
       "path": "_framework/OpenChestnut.Codec.wasm",
-      "bytes": 1820949,
-      "sha256": "305215e74322e631d458c9b1f3b6422171791a72ac894da479efd84502edc15e"
+      "bytes": 1827093,
+      "sha256": "9d65a14d12e0209a77352b4ec87ee2c1dd92b811756505f335c1667b1e8cf55f"
     },
     {
       "path": "_framework/OpenChestnut.Runtime.wasm",
       "bytes": 6421,
-      "sha256": "ffedca9c6af9e032fc579bc785a0a3a717d34c8cd5b879d54411f6e863179b16"
+      "sha256": "679953369b8c74570b4bc97b1ac943ee15f632c2ae504ddf212ad14e986c81c2"
     },
     {
       "path": "_framework/System.Collections.Concurrent.wasm",
@@ -158,7 +158,7 @@
     {
       "path": "_framework/blazor.boot.json",
       "bytes": 3140,
-      "sha256": "d87fde355ea6289fd94cec1b73df0fa05393d1360168eab8a3b47c31ed7b6c55"
+      "sha256": "ced9a97018d649f6f6c1994979026dfdc02a342c1defd5ea2976ab9a8043938a"
     },
     {
       "path": "_framework/dotnet.js",
@@ -201,5 +201,5 @@
       "sha256": "b93bc9918b522c7dce87c13a82d0fa1b9f9b21627909578d12539592a4cb0c1b"
     }
   ],
-  "totalBytes": 14303420
+  "totalBytes": 14309564
 }

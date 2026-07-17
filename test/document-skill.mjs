@@ -163,6 +163,27 @@ try {
   assert.match(tocXml, /w:fldCharType="end"/);
   assert.match(tocSettings, /<w:updateFields\b[^>]*w:val="true"/);
 
+  const inlineFields = await runFixture("open-chestnut-inline-fields", {
+    nativeRender: nativeStatus.available ? "required" : "auto",
+  });
+  const inlineFieldDocument = await DocumentFile.importDocx(await FileBlob.load(inlineFields.docxPath));
+  const inlineFieldParagraph = inlineFieldDocument.blocks.find((block) => block.name === "field-caption" || block.text.startsWith("Figure 1:"));
+  assert.equal(inlineFieldParagraph?.text, "Figure 1: Updated revenue. See figure 1 on page 1.");
+  assert.deepEqual(inlineFieldParagraph?.runs.filter((run) => run.inlineField).map((run) => run.inlineField.instruction), [
+    "SEQ Figure \\* ARABIC",
+    "REF fig1 \\h",
+    "PAGEREF fig1 \\h",
+  ]);
+  assert.equal(inlineFields.qa.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+  const inlineFieldZip = await JSZip.loadAsync(await fs.readFile(inlineFields.docxPath));
+  const inlineFieldXml = await inlineFieldZip.file("word/document.xml").async("text");
+  assert.equal((inlineFieldXml.match(/w:fldCharType="begin"/g) || []).length, 3);
+  assert.equal((inlineFieldXml.match(/w:fldCharType="separate"/g) || []).length, 3);
+  assert.equal((inlineFieldXml.match(/w:fldCharType="end"/g) || []).length, 3);
+  assert.match(inlineFieldXml, /SEQ Figure \\[*] ARABIC/);
+  assert.match(inlineFieldXml, /REF fig1 \\h/);
+  assert.match(inlineFieldXml, /PAGEREF fig1 \\h/);
+
   const classicFixture = await runFixture("package-comments");
   const classicDocument = await DocumentFile.importDocx(await FileBlob.load(classicFixture.docxPath));
   assert.equal(classicDocument.comments.length, 1);
@@ -219,6 +240,7 @@ try {
   assert.match(skillText, /document\.addBibliographySource/);
   assert.match(skillText, /document\.addCitation/);
   assert.match(skillText, /document\.addTableOfContents/);
+  assert.match(skillText, /paragraph\.addField/);
   assert.doesNotMatch(skillText, /Author\/edit with `python-docx`|Default tool: python-docx/);
   const commentsGuide = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "tasks", "comments_manage.md"), "utf8");
   assert.match(commentsGuide, /document\.addComment/);

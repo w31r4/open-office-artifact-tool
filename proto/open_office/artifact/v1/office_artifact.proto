@@ -2026,6 +2026,15 @@ message DocumentRun {
   // Rich text, block/cell controls, data binding, dropdown/date/checkbox
   // properties, placeholder documents, locking, and nested SDTs stay opaque.
   DocumentTextContentControl text_content_control = 7;
+  // One logical inline Word field represented by the public run's text as its
+  // cached display result. OpenChestnut authors/imports a canonical five-run
+  // begin/instrText/separate/result/end graph for bounded SEQ/REF/PAGEREF
+  // commands; field position and instruction stay source-bound after import.
+  DocumentInlineField inline_field = 8;
+}
+
+message DocumentInlineField {
+  string instruction = 1;
 }
 
 message DocumentTextContentControl {
