@@ -311,7 +311,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /character.*picture bullets.*auto-numbering.*levels.*indents.*spacing/);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /absolute uri.*slideId.*relative action/);
 const workbookCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "workbook");
-assert.equal(workbookCatalog.length, 170);
+assert.equal(workbookCatalog.length, 172);
 assert.ok(workbookCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "workbook.trace")?.schema?.parameters?.reference?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "Workbook.create")?.schema?.parameters?.dateSystem?.type, "string");

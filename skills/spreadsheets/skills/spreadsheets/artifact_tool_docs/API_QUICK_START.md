@@ -318,6 +318,34 @@ grid.conditionalFormats.add("colorScale", {
 - Toggles for table utilities (set/get): `table.showTotals`, `table.showBandedColumns = true`, `table.showFilterButton`
 - `table.delete()`
 
+### What-If Data Tables
+
+Use native What-If data tables when Excel or another compatible spreadsheet host should evaluate one formula over a bounded set of substituted inputs. This is not an ordinary worksheet table and is not simulated by the JavaScript formula evaluator.
+
+```js
+// The full rectangle contains the formula in its upper-left cell, substitution
+// values in the first row/column, and an initially blank native result area.
+sheet.getRange("A1:B4").values = [
+  [null, "Result"],
+  [80, null],
+  [100, null],
+  [120, null],
+];
+sheet.getRange("A1").formulas = [["=D1*D2"]];
+sheet.getRange("D1:D2").values = [[100], [0.2]];
+
+// One-variable row-oriented table. Use columnInput instead for a
+// column-oriented table, or provide both for a two-variable table.
+sheet.dataTables.add("A1:B4", { rowInput: "D1" });
+
+const definitions = sheet.dataTables.__getDefinitions();
+```
+
+- `range` must be at least 2x2 and its upper-left cell must already contain a formula.
+- `rowInput` and `columnInput` are normalized same-sheet single-cell A1 addresses. Cross-sheet inputs, out-of-bounds cells, and overlapping result ranges fail closed.
+- OpenChestnut exports canonical native `<f t="dataTable">` markup. Result cells are calculated by Excel, LibreOffice, or another compatible host after opening/recalculation; do not hardcode guessed outputs.
+- Canonical imported definitions are inspectable through `__getDefinitions()`, but their count, order, result range, inputs, and orientation are source-bound and read-only. Make ordinary cell edits around them, or rebuild a new workbook deliberately; there is no silent lossy fallback.
+
 ### Images
 - `sheet.images.add({dataUrl: "data:image/png;base64,...", anchor: {from: { row: 1, col: 2 }, extent: { widthPx: 160, heightPx: 120 }}})`
 

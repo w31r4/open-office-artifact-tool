@@ -106,6 +106,18 @@ try {
   assert.equal((sparklineXml.match(/<x14:sparklineGroup\b/g) || []).length, 3);
   assert.equal((sparklineXml.match(/<x14:sparkline\b/g) || []).length, 9);
 
+  const { createDataTableWorkbook } = await import(
+    "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-data-table-workflow.mjs"
+  );
+  const dataTablePath = path.join(outputDir, "openchestnut-data-table-workflow.xlsx");
+  const dataTableResult = await createDataTableWorkbook(dataTablePath);
+  assert.equal(dataTableResult.verification.ok, true);
+  const dataTableWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(dataTablePath));
+  assert.equal(dataTableWorkbook.worksheets.getItem("Scenario Analysis").dataTables.__getDefinitions().length, 2);
+  const dataTableZip = await JSZip.loadAsync(await fs.readFile(dataTablePath));
+  const dataTableXml = await dataTableZip.file("xl/worksheets/sheet1.xml").async("text");
+  assert.equal((dataTableXml.match(/<x:f\b[^>]*t="dataTable"/g) || []).length, 2);
+
   const queryResult = await runFixture("open-chestnut-query-table");
   assert.equal(queryResult.sourceQueryTable.sheet, "External Data");
   assert.equal(queryResult.sourceQueryTable.table, "ExternalSales");

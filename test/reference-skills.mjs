@@ -344,6 +344,19 @@ try {
   assert.deepEqual(sparklineRoundTrip.worksheets.getItem("Operating Trends").sparklineGroups.items.map((group) => group.type), ["line", "column"]);
   assert.equal(sparklineRoundTrip.worksheets.getItem("Operating Trends").sparklineGroups.items[0].seriesColor, "#F97316");
 
+  const { createDataTableWorkbook } = await import(
+    "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-data-table-workflow.mjs"
+  );
+  const dataTablePath = path.join(tempRoot, "openchestnut-data-table-workflow.xlsx");
+  const authoredDataTables = await createDataTableWorkbook(dataTablePath);
+  assert.equal(authoredDataTables.verification.ok, true);
+  assert.match(authoredDataTables.inspection.ndjson, /"kind":"dataTable"/);
+  const dataTableRoundTrip = await SpreadsheetFile.importXlsx(await FileBlob.load(dataTablePath));
+  assert.deepEqual(
+    dataTableRoundTrip.worksheets.getItem("Scenario Analysis").dataTables.__getDefinitions().map((item) => item.displayFormula),
+    ["{=TABLE(D1)}", "{=TABLE(D1,D2)}"],
+  );
+
   const { createPdf } = await import(
     "../skills/pdf/skills/pdf/examples/public-api-end-to-end.mjs"
   );

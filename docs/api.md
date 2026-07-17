@@ -2363,7 +2363,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 | Name | Kind | Summary |
 | --- | --- | --- |
-| `exportXlsxWithOpenChestnut` | api | Export the bounded Workbook model through the bundled C# Open XML SDK WebAssembly codec: cells, formulas, styles, merges, dimensions, freezes, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie/area/doughnut charts, and standard Office 2010 line/column/stacked sparklines. Nested/branched replies, mentions, imported connections, QueryTables, dynamic-array topology, pivots, and unsupported extension graphs are preservation-only; authoring or editing them fails closed. |
+| `exportXlsxWithOpenChestnut` | api | Export the bounded Workbook model through the bundled C# Open XML SDK WebAssembly codec: cells, formulas, styles, merges, dimensions, freezes, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie/area/doughnut charts, standard Office 2010 line/column/stacked sparklines, and canonical one-variable or two-variable What-If data tables. Nested/branched replies, mentions, imported connections, QueryTables, dynamic-array topology, pivots, and unsupported extension graphs are preservation-only; authoring or editing them fails closed. |
 | `fx.ABS` | formula | Return the absolute value of a number. |
 | `fx.AND` | formula | Return TRUE when all conditions are true. |
 | `fx.AVERAGE` | formula | Average numeric values across arguments and ranges in the clean-room formula engine. |
@@ -2452,7 +2452,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.XLOOKUP` | formula | Look up a value in one range and return the corresponding value from another range. |
 | `fx.XMATCH` | formula | Return a 1-based lookup position with exact, next-smaller, next-larger, wildcard, and forward or reverse search modes. |
 | `fx.YEAR` | formula | Return the year component of a serial in the workbook's 1900 or 1904 date system. |
-| `importXlsxWithOpenChestnut` | api | Import XLSX bytes through OpenChestnut with editable core cells, formulas, styles, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie/area/doughnut charts, and canonical Office 2010 line/column/stacked sparkline groups. Nested/branched replies, mentions, connections, QueryTables, dynamic-array topology, pivots, non-reversible sparkline graphs, and other advanced package content remain source-bound and read-only. |
+| `importXlsxWithOpenChestnut` | api | Import XLSX bytes through OpenChestnut with editable core cells, formulas, styles, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie/area/doughnut charts, canonical Office 2010 line/column/stacked sparkline groups, and inspectable canonical What-If data tables. Imported data-table topology is source-bound and read-only. Nested/branched replies, mentions, connections, QueryTables, dynamic-array topology, pivots, non-reversible sparkline graphs, and other advanced package content remain source-bound and read-only. |
 | `invokeOpenChestnut` | api | Advanced experimental byte-boundary API for invoking the public OpenChestnut codec protocol with generated wire-message objects. |
 | `openChestnutStatus` | api | Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its protocol, assembly, and integrity manifest. |
 | `range.clear` | api | Clear range contents, formats, or both without silently changing validations, dimensions, or other package graphs. |
@@ -2481,6 +2481,8 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `range.write` | api | Write a mixed matrix or one explicit values/formulas/formulasR1C1 payload from the range anchor and return the actual written range. |
 | `range.writeValues` | api | Write a one- or two-dimensional value matrix from the range anchor. |
 | `sheet.charts.add` | api | Create an inspectable worksheet chart from a range or config; setData(range) infers categories/series formulas, series.fill sets an explicit #RRGGBB solid color, series.line sets bounded RGB color/dash/width (series.stroke is an alias), line-series marker sets direct symbol/size/RGB fill/bounded outline semantics, lineOptions controls standard/stacked/percent-stacked grouping, smooth interpolation, and direct vary-colors behavior, dataLabels controls plot-level value/category/series-name visibility and bounded position, and xAxis/yAxis configure primary titles, formats, intervals, and linear value bounds. |
+| `sheet.dataTables.__getDefinitions` | api | Return defensive inspectable definitions for the worksheet's canonical What-If data tables, including result range, native anchor, inputs, orientation, and display formula. |
+| `sheet.dataTables.add` | api | Create a canonical native Excel What-If data table from a rectangular formula/input grid and one row input, one column input, or both. Excel or another compatible host calculates the result values; the JavaScript evaluator does not simulate TABLE. |
 | `sheet.images.add` | api | Create an inspectable worksheet image from a data URL, URI, or prompt with one-cell, two-cell, or absolute pixel geometry plus optional percentage crop, bounded grayscale/luminance/opacity effects, rotation, and horizontal/vertical flips. |
 | `sheet.pivotTables.add` | api | Build a model-level pivot facade for calculation, inspect, layout, and preview. OpenChestnut 0.2 does not author pivots; imported pivot package graphs are preserved read-only and any model edit fails closed. |
 | `sheet.sparklineGroups.add` | api | Create standard Office 2010 line/column/stacked sparkline groups for inspect, SVG preview, and OpenChestnut XLSX export. Source-free groups use reversible one-dimensional target/source mappings; recognized imported groups support fixed-topology semantic edits while unsupported native graphs remain source-bound. |
@@ -2538,7 +2540,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 #### `exportXlsxWithOpenChestnut`
 
-Export the bounded Workbook model through the bundled C# Open XML SDK WebAssembly codec: cells, formulas, styles, merges, dimensions, freezes, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie/area/doughnut charts, and standard Office 2010 line/column/stacked sparklines. Nested/branched replies, mentions, imported connections, QueryTables, dynamic-array topology, pivots, and unsupported extension graphs are preservation-only; authoring or editing them fails closed.
+Export the bounded Workbook model through the bundled C# Open XML SDK WebAssembly codec: cells, formulas, styles, merges, dimensions, freezes, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie/area/doughnut charts, standard Office 2010 line/column/stacked sparklines, and canonical one-variable or two-variable What-If data tables. Nested/branched replies, mentions, imported connections, QueryTables, dynamic-array topology, pivots, and unsupported extension graphs are preservation-only; authoring or editing them fails closed.
 
 **Schema parameters:**
 
@@ -4054,7 +4056,7 @@ Return the year component of a serial in the workbook's 1900 or 1904 date system
 
 #### `importXlsxWithOpenChestnut`
 
-Import XLSX bytes through OpenChestnut with editable core cells, formulas, styles, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie/area/doughnut charts, and canonical Office 2010 line/column/stacked sparkline groups. Nested/branched replies, mentions, connections, QueryTables, dynamic-array topology, pivots, non-reversible sparkline graphs, and other advanced package content remain source-bound and read-only.
+Import XLSX bytes through OpenChestnut with editable core cells, formulas, styles, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie/area/doughnut charts, canonical Office 2010 line/column/stacked sparkline groups, and inspectable canonical What-If data tables. Imported data-table topology is source-bound and read-only. Nested/branched replies, mentions, connections, QueryTables, dynamic-array topology, pivots, non-reversible sparkline graphs, and other advanced package content remain source-bound and read-only.
 
 **Schema parameters:**
 
@@ -4414,6 +4416,28 @@ Create an inspectable worksheet chart from a range or config; setData(range) inf
 **Schema returns:**
 
 - `chart` (WorksheetChart) — Editable worksheet chart facade.
+
+#### `sheet.dataTables.__getDefinitions`
+
+Return defensive inspectable definitions for the worksheet's canonical What-If data tables, including result range, native anchor, inputs, orientation, and display formula.
+
+**Schema returns:**
+
+- `definitions` (object[]) — Fresh defensive copies with zero-based result-range bounds, formulaRef, anchor, normalized rowInput/columnInput, rowOriented, twoVariable, and displayFormula. Mutating the returned objects does not mutate the worksheet.
+
+#### `sheet.dataTables.add`
+
+Create a canonical native Excel What-If data table from a rectangular formula/input grid and one row input, one column input, or both. Excel or another compatible host calculates the result values; the JavaScript evaluator does not simulate TABLE.
+
+**Schema parameters:**
+
+- `range` (string|Range) required — A rectangular A1 range at least 2x2. Its top-left cell must contain the formula to evaluate; its first row and first column contain substitution values, and the remaining rectangle is the native result range.
+- `rowInput` (string) — Optional same-sheet single-cell A1 input reference. With no columnInput this authors a row-oriented one-variable table.
+- `columnInput` (string) — Optional same-sheet single-cell A1 input reference. With no rowInput this authors a column-oriented one-variable table; provide both inputs for a two-variable table.
+
+**Schema returns:**
+
+- `result` (undefined) — No return value. Source-free canonical tables are authored as native t=dataTable formulas. Imported topology, input bindings, and orientation remain source-bound and read-only; unsupported or overlapping graphs fail closed without fallback.
 
 #### `sheet.images.add`
 
