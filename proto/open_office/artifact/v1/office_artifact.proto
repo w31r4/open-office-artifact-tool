@@ -1974,6 +1974,19 @@ message DocumentRun {
   bool italic = 4;
   bool underline = 5;
   DocumentRunFormatting formatting = 6;
+  // One bounded inline Word plain-text content control. The model ID is
+  // agent-facing identity for one object lifetime; native_id is package-local
+  // w:sdtPr/w:id identity and is assigned deterministically when omitted.
+  // Rich text, block/cell controls, data binding, dropdown/date/checkbox
+  // properties, placeholder documents, locking, and nested SDTs stay opaque.
+  DocumentTextContentControl text_content_control = 7;
+}
+
+message DocumentTextContentControl {
+  string id = 1;
+  string tag = 2;
+  string alias = 3;
+  optional uint32 native_id = 4;
 }
 
 message DocumentImage {

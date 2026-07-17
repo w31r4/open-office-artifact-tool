@@ -139,8 +139,35 @@ class DocumentTableBlock {
   toProto() { return { kind: "table", id: this.id, name: this.name, styleId: this.styleId, gridColumns: this.gridColumns, cells: this.cells, widthDxa: this.widthDxa, indentDxa: this.indentDxa, columnWidthsDxa: this.columnWidthsDxa, cellMarginsDxa: this.cellMarginsDxa, borderColor: this.borderColor, borderSize: this.borderSize, headerFill: this.headerFill, values: this.values }; }
 }
 
+function normalizeDocumentTextContentControl(value) {
+  if (value == null || value === false) return undefined;
+  const source = typeof value === "string" ? { tag: value } : value;
+  if (!source || typeof source !== "object") throw new TypeError("Document text content control must be an object or tag string.");
+  const tag = String(source.tag ?? source.name ?? "").trim();
+  if (!tag) throw new TypeError("Document text content control requires a non-empty tag.");
+  const nativeId = source.nativeId == null ? undefined : Number(source.nativeId);
+  if (nativeId !== undefined && (!Number.isInteger(nativeId) || nativeId < 1 || nativeId > 0x7fffffff)) {
+    throw new TypeError("Document text content control nativeId must be an integer from 1 through 2147483647.");
+  }
+  return {
+    id: String(source.id || aid("dcc")),
+    tag,
+    alias: String(source.alias ?? source.title ?? tag),
+    nativeId,
+  };
+}
+
+function normalizeDocumentRun(run = {}, theme = {}) {
+  const contentControl = normalizeDocumentTextContentControl(run.contentControl ?? run.textContentControl ?? run.control);
+  return {
+    text: String(run.text ?? run.value ?? ""),
+    style: normalizeDocxRunStyle(run.style || run.textStyle || {}, theme),
+    ...(contentControl ? { contentControl } : {}),
+  };
+}
+
 function normalizeDocumentRuns(text, config = {}, theme = {}) {
-  const runs = (config.runs || config.textRuns || []).map((run) => ({ text: String(run.text ?? run.value ?? ""), style: normalizeDocxRunStyle(run.style || run.textStyle || {}, theme) })).filter((run) => run.text.length > 0);
+  const runs = (config.runs || config.textRuns || []).map((run) => normalizeDocumentRun(run, theme)).filter((run) => run.text.length > 0 || run.contentControl);
   if (runs.length) return runs;
   const rawText = String(text ?? "");
   return rawText ? [{ text: rawText, style: normalizeDocxRunStyle({}, theme) }] : [];
@@ -153,7 +180,7 @@ function documentEffectiveRunStyle(document, block, run) {
 }
 
 function documentRunsNeedSerialization(runs = []) {
-  return runs.length > 1 || runs.some((run) => Object.keys(run.style || {}).length > 0);
+  return runs.length > 1 || runs.some((run) => Object.keys(run.style || {}).length > 0 || run.contentControl);
 }
 
 class DocumentParagraphBlock {
@@ -168,8 +195,33 @@ class DocumentParagraphBlock {
     this.paragraphFormat = { ...(config.paragraphFormat || config.formatting || {}) };
   }
 
+  _syncText() { this.text = this.runs.map((run) => String(run.text ?? "")).join(""); return this.text; }
+  addRun(text, config = {}) { const run = normalizeDocumentRun({ ...config, text }, this.document.theme); this.runs.push(run); this._syncText(); return run; }
+  addTextContentControl(text, config = {}) { return this.addRun(text, { ...config, contentControl: config.contentControl || config }); }
   inspectRecord(index) { return { kind: "paragraph", id: this.id, index, name: this.name || undefined, styleId: this.styleId, paragraphFormat: Object.keys(this.paragraphFormat).length ? this.paragraphFormat : undefined, text: this.text, textChars: this.text.length, runs: documentRunsNeedSerialization(this.runs) ? this.runs : undefined }; }
   toProto() { return { kind: "paragraph", id: this.id, name: this.name, styleId: this.styleId, paragraphFormat: Object.keys(this.paragraphFormat).length ? this.paragraphFormat : undefined, text: this.text, runs: documentRunsNeedSerialization(this.runs) ? this.runs : undefined }; }
+}
+
+class DocumentTextContentControlHandle {
+  constructor(block, runIndex) { this.document = block.document; this.block = block; this.runIndex = runIndex; this.kind = "contentControl"; }
+  get run() { return this.block.runs[this.runIndex]; }
+  get control() { return this.run?.contentControl; }
+  get id() { return this.control?.id; }
+  get targetId() { return this.block.id; }
+  get tag() { return this.control?.tag || ""; }
+  set tag(value) { this.control.tag = String(value ?? "").trim(); }
+  get alias() { return this.control?.alias || ""; }
+  set alias(value) { this.control.alias = String(value ?? ""); }
+  get nativeId() { return this.control?.nativeId; }
+  get text() { return String(this.run?.text ?? ""); }
+  set text(value) { this.run.text = String(value ?? ""); this.block._syncText(); }
+  inspectRecord() { return { kind: this.kind, id: this.id, targetId: this.targetId, runIndex: this.runIndex, tag: this.tag, alias: this.alias, nativeId: this.nativeId, text: this.text, textChars: this.text.length }; }
+}
+
+function documentTextContentControls(document) {
+  return document.blocks.flatMap((block) => block.kind === "paragraph"
+    ? block.runs.flatMap((run, runIndex) => run.contentControl ? [new DocumentTextContentControlHandle(block, runIndex)] : [])
+    : []);
 }
 
 class DocumentChangeBlock {
