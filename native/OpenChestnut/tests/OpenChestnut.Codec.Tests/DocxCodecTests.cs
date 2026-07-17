@@ -1875,6 +1875,48 @@ public sealed class DocxCodecTests
         Assert.Equal("unsupported_document_edit", Assert.Single(rejected.Diagnostics).Code);
     }
 
+    [Fact]
+    public void IrregularTrackedChangeTopologyIsVisibleButReadOnlyAndPreservedUnchanged()
+    {
+        var authored = Invoke(TrackedChangeExportRequest(includeDeletion: false));
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var source = AddSecondTrackedChangeRun(authored.File.ToByteArray());
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(source),
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var block = Assert.Single(imported.Artifact.Document.Blocks);
+        Assert.Equal(DocumentBlock.ContentOneofCase.Change, block.ContentCase);
+        Assert.Equal("Added wording continuation", block.Change.Text);
+        Assert.False(block.Source.Editable);
+        Assert.Empty(block.Source.ResidualSha256);
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(source, unchanged.File.ToByteArray());
+
+        block.Change.Text = "Attempted edit";
+        var rejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
     private static CodecResponse Invoke(CodecRequest request) =>
         CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
 
@@ -1934,6 +1976,20 @@ public sealed class DocxCodecTests
         {
             var run = document.MainDocumentPart!.Document!.Descendants<W.InsertedRun>().Single().Elements<W.Run>().Single();
             run.RunProperties = new W.RunProperties(new W.Bold());
+            document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddSecondTrackedChangeRun(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true))
+        {
+            var insertion = document.MainDocumentPart!.Document!.Descendants<W.InsertedRun>().Single();
+            insertion.Append(new W.Run(new W.Text(" continuation") { Space = SpaceProcessingModeValues.Preserve }));
             document.MainDocumentPart.Document.Save();
         }
         return stream.ToArray();

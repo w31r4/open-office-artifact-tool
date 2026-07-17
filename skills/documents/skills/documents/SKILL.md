@@ -11,7 +11,7 @@ them visually.
 
 ## Tools + Contract
 
-- Use Codex workspace dependencies for DOCX artifact work: resolve them through the workspace dependency loader or runtime skill, then treat the returned Node/Python runtimes and package directory as authoritative. Do not use system `node`, system `python`, global npm packages, or repo-local installs.
+- Use host-provided workspace dependencies for DOCX artifact work: resolve them through the workspace dependency loader or runtime skill, then treat the returned Node/Python runtimes and package directory as authoritative. Do not use system `node`, system `python`, global npm packages, or repo-local installs.
 - For ordinary DOCX creation, import, semantic editing, and export, **MUST** use the public `open-office-artifact-tool` `DocumentModel`/`DocumentFile` surface and its bundled OpenChestnut codec. Read `artifact_tool/API_QUICK_START.md`, then use `tasks/create_edit.md` for the task workflow.
 - Python and direct OOXML helpers are reserved for explicit low-level package patches, specialized audits, and render/QA operations documented by this Skill. They are never an automatic authoring fallback. If an imported construct cannot be edited through the supported model, narrow the edit or report the fail-closed boundary.
 - Run any builder or helper file from a writable workspace or temp directory, not from the managed dependency directory itself.
@@ -342,7 +342,7 @@ This is a quick index so you can jump from a helper script to the right task gui
 - `insert_toc.py` → `tasks/toc_workflow.md`
 
 ### Review lifecycle (comments / tracked changes)
-- `add_tracked_replacements.py`, `accept_tracked_changes.py` → `tasks/clean_tracked_changes.md`
+- Public `document.addInsertion(...)` / `document.addDeletion(...)` handles standalone whole-paragraph revisions; `add_tracked_replacements.py` and `accept_tracked_changes.py` handle in-paragraph replacement and explicit finalization → `ooxml/tracked_changes.md`, `tasks/clean_tracked_changes.md`
 - `comments_add.py`, `comments_extract.py`, `comments_apply_patch.py`, `comments_strip.py` → `tasks/comments_manage.md`
 
 ### Privacy / publishing
@@ -437,7 +437,7 @@ Then inspect the generated `page-<N>.png` files.
 - If you have mixed portrait/landscape or margin weirdness: `tasks/sections_layout.md`
 - If images shift or overlap across renderers: `tasks/images_figures.md`
 - If you need spreadsheet ↔ table round-tripping: `tasks/tables_spreadsheets.md`
-- If you need **tracked changes (redlines)**: `ooxml/tracked_changes.md`
+- If you need **tracked changes (redlines)**: use public `document.addInsertion(...)` / `document.addDeletion(...)` for the bounded whole-paragraph profile, then route complex/in-paragraph work through `ooxml/tracked_changes.md`
 - If you need **comments**: `ooxml/comments.md`
 - If you need **hyperlinks/fields/page numbers/headers**: `ooxml/hyperlinks_and_fields.md`
 - If LibreOffice headless is failing: `troubleshooting/libreoffice_headless.md`
@@ -449,7 +449,7 @@ Then inspect the generated `page-<N>.png` files.
 - If you need **true footnotes/endnotes**: `tasks/footnotes_endnotes.md`
 - If you want reproducible fixtures for edge cases: `tasks/fixtures_edge_cases.md`
 
-## Codex App final response citations
+## Host app final response citations
 
 Use the inline form `:codex-file-citation{...}` and place each citation immediately after the claim it supports.
 

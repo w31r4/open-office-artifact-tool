@@ -167,6 +167,8 @@ try {
   assert.match(skillText, /DocumentFile/);
   assert.match(skillText, /OpenChestnut/);
   assert.match(skillText, /artifact_tool\/API_QUICK_START\.md/);
+  assert.match(skillText, /document\.addInsertion/);
+  assert.match(skillText, /document\.addDeletion/);
   assert.doesNotMatch(skillText, /Author\/edit with `python-docx`|Default tool: python-docx/);
   const commentsGuide = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "tasks", "comments_manage.md"), "utf8");
   assert.match(commentsGuide, /document\.addComment/);

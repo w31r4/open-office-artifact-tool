@@ -8,22 +8,22 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | --- | --- | --- |
 | `document.addBibliographySource` | api | Add a model-level bibliography source for inspect and resolve. OpenChestnut 0.2 does not author bibliography parts; imported bibliography graphs are preserved read-only. |
 | `document.addBookmark` | api | Create a model-level bookmark range for inspect and resolve. OpenChestnut 0.2 does not author bookmarks; imported bookmark markup is preserved read-only and edits fail closed. |
-| `document.addChange` | api | Append a model-level tracked insertion or deletion for inspect and preview. OpenChestnut 0.2 does not author revision markup; imported revisions are opaque and read-only. |
+| `document.addChange` | api | Append one bounded whole-paragraph tracked insertion or deletion. OpenChestnut authors native w:ins/w:del markup and permits fixed-topology imported text/author/date edits; mixed or nested revision graphs remain source-bound. |
 | `document.addCitation` | api | Add a model-level structured citation. OpenChestnut 0.2 does not author bibliography-backed CITATION graphs; imported citation content remains source-bound and read-only. |
 | `document.addComment` | api | Attach a classic whole-paragraph Word comment with author, initials, date, and text. Replies, resolution metadata, durable IDs, UTC/person data, and other modern comment extensions fail closed. |
-| `document.addDeletion` | api | Append a model-level tracked deletion for inspect and preview. Canonical DOCX export rejects source-free revision markup and imported-revision edits. |
+| `document.addDeletion` | api | Append one bounded whole-paragraph tracked deletion using native w:del/w:delText markup. In-paragraph replacements, mixed normal/revision runs, moves, and property changes require an explicit advanced package workflow. |
 | `document.addField` | api | Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC; native import restores simple and complex field codes. |
 | `document.addFooter` | api | Add a default, first-page, or even-page DOCX footer, optionally section-scoped; first/even activation is independent from the preserved relationship reference. |
 | `document.addHeader` | api | Add a default, first-page, or even-page DOCX header, optionally section-scoped; first/even activation is independent from the preserved relationship reference. |
 | `document.addHyperlink` | api | Append a native w:hyperlink backed by an external relationship or internal bookmark anchor; native import restores URL/anchor, relationship identity, tooltip, and history state. |
 | `document.addImage` | api | Append an inspectable image block; dataUrl images export as native DOCX media parts with DrawingML inline pictures. |
-| `document.addInsertion` | api | Append a model-level tracked insertion for inspect and preview. Canonical DOCX export rejects source-free revision markup and imported-revision edits. |
+| `document.addInsertion` | api | Append one bounded whole-paragraph tracked insertion using native w:ins markup. In-paragraph replacements, mixed normal/revision runs, moves, and property changes require an explicit advanced package workflow. |
 | `document.addListItem` | api | Append a numbered or character-bulleted list item using native DOCX numbering definitions. Picture bullets remain model-only and make canonical OpenChestnut export fail closed. |
 | `document.addParagraph` | api | Append a styled paragraph with optional run spans, including character-style runStyleId references plus direct/theme and complex-script semantics. |
 | `document.addSection` | api | Append a DOCX section break with page size, orientation, margin, and break-type metadata backed by w:sectPr. |
 | `document.addTable` | api | Append a Word-style table with physical cell values, optional logical merge geometry, and fixed-layout width/margin/border/header formatting. |
 | `document.applyDesignPreset` | api | Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews. |
-| `document.inspect` | api | Emit bounded NDJSON for document blocks, bookmark ranges, bibliography sources, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude. |
+| `document.inspect` | api | Emit bounded NDJSON for document blocks including tracked changes, bookmark ranges, bibliography sources, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude. |
 | `document.layoutJson` | api | Return page-aware layout JSON with block bounding boxes, section/page ordinals, effective inherited header/footer selections, styles, and target/search slicing. |
 | `document.render` | api | Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs. |
 | `document.replyToComment` | api | Create a model-level comment reply for inspect and preview. OpenChestnut 0.2 does not author modern/extended reply graphs, and imported replies are preservation-only. |
@@ -32,14 +32,14 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.setSettings` | api | Set model settings. Only evenAndOddHeaders is inside the OpenChestnut 0.2 DOCX boundary; trackRevisions, updateFields, mirrorMargins, and documentProtection are not authorable or editable through the facade. |
 | `document.styles.effective` | api | Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata. |
 | `document.textRange` | api | Inspect or resolve stable textRange anchors such as blockId/text for editable document block, header/footer, and comment text. |
-| `document.verify` | api | Return QA issues for fake lists, invalid links/citations/bibliography sources, duplicate/dangling/reversed bookmark ranges, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells. |
+| `document.verify` | api | Return QA issues for fake lists, invalid links/citations/bibliography sources, malformed tracked changes, duplicate/dangling/reversed bookmark ranges, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells. |
 | `DocumentFile.exportDocx` | api | Export DocumentModel to DOCX through the single bundled OpenChestnut codec. Only limits is accepted; legacy codec and lossy-fallback options fail explicitly. |
-| `DocumentFile.importDocx` | api | Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Advanced bookmarks, bibliography, revisions, modern comments, settings, and unsupported content remain source-bound and read-only. |
+| `DocumentFile.importDocx` | api | Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Recognized whole-paragraph tracked revisions are semantic; complex revisions, bookmarks, bibliography, modern comments, settings, and unsupported content remain source-bound and read-only. |
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
-| `DocumentModel.create` | api | Create a document with paragraph/character styles, formatted paragraphs/runs, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, simple fields, classic comments, and PNG/JPEG images. Arbitrary source-free table-style graphs, bookmarks, bibliography, tracked changes, modern comment graphs, and advanced settings remain unsupported or import-preserved read-only. |
-| `exportDocxWithOpenChestnut` | api | Experimentally export bounded DocumentModel paragraphs/runs/tables, classic whole-paragraph comments, validated source-free gridSpan/vMerge tables, and direct text-marker numbering graphs; recognized imports permit fixed-topology classic-comment metadata/text, hyperlink/simple-field/table-text, direct table-formatting, and coherent numbering-definition edits through bundled OpenChestnut. |
-| `importDocxWithOpenChestnut` | api | Experimentally import DOCX bytes through OpenChestnut with source-bound block and exact-profile classic-comment bindings; extended or complex comment graphs and other advanced content remain opaque and fail closed. |
+| `DocumentModel.create` | api | Create a document with paragraph/character styles, formatted paragraphs/runs, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, simple fields, bounded whole-paragraph tracked insertions/deletions, classic comments, and PNG/JPEG images. Arbitrary source-free table-style graphs, bookmarks, bibliography, complex revisions, modern comment graphs, and advanced settings remain unsupported or import-preserved read-only. |
+| `exportDocxWithOpenChestnut` | api | Experimentally export bounded DocumentModel paragraphs/runs/tables, whole-paragraph tracked insertions/deletions, classic comments, validated source-free gridSpan/vMerge tables, and direct text-marker numbering graphs; recognized imports permit fixed-topology tracked-change, comment, hyperlink, simple-field, table-formatting/text, and coherent numbering-definition edits through bundled OpenChestnut. |
+| `importDocxWithOpenChestnut` | api | Experimentally import DOCX bytes through OpenChestnut with source-bound block, exact-profile classic-comment, and whole-paragraph tracked-change bindings; extended comment or complex revision graphs remain source-bound, preserved unchanged, and fail closed on semantic edits. |
 
 ### document details
 
@@ -80,7 +80,7 @@ Create a model-level bookmark range for inspect and resolve. OpenChestnut 0.2 do
 
 #### `document.addChange`
 
-Append a model-level tracked insertion or deletion for inspect and preview. OpenChestnut 0.2 does not author revision markup; imported revisions are opaque and read-only.
+Append one bounded whole-paragraph tracked insertion or deletion. OpenChestnut authors native w:ins/w:del markup and permits fixed-topology imported text/author/date edits; mixed or nested revision graphs remain source-bound.
 
 **Schema parameters:**
 
@@ -92,7 +92,7 @@ Append a model-level tracked insertion or deletion for inspect and preview. Open
 
 **Schema returns:**
 
-- `change` (DocumentChangeBlock) — Appended model-level tracked-change block; canonical DOCX export rejects source-free revision markup.
+- `change` (DocumentChangeBlock) — Appended bounded tracked-change block authored as native whole-paragraph w:ins or w:del markup.
 
 #### `document.addCitation`
 
@@ -133,7 +133,7 @@ Attach a classic whole-paragraph Word comment with author, initials, date, and t
 
 #### `document.addDeletion`
 
-Append a model-level tracked deletion for inspect and preview. Canonical DOCX export rejects source-free revision markup and imported-revision edits.
+Append one bounded whole-paragraph tracked deletion using native w:del/w:delText markup. In-paragraph replacements, mixed normal/revision runs, moves, and property changes require an explicit advanced package workflow.
 
 **Schema parameters:**
 
@@ -144,7 +144,7 @@ Append a model-level tracked deletion for inspect and preview. Canonical DOCX ex
 
 **Schema returns:**
 
-- `change` (DocumentChangeBlock) — Appended model-level tracked deletion; canonical DOCX export rejects it.
+- `change` (DocumentChangeBlock) — Appended bounded whole-paragraph tracked deletion.
 
 #### `document.addField`
 
@@ -231,7 +231,7 @@ Append an inspectable image block; dataUrl images export as native DOCX media pa
 
 #### `document.addInsertion`
 
-Append a model-level tracked insertion for inspect and preview. Canonical DOCX export rejects source-free revision markup and imported-revision edits.
+Append one bounded whole-paragraph tracked insertion using native w:ins markup. In-paragraph replacements, mixed normal/revision runs, moves, and property changes require an explicit advanced package workflow.
 
 **Schema parameters:**
 
@@ -242,7 +242,7 @@ Append a model-level tracked insertion for inspect and preview. Canonical DOCX e
 
 **Schema returns:**
 
-- `change` (DocumentChangeBlock) — Appended model-level tracked insertion; canonical DOCX export rejects it.
+- `change` (DocumentChangeBlock) — Appended bounded whole-paragraph tracked insertion.
 
 #### `document.addListItem`
 
@@ -334,7 +334,7 @@ Apply a clean-room report or memo design preset that updates named styles for co
 
 #### `document.inspect`
 
-Emit bounded NDJSON for document blocks, bookmark ranges, bibliography sources, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude.
+Emit bounded NDJSON for document blocks including tracked changes, bookmark ranges, bibliography sources, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude.
 
 **Examples:**
 
@@ -486,7 +486,7 @@ Inspect or resolve stable textRange anchors such as blockId/text for editable do
 
 #### `document.verify`
 
-Return QA issues for fake lists, invalid links/citations/bibliography sources, duplicate/dangling/reversed bookmark ranges, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells.
+Return QA issues for fake lists, invalid links/citations/bibliography sources, malformed tracked changes, duplicate/dangling/reversed bookmark ranges, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells.
 
 **Schema parameters:**
 
@@ -512,7 +512,7 @@ Export DocumentModel to DOCX through the single bundled OpenChestnut codec. Only
 
 #### `DocumentFile.importDocx`
 
-Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Advanced bookmarks, bibliography, revisions, modern comments, settings, and unsupported content remain source-bound and read-only.
+Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Recognized whole-paragraph tracked revisions are semantic; complex revisions, bookmarks, bibliography, modern comments, settings, and unsupported content remain source-bound and read-only.
 
 **Schema parameters:**
 
@@ -569,7 +569,7 @@ Apply DOCX part patches with path traversal validation for settings, classic-com
 
 #### `DocumentModel.create`
 
-Create a document with paragraph/character styles, formatted paragraphs/runs, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, simple fields, classic comments, and PNG/JPEG images. Arbitrary source-free table-style graphs, bookmarks, bibliography, tracked changes, modern comment graphs, and advanced settings remain unsupported or import-preserved read-only.
+Create a document with paragraph/character styles, formatted paragraphs/runs, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, simple fields, bounded whole-paragraph tracked insertions/deletions, classic comments, and PNG/JPEG images. Arbitrary source-free table-style graphs, bookmarks, bibliography, complex revisions, modern comment graphs, and advanced settings remain unsupported or import-preserved read-only.
 
 **Schema parameters:**
 
@@ -594,7 +594,7 @@ Create a document with paragraph/character styles, formatted paragraphs/runs, se
 
 #### `exportDocxWithOpenChestnut`
 
-Experimentally export bounded DocumentModel paragraphs/runs/tables, classic whole-paragraph comments, validated source-free gridSpan/vMerge tables, and direct text-marker numbering graphs; recognized imports permit fixed-topology classic-comment metadata/text, hyperlink/simple-field/table-text, direct table-formatting, and coherent numbering-definition edits through bundled OpenChestnut.
+Experimentally export bounded DocumentModel paragraphs/runs/tables, whole-paragraph tracked insertions/deletions, classic comments, validated source-free gridSpan/vMerge tables, and direct text-marker numbering graphs; recognized imports permit fixed-topology tracked-change, comment, hyperlink, simple-field, table-formatting/text, and coherent numbering-definition edits through bundled OpenChestnut.
 
 **Schema parameters:**
 
@@ -607,7 +607,7 @@ Experimentally export bounded DocumentModel paragraphs/runs/tables, classic whol
 
 #### `importDocxWithOpenChestnut`
 
-Experimentally import DOCX bytes through OpenChestnut with source-bound block and exact-profile classic-comment bindings; extended or complex comment graphs and other advanced content remain opaque and fail closed.
+Experimentally import DOCX bytes through OpenChestnut with source-bound block, exact-profile classic-comment, and whole-paragraph tracked-change bindings; extended comment or complex revision graphs remain source-bound, preserved unchanged, and fail closed on semantic edits.
 
 **Schema parameters:**
 

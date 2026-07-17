@@ -550,7 +550,7 @@ internal static class DocxCodec
                 block.Source.ResidualSha256 = DocxHyperlinkCodec.ResidualHash(sourceParagraph);
             else if (block.ContentCase == DocumentBlock.ContentOneofCase.Field)
                 block.Source.ResidualSha256 = DocxFieldCodec.ResidualHash(sourceParagraph);
-            else if (block.ContentCase == DocumentBlock.ContentOneofCase.Change)
+            else if (block.ContentCase == DocumentBlock.ContentOneofCase.Change && editable)
                 block.Source.ResidualSha256 = DocxTrackedChangeCodec.ResidualHash(sourceParagraph);
             else if (block.ContentCase == DocumentBlock.ContentOneofCase.Paragraph && block.Paragraph.Numbering is not null && editable)
                 block.Source.ResidualSha256 = DocxNumberedParagraphCodec.ResidualHash(sourceParagraph);

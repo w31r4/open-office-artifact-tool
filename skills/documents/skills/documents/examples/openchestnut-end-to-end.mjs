@@ -136,6 +136,18 @@ export function buildDocument(spec = DEFAULT_BRIEF) {
     styleId: "Normal",
     paragraphFormat: { spaceAfterTwips: 100 },
   });
+  document.addInsertion("Final compatibility review is required before rollout.", {
+    name: "tracked-release-condition",
+    styleId: "Normal",
+    author: "Release reviewer",
+    date: "2026-07-16T08:10:00Z",
+  });
+  document.addDeletion("Immediate unrestricted rollout.", {
+    name: "tracked-superseded-condition",
+    styleId: "Normal",
+    author: "Release reviewer",
+    date: "2026-07-16T08:11:00Z",
+  });
 
   document.addParagraph("Evidence", { styleId: "BriefHeading1" });
   document.addTable({
@@ -205,6 +217,13 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
   assert.ok(evidence, "OpenChestnut must re-import the evidence table");
   evidence.getCell(1, 1).value = "Verified";
   imported.comments[0].text = "Recommendation wording verified for the release record.";
+  const trackedInsertion = imported.blocks.find(
+    (block) => block.kind === "change" && block.changeType === "insert",
+  );
+  assert.ok(trackedInsertion, "OpenChestnut must re-import the tracked insertion");
+  trackedInsertion.text = "Final application-compatibility review is required before rollout.";
+  trackedInsertion.author = "Lead reviewer";
+  trackedInsertion.date = "2026-07-16T09:00:00Z";
 
   const finalDocx = await DocumentFile.exportDocx(imported);
   const finalDocument = await DocumentFile.importDocx(finalDocx);
@@ -212,12 +231,21 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
   assert.equal(finalReport.ok, true, finalReport.ndjson || JSON.stringify(finalReport.issues));
   assert.equal(finalDocument.blocks.find((block) => block.kind === "table")?.getCell(1, 1).value, "Verified");
   assert.equal(finalDocument.comments[0]?.text, "Recommendation wording verified for the release record.");
+  assert.deepEqual(
+    finalDocument.blocks.filter((block) => block.kind === "change").map(
+      (block) => [block.changeType, block.text, block.author],
+    ),
+    [
+      ["insert", "Final application-compatibility review is required before rollout.", "Lead reviewer"],
+      ["delete", "Immediate unrestricted rollout.", "Release reviewer"],
+    ],
+  );
 
   const inspection = finalDocument.inspect({
-    kind: "document,paragraph,listItem,table,comment,header,footer,hyperlink,layout",
+    kind: "document,paragraph,listItem,table,comment,header,footer,hyperlink,change,layout",
     maxChars: 24_000,
   });
-  for (const expected of [spec.title, "Verified", "Recommendation wording verified", "LAUNCH READINESS"]) {
+  for (const expected of [spec.title, "Verified", "Recommendation wording verified", "application-compatibility", "LAUNCH READINESS"]) {
     assert.match(inspection.ndjson, new RegExp(expected));
   }
 

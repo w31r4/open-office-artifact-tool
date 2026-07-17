@@ -185,6 +185,17 @@ try {
   assert.equal(documentRoundTrip.comments[0]?.text, "Recommendation wording verified for the release record.");
   assert.equal(documentRoundTrip.headers[0]?.text, "LAUNCH READINESS | DECISION BRIEF");
   assert.equal(documentRoundTrip.footers[0]?.fieldInstruction, "PAGE");
+  assert.deepEqual(documentRoundTrip.blocks.filter((block) => block.kind === "change").map(
+    (block) => [block.changeType, block.text, block.author],
+  ), [
+    ["insert", "Final application-compatibility review is required before rollout.", "Lead reviewer"],
+    ["delete", "Immediate unrestricted rollout.", "Release reviewer"],
+  ]);
+  const documentPackage = await JSZip.loadAsync(await fs.readFile(docxPath));
+  const documentXml = await documentPackage.file("word/document.xml").async("text");
+  assert.match(documentXml, /<w:ins\b/);
+  assert.match(documentXml, /<w:del\b/);
+  assert.match(documentXml, /<w:delText\b/);
 
   const { ensureArtifactToolWorkspace, importArtifactTool } = await import(
     "../skills/presentations/skills/presentations/container_tools/artifact_tool_utils.mjs"

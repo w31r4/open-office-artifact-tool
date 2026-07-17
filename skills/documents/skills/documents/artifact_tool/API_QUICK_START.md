@@ -4,7 +4,7 @@ Use `open-office-artifact-tool` for ordinary DOCX creation, import, semantic edi
 
 ## Startup
 
-Resolve Node.js and the package directory through the Codex workspace dependency loader. Work in a writable task directory, link that loader-provided package directory into the task workspace when necessary, and use ES modules.
+Resolve Node.js and the package directory through the host workspace dependency loader. Work in a writable task directory, link that loader-provided package directory into the task workspace when necessary, and use ES modules.
 
 ```js
 import {
@@ -64,6 +64,14 @@ document.addComment(recommendation, "Confirm wording before publication.", {
 });
 document.addHeader("Decision brief | Internal");
 document.addFooter("1", { fieldInstruction: "PAGE" });
+document.addInsertion("Added release condition.", {
+  author: "Reviewer",
+  date: "2026-07-17T08:00:00Z",
+});
+document.addDeletion("Superseded release condition.", {
+  author: "Reviewer",
+  date: "2026-07-17T08:05:00Z",
+});
 
 const output = await DocumentFile.exportDocx(document);
 await output.save("output.docx");
@@ -126,8 +134,9 @@ For final visual QA, export the DOCX and use the packaged `render_docx.py` workf
 - External/internal hyperlinks
 - PNG/JPEG inline images
 - Classic whole-paragraph comments
+- Standalone whole-paragraph tracked insertions/deletions with one text run, author, and optional ISO timestamp
 
-Bookmarks, bibliography-backed citations, tracked revisions, modern comment replies, content controls, complex fields, floating drawings, and other advanced graphs are not source-free authoring features. Imported versions are preserved only while their source evidence remains valid.
+In-paragraph tracked replacements, mixed accepted/revision runs, nested revisions, moves, property changes, and automatic future-change tracking are advanced package workflows, not ordinary public-model authoring. Bookmarks, bibliography-backed citations, modern comment replies, content controls, complex fields, floating drawings, and other advanced graphs are likewise not source-free authoring features. Imported versions are preserved only while their source evidence remains valid.
 
 Use `DocumentFile.inspectDocx` or `DocumentFile.patchDocx` only when the user explicitly requests package-level inspection or patching. These are deliberate low-level operations, never an automatic fallback for ordinary authoring.
 
