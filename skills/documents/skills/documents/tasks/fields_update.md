@@ -24,6 +24,17 @@ python scripts/fields_report.py /mnt/data/input.docx
 
 If you see `TOC`, `REF`, `PAGEREF`, `NUMPAGES`, or `PAGE`, plan for a field refresh step.
 
+For a source-free native TOC, prefer the public OpenChestnut path:
+
+```js
+document.addTableOfContents({ levels: "1-3" });
+```
+
+This sets `document.settings.updateFields = true` and emits native
+`w:updateFields`. Treat it only as a host-refresh request. It never means the
+cached result is current, and headless export alone is not proof that page
+numbers match.
+
 ### 2) Render and inspect
 
 ```bash

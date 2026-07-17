@@ -161,6 +161,41 @@ or irregular bibliography parts, nested/mixed result runs, and bibliography
 output fields remain opaque/read-only. Never rebuild those graphs to claim a
 lossless edit; report the boundary or use an explicit narrow package workflow.
 
+## Native table of contents field
+
+For a new document, author the bounded native TOC placeholder through the
+public model instead of patching the package:
+
+```js
+document.addParagraph("Executive summary", { styleId: "Heading1" });
+document.addParagraph("Decision", { styleId: "Heading2" });
+
+const toc = document.addTableOfContents({
+  levels: "1-3",
+  display: "Refresh fields before delivery",
+});
+
+const docx = await DocumentFile.exportDocx(document);
+const imported = await DocumentFile.importDocx(docx);
+if (!imported.settings.updateFields) throw new Error("TOC refresh hint missing");
+const importedToc = imported.blocks.find(
+  (block) => block.kind === "field" && block.complex,
+);
+importedToc.display = "Update this table of contents in Word";
+```
+
+`addTableOfContents()` writes one canonical complex field with `TOC \\o
+"1-3" \\h \\z \\u` and enables `w:updateFields` by default. The setting is
+only a request to refresh fields when a compatible host opens the document; it
+does not prove that cached headings or page numbers are current. Open the final
+DOCX in Word, update fields, save, and render every page before delivery.
+
+OpenChestnut can re-import and edit the unrefreshed one-paragraph canonical
+placeholder. Once Word expands a TOC across multiple paragraphs, the whole
+field span is deliberately opaque/source-bound and read-only. Do not rebuild
+that result graph to claim a lossless edit. Use `tasks/toc_workflow.md` for the
+native-refresh and deterministic static-TOC alternatives.
+
 Use real `addListItem` calls for lists and exact `widthDxa`, `indentDxa`, `columnWidthsDxa`, and `cellMarginsDxa` values for tables. Do not fake lists with text markers or use tables as prose layout containers.
 
 `document.addSection(...)` inserts a section break before the blocks that follow it. Use it only when the document actually changes section geometry or header/footer behavior; never append an otherwise unused section block at the end of a document.
@@ -217,7 +252,7 @@ For final visual QA, export the DOCX and use the packaged `render_docx.py` workf
 - Named paragraph and character styles with `basedOn`; source-free tables may use the bounded `TableGrid` style plus explicit direct geometry/formatting
 - Numbered and character-bulleted lists
 - Fixed-geometry tables
-- Sections, headers, footers, and PAGE/simple fields
+- Sections, headers, footers, PAGE/simple fields, and one canonical complex TOC placeholder with an explicit `updateFields` refresh hint
 - External/internal hyperlinks and source-free bookmarks around one paragraph-like block
 - Plain-text footnotes/endnotes anchored at the end of one paragraph or list item; recognized imported note bodies allow text-only edits
 - PNG/JPEG inline images
@@ -226,7 +261,7 @@ For final visual QA, export the DOCX and use the packaged `render_docx.py` workf
 - Inline plain-text content-control runs with tag/alias identity, transactional fill-by-tag, and fixed-topology imported edits
 - Canonical bibliography source catalogs and whole-paragraph `CITATION` fields with fixed imported source/tag topology
 
-In-paragraph tracked replacements, mixed accepted/revision runs, nested revisions, moves, property changes, and automatic future-change tracking are advanced package workflows, not ordinary public-model authoring. Bookmarks spanning multiple blocks or table cells, nested/crossing ranges, multi-paragraph or reused note graphs, complex bibliography contributor roles/field switches/output fields, modern comment replies, rich/block/cell/data-bound/dropdown/date/checkbox content controls, complex fields, floating drawings, and other advanced graphs are likewise outside source-free authoring. Recognized imported whole-block bookmarks are inspectable/resolvable but fixed-topology and read-only. Canonical imported footnote/endnote text, bounded citation/source content, and bounded inline plain-text control text/tag/alias may change, but their anchors, native IDs, tags, and topology remain source-bound; other imported advanced graphs are preserved only while their source evidence remains valid.
+In-paragraph tracked replacements, mixed accepted/revision runs, nested revisions, moves, property changes, and automatic future-change tracking are advanced package workflows, not ordinary public-model authoring. Bookmarks spanning multiple blocks or table cells, nested/crossing ranges, multi-paragraph or reused note graphs, complex bibliography contributor roles/field switches/output fields, modern comment replies, rich/block/cell/data-bound/dropdown/date/checkbox content controls, complex fields other than the canonical one-paragraph TOC placeholder, floating drawings, and other advanced graphs are likewise outside source-free authoring. Recognized imported whole-block bookmarks are inspectable/resolvable but fixed-topology and read-only. Canonical imported footnote/endnote text, bounded citation/source content, bounded inline plain-text control text/tag/alias, and canonical unrefreshed TOC instruction/display may change, but their anchors, native IDs, tags, and topology remain source-bound; refreshed cross-paragraph TOC graphs and other imported advanced graphs are preserved only while their source evidence remains valid.
 
 Use `DocumentFile.inspectDocx` or `DocumentFile.patchDocx` only when the user explicitly requests package-level inspection or patching. These are deliberate low-level operations, never an automatic fallback for ordinary authoring.
 

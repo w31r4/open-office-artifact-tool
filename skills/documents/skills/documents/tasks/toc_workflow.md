@@ -21,7 +21,39 @@ See: `tasks/navigation_internal_links.md`.
 2. Keep heading text in the paragraph (avoid leading manual numbers as plain text).
 3. After edits, **update fields** before final export.
 
-## Insert a TOC at a placeholder
+## Public OpenChestnut path for a new/canonical document
+
+Use the public model for ordinary authoring:
+
+```js
+import { DocumentFile, DocumentModel } from "open-office-artifact-tool";
+
+const document = DocumentModel.create({ name: "Report", blocks: [] });
+document.addParagraph("Report", { styleId: "Title" });
+document.addTableOfContents({
+  levels: "1-3",
+  display: "Refresh fields before delivery",
+});
+document.addParagraph("Executive summary", { styleId: "Heading1" });
+document.addParagraph("Decision", { styleId: "Heading2" });
+
+await (await DocumentFile.exportDocx(document)).save("with_toc.docx");
+```
+
+`addTableOfContents()` authors a canonical complex TOC field and sets
+`settings.updateFields`/native `w:updateFields` by default. That flag requests a
+refresh on open; it does not compute the TOC and is not QA evidence. After Word
+updates the field, the result may span many paragraphs. OpenChestnut preserves
+that entire field span as opaque/source-bound and rejects semantic edits rather
+than treating cached entry paragraphs as ordinary body text.
+
+## Existing-template placeholder patch
+
+Use this explicit Python package route only when an existing template already
+contains a `[[TOC]]` placeholder and cannot be recreated through the public
+model.
+
+### Insert a TOC at a placeholder
 1) Add a single paragraph containing the placeholder token:
 
 ```

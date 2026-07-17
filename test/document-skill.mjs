@@ -158,7 +158,7 @@ try {
   const tocXml = await tocZip.file("word/document.xml").async("text");
   const tocSettings = await tocZip.file("word/settings.xml").async("text");
   assert.match(tocXml, /w:fldCharType="begin"/);
-  assert.match(tocXml, /<w:instrText[^>]*> TOC \\o &quot;1-4&quot; \\h \\z \\u <\/w:instrText>/);
+  assert.match(tocXml, /<w:instrText[^>]*> TOC \\o (?:"|&quot;)1-4(?:"|&quot;) \\h \\z \\u <\/w:instrText>/);
   assert.match(tocXml, /w:fldCharType="separate"/);
   assert.match(tocXml, /w:fldCharType="end"/);
   assert.match(tocSettings, /<w:updateFields\b[^>]*w:val="true"/);
