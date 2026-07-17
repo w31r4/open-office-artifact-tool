@@ -1835,6 +1835,7 @@ message DocumentBlock {
     DocumentField field = 14;
     DocumentImage image = 15;
     DocumentSection section = 16;
+    DocumentChange change = 17;
   }
 }
 
@@ -1850,6 +1851,9 @@ message DocumentSourceBinding {
   // selected content case. It protects formatting and extension markup while
   // a source-bound edit changes modeled values in place.
   string residual_sha256 = 5;
+  // Package-local w:id for a recognized tracked insertion/deletion. It is
+  // source identity, not durable agent-facing revision identity.
+  string native_revision_id = 6;
 }
 
 message DocumentParagraph {
@@ -1926,6 +1930,22 @@ message DocumentHyperlink {
 message DocumentField {
   string instruction = 1;
   string display = 2;
+}
+
+enum DocumentChangeType {
+  DOCUMENT_CHANGE_TYPE_UNSPECIFIED = 0;
+  DOCUMENT_CHANGE_TYPE_INSERT = 1;
+  DOCUMENT_CHANGE_TYPE_DELETE = 2;
+}
+
+// One bounded whole-paragraph tracked insertion or deletion. OpenChestnut
+// deliberately excludes nested revisions, moves, property changes, mixed
+// accepted/revision runs, comments, bookmarks, fields, and other run graphs.
+message DocumentChange {
+  DocumentChangeType type = 1;
+  string text = 2;
+  string author = 3;
+  optional string date = 4;
 }
 
 message DocumentTable {

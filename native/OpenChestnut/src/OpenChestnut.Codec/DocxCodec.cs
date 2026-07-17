@@ -105,8 +105,9 @@ internal static class DocxCodec
             var body = new W.Body();
             mainPart.Document = new W.Document(body);
             uint sectionIndex = 0;
-            foreach (var block in envelope.Document.Blocks)
+            for (var blockIndex = 0; blockIndex < envelope.Document.Blocks.Count; blockIndex++)
             {
+                var block = envelope.Document.Blocks[blockIndex];
                 if (block.ContentCase == DocumentBlock.ContentOneofCase.Section)
                 {
                     body.Append(DocxSectionCodec.BuildBoundary(
@@ -115,7 +116,7 @@ internal static class DocxCodec
                         headerFooterPlan.DifferentFirstPage(sectionIndex)));
                     sectionIndex++;
                 }
-                else body.Append(BuildBlock(block, context));
+                else body.Append(BuildBlock(block, context, checked(blockIndex + 1).ToString()));
             }
             DocxClassicCommentCodec.Author(context, body, envelope.Document);
             body.Append(DocxSectionCodec.BuildFinal(
@@ -293,6 +294,35 @@ internal static class DocxCodec
                             $"Document field block {ordinal} does not match the requested modeled semantics after editing.",
                             "word/document.xml");
                 }
+                else if (block.ContentCase == DocumentBlock.ContentOneofCase.Change)
+                {
+                    if (!block.StyleId.Equals(original.StyleId, StringComparison.Ordinal))
+                        throw new CodecException(
+                            "unsupported_document_edit",
+                            $"Document tracked-change block {ordinal} paragraph style is source-bound and cannot be edited by this codec slice.",
+                            "word/document.xml");
+                    if (element is not W.Paragraph changeParagraph ||
+                        string.IsNullOrWhiteSpace(binding.NativeRevisionId) ||
+                        string.IsNullOrWhiteSpace(binding.ResidualSha256) ||
+                        !DocxTrackedChangeCodec.ResidualHash(changeParagraph).Equals(binding.ResidualSha256, StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "document_source_residual_mismatch",
+                            $"Document tracked-change block {ordinal} unmodeled source formatting or revision identity does not match its binding.",
+                            "word/document.xml");
+                    DocxTrackedChangeCodec.Apply(changeParagraph, block.Change);
+                    if (!DocxTrackedChangeCodec.ResidualHash(changeParagraph).Equals(binding.ResidualSha256, StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "document_residual_not_preserved",
+                            $"Document tracked-change block {ordinal} changed source-bound formatting or revision identity.",
+                            "word/document.xml");
+                    ulong verificationItems = 0;
+                    var verified = ReadBodyBlock(changeParagraph, ordinal, binding.BodyIndex, ref verificationItems, limits, context);
+                    if (!SemanticHash(verified).Equals(SemanticHash(block), StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "document_semantics_not_applied",
+                            $"Document tracked-change block {ordinal} does not match the requested modeled semantics after editing.",
+                            "word/document.xml");
+                }
                 else if (block.ContentCase == DocumentBlock.ContentOneofCase.Table)
                 {
                     if (!block.StyleId.Equals(original.StyleId, StringComparison.Ordinal))
@@ -426,6 +456,7 @@ internal static class DocxCodec
     {
         var block = new DocumentBlock { Id = $"document/block/{ordinal + 1}" };
         var editable = false;
+        var nativeRevisionId = string.Empty;
         switch (element)
         {
             case W.Paragraph paragraph:
@@ -458,6 +489,12 @@ internal static class DocxCodec
                 if (DocxFieldCodec.TryRead(paragraph, out var field, out editable))
                 {
                     block.Field = field;
+                    semanticItems++;
+                    break;
+                }
+                if (DocxTrackedChangeCodec.TryRead(paragraph, out var change, out nativeRevisionId, out editable))
+                {
+                    block.Change = change;
                     semanticItems++;
                     break;
                 }
@@ -499,6 +536,7 @@ internal static class DocxCodec
             BodyIndex = bodyIndex,
             ElementSha256 = HashElement(element),
             Editable = editable,
+            NativeRevisionId = nativeRevisionId,
         };
         if (element is W.Paragraph sourceParagraph)
         {
@@ -506,6 +544,8 @@ internal static class DocxCodec
                 block.Source.ResidualSha256 = DocxHyperlinkCodec.ResidualHash(sourceParagraph);
             else if (block.ContentCase == DocumentBlock.ContentOneofCase.Field)
                 block.Source.ResidualSha256 = DocxFieldCodec.ResidualHash(sourceParagraph);
+            else if (block.ContentCase == DocumentBlock.ContentOneofCase.Change)
+                block.Source.ResidualSha256 = DocxTrackedChangeCodec.ResidualHash(sourceParagraph);
             else if (block.ContentCase == DocumentBlock.ContentOneofCase.Paragraph && block.Paragraph.Numbering is not null && editable)
                 block.Source.ResidualSha256 = DocxNumberedParagraphCodec.ResidualHash(sourceParagraph);
             else if (block.ContentCase == DocumentBlock.ContentOneofCase.Section && editable)
@@ -544,12 +584,15 @@ internal static class DocxCodec
             DocxFormattingCodec.IsSupportedRunProperties(run.RunProperties));
     }
 
-    private static OpenXmlElement BuildBlock(DocumentBlock block, DocxPartContext context) => block.ContentCase switch
+    private static OpenXmlElement BuildBlock(DocumentBlock block, DocxPartContext context, string? revisionId = null) => block.ContentCase switch
     {
         DocumentBlock.ContentOneofCase.Paragraph => BuildParagraph(block),
         DocumentBlock.ContentOneofCase.Table => DocxTableCodec.Build(block),
         DocumentBlock.ContentOneofCase.Hyperlink => DocxHyperlinkCodec.Build(block, context),
         DocumentBlock.ContentOneofCase.Field => DocxFieldCodec.Build(block),
+        DocumentBlock.ContentOneofCase.Change => DocxTrackedChangeCodec.Build(
+            block,
+            revisionId ?? throw new CodecException("missing_document_revision_id", $"Document tracked-change block {block.Id} requires a revision ID.")),
         DocumentBlock.ContentOneofCase.Image => DocxImageCodec.Build(block, context),
         DocumentBlock.ContentOneofCase.Section => throw new CodecException(
             "invalid_document_section",
@@ -653,6 +696,11 @@ internal static class DocxCodec
                 case DocumentBlock.ContentOneofCase.Field:
                     if (block.Source?.Editable == false) DocxFieldCodec.ValidatePreserved(block.Field);
                     else DocxFieldCodec.Validate(block.Field);
+                    semanticItems++;
+                    break;
+                case DocumentBlock.ContentOneofCase.Change:
+                    if (block.Source?.Editable == false) DocxTrackedChangeCodec.ValidatePreserved(block.Change);
+                    else DocxTrackedChangeCodec.Validate(block.Change);
                     semanticItems++;
                     break;
                 case DocumentBlock.ContentOneofCase.Image:
