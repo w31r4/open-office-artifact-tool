@@ -65,6 +65,14 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### DOCX whole-block bookmark vertical slice
+
+On 2026-07-17, the Documents public model, versioned protobuf wire, OpenChestnut C# codec, bundled WASM runtime, Help catalog, and native Documents plugin converged on one reversible bookmark profile. A source-free bookmark may wrap exactly one paragraph-like block and supplies a native target for internal `w:hyperlink` anchors. Export writes paired `w:bookmarkStart`/`w:bookmarkEnd`; import exposes name, target, native identity, source position, and semantic binding. Recognized imported whole-block bookmarks remain fixed-topology and read-only, while cross-block, nested, crossing, table-cell, and otherwise irregular graphs stay opaque-preserved and fail closed on mutation.
+
+The shipped Documents example now authors a `DecisionSection` bookmark plus internal jump link, completes two OpenChestnut round trips, resolves the imported target, verifies the final model, and asserts the native bookmark and hyperlink markup in `word/document.xml`. The broader Documents smoke continues to require semantic verification and native LibreOffice/Poppler page rendering. C# and JavaScript regressions cover source-free authoring, internal-link planning before bookmark insertion, unchanged source-preserving export, imported rename rejection, topology-change rejection, and cross-block authoring rejection.
+
+The complete local gate passed `npm test`, `npm run docs:api`, `npm run proto:check`, `npm run test:pack`, serial `npm run verify:open-chestnut-build`, OpenChestnut `174/174`, and OfficeBridge `5/5`. Two clean WASM builds produced the same 39 audited files and the same manifest-bound 38-file, 14,184,636-byte runtime. The clean-install tarball contains 421 files, is 9,202,409 bytes compressed and 22,856,201 bytes unpacked. The unpacked-size regression budget moved narrowly from 22,850,000 to 22,900,000 bytes to account for the measured codec/runtime addition while retaining less than 44 KiB of headroom.
+
 ### Composition root and Spreadsheet domain layering
 
 On 2026-07-17, the remaining stateful Spreadsheet domain moved from the public root entry into `src/spreadsheet/index.mjs`: workbook/worksheet/range ownership, tables/pivots/charts/images/sparklines, formulas and dependency graphs, conditional formatting, inspect/resolve/verify/help, layout/SVG rendering, delimited-file support, metadata restoration, and the `SpreadsheetFile` facade now share one cohesive owner. The root retains exact re-exports rather than wrappers; all four public Spreadsheet bindings are strict-identical between the root and leaf entry. The OpenChestnut Spreadsheet adapter imports the leaf directly, and a source-level regression prevents a back-edge to `src/index.mjs`.
@@ -114,6 +122,8 @@ On 2026-07-17, the native reference-plugin/OpenChestnut compatibility worktree p
 - LibreOffice opened the shipped 26-slide reference template and produced a 26-page PDF; bounded custom-geometry icons rendered visibly. This local LibreOffice build substituted `Helvetica Neue`, so pixel parity with the checked-in preview images is not claimed and remains a visual-fidelity gap.
 
 ## Hosted evidence
+
+The DOCX whole-block bookmark and Documents navigation candidate through commit `b161676d1e68df8acdc7bd3a4a3640fbcf267b3c` passed the hosted Linux `ci` workflow in [GitHub Actions run 29564975672](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29564975672) on 2026-07-17. The run completed with conclusion `success` in 5m09s and covered generated protocol plus deterministic bundled-runtime verification, Chromium/native-tool checks, the complete npm suite including the public bookmark/internal-link Skill workflow and fail-closed topology regressions, generated API-doc cleanliness, offline release metadata, the 421-file clean-install tarball, OfficeBridge `5/5`, and OpenChestnut `174/174`.
 
 The composition-root and complete Spreadsheet-domain layering candidate at commit `f8a4241a40448cc21ad1dce449edb6747d491473` passed the hosted Linux `ci` workflow in [GitHub Actions run 29563335625](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29563335625) on 2026-07-17. The run completed with conclusion `success` in 4m26s and covered protocol plus deterministic bundled-runtime verification, Chromium/native-tool checks, the complete npm suite including root/leaf Spreadsheet binding identity and codec dependency-direction regressions, generated API-doc cleanliness, offline release metadata, the 421-file clean-install tarball, OfficeBridge `5/5`, and OpenChestnut `173/173`.
 
