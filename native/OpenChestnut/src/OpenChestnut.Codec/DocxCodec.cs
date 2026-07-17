@@ -51,6 +51,7 @@ internal static class DocxCodec
             var block = ReadBodyBlock(element, ordinal++, checked((uint)bodyIndex), ref semanticItems, limits, context);
             document.Blocks.Add(block);
         }
+        DocxBookmarkCodec.Read(body, document, ref semanticItems, limits);
         DocxClassicCommentCodec.Read(context, body, document, ref semanticItems, limits, diagnostics);
         DocxHeaderFooterCodec.Read(mainPart, body, document, diagnostics);
 
@@ -100,7 +101,7 @@ internal static class DocxCodec
             var mainPart = package.AddMainDocumentPart();
             DocxDirectStyles.AddRequiredStyles(mainPart, envelope.Document);
             DocxDirectNumbering.Apply(mainPart, numberingPlan);
-            var context = new DocxPartContext(mainPart, imageAssets);
+            var context = new DocxPartContext(mainPart, imageAssets, envelope.Document.Bookmarks.Select(bookmark => bookmark.Name));
             var headerFooterPlan = DocxHeaderFooterCodec.Author(mainPart, envelope.Document);
             var body = new W.Body();
             mainPart.Document = new W.Document(body);
@@ -118,6 +119,7 @@ internal static class DocxCodec
                 }
                 else body.Append(BuildBlock(block, context, checked(blockIndex + 1).ToString()));
             }
+            DocxBookmarkCodec.Author(body, envelope.Document);
             DocxClassicCommentCodec.Author(context, body, envelope.Document);
             body.Append(DocxSectionCodec.BuildFinal(
                 headerFooterPlan.References(sectionIndex),
@@ -140,7 +142,8 @@ internal static class DocxCodec
 
         return envelope.Document.Blocks.Any(block =>
                    block.Source is not null || block.ContentCase == DocumentBlock.ContentOneofCase.Opaque) ||
-               envelope.Document.Comments.Any(comment => comment.Source is not null);
+               envelope.Document.Comments.Any(comment => comment.Source is not null) ||
+               envelope.Document.Bookmarks.Any(bookmark => bookmark.Source is not null);
     }
 
     private static DocxExportResult ExportPreservingSource(ArtifactEnvelope envelope, EffectiveCodecLimits limits, int opaqueCount)
@@ -151,6 +154,7 @@ internal static class DocxCodec
             limits,
             OpcPackageProfile.Docx);
         DocxClassicCommentCodec.AssertModeledCommentsWereNotRemoved(sourceBytes, envelope.Document);
+        DocxBookmarkCodec.AssertSourceUnchanged(sourceBytes, envelope.Document);
         var imageAssets = new DocxImageAssetCatalog(envelope.Assets, limits);
         using var stream = new MemoryStream();
         stream.Write(sourceBytes);
@@ -674,12 +678,13 @@ internal static class DocxCodec
         if ((ulong)envelope.Document.Blocks.Count > limits.MaxCells)
             throw new CodecException("document_item_budget_exceeded", $"Document has {envelope.Document.Blocks.Count} blocks and exceeds max_cells ({limits.MaxCells}).");
         DocxClassicCommentCodec.Validate(envelope.Document, limits);
+        DocxBookmarkCodec.Validate(envelope.Document);
         DocxDirectStyles.Validate(
             envelope.Document,
             allowImportedCycles: envelope.OpaqueOpc?.SourcePackage is { Data.IsEmpty: false });
         DocxHeaderFooterCodec.Validate(envelope.Document);
 
-        ulong semanticItems = checked((ulong)envelope.Document.Comments.Count);
+        ulong semanticItems = checked((ulong)envelope.Document.Comments.Count + (ulong)envelope.Document.Bookmarks.Count);
         foreach (var block in envelope.Document.Blocks)
         {
             switch (block.ContentCase)

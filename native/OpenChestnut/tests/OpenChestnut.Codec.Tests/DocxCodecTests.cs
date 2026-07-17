@@ -1587,6 +1587,59 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void WholeParagraphBookmarkAuthorsImportsAndFailsClosedOnMutation()
+    {
+        var exported = Invoke(BookmarkExportRequest());
+        Assert.True(exported.Ok, Diagnostics(exported));
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var body = package.MainDocumentPart!.Document!.Body!;
+            var start = Assert.Single(body.Descendants<W.BookmarkStart>());
+            var end = Assert.Single(body.Descendants<W.BookmarkEnd>());
+            Assert.Equal("TargetBookmark", start.Name?.Value);
+            Assert.Equal(start.Id?.Value, end.Id?.Value);
+            Assert.Equal("TargetBookmark", Assert.Single(body.Descendants<W.Hyperlink>()).Anchor?.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = exported.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var bookmark = Assert.Single(imported.Artifact.Document.Bookmarks);
+        Assert.Equal("TargetBookmark", bookmark.Name);
+        Assert.Equal("document/block/2", bookmark.TargetBlockId);
+        Assert.Equal(bookmark.TargetBlockId, bookmark.EndTargetBlockId);
+        Assert.Equal("0", bookmark.NativeId);
+        Assert.False(bookmark.Source.Editable);
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+
+        bookmark.Name = "RenamedBookmark";
+        var rejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_document_bookmark_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void HyperlinkSliceRejectsUnsupportedTopologyAndUnsafeUri()
     {
         var authored = Invoke(HyperlinkExportRequest());
@@ -2273,6 +2326,48 @@ public sealed class DocxCodecTests
         };
         target.Paragraph.Runs.Add(new DocumentRun { Text = target.Paragraph.Text });
         document.Blocks.Add(target);
+        return new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = new ArtifactEnvelope
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Family = ArtifactFamily.Document,
+                Document = document,
+            },
+        };
+    }
+
+    private static CodecRequest BookmarkExportRequest()
+    {
+        var document = new DocumentArtifact { Id = "document/bookmarks", Name = "Bookmark fixture" };
+        document.Blocks.Add(new DocumentBlock
+        {
+            Id = "document/jump",
+            StyleId = "Normal",
+            Hyperlink = new DocumentHyperlink
+            {
+                Text = "Jump to target",
+                InternalAnchor = "TargetBookmark",
+            },
+        });
+        var target = new DocumentBlock
+        {
+            Id = "document/target",
+            StyleId = "Normal",
+            Paragraph = new DocumentParagraph { Text = "Target paragraph" },
+        };
+        target.Paragraph.Runs.Add(new DocumentRun { Text = target.Paragraph.Text });
+        document.Blocks.Add(target);
+        document.Bookmarks.Add(new DocumentBookmark
+        {
+            Id = "document/bookmark/target",
+            Name = "TargetBookmark",
+            TargetBlockId = target.Id,
+            EndTargetBlockId = target.Id,
+        });
         return new CodecRequest
         {
             ProtocolVersion = CodecProtocol.ProtocolVersion,

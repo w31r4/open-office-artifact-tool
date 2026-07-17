@@ -114,7 +114,9 @@ const section = document.addSection({
   pageSize: { widthTwips: 15840, heightTwips: 12240 },
   margins: { top: 720, right: 900, bottom: 720, left: 900 },
 });
-document.addParagraph("Second-section evidence.", { name: "second-section", styleId: "Normal" });
+const secondSection = document.addParagraph("Second-section evidence.", { name: "second-section", styleId: "Normal" });
+const secondSectionBookmark = document.addBookmark(secondSection, "SecondSection");
+const internalLink = document.addHyperlink("Jump to second-section evidence", "#SecondSection", { name: "internal-link", styleId: "Normal" });
 
 document.setSectionSettings(0, { differentFirstPage: true });
 const defaultHeader = document.addHeader("Default header", {
@@ -161,7 +163,7 @@ const comment = document.addComment(commentTarget, "Confirm the release evidence
 });
 
 const inspect = document.inspect({
-  kind: "document,paragraph,listItem,table,comment,header,footer,hyperlink,field,change,image,section,style,layout",
+  kind: "document,paragraph,listItem,table,comment,bookmark,header,footer,hyperlink,field,change,image,section,style,layout",
   maxChars: 24_000,
 }).ndjson;
 for (const expected of [
@@ -178,6 +180,7 @@ for (const expected of [
   "Added wording",
   "Removed wording",
   "Confirm the release evidence",
+  "SecondSection",
 ]) assert.match(inspect, new RegExp(expected));
 assert.equal(document.resolve(formatted.id), formatted);
 assert.equal(document.resolve(table.id).getCell(1, 1).value, "Pending");
@@ -190,6 +193,8 @@ assert.equal(document.resolve(evenHeader.id).referenceType, "even");
 assert.equal(document.resolve(defaultFooter.id).fieldInstruction, "PAGE");
 assert.equal(document.resolve(insertion.id).changeType, "insert");
 assert.equal(document.resolve(deletion.id).changeType, "delete");
+assert.equal(document.resolve(secondSectionBookmark.id).targetId, secondSection.id);
+assert.equal(internalLink.anchor, "SecondSection");
 assert.equal(document.resolve(firstFooter.id).referenceType, "first");
 assert.equal(document.resolve(evenFooter.id).referenceType, "even");
 const modelVerification = document.verify({ visualQa: true });
@@ -228,6 +233,10 @@ assert.deepEqual(imported.headers.map((item) => item.referenceType), ["default",
 assert.deepEqual(imported.footers.map((item) => item.referenceType), ["default", "first", "even"]);
 assert.equal(imported.footers[0].fieldInstruction, "PAGE");
 assert.equal(imported.comments.length, 1);
+assert.equal(imported.bookmarks.length, 1);
+assert.equal(imported.bookmarks[0].name, "SecondSection");
+assert.equal(imported.bookmarks[0].targetId, imported.blocks.find((block) => block.text === "Second-section evidence.")?.id);
+assert.equal(imported.blocks.find((block) => block.kind === "hyperlink" && block.anchor === "SecondSection")?.text, "Jump to second-section evidence");
 
 importedFormatted.text = "Bold and edited";
 importedFormatted.runs[0].text = "Bold ";
@@ -276,7 +285,26 @@ assert.equal(roundTrip.blocks.find((block) => block.kind === "image" && block.al
 assert.equal(roundTrip.blocks.find((block) => block.kind === "section")?.margins.left, 1200);
 assert.equal(roundTrip.comments[0].author, "Lead reviewer");
 assert.equal(roundTrip.comments[0].text, "Release evidence approved.");
+assert.equal(roundTrip.bookmarks[0].name, "SecondSection");
+assert.equal(roundTrip.blocks.some((block) => block.kind === "hyperlink" && block.anchor === "SecondSection"), true);
 assert.equal(roundTrip.verify({ visualQa: true }).ok, true);
+
+const importedWithRenamedBookmark = await DocumentFile.importDocx(firstDocx);
+importedWithRenamedBookmark.bookmarks[0].name = "RenamedSection";
+await assert.rejects(
+  () => DocumentFile.exportDocx(importedWithRenamedBookmark),
+  (error) => error?.code === "unsupported_document_bookmark_edit" && /source-bound/i.test(error.message),
+);
+
+const invalidBookmarkRange = DocumentModel.create({ blocks: [
+  { kind: "paragraph", text: "Start" },
+  { kind: "paragraph", text: "End" },
+] });
+invalidBookmarkRange.addBookmark(invalidBookmarkRange.blocks[0], "CrossBlock", { endTarget: invalidBookmarkRange.blocks[1] });
+await assert.rejects(
+  () => DocumentFile.exportDocx(invalidBookmarkRange),
+  (error) => error?.code === "invalid_document_bookmark" && /exactly one block/i.test(error.message),
+);
 
 const importedWithChangedRevisionKind = await DocumentFile.importDocx(firstDocx);
 importedWithChangedRevisionKind.blocks.find((block) => block.kind === "change").changeType = "delete";
@@ -320,7 +348,7 @@ const importedWithAddedBookmark = await DocumentFile.importDocx(firstDocx);
 importedWithAddedBookmark.addBookmark(importedWithAddedBookmark.blocks[0], "AddedBookmark");
 await assert.rejects(
   () => DocumentFile.exportDocx(importedWithAddedBookmark),
-  (error) => error?.code === "unsupported_document_features" && /bookmarks/i.test(error.message),
+  (error) => error?.code === "document_bookmark_topology_changed" && /bookmark topology/i.test(error.message),
 );
 
 const importedWithoutSourceSnapshot = await DocumentFile.importDocx(firstDocx);

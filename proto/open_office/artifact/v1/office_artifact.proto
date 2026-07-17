@@ -1730,6 +1730,26 @@ message DocumentArtifact {
   repeated DocumentHeaderFooter footers = 8;
   bool even_and_odd_headers = 9;
   repeated DocumentSectionSettings section_settings = 10;
+  // Bounded whole-paragraph bookmarks. Source-free authoring wraps one
+  // paragraph-like block; recognized imports retain package-local identity in
+  // the source binding and remain fixed-topology/read-only in protocol 2.
+  repeated DocumentBookmark bookmarks = 11;
+}
+
+message DocumentBookmark {
+  string id = 1;
+  string name = 2;
+  string target_block_id = 3;
+  string end_target_block_id = 4;
+  string native_id = 5;
+  DocumentBookmarkSourceBinding source = 6;
+}
+
+message DocumentBookmarkSourceBinding {
+  uint32 body_index = 1;
+  string native_id = 2;
+  string semantic_sha256 = 3;
+  bool editable = 4;
 }
 
 enum DocumentStyleType {

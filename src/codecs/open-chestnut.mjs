@@ -1994,6 +1994,51 @@ function documentCommentSnapshot(comment) {
   };
 }
 
+function documentBookmarkSnapshot(bookmark) {
+  return {
+    id: bookmark.id,
+    name: bookmark.name,
+    targetId: bookmark.targetId,
+    endTargetId: bookmark.endTargetId,
+    nativeId: bookmark.nativeId,
+  };
+}
+
+function documentBookmark(bookmark, slot, document) {
+  if (slot) {
+    if (JSON.stringify(documentBookmarkSnapshot(bookmark)) !== JSON.stringify(slot.publicSnapshot)) {
+      throw new OpenChestnutCodecError(`Imported document bookmark ${bookmark.id} identity, name, and target are source-bound in protocol 2.`, [], { code: "unsupported_document_bookmark_edit" });
+    }
+    return slot.wire;
+  }
+  const name = String(bookmark.name || "");
+  if (!/^[A-Za-z][A-Za-z0-9_]{0,39}$/.test(name)) {
+    throw new OpenChestnutCodecError(`Document bookmark ${bookmark.id} name must start with an ASCII letter and contain only letters, digits, or underscores (maximum 40 characters).`, [], { code: "invalid_document_bookmark" });
+  }
+  if (!bookmark.targetId || bookmark.targetId !== bookmark.endTargetId) {
+    throw new OpenChestnutCodecError(`Document bookmark ${bookmark.id} must wrap exactly one block in protocol 2.`, [], { code: "invalid_document_bookmark" });
+  }
+  const target = document.blocks.find((block) => block.id === bookmark.targetId);
+  if (!target || !new Set(["paragraph", "hyperlink", "field", "change", "image"]).has(target.kind)) {
+    throw new OpenChestnutCodecError(`Document bookmark ${bookmark.id} target must be a paragraph, hyperlink, field, tracked change, or image block.`, [], { code: "invalid_document_bookmark" });
+  }
+  let nativeId = "";
+  if (bookmark.nativeId !== undefined) {
+    const value = Number(bookmark.nativeId);
+    if (!Number.isInteger(value) || value < 0 || value > 4_294_967_295) {
+      throw new OpenChestnutCodecError(`Document bookmark ${bookmark.id} nativeId must be an unsigned 32-bit integer when present.`, [], { code: "invalid_document_bookmark" });
+    }
+    nativeId = String(value);
+  }
+  return {
+    id: String(bookmark.id || ""),
+    name,
+    targetBlockId: bookmark.targetId,
+    endTargetBlockId: bookmark.endTargetId,
+    nativeId,
+  };
+}
+
 function documentComment(comment, slot) {
   const advanced = [
     ["parentId", comment.parentId],
@@ -2362,7 +2407,6 @@ function documentBlock(block, original, directNumbering, assets) {
 function unsupportedDocumentCollections(document) {
   const unsupported = [];
   for (const [label, value] of [
-    ["bookmarks", document.bookmarks],
     ["bibliography sources", document.bibliographySources],
   ]) {
     if (value?.length) unsupported.push(label);
@@ -2388,6 +2432,9 @@ function documentEnvelope(document) {
   }
   if (state && state.comments.length !== document.comments.length) {
     throw new OpenChestnutCodecError(`Source-preserving DOCX export requires the original ${state.comments.length}-comment topology; the document contains ${document.comments.length} comments.`, [], { code: "document_comment_topology_changed" });
+  }
+  if (state && state.bookmarks.length !== document.bookmarks.length) {
+    throw new OpenChestnutCodecError(`Source-preserving DOCX export requires the original ${state.bookmarks.length}-bookmark topology; the document contains ${document.bookmarks.length} bookmarks.`, [], { code: "document_bookmark_topology_changed" });
   }
   if (state && (state.headers.length !== document.headers.length || state.footers.length !== document.footers.length)) {
     throw new OpenChestnutCodecError("Source-preserving DOCX export requires the original header/footer topology.", [], { code: "document_header_footer_topology_changed" });
@@ -2415,6 +2462,7 @@ function documentEnvelope(document) {
         name: document.name,
         blocks,
         comments: document.comments.map((comment, index) => documentComment(comment, state?.comments[index])),
+        bookmarks: document.bookmarks.map((bookmark, index) => documentBookmark(bookmark, state?.bookmarks[index], document)),
         styles: document.styles.values().map(wireDocumentStyle),
         defaultRunStyle: documentRunFormatting(defaultRunSource, "Document default run style"),
         headers: document.headers.map(wireHeaderFooter),
@@ -2595,12 +2643,20 @@ function documentFromEnvelope(envelope) {
     date: comment.createdAt,
     text: comment.text,
   }));
+  const bookmarks = (source.bookmarks || []).map((bookmark) => ({
+    id: bookmark.id,
+    name: bookmark.name,
+    targetId: bookmark.targetBlockId,
+    endTargetId: bookmark.endTargetBlockId,
+    nativeId: bookmark.nativeId === "" ? undefined : Number(bookmark.nativeId),
+  }));
   const document = DocumentModel.create({
     name: source.name || "Imported document",
     styles,
     defaultRunStyle: publicDocumentRunFormatting(source.defaultRunStyle),
     blocks,
     comments,
+    bookmarks,
     headers: (source.headers || []).map(publicHeaderFooter),
     footers: (source.footers || []).map(publicHeaderFooter),
     settings: { evenAndOddHeaders: Boolean(source.evenAndOddHeaders) },
@@ -2611,6 +2667,10 @@ function documentFromEnvelope(envelope) {
     wire,
     publicSnapshot: documentCommentSnapshot(document.comments[index]),
   }));
+  const bookmarkSlots = (source.bookmarks || []).map((wire, index) => ({
+    wire,
+    publicSnapshot: documentBookmarkSnapshot(document.bookmarks[index]),
+  }));
   const readOnlyBlockSlots = source.blocks.flatMap((wire, index) => {
     if (wire.content.case !== "opaque" && wire.source?.editable !== false) return [];
     const block = document.blocks[index];
@@ -2618,7 +2678,7 @@ function documentFromEnvelope(envelope) {
   });
   Object.defineProperty(document, DOCUMENT_STATE, {
     configurable: true,
-    value: { source: envelope.source, opaqueOpc: envelope.opaqueOpc, diagnostics: envelope.diagnostics, assets: envelope.assets || [], blocks: source.blocks, readOnlyBlockSlots, comments: commentSlots, headers: source.headers || [], footers: source.footers || [] },
+    value: { source: envelope.source, opaqueOpc: envelope.opaqueOpc, diagnostics: envelope.diagnostics, assets: envelope.assets || [], blocks: source.blocks, readOnlyBlockSlots, comments: commentSlots, bookmarks: bookmarkSlots, headers: source.headers || [], footers: source.footers || [] },
     writable: true,
   });
   return document;

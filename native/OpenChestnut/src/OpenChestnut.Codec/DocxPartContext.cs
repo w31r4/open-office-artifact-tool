@@ -22,11 +22,13 @@ internal sealed class DocxPartContext
     private string? _mutatedCommentsRelationshipId;
     private bool _stylesDocumentLoaded;
     private uint? _nextDrawingId;
+    private readonly HashSet<string> _plannedBookmarks;
 
-    internal DocxPartContext(MainDocumentPart owner, DocxImageAssetCatalog? images = null)
+    internal DocxPartContext(MainDocumentPart owner, DocxImageAssetCatalog? images = null, IEnumerable<string>? plannedBookmarks = null)
     {
         Owner = owner;
         Images = images;
+        _plannedBookmarks = new HashSet<string>(plannedBookmarks ?? [], StringComparer.Ordinal);
     }
 
     internal MainDocumentPart Owner { get; }
@@ -115,6 +117,7 @@ internal sealed class DocxPartContext
     }
 
     internal bool HasBookmark(string name) =>
+        _plannedBookmarks.Contains(name) ||
         Owner.Document?.Descendants<W.BookmarkStart>().Any(item => item.Name?.Value == name) == true;
 
     internal bool TryReadExternal(string relationshipId, out string uri)
