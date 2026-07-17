@@ -1236,13 +1236,13 @@ Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or 
 | `compose.column` | api | Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels. |
 | `compose.paragraph` | api | Create an editable text block with name, className/style text tokens, and stable inspect output. |
 | `compose.text` | api | Create the same editable paragraph node through the reference-template-compatible children-first text(children, props) helper. |
-| `exportPptxWithOpenChestnut` | api | Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures with native crop/contain/cover semantics, fixed-grid plain-text tables, recursive native p:grpSp trees, plain-text speaker notes, source-free bar/line/pie charts, and validated payload-only replacement for eligible imported OLE workbooks. Recognized imported direct backgrounds, picture source rectangles, canonical fixed-topology groups, simple notes bodies, and eligible OLE bindings are hash-bound and editable; inherited or complex graphs remain preserved and fail closed on unsupported mutation. |
-| `importPptxWithOpenChestnut` | api | Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich text, rectangular pictures and native source rectangles, tables, connectors, recursive canonical p:grpSp groups, bar/line/pie charts, plain-text speaker notes, and defensive payload access for eligible OLE workbooks. Complex backgrounds/blips/groups, rich notes, ambiguous OLE graphs, and other unsupported content remain source-bound and read-only. |
+| `exportPptxWithOpenChestnut` | api | Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures with native crop/contain/cover semantics, fixed-grid plain-text tables, recursive native p:grpSp trees, plain-text speaker notes, source-free bar/line/pie charts, a bounded literal primary-axis clustered bar+line combo, and validated payload-only replacement for eligible imported OLE workbooks. Recognized imported direct backgrounds, picture source rectangles, canonical fixed-topology groups, simple notes bodies, eligible OLE bindings, and canonical fixed-topology combos are hash-bound and editable; inherited or complex graphs remain preserved and fail closed on unsupported mutation. |
+| `importPptxWithOpenChestnut` | api | Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich text, rectangular pictures and native source rectangles, tables, connectors, recursive canonical p:grpSp groups, bar/line/pie charts, the canonical literal primary-axis clustered bar+line combo profile, plain-text speaker notes, and defensive payload access for eligible OLE workbooks. Complex backgrounds/blips/groups, rich notes, secondary-axis or irregular combo graphs, ambiguous OLE graphs, and other unsupported content remain source-bound and read-only. |
 | `nativeObject.getEmbeddedWorkbook` | api | Read a defensive FileBlob copy of the XLSX payload from an eligible source-bound top-level OLE object without exposing arbitrary native-part mutation. |
 | `nativeObject.replaceEmbeddedWorkbook` | api | Replace only the XLSX payload of an eligible imported top-level OLE object. OpenChestnut validates the new workbook and immutable source binding, preserves the OLE shell, relationships, preview, and all other native parts, and fails closed for malformed or ambiguous graphs. |
 | `nativeObject.setName` | api | Native OLE, SmartArt/diagram, and contentPart objects imported through OpenChestnut are source-bound and read-only; setName rejects instead of mutating the preserved package graph. |
 | `nativeObject.setPosition` | api | Native OLE, SmartArt/diagram, and contentPart objects imported through OpenChestnut are source-bound and read-only; setPosition rejects instead of rewriting their geometry or payload graph. |
-| `Presentation.create` | api | Create a deck model whose canonical OpenChestnut export supports ordinary slides, direct solid/style-reference slide backgrounds, shapes, rich text, tables, images, connectors, recursive native p:grpSp groups, plain-text speaker notes, and source-free bar/line/pie charts. Custom themes, Master/Layout authoring, comments, custom shows, and other package-level features remain outside the source-free PPTX boundary. |
+| `Presentation.create` | api | Create a deck model whose canonical OpenChestnut export supports ordinary slides, direct solid/style-reference slide backgrounds, shapes, rich text, tables, images, connectors, recursive native p:grpSp groups, plain-text speaker notes, source-free bar/line/pie charts, and a bounded literal primary-axis clustered bar+line combo profile. Custom themes, Master/Layout authoring, comments, custom shows, secondary-axis or irregular combo graphs, and other package-level features remain outside the source-free PPTX boundary. |
 | `presentation.customShows.add` | api | Define a model-level custom slide show for inspect and preview. OpenChestnut 0.2 does not author custom shows, and imported custom-show graphs are source-bound and read-only. |
 | `presentation.customShows.getItem` | api | Resolve a model-level or imported read-only custom slide show by zero-based index, stable facade ID, or exact name. |
 | `presentation.export` | api | Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON. |
@@ -1273,7 +1273,7 @@ Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or 
 | `slide.addNotes` | api | Set plain-text speaker notes for inspect, preview, and canonical PPTX output. OpenChestnut authors source-free notes and edits hash-bound simple imported notes bodies; rich or irregular imported notes fail closed instead of losing formatting. |
 | `slide.applyLayout` | api | Materialize layout placeholders in the model for preview. Source-free layout binding is outside the OpenChestnut 0.2 PPTX boundary; imported Layout relationships are preservation-only. |
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
-| `slide.charts.add` | api | Add a source-free bar, line, or pie chart with literal categories and numeric values, title, legend, basic series fill/line/marker formatting, chart-level data labels, primary axes, layout JSON, SVG preview, and native PPTX output. Combo charts, external data, secondary axes, point overrides, trendlines, error bars, and per-series data labels are model-only and fail closed on export. |
+| `slide.charts.add` | api | Add a source-free bar, line, or pie chart, or a bounded literal primary-axis clustered bar+line combo. All variants use literal categories/numeric values, title, legend, basic series fill/line/marker formatting, chart-level data labels, layout JSON, SVG preview, and native PPTX output. A combo requires at least one bar and one line series, shares one primary category/value axis pair, and keeps its plot/series topology fixed after import. External data, secondary axes, point overrides, trendlines, error bars, per-series data labels, smooth lines, and irregular combo graphs fail closed on export. |
 | `slide.clearBackground` | api | Remove the direct slide background so preview and PPTX output inherit from the preserved Layout/Master chain. Unsupported imported background graphs fail closed rather than being flattened or discarded. |
 | `slide.comments.addThread` | api | Create a bounded legacy PPTX annotation with one author, one text item, and an explicit slide coordinate. Recognized imported legacy comments are source-bound and read-only; modern comment graphs remain opaque/source-bound. |
 | `slide.compose` | api | Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph/text, shape, table, chart, image, and rule nodes into editable slide objects. |
@@ -1332,11 +1332,11 @@ Create the same editable paragraph node through the reference-template-compatibl
 
 #### `exportPptxWithOpenChestnut`
 
-Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures with native crop/contain/cover semantics, fixed-grid plain-text tables, recursive native p:grpSp trees, plain-text speaker notes, source-free bar/line/pie charts, and validated payload-only replacement for eligible imported OLE workbooks. Recognized imported direct backgrounds, picture source rectangles, canonical fixed-topology groups, simple notes bodies, and eligible OLE bindings are hash-bound and editable; inherited or complex graphs remain preserved and fail closed on unsupported mutation.
+Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures with native crop/contain/cover semantics, fixed-grid plain-text tables, recursive native p:grpSp trees, plain-text speaker notes, source-free bar/line/pie charts, a bounded literal primary-axis clustered bar+line combo, and validated payload-only replacement for eligible imported OLE workbooks. Recognized imported direct backgrounds, picture source rectangles, canonical fixed-topology groups, simple notes bodies, eligible OLE bindings, and canonical fixed-topology combos are hash-bound and editable; inherited or complex graphs remain preserved and fail closed on unsupported mutation.
 
 **Schema parameters:**
 
-- `presentation` (Presentation) required — Presentation facade within the bounded direct-slide-background/shape/rich-text/picture/fixed-table/connector/recursive-group/plain-text-notes/source-free bar-line-pie chart boundary. Complex backgrounds or groups, rich notes, and other imported advanced package graphs must remain unchanged.
+- `presentation` (Presentation) required — Presentation facade within the bounded direct-slide-background/shape/rich-text/picture/fixed-table/connector/recursive-group/plain-text-notes/source-free bar-line-pie and literal primary-axis clustered bar-line combo chart boundary. Complex backgrounds or groups, rich notes, secondary-axis or irregular combo charts, and other imported advanced package graphs must remain unchanged.
 - `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets.
 
 **Schema returns:**
@@ -1345,7 +1345,7 @@ Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse sha
 
 #### `importPptxWithOpenChestnut`
 
-Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich text, rectangular pictures and native source rectangles, tables, connectors, recursive canonical p:grpSp groups, bar/line/pie charts, plain-text speaker notes, and defensive payload access for eligible OLE workbooks. Complex backgrounds/blips/groups, rich notes, ambiguous OLE graphs, and other unsupported content remain source-bound and read-only.
+Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich text, rectangular pictures and native source rectangles, tables, connectors, recursive canonical p:grpSp groups, bar/line/pie charts, the canonical literal primary-axis clustered bar+line combo profile, plain-text speaker notes, and defensive payload access for eligible OLE workbooks. Complex backgrounds/blips/groups, rich notes, secondary-axis or irregular combo graphs, ambiguous OLE graphs, and other unsupported content remain source-bound and read-only.
 
 **Schema parameters:**
 
@@ -1354,7 +1354,7 @@ Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich t
 
 **Schema returns:**
 
-- `presentation` (Presentation) — Imported presentation facade with editable bounded direct slide backgrounds, shapes, rich text, pictures, tables, connectors, recursive canonical groups, and bar/line/pie charts; advanced package graphs are read-only except for validated payload-only replacement on eligible OLE workbooks through getEmbeddedWorkbook and replaceEmbeddedWorkbook.
+- `presentation` (Presentation) — Imported presentation facade with editable bounded direct slide backgrounds, shapes, rich text, pictures, tables, connectors, recursive canonical groups, bar/line/pie charts, and the literal primary-axis clustered bar+line combo profile; advanced package graphs are read-only except for validated payload-only replacement on eligible OLE workbooks through getEmbeddedWorkbook and replaceEmbeddedWorkbook.
 
 #### `nativeObject.getEmbeddedWorkbook`
 
@@ -1402,7 +1402,7 @@ Native OLE, SmartArt/diagram, and contentPart objects imported through OpenChest
 
 #### `Presentation.create`
 
-Create a deck model whose canonical OpenChestnut export supports ordinary slides, direct solid/style-reference slide backgrounds, shapes, rich text, tables, images, connectors, recursive native p:grpSp groups, plain-text speaker notes, and source-free bar/line/pie charts. Custom themes, Master/Layout authoring, comments, custom shows, and other package-level features remain outside the source-free PPTX boundary.
+Create a deck model whose canonical OpenChestnut export supports ordinary slides, direct solid/style-reference slide backgrounds, shapes, rich text, tables, images, connectors, recursive native p:grpSp groups, plain-text speaker notes, source-free bar/line/pie charts, and a bounded literal primary-axis clustered bar+line combo profile. Custom themes, Master/Layout authoring, comments, custom shows, secondary-axis or irregular combo graphs, and other package-level features remain outside the source-free PPTX boundary.
 
 **Schema parameters:**
 
@@ -1735,7 +1735,7 @@ Import PPTX through the single bundled OpenChestnut codec with source-bound opaq
 
 **Schema returns:**
 
-- `presentation` (Presentation) — Imported presentation facade with editable core objects, recognized direct slide backgrounds, canonical fixed-topology recursive groups, simple plain-text speaker notes, bounded legacy slide-level comments (unchanged-only), and payload-only replacement for eligible source-bound OLE workbooks; complex backgrounds/groups, rich notes, Master/Layout, modern comments, themes, other native objects, placeholders, and unsupported package graphs remain source-bound.
+- `presentation` (Presentation) — Imported presentation facade with editable core objects, recognized direct slide backgrounds, canonical fixed-topology recursive groups, bar/line/pie charts plus the literal primary-axis clustered bar+line combo profile, simple plain-text speaker notes, bounded legacy slide-level comments (unchanged-only), and payload-only replacement for eligible source-bound OLE workbooks; complex backgrounds/groups, rich notes, secondary-axis or irregular combo graphs, Master/Layout, modern comments, themes, other native objects, placeholders, and unsupported package graphs remain source-bound.
 
 #### `PresentationFile.inspectPptx`
 
@@ -1846,17 +1846,17 @@ Place existing shapes inside a frame using horizontal or vertical flow, gap, pad
 
 #### `slide.charts.add`
 
-Add a source-free bar, line, or pie chart with literal categories and numeric values, title, legend, basic series fill/line/marker formatting, chart-level data labels, primary axes, layout JSON, SVG preview, and native PPTX output. Combo charts, external data, secondary axes, point overrides, trendlines, error bars, and per-series data labels are model-only and fail closed on export.
+Add a source-free bar, line, or pie chart, or a bounded literal primary-axis clustered bar+line combo. All variants use literal categories/numeric values, title, legend, basic series fill/line/marker formatting, chart-level data labels, layout JSON, SVG preview, and native PPTX output. A combo requires at least one bar and one line series, shares one primary category/value axis pair, and keeps its plot/series topology fixed after import. External data, secondary axes, point overrides, trendlines, error bars, per-series data labels, smooth lines, and irregular combo graphs fail closed on export.
 
 **Schema parameters:**
 
-- `chartType` (string) — bar, line, or pie for canonical OpenChestnut export; combo is model-only and rejected.
+- `chartType` (string) — bar, line, pie, or combo for canonical OpenChestnut export. combo is only the literal primary-axis clustered bar+line profile described by series.
 - `title` (string) — Chart title.
 - `categories` (string[]) required — Category labels.
-- `series` (object[]) required — One or more series with a name, one finite numeric value per literal category, and optional basic fill/color, line/stroke, and marker formatting. Point overrides, per-series labels, smooth, trendlines, error bars, secondary axes, and per-series chart types fail closed.
+- `series` (object[]) required — One or more series with a name, one finite numeric value per literal category, and optional basic fill/color, line/stroke, and marker formatting. For combo, every series must declare chartType bar or line and the collection must contain at least one of each. Point overrides, per-series labels, smooth, trendlines, error bars, secondary axes, and per-series chart types outside combo fail closed.
 - `externalData` (object|FileBlob|ArrayBuffer|Uint8Array|string) — Model-only external/embedded workbook metadata. OpenChestnut 0.2 source-free charts require literal categories and values and reject externalData.
 - `position` (object) — Pixel left/top/width/height frame.
-- `axes` (object) — Basic primary category/value axis titles, number formats, intervals, bounds, and major units. Secondary axes are unsupported.
+- `axes` (object) — Basic primary category/value axis titles, number formats, intervals, bounds, and major units. Combo shares this one primary axis pair; secondary axes are unsupported.
 - `legend` (object) — Legend options.
 - `dataLabels` (boolean|object) — Chart-level showValue/showCategoryName/showSeriesName and a supported bounded position. Per-series overrides are unsupported.
 - `styleId` (number) — Model-only chart style metadata; it is not part of the bounded OpenChestnut chart wire.

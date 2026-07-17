@@ -170,12 +170,19 @@ authoredGroup.tables.add({
   values: [["Gate", "State"], ["Import", "Before"]],
   styleOptions: { headerRow: true, bandedRows: true },
 });
-authoredGroup.charts.add("bar", {
+authoredGroup.charts.add("combo", {
   name: "grouped-chart",
   title: "Grouped readiness",
   position: { left: 450, top: 300, width: 350, height: 200 },
   categories: ["Create", "Edit"],
-  series: [{ name: "Score", values: [7, 9], color: "#7C3AED" }],
+  series: [
+    { name: "Score", chartType: "bar", values: [7, 9], color: "#7C3AED" },
+    {
+      name: "Review", chartType: "line", values: [5, 8],
+      line: { fill: "#0F766E", width: 2 },
+      marker: { symbol: "circle", size: 6, fill: "#0F766E" },
+    },
+  ],
   legend: false,
 });
 const nestedGroup = authoredGroup.groups.add({
@@ -218,8 +225,11 @@ delete itemByName(importedGroup.connectors.items, "grouped-connector").line.endA
 itemByName(importedGroup.images.items, "grouped-image").alt = "Edited grouped image evidence";
 itemByName(importedGroup.tables.items, "grouped-table").cells.set(1, 1, "After");
 const importedGroupedChart = itemByName(importedGroup.charts.items, "grouped-chart");
+assert.equal(importedGroupedChart.chartType, "combo");
+assert.deepEqual(importedGroupedChart.series.map((series) => series.chartType), ["bar", "line"]);
 importedGroupedChart.title = "Edited grouped readiness";
 importedGroupedChart.series[0].values = [8, 10];
+importedGroupedChart.series[1].values = [6, 9];
 const importedNestedGroup = itemByName(importedGroup.groups.items, "nested-group");
 importedNestedGroup.position.top = 320;
 itemByName(importedNestedGroup.shapes.items, "nested-shape").fill = "#FDE68A";
@@ -233,7 +243,9 @@ assert.equal(itemByName(roundTripGroup.shapes.items, "grouped-before").text.valu
 assert.equal(itemByName(roundTripGroup.connectors.items, "grouped-connector").line.endArrow, undefined);
 assert.equal(itemByName(roundTripGroup.images.items, "grouped-image").alt, "Edited grouped image evidence");
 assert.equal(itemByName(roundTripGroup.tables.items, "grouped-table").values[1][1], "After");
+assert.equal(itemByName(roundTripGroup.charts.items, "grouped-chart").chartType, "combo");
 assert.deepEqual(itemByName(roundTripGroup.charts.items, "grouped-chart").series[0].values, [8, 10]);
+assert.deepEqual(itemByName(roundTripGroup.charts.items, "grouped-chart").series[1].values, [6, 9]);
 assert.equal(itemByName(itemByName(roundTripGroup.groups.items, "nested-group").shapes.items, "nested-shape").fill, "#FDE68A");
 
 const removedGroupedChild = roundTripGroup.children.pop();
