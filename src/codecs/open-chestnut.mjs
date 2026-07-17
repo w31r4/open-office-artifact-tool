@@ -13,6 +13,7 @@ import {
   CodecResponseSchema,
   DocumentChangeType,
   DocumentHeaderFooterReference,
+  DocumentNoteKind,
   DocumentSectionBreak,
   DocumentStyleType,
   DocumentTableVerticalMerge,
@@ -2004,6 +2005,71 @@ function documentBookmarkSnapshot(bookmark) {
   };
 }
 
+function documentNoteSnapshot(note) {
+  return {
+    id: note.id,
+    kind: note.kind,
+    targetId: note.targetId,
+    text: note.text,
+    nativeId: note.nativeId,
+  };
+}
+
+function wireDocumentNoteKind(value) {
+  if (value === "footnote") return DocumentNoteKind.FOOTNOTE;
+  if (value === "endnote") return DocumentNoteKind.ENDNOTE;
+  return DocumentNoteKind.UNSPECIFIED;
+}
+
+function publicDocumentNoteKind(value) {
+  if (value === DocumentNoteKind.FOOTNOTE) return "footnote";
+  if (value === DocumentNoteKind.ENDNOTE) return "endnote";
+  throw new OpenChestnutCodecError(`Document note kind ${value} is invalid.`, [], { code: "invalid_document_note" });
+}
+
+function documentNote(note, slot, document) {
+  const kind = String(note.kind || "");
+  const targetId = String(note.targetId || "");
+  const text = String(note.text ?? "");
+  const nativeId = note.nativeId === undefined ? "" : String(note.nativeId);
+  if (slot) {
+    const original = slot.publicSnapshot;
+    if (note.id !== original.id || kind !== original.kind || targetId !== original.targetId || note.nativeId !== original.nativeId) {
+      throw new OpenChestnutCodecError(`Imported document ${kind || "note"} ${note.id} identity, kind, target, and native ID are source-bound.`, [], { code: "unsupported_document_note_edit" });
+    }
+    if (text === original.text) return slot.wire;
+    if (slot.wire.source?.editable !== true) {
+      throw new OpenChestnutCodecError(`Imported document ${kind} ${note.id} body topology is preserved but not editable.`, [], { code: "unsupported_document_note_edit" });
+    }
+    validateDocumentNoteText(note, text);
+    return { ...slot.wire, text };
+  }
+  if (!new Set(["footnote", "endnote"]).has(kind)) {
+    throw new OpenChestnutCodecError(`Document note ${note.id} kind must be footnote or endnote.`, [], { code: "invalid_document_note" });
+  }
+  const target = document.blocks.find((block) => block.id === targetId);
+  if (!target || !new Set(["paragraph", "listItem"]).has(target.kind)) {
+    throw new OpenChestnutCodecError(`Document ${kind} ${note.id} target must be a paragraph or list item.`, [], { code: "invalid_document_note" });
+  }
+  validateDocumentNoteText(note, text);
+  if (nativeId && (!/^\d+$/.test(nativeId) || Number(nativeId) < 1 || Number(nativeId) > 2_147_483_647)) {
+    throw new OpenChestnutCodecError(`Document ${kind} ${note.id} nativeId must be a positive 32-bit integer when present.`, [], { code: "invalid_document_note" });
+  }
+  return {
+    id: String(note.id || ""),
+    kind: wireDocumentNoteKind(kind),
+    targetBlockId: targetId,
+    text,
+    nativeId,
+  };
+}
+
+function validateDocumentNoteText(note, text) {
+  if (!text.length || text.length > 1_000_000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) {
+    throw new OpenChestnutCodecError(`Document ${note.kind || "note"} ${note.id} text must contain 1 through 1,000,000 XML-safe characters.`, [], { code: "invalid_document_note" });
+  }
+}
+
 function documentBookmark(bookmark, slot, document) {
   if (slot) {
     if (JSON.stringify(documentBookmarkSnapshot(bookmark)) !== JSON.stringify(slot.publicSnapshot)) {
@@ -2436,6 +2502,9 @@ function documentEnvelope(document) {
   if (state && state.bookmarks.length !== document.bookmarks.length) {
     throw new OpenChestnutCodecError(`Source-preserving DOCX export requires the original ${state.bookmarks.length}-bookmark topology; the document contains ${document.bookmarks.length} bookmarks.`, [], { code: "document_bookmark_topology_changed" });
   }
+  if (state && state.notes.length !== document.notes.length) {
+    throw new OpenChestnutCodecError(`Source-preserving DOCX export requires the original ${state.notes.length}-note topology; the document contains ${document.notes.length} notes.`, [], { code: "document_note_topology_changed" });
+  }
   if (state && (state.headers.length !== document.headers.length || state.footers.length !== document.footers.length)) {
     throw new OpenChestnutCodecError("Source-preserving DOCX export requires the original header/footer topology.", [], { code: "document_header_footer_topology_changed" });
   }
@@ -2463,6 +2532,7 @@ function documentEnvelope(document) {
         blocks,
         comments: document.comments.map((comment, index) => documentComment(comment, state?.comments[index])),
         bookmarks: document.bookmarks.map((bookmark, index) => documentBookmark(bookmark, state?.bookmarks[index], document)),
+        notes: document.notes.map((note, index) => documentNote(note, state?.notes[index], document)),
         styles: document.styles.values().map(wireDocumentStyle),
         defaultRunStyle: documentRunFormatting(defaultRunSource, "Document default run style"),
         headers: document.headers.map(wireHeaderFooter),
@@ -2650,6 +2720,13 @@ function documentFromEnvelope(envelope) {
     endTargetId: bookmark.endTargetBlockId,
     nativeId: bookmark.nativeId === "" ? undefined : Number(bookmark.nativeId),
   }));
+  const notes = (source.notes || []).map((note) => ({
+    id: note.id,
+    kind: publicDocumentNoteKind(note.kind),
+    targetId: note.targetBlockId,
+    text: note.text,
+    nativeId: note.nativeId === "" ? undefined : Number(note.nativeId),
+  }));
   const document = DocumentModel.create({
     name: source.name || "Imported document",
     styles,
@@ -2657,6 +2734,7 @@ function documentFromEnvelope(envelope) {
     blocks,
     comments,
     bookmarks,
+    notes,
     headers: (source.headers || []).map(publicHeaderFooter),
     footers: (source.footers || []).map(publicHeaderFooter),
     settings: { evenAndOddHeaders: Boolean(source.evenAndOddHeaders) },
@@ -2671,6 +2749,10 @@ function documentFromEnvelope(envelope) {
     wire,
     publicSnapshot: documentBookmarkSnapshot(document.bookmarks[index]),
   }));
+  const noteSlots = (source.notes || []).map((wire, index) => ({
+    wire,
+    publicSnapshot: documentNoteSnapshot(document.notes[index]),
+  }));
   const readOnlyBlockSlots = source.blocks.flatMap((wire, index) => {
     if (wire.content.case !== "opaque" && wire.source?.editable !== false) return [];
     const block = document.blocks[index];
@@ -2678,7 +2760,7 @@ function documentFromEnvelope(envelope) {
   });
   Object.defineProperty(document, DOCUMENT_STATE, {
     configurable: true,
-    value: { source: envelope.source, opaqueOpc: envelope.opaqueOpc, diagnostics: envelope.diagnostics, assets: envelope.assets || [], blocks: source.blocks, readOnlyBlockSlots, comments: commentSlots, bookmarks: bookmarkSlots, headers: source.headers || [], footers: source.footers || [] },
+    value: { source: envelope.source, opaqueOpc: envelope.opaqueOpc, diagnostics: envelope.diagnostics, assets: envelope.assets || [], blocks: source.blocks, readOnlyBlockSlots, comments: commentSlots, bookmarks: bookmarkSlots, notes: noteSlots, headers: source.headers || [], footers: source.footers || [] },
     writable: true,
   });
   return document;

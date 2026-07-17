@@ -1734,6 +1734,10 @@ message DocumentArtifact {
   // paragraph-like block; recognized imports retain package-local identity in
   // the source binding and remain fixed-topology/read-only in protocol 2.
   repeated DocumentBookmark bookmarks = 11;
+  // Bounded plain-text footnotes/endnotes. Source-free authoring appends one
+  // reference to one paragraph/list block; recognized imports retain their
+  // package-local part, relationship, note ID, and anchor integrity evidence.
+  repeated DocumentNote notes = 12;
 }
 
 message DocumentBookmark {
@@ -1750,6 +1754,33 @@ message DocumentBookmarkSourceBinding {
   string native_id = 2;
   string semantic_sha256 = 3;
   bool editable = 4;
+}
+
+enum DocumentNoteKind {
+  DOCUMENT_NOTE_KIND_UNSPECIFIED = 0;
+  DOCUMENT_NOTE_KIND_FOOTNOTE = 1;
+  DOCUMENT_NOTE_KIND_ENDNOTE = 2;
+}
+
+message DocumentNote {
+  string id = 1;
+  DocumentNoteKind kind = 2;
+  string target_block_id = 3;
+  string text = 4;
+  string native_id = 5;
+  DocumentNoteSourceBinding source = 6;
+}
+
+message DocumentNoteSourceBinding {
+  uint32 target_body_index = 1;
+  string native_id = 2;
+  string relationship_id = 3;
+  string part_path = 4;
+  string note_element_sha256 = 5;
+  string semantic_sha256 = 6;
+  string residual_sha256 = 7;
+  string anchor_sha256 = 8;
+  bool editable = 9;
 }
 
 enum DocumentStyleType {

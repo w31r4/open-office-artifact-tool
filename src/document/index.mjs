@@ -283,6 +283,22 @@ class DocumentBookmark {
   toProto() { return { kind: "bookmark", id: this.id, name: this.name, targetId: this.targetId, endTargetId: this.endTargetId, target: this.target, endTarget: this.endTarget, nativeId: this.nativeId }; }
 }
 
+class DocumentNote {
+  constructor(document, kind, target, text, config = {}) {
+    this.document = document;
+    const rawKind = String(kind ?? config.kind ?? config.noteKind ?? config.type ?? "footnote").toLowerCase();
+    this.kind = rawKind === "endnote" || rawKind === "end" ? "endnote" : "footnote";
+    this.id = config.id || aid(this.kind === "endnote" ? "den" : "dfn");
+    this.name = config.name || "";
+    this.targetId = String(typeof target === "string" ? target : target?.id || config.targetId || "");
+    this.text = String(text ?? config.text ?? "");
+    this.nativeId = config.nativeId === undefined ? undefined : Number(config.nativeId);
+  }
+
+  inspectRecord(index) { return { kind: this.kind, id: this.id, index, name: this.name || undefined, targetId: this.targetId, nativeId: this.nativeId, text: this.text, textChars: this.text.length }; }
+  toProto() { return { kind: this.kind, id: this.id, name: this.name, targetId: this.targetId, nativeId: this.nativeId, text: this.text }; }
+}
+
 class DocumentFieldBlock {
   constructor(document, instruction, display, config = {}) {
     this.document = document;
@@ -512,7 +528,7 @@ function documentLayoutRecords(document, options = {}) {
 }
 
 function documentTextParent(document, parentId) {
-  return [...document.blocks, ...document.headers, ...document.footers, ...document.comments].find((item) => item.id === parentId);
+  return [...document.blocks, ...document.headers, ...document.footers, ...document.comments, ...document.notes].find((item) => item.id === parentId);
 }
 
 function documentTextRange(document, id) {
@@ -539,7 +555,7 @@ function documentInspectRecord(document, block, index) {
 }
 
 function documentTextRangeRecords(document) {
-  const parents = [...document.blocks, ...document.headers, ...document.footers, ...document.comments].filter((item) => item && ("text" in item || "display" in item));
+  const parents = [...document.blocks, ...document.headers, ...document.footers, ...document.comments, ...document.notes].filter((item) => item && ("text" in item || "display" in item));
   return parents.map((parent, index) => textRangeRecord(parent, {
     parentKind: parent.kind,
     getText: () => parent.text ?? parent.display ?? "",
@@ -577,6 +593,7 @@ export class DocumentModel {
     this.styles = new DocumentStyleCollection(options.styles || {});
     this.blocks = [];
     this.bookmarks = [];
+    this.notes = [];
     this.comments = [];
     this.bibliography = {
       selectedStyle: String(options.bibliography?.selectedStyle || ""),
@@ -607,6 +624,7 @@ export class DocumentModel {
     for (const footer of options.footers || []) this.addFooter(footer.text, { ...footer, _restore: true });
     if (!preservesEvenOddActivation && [...this.headers, ...this.footers].some((block) => block.referenceType === "even" && block.variantActive !== false)) this.settings = normalizeDocxSettings({ ...this.settings, evenAndOddHeaders: true });
     for (const bookmark of options.bookmarks || []) this.addBookmark(bookmark.targetId, bookmark.name, bookmark);
+    for (const note of options.notes || []) this.addNote(note.kind || note.noteKind, note.targetId, note.text, note);
     for (const comment of options.comments || []) this.addComment(comment.targetId, comment.text, comment);
   }
 
@@ -695,6 +713,9 @@ export class DocumentModel {
     this.bookmarks.push(bookmark);
     return bookmark;
   }
+  addNote(kind, target, text, config = {}) { const note = new DocumentNote(this, kind, target, text, config); this.notes.push(note); return note; }
+  addFootnote(target, text, config = {}) { return this.addNote("footnote", target, text, config); }
+  addEndnote(target, text, config = {}) { return this.addNote("endnote", target, text, config); }
   addComment(target, text, config = {}) { const targetId = typeof target === "string" ? target : target?.id; const comment = new DocumentComment(this, targetId, text, config); this.comments.push(comment); return comment; }
   replyToComment(parent, text, config = {}) { const comment = typeof parent === "string" ? this.comments.find((item) => item.id === parent) : parent; if (!comment || !this.comments.includes(comment)) throw new Error(`Unknown parent document comment: ${typeof parent === "string" ? parent : parent?.id}`); return this.addComment(comment.targetId, text, { ...config, parentId: comment.id }); }
   setSettings(settings = {}) { this.settings = normalizeDocxSettings({ ...this.settings, ...settings }); return this; }
@@ -710,15 +731,15 @@ export class DocumentModel {
       if (table && row < table.rows && column < table.columns) return table.getCell(row, column);
       return undefined;
     }
-    return token === `${this.id}/settings` ? this.settings : token === `${this.id}/theme` ? this.theme : this.id === token ? this : this.blocks.find((block) => block.id === token) || this.headers.find((block) => block.id === token) || this.footers.find((block) => block.id === token) || this.bookmarks.find((bookmark) => bookmark.id === token || bookmark.name === token) || this.comments.find((comment) => comment.id === token) || this.bibliographySources.find((source) => source.id === token || source.tag === token) || this.styles.get(token);
+    return token === `${this.id}/settings` ? this.settings : token === `${this.id}/theme` ? this.theme : this.id === token ? this : this.blocks.find((block) => block.id === token) || this.headers.find((block) => block.id === token) || this.footers.find((block) => block.id === token) || this.bookmarks.find((bookmark) => bookmark.id === token || bookmark.name === token) || this.notes.find((note) => note.id === token) || this.comments.find((comment) => comment.id === token) || this.bibliographySources.find((source) => source.id === token || source.tag === token) || this.styles.get(token);
   }
 
-  toProto() { return { id: this.id, name: this.name, designPreset: this.designPreset, theme: this.theme, defaultRunStyle: this.defaultRunStyle, settings: this.settings, bibliography: this.bibliography, bibliographySources: this.bibliographySources.map((source) => source.toProto()), sectionSettings: this.sectionSettings, styles: Object.fromEntries(this.styles.values().map((style) => [style.id, style])), blocks: this.blocks.map((block) => block.toProto()), headers: this.headers.map((block) => block.toProto()), footers: this.footers.map((block) => block.toProto()), bookmarks: this.bookmarks.map((bookmark) => bookmark.toProto()), comments: this.comments.map((comment) => comment.toProto()) }; }
+  toProto() { return { id: this.id, name: this.name, designPreset: this.designPreset, theme: this.theme, defaultRunStyle: this.defaultRunStyle, settings: this.settings, bibliography: this.bibliography, bibliographySources: this.bibliographySources.map((source) => source.toProto()), sectionSettings: this.sectionSettings, styles: Object.fromEntries(this.styles.values().map((style) => [style.id, style])), blocks: this.blocks.map((block) => block.toProto()), headers: this.headers.map((block) => block.toProto()), footers: this.footers.map((block) => block.toProto()), bookmarks: this.bookmarks.map((bookmark) => bookmark.toProto()), notes: this.notes.map((note) => note.toProto()), comments: this.comments.map((comment) => comment.toProto()) }; }
 
   inspect(options = {}) {
-    const kinds = normalizeKinds(options.kind, ["paragraph", "table", "listItem", "hyperlink", "field", "citation", "bibliographySource", "image", "section", "change", "bookmark", "comment", "header", "footer"]);
+    const kinds = normalizeKinds(options.kind, ["paragraph", "table", "listItem", "hyperlink", "field", "citation", "bibliographySource", "image", "section", "change", "bookmark", "footnote", "endnote", "comment", "header", "footer"]);
     const records = [];
-    if (kinds.has("document")) records.push({ kind: "document", id: this.id, name: this.name, blocks: this.blocks.length, sections: this.blocks.filter((block) => block.kind === "section").length + 1, bookmarks: this.bookmarks.length, bibliographySources: this.bibliographySources.length, designPreset: this.designPreset, defaultRunStyle: this.defaultRunStyle, settings: this.settings, sectionSettings: this.sectionSettings });
+    if (kinds.has("document")) records.push({ kind: "document", id: this.id, name: this.name, blocks: this.blocks.length, sections: this.blocks.filter((block) => block.kind === "section").length + 1, bookmarks: this.bookmarks.length, notes: this.notes.length, footnotes: this.notes.filter((note) => note.kind === "footnote").length, endnotes: this.notes.filter((note) => note.kind === "endnote").length, bibliographySources: this.bibliographySources.length, designPreset: this.designPreset, defaultRunStyle: this.defaultRunStyle, settings: this.settings, sectionSettings: this.sectionSettings });
     if (kinds.has("theme")) records.push({ kind: "theme", id: `${this.id}/theme`, ...this.theme });
     if (kinds.has("settings")) records.push({ kind: "settings", id: `${this.id}/settings`, ...this.settings });
     if (kinds.has("layout")) records.push(...documentLayoutRecords(this, options));
@@ -727,6 +748,7 @@ export class DocumentModel {
     if (kinds.has("header")) records.push(...this.headers.map((block, index) => documentInspectRecord(this, block, index)));
     if (kinds.has("footer")) records.push(...this.footers.map((block, index) => documentInspectRecord(this, block, index)));
     if (kinds.has("bookmark")) records.push(...this.bookmarks.map((bookmark) => bookmark.inspectRecord()));
+    if (kinds.has("note") || kinds.has("footnote") || kinds.has("endnote")) records.push(...this.notes.filter((note) => kinds.has("note") || kinds.has(note.kind)).map((note, index) => note.inspectRecord(index)));
     if (kinds.has("bibliographySource")) records.push(...this.bibliographySources.map((source, index) => source.inspectRecord(index)));
     if (kinds.has("comment")) records.push(...this.comments.map((comment) => comment.inspectRecord()));
     if (kinds.has("textRange")) records.push(...documentTextRangeRecords(this));
@@ -836,6 +858,22 @@ export class DocumentModel {
       }
     }
     const blockIds = new Set(this.blocks.map((block) => block.id));
+    const noteTargets = new Set();
+    const noteNativeIds = new Set();
+    for (const note of this.notes) {
+      const target = this.blocks.find((block) => block.id === note.targetId);
+      if (!target) issues.push(verificationIssue("document", "danglingNote", `${note.kind} ${note.id} points at missing block ${note.targetId}.`, { id: note.id, kind: note.kind, targetId: note.targetId }));
+      else if (!new Set(["paragraph", "listItem"]).has(target.kind)) issues.push(verificationIssue("document", "unsupportedNoteTarget", `${note.kind} ${note.id} must target a paragraph or list item.`, { id: note.id, kind: note.kind, targetId: note.targetId, targetKind: target.kind }));
+      if (noteTargets.has(note.targetId)) issues.push(verificationIssue("document", "duplicateNoteTarget", `${note.kind} ${note.id} shares target ${note.targetId}; the bounded profile permits one note per block.`, { id: note.id, kind: note.kind, targetId: note.targetId }));
+      noteTargets.add(note.targetId);
+      if (!String(note.text || "").length || String(note.text).length > 1_000_000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(String(note.text))) issues.push(verificationIssue("document", "invalidNoteText", `${note.kind} ${note.id} text must contain 1 through 1,000,000 XML-safe characters.`, { id: note.id, kind: note.kind, textChars: String(note.text || "").length }));
+      if (note.nativeId !== undefined) {
+        const key = `${note.kind}:${note.nativeId}`;
+        if (!Number.isInteger(note.nativeId) || note.nativeId < 1 || note.nativeId > 2_147_483_647) issues.push(verificationIssue("document", "invalidNoteNativeId", `${note.kind} ${note.id} native ID must be a positive 32-bit integer.`, { id: note.id, kind: note.kind, nativeId: note.nativeId }));
+        else if (noteNativeIds.has(key)) issues.push(verificationIssue("document", "duplicateNoteNativeId", `${note.kind} ${note.id} duplicates native ID ${note.nativeId}.`, { id: note.id, kind: note.kind, nativeId: note.nativeId }));
+        noteNativeIds.add(key);
+      }
+    }
     const blockIndexes = new Map(this.blocks.map((block, index) => [block.id, index]));
     const bookmarkNativeIds = new Set();
     for (const bookmark of this.bookmarks) {
