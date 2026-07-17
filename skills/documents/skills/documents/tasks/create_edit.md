@@ -10,7 +10,7 @@ Use the public `open-office-artifact-tool` package for:
 - paragraphs, formatted runs, and named styles;
 - real numbered or character-bulleted lists;
 - fixed-geometry tables;
-- sections, headers, footers, hyperlinks, bounded whole-block bookmarks, and simple fields;
+- sections, headers, footers, hyperlinks, bounded whole-block bookmarks, plain-text footnotes/endnotes, and simple fields;
 - PNG/JPEG inline images and classic comments;
 - DOCX import, export, inspect, resolve, verification, and model preview.
 

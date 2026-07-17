@@ -39,7 +39,7 @@ for (const name of ["Workbook", "Worksheet", "Range", "SpreadsheetFile"]) {
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 281);
+assert.equal(HELP_CATALOG.length, 284);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -75,6 +75,9 @@ assert.match(HELP_CATALOG.find((item) => item.name === "sheet.images.add")?.sche
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.images.add")?.schema?.parameters?.fit?.description || "", /contain.*cover.*stretch.*srcRect.*no fit keyword/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.images.add")?.schema?.parameters?.crop?.description || "", /-1\.\.1.*Positive.*negative.*Manual crop/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.master")?.schema?.parameters?.placeholders?.description || "", /rejects source-free Master authoring.*imported placeholders/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "presentation.view")?.summary || "", /local editor gridline\/guide visibility.*grid spacing.*read-only slide guides.*source\/hash-bound/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "presentation.view")?.schema?.returns?.view?.description || "", /show\/hide\/toggle.*gridSpacingCxEmu.*hidden guide visibility.*slideGuides/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "presentation.master")?.schema?.parameters?.slideGuides?.description || "", /Read-only imported PowerPoint guide definitions/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "SpreadsheetFile.patchXlsx"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.masters.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.masters.getItem"));
@@ -122,6 +125,8 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "document.layoutJson"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.resolve"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "DocumentFile.importDocx"));
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addBookmark")?.summary || "", /native Word bookmark.*fixed-topology\/read-only/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "document.addFootnote")?.summary || "", /native plain-text footnote.*text edits only/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "document.addEndnote")?.summary || "", /native plain-text endnote.*text edits only/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addBookmark")?.schema?.parameters?.name?.description || "", /ASCII letter.*40 characters/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addBibliographySource")?.summary || "", /does not author bibliography parts.*read-only/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addChange")?.summary || "", /native w:ins\/w:del.*fixed-topology/i);
@@ -261,7 +266,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.renderPdf")?.sch
 assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schema?.parameters?.operations?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.summary || "", /MuPDF/);
 const documentCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "document");
-assert.equal(documentCatalog.length, 34);
+assert.equal(documentCatalog.length, 36);
 assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.schema?.parameters?.pictureBullet?.type, "string|object");
@@ -270,7 +275,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.
 assert.match(HELP_CATALOG.find((item) => item.name === "DocumentModel.create")?.schema?.parameters?.styles?.description || "", /numberingId\/numberingLevel/);
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.schema?.returns?.document?.type, "DocumentModel");
 const presentationCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "presentation");
-assert.equal(presentationCatalog.length, 47);
+assert.equal(presentationCatalog.length, 48);
 assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.importPptx")?.schema?.returns?.presentation?.type, "Presentation");
@@ -399,6 +404,8 @@ assert.match(HELP_CATALOG.find((item) => item.name === "presentation.theme")?.su
 assert.match(presentation.help("presentation.layouts.add").ndjson, /slide layout/);
 assert.match(document.help("document.addField").ndjson, /fldSimple/);
 assert.match(document.help("document.addBookmark").ndjson, /native Word bookmark/);
+assert.match(document.help("document.addFootnote").ndjson, /native bounded footnote/i);
+assert.match(document.help("document.addEndnote").ndjson, /native bounded endnote/i);
 assert.match(document.help("document.addBibliographySource").ndjson, /bibliography source/);
 assert.match(document.help("document.applyDesignPreset").ndjson, /design preset/);
 assert.match(document.help("document.layoutJson").ndjson, /layout JSON/);

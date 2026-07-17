@@ -17,7 +17,7 @@ Use this plugin for spreadsheet-oriented terms from the file-type naming model: 
 
 The local `Spreadsheets` Skill runs against the public npm package. `excel-live-control` is also included so the host can route live Excel requests correctly, but execution requires the host-provided connected-document app and an active Excel add-in session; those services are not implemented by the npm codec.
 
-The core reference-style workbook example is tested end to end. Full parity with every API named in `API_QUICK_START.md` is still in progress and is tracked in `docs/reference-skills.md` in the source repository.
+The core reference-style workbook example is tested end to end. Full parity with every API named in `artifact_tool_docs/API_QUICK_START.md` is still in progress and is tracked in `docs/reference-skills.md` in the source repository.
 
 ## Source
 

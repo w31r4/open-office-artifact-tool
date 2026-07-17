@@ -30,7 +30,7 @@ assert.equal(result.status, 0, `npm pack manifest failed\nSTDOUT:\n${result.stdo
 const report = JSON.parse(result.stdout)[0];
 const files = report.files.map((item) => item.path);
 const maxPackedBytes = 9_500_000;
-const maxUnpackedBytes = 22_900_000;
+const maxUnpackedBytes = 23_100_000;
 
 for (const required of [
   "LICENSE",
@@ -128,7 +128,8 @@ for (const required of [
   "skills/spreadsheets/README.md",
   "skills/spreadsheets/skills/spreadsheets/SKILL.md",
   "skills/spreadsheets/skills/spreadsheets/agents/openai.yaml",
-  "skills/spreadsheets/skills/spreadsheets/API_QUICK_START.md",
+  "skills/spreadsheets/skills/spreadsheets/artifact_tool_docs/API_QUICK_START.md",
+  "skills/spreadsheets/skills/spreadsheets/features/charts.md",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-range-workflow.mjs",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-sparkline-workflow.mjs",
   "skills/spreadsheets/skills/excel-live-control/SKILL.md",

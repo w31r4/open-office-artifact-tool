@@ -177,6 +177,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "fx.PMT", category: "financial", summary: "Calculate a loan payment for constant payments and constant interest rate.", examples: ["=PMT(rate,nper,pv)"], notes: ["Catalog entry only in MVP; full financial formula evaluation is roadmap."] },
 
   { artifactKind: "presentation", kind: "api", name: "Presentation.create", summary: "Create a deck model whose canonical OpenChestnut export supports ordinary slides, direct solid/style-reference slide backgrounds, shapes, rich text, tables, images, connectors, recursive native p:grpSp groups, plain-text speaker notes, and source-free bar/line/pie charts. Custom themes, Master/Layout authoring, comments, custom shows, and other package-level features remain outside the source-free PPTX boundary." },
+  { artifactKind: "presentation", kind: "api", name: "presentation.view", summary: "Control local editor gridline/guide visibility and inspect imported PowerPoint grid spacing, snap settings, and read-only slide guides. Visibility is local model state; imported viewProps.xml metadata remains source/hash-bound and unchanged by canonical export." },
   { artifactKind: "presentation", kind: "api", name: "presentation.slides.add", summary: "Append an editable core slide with an optional direct solid/style-reference background and plain-text speaker notes. OpenChestnut authors only the direct slide background; effective Layout/Master inheritance is never flattened." },
   { artifactKind: "presentation", kind: "api", name: "slide.setBackground", summary: "Set a direct slide background to a six-digit RGB/theme color solid fill or a native style reference. Recognized imported direct backgrounds are hash-bound and editable; inherited Layout/Master backgrounds remain inherited." },
   { artifactKind: "presentation", kind: "api", name: "slide.clearBackground", summary: "Remove the direct slide background so preview and PPTX output inherit from the preserved Layout/Master chain. Unsupported imported background graphs fail closed rather than being flattened or discarded." },
@@ -1121,6 +1122,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     layouts: { type: "object[]", description: "Model-level slide layouts. OpenChestnut 0.2 preserves imported layouts unchanged but does not author or edit them." },
     commentFormat: { type: "string", description: "Model comment format. OpenChestnut 0.2 does not author legacy or modern PPTX comments." },
   }, "presentation", "Presentation", "Editable presentation facade."),
+  "presentation.view": helpSchema({}, "view", "PresentationView", "Local gridlinesVisible/guidesVisible state with show/hide/toggle methods, optional imported gridSpacingCxEmu/gridSpacingCyEmu, and serialized hidden guide visibility. Imported slide-guide definitions are exposed read-only through master/layout slideGuides and remain source-bound in PPTX output."),
   "presentation.slides.add": helpSchema({
     name: { type: "string", description: "Inspectable slide name." },
     layout: { type: "string|object", description: "Model-only Layout binding; source-free canonical PPTX export rejects it." },
@@ -1270,6 +1272,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     theme: { type: "object", description: "Optional partial theme override inherited from presentation.theme and exported through the master's own Theme relationship." },
     placeholders: { type: "object[]", description: "Model-level placeholder definitions. OpenChestnut 0.2 rejects source-free Master authoring and any mutation of imported placeholders." },
     textParagraphStyles: { type: "object", description: "title/body/other level maps (0-8) using the structured paragraph style fields, including embedded or external bulletImage values." },
+    slideGuides: { type: "object[]", description: "Read-only imported PowerPoint guide definitions with horizontal/vertical orientation and raw native position. Source-free authoring and imported mutation are unsupported." },
   }, "master", "PresentationSlideMaster", "Model-level first Slide Master; imported masters are source-bound and read-only, and source-free customization is rejected."),
   "presentation.masters.add": helpSchema({
     id: { type: "string", required: true, description: "Stable unique master identity used by layouts." },
@@ -1295,6 +1298,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     masterId: { type: "string", description: "Master identity." },
     background: { type: "string|object", description: "Optional layout background overriding the linked master background." },
     placeholders: { type: "object[]", description: "Model-level placeholder definitions; canonical PPTX export does not author or edit Layout graphs." },
+    slideGuides: { type: "object[]", description: "Imported layouts expose the presentation's read-only native guide definitions. Canonical export preserves them through the source-bound view-properties part." },
   }, "layout", "SlideLayoutTemplate", "Appended model-level layout for inspect/preview; canonical PPTX export rejects it."),
   "presentation.layout.setBackground": helpSchema({
     background: { type: "string|object", required: true, description: "Direct solid RGB/scheme background or native style reference with index." },

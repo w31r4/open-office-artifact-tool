@@ -12,8 +12,10 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.addCitation` | api | Add a model-level structured citation. OpenChestnut 0.2 does not author bibliography-backed CITATION graphs; imported citation content remains source-bound and read-only. |
 | `document.addComment` | api | Attach a classic whole-paragraph Word comment with author, initials, date, and text. Replies, resolution metadata, durable IDs, UTC/person data, and other modern comment extensions fail closed. |
 | `document.addDeletion` | api | Append one bounded whole-paragraph tracked deletion using native w:del/w:delText markup. In-paragraph replacements, mixed normal/revision runs, moves, and property changes require an explicit advanced package workflow. |
+| `document.addEndnote` | api | Append one native plain-text endnote at the end of one paragraph or list item. Recognized imported canonical endnotes permit body-text edits only; anchor, kind, native ID, and note topology remain source-bound. |
 | `document.addField` | api | Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC; native import restores simple and complex field codes. |
 | `document.addFooter` | api | Add a default, first-page, or even-page DOCX footer, optionally section-scoped; first/even activation is independent from the preserved relationship reference. |
+| `document.addFootnote` | api | Append one native plain-text footnote at the end of one paragraph or list item. Recognized imported canonical footnotes permit body-text edits only; anchor, kind, native ID, and note topology remain source-bound. |
 | `document.addHeader` | api | Add a default, first-page, or even-page DOCX header, optionally section-scoped; first/even activation is independent from the preserved relationship reference. |
 | `document.addHyperlink` | api | Append a native w:hyperlink backed by an external relationship or internal bookmark anchor; native import restores URL/anchor, relationship identity, tooltip, and history state. |
 | `document.addImage` | api | Append an inspectable image block; dataUrl images export as native DOCX media parts with DrawingML inline pictures. |
@@ -23,23 +25,23 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.addSection` | api | Append a DOCX section break with page size, orientation, margin, and break-type metadata backed by w:sectPr. |
 | `document.addTable` | api | Append a Word-style table with physical cell values, optional logical merge geometry, and fixed-layout width/margin/border/header formatting. |
 | `document.applyDesignPreset` | api | Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews. |
-| `document.inspect` | api | Emit bounded NDJSON for document blocks including tracked changes, bookmark ranges, bibliography sources, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude. |
+| `document.inspect` | api | Emit bounded NDJSON for document blocks including tracked changes, bookmark ranges, footnotes/endnotes, bibliography sources, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude. |
 | `document.layoutJson` | api | Return page-aware layout JSON with block bounding boxes, section/page ordinals, effective inherited header/footer selections, styles, and target/search slicing. |
 | `document.render` | api | Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs. |
 | `document.replyToComment` | api | Create a model-level comment reply for inspect and preview. OpenChestnut 0.2 does not author modern/extended reply graphs, and imported replies are preservation-only. |
-| `document.resolve` | api | Resolve stable document, block, bookmark, bibliography source ID/tag, header/footer, comment, style, and editable text-range IDs. |
+| `document.resolve` | api | Resolve stable document, block, bookmark, footnote/endnote, bibliography source ID/tag, header/footer, comment, style, and editable text-range IDs. |
 | `document.setSectionSettings` | api | Set per-section Word behavior such as different-first-page header/footer activation without changing preserved header/footer references. |
 | `document.setSettings` | api | Set model settings. Only evenAndOddHeaders is inside the OpenChestnut 0.2 DOCX boundary; trackRevisions, updateFields, mirrorMargins, and documentProtection are not authorable or editable through the facade. |
 | `document.styles.effective` | api | Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata. |
 | `document.textRange` | api | Inspect or resolve stable textRange anchors such as blockId/text for editable document block, header/footer, and comment text. |
-| `document.verify` | api | Return QA issues for fake lists, invalid links/citations/bibliography sources, malformed tracked changes, duplicate/dangling/reversed bookmark ranges, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells. |
+| `document.verify` | api | Return QA issues for fake lists, invalid links/citations/bibliography sources, malformed tracked changes, duplicate/dangling/reversed bookmark ranges, invalid or duplicate footnotes/endnotes, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells. |
 | `DocumentFile.exportDocx` | api | Export DocumentModel to DOCX through the single bundled OpenChestnut codec. Only limits is accepted; legacy codec and lossy-fallback options fail explicitly. |
-| `DocumentFile.importDocx` | api | Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Recognized whole-paragraph tracked revisions and whole-block bookmarks are semantic; imported bookmarks remain fixed-topology/read-only, while complex revisions/bookmark graphs, bibliography, modern comments, settings, and unsupported content remain source-bound and read-only. |
+| `DocumentFile.importDocx` | api | Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Recognized whole-paragraph tracked revisions, whole-block bookmarks, and canonical plain-text footnotes/endnotes are semantic; note bodies are fixed-topology editable while anchors remain read-only, and complex graphs stay source-bound. |
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
-| `DocumentModel.create` | api | Create a document with paragraph/character styles, formatted paragraphs/runs, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, bounded whole-block bookmarks, simple fields, bounded whole-paragraph tracked insertions/deletions, classic comments, and PNG/JPEG images. Arbitrary source-free table-style graphs, bibliography, complex bookmark/revision graphs, modern comment graphs, and advanced settings remain unsupported or import-preserved read-only. |
-| `exportDocxWithOpenChestnut` | api | Export bounded DocumentModel paragraphs/runs/tables, whole-block bookmarks and internal links, whole-paragraph tracked insertions/deletions, classic comments, validated source-free gridSpan/vMerge tables, and direct text-marker numbering graphs; recognized imports permit fixed-topology tracked-change, comment, hyperlink, simple-field, table-formatting/text, and coherent numbering-definition edits through bundled OpenChestnut. |
-| `importDocxWithOpenChestnut` | api | Import DOCX bytes through OpenChestnut with source-bound block, exact-profile classic-comment, whole-paragraph tracked-change, and canonical whole-block bookmark bindings; imported bookmarks and extended comment or complex revision/bookmark graphs remain source-bound, preserved unchanged, and fail closed on semantic edits. |
+| `DocumentModel.create` | api | Create a document with paragraph/character styles, formatted paragraphs/runs, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, bounded whole-block bookmarks, plain-text footnotes/endnotes, simple fields, bounded whole-paragraph tracked insertions/deletions, classic comments, and PNG/JPEG images. Arbitrary source-free table-style graphs, bibliography, complex bookmark/note/revision graphs, modern comment graphs, and advanced settings remain unsupported or import-preserved read-only. |
+| `exportDocxWithOpenChestnut` | api | Export bounded DocumentModel paragraphs/runs/tables, whole-block bookmarks and internal links, plain-text footnotes/endnotes, whole-paragraph tracked insertions/deletions, classic comments, validated source-free gridSpan/vMerge tables, and direct text-marker numbering graphs; recognized imports permit fixed-topology note-body, tracked-change, comment, hyperlink, simple-field, table-formatting/text, and coherent numbering-definition edits through bundled OpenChestnut. |
+| `importDocxWithOpenChestnut` | api | Import DOCX bytes through OpenChestnut with source-bound block, exact-profile classic-comment, whole-paragraph tracked-change, canonical whole-block bookmark, and canonical plain-text footnote/endnote bindings; imported note text may be edited without moving its source-bound anchor, while complex graphs remain opaque-preserved. |
 
 ### document details
 
@@ -146,6 +148,21 @@ Append one bounded whole-paragraph tracked deletion using native w:del/w:delText
 
 - `change` (DocumentChangeBlock) — Appended bounded whole-paragraph tracked deletion.
 
+#### `document.addEndnote`
+
+Append one native plain-text endnote at the end of one paragraph or list item. Recognized imported canonical endnotes permit body-text edits only; anchor, kind, native ID, and note topology remain source-bound.
+
+**Schema parameters:**
+
+- `target` (string|DocumentParagraphBlock|DocumentListItemBlock) required — Paragraph or list-item ID/facade whose final run receives the native endnote reference.
+- `text` (string) required — Plain-text endnote body, 1 through 1,000,000 XML-safe characters.
+- `name` (string) — Optional inspectable note name.
+- `nativeId` (number) — Optional positive 32-bit native endnote ID for source-free authoring; imported identity is source-bound.
+
+**Schema returns:**
+
+- `endnote` (DocumentNote) — Native bounded endnote. Canonical imports allow text-only edits with fixed topology.
+
 #### `document.addField`
 
 Append a Word field block exported as w:fldSimple with instruction text such as PAGE, REF, PAGEREF, or TOC; native import restores simple and complex field codes.
@@ -176,6 +193,21 @@ Add a default, first-page, or even-page DOCX footer, optionally section-scoped; 
 **Schema returns:**
 
 - `footer` (DocumentHeaderFooterBlock) — Appended footer block.
+
+#### `document.addFootnote`
+
+Append one native plain-text footnote at the end of one paragraph or list item. Recognized imported canonical footnotes permit body-text edits only; anchor, kind, native ID, and note topology remain source-bound.
+
+**Schema parameters:**
+
+- `target` (string|DocumentParagraphBlock|DocumentListItemBlock) required — Paragraph or list-item ID/facade whose final run receives the native footnote reference.
+- `text` (string) required — Plain-text footnote body, 1 through 1,000,000 XML-safe characters.
+- `name` (string) — Optional inspectable note name.
+- `nativeId` (number) — Optional positive 32-bit native footnote ID for source-free authoring; imported identity is source-bound.
+
+**Schema returns:**
+
+- `footnote` (DocumentNote) — Native bounded footnote. Canonical imports allow text-only edits with fixed topology.
 
 #### `document.addHeader`
 
@@ -334,7 +366,7 @@ Apply a clean-room report or memo design preset that updates named styles for co
 
 #### `document.inspect`
 
-Emit bounded NDJSON for document blocks including tracked changes, bookmark ranges, bibliography sources, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude.
+Emit bounded NDJSON for document blocks including tracked changes, bookmark ranges, footnotes/endnotes, bibliography sources, comments, styles, headers/footers, and layout; narrow with search/target anchors and shape fields with include/exclude.
 
 **Examples:**
 
@@ -425,7 +457,7 @@ Create a model-level comment reply for inspect and preview. OpenChestnut 0.2 doe
 
 #### `document.resolve`
 
-Resolve stable document, block, bookmark, bibliography source ID/tag, header/footer, comment, style, and editable text-range IDs.
+Resolve stable document, block, bookmark, footnote/endnote, bibliography source ID/tag, header/footer, comment, style, and editable text-range IDs.
 
 **Schema parameters:**
 
@@ -486,7 +518,7 @@ Inspect or resolve stable textRange anchors such as blockId/text for editable do
 
 #### `document.verify`
 
-Return QA issues for fake lists, invalid links/citations/bibliography sources, malformed tracked changes, duplicate/dangling/reversed bookmark ranges, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells.
+Return QA issues for fake lists, invalid links/citations/bibliography sources, malformed tracked changes, duplicate/dangling/reversed bookmark ranges, invalid or duplicate footnotes/endnotes, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells.
 
 **Schema parameters:**
 
@@ -512,7 +544,7 @@ Export DocumentModel to DOCX through the single bundled OpenChestnut codec. Only
 
 #### `DocumentFile.importDocx`
 
-Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Recognized whole-paragraph tracked revisions and whole-block bookmarks are semantic; imported bookmarks remain fixed-topology/read-only, while complex revisions/bookmark graphs, bibliography, modern comments, settings, and unsupported content remain source-bound and read-only.
+Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Recognized whole-paragraph tracked revisions, whole-block bookmarks, and canonical plain-text footnotes/endnotes are semantic; note bodies are fixed-topology editable while anchors remain read-only, and complex graphs stay source-bound.
 
 **Schema parameters:**
 
@@ -569,7 +601,7 @@ Apply DOCX part patches with path traversal validation for settings, classic-com
 
 #### `DocumentModel.create`
 
-Create a document with paragraph/character styles, formatted paragraphs/runs, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, bounded whole-block bookmarks, simple fields, bounded whole-paragraph tracked insertions/deletions, classic comments, and PNG/JPEG images. Arbitrary source-free table-style graphs, bibliography, complex bookmark/revision graphs, modern comment graphs, and advanced settings remain unsupported or import-preserved read-only.
+Create a document with paragraph/character styles, formatted paragraphs/runs, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, bounded whole-block bookmarks, plain-text footnotes/endnotes, simple fields, bounded whole-paragraph tracked insertions/deletions, classic comments, and PNG/JPEG images. Arbitrary source-free table-style graphs, bibliography, complex bookmark/note/revision graphs, modern comment graphs, and advanced settings remain unsupported or import-preserved read-only.
 
 **Schema parameters:**
 
@@ -581,6 +613,7 @@ Create a document with paragraph/character styles, formatted paragraphs/runs, se
 - `paragraphs` (string[]) — Convenience paragraph list; the first paragraph uses Title style.
 - `blocks` (object[]) — Ordered paragraph/list/table/link/field/image/section/change block models. Bibliography-backed citations remain model-only and are rejected by canonical DOCX export.
 - `bookmarks` (object[]) — Whole-block bookmark ranges. Source-free authoring requires one unique valid Word name around exactly one paragraph-like block; imported bookmarks are fixed-topology/read-only.
+- `notes` (object[]) — Plain-text footnote/endnote records. The bounded profile permits one note at the end of each paragraph or list item; imported note text may change, but kind, anchor, native ID, and topology are source-bound.
 - `bibliography` (object) — Model-only Word bibliography metadata; OpenChestnut 0.2 cannot author or edit it.
 - `bibliographySources` (object[]) — Model-only Word bibliography sources; imported b:Sources graphs are source-bound and read-only.
 - `headers` (object[]) — Header block models.
@@ -595,11 +628,11 @@ Create a document with paragraph/character styles, formatted paragraphs/runs, se
 
 #### `exportDocxWithOpenChestnut`
 
-Export bounded DocumentModel paragraphs/runs/tables, whole-block bookmarks and internal links, whole-paragraph tracked insertions/deletions, classic comments, validated source-free gridSpan/vMerge tables, and direct text-marker numbering graphs; recognized imports permit fixed-topology tracked-change, comment, hyperlink, simple-field, table-formatting/text, and coherent numbering-definition edits through bundled OpenChestnut.
+Export bounded DocumentModel paragraphs/runs/tables, whole-block bookmarks and internal links, plain-text footnotes/endnotes, whole-paragraph tracked insertions/deletions, classic comments, validated source-free gridSpan/vMerge tables, and direct text-marker numbering graphs; recognized imports permit fixed-topology note-body, tracked-change, comment, hyperlink, simple-field, table-formatting/text, and coherent numbering-definition edits through bundled OpenChestnut.
 
 **Schema parameters:**
 
-- `document` (DocumentModel) required — Document facade within the OpenChestnut paragraph/run/style, section, header/footer, image, list, hyperlink, whole-block bookmark, simple-field, comment, and fixed-table boundary. Advanced imported content remains source-bound; unsupported edits fail closed.
+- `document` (DocumentModel) required — Document facade within the OpenChestnut paragraph/run/style, section, header/footer, image, list, hyperlink, whole-block bookmark, plain-text footnote/endnote, simple-field, comment, and fixed-table boundary. Advanced imported content remains source-bound; unsupported edits fail closed.
 - `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxCells, and maxCompressionRatio codec budgets.
 
 **Schema returns:**
@@ -608,7 +641,7 @@ Export bounded DocumentModel paragraphs/runs/tables, whole-block bookmarks and i
 
 #### `importDocxWithOpenChestnut`
 
-Import DOCX bytes through OpenChestnut with source-bound block, exact-profile classic-comment, whole-paragraph tracked-change, and canonical whole-block bookmark bindings; imported bookmarks and extended comment or complex revision/bookmark graphs remain source-bound, preserved unchanged, and fail closed on semantic edits.
+Import DOCX bytes through OpenChestnut with source-bound block, exact-profile classic-comment, whole-paragraph tracked-change, canonical whole-block bookmark, and canonical plain-text footnote/endnote bindings; imported note text may be edited without moving its source-bound anchor, while complex graphs remain opaque-preserved.
 
 **Schema parameters:**
 
@@ -617,7 +650,7 @@ Import DOCX bytes through OpenChestnut with source-bound block, exact-profile cl
 
 **Schema returns:**
 
-- `document` (DocumentModel) — Imported document facade carrying source/opaque evidence. Canonical whole-block bookmarks are exposed as fixed-topology/read-only; bibliography, complex bookmark/revision graphs, modern comments, non-core settings, and unsupported blocks remain source-bound and read-only.
+- `document` (DocumentModel) — Imported document facade carrying source/opaque evidence. Canonical footnote/endnote bodies are text-editable with fixed source-bound anchors; whole-block bookmarks are fixed-topology/read-only, and other complex graphs remain source-bound.
 
 ## pdf
 
@@ -1127,6 +1160,7 @@ Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or 
 | `presentation.theme` | api | Inspect the model theme and theme inheritance. Custom source-free themes are not authored by OpenChestnut 0.2, and imported themes are source-bound and read-only. |
 | `presentation.validateLayout` | api | Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow. |
 | `presentation.verify` | api | Return QA issues for layout validation, missing master/layout references, placeholder fidelity, chart/data consistency, table shape, image data, and dangling comments. |
+| `presentation.view` | api | Control local editor gridline/guide visibility and inspect imported PowerPoint grid spacing, snap settings, and read-only slide guides. Visibility is local model state; imported viewProps.xml metadata remains source/hash-bound and unchanged by canonical export. |
 | `PresentationFile.exportPptx` | api | Serialize PPTX through the single bundled OpenChestnut codec. Only limits is accepted; legacy codec and lossy-fallback options fail explicitly. |
 | `PresentationFile.importPptx` | api | Import PPTX through the single bundled OpenChestnut codec with source-bound opaque preservation, eligible OLE workbook payload access/replacement, and fail-closed edits. |
 | `PresentationFile.inspectPptx` | api | Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets. |
@@ -1389,6 +1423,7 @@ Create a model-level slide layout for inspect and preview. OpenChestnut 0.2 does
 - `masterId` (string) — Master identity.
 - `background` (string|object) — Optional layout background overriding the linked master background.
 - `placeholders` (object[]) — Model-level placeholder definitions; canonical PPTX export does not author or edit Layout graphs.
+- `slideGuides` (object[]) — Imported layouts expose the presentation's read-only native guide definitions. Canonical export preserves them through the source-bound view-properties part.
 
 **Schema returns:**
 
@@ -1406,6 +1441,7 @@ Access the first Slide Master for model inspection. Source-free master configura
 - `theme` (object) — Optional partial theme override inherited from presentation.theme and exported through the master's own Theme relationship.
 - `placeholders` (object[]) — Model-level placeholder definitions. OpenChestnut 0.2 rejects source-free Master authoring and any mutation of imported placeholders.
 - `textParagraphStyles` (object) — title/body/other level maps (0-8) using the structured paragraph style fields, including embedded or external bulletImage values.
+- `slideGuides` (object[]) — Read-only imported PowerPoint guide definitions with horizontal/vertical orientation and raw native position. Source-free authoring and imported mutation are unsupported.
 
 **Schema returns:**
 
@@ -1554,6 +1590,14 @@ Return QA issues for layout validation, missing master/layout references, placeh
 **Schema returns:**
 
 - `report` (object) — Presentation semantic/layout QA result.
+
+#### `presentation.view`
+
+Control local editor gridline/guide visibility and inspect imported PowerPoint grid spacing, snap settings, and read-only slide guides. Visibility is local model state; imported viewProps.xml metadata remains source/hash-bound and unchanged by canonical export.
+
+**Schema returns:**
+
+- `view` (PresentationView) — Local gridlinesVisible/guidesVisible state with show/hide/toggle methods, optional imported gridSpacingCxEmu/gridSpacingCyEmu, and serialized hidden guide visibility. Imported slide-guide definitions are exposed read-only through master/layout slideGuides and remain source-bound in PPTX output.
 
 #### `PresentationFile.exportPptx`
 

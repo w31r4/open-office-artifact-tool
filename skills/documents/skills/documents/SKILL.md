@@ -12,7 +12,7 @@ them visually.
 ## Tools + Contract
 
 - Use host-provided workspace dependencies for DOCX artifact work: resolve them through the workspace dependency loader or runtime skill, then treat the returned Node/Python runtimes and package directory as authoritative. Do not use system `node`, system `python`, global npm packages, or repo-local installs.
-- For ordinary DOCX creation, import, semantic editing, bounded whole-block bookmarks/internal links, and export, **MUST** use the public `open-office-artifact-tool` `DocumentModel`/`DocumentFile` surface and its bundled OpenChestnut codec. Read `artifact_tool/API_QUICK_START.md`, then use `tasks/create_edit.md` for the task workflow.
+- For ordinary DOCX creation, import, semantic editing, bounded whole-block bookmarks/internal links, plain-text footnotes/endnotes, and export, **MUST** use the public `open-office-artifact-tool` `DocumentModel`/`DocumentFile` surface and its bundled OpenChestnut codec. Read `artifact_tool/API_QUICK_START.md`, then use `tasks/create_edit.md` for the task workflow.
 - Python and direct OOXML helpers are reserved for explicit low-level package patches, specialized audits, and render/QA operations documented by this Skill. They are never an automatic authoring fallback. If an imported construct cannot be edited through the supported model, narrow the edit or report the fail-closed boundary.
 - Run any builder or helper file from a writable workspace or temp directory, not from the managed dependency directory itself.
 - Final user-facing responses should describe only the requested document result. Do not link QA intermediates unless the user explicitly asks for them.
@@ -446,7 +446,7 @@ Then inspect the generated `page-<N>.png` files.
 - If you need **templates / style packs (DOTX)**: `tasks/templates_style_packs.md`
 - If you need a **first-page header / cover / title block**: `references/header_templates.md`
 - If you need **watermark audit/removal**: `tasks/watermarks_background.md`
-- If you need **true footnotes/endnotes**: `tasks/footnotes_endnotes.md`
+- If you need **true footnotes/endnotes**: use public `document.addFootnote(...)` / `document.addEndnote(...)` for the bounded plain-text profile, then follow `tasks/footnotes_endnotes.md` for import, audit, advanced graphs, and render QA
 - If you want reproducible fixtures for edge cases: `tasks/fixtures_edge_cases.md`
 
 ## Host app final response citations

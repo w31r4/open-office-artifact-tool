@@ -87,6 +87,22 @@ assert.equal(await exists(path.join(skillsRoot, "documents", "SKILL.md")), false
 assert.equal(await exists(path.join(skillsRoot, "spreadsheets", "scripts")), false);
 assert.equal(await exists(path.join(skillsRoot, "presentations", "fixtures")), false);
 assert.ok(await exists(path.join(repoRoot, "test", "skill-harness", "spreadsheets", "scripts", "workflow.mjs")));
+assert.ok(await exists(path.join(skillsRoot, "spreadsheets", "skills", "spreadsheets", "artifact_tool_docs", "API_QUICK_START.md")));
+assert.ok(await exists(path.join(skillsRoot, "spreadsheets", "skills", "spreadsheets", "features", "charts.md")));
+assert.equal(await exists(path.join(skillsRoot, "spreadsheets", "skills", "spreadsheets", "API_QUICK_START.md")), false);
+assert.equal(await exists(path.join(skillsRoot, "spreadsheets", "skills", "spreadsheets", "charts.md")), false);
+const spreadsheetSkillText = await fs.readFile(path.join(skillsRoot, "spreadsheets", "skills", "spreadsheets", "SKILL.md"), "utf8");
+assert.match(spreadsheetSkillText, /artifact_tool_docs\/API_QUICK_START\.md/);
+assert.match(spreadsheetSkillText, /features\/charts\.md/);
+
+const presentationApiRoot = path.join(skillsRoot, "presentations", "skills", "presentations", "artifact_tool", "api");
+const presentationApiDocs = await fs.readFile(path.join(presentationApiRoot, "API_DOCS.md"), "utf8");
+const presentationSpec = await fs.readFile(path.join(presentationApiRoot, "references", "presentation.spec.md"), "utf8");
+const presentationLayoutSpec = await fs.readFile(path.join(presentationApiRoot, "references", "layout.spec.md"), "utf8");
+assert.match(presentationApiDocs, /presentation\.view/);
+assert.match(presentationSpec, /showGridlines\(\).*showGuides\(\)/s);
+assert.match(presentationSpec, /gridSpacingCxEmu.*gridSpacingCyEmu/s);
+assert.match(presentationLayoutSpec, /read-only `slideGuides`/);
 
 const documentsSkillRoot = path.join(skillsRoot, "documents", "skills", "documents");
 const documentsManifest = (await fs.readFile(path.join(documentsSkillRoot, "manifest.txt"), "utf8"))
@@ -184,6 +200,10 @@ try {
   assert.equal(documentRoundTrip.blocks.filter((block) => block.kind === "listItem").length, 3);
   assert.equal(documentRoundTrip.comments[0]?.text, "Recommendation wording verified for the release record.");
   assert.equal(documentRoundTrip.bookmarks[0]?.name, "DecisionSection");
+  assert.deepEqual(documentRoundTrip.notes.map((note) => [note.kind, note.text]), [
+    ["footnote", "The final gate includes native rendering, package validation, and semantic re-import."],
+    ["endnote", "Evidence snapshot dated 2026-07-17; retained with the release record."],
+  ]);
   assert.equal(documentRoundTrip.blocks.some(
     (block) => block.kind === "hyperlink" && block.anchor === "DecisionSection",
   ), true);
@@ -203,6 +223,14 @@ try {
   assert.match(documentXml, /<w:bookmarkStart\b[^>]*w:name="DecisionSection"/);
   assert.match(documentXml, /<w:bookmarkEnd\b/);
   assert.match(documentXml, /<w:hyperlink\b[^>]*w:anchor="DecisionSection"/);
+  assert.match(documentXml, /<w:footnoteReference\b[^>]*w:id="1"/);
+  assert.match(documentXml, /<w:endnoteReference\b[^>]*w:id="1"/);
+  const footnotesXml = await documentPackage.file("word/footnotes.xml").async("text");
+  const endnotesXml = await documentPackage.file("word/endnotes.xml").async("text");
+  for (const id of ["-1", "0", "1"]) assert.match(footnotesXml, new RegExp(`<w:footnote\\b[^>]*w:id="${id}"`));
+  for (const id of ["-1", "0", "1"]) assert.match(endnotesXml, new RegExp(`<w:endnote\\b[^>]*w:id="${id}"`));
+  assert.match(footnotesXml, /semantic re-import/);
+  assert.match(endnotesXml, /retained with the release record/);
 
   const { ensureArtifactToolWorkspace, importArtifactTool } = await import(
     "../skills/presentations/skills/presentations/container_tools/artifact_tool_utils.mjs"

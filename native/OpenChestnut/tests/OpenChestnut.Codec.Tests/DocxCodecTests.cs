@@ -1744,6 +1744,46 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void RichFootnoteBodyRemainsOpaqueAndBytePreserved()
+    {
+        var authored = Invoke(NoteExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var richSource = AddSecondFootnoteParagraph(authored.File.ToByteArray());
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(richSource),
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var endnote = Assert.Single(imported.Artifact.Document.Notes);
+        Assert.Equal(DocumentNoteKind.Endnote, endnote.Kind);
+        Assert.False(imported.Artifact.Document.Blocks[0].Source.Editable);
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact.Clone(),
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(richSource, unchanged.File.ToByteArray());
+
+        imported.Artifact.Document.Blocks[0].Paragraph.Text = "Attempted rich-note anchor edit";
+        var rejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void HyperlinkSliceRejectsUnsupportedTopologyAndUnsafeUri()
     {
         var authored = Invoke(HyperlinkExportRequest());
@@ -2530,6 +2570,21 @@ public sealed class DocxCodecTests
                 Document = document,
             },
         };
+    }
+
+    private static byte[] AddSecondFootnoteParagraph(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var footnote = document.MainDocumentPart!.FootnotesPart!.Footnotes!
+                .Elements<W.Footnote>().Single(note => note.Id?.Value == 1);
+            footnote.Append(new W.Paragraph(new W.Run(new W.Text("Second rich paragraph"))));
+            document.MainDocumentPart.FootnotesPart.Footnotes.Save();
+        }
+        return stream.ToArray();
     }
 
     private static CodecRequest DirectNumberingExportRequest()

@@ -162,6 +162,58 @@ function presentationPlaceholderTextStyleKind(type = "body") {
   return "other";
 }
 
+function normalizePresentationSlideGuides(value = []) {
+  if (!Array.isArray(value)) throw new TypeError("Presentation slideGuides must be an array.");
+  if (value.length > 1024) throw new RangeError("Presentation slideGuides exceed 1,024 entries.");
+  return Object.freeze(value.map((guide) => {
+    if (!guide || !["horizontal", "vertical"].includes(guide.orientation)) {
+      throw new TypeError("Presentation guide orientation must be horizontal or vertical.");
+    }
+    const position = Number(guide.position);
+    if (!Number.isInteger(position) || position < -2_147_483_648 || position > 2_147_483_647) {
+      throw new RangeError("Presentation guide position must be a signed 32-bit integer.");
+    }
+    return Object.freeze({ orientation: guide.orientation, position });
+  }));
+}
+
+class PresentationView {
+  #presentation;
+  #gridlinesVisible = false;
+  #guidesVisible = false;
+
+  constructor(presentation) { this.#presentation = presentation; }
+  get gridlinesVisible() { return this.#gridlinesVisible; }
+  get guidesVisible() { return this.#guidesVisible; }
+  get gridSpacingCxEmu() { return this.#presentation._viewProperties?.gridSpacingCxEmu; }
+  get gridSpacingCyEmu() { return this.#presentation._viewProperties?.gridSpacingCyEmu; }
+  showGridlines() { this.#gridlinesVisible = true; }
+  hideGridlines() { this.#gridlinesVisible = false; }
+  toggleGridlines() { this.#gridlinesVisible = !this.#gridlinesVisible; return this.#gridlinesVisible; }
+  showGuides() { this.#guidesVisible = true; this.#hideGuidesOnExport(); }
+  hideGuides() { this.#guidesVisible = false; this.#hideGuidesOnExport(); }
+  toggleGuides() { this.#guidesVisible = !this.#guidesVisible; this.#hideGuidesOnExport(); return this.#guidesVisible; }
+  toProto() {
+    const source = this.#presentation._viewProperties;
+    if (!source) return undefined;
+    return { ...source, slideGuides: source.slideGuides?.map((guide) => ({ ...guide })) || [] };
+  }
+  _setImportedProperties(properties) {
+    this.#presentation._viewProperties = properties ? {
+      ...properties,
+      slideViewShowGuides: false,
+      slideGuides: normalizePresentationSlideGuides(properties.slideGuides),
+    } : undefined;
+  }
+  #hideGuidesOnExport() {
+    this.#presentation._viewProperties = {
+      ...(this.#presentation._viewProperties || {}),
+      slideViewShowGuides: false,
+      slideGuides: this.#presentation._viewProperties?.slideGuides || Object.freeze([]),
+    };
+  }
+}
+
 class PresentationSlideMaster {
   constructor(presentation, config = {}) {
     this.presentation = presentation;
@@ -175,6 +227,7 @@ class PresentationSlideMaster {
       : normalizePresentationBackground(presentation.theme.colors.bg1);
     this.placeholders = normalizePresentationPlaceholders(config.placeholders || [], `${this.id}/ph`);
     this.textParagraphStyles = normalizePresentationMasterParagraphStyles(config.textParagraphStyles || {});
+    Object.defineProperty(this, "slideGuides", { value: normalizePresentationSlideGuides(config.slideGuides), enumerable: true });
   }
 
   update(config = {}) {
@@ -199,8 +252,8 @@ class PresentationSlideMaster {
   effectiveTheme() { return this.theme || this.presentation.theme; }
   effectiveBackground() { return this.background || normalizePresentationBackground(this.effectiveTheme().colors.bg1, "#ffffff"); }
   paragraphStylesForPlaceholder(type) { return this.textParagraphStyles[presentationPlaceholderTextStyleKind(type)] || {}; }
-  inspectRecord() { const theme = this.effectiveTheme(); return { kind: "slideMaster", id: this.id, name: this.name, background: this.background, effectiveBackground: this.effectiveBackground(), placeholders: this.placeholders.length, placeholderTypes: this.placeholders.map((placeholder) => placeholder.type), textParagraphStyleLevels: Object.fromEntries(Object.entries(this.textParagraphStyles).map(([kind, styles]) => [kind, Object.keys(styles).length])), hasThemeOverride: Boolean(this.theme), themeId: theme.id, themeName: theme.name }; }
-  toJSON() { return { id: this.id, name: this.name, background: this.background, theme: this.theme?.toJSON(), placeholders: this.placeholders.map((placeholder) => ({ ...placeholder })), textParagraphStyles: normalizePresentationMasterParagraphStyles(this.textParagraphStyles) }; }
+  inspectRecord() { const theme = this.effectiveTheme(); return { kind: "slideMaster", id: this.id, name: this.name, background: this.background, effectiveBackground: this.effectiveBackground(), placeholders: this.placeholders.length, placeholderTypes: this.placeholders.map((placeholder) => placeholder.type), slideGuides: this.slideGuides.length, textParagraphStyleLevels: Object.fromEntries(Object.entries(this.textParagraphStyles).map(([kind, styles]) => [kind, Object.keys(styles).length])), hasThemeOverride: Boolean(this.theme), themeId: theme.id, themeName: theme.name }; }
+  toJSON() { return { id: this.id, name: this.name, background: this.background, theme: this.theme?.toJSON(), placeholders: this.placeholders.map((placeholder) => ({ ...placeholder })), slideGuides: this.slideGuides.map((guide) => ({ ...guide })), textParagraphStyles: normalizePresentationMasterParagraphStyles(this.textParagraphStyles) }; }
 }
 
 class PresentationSlideMasterCollection {
@@ -229,6 +282,7 @@ class SlideLayoutTemplate {
     Object.defineProperty(this, "_backgroundClearRequested", { value: false, writable: true });
     this.background = config.background ? normalizePresentationBackground(config.background) : undefined;
     this.placeholders = normalizePresentationPlaceholders(config.placeholders || [], `${this.id}/ph`, { allowMissingPosition: true });
+    Object.defineProperty(this, "slideGuides", { value: normalizePresentationSlideGuides(config.slideGuides), enumerable: true });
   }
 
   effectiveMaster() { return this.presentation.masters.getItem(this.masterId); }
@@ -266,8 +320,8 @@ class SlideLayoutTemplate {
     });
   }
 
-  inspectRecord() { return { kind: "layoutTemplate", id: this.id, name: this.name, type: this.type, masterId: this.masterId, themeId: this.effectiveTheme().id, background: this.background, effectiveBackground: this.effectiveBackground(), placeholders: this.placeholders.length, effectivePlaceholders: this.effectivePlaceholders().length, placeholderTypes: this.effectivePlaceholders().map((placeholder) => placeholder.type) }; }
-  toJSON() { return { id: this.id, name: this.name, type: this.type, masterId: this.masterId, background: this.background, placeholders: this.placeholders.map((placeholder) => ({ ...placeholder })) }; }
+  inspectRecord() { return { kind: "layoutTemplate", id: this.id, name: this.name, type: this.type, masterId: this.masterId, themeId: this.effectiveTheme().id, background: this.background, effectiveBackground: this.effectiveBackground(), placeholders: this.placeholders.length, effectivePlaceholders: this.effectivePlaceholders().length, placeholderTypes: this.effectivePlaceholders().map((placeholder) => placeholder.type), slideGuides: this.slideGuides.length }; }
+  toJSON() { return { id: this.id, name: this.name, type: this.type, masterId: this.masterId, background: this.background, placeholders: this.placeholders.map((placeholder) => ({ ...placeholder })), slideGuides: this.slideGuides.map((guide) => ({ ...guide })) }; }
 }
 
 class SlideLayoutCollection {
@@ -318,6 +372,8 @@ export class Presentation {
     for (const layout of options.layouts || []) this.layouts.add(layout);
     this.slides = new SlideCollection(this);
     this.customShows = new PresentationCustomShowCollection(this);
+    Object.defineProperty(this, "_viewProperties", { value: undefined, writable: true });
+    this.view = new PresentationView(this);
   }
 
   static create(options = {}) { return new Presentation(options); }
@@ -436,7 +492,7 @@ export class Presentation {
   }
 
   toProto() {
-    return { id: this.id, slideSize: this.slideSize, theme: this.theme.toJSON(), master: this.master.toJSON(), masters: this.masters.items.map((master) => master.toJSON()), layouts: this.layouts.items.map((layout) => layout.toJSON()), slides: this.slides.items.map((slide) => slide.toProto()) };
+    return { id: this.id, slideSize: this.slideSize, theme: this.theme.toJSON(), master: this.master.toJSON(), masters: this.masters.items.map((master) => master.toJSON()), layouts: this.layouts.items.map((layout) => layout.toJSON()), slides: this.slides.items.map((slide) => slide.toProto()), viewProperties: this.view.toProto() };
   }
 }
 

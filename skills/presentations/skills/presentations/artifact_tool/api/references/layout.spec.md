@@ -53,6 +53,14 @@ const layoutSummary = layout.placeholders.summary();
 const resolved = presentation.layouts.getById(layout.id);
 ```
 
+Imported layouts and masters expose preserved PowerPoint guide metadata through
+the read-only `slideGuides` collection. Use `presentation.view` to control local
+editor visibility without changing the source-bound `viewProps.xml` graph.
+
+```ts
+const importedGuides = presentation.layouts.items[0].slideGuides;
+```
+
 ## Cookbook
 
 ```ts

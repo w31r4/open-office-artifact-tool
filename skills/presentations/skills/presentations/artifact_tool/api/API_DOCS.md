@@ -140,6 +140,7 @@ tags default `width` to `"fill"` when you omit it.
 - Export previews with `presentation.export({ slide, format, scale })`.
 - Export deck montages with `presentation.export({ format: "webp", montage: true, scale: 1 })`.
 - Export layout JSON with `slide.export({ format: "layout" })`.
+- Control local editor gridlines and inspect imported PowerPoint guides with `presentation.view`.
 - Search API help with `presentation.help(query, { search, include, maxChars })`.
 - Run high-level edits with `presentation.scripts.run(kind, options)`; see [`references/presentation.spec.md`](./references/presentation.spec.md) for the script surface.
 
@@ -212,7 +213,7 @@ Open these references as needed:
 - [`references/tokens.md`](./references/tokens.md) — Tailwind-like token reference for colors, text, radius, shadows, and `className`.
 - [`references/cookbook/layout.md`](./references/cookbook/layout.md) — first-principles layout recipes for rows, columns, 12-column grids, alignment, masks, and overlays.
 - [`references/cookbook/imported-deck.md`](./references/cookbook/imported-deck.md) — safe inspect, resolve, edit, preview, and re-inspect loops for existing decks.
-- [`references/presentation.spec.md`](./references/presentation.spec.md) — `Presentation` facade, slide collection, export/toProto, scripts.
+- [`references/presentation.spec.md`](./references/presentation.spec.md) — `Presentation` facade, slide collection, view controls, export/toProto, scripts.
 - [`references/slide.spec.md`](./references/slide.spec.md) — `Slide` API, backgrounds, placeholders, notes, export, auto-layout.
 - [`references/grouping.spec.md`](./references/grouping.spec.md) — recursive native `p:grpSp` authoring, local child coordinates, fixed-topology imported edits, and opaque fail-closed boundaries.
 - [`references/inspect.md`](./references/inspect.md) — grep-first snapshot (`inspect → rg → resolve/edit → re-inspect`) for loaded presentation data and templates.

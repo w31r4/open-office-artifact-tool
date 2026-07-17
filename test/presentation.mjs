@@ -44,6 +44,25 @@ assert.throws(() => effectivePresentationImageCrop({ fit: "cover", dataUrl: "dat
 // The JavaScript layer remains the object model, Compose, inspect, resolve,
 // semantic verification, and rendering surface.
 const modelPresentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });
+assert.equal(modelPresentation.view.gridlinesVisible, false);
+assert.equal(modelPresentation.view.guidesVisible, false);
+assert.equal(modelPresentation.view.gridSpacingCxEmu, undefined);
+assert.equal(modelPresentation.view.gridSpacingCyEmu, undefined);
+assert.equal(modelPresentation.view.toProto(), undefined);
+assert.equal(modelPresentation.view.showGridlines(), undefined);
+assert.equal(modelPresentation.view.gridlinesVisible, true);
+assert.equal(modelPresentation.view.toggleGridlines(), false);
+assert.equal(modelPresentation.view.hideGridlines(), undefined);
+assert.equal(modelPresentation.view.showGuides(), undefined);
+assert.equal(modelPresentation.view.guidesVisible, true);
+assert.deepEqual(modelPresentation.view.toProto(), { slideViewShowGuides: false, slideGuides: [] });
+assert.equal(modelPresentation.view.toggleGuides(), false);
+assert.equal(modelPresentation.view.hideGuides(), undefined);
+assert.deepEqual(modelPresentation.toProto().viewProperties, { slideViewShowGuides: false, slideGuides: [] });
+assert.deepEqual(modelPresentation.master.slideGuides, []);
+assert.throws(() => modelPresentation.master.slideGuides.push({ orientation: "horizontal", position: 1 }), TypeError);
+assert.throws(() => Presentation.create({ master: { slideGuides: [{ orientation: "diagonal", position: 1 }] } }), /horizontal or vertical/);
+assert.throws(() => Presentation.create({ master: { slideGuides: [{ orientation: "horizontal", position: 1.5 }] } }), /signed 32-bit integer/);
 const modelSlide = modelPresentation.slides.add({ name: "Compose model" });
 const composed = modelSlide.compose(
   column({ name: "compose-root", width: "fill", height: "fill", gap: 18, padding: { x: 24, y: 20 } }, [
@@ -416,6 +435,56 @@ const firstZip = await JSZip.loadAsync(new Uint8Array(await firstExport.arrayBuf
 const firstSlideXml = await firstZip.file("ppt/slides/slide1.xml").async("text");
 assert.match(firstSlideXml, /<a:srcRect[^>]*l="25000"/);
 assert.match(firstSlideXml, /<a:srcRect[^>]*r="25000"/);
+
+// Reference 2.8.24 exposes imported PowerPoint grid spacing, snap settings,
+// and guides through presentation.view plus read-only master/layout projections.
+const viewPropertiesXml = '<p:viewPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" lastView="sldView"><p:slideViewPr><p:cSldViewPr snapToGrid="1" snapToObjects="0" showGuides="1"><p:cViewPr varScale="1"><p:scale><a:sx n="1" d="1"/><a:sy n="1" d="1"/></p:scale><p:origin x="0" y="0"/></p:cViewPr><p:guideLst><p:guide orient="horz" pos="2160"/><p:guide orient="vert" pos="2880"/></p:guideLst></p:cSldViewPr></p:slideViewPr><p:gridSpacing cx="72008" cy="91440"/></p:viewPr>';
+const presentationRelationships = await firstZip.file("ppt/_rels/presentation.xml.rels").async("text");
+const viewSource = await PresentationFile.patchPptx(firstExport, [
+  {
+    path: "ppt/_rels/presentation.xml.rels",
+    xml: presentationRelationships.replace("</Relationships>", '<Relationship Id="rIdViewProperties" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/viewProps" Target="viewProps.xml"/></Relationships>'),
+  },
+  {
+    path: "ppt/viewProps.xml",
+    xml: viewPropertiesXml,
+    contentType: "application/vnd.openxmlformats-officedocument.presentationml.viewProps+xml",
+  },
+]);
+const importedViewPresentation = await PresentationFile.importPptx(viewSource);
+assert.equal(importedViewPresentation.view.gridSpacingCxEmu, 72_008);
+assert.equal(importedViewPresentation.view.gridSpacingCyEmu, 91_440);
+assert.equal(importedViewPresentation.view.gridlinesVisible, false);
+assert.equal(importedViewPresentation.view.guidesVisible, false);
+assert.deepEqual(importedViewPresentation.view.toProto(), {
+  gridSpacingCxEmu: 72_008,
+  gridSpacingCyEmu: 91_440,
+  slideViewSnapToGrid: true,
+  slideViewSnapToObjects: false,
+  slideViewShowGuides: false,
+  slideGuides: [
+    { orientation: "horizontal", position: 2160 },
+    { orientation: "vertical", position: 2880 },
+  ],
+});
+assert.deepEqual(importedViewPresentation.master.slideGuides, importedViewPresentation.view.toProto().slideGuides);
+assert.deepEqual(importedViewPresentation.layouts.items[0].slideGuides, importedViewPresentation.view.toProto().slideGuides);
+assert.throws(() => importedViewPresentation.layouts.items[0].slideGuides[0].position = 0, TypeError);
+assert.equal(importedViewPresentation.view.showGridlines(), undefined);
+assert.equal(importedViewPresentation.view.showGuides(), undefined);
+assert.equal(importedViewPresentation.view.gridlinesVisible, true);
+assert.equal(importedViewPresentation.view.guidesVisible, true);
+const viewRoundTripFile = await PresentationFile.exportPptx(importedViewPresentation);
+const viewRoundTripZip = await JSZip.loadAsync(viewRoundTripFile.bytes);
+assert.equal(await viewRoundTripZip.file("ppt/viewProps.xml").async("text"), viewPropertiesXml);
+const viewRoundTrip = await PresentationFile.importPptx(viewRoundTripFile);
+assert.deepEqual(viewRoundTrip.view.toProto().slideGuides, importedViewPresentation.view.toProto().slideGuides);
+const viewState = viewRoundTrip[Symbol.for("open-office-artifact-tool.open-chestnut-presentation-state")];
+viewState.viewProperties.gridSpacingCxEmu = 72_009n;
+await assert.rejects(
+  () => PresentationFile.exportPptx(viewRoundTrip),
+  (error) => error?.code === "unsupported_presentation_view_edit",
+);
 
 // Eligible imported top-level OLE objects expose one deliberately narrow edit:
 // replacing the uniquely bound XLSX payload. The OLE shell, preview image,

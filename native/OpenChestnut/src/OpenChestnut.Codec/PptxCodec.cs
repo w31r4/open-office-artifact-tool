@@ -59,6 +59,7 @@ internal static class PptxCodec
             SlideWidthEmu = presentationRoot.SlideSize?.Cx?.Value ?? DefaultSlideWidthEmu,
             SlideHeightEmu = presentationRoot.SlideSize?.Cy?.Value ?? DefaultSlideHeightEmu,
         };
+        artifact.ViewProperties = PptxViewPropertiesCodec.Read(presentationPart);
         foreach (var master in masterGraph)
         {
             var masterRoot = master.Part.SlideMaster ??
@@ -238,7 +239,8 @@ internal static class PptxCodec
                    layout.Source is not null || layout.Placeholders.Any(placeholder => placeholder.Source is not null)) ||
                presentation.Slides.Any(slide =>
                    slide.Source is not null || slide.Elements.Any(element =>
-                       element.Source is not null || element.ContentCase == PresentationElement.ContentOneofCase.Opaque));
+                       element.Source is not null || element.ContentCase == PresentationElement.ContentOneofCase.Opaque)) ||
+               presentation.ViewProperties?.Source is not null;
     }
 
     private static PptxExportResult ExportPreservingSource(ArtifactEnvelope envelope, EffectiveCodecLimits limits, int opaqueCount, PptxAssetCatalog assetCatalog)
@@ -282,6 +284,7 @@ internal static class PptxCodec
                     $"Source-preserving PPTX export requires the original {layoutGraph.Length}-layout topology; the artifact contains {envelope.Presentation.Layouts.Count} layouts.",
                     "ppt/presentation.xml");
             var layoutIdByPartPath = layoutGraph.ToDictionary(item => PartPath(item.Layout.Part), item => item.Layout.Id, StringComparer.OrdinalIgnoreCase);
+            PptxViewPropertiesCodec.AssertSource(presentationPart, envelope.Presentation.ViewProperties);
             assetCatalog.IndexExistingParts(slideParts.SelectMany(part => part.ImageParts)
                 .Concat(masterGraph.SelectMany(master => master.Part.Parts.Select(pair => pair.OpenXmlPart).OfType<ImagePart>())));
 
@@ -1542,6 +1545,7 @@ internal static class PptxCodec
             throw new CodecException("invalid_slide_size", "Presentation slide dimensions must fit the PresentationML signed 32-bit EMU range.");
         var assetCatalog = new PptxAssetCatalog(envelope.Assets, limits);
         var hasSourcePackage = envelope.OpaqueOpc?.SourcePackage is { Data.IsEmpty: false };
+        PptxViewPropertiesCodec.Validate(envelope.Presentation.ViewProperties, hasSourcePackage);
 
         if (envelope.Presentation.Masters.Count > 64)
             throw new CodecException("presentation_master_budget_exceeded", "Presentation cannot contain more than 64 slide masters.");

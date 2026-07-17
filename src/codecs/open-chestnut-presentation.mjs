@@ -1,6 +1,7 @@
 import { ChartElement, GroupShape, ImageElement, Presentation, Shape, TableElement } from "../presentation/index.mjs";
 import {
   ArtifactFamily,
+  PresentationSlideGuide_Orientation,
   SpreadsheetChartDataLabelPosition,
   SpreadsheetChartLineDashStyle,
   SpreadsheetChartMarkerSymbol,
@@ -79,6 +80,25 @@ const PRESENTATION_CHART_MARKERS_TO_WIRE = new Map([
   ["dash", SpreadsheetChartMarkerSymbol.DASH],
 ]);
 const PRESENTATION_CHART_MARKERS_FROM_WIRE = new Map([...PRESENTATION_CHART_MARKERS_TO_WIRE].map(([name, value]) => [value, name]));
+
+function modelPresentationSlideGuides(viewProperties) {
+  return (viewProperties?.slideGuides || []).map((guide) => ({
+    orientation: guide.orientation === PresentationSlideGuide_Orientation.VERTICAL ? "vertical" : "horizontal",
+    position: Number(guide.position),
+  }));
+}
+
+function modelPresentationView(viewProperties) {
+  if (!viewProperties) return undefined;
+  return {
+    ...(viewProperties.gridSpacingCxEmu === undefined ? {} : { gridSpacingCxEmu: Number(viewProperties.gridSpacingCxEmu) }),
+    ...(viewProperties.gridSpacingCyEmu === undefined ? {} : { gridSpacingCyEmu: Number(viewProperties.gridSpacingCyEmu) }),
+    ...(viewProperties.slideViewSnapToGrid === undefined ? {} : { slideViewSnapToGrid: viewProperties.slideViewSnapToGrid }),
+    ...(viewProperties.slideViewSnapToObjects === undefined ? {} : { slideViewSnapToObjects: viewProperties.slideViewSnapToObjects }),
+    slideViewShowGuides: false,
+    slideGuides: modelPresentationSlideGuides(viewProperties),
+  };
+}
 
 function assertTrustedPresentationState(state) {
   if (!state) return;
@@ -1331,6 +1351,7 @@ export function presentationEnvelope(presentation, protocolVersion) {
         slides,
         masters,
         layouts,
+        ...(state?.viewProperties ? { viewProperties: state.viewProperties } : {}),
       },
     },
   };
@@ -1751,6 +1772,8 @@ export async function presentationFromEnvelope(envelope) {
     slideSize: { width: Number(source.slideWidthEmu) / EMU_PER_PIXEL, height: Number(source.slideHeightEmu) / EMU_PER_PIXEL },
   });
   presentation.id = source.id || presentation.id;
+  const slideGuides = modelPresentationSlideGuides(source.viewProperties);
+  presentation.view._setImportedProperties(modelPresentationView(source.viewProperties));
   const masterStates = [];
   if (source.masters?.length) {
     presentation.masters.items.length = 0;
@@ -1761,6 +1784,7 @@ export async function presentationFromEnvelope(envelope) {
         ...(sourceMaster.background ? { background: modelBackground(sourceMaster.background) } : {}),
         placeholders: (sourceMaster.placeholders || []).map((placeholder) => modelPlaceholder(placeholder, assetCatalog)),
         textParagraphStyles: modelMasterTextStyles(sourceMaster, assetCatalog),
+        slideGuides,
       });
       if (!sourceMaster.background) model.background = undefined;
       for (let index = 0; index < sourceMaster.placeholders.length; index += 1) {
@@ -1782,6 +1806,7 @@ export async function presentationFromEnvelope(envelope) {
       masterId: sourceLayout.masterId,
       ...(sourceLayout.background ? { background: modelBackground(sourceLayout.background) } : {}),
       placeholders: (sourceLayout.placeholders || []).map((placeholder) => modelPlaceholder(placeholder, assetCatalog)),
+      slideGuides,
     });
     layoutStates.push({
       wire: sourceLayout,
@@ -1966,6 +1991,7 @@ export async function presentationFromEnvelope(envelope) {
       name: source.name,
       slideWidthEmu: source.slideWidthEmu,
       slideHeightEmu: source.slideHeightEmu,
+      viewProperties: source.viewProperties,
       advancedSnapshot: presentationAdvancedSnapshot(presentation),
       masters: masterStates,
       layouts: layoutStates,

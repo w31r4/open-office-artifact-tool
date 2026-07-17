@@ -1066,6 +1066,36 @@ message PresentationArtifact {
   // Source-bound exports require the original master/layout topology.
   repeated PresentationMaster masters = 6;
   repeated PresentationLayout layouts = 7;
+  // Imported presentation-wide view metadata. Editor visibility is local JS
+  // state and is never written back as visible by the canonical codec.
+  PresentationViewProperties view_properties = 8;
+}
+
+message PresentationViewProperties {
+  optional int64 grid_spacing_cx_emu = 1;
+  optional int64 grid_spacing_cy_emu = 2;
+  optional bool slide_view_snap_to_grid = 3;
+  optional bool slide_view_snap_to_objects = 4;
+  repeated PresentationSlideGuide slide_guides = 5;
+  PresentationViewPropertiesSourceBinding source = 6;
+}
+
+message PresentationSlideGuide {
+  enum Orientation {
+    ORIENTATION_UNSPECIFIED = 0;
+    ORIENTATION_HORIZONTAL = 1;
+    ORIENTATION_VERTICAL = 2;
+  }
+  Orientation orientation = 1;
+  // Raw PresentationML p:guide/@pos coordinate. It is exposed read-only.
+  int32 position = 2;
+}
+
+message PresentationViewPropertiesSourceBinding {
+  string part_path = 1;
+  string relationship_id = 2;
+  string view_xml_sha256 = 3;
+  string semantic_sha256 = 4;
 }
 
 message PresentationSlide {

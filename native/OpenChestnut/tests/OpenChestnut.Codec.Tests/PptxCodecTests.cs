@@ -62,6 +62,60 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void ImportedViewPropertiesExposeGridSnapAndGuidesAndRemainSourceBound()
+    {
+        var authored = Invoke(ExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var sourceBytes = AddViewProperties(authored.File.ToByteArray());
+        var sourceViewXml = ZipBytes(sourceBytes, "ppt/viewProps.xml");
+
+        var imported = Import(sourceBytes);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var view = imported.Artifact.Presentation.ViewProperties;
+        Assert.NotNull(view);
+        Assert.Equal(72_008, view.GridSpacingCxEmu);
+        Assert.Equal(91_440, view.GridSpacingCyEmu);
+        Assert.True(view.SlideViewSnapToGrid);
+        Assert.False(view.SlideViewSnapToObjects);
+        Assert.Collection(view.SlideGuides,
+            guide =>
+            {
+                Assert.Equal(PresentationSlideGuide.Types.Orientation.Horizontal, guide.Orientation);
+                Assert.Equal(2_160, guide.Position);
+            },
+            guide =>
+            {
+                Assert.Equal(PresentationSlideGuide.Types.Orientation.Vertical, guide.Orientation);
+                Assert.Equal(2_880, guide.Position);
+            });
+        Assert.Equal("ppt/viewProps.xml", view.Source.PartPath);
+        Assert.False(string.IsNullOrWhiteSpace(view.Source.RelationshipId));
+        Assert.Equal(64, view.Source.ViewXmlSha256.Length);
+        Assert.Equal(64, view.Source.SemanticSha256.Length);
+
+        var unchanged = Export(imported.Artifact);
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(sourceViewXml, ZipBytes(unchanged.File.ToByteArray(), "ppt/viewProps.xml"));
+        using (var stream = new MemoryStream(unchanged.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+
+        imported.Artifact.Presentation.ViewProperties.GridSpacingCxEmu = 72_009;
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_presentation_view_edit", Assert.Single(rejected.Diagnostics).Code);
+
+        var sourceFree = ExportRequest();
+        sourceFree.Artifact.Presentation.ViewProperties = new PresentationViewProperties
+        {
+            GridSpacingCxEmu = 72_008,
+        };
+        rejected = Invoke(sourceFree);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_presentation_features", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void SpeakerNotesAuthorImportEditAndFailClosedForRichSourceText()
     {
         var request = ExportRequest();
@@ -3593,6 +3647,26 @@ public sealed class PptxCodecTests
                         new A.Extents { Cx = 1_714_500L, Cy = 1_143_000L }),
                     new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle })));
             slidePart.Slide.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddViewProperties(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var package = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var presentationPart = package.PresentationPart!;
+            var part = presentationPart.AddNewPart<ViewPropertiesPart>("rIdViewProperties");
+            part.ViewProperties = new P.ViewProperties(
+                "<p:viewPr xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" lastView=\"sldView\">" +
+                "<p:slideViewPr><p:cSldViewPr snapToGrid=\"1\" snapToObjects=\"0\" showGuides=\"1\">" +
+                "<p:cViewPr varScale=\"1\"><p:scale><a:sx n=\"1\" d=\"1\"/><a:sy n=\"1\" d=\"1\"/></p:scale><p:origin x=\"0\" y=\"0\"/></p:cViewPr>" +
+                "<p:guideLst><p:guide orient=\"horz\" pos=\"2160\"/><p:guide orient=\"vert\" pos=\"2880\"/></p:guideLst>" +
+                "</p:cSldViewPr></p:slideViewPr><p:gridSpacing cx=\"72008\" cy=\"91440\"/></p:viewPr>");
+            part.ViewProperties.Save();
         }
         return stream.ToArray();
     }

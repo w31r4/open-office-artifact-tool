@@ -137,6 +137,20 @@ export function buildDocument(spec = DEFAULT_BRIEF) {
     styleId: "Normal",
     paragraphFormat: { spaceAfterTwips: 100 },
   });
+  const footnoteTarget = document.addParagraph("The decision depends on a final application-compatibility gate.", {
+    name: "footnote-target",
+    styleId: "Normal",
+  });
+  document.addFootnote(footnoteTarget, "The final gate includes native rendering and package validation.", {
+    name: "release-gate-footnote",
+  });
+  const endnoteTarget = document.addParagraph("The evidence snapshot is retained with the release record.", {
+    name: "endnote-target",
+    styleId: "Normal",
+  });
+  document.addEndnote(endnoteTarget, "Evidence snapshot dated 2026-07-17.", {
+    name: "evidence-endnote",
+  });
   document.addInsertion("Final compatibility review is required before rollout.", {
     name: "tracked-release-condition",
     styleId: "Normal",
@@ -224,6 +238,10 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
     imported.blocks.some((block) => block.kind === "hyperlink" && block.anchor === "DecisionSection"),
     true,
   );
+  assert.deepEqual(imported.notes.map((note) => [note.kind, note.text]), [
+    ["footnote", "The final gate includes native rendering and package validation."],
+    ["endnote", "Evidence snapshot dated 2026-07-17."],
+  ]);
   const recommendation = imported.blocks.find(
     (block) => block.kind === "paragraph" && block.text.startsWith("Recommendation:"),
   );
@@ -241,6 +259,8 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
   trackedInsertion.text = "Final application-compatibility review is required before rollout.";
   trackedInsertion.author = "Lead reviewer";
   trackedInsertion.date = "2026-07-16T09:00:00Z";
+  imported.notes[0].text = "The final gate includes native rendering, package validation, and semantic re-import.";
+  imported.notes[1].text = "Evidence snapshot dated 2026-07-17; retained with the release record.";
 
   const finalDocx = await DocumentFile.exportDocx(imported);
   const finalDocument = await DocumentFile.importDocx(finalDocx);
@@ -253,6 +273,10 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
     finalDocument.blocks.some((block) => block.kind === "hyperlink" && block.anchor === "DecisionSection"),
     true,
   );
+  assert.deepEqual(finalDocument.notes.map((note) => [note.kind, note.text]), [
+    ["footnote", "The final gate includes native rendering, package validation, and semantic re-import."],
+    ["endnote", "Evidence snapshot dated 2026-07-17; retained with the release record."],
+  ]);
   assert.deepEqual(
     finalDocument.blocks.filter((block) => block.kind === "change").map(
       (block) => [block.changeType, block.text, block.author],
@@ -264,10 +288,10 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
   );
 
   const inspection = finalDocument.inspect({
-    kind: "document,paragraph,listItem,table,comment,bookmark,header,footer,hyperlink,change,layout",
+    kind: "document,paragraph,listItem,table,comment,bookmark,note,header,footer,hyperlink,change,layout",
     maxChars: 24_000,
   });
-  for (const expected of [spec.title, "Verified", "Recommendation wording verified", "application-compatibility", "DecisionSection", "LAUNCH READINESS"]) {
+  for (const expected of [spec.title, "Verified", "Recommendation wording verified", "application-compatibility", "semantic re-import", "Evidence snapshot", "DecisionSection", "LAUNCH READINESS"]) {
     assert.match(inspection.ndjson, new RegExp(expected));
   }
 
@@ -285,6 +309,7 @@ if (entry === import.meta.url) {
     bytes: result.file.bytes.length,
     blocks: result.document.blocks.length,
     comments: result.document.comments.length,
+    notes: result.document.notes.length,
     verified: result.verification.ok,
   }));
 }

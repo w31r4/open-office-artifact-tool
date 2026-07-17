@@ -32,8 +32,8 @@ Do not follow those routing instructions if irrelevant to the task. Default is t
 
 Other documents:
 - `style_guidelines.md`: REQUIRED for formatting requirements
-- `API_QUICK_START.md`: REQUIRED API documentation for `artifact_tool` JS library, which exposes methods to read, manipulate, edit, recalculate, render, import and save spreadsheets. You must read it entirely to get started.
-- `charts.md`: Read when creating or editing charts.
+- `artifact_tool_docs/API_QUICK_START.md`: REQUIRED API documentation for `artifact_tool` JS library, which exposes methods to read, manipulate, edit, recalculate, render, import and save spreadsheets. You must read it entirely to get started.
+- `features/charts.md`: Read when creating or editing charts.
 - `examples/openchestnut-range-workflow.mjs`: Run or adapt this public-package example for R1C1 formulas, block writes, range navigation, formula inspection, OpenChestnut roundtrip, and SVG verification.
 - `examples/openchestnut-sparkline-workflow.mjs`: Run or adapt this canonical example for line/column sparkline authoring, Range aliases, inspect/render/verify, and source-bound OpenChestnut edits.
 

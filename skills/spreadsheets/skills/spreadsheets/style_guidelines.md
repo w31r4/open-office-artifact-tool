@@ -50,4 +50,4 @@ Important totals should usually appear in a visible summary area near the top or
 For generated dashboards, reports, scorecards, and trackers, work within the user's or supplied template's visual language:
 - Establish a clear hierarchy: make primary KPIs prominent with explicit number formats and enough whitespace to scan at normal zoom.
 - Use native conditional-formatting rules for status, risk, priority, variance, threshold, and exception fields when they aid scanning or must react to future changes; verify the applied range rather than substituting static fills.
-- Include a meaningful chart, sparkline, or compact visual or table only when it clarifies the requested analysis; avoid decorative or redundant visuals and follow `charts.md`.
+- Include a meaningful chart, sparkline, or compact visual or table only when it clarifies the requested analysis; avoid decorative or redundant visuals and follow `features/charts.md`.

@@ -76,6 +76,10 @@ document.addDeletion("Superseded release condition.", {
 document.addHyperlink("Back to decision brief", titleBookmark, {
   tooltip: "Jump to the decision brief heading",
 });
+const approvalCondition = document.addParagraph("The rollout has one final quality condition.");
+document.addFootnote(approvalCondition, "Approval remains conditional on final QA.");
+const provenance = document.addParagraph("Evidence was collected from the release candidate.");
+document.addEndnote(provenance, "Evidence snapshot: 2026-07-17.");
 
 const output = await DocumentFile.exportDocx(document);
 await output.save("output.docx");
@@ -101,6 +105,9 @@ text.text = "Approve the revised rollout after final QA.";
 
 const table = document.blocks.find((block) => block.kind === "table");
 if (table) table.getCell(1, 1).value = "95%";
+
+const footnote = document.notes.find((note) => note.kind === "footnote");
+if (footnote) footnote.text = "Approval remains conditional on final render QA.";
 
 const output = await DocumentFile.exportDocx(document);
 await output.save("edited.docx");
@@ -136,11 +143,12 @@ For final visual QA, export the DOCX and use the packaged `render_docx.py` workf
 - Fixed-geometry tables
 - Sections, headers, footers, and PAGE/simple fields
 - External/internal hyperlinks and source-free bookmarks around one paragraph-like block
+- Plain-text footnotes/endnotes anchored at the end of one paragraph or list item; recognized imported note bodies allow text-only edits
 - PNG/JPEG inline images
 - Classic whole-paragraph comments
 - Standalone whole-paragraph tracked insertions/deletions with one text run, author, and optional ISO timestamp
 
-In-paragraph tracked replacements, mixed accepted/revision runs, nested revisions, moves, property changes, and automatic future-change tracking are advanced package workflows, not ordinary public-model authoring. Bookmarks spanning multiple blocks, table cells, nested/crossing ranges, bibliography-backed citations, modern comment replies, content controls, complex fields, floating drawings, and other advanced graphs are likewise not source-free authoring features. Recognized imported whole-block bookmarks are inspectable/resolvable but fixed-topology and read-only; other imported advanced graphs are preserved only while their source evidence remains valid.
+In-paragraph tracked replacements, mixed accepted/revision runs, nested revisions, moves, property changes, and automatic future-change tracking are advanced package workflows, not ordinary public-model authoring. Bookmarks spanning multiple blocks or table cells, nested/crossing ranges, multi-paragraph or reused note graphs, bibliography-backed citations, modern comment replies, content controls, complex fields, floating drawings, and other advanced graphs are likewise not source-free authoring features. Recognized imported whole-block bookmarks are inspectable/resolvable but fixed-topology and read-only. Canonical imported footnote/endnote text may change, but the target paragraph becomes source-bound and the note kind, anchor, native ID, and topology cannot move; other imported advanced graphs are preserved only while their source evidence remains valid.
 
 Use `DocumentFile.inspectDocx` or `DocumentFile.patchDocx` only when the user explicitly requests package-level inspection or patching. These are deliberate low-level operations, never an automatic fallback for ordinary authoring.
 
