@@ -2056,11 +2056,15 @@ function documentField(block, original) {
     throw new OpenChestnutCodecError(`Document field ${block.id} instruction must contain 1 through 8192 characters without controls.`, [], { code: "invalid_document_field" });
   }
   const command = /^[A-Za-z]+/.exec(instruction.trimStart())?.[0]?.toUpperCase();
-  if (!command || !DOCUMENT_FIELD_COMMANDS.has(command)) {
+  const complex = Boolean(block.complex);
+  if (!command || (complex ? command !== "TOC" : !DOCUMENT_FIELD_COMMANDS.has(command))) {
     throw new OpenChestnutCodecError(`Document field ${block.id} command ${command || "(missing)"} is outside the bounded editable field catalog.`, [], { code: "invalid_document_field" });
   }
+  if (complex && !/^TOC \\o "[1-9]-[1-9]"(?: \\h)?(?: \\z)?(?: \\u)?$/.test(instruction)) {
+    throw new OpenChestnutCodecError(`Document field ${block.id} complex TOC instruction is outside the canonical bounded profile.`, [], { code: "invalid_document_field" });
+  }
   if (display.length > 1_000_000) throw new OpenChestnutCodecError(`Document field ${block.id} display text exceeds 1,000,000 characters.`, [], { code: "invalid_document_field" });
-  return { instruction, display };
+  return { instruction, display, complex };
 }
 
 function documentCommentSnapshot(comment) {
@@ -2466,7 +2470,7 @@ function unchangedSourceBlock(block, original) {
     case "hyperlink":
       return sameDocumentHyperlink(block, original.content.value);
     case "field":
-      return block.kind === "field" && block.styleId === (original.styleId || "Normal") && block.instruction === original.content.value.instruction && block.display === original.content.value.display;
+      return block.kind === "field" && block.styleId === (original.styleId || "Normal") && block.instruction === original.content.value.instruction && block.display === original.content.value.display && Boolean(block.complex) === Boolean(original.content.value.complex);
     case "citation":
       return block.kind === "citation" && block.styleId === (original.styleId || "Normal") &&
         String(block.metadata?.tag || "") === original.content.value.tag && block.text === original.content.value.display;
@@ -2638,7 +2642,6 @@ function documentBlock(block, original, directNumbering, assets, contentControlN
 function unsupportedDocumentCollections(document) {
   const unsupported = [];
   if (document.settings?.trackRevisions) unsupported.push("revision tracking");
-  if (document.settings?.updateFields) unsupported.push("automatic field refresh");
   if (document.settings?.mirrorMargins) unsupported.push("mirrored margins");
   if (document.settings?.documentProtection != null) unsupported.push("document protection");
   return unsupported;
@@ -2701,6 +2704,7 @@ function documentEnvelope(document) {
         headers: document.headers.map(wireHeaderFooter),
         footers: document.footers.map(wireHeaderFooter),
         evenAndOddHeaders: Boolean(document.settings?.evenAndOddHeaders),
+        updateFields: Boolean(document.settings?.updateFields),
         sectionSettings: (document.sectionSettings || []).map((settings) => ({
           sectionIndex: uint32(settings.sectionIndex, "Document section settings index"),
           differentFirstPage: settings.differentFirstPage == null ? undefined : Boolean(settings.differentFirstPage),
@@ -2821,6 +2825,7 @@ function documentFromEnvelope(envelope) {
           styleId: block.styleId || "Normal",
           instruction: block.content.value.instruction,
           display: block.content.value.display,
+          complex: Boolean(block.content.value.complex),
         };
       case "citation":
         return {
@@ -2923,7 +2928,7 @@ function documentFromEnvelope(envelope) {
     bibliographySources: (source.bibliography?.sources || []).map(publicDocumentBibliographySource),
     headers: (source.headers || []).map(publicHeaderFooter),
     footers: (source.footers || []).map(publicHeaderFooter),
-    settings: { evenAndOddHeaders: Boolean(source.evenAndOddHeaders) },
+    settings: { evenAndOddHeaders: Boolean(source.evenAndOddHeaders), updateFields: Boolean(source.updateFields) },
     sectionSettings: (source.sectionSettings || []).map((settings) => ({ sectionIndex: settings.sectionIndex, differentFirstPage: settings.differentFirstPage })),
   });
   document.id = source.id || document.id;

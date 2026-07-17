@@ -1780,6 +1780,10 @@ message DocumentArtifact {
   // Imported catalogs keep their part/relationship identity and fixed source
   // topology in the source binding; irregular custom XML remains opaque.
   DocumentBibliography bibliography = 13;
+  // Request field refresh when the document is next opened by a compatible
+  // WordprocessingML host. This is a refresh hint, not evidence that cached
+  // PAGE/TOC/REF results are current.
+  bool update_fields = 14;
 }
 
 message DocumentBibliography {
@@ -2073,6 +2077,9 @@ message DocumentHyperlink {
 message DocumentField {
   string instruction = 1;
   string display = 2;
+  // False is the bounded w:fldSimple profile. True is the canonical one-run
+  // begin/instrText/separate/result/end profile currently limited to TOC.
+  bool complex = 3;
 }
 
 message DocumentCitation {

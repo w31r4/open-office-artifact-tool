@@ -361,11 +361,12 @@ class DocumentFieldBlock {
     this.display = String(display ?? config.display ?? "1");
     this.styleId = config.styleId || config.style || "Normal";
     this.name = config.name || "";
+    this.complex = Boolean(config.complex);
   }
 
   get text() { return this.display; }
-  inspectRecord(index) { return { kind: "field", id: this.id, index, name: this.name || undefined, styleId: this.styleId, instruction: this.instruction, display: this.display }; }
-  toProto() { return { kind: "field", id: this.id, name: this.name, styleId: this.styleId, instruction: this.instruction, display: this.display }; }
+  inspectRecord(index) { return { kind: "field", id: this.id, index, name: this.name || undefined, styleId: this.styleId, instruction: this.instruction, display: this.display, complex: this.complex }; }
+  toProto() { return { kind: "field", id: this.id, name: this.name, styleId: this.styleId, instruction: this.instruction, display: this.display, complex: this.complex }; }
 }
 
 class DocumentBibliographySource {
@@ -741,6 +742,22 @@ export class DocumentModel {
   addList(items = [], config = {}) { return items.map((item) => this.addListItem(typeof item === "string" ? item : item.text, { ...config, ...(typeof item === "string" ? {} : item) })); }
   addHyperlink(text, url, config = {}) { const block = new DocumentHyperlinkBlock(this, text, url, config); this.blocks.push(block); return block; }
   addField(instruction, display, config = {}) { const block = new DocumentFieldBlock(this, instruction, display, config); this.blocks.push(block); return block; }
+  addTableOfContents(config = {}) {
+    const levels = String(config.levels ?? `${config.minLevel ?? 1}-${config.maxLevel ?? 3}`);
+    const match = /^([1-9])-([1-9])$/.exec(levels);
+    if (!match || Number(match[1]) > Number(match[2])) throw new TypeError("Document TOC levels must be an ascending range from 1-1 through 1-9.");
+    const switches = [`\\o "${levels}"`];
+    if (config.hyperlinks !== false) switches.push("\\h");
+    if (config.hidePageNumbersInWeb !== false) switches.push("\\z");
+    if (config.useOutlineLevels !== false) switches.push("\\u");
+    const block = this.addField(
+      `TOC ${switches.join(" ")}`,
+      config.display ?? "(Table of contents will populate after fields are updated)",
+      { ...config, complex: true },
+    );
+    if (config.updateFields !== false) this.settings = normalizeDocxSettings({ ...this.settings, updateFields: true });
+    return block;
+  }
   addBibliographySource(config = {}) { const source = new DocumentBibliographySource(this, config); this.bibliographySources.push(source); return source; }
   addCitation(text, metadata = {}, config = {}) {
     const block = new DocumentCitationBlock(this, text, metadata, config);
