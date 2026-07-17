@@ -1108,7 +1108,6 @@ function presentationAdvancedSnapshot(presentation) {
     commentFormat: presentation.commentFormat,
     customShows: presentation.customShows.items.map((show) => show.toJSON()),
     slides: presentation.slides.items.map((slide) => ({
-      speakerNotes: slide.speakerNotes,
       background: slide.background,
       comments: slide.comments.items.map((comment) => comment.toJSON()),
     })),
@@ -1129,7 +1128,6 @@ function unsupportedPresentationFeatures(presentation) {
   for (const slide of presentation.slides?.items || []) {
     const prefix = `slide ${slide.index + 1}`;
     if (slide.layoutId) unsupported.push(`${prefix} layout binding`);
-    if (slide.speakerNotes?.text) unsupported.push(`${prefix} speaker notes`);
     if (slide.background?.fill) unsupported.push(`${prefix} background`);
     if (slide.comments?.items?.length) unsupported.push(`${prefix} comments`);
     if (slide.groups?.items?.length) unsupported.push(`${prefix} groups`);
@@ -1169,7 +1167,7 @@ export function presentationEnvelope(presentation, protocolVersion) {
     }
   } else {
     if (presentationAdvancedSnapshot(presentation) !== state.advancedSnapshot) {
-      throw new OpenChestnutCodecError("Imported presentation theme, comments, notes, slide backgrounds, and custom shows are source-bound and read-only in OpenChestnut 0.2.", [], { code: "unsupported_presentation_edit" });
+      throw new OpenChestnutCodecError("Imported presentation theme, comments, slide backgrounds, and custom shows are source-bound and read-only in OpenChestnut 0.2.", [], { code: "unsupported_presentation_edit" });
     }
     if (state.slides.length !== presentation.slides.items.length) throw new OpenChestnutCodecError(`Source-preserving PPTX export requires the original ${state.slides.length}-slide topology.`, [], { code: "presentation_topology_changed" });
     if (Number(state.slideWidthEmu) !== Math.round(Number(presentation.slideSize.width) * EMU_PER_PIXEL) || Number(state.slideHeightEmu) !== Math.round(Number(presentation.slideSize.height) * EMU_PER_PIXEL)) {
@@ -1189,12 +1187,20 @@ export function presentationEnvelope(presentation, protocolVersion) {
       if (current.length !== sourceState.entries.length || sourceState.entries.some((entry) => !current.includes(entry.model))) {
         throw new OpenChestnutCodecError(`Source-preserving PPTX export requires slide ${slideIndex + 1}'s original ${sourceState.entries.length}-element topology.`, [], { code: "presentation_element_topology_changed" });
       }
+      if (!sourceState.wire.speakerNotes && slide.speakerNotes?.text) {
+        throw new OpenChestnutCodecError(`Source-preserving PPTX export cannot add speaker notes to slide ${slideIndex + 1} because the source slide has no notes part.`, [], { code: "unsupported_presentation_edit" });
+      }
     }
     return {
       id: sourceState?.wire.id || slide.id,
       name: slide.name,
       source: sourceState?.wire.source,
       ...(slide.layoutId ? { layoutId: slide.layoutId } : {}),
+      ...(sourceState?.wire.speakerNotes
+        ? { speakerNotes: { text: slide.speakerNotes?.text || "", source: sourceState.wire.speakerNotes.source } }
+        : slide.speakerNotes?.text
+          ? { speakerNotes: { text: slide.speakerNotes.text } }
+          : {}),
       elements: sourceState
           ? sourceState.entries.map((entry) => {
             if (entry.wire.content.case === "shape") {
@@ -1612,6 +1618,7 @@ export async function presentationFromEnvelope(envelope) {
     const slide = presentation.slides.add({ name: sourceSlide.name });
     slide.id = sourceSlide.id || slide.id;
     slide.layoutId = sourceSlide.layoutId || undefined;
+    slide.addNotes(sourceSlide.speakerNotes?.text || "");
     const entries = [];
     for (const element of sourceSlide.elements) {
       let model;

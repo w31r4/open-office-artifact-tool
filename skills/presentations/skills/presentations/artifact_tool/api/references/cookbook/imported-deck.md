@@ -168,7 +168,6 @@ notes.setText([
   "Opening: summarize the revised revenue outlook.",
   "Call out risk on enterprise timing.",
 ].filter(Boolean).join("\n"));
-notes.setVisible(true);
 
 const verified = await presentation.inspect({
   kind: "thread,notes",
@@ -178,4 +177,6 @@ const verified = await presentation.inspect({
 ```
 
 Keep unrelated threads and speaker notes intact unless the task explicitly asks
-to clear them.
+to clear them. Speaker-note edits use the bounded plain-text OpenChestnut
+contract; rich or irregular imported notes remain preservation-only and fail
+closed on mutation.

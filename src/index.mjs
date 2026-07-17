@@ -5076,6 +5076,20 @@ function slideLayoutSlice(slide, layout, options = {}) {
   return { ...layout, elements, slice: { targets, search: search || undefined, before, after, matchedElements: matches.length, returnedElements: elements.length } };
 }
 
+class SpeakerNotes {
+  constructor(slide, text = "") {
+    this.slide = slide;
+    this.textFrame = new TextFrame(text);
+  }
+
+  get id() { return `${this.slide.id}/notes`; }
+  get text() { return this.textFrame.value; }
+  set text(value) { this.textFrame.set(value); }
+  setText(value) { this.textFrame.set(value); return this; }
+  append(value) { this.textFrame.set(`${this.text}${String(value ?? "")}`); return this; }
+  clear() { this.textFrame.set(""); return this; }
+}
+
 export class Slide {
   constructor(presentation, options = {}) {
     this.presentation = presentation;
@@ -5090,14 +5104,14 @@ export class Slide {
     this.nativeObjects = new ElementCollection(this, NativePresentationObject);
     this.comments = new SlideCommentCollection(this);
     this.layoutId = options.layoutId || options.layout?.id || (typeof options.layout === "string" ? options.layout : undefined);
-    this.speakerNotes = { text: String(options.notes || options.speakerNotes?.text || "") };
+    this.speakerNotes = new SpeakerNotes(this, options.notes || options.speakerNotes?.text || "");
     this.background = options.background ? normalizePresentationBackground(options.background) : {};
   }
 
   get index() { return this.presentation.slides.items.indexOf(this); }
   get frame() { return { left: 0, top: 0, ...this.presentation.slideSize }; }
 
-  addNotes(text) { this.speakerNotes.text = String(text ?? ""); return this.speakerNotes; }
+  addNotes(text) { return this.speakerNotes.setText(text); }
   addComment(target, text, config = {}) { return this.comments.addThread(target, text, config); }
   addConnector(config = {}) { return this.connectors.add(config); }
   addGroup(config = {}) { return this.groups.add(config); }
@@ -5128,6 +5142,7 @@ export class Slide {
 
   title() { return this.shapes.items.find((shape) => shape.text.value)?.text.value || this.charts.items[0]?.title || ""; }
   resolve(id) {
+    if (id === this.speakerNotes.id) return this.speakerNotes;
     if (String(id || "").endsWith("/text")) {
       const parentId = String(id).slice(0, -5);
       const shape = this.shapes.items.find((item) => item.id === parentId);
@@ -5314,6 +5329,7 @@ class TextFrame {
   set paragraphs(value) { this._paragraphs = normalizePresentationParagraphs(value); }
   effectiveParagraphs() { return inheritPresentationParagraphs(this._paragraphs, this.inheritedParagraphStyles); }
   set(text) { this._paragraphs = normalizePresentationParagraphs(text); return this; }
+  setText(text) { return this.set(text); }
   replace(search, replacement) { replacePresentationParagraphText(this._paragraphs, search, replacement); return this; }
   toString() { return this.value; }
 }

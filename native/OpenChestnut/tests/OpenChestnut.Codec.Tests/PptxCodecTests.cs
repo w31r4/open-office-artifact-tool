@@ -61,6 +61,54 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void SpeakerNotesAuthorImportEditAndFailClosedForRichSourceText()
+    {
+        var request = ExportRequest();
+        request.Artifact.Presentation.Slides[0].SpeakerNotes = new PresentationSpeakerNotes
+        {
+            Text = "Open with the customer outcome.\nThen explain the operating model.",
+        };
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            Assert.NotNull(package.PresentationPart!.NotesMasterPart);
+            var notesPart = Assert.Single(package.PresentationPart.SlideParts).NotesSlidePart;
+            Assert.NotNull(notesPart);
+            Assert.NotNull(notesPart!.NotesMasterPart);
+            Assert.Equal(2, notesPart.NotesSlide!.Descendants<A.Paragraph>().Count());
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedNotes = Assert.Single(imported.Artifact.Presentation.Slides).SpeakerNotes;
+        Assert.Equal("Open with the customer outcome.\nThen explain the operating model.", importedNotes.Text);
+        Assert.True(importedNotes.Source.Editable);
+        Assert.StartsWith("ppt/notesSlides/notesSlide", importedNotes.Source.PartPath, StringComparison.OrdinalIgnoreCase);
+
+        importedNotes.Text = "Lead with evidence.\nClose with the decision.";
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var roundTrip = Import(edited.File.ToByteArray());
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        Assert.Equal("Lead with evidence.\nClose with the decision.", Assert.Single(roundTrip.Artifact.Presentation.Slides).SpeakerNotes.Text);
+
+        var richBytes = AddRichSpeakerNotes(authored.File.ToByteArray());
+        var rich = Import(richBytes);
+        Assert.True(rich.Ok, Diagnostics(rich));
+        var richNotes = Assert.Single(rich.Artifact.Presentation.Slides).SpeakerNotes;
+        Assert.False(richNotes.Source.Editable);
+        var preserved = Export(rich.Artifact);
+        Assert.True(preserved.Ok, Diagnostics(preserved));
+        richNotes.Text = "Do not flatten the source formatting.";
+        var rejected = Export(rich.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void LiteralCustomGeometryAuthorsImportsEditsAndValidates()
     {
         var request = ExportRequest();
@@ -2726,6 +2774,21 @@ public sealed class PptxCodecTests
         return presentationPart.Presentation!.SlideIdList!.Elements<P.SlideId>()
             .Select(slideId => (SlidePart)presentationPart.GetPartById(slideId.RelationshipId!.Value!))
             .ToArray();
+    }
+
+    private static byte[] AddRichSpeakerNotes(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var package = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var runs = OrderedSlides(package)[0].NotesSlidePart!.NotesSlide!.Descendants<A.Run>().ToArray();
+            Assert.Equal(2, runs.Length);
+            runs[0].RunProperties = new A.RunProperties { Bold = true };
+            runs[1].RunProperties = new A.RunProperties { Italic = true };
+        }
+        return stream.ToArray();
     }
 
     private static byte[] AddUnknownRunClick(byte[] bytes)

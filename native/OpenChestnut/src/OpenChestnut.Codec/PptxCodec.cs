@@ -150,6 +150,8 @@ internal static class PptxCodec
                     LayoutRelationshipId = slidePart.SlideLayoutPart is { } boundLayout ? slidePart.GetIdOfPart(boundLayout) : string.Empty,
                 },
             };
+            if (PptxSpeakerNotesCodec.Read(slidePart) is { } speakerNotes)
+                target.SpeakerNotes = speakerNotes;
             var slideContext = new PptxPartContext(slidePart, slideIdByPartPath, assets: assetCatalog);
             for (var elementIndex = 0; elementIndex < elements.Length; elementIndex++)
             {
@@ -541,6 +543,11 @@ internal static class PptxCodec
                 {
                     slideRoot.Save();
                     changedParts.Add(PartPath(slidePart));
+                }
+                if (PptxSpeakerNotesCodec.ApplySourceBound(slidePart, target.SpeakerNotes, slideIndex) is { } notesChange)
+                {
+                    changedParts.Add(notesChange.PartPath);
+                    replacedOpaquePartHashes.Add(notesChange.PartPath, notesChange.Sha256);
                 }
                 TrackContextChanges(slidePart, slideContext, changedParts, addedRelationshipIds, addedPartPaths);
             }
@@ -937,8 +944,12 @@ internal static class PptxCodec
                 });
             slidePart.Slide.Save();
         }
-        presentationPart.Presentation = new P.Presentation(
-            new P.SlideMasterIdList(new P.SlideMasterId { Id = 2_147_483_648U, RelationshipId = "rIdMaster1" }),
+        var notesMasterRelationshipId = PptxSpeakerNotesCodec.BuildSourceFree(presentationPart, themePart, slideParts, artifact.Slides);
+        var presentationRoot = new P.Presentation();
+        presentationRoot.Append(new P.SlideMasterIdList(new P.SlideMasterId { Id = 2_147_483_648U, RelationshipId = "rIdMaster1" }));
+        if (notesMasterRelationshipId is not null)
+            presentationRoot.Append(new P.NotesMasterIdList(new P.NotesMasterId { Id = notesMasterRelationshipId }));
+        presentationRoot.Append(
             slideIdList,
             new P.SlideSize
             {
@@ -947,6 +958,7 @@ internal static class PptxCodec
             },
             new P.NotesSize { Cx = 6_858_000L, Cy = 9_144_000L },
             new P.DefaultTextStyle());
+        presentationPart.Presentation = presentationRoot;
         themePart.Theme.Save();
         layoutPart.SlideLayout.Save();
         masterPart.SlideMaster.Save();
@@ -1312,6 +1324,7 @@ internal static class PptxCodec
 
         foreach (var slide in envelope.Presentation.Slides)
         {
+            PptxSpeakerNotesCodec.Validate(slide.SpeakerNotes);
             if (!string.IsNullOrWhiteSpace(slide.LayoutId) && !layoutIds.Contains(slide.LayoutId))
                 throw new CodecException("invalid_presentation_layout", $"Presentation slide {slide.Id} references missing layout {slide.LayoutId}.");
             foreach (var element in slide.Elements)

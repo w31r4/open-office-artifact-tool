@@ -85,6 +85,7 @@ assert.throws(
 // The canonical file facade always crosses the OpenChestnut C# WASM layer.
 const deck = Presentation.create({ slideSize: { width: 1280, height: 720 } });
 const coreSlide = deck.slides.add({ name: "Core objects" });
+coreSlide.addNotes("Lead with the customer outcome.\nThen explain the operating model.");
 coreSlide.shapes.add({
   name: "core-title",
   geometry: "textbox",
@@ -227,7 +228,10 @@ assert.equal(deck.verify().ok, true);
 assert.equal(deck.validateLayout().ok, true);
 assert.equal(deck.resolve(rounded.id), rounded);
 assert.equal(deck.resolve(rounded.id + "/text").text, "Before edit");
-assert.match(deck.inspect({ kind: "deck,slide,textbox,shape,table,chart,image,connector,textRange", maxChars: 24_000 }).ndjson, /elbow-polyline-connector/);
+assert.match(deck.inspect({ kind: "deck,slide,textbox,shape,table,chart,image,connector,textRange,notes", maxChars: 24_000 }).ndjson, /Lead with the customer outcome/);
+assert.equal(deck.resolve(coreSlide.speakerNotes.id), coreSlide.speakerNotes);
+coreSlide.speakerNotes.textFrame.setText("Lead with the customer outcome.\nThen explain the operating model.");
+assert.equal(coreSlide.speakerNotes.append("").text, "Lead with the customer outcome.\nThen explain the operating model.");
 
 const firstExport = await PresentationFile.exportPptx(deck);
 assert.equal(firstExport.metadata.codec, "open-chestnut");
@@ -265,12 +269,14 @@ await assert.rejects(
   /layout .*source-bound and read-only/i,
 );
 imported.layouts.items[0].name = "Source Layout Marker";
-imported.slides.getItem(0).addNotes("Unsupported source-bound note edit");
+assert.equal(imported.slides.getItem(0).speakerNotes.text, "Lead with the customer outcome.\nThen explain the operating model.");
+imported.slides.getItem(0).addNotes("Lead with evidence.\nClose with the decision.");
+imported.slides.getItem(1).addNotes("Cannot add a new notes part source-bound");
 await assert.rejects(
   () => PresentationFile.exportPptx(imported),
-  /theme, comments, notes, slide backgrounds, and custom shows.*read-only/i,
+  /cannot add speaker notes to slide 2.*no notes part/i,
 );
-imported.slides.getItem(0).addNotes("");
+imported.slides.getItem(1).addNotes("");
 const importedCore = imported.slides.getItem(0);
 assert.equal(itemByName(importedCore.shapes.items, "rounded-card").geometry, "roundRect");
 assert.equal(itemByName(importedCore.shapes.items, "target-textbox").geometry, "textbox");
@@ -332,11 +338,13 @@ assert.match(secondSlideXml, /<a:tailEnd type="triangle"/);
 assert.ok(Object.keys(secondZip.files).some((name) => /\/media\/.+\.png$/.test(name)));
 assert.ok(Object.keys(secondZip.files).some((name) => /\/media\/.+\.jpe?g$/.test(name)));
 assert.equal(Object.keys(secondZip.files).filter((name) => /\/charts\/chart\d+\.xml$/.test(name)).length, 3);
+assert.match(await secondZip.file("ppt/notesSlides/notesSlide1.xml").async("text"), /Lead with evidence/);
 
 const roundTrip = await PresentationFile.importPptx(secondExport);
 assert.equal(roundTrip.master.name, "Source Master Marker");
 assert.equal(roundTrip.layouts.items[0].name, "Source Layout Marker");
 const roundTripCore = roundTrip.slides.getItem(0);
+assert.equal(roundTripCore.speakerNotes.text, "Lead with evidence.\nClose with the decision.");
 assert.equal(itemByName(roundTripCore.shapes.items, "rounded-card").text.value, "After edit");
 assert.equal(itemByName(roundTripCore.shapes.items, "rounded-card").shadow.opacity, 0.35);
 assert.equal(itemByName(roundTripCore.tables.items, "fixed-table").values[1][1], "After");

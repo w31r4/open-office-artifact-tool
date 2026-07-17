@@ -176,8 +176,8 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "fx.FLOOR", category: "math-trig", summary: "Round a number down to the nearest significance.", examples: ["=FLOOR(A1,5)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.PMT", category: "financial", summary: "Calculate a loan payment for constant payments and constant interest rate.", examples: ["=PMT(rate,nper,pv)"], notes: ["Catalog entry only in MVP; full financial formula evaluation is roadmap."] },
 
-  { artifactKind: "presentation", kind: "api", name: "Presentation.create", summary: "Create a deck model whose canonical OpenChestnut export supports ordinary slides, shapes, rich text, tables, images, connectors, and source-free bar/line/pie charts. Custom themes, Master/Layout authoring, notes, comments, custom shows, and other package-level features are outside the source-free PPTX boundary." },
-  { artifactKind: "presentation", kind: "api", name: "presentation.slides.add", summary: "Append an editable core slide. Layout identity and speaker notes remain model-only for source-free decks; canonical OpenChestnut export rejects them and preserves imported equivalents read-only." },
+  { artifactKind: "presentation", kind: "api", name: "Presentation.create", summary: "Create a deck model whose canonical OpenChestnut export supports ordinary slides, shapes, rich text, tables, images, connectors, plain-text speaker notes, and source-free bar/line/pie charts. Custom themes, Master/Layout authoring, comments, custom shows, and other package-level features remain outside the source-free PPTX boundary." },
+  { artifactKind: "presentation", kind: "api", name: "presentation.slides.add", summary: "Append an editable core slide with optional plain-text speaker notes. OpenChestnut authors the canonical notes graph; source-bound slides can edit an existing simple notes body but cannot add a new notes part." },
   { artifactKind: "presentation", kind: "api", name: "presentation.customShows.add", summary: "Define a model-level custom slide show for inspect and preview. OpenChestnut 0.2 does not author custom shows, and imported custom-show graphs are source-bound and read-only." },
   { artifactKind: "presentation", kind: "api", name: "presentation.customShows.getItem", summary: "Resolve a model-level or imported read-only custom slide show by zero-based index, stable facade ID, or exact name." },
   { artifactKind: "presentation", kind: "api", name: "presentation.inspect", summary: "Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, tables, charts, images, and native contentPart/OLE/diagram objects with bounded editability, relationship-reference, root-relationship, preserved-part, and eligible embedded-workbook summaries; narrow with search/target anchors and shape fields with include/exclude." },
@@ -209,15 +209,15 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "presentation.layout.setBackground", summary: "Change a model-level layout background for preview only. Canonical PPTX export rejects layout authoring and imported-layout mutation." },
   { artifactKind: "presentation", kind: "api", name: "presentation.layout.clearBackground", summary: "Clear a model-level layout background for preview only. Canonical PPTX export rejects layout authoring and imported-layout mutation." },
   { artifactKind: "presentation", kind: "api", name: "slide.applyLayout", summary: "Materialize layout placeholders in the model for preview. Source-free layout binding is outside the OpenChestnut 0.2 PPTX boundary; imported Layout relationships are preservation-only." },
-  { artifactKind: "presentation", kind: "api", name: "slide.addNotes", summary: "Set model-level speaker notes for inspect and preview. OpenChestnut 0.2 does not author notes; imported notes are source-bound and read-only." },
+  { artifactKind: "presentation", kind: "api", name: "slide.addNotes", summary: "Set plain-text speaker notes for inspect, preview, and canonical PPTX output. OpenChestnut authors source-free notes and edits hash-bound simple imported notes bodies; rich or irregular imported notes fail closed instead of losing formatting." },
   { artifactKind: "presentation", kind: "api", name: "slide.comments.addThread", summary: "Create model-level comment threads for inspect and preview. OpenChestnut 0.2 does not author legacy or modern PPTX comments; imported comment graphs are source-bound and read-only." },
   { artifactKind: "presentation", kind: "api", name: "slide.connectors.add", summary: "Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.inspectPptx", summary: "Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.patchPptx", summary: "Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.exportPptx", summary: "Serialize PPTX through the single bundled OpenChestnut codec. Only limits is accepted; legacy codec and lossy-fallback options fail explicitly." },
   { artifactKind: "presentation", kind: "api", name: "PresentationFile.importPptx", summary: "Import PPTX through the single bundled OpenChestnut codec with source-bound opaque preservation and fail-closed edits." },
-  { artifactKind: "presentation", kind: "api", name: "exportPptxWithOpenChestnut", summary: "Export bounded textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures, fixed-grid plain-text tables, and source-free bar/line/pie charts. Imported Master/Layout, notes, comments, themes, native OLE/diagram/contentPart, and other advanced package graphs are preserved unchanged and edits fail closed." },
-  { artifactKind: "presentation", kind: "api", name: "importPptxWithOpenChestnut", summary: "Import PPTX bytes with editable bounded shapes, rich text, pictures, tables, connectors, and bar/line/pie charts. Master/Layout graphs, notes, comments, themes, native OLE/diagram/contentPart objects, and unsupported content remain source-bound and read-only; eligible OLE XLSX payloads may be inspected but not replaced." },
+  { artifactKind: "presentation", kind: "api", name: "exportPptxWithOpenChestnut", summary: "Export bounded textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures, fixed-grid plain-text tables, plain-text speaker notes, and source-free bar/line/pie charts. Imported simple notes bodies are hash-bound and editable; complex notes and other advanced package graphs remain preserved and fail closed on mutation." },
+  { artifactKind: "presentation", kind: "api", name: "importPptxWithOpenChestnut", summary: "Import PPTX bytes with editable bounded shapes, rich text, pictures, tables, connectors, bar/line/pie charts, and plain-text speaker notes. Simple notes bodies are hash-bound and editable; rich or irregular notes plus other unsupported content remain source-bound and read-only." },
   { artifactKind: "presentation", kind: "api", name: "compose.column", summary: "Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels." },
   { artifactKind: "presentation", kind: "api", name: "compose.paragraph", summary: "Create an editable text block with name, className/style text tokens, and stable inspect output." },
   { artifactKind: "presentation", kind: "api", name: "compose.text", summary: "Create the same editable paragraph node through the reference-template-compatible children-first text(children, props) helper." },
@@ -1070,7 +1070,7 @@ const PRESENTATION_HELP_SCHEMAS = {
   "presentation.slides.add": helpSchema({
     name: { type: "string", description: "Inspectable slide name." },
     layout: { type: "string|object", description: "Model-only Layout binding; source-free canonical PPTX export rejects it." },
-    notes: { type: "string", description: "Model-only speaker notes; source-free canonical PPTX export rejects them." },
+    notes: { type: "string", description: "Optional plain-text speaker notes authored into the canonical PresentationML notes graph." },
   }, "slide", "Slide", "Appended editable slide."),
   "presentation.inspect": helpSchema({
     kind: { type: "string", description: "Comma-separated deck/theme/layout/slide/textbox/textRange/shape/groupShape/table/chart/image/connector/nativeObject/contentPart/oleObject/diagram/comment/notes kinds." },
@@ -1245,7 +1245,7 @@ const PRESENTATION_HELP_SCHEMAS = {
   }, "shapes", "Shape[]", "Materialized model placeholder shapes for preview; source-free Layout binding is rejected by canonical PPTX export."),
   "slide.addNotes": helpSchema({
     text: { type: "string", required: true, description: "Speaker notes text." },
-  }, "notes", "object", "Model-level speaker-notes record; canonical PPTX export rejects source-free notes and imported-note edits."),
+  }, "notes", "object", "Plain-text speaker-notes record. Source-free notes and simple hash-bound imported notes are editable; rich imported notes remain preservation-only."),
   "slide.comments.addThread": helpSchema({
     target: { type: "string|object", required: true, description: "Stable model element/text-range ID or facade. OpenChestnut 0.2 does not author PPTX comment bindings." },
     text: { type: "string", required: true, description: "Initial comment text." },
@@ -1300,9 +1300,9 @@ const PRESENTATION_HELP_SCHEMAS = {
   "PresentationFile.importPptx": helpSchema({
     pptx: { type: "FileBlob|Uint8Array", required: true, description: "PPTX package bytes." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
-  }, "presentation", "Presentation", "Imported presentation facade with editable core objects and source-bound read-only Master/Layout, notes, comments, themes, native objects, placeholders, and unsupported package graphs."),
+  }, "presentation", "Presentation", "Imported presentation facade with editable core objects and simple plain-text speaker notes; rich notes, Master/Layout, comments, themes, native objects, placeholders, and unsupported package graphs remain source-bound."),
   "exportPptxWithOpenChestnut": helpSchema({
-    presentation: { type: "Presentation", required: true, description: "Presentation facade within the bounded shape/rich-text/picture/fixed-table/connector/source-free bar-line-pie chart boundary. Imported Master/Layout, notes, comments, themes, native OLE/diagram/contentPart, placeholders, and other advanced package graphs must remain unchanged." },
+    presentation: { type: "Presentation", required: true, description: "Presentation facade within the bounded shape/rich-text/picture/fixed-table/connector/plain-text-notes/source-free bar-line-pie chart boundary. Rich notes and other imported advanced package graphs must remain unchanged." },
     limits: { type: "object", description: "Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets." },
   }, "blob", "FileBlob", "PPTX bytes produced by the bundled Open XML SDK WebAssembly codec, including bounded top-level embedded-picture and fixed-grid plain-text-table profiles, with codec diagnostics in metadata."),
   "importPptxWithOpenChestnut": helpSchema({

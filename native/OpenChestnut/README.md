@@ -16,7 +16,7 @@ Protocol version 2 removes `allow_lossy`; the removed field name and number are 
 
 - XLSX: cells/formulas/styles, merges/dimensions/freeze panes, tables, PNG/JPEG images, bar/line/pie charts, standard Office 2010 line/column/stacked sparklines with reversible range mappings, basic data validation and conditional formatting, and one-level threaded comments.
 - DOCX: styles, paragraph/run formatting, pages/sections, headers/footers, PAGE/simple fields, PNG/JPEG images, lists, links, classic comments, and fixed-geometry tables.
-- PPTX: text boxes/round rectangles, basic fill/line/shadow, straight/polyline connectors and arrows, source-free bar/line/pie charts, images, fixed tables, rich text/lists/links, and source-bound Master/Layout preservation.
+- PPTX: text boxes/round rectangles, basic fill/line/shadow, straight/polyline connectors and arrows, source-free bar/line/pie charts, images, fixed tables, rich text/lists/links, canonical plain-text speaker notes, and source-bound Master/Layout preservation. Imported notes with one bounded body placeholder are hash-bound and editable; rich or irregular notes remain opaque-preserved and fail closed on mutation.
 
 Imported objects outside these modeled profiles remain opaque and unchanged. They do not become permission for lossy rewriting.
 
