@@ -16,6 +16,7 @@ import {
 import { HELP_CATALOG as LEAF_HELP_CATALOG } from "../src/help/index.mjs";
 import { node as leafNode, text as leafText } from "../src/presentation/compose.mjs";
 import * as presentationApi from "../src/presentation/index.mjs";
+import * as spreadsheetApi from "../src/spreadsheet/index.mjs";
 import { FileBlob as LeafFileBlob } from "../src/shared/file-blob.mjs";
 
 assert.deepEqual(Object.keys(rootApi).sort(), [
@@ -32,6 +33,9 @@ assert.strictEqual(text, leafText, "root must re-export the reference-compatible
 assert.strictEqual(FileBlob, LeafFileBlob, "root must re-export the FileBlob constructor binding");
 for (const name of ["Presentation", "PresentationFile", "Slide", "Shape", "TableElement", "ChartElement", "ImageElement", "GroupShape"]) {
   assert.strictEqual(rootApi[name], presentationApi[name], `root must re-export the ${name} constructor binding`);
+}
+for (const name of ["Workbook", "Worksheet", "Range", "SpreadsheetFile"]) {
+  assert.strictEqual(rootApi[name], spreadsheetApi[name], `root must re-export the ${name} constructor binding`);
 }
 
 assert.ok(HELP_CATALOG.length >= 40);

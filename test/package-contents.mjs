@@ -16,6 +16,9 @@ assert.doesNotMatch(pdfFacadeSource, /from\s+["']mupdf["']/, "the root PDF facad
 const presentationCodecSource = await fs.readFile(path.join(repoRoot, "src", "codecs", "open-chestnut-presentation.mjs"), "utf8");
 assert.match(presentationCodecSource, /from "\.\.\/presentation\/index\.mjs";/, "the Presentation codec must depend on the Presentation leaf module");
 assert.doesNotMatch(presentationCodecSource, /from "\.\.\/index\.mjs";/, "the Presentation codec must not create a back-edge to the root entry");
+const spreadsheetCodecSource = await fs.readFile(path.join(repoRoot, "src", "codecs", "open-chestnut.mjs"), "utf8");
+assert.match(spreadsheetCodecSource, /from "\.\.\/spreadsheet\/index\.mjs";/, "the Spreadsheet codec must depend on the Spreadsheet leaf module");
+assert.doesNotMatch(spreadsheetCodecSource, /from "\.\.\/index\.mjs";/, "the Spreadsheet codec must not create a back-edge to the root entry");
 const skillsNpmIgnore = await fs.readFile(path.join(repoRoot, "skills", ".npmignore"), "utf8");
 assert.match(skillsNpmIgnore, /__pycache__/);
 assert.match(skillsNpmIgnore, /\*\.pyc/);
@@ -95,6 +98,7 @@ for (const required of [
   "src/shared/text-range.mjs",
   "src/shared/xml.mjs",
   "src/spreadsheet/formula-criteria.mjs",
+  "src/spreadsheet/index.mjs",
   "src/spreadsheet/formula-coercion.mjs",
   "src/spreadsheet/chart-source-data.mjs",
   "src/spreadsheet/ooxml-styles.mjs",

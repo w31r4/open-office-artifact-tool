@@ -1,7 +1,7 @@
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { Workbook } from "../index.mjs";
+import { Workbook } from "../spreadsheet/index.mjs";
 import { DocumentModel } from "../document/index.mjs";
 import { FileBlob } from "../shared/file-blob.mjs";
 import { XLSX_THEME_COLOR_NAMES, normalizeXlsxStyle, normalizeXlsxThemeConfig } from "../spreadsheet/ooxml-styles.mjs";
