@@ -160,7 +160,9 @@ internal static class DocxTrackedChangeCodec
 
     private static bool TryReadRun(OpenXmlCompositeElement revision, bool deleted, out string text)
     {
-        text = string.Empty;
+        text = deleted
+            ? string.Concat(revision.Descendants<W.DeletedText>().Select(value => value.Text))
+            : string.Concat(revision.Descendants<W.Text>().Select(value => value.Text));
         if (revision.ChildElements.Any(child => child is not W.Run)) return false;
         var runs = revision.Elements<W.Run>().ToArray();
         if (runs.Length != 1) return false;
@@ -172,13 +174,11 @@ internal static class DocxTrackedChangeCodec
         {
             var values = run.Elements<W.DeletedText>().ToArray();
             if (values.Length != 1) return false;
-            text = values[0].Text;
         }
         else
         {
             var values = run.Elements<W.Text>().ToArray();
             if (values.Length != 1) return false;
-            text = values[0].Text;
         }
         return true;
     }

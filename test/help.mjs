@@ -115,7 +115,7 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "document.resolve"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "DocumentFile.importDocx"));
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addBookmark")?.summary || "", /does not author bookmarks.*read-only/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addBibliographySource")?.summary || "", /does not author bibliography parts.*read-only/i);
-assert.match(HELP_CATALOG.find((item) => item.name === "document.addChange")?.summary || "", /does not author revision markup.*read-only/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "document.addChange")?.summary || "", /native w:ins\/w:del.*fixed-topology/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.replyToComment")?.summary || "", /does not author modern\/extended reply graphs.*preservation-only/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.setSettings")?.summary || "", /Only evenAndOddHeaders.*not authorable or editable/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.extractTables"));

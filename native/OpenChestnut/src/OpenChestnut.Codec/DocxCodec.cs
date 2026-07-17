@@ -206,6 +206,12 @@ internal static class DocxCodec
                         "document_source_binding_mismatch",
                         $"Document hyperlink block {ordinal} relationship locator does not match its source element.",
                         "word/document.xml");
+                if (block.ContentCase == DocumentBlock.ContentOneofCase.Change &&
+                    !binding.NativeRevisionId.Equals(original.Source?.NativeRevisionId ?? string.Empty, StringComparison.Ordinal))
+                    throw new CodecException(
+                        "document_source_binding_mismatch",
+                        $"Document tracked-change block {ordinal} revision locator does not match its source element.",
+                        "word/document.xml");
 
                 sourceBlocks.Add(new DocxSourceBlock(ordinal, element, block, original, binding));
             }
@@ -651,6 +657,8 @@ internal static class DocxCodec
         semantic.Source = null;
         if (semantic.ContentCase == DocumentBlock.ContentOneofCase.Hyperlink)
             semantic.Hyperlink.RelationshipId = string.Empty;
+        if (semantic.ContentCase == DocumentBlock.ContentOneofCase.Change && semantic.Change.HasDate)
+            semantic.Change.Date = DateTimeOffset.Parse(semantic.Change.Date).UtcDateTime.ToString("O");
         return Hash(semantic.ToByteArray());
     }
 

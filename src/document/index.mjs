@@ -179,8 +179,8 @@ class DocumentChangeBlock {
     const rawType = String(changeType ?? config.changeType ?? config.type ?? "insert").toLowerCase();
     this.changeType = rawType === "delete" || rawType === "deletion" || rawType === "del" ? "delete" : "insert";
     this.text = String(text ?? "");
-    this.author = config.author || "User";
-    this.date = config.date || new Date().toISOString();
+    this.author = config.author === undefined && config._restore ? "" : (config.author || "User");
+    this.date = config.date === undefined ? (config._restore ? undefined : new Date().toISOString()) : config.date;
     this.styleId = config.styleId || config.style || "Normal";
     this.name = config.name || "";
   }
@@ -776,6 +776,12 @@ export class DocumentModel {
       if (block.kind === "hyperlink" && block.tooltip && String(block.tooltip).length > 260) issues.push(verificationIssue("document", "invalidHyperlinkTooltip", `Hyperlink ${block.id} tooltip exceeds 260 characters.`, { id: block.id }));
       if (block.kind === "field" && !block.instruction.trim()) {
         issues.push(verificationIssue("document", "emptyField", `Field ${block.id} is missing an instruction.`, { id: block.id }));
+      }
+      if (block.kind === "change") {
+        if (!new Set(["insert", "delete"]).has(block.changeType)) issues.push(verificationIssue("document", "invalidChangeType", `Tracked change ${block.id} must be insert or delete.`, { id: block.id, changeType: block.changeType }));
+        if (!String(block.author || "").trim() || String(block.author).length > 255 || /[\u0000-\u001f\u007f]/.test(String(block.author))) issues.push(verificationIssue("document", "invalidChangeAuthor", `Tracked change ${block.id} needs an author of at most 255 characters without controls.`, { id: block.id, author: block.author }));
+        if (block.date !== undefined && Number.isNaN(Date.parse(block.date))) issues.push(verificationIssue("document", "invalidChangeDate", `Tracked change ${block.id} has an invalid date.`, { id: block.id, date: block.date }));
+        if (String(block.text ?? "").length > 1_000_000) issues.push(verificationIssue("document", "changeTextTooLong", `Tracked change ${block.id} exceeds 1,000,000 characters.`, { id: block.id, textChars: String(block.text ?? "").length }));
       }
       if (block.kind === "citation" && block.metadata?.url && !/^https?:\/\//.test(String(block.metadata.url))) {
         issues.push(verificationIssue("document", "invalidCitationUrl", `Citation ${block.id} has a non-http(s) URL.`, { severity: "warning", id: block.id, url: block.metadata.url }));

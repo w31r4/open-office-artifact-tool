@@ -89,6 +89,8 @@ const hyperlink = document.addHyperlink(
   { name: "external-link", styleId: "Normal", tooltip: "Open documentation", history: true },
 );
 const field = document.addField("PAGE", "1", { name: "page-field", styleId: "Normal" });
+const insertion = document.addInsertion("Added wording", { name: "tracked-insertion", styleId: "Normal", author: "Reviewer", date: "2026-07-17T08:00:00Z" });
+const deletion = document.addDeletion("Removed wording", { name: "tracked-deletion", styleId: "Normal", author: "Reviewer", date: "2026-07-17T08:05:00Z" });
 const pngImage = document.addImage({
   name: "png-mark",
   styleId: "Normal",
@@ -159,7 +161,7 @@ const comment = document.addComment(commentTarget, "Confirm the release evidence
 });
 
 const inspect = document.inspect({
-  kind: "document,paragraph,listItem,table,comment,header,footer,hyperlink,field,image,section,style,layout",
+  kind: "document,paragraph,listItem,table,comment,header,footer,hyperlink,field,change,image,section,style,layout",
   maxChars: 24_000,
 }).ndjson;
 for (const expected of [
@@ -173,6 +175,8 @@ for (const expected of [
   "PNG approval mark",
   "JPEG approval mark",
   "landscape-section",
+  "Added wording",
+  "Removed wording",
   "Confirm the release evidence",
 ]) assert.match(inspect, new RegExp(expected));
 assert.equal(document.resolve(formatted.id), formatted);
@@ -184,6 +188,8 @@ assert.equal(document.resolve(defaultHeader.id).referenceType, "default");
 assert.equal(document.resolve(firstHeader.id).referenceType, "first");
 assert.equal(document.resolve(evenHeader.id).referenceType, "even");
 assert.equal(document.resolve(defaultFooter.id).fieldInstruction, "PAGE");
+assert.equal(document.resolve(insertion.id).changeType, "insert");
+assert.equal(document.resolve(deletion.id).changeType, "delete");
 assert.equal(document.resolve(firstFooter.id).referenceType, "first");
 assert.equal(document.resolve(evenFooter.id).referenceType, "even");
 const modelVerification = document.verify({ visualQa: true });
@@ -208,6 +214,10 @@ assert.equal(imported.blocks.filter((block) => block.kind === "listItem").length
 assert.equal(imported.blocks.find((block) => block.kind === "table")?.values[1][1], "Pending");
 assert.equal(imported.blocks.find((block) => block.kind === "hyperlink")?.url, hyperlink.url);
 assert.equal(imported.blocks.find((block) => block.kind === "field")?.instruction, "PAGE");
+assert.deepEqual(imported.blocks.filter((block) => block.kind === "change").map((block) => [block.changeType, block.text, block.author]), [
+  ["insert", "Added wording", "Reviewer"],
+  ["delete", "Removed wording", "Reviewer"],
+]);
 assert.equal(imported.blocks.filter((block) => block.kind === "image").length, 2);
 assert.equal(imported.blocks.some((block) => block.kind === "image" && block.dataUrl.startsWith("data:image/png;base64,")), true);
 assert.equal(imported.blocks.some((block) => block.kind === "image" && block.dataUrl.startsWith("data:image/jpeg;base64,")), true);
@@ -234,6 +244,10 @@ importedLink.history = false;
 const importedField = imported.blocks.find((block) => block.kind === "field");
 importedField.instruction = "NUMPAGES";
 importedField.display = "2";
+const importedInsertion = imported.blocks.find((block) => block.kind === "change" && block.changeType === "insert");
+importedInsertion.text = "Edited insertion";
+importedInsertion.author = "Lead reviewer";
+importedInsertion.date = "2026-07-17T08:30:00Z";
 const importedPng = imported.blocks.find((block) => block.kind === "image" && block.alt === "PNG approval mark");
 importedPng.alt = "Edited PNG approval mark";
 importedPng.widthPx = 56;
@@ -254,11 +268,22 @@ assert.equal(roundTrip.blocks.some((block) => block.kind === "listItem" && block
 assert.equal(roundTrip.blocks.find((block) => block.kind === "table")?.values[1][1], "Pass");
 assert.equal(roundTrip.blocks.find((block) => block.kind === "hyperlink")?.history, false);
 assert.equal(roundTrip.blocks.find((block) => block.kind === "field")?.instruction, "NUMPAGES");
+assert.deepEqual(roundTrip.blocks.filter((block) => block.kind === "change").map((block) => [block.changeType, block.text, block.author]), [
+  ["insert", "Edited insertion", "Lead reviewer"],
+  ["delete", "Removed wording", "Reviewer"],
+]);
 assert.equal(roundTrip.blocks.find((block) => block.kind === "image" && block.alt === "Edited PNG approval mark")?.widthPx, 56);
 assert.equal(roundTrip.blocks.find((block) => block.kind === "section")?.margins.left, 1200);
 assert.equal(roundTrip.comments[0].author, "Lead reviewer");
 assert.equal(roundTrip.comments[0].text, "Release evidence approved.");
 assert.equal(roundTrip.verify({ visualQa: true }).ok, true);
+
+const importedWithChangedRevisionKind = await DocumentFile.importDocx(firstDocx);
+importedWithChangedRevisionKind.blocks.find((block) => block.kind === "change").changeType = "delete";
+await assert.rejects(
+  () => DocumentFile.exportDocx(importedWithChangedRevisionKind),
+  (error) => error?.code === "unsupported_document_edit" && /insertion\/deletion kind/i.test(error.message),
+);
 
 const unsupported = DocumentModel.create({
   name: "Unsupported advanced authoring",

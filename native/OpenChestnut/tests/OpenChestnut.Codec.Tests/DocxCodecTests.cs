@@ -1784,11 +1784,160 @@ public sealed class DocxCodecTests
         Assert.Equal("invalid_document_field", Assert.Single(unsafeResponse.Diagnostics).Code);
     }
 
+    [Fact]
+    public void TrackedChangeSliceAuthorsImportsAndValidatesWholeParagraphInsertionsAndDeletions()
+    {
+        var authored = Invoke(TrackedChangeExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var document = WordprocessingDocument.Open(stream, false))
+        {
+            var body = document.MainDocumentPart!.Document!.Body!;
+            var insertion = body.Descendants<W.InsertedRun>().Single();
+            var deletion = body.Descendants<W.DeletedRun>().Single();
+            Assert.Equal("1", insertion.Id?.Value);
+            Assert.Equal("2", deletion.Id?.Value);
+            Assert.Equal("Reviewer", insertion.Author?.Value);
+            Assert.Equal("Removed wording", deletion.Descendants<W.DeletedText>().Single().Text);
+            Assert.Empty(deletion.Descendants<W.Text>());
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.Equal(DocumentBlock.ContentOneofCase.Change, imported.Artifact.Document.Blocks[0].ContentCase);
+        Assert.Equal(DocumentChangeType.Insert, imported.Artifact.Document.Blocks[0].Change.Type);
+        Assert.Equal("Added wording", imported.Artifact.Document.Blocks[0].Change.Text);
+        Assert.Equal("1", imported.Artifact.Document.Blocks[0].Source.NativeRevisionId);
+        Assert.True(imported.Artifact.Document.Blocks[0].Source.Editable);
+        Assert.Equal(DocumentChangeType.Delete, imported.Artifact.Document.Blocks[1].Change.Type);
+        Assert.Equal("Removed wording", imported.Artifact.Document.Blocks[1].Change.Text);
+        Assert.Equal("2", imported.Artifact.Document.Blocks[1].Source.NativeRevisionId);
+    }
+
+    [Fact]
+    public void SourcePreservingExportEditsTrackedChangeSemanticsAndKeepsRevisionIdentityAndFormatting()
+    {
+        var authored = Invoke(TrackedChangeExportRequest(includeDeletion: false));
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var source = AddTrackedChangeFormatting(authored.File.ToByteArray());
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(source),
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var block = imported.Artifact.Document.Blocks.Single();
+        Assert.Equal(DocumentBlock.ContentOneofCase.Change, block.ContentCase);
+        Assert.True(block.Source.Editable);
+        Assert.Equal("1", block.Source.NativeRevisionId);
+        Assert.NotEmpty(block.Source.ResidualSha256);
+
+        block.Change.Text = "Edited insertion";
+        block.Change.Author = "Lead reviewer";
+        block.Change.Date = "2026-07-17T08:30:00Z";
+        var exported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(exported.Ok, Diagnostics(exported));
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = WordprocessingDocument.Open(stream, false))
+        {
+            var insertion = document.MainDocumentPart!.Document!.Descendants<W.InsertedRun>().Single();
+            Assert.Equal("1", insertion.Id?.Value);
+            Assert.Equal("Lead reviewer", insertion.Author?.Value);
+            Assert.Equal("Edited insertion", insertion.InnerText);
+            Assert.NotNull(insertion.Descendants<W.Bold>().SingleOrDefault());
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        }
+
+        block.Change.Type = DocumentChangeType.Delete;
+        var rejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
     private static CodecResponse Invoke(CodecRequest request) =>
         CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
 
     private static string Diagnostics(CodecResponse response) =>
         string.Join("\n", response.Diagnostics.Select(item => $"{item.Code}: {item.Message}"));
+
+    private static CodecRequest TrackedChangeExportRequest(bool includeDeletion = true)
+    {
+        var document = new DocumentArtifact { Id = "document/tracked", Name = "Tracked changes" };
+        document.Blocks.Add(new DocumentBlock
+        {
+            Id = "document/change/insert",
+            StyleId = "Normal",
+            Change = new DocumentChange
+            {
+                Type = DocumentChangeType.Insert,
+                Text = "Added wording",
+                Author = "Reviewer",
+                Date = "2026-07-17T08:00:00Z",
+            },
+        });
+        if (includeDeletion)
+        {
+            document.Blocks.Add(new DocumentBlock
+            {
+                Id = "document/change/delete",
+                StyleId = "Normal",
+                Change = new DocumentChange
+                {
+                    Type = DocumentChangeType.Delete,
+                    Text = "Removed wording",
+                    Author = "Reviewer",
+                    Date = "2026-07-17T08:05:00Z",
+                },
+            });
+        }
+        return new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = new ArtifactEnvelope
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Family = ArtifactFamily.Document,
+                Document = document,
+            },
+        };
+    }
+
+    private static byte[] AddTrackedChangeFormatting(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true))
+        {
+            var run = document.MainDocumentPart!.Document!.Descendants<W.InsertedRun>().Single().Elements<W.Run>().Single();
+            run.RunProperties = new W.RunProperties(new W.Bold());
+            document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
 
     private static CodecRequest ExportRequest(bool includeSecondParagraph = false)
     {

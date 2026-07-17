@@ -11,6 +11,7 @@ import {
   CodecOperation,
   CodecRequestSchema,
   CodecResponseSchema,
+  DocumentChangeType,
   DocumentHeaderFooterReference,
   DocumentSectionBreak,
   DocumentStyleType,
@@ -2127,6 +2128,28 @@ function publicDocumentSectionBreak(value) {
   return "nextPage";
 }
 
+function documentChangeType(value) {
+  if (value === "insert") return DocumentChangeType.INSERT;
+  if (value === "delete") return DocumentChangeType.DELETE;
+  throw new OpenChestnutCodecError(`Document tracked-change type ${value || "(empty)"} must be insert or delete.`, [], { code: "invalid_document_change" });
+}
+
+function publicDocumentChangeType(value) {
+  if (value === DocumentChangeType.INSERT) return "insert";
+  if (value === DocumentChangeType.DELETE) return "delete";
+  throw new OpenChestnutCodecError("Document tracked-change wire type must be insert or delete.", [], { code: "invalid_document_change" });
+}
+
+function wireDocumentChange(block) {
+  const text = String(block.text ?? "");
+  const author = String(block.author ?? "");
+  const date = block.date == null || block.date === "" ? undefined : String(block.date);
+  if (text.length > 1_000_000) throw new OpenChestnutCodecError(`Document tracked change ${block.id} text exceeds 1,000,000 characters.`, [], { code: "invalid_document_change" });
+  if (!author.trim() || author.length > 255 || /[\u0000-\u001f\u007f]/.test(author)) throw new OpenChestnutCodecError(`Document tracked change ${block.id} requires an author of at most 255 characters without controls.`, [], { code: "invalid_document_change" });
+  if (date !== undefined && Number.isNaN(Date.parse(date))) throw new OpenChestnutCodecError(`Document tracked change ${block.id} date must be an ISO 8601 timestamp.`, [], { code: "invalid_document_change" });
+  return { type: documentChangeType(block.changeType), text, author, date };
+}
+
 function documentImage(block, assets) {
   if (!block.dataUrl) throw new OpenChestnutCodecError(`Document image ${block.id} requires embedded PNG or JPEG data.`, [], { code: "unsupported_document_image" });
   const match = /^data:(image\/(?:png|jpeg));base64,([A-Za-z0-9+/=\s]+)$/i.exec(String(block.dataUrl));
@@ -2178,6 +2201,11 @@ function unchangedSourceBlock(block, original) {
       return sameDocumentHyperlink(block, original.content.value);
     case "field":
       return block.kind === "field" && block.styleId === (original.styleId || "Normal") && block.instruction === original.content.value.instruction && block.display === original.content.value.display;
+    case "change": {
+      if (block.kind !== "change" || block.styleId !== (original.styleId || "Normal")) return false;
+      const value = original.content.value;
+      return block.changeType === publicDocumentChangeType(value.type) && block.text === value.text && block.author === value.author && (block.date || undefined) === value.date;
+    }
     case "section": {
       if (block.kind !== "section") return false;
       const value = wireDocumentSection(block);
@@ -2308,6 +2336,12 @@ function documentBlock(block, original, directNumbering, assets) {
     return {
       ...common,
       content: { case: "field", value: documentField(block, original) },
+    };
+  }
+  if (block.kind === "change") {
+    return {
+      ...common,
+      content: { case: "change", value: wireDocumentChange(block) },
     };
   }
   if (block.kind === "image") {
@@ -2500,6 +2534,20 @@ function documentFromEnvelope(envelope) {
           instruction: block.content.value.instruction,
           display: block.content.value.display,
         };
+      case "change": {
+        const change = block.content.value;
+        return {
+          kind: "change",
+          id: block.id,
+          name: block.name,
+          styleId: block.styleId || "Normal",
+          changeType: publicDocumentChangeType(change.type),
+          text: change.text,
+          author: change.author,
+          date: change.date,
+          _restore: true,
+        };
+      }
       case "image": {
         const image = block.content.value;
         const asset = assets.get(image.assetId);
