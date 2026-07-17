@@ -2424,6 +2424,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.PMT` | formula | Calculate a constant-period loan payment from finite rate, term, present value, optional future value, and payment-timing inputs. |
 | `fx.PPMT` | formula | Calculate the principal component of one constant-payment loan period using the same bounded inputs as IPMT. |
 | `fx.RANK.EQ` | formula | Return a number's equal rank in a numeric range, descending by default or ascending when order is nonzero. |
+| `fx.RATE` | formula | Solve a bounded periodic interest rate from an integer payment term, payment, present value, optional future value, payment timing, and optional guess. |
 | `fx.RIGHT` | formula | Return characters from the end of a text value. |
 | `fx.ROUND` | formula | Round a numeric value to decimal places or, with negative digits, positions left of the decimal point. |
 | `fx.ROUNDDOWN` | formula | Round a numeric value toward zero at the requested positive or negative digit position. |
@@ -3586,6 +3587,28 @@ Return a number's equal rank in a numeric range, descending by default or ascend
 **Schema returns:**
 
 - `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.RATE`
+
+Solve a bounded periodic interest rate from an integer payment term, payment, present value, optional future value, payment timing, and optional guess.
+
+**Examples:**
+
+- =RATE(B1,B2,B3)
+- =RATE(B1,B2,B3,B4,1,0.1)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =RATE(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+**Notes:**
+
+- The evaluator accepts an integer term from 1 through 9,999, type 0 or 1, and a finite guess greater than -1 (default 0.1). It finds a converged rate greater than -1 nearest the guess or returns #NUM! rather than inventing a rate.
 
 #### `fx.RIGHT`
 

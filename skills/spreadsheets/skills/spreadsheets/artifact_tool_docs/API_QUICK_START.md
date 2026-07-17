@@ -78,11 +78,12 @@ await output.save(`${outputDir}/output.xlsx`);
 
 ### Financial cash-flow profile
 
-- `PMT`, `IPMT`, `PPMT`, `NPV`, `XNPV`, `IRR`, and `XIRR` calculate in the JavaScript model as well as being written to XLSX. Put rates, loan terms, cash-flow vectors, and dates in visible input cells; do not hide them as magic numbers in a long formula.
+- `PMT`, `IPMT`, `PPMT`, `RATE`, `NPV`, `XNPV`, `IRR`, and `XIRR` calculate in the JavaScript model as well as being written to XLSX. Put rates, loan terms, cash-flow vectors, and dates in visible input cells; do not hide them as magic numbers in a long formula.
 - `IPMT` / `PPMT` accept `rate, per, nper, pv, [fv], [type]` and calculate a single interest or principal component in constant time. `per` must be an integer from 1 through `nper`; `type` is 0 (end of period) or 1 (beginning of period). For every supported period, `PMT = IPMT + PPMT`; period-one `IPMT` is zero when `type` is 1.
+- `RATE` accepts `nper, pmt, pv, [fv], [type], [guess]` and solves the periodic rate of a finite payment stream. `nper` must be an integer from 1 through 9,999; `type` is 0 (end) or 1 (beginning); `guess` is finite and greater than `-1` (default `0.1`). It returns `#NUM!` if no valid root near the guess converges, so compare its result with a visible model rate rather than treating a failure as a rate.
 - `NPV` discounts its first cash flow one period after the present; `XNPV` uses the actual whole-day offset from its first date divided by 365. `XNPV`/`XIRR` require equal nonempty value/date vectors with valid workbook-date-system dates.
 - Return formulas require both a positive and a negative finite cash flow. `IRR`/`XIRR` use an optional finite guess (default `0.1`) and return `#NUM!` if they cannot converge to a valid rate greater than `-1`; do not present that error as an investment result.
-- This is a bounded agent-safe evaluator: the five functions require finite numeric inputs and accept at most 10,000 cash flows. Invalid types, mismatched vectors, invalid dates, invalid rates, and unconverged roots fail as `#VALUE!` or `#NUM!` instead of being silently coerced. Use `workbook.help("fx.XIRR", { include: "index,examples,notes" })` for the exact contract.
+- This is a bounded agent-safe evaluator: financial functions require finite numeric inputs, cash-flow vectors accept at most 10,000 entries, and `RATE` accepts at most 9,999 periods. Invalid types, mismatched vectors, invalid dates, invalid rates, and unconverged roots fail as `#VALUE!` or `#NUM!` instead of being silently coerced. Use `workbook.help("fx.RATE", { include: "index,examples,notes" })` or `workbook.help("fx.XIRR", { include: "index,examples,notes" })` for the exact contract.
 
 Useful `help` calls:
 ```js

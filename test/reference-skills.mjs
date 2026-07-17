@@ -389,7 +389,9 @@ try {
   loanAmortizationRoundTrip.recalculate();
   assert.equal(loanAmortizationRoundTrip.worksheets.getItem("Amortization").getRange("D5").formulas[0][0], "=IPMT('Inputs'!$B$10,A5,'Inputs'!$B$11,'Inputs'!$B$5,0,'Inputs'!$B$9)");
   assert.ok(Math.abs(loanAmortizationRoundTrip.worksheets.getItem("Amortization").getRange("F16").values[0][0]) < 1e-7);
-  assert.deepEqual(loanAmortizationRoundTrip.worksheets.getItem("Checks").getRange("E4:E9").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
+  assert.equal(loanAmortizationRoundTrip.worksheets.getItem("Checks").getRange("B9").formulas[0][0], "=RATE('Inputs'!$B$11,'Amortization'!$C$5,'Inputs'!$B$5,0,'Inputs'!$B$9,'Inputs'!$B$10)");
+  assert.ok(Math.abs(loanAmortizationRoundTrip.worksheets.getItem("Checks").getRange("B9").values[0][0] - 0.01) < 1e-10);
+  assert.deepEqual(loanAmortizationRoundTrip.worksheets.getItem("Checks").getRange("E4:E10").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
 
   const { createScatterWorkbook } = await import(
     "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-scatter-chart-workflow.mjs"

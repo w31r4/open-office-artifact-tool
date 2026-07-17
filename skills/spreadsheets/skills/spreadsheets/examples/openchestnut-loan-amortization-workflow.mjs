@@ -119,57 +119,64 @@ export function buildLoanAmortizationWorkbook() {
   styleTitle(checks, "A1:F1", 6, "Model Checks");
   checks.getRange("A3:F3").values = [["Check", "Actual", "Expected / minimum", "Difference", "Status", "Notes"]];
   checks.getRange("A3:F3").format = { fill: HEADER_FILL, font: { bold: true, color: "#FFFFFF" }, alignment: { horizontal: "center" } };
-  checks.getRange("A4:F9").values = [
+  checks.getRange("A4:F10").values = [
     ["Payment identity", null, 0, null, null, "Payment equals interest plus principal."],
     ["First-period interest", null, null, null, null, "Uses the selected payment timing."],
     ["Final closing balance", null, 0, null, null, "Fully amortized balance should be zero."],
     ["Total principal repaid", null, null, null, null, "Principal total equals original principal."],
     ["Modeled period count", null, null, null, null, "Rows match the visible period input."],
+    ["Solved periodic rate", null, null, null, null, "RATE reverses the payment terms back to the visible input rate."],
     ["Overall model status", null, 0, null, null, "Zero failed checks required."],
   ];
-  checks.getRange("B4:B9").formulas = [
+  checks.getRange("B4:B10").formulas = [
     ["=SUM('Amortization'!$C$5:$C$16)-SUM('Amortization'!$D$5:$D$16)-SUM('Amortization'!$E$5:$E$16)"],
     ["='Amortization'!$D$5"],
     ["='Amortization'!$F$16"],
     ["=SUM('Amortization'!$E$5:$E$16)"],
     ["=COUNTIF('Amortization'!$A$5:$A$16,\">0\")"],
-    ["=COUNTIF(E4:E8,\"CHECK\")"],
+    ["=RATE('Inputs'!$B$11,'Amortization'!$C$5,'Inputs'!$B$5,0,'Inputs'!$B$9,'Inputs'!$B$10)"],
+    ["=COUNTIF(E4:E9,\"CHECK\")"],
   ];
   checks.getRange("C5").formulas = [["=-'Inputs'!$B$5*'Inputs'!$B$10*(1-'Inputs'!$B$9)"]];
   checks.getRange("C7").formulas = [["=-'Inputs'!$B$5"]];
   checks.getRange("C8").formulas = [["='Inputs'!$B$11"]];
-  checks.getRange("D4:D9").formulas = [
+  checks.getRange("C9").formulas = [["='Inputs'!$B$10"]];
+  checks.getRange("D4:D10").formulas = [
     ["=B4-C4"],
     ["=B5-C5"],
     ["=B6-C6"],
     ["=B7-C7"],
     ["=B8-C8"],
     ["=B9-C9"],
+    ["=B10-C10"],
   ];
-  checks.getRange("E4:E9").formulas = [
+  checks.getRange("E4:E10").formulas = [
     ["=IF(ABS(D4)<0.01,\"OK\",\"CHECK\")"],
     ["=IF(ABS(D5)<0.01,\"OK\",\"CHECK\")"],
     ["=IF(ABS(D6)<0.01,\"OK\",\"CHECK\")"],
     ["=IF(ABS(D7)<0.01,\"OK\",\"CHECK\")"],
     ["=IF(B8=C8,\"OK\",\"CHECK\")"],
-    ["=IF(B9=C9,\"OK\",\"CHECK\")"],
+    ["=IF(ABS(D9)<0.0000001,\"OK\",\"CHECK\")"],
+    ["=IF(B10=C10,\"OK\",\"CHECK\")"],
   ];
-  checks.getRange("B4:C9").format = { font: { color: "#008000" } };
-  checks.getRange("D4:D9").format = { font: { color: "#000000" } };
+  checks.getRange("B4:C10").format = { font: { color: "#008000" } };
+  checks.getRange("D4:D10").format = { font: { color: "#000000" } };
   checks.getRange("B4:D7").format.numberFormat = MONEY_FORMAT;
-  checks.getRange("B8:D9").format.numberFormat = COUNT_FORMAT;
-  checks.getRange("E4:E9").conditionalFormats.add("containsText", {
+  checks.getRange("B8:D8").format.numberFormat = COUNT_FORMAT;
+  checks.getRange("B9:D9").format.numberFormat = RATE_FORMAT;
+  checks.getRange("B10:D10").format.numberFormat = COUNT_FORMAT;
+  checks.getRange("E4:E10").conditionalFormats.add("containsText", {
     text: "OK",
     format: { fill: "#DCFCE7", font: { bold: true, color: "#166534" } },
   });
-  checks.getRange("E4:E9").conditionalFormats.add("containsText", {
+  checks.getRange("E4:E10").conditionalFormats.add("containsText", {
     text: "CHECK",
     format: { fill: "#FEE2E2", font: { bold: true, color: "#B91C1C" } },
   });
-  checks.getRange("A1:A9").format.columnWidthPx = 198;
-  checks.getRange("B1:D9").format.columnWidthPx = 136;
-  checks.getRange("E1:E9").format.columnWidthPx = 94;
-  checks.getRange("F1:F9").format.columnWidthPx = 292;
+  checks.getRange("A1:A10").format.columnWidthPx = 198;
+  checks.getRange("B1:D10").format.columnWidthPx = 136;
+  checks.getRange("E1:E10").format.columnWidthPx = 94;
+  checks.getRange("F1:F10").format.columnWidthPx = 292;
   checks.freezePanes.freezeRows(3);
 
   workbook.worksheets.setActiveWorksheet("Amortization");
@@ -187,7 +194,8 @@ export async function createLoanAmortizationWorkbook(outputPath) {
   assertClose(amortization.getRange("E5").values[0][0], -7884.878867834168);
   assertClose(amortization.getRange("D6").values[0][0], -921.1512113216584);
   assertClose(amortization.getRange("F16").values[0][0], 0, 1e-7);
-  assert.deepEqual(checks.getRange("E4:E9").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
+  assertClose(checks.getRange("B9").values[0][0], 0.01, 1e-10);
+  assert.deepEqual(checks.getRange("E4:E10").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
 
   const inspection = workbook.inspect({
     kind: "workbook,sheet,formula",
@@ -210,12 +218,15 @@ export async function createLoanAmortizationWorkbook(outputPath) {
   imported.recalculate();
   assert.equal(imported.worksheets.getItem("Amortization").getRange("D5").formulas[0][0], "=IPMT('Inputs'!$B$10,A5,'Inputs'!$B$11,'Inputs'!$B$5,0,'Inputs'!$B$9)");
   assert.equal(imported.worksheets.getItem("Amortization").getRange("E5").format.numberFormat, MONEY_FORMAT);
-  assert.deepEqual(imported.worksheets.getItem("Checks").getRange("E4:E9").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
+  assert.equal(imported.worksheets.getItem("Checks").getRange("B9").formulas[0][0], "=RATE('Inputs'!$B$11,'Amortization'!$C$5,'Inputs'!$B$5,0,'Inputs'!$B$9,'Inputs'!$B$10)");
+  assertClose(imported.worksheets.getItem("Checks").getRange("B9").values[0][0], 0.01, 1e-10);
+  assert.deepEqual(imported.worksheets.getItem("Checks").getRange("E4:E10").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
   const final = await SpreadsheetFile.exportXlsx(imported, { recalculate: false });
   const roundTrip = await SpreadsheetFile.importXlsx(final);
   roundTrip.recalculate();
   assertClose(roundTrip.worksheets.getItem("Amortization").getRange("F16").values[0][0], 0, 1e-7);
-  assert.deepEqual(roundTrip.worksheets.getItem("Checks").getRange("E4:E9").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
+  assertClose(roundTrip.worksheets.getItem("Checks").getRange("B9").values[0][0], 0.01, 1e-10);
+  assert.deepEqual(roundTrip.worksheets.getItem("Checks").getRange("E4:E10").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
 
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
   await final.save(outputPath);

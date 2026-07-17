@@ -93,7 +93,9 @@ try {
   assert.deepEqual(fixtureAmortization.getRange("C2:E2").values, [[-8884.878867834168, -1000, -7884.878867834168]]);
   assert.equal(fixtureAmortization.getRange("D2").formulas[0][0], "=IPMT('Inputs'!$B$7,A2,'Inputs'!$B$8,'Inputs'!$B$2,0,'Inputs'!$B$6)");
   assert.ok(Math.abs(fixtureAmortization.getRange("F13").values[0][0]) < 1e-7);
-  assert.deepEqual(fixtureLoanChecks.getRange("E2:E7").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
+  assert.equal(fixtureLoanChecks.getRange("B7").formulas[0][0], "=RATE('Inputs'!$B$8,'Amortization'!$C$2,'Inputs'!$B$2,0,'Inputs'!$B$6,'Inputs'!$B$7)");
+  assert.ok(Math.abs(fixtureLoanChecks.getRange("B7").values[0][0] - 0.01) < 1e-10);
+  assert.deepEqual(fixtureLoanChecks.getRange("E2:E8").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
   assert.equal(fixtureLoanChecks.conditionalFormattings.items.length, 2);
 
   const basicResult = await runFixture("open-chestnut-basic");
@@ -179,7 +181,9 @@ try {
   assert.equal(loanAmortization.getRange("D5").formulas[0][0], "=IPMT('Inputs'!$B$10,A5,'Inputs'!$B$11,'Inputs'!$B$5,0,'Inputs'!$B$9)");
   assert.equal(loanAmortization.getRange("E5").format.numberFormat, "$#,##0;[Red]($#,##0);-");
   assert.ok(Math.abs(loanAmortization.getRange("F16").values[0][0]) < 1e-7);
-  assert.deepEqual(loanAmortizationChecks.getRange("E4:E9").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
+  assert.equal(loanAmortizationChecks.getRange("B9").formulas[0][0], "=RATE('Inputs'!$B$11,'Amortization'!$C$5,'Inputs'!$B$5,0,'Inputs'!$B$9,'Inputs'!$B$10)");
+  assert.ok(Math.abs(loanAmortizationChecks.getRange("B9").values[0][0] - 0.01) < 1e-10);
+  assert.deepEqual(loanAmortizationChecks.getRange("E4:E10").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
   const loanAmortizationQa = await verifyWorkbookFile(loanAmortizationPath, {
     outputDir: path.join(outputDir, "openchestnut-loan-amortization-native-qa"),
     sheetName: "Amortization",
