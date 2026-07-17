@@ -545,6 +545,14 @@ internal static class PptxCodec
                         replacedOpaquePartHashes.Add(replacement.PartPath, replacement.Sha256);
                         changed = true;
                     }
+                    else if (sourceElement is P.GroupShape sourceGroup &&
+                             requested.ContentCase == PresentationElement.ContentOneofCase.Group &&
+                             original.ContentCase == PresentationElement.ContentOneofCase.Group &&
+                             TryReadGroup(sourceGroup, original.Id, slideContext, elementIdsByNativeId, out _))
+                    {
+                        if (ApplyGroup(sourceGroup, original, requested, slideContext, elementIdsByNativeId, nativeIdsByElementId, changedParts, replacedOpaquePartHashes, slideIndex, $"element {elementIndex + 1}"))
+                            changed = true;
+                    }
                     else if (requested.ContentCase == PresentationElement.ContentOneofCase.Opaque &&
                              PptxNativeObjectCatalog.SupportsPlacementEditing(sourceElement))
                     {
@@ -1021,19 +1029,11 @@ internal static class PptxCodec
             PptxBackgroundCodec.Build(slideCommon, source.Background);
             var shapeTree = slideCommon.ShapeTree!;
             var slideContext = new PptxPartContext(slidePart, slideIdByPartPath, slidePartById, assetCatalog);
-            var nativeIdsByElementId = source.Elements.Select((element, index) => (element.Id, NativeId: checked((uint)(index + 2))))
+            var flattenedElements = FlattenPresentationElements(source.Elements).ToArray();
+            var nativeIdsByElementId = flattenedElements.Select((element, index) => (element.Id, NativeId: checked((uint)(index + 2))))
                 .ToDictionary(item => item.Id, item => item.NativeId, StringComparer.Ordinal);
-            uint nativeId = 2;
             foreach (var element in source.Elements)
-                shapeTree.Append(element.ContentCase switch
-                {
-                    PresentationElement.ContentOneofCase.Shape => BuildShape(element, nativeId++, slideContext),
-                    PresentationElement.ContentOneofCase.Image => PptxPictureCodec.Build(element, nativeId++, slideContext),
-                    PresentationElement.ContentOneofCase.Table => PptxTableCodec.Build(element, nativeId++),
-                    PresentationElement.ContentOneofCase.Connector => BuildConnector(element, nativeId++, nativeIdsByElementId),
-                    PresentationElement.ContentOneofCase.Chart => PptxChartCodec.Build(element, nativeId++, slidePart),
-                    _ => throw new CodecException("unsupported_presentation_element", $"Opaque presentation element {element.Id} requires its validated source package and cannot be authored from scratch."),
-                });
+                shapeTree.Append(BuildElement(element, nativeIdsByElementId, slideContext, slidePart));
             slidePart.Slide.Save();
         }
         var notesMasterRelationshipId = PptxSpeakerNotesCodec.BuildSourceFree(presentationPart, themePart, slideParts, artifact.Slides);
@@ -1055,6 +1055,53 @@ internal static class PptxCodec
         layoutPart.SlideLayout.Save();
         masterPart.SlideMaster.Save();
         presentationPart.Presentation.Save();
+    }
+
+    private static IEnumerable<PresentationElement> FlattenPresentationElements(IEnumerable<PresentationElement> elements)
+    {
+        foreach (var element in elements)
+        {
+            yield return element;
+            if (element.ContentCase == PresentationElement.ContentOneofCase.Group)
+                foreach (var child in FlattenPresentationElements(element.Group.Children)) yield return child;
+        }
+    }
+
+    private static OpenXmlElement BuildElement(
+        PresentationElement element,
+        IReadOnlyDictionary<string, uint> nativeIdsByElementId,
+        PptxPartContext slideContext,
+        SlidePart slidePart) => element.ContentCase switch
+        {
+            PresentationElement.ContentOneofCase.Shape => BuildShape(element, nativeIdsByElementId[element.Id], slideContext),
+            PresentationElement.ContentOneofCase.Image => PptxPictureCodec.Build(element, nativeIdsByElementId[element.Id], slideContext),
+            PresentationElement.ContentOneofCase.Table => PptxTableCodec.Build(element, nativeIdsByElementId[element.Id]),
+            PresentationElement.ContentOneofCase.Connector => BuildConnector(element, nativeIdsByElementId[element.Id], nativeIdsByElementId),
+            PresentationElement.ContentOneofCase.Chart => PptxChartCodec.Build(element, nativeIdsByElementId[element.Id], slidePart),
+            PresentationElement.ContentOneofCase.Group => BuildGroup(element, nativeIdsByElementId, slideContext, slidePart),
+            _ => throw new CodecException("unsupported_presentation_element", $"Opaque presentation element {element.Id} requires its validated source package and cannot be authored from scratch."),
+        };
+
+    private static P.GroupShape BuildGroup(
+        PresentationElement element,
+        IReadOnlyDictionary<string, uint> nativeIdsByElementId,
+        PptxPartContext slideContext,
+        SlidePart slidePart)
+    {
+        var group = element.Group;
+        var output = new P.GroupShape(
+            new P.NonVisualGroupShapeProperties(
+                new P.NonVisualDrawingProperties { Id = nativeIdsByElementId[element.Id], Name = element.Name },
+                new P.NonVisualGroupShapeDrawingProperties(),
+                new P.ApplicationNonVisualDrawingProperties()),
+            new P.GroupShapeProperties(new A.TransformGroup(
+                new A.Offset { X = group.LeftEmu, Y = group.TopEmu },
+                new A.Extents { Cx = group.WidthEmu, Cy = group.HeightEmu },
+                new A.ChildOffset { X = group.ChildLeftEmu, Y = group.ChildTopEmu },
+                new A.ChildExtents { Cx = group.ChildWidthEmu, Cy = group.ChildHeightEmu })));
+        foreach (var child in group.Children)
+            output.Append(BuildElement(child, nativeIdsByElementId, slideContext, slidePart));
+        return output;
     }
 
     private static P.Shape BuildShape(PresentationElement source, uint nativeId, PptxPartContext slideContext)
@@ -1157,6 +1204,103 @@ internal static class PptxCodec
         geometry.Preset = requested.Connector.ConnectorType == "elbow" ? A.ShapeTypeValues.BentConnector3 : A.ShapeTypeValues.Line;
         properties.GetFirstChild<A.Outline>()?.Remove();
         properties.Append(ConnectorOutline(requested.Connector));
+    }
+
+    private static bool ApplyGroup(
+        P.GroupShape source,
+        PresentationElement original,
+        PresentationElement requested,
+        PptxPartContext slideContext,
+        IReadOnlyDictionary<uint, string> elementIdsByNativeId,
+        IReadOnlyDictionary<string, uint> nativeIdsByElementId,
+        ISet<string> changedParts,
+        IDictionary<string, string> replacedOpaquePartHashes,
+        int slideIndex,
+        string location)
+    {
+        if (original.ContentCase != PresentationElement.ContentOneofCase.Group || requested.ContentCase != PresentationElement.ContentOneofCase.Group)
+            throw new CodecException("presentation_group_content_changed", $"Presentation slide {slideIndex + 1} {location} changed its group content type.", PartPath(slideContext.Owner));
+        var sourceChildren = GroupElements(source);
+        if (sourceChildren.Length != original.Group.Children.Count || sourceChildren.Length != requested.Group.Children.Count)
+            throw new CodecException("presentation_group_topology_changed", $"Presentation slide {slideIndex + 1} {location} changed its fixed group topology.", PartPath(slideContext.Owner));
+
+        var changed = false;
+        if (requested.Name != original.Name ||
+            requested.Group.LeftEmu != original.Group.LeftEmu || requested.Group.TopEmu != original.Group.TopEmu ||
+            requested.Group.WidthEmu != original.Group.WidthEmu || requested.Group.HeightEmu != original.Group.HeightEmu ||
+            requested.Group.ChildLeftEmu != original.Group.ChildLeftEmu || requested.Group.ChildTopEmu != original.Group.ChildTopEmu ||
+            requested.Group.ChildWidthEmu != original.Group.ChildWidthEmu || requested.Group.ChildHeightEmu != original.Group.ChildHeightEmu)
+        {
+            source.NonVisualGroupShapeProperties!.NonVisualDrawingProperties!.Name = requested.Name;
+            var transform = source.GroupShapeProperties!.GetFirstChild<A.TransformGroup>()!;
+            transform.Offset!.X = requested.Group.LeftEmu;
+            transform.Offset.Y = requested.Group.TopEmu;
+            transform.Extents!.Cx = requested.Group.WidthEmu;
+            transform.Extents.Cy = requested.Group.HeightEmu;
+            transform.ChildOffset!.X = requested.Group.ChildLeftEmu;
+            transform.ChildOffset.Y = requested.Group.ChildTopEmu;
+            transform.ChildExtents!.Cx = requested.Group.ChildWidthEmu;
+            transform.ChildExtents.Cy = requested.Group.ChildHeightEmu;
+            changed = true;
+        }
+
+        for (var index = 0; index < sourceChildren.Length; index++)
+        {
+            var sourceChild = sourceChildren[index];
+            var originalChild = original.Group.Children[index];
+            var requestedChild = requested.Group.Children[index];
+            var binding = requestedChild.Source ?? throw new CodecException(
+                "missing_presentation_element_binding",
+                $"Presentation slide {slideIndex + 1} {location} child {index + 1} is missing its source binding.",
+                PartPath(slideContext.Owner));
+            if (requestedChild.Id != originalChild.Id || binding.ShapeTreeIndex != index ||
+                !binding.ElementSha256.Equals(HashElement(sourceChild), StringComparison.OrdinalIgnoreCase) ||
+                binding.Editable != originalChild.Source?.Editable ||
+                !binding.SemanticSha256.Equals(originalChild.Source?.SemanticSha256 ?? string.Empty, StringComparison.OrdinalIgnoreCase) ||
+                !SemanticHash(originalChild).Equals(binding.SemanticSha256, StringComparison.OrdinalIgnoreCase))
+                throw new CodecException(
+                    "presentation_element_binding_mismatch",
+                    $"Presentation slide {slideIndex + 1} {location} child {index + 1} does not match its owner-local source binding.",
+                    PartPath(slideContext.Owner));
+            if (SemanticHash(requestedChild).Equals(binding.SemanticSha256, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!binding.Editable)
+                throw new CodecException("unsupported_presentation_edit", $"Presentation slide {slideIndex + 1} {location} child {index + 1} is read-only.", PartPath(slideContext.Owner));
+            ApplyGroupChild(sourceChild, originalChild, requestedChild, slideContext, elementIdsByNativeId, nativeIdsByElementId, changedParts, replacedOpaquePartHashes, slideIndex, $"{location} child {index + 1}");
+            changed = true;
+        }
+        return changed;
+    }
+
+    private static void ApplyGroupChild(
+        OpenXmlElement source,
+        PresentationElement original,
+        PresentationElement requested,
+        PptxPartContext slideContext,
+        IReadOnlyDictionary<uint, string> elementIdsByNativeId,
+        IReadOnlyDictionary<string, uint> nativeIdsByElementId,
+        ISet<string> changedParts,
+        IDictionary<string, string> replacedOpaquePartHashes,
+        int slideIndex,
+        string location)
+    {
+        if (source is P.Shape shape && requested.ContentCase == PresentationElement.ContentOneofCase.Shape && IsSimpleShape(shape))
+            ApplyShape(shape, requested, slideContext);
+        else if (source is P.Picture picture && requested.ContentCase == PresentationElement.ContentOneofCase.Image && PptxPictureCodec.TryRead(picture, slideContext, out _))
+            PptxPictureCodec.Apply(picture, requested, slideContext);
+        else if (source is P.GraphicFrame table && requested.ContentCase == PresentationElement.ContentOneofCase.Table && PptxTableCodec.TryRead(table, out _))
+            PptxTableCodec.Apply(table, requested);
+        else if (source is P.ConnectionShape connector && requested.ContentCase == PresentationElement.ContentOneofCase.Connector && TryReadConnector(connector, elementIdsByNativeId, out _))
+            ApplyConnector(connector, requested, nativeIdsByElementId);
+        else if (source is P.GraphicFrame chart && requested.ContentCase == PresentationElement.ContentOneofCase.Chart && PptxChartCodec.TryRead(chart, slideContext, out _, out var chartEditable) && chartEditable)
+        {
+            var replacement = PptxChartCodec.Apply(chart, requested, slideContext);
+            changedParts.Add(replacement.PartPath);
+            replacedOpaquePartHashes.Add(replacement.PartPath, replacement.Sha256);
+        }
+        else if (source is P.GroupShape group && requested.ContentCase == PresentationElement.ContentOneofCase.Group && original.ContentCase == PresentationElement.ContentOneofCase.Group && TryReadGroup(group, original.Id, slideContext, elementIdsByNativeId, out _))
+            _ = ApplyGroup(group, original, requested, slideContext, elementIdsByNativeId, nativeIdsByElementId, changedParts, replacedOpaquePartHashes, slideIndex, location);
+        else
+            throw new CodecException("unsupported_presentation_edit", $"Presentation slide {slideIndex + 1} {location} changed outside the bounded group-child profile.", PartPath(slideContext.Owner));
     }
 
     private static A.Transform2D ConnectorTransform(PresentationConnector source)
@@ -1439,84 +1583,98 @@ internal static class PptxCodec
             if (!string.IsNullOrWhiteSpace(slide.LayoutId) && !layoutIds.Contains(slide.LayoutId))
                 throw new CodecException("invalid_presentation_layout", $"Presentation slide {slide.Id} references missing layout {slide.LayoutId}.");
             foreach (var element in slide.Elements)
-            {
-                items++;
-                if (items > limits.MaxCells)
-                    throw new CodecException("presentation_item_budget_exceeded", $"Presentation exceeds max_cells semantic-item budget ({limits.MaxCells}).");
-                if (element.ContentCase == PresentationElement.ContentOneofCase.Shape)
-                {
-                    if (element.Shape.Placeholder is not null && !hasSourcePackage)
-                        throw new CodecException("unsupported_presentation_features", $"Presentation shape {element.Id} uses source-free slide placeholder authoring, which is not supported by this codec slice.");
-                    if (element.Shape.Placeholder is not null && element.Shape.Transform is not null)
-                        throw new CodecException("invalid_presentation_transform", $"Presentation placeholder shape {element.Id} cannot carry an ordinary shape transform.");
-                    var inheritedPlaceholderGeometry = element.Shape.Placeholder?.InheritsGeometry == true &&
-                        element.Shape.DirectFrame is null && element.Source?.Editable == false;
-                    if ((!inheritedPlaceholderGeometry && (element.Shape.LeftEmu < 0 || element.Shape.TopEmu < 0 || element.Shape.WidthEmu <= 0 || element.Shape.HeightEmu <= 0)) ||
-                        element.Shape.LineWidthEmu < 0 || element.Shape.LineWidthEmu > int.MaxValue)
-                        throw new CodecException("invalid_presentation_frame", $"Presentation shape {element.Id} has an invalid frame.");
-                    if (element.Shape.DirectFrame is not null)
-                    {
-                        if (element.Shape.Placeholder is null || element.Shape.Placeholder.InheritsGeometry)
-                            throw new CodecException("invalid_presentation_placeholder", $"Presentation shape {element.Id} has inconsistent direct placeholder geometry.");
-                        PptxPlaceholderCodec.ValidateDirectFrame(element.Shape.DirectFrame, element.Id);
-                    }
-                    if (element.Shape.Geometry is not ("rect" or "ellipse" or "roundRect" or "textbox" or "custom"))
-                        throw new CodecException("unsupported_presentation_geometry", $"Presentation shape {element.Id} uses unsupported geometry {element.Shape.Geometry}.");
-                    PptxCustomGeometryCodec.Validate(element.Shape, element.Id);
-                    if (!string.IsNullOrWhiteSpace(element.Shape.FillRgb)) PptxColor.Normalize(element.Shape.FillRgb);
-                    if (!string.IsNullOrWhiteSpace(element.Shape.LineRgb)) PptxColor.Normalize(element.Shape.LineRgb);
-                    PptxShapeTransformCodec.Validate(element.Shape.Transform, element.Id);
-                    ValidateShadow(element.Shape.Shadow, element.Id);
-                    PptxTextCodec.Validate(element.Shape);
-                    foreach (var paragraph in element.Shape.TextBody?.Paragraphs ?? [])
-                        if (paragraph.BulletCase == PresentationTextParagraph.BulletOneofCase.PictureBullet &&
-                            paragraph.PictureBullet.SourceCase == PresentationPictureBullet.SourceOneofCase.AssetId)
-                            _ = assetCatalog.Get(paragraph.PictureBullet.AssetId);
-                }
-                else if (element.ContentCase == PresentationElement.ContentOneofCase.Image)
-                {
-                    if (element.Name.Length > 1_024)
-                        throw new CodecException("invalid_presentation_image", $"Presentation image {element.Id} name exceeds 1024 characters.");
-                    PptxPictureCodec.Validate(element.Image, element.Id, assetCatalog);
-                }
-                else if (element.ContentCase == PresentationElement.ContentOneofCase.Table)
-                {
-                    if (element.Name.Length > 1_024)
-                        throw new CodecException("invalid_presentation_table", $"Presentation table {element.Id} name exceeds 1024 characters.");
-                    PptxTableCodec.Validate(element.Table, element.Id);
-                    items += checked((ulong)element.Table.Rows.Sum(row => row.Cells.Count));
-                    if (items > limits.MaxCells)
-                        throw new CodecException("presentation_item_budget_exceeded", $"Presentation exceeds max_cells semantic-item budget ({limits.MaxCells}).");
-                }
-                else if (element.ContentCase == PresentationElement.ContentOneofCase.Connector)
-                {
-                    ValidateConnector(element.Connector, element.Id, element.Name);
-                }
-                else if (element.ContentCase == PresentationElement.ContentOneofCase.Chart)
-                {
-                    PptxChartCodec.Validate(element.Chart, element.Id, element.Name);
-                    items += checked((ulong)element.Chart.Series.Sum(series => series.Values.Count));
-                    if (items > limits.MaxCells)
-                        throw new CodecException("presentation_item_budget_exceeded", $"Presentation exceeds max_cells semantic-item budget ({limits.MaxCells}).");
-                }
-                else if (element.ContentCase != PresentationElement.ContentOneofCase.Opaque)
-                    throw new CodecException("missing_presentation_element_content", $"Presentation element {element.Id} has no content.");
-                else
-                {
-                    // Preserve arbitrary read-only source objects even when
-                    // they have no useful frame. Only the narrow placement-
-                    // editable contract requires writable name/frame values.
-                    if (element.Source?.Editable == true)
-                    {
-                        if (element.Name.Length > 1_024)
-                            throw new CodecException("invalid_presentation_native_object", $"Presentation native object {element.Id} name exceeds 1024 characters.");
-                        if (element.Opaque.LeftEmu < 0 || element.Opaque.TopEmu < 0 || element.Opaque.WidthEmu <= 0 || element.Opaque.HeightEmu <= 0)
-                            throw new CodecException("invalid_presentation_frame", $"Presentation native object {element.Id} has an invalid frame.");
-                    }
-                }
-            }
+                ValidatePresentationElement(element, hasSourcePackage, assetCatalog, limits, ref items, 0);
         }
         return assetCatalog;
+    }
+
+    private static void ValidatePresentationElement(
+        PresentationElement element,
+        bool hasSourcePackage,
+        PptxAssetCatalog assetCatalog,
+        EffectiveCodecLimits limits,
+        ref ulong items,
+        int depth)
+    {
+        items++;
+        if (items > limits.MaxCells)
+            throw new CodecException("presentation_item_budget_exceeded", $"Presentation exceeds max_cells semantic-item budget ({limits.MaxCells}).");
+        if (depth > 16)
+            throw new CodecException("presentation_group_depth_exceeded", "Presentation groups cannot be nested more than 16 levels.");
+        if (string.IsNullOrWhiteSpace(element.Id) || element.Id.Length > 1_024 || element.Name.Length > 1_024)
+            throw new CodecException("invalid_presentation_element", "Presentation element IDs and names must be bounded non-empty metadata.");
+
+        if (element.ContentCase == PresentationElement.ContentOneofCase.Shape)
+        {
+            if (element.Shape.Placeholder is not null && !hasSourcePackage)
+                throw new CodecException("unsupported_presentation_features", $"Presentation shape {element.Id} uses source-free slide placeholder authoring, which is not supported by this codec slice.");
+            if (element.Shape.Placeholder is not null && element.Shape.Transform is not null)
+                throw new CodecException("invalid_presentation_transform", $"Presentation placeholder shape {element.Id} cannot carry an ordinary shape transform.");
+            var inheritedPlaceholderGeometry = element.Shape.Placeholder?.InheritsGeometry == true &&
+                element.Shape.DirectFrame is null && element.Source?.Editable == false;
+            if ((!inheritedPlaceholderGeometry && (element.Shape.LeftEmu < 0 || element.Shape.TopEmu < 0 || element.Shape.WidthEmu <= 0 || element.Shape.HeightEmu <= 0)) ||
+                element.Shape.LineWidthEmu < 0 || element.Shape.LineWidthEmu > int.MaxValue)
+                throw new CodecException("invalid_presentation_frame", $"Presentation shape {element.Id} has an invalid frame.");
+            if (element.Shape.DirectFrame is not null)
+            {
+                if (element.Shape.Placeholder is null || element.Shape.Placeholder.InheritsGeometry)
+                    throw new CodecException("invalid_presentation_placeholder", $"Presentation shape {element.Id} has inconsistent direct placeholder geometry.");
+                PptxPlaceholderCodec.ValidateDirectFrame(element.Shape.DirectFrame, element.Id);
+            }
+            if (element.Shape.Geometry is not ("rect" or "ellipse" or "roundRect" or "textbox" or "custom"))
+                throw new CodecException("unsupported_presentation_geometry", $"Presentation shape {element.Id} uses unsupported geometry {element.Shape.Geometry}.");
+            PptxCustomGeometryCodec.Validate(element.Shape, element.Id);
+            if (!string.IsNullOrWhiteSpace(element.Shape.FillRgb)) PptxColor.Normalize(element.Shape.FillRgb);
+            if (!string.IsNullOrWhiteSpace(element.Shape.LineRgb)) PptxColor.Normalize(element.Shape.LineRgb);
+            PptxShapeTransformCodec.Validate(element.Shape.Transform, element.Id);
+            ValidateShadow(element.Shape.Shadow, element.Id);
+            PptxTextCodec.Validate(element.Shape);
+            foreach (var paragraph in element.Shape.TextBody?.Paragraphs ?? [])
+                if (paragraph.BulletCase == PresentationTextParagraph.BulletOneofCase.PictureBullet &&
+                    paragraph.PictureBullet.SourceCase == PresentationPictureBullet.SourceOneofCase.AssetId)
+                    _ = assetCatalog.Get(paragraph.PictureBullet.AssetId);
+        }
+        else if (element.ContentCase == PresentationElement.ContentOneofCase.Image)
+            PptxPictureCodec.Validate(element.Image, element.Id, assetCatalog);
+        else if (element.ContentCase == PresentationElement.ContentOneofCase.Table)
+        {
+            PptxTableCodec.Validate(element.Table, element.Id);
+            items += checked((ulong)element.Table.Rows.Sum(row => row.Cells.Count));
+            if (items > limits.MaxCells)
+                throw new CodecException("presentation_item_budget_exceeded", $"Presentation exceeds max_cells semantic-item budget ({limits.MaxCells}).");
+        }
+        else if (element.ContentCase == PresentationElement.ContentOneofCase.Connector)
+            ValidateConnector(element.Connector, element.Id, element.Name);
+        else if (element.ContentCase == PresentationElement.ContentOneofCase.Chart)
+        {
+            PptxChartCodec.Validate(element.Chart, element.Id, element.Name);
+            items += checked((ulong)element.Chart.Series.Sum(series => series.Values.Count));
+            if (items > limits.MaxCells)
+                throw new CodecException("presentation_item_budget_exceeded", $"Presentation exceeds max_cells semantic-item budget ({limits.MaxCells}).");
+        }
+        else if (element.ContentCase == PresentationElement.ContentOneofCase.Group)
+        {
+            var group = element.Group;
+            if (group.LeftEmu < 0 || group.TopEmu < 0 || group.WidthEmu <= 0 || group.HeightEmu <= 0 ||
+                group.ChildWidthEmu <= 0 || group.ChildHeightEmu <= 0 || group.Children.Count == 0)
+                throw new CodecException("invalid_presentation_group", $"Presentation group {element.Id} requires positive outer/child extents and at least one child.");
+            var childIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var child in group.Children)
+            {
+                if (!childIds.Add(child.Id))
+                    throw new CodecException("invalid_presentation_group", $"Presentation group {element.Id} contains duplicate child ID {child.Id}.");
+                if (child.ContentCase == PresentationElement.ContentOneofCase.Opaque)
+                    throw new CodecException("unsupported_presentation_features", $"Presentation group {element.Id} contains a source-free or semantically edited opaque child.");
+                ValidatePresentationElement(child, hasSourcePackage, assetCatalog, limits, ref items, depth + 1);
+            }
+        }
+        else if (element.ContentCase != PresentationElement.ContentOneofCase.Opaque)
+            throw new CodecException("missing_presentation_element_content", $"Presentation element {element.Id} has no content.");
+        else if (element.Source?.Editable == true)
+        {
+            if (element.Opaque.LeftEmu < 0 || element.Opaque.TopEmu < 0 || element.Opaque.WidthEmu <= 0 || element.Opaque.HeightEmu <= 0)
+                throw new CodecException("invalid_presentation_frame", $"Presentation native object {element.Id} has an invalid frame.");
+        }
     }
 
     private static void ValidatePlaceholders(
@@ -1707,6 +1865,16 @@ internal static class PptxCodec
                             "presentation_postwrite_semantics_mismatch",
                             $"PPTX slide {slideIndex + 1} edited native object {elementIndex + 1} does not match the requested name/frame.",
                             PartPath(outputSlides[slideIndex]));
+                    continue;
+                }
+                if (request.ContentCase == PresentationElement.ContentOneofCase.Group)
+                {
+                    if (before[elementIndex] is not P.GroupShape beforeGroup || after[elementIndex] is not P.GroupShape afterGroup)
+                        throw new CodecException("presentation_postwrite_element_mismatch", $"PPTX slide {slideIndex + 1} edited group {elementIndex + 1} changed native element type.", PartPath(outputSlides[slideIndex]));
+                    ValidateGroupOutput(beforeGroup, afterGroup, request, sourceContext, outputContext, afterIds, slideIndex, $"element {elementIndex + 1}");
+                    var outputGroupSemantic = ReadElement(afterGroup, slideIndex, elementIndex, outputContext, elementIdsByNativeId: afterIds);
+                    if (!SemanticHash(outputGroupSemantic).Equals(SemanticHash(request), StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException("presentation_postwrite_semantics_mismatch", $"PPTX slide {slideIndex + 1} edited group {elementIndex + 1} does not match requested semantics after export.", PartPath(outputSlides[slideIndex]));
                     continue;
                 }
                 if (request.ContentCase == PresentationElement.ContentOneofCase.Image)

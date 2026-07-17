@@ -1015,6 +1015,255 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void GroupShapesAuthorImportNestedModeledChildrenAndValidateNativeTree()
+    {
+        var request = ExportRequest();
+        var assetId = AddPictureAsset(request.Artifact, Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="), "image/png");
+        var groupElement = new PresentationElement
+        {
+            Id = "presentation/slide/1/group/1",
+            Name = "Agent card group",
+            Group = new PresentationGroup
+            {
+                LeftEmu = 1_000_000,
+                TopEmu = 1_400_000,
+                WidthEmu = 5_000_000,
+                HeightEmu = 3_000_000,
+                ChildLeftEmu = -100_000,
+                ChildTopEmu = 200_000,
+                ChildWidthEmu = 4_000_000,
+                ChildHeightEmu = 2_400_000,
+            },
+        };
+        var title = new PresentationElement
+        {
+            Id = "presentation/slide/1/group/1/title",
+            Name = "Group title",
+            Shape = new PresentationShape
+            {
+                Geometry = "textbox",
+                LeftEmu = 0,
+                TopEmu = 0,
+                WidthEmu = 2_000_000,
+                HeightEmu = 500_000,
+                Text = "Grouped evidence",
+                FillRgb = "FFFFFF",
+                LineRgb = "2563EB",
+                LineWidthEmu = 12_700,
+            },
+        };
+        var status = new PresentationElement
+        {
+            Id = "presentation/slide/1/group/1/status",
+            Name = "Status",
+            Shape = new PresentationShape
+            {
+                Geometry = "roundRect",
+                LeftEmu = 2_400_000,
+                TopEmu = 0,
+                WidthEmu = 1_000_000,
+                HeightEmu = 500_000,
+                Text = "Ready",
+                FillRgb = "DCFCE7",
+                LineRgb = "16A34A",
+                LineWidthEmu = 12_700,
+            },
+        };
+        groupElement.Group.Children.Add(title);
+        groupElement.Group.Children.Add(status);
+        groupElement.Group.Children.Add(new PresentationElement
+        {
+            Id = "presentation/slide/1/group/1/connector",
+            Name = "Title to status",
+            Connector = new PresentationConnector
+            {
+                ConnectorType = "straight",
+                StartXEmu = 2_000_000,
+                StartYEmu = 250_000,
+                EndXEmu = 2_400_000,
+                EndYEmu = 250_000,
+                LineRgb = "64748B",
+                LineWidthEmu = 12_700,
+                EndArrow = "triangle",
+                StartTargetId = title.Id,
+                EndTargetId = status.Id,
+            },
+        });
+        groupElement.Group.Children.Add(new PresentationElement
+        {
+            Id = "presentation/slide/1/group/1/image",
+            Name = "Grouped image",
+            Image = new PresentationImage
+            {
+                AssetId = assetId,
+                AltText = "Grouped image evidence",
+                LeftEmu = 0,
+                TopEmu = 700_000,
+                WidthEmu = 900_000,
+                HeightEmu = 900_000,
+            },
+        });
+        var table = new PresentationTable
+        {
+            LeftEmu = 1_100_000,
+            TopEmu = 700_000,
+            WidthEmu = 1_400_000,
+            HeightEmu = 900_000,
+        };
+        table.ColumnWidthsEmu.Add([700_000, 700_000]);
+        table.Rows.Add(new PresentationTableRow
+        {
+            HeightEmu = 450_000,
+            Cells = { new PresentationTableCell { Text = "Gate" }, new PresentationTableCell { Text = "State" } },
+        });
+        table.Rows.Add(new PresentationTableRow
+        {
+            HeightEmu = 450_000,
+            Cells = { new PresentationTableCell { Text = "QA" }, new PresentationTableCell { Text = "Pass" } },
+        });
+        groupElement.Group.Children.Add(new PresentationElement
+        {
+            Id = "presentation/slide/1/group/1/table",
+            Name = "Grouped table",
+            Table = table,
+        });
+        var chart = new PresentationChart
+        {
+            LeftEmu = 2_700_000,
+            TopEmu = 700_000,
+            WidthEmu = 1_100_000,
+            HeightEmu = 900_000,
+            Type = SpreadsheetChartType.Bar,
+            Title = "Grouped chart",
+            HasLegend = false,
+        };
+        chart.Categories.Add(["A", "B"]);
+        chart.Series.Add(new SpreadsheetChartSeriesArtifact { Name = "Score" });
+        chart.Series[0].Values.Add([3, 5]);
+        groupElement.Group.Children.Add(new PresentationElement
+        {
+            Id = "presentation/slide/1/group/1/chart",
+            Name = "Grouped chart",
+            Chart = chart,
+        });
+        var nested = new PresentationElement
+        {
+            Id = "presentation/slide/1/group/1/nested",
+            Name = "Nested group",
+            Group = new PresentationGroup
+            {
+                LeftEmu = 0,
+                TopEmu = 1_800_000,
+                WidthEmu = 1_000_000,
+                HeightEmu = 400_000,
+                ChildWidthEmu = 1_000_000,
+                ChildHeightEmu = 400_000,
+            },
+        };
+        nested.Group.Children.Add(new PresentationElement
+        {
+            Id = "presentation/slide/1/group/1/nested/label",
+            Name = "Nested label",
+            Shape = new PresentationShape
+            {
+                Geometry = "rect",
+                LeftEmu = 0,
+                TopEmu = 0,
+                WidthEmu = 1_000_000,
+                HeightEmu = 400_000,
+                Text = "Nested",
+                FillRgb = "DBEAFE",
+                LineRgb = "2563EB",
+                LineWidthEmu = 12_700,
+            },
+        });
+        groupElement.Group.Children.Add(nested);
+        request.Artifact.Presentation.Slides[0].Elements.Add(groupElement);
+
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var slide = package.PresentationPart!.SlideParts.Single().Slide!;
+            Assert.Equal(2, slide.Descendants<P.GroupShape>().Count());
+            var outer = slide.Descendants<P.GroupShape>().First();
+            var transform = outer.GroupShapeProperties!.GetFirstChild<A.TransformGroup>()!;
+            Assert.Equal(-100_000L, transform.ChildOffset!.X!.Value);
+            Assert.Equal(200_000L, transform.ChildOffset.Y!.Value);
+            Assert.Equal(2, outer.Elements<P.Shape>().Count());
+            Assert.Single(outer.Elements<P.ConnectionShape>());
+            Assert.Single(outer.Elements<P.Picture>());
+            Assert.Equal(2, outer.Elements<P.GraphicFrame>().Count());
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedGroup = Assert.Single(Assert.Single(imported.Artifact.Presentation.Slides).Elements, item => item.ContentCase == PresentationElement.ContentOneofCase.Group);
+        Assert.True(importedGroup.Source.Editable);
+        Assert.Equal(-100_000L, importedGroup.Group.ChildLeftEmu);
+        Assert.Equal([
+            PresentationElement.ContentOneofCase.Shape,
+            PresentationElement.ContentOneofCase.Shape,
+            PresentationElement.ContentOneofCase.Connector,
+            PresentationElement.ContentOneofCase.Image,
+            PresentationElement.ContentOneofCase.Table,
+            PresentationElement.ContentOneofCase.Chart,
+            PresentationElement.ContentOneofCase.Group,
+        ], importedGroup.Group.Children.Select(child => child.ContentCase));
+        Assert.All(importedGroup.Group.Children, child => Assert.True(child.Source.Editable));
+        Assert.Single(importedGroup.Group.Children[^1].Group.Children);
+
+        importedGroup.Name = "Edited agent card group";
+        importedGroup.Group.LeftEmu = 1_200_000;
+        importedGroup.Group.ChildLeftEmu = -50_000;
+        importedGroup.Group.Children[0].Shape.Text = "Edited grouped evidence";
+        importedGroup.Group.Children[0].Shape.TextBody.Paragraphs[0].Runs[0].Text = "Edited grouped evidence";
+        importedGroup.Group.Children[2].Connector.EndArrow = string.Empty;
+        importedGroup.Group.Children[3].Image.AltText = "Edited grouped image";
+        importedGroup.Group.Children[4].Table.Rows[1].Cells[1].Text = "After";
+        importedGroup.Group.Children[5].Chart.Title = "Edited grouped chart";
+        importedGroup.Group.Children[5].Chart.Series[0].Values[1] = 8;
+        importedGroup.Group.Children[6].Group.TopEmu = 1_900_000;
+        importedGroup.Group.Children[6].Group.Children[0].Shape.FillRgb = "FDE68A";
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        using (var stream = new MemoryStream(edited.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var outer = package.PresentationPart!.SlideParts.Single().Slide!.Descendants<P.GroupShape>().First();
+            Assert.Equal("Edited agent card group", outer.NonVisualGroupShapeProperties!.NonVisualDrawingProperties!.Name!.Value);
+            Assert.Equal(1_200_000L, outer.GroupShapeProperties!.GetFirstChild<A.TransformGroup>()!.Offset!.X!.Value);
+            Assert.Equal("Edited grouped evidence", outer.Elements<P.Shape>().First().Descendants<A.Text>().Single().Text);
+            Assert.Null(outer.Elements<P.ConnectionShape>().Single().ShapeProperties!.GetFirstChild<A.Outline>()!.GetFirstChild<A.TailEnd>());
+            Assert.Equal("Edited grouped image", outer.Elements<P.Picture>().Single().NonVisualPictureProperties!.NonVisualDrawingProperties!.Description!.Value);
+            Assert.Contains("After", outer.Elements<P.GraphicFrame>().Single(frame => frame.Descendants<A.Table>().Any()).Descendants<A.Text>().Select(text => text.Text));
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+        var roundTrip = Import(edited.File.ToByteArray());
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        var roundTripGroup = Assert.Single(Assert.Single(roundTrip.Artifact.Presentation.Slides).Elements, item => item.ContentCase == PresentationElement.ContentOneofCase.Group);
+        Assert.Equal("Edited grouped evidence", roundTripGroup.Group.Children[0].Shape.Text);
+        Assert.Equal("After", roundTripGroup.Group.Children[4].Table.Rows[1].Cells[1].Text);
+        Assert.Equal(8D, roundTripGroup.Group.Children[5].Chart.Series[0].Values[1]);
+        Assert.Equal("FDE68A", roundTripGroup.Group.Children[6].Group.Children[0].Shape.FillRgb);
+
+        roundTripGroup.Group.Children.RemoveAt(1);
+        var topologyRejected = Export(roundTrip.Artifact);
+        Assert.False(topologyRejected.Ok);
+        Assert.Equal("presentation_group_topology_changed", Assert.Single(topologyRejected.Diagnostics).Code);
+
+        var irregularSource = ReplaceZipText(authored.File.ToByteArray(), "ppt/slides/slide1.xml", xml =>
+            xml.Replace("<p:cNvPr id=\"3\" name=\"Agent card group\" />", "<p:cNvPr id=\"3\" name=\"Agent card group\"><a:extLst /></p:cNvPr>", StringComparison.Ordinal));
+        var irregularImported = Import(irregularSource);
+        Assert.True(irregularImported.Ok, Diagnostics(irregularImported));
+        var irregular = Assert.Single(Assert.Single(irregularImported.Artifact.Presentation.Slides).Elements, item => item.Name == "Agent card group");
+        Assert.Equal(PresentationElement.ContentOneofCase.Opaque, irregular.ContentCase);
+        Assert.False(irregular.Source.Editable);
+    }
+
+    [Fact]
     public void TopLevelPicturesAuthorImportEditReplaceAndPreserveResidualGraph()
     {
         var authoredRequest = ExportRequest();

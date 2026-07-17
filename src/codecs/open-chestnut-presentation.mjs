@@ -1,4 +1,4 @@
-import { ChartElement, ImageElement, Presentation, Shape, TableElement } from "../index.mjs";
+import { ChartElement, GroupShape, ImageElement, Presentation, Shape, TableElement } from "../index.mjs";
 import {
   ArtifactFamily,
   SpreadsheetChartDataLabelPosition,
@@ -93,6 +93,12 @@ function assertTrustedPresentationState(state) {
 function emuFromPixels(value, name) {
   const number = Number(value);
   if (!Number.isFinite(number) || number < 0) throw new OpenChestnutCodecError(`${name} must be a non-negative finite number.`, [], { code: "invalid_presentation_frame" });
+  return BigInt(Math.round(number * EMU_PER_PIXEL));
+}
+
+function signedEmuFromPixels(value, name) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || Math.abs(number) > 10_000_000) throw new OpenChestnutCodecError(`${name} must be a bounded finite number.`, [], { code: "invalid_presentation_group" });
   return BigInt(Math.round(number * EMU_PER_PIXEL));
 }
 
@@ -1082,6 +1088,52 @@ function presentationTableReadOnlySnapshot(table) {
   });
 }
 
+function presentationElement(element, original, assetCatalog) {
+  if (element instanceof GroupShape) return presentationGroup(element, original, assetCatalog);
+  if (element instanceof ImageElement) return presentationImage(element, original, assetCatalog);
+  if (element instanceof TableElement) return presentationTable(element, original);
+  if (element instanceof ChartElement) return presentationChart(element, original);
+  if (element?.kind === "connector") return presentationConnector(element, original);
+  if (element instanceof Shape) return presentationShape(element, original, assetCatalog);
+  throw new OpenChestnutCodecError(`Presentation element ${element?.id || "<unknown>"} has no supported OpenChestnut wire projection.`, [], { code: "unsupported_presentation_element" });
+}
+
+function presentationGroup(group, original, assetCatalog) {
+  const originalGroup = original?.content?.case === "group" ? original.content.value : undefined;
+  if (!group.children.length) throw new OpenChestnutCodecError(`Presentation group ${group.id} requires at least one child.`, [], { code: "invalid_presentation_group" });
+  if (originalGroup && originalGroup.children.length !== group.children.length) {
+    throw new OpenChestnutCodecError(`Source-preserving PPTX export requires presentation group ${group.id}'s original ${originalGroup.children.length}-child topology.`, [], { code: "presentation_group_topology_changed" });
+  }
+  const frame = group.position || {};
+  const childFrame = group.childFrame || {};
+  const widthEmu = emuFromPixels(frame.width, `${group.id}.position.width`);
+  const heightEmu = emuFromPixels(frame.height, `${group.id}.position.height`);
+  const childWidthEmu = emuFromPixels(childFrame.width, `${group.id}.childFrame.width`);
+  const childHeightEmu = emuFromPixels(childFrame.height, `${group.id}.childFrame.height`);
+  if (widthEmu < 1n || heightEmu < 1n || childWidthEmu < 1n || childHeightEmu < 1n) {
+    throw new OpenChestnutCodecError(`Presentation group ${group.id} requires positive outer and child extents.`, [], { code: "invalid_presentation_group" });
+  }
+  return {
+    id: original?.id || group.id,
+    name: String(group.name || original?.name || ""),
+    source: original?.source,
+    content: {
+      case: "group",
+      value: {
+        leftEmu: emuFromPixels(frame.left, `${group.id}.position.left`),
+        topEmu: emuFromPixels(frame.top, `${group.id}.position.top`),
+        widthEmu,
+        heightEmu,
+        childLeftEmu: signedEmuFromPixels(childFrame.left, `${group.id}.childFrame.left`),
+        childTopEmu: signedEmuFromPixels(childFrame.top, `${group.id}.childFrame.top`),
+        childWidthEmu,
+        childHeightEmu,
+        children: group.children.map((child, index) => presentationElement(child, originalGroup?.children[index], assetCatalog)),
+      },
+    },
+  };
+}
+
 function directSlideElements(slide) {
   return [
     ...slide.shapes.items,
@@ -1130,7 +1182,6 @@ function unsupportedPresentationFeatures(presentation) {
     const prefix = `slide ${slide.index + 1}`;
     if (slide.layoutId) unsupported.push(`${prefix} layout binding`);
     if (slide.comments?.items?.length) unsupported.push(`${prefix} comments`);
-    if (slide.groups?.items?.length) unsupported.push(`${prefix} groups`);
     if (slide.nativeObjects?.items?.length) unsupported.push(`${prefix} native objects`);
     if (slide.shapes?.items?.some((shape) => shape.placeholder)) unsupported.push(`${prefix} source-free placeholder authoring`);
   }
@@ -1227,20 +1278,13 @@ export function presentationEnvelope(presentation, protocolVersion) {
             }
             if (entry.wire.content.case === "connector") return presentationConnector(entry.model, entry.wire);
             if (entry.wire.content.case === "chart") return presentationChart(entry.model, entry.wire);
+            if (entry.wire.content.case === "group") return presentationGroup(entry.model, entry.wire, assetCatalog);
             if (opaquePresentationSnapshot(entry.model) !== entry.snapshot) throw new OpenChestnutCodecError(`Presentation native element ${entry.model.id} is source-bound and read-only in OpenChestnut 0.2.`, [], { code: "unsupported_presentation_edit" });
             return entry.wire;
           })
         : directSlideElements(slide)
-          .filter((element) => element instanceof Shape || element instanceof ImageElement || element instanceof TableElement || element instanceof ChartElement || slide.connectors.items.includes(element))
-          .map((element) => element instanceof ImageElement
-            ? presentationImage(element, undefined, assetCatalog)
-            : element instanceof TableElement
-              ? presentationTable(element, undefined)
-              : element instanceof ChartElement
-                ? presentationChart(element, undefined)
-                : slide.connectors.items.includes(element)
-                  ? presentationConnector(element, undefined)
-                  : presentationShape(element, undefined, assetCatalog)),
+          .filter((element) => element instanceof Shape || element instanceof ImageElement || element instanceof TableElement || element instanceof ChartElement || element instanceof GroupShape || slide.connectors.items.includes(element))
+          .map((element) => presentationElement(element, undefined, assetCatalog)),
     };
   });
   return {
@@ -1565,6 +1609,110 @@ function modelPresentationChart(source) {
   };
 }
 
+function modelPresentationGroupChild(element, assetCatalog) {
+  const common = { id: element.id, name: element.name };
+  if (element.content.case === "shape") {
+    const shape = element.content.value;
+    if (shape.placeholder) throw new OpenChestnutCodecError(`Presentation group ${element.id} contains an unsupported placeholder child.`, [], { code: "invalid_presentation_group" });
+    return {
+      kind: "shape",
+      ...common,
+      geometry: shape.geometry || "rect",
+      ...(shape.customPaths?.length ? { customPaths: modelCustomGeometryPaths(shape) } : {}),
+      position: {
+        left: Number(shape.leftEmu) / EMU_PER_PIXEL,
+        top: Number(shape.topEmu) / EMU_PER_PIXEL,
+        width: Number(shape.widthEmu) / EMU_PER_PIXEL,
+        height: Number(shape.heightEmu) / EMU_PER_PIXEL,
+      },
+      ...(shape.transform ? { transform: modelPresentationTransform(shape.transform) } : {}),
+      fill: shape.fillRgb ? `#${shape.fillRgb}` : "transparent",
+      line: { fill: shape.lineRgb ? `#${shape.lineRgb}` : "transparent", width: Number(shape.lineWidthEmu) / EMU_PER_POINT },
+      ...(shape.shadow ? { shadow: modelPresentationShadow(shape.shadow) } : {}),
+      text: modelText(shape, assetCatalog),
+      textBodyProperties: modelTextBodyProperties(shape),
+    };
+  }
+  if (element.content.case === "image") {
+    const image = element.content.value;
+    return {
+      kind: "image",
+      ...common,
+      position: {
+        left: Number(image.leftEmu) / EMU_PER_PIXEL,
+        top: Number(image.topEmu) / EMU_PER_PIXEL,
+        width: Number(image.widthEmu) / EMU_PER_PIXEL,
+        height: Number(image.heightEmu) / EMU_PER_PIXEL,
+      },
+      alt: image.altText,
+      dataUrl: assetCatalog.dataUrl(image.assetId),
+      fit: "stretch",
+      ...(image.crop ? { crop: presentationImageCropFromWire(image.crop) } : {}),
+      geometry: "rect",
+      ...(image.transform ? { transform: modelPresentationTransform(image.transform) } : {}),
+    };
+  }
+  if (element.content.case === "table") {
+    const table = element.content.value;
+    return {
+      kind: "table",
+      ...common,
+      position: {
+        left: Number(table.leftEmu) / EMU_PER_PIXEL,
+        top: Number(table.topEmu) / EMU_PER_PIXEL,
+        width: Number(table.widthEmu) / EMU_PER_PIXEL,
+        height: Number(table.heightEmu) / EMU_PER_PIXEL,
+      },
+      values: table.rows.map((row) => row.cells.map((cell) => cell.text)),
+      rows: table.rows.length,
+      columns: table.columnWidthsEmu.length,
+      styleOptions: { headerRow: table.firstRow === true, bandedRows: table.bandedRows === true },
+    };
+  }
+  if (element.content.case === "connector") {
+    const connector = element.content.value;
+    return {
+      kind: "connector",
+      ...common,
+      connectorType: connector.connectorType || "straight",
+      start: { x: Number(connector.startXEmu) / EMU_PER_PIXEL, y: Number(connector.startYEmu) / EMU_PER_PIXEL },
+      end: { x: Number(connector.endXEmu) / EMU_PER_PIXEL, y: Number(connector.endYEmu) / EMU_PER_PIXEL },
+      startTargetId: connector.startTargetId || undefined,
+      endTargetId: connector.endTargetId || undefined,
+      line: {
+        fill: connector.lineRgb ? `#${connector.lineRgb}` : "transparent",
+        width: Number(connector.lineWidthEmu) / EMU_PER_POINT,
+        ...(connector.startArrow ? { startArrow: connector.startArrow } : {}),
+        ...(connector.endArrow ? { endArrow: connector.endArrow } : {}),
+      },
+    };
+  }
+  if (element.content.case === "chart") return { kind: "chart", ...common, ...modelPresentationChart(element.content.value) };
+  if (element.content.case === "group") return { kind: "groupShape", ...modelPresentationGroup(element, assetCatalog) };
+  throw new OpenChestnutCodecError(`Presentation group child ${element.id} has unsupported wire content ${element.content.case || "none"}.`, [], { code: "invalid_presentation_group" });
+}
+
+function modelPresentationGroup(element, assetCatalog) {
+  const group = element.content.value;
+  return {
+    id: element.id,
+    name: element.name,
+    position: {
+      left: Number(group.leftEmu) / EMU_PER_PIXEL,
+      top: Number(group.topEmu) / EMU_PER_PIXEL,
+      width: Number(group.widthEmu) / EMU_PER_PIXEL,
+      height: Number(group.heightEmu) / EMU_PER_PIXEL,
+    },
+    childFrame: {
+      left: Number(group.childLeftEmu) / EMU_PER_PIXEL,
+      top: Number(group.childTopEmu) / EMU_PER_PIXEL,
+      width: Number(group.childWidthEmu) / EMU_PER_PIXEL,
+      height: Number(group.childHeightEmu) / EMU_PER_PIXEL,
+    },
+    children: group.children.map((child) => modelPresentationGroupChild(child, assetCatalog)),
+  };
+}
+
 export async function presentationFromEnvelope(envelope) {
   if (envelope.family !== ArtifactFamily.PRESENTATION || envelope.payload.case !== "presentation") {
     throw new OpenChestnutCodecError("OpenChestnut response does not contain a presentation artifact.", [], { code: "invalid_presentation_artifact" });
@@ -1736,6 +1884,8 @@ export async function presentationFromEnvelope(envelope) {
           name: element.name,
           ...modelPresentationChart(element.content.value),
         });
+      } else if (element.content.case === "group") {
+        model = slide.groups.add(modelPresentationGroup(element, assetCatalog));
       } else if (element.content.case === "opaque") {
         const opaque = element.content.value;
         const sourcePart = sourceSlide.source?.partPath;
