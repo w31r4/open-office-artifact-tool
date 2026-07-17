@@ -1148,6 +1148,26 @@ message PresentationSlide {
   // Direct p:cSld/p:bg only. Effective layout/master inheritance stays in the
   // JavaScript model and is never flattened into the slide part.
   PresentationBackground background = 7;
+  // The bounded legacy PresentationML comment profile. This is deliberately a
+  // codec-level record rather than the richer JavaScript thread abstraction:
+  // legacy PowerPoint comments have one text item, one author, and one page
+  // coordinate, but no replies, resolved state, reactions, or element anchor.
+  // Modern comment graphs remain opaque/source-bound.
+  repeated PresentationLegacyComment legacy_comments = 8;
+}
+
+// One p:cm record from a legacy ppt/comments/commentN.xml part. `id` is a
+// stable locator only within the decoded artifact; native author/index values
+// are package-local source evidence, not durable cross-file identity.
+message PresentationLegacyComment {
+  string id = 1;
+  string author = 2;
+  string text = 3;
+  string created_at = 4;
+  int64 position_x_emu = 5;
+  int64 position_y_emu = 6;
+  uint32 native_author_id = 7;
+  uint32 native_index = 8;
 }
 
 message PresentationSlideSourceBinding {

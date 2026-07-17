@@ -62,6 +62,75 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void LegacyCommentsAuthorImportAndRemainSourceBound()
+    {
+        var request = ExportRequest();
+        request.Artifact.Presentation.Slides[0].LegacyComments.Add(new PresentationLegacyComment
+        {
+            Id = "presentation/slide/1/legacy-comment/1",
+            Author = "Review Owner",
+            Text = "Confirm the customer evidence before delivery.",
+            CreatedAt = "2026-07-18T02:55:00Z",
+            PositionXEmu = 1_234_500,
+            PositionYEmu = 2_345_600,
+        });
+
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var author = Assert.Single(package.PresentationPart!.CommentAuthorsPart!.CommentAuthorList!.Elements<P.CommentAuthor>());
+            Assert.Equal("Review Owner", author.Name!.Value);
+            Assert.Equal(0U, author.Id!.Value);
+            var comment = Assert.Single(Assert.Single(package.PresentationPart.SlideParts).SlideCommentsPart!.CommentList!.Elements<P.Comment>());
+            Assert.Equal(0U, comment.AuthorId!.Value);
+            Assert.Equal(0U, comment.Index!.Value);
+            Assert.Equal("Confirm the customer evidence before delivery.", comment.Text!.Text);
+            Assert.Equal(1_234_500L, comment.Position!.X!.Value);
+            Assert.Equal(2_345_600L, comment.Position.Y!.Value);
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedComment = Assert.Single(Assert.Single(imported.Artifact.Presentation.Slides).LegacyComments);
+        Assert.Equal("presentation/slide/1/legacy-comment/1", importedComment.Id);
+        Assert.Equal("Review Owner", importedComment.Author);
+        Assert.Equal("Confirm the customer evidence before delivery.", importedComment.Text);
+        Assert.Equal(1_234_500L, importedComment.PositionXEmu);
+        Assert.Equal(2_345_600L, importedComment.PositionYEmu);
+        Assert.Equal(0U, importedComment.NativeAuthorId);
+        Assert.Equal(0U, importedComment.NativeIndex);
+
+        var unchanged = Export(imported.Artifact);
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(
+            ZipBytes(authored.File.ToByteArray(), "ppt/comments/comment1.xml"),
+            ZipBytes(unchanged.File.ToByteArray(), "ppt/comments/comment1.xml"));
+        Assert.Equal(
+            ZipBytes(authored.File.ToByteArray(), "ppt/commentAuthors.xml"),
+            ZipBytes(unchanged.File.ToByteArray(), "ppt/commentAuthors.xml"));
+
+        importedComment.Text = "Changed after import.";
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_presentation_comment_edit", Assert.Single(rejected.Diagnostics).Code);
+
+        var invalid = ExportRequest();
+        invalid.Artifact.Presentation.Slides[0].LegacyComments.Add(new PresentationLegacyComment
+        {
+            Id = "invalid-comment",
+            Author = "Reviewer",
+            Text = "Needs an invalid timestamp.",
+            CreatedAt = "not-a-timestamp",
+        });
+        rejected = Invoke(invalid);
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_presentation_legacy_comment", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void ImportedViewPropertiesExposeGridSnapAndGuidesAndRemainSourceBound()
     {
         var authored = Invoke(ExportRequest());

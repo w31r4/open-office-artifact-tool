@@ -160,6 +160,7 @@ internal static class PptxCodec
             if (slideBackground is not null) target.Background = slideBackground;
             if (PptxSpeakerNotesCodec.Read(slidePart) is { } speakerNotes)
                 target.SpeakerNotes = speakerNotes;
+            target.LegacyComments.Add(PptxLegacyCommentsCodec.Read(presentationPart, slidePart, slideIndex, diagnostics));
             var slideContext = new PptxPartContext(slidePart, slideIdByPartPath, assets: assetCatalog);
             for (var elementIndex = 0; elementIndex < elements.Length; elementIndex++)
             {
@@ -285,6 +286,7 @@ internal static class PptxCodec
                     "ppt/presentation.xml");
             var layoutIdByPartPath = layoutGraph.ToDictionary(item => PartPath(item.Layout.Part), item => item.Layout.Id, StringComparer.OrdinalIgnoreCase);
             PptxViewPropertiesCodec.AssertSource(presentationPart, envelope.Presentation.ViewProperties);
+            PptxLegacyCommentsCodec.AssertSourceUnchanged(presentationPart, slideParts, envelope.Presentation.Slides);
             assetCatalog.IndexExistingParts(slideParts.SelectMany(part => part.ImageParts)
                 .Concat(masterGraph.SelectMany(master => master.Part.Parts.Select(pair => pair.OpenXmlPart).OfType<ImagePart>())));
 
@@ -1062,6 +1064,7 @@ internal static class PptxCodec
             new P.NotesSize { Cx = 6_858_000L, Cy = 9_144_000L },
             new P.DefaultTextStyle());
         presentationPart.Presentation = presentationRoot;
+        PptxLegacyCommentsCodec.BuildSourceFree(presentationPart, slideParts, artifact.Slides);
         themePart.Theme.Save();
         layoutPart.SlideLayout.Save();
         masterPart.SlideMaster.Save();
@@ -1588,10 +1591,12 @@ internal static class PptxCodec
             ValidatePlaceholders(layout.Id, layout.Placeholders, assetCatalog, limits, ref items);
         }
 
-        foreach (var slide in envelope.Presentation.Slides)
+        for (var slideIndex = 0; slideIndex < envelope.Presentation.Slides.Count; slideIndex++)
         {
+            var slide = envelope.Presentation.Slides[slideIndex];
             PptxSpeakerNotesCodec.Validate(slide.SpeakerNotes);
             PptxBackgroundCodec.Validate(slide.Background);
+            PptxLegacyCommentsCodec.Validate(slide, slideIndex);
             if (!string.IsNullOrWhiteSpace(slide.LayoutId) && !layoutIds.Contains(slide.LayoutId))
                 throw new CodecException("invalid_presentation_layout", $"Presentation slide {slide.Id} references missing layout {slide.LayoutId}.");
             foreach (var element in slide.Elements)
