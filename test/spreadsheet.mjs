@@ -260,6 +260,33 @@ const secondPackageInspect = await SpreadsheetFile.inspectXlsx(secondXlsx, { max
 assert.equal(secondPackageInspect.ok, true, secondPackageInspect.ndjson);
 assert.equal(secondPackageInspect.records[0].semanticIssues, 0);
 
+function chartBoundaryWorkbook(type) {
+  const candidate = Workbook.create();
+  const candidateSheet = candidate.worksheets.add("Chart boundary");
+  candidateSheet.getRange("A1:B3").values = [["Quarter", "Revenue"], ["Q1", 40], ["Q2", 60]];
+  return { candidate, chart: candidateSheet.charts.add(type, candidateSheet.getRange("A1:B3")) };
+}
+
+const invalidDoughnutAxes = chartBoundaryWorkbook("doughnut");
+invalidDoughnutAxes.chart.xAxis = {};
+await assert.rejects(
+  () => SpreadsheetFile.exportXlsx(invalidDoughnutAxes.candidate),
+  (error) => error?.code === "unsupported_spreadsheet_chart" && /doughnut charts cannot carry.*axes/i.test(error.message),
+);
+
+const invalidAreaLineOptions = chartBoundaryWorkbook("area");
+invalidAreaLineOptions.chart.lineOptions = { grouping: "standard" };
+await assert.rejects(
+  () => SpreadsheetFile.exportXlsx(invalidAreaLineOptions.candidate),
+  (error) => error?.code === "unsupported_spreadsheet_chart" && /lineOptions require a line chart/i.test(error.message),
+);
+
+const unsupportedScatter = chartBoundaryWorkbook("scatter");
+await assert.rejects(
+  () => SpreadsheetFile.exportXlsx(unsupportedScatter.candidate),
+  (error) => error?.code === "unsupported_spreadsheet_chart" && /bar, line, pie, area, or doughnut/i.test(error.message),
+);
+
 const connectionWorkbook = Workbook.create({
   connections: [{ connectionId: 1, name: "Source-free connection", type: 1, refreshedVersion: 1 }],
 });

@@ -2363,7 +2363,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 | Name | Kind | Summary |
 | --- | --- | --- |
-| `exportXlsxWithOpenChestnut` | api | Export the bounded Workbook model through the bundled C# Open XML SDK WebAssembly codec: cells, formulas, styles, merges, dimensions, freezes, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie charts, and standard Office 2010 line/column/stacked sparklines. Nested/branched replies, mentions, imported connections, QueryTables, dynamic-array topology, pivots, and unsupported extension graphs are preservation-only; authoring or editing them fails closed. |
+| `exportXlsxWithOpenChestnut` | api | Export the bounded Workbook model through the bundled C# Open XML SDK WebAssembly codec: cells, formulas, styles, merges, dimensions, freezes, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie/area/doughnut charts, and standard Office 2010 line/column/stacked sparklines. Nested/branched replies, mentions, imported connections, QueryTables, dynamic-array topology, pivots, and unsupported extension graphs are preservation-only; authoring or editing them fails closed. |
 | `fx.ABS` | formula | Return the absolute value of a number. |
 | `fx.AND` | formula | Return TRUE when all conditions are true. |
 | `fx.AVERAGE` | formula | Average numeric values across arguments and ranges in the clean-room formula engine. |
@@ -2452,7 +2452,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.XLOOKUP` | formula | Look up a value in one range and return the corresponding value from another range. |
 | `fx.XMATCH` | formula | Return a 1-based lookup position with exact, next-smaller, next-larger, wildcard, and forward or reverse search modes. |
 | `fx.YEAR` | formula | Return the year component of a serial in the workbook's 1900 or 1904 date system. |
-| `importXlsxWithOpenChestnut` | api | Import XLSX bytes through OpenChestnut with editable core cells, formulas, styles, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie charts, and canonical Office 2010 line/column/stacked sparkline groups. Nested/branched replies, mentions, connections, QueryTables, dynamic-array topology, pivots, non-reversible sparkline graphs, and other advanced package content remain source-bound and read-only. |
+| `importXlsxWithOpenChestnut` | api | Import XLSX bytes through OpenChestnut with editable core cells, formulas, styles, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie/area/doughnut charts, and canonical Office 2010 line/column/stacked sparkline groups. Nested/branched replies, mentions, connections, QueryTables, dynamic-array topology, pivots, non-reversible sparkline graphs, and other advanced package content remain source-bound and read-only. |
 | `invokeOpenChestnut` | api | Advanced experimental byte-boundary API for invoking the public OpenChestnut codec protocol with generated wire-message objects. |
 | `openChestnutStatus` | api | Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its protocol, assembly, and integrity manifest. |
 | `range.clear` | api | Clear range contents, formats, or both without silently changing validations, dimensions, or other package graphs. |
@@ -2538,7 +2538,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 #### `exportXlsxWithOpenChestnut`
 
-Export the bounded Workbook model through the bundled C# Open XML SDK WebAssembly codec: cells, formulas, styles, merges, dimensions, freezes, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie charts, and standard Office 2010 line/column/stacked sparklines. Nested/branched replies, mentions, imported connections, QueryTables, dynamic-array topology, pivots, and unsupported extension graphs are preservation-only; authoring or editing them fails closed.
+Export the bounded Workbook model through the bundled C# Open XML SDK WebAssembly codec: cells, formulas, styles, merges, dimensions, freezes, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie/area/doughnut charts, and standard Office 2010 line/column/stacked sparklines. Nested/branched replies, mentions, imported connections, QueryTables, dynamic-array topology, pivots, and unsupported extension graphs are preservation-only; authoring or editing them fails closed.
 
 **Schema parameters:**
 
@@ -4054,7 +4054,7 @@ Return the year component of a serial in the workbook's 1900 or 1904 date system
 
 #### `importXlsxWithOpenChestnut`
 
-Import XLSX bytes through OpenChestnut with editable core cells, formulas, styles, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie charts, and canonical Office 2010 line/column/stacked sparkline groups. Nested/branched replies, mentions, connections, QueryTables, dynamic-array topology, pivots, non-reversible sparkline graphs, and other advanced package content remain source-bound and read-only.
+Import XLSX bytes through OpenChestnut with editable core cells, formulas, styles, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie/area/doughnut charts, and canonical Office 2010 line/column/stacked sparkline groups. Nested/branched replies, mentions, connections, QueryTables, dynamic-array topology, pivots, non-reversible sparkline graphs, and other advanced package content remain source-bound and read-only.
 
 **Schema parameters:**
 
@@ -4399,7 +4399,7 @@ Create an inspectable worksheet chart from a range or config; setData(range) inf
 
 **Schema parameters:**
 
-- `chartType` (string) required — Chart type such as bar, line, or pie.
+- `chartType` (string) required — Canonical OpenChestnut XLSX chart type: bar, line, pie, area, or doughnut. Other model names fail closed on export.
 - `source` (Range|object) — Source range or explicit chart config.
 - `title` (string) — Chart title.
 - `titleTextStyle` (object) — Optional chart-title style with fontSize from 1 through 4000 points.
@@ -4407,8 +4407,8 @@ Create an inspectable worksheet chart from a range or config; setData(range) inf
 - `dataLabels` (boolean|object) — Optional plot-level labels. A boolean controls showValue; an object accepts boolean showValue/showCategoryName, optional presence-aware showSeriesName, and position: bestFit, bottom, center, insideBase, insideEnd, left, outsideEnd, right, or top. Per-series/per-point labels, number formats, and label text styles remain outside this bounded profile.
 - `categories` (string[]) — Explicit categories.
 - `series` (object[]) — Explicit series definitions with name, optional numeric values, optional categoryFormula/formula, optional #RRGGBB solid fill, optional line { fill, style, width }, and line-chart-only marker { symbol, size, fill, line }. When internal range formulas are present, inspect/render/OpenChestnut export resolve live category/value caches from those cells. line.fill and marker.fill are #RRGGBB; both line objects use style solid, dashed, dotted, dash-dot, or dash-dot-dot and width 0 through 1584 points. marker.symbol is none, dot, circle, square, diamond, triangle, x, star, plus, or dash; marker.size is an integer from 2 through 72. stroke { color, style, weight } is a series-line compatibility alias and must not conflict with line.
-- `xAxis` (object) — Primary text category axis with title.text, tick-label textStyle.fontSize, numberFormatCode, and tickLabelInterval.
-- `yAxis` (object) — Primary numeric value axis with title.text, tick-label textStyle.fontSize, numberFormatCode, min, max, and majorUnit; tickLabelInterval is accepted as a compatibility alias for majorUnit.
+- `xAxis` (object) — Primary text category axis with title.text, tick-label textStyle.fontSize, numberFormatCode, and tickLabelInterval. Pie and doughnut charts have no axes.
+- `yAxis` (object) — Primary numeric value axis with title.text, tick-label textStyle.fontSize, numberFormatCode, min, max, and majorUnit; tickLabelInterval is accepted as a compatibility alias for majorUnit. Pie and doughnut charts have no axes.
 - `position` (object) — Pixel chart frame.
 
 **Schema returns:**

@@ -380,7 +380,7 @@ chart.yAxis.title.text = "Revenue and EBITDA";
 - If using compat positioning, always set position: `chart.setPosition("F2", "M20")`.
 - `sheet.charts.getItemOrNullObject("Chart 1")`, `sheet.charts.deleteAll()`
 - For month/date x-axes, prefer a chart helper range with text labels such as `Jan 2025` or `2025-01`. Do not rely on date axis number formats alone; rendered previews can show Excel serial numbers.
-- Chart types: `"bar" | "line" | "area" | "pie" | "doughnut" | "scatter" | "bubble" | "radar" | "stock" | "treemap" | "sunburst" | "histogram" | "boxWhisker" | "waterfall" | "funnel" | "map"`.
+- Canonical OpenChestnut XLSX types are `"bar" | "line" | "area" | "pie" | "doughnut"`. Area uses the standard grouping; doughnut uses a 50% hole. Scatter, bubble, radar, stock, treemap, sunburst, histogram, box-whisker, waterfall, funnel, map, stacked-area variants, custom doughnut holes, and exploded points are not silently substituted: imported graphs remain source-bound, while unsupported source-free creation fails closed.
 
 ### Sparklines
 ```

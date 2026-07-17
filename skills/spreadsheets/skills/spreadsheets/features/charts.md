@@ -12,6 +12,11 @@ Use a chart only when it makes a KPI, comparison, trend, distribution, ranking, 
 
 Optimize for one clear takeaway and prioritize the data. Use color only for meaning, and keep labels, units, and comparisons easy to read.
 
+The canonical OpenChestnut path supports native bar, line, pie, standard-area,
+and 50%-hole doughnut charts. Other reference chart names and advanced plot
+options require a separately verified provider or must fail closed; never
+substitute a different chart family without telling the user.
+
 1. Choose the takeaway and most suitable chart type for the data.
 Examples below are guidance, not hard rules:
 - For category comparison or ranking, consider a sorted bar/column chart.

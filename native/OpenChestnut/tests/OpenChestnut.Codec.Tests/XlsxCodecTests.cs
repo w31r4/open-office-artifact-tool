@@ -3361,6 +3361,22 @@ public sealed class XlsxCodecTests
         Assert.Equal("Edited quarter area", secondArea.Artifact.Workbook.Worksheets[0].Charts[0].Title);
         Assert.Equal(91, secondArea.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Values[1]);
 
+        var stackedAreaSource = SetChartScalar(authoredArea.File.ToByteArray(), "areaChart", "grouping", "stacked");
+        AssertOffice2021Valid(stackedAreaSource);
+        var stackedAreaXml = ReadChartXml(stackedAreaSource);
+        var importedStackedArea = Import(stackedAreaSource);
+        Assert.True(importedStackedArea.Ok, string.Join("\n", importedStackedArea.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var stackedArea = Assert.Single(importedStackedArea.Artifact.Workbook.Worksheets[0].Charts);
+        Assert.Equal(SpreadsheetChartType.Area, stackedArea.Type);
+        Assert.False(stackedArea.Source.Editable);
+        var preservedStackedArea = Export(importedStackedArea.Artifact);
+        Assert.True(preservedStackedArea.Ok, string.Join("\n", preservedStackedArea.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(stackedAreaXml, ReadChartXml(preservedStackedArea.File.ToByteArray()));
+        stackedArea.Title = "Rejected stacked edit";
+        var rejected = Export(importedStackedArea.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_chart_edit", Assert.Single(rejected.Diagnostics).Code);
+
         var doughnutRequest = ChartExportRequest();
         var doughnut = doughnutRequest.Artifact.Workbook.Worksheets[0].Charts[0];
         doughnut.Type = SpreadsheetChartType.Doughnut;
@@ -3397,6 +3413,22 @@ public sealed class XlsxCodecTests
         var secondDoughnut = Import(editedDoughnut.File.ToByteArray());
         Assert.Equal("Edited quarter mix", secondDoughnut.Artifact.Workbook.Worksheets[0].Charts[0].Title);
         Assert.Equal(55, secondDoughnut.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Values[0]);
+
+        var customDoughnutSource = SetChartScalar(authoredDoughnut.File.ToByteArray(), "doughnutChart", "holeSize", "60");
+        AssertOffice2021Valid(customDoughnutSource);
+        var customDoughnutXml = ReadChartXml(customDoughnutSource);
+        var importedCustomDoughnut = Import(customDoughnutSource);
+        Assert.True(importedCustomDoughnut.Ok, string.Join("\n", importedCustomDoughnut.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var customDoughnut = Assert.Single(importedCustomDoughnut.Artifact.Workbook.Worksheets[0].Charts);
+        Assert.Equal(SpreadsheetChartType.Doughnut, customDoughnut.Type);
+        Assert.False(customDoughnut.Source.Editable);
+        var preservedCustomDoughnut = Export(importedCustomDoughnut.Artifact);
+        Assert.True(preservedCustomDoughnut.Ok, string.Join("\n", preservedCustomDoughnut.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(customDoughnutXml, ReadChartXml(preservedCustomDoughnut.File.ToByteArray()));
+        customDoughnut.Title = "Rejected custom hole edit";
+        rejected = Export(importedCustomDoughnut.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_chart_edit", Assert.Single(rejected.Diagnostics).Code);
     }
 
     [Fact]
@@ -4593,6 +4625,24 @@ public sealed class XlsxCodecTests
             XNamespace c = "http://schemas.openxmlformats.org/drawingml/2006/chart";
             XNamespace fixture = "urn:openchestnut:worksheet-chart";
             chart.Root!.Add(new XElement(c + "extLst", new XElement(c + "ext", new XAttribute("uri", "{B6E80C28-38CE-4C9A-91B6-784D65016615}"), new XElement(fixture + "probe", "preserve-me"))));
+            using var output = chartPart.GetStream(FileMode.Create, FileAccess.Write);
+            chart.Save(output, SaveOptions.DisableFormatting);
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] SetChartScalar(byte[] bytes, string plotName, string scalarName, string value)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var chartPart = document.WorkbookPart!.WorksheetParts.Single().DrawingsPart!.ChartParts.Single();
+            var chart = XDocument.Parse(ReadPartText(chartPart));
+            XNamespace c = "http://schemas.openxmlformats.org/drawingml/2006/chart";
+            var scalar = chart.Descendants(c + plotName).Single().Elements(c + scalarName).Single();
+            scalar.SetAttributeValue("val", value);
             using var output = chartPart.GetStream(FileMode.Create, FileAccess.Write);
             chart.Save(output, SaveOptions.DisableFormatting);
         }
