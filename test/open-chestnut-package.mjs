@@ -22,6 +22,10 @@ try {
   ], temporary);
 
   const probe = String.raw`
+    import { spawnSync } from "node:child_process";
+    import fs from "node:fs";
+    import path from "node:path";
+
     import {
       DocumentFile, DocumentModel, PdfArtifact, PdfFile,
       Presentation, PresentationFile, SpreadsheetFile, Workbook,
@@ -69,6 +73,63 @@ try {
     if (inspection.summary.pages !== 1 || !inspection.summary.tagged) process.exit(31);
     const importedPdf = await PdfFile.importPdf(pdfFile);
     if (!importedPdf.extractText().includes("clean install PDF")) process.exit(32);
+
+    const installedPackage = path.join(process.cwd(), "node_modules", "open-office-artifact-tool");
+    const creatorPath = path.join(
+      installedPackage,
+      "skills", "template-creator", "skills", "template-creator", "scripts", "create-template-skill.mjs",
+    );
+    if (!fs.existsSync(creatorPath)) process.exit(50);
+
+    const fixtureDirectory = path.join(process.cwd(), "template-creator-fixture");
+    const templateHome = path.join(process.cwd(), "template-creator-home");
+    const referencePath = path.join(fixtureDirectory, "reference.xlsx");
+    const previewPath = path.join(fixtureDirectory, "preview.png");
+    fs.mkdirSync(fixtureDirectory, { recursive: true });
+    fs.writeFileSync(referencePath, xlsx.bytes);
+    fs.writeFileSync(
+      previewPath,
+      Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==",
+        "base64",
+      ),
+    );
+    const created = spawnSync(
+      process.execPath,
+      [
+        creatorPath,
+        "--reference-path", referencePath,
+        "--preview-path", previewPath,
+        "--display-name", "Packed workbook template",
+        "--description", "Create a workbook from the clean-installed package fixture.",
+      ],
+      {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        env: { ...process.env, OFFICE_ARTIFACT_HOME: templateHome },
+      },
+    );
+    if (created.status !== 0) {
+      process.stderr.write(created.stderr);
+      process.exit(51);
+    }
+    const template = JSON.parse(created.stdout);
+    if (
+      template.kind !== "spreadsheet" ||
+      template.skillName !== "artifact-template-packed-workbook-template" ||
+      path.dirname(template.skillPath) !== path.join(templateHome, "skills")
+    ) process.exit(52);
+    const sidecar = JSON.parse(fs.readFileSync(path.join(template.skillPath, "artifact-template.json"), "utf8"));
+    if (
+      sidecar.schemaVersion !== 1 ||
+      sidecar.kind !== "spreadsheet" ||
+      sidecar.reference !== "assets/reference.xlsx" ||
+      sidecar.preview !== "assets/preview.png"
+    ) process.exit(53);
+    if (
+      !fs.readFileSync(path.join(template.skillPath, sidecar.reference)).equals(Buffer.from(xlsx.bytes)) ||
+      !fs.readFileSync(path.join(template.skillPath, sidecar.preview)).equals(fs.readFileSync(previewPath))
+    ) process.exit(54);
   `;
 
   run(process.execPath, ["--input-type=module", "-e", probe], temporary, {
@@ -78,7 +139,7 @@ try {
   fs.rmSync(temporary, { force: true, recursive: true });
 }
 
-console.log("OpenChestnut and PDF clean-install package smoke ok");
+console.log("OpenChestnut, PDF, and Template Creator clean-install package smoke ok");
 
 function run(command, args, cwd, environment = {}) {
   const result = spawnSync(command, args, {
