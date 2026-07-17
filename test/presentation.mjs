@@ -13,6 +13,7 @@ import {
 
 const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 const JPEG = "data:image/jpeg;base64,/9j/2Q==";
+const WIDE_SVG = `data:image/svg+xml;base64,${Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200" viewBox="0 0 400 200"><rect width="200" height="200" fill="#2563eb"/><rect x="200" width="200" height="200" fill="#f97316"/></svg>').toString("base64")}`;
 
 function itemByName(items, name) {
   const item = items.find((candidate) => candidate.name === name);
@@ -161,6 +162,15 @@ coreSlide.images.add({
   fit: "stretch",
   dataUrl: JPEG,
 });
+const coverImage = coreSlide.images.add({
+  name: "cover-image",
+  alt: "Wide image cropped to a square",
+  position: { left: 650, top: 480, width: 140, height: 140 },
+  fit: "cover",
+  dataUrl: WIDE_SVG,
+});
+assert.match(coverImage.toSvg(), /viewBox="100 0 200 200"/);
+assert.throws(() => { coverImage.crop = { left: 0.8, right: 0.3 }; }, /opposing sums/);
 coreSlide.connectors.add({
   name: "straight-connector",
   connectorType: "straight",
@@ -243,6 +253,9 @@ assert.equal((await PresentationFile.inspectPptx(firstExport)).ok, true);
 // creating a second writer, then prove its Master/Layout parts survive a
 // modeled slide edit byte-for-byte.
 const firstZip = await JSZip.loadAsync(new Uint8Array(await firstExport.arrayBuffer()));
+const firstSlideXml = await firstZip.file("ppt/slides/slide1.xml").async("text");
+assert.match(firstSlideXml, /<a:srcRect[^>]*l="25000"/);
+assert.match(firstSlideXml, /<a:srcRect[^>]*r="25000"/);
 const masterPath = "ppt/slideMasters/slideMaster1.xml";
 const layoutPath = "ppt/slideLayouts/slideLayout1.xml";
 const masterXml = await firstZip.file(masterPath).async("text");
@@ -292,6 +305,9 @@ assert.deepEqual(itemByName(importedCore.shapes.items, "rounded-card").shadow, {
 });
 assert.equal(itemByName(importedCore.images.items, "png-image").dataUrl, PNG);
 assert.equal(itemByName(importedCore.images.items, "jpeg-image").dataUrl, JPEG);
+const importedCover = itemByName(importedCore.images.items, "cover-image");
+assert.equal(importedCover.fit, "stretch");
+assert.deepEqual(importedCover.crop, { left: 0.25, top: 0, right: 0.25, bottom: 0 });
 assert.equal(itemByName(importedCore.tables.items, "fixed-table").values[1][1], "Before");
 const importedStraight = itemByName(importedCore.connectors.items, "straight-connector");
 const importedElbow = itemByName(importedCore.connectors.items, "elbow-polyline-connector");
@@ -317,6 +333,8 @@ assert.equal(importedCore.setBackground({ fill: "accent2", mode: "reference", in
 assert.equal(imported.slides.getItem(1).setBackground({ fill: "#FFF7ED", mode: "solid" }), imported.slides.getItem(1));
 itemByName(importedCore.tables.items, "fixed-table").cells.set(1, 1, "After");
 itemByName(importedCore.images.items, "png-image").alt = "Updated PNG evidence";
+importedCover.fit = "contain";
+importedCover.crop = undefined;
 delete importedElbow.line.endArrow;
 const editedParagraphs = importedRich.text.paragraphs;
 editedParagraphs[0].runs[0].text = "Updated ";
@@ -338,6 +356,8 @@ const secondChartSlideXml = await secondZip.file("ppt/slides/slide2.xml").async(
 assert.match(secondSlideXml, /<p:bgRef idx="1002">/);
 assert.match(secondSlideXml, /<a:schemeClr val="accent2"/);
 assert.match(secondChartSlideXml, /<a:srgbClr val="FFF7ED"/);
+assert.match(secondSlideXml, /<a:srcRect[^>]*t="-50000"/);
+assert.match(secondSlideXml, /<a:srcRect[^>]*b="-50000"/);
 assert.match(secondSlideXml, /prst="roundRect"/);
 assert.match(secondSlideXml, /txBox="1"/);
 assert.match(secondSlideXml, /prst="line"/);
@@ -360,6 +380,9 @@ assert.equal(itemByName(roundTripCore.shapes.items, "rounded-card").text.value, 
 assert.equal(itemByName(roundTripCore.shapes.items, "rounded-card").shadow.opacity, 0.35);
 assert.equal(itemByName(roundTripCore.tables.items, "fixed-table").values[1][1], "After");
 assert.equal(itemByName(roundTripCore.images.items, "png-image").alt, "Updated PNG evidence");
+const roundTripCover = itemByName(roundTripCore.images.items, "cover-image");
+assert.equal(roundTripCover.fit, "stretch");
+assert.deepEqual(roundTripCover.crop, { left: 0, top: -0.5, right: 0, bottom: -0.5 });
 assert.equal(itemByName(roundTripCore.connectors.items, "elbow-polyline-connector").line.endArrow, undefined);
 assert.equal(itemByName(roundTripCore.shapes.items, "rich-copy").text.paragraphs[0].runs[0].text, "Updated ");
 const roundTripBar = itemByName(roundTrip.slides.getItem(1).charts.items, "bar-chart");
@@ -368,11 +391,15 @@ assert.deepEqual(roundTripBar.series[0].values, [80, 94, 88]);
 assert.equal(roundTrip.verify().ok, true);
 
 assert.equal(roundTripCore.clearBackground(), roundTripCore);
+roundTripCover.fit = "stretch";
+roundTripCover.crop = undefined;
 const clearedBackgroundExport = await PresentationFile.exportPptx(roundTrip);
 const clearedBackgroundZip = await JSZip.loadAsync(new Uint8Array(await clearedBackgroundExport.arrayBuffer()));
 assert.doesNotMatch(await clearedBackgroundZip.file("ppt/slides/slide1.xml").async("text"), /<p:bg(?:Pr|Ref)\b/);
+assert.doesNotMatch(await clearedBackgroundZip.file("ppt/slides/slide1.xml").async("text"), /<a:srcRect\b/);
 const clearedBackgroundRoundTrip = await PresentationFile.importPptx(clearedBackgroundExport);
 assert.deepEqual(clearedBackgroundRoundTrip.slides.getItem(0).background, {});
+assert.equal(itemByName(clearedBackgroundRoundTrip.slides.getItem(0).images.items, "cover-image").crop, undefined);
 
 const importedWithoutSourceSnapshot = await PresentationFile.importPptx(firstExport);
 const presentationState = importedWithoutSourceSnapshot[Symbol.for("open-office-artifact-tool.open-chestnut-presentation-state")];

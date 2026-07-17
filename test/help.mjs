@@ -64,6 +64,8 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.resolve"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "SpreadsheetFile.inspectXlsx"));
 assert.match(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.importXlsx")?.schema?.returns?.workbook?.description || "", /images.*charts/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.images.add")?.schema?.parameters?.transform?.description || "", /rotationDegrees.*flipHorizontal.*flipVertical/);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.images.add")?.schema?.parameters?.fit?.description || "", /contain.*cover.*stretch.*srcRect.*no fit keyword/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.images.add")?.schema?.parameters?.crop?.description || "", /-1\.\.1.*Positive.*negative.*Manual crop/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.master")?.schema?.parameters?.placeholders?.description || "", /rejects source-free Master authoring.*imported placeholders/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "SpreadsheetFile.patchXlsx"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.masters.add"));

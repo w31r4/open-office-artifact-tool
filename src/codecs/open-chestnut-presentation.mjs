@@ -9,6 +9,7 @@ import {
 import { normalizePresentationRunLink } from "../presentation/ooxml-hyperlinks.mjs";
 import { normalizePresentationThemeConfig } from "../presentation/ooxml-theme.mjs";
 import { normalizePresentationTextBodyProperties } from "../presentation/text-body-properties.mjs";
+import { effectivePresentationImageCrop, presentationImageCropFromWire, presentationImageCropToWire } from "../presentation/image-crop.mjs";
 import { isPresentationAutoNumberType, normalizePresentationParagraphs, normalizePresentationParagraphStyles } from "../presentation/text-paragraphs.mjs";
 import { resolveColorToken } from "../shared/colors.mjs";
 import { createPresentationAssetCatalog, validatePictureBulletUri } from "./open-chestnut-assets.mjs";
@@ -960,9 +961,10 @@ function presentationImage(image, original, assetCatalog) {
   if (!image.dataUrl) {
     throw new OpenChestnutCodecError(`Presentation image ${image.id} requires an embedded dataUrl.`, [], { code: "invalid_presentation_image" });
   }
-  if (image.uri || image.geometry !== "rect" || image.borderRadius != null || !new Set(["contain", "stretch"]).has(image.fit)) {
-    throw new OpenChestnutCodecError(`Presentation image ${image.id} uses crop, external, geometry, or fit semantics outside the bounded PPTX image slice.`, [], { code: "unsupported_presentation_features" });
+  if (image.uri || image.geometry !== "rect" || image.borderRadius != null) {
+    throw new OpenChestnutCodecError(`Presentation image ${image.id} uses external, geometry, or mask semantics outside the bounded PPTX image slice.`, [], { code: "unsupported_presentation_features" });
   }
+  const crop = effectivePresentationImageCrop({ crop: image.crop, fit: image.fit, dataUrl: image.dataUrl, frame: position });
   return {
     id: original?.id || image.id,
     name: image.name || original?.name || "",
@@ -976,6 +978,7 @@ function presentationImage(image, original, assetCatalog) {
         topEmu: emuFromPixels(position.top, `${image.id}.position.top`),
         widthEmu: emuFromPixels(position.width, `${image.id}.position.width`),
         heightEmu: emuFromPixels(position.height, `${image.id}.position.height`),
+        ...(crop ? { crop: presentationImageCropToWire(crop) } : {}),
         ...(image.transform == null ? {} : { transform: wirePresentationTransform(image.transform, `image ${image.id}`) }),
       },
     },
@@ -986,7 +989,6 @@ function presentationImageReadOnlySnapshot(image) {
   return JSON.stringify({
     uri: image.uri,
     contentType: image.contentType,
-    fit: image.fit,
     geometry: image.geometry,
     borderRadius: image.borderRadius,
   });
@@ -1688,6 +1690,7 @@ export async function presentationFromEnvelope(envelope) {
           alt: image.altText,
           dataUrl: assetCatalog.dataUrl(image.assetId),
           fit: "stretch",
+          ...(image.crop ? { crop: presentationImageCropFromWire(image.crop) } : {}),
           geometry: "rect",
           ...(image.transform ? { transform: modelPresentationTransform(image.transform) } : {}),
         });

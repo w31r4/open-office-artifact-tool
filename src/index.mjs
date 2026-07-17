@@ -51,6 +51,7 @@ import { planPresentationCustomShows, PresentationCustomShowCollection } from ".
 import { inheritPresentationParagraphs, normalizePresentationParagraphs, normalizePresentationParagraphStyles, presentationParagraphsNeedSerialization, presentationParagraphsSvg, presentationParagraphsText, replacePresentationParagraphText } from "./presentation/text-paragraphs.mjs";
 import { normalizePresentationTextBodyProperties } from "./presentation/text-body-properties.mjs";
 import { normalizePresentationCustomPaths, presentationCustomPathsSvg } from "./presentation/custom-geometry.mjs";
+import { normalizePresentationImageCrop, normalizePresentationImageFit, presentationImageCropViewport } from "./presentation/image-crop.mjs";
 import { planPresentationModernComments } from "./presentation/ooxml-modern-comments.mjs";
 import { PdfArtifact, PdfFile } from "./pdf/index.mjs";
 import { formulaTimeParts, formulaTimeSerial, parseFormulaDateText, parseFormulaNumberText, parseFormulaTimeText } from "./spreadsheet/formula-coercion.mjs";
@@ -5737,6 +5738,7 @@ export class ImageElement {
     this.dataUrl = config.dataUrl;
     this.contentType = config.contentType;
     this.fit = config.fit || "contain";
+    this.crop = config.crop;
     this.geometry = config.geometry || "rect";
     this.borderRadius = config.borderRadius;
     this.transform = config.transform == null ? undefined : normalizePresentationPlaceholderTransform(config.transform, `Presentation image ${this.name || this.id} transform`);
@@ -5744,14 +5746,18 @@ export class ImageElement {
 
   get frame() { return this.position; }
   set frame(value) { this.position = normalizeFrame(value, this.position); }
+  get fit() { return this._fit; }
+  set fit(value) { this._fit = normalizePresentationImageFit(value); }
+  get crop() { return this._crop; }
+  set crop(value) { this._crop = normalizePresentationImageCrop(value); }
   replace(config = {}) { Object.assign(this, config); }
 
   inspectRecord() {
     const p = this.position;
-    return { kind: "image", id: this.id, slide: this.slide.index + 1, name: this.name || undefined, nativeId: this.nativeId, creationId: this.creationId, alt: this.alt || undefined, prompt: this.prompt || undefined, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px", fit: this.fit, transform: this.transform };
+    return { kind: "image", id: this.id, slide: this.slide.index + 1, name: this.name || undefined, nativeId: this.nativeId, creationId: this.creationId, alt: this.alt || undefined, prompt: this.prompt || undefined, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px", fit: this.fit, crop: this.crop, transform: this.transform };
   }
 
-  layoutJson() { return { kind: "image", id: this.id, name: this.name, frame: this.position, alt: this.alt, prompt: this.prompt, uri: this.uri, dataUrl: this.dataUrl, fit: this.fit, geometry: this.geometry, borderRadius: this.borderRadius, transform: this.transform }; }
+  layoutJson() { return { kind: "image", id: this.id, name: this.name, frame: this.position, alt: this.alt, prompt: this.prompt, uri: this.uri, dataUrl: this.dataUrl, fit: this.fit, crop: this.crop, geometry: this.geometry, borderRadius: this.borderRadius, transform: this.transform }; }
 
   toSvg() {
     const p = this.position;
@@ -5762,7 +5768,15 @@ export class ImageElement {
     const flipHorizontal = this.transform?.flipHorizontal === true ? -1 : 1;
     const flipVertical = this.transform?.flipVertical === true ? -1 : 1;
     const transform = this.transform ? ` transform="translate(${cx} ${cy}) rotate(${rotation}) scale(${flipHorizontal} ${flipVertical}) translate(${-cx} ${-cy})"` : "";
-    if (this.dataUrl) return `<image href="${attrEscape(this.dataUrl)}" x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" preserveAspectRatio="${this.fit === "stretch" ? "none" : "xMidYMid meet"}"${transform}/>`;
+    if (this.dataUrl) {
+      const viewport = presentationImageCropViewport({ crop: this.crop, fit: this.fit, dataUrl: this.dataUrl, frame: p });
+      if (viewport) {
+        const cropped = `<svg x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" viewBox="${viewport.x} ${viewport.y} ${viewport.width} ${viewport.height}" preserveAspectRatio="none" overflow="hidden"><image href="${attrEscape(this.dataUrl)}" x="0" y="0" width="${viewport.imageWidth}" height="${viewport.imageHeight}" preserveAspectRatio="none"/></svg>`;
+        return transform ? `<g${transform}>${cropped}</g>` : cropped;
+      }
+      const aspect = this.fit === "cover" ? "xMidYMid slice" : this.fit === "stretch" ? "none" : "xMidYMid meet";
+      return `<image href="${attrEscape(this.dataUrl)}" x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" preserveAspectRatio="${aspect}"${transform}/>`;
+    }
     const rect = this.geometry === "ellipse"
       ? `<ellipse cx="${p.left + p.width / 2}" cy="${p.top + p.height / 2}" rx="${p.width / 2}" ry="${p.height / 2}" fill="#e0f2fe" stroke="#0284c7"/>`
       : `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" rx="${this.borderRadius ? 12 : 0}" fill="#e0f2fe" stroke="#0284c7"/>`;

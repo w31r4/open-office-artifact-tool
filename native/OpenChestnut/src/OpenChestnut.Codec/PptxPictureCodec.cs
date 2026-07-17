@@ -16,7 +16,7 @@ internal static class PptxPictureCodec
     internal static bool TryRead(P.Picture source, PptxPartContext context, out PresentationImage image)
     {
         image = new PresentationImage();
-        if (!TryParts(source, out var nonVisual, out var blip, out var transform)) return false;
+        if (!TryParts(source, out var nonVisual, out var blip, out var transform, out var crop)) return false;
         var relationshipId = blip.Embed?.Value ?? string.Empty;
         if (relationshipId.Length == 0) return false;
         try
@@ -33,6 +33,7 @@ internal static class PptxPictureCodec
                 WidthEmu = extents.Cx?.Value ?? 0,
                 HeightEmu = extents.Cy?.Value ?? 0,
             };
+            if (crop is not null) image.Crop = ReadCrop(crop);
             var visual = ReadTransform(transform);
             if (visual is not null) image.Transform = visual;
             return image.LeftEmu >= 0 && image.TopEmu >= 0 && image.WidthEmu > 0 && image.HeightEmu > 0 &&
@@ -56,6 +57,8 @@ internal static class PptxPictureCodec
             throw Invalid(elementId, $"alternative text exceeds {MaxTextLength} characters");
         if (image.LeftEmu < 0 || image.TopEmu < 0 || image.WidthEmu <= 0 || image.HeightEmu <= 0)
             throw Invalid(elementId, "frame must use non-negative coordinates and positive extents");
+        if (image.Crop is not null && !CropValuesValid(image.Crop))
+            throw Invalid(elementId, "crop edges must be between -100% and 100% and opposing sums must remain below 100%");
         ValidateTransform(image.Transform, elementId);
     }
 
@@ -66,6 +69,9 @@ internal static class PptxPictureCodec
             new A.Offset { X = image.LeftEmu, Y = image.TopEmu },
             new A.Extents { Cx = image.WidthEmu, Cy = image.HeightEmu });
         ApplyTransform(transform, image.Transform);
+        var fill = new P.BlipFill(new A.Blip { Embed = context.AddEmbeddedPicture(image.AssetId) });
+        if (image.Crop is not null) fill.Append(BuildCrop(image.Crop));
+        fill.Append(new A.Stretch(new A.FillRectangle()));
         return new P.Picture(
             new P.NonVisualPictureProperties(
                 new P.NonVisualDrawingProperties
@@ -76,9 +82,7 @@ internal static class PptxPictureCodec
                 },
                 new P.NonVisualPictureDrawingProperties(),
                 new P.ApplicationNonVisualDrawingProperties()),
-            new P.BlipFill(
-                new A.Blip { Embed = context.AddEmbeddedPicture(image.AssetId) },
-                new A.Stretch(new A.FillRectangle())),
+            fill,
             new P.ShapeProperties(
                 transform,
                 new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle }));
@@ -86,7 +90,7 @@ internal static class PptxPictureCodec
 
     internal static void Apply(P.Picture source, PresentationElement requested, PptxPartContext context)
     {
-        if (!TryParts(source, out var nonVisual, out var blip, out var transform))
+        if (!TryParts(source, out var nonVisual, out var blip, out var transform, out _))
             throw new CodecException("unsupported_presentation_edit", $"Presentation image {requested.Id} no longer matches the editable picture profile.");
         var current = context.ReadEmbeddedPicture(blip.Embed?.Value ?? string.Empty);
         var replacement = context.Assets?.Get(requested.Image.AssetId) ??
@@ -103,6 +107,7 @@ internal static class PptxPictureCodec
         transform.Offset.Y = requested.Image.TopEmu;
         transform.Extents!.Cx = requested.Image.WidthEmu;
         transform.Extents.Cy = requested.Image.HeightEmu;
+        ApplyCrop(source.BlipFill!, requested.Image.Crop);
         ApplyTransform(transform, requested.Image.Transform);
     }
 
@@ -114,6 +119,7 @@ internal static class PptxPictureCodec
             nonVisual.Description = string.Empty;
         }
         if (source.BlipFill?.GetFirstChild<A.Blip>() is { } blip) blip.Embed = string.Empty;
+        source.BlipFill?.GetFirstChild<A.SourceRectangle>()?.Remove();
         if (source.ShapeProperties?.Transform2D is { } transform)
         {
             if (transform.Offset is { } offset) { offset.X = 0L; offset.Y = 0L; }
@@ -128,11 +134,13 @@ internal static class PptxPictureCodec
         P.Picture source,
         out P.NonVisualDrawingProperties nonVisual,
         out A.Blip blip,
-        out A.Transform2D transform)
+        out A.Transform2D transform,
+        out A.SourceRectangle? crop)
     {
         nonVisual = null!;
         blip = null!;
         transform = null!;
+        crop = null;
         var nonVisualContainer = source.NonVisualPictureProperties;
         var fill = source.BlipFill;
         var properties = source.ShapeProperties;
@@ -140,11 +148,12 @@ internal static class PptxPictureCodec
             nonVisualContainer.NonVisualPictureDrawingProperties is null ||
             nonVisualContainer.ApplicationNonVisualDrawingProperties is null ||
             fill is null || properties is null) return false;
+        var fillChildren = fill.ChildElements.ToArray();
         if (source.ChildElements.Count != 3 ||
             nonVisualContainer.ChildElements.Count != 3 ||
-            fill.ChildElements.Count != 2 ||
-            fill.Elements<A.Blip>().SingleOrDefault() is not { } embedded ||
-            fill.Elements<A.Stretch>().SingleOrDefault() is not { } stretch ||
+            fillChildren.Length is < 2 or > 3 || fillChildren[0] is not A.Blip embedded ||
+            fillChildren[^1] is not A.Stretch stretch ||
+            fillChildren.Length == 3 && fillChildren[1] is not A.SourceRectangle ||
             stretch.ChildElements.Count != 1 || stretch.GetFirstChild<A.FillRectangle>() is not { } fillRect ||
             fillRect.HasAttributes || fillRect.HasChildren ||
             embedded.Link is not null || embedded.Embed is null || embedded.ChildElements.Count != 0 || embedded.CompressionState is not null ||
@@ -156,10 +165,62 @@ internal static class PptxPictureCodec
             geometry.ChildElements.Count != 1 || geometry.GetFirstChild<A.AdjustValueList>() is not { } adjustments ||
             adjustments.HasAttributes || adjustments.HasChildren ||
             !TransformSupported(xfrm)) return false;
+        crop = fillChildren.Length == 3 ? (A.SourceRectangle)fillChildren[1] : null;
+        if (crop is not null && !CropSupported(crop)) return false;
         nonVisual = nv;
         blip = embedded;
         transform = xfrm;
         return true;
+    }
+
+    private static bool CropSupported(A.SourceRectangle source)
+    {
+        var known = new HashSet<string>(StringComparer.Ordinal) { "l", "t", "r", "b" };
+        return !source.HasChildren && source.GetAttributes().All(attribute => known.Contains(attribute.LocalName)) &&
+               CropValuesValid(ReadCrop(source));
+    }
+
+    private static PresentationImageCrop ReadCrop(A.SourceRectangle source) => new()
+    {
+        LeftThousandthPercent = source.Left?.Value ?? 0,
+        TopThousandthPercent = source.Top?.Value ?? 0,
+        RightThousandthPercent = source.Right?.Value ?? 0,
+        BottomThousandthPercent = source.Bottom?.Value ?? 0,
+    };
+
+    private static bool CropValuesValid(PresentationImageCrop crop) =>
+        crop.LeftThousandthPercent is >= -100_000 and <= 100_000 &&
+        crop.TopThousandthPercent is >= -100_000 and <= 100_000 &&
+        crop.RightThousandthPercent is >= -100_000 and <= 100_000 &&
+        crop.BottomThousandthPercent is >= -100_000 and <= 100_000 &&
+        crop.LeftThousandthPercent + crop.RightThousandthPercent < 100_000 &&
+        crop.TopThousandthPercent + crop.BottomThousandthPercent < 100_000;
+
+    private static A.SourceRectangle BuildCrop(PresentationImageCrop crop) => new()
+    {
+        Left = crop.LeftThousandthPercent,
+        Top = crop.TopThousandthPercent,
+        Right = crop.RightThousandthPercent,
+        Bottom = crop.BottomThousandthPercent,
+    };
+
+    private static void ApplyCrop(P.BlipFill target, PresentationImageCrop? crop)
+    {
+        var current = target.GetFirstChild<A.SourceRectangle>();
+        if (crop is null)
+        {
+            current?.Remove();
+            return;
+        }
+        var replacement = BuildCrop(crop);
+        if (current is not null)
+        {
+            current.InsertAfterSelf(replacement);
+            current.Remove();
+            return;
+        }
+        var blip = target.GetFirstChild<A.Blip>() ?? throw new CodecException("unsupported_presentation_edit", "Presentation picture lost its embedded blip.");
+        blip.InsertAfterSelf(replacement);
     }
 
     private static bool TransformSupported(A.Transform2D? transform)

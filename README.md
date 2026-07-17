@@ -1,129 +1,117 @@
 # open-office-artifact-tool
 
-Clean-room Office and PDF artifact toolkit for agent workflows.
+面向 Agent 的 Office 与 PDF 创建、读取、编辑和验证工具箱。
 
-Version 0.2 has one Office codec: **OpenChestnut**, the repository's C# Open XML SDK implementation compiled to bundled .NET WebAssembly. `SpreadsheetFile`, `DocumentFile`, and `PresentationFile` always use it for XLSX, DOCX, and PPTX import/export. Installed consumers do not need `dotnet` on `PATH`.
+> A clean-room, agent-facing toolkit for creating, editing, inspecting, rendering, and verifying Office and PDF artifacts.
 
-PDF is the fourth, independent format pipeline. It never enters OpenChestnut or the Office protobuf/WASM wire. The JavaScript model handles greenfield semantic/tagged authoring and QA; the native PDF Skill routes existing-file work directly from original bytes to explicit mature providers with provenance, save-policy, security, and render gates.
+`open-office-artifact-tool` 用统一的 JavaScript 对象模型提供 Agent 友好的操作原语。DOCX、XLSX 和 PPTX 由仓库内的 **OpenChestnut**（C# + Open XML SDK + .NET WebAssembly）负责真实文件读写；PDF 使用独立的语义模型和显式 Provider 路由。项目不包含第二套 JavaScript Office codec，也不会在失败时偷偷降级为有损输出。
 
-## Format boundary
+> 当前状态：`0.2.0` 发布候选。源码、可复现 WASM 和 npm tarball 已具备完整验证流程，但尚未执行正式 `npm publish`。
 
-| Format | File pipeline | Supported authoring/import boundary |
+## 为什么需要它
+
+- **为 Agent 设计**：提供 `inspect`、`resolve`、`verify`、render 和 visual QA，而不只是字节级读写。
+- **单一 Office 路径**：DOCX、XLSX、PPTX 始终经过 OpenChestnut；安装后的使用者不需要本机 `dotnet`。
+- **保真优先**：无法安全建模的 Office 内容会绑定原始包并原样保留；不支持的编辑明确失败。
+- **PDF 按能力选路**：创建、提取、表单、原地编辑、脱敏、签名和合规验证分别交给合适的成熟工具。
+- **Skill 可直接使用**：仓库随包提供 Documents、Spreadsheets、Presentations 和 PDF 四个原生 Codex 插件包。
+
+## 支持范围
+
+| 格式 | 文件管线 | 当前核心能力 |
 | --- | --- | --- |
-| XLSX | OpenChestnut C# WASM | Cells, formulas, static styles, merged cells, row/column sizes, frozen panes, tables, PNG/JPEG images, bar/line/pie charts, standard Office 2010 line/column/stacked sparklines, dates as Excel serials, basic data validation, basic conditional formatting, and one-level threaded comments. |
-| DOCX | OpenChestnut C# WASM | Styles, paragraphs and runs, page/section settings, headers and footers, PAGE/simple fields, PNG/JPEG images, lists, fixed-geometry tables, links, classic comments, and fixed-topology edits of modeled objects. Bookmarks, bibliography, unsupported settings, and opaque blocks are imported read-only. |
-| PPTX | OpenChestnut C# WASM | Direct solid/style-reference slide backgrounds, text boxes and round rectangles, basic fill/line/shadow, line/polyline connectors and arrows, source-free bar/line/pie charts, images, tables, rich text, lists, links, plain-text speaker notes, and source-bound Master/Layout preservation. Recognized imported direct backgrounds and simple notes bodies are hash-bound and editable; complex backgrounds and rich notes remain preservation-only. |
-| PDF | Independent provider-routed pipeline | Greenfield tagged authoring, extraction/inspect/QA, and bounded native imported-PDF edits. The Skill preserves ReportLab, pdfplumber/pypdf, and Poppler workflows and adds an explicit optional PyMuPDF provider for direct page/content/image/form/annotation edits and sanitize. pyHanko and veraPDF retain signature/conformance roles. |
+| XLSX | OpenChestnut C# WASM | 单元格、公式、样式、表格、图片、冻结窗格、基础验证与条件格式、评论、bar/line/pie 图表和标准 sparklines。 |
+| DOCX | OpenChestnut C# WASM | 段落与 Run、样式、分节、页眉页脚、列表、固定几何表格、链接、简单字段、图片和经典评论。 |
+| PPTX | OpenChestnut C# WASM | 形状、富文本、图片及可逆裁剪、表格、连接线、bar/line/pie 图表、直接幻灯片背景、纯文本演讲者备注，以及 Master/Layout 保真。 |
+| PDF | 独立模型与 Provider 路由 | Tagged PDF 创建、提取与阅读顺序、表格/图片/链接、表单与批注、有界原文件编辑、合并重排、水印、真实脱敏、渲染和残留检查。 |
 
-Imported Office objects outside the modeled boundary remain hash-bound to their source package. Leaving them unchanged preserves them; trying to create or semantically edit an unsupported object fails explicitly. If a source-bound opaque object no longer has a trustworthy source snapshot, export fails. There is no lossy fallback.
+完整且持续更新的边界见 [能力矩阵](docs/coverage.md)。
 
-JavaScript still owns the public object models, calculations, Compose/JSX, normalization, inspect/resolve, explicit low-level OOXML package patching, render adapters, and QA. Those facilities are not a second Office serializer.
+## 架构
 
-## Installation
+```text
+Agent / Codex Skill
+├─ Office → JavaScript model → OpenChestnut C# WASM → DOCX / XLSX / PPTX
+├─ PDF    → PdfArtifact 或显式 Provider → PDF
+└─ QA     → inspect / resolve → render → verify / visual QA
+```
+
+JavaScript 负责公共对象模型、计算、Compose/JSX、检查与渲染编排；OpenChestnut 是唯一的 Office parser/writer。PDF 不进入 Office protobuf/WASM 管线，也不会伪装成可任意重排的 Word 文档。
+
+## 快速开始
+
+正式发布前，请从源码安装：
+
+```sh
+git clone https://github.com/w31r4/open-office-artifact-tool.git
+cd open-office-artifact-tool
+npm install
+node examples/create-xlsx-dashboard.mjs
+```
+
+正式发布后可直接使用：
 
 ```sh
 npm install open-office-artifact-tool
 ```
 
-## Office examples
-
-No codec selector is accepted. Facades lazily load the bundled runtime on first Office import/export.
+下面创建一个工作簿并完成一次真实 XLSX 导出/导入：
 
 ```js
-import {
-  DocumentFile,
-  DocumentModel,
-  Presentation,
-  PresentationFile,
-  SpreadsheetFile,
-  Workbook,
-} from "open-office-artifact-tool";
+import { SpreadsheetFile, Workbook } from "open-office-artifact-tool";
 
 const workbook = Workbook.create();
 const sheet = workbook.worksheets.add("Summary");
-sheet.getRange("A1:B2").values = [["Metric", "Value"], ["Revenue", 42.5]];
-sheet.tables.add({ range: "A1:B2", name: "MetricsTable", style: "TableStyleMedium4" });
+
+sheet.getRange("A1:B2").values = [
+  ["Metric", "Value"],
+  ["Revenue", 42.5],
+];
+
 const xlsx = await SpreadsheetFile.exportXlsx(workbook, { recalculate: true });
-const importedWorkbook = await SpreadsheetFile.importXlsx(xlsx);
+const reopened = await SpreadsheetFile.importXlsx(xlsx);
 
-const document = DocumentModel.create({ paragraphs: ["OpenChestnut document"] });
-const docx = await DocumentFile.exportDocx(document);
-const importedDocument = await DocumentFile.importDocx(docx);
-
-const deck = Presentation.create();
-const overview = deck.slides.add({ name: "Overview", background: { fill: "#F8FAFC", mode: "solid" } });
-overview.shapes.add({
-  name: "Title",
-  type: "roundRect",
-  text: "OpenChestnut presentation",
-  position: { left: 60, top: 40, width: 640, height: 80 },
-});
-const pptx = await PresentationFile.exportPptx(deck);
-const importedDeck = await PresentationFile.importPptx(pptx);
+console.log(reopened.inspect({ kind: "worksheet,table,chart" }).ndjson);
 ```
 
-Office import methods accept only `limits`. DOCX/PPTX export also accepts only `limits`; XLSX export additionally accepts `recalculate`. Legacy `codec`, `allowLossy`, `preferNative`, and `relativeDateAsOf` options throw. The removed `codecs/openxml-wasm` package path is not exported.
+更多可运行示例：
 
-Advanced byte-boundary users may call the same implementation through `open-office-artifact-tool/codecs/open-chestnut`. Generated wire bindings are exported at `open-office-artifact-tool/codecs/open-chestnut/wire`. Both use wire protocol version 2 and identify output with `metadata.codec === "open-chestnut"`.
+- [创建 DOCX 报告](examples/create-docx-report.mjs)
+- [创建 XLSX 仪表盘](examples/create-xlsx-dashboard.mjs)
+- [使用 Compose 创建 PPTX](examples/create-pptx-compose.mjs)
+- [解析与渲染 PDF](examples/parse-render-pdf.mjs)
 
-## PDF example
+## 原生 Skills
 
-```js
-import { PdfArtifact, PdfFile } from "open-office-artifact-tool";
+仓库采用四个插件包、五个 Skill 的参考兼容结构：
 
-const pdf = PdfArtifact.create({
-  title: "Readiness report",
-  pages: [{
-    text: "Quarterly readiness",
-    tables: [{ values: [["Metric", "Value"], ["Coverage", "82%"]], bbox: [72, 160, 320, 80] }],
-  }],
-});
+- [Documents](skills/documents/skills/documents/SKILL.md)
+- [Spreadsheets](skills/spreadsheets/skills/spreadsheets/SKILL.md)
+- [Excel Live Control](skills/spreadsheets/skills/excel-live-control/SKILL.md) — 依赖宿主提供的实时 Excel 会话
+- [Presentations](skills/presentations/skills/presentations/SKILL.md)
+- [PDF](skills/pdf/skills/pdf/SKILL.md)
 
-const file = await PdfFile.exportPdf(pdf);
-const inspection = await PdfFile.inspectPdf(file);
-const imported = await PdfFile.importPdf(file);
-console.log(imported.extractText(), inspection.summary);
-```
+Office Skill 的普通文件工作流统一调用 OpenChestnut。PDF Skill 在 ReportLab、pdfplumber、pypdf、PyMuPDF、Poppler、pyHanko 和 veraPDF 之间显式选路，不做静默 fallback；缺少所需 Provider 时会明确失败。安装关系见 [PDF Provider Matrix](skills/pdf/skills/pdf/references/PROVIDER_MATRIX.md)，具体适配进度见 [Reference Skill 兼容性](docs/reference-skills.md)。
 
-This example is a greenfield/trusted-model workflow. `open-office-artifact-tool/pdf/pdfjs` supplies an optional reconstructed view of arbitrary PDFs for extraction, inspect, and QA; it must not be exported as a fidelity-preserving edit to the original file. Existing files go directly to the explicitly selected pypdf or PyMuPDF Skill provider, and signatures go to pyHanko. Poppler and Playwright renderer adapters remain explicit.
+## 必须知道的边界
 
-## Inspect, patch, render, and QA
+- 导入 Office 文件时，未建模对象只有在模型仍携带原始包快照且相关拓扑未被不支持的操作改变时才能原样保留；否则导出会明确失败。
+- 任意已有 PDF 不能像 Word 一样可靠地自动重排全文；现有文件编辑必须落在明确、可验证的有界操作中。
+- PDF 签名与 LTV 交给 pyHanko，PDF/A 与 PDF/UA 机器验证交给 veraPDF；OCR 和复杂结构修复仍依赖外部工具。
+- PyMuPDF/MuPDF 不随 MIT npm 包分发。使用者必须单独安装，并明确接受 GNU AGPL 或商业许可。
+- LibreOffice、Poppler、Playwright 和原生 Office Bridge 是渲染/验证工具，不是隐藏的 Office codec fallback。
 
-Artifact models expose stable `inspect(...)`, `resolve(...)`, layout, render, and `verify()` surfaces. `verifyArtifact(...)`, `renderArtifact(...)`, and `visualQaArtifact(...)` provide shared gates.
-
-`SpreadsheetFile.inspectXlsx/patchXlsx`, `DocumentFile.inspectDocx/patchDocx`, and `PresentationFile.inspectPptx/patchPptx` are explicit package-level tools. They validate paths, relationships, content types, and source references; the normal facades never call them as a fallback.
-
-These three facades share one dependency-leaf OPC engine in `src/ooxml/package.mjs`. It owns JSZip loading, decompression budgets, safe part paths, content-type and relationship synchronization, recipe/source-reference patching, validation, and transactional package generation; `src/index.mjs` remains the public compatibility barrel rather than a second package implementation.
-
-Renderer adapters are exported for Playwright, sharp, canvas, Poppler, LibreOffice, and the optional native Office bridge. The bridge is a QA/render sidecar, not an Office codec.
-
-## Reference Skills
-
-The repository ships four native Codex plugin bundles under `skills/{documents,spreadsheets,presentations,pdf}`. Each bundle contains `.codex-plugin/plugin.json`, plugin assets, a README, and its native `skills/...` tree. Spreadsheets intentionally includes both `Spreadsheets` for local artifact authoring and `excel-live-control` for host-provided live Excel sessions, so the published surface contains five Skills in four plugins.
-
-The 26-slide built-in Presentation template, Spreadsheet core, Range/R1C1, and standard-sparkline workflows, ordinary Documents create/import/edit/export example, and tagged PDF create/edit/verify/Poppler-render example execute directly against `open-office-artifact-tool`; the Office workflows use canonical OpenChestnut I/O. The PDF plugin is a richer provider-routing superset with shipped thin ReportLab, pdfplumber, pypdf, and optional PyMuPDF scripts, explicit rewrite/incremental/sanitize policy, and fail-closed residue gates. Full reference-instruction compatibility is tracked independently from packaging: advanced Documents tasks, the extended Spreadsheet/Presentation guides, live Excel host execution, and external PDF signature/conformance/OCR providers remain partial.
-
-The development-only fixture runners live under `test/skill-harness` and are not included in npm. See [reference Skill compatibility](docs/reference-skills.md) for the audited boundary.
-
-## Development
+## 开发与验证
 
 ```sh
-npm install
-npm run proto:generate
-npm run build:open-chestnut
-npm run test:open-chestnut-dotnet
 npm test
-npm run test:agent-evals
 npm run test:pack
 npm run docs:api
+npm run release:check
 ```
 
-`npm run verify:open-chestnut-build` performs the deterministic WASM build check. `npm run release:check` validates release metadata and packaged artifacts. C# source and build tooling live in the repository; the npm package contains the bundled runtime, public proto/generated JavaScript, integrity manifest, SBOM, and licenses.
-
-`npm run eval:agents -- validate` checks the repository-only Agent PromptBench. Its isolated trials compare the candidate and reference Skills against the same packed npm candidate; all seven ready PDF cases have independent semantic/visual/security/trace graders, including greenfield tagged accessibility authoring and typed merge/reorder/selective-watermark QA, while 19 corpus/PKI cases remain asset-required. The benchmark and its locked corpus are intentionally excluded from the consumer tarball. See [Agent black-box evaluations](docs/agent-evals.md).
-
-See [coverage](docs/coverage.md), [reference Skill compatibility](docs/reference-skills.md), [Agent black-box evaluations](docs/agent-evals.md), [runtime architecture](docs/reference-runtime-architecture.md), and [release gates](docs/release.md).
+OpenChestnut 的确定性构建、C# 测试和协议生成命令见 [发布门禁](docs/release.md)。架构细节见 [运行时架构](docs/reference-runtime-architecture.md)，Agent 黑盒评测见 [PromptBench](docs/agent-evals.md)，完整 API 见 [API Reference](docs/api.md)。
 
 ## License
 
-MIT. Runtime third-party notices are in `THIRD_PARTY_NOTICES.md` and the packaged OpenChestnut runtime notice files.
+[MIT](LICENSE)。第三方运行时许可与来源见 `THIRD_PARTY_NOTICES.md` 和 OpenChestnut runtime notices。

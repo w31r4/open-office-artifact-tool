@@ -1032,6 +1032,11 @@ public sealed class PptxCodecTests
                 TopEmu = 1_250_000,
                 WidthEmu = 1_500_000,
                 HeightEmu = 1_000_000,
+                Crop = new PresentationImageCrop
+                {
+                    LeftThousandthPercent = 25_000,
+                    RightThousandthPercent = 25_000,
+                },
                 Transform = new PresentationImageTransform
                 {
                     RotationAngle60000 = 180_000,
@@ -1046,6 +1051,8 @@ public sealed class PptxCodecTests
         Assert.True(authoredRoundTrip.Ok, Diagnostics(authoredRoundTrip));
         var authoredImage = Assert.Single(Assert.Single(authoredRoundTrip.Artifact.Presentation.Slides).Elements, item => item.ContentCase == PresentationElement.ContentOneofCase.Image);
         Assert.Equal("Authored image evidence", authoredImage.Image.AltText);
+        Assert.Equal(25_000, authoredImage.Image.Crop.LeftThousandthPercent);
+        Assert.Equal(25_000, authoredImage.Image.Crop.RightThousandthPercent);
         Assert.Equal(180_000, authoredImage.Image.Transform.RotationAngle60000);
         Assert.True(authoredImage.Image.Transform.HasFlipHorizontal);
         Assert.False(authoredImage.Image.Transform.FlipHorizontal);
@@ -1075,6 +1082,13 @@ public sealed class PptxCodecTests
         slide.Elements[1].Image.AltText = "Edited alternative text";
         slide.Elements[1].Image.LeftEmu = 750_000;
         slide.Elements[1].Image.WidthEmu = 2_000_000;
+        slide.Elements[1].Image.Crop = new PresentationImageCrop
+        {
+            LeftThousandthPercent = -10_000,
+            TopThousandthPercent = 2_000,
+            RightThousandthPercent = 5_000,
+            BottomThousandthPercent = 3_000,
+        };
         slide.Elements[1].Image.Transform = new PresentationImageTransform
         {
             RotationAngle60000 = -360_000,
@@ -1097,6 +1111,11 @@ public sealed class PptxCodecTests
             Assert.Equal(-360_000, picture.ShapeProperties!.Transform2D!.Rotation!.Value);
             Assert.True(picture.ShapeProperties.Transform2D.HorizontalFlip!.Value);
             Assert.False(picture.ShapeProperties.Transform2D.VerticalFlip!.Value);
+            var crop = picture.BlipFill!.GetFirstChild<A.SourceRectangle>() ?? throw new InvalidOperationException("Expected edited picture crop.");
+            Assert.Equal(-10_000, crop.Left!.Value);
+            Assert.Equal(2_000, crop.Top!.Value);
+            Assert.Equal(5_000, crop.Right!.Value);
+            Assert.Equal(3_000, crop.Bottom!.Value);
             var selected = Assert.IsType<ImagePart>(slidePart.GetPartById(picture.BlipFill!.Blip!.Embed!.Value!));
             using var selectedStream = selected.GetStream(FileMode.Open, FileAccess.Read);
             using var selectedBytes = new MemoryStream();
@@ -1113,6 +1132,23 @@ public sealed class PptxCodecTests
         Assert.Equal(750_000L, roundTripImage.Image.LeftEmu);
         Assert.Equal(2_000_000L, roundTripImage.Image.WidthEmu);
         Assert.Equal(replacementId, roundTripImage.Image.AssetId);
+        Assert.Equal(-10_000, roundTripImage.Image.Crop.LeftThousandthPercent);
+        Assert.Equal(2_000, roundTripImage.Image.Crop.TopThousandthPercent);
+        Assert.Equal(5_000, roundTripImage.Image.Crop.RightThousandthPercent);
+        Assert.Equal(3_000, roundTripImage.Image.Crop.BottomThousandthPercent);
+
+        roundTripImage.Image.Crop = null;
+        var uncropped = Export(roundTrip.Artifact);
+        Assert.True(uncropped.Ok, Diagnostics(uncropped));
+        using (var stream = new MemoryStream(uncropped.File.ToByteArray()))
+        using (var presentation = PresentationDocument.Open(stream, false))
+            Assert.Null(Assert.Single(presentation.PresentationPart!.SlideParts.Single().Slide!.Descendants<P.Picture>()).BlipFill!.GetFirstChild<A.SourceRectangle>());
+
+        roundTripImage.Image.Crop = new PresentationImageCrop { LeftThousandthPercent = 80_000, RightThousandthPercent = 30_000 };
+        var invalidCrop = Export(roundTrip.Artifact);
+        Assert.False(invalidCrop.Ok);
+        Assert.Equal("invalid_presentation_image", Assert.Single(invalidCrop.Diagnostics).Code);
+        roundTripImage.Image.Crop = null;
 
         var jpegId = AddPictureAsset(roundTrip.Artifact, [0xff, 0xd8, 0xff, 0xd9], "image/jpeg");
         roundTripImage.Image.AssetId = jpegId;
@@ -1129,6 +1165,12 @@ public sealed class PptxCodecTests
         var complexRejected = Export(complexImported.Artifact);
         Assert.False(complexRejected.Ok);
         Assert.Equal("unsupported_presentation_edit", Assert.Single(complexRejected.Diagnostics).Code);
+
+        var irregularCropSource = ReplaceZipText(source, "ppt/slides/slide1.xml", xml =>
+            xml.Replace("<a:stretch>", "<a:srcRect l=\"1000\" fixture:unknown=\"1\" xmlns:fixture=\"urn:open-chestnut:test\"/><a:stretch>", StringComparison.Ordinal));
+        var irregularCropImported = Import(irregularCropSource);
+        var irregularCropPicture = Assert.Single(Assert.Single(irregularCropImported.Artifact.Presentation.Slides).Elements, item => item.ContentCase == PresentationElement.ContentOneofCase.Opaque);
+        Assert.False(irregularCropPicture.Source.Editable);
     }
 
     [Fact]

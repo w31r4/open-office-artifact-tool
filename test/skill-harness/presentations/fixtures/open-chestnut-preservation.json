@@ -59,8 +59,8 @@
           "name": "roundtrip-image",
           "alt": "Roundtrip status before edit",
           "position": { "left": 420, "top": 310, "width": 180, "height": 180 },
-          "fit": "stretch",
-          "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+          "fit": "cover",
+          "dataUrl": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI0MDAiIGhlaWdodD0iMjAwIiB2aWV3Qm94PSIwIDAgNDAwIDIwMCI+PHJlY3Qgd2lkdGg9IjIwMCIgaGVpZ2h0PSIyMDAiIGZpbGw9IiMyNTYzZWIiLz48cmVjdCB4PSIyMDAiIHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjZjk3MzE2Ii8+PC9zdmc+"
         }
       ],
       "charts": [
@@ -97,7 +97,9 @@
         "sourceName": "roundtrip-image",
         "name": "edited-roundtrip-image",
         "alt": "Roundtrip status after edit",
-        "position": { "left": 430, "top": 320, "width": 170, "height": 170 }
+        "position": { "left": 430, "top": 320, "width": 170, "height": 170 },
+        "fit": "contain",
+        "crop": null
       }
     ],
     "charts": [

@@ -1355,9 +1355,9 @@ message PresentationShapeTransform {
 // Bounded top-level p:pic projection. The asset is content-addressed in the
 // envelope; relationship IDs and OPC part names remain package-local. This
 // slice owns only an embedded PNG/JPEG/GIF/safe-SVG source, alternative text,
-// a rectangular stretch frame, and direct rotation/flips. Crop, effects,
-// external links, transformed blips, and non-rectangular geometry remain
-// source-bound opaque content.
+// a rectangular stretch frame, a bounded native source rectangle, and direct
+// rotation/flips. Effects, external links, transformed blips, and
+// non-rectangular geometry remain source-bound opaque content.
 message PresentationImage {
   string asset_id = 1;
   string alt_text = 2;
@@ -1366,12 +1366,22 @@ message PresentationImage {
   int64 width_emu = 5;
   int64 height_emu = 6;
   PresentationImageTransform transform = 7;
+  PresentationImageCrop crop = 8;
 }
 
 message PresentationImageTransform {
   optional sint32 rotation_angle_60000 = 1;
   optional bool flip_horizontal = 2;
   optional bool flip_vertical = 3;
+}
+
+// DrawingML a:srcRect signed thousandth-percent edges. Negative values expand
+// the source rectangle for contain/letterbox semantics; positive values crop.
+message PresentationImageCrop {
+  sint32 left_thousandth_percent = 1;
+  sint32 top_thousandth_percent = 2;
+  sint32 right_thousandth_percent = 3;
+  sint32 bottom_thousandth_percent = 4;
 }
 
 // Bounded top-level DrawingML table projection. Column widths and row heights

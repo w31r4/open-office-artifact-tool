@@ -273,6 +273,8 @@ function applyPresentationFixtureEdits(presentation, edit = {}) {
     if (Object.hasOwn(change, "name")) image.name = change.name;
     if (Object.hasOwn(change, "alt")) image.alt = change.alt;
     if (Object.hasOwn(change, "position")) image.position = { ...change.position };
+    if (Object.hasOwn(change, "fit")) image.fit = change.fit;
+    if (Object.hasOwn(change, "crop")) image.crop = change.crop == null ? undefined : { ...change.crop };
     if (Object.hasOwn(change, "transform")) image.transform = change.transform == null ? undefined : { ...change.transform };
     if (Object.hasOwn(change, "dataUrl")) image.dataUrl = change.dataUrl;
   }

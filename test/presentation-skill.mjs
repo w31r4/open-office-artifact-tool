@@ -98,6 +98,12 @@ try {
   const editedImage = itemByName(roundtripSlide.images.items, "edited-roundtrip-image");
   assert.equal(editedImage.alt, "Roundtrip status after edit");
   assert.deepEqual(editedImage.position, { left: 430, top: 320, width: 170, height: 170 });
+  assert.equal(editedImage.fit, "stretch");
+  assert.deepEqual(editedImage.crop, { left: 0, top: -0.5, right: 0, bottom: -0.5 });
+  const roundtripZip = await JSZip.loadAsync(await fs.readFile(roundtrip.pptxPath));
+  const roundtripSlideXml = await roundtripZip.file("ppt/slides/slide1.xml").async("text");
+  assert.match(roundtripSlideXml, /<a:srcRect[^>]*t="-50000"/);
+  assert.match(roundtripSlideXml, /<a:srcRect[^>]*b="-50000"/);
   const editedChart = itemByName(roundtripSlide.charts.items, "roundtrip-chart");
   assert.equal(editedChart.title, "After roundtrip");
   assert.deepEqual(editedChart.series[0].values, [8, 14, 6]);
