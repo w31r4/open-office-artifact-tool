@@ -35,7 +35,7 @@ import {
 } from "./range-operations.mjs";
 import { createSpreadsheetSparklineClasses } from "./sparklines.mjs";
 import { formulaTimeParts, formulaTimeSerial, parseFormulaDateText, parseFormulaNumberText, parseFormulaTimeText } from "./formula-coercion.mjs";
-import { calculateIpmt, calculateIrr, calculateNpv, calculatePmt, calculatePpmt, calculateRate, calculateXirr, calculateXnpv } from "./financial-formulas.mjs";
+import { calculateDb, calculateDdb, calculateIpmt, calculateIrr, calculateNpv, calculatePmt, calculatePpmt, calculateRate, calculateSln, calculateXirr, calculateXnpv } from "./financial-formulas.mjs";
 import { createWorkbookWindowCollection, worksheetWindowMemberships } from "./workbook-windows.mjs";
 import { decoder, encoder, toUint8Array } from "../shared/binary.mjs";
 import { FileBlob } from "../shared/file-blob.mjs";
@@ -3730,6 +3730,15 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
     case "INT": return Math.floor(formulaNumber(scalar(0, 0)));
     case "CEILING": return Math.ceil(formulaNumber(scalar(0, 0)) / Math.max(1, formulaNumber(scalar(1, 1)))) * Math.max(1, formulaNumber(scalar(1, 1)));
     case "FLOOR": return Math.floor(formulaNumber(scalar(0, 0)) / Math.max(1, formulaNumber(scalar(1, 1)))) * Math.max(1, formulaNumber(scalar(1, 1)));
+    case "SLN": return args.length === 3
+      ? calculateSln({ cost: scalar(0), salvage: scalar(1), life: scalar(2) }, financialHelpers)
+      : "#VALUE!";
+    case "DB": return args.length >= 4 && args.length <= 5
+      ? calculateDb({ cost: scalar(0), salvage: scalar(1), life: scalar(2), period: scalar(3), month: scalar(4, 12) }, financialHelpers)
+      : "#VALUE!";
+    case "DDB": return args.length >= 4 && args.length <= 5
+      ? calculateDdb({ cost: scalar(0), salvage: scalar(1), life: scalar(2), period: scalar(3), factor: scalar(4, 2) }, financialHelpers)
+      : "#VALUE!";
     case "PMT": return args.length >= 3 && args.length <= 5
       ? calculatePmt({ rate: scalar(0), nper: scalar(1), pv: scalar(2), fv: scalar(3, 0), type: scalar(4, 0) }, financialHelpers)
       : "#VALUE!";

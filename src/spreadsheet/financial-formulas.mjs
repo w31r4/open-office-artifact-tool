@@ -218,6 +218,16 @@ function paymentPeriod(per, nper, helpers) {
   return { value: safePer.value };
 }
 
+function depreciationTerms({ cost, salvage, life, period }, helpers) {
+  const [safeCost, safeSalvage, safeLife, safePeriod] = [cost, salvage, life, period].map((value) => finiteNumber(value, helpers));
+  const error = [safeCost, safeSalvage, safeLife, safePeriod].find((item) => item.error)?.error;
+  if (error) return { error };
+  if (safeCost.value < 0 || safeSalvage.value < 0 || safeSalvage.value > safeCost.value
+    || !Number.isInteger(safeLife.value) || safeLife.value < 1 || safeLife.value > FINANCIAL_MAX_RATE_PERIODS
+    || !Number.isInteger(safePeriod.value) || safePeriod.value < 1) return { error: "#NUM!" };
+  return { cost: safeCost.value, salvage: safeSalvage.value, life: safeLife.value, period: safePeriod.value };
+}
+
 export function calculatePmt(rawTerms, helpers) {
   const terms = paymentTerms(rawTerms, helpers);
   return terms.error ? terms.error : paymentFromTerms(terms);
@@ -259,6 +269,64 @@ export function calculatePpmt(rawTerms, helpers) {
   if (typeof payment !== "number") return payment;
   const interest = calculateIpmt(rawTerms, helpers);
   return typeof interest === "number" ? payment - interest : interest;
+}
+
+export function calculateSln({ cost, salvage, life }, helpers) {
+  const [safeCost, safeSalvage, safeLife] = [cost, salvage, life].map((value) => finiteNumber(value, helpers));
+  const error = [safeCost, safeSalvage, safeLife].find((item) => item.error)?.error;
+  if (error) return error;
+  if (safeLife.value === 0) return "#DIV/0!";
+  const depreciation = (safeCost.value - safeSalvage.value) / safeLife.value;
+  return Number.isFinite(depreciation) ? depreciation : "#NUM!";
+}
+
+export function calculateDb({ cost, salvage, life, period, month = 12 }, helpers) {
+  const terms = depreciationTerms({ cost, salvage, life, period }, helpers);
+  if (terms.error) return terms.error;
+  const safeMonth = finiteNumber(month, helpers);
+  if (safeMonth.error) return safeMonth.error;
+  if (!Number.isInteger(safeMonth.value) || safeMonth.value < 1 || safeMonth.value > 12) return "#NUM!";
+  const maxPeriod = terms.life + (safeMonth.value < 12 ? 1 : 0);
+  if (terms.period > maxPeriod) return "#NUM!";
+  if (terms.cost === 0 || terms.cost === terms.salvage) return 0;
+
+  // Excel/LibreOffice DB uses a three-decimal fixed declining rate. The first
+  // and optional final partial years are prorated by month; middle periods use
+  // the opening book value from the preceding period without a silent
+  // straight-line switch.
+  const rate = Math.round((1 - Math.pow(terms.salvage / terms.cost, 1 / terms.life)) * 1_000) / 1_000;
+  if (!Number.isFinite(rate) || rate < 0 || rate > 1) return "#NUM!";
+  let bookValue = terms.cost;
+  for (let currentPeriod = 1; currentPeriod <= terms.period; currentPeriod += 1) {
+    const fraction = currentPeriod === 1
+      ? safeMonth.value / 12
+      : currentPeriod === terms.life + 1 ? (12 - safeMonth.value) / 12 : 1;
+    const depreciation = bookValue * rate * fraction;
+    if (!Number.isFinite(depreciation)) return "#NUM!";
+    if (currentPeriod === terms.period) return depreciation;
+    bookValue -= depreciation;
+  }
+  return "#NUM!";
+}
+
+export function calculateDdb({ cost, salvage, life, period, factor = 2 }, helpers) {
+  const terms = depreciationTerms({ cost, salvage, life, period }, helpers);
+  if (terms.error) return terms.error;
+  const safeFactor = finiteNumber(factor, helpers);
+  if (safeFactor.error) return safeFactor.error;
+  if (safeFactor.value <= 0 || terms.period > terms.life) return "#NUM!";
+  if (terms.cost === 0 || terms.cost === terms.salvage) return 0;
+
+  const rate = safeFactor.value / terms.life;
+  if (!Number.isFinite(rate)) return "#NUM!";
+  let bookValue = terms.cost;
+  for (let currentPeriod = 1; currentPeriod <= terms.period; currentPeriod += 1) {
+    const depreciation = Math.min(bookValue * rate, Math.max(0, bookValue - terms.salvage));
+    if (!Number.isFinite(depreciation)) return "#NUM!";
+    if (currentPeriod === terms.period) return depreciation;
+    bookValue -= depreciation;
+  }
+  return "#NUM!";
 }
 
 export function calculateRate({ nper, pmt, pv, fv = 0, type = 0, guess }, helpers) {

@@ -124,6 +124,52 @@ assert.ok(Math.abs(rateValues[1] - 0.1) < 1e-10);
 assert.ok(Math.abs(rateValues[2]) < 1e-10);
 assert.ok(Math.abs(rateValues[3] - 0.0426446765858793) < 1e-10);
 assert.deepEqual(rateValues.slice(4), ["#NUM!", "#NUM!", "#NUM!", "#NUM!"]);
+financialSheet.getRange("V1:V3").formulas = [
+  ["=SLN(1000,100,5)"],
+  ["=SLN(-1000,100,5)"],
+  ["=SLN(1000,100,0)"],
+];
+assert.deepEqual(financialSheet.getRange("V1:V3").values, [[180], [-220], ["#DIV/0!"]]);
+financialSheet.getRange("W1:W10").formulas = [
+  ["=DB(1000,100,5,1)"],
+  ["=DB(1000,100,5,2)"],
+  ["=DB(1000,100,5,5)"],
+  ["=DB(1000,100,5,1,6)"],
+  ["=DB(1000,100,5,6,6)"],
+  ["=DB(1000,100,5,6)"],
+  ["=DB(1000,100,5,1,0)"],
+  ["=DB(1000,100,5,0)"],
+  ["=DB(1000,1200,5,1)"],
+  ["=DB(0,0,5,1)"],
+];
+const dbValues = financialSheet.getRange("W1:W10").values.flat();
+assert.equal(dbValues[0], 369);
+assert.equal(dbValues[1], 232.839);
+assert.ok(Math.abs(dbValues[2] - 58.498375128849) < 1e-10);
+assert.equal(dbValues[3], 184.5);
+assert.ok(Math.abs(dbValues[4] - 23.8527124587882) < 1e-10);
+assert.deepEqual(dbValues.slice(5, 9), ["#NUM!", "#NUM!", "#NUM!", "#NUM!"]);
+assert.equal(dbValues[9], 0);
+financialSheet.getRange("X1:X10").formulas = [
+  ["=DDB(1000,100,5,1)"],
+  ["=DDB(1000,100,5,2)"],
+  ["=DDB(1000,100,5,5)"],
+  ["=DDB(1000,100,5,1,1.5)"],
+  ["=DDB(1000,100,5,5,1.5)"],
+  ["=DDB(1000,100,5,6)"],
+  ["=DDB(1000,100,5,0)"],
+  ["=DDB(1000,100,5,1,0)"],
+  ["=DDB(1000,1200,5,1)"],
+  ["=DDB(0,0,5,1)"],
+];
+const ddbValues = financialSheet.getRange("X1:X10").values.flat();
+assert.equal(ddbValues[0], 400);
+assert.equal(ddbValues[1], 240);
+assert.ok(Math.abs(ddbValues[2] - 29.6) < 1e-10);
+assert.equal(ddbValues[3], 300);
+assert.ok(Math.abs(ddbValues[4] - 72.03) < 1e-10);
+assert.deepEqual(ddbValues.slice(5, 9), ["#NUM!", "#NUM!", "#NUM!", "#NUM!"]);
+assert.equal(ddbValues[9], 0);
 financialSheet.getRange("G1:G2").values = [[-100], [110]];
 financialSheet.getRange("H1:H2").formulas = [
   ["=DATE(2017,1,1)"],
@@ -161,6 +207,7 @@ const financialRoundTrip = await SpreadsheetFile.importXlsx(await SpreadsheetFil
 assert.deepEqual(financialRoundTrip.worksheets.getItem("Cash Flows").getRange("C1:C6").formulas, financialSheet.getRange("C1:C6").formulas);
 assert.deepEqual(financialRoundTrip.worksheets.getItem("Cash Flows").getRange("P1:R12").formulas, financialSheet.getRange("P1:R12").formulas);
 assert.deepEqual(financialRoundTrip.worksheets.getItem("Cash Flows").getRange("U1:U8").formulas, financialSheet.getRange("U1:U8").formulas);
+assert.deepEqual(financialRoundTrip.worksheets.getItem("Cash Flows").getRange("V1:X10").formulas, financialSheet.getRange("V1:X10").formulas);
 const financialLimitWorkbook = Workbook.create();
 const financialLimitSheet = financialLimitWorkbook.worksheets.add("Cash flow limit");
 financialLimitSheet.getRange("A1:A10001").values = Array.from({ length: 10_001 }, (_, index) => [index === 0 ? -100 : 1]);

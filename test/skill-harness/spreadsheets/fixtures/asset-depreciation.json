@@ -1,0 +1,131 @@
+{
+  "name": "asset-depreciation",
+  "outputName": "asset-depreciation.xlsx",
+  "sheets": [
+    {
+      "name": "Inputs",
+      "showGridLines": false,
+      "ranges": [
+        {
+          "range": "A1:D1",
+          "values": [["Assumption", "Value", "Units", "Purpose"]],
+          "format": { "fill": "#0F172A", "font": { "bold": true, "color": "#FFFFFF" } }
+        },
+        {
+          "range": "A2:D8",
+          "values": [
+            ["Asset cost", 100000, "$", "Illustrative acquisition cost"],
+            ["Estimated salvage value", 10000, "$", "Residual book value floor"],
+            ["Useful life", 5, "years", "Annual modeled periods"],
+            ["First-year months", 12, "months", "DB proration"],
+            ["DDB factor", 2, "multiple", "Double-declining factor"],
+            ["Straight-line annual expense", null, "$ / year", "SLN result"],
+            ["Depreciable basis", null, "$", "Cost less salvage"]
+          ]
+        },
+        { "range": "B7", "formulas": [["=SLN(B2,B3,B4)"]] },
+        { "range": "B8", "formulas": [["=B2-B3"]] },
+        { "range": "B2:B3", "format": { "numberFormat": "$#,##0;[Red]($#,##0);-", "font": { "color": "#0000FF" } } },
+        { "range": "B4:B6", "format": { "numberFormat": "#,##0;[Red](#,##0);-", "font": { "color": "#0000FF" } } },
+        { "range": "B7:B8", "format": { "numberFormat": "$#,##0;[Red]($#,##0);-", "font": { "color": "#000000" } } }
+      ]
+    },
+    {
+      "name": "Depreciation",
+      "showGridLines": false,
+      "ranges": [
+        {
+          "range": "A1:G1",
+          "values": [["Year", "Opening DDB book value", "SLN expense", "DB expense", "DDB expense", "Closing DDB book value", "Closing DB book value"]],
+          "format": { "fill": "#0F172A", "font": { "bold": true, "color": "#FFFFFF" } }
+        },
+        { "range": "A2:A6", "values": [[1], [2], [3], [4], [5]] },
+        {
+          "range": "B2:G6",
+          "formulas": [
+            ["='Inputs'!$B$2", "=SLN('Inputs'!$B$2,'Inputs'!$B$3,'Inputs'!$B$4)", "=DB('Inputs'!$B$2,'Inputs'!$B$3,'Inputs'!$B$4,A2,'Inputs'!$B$5)", "=DDB('Inputs'!$B$2,'Inputs'!$B$3,'Inputs'!$B$4,A2,'Inputs'!$B$6)", "=B2-E2", "='Inputs'!$B$2-D2"],
+            ["=F2", "=SLN('Inputs'!$B$2,'Inputs'!$B$3,'Inputs'!$B$4)", "=DB('Inputs'!$B$2,'Inputs'!$B$3,'Inputs'!$B$4,A3,'Inputs'!$B$5)", "=DDB('Inputs'!$B$2,'Inputs'!$B$3,'Inputs'!$B$4,A3,'Inputs'!$B$6)", "=B3-E3", "=G2-D3"],
+            ["=F3", "=SLN('Inputs'!$B$2,'Inputs'!$B$3,'Inputs'!$B$4)", "=DB('Inputs'!$B$2,'Inputs'!$B$3,'Inputs'!$B$4,A4,'Inputs'!$B$5)", "=DDB('Inputs'!$B$2,'Inputs'!$B$3,'Inputs'!$B$4,A4,'Inputs'!$B$6)", "=B4-E4", "=G3-D4"],
+            ["=F4", "=SLN('Inputs'!$B$2,'Inputs'!$B$3,'Inputs'!$B$4)", "=DB('Inputs'!$B$2,'Inputs'!$B$3,'Inputs'!$B$4,A5,'Inputs'!$B$5)", "=DDB('Inputs'!$B$2,'Inputs'!$B$3,'Inputs'!$B$4,A5,'Inputs'!$B$6)", "=B5-E5", "=G4-D5"],
+            ["=F5", "=SLN('Inputs'!$B$2,'Inputs'!$B$3,'Inputs'!$B$4)", "=DB('Inputs'!$B$2,'Inputs'!$B$3,'Inputs'!$B$4,A6,'Inputs'!$B$5)", "=DDB('Inputs'!$B$2,'Inputs'!$B$3,'Inputs'!$B$4,A6,'Inputs'!$B$6)", "=B6-E6", "=G5-D6"]
+          ]
+        },
+        { "range": "B2:G6", "format": { "numberFormat": "$#,##0;[Red]($#,##0);-", "font": { "color": "#008000" } } },
+        { "range": "B3:B6", "format": { "numberFormat": "$#,##0;[Red]($#,##0);-", "font": { "color": "#000000" } } },
+        { "range": "F2:G6", "format": { "numberFormat": "$#,##0;[Red]($#,##0);-", "font": { "color": "#000000" } } }
+      ]
+    },
+    {
+      "name": "Checks",
+      "showGridLines": false,
+      "ranges": [
+        {
+          "range": "A1:E1",
+          "values": [["Check", "Actual", "Expected", "Difference", "Status"]],
+          "format": { "fill": "#0F172A", "font": { "bold": true, "color": "#FFFFFF" } }
+        },
+        {
+          "range": "A2:E7",
+          "values": [
+            ["DDB final book value", null, null, null, null],
+            ["DDB total depreciation", null, null, null, null],
+            ["SLN total depreciation", null, null, null, null],
+            ["DB final book value floor", null, null, null, null],
+            ["Modeled depreciation periods", null, null, null, null],
+            ["Overall model status", null, 0, null, null]
+          ]
+        },
+        {
+          "range": "B2:B7",
+          "formulas": [
+            ["='Depreciation'!$F$6"],
+            ["=SUM('Depreciation'!$E$2:$E$6)"],
+            ["=SUM('Depreciation'!$C$2:$C$6)"],
+            ["='Depreciation'!$G$6"],
+            ["=COUNTIF('Depreciation'!$A$2:$A$6,\">0\")"],
+            ["=COUNTIF(E2:E6,\"CHECK\")"]
+          ]
+        },
+        { "range": "C2", "formulas": [["='Inputs'!$B$3"]] },
+        { "range": "C3:C4", "formulas": [["='Inputs'!$B$8"], ["='Inputs'!$B$8"]] },
+        { "range": "C5", "formulas": [["='Inputs'!$B$3"]] },
+        { "range": "C6", "formulas": [["='Inputs'!$B$4"]] },
+        {
+          "range": "D2:D7",
+          "formulas": [["=B2-C2"], ["=B3-C3"], ["=B4-C4"], ["=B5-C5"], ["=B6-C6"], ["=B7-C7"]]
+        },
+        {
+          "range": "E2:E7",
+          "formulas": [["=IF(ABS(D2)<0.01,\"OK\",\"CHECK\")"], ["=IF(ABS(D3)<0.01,\"OK\",\"CHECK\")"], ["=IF(ABS(D4)<0.01,\"OK\",\"CHECK\")"], ["=IF(B5>=C5,\"OK\",\"CHECK\")"], ["=IF(B6=C6,\"OK\",\"CHECK\")"], ["=IF(B7=C7,\"OK\",\"CHECK\")"]]
+        },
+        {
+          "range": "E2:E7",
+          "conditionalFormats": [
+            { "ruleType": "containsText", "config": { "text": "OK", "format": { "fill": "#DCFCE7", "font": { "bold": true, "color": "#166534" } } } },
+            { "ruleType": "containsText", "config": { "text": "CHECK", "format": { "fill": "#FEE2E2", "font": { "bold": true, "color": "#B91C1C" } } } }
+          ]
+        }
+      ]
+    }
+  ],
+  "activeWorksheet": "Depreciation",
+  "expectations": [
+    {
+      "sheet": "Depreciation",
+      "range": "C2:E2",
+      "values": [[18000, 36900, 40000]]
+    },
+    {
+      "sheet": "Checks",
+      "range": "E2:E7",
+      "values": [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]
+    }
+  ],
+  "qa": {
+    "sheetName": "Depreciation",
+    "range": "A1:G6",
+    "renderFormat": "svg",
+    "inspectKind": "workbook,sheet,formula",
+    "maxChars": 16000
+  }
+}
