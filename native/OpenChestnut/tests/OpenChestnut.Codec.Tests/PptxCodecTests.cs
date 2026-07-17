@@ -667,6 +667,111 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void LiteralSecondaryAxisBarLineComboAuthorsImportsAndEdits()
+    {
+        var request = ExportRequest();
+        var chart = new PresentationChart
+        {
+            LeftEmu = 800_000,
+            TopEmu = 1_400_000,
+            WidthEmu = 7_200_000,
+            HeightEmu = 3_800_000,
+            Type = SpreadsheetChartType.Combo,
+            Title = "Revenue and gross margin",
+            HasLegend = true,
+            XAxis = new SpreadsheetChartAxisArtifact { Title = "Quarter" },
+            YAxis = new SpreadsheetChartAxisArtifact { Title = "Revenue ($M)" },
+            SecondaryXAxis = new SpreadsheetChartAxisArtifact { Title = "Quarter" },
+            SecondaryYAxis = new SpreadsheetChartAxisArtifact { Title = "Gross margin (%)", Minimum = 0, Maximum = 100, MajorUnit = 10 },
+        };
+        chart.Categories.Add(["Q1", "Q2", "Q3"]);
+        chart.ComboSeries.Add(new PresentationComboSeriesArtifact
+        {
+            Type = SpreadsheetChartType.Bar,
+            AxisGroup = PresentationChartAxisGroup.Primary,
+            Series = new SpreadsheetChartSeriesArtifact { Name = "Revenue", Fill = new SpreadsheetColor { Rgb = "2563EB" } },
+        });
+        chart.ComboSeries[0].Series.Values.Add([42, 48, 57]);
+        chart.ComboSeries.Add(new PresentationComboSeriesArtifact
+        {
+            Type = SpreadsheetChartType.Line,
+            AxisGroup = PresentationChartAxisGroup.Secondary,
+            Series = new SpreadsheetChartSeriesArtifact
+            {
+                Name = "Gross margin",
+                Line = new SpreadsheetChartLineStyleArtifact { Color = new SpreadsheetColor { Rgb = "16A34A" }, DashStyle = SpreadsheetChartLineDashStyle.Solid, WidthPoints = 2 },
+                Marker = new SpreadsheetChartMarkerArtifact { Symbol = SpreadsheetChartMarkerSymbol.Circle, Size = 6 },
+            },
+        });
+        chart.ComboSeries[1].Series.Values.Add([45, 47, 50]);
+        request.Artifact.Presentation.Slides[0].Elements.Add(new PresentationElement
+        {
+            Id = "presentation/slide/1/chart/secondary-combo",
+            Name = "Revenue and gross margin combo",
+            Chart = chart,
+        });
+
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var chartPart = Assert.Single(package.PresentationPart!.SlideParts.Single().ChartParts);
+            var document = XDocument.Load(chartPart.GetStream(FileMode.Open, FileAccess.Read));
+            XNamespace chartNs = "http://schemas.openxmlformats.org/drawingml/2006/chart";
+            var plotArea = document.Root!.Element(chartNs + "chart")!.Element(chartNs + "plotArea")!;
+            var barPlot = Assert.Single(plotArea.Elements(chartNs + "barChart"));
+            var linePlot = Assert.Single(plotArea.Elements(chartNs + "lineChart"));
+            Assert.Equal(["1", "2"], barPlot.Elements(chartNs + "axId").Select(item => item.Attribute("val")!.Value));
+            Assert.Equal(["3", "4"], linePlot.Elements(chartNs + "axId").Select(item => item.Attribute("val")!.Value));
+            Assert.Equal("b", Assert.Single(plotArea.Elements(chartNs + "catAx"), item => item.Element(chartNs + "axId")!.Attribute("val")!.Value == "1").Element(chartNs + "axPos")!.Attribute("val")!.Value);
+            Assert.Equal("t", Assert.Single(plotArea.Elements(chartNs + "catAx"), item => item.Element(chartNs + "axId")!.Attribute("val")!.Value == "3").Element(chartNs + "axPos")!.Attribute("val")!.Value);
+            Assert.Equal("l", Assert.Single(plotArea.Elements(chartNs + "valAx"), item => item.Element(chartNs + "axId")!.Attribute("val")!.Value == "2").Element(chartNs + "axPos")!.Attribute("val")!.Value);
+            Assert.Equal("r", Assert.Single(plotArea.Elements(chartNs + "valAx"), item => item.Element(chartNs + "axId")!.Attribute("val")!.Value == "4").Element(chartNs + "axPos")!.Attribute("val")!.Value);
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedChart = Assert.Single(Assert.Single(imported.Artifact.Presentation.Slides).Elements, item => item.ContentCase == PresentationElement.ContentOneofCase.Chart).Chart;
+        Assert.True(Assert.Single(imported.Artifact.Presentation.Slides).Elements.Single(item => item.ContentCase == PresentationElement.ContentOneofCase.Chart).Source.Editable);
+        Assert.Equal(PresentationChartAxisGroup.Primary, importedChart.ComboSeries[0].AxisGroup);
+        Assert.Equal(PresentationChartAxisGroup.Secondary, importedChart.ComboSeries[1].AxisGroup);
+        Assert.Equal("Gross margin (%)", importedChart.SecondaryYAxis.Title);
+        Assert.Equal(100, importedChart.SecondaryYAxis.Maximum);
+
+        importedChart.ComboSeries[1].Series.Values[2] = 53;
+        importedChart.SecondaryYAxis.Maximum = 80;
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var roundTrip = Import(edited.File.ToByteArray());
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        var roundTripChart = Assert.Single(Assert.Single(roundTrip.Artifact.Presentation.Slides).Elements, item => item.ContentCase == PresentationElement.ContentOneofCase.Chart).Chart;
+        Assert.Equal(PresentationChartAxisGroup.Secondary, roundTripChart.ComboSeries[1].AxisGroup);
+        Assert.Equal(53, roundTripChart.ComboSeries[1].Series.Values[2]);
+        Assert.Equal(80, roundTripChart.SecondaryYAxis.Maximum);
+
+        var invalid = ExportRequest();
+        var mixedAxisChart = chart.Clone();
+        mixedAxisChart.ComboSeries.Add(new PresentationComboSeriesArtifact
+        {
+            Type = SpreadsheetChartType.Line,
+            AxisGroup = PresentationChartAxisGroup.Primary,
+            Series = new SpreadsheetChartSeriesArtifact { Name = "Invalid mixed line" },
+        });
+        mixedAxisChart.ComboSeries[2].Series.Values.Add([1, 2, 3]);
+        invalid.Artifact.Presentation.Slides[0].Elements.Add(new PresentationElement
+        {
+            Id = "presentation/slide/1/chart/mixed-axis-combo",
+            Name = "Invalid mixed axis combo",
+            Chart = mixedAxisChart,
+        });
+        var rejected = Invoke(invalid);
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_presentation_chart", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void OrdinaryShapeTransformAuthorsImportsEditsAndClearsWithPresence()
     {
         var request = ExportRequest();

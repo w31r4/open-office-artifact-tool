@@ -447,15 +447,61 @@ comboSlide.charts.add("combo", {
   dataLabels: { showValue: true, position: "top" },
 });
 const secondaryAxisCombo = Presentation.create({ slideSize: { width: 640, height: 360 } });
-secondaryAxisCombo.slides.add({ name: "Rejected combo" }).charts.add("combo", {
+const secondaryAxisSlide = secondaryAxisCombo.slides.add({ name: "Secondary-axis combo" });
+secondaryAxisSlide.charts.add("combo", {
   name: "secondary-axis-combo",
+  title: "Revenue and gross margin",
+  position: { left: 48, top: 60, width: 540, height: 250 },
+  categories: ["Q1", "Q2"],
+  series: [
+    { name: "Revenue", chartType: "bar", values: [42, 48], color: "#2563EB" },
+    { name: "Gross margin", chartType: "line", axisGroup: "secondary", values: [45, 50], line: { fill: "#16A34A", width: 2 }, marker: { symbol: "circle", size: 6, fill: "#16A34A" } },
+  ],
+  axes: {
+    category: { title: "Quarter" },
+    value: { title: "Revenue ($M)" },
+    secondary: { category: { title: "Quarter" }, value: { title: "Gross margin (%)", min: 0, max: 100, majorUnit: 10 } },
+  },
+  legend: true,
+});
+const secondaryAxisExport = await PresentationFile.exportPptx(secondaryAxisCombo);
+const secondaryAxisZip = await JSZip.loadAsync(new Uint8Array(await secondaryAxisExport.arrayBuffer()));
+const secondaryAxisChartXml = await Promise.all(Object.keys(secondaryAxisZip.files)
+  .filter((name) => /\/charts\/chart\d+\.xml$/.test(name))
+  .map((name) => secondaryAxisZip.file(name).async("text")))
+  .then((items) => items.find((xml) => xml.includes("Revenue and gross margin")));
+assert.ok(secondaryAxisChartXml);
+assert.match(secondaryAxisChartXml, /<c:barChart>[\s\S]*?<c:axId val="1"\s*\/><c:axId val="2"\s*\/><\/c:barChart>/);
+assert.match(secondaryAxisChartXml, /<c:lineChart>[\s\S]*?<c:axId val="3"\s*\/><c:axId val="4"\s*\/><\/c:lineChart>/);
+assert.match(secondaryAxisChartXml, /<c:catAx><c:axId val="3"\s*\/>[\s\S]*?<c:axPos val="t"\s*\/>/);
+assert.match(secondaryAxisChartXml, /<c:valAx><c:axId val="4"\s*\/>[\s\S]*?<c:axPos val="r"\s*\/>/);
+const importedSecondaryAxis = await PresentationFile.importPptx(secondaryAxisExport);
+const importedSecondaryAxisChart = itemByName(importedSecondaryAxis.slides.getItem(0).charts.items, "secondary-axis-combo");
+assert.equal(importedSecondaryAxisChart.chartType, "combo");
+assert.deepEqual(importedSecondaryAxisChart.series.map((series) => [series.chartType, series.axisGroup || "primary"]), [["bar", "primary"], ["line", "secondary"]]);
+assert.equal(importedSecondaryAxisChart.axes.secondary.category.title, "Quarter");
+assert.equal(importedSecondaryAxisChart.axes.secondary.value.title, "Gross margin (%)");
+assert.equal(importedSecondaryAxisChart.axes.secondary.value.max, 100);
+importedSecondaryAxisChart.series[1].values = [47, 53];
+importedSecondaryAxisChart.axes.secondary.value.max = 80;
+const editedSecondaryAxis = await PresentationFile.exportPptx(importedSecondaryAxis);
+const roundTripSecondaryAxis = await PresentationFile.importPptx(editedSecondaryAxis);
+const roundTripSecondaryAxisChart = itemByName(roundTripSecondaryAxis.slides.getItem(0).charts.items, "secondary-axis-combo");
+assert.deepEqual(roundTripSecondaryAxisChart.series[1].values, [47, 53]);
+assert.equal(roundTripSecondaryAxisChart.series[1].axisGroup, "secondary");
+assert.equal(roundTripSecondaryAxisChart.axes.secondary.value.max, 80);
+
+const mixedAxisCombo = Presentation.create({ slideSize: { width: 640, height: 360 } });
+mixedAxisCombo.slides.add({ name: "Rejected mixed combo" }).charts.add("combo", {
+  name: "mixed-axis-combo",
   categories: ["Q1", "Q2"],
   series: [
     { name: "Revenue", chartType: "bar", values: [42, 48] },
-    { name: "Margin", chartType: "line", axisGroup: "secondary", values: [12, 15] },
+    { name: "Primary line", chartType: "line", values: [12, 15] },
+    { name: "Secondary line", chartType: "line", axisGroup: "secondary", values: [45, 50] },
   ],
 });
-await assert.rejects(PresentationFile.exportPptx(secondaryAxisCombo), /outside the bounded native chart slice/i);
+await assert.rejects(PresentationFile.exportPptx(mixedAxisCombo), /cannot mix primary and secondary line plots/i);
 
 assert.equal(deck.verify().ok, true);
 assert.equal(deck.validateLayout().ok, true);

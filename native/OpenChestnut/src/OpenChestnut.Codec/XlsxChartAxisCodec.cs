@@ -30,6 +30,16 @@ internal static class XlsxChartAxisCodec
     }
 
     internal static bool TryRead(XElement plotArea, XElement plot, SpreadsheetChartArtifact chart, out bool editable)
+        => TryReadAtPositions(plotArea, plot, chart, "b", "l", out editable);
+
+    // Presentation combo charts own a second category/value pair for the one
+    // supported secondary line plot. Keeping this in the axis codec makes the
+    // native IDs/positions an implementation detail of one deep helper rather
+    // than a second hand-rolled axis reader in the combo codec.
+    internal static bool TryReadPresentationSecondary(XElement plotArea, XElement plot, SpreadsheetChartArtifact chart, out bool editable)
+        => TryReadAtPositions(plotArea, plot, chart, "t", "r", out editable);
+
+    private static bool TryReadAtPositions(XElement plotArea, XElement plot, SpreadsheetChartArtifact chart, string horizontalPosition, string verticalPosition, out bool editable)
     {
         editable = false;
         if (chart.Type is SpreadsheetChartType.Pie or SpreadsheetChartType.Doughnut)
@@ -38,9 +48,9 @@ internal static class XlsxChartAxisCodec
             return editable;
         }
         var numericX = UsesNumericXAxis(chart.Type);
-        if (!TryLocate(plotArea, plot, numericX, out var horizontalAxis, out var verticalAxis)) return false;
-        if (!TryReadAxis(horizontalAxis, !numericX, "b", out var xAxis, out var xEditable) ||
-            !TryReadAxis(verticalAxis, false, "l", out var yAxis, out var yEditable)) return false;
+        if (!TryLocate(plotArea, plot, numericX, horizontalPosition, verticalPosition, out var horizontalAxis, out var verticalAxis)) return false;
+        if (!TryReadAxis(horizontalAxis, !numericX, horizontalPosition, out var xAxis, out var xEditable) ||
+            !TryReadAxis(verticalAxis, false, verticalPosition, out var yAxis, out var yEditable)) return false;
         chart.XAxis = xAxis;
         chart.YAxis = yAxis;
         editable = xEditable && yEditable;
@@ -58,13 +68,28 @@ internal static class XlsxChartAxisCodec
             plotArea.Add(BuildCategoryAxis(xAxis), BuildValueAxis(yAxis, "2", "1", "l"));
     }
 
+    internal static void AppendAuthoredPresentationSecondary(XElement plotArea, SpreadsheetChartArtifact chart)
+    {
+        var xAxis = chart.XAxis ?? new SpreadsheetChartAxisArtifact();
+        var yAxis = chart.YAxis ?? new SpreadsheetChartAxisArtifact();
+        plotArea.Add(BuildCategoryAxis(xAxis, "3", "4", "t"), BuildValueAxis(yAxis, "4", "3", "r"));
+    }
+
     internal static void Patch(XElement plotArea, XElement plot, SpreadsheetChartArtifact target)
     {
         if (target.Type is SpreadsheetChartType.Pie or SpreadsheetChartType.Doughnut) return;
         var numericX = UsesNumericXAxis(target.Type);
-        if (target.XAxis is null || target.YAxis is null || !TryLocate(plotArea, plot, numericX, out var horizontalAxis, out var verticalAxis))
+        if (target.XAxis is null || target.YAxis is null || !TryLocate(plotArea, plot, numericX, "b", "l", out var horizontalAxis, out var verticalAxis))
             throw new CodecException("unsupported_spreadsheet_chart_edit", $"Worksheet chart {target.Id} cannot change its primary-axis topology.");
         PatchAxis(horizontalAxis, target.XAxis, !numericX);
+        PatchAxis(verticalAxis, target.YAxis, false);
+    }
+
+    internal static void PatchPresentationSecondary(XElement plotArea, XElement plot, SpreadsheetChartArtifact target)
+    {
+        if (target.XAxis is null || target.YAxis is null || !TryLocate(plotArea, plot, false, "t", "r", out var horizontalAxis, out var verticalAxis))
+            throw new CodecException("unsupported_presentation_edit", "Presentation combo chart cannot change its secondary-axis topology.");
+        PatchAxis(horizontalAxis, target.XAxis, true);
         PatchAxis(verticalAxis, target.YAxis, false);
     }
 
@@ -87,19 +112,23 @@ internal static class XlsxChartAxisCodec
         if (axis.HasMajorUnit && (!double.IsFinite(axis.MajorUnit) || axis.MajorUnit <= 0)) throw Invalid(worksheetId, chartId, $"{axisName}-axis major unit must be finite and positive.");
     }
 
-    private static bool TryLocate(XElement plotArea, XElement plot, bool numericX, out XElement horizontalAxis, out XElement verticalAxis)
+    private static bool TryLocate(XElement plotArea, XElement plot, bool numericX, string horizontalPosition, string verticalPosition, out XElement horizontalAxis, out XElement verticalAxis)
     {
         horizontalAxis = null!;
         verticalAxis = null!;
-        var axes = plotArea.Elements().Where(IsAxis).ToArray();
+        var plotIds = plot.Elements(ChartNs + "axId").Select(AxisValue).ToArray();
+        if (plotIds.Length != 2 || plotIds.Any(string.IsNullOrEmpty) || plotIds.Distinct(StringComparer.Ordinal).Count() != 2) return false;
+        var axes = plotArea.Elements().Where(IsAxis)
+            .Where(item => plotIds.Contains(AxisValue(item.Element(ChartNs + "axId")), StringComparer.Ordinal))
+            .ToArray();
         var categories = axes.Where(item => item.Name == ChartNs + "catAx").ToArray();
         var values = axes.Where(item => item.Name == ChartNs + "valAx").ToArray();
         if (axes.Length != 2) return false;
         if (numericX)
         {
             if (categories.Length != 0 || values.Length != 2) return false;
-            var horizontal = values.Where(item => AxisValue(item.Element(ChartNs + "axPos")) == "b").ToArray();
-            var vertical = values.Where(item => AxisValue(item.Element(ChartNs + "axPos")) == "l").ToArray();
+            var horizontal = values.Where(item => AxisValue(item.Element(ChartNs + "axPos")) == horizontalPosition).ToArray();
+            var vertical = values.Where(item => AxisValue(item.Element(ChartNs + "axPos")) == verticalPosition).ToArray();
             if (horizontal.Length != 1 || vertical.Length != 1 || ReferenceEquals(horizontal[0], vertical[0])) return false;
             horizontalAxis = horizontal[0];
             verticalAxis = vertical[0];
@@ -110,7 +139,6 @@ internal static class XlsxChartAxisCodec
             horizontalAxis = categories[0];
             verticalAxis = values[0];
         }
-        var plotIds = plot.Elements(ChartNs + "axId").Select(AxisValue).ToArray();
         var horizontalId = AxisValue(horizontalAxis.Element(ChartNs + "axId"));
         var verticalId = AxisValue(verticalAxis.Element(ChartNs + "axId"));
         if (plotIds.Length != 2 || plotIds.Any(string.IsNullOrEmpty) || plotIds.Distinct(StringComparer.Ordinal).Count() != 2 ||
@@ -183,15 +211,15 @@ internal static class XlsxChartAxisCodec
         return true;
     }
 
-    private static XElement BuildCategoryAxis(SpreadsheetChartAxisArtifact axis)
+    private static XElement BuildCategoryAxis(SpreadsheetChartAxisArtifact axis, string axisId = "1", string crossAxisId = "2", string position = "b")
     {
         var output = new XElement(ChartNs + "catAx",
-            new XElement(ChartNs + "axId", new XAttribute("val", "1")),
+            new XElement(ChartNs + "axId", new XAttribute("val", axisId)),
             new XElement(ChartNs + "scaling", new XElement(ChartNs + "orientation", new XAttribute("val", "minMax"))),
-            new XElement(ChartNs + "axPos", new XAttribute("val", "b")));
+            new XElement(ChartNs + "axPos", new XAttribute("val", position)));
         AppendTitleAndNumberFormat(output, axis);
         XlsxChartTextStyleCodec.AppendAuthoredAxis(output, axis.TextStyle);
-        output.Add(new XElement(ChartNs + "crossAx", new XAttribute("val", "2")));
+        output.Add(new XElement(ChartNs + "crossAx", new XAttribute("val", crossAxisId)));
         if (axis.HasTickLabelInterval) output.Add(ValueElement("tickLblSkip", axis.TickLabelInterval));
         return output;
     }

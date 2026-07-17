@@ -1455,19 +1455,35 @@ message PresentationChart {
   SpreadsheetChartAxisArtifact x_axis = 10;
   SpreadsheetChartAxisArtifact y_axis = 11;
   SpreadsheetChartDataLabelsArtifact data_labels = 12;
-  // A bounded literal primary-axis bar+line composition. When type is COMBO,
-  // `series` must be empty and this collection must contain at least one BAR
-  // and one LINE entry. The wrapper keeps Presentation-only plot identity out
+  // A bounded literal bar+line composition. When type is COMBO, `series` must
+  // be empty and this collection must contain at least one primary BAR and one
+  // LINE entry. The wrapper keeps Presentation-only plot and axis identity out
   // of the reusable Worksheet chart series contract.
   repeated PresentationComboSeriesArtifact combo_series = 13;
+  // The canonical secondary-axis combo variant owns a second category/value
+  // pair for its line plot. These fields are unset for primary-axis combos.
+  SpreadsheetChartAxisArtifact secondary_x_axis = 14;
+  SpreadsheetChartAxisArtifact secondary_y_axis = 15;
+}
+
+// PresentationML plot/axis ownership is intentionally separate from
+// SpreadsheetChartSeriesArtifact: the latter is reusable across XLSX and has
+// no concept of a slide chart's paired axes. UNSPECIFIED is interpreted as
+// PRIMARY when reading older primary-axis combo payloads.
+enum PresentationChartAxisGroup {
+  PRESENTATION_CHART_AXIS_GROUP_UNSPECIFIED = 0;
+  PRESENTATION_CHART_AXIS_GROUP_PRIMARY = 1;
+  PRESENTATION_CHART_AXIS_GROUP_SECONDARY = 2;
 }
 
 // One series in a bounded PresentationML combo chart. The embedded series
-// keeps normal literal values and style semantics; type may only be BAR or
-// LINE and all entries share the owning chart's primary category/value axes.
+// keeps normal literal values and style semantics. The native profile permits
+// only primary clustered BAR entries plus either all-primary or all-secondary
+// standard LINE entries, avoiding mixed same-type plots and a third graph.
 message PresentationComboSeriesArtifact {
   SpreadsheetChartType type = 1;
   SpreadsheetChartSeriesArtifact series = 2;
+  PresentationChartAxisGroup axis_group = 3;
 }
 
 message PresentationShapeTransform {

@@ -1,6 +1,7 @@
 import { ChartElement, GroupShape, ImageElement, Presentation, Shape, TableElement } from "../presentation/index.mjs";
 import {
   ArtifactFamily,
+  PresentationChartAxisGroup,
   PresentationSlideGuide_Orientation,
   SpreadsheetChartDataLabelPosition,
   SpreadsheetChartLineDashStyle,
@@ -48,6 +49,11 @@ const PRESENTATION_CHART_TYPES_TO_WIRE = new Map([
   ["combo", SpreadsheetChartType.COMBO],
 ]);
 const PRESENTATION_CHART_TYPES_FROM_WIRE = new Map([...PRESENTATION_CHART_TYPES_TO_WIRE].map(([name, value]) => [value, name]));
+const PRESENTATION_CHART_AXIS_GROUPS_TO_WIRE = new Map([
+  ["primary", PresentationChartAxisGroup.PRIMARY],
+  ["secondary", PresentationChartAxisGroup.SECONDARY],
+]);
+const PRESENTATION_CHART_AXIS_GROUPS_FROM_WIRE = new Map([...PRESENTATION_CHART_AXIS_GROUPS_TO_WIRE].map(([name, value]) => [value, name]));
 const PRESENTATION_CHART_LINE_STYLES_TO_WIRE = new Map([
   ["solid", SpreadsheetChartLineDashStyle.SOLID],
   ["dashed", SpreadsheetChartLineDashStyle.DASHED],
@@ -891,7 +897,8 @@ function presentationChart(chart, original) {
     if (combo && seriesType !== SpreadsheetChartType.BAR && seriesType !== SpreadsheetChartType.LINE) {
       throw new OpenChestnutCodecError(`Presentation combo chart ${chart.id} series ${index + 1} must be bar or line.`, [], { code: "unsupported_presentation_features" });
     }
-    if (item.axisGroup === "secondary" || (!combo && item.chartType) || item.points?.length || item.trendlines?.length || item.errorBars || item.dataLabels || item.smooth != null) {
+    const axisGroup = item.axisGroup === "secondary" ? "secondary" : "primary";
+    if ((!combo && (axisGroup === "secondary" || item.chartType)) || item.points?.length || item.trendlines?.length || item.errorBars || item.dataLabels || item.smooth != null) {
       throw new OpenChestnutCodecError(`Presentation chart ${chart.id} series ${index + 1} uses semantics outside the bounded native chart slice.`, [], { code: "unsupported_presentation_features" });
     }
     return {
@@ -901,17 +908,32 @@ function presentationChart(chart, original) {
       ...(item.line || item.stroke ? { line: presentationChartLine(item.line || item.stroke, chart, `series[${index}].line`) } : {}),
       ...(item.marker ? { marker: presentationChartMarker(item.marker, chart, `series[${index}].marker`) } : {}),
       ...(seriesType == null ? {} : { _comboType: seriesType }),
+      ...(seriesType == null ? {} : { _comboAxisGroup: PRESENTATION_CHART_AXIS_GROUPS_TO_WIRE.get(axisGroup) }),
     };
   });
   if (combo && (!series.some((item) => item._comboType === SpreadsheetChartType.BAR) || !series.some((item) => item._comboType === SpreadsheetChartType.LINE))) {
     throw new OpenChestnutCodecError(`Presentation combo chart ${chart.id} requires at least one bar series and one line series.`, [], { code: "invalid_presentation_chart" });
   }
-  if (combo && originalChart?.type === SpreadsheetChartType.COMBO && originalSeries.some((item, index) => item.type !== series[index]?._comboType)) {
-    throw new OpenChestnutCodecError(`Presentation chart ${chart.id} cannot change an imported combo series type.`, [], { code: "presentation_chart_topology_changed" });
+  const comboBars = combo ? series.filter((item) => item._comboType === SpreadsheetChartType.BAR) : [];
+  const comboLines = combo ? series.filter((item) => item._comboType === SpreadsheetChartType.LINE) : [];
+  const hasSecondaryComboLine = comboLines.some((item) => item._comboAxisGroup === PresentationChartAxisGroup.SECONDARY);
+  if (combo && comboBars.some((item) => item._comboAxisGroup !== PresentationChartAxisGroup.PRIMARY)) {
+    throw new OpenChestnutCodecError(`Presentation combo chart ${chart.id} supports bars only on the primary axis pair.`, [], { code: "unsupported_presentation_features" });
   }
-  const nativeSeries = series.map(({ _comboType, ...item }) => item);
+  if (hasSecondaryComboLine && comboLines.some((item) => item._comboAxisGroup !== PresentationChartAxisGroup.SECONDARY)) {
+    throw new OpenChestnutCodecError(`Presentation combo chart ${chart.id} cannot mix primary and secondary line plots.`, [], { code: "unsupported_presentation_features" });
+  }
+  if (combo && originalChart?.type === SpreadsheetChartType.COMBO && originalSeries.some((item, index) =>
+    item.type !== series[index]?._comboType ||
+    (item.axisGroup === PresentationChartAxisGroup.SECONDARY ? PresentationChartAxisGroup.SECONDARY : PresentationChartAxisGroup.PRIMARY) !== series[index]?._comboAxisGroup,
+  )) {
+    throw new OpenChestnutCodecError(`Presentation chart ${chart.id} cannot change an imported combo series type or axis group.`, [], { code: "presentation_chart_topology_changed" });
+  }
+  const nativeSeries = series.map(({ _comboType, _comboAxisGroup, ...item }) => item);
   const xAxis = type === SpreadsheetChartType.PIE ? undefined : presentationChartAxis(chart.axes?.category, chart, "xAxis", originalChart?.xAxis);
   const yAxis = type === SpreadsheetChartType.PIE ? undefined : presentationChartAxis(chart.axes?.value, chart, "yAxis", originalChart?.yAxis);
+  const secondaryXAxis = hasSecondaryComboLine ? presentationChartAxis(chart.axes?.secondary?.category, chart, "secondaryXAxis", originalChart?.secondaryXAxis) : undefined;
+  const secondaryYAxis = hasSecondaryComboLine ? presentationChartAxis(chart.axes?.secondary?.value, chart, "secondaryYAxis", originalChart?.secondaryYAxis) : undefined;
   const dataLabels = presentationChartDataLabels(chart.dataLabels, chart, originalChart?.dataLabels);
   return {
     id: original?.id || chart.id,
@@ -929,9 +951,11 @@ function presentationChart(chart, original) {
         hasLegend: Boolean(chart.legend?.visible ?? chart.hasLegend),
         categories: chart.categories.map((value) => String(value ?? "")),
         series: combo ? [] : nativeSeries,
-        ...(combo ? { comboSeries: series.map(({ _comboType, ...item }) => ({ type: _comboType, series: item })) } : {}),
+        ...(combo ? { comboSeries: series.map(({ _comboType, _comboAxisGroup, ...item }) => ({ type: _comboType, axisGroup: _comboAxisGroup, series: item })) } : {}),
         ...(xAxis ? { xAxis } : {}),
         ...(yAxis ? { yAxis } : {}),
+        ...(secondaryXAxis ? { secondaryXAxis } : {}),
+        ...(secondaryYAxis ? { secondaryYAxis } : {}),
         ...(dataLabels ? { dataLabels } : {}),
       },
     },
@@ -1735,9 +1759,31 @@ function modelPresentationChart(source) {
   if (combo && (!sourceSeries.some((item) => item.type === SpreadsheetChartType.BAR) || !sourceSeries.some((item) => item.type === SpreadsheetChartType.LINE))) {
     throw new OpenChestnutCodecError("Presentation combo chart must contain at least one bar and one line series.", [], { code: "invalid_presentation_chart" });
   }
+  const comboAxisGroup = (entry) => {
+    if (entry.axisGroup === PresentationChartAxisGroup.UNSPECIFIED || entry.axisGroup === PresentationChartAxisGroup.PRIMARY) return "primary";
+    const value = PRESENTATION_CHART_AXIS_GROUPS_FROM_WIRE.get(entry.axisGroup);
+    if (!value) throw new OpenChestnutCodecError("Presentation combo chart contains an unsupported axis group.", [], { code: "invalid_presentation_chart" });
+    return value;
+  };
+  const comboBars = combo ? sourceSeries.filter((entry) => entry.type === SpreadsheetChartType.BAR) : [];
+  const comboLines = combo ? sourceSeries.filter((entry) => entry.type === SpreadsheetChartType.LINE) : [];
+  const hasSecondaryComboLine = comboLines.some((entry) => comboAxisGroup(entry) === "secondary");
+  if (combo && (comboBars.some((entry) => comboAxisGroup(entry) !== "primary") ||
+    (hasSecondaryComboLine && comboLines.some((entry) => comboAxisGroup(entry) !== "secondary")))) {
+    throw new OpenChestnutCodecError("Presentation combo chart does not match the canonical primary-bar/secondary-line topology.", [], { code: "invalid_presentation_chart" });
+  }
+  if (hasSecondaryComboLine && (!source.secondaryXAxis || !source.secondaryYAxis)) {
+    throw new OpenChestnutCodecError("Presentation secondary-axis combo chart is missing its paired secondary axes.", [], { code: "invalid_presentation_chart" });
+  }
   const axes = chartType === "pie" ? undefined : {
     category: modelPresentationChartAxis(source.xAxis, true) || { title: "" },
     value: modelPresentationChartAxis(source.yAxis, false) || { title: "" },
+    ...(hasSecondaryComboLine ? {
+      secondary: {
+        category: modelPresentationChartAxis(source.secondaryXAxis, true) || { title: "" },
+        value: modelPresentationChartAxis(source.secondaryYAxis, false) || { title: "" },
+      },
+    } : {}),
   };
   return {
     chartType,
@@ -1760,6 +1806,7 @@ function modelPresentationChart(source) {
         ...(series.line ? { line: modelPresentationChartLine(series.line) } : {}),
         ...(series.marker ? { marker: modelPresentationChartMarker(series.marker) } : {}),
         ...(seriesType ? { chartType: seriesType } : {}),
+        ...(combo && comboAxisGroup(entry) === "secondary" ? { axisGroup: "secondary" } : {}),
       };
     }),
     hasLegend: source.hasLegend,
