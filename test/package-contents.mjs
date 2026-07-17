@@ -140,6 +140,7 @@ for (const required of [
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-sparkline-workflow.mjs",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-data-table-workflow.mjs",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-loan-amortization-workflow.mjs",
+  "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-asset-depreciation-workflow.mjs",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-scatter-chart-workflow.mjs",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-bubble-chart-workflow.mjs",
   "skills/spreadsheets/skills/excel-live-control/SKILL.md",

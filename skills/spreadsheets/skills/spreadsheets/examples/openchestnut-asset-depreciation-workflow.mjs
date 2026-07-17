@@ -89,7 +89,7 @@ export function buildAssetDepreciationWorkbook() {
 
   styleTitle(depreciation, "A1:G1", 7, "Annual Depreciation Schedule");
   styleSection(depreciation, "A3:G3", 7, "Five-Year Asset Profile");
-  depreciation.getRange("A4:G4").values = [["Year", "Opening DDB book value", "SLN expense", "DB expense", "DDB expense", "Closing DDB book value", "Closing DB book value"]];
+  depreciation.getRange("A4:G4").values = [["Year", "DDB open", "SLN", "DB", "DDB", "DDB close", "DB close"]];
   depreciation.getRange("A4:G4").format = { fill: HEADER_FILL, font: { bold: true, color: "#FFFFFF" }, alignment: { horizontal: "center" } };
   depreciation.getRange("A5:A9").values = [[1], [2], [3], [4], [5]];
   depreciation.getRange("B5").formulas = [["='Inputs'!$B$5"]];
@@ -111,8 +111,8 @@ export function buildAssetDepreciationWorkbook() {
   depreciation.getRange("F5:G9").format = { font: { color: "#000000" } };
   depreciation.getRange("A5:A9").format.numberFormat = COUNT_FORMAT;
   depreciation.getRange("B5:G9").format.numberFormat = MONEY_FORMAT;
-  depreciation.getRange("A1:A9").format.columnWidthPx = 64;
-  depreciation.getRange("B1:G9").format.columnWidthPx = 152;
+  depreciation.getRange("A1:A9").format.columnWidthPx = 60;
+  depreciation.getRange("B1:G9").format.columnWidthPx = 96;
   depreciation.freezePanes.freezeRows(4);
 
   styleTitle(checks, "A1:F1", 6, "Model Checks");

@@ -103,6 +103,7 @@ assert.match(spreadsheetSkillText, /artifact_tool_docs\/API_QUICK_START\.md/);
 assert.match(spreadsheetSkillText, /features\/charts\.md/);
 assert.match(spreadsheetSkillText, /openchestnut-financial-returns-workflow\.mjs/);
 assert.match(spreadsheetSkillText, /openchestnut-loan-amortization-workflow\.mjs/);
+assert.match(spreadsheetSkillText, /openchestnut-asset-depreciation-workflow\.mjs/);
 
 const presentationApiRoot = path.join(skillsRoot, "presentations", "skills", "presentations", "artifact_tool", "api");
 const presentationApiDocs = await fs.readFile(path.join(presentationApiRoot, "API_DOCS.md"), "utf8");
@@ -392,6 +393,21 @@ try {
   assert.equal(loanAmortizationRoundTrip.worksheets.getItem("Checks").getRange("B9").formulas[0][0], "=RATE('Inputs'!$B$11,'Amortization'!$C$5,'Inputs'!$B$5,0,'Inputs'!$B$9,'Inputs'!$B$10)");
   assert.ok(Math.abs(loanAmortizationRoundTrip.worksheets.getItem("Checks").getRange("B9").values[0][0] - 0.01) < 1e-10);
   assert.deepEqual(loanAmortizationRoundTrip.worksheets.getItem("Checks").getRange("E4:E10").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
+
+  const { createAssetDepreciationWorkbook } = await import(
+    "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-asset-depreciation-workflow.mjs"
+  );
+  const assetDepreciationPath = path.join(tempRoot, "openchestnut-asset-depreciation-workflow.xlsx");
+  const authoredAssetDepreciation = await createAssetDepreciationWorkbook(assetDepreciationPath);
+  assert.equal(authoredAssetDepreciation.verification.ok, true);
+  assert.match(authoredAssetDepreciation.inspection.ndjson, /SLN/);
+  assert.match(authoredAssetDepreciation.inspection.ndjson, /DDB/);
+  const assetDepreciationRoundTrip = await SpreadsheetFile.importXlsx(await FileBlob.load(assetDepreciationPath));
+  assetDepreciationRoundTrip.recalculate();
+  assert.equal(assetDepreciationRoundTrip.worksheets.getItem("Depreciation").getRange("D5").formulas[0][0], "=DB('Inputs'!$B$5,'Inputs'!$B$6,'Inputs'!$B$7,A5,'Inputs'!$B$8)");
+  assert.equal(assetDepreciationRoundTrip.worksheets.getItem("Depreciation").getRange("E5").formulas[0][0], "=DDB('Inputs'!$B$5,'Inputs'!$B$6,'Inputs'!$B$7,A5,'Inputs'!$B$9)");
+  assert.equal(assetDepreciationRoundTrip.worksheets.getItem("Depreciation").getRange("F9").values[0][0], 10000);
+  assert.deepEqual(assetDepreciationRoundTrip.worksheets.getItem("Checks").getRange("E4:E9").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
 
   const { createScatterWorkbook } = await import(
     "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-scatter-chart-workflow.mjs"

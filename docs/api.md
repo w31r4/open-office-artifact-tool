@@ -2381,6 +2381,8 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.DATEVALUE` | formula | Convert deterministic ISO or English month-name date text to a serial in the workbook's 1900 or 1904 date system; ambiguous locale-numeric dates return #VALUE!. |
 | `fx.DAY` | formula | Return the day component of a serial in the workbook's date system, including 1900 compatibility serial 60. |
 | `fx.DAYS` | formula | Return the whole-day difference between two Excel date serials. |
+| `fx.DB` | formula | Calculate one fixed-declining-balance depreciation period with an optional first-year month count. |
+| `fx.DDB` | formula | Calculate one double-declining-balance depreciation period with an optional positive factor. |
 | `fx.DROP` | formula | Drop rows and optional columns from the start or end of an array and spill the remainder. |
 | `fx.EDATE` | formula | Shift a serial date by whole months and clamp the day to the target month end. |
 | `fx.EOMONTH` | formula | Return the final date serial of a month offset from a start date. |
@@ -2431,6 +2433,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.ROUNDUP` | formula | Round a numeric value away from zero at the requested positive or negative digit position. |
 | `fx.SECOND` | formula | Return the 0 through 59 second component from a nonnegative serial or supported time text. |
 | `fx.SEQUENCE` | formula | Return a dynamic array sequence that spills into neighboring cells in the clean-room formula engine. |
+| `fx.SLN` | formula | Calculate straight-line depreciation from cost, salvage value, and useful life. |
 | `fx.SMALL` | formula | Return the k-th smallest numeric value in an array or range. |
 | `fx.SORT` | formula | Sort a range by a 1-based column index and spill the sorted rows. |
 | `fx.SUM` | formula | Sum numeric values across arguments and ranges. |
@@ -2831,6 +2834,50 @@ Return the whole-day difference between two Excel date serials.
 **Schema returns:**
 
 - `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.DB`
+
+Calculate one fixed-declining-balance depreciation period with an optional first-year month count.
+
+**Examples:**
+
+- =DB(B1,B2,B3,A2)
+- =DB(B1,B2,B3,A2,6)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =DB(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+**Notes:**
+
+- The bounded evaluator requires nonnegative cost and salvage, salvage no greater than cost, integer life and period from 1 through 9,999, and an integer month from 1 through 12. A partial first year permits one prorated final period; the native three-decimal declining rate is not silently switched to straight-line.
+
+#### `fx.DDB`
+
+Calculate one double-declining-balance depreciation period with an optional positive factor.
+
+**Examples:**
+
+- =DDB(B1,B2,B3,A2)
+- =DDB(B1,B2,B3,A2,1.5)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =DDB(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+**Notes:**
+
+- The bounded evaluator requires nonnegative cost and salvage, salvage no greater than cost, and integer life and period from 1 through 9,999. The factor defaults to 2, must be positive, and depreciation is capped at the remaining amount above salvage without a silent straight-line switch.
 
 #### `fx.DROP`
 
@@ -3711,6 +3758,27 @@ Return a dynamic array sequence that spills into neighboring cells in the clean-
 **Schema returns:**
 
 - `value` (unknown[][]) — Spilled two-dimensional formula result.
+
+#### `fx.SLN`
+
+Calculate straight-line depreciation from cost, salvage value, and useful life.
+
+**Examples:**
+
+- =SLN(B1,B2,B3)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =SLN(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+**Notes:**
+
+- The evaluator accepts finite numeric inputs and returns #DIV/0! for zero life rather than coercing a rate. This is the direct per-period expense, not a declining-balance schedule.
 
 #### `fx.SMALL`
 

@@ -98,6 +98,17 @@ try {
   assert.deepEqual(fixtureLoanChecks.getRange("E2:E8").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
   assert.equal(fixtureLoanChecks.conditionalFormattings.items.length, 2);
 
+  const assetFixture = await runFixture("asset-depreciation");
+  const assetFixtureWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(assetFixture.workbookPath));
+  const fixtureDepreciation = assetFixtureWorkbook.worksheets.getItem("Depreciation");
+  const fixtureAssetChecks = assetFixtureWorkbook.worksheets.getItem("Checks");
+  assert.deepEqual(fixtureDepreciation.getRange("C2:E2").values, [[18000, 36900, 40000]]);
+  assert.equal(fixtureDepreciation.getRange("D2").formulas[0][0], "=DB('Inputs'!$B$2,'Inputs'!$B$3,'Inputs'!$B$4,A2,'Inputs'!$B$5)");
+  assert.equal(fixtureDepreciation.getRange("E2").formulas[0][0], "=DDB('Inputs'!$B$2,'Inputs'!$B$3,'Inputs'!$B$4,A2,'Inputs'!$B$6)");
+  assert.equal(fixtureDepreciation.getRange("F6").values[0][0], 10000);
+  assert.deepEqual(fixtureAssetChecks.getRange("E2:E7").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
+  assert.equal(fixtureAssetChecks.conditionalFormattings.items.length, 2);
+
   const basicResult = await runFixture("open-chestnut-basic");
   const basicWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(basicResult.workbookPath));
   const dashboard = basicWorkbook.worksheets.getItem("Dashboard");
@@ -194,6 +205,34 @@ try {
   if (nativeSpreadsheetRenderStatus().available) {
     assert.equal(loanAmortizationQa.summary.nativeRender.status, "passed");
     assert.equal(loanAmortizationQa.summary.nativeRender.ok, true);
+  }
+
+  const { createAssetDepreciationWorkbook } = await import(
+    "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-asset-depreciation-workflow.mjs"
+  );
+  const assetDepreciationPath = path.join(outputDir, "openchestnut-asset-depreciation-workflow.xlsx");
+  const assetDepreciationResult = await createAssetDepreciationWorkbook(assetDepreciationPath);
+  assert.equal(assetDepreciationResult.verification.ok, true);
+  assert.match(assetDepreciationResult.inspection.ndjson, /SLN/);
+  assert.match(assetDepreciationResult.inspection.ndjson, /DDB/);
+  const assetDepreciationWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(assetDepreciationPath));
+  assetDepreciationWorkbook.recalculate();
+  const assetDepreciation = assetDepreciationWorkbook.worksheets.getItem("Depreciation");
+  const assetDepreciationChecks = assetDepreciationWorkbook.worksheets.getItem("Checks");
+  assert.equal(assetDepreciation.getRange("D5").formulas[0][0], "=DB('Inputs'!$B$5,'Inputs'!$B$6,'Inputs'!$B$7,A5,'Inputs'!$B$8)");
+  assert.equal(assetDepreciation.getRange("E5").formulas[0][0], "=DDB('Inputs'!$B$5,'Inputs'!$B$6,'Inputs'!$B$7,A5,'Inputs'!$B$9)");
+  assert.equal(assetDepreciation.getRange("F9").values[0][0], 10000);
+  assert.deepEqual(assetDepreciationChecks.getRange("E4:E9").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
+  const assetDepreciationQa = await verifyWorkbookFile(assetDepreciationPath, {
+    outputDir: path.join(outputDir, "openchestnut-asset-depreciation-native-qa"),
+    sheetName: "Depreciation",
+    renderFormat: "svg",
+    nativeRender: "auto",
+    allSheets: true,
+  });
+  if (nativeSpreadsheetRenderStatus().available) {
+    assert.equal(assetDepreciationQa.summary.nativeRender.status, "passed");
+    assert.equal(assetDepreciationQa.summary.nativeRender.ok, true);
   }
 
   const { createScatterWorkbook } = await import(
