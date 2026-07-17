@@ -136,7 +136,10 @@ compatible host refreshes fields:
 ```js
 const caption = document.addParagraph("", { styleId: "Caption" });
 caption.addRun("Figure ");
-caption.addField("SEQ Figure \\* ARABIC", "0", { style: { bold: true } });
+caption.addField("SEQ Figure \\* ARABIC", "0", {
+  bookmarkName: "fig1",
+  style: { bold: true },
+});
 caption.addRun(": Revenue. See figure ");
 caption.addField("REF fig1 \\h", "0");
 caption.addRun(" on page ");
@@ -145,18 +148,19 @@ caption.addRun(".");
 ```
 
 OpenChestnut writes each logical field run as the canonical five-run native
-`begin` / `instrText` / `separate` / cached-result / `end` graph. It imports
-that exact profile back into one `run.inlineField` object. Source-free authoring
+`begin` / `instrText` / `separate` / cached-result / `end` graph. For a `SEQ`
+run, `bookmarkName` inserts a paired Word bookmark around only the cached
+result. OpenChestnut imports that exact profile back into one `run.inlineField`
+object. Source-free authoring
 accepts only `SEQ <label> \\* ARABIC`, `REF <bookmark> \\h`, and `PAGEREF
 <bookmark> \\h`, with bounded Word-compatible names. On an imported paragraph,
-ordinary text and cached field results may change, but field positions and
-instructions are source-bound.
+ordinary text and cached field results may change, but field positions,
+instructions, bookmark names, and native bookmark IDs are source-bound.
 
-This slice does not create a bookmark around only the caption-number result.
-Use `tasks/captions_crossrefs.md` and its explicit package helper when the task
-needs that exact caption-target topology or deterministic SEQ/REF
-materialization. Never claim a cached result is current without host refresh or
-materialization plus render review.
+Use `tasks/captions_crossrefs.md` for the full workflow. Its explicit package
+helper remains useful for bulk caption discovery/insertion and deterministic
+SEQ/REF materialization. Never claim a cached result is current without host
+refresh or materialization plus render review.
 
 ## Bibliography-backed citations
 

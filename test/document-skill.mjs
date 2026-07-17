@@ -174,6 +174,8 @@ try {
     "REF fig1 \\h",
     "PAGEREF fig1 \\h",
   ]);
+  assert.equal(inlineFieldParagraph?.runs.find((run) => run.inlineField?.instruction.startsWith("SEQ "))?.inlineField.bookmarkName, "fig1");
+  assert.equal(inlineFieldParagraph?.runs.find((run) => run.inlineField?.instruction.startsWith("SEQ "))?.inlineField.bookmarkNativeId, 0);
   assert.equal(inlineFields.qa.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
   const inlineFieldZip = await JSZip.loadAsync(await fs.readFile(inlineFields.docxPath));
   const inlineFieldXml = await inlineFieldZip.file("word/document.xml").async("text");
@@ -183,6 +185,10 @@ try {
   assert.match(inlineFieldXml, /SEQ Figure \\[*] ARABIC/);
   assert.match(inlineFieldXml, /REF fig1 \\h/);
   assert.match(inlineFieldXml, /PAGEREF fig1 \\h/);
+  const inlineBookmarkStart = inlineFieldXml.indexOf('w:name="fig1"');
+  const inlineBookmarkResult = inlineFieldXml.indexOf("<w:t>1</w:t>", inlineBookmarkStart);
+  const inlineBookmarkEnd = inlineFieldXml.indexOf("<w:bookmarkEnd", inlineBookmarkStart);
+  assert.ok(inlineBookmarkStart >= 0 && inlineBookmarkResult > inlineBookmarkStart && inlineBookmarkEnd > inlineBookmarkResult, "Caption-number bookmark must wrap only the SEQ cached-result run.");
 
   const classicFixture = await runFixture("package-comments");
   const classicDocument = await DocumentFile.importDocx(await FileBlob.load(classicFixture.docxPath));

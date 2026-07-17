@@ -2029,12 +2029,16 @@ message DocumentRun {
   // One logical inline Word field represented by the public run's text as its
   // cached display result. OpenChestnut authors/imports a canonical five-run
   // begin/instrText/separate/result/end graph for bounded SEQ/REF/PAGEREF
-  // commands; field position and instruction stay source-bound after import.
+  // commands. A SEQ result may additionally carry one narrow native bookmark
+  // around only the cached-result run; field position, instruction, and that
+  // bookmark identity stay source-bound after import.
   DocumentInlineField inline_field = 8;
 }
 
 message DocumentInlineField {
   string instruction = 1;
+  string bookmark_name = 2;
+  string bookmark_native_id = 3;
 }
 
 message DocumentTextContentControl {

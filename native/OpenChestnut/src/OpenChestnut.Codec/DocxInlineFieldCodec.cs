@@ -6,8 +6,9 @@ using W = DocumentFormat.OpenXml.Wordprocessing;
 namespace OpenChestnut.Codec;
 
 // Owns one bounded logical inline field encoded as five consecutive physical
-// runs: begin, instrText, separate, cached-result, end. The logical run's Text
-// is the cached result; its InlineField carries the canonical instruction.
+// runs: begin, instrText, separate, cached-result, end. A SEQ field may wrap
+// only its cached result in one bookmarkStart/bookmarkEnd pair. The logical
+// run's Text is the cached result; its InlineField carries both identities.
 internal static class DocxInlineFieldCodec
 {
     private static readonly Regex CanonicalInstruction = new(
@@ -25,10 +26,37 @@ internal static class DocxInlineFieldCodec
         if (start < 0 || start + 5 > children.Count ||
             children[start] is not W.Run beginRun ||
             children[start + 1] is not W.Run instructionRun ||
-            children[start + 2] is not W.Run separateRun ||
-            children[start + 3] is not W.Run resultRun ||
-            children[start + 4] is not W.Run endRun)
+            children[start + 2] is not W.Run separateRun)
             return false;
+        var bookmarkName = string.Empty;
+        var bookmarkNativeId = string.Empty;
+        W.Run resultRun;
+        W.Run endRun;
+        if (start + 7 <= children.Count &&
+            children[start + 3] is W.BookmarkStart bookmarkStart &&
+            children[start + 4] is W.Run bookmarkedResultRun &&
+            children[start + 5] is W.BookmarkEnd bookmarkEnd &&
+            children[start + 6] is W.Run bookmarkedEndRun)
+        {
+            bookmarkName = bookmarkStart.Name?.Value ?? string.Empty;
+            bookmarkNativeId = bookmarkStart.Id?.Value ?? string.Empty;
+            if (!DocxBookmarkCodec.ValidName(bookmarkName) ||
+                !uint.TryParse(bookmarkNativeId, out _) ||
+                bookmarkEnd.Id?.Value != bookmarkNativeId)
+                return false;
+            resultRun = bookmarkedResultRun;
+            endRun = bookmarkedEndRun;
+            consumed = 7;
+        }
+        else
+        {
+            if (children[start + 3] is not W.Run plainResultRun ||
+                children[start + 4] is not W.Run plainEndRun)
+                return false;
+            resultRun = plainResultRun;
+            endRun = plainEndRun;
+            consumed = 5;
+        }
         if (!SingleFieldChar(beginRun, W.FieldCharValues.Begin) ||
             !SingleFieldCode(instructionRun, out var instruction) ||
             !SingleFieldChar(separateRun, W.FieldCharValues.Separate) ||
@@ -38,22 +66,35 @@ internal static class DocxInlineFieldCodec
             return false;
 
         run = DocxCodec.ReadRun(resultRun);
-        run.InlineField = new DocumentInlineField { Instruction = instruction.Trim() };
-        consumed = 5;
+        run.InlineField = new DocumentInlineField
+        {
+            Instruction = instruction.Trim(),
+            BookmarkName = bookmarkName,
+            BookmarkNativeId = bookmarkNativeId,
+        };
         return true;
     }
 
-    internal static IReadOnlyList<W.Run> Build(DocumentRun source)
+    internal static IReadOnlyList<OpenXmlElement> Build(DocumentRun source)
     {
         Validate(source);
-        return
-        [
+        var elements = new List<OpenXmlElement>
+        {
             new W.Run(new W.FieldChar { FieldCharType = W.FieldCharValues.Begin }),
             new W.Run(new W.FieldCode($" {source.InlineField.Instruction} ") { Space = SpaceProcessingModeValues.Preserve }),
-            new W.Run(new W.FieldChar { FieldCharType = W.FieldCharValues.Separate }),
-            DocxCodec.BuildRun(source),
-            new W.Run(new W.FieldChar { FieldCharType = W.FieldCharValues.End }),
-        ];
+            new W.Run(new W.FieldChar { FieldCharType = W.FieldCharValues.Separate })
+        };
+        if (source.InlineField.BookmarkName.Length > 0)
+            elements.Add(new W.BookmarkStart
+            {
+                Name = source.InlineField.BookmarkName,
+                Id = source.InlineField.BookmarkNativeId,
+            });
+        elements.Add(DocxCodec.BuildRun(source));
+        if (source.InlineField.BookmarkName.Length > 0)
+            elements.Add(new W.BookmarkEnd { Id = source.InlineField.BookmarkNativeId });
+        elements.Add(new W.Run(new W.FieldChar { FieldCharType = W.FieldCharValues.End }));
+        return elements;
     }
 
     internal static void Validate(DocumentRun source)
@@ -64,6 +105,16 @@ internal static class DocxInlineFieldCodec
                 "Document inline field must be canonical SEQ <label> \\* ARABIC, REF <bookmark> \\h, or PAGEREF <bookmark> \\h.");
         if (source.TextContentControl is not null)
             throw new CodecException("invalid_document_inline_field", "Document run cannot combine an inline field and a text content control.");
+        if (source.InlineField.BookmarkName.Length > 0)
+        {
+            if (!source.InlineField.Instruction.TrimStart().StartsWith("SEQ ", StringComparison.Ordinal))
+                throw new CodecException("invalid_document_inline_field", "Only a canonical SEQ inline field may carry a cached-result bookmark.");
+            if (!DocxBookmarkCodec.ValidName(source.InlineField.BookmarkName) ||
+                !uint.TryParse(source.InlineField.BookmarkNativeId, out _))
+                throw new CodecException("invalid_document_inline_field", "Document inline field bookmark requires a valid name and planned unsigned native ID.");
+        }
+        else if (source.InlineField.BookmarkNativeId.Length > 0)
+            throw new CodecException("invalid_document_inline_field", "Document inline field bookmark native ID requires a bookmark name.");
         if (source.Text.Length > 1_000_000)
             throw new CodecException("invalid_document_inline_field", "Document inline field cached display exceeds 1,000,000 characters.");
     }
@@ -84,7 +135,7 @@ internal static class DocxInlineFieldCodec
     private static IEnumerable<string> Topology(DocumentParagraph paragraph) =>
         paragraph.Runs.Select((run, index) => (run, index))
             .Where(item => item.run.InlineField is not null)
-            .Select(item => $"{item.index}:{item.run.InlineField.Instruction.Trim()}");
+            .Select(item => $"{item.index}:{item.run.InlineField.Instruction.Trim()}:{item.run.InlineField.BookmarkName}:{item.run.InlineField.BookmarkNativeId}");
 
     private static bool IsCanonical(string value) =>
         !string.IsNullOrWhiteSpace(value) &&

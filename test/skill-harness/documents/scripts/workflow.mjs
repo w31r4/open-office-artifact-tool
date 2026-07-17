@@ -251,6 +251,7 @@ export async function runDocumentFixture(fixturePath, options = {}) {
           const run = paragraph.runs[Number(change.index)];
           assert.ok(run, `Missing source-bound paragraph run ${change.index}.`);
           if (Object.prototype.hasOwnProperty.call(change, "expectInstruction")) assert.equal(run.inlineField?.instruction, change.expectInstruction);
+          if (Object.prototype.hasOwnProperty.call(change, "expectBookmarkName")) assert.equal(run.inlineField?.bookmarkName, change.expectBookmarkName);
           if (Object.prototype.hasOwnProperty.call(change, "text")) run.text = String(change.text);
         }
         paragraph.text = paragraph.runs.map((run) => String(run.text || "")).join("");

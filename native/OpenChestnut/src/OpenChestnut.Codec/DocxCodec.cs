@@ -86,7 +86,10 @@ internal static class DocxCodec
     internal static DocxExportResult Export(ArtifactEnvelope envelope, EffectiveCodecLimits limits)
     {
         if (envelope.PayloadCase == ArtifactEnvelope.PayloadOneofCase.Document)
+        {
             DocxTextContentControlCodec.AssignNativeIds(envelope.Document);
+            DocxBookmarkCodec.AssignNativeIds(envelope.Document);
+        }
         var requiresSourcePreservation =
             envelope.ProtocolVersion == CodecProtocol.ProtocolVersion &&
             envelope.Family == ArtifactFamily.Document &&
@@ -116,7 +119,7 @@ internal static class DocxCodec
             var context = new DocxPartContext(
                 mainPart,
                 imageAssets,
-                envelope.Document.Bookmarks.Select(bookmark => bookmark.Name),
+                DocxBookmarkCodec.Names(envelope.Document),
                 envelope.Document.Bibliography?.Sources.Select(source => source.Tag));
             var headerFooterPlan = DocxHeaderFooterCodec.Author(mainPart, envelope.Document);
             var body = new W.Body();

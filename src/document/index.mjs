@@ -163,7 +163,16 @@ function normalizeDocumentInlineField(value) {
   if (!source || typeof source !== "object") throw new TypeError("Document inline field must be an instruction string or object.");
   const instruction = String(source.instruction ?? source.code ?? "").trim();
   if (!instruction) throw new TypeError("Document inline field requires a non-empty instruction.");
-  return { instruction };
+  const bookmarkName = String(source.bookmarkName ?? source.bookmark ?? "").trim();
+  const bookmarkNativeId = source.bookmarkNativeId == null ? undefined : Number(source.bookmarkNativeId);
+  if (bookmarkNativeId !== undefined && (!Number.isInteger(bookmarkNativeId) || bookmarkNativeId < 0 || bookmarkNativeId > 0xffffffff)) {
+    throw new TypeError("Document inline field bookmarkNativeId must be an unsigned 32-bit integer.");
+  }
+  return {
+    instruction,
+    ...(bookmarkName ? { bookmarkName } : {}),
+    ...(bookmarkNativeId !== undefined ? { bookmarkNativeId } : {}),
+  };
 }
 
 function normalizeDocumentRun(run = {}, theme = {}) {
@@ -210,7 +219,16 @@ class DocumentParagraphBlock {
   _syncText() { this.text = this.runs.map((run) => String(run.text ?? "")).join(""); return this.text; }
   addRun(text, config = {}) { const run = normalizeDocumentRun({ ...config, text }, this.document.theme); this.runs.push(run); this._syncText(); return run; }
   addTextContentControl(text, config = {}) { return this.addRun(text, { ...config, contentControl: config.contentControl || config }); }
-  addField(instruction, display = "0", config = {}) { return this.addRun(display, { ...config, inlineField: { instruction } }); }
+  addField(instruction, display = "0", config = {}) {
+    return this.addRun(display, {
+      ...config,
+      inlineField: {
+        instruction,
+        bookmarkName: config.bookmarkName ?? config.bookmark,
+        bookmarkNativeId: config.bookmarkNativeId,
+      },
+    });
+  }
   inspectRecord(index) { return { kind: "paragraph", id: this.id, index, name: this.name || undefined, styleId: this.styleId, paragraphFormat: Object.keys(this.paragraphFormat).length ? this.paragraphFormat : undefined, text: this.text, textChars: this.text.length, runs: documentRunsNeedSerialization(this.runs) ? this.runs : undefined }; }
   toProto() { return { kind: "paragraph", id: this.id, name: this.name, styleId: this.styleId, paragraphFormat: Object.keys(this.paragraphFormat).length ? this.paragraphFormat : undefined, text: this.text, runs: documentRunsNeedSerialization(this.runs) ? this.runs : undefined }; }
 }
@@ -887,10 +905,20 @@ export class DocumentModel {
       if (control.nativeId !== undefined) nativeContentControlIds.add(control.nativeId);
     }
     const bookmarkByName = new Map();
+    const bookmarkNativeIds = new Set();
+    const registerBookmarkIdentity = (name, id, nativeId) => {
+      const key = String(name || "").toLowerCase();
+      if (!/^[A-Za-z][A-Za-z0-9_]{0,39}$/.test(String(name || ""))) issues.push(verificationIssue("document", "invalidBookmarkName", `Bookmark ${id} name must start with an ASCII letter and contain only letters, digits, or underscores (maximum 40 characters).`, { id, name }));
+      if (bookmarkByName.has(key)) issues.push(verificationIssue("document", "duplicateBookmarkName", `Bookmark ${id} duplicates name ${name}.`, { id, name }));
+      else bookmarkByName.set(key, id);
+      if (nativeId !== undefined) {
+        if (!Number.isInteger(nativeId) || nativeId < 0 || nativeId > 0xffffffff) issues.push(verificationIssue("document", "invalidBookmarkNativeId", `Bookmark ${id} has invalid native ID ${nativeId}.`, { id, nativeId }));
+        else if (bookmarkNativeIds.has(nativeId)) issues.push(verificationIssue("document", "duplicateBookmarkNativeId", `Bookmark ${id} duplicates native ID ${nativeId}.`, { id, nativeId }));
+        bookmarkNativeIds.add(nativeId);
+      }
+    };
     for (const bookmark of this.bookmarks) {
-      if (!bookmark.name || bookmark.name.length > 40) issues.push(verificationIssue("document", "invalidBookmarkName", `Bookmark ${bookmark.id} name must contain 1 to 40 characters.`, { id: bookmark.id, name: bookmark.name }));
-      if (bookmarkByName.has(bookmark.name)) issues.push(verificationIssue("document", "duplicateBookmarkName", `Bookmark ${bookmark.id} duplicates name ${bookmark.name}.`, { id: bookmark.id, name: bookmark.name }));
-      else bookmarkByName.set(bookmark.name, bookmark);
+      registerBookmarkIdentity(bookmark.name, bookmark.id, bookmark.nativeId);
     }
     const bibliographyByTag = new Map();
     for (const source of this.bibliographySources) {
@@ -901,8 +929,13 @@ export class DocumentModel {
     }
     for (const block of this.blocks) {
       if (block.kind === "paragraph") {
-        for (const run of block.runs || []) {
+        for (const [runIndex, run] of (block.runs || []).entries()) {
           if (run.style?.runStyleId && !knownStyleIds.has(run.style.runStyleId)) issues.push(verificationIssue("document", "unknownRunStyle", `Paragraph ${block.id} references missing character style ${run.style.runStyleId}.`, { severity: "warning", id: block.id, runStyleId: run.style.runStyleId }));
+          if (run.inlineField?.bookmarkName || run.inlineField?.bookmarkNativeId !== undefined) {
+            const id = `${block.id}/run/${runIndex}/inline-field`;
+            registerBookmarkIdentity(run.inlineField.bookmarkName, id, run.inlineField.bookmarkNativeId);
+            if (!String(run.inlineField.instruction || "").startsWith("SEQ ")) issues.push(verificationIssue("document", "invalidInlineFieldBookmark", `Inline field ${id} may bookmark only a canonical SEQ cached result.`, { id, instruction: run.inlineField.instruction }));
+          }
         }
       }
       if (block.kind === "paragraph" && /^\s*([-*•]|\d+[.)])\s+/.test(block.text)) {
@@ -910,7 +943,7 @@ export class DocumentModel {
       }
       if (block.kind === "hyperlink" && block.anchor) {
         if (block.url) issues.push(verificationIssue("document", "ambiguousHyperlink", `Hyperlink ${block.id} cannot combine an external URL with an internal anchor.`, { id: block.id, url: block.url, anchor: block.anchor }));
-        if (!bookmarkByName.has(block.anchor)) issues.push(verificationIssue("document", "missingHyperlinkAnchor", `Hyperlink ${block.id} targets missing bookmark ${block.anchor}.`, { id: block.id, anchor: block.anchor }));
+        if (!bookmarkByName.has(String(block.anchor || "").toLowerCase())) issues.push(verificationIssue("document", "missingHyperlinkAnchor", `Hyperlink ${block.id} targets missing bookmark ${block.anchor}.`, { id: block.id, anchor: block.anchor }));
         if (block.anchor.length > 255) issues.push(verificationIssue("document", "invalidHyperlinkAnchor", `Hyperlink ${block.id} anchor exceeds 255 characters.`, { id: block.id, anchor: block.anchor }));
       } else if (block.kind === "hyperlink" && !/^https?:\/\//.test(block.url)) {
         issues.push(verificationIssue("document", "invalidHyperlink", `Hyperlink ${block.id} is missing an absolute http(s) URL or internal bookmark anchor.`, { id: block.id, url: block.url }));
@@ -995,7 +1028,6 @@ export class DocumentModel {
       }
     }
     const blockIndexes = new Map(this.blocks.map((block, index) => [block.id, index]));
-    const bookmarkNativeIds = new Set();
     for (const bookmark of this.bookmarks) {
       const validateEndpoint = (endpoint, end = false) => {
         const blockId = documentBookmarkEndpointBlockId(endpoint);
@@ -1018,11 +1050,8 @@ export class DocumentModel {
       const startValid = validateEndpoint(bookmark.target, false);
       const endValid = validateEndpoint(bookmark.endTarget, true);
       if (startValid && endValid && compareDocumentBookmarkEndpoints(bookmark.target, bookmark.endTarget, blockIndexes) > 0) issues.push(verificationIssue("document", "reversedBookmarkRange", `Bookmark ${bookmark.id} ends before it starts.`, { id: bookmark.id, targetId: bookmark.targetId, endTargetId: bookmark.endTargetId }));
-      if (bookmark.nativeId !== undefined) {
-        if (!Number.isInteger(bookmark.nativeId) || bookmark.nativeId === -1) issues.push(verificationIssue("document", "invalidBookmarkNativeId", `Bookmark ${bookmark.id} has invalid native ID ${bookmark.nativeId}.`, { id: bookmark.id, nativeId: bookmark.nativeId }));
-        else if (bookmarkNativeIds.has(bookmark.nativeId)) issues.push(verificationIssue("document", "duplicateBookmarkNativeId", `Bookmark ${bookmark.id} duplicates native ID ${bookmark.nativeId}.`, { id: bookmark.id, nativeId: bookmark.nativeId }));
-        bookmarkNativeIds.add(bookmark.nativeId);
-      }
+      const targetBlock = this.blocks.find((block) => block.id === bookmark.targetId);
+      if (targetBlock?.kind === "paragraph" && targetBlock.runs.some((run) => run.inlineField?.bookmarkName)) issues.push(verificationIssue("document", "nestedBoundedBookmark", `Bookmark ${bookmark.id} cannot wrap paragraph ${targetBlock.id}, which already contains an inline-field bookmark.`, { id: bookmark.id, targetId: targetBlock.id }));
     }
     const finalSectionIndex = this.blocks.filter((block) => block.kind === "section").length;
     for (const block of [...this.headers, ...this.footers]) {

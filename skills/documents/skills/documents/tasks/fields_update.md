@@ -33,14 +33,16 @@ document.addTableOfContents({ levels: "1-3" });
 For canonical inline numbering and references, also prefer the public run path:
 
 ```js
-paragraph.addField("SEQ Figure \\* ARABIC", "0");
+paragraph.addField("SEQ Figure \\* ARABIC", "0", { bookmarkName: "fig1" });
 paragraph.addField("REF fig1 \\h", "0");
 paragraph.addField("PAGEREF fig1 \\h", "0");
 ```
 
-The second argument is only cached display text. After importing a canonical
-field paragraph, the cache and ordinary run text may change, but field position
-and instruction remain source-bound.
+The second argument is only cached display text. `bookmarkName` on a `SEQ`
+field wraps only that cached result, giving `REF`/`PAGEREF` a real caption
+target. After importing a canonical field paragraph, the cache and ordinary
+run text may change, but field position, instruction, and bookmark identity
+remain source-bound.
 
 This sets `document.settings.updateFields = true` and emits native
 `w:updateFields`. Treat it only as a host-refresh request. It never means the

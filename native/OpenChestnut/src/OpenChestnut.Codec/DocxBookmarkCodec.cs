@@ -13,6 +13,33 @@ namespace OpenChestnut.Codec;
 internal static class DocxBookmarkCodec
 {
     private sealed record CanonicalBookmark(string Name, string NativeId, uint BodyIndex, string BlockId);
+    private sealed record BookmarkIdentity(
+        string Description,
+        string Name,
+        string NativeId,
+        Action<string> AssignNativeId);
+
+    internal static IEnumerable<string> Names(DocumentArtifact document) =>
+        Identities(document).Select(identity => identity.Name);
+
+    internal static void AssignNativeIds(DocumentArtifact document)
+    {
+        var identities = Identities(document).ToArray();
+        ValidateIdentitySpace(identities, requireNativeIds: false);
+        var usedNativeIds = identities
+            .Where(identity => identity.NativeId.Length > 0)
+            .Select(identity => identity.NativeId)
+            .ToHashSet(StringComparer.Ordinal);
+        uint nextNativeId = 0;
+        foreach (var identity in identities.Where(identity => identity.NativeId.Length == 0))
+        {
+            while (usedNativeIds.Contains(nextNativeId.ToString())) nextNativeId++;
+            var nativeId = nextNativeId.ToString();
+            identity.AssignNativeId(nativeId);
+            usedNativeIds.Add(nativeId);
+            nextNativeId++;
+        }
+    }
 
     internal static void Read(
         W.Body body,
@@ -56,22 +83,10 @@ internal static class DocxBookmarkCodec
         var blockIndexes = document.Blocks
             .Select((block, index) => (block.Id, Index: index))
             .ToDictionary(item => item.Id, item => item.Index, StringComparer.Ordinal);
-        var usedNativeIds = new HashSet<string>(StringComparer.Ordinal);
-        uint nextNativeId = 0;
         foreach (var bookmark in document.Bookmarks)
         {
             var nativeId = bookmark.NativeId;
-            if (string.IsNullOrEmpty(nativeId))
-            {
-                while (usedNativeIds.Contains(nextNativeId.ToString())) nextNativeId++;
-                nativeId = nextNativeId.ToString();
-                usedNativeIds.Add(nativeId);
-                nextNativeId++;
-            }
-            else if (!usedNativeIds.Add(nativeId))
-            {
-                throw Invalid($"Document bookmark {bookmark.Id} duplicates native ID {nativeId}.");
-            }
+            if (string.IsNullOrEmpty(nativeId)) throw Invalid($"Document bookmark {bookmark.Id} is missing its planned native ID.");
 
             var element = body.ChildElements[blockIndexes[bookmark.TargetBlockId]];
             if (element is not W.Paragraph paragraph)
@@ -127,14 +142,11 @@ internal static class DocxBookmarkCodec
 
     internal static void Validate(DocumentArtifact document)
     {
+        ValidateIdentitySpace(Identities(document).ToArray(), requireNativeIds: true);
         var blocks = document.Blocks.ToDictionary(block => block.Id, StringComparer.Ordinal);
-        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var targets = new HashSet<string>(StringComparer.Ordinal);
         foreach (var bookmark in document.Bookmarks)
         {
-            if (!ValidName(bookmark.Name))
-                throw Invalid($"Document bookmark {bookmark.Id} name must start with an ASCII letter and contain only letters, digits, or underscores (maximum 40 characters).");
-            if (!names.Add(bookmark.Name)) throw Invalid($"Document bookmark name {bookmark.Name} is duplicated.");
             if (string.IsNullOrWhiteSpace(bookmark.TargetBlockId) ||
                 !bookmark.TargetBlockId.Equals(bookmark.EndTargetBlockId, StringComparison.Ordinal))
                 throw Invalid($"Document bookmark {bookmark.Id} must wrap exactly one block in protocol 2.");
@@ -142,10 +154,59 @@ internal static class DocxBookmarkCodec
                 throw Invalid($"Document bookmark target {bookmark.TargetBlockId} already has a bounded bookmark.");
             if (!blocks.TryGetValue(bookmark.TargetBlockId, out var block) || !IsParagraphLike(block))
                 throw Invalid($"Document bookmark {bookmark.Id} target must be a paragraph, hyperlink, field, citation, tracked change, or image block.");
-            if (bookmark.NativeId.Length > 0 && !uint.TryParse(bookmark.NativeId, out _))
-                throw Invalid($"Document bookmark {bookmark.Id} native ID must be an unsigned decimal integer when present.");
+            if (block.ContentCase == DocumentBlock.ContentOneofCase.Paragraph &&
+                block.Paragraph.Runs.Any(run => run.InlineField?.BookmarkName.Length > 0))
+                throw Invalid($"Document bookmark {bookmark.Id} cannot wrap a paragraph that already contains a bounded inline-field bookmark.");
             if (bookmark.Source is not null && bookmark.Source.Editable)
                 throw Invalid($"Imported document bookmark {bookmark.Id} cannot claim editable source topology in protocol 2.");
+        }
+    }
+
+    private static IEnumerable<BookmarkIdentity> Identities(DocumentArtifact document)
+    {
+        foreach (var bookmark in document.Bookmarks)
+        {
+            var captured = bookmark;
+            yield return new BookmarkIdentity(
+                $"Document bookmark {captured.Id}",
+                captured.Name,
+                captured.NativeId,
+                value => captured.NativeId = value);
+        }
+        foreach (var block in document.Blocks.Where(block => block.ContentCase == DocumentBlock.ContentOneofCase.Paragraph))
+        {
+            for (var runIndex = 0; runIndex < block.Paragraph.Runs.Count; runIndex++)
+            {
+                var field = block.Paragraph.Runs[runIndex].InlineField;
+                if (field is null || field.BookmarkName.Length == 0 && field.BookmarkNativeId.Length == 0) continue;
+                var captured = field;
+                yield return new BookmarkIdentity(
+                    $"Document paragraph {block.Id} inline field {runIndex}",
+                    captured.BookmarkName,
+                    captured.BookmarkNativeId,
+                    value => captured.BookmarkNativeId = value);
+            }
+        }
+    }
+
+    private static void ValidateIdentitySpace(IReadOnlyList<BookmarkIdentity> identities, bool requireNativeIds)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var nativeIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var identity in identities)
+        {
+            if (!ValidName(identity.Name))
+                throw Invalid($"{identity.Description} name must start with an ASCII letter and contain only letters, digits, or underscores (maximum 40 characters).");
+            if (!names.Add(identity.Name)) throw Invalid($"Document bookmark name {identity.Name} is duplicated.");
+            if (identity.NativeId.Length == 0)
+            {
+                if (requireNativeIds) throw Invalid($"{identity.Description} is missing its planned native ID.");
+                continue;
+            }
+            if (!uint.TryParse(identity.NativeId, out _))
+                throw Invalid($"{identity.Description} native ID must be an unsigned decimal integer when present.");
+            if (!nativeIds.Add(identity.NativeId))
+                throw Invalid($"{identity.Description} duplicates native ID {identity.NativeId}.");
         }
     }
 
@@ -182,7 +243,7 @@ internal static class DocxBookmarkCodec
         DocumentBlock.ContentOneofCase.Change or
         DocumentBlock.ContentOneofCase.Image;
 
-    private static bool ValidName(string value) =>
+    internal static bool ValidName(string value) =>
         value.Length is >= 1 and <= 40 &&
         ((value[0] is >= 'A' and <= 'Z') || (value[0] is >= 'a' and <= 'z')) &&
         value.All(character =>

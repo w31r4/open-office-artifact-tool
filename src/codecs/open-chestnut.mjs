@@ -1655,6 +1655,17 @@ function documentRun(run, blockId, contentControlNativeId) {
     throw new OpenChestnutCodecError(`Document block ${blockId} inline field must be canonical SEQ <label> \\* ARABIC, REF <bookmark> \\h, or PAGEREF <bookmark> \\h.`, [], { code: "invalid_document_inline_field" });
   }
   if (run.contentControl && inlineInstruction !== undefined) throw new OpenChestnutCodecError(`Document block ${blockId} run cannot combine a content control and an inline field.`, [], { code: "invalid_document_inline_field" });
+  const bookmarkName = inlineInstruction === undefined ? "" : String(run.inlineField?.bookmarkName || "").trim();
+  let bookmarkNativeId = "";
+  if (run.inlineField?.bookmarkNativeId !== undefined) {
+    const value = Number(run.inlineField.bookmarkNativeId);
+    if (!Number.isInteger(value) || value < 0 || value > 0xffffffff) throw new OpenChestnutCodecError(`Document block ${blockId} inline field bookmarkNativeId must be an unsigned 32-bit integer.`, [], { code: "invalid_document_inline_field" });
+    bookmarkNativeId = String(value);
+  }
+  if (bookmarkName && (!/^[A-Za-z][A-Za-z0-9_]{0,39}$/.test(bookmarkName) || !inlineInstruction.startsWith("SEQ "))) {
+    throw new OpenChestnutCodecError(`Document block ${blockId} may bookmark only a canonical SEQ cached result with a valid Word bookmark name.`, [], { code: "invalid_document_inline_field" });
+  }
+  if (!bookmarkName && bookmarkNativeId) throw new OpenChestnutCodecError(`Document block ${blockId} inline field bookmarkNativeId requires bookmarkName.`, [], { code: "invalid_document_inline_field" });
   return {
     text: String(run.text ?? ""),
     styleId: style.runStyleId || "",
@@ -1663,7 +1674,7 @@ function documentRun(run, blockId, contentControlNativeId) {
     underline: style.underline === true || style.underline === "single",
     formatting,
     textContentControl: run.contentControl ? wireDocumentTextContentControl(run.contentControl, contentControlNativeId, blockId) : undefined,
-    inlineField: inlineInstruction === undefined ? undefined : { instruction: inlineInstruction },
+    inlineField: inlineInstruction === undefined ? undefined : { instruction: inlineInstruction, bookmarkName, bookmarkNativeId },
   };
 }
 
@@ -1685,7 +1696,12 @@ function assertDocumentContentControlTopology(block, original) {
 function documentInlineFieldTopology(runs = []) {
   return runs.flatMap((run, index) => {
     const field = run.inlineField || run.field;
-    return field ? [{ index, instruction: String(field.instruction || "").trim() }] : [];
+    return field ? [{
+      index,
+      instruction: String(field.instruction || "").trim(),
+      bookmarkName: String(field.bookmarkName || ""),
+      bookmarkNativeId: field.bookmarkNativeId === undefined || field.bookmarkNativeId === "" ? undefined : Number(field.bookmarkNativeId),
+    }] : [];
   });
 }
 
@@ -2810,7 +2826,11 @@ function documentFromEnvelope(envelope) {
               alias: run.textContentControl.alias,
               nativeId: run.textContentControl.nativeId,
             } } : {}),
-            ...(run.inlineField ? { inlineField: { instruction: run.inlineField.instruction } } : {}),
+            ...(run.inlineField ? { inlineField: {
+              instruction: run.inlineField.instruction,
+              ...(run.inlineField.bookmarkName ? { bookmarkName: run.inlineField.bookmarkName } : {}),
+              ...(run.inlineField.bookmarkNativeId !== "" ? { bookmarkNativeId: Number(run.inlineField.bookmarkNativeId) } : {}),
+            } } : {}),
           })) : undefined,
         };
       case "table":

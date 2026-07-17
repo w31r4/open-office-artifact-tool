@@ -429,7 +429,7 @@ Then inspect the generated `page-<N>.png` files.
 - If you need **forms / content controls (SDTs)**: use the public API for inline plain-text controls, then follow `tasks/forms_content_controls.md` for import, strict tag filling, advanced package routes, and fail-closed boundaries
 - If you need **bibliography-backed citations**: use `document.addBibliographySource(...)` and `document.addCitation(...)` for the canonical source catalog plus whole-paragraph `CITATION` profile; keep imported source order/tags and citation tags fixed
 - If you need a **native Table of Contents field** in a new or canonical document: use `document.addTableOfContents(...)`, preserve the resulting `settings.updateFields` refresh hint, then follow `tasks/toc_workflow.md` for host refresh and page-level verification
-- If you need **inline numbering/cross-reference fields** in a new or canonical paragraph: use `paragraph.addField(...)`, then follow `tasks/captions_crossrefs.md`; use the explicit package helper only when the task requires a bookmark wrapped around the caption number or deterministic materialization
+- If you need **inline numbering/cross-reference fields** in a new or canonical paragraph: use `paragraph.addField(...)`, including `bookmarkName` on a `SEQ` field when `REF`/`PAGEREF` must target only the caption number, then follow `tasks/captions_crossrefs.md`; use the explicit package helper for bulk insertion or deterministic materialization
 - If you need **redaction/anonymization**: `tasks/redaction_anonymization.md`
 - If the task is **verification/raster review**: `tasks/verify_render.md`
 - If your render looks wrong but content is right (stale fields): `tasks/fields_update.md`

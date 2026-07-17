@@ -16,7 +16,7 @@ run primitive first:
 ```js
 const caption = document.addParagraph("", { styleId: "Caption" });
 caption.addRun("Figure ");
-caption.addField("SEQ Figure \\* ARABIC", "0");
+caption.addField("SEQ Figure \\* ARABIC", "0", { bookmarkName: "fig1" });
 caption.addRun(": Revenue by category");
 
 const reference = document.addParagraph("See figure ");
@@ -25,12 +25,15 @@ reference.addRun(" for details.");
 ```
 
 `paragraph.addField(...)` authors/imports canonical inline `SEQ`, `REF`, and
-`PAGEREF` five-run fields. Imported field positions and instructions are
-source-bound; cached display text and ordinary runs are editable.
+`PAGEREF` five-run fields. A `SEQ` field may set `bookmarkName` to wrap only
+its cached-result run in a native Word bookmark, so `REF`/`PAGEREF` can target
+the caption number. Imported field positions, instructions, bookmark name, and
+native bookmark ID are source-bound; cached display text and ordinary runs are
+editable.
 
-The public slice does not yet wrap a bookmark around only the caption-number
-result or materialize counters. For those explicit advanced needs this bundle
-uses OOXML-level helpers:
+The public slice does not calculate field results. For deterministic counters
+or bulk discovery/insertion into an existing package, this bundle keeps
+explicit OOXML-level helpers:
 - `scripts/captions_and_crossrefs.py` — insert caption paragraphs + optional bookmarks around the caption number
 - `scripts/insert_ref_fields.py` — replace `[[REF:bookmark]]` markers with real `REF` fields
 - `scripts/fields_materialize.py` — materialize `SEQ/REF` *display text* so headless renders show the correct numbers
@@ -48,7 +51,7 @@ A human can still open the document later and update fields, but for automation 
 
 ## Workflow
 
-### 1) Add captions and number-only bookmarks when the public slice is insufficient
+### 1) Bulk-add captions and number-only bookmarks to an existing package
 This adds captions for tables and/or figures that don't already have a `Caption` paragraph immediately after them.
 
 ```bash

@@ -435,17 +435,20 @@ assert.throws(() => tocDocument.addTableOfContents({ levels: "4-2" }), /ascendin
 const inlineFieldDocument = DocumentModel.create({ name: "Inline fields", blocks: [] });
 const inlineFieldParagraph = inlineFieldDocument.addParagraph("", { name: "inline-field-caption", styleId: "Caption" });
 inlineFieldParagraph.addRun("Figure ");
-inlineFieldParagraph.addField("SEQ Figure \\* ARABIC", "0", { style: { bold: true } });
+inlineFieldParagraph.addField("SEQ Figure \\* ARABIC", "0", { bookmarkName: "fig1", style: { bold: true } });
 inlineFieldParagraph.addRun(": Revenue. See ");
 inlineFieldParagraph.addField("REF fig1 \\h", "0");
 inlineFieldParagraph.addRun(".");
 assert.equal(inlineFieldParagraph.text, "Figure 0: Revenue. See 0.");
 assert.equal(inlineFieldParagraph.runs[1].inlineField.instruction, "SEQ Figure \\* ARABIC");
+assert.equal(inlineFieldParagraph.runs[1].inlineField.bookmarkName, "fig1");
 const inlineFieldDocx = await DocumentFile.exportDocx(inlineFieldDocument);
 const importedInlineFieldDocument = await DocumentFile.importDocx(inlineFieldDocx);
 const importedInlineFieldParagraph = importedInlineFieldDocument.blocks[0];
 assert.equal(importedInlineFieldParagraph.runs.length, 5);
 assert.equal(importedInlineFieldParagraph.runs[1].inlineField.instruction, "SEQ Figure \\* ARABIC");
+assert.equal(importedInlineFieldParagraph.runs[1].inlineField.bookmarkName, "fig1");
+assert.equal(importedInlineFieldParagraph.runs[1].inlineField.bookmarkNativeId, 0);
 assert.equal(importedInlineFieldParagraph.runs[3].inlineField.instruction, "REF fig1 \\h");
 importedInlineFieldParagraph.runs[1].text = "1";
 importedInlineFieldParagraph.runs[2].text = ": Updated revenue. See ";
@@ -454,6 +457,13 @@ importedInlineFieldParagraph.text = importedInlineFieldParagraph.runs.map((run) 
 const editedInlineFieldDocx = await DocumentFile.exportDocx(importedInlineFieldDocument);
 const roundTripInlineFieldDocument = await DocumentFile.importDocx(editedInlineFieldDocx);
 assert.equal(roundTripInlineFieldDocument.blocks[0].text, "Figure 1: Updated revenue. See 1.");
+assert.equal(roundTripInlineFieldDocument.blocks[0].runs[1].inlineField.bookmarkName, "fig1");
+importedInlineFieldParagraph.runs[1].inlineField.bookmarkName = "fig2";
+await assert.rejects(
+  () => DocumentFile.exportDocx(importedInlineFieldDocument),
+  (error) => error?.code === "document_inline_field_topology_changed" && /source-bound/i.test(error.message),
+);
+importedInlineFieldParagraph.runs[1].inlineField.bookmarkName = "fig1";
 importedInlineFieldParagraph.runs[3].inlineField.instruction = "REF fig2 \\h";
 await assert.rejects(
   () => DocumentFile.exportDocx(importedInlineFieldDocument),
@@ -464,6 +474,20 @@ invalidInlineFieldDocument.addParagraph("", { runs: [{ text: "0", inlineField: {
 await assert.rejects(
   () => DocumentFile.exportDocx(invalidInlineFieldDocument),
   (error) => error?.code === "invalid_document_inline_field" && /canonical SEQ/i.test(error.message),
+);
+const invalidInlineBookmarkDocument = DocumentModel.create({ blocks: [] });
+invalidInlineBookmarkDocument.addParagraph("", { runs: [{ text: "0", inlineField: { instruction: "REF fig1 \\h", bookmarkName: "fig1" } }] });
+await assert.rejects(
+  () => DocumentFile.exportDocx(invalidInlineBookmarkDocument),
+  (error) => error?.code === "invalid_document_inline_field" && /bookmark only a canonical SEQ/i.test(error.message),
+);
+const duplicateInlineBookmarkDocument = DocumentModel.create({ blocks: [] });
+duplicateInlineBookmarkDocument.addParagraph("", { runs: [{ text: "0", inlineField: { instruction: "SEQ Figure \\* ARABIC", bookmarkName: "fig1" } }] });
+const duplicateBookmarkTarget = duplicateInlineBookmarkDocument.addParagraph("Target");
+duplicateInlineBookmarkDocument.addBookmark(duplicateBookmarkTarget, "FIG1");
+await assert.rejects(
+  () => DocumentFile.exportDocx(duplicateInlineBookmarkDocument),
+  (error) => error?.code === "invalid_document_bookmark" && /duplicated/i.test(error.message),
 );
 
 const invalidComplexField = DocumentModel.create({ blocks: [] });

@@ -108,7 +108,11 @@ public sealed class DocxCodecTests
         paragraph.Paragraph.Runs.Add(new DocumentRun
         {
             Text = "0",
-            InlineField = new DocumentInlineField { Instruction = "SEQ Figure \\* ARABIC" },
+            InlineField = new DocumentInlineField
+            {
+                Instruction = "SEQ Figure \\* ARABIC",
+                BookmarkName = "fig1",
+            },
             Formatting = new DocumentRunFormatting { Bold = true },
         });
         paragraph.Paragraph.Runs.Add(new DocumentRun { Text = ": Revenue. See " });
@@ -141,6 +145,13 @@ public sealed class DocxCodecTests
             Assert.Equal(
                 [" SEQ Figure \\* ARABIC ", " REF fig1 \\h "],
                 nativeParagraph.Descendants<W.FieldCode>().Select(code => code.Text).ToArray());
+            var children = nativeParagraph.ChildElements.ToArray();
+            var bookmarkStartIndex = Array.FindIndex(children, child => child is W.BookmarkStart);
+            var bookmarkEndIndex = Array.FindIndex(children, child => child is W.BookmarkEnd);
+            Assert.Equal("fig1", Assert.IsType<W.BookmarkStart>(children[bookmarkStartIndex]).Name!.Value);
+            Assert.Equal("0", Assert.IsType<W.BookmarkStart>(children[bookmarkStartIndex]).Id!.Value);
+            Assert.Equal(bookmarkStartIndex + 2, bookmarkEndIndex);
+            Assert.IsType<W.Run>(children[bookmarkStartIndex + 1]);
             Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(word));
         }
 
@@ -156,6 +167,8 @@ public sealed class DocxCodecTests
         Assert.True(importedBlock.Source.Editable);
         Assert.Equal(5, importedBlock.Paragraph.Runs.Count);
         Assert.Equal("SEQ Figure \\* ARABIC", importedBlock.Paragraph.Runs[1].InlineField.Instruction);
+        Assert.Equal("fig1", importedBlock.Paragraph.Runs[1].InlineField.BookmarkName);
+        Assert.Equal("0", importedBlock.Paragraph.Runs[1].InlineField.BookmarkNativeId);
         Assert.Equal("REF fig1 \\h", importedBlock.Paragraph.Runs[3].InlineField.Instruction);
 
         importedBlock.Paragraph.Runs[1].Text = "1";
@@ -178,7 +191,19 @@ public sealed class DocxCodecTests
             File = edited.File,
         });
         Assert.Equal("Figure 1: Updated revenue. See 1.", secondImport.Artifact.Document.Blocks[0].Paragraph.Text);
+        Assert.Equal("fig1", secondImport.Artifact.Document.Blocks[0].Paragraph.Runs[1].InlineField.BookmarkName);
 
+        importedBlock.Paragraph.Runs[1].InlineField.BookmarkName = "fig2";
+        var bookmarkTopologyRejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.False(bookmarkTopologyRejected.Ok);
+        Assert.Equal("document_inline_field_topology_changed", Assert.Single(bookmarkTopologyRejected.Diagnostics).Code);
+        importedBlock.Paragraph.Runs[1].InlineField.BookmarkName = "fig1";
         importedBlock.Paragraph.Runs[3].InlineField.Instruction = "REF fig2 \\h";
         var topologyRejected = Invoke(new CodecRequest
         {
