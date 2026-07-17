@@ -35,7 +35,7 @@ import {
 } from "./range-operations.mjs";
 import { createSpreadsheetSparklineClasses } from "./sparklines.mjs";
 import { formulaTimeParts, formulaTimeSerial, parseFormulaDateText, parseFormulaNumberText, parseFormulaTimeText } from "./formula-coercion.mjs";
-import { calculateIrr, calculateNpv, calculatePmt, calculateXirr, calculateXnpv } from "./financial-formulas.mjs";
+import { calculateIpmt, calculateIrr, calculateNpv, calculatePmt, calculatePpmt, calculateXirr, calculateXnpv } from "./financial-formulas.mjs";
 import { createWorkbookWindowCollection, worksheetWindowMemberships } from "./workbook-windows.mjs";
 import { decoder, encoder, toUint8Array } from "../shared/binary.mjs";
 import { FileBlob } from "../shared/file-blob.mjs";
@@ -3713,6 +3713,12 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
     case "FLOOR": return Math.floor(formulaNumber(scalar(0, 0)) / Math.max(1, formulaNumber(scalar(1, 1)))) * Math.max(1, formulaNumber(scalar(1, 1)));
     case "PMT": return args.length >= 3 && args.length <= 5
       ? calculatePmt({ rate: scalar(0), nper: scalar(1), pv: scalar(2), fv: scalar(3, 0), type: scalar(4, 0) }, financialHelpers)
+      : "#VALUE!";
+    case "IPMT": return args.length >= 4 && args.length <= 6
+      ? calculateIpmt({ rate: scalar(0), per: scalar(1), nper: scalar(2), pv: scalar(3), fv: scalar(4, 0), type: scalar(5, 0) }, financialHelpers)
+      : "#VALUE!";
+    case "PPMT": return args.length >= 4 && args.length <= 6
+      ? calculatePpmt({ rate: scalar(0), per: scalar(1), nper: scalar(2), pv: scalar(3), fv: scalar(4, 0), type: scalar(5, 0) }, financialHelpers)
       : "#VALUE!";
     case "NPV": return args.length >= 2
       ? calculateNpv({ rate: scalar(0), cashFlows: values(args.slice(1)) }, financialHelpers)

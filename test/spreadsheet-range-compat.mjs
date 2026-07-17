@@ -66,6 +66,40 @@ assert.ok(Math.abs(financialValues[2] - 0.1306623862918075) < 1e-10);
 assert.ok(Math.abs(financialValues[3] - 0.1306623862918075) < 1e-10);
 assert.ok(Math.abs(financialValues[4] + 87.91588723000957) < 1e-10);
 assert.equal(financialValues[5], -50);
+financialSheet.getRange("P1:R12").formulas = Array.from({ length: 12 }, (_, index) => [
+  "=PMT(0.01,12,100000)",
+  `=IPMT(0.01,${index + 1},12,100000)`,
+  `=PPMT(0.01,${index + 1},12,100000)`,
+]);
+const amortizationSchedule = financialSheet.getRange("P1:R12").values;
+assert.equal(amortizationSchedule[0][1], -1000);
+assert.ok(Math.abs(amortizationSchedule[0][2] + 7884.878867834168) < 1e-10);
+assert.ok(Math.abs(amortizationSchedule[1][1] + 921.1512113216584) < 1e-10);
+for (const [payment, interest, principal] of amortizationSchedule) {
+  assert.ok(Math.abs(payment - interest - principal) < 1e-10);
+}
+assert.ok(Math.abs(100000 + amortizationSchedule.reduce((balance, [, , principal]) => balance + principal, 0)) < 1e-8);
+financialSheet.getRange("S1:S11").formulas = [
+  ["=PMT(0.1,2,1000,0,1)"],
+  ["=IPMT(0.1,1,2,1000,0,1)"],
+  ["=IPMT(0.1,2,2,1000,0,1)"],
+  ["=PPMT(0.1,2,2,1000,0,1)"],
+  ["=IPMT(0,1,2,100)"],
+  ["=PPMT(0,1,2,100)"],
+  ["=IPMT(0.1,0,2,1000)"],
+  ["=IPMT(0.1,2.5,2,1000)"],
+  ["=IPMT(0.1,3,2,1000)"],
+  ["=PPMT(0.1,1,2,1000,0,2)"],
+  ["=IPMT(0.1,1,2)"],
+];
+const duePaymentValues = financialSheet.getRange("S1:S11").values.flat();
+assert.ok(Math.abs(duePaymentValues[0] + 523.8095238095239) < 1e-10);
+assert.equal(duePaymentValues[1], 0);
+assert.ok(Math.abs(duePaymentValues[2] + 52.38095238095239) < 1e-10);
+assert.ok(Math.abs(duePaymentValues[3] + 471.42857142857144) < 1e-10);
+assert.equal(duePaymentValues[4], 0);
+assert.equal(duePaymentValues[5], -50);
+assert.deepEqual(duePaymentValues.slice(6), ["#NUM!", "#NUM!", "#NUM!", "#NUM!", "#VALUE!"]);
 financialSheet.getRange("G1:G2").values = [[-100], [110]];
 financialSheet.getRange("H1:H2").formulas = [
   ["=DATE(2017,1,1)"],
@@ -101,6 +135,7 @@ assert.ok(Math.abs(dateObjectReturns[0] - 4.894579157536754) < 1e-10);
 assert.ok(Math.abs(dateObjectReturns[1] - 0.2106338215370842) < 1e-10);
 const financialRoundTrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(financialWorkbook, { recalculate: false }));
 assert.deepEqual(financialRoundTrip.worksheets.getItem("Cash Flows").getRange("C1:C6").formulas, financialSheet.getRange("C1:C6").formulas);
+assert.deepEqual(financialRoundTrip.worksheets.getItem("Cash Flows").getRange("P1:R12").formulas, financialSheet.getRange("P1:R12").formulas);
 const financialLimitWorkbook = Workbook.create();
 const financialLimitSheet = financialLimitWorkbook.worksheets.add("Cash flow limit");
 financialLimitSheet.getRange("A1:A10001").values = Array.from({ length: 10_001 }, (_, index) => [index === 0 ? -100 : 1]);

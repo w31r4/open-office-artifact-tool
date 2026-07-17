@@ -185,19 +185,79 @@ function returnRate(cashFlows, exponents, guess) {
   return newtonRoot(evaluate, initialLogRate) ?? bracketedRoot(evaluate, initialLogRate) ?? "#NUM!";
 }
 
-export function calculatePmt({ rate, nper, pv, fv = 0, type = 0 }, helpers) {
+function paymentTerms({ rate, nper, pv, fv = 0, type = 0 }, helpers) {
   const [safeRate, safeNper, safePv, safeFv, safeType] = [rate, nper, pv, fv, type].map((value) => finiteNumber(value, helpers));
   const error = [safeRate, safeNper, safePv, safeFv, safeType].find((item) => item.error)?.error;
-  if (error) return error;
-  if (safeRate.value <= -1 || safeNper.value <= 0 || ![0, 1].includes(safeType.value)) return "#NUM!";
-  if (safeRate.value === 0) {
-    const payment = -(safePv.value + safeFv.value) / safeNper.value;
+  if (error) return { error };
+  if (safeRate.value <= -1 || safeNper.value <= 0 || ![0, 1].includes(safeType.value)) return { error: "#NUM!" };
+  return {
+    rate: safeRate.value,
+    nper: safeNper.value,
+    pv: safePv.value,
+    fv: safeFv.value,
+    type: safeType.value,
+  };
+}
+
+function paymentFromTerms({ rate, nper, pv, fv, type }) {
+  if (rate === 0) {
+    const payment = -(pv + fv) / nper;
     return Number.isFinite(payment) ? payment : "#NUM!";
   }
-  const growth = Math.exp(safeNper.value * Math.log1p(safeRate.value));
-  const denominator = (1 + safeRate.value * safeType.value) * (growth - 1);
-  const payment = -(safeRate.value * (safePv.value * growth + safeFv.value)) / denominator;
+  const growth = Math.exp(nper * Math.log1p(rate));
+  const denominator = (1 + rate * type) * (growth - 1);
+  const payment = -(rate * (pv * growth + fv)) / denominator;
   return Number.isFinite(growth) && Number.isFinite(denominator) && denominator !== 0 && Number.isFinite(payment) ? payment : "#NUM!";
+}
+
+function paymentPeriod(per, nper, helpers) {
+  const safePer = finiteNumber(per, helpers);
+  if (safePer.error) return safePer;
+  if (!Number.isInteger(safePer.value) || safePer.value < 1 || safePer.value > nper) return { error: "#NUM!" };
+  return { value: safePer.value };
+}
+
+export function calculatePmt(rawTerms, helpers) {
+  const terms = paymentTerms(rawTerms, helpers);
+  return terms.error ? terms.error : paymentFromTerms(terms);
+}
+
+export function calculateIpmt(rawTerms, helpers) {
+  const terms = paymentTerms(rawTerms, helpers);
+  if (terms.error) return terms.error;
+  const safePer = paymentPeriod(rawTerms.per, terms.nper, helpers);
+  if (safePer.error) return safePer.error;
+  if (terms.rate === 0 || (terms.type === 1 && safePer.value === 1)) return 0;
+
+  const payment = paymentFromTerms(terms);
+  if (typeof payment !== "number") return payment;
+  const logRate = Math.log1p(terms.rate);
+  if (!Number.isFinite(logRate)) return "#NUM!";
+
+  let balance;
+  if (terms.type === 0) {
+    const elapsedPeriods = safePer.value - 1;
+    const growth = Math.exp(elapsedPeriods * logRate);
+    const accumulatedPayments = Math.expm1(elapsedPeriods * logRate) / terms.rate;
+    balance = terms.pv * growth + payment * accumulatedPayments;
+  } else {
+    // With payments at the beginning of a period, the first payment has no
+    // accrued interest. Later payments service the balance after the prior
+    // beginning-of-period payments have accrued for one or more periods.
+    const elapsedPeriods = safePer.value - 1;
+    const growth = Math.exp(elapsedPeriods * logRate);
+    const previousPaymentGrowth = (1 + terms.rate) * Math.expm1((elapsedPeriods - 1) * logRate) / terms.rate;
+    balance = (terms.pv + payment) * growth + payment * previousPaymentGrowth;
+  }
+  const interest = -balance * terms.rate;
+  return Number.isFinite(balance) && Number.isFinite(interest) ? interest : "#NUM!";
+}
+
+export function calculatePpmt(rawTerms, helpers) {
+  const payment = calculatePmt(rawTerms, helpers);
+  if (typeof payment !== "number") return payment;
+  const interest = calculateIpmt(rawTerms, helpers);
+  return typeof interest === "number" ? payment - interest : interest;
 }
 
 export function calculateNpv({ rate, cashFlows }, helpers) {
