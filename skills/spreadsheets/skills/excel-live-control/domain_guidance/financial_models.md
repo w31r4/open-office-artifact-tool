@@ -99,14 +99,14 @@ For period-based models:
 In additional to the formula rules already specified in SKILL.md, follow these rules:
 - No harcoded numbers inside calculation areas unless explicitly allowed. Always ensure color formatting conventions are properly applied.
 - Legible formulas that is **easily auditable** and follow industry guidelines for the task and end user is important. Instead of dense nested formulas for complex logic, prefer helper rows and Excel formulas to simplify. Users should be able to trace the model from inputs to outputs.
-- Use standard Excel functions and common financial functions when they improve auditability: NPV/XNPV, IRR/XIRR, PMT/IPMT, SLN/DB/DDB, and exact-match lookups such as INDEX/MATCH or XLOOKUP where appropriate. Keep formulas readable and source assumptions from input cells.
+- Use standard Excel functions and common financial functions when they improve auditability: NPV/XNPV, IRR/XIRR/MIRR, PMT/IPMT, SLN/DB/DDB, and exact-match lookups such as INDEX/MATCH or XLOOKUP where appropriate. Keep formulas readable and source assumptions from input cells.
 - Calculations must be formula driven, and a single formula pattern across forecast periods where possible.
 - Avoid volatile functions (**INDIRECT, OFFSET**) unless required.
 - Time series logic should be **copy-across consistent** (same formula pattern across periods).
 - Use SUM across the range above for totals; avoid “sum of parts” that skips lines.
 - Avoid external workbook links unless explicitly requested, or it already exists; if unavoidable, label and color-code them red.
 - Avoid circular references in most cases, as they can make models unstable and difficult to audit. However, in certain financial models: such as cash flow sweeps, interest on average balances, or working capital loops, they may be required. When circular logic is intentional, clearly document the purpose and ensure that iteration settings are configured correctly. Surface it on `Checks` and avoid hacks.
-- Financial return formulas must be guarded until the cash-flow sign pattern and minimum data requirements are valid. If IRR/XIRR cannot be valid for an illustrative template, use a documented estimate metric such as cash-on-cash return, NPV at the stated discount rate, or a guarded RATE approximation instead of surfacing `#NUM!`.
+- Financial return formulas must be guarded until the cash-flow sign pattern and minimum data requirements are valid. MIRR additionally needs explicit visible finance and reinvestment-rate assumptions. If IRR/XIRR/MIRR cannot be valid for an illustrative template, use a documented estimate metric such as cash-on-cash return, NPV at the stated discount rate, or a guarded RATE approximation instead of surfacing `#NUM!`.
 
 ### Sensitivity/scenario table correctness
 - Changed drivers should be obvious in row/column headers.

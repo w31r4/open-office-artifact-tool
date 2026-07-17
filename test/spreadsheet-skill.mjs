@@ -82,8 +82,9 @@ try {
   const fixtureReturns = financialFixtureWorkbook.worksheets.getItem("Returns");
   const fixtureChecks = financialFixtureWorkbook.worksheets.getItem("Checks");
   assert.ok(Math.abs(fixtureReturns.getRange("B4").values[0][0] - 0.1709368633949911) < 1e-9);
-  assert.ok(Math.abs(fixtureReturns.getRange("B7").values[0][0] + 8884.878867834168) < 1e-9);
-  assert.deepEqual(fixtureChecks.getRange("E2:E7").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
+  assert.ok(Math.abs(fixtureReturns.getRange("B7").values[0][0] - 0.14400168352963139) < 1e-9);
+  assert.ok(Math.abs(fixtureReturns.getRange("B8").values[0][0] + 8884.878867834168) < 1e-9);
+  assert.deepEqual(fixtureChecks.getRange("E2:E8").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
   assert.equal(fixtureChecks.conditionalFormattings.items.length, 2);
 
   const loanFixture = await runFixture("loan-amortization");
@@ -167,14 +168,17 @@ try {
   const financialReturnsResult = await createFinancialReturnsWorkbook(financialReturnsPath);
   assert.equal(financialReturnsResult.verification.ok, true);
   assert.match(financialReturnsResult.inspection.ndjson, /XIRR/);
+  assert.match(financialReturnsResult.inspection.ndjson, /MIRR/);
   const financialReturnsWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(financialReturnsPath));
   financialReturnsWorkbook.recalculate();
   const financialReturns = financialReturnsWorkbook.worksheets.getItem("Returns");
   const financialChecks = financialReturnsWorkbook.worksheets.getItem("Checks");
   assert.equal(financialReturns.getRange("B8").formulas[0][0], "=XIRR('Inputs'!$C$14:$C$18,'Inputs'!$B$14:$B$18,'Inputs'!$B$7)");
+  assert.equal(financialReturns.getRange("B9").formulas[0][0], "=MIRR('Inputs'!$C$14:$C$18,'Inputs'!$B$5,'Inputs'!$B$6)");
   assert.equal(financialReturns.getRange("B7").format.numberFormat, "$#,##0;[Red]($#,##0);-");
   assert.ok(Math.abs(financialReturns.getRange("B8").values[0][0] - 0.17083686863616765) < 1e-9);
-  assert.deepEqual(financialChecks.getRange("E4:E9").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
+  assert.ok(Math.abs(financialReturns.getRange("B9").values[0][0] - 0.14400168352963139) < 1e-9);
+  assert.deepEqual(financialChecks.getRange("E4:E10").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
   const financialReturnsQa = await verifyWorkbookFile(financialReturnsPath, {
     outputDir: path.join(outputDir, "openchestnut-financial-returns-native-qa"),
     sheetName: "Returns",

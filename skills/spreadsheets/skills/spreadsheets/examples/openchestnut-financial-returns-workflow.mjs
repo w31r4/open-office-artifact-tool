@@ -51,8 +51,8 @@ export function buildFinancialReturnsWorkbook() {
   styleSection(inputs, "A3:D3", "Assumptions");
   inputs.getRange("A4:D10").values = [
     ["Assumption", "Value", "Units", "Purpose"],
-    ["Periodic discount rate", 0.1, "%", "Used for NPV of annual periods"],
-    ["Annual discount rate", 0.1, "%", "Used for XNPV on actual dates"],
+    ["Periodic finance rate", 0.1, "%", "NPV + MIRR finance"],
+    ["Annual reinvestment rate", 0.1, "%", "XNPV + MIRR reinvestment"],
     ["IRR / XIRR guess", 0.1, "%", "Explicit root-search starting point"],
     ["Loan rate per period", 0.01, "%", "Used for the illustrative PMT output"],
     ["Loan term", 12, "periods", "Used for the illustrative PMT output"],
@@ -81,99 +81,104 @@ export function buildFinancialReturnsWorkbook() {
   inputs.getRange("B1:B18").format.columnWidthPx = 126;
   inputs.getRange("C1:C18").format.columnWidthPx = 126;
   inputs.getRange("D1:D18").format.columnWidthPx = 230;
-  inputs.getRange("F3:G6").values = [
-    ["Legend", "Meaning"],
-    ["Blue text", "Editable assumption or cash-flow input"],
-    ["Green text", "Formula linked to another worksheet"],
-    ["Status", "Formula-driven check result"],
+  styleSection(inputs, "A20:D20", "Legend");
+  inputs.getRange("A21:D23").values = [
+    ["Blue text", "Editable assumption or cash-flow input", null, null],
+    ["Green text", "Formula linked to another worksheet", null, null],
+    ["Status", "Formula-driven check result", null, null],
   ];
-  inputs.getRange("F3:G3").format = { fill: HEADER_FILL, font: { bold: true, color: "#FFFFFF" } };
-  inputs.getRange("F4").format = { font: { color: "#0000FF", bold: true } };
-  inputs.getRange("F5").format = { font: { color: "#008000", bold: true } };
-  inputs.getRange("F6").format = { font: { color: "#000000", bold: true } };
-  inputs.getRange("F3:F6").format.columnWidthPx = 104;
-  inputs.getRange("G3:G6").format.columnWidthPx = 238;
+  for (const row of [21, 22, 23]) inputs.getRange(`B${row}:D${row}`).merge();
+  inputs.getRange("A21").format = { font: { color: "#0000FF", bold: true } };
+  inputs.getRange("A22").format = { font: { color: "#008000", bold: true } };
+  inputs.getRange("A23").format = { font: { color: "#000000", bold: true } };
   inputs.freezePanes.freezeRows(4);
 
   styleTitle(returns, "A1:C1", "Investment Return Outputs");
-  returns.getRange("A3:C3").values = [["Metric", "Value", "Convention / formula purpose"]];
+  returns.getRange("A3:C3").values = [["Metric", "Value", "Purpose / convention"]];
   returns.getRange("A3:C3").format = { fill: HEADER_FILL, font: { bold: true, color: "#FFFFFF" }, alignment: { horizontal: "center" } };
-  returns.getRange("A4:C9").values = [
-    ["PV of future cash flows", null, "Discounts periods 1-4 only"],
-    ["Net present value", null, "Initial outlay plus PV of future cash flows"],
-    ["Periodic IRR", null, "Cash flows indexed by period"],
-    ["Date-based NPV", null, "Actual days from the first date / 365"],
+  returns.getRange("A4:C10").values = [
+    ["PV of future cash flows", null, "Future periods only"],
+    ["Net present value", null, "Initial outlay + future PV"],
+    ["Periodic IRR", null, "Periodic cash-flow return"],
+    ["Date-based NPV", null, "Actual-day NPV / 365"],
     ["Date-based IRR", null, "Annualized actual-date return"],
-    ["Loan payment per period", null, "Illustrative payment shown as a cash outflow"],
+    ["Modified periodic IRR", null, "Finance / reinvestment rates"],
+    ["Loan payment per period", null, "Illustrative cash outflow"],
   ];
-  returns.getRange("B4:B9").formulas = [
+  returns.getRange("B4:B10").formulas = [
     ["=NPV('Inputs'!$B$5,'Inputs'!$C$15:$C$18)"],
     ["='Inputs'!$C$14+B4"],
     ["=IRR('Inputs'!$C$14:$C$18,'Inputs'!$B$7)"],
     ["=XNPV('Inputs'!$B$6,'Inputs'!$C$14:$C$18,'Inputs'!$B$14:$B$18)"],
     ["=XIRR('Inputs'!$C$14:$C$18,'Inputs'!$B$14:$B$18,'Inputs'!$B$7)"],
+    ["=MIRR('Inputs'!$C$14:$C$18,'Inputs'!$B$5,'Inputs'!$B$6)"],
     ["=PMT('Inputs'!$B$8,'Inputs'!$B$9,'Inputs'!$B$10)"],
   ];
-  returns.getRange("B4:B9").format = { fill: "#F0FDF4", font: { bold: true, color: "#008000" } };
+  returns.getRange("B4:B10").format = { fill: "#F0FDF4", font: { bold: true, color: "#008000" } };
   returns.getRange("B4:B5").format.numberFormat = MONEY_FORMAT;
   returns.getRange("B6").format.numberFormat = RATE_FORMAT;
   returns.getRange("B7").format.numberFormat = MONEY_FORMAT;
-  returns.getRange("B8").format.numberFormat = RATE_FORMAT;
-  returns.getRange("B9").format.numberFormat = MONEY_FORMAT;
-  returns.getRange("A1:A9").format.columnWidthPx = 210;
-  returns.getRange("B1:B9").format.columnWidthPx = 144;
-  returns.getRange("C1:C9").format.columnWidthPx = 276;
+  returns.getRange("B8:B9").format.numberFormat = RATE_FORMAT;
+  returns.getRange("B10").format.numberFormat = MONEY_FORMAT;
+  returns.getRange("A1:A10").format.columnWidthPx = 210;
+  returns.getRange("B1:B10").format.columnWidthPx = 144;
+  returns.getRange("C1:C10").format.columnWidthPx = 260;
   returns.freezePanes.freezeRows(3);
 
-  styleTitle(checks, "A1:F1", "Model Checks");
-  checks.getRange("A3:F3").values = [["Check", "Actual", "Expected / minimum", "Difference", "Status", "Notes"]];
-  checks.getRange("A3:F3").format = { fill: HEADER_FILL, font: { bold: true, color: "#FFFFFF" }, alignment: { horizontal: "center" } };
-  checks.getRange("A4:F9").values = [
-    ["Positive cash flow count", null, 1, null, null, "Requires at least one positive cash flow."],
-    ["Negative cash flow count", null, 1, null, null, "Requires at least one negative cash flow."],
-    ["Periodic return is numeric", null, true, null, null, "Bounded IRR solver converged."],
-    ["Date-based return is numeric", null, true, null, null, "Date alignment and XIRR converged."],
-    ["NPV reconciliation", null, null, null, null, "Initial outlay plus future PV."],
-    ["Overall model status", null, 0, null, null, "Zero failed checks required."],
+  styleTitle(checks, "A1:E1", "Model Checks");
+  checks.getRange("A3:E3").values = [["Check", "Actual", "Expected / minimum", "Difference", "Status"]];
+  checks.getRange("A3:E3").format = { fill: HEADER_FILL, font: { bold: true, color: "#FFFFFF" }, alignment: { horizontal: "center" } };
+  checks.getRange("A4:E10").values = [
+    ["Positive cash flow count", null, 1, null, null],
+    ["Negative cash flow count", null, 1, null, null],
+    ["Periodic return is numeric", null, true, null, null],
+    ["Date-based return is numeric", null, true, null, null],
+    ["Modified return is numeric", null, true, null, null],
+    ["NPV reconciliation", null, null, null, null],
+    ["Overall model status", null, 0, null, null],
   ];
   // Write formulas only to formula cells: assigning a matrix with null formulas
   // would intentionally clear the neighboring static expected-value cells.
-  checks.getRange("B4:B9").formulas = [
+  checks.getRange("B4:B10").formulas = [
     ["=COUNTIF('Inputs'!$C$14:$C$18,\">0\")"],
     ["=COUNTIF('Inputs'!$C$14:$C$18,\"<0\")"],
     ["=ISNUMBER('Returns'!$B$6)"],
     ["=ISNUMBER('Returns'!$B$8)"],
+    ["=ISNUMBER('Returns'!$B$9)"],
     ["='Returns'!$B$5"],
-    ["=COUNTIF(E4:E8,\"CHECK\")"],
+    ["=COUNTIF(E4:E9,\"CHECK\")"],
   ];
-  checks.getRange("C8").formulas = [["='Inputs'!$C$14+'Returns'!$B$4"]];
+  checks.getRange("C9").formulas = [["='Inputs'!$C$14+'Returns'!$B$4"]];
   checks.getRange("D4:D5").formulas = [["=B4-C4"], ["=B5-C5"]];
-  checks.getRange("D8:D9").formulas = [["=B8-C8"], ["=B9-C9"]];
-  checks.getRange("E4:E9").formulas = [
+  checks.getRange("D9:D10").formulas = [["=B9-C9"], ["=B10-C10"]];
+  checks.getRange("E4:E10").formulas = [
     ["=IF(B4>=C4,\"OK\",\"CHECK\")"],
     ["=IF(B5>=C5,\"OK\",\"CHECK\")"],
     ["=IF(B6=C6,\"OK\",\"CHECK\")"],
     ["=IF(B7=C7,\"OK\",\"CHECK\")"],
-    ["=IF(ABS(D8)<'Inputs'!$B$10,\"OK\",\"CHECK\")"],
-    ["=IF(B9=C9,\"OK\",\"CHECK\")"],
+    ["=IF(B8=C8,\"OK\",\"CHECK\")"],
+    ["=IF(ABS(D9)<'Inputs'!$B$10,\"OK\",\"CHECK\")"],
+    ["=IF(B10=C10,\"OK\",\"CHECK\")"],
   ];
-  checks.getRange("B4:C9").format = { font: { color: "#008000" } };
-  checks.getRange("D4:D9").format = { font: { color: "#000000" } };
+  checks.getRange("B4:C10").format = { font: { color: "#008000" } };
+  checks.getRange("D4:D10").format = { font: { color: "#000000" } };
   checks.getRange("B4:D5").format.numberFormat = COUNT_FORMAT;
-  checks.getRange("B8:D8").format.numberFormat = MONEY_FORMAT;
-  checks.getRange("B9:D9").format.numberFormat = COUNT_FORMAT;
-  checks.getRange("E4:E9").conditionalFormats.add("containsText", {
+  checks.getRange("B9:D9").format.numberFormat = MONEY_FORMAT;
+  checks.getRange("B10:D10").format.numberFormat = COUNT_FORMAT;
+  checks.getRange("E4:E10").format = { fill: "#DCFCE7", font: { bold: true, color: "#166534" }, alignment: { horizontal: "center" } };
+  checks.getRange("E4:E10").conditionalFormats.add("containsText", {
     text: "OK",
     format: { fill: "#DCFCE7", font: { bold: true, color: "#166534" } },
   });
-  checks.getRange("E4:E9").conditionalFormats.add("containsText", {
+  checks.getRange("E4:E10").conditionalFormats.add("containsText", {
     text: "CHECK",
     format: { fill: "#FEE2E2", font: { bold: true, color: "#B91C1C" } },
   });
-  checks.getRange("A1:A9").format.columnWidthPx = 208;
-  checks.getRange("B1:D9").format.columnWidthPx = 130;
-  checks.getRange("E1:E9").format.columnWidthPx = 94;
-  checks.getRange("F1:F9").format.columnWidthPx = 270;
+  checks.getRange("A1:A10").format.columnWidthPx = 200;
+  checks.getRange("B1:B10").format.columnWidthPx = 115;
+  checks.getRange("C1:C10").format.columnWidthPx = 145;
+  checks.getRange("D1:D10").format.columnWidthPx = 100;
+  checks.getRange("E1:E10").format.columnWidthPx = 75;
   checks.freezePanes.freezeRows(3);
 
   workbook.worksheets.setActiveWorksheet("Returns");
@@ -191,20 +196,21 @@ export async function createFinancialReturnsWorkbook(outputPath) {
   assertClose(returns.getRange("B6").values[0][0], 0.1709368633949911);
   assertClose(returns.getRange("B7").values[0][0], 16970.673463254516);
   assertClose(returns.getRange("B8").values[0][0], 0.17083686863616765);
-  assertClose(returns.getRange("B9").values[0][0], -8884.878867834168);
-  assert.deepEqual(checks.getRange("E4:E9").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
+  assertClose(returns.getRange("B9").values[0][0], 0.14400168352963139);
+  assertClose(returns.getRange("B10").values[0][0], -8884.878867834168);
+  assert.deepEqual(checks.getRange("E4:E10").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
 
   const inspection = workbook.inspect({
     kind: "workbook,sheet,formula,computedStyle",
     sheetName: "Returns",
-    range: "A1:C9",
+    range: "A1:C10",
     maxChars: 12_000,
   });
   assert.match(inspection.ndjson, /XIRR/);
   assert.match(inspection.ndjson, /"formula":"=NPV/);
   const verification = workbook.verify({ visualQa: true });
   assert.equal(verification.ok, true, verification.ndjson);
-  const previewSvg = await workbook.render({ sheetName: "Returns", range: "A1:C9", autoCrop: "all", format: "svg" });
+  const previewSvg = await workbook.render({ sheetName: "Returns", range: "A1:C10", autoCrop: "all", format: "svg" });
   assert.equal(previewSvg.type, "image/svg+xml");
   const previewText = await previewSvg.text();
   assert.match(previewText, /Investment Return Outputs/);
@@ -213,14 +219,14 @@ export async function createFinancialReturnsWorkbook(outputPath) {
   const first = await SpreadsheetFile.exportXlsx(workbook, { recalculate: false });
   const imported = await SpreadsheetFile.importXlsx(first);
   imported.recalculate();
-  assert.equal(imported.worksheets.getItem("Returns").getRange("B8").formulas[0][0], "=XIRR('Inputs'!$C$14:$C$18,'Inputs'!$B$14:$B$18,'Inputs'!$B$7)");
+  assert.equal(imported.worksheets.getItem("Returns").getRange("B9").formulas[0][0], "=MIRR('Inputs'!$C$14:$C$18,'Inputs'!$B$5,'Inputs'!$B$6)");
   assert.equal(imported.worksheets.getItem("Returns").getRange("B7").format.numberFormat, MONEY_FORMAT);
-  assert.deepEqual(imported.worksheets.getItem("Checks").getRange("E4:E9").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
+  assert.deepEqual(imported.worksheets.getItem("Checks").getRange("E4:E10").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
   const final = await SpreadsheetFile.exportXlsx(imported, { recalculate: false });
   const roundTrip = await SpreadsheetFile.importXlsx(final);
   roundTrip.recalculate();
-  assertClose(roundTrip.worksheets.getItem("Returns").getRange("B8").values[0][0], 0.17083686863616765);
-  assert.deepEqual(roundTrip.worksheets.getItem("Checks").getRange("E4:E9").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
+  assertClose(roundTrip.worksheets.getItem("Returns").getRange("B9").values[0][0], 0.14400168352963139);
+  assert.deepEqual(roundTrip.worksheets.getItem("Checks").getRange("E4:E10").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
 
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
   await final.save(outputPath);

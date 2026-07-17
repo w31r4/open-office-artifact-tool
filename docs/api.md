@@ -2418,6 +2418,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.MID` | formula | Return characters from the middle of a text value. |
 | `fx.MIN` | formula | Return the minimum numeric value across arguments and ranges. |
 | `fx.MINUTE` | formula | Return the 0 through 59 minute component from a nonnegative serial or supported time text. |
+| `fx.MIRR` | formula | Calculate a modified periodic internal rate of return using distinct finance and reinvestment rates for a finite cash-flow vector. |
 | `fx.MODE.SNGL` | formula | Return the most frequently occurring numeric value, or #N/A when no value repeats. |
 | `fx.MONTH` | formula | Return the month component of a serial in the workbook's 1900 or 1904 date system. |
 | `fx.NA` | formula | Return the #N/A error value to mark unavailable data explicitly. |
@@ -3501,6 +3502,27 @@ Return the 0 through 59 minute component from a nonnegative serial or supported 
 **Schema returns:**
 
 - `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.MIRR`
+
+Calculate a modified periodic internal rate of return using distinct finance and reinvestment rates for a finite cash-flow vector.
+
+**Examples:**
+
+- =MIRR(B2:B6,B7,B8)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =MIRR(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+**Notes:**
+
+- The bounded evaluator accepts 2 through 10,000 finite cash flows containing both signs. Finance and reinvestment rates must be greater than -1; negative flows are discounted at the finance rate, positive flows compound at the reinvestment rate, and invalid profiles return #VALUE! or #NUM! rather than choosing an implied rate.
 
 #### `fx.MODE.SNGL`
 

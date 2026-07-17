@@ -14,8 +14,8 @@
         {
           "range": "A2:D7",
           "values": [
-            ["Periodic discount rate", 0.1, "%", "NPV"],
-            ["Annual discount rate", 0.1, "%", "XNPV"],
+            ["Periodic finance / discount rate", 0.1, "%", "NPV and MIRR finance"],
+            ["Annual reinvestment / discount rate", 0.1, "%", "XNPV and MIRR reinvestment"],
             ["IRR / XIRR guess", 0.1, "%", "Root search"],
             ["Loan rate per period", 0.01, "%", "PMT"],
             ["Loan term", 12, "periods", "PMT"],
@@ -51,32 +51,34 @@
           "format": { "fill": "#0F172A", "font": { "bold": true, "color": "#FFFFFF" } }
         },
         {
-          "range": "A2:C7",
+          "range": "A2:C8",
           "values": [
             ["PV of future cash flows", null, "Periods 1-4"],
             ["Net present value", null, "Initial outlay plus PV"],
             ["Periodic IRR", null, "By period"],
             ["Date-based NPV", null, "Actual days / 365"],
             ["Date-based IRR", null, "Annualized"],
+            ["Modified periodic IRR", null, "MIRR finance/reinvestment rates"],
             ["Loan payment per period", null, "Cash outflow"]
           ]
         },
         {
-          "range": "B2:B7",
+          "range": "B2:B8",
           "formulas": [
             ["=NPV('Inputs'!$B$2,'Inputs'!$C$11:$C$14)"],
             ["='Inputs'!$C$10+B2"],
             ["=IRR('Inputs'!$C$10:$C$14,'Inputs'!$B$4)"],
             ["=XNPV('Inputs'!$B$3,'Inputs'!$C$10:$C$14,'Inputs'!$B$10:$B$14)"],
             ["=XIRR('Inputs'!$C$10:$C$14,'Inputs'!$B$10:$B$14,'Inputs'!$B$4)"],
+            ["=MIRR('Inputs'!$C$10:$C$14,'Inputs'!$B$2,'Inputs'!$B$3)"],
             ["=PMT('Inputs'!$B$5,'Inputs'!$B$6,'Inputs'!$B$7)"]
           ]
         },
         { "range": "B2:B3", "format": { "numberFormat": "$#,##0;[Red]($#,##0);-", "font": { "color": "#008000" } } },
         { "range": "B4", "format": { "numberFormat": "0.0%", "font": { "color": "#008000" } } },
         { "range": "B5", "format": { "numberFormat": "$#,##0;[Red]($#,##0);-", "font": { "color": "#008000" } } },
-        { "range": "B6", "format": { "numberFormat": "0.0%", "font": { "color": "#008000" } } },
-        { "range": "B7", "format": { "numberFormat": "$#,##0;[Red]($#,##0);-", "font": { "color": "#008000" } } }
+        { "range": "B6:B7", "format": { "numberFormat": "0.0%", "font": { "color": "#008000" } } },
+        { "range": "B8", "format": { "numberFormat": "$#,##0;[Red]($#,##0);-", "font": { "color": "#008000" } } }
       ]
     },
     {
@@ -89,42 +91,45 @@
           "format": { "fill": "#0F172A", "font": { "bold": true, "color": "#FFFFFF" } }
         },
         {
-          "range": "A2:E7",
+          "range": "A2:E8",
           "values": [
             ["Positive cash flow count", null, 1, null, null],
             ["Negative cash flow count", null, 1, null, null],
             ["Periodic return is numeric", null, true, null, null],
             ["Date-based return is numeric", null, true, null, null],
+            ["Modified return is numeric", null, true, null, null],
             ["NPV reconciliation", null, null, null, null],
             ["Overall model status", null, 0, null, null]
           ]
         },
         {
-          "range": "B2:B7",
+          "range": "B2:B8",
           "formulas": [
             ["=COUNTIF('Inputs'!$C$10:$C$14,\">0\")"],
             ["=COUNTIF('Inputs'!$C$10:$C$14,\"<0\")"],
             ["=ISNUMBER('Returns'!$B$4)"],
             ["=ISNUMBER('Returns'!$B$6)"],
+            ["=ISNUMBER('Returns'!$B$7)"],
             ["='Returns'!$B$3"],
-            ["=COUNTIF(E2:E6,\"CHECK\")"]
+            ["=COUNTIF(E2:E7,\"CHECK\")"]
           ]
         },
-        { "range": "C6", "formulas": [["='Inputs'!$C$10+'Returns'!$B$2"]] },
+        { "range": "C7", "formulas": [["='Inputs'!$C$10+'Returns'!$B$2"]] },
         { "range": "D2:D3", "formulas": [["=B2-C2"], ["=B3-C3"]] },
-        { "range": "D6:D7", "formulas": [["=B6-C6"], ["=B7-C7"]] },
+        { "range": "D7:D8", "formulas": [["=B7-C7"], ["=B8-C8"]] },
         {
-          "range": "E2:E7",
+          "range": "E2:E8",
           "formulas": [
             ["=IF(B2>=C2,\"OK\",\"CHECK\")"],
             ["=IF(B3>=C3,\"OK\",\"CHECK\")"],
             ["=IF(B4=C4,\"OK\",\"CHECK\")"],
             ["=IF(B5=C5,\"OK\",\"CHECK\")"],
-            ["=IF(ABS(D6)<0.01,\"OK\",\"CHECK\")"],
-            ["=IF(B7=C7,\"OK\",\"CHECK\")"]
+            ["=IF(B6=C6,\"OK\",\"CHECK\")"],
+            ["=IF(ABS(D7)<0.01,\"OK\",\"CHECK\")"],
+            ["=IF(B8=C8,\"OK\",\"CHECK\")"]
           ]
         },
-        { "range": "E2:E7", "conditionalFormats": [
+        { "range": "E2:E8", "conditionalFormats": [
           { "ruleType": "containsText", "config": { "text": "OK", "format": { "fill": "#DCFCE7", "font": { "bold": true, "color": "#166534" } } } },
           { "ruleType": "containsText", "config": { "text": "CHECK", "format": { "fill": "#FEE2E2", "font": { "bold": true, "color": "#B91C1C" } } } }
         ] }
@@ -133,12 +138,12 @@
   ],
   "activeWorksheet": "Returns",
   "expectations": [
-    { "sheet": "Returns", "range": "B2:B7", "values": [[116986.5446349293], [16986.544634929305], [0.1709368633949911], [16970.673463254516], [0.17083686863616765], [-8884.878867834168]] },
-    { "sheet": "Checks", "range": "E2:E7", "values": [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]] }
+    { "sheet": "Returns", "range": "B2:B8", "values": [[116986.5446349293], [16986.544634929305], [0.1709368633949911], [16970.673463254516], [0.17083686863616765], [0.14400168352963139], [-8884.878867834168]] },
+    { "sheet": "Checks", "range": "E2:E8", "values": [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]] }
   ],
   "qa": {
     "sheetName": "Returns",
-    "range": "A1:C7",
+    "range": "A1:C8",
     "renderFormat": "svg",
     "inspectKind": "workbook,sheet,formula,computedStyle",
     "maxChars": 16000

@@ -374,10 +374,13 @@ try {
   const authoredFinancialReturns = await createFinancialReturnsWorkbook(financialReturnsPath);
   assert.equal(authoredFinancialReturns.verification.ok, true);
   assert.match(authoredFinancialReturns.inspection.ndjson, /XIRR/);
+  assert.match(authoredFinancialReturns.inspection.ndjson, /MIRR/);
   const financialReturnsRoundTrip = await SpreadsheetFile.importXlsx(await FileBlob.load(financialReturnsPath));
   financialReturnsRoundTrip.recalculate();
   assert.equal(financialReturnsRoundTrip.worksheets.getItem("Returns").getRange("B8").formulas[0][0], "=XIRR('Inputs'!$C$14:$C$18,'Inputs'!$B$14:$B$18,'Inputs'!$B$7)");
-  assert.deepEqual(financialReturnsRoundTrip.worksheets.getItem("Checks").getRange("E4:E9").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
+  assert.equal(financialReturnsRoundTrip.worksheets.getItem("Returns").getRange("B9").formulas[0][0], "=MIRR('Inputs'!$C$14:$C$18,'Inputs'!$B$5,'Inputs'!$B$6)");
+  assert.ok(Math.abs(financialReturnsRoundTrip.worksheets.getItem("Returns").getRange("B9").values[0][0] - 0.14400168352963139) < 1e-9);
+  assert.deepEqual(financialReturnsRoundTrip.worksheets.getItem("Checks").getRange("E4:E10").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
 
   const { createLoanAmortizationWorkbook } = await import(
     "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-loan-amortization-workflow.mjs"
