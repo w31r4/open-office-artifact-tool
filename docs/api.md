@@ -2389,6 +2389,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.EXPAND` | formula | Expand an array to requested row and column dimensions with optional padding. |
 | `fx.FILTER` | formula | Filter rows from a source range with a boolean or comparison include array and spill the matching rows. |
 | `fx.FLOOR` | formula | Round a number down to the nearest significance. |
+| `fx.FV` | formula | Calculate the future value of a finite constant-payment stream from rate, term, payment, optional present value, and payment timing. |
 | `fx.HLOOKUP` | formula | Look up a value in the first row of a table range and return a value from another row. |
 | `fx.HOUR` | formula | Return the 0 through 23 hour component from a nonnegative serial or supported time text. |
 | `fx.HSTACK` | formula | Append arrays horizontally, padding shorter arrays with #N/A to the maximum row count. |
@@ -2421,10 +2422,12 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.NETWORKDAYS` | formula | Count Monday-through-Friday dates inclusively between two serial dates, excluding optional holidays. |
 | `fx.NETWORKDAYS.INTL` | formula | Count inclusive workdays with a numbered or Monday-first seven-character custom weekend and optional holidays. |
 | `fx.NOT` | formula | Reverse the truth value of a condition. |
+| `fx.NPER` | formula | Solve the finite payment-period count from rate, payment, present value, optional future value, and payment timing. |
 | `fx.NPV` | formula | Discount a finite periodic cash-flow vector beginning one period after the present value date. |
 | `fx.OR` | formula | Return TRUE when any condition is true. |
 | `fx.PMT` | formula | Calculate a constant-period loan payment from finite rate, term, present value, optional future value, and payment-timing inputs. |
 | `fx.PPMT` | formula | Calculate the principal component of one constant-payment loan period using the same bounded inputs as IPMT. |
+| `fx.PV` | formula | Calculate the present value of a finite constant-payment stream from rate, term, payment, optional future value, and payment timing. |
 | `fx.RANK.EQ` | formula | Return a number's equal rank in a numeric range, descending by default or ascending when order is nonzero. |
 | `fx.RATE` | formula | Solve a bounded periodic interest rate from an integer payment term, payment, present value, optional future value, payment timing, and optional guess. |
 | `fx.RIGHT` | formula | Return characters from the end of a text value. |
@@ -2981,6 +2984,28 @@ Round a number down to the nearest significance.
 
 - `value` (number) — Calculated cell value or an Excel-style formula error string.
 
+#### `fx.FV`
+
+Calculate the future value of a finite constant-payment stream from rate, term, payment, optional present value, and payment timing.
+
+**Examples:**
+
+- =FV(B1,B2,B3)
+- =FV(B1,B2,B3,B4,1)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =FV(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+**Notes:**
+
+- The bounded evaluator requires rate > -1, a positive finite term, and payment type 0 or 1. It uses the same cash-flow equation as PMT and PV, including the zero-rate case.
+
 #### `fx.HLOOKUP`
 
 Look up a value in the first row of a table range and return a value from another row.
@@ -3536,6 +3561,28 @@ Reverse the truth value of a condition.
 
 - `value` (boolean) — Calculated cell value or an Excel-style formula error string.
 
+#### `fx.NPER`
+
+Solve the finite payment-period count from rate, payment, present value, optional future value, and payment timing.
+
+**Examples:**
+
+- =NPER(B1,B2,B3)
+- =NPER(B1,B2,B3,B4,1)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =NPER(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+**Notes:**
+
+- The bounded evaluator requires rate > -1 and payment type 0 or 1. It returns a closed-form finite period count, which may be zero or negative for the supplied cash-flow signs; a zero payment at zero rate or an invalid real solution returns #NUM!.
+
 #### `fx.NPV`
 
 Discount a finite periodic cash-flow vector beginning one period after the present value date.
@@ -3617,6 +3664,28 @@ Calculate the principal component of one constant-payment loan period using the 
 **Notes:**
 
 - For every supported period, PMT equals IPMT plus PPMT. The evaluator rejects an out-of-range or non-integer period and invalid payment timing with #NUM! rather than coercing them.
+
+#### `fx.PV`
+
+Calculate the present value of a finite constant-payment stream from rate, term, payment, optional future value, and payment timing.
+
+**Examples:**
+
+- =PV(B1,B2,B3)
+- =PV(B1,B2,B3,B4,1)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =PV(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+**Notes:**
+
+- The bounded evaluator requires rate > -1, a positive finite term, and payment type 0 or 1. It preserves standard cash-flow signs and returns #VALUE! or #NUM! for invalid inputs rather than coercing them.
 
 #### `fx.RANK.EQ`
 
