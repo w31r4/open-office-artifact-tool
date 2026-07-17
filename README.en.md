@@ -54,13 +54,13 @@ The official `mupdf@1.28.0` package is a required npm dependency and is resolved
 
 - **Designed for agents:** artifact models expose `inspect`, `resolve`, `verify`, render, and visual QA primitives.
 - **Fidelity first:** Office content that cannot be modeled safely stays bound to its source package and is preserved unchanged; unsupported edits fail explicitly.
-- **Native Skills included:** the package ships four installable Skill bundles for Documents, Spreadsheets, Presentations, and PDF; workflows that require a host session or an external provider state their prerequisites explicitly.
+- **Native Skills included:** the package ships four file-workflow bundles for Documents, Spreadsheets, Presentations, and PDF, plus a Template Creator utility bundle; workflows that require a host session or an external provider state their prerequisites explicitly.
 
 ## Supported surface
 
 | Format | File pipeline | Current core capabilities |
 | --- | --- | --- |
-| XLSX | OpenChestnut C# WASM | Cells and formulas, styles and layout, tables, images, basic validation and conditional formatting, comments, charts, and sparklines. |
+| XLSX | OpenChestnut C# WASM | Cells and formulas, styles and layout, tables, images, basic validation and conditional formatting, comments, charts, sparklines, and bounded What-If data tables. |
 | DOCX | OpenChestnut C# WASM | Structured text and styles, sections, headers and footers, lists, tables, links, fields, images, classic comments, and inline plain-text content controls. |
 | PPTX | OpenChestnut C# WASM | Shapes and rich text, images with reversible cropping, tables, connectors, charts, direct backgrounds, and plain-text speaker notes; slide masters and layouts are preserved but cannot be edited. |
 | PDF | Independent model + MuPDF.js | Tagged PDF authoring; native read/inspect/render for arbitrary PDFs; bounded annotation, form, page, metadata, link, rewrite, and incremental edits; real rewrite redaction. Specialist tools verify strict sanitization, signatures, PDF/UA, and OCR. |
@@ -80,15 +80,16 @@ OpenChestnut is the only parser/writer used by normal Office import and export. 
 
 ## Native Skills
 
-The repository contains four plugin bundles and five Skills:
+The repository contains five plugin bundles and six Skills:
 
 - [Documents](skills/documents/skills/documents/SKILL.md)
 - [Spreadsheets](skills/spreadsheets/skills/spreadsheets/SKILL.md)
 - [Excel Live Control](skills/spreadsheets/skills/excel-live-control/SKILL.md) — requires a live Excel session supplied by the host
 - [Presentations](skills/presentations/skills/presentations/SKILL.md)
 - [PDF](skills/pdf/skills/pdf/SKILL.md)
+- [Template Creator](skills/template-creator/skills/template-creator/SKILL.md) — creates or explicitly updates reusable local templates from DOCX, PPTX, or XLSX references
 
-Each `skills/<name>` directory contains the Skill definitions and resources shipped with the package; loading is handled by the Agent host. Normal Office Skill workflows use OpenChestnut. The PDF Skill defaults to a thin MuPDF.js CLI that calls the same package APIs installed by npm; Python and system tools are reserved for specialist capabilities without an equivalent implementation. See the [PDF Provider Matrix](skills/pdf/skills/pdf/references/PROVIDER_MATRIX.md).
+Each `skills/<name>` directory contains the Skill definitions and resources shipped with the package; loading is handled by the Agent host. Normal Office Skill workflows use OpenChestnut. The PDF Skill defaults to a thin MuPDF.js CLI that calls the same package APIs installed by npm. Template Creator writes only below `${OFFICE_ARTIFACT_HOME:-~/.office-artifact-tool}/skills`, transactionally retains the explicitly supplied local reference and PNG preview, performs no network fetch, and never overwrites an unnamed template. Python and system tools are reserved for specialist capabilities without an equivalent implementation. See the [PDF Provider Matrix](skills/pdf/skills/pdf/references/PROVIDER_MATRIX.md).
 
 ## Important boundaries
 

@@ -20,7 +20,7 @@ There is no compatibility window or fallback mode.
 
 The repository is the authoritative source distribution. It contains OpenChestnut C# source, locked dependencies, protocol definitions, build scripts, tests, Skills, and reproducibility gates.
 
-The npm tarball is the consumer distribution. It contains the JavaScript object models, OpenChestnut adapter, generated wire binding, public proto, bundled runtime, integrity manifest, SBOM, license notices, render/QA helpers, PDF pipeline, and four native plugin bundles containing five Skills. It excludes C# source, test sources, build output, repository-only build scripts, and the development-only `test/skill-harness` fixtures. MuPDF.js is declared in the required npm dependency graph rather than copied into this project's own tarball, and its WASM runtime is initialized only by a PDF operation.
+The npm tarball is the consumer distribution. It contains the JavaScript object models, OpenChestnut adapter, generated wire binding, public proto, bundled runtime, integrity manifest, SBOM, license notices, render/QA helpers, PDF pipeline, and five native plugin bundles containing six Skills, including the local-only Template Creator utility. It excludes C# source, test sources, build output, repository-only build scripts, and the development-only `test/skill-harness` fixtures. MuPDF.js is declared in the required npm dependency graph rather than copied into this project's own tarball, and its WASM runtime is initialized only by a PDF operation.
 
 Installed consumers do not need `dotnet` on `PATH`.
 
@@ -46,7 +46,7 @@ The release candidate is acceptable only when all of the following are true:
 - C# DOCX, XLSX, PPTX, package-boundary, and failure-profile tests pass;
 - default facade create/import/edit/re-export roundtrips pass for all three Office formats;
 - legacy options, old subpath, missing runtime, and opaque-without-source cases fail explicitly;
-- all four native plugin manifests validate, the published five-Skill topology is complete, and every workflow promoted to compatible in `docs/reference-skills.md` passes from the public package surface;
+- all five native plugin manifests validate, the published six-Skill topology is complete, and every workflow promoted to compatible in `docs/reference-skills.md` passes from the public package surface;
 - PDF greenfield authoring plus default MuPDF.js import/inspect/render/bounded-edit, lazy-load, pre-WASM budget, exact-prefix incremental-save, signature/redaction/deletion fail-closed, Skill CLI source-protection, and specialist-provider contract tests pass independently;
 - when explicitly configured, the real optional-provider test covers ReportLab creation, pdfplumber extraction, type-aware pypdf text/radio/checkbox forms and annotations, typed pypdf merge/reorder/selective watermarking, PyMuPDF rewrite/incremental/page/text/image/form/annotation edits, real redaction/scrub/residue scans, capped numerical text-fit behavior, canonical audit byte binding, and typed Poppler source/output comparison;
 - Open XML SDK validation passes for generated Office fixtures;

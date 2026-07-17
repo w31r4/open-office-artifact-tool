@@ -16,12 +16,13 @@ import {
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const skillsRoot = path.join(repoRoot, "skills");
-const pluginNames = ["documents", "spreadsheets", "presentations", "pdf"];
+const pluginNames = ["documents", "spreadsheets", "presentations", "pdf", "template-creator"];
 const expectedSkills = new Map([
   ["documents", ["documents"]],
   ["spreadsheets", ["excel-live-control", "spreadsheets"]],
   ["presentations", ["presentations"]],
   ["pdf", ["pdf"]],
+  ["template-creator", ["template-creator"]],
 ]);
 const expectedDeclaredSkillNames = new Map([
   ["documents", "documents"],
@@ -29,6 +30,7 @@ const expectedDeclaredSkillNames = new Map([
   ["spreadsheets", "Spreadsheets"],
   ["presentations", "Presentations"],
   ["pdf", "pdf"],
+  ["template-creator", "template-creator"],
 ]);
 
 async function exists(file) {
@@ -74,7 +76,8 @@ for (const pluginName of pluginNames) {
     const frontmatter = skillText.match(/^---\n([\s\S]*?)\n---/);
     assert.ok(frontmatter, `${pluginName}/${skillName} is missing YAML frontmatter`);
     assert.equal(yamlValue(frontmatter[1], "name"), expectedDeclaredSkillNames.get(skillName));
-    const agentText = await fs.readFile(path.join(skillRoot, "agents", "openai.yaml"), "utf8");
+    const agentFilename = skillName === "template-creator" ? "agent.yaml" : "openai.yaml";
+    const agentText = await fs.readFile(path.join(skillRoot, "agents", agentFilename), "utf8");
     for (const iconKey of ["icon_small", "icon_large"]) {
       const icon = yamlValue(agentText, iconKey);
       assert.ok(icon, `${pluginName}/${skillName} is missing ${iconKey}`);
@@ -82,6 +85,10 @@ for (const pluginName of pluginNames) {
     }
   }
 }
+
+const templateCreatorManifest = JSON.parse(await fs.readFile(path.join(skillsRoot, "template-creator", "manifest.json"), "utf8"));
+assert.equal(templateCreatorManifest.schemaVersion, 1);
+assert.deepEqual(templateCreatorManifest.skills, ["skills/template-creator"]);
 
 assert.equal(await exists(path.join(skillsRoot, "documents", "SKILL.md")), false);
 assert.equal(await exists(path.join(skillsRoot, "spreadsheets", "scripts")), false);

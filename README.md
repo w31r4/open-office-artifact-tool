@@ -54,13 +54,13 @@ console.log(reopened.inspect({ kind: "worksheet,table,chart" }).ndjson);
 
 - **为 Agent 设计**：文件模型自带 `inspect`、`resolve`、`verify`、render 和 visual QA 原语。
 - **保真优先**：无法安全建模的 Office 内容绑定原始包并原样保留；不支持的修改明确失败。
-- **内置原生 Skills**：仓库随包提供 Documents、Spreadsheets、Presentations 和 PDF 四个可安装 Skill 包；需要宿主会话或外部 Provider 的工作流会明确说明前置条件。
+- **内置原生 Skills**：仓库随包提供 Documents、Spreadsheets、Presentations、PDF 四个文件工作流包，以及 Template Creator 模板工具包；需要宿主会话或外部 Provider 的工作流会明确说明前置条件。
 
 ## 支持范围
 
 | 格式 | 文件管线 | 当前核心能力 |
 | --- | --- | --- |
-| XLSX | OpenChestnut C# WASM | 单元格与公式、样式与布局、表格、图片、基础验证/条件格式、评论、图表和 sparklines。 |
+| XLSX | OpenChestnut C# WASM | 单元格与公式、样式与布局、表格、图片、基础验证/条件格式、评论、图表、sparklines 和有界 What-If Data Tables。 |
 | DOCX | OpenChestnut C# WASM | 结构化文本与样式、分节、页眉页脚、列表、表格、链接、字段、图片、经典评论和行内纯文本内容控件。 |
 | PPTX | OpenChestnut C# WASM | 形状与富文本、图片及可逆裁剪、表格、连接线、图表、直接背景和纯文本演讲者备注；Master/Layout 仅保真、不可编辑。 |
 | PDF | 独立模型 + MuPDF.js | Tagged PDF 创建；任意 PDF 原生读取/检查/渲染；有界批注、表单、页面、元数据、链接和 rewrite/incremental 编辑；真实 rewrite 脱敏。严格 sanitize、签名、PDF/UA 和 OCR 由专项工具复核。 |
@@ -80,15 +80,16 @@ OpenChestnut 是普通 Office 导入/导出的唯一 parser/writer。显式 OOXM
 
 ## 原生 Skills
 
-仓库包含四个插件包、五个 Skill：
+仓库包含五个插件包、六个 Skill：
 
 - [Documents](skills/documents/skills/documents/SKILL.md)
 - [Spreadsheets](skills/spreadsheets/skills/spreadsheets/SKILL.md)
 - [Excel Live Control](skills/spreadsheets/skills/excel-live-control/SKILL.md) — 依赖宿主提供实时 Excel 会话
 - [Presentations](skills/presentations/skills/presentations/SKILL.md)
 - [PDF](skills/pdf/skills/pdf/SKILL.md)
+- [Template Creator](skills/template-creator/skills/template-creator/SKILL.md) — 从本地 DOCX、PPTX 或 XLSX 参考文件创建/显式更新可复用模板
 
-四个 `skills/<name>` 目录都包含随包分发的 Skill 定义和资源；具体加载方式由 Agent 宿主决定。Office Skill 的普通文件工作流统一调用 OpenChestnut。PDF Skill 默认通过随 npm 安装的 MuPDF.js 薄 CLI 调用同一组包 API；Python 与系统工具只承担尚无等价实现的专项工作。职责见 [PDF Provider Matrix](skills/pdf/skills/pdf/references/PROVIDER_MATRIX.md)。
+五个 `skills/<name>` 目录都包含随包分发的 Skill 定义和资源；具体加载方式由 Agent 宿主决定。Office Skill 的普通文件工作流统一调用 OpenChestnut。PDF Skill 默认通过随 npm 安装的 MuPDF.js 薄 CLI 调用同一组包 API；Template Creator 只在 `${OFFICE_ARTIFACT_HOME:-~/.office-artifact-tool}/skills` 下事务式保存用户明确提供的本地参考文件与 PNG 预览，不联网、不覆盖未点名模板。Python 与系统工具只承担尚无等价实现的专项工作。职责见 [PDF Provider Matrix](skills/pdf/skills/pdf/references/PROVIDER_MATRIX.md)。
 
 ## 必须知道的边界
 

@@ -1,6 +1,6 @@
 # Reference Skill compatibility
 
-The 0.2 source tree publishes the reference file-type layout as four native plugin bundles, not as the earlier flat project-specific Skills:
+The 0.2 source tree publishes the reference file-type layout plus its local template utility as five native plugin bundles, not as the earlier flat project-specific Skills:
 
 ```text
 skills/
@@ -8,18 +8,20 @@ skills/
   spreadsheets/{.codex-plugin,.app.json,README.md,assets,skills/{spreadsheets,excel-live-control}}
   presentations/{.codex-plugin,README.md,assets,skills/presentations}
   pdf/{.codex-plugin,README.md,assets,skills/pdf}
+  template-creator/{.codex-plugin,manifest.json,README.md,assets,skills/template-creator}
 ```
 
-There are therefore four plugin packages and five Skills. The old fixture runners remain under `test/skill-harness`; they are development tests and are excluded from the npm package.
+There are therefore five plugin packages and six Skills. The old fixture runners remain under `test/skill-harness`; they are development tests and are excluded from the npm package.
 
 ## Verified compatibility
 
 | Surface | Status | Evidence and remaining boundary |
 | --- | --- | --- |
-| Plugin manifests and discovery | done | All four manifests pass the plugin validator. Every declared Skill, `agents/openai.yaml`, plugin icon, and Skill icon resolves inside its plugin bundle. |
+| Plugin manifests and discovery | done | All five native manifests pass the plugin validator. Every declared Skill, agent metadata file, plugin icon, and Skill icon resolves inside its plugin bundle; Template Creator also retains the reference-compatible versioned `manifest.json`. |
 | Private-package imports | done | Published JavaScript examples and runners import `open-office-artifact-tool`; the package test rejects imports from `office-artifact-tool`. |
 | Presentations built-in template | done | The unflattened 26-slide `grid-layout-library` runs through its shipped `create-presentation.mjs`, canonical OpenChestnut export, and second import. Text runs, body properties, absolute frames, 11 literal custom geometries, one prompt placeholder image, and two connectors survive. |
 | Presentation workspace helper | done | The shipped setup helper resolves the public package root or bundled runtime, creates a module workspace, and links/imports `open-office-artifact-tool` without a private runtime path. |
+| Template Creator | done | The shipped local-only utility creates numbered `artifact-template-*` Skills from one DOCX/PPTX/XLSX reference plus a structurally valid PNG preview, retains source bytes, and explicitly updates only one named same-kind template. It enforces input budgets, rejects symbolic-link update trees, serializes writers, recovers interrupted replacements, preserves extra template-owned files, rolls back placement failure, and leaves no staging/backup/lock residue. |
 | Spreadsheet core example | done | The reference-style create/value/formula/fill/style/chart/SVG-render/export/import example, `Workbook.fromCSV`, and the shipped `openchestnut-range-workflow.mjs`, `openchestnut-sparkline-workflow.mjs`, and `openchestnut-data-table-workflow.mjs` run against the public package. They cover R1C1 formulas, block writes, formula evidence, current-region/navigation, formatting, charting, one threaded-comment root with a native direct reply and two person identities, standard line/column sparklines, one-/two-variable What-If data tables, fresh `workbook.fontFamilies` inventory, verification, ordinary edits, and canonical OpenChestnut round trips. An independent forward test also authored a polished three-sheet operating forecast with formula-driven financials, model checks, zero spreadsheet errors, a formula-bound line chart, OpenChestnut roundtrip, and visual review of every sheet. |
 | Full Spreadsheet Quick API | partial | The high-value Range slice is compatible: `formulasR1C1`, `displayFormulas`, `formulaInfos`, `Range.write/writeValues`, clear/copy modes, relative formula translation, even tiling, used/current regions, navigation aliases, and scalar/matrix number formats are documented and tested. `thread.addReply()` now crosses the public model/protobuf/Open XML path for one root plus direct replies with independent person/date/done metadata; nested/branched replies and mentions remain opaque and fail closed. `containsText` derives its required native formula; direct text references retain labels; formula-only internal chart series resolve live caches for inspect/render/export; bar/line/pie plus bounded standard-area and 50%-doughnut charts cross the public model/protobuf/Open XML path with type-aware SVG QA; standard Office 2010 line/column/stacked sparkline groups support reversible source-free authoring plus fixed-topology imported edits; and `sheet.dataTables` authors/imports bounded one-variable and two-variable native What-If tables while keeping imported topology source-bound. Remaining reference breadth includes non-reversible native sparkline/data-table graphs, imported data-table topology mutation, scatter/bubble/radar/stock and modern chart families, advanced area/doughnut plot options, advanced conditional-format graphs, and formulas outside the public Help catalog. |
 | Excel live control | partial | Routing content, Skill metadata, icon, and `.app.json` connector declaration are present. Execution requires the host-provided connected-document app plus an active Excel add-in session; the npm package does not implement that service. |

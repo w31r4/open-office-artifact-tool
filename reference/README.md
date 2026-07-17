@@ -14,6 +14,15 @@ Use this submodule to observe the reference package's public package shape, expo
 The currently pinned reference baseline is `office-artifact-tool@2.8.24` at
 `2d0e249ea6b62f55cca22a343b832a38e8f7537c`.
 
+On 2026-07-18, the local reference worktree's unpublished
+`feat/sync-grid-layout-library-template-creator` commit
+`207ce094a55d82a37efdca42a1c5e9656f696962` was audited for its observable Skill
+delta. The neutral `grid-layout-library` naming and Template Creator workflow
+were adapted into this project's public Skills with independent package,
+security, and workflow tests. The submodule intentionally remains on the
+remotely obtainable `2d0e249` baseline until that reference commit is published;
+this repository never records an unreachable submodule pointer.
+
 Do **not** vendor the reference package's runtime artifact, runtime module, runtime bindings, or implementation details into `open-office-artifact-tool`. Implement behavior independently using public standards, public libraries, OOXML/PDF specs, OpenXML SDK, Microsoft Office native automation, Playwright, LibreOffice, Poppler, PDF.js, sharp/canvas, and other legally usable technologies.
 
 ## Relationship to `handoff/reference-skills`

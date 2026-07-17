@@ -1,0 +1,42 @@
+{
+  "name": "template-creator",
+  "version": "0.2.0",
+  "description": "Create and update reusable local Office artifact templates from DOCX, PPTX, or XLSX references.",
+  "author": {
+    "name": "w31r4",
+    "email": "w31r4@users.noreply.github.com",
+    "url": "https://github.com/w31r4/open-office-artifact-tool"
+  },
+  "homepage": "https://github.com/w31r4/open-office-artifact-tool",
+  "repository": "https://github.com/w31r4/open-office-artifact-tool",
+  "license": "AGPL-3.0-or-later",
+  "keywords": [
+    "office",
+    "template",
+    "docx",
+    "pptx",
+    "xlsx"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Template Creator",
+    "shortDescription": "Create reusable Office templates",
+    "longDescription": "Create or explicitly update a local reusable Office artifact template from one DOCX, PPTX, or XLSX reference and a verified PNG preview. References stay local and are retained byte-for-byte.",
+    "developerName": "w31r4",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/w31r4/open-office-artifact-tool",
+    "privacyPolicyURL": "https://github.com/w31r4/open-office-artifact-tool#readme",
+    "termsOfServiceURL": "https://github.com/w31r4/open-office-artifact-tool#readme",
+    "composerIcon": "./assets/icon.svg",
+    "logo": "./assets/icon.svg",
+    "defaultPrompt": [
+      "Create a reusable Office template from my reference file"
+    ],
+    "brandColor": "#8B5CF6",
+    "screenshots": []
+  }
+}

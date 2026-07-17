@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import sharp from "sharp";
 
 import {
   DocumentFile,
@@ -159,12 +160,14 @@ async function writePresentationFixture(filePath, slideCount) {
 }
 
 async function writePngFixture(filePath) {
-  const presentation = Presentation.create({
-    slideSize: { width: 1280, height: 720 },
-  });
-  const slide = presentation.slides.add();
-  const png = await presentation.export({ slide, format: "png", scale: 1 });
-  await fs.writeFile(filePath, new Uint8Array(await png.arrayBuffer()));
+  await sharp({
+    create: {
+      width: 320,
+      height: 180,
+      channels: 4,
+      background: { r: 15, g: 118, b: 110, alpha: 1 },
+    },
+  }).png().toFile(filePath);
 }
 
 async function writeDocumentFixture(filePath) {
@@ -267,6 +270,44 @@ try {
   );
   if (restoredSentinel !== "retain me\n") {
     throw new Error("Template update did not preserve additional template-owned files.");
+  }
+  await assertNoTransactionalResidue();
+
+  const linkedTemplatePath = path.join(home, "skills", "artifact-template-linked");
+  const outsidePath = path.join(tempRoot, "outside-assets");
+  await fs.mkdir(linkedTemplatePath, { recursive: true });
+  await fs.mkdir(outsidePath, { recursive: true });
+  await fs.writeFile(path.join(linkedTemplatePath, "artifact-template.json"), JSON.stringify({ schemaVersion: 1, kind: "document" }));
+  await fs.symlink(outsidePath, path.join(linkedTemplatePath, "assets"), "dir");
+  const linkedUpdate = await runCreator([
+    "--mode", "update",
+    "--skill-name", "artifact-template-linked",
+    "--reference-path", docxPath,
+    "--preview-path", previewPath,
+    "--display-name", "Linked template",
+    "--description", "This update must fail before following a template-owned symlink.",
+  ]);
+  if (linkedUpdate.code === 0 || !/reject symbolic links/i.test(linkedUpdate.stderr)) {
+    throw new Error(`Template creator did not fail closed on a template-owned symlink: ${linkedUpdate.stderr}`);
+  }
+  if ((await fs.readdir(outsidePath)).length !== 0) {
+    throw new Error("Template creator wrote through a template-owned symbolic link.");
+  }
+  await fs.rm(linkedTemplatePath, { recursive: true, force: true });
+  await assertNoTransactionalResidue();
+
+  const oversizedReferencePath = path.join(fixturesDirectory, "oversized.docx");
+  const oversizedHandle = await fs.open(oversizedReferencePath, "w");
+  await oversizedHandle.truncate(512 * 1024 * 1024 + 1);
+  await oversizedHandle.close();
+  const oversized = await runCreator([
+    "--reference-path", oversizedReferencePath,
+    "--preview-path", previewPath,
+    "--display-name", "Oversized reference",
+    "--description", "This input must be rejected before it is copied.",
+  ]);
+  if (oversized.code === 0 || !/input budget/i.test(oversized.stderr)) {
+    throw new Error(`Template creator did not enforce its input budget: ${oversized.stderr}`);
   }
   await assertNoTransactionalResidue();
 

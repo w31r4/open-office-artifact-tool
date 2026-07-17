@@ -13,6 +13,8 @@ const WRITE_LOCK_NAME = ".artifact-template-write-lock";
 const LOCK_OWNER_FILENAME = "owner-pid";
 const BACKUP_NAME_PATTERN = /^(artifact-template-[a-z0-9]+(?:-[a-z0-9]+)*)\.backup-[0-9a-f-]+$/u;
 const MAX_SKILL_NAME_LENGTH = 64;
+const MAX_REFERENCE_BYTES = 512 * 1024 * 1024;
+const MAX_PREVIEW_BYTES = 64 * 1024 * 1024;
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const USAGE =
   "Usage: create-template-skill.mjs --reference-path <path> --preview-path <path> --display-name <name> --description <description> [--mode update --skill-name <name>]";
@@ -124,8 +126,8 @@ async function validateRequest(rawRequest) {
     throw new Error("--reference-path must end in .docx, .pptx, or .xlsx.");
   }
   await Promise.all([
-    assertRegularFile(referencePath, "--reference-path"),
-    assertRegularFile(previewPath, "--preview-path"),
+    assertRegularFile(referencePath, "--reference-path", MAX_REFERENCE_BYTES),
+    assertRegularFile(previewPath, "--preview-path", MAX_PREVIEW_BYTES),
   ]);
   if (path.extname(previewPath).toLowerCase() !== ".png") {
     throw new Error("--preview-path must end in .png.");
@@ -219,6 +221,7 @@ async function getCreateIdentity(skillsRoot, displayName) {
 
 async function getUpdateIdentity(skillsRoot, request, kind) {
   const skillPath = path.join(skillsRoot, request.skillName);
+  await assertSafeTemplateTree(skillPath);
   const sidecarPath = path.join(skillPath, "artifact-template.json");
   const sidecar = JSON.parse(await fs.readFile(sidecarPath, "utf8"));
   if (sidecar.schemaVersion !== 1 || sidecar.kind !== kind) {
@@ -535,10 +538,31 @@ function hasValidPngStructure(bytes) {
   return false;
 }
 
-async function assertRegularFile(filePath, label) {
+async function assertRegularFile(filePath, label, maxBytes) {
   const stat = await fs.stat(filePath);
   if (!stat.isFile()) {
     throw new Error(`${label} must point to a file.`);
+  }
+  if (stat.size > maxBytes) {
+    throw new Error(`${label} exceeds the ${maxBytes}-byte input budget.`);
+  }
+}
+
+async function assertSafeTemplateTree(skillPath) {
+  const root = await fs.lstat(skillPath);
+  if (!root.isDirectory() || root.isSymbolicLink()) {
+    throw new Error("--skill-name must identify a real template directory, not a symbolic link.");
+  }
+  const pending = [skillPath];
+  while (pending.length > 0) {
+    const directory = pending.pop();
+    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+      const target = path.join(directory, entry.name);
+      if (entry.isSymbolicLink()) {
+        throw new Error(`Template updates reject symbolic links: ${target}`);
+      }
+      if (entry.isDirectory()) pending.push(target);
+    }
   }
 }
 

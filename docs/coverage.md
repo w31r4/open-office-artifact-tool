@@ -99,7 +99,7 @@ Status meanings:
 
 ## Reference Skills
 
-The published layout is four native plugin bundles and five Skills; `test/skill-harness` is development-only and is not a public Skill surface. Detailed evidence and gaps are in [reference Skill compatibility](reference-skills.md).
+The published layout is five native plugin bundles and six Skills; `test/skill-harness` is development-only and is not a public Skill surface. Detailed evidence and gaps are in [reference Skill compatibility](reference-skills.md).
 
 | Skill | Status | Main workflow |
 | --- | --- | --- |
@@ -108,3 +108,4 @@ The published layout is four native plugin bundles and five Skills; `test/skill-
 | Excel live control | partial | Native routing Skill and connector declaration are present; execution depends on a host-provided connected Excel session outside the npm package. |
 | Presentations | partial | The native plugin and complete 26-slide built-in template pass canonical OpenChestnut export/import, including bounded custom geometry. Direct solid/style-reference slide backgrounds, plain-text speaker notes, embedded rectangular image `stretch`/`cover`/`contain` plus signed crop, recursive native `p:grpSp` groups, and payload-only replacement of one eligible imported embedded XLSX cross the public Skill/model/protobuf/Open XML path with inspect/resolve evidence, real render-backed QA, source/hash/relationship binding, byte-preserved surrounding package evidence, fixed-topology imported edits, and fail-closed advanced-graph preservation. The broader reference API guide still exceeds the current PPTX boundary. |
 | PDF | partial | The native plugin is a reference-compatible capability-router superset: greenfield `PdfArtifact`; required lazy MuPDF.js arbitrary-file import/inspect/render/bounded edits; a runnable `scripts/mupdf.mjs` CLI; ReportLab/pdfplumber/pypdf specialist workflows; typed attachment quarantine and AcroForms; merge/reorder/selective watermarking; specialist PyMuPDF sanitize; explicit save policies; canonical audits; residue scans; and independent Poppler comparison. Fixed evaluation matrices retain their recorded results. qpdf/pyHanko/veraPDF external execution, OCRmyPDF/pikepdf adapters, hosted specialist-provider tests, remaining matrices, and broader corpus QA remain open. |
+| Template Creator | done | The reference-compatible local utility creates or explicitly updates same-kind DOCX/PPTX/XLSX-backed `artifact-template-*` Skills under a configurable private home. It retains reference/preview bytes, validates PNG chunks/CRCs, enforces file budgets, rejects symlink-bearing update trees, prevents concurrent writers, recovers interrupted updates, preserves extra owned files, and verifies transactional cleanup. |
