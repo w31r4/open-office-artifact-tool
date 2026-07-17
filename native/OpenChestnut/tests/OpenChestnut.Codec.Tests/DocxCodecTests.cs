@@ -2223,6 +2223,134 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void ComplexTocFieldAuthorsImportsEditsAndCarriesExplicitRefreshHint()
+    {
+        var authored = Invoke(TocExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var document = WordprocessingDocument.Open(stream, false))
+        {
+            var settings = document.MainDocumentPart!.DocumentSettingsPart!.Settings!;
+            Assert.True(settings.GetFirstChild<W.UpdateFieldsOnOpen>()?.Val?.Value);
+            var paragraph = document.MainDocumentPart.Document!.Body!.Elements<W.Paragraph>().Single();
+            var run = paragraph.Elements<W.Run>().Single();
+            Assert.Equal(W.FieldCharValues.Begin, ((W.FieldChar)run.ChildElements[0]).FieldCharType?.Value);
+            Assert.Equal(" TOC \\o \"1-3\" \\h \\z \\u ", run.Elements<W.FieldCode>().Single().Text);
+            Assert.Equal("Refresh in Word", run.Elements<W.Text>().Single().Text);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.True(imported.Artifact.Document.UpdateFields);
+        var block = Assert.Single(imported.Artifact.Document.Blocks);
+        Assert.Equal(DocumentBlock.ContentOneofCase.Field, block.ContentCase);
+        Assert.True(block.Field.Complex);
+        Assert.True(block.Source.Editable);
+        Assert.Equal("TOC \\o \"1-3\" \\h \\z \\u", block.Field.Instruction);
+
+        block.Field.Instruction = "TOC \\o \"1-4\" \\h \\z \\u";
+        block.Field.Display = "Update before delivery";
+        imported.Artifact.Document.UpdateFields = false;
+        var edited = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(edited.Ok, Diagnostics(edited));
+        using (var stream = new MemoryStream(edited.File.ToByteArray()))
+        using (var document = WordprocessingDocument.Open(stream, false))
+        {
+            Assert.Null(document.MainDocumentPart!.DocumentSettingsPart!.Settings!.GetFirstChild<W.UpdateFieldsOnOpen>());
+            Assert.Equal(" TOC \\o \"1-4\" \\h \\z \\u ", document.MainDocumentPart.Document!.Descendants<W.FieldCode>().Single().Text);
+            Assert.Equal("Update before delivery", document.MainDocumentPart.Document.Descendants<W.Text>().Single().Text);
+        }
+        var secondImport = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = edited.File,
+        });
+        Assert.True(secondImport.Ok, Diagnostics(secondImport));
+        Assert.False(secondImport.Artifact.Document.UpdateFields);
+        Assert.Equal("TOC \\o \"1-4\" \\h \\z \\u", secondImport.Artifact.Document.Blocks[0].Field.Instruction);
+
+        var withoutSettings = Invoke(FieldExportRequest());
+        var plainImport = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = withoutSettings.File,
+        });
+        using (var plainStream = new MemoryStream(withoutSettings.File.ToByteArray()))
+        using (var plainDocument = WordprocessingDocument.Open(plainStream, false))
+            Assert.Null(plainDocument.MainDocumentPart!.DocumentSettingsPart);
+        plainImport.Artifact.Document.UpdateFields = true;
+        var added = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = plainImport.Artifact,
+        });
+        Assert.True(added.Ok, Diagnostics(added));
+        using var addedStream = new MemoryStream(added.File.ToByteArray());
+        using var addedDocument = WordprocessingDocument.Open(addedStream, false);
+        Assert.True(addedDocument.MainDocumentPart!.DocumentSettingsPart!.Settings!.GetFirstChild<W.UpdateFieldsOnOpen>()?.Val?.Value);
+    }
+
+    [Fact]
+    public void RefreshedCrossParagraphTocGraphIsOpaqueAndReadOnlyAsOneFieldSpan()
+    {
+        var authored = Invoke(TocExportRequest());
+        var source = ExpandTocFieldAcrossParagraphs(authored.File.ToByteArray());
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(source),
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.Equal(3, imported.Artifact.Document.Blocks.Count);
+        Assert.All(imported.Artifact.Document.Blocks, block =>
+        {
+            Assert.Equal(DocumentBlock.ContentOneofCase.Opaque, block.ContentCase);
+            Assert.False(block.Source.Editable);
+        });
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+
+        imported.Artifact.Document.Blocks[1].Opaque.Text = "Unsafe cached-result edit";
+        var rejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void TrackedChangeSliceAuthorsImportsAndValidatesWholeParagraphInsertionsAndDeletions()
     {
         var authored = Invoke(TrackedChangeExportRequest());
@@ -3037,6 +3165,39 @@ public sealed class DocxCodecTests
         };
     }
 
+    private static CodecRequest TocExportRequest()
+    {
+        var document = new DocumentArtifact
+        {
+            Id = "document/toc",
+            Name = "TOC fixture",
+            UpdateFields = true,
+        };
+        document.Blocks.Add(new DocumentBlock
+        {
+            Id = "document/toc-field",
+            StyleId = "Normal",
+            Field = new DocumentField
+            {
+                Instruction = "TOC \\o \"1-3\" \\h \\z \\u",
+                Display = "Refresh in Word",
+                Complex = true,
+            },
+        });
+        return new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = new ArtifactEnvelope
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Family = ArtifactFamily.Document,
+                Document = document,
+            },
+        };
+    }
+
     private static byte[] AddSimpleFieldFormatting(byte[] bytes)
     {
         using var stream = new MemoryStream();
@@ -3374,6 +3535,29 @@ public sealed class DocxCodecTests
         using (var document = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
         {
             document.MainDocumentPart!.Document!.Descendants<W.SimpleField>().Single().Append(new W.Run(new W.Text(" second result")));
+            document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] ExpandTocFieldAcrossParagraphs(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var body = document.MainDocumentPart!.Document!.Body!;
+            var paragraph = body.Elements<W.Paragraph>().Single();
+            var run = paragraph.Elements<W.Run>().Single();
+            var begin = (W.FieldChar)run.ChildElements[0].CloneNode(true);
+            var code = (W.FieldCode)run.ChildElements[1].CloneNode(true);
+            var separate = (W.FieldChar)run.ChildElements[2].CloneNode(true);
+            var end = (W.FieldChar)run.ChildElements[4].CloneNode(true);
+            paragraph.InsertBeforeSelf(new W.Paragraph(new W.Run(begin, code, separate)));
+            paragraph.InsertBeforeSelf(new W.Paragraph(new W.Run(new W.Text("First section\t1"))));
+            paragraph.InsertBeforeSelf(new W.Paragraph(new W.Run(end)));
+            paragraph.Remove();
             document.MainDocumentPart.Document.Save();
         }
         return stream.ToArray();

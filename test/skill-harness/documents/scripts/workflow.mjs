@@ -49,6 +49,7 @@ function addFixtureBlock(document, block = {}) {
     case "table": return document.addTable(config);
     case "hyperlink": return document.addHyperlink(block.text || "", block.url, config);
     case "field": return document.addField(block.instruction, block.display, config);
+    case "toc": return document.addTableOfContents(config);
     case "citation": return document.addCitation(block.text || "", block.metadata || {}, config);
     case "image": return document.addImage(config);
     case "section": return document.addSection(config);
@@ -58,9 +59,9 @@ function addFixtureBlock(document, block = {}) {
 
 export function createDocumentFromFixture(fixture = {}) {
   const settings = fixture.settings || {};
-  const unsupportedSettings = Object.keys(settings).filter((key) => key !== "evenAndOddHeaders");
+  const unsupportedSettings = Object.keys(settings).filter((key) => !new Set(["evenAndOddHeaders", "updateFields"]).has(key));
   if (unsupportedSettings.length) {
-    throw new Error(`Document fixture settings are limited to evenAndOddHeaders; imported ${unsupportedSettings.join(", ")} semantics are read-only.`);
+    throw new Error(`Document fixture settings are limited to evenAndOddHeaders and updateFields; imported ${unsupportedSettings.join(", ")} semantics are read-only.`);
   }
   const document = DocumentModel.create({
     name: fixture.name || "Fixture document",
@@ -288,6 +289,10 @@ export async function runDocumentFixture(fixturePath, options = {}) {
         assert.ok(field, `Missing source-bound field fixture target ${edit.matchInstruction || "(unspecified)"}.`);
         if (Object.prototype.hasOwnProperty.call(edit, "instruction")) field.instruction = String(edit.instruction);
         if (Object.prototype.hasOwnProperty.call(edit, "display")) field.display = String(edit.display);
+        continue;
+      }
+      if (edit.kind === "settings") {
+        imported.setSettings(edit.values || {});
         continue;
       }
       if (edit.kind === "citation") {

@@ -44,12 +44,20 @@ internal static class DocxCodec
         ulong semanticItems = 0;
         var bibliographyTags = DocxBibliographyCodec.Read(mainPart, document, ref semanticItems, limits, diagnostics);
         var context = new DocxPartContext(mainPart, imageAssets, bibliographyTags: bibliographyTags);
+        var irregularComplexFields = IrregularComplexFieldBodyIndexes(body);
         var ordinal = 0;
         for (var bodyIndex = 0; bodyIndex < body.ChildElements.Count; bodyIndex++)
         {
             var element = body.ChildElements[bodyIndex];
             if (element is W.SectionProperties) continue;
-            var block = ReadBodyBlock(element, ordinal++, checked((uint)bodyIndex), ref semanticItems, limits, context);
+            var block = ReadBodyBlock(
+                element,
+                ordinal++,
+                checked((uint)bodyIndex),
+                ref semanticItems,
+                limits,
+                context,
+                irregularComplexFields.Contains(checked((uint)bodyIndex)));
             document.Blocks.Add(block);
         }
         DocxNoteCodec.Read(context, body, document, ref semanticItems, limits);
@@ -184,6 +192,8 @@ internal static class DocxCodec
                 bibliographyTags: DocxBibliographyCodec.SourceTags(mainPart, envelope.Document.Bibliography));
             DocxDirectStyles.AssertSourceUnchanged(mainPart, envelope.Document);
             DocxHeaderFooterCodec.AssertSourceUnchanged(mainPart, body, envelope.Document);
+            DocxHeaderFooterCodec.ApplySourceSettings(mainPart, envelope.Document, context);
+            var irregularComplexFields = IrregularComplexFieldBodyIndexes(body);
             var sourceElements = body.ChildElements.Where(element => element is not W.SectionProperties).ToArray();
             if (sourceElements.Length != envelope.Document.Blocks.Count)
                 throw new CodecException(
@@ -213,7 +223,14 @@ internal static class DocxCodec
                         $"Document block {ordinal} no longer matches its source element hash.",
                         "word/document.xml");
 
-                var original = ReadBodyBlock(element, ordinal, binding.BodyIndex, ref semanticItems, limits, context);
+                var original = ReadBodyBlock(
+                    element,
+                    ordinal,
+                    binding.BodyIndex,
+                    ref semanticItems,
+                    limits,
+                    context,
+                    irregularComplexFields.Contains(binding.BodyIndex));
                 if (!SemanticHash(original).Equals(binding.SemanticSha256, StringComparison.OrdinalIgnoreCase))
                     throw new CodecException(
                         "document_source_semantics_mismatch",
@@ -517,12 +534,22 @@ internal static class DocxCodec
         uint bodyIndex,
         ref ulong semanticItems,
         EffectiveCodecLimits limits,
-        DocxPartContext context)
+        DocxPartContext context,
+        bool forceOpaque = false)
     {
         var block = new DocumentBlock { Id = $"document/block/{ordinal + 1}" };
         var editable = false;
         var nativeRevisionId = string.Empty;
-        switch (element)
+        if (forceOpaque)
+        {
+            block.Opaque = new DocumentOpaqueBlock
+            {
+                ElementName = element.LocalName,
+                Text = element.InnerText ?? string.Empty,
+            };
+            semanticItems++;
+        }
+        else switch (element)
         {
             case W.Paragraph paragraph:
                 block.StyleId = paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value ?? string.Empty;
@@ -662,6 +689,37 @@ internal static class DocxCodec
             run.ChildElements.All(child => child is W.RunProperties or W.Text) &&
             DocxFormattingCodec.IsSupportedRunProperties(run.RunProperties)) &&
             paragraph.Elements<W.SdtRun>().All(DocxTextContentControlCodec.IsSupported);
+    }
+
+    private static HashSet<uint> IrregularComplexFieldBodyIndexes(W.Body body)
+    {
+        var result = new HashSet<uint>();
+        var depth = 0;
+        for (var bodyIndex = 0; bodyIndex < body.ChildElements.Count; bodyIndex++)
+        {
+            var element = body.ChildElements[bodyIndex];
+            if (element is W.SectionProperties) continue;
+            var startedInside = depth > 0;
+            var sawFieldCharacter = false;
+            var malformed = false;
+            foreach (var fieldCharacter in element.Descendants<W.FieldChar>())
+            {
+                sawFieldCharacter = true;
+                if (fieldCharacter.FieldCharType?.Value == W.FieldCharValues.Begin) depth++;
+                else if (fieldCharacter.FieldCharType?.Value == W.FieldCharValues.End)
+                {
+                    if (depth == 0) malformed = true;
+                    else depth--;
+                }
+            }
+            if (!startedInside && !sawFieldCharacter && depth == 0) continue;
+            var canonicalSingleParagraph =
+                !startedInside && !malformed && depth == 0 &&
+                element is W.Paragraph paragraph &&
+                DocxFieldCodec.TryRead(paragraph, out var field, out _) && field.Complex;
+            if (!canonicalSingleParagraph) result.Add(checked((uint)bodyIndex));
+        }
+        return result;
     }
 
     private static OpenXmlElement BuildBlock(DocumentBlock block, DocxPartContext context, string? revisionId = null) => block.ContentCase switch

@@ -35,7 +35,7 @@ async function runFixture(name, options = {}) {
 try {
   assert.throws(
     () => createDocumentFromFixture({ settings: { trackRevisions: true }, blocks: [] }),
-    /limited to evenAndOddHeaders.*trackRevisions.*read-only/i,
+    /limited to evenAndOddHeaders and updateFields.*trackRevisions.*read-only/i,
   );
   const business = await runFixture("business-brief", {
     nativeRender: nativeStatus.available ? "required" : "auto",
@@ -144,6 +144,25 @@ try {
   assert.match(await bibliographyZip.file(bibliographyParts[0]).async("text"), /<Sources\b[^>]*xmlns="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/bibliography"/);
   assert.match(await bibliographyZip.file("word/document.xml").async("text"), /w:instr=" CITATION AgentSource "/);
 
+  const toc = await runFixture("open-chestnut-toc", {
+    nativeRender: nativeStatus.available ? "required" : "auto",
+  });
+  const tocDocument = await DocumentFile.importDocx(await FileBlob.load(toc.docxPath));
+  const tocField = tocDocument.blocks.find((block) => block.kind === "field");
+  assert.equal(tocDocument.settings.updateFields, true);
+  assert.equal(tocField?.complex, true);
+  assert.equal(tocField?.instruction, 'TOC \\o "1-4" \\h \\z \\u');
+  assert.equal(tocField?.display, "Update this table of contents in Word");
+  assert.equal(toc.qa.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+  const tocZip = await JSZip.loadAsync(await fs.readFile(toc.docxPath));
+  const tocXml = await tocZip.file("word/document.xml").async("text");
+  const tocSettings = await tocZip.file("word/settings.xml").async("text");
+  assert.match(tocXml, /w:fldCharType="begin"/);
+  assert.match(tocXml, /<w:instrText[^>]*> TOC \\o &quot;1-4&quot; \\h \\z \\u <\/w:instrText>/);
+  assert.match(tocXml, /w:fldCharType="separate"/);
+  assert.match(tocXml, /w:fldCharType="end"/);
+  assert.match(tocSettings, /<w:updateFields\b[^>]*w:val="true"/);
+
   const classicFixture = await runFixture("package-comments");
   const classicDocument = await DocumentFile.importDocx(await FileBlob.load(classicFixture.docxPath));
   assert.equal(classicDocument.comments.length, 1);
@@ -199,6 +218,7 @@ try {
   assert.match(skillText, /document\.fillContentControls/);
   assert.match(skillText, /document\.addBibliographySource/);
   assert.match(skillText, /document\.addCitation/);
+  assert.match(skillText, /document\.addTableOfContents/);
   assert.doesNotMatch(skillText, /Author\/edit with `python-docx`|Default tool: python-docx/);
   const commentsGuide = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "tasks", "comments_manage.md"), "utf8");
   assert.match(commentsGuide, /document\.addComment/);

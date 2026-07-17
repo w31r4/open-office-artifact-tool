@@ -402,6 +402,43 @@ await assert.rejects(
   (error) => new Set(["unsupported_document_bibliography_edit", "unsupported_document_edit"]).has(error?.code) && /source-bound/i.test(error.message),
 );
 
+const tocDocument = DocumentModel.create({
+  name: "Bounded native TOC field",
+  blocks: [
+    { kind: "paragraph", styleId: "Title", text: "Native TOC workflow" },
+    { kind: "paragraph", styleId: "Heading1", text: "First section" },
+    { kind: "paragraph", styleId: "Heading2", text: "Nested section" },
+  ],
+});
+const tocField = tocDocument.addTableOfContents({ levels: "1-3", display: "Refresh fields before delivery" });
+assert.equal(tocField.complex, true);
+assert.equal(tocField.instruction, 'TOC \\o "1-3" \\h \\z \\u');
+assert.equal(tocDocument.settings.updateFields, true);
+const tocDocx = await DocumentFile.exportDocx(tocDocument);
+const importedToc = await DocumentFile.importDocx(tocDocx);
+const importedTocField = importedToc.blocks.find((block) => block.kind === "field");
+assert.equal(importedToc.settings.updateFields, true);
+assert.equal(importedTocField?.complex, true);
+assert.equal(importedTocField?.instruction, 'TOC \\o "1-3" \\h \\z \\u');
+assert.equal(importedTocField?.display, "Refresh fields before delivery");
+assert.match(importedToc.inspect({ kind: "field,settings", maxChars: 4_000 }).ndjson, /"complex":true/);
+importedTocField.instruction = 'TOC \\o "1-4" \\h \\z \\u';
+importedTocField.display = "Update this TOC in Word";
+importedToc.setSettings({ updateFields: false });
+const editedTocDocx = await DocumentFile.exportDocx(importedToc);
+const roundTripToc = await DocumentFile.importDocx(editedTocDocx);
+assert.equal(roundTripToc.settings.updateFields, false);
+assert.equal(roundTripToc.blocks.find((block) => block.kind === "field")?.instruction, 'TOC \\o "1-4" \\h \\z \\u');
+assert.equal(roundTripToc.blocks.find((block) => block.kind === "field")?.display, "Update this TOC in Word");
+assert.throws(() => tocDocument.addTableOfContents({ levels: "4-2" }), /ascending range/);
+
+const invalidComplexField = DocumentModel.create({ blocks: [] });
+invalidComplexField.addField('TOC \\o "1-3" \\p "custom separator"', "Unsafe switches", { complex: true });
+await assert.rejects(
+  () => DocumentFile.exportDocx(invalidComplexField),
+  (error) => error?.code === "invalid_document_field" && /canonical bounded profile/i.test(error.message),
+);
+
 const unsupportedSettings = DocumentModel.create({
   name: "Unsupported document settings",
   settings: { trackRevisions: true },

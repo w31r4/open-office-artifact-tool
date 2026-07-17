@@ -38,6 +38,7 @@ internal static class DocxHeaderFooterCodec
         ICollection<Diagnostic> diagnostics)
     {
         document.EvenAndOddHeaders = mainPart.DocumentSettingsPart?.Settings?.GetFirstChild<W.EvenAndOddHeaders>() is not null;
+        document.UpdateFields = mainPart.DocumentSettingsPart?.Settings?.GetFirstChild<W.UpdateFieldsOnOpen>() is not null;
         var sections = BoundarySections(body).ToArray();
         for (var sectionIndex = 0; sectionIndex < sections.Length; sectionIndex++)
         {
@@ -94,13 +95,33 @@ internal static class DocxHeaderFooterCodec
             }
         }
 
-        if (document.EvenAndOddHeaders)
+        if (document.EvenAndOddHeaders || document.UpdateFields)
         {
             var settingsPart = mainPart.AddNewPart<DocumentSettingsPart>();
-            settingsPart.Settings = new W.Settings(new W.EvenAndOddHeaders());
+            settingsPart.Settings = new W.Settings();
+            if (document.EvenAndOddHeaders) settingsPart.Settings.Append(new W.EvenAndOddHeaders());
+            if (document.UpdateFields) settingsPart.Settings.Append(new W.UpdateFieldsOnOpen { Val = true });
             settingsPart.Settings.Save();
         }
         return plan;
+    }
+
+    internal static void ApplySourceSettings(
+        MainDocumentPart mainPart,
+        DocumentArtifact requested,
+        DocxPartContext context)
+    {
+        var settingsPart = mainPart.DocumentSettingsPart;
+        var source = settingsPart?.Settings?.GetFirstChild<W.UpdateFieldsOnOpen>() is not null;
+        if (source == requested.UpdateFields) return;
+
+        settingsPart ??= mainPart.AddNewPart<DocumentSettingsPart>();
+        settingsPart.Settings ??= new W.Settings();
+        settingsPart.Settings.RemoveAllChildren<W.UpdateFieldsOnOpen>();
+        if (requested.UpdateFields)
+            settingsPart.Settings.Append(new W.UpdateFieldsOnOpen { Val = true });
+        settingsPart.Settings.Save();
+        context.MarkSettingsMutated(settingsPart);
     }
 
     internal static void AssertSourceUnchanged(
