@@ -49,3 +49,12 @@ export function resolvedWorksheetChartSeriesXValues(chart, series) {
   }
   return [...(series?.xValues || [])].map(Number);
 }
+
+export function resolvedWorksheetChartSeriesBubbleSizes(chart, series) {
+  const referenced = worksheetChartRangeValues(chart?.worksheet, series?.bubbleSizeFormula);
+  if (referenced.length) {
+    const numeric = referenced.map(Number);
+    if (numeric.every((value) => Number.isFinite(value) && value > 0)) return numeric;
+  }
+  return [...(series?.bubbleSizes || [])].map(Number);
+}

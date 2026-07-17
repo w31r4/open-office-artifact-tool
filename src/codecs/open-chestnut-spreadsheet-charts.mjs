@@ -3,7 +3,7 @@ import { normalizeSpreadsheetChartLineOptions } from "../spreadsheet/chart-line-
 import { normalizeSpreadsheetChartSeriesLine, SPREADSHEET_CHART_LINE_MAX_WIDTH_POINTS } from "../spreadsheet/chart-line-style.mjs";
 import { normalizeSpreadsheetChartSeriesMarker } from "../spreadsheet/chart-marker-style.mjs";
 import { normalizeSpreadsheetChartDataLabels } from "../spreadsheet/chart-data-labels.mjs";
-import { resolvedWorksheetChartCategories, resolvedWorksheetChartSeriesValues, resolvedWorksheetChartSeriesXValues } from "../spreadsheet/chart-source-data.mjs";
+import { resolvedWorksheetChartCategories, resolvedWorksheetChartSeriesBubbleSizes, resolvedWorksheetChartSeriesValues, resolvedWorksheetChartSeriesXValues } from "../spreadsheet/chart-source-data.mjs";
 import { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
 
 const EMU_PER_PIXEL = 9525;
@@ -19,9 +19,11 @@ const TYPES_TO_WIRE = new Map([
   ["area", SpreadsheetChartType.AREA],
   ["doughnut", SpreadsheetChartType.DOUGHNUT],
   ["scatter", SpreadsheetChartType.SCATTER],
+  ["bubble", SpreadsheetChartType.BUBBLE],
 ]);
 const TYPES_FROM_WIRE = new Map([...TYPES_TO_WIRE].map(([name, value]) => [value, name]));
 const CIRCULAR_TYPES = new Set(["pie", "doughnut"]);
+const NUMERIC_X_TYPES = new Set(["scatter", "bubble"]);
 const LINE_STYLES_TO_WIRE = new Map([
   ["solid", SpreadsheetChartLineDashStyle.SOLID],
   ["dashed", SpreadsheetChartLineDashStyle.DASHED],
@@ -193,7 +195,7 @@ function axisSnapshot(axis, kind, chartType, chart) {
   if (axis == null) return null;
   const title = typeof axis.title === "string" ? axis.title : axis.title?.text;
   const aliasMajorUnit = kind === "y" && axis.majorUnit == null ? axis.tickLabelInterval : axis.majorUnit;
-  const numeric = kind === "y" || chartType === "scatter";
+  const numeric = kind === "y" || NUMERIC_X_TYPES.has(chartType);
   return {
     axisType: String(axis.axisType || (numeric ? "valueAxis" : "textAxis")),
     title: String(title ?? ""),
@@ -234,9 +236,11 @@ export function spreadsheetChartSnapshot(chart, options = {}) {
       name: String(series?.name || ""),
       xValues: options.resolveSourceData ? resolvedWorksheetChartSeriesXValues(chart, series) : [...(series?.xValues || [])].map(Number),
       values: options.resolveSourceData ? resolvedWorksheetChartSeriesValues(chart, series) : [...(series?.values || [])].map(Number),
+      bubbleSizes: options.resolveSourceData ? resolvedWorksheetChartSeriesBubbleSizes(chart, series) : [...(series?.bubbleSizes || [])].map(Number),
       categoryFormula: series?.categoryFormula == null ? "" : String(series.categoryFormula),
       xFormula: series?.xFormula == null ? "" : String(series.xFormula),
       formula: series?.formula == null ? "" : String(series.formula),
+      bubbleSizeFormula: series?.bubbleSizeFormula == null ? "" : String(series.bubbleSizeFormula),
       fill: series?.fill == null ? null : String(series.fill),
       line: seriesLineSnapshot(series, chart),
       marker: seriesMarkerSnapshot(series?.marker, chart),
@@ -250,12 +254,12 @@ function validateSnapshot(snapshot, chart) {
   text(snapshot.title, "title", chart);
   if (snapshot.titleTextStyle != null && snapshot.title.length === 0) fail(chart, "titleTextStyle requires a non-empty title.");
   const type = TYPES_TO_WIRE.get(snapshot.type);
-  if (type == null) fail(chart, `type must be bar, line, pie, area, doughnut, or scatter; received ${snapshot.type}.`, "unsupported_spreadsheet_chart");
+  if (type == null) fail(chart, `type must be bar, line, pie, area, doughnut, scatter, or bubble; received ${snapshot.type}.`, "unsupported_spreadsheet_chart");
   if (snapshot.lineOptions != null && snapshot.type !== "line") fail(chart, "lineOptions require a line chart.", "unsupported_spreadsheet_chart");
   if (CIRCULAR_TYPES.has(snapshot.type)) {
     if (snapshot.xAxis != null || snapshot.yAxis != null) fail(chart, `${snapshot.type} charts cannot carry category/value axes in the bounded native profile.`, "unsupported_spreadsheet_chart");
   } else {
-    if (snapshot.xAxis == null || snapshot.yAxis == null) fail(chart, "bar, line, area, and scatter charts require primary xAxis and yAxis objects.");
+    if (snapshot.xAxis == null || snapshot.yAxis == null) fail(chart, "bar, line, area, scatter, and bubble charts require primary xAxis and yAxis objects.");
     if ([chart?.xAxis, chart?.yAxis].some((axis) => axis?.title?.textStyle != null)) fail(chart, "axis-title text styling is outside the bounded native chart profile.", "unsupported_spreadsheet_chart");
     validateAxis(snapshot.xAxis, "x", snapshot.type, chart);
     validateAxis(snapshot.yAxis, "y", snapshot.type, chart);
@@ -265,7 +269,7 @@ function validateSnapshot(snapshot, chart) {
   }
   if (snapshot.series.length < 1 || snapshot.series.length > MAX_SERIES) fail(chart, `must contain 1 through ${MAX_SERIES} series.`);
   if (snapshot.categories.length > MAX_POINTS) fail(chart, `exceeds the ${MAX_POINTS}-category budget.`);
-  if (snapshot.type === "scatter" && snapshot.categories.length > 0) fail(chart, "scatter charts use per-series numeric xValues rather than shared text categories.", "unsupported_spreadsheet_chart");
+  if (NUMERIC_X_TYPES.has(snapshot.type) && snapshot.categories.length > 0) fail(chart, `${snapshot.type} charts use per-series numeric xValues rather than shared text categories.`, "unsupported_spreadsheet_chart");
   snapshot.categories.forEach((value, index) => text(value, `category ${index + 1}`, chart));
   let points = 0;
   snapshot.series.forEach((series, seriesIndex) => {
@@ -273,17 +277,27 @@ function validateSnapshot(snapshot, chart) {
     formula(series.categoryFormula, `series ${seriesIndex + 1} categoryFormula`, chart);
     formula(series.xFormula, `series ${seriesIndex + 1} xFormula`, chart);
     formula(series.formula, `series ${seriesIndex + 1} formula`, chart);
+    formula(series.bubbleSizeFormula, `series ${seriesIndex + 1} bubbleSizeFormula`, chart);
     series.fill = seriesFill(series.fill, `series ${seriesIndex + 1} fill`, chart);
     if (snapshot.type === "scatter" && series.line != null) fail(chart, `series ${seriesIndex + 1} marker-only scatter data cannot carry line/stroke; use marker.line to style the marker border.`, "unsupported_spreadsheet_chart");
     if (series.marker != null && snapshot.type !== "line" && snapshot.type !== "scatter") fail(chart, `series ${seriesIndex + 1} markers require a line or scatter chart.`, "unsupported_spreadsheet_chart");
     points += series.values.length;
     if (points > MAX_POINTS) fail(chart, `exceeds the ${MAX_POINTS}-value budget.`);
-    if (snapshot.type === "scatter") {
-      if (series.categoryFormula) fail(chart, `series ${seriesIndex + 1} scatter data cannot carry categoryFormula; use xFormula.`, "unsupported_spreadsheet_chart");
+    if (NUMERIC_X_TYPES.has(snapshot.type)) {
+      if (series.categoryFormula) fail(chart, `series ${seriesIndex + 1} ${snapshot.type} data cannot carry categoryFormula; use xFormula.`, "unsupported_spreadsheet_chart");
       if (series.xValues.length !== series.values.length) fail(chart, `series ${seriesIndex + 1} has ${series.xValues.length} xValues for ${series.values.length} y values.`);
       series.xValues.forEach((value, pointIndex) => finite(value, `series ${seriesIndex + 1} xValue ${pointIndex + 1}`, chart));
+      if (snapshot.type === "bubble") {
+        if (series.bubbleSizes.length !== series.values.length) fail(chart, `series ${seriesIndex + 1} has ${series.bubbleSizes.length} bubbleSizes for ${series.values.length} y values.`);
+        series.bubbleSizes.forEach((value, pointIndex) => {
+          if (finite(value, `series ${seriesIndex + 1} bubbleSize ${pointIndex + 1}`, chart) <= 0) fail(chart, `series ${seriesIndex + 1} bubbleSize ${pointIndex + 1} must be positive.`);
+        });
+      } else if (series.bubbleSizes.length > 0 || series.bubbleSizeFormula) {
+        fail(chart, `series ${seriesIndex + 1} bubbleSizes/bubbleSizeFormula require a bubble chart.`, "unsupported_spreadsheet_chart");
+      }
     } else {
-      if (series.xValues.length > 0 || series.xFormula) fail(chart, `series ${seriesIndex + 1} xValues/xFormula require a scatter chart.`, "unsupported_spreadsheet_chart");
+      if (series.xValues.length > 0 || series.xFormula) fail(chart, `series ${seriesIndex + 1} xValues/xFormula require a scatter or bubble chart.`, "unsupported_spreadsheet_chart");
+      if (series.bubbleSizes.length > 0 || series.bubbleSizeFormula) fail(chart, `series ${seriesIndex + 1} bubbleSizes/bubbleSizeFormula require a bubble chart.`, "unsupported_spreadsheet_chart");
       if (series.values.length !== snapshot.categories.length) fail(chart, `series ${seriesIndex + 1} has ${series.values.length} values for ${snapshot.categories.length} categories.`);
     }
     series.values.forEach((value, pointIndex) => finite(value, `series ${seriesIndex + 1} value ${pointIndex + 1}`, chart));
@@ -296,7 +310,7 @@ function validateSnapshot(snapshot, chart) {
 }
 
 function validateAxis(axis, kind, chartType, chart) {
-  const numeric = kind === "y" || chartType === "scatter";
+  const numeric = kind === "y" || NUMERIC_X_TYPES.has(chartType);
   const expectedType = numeric ? "valueAxis" : "textAxis";
   if (axis.axisType !== expectedType) fail(chart, `${kind}Axis.axisType must be ${expectedType}; received ${axis.axisType}.`, "unsupported_spreadsheet_chart");
   text(axis.title, `${kind}Axis.title.text`, chart);
@@ -353,9 +367,11 @@ function wireChart(chart, original) {
       name: series.name,
       xValues: series.xValues,
       values: series.values,
+      bubbleSizes: series.bubbleSizes,
       categoryFormula: series.categoryFormula,
       xValueFormula: series.xFormula,
       valueFormula: series.formula,
+      bubbleSizeFormula: series.bubbleSizeFormula,
       fill: series.fill == null ? undefined : { source: { case: "rgb", value: series.fill.slice(1) } },
       line: series.line == null ? undefined : {
         color: series.line.fill == null ? undefined : { source: { case: "rgb", value: series.line.fill.slice(1) } },
@@ -466,7 +482,7 @@ function positionFromWire(sheet, source) {
 function axisFromWire(axis, kind, chartType) {
   if (axis == null) return undefined;
   return {
-    axisType: kind === "x" && chartType !== "scatter" ? "textAxis" : "valueAxis",
+    axisType: kind === "x" && !NUMERIC_X_TYPES.has(chartType) ? "textAxis" : "valueAxis",
     title: { text: axis.title || "" },
     ...(axis.textStyle == null ? {} : { textStyle: textStyleFromWire(axis.textStyle, `${kind}Axis.textStyle`, axis) }),
     ...(axis.numberFormatCode ? { numberFormatCode: axis.numberFormatCode } : {}),
@@ -528,7 +544,8 @@ export function spreadsheetChartFromWire(sheet, source) {
     series: sourceSeries.map((series, index) => {
       return {
         name: series.name,
-        ...(type === "scatter" ? { xValues: [...series.xValues] } : {}),
+        ...(NUMERIC_X_TYPES.has(type) ? { xValues: [...series.xValues] } : {}),
+        ...(type === "bubble" ? { bubbleSizes: [...series.bubbleSizes] } : {}),
         values: [...series.values],
         ...(importedFills[index] == null ? {} : { fill: importedFills[index] }),
         ...(importedLines[index] == null ? {} : { line: importedLines[index] }),
@@ -541,6 +558,7 @@ export function spreadsheetChartFromWire(sheet, source) {
     categoryFormula: series.categoryFormula || undefined,
     xFormula: series.xValueFormula || undefined,
     formula: series.valueFormula || undefined,
+    bubbleSizeFormula: series.bubbleSizeFormula || undefined,
     fill: importedFills[index],
     ...(importedLines[index] == null ? {} : { line: importedLines[index] }),
     ...(importedMarkers[index] == null ? {} : { marker: importedMarkers[index] }),

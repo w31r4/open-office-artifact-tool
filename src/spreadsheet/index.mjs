@@ -4,7 +4,7 @@ import { normalizeSpreadsheetChartSeriesLine } from "./chart-line-style.mjs";
 import { normalizeSpreadsheetChartLineOptions } from "./chart-line-options.mjs";
 import { normalizeSpreadsheetChartSeriesMarker } from "./chart-marker-style.mjs";
 import { normalizeSpreadsheetChartDataLabels } from "./chart-data-labels.mjs";
-import { resolvedWorksheetChartCategories, resolvedWorksheetChartSeriesValues, resolvedWorksheetChartSeriesXValues } from "./chart-source-data.mjs";
+import { resolvedWorksheetChartCategories, resolvedWorksheetChartSeriesBubbleSizes, resolvedWorksheetChartSeriesValues, resolvedWorksheetChartSeriesXValues } from "./chart-source-data.mjs";
 import { renderWorksheetChartSvg } from "./chart-preview.mjs";
 import { WorksheetDataTableCollection } from "./data-tables.mjs";
 import { computePivotValues, normalizePivotConfig } from "./pivots.mjs";
@@ -597,9 +597,11 @@ class WorksheetPivotTableCollection {
   toJSON() { return this.items.map((pivot) => pivot.toJSON()); }
 }
 
+const WORKSHEET_NUMERIC_X_CHART_TYPES = new Set(["scatter", "bubble"]);
+
 class WorksheetChartSeriesCollection {
   constructor(chart) { this.chart = chart; this.items = []; }
-  add(name, values = []) { const series = { name, values, xValues: undefined, categoryFormula: undefined, xFormula: undefined, formula: undefined, fill: undefined }; this.items.push(series); return series; }
+  add(name, values = []) { const series = { name, values, xValues: undefined, bubbleSizes: undefined, categoryFormula: undefined, xFormula: undefined, formula: undefined, bubbleSizeFormula: undefined, fill: undefined }; this.items.push(series); return series; }
   getItemAt(index) { return this.items[index]; }
   toJSON() {
     return this.items.map((item) => {
@@ -616,7 +618,7 @@ function normalizeWorksheetChartAxis(value, kind, chartType) {
   if (typeof value !== "object" || Array.isArray(value)) throw new TypeError(`Worksheet chart ${kind}Axis must be an object.`);
   const title = typeof value.title === "string" ? value.title : value.title?.text;
   return {
-    axisType: value.axisType || (kind === "x" && chartType !== "scatter" ? "textAxis" : "valueAxis"),
+    axisType: value.axisType || (kind === "x" && !WORKSHEET_NUMERIC_X_CHART_TYPES.has(chartType) ? "textAxis" : "valueAxis"),
     title: {
       text: title == null ? "" : String(title),
       ...(typeof value.title === "object" && value.title?.textStyle != null ? { textStyle: value.title.textStyle } : {}),
@@ -652,9 +654,11 @@ class WorksheetChart {
     this.series = new WorksheetChartSeriesCollection(this);
     if (sourceOrConfig.series) sourceOrConfig.series.forEach((series) => Object.assign(this.series.add(series.name, series.values || []), {
       xValues: series.xValues == null ? undefined : [...series.xValues],
+      bubbleSizes: series.bubbleSizes == null ? undefined : [...series.bubbleSizes],
       categoryFormula: series.categoryFormula,
       xFormula: series.xFormula,
       formula: series.formula,
+      bubbleSizeFormula: series.bubbleSizeFormula,
       fill: series.fill,
       ...(series.line == null ? {} : { line: series.line }),
       ...(series.stroke == null ? {} : { stroke: series.stroke }),
@@ -674,6 +678,30 @@ class WorksheetChart {
     if (!values.length || !values[0]?.length) return this;
     const header = values[0];
     const dataRows = values.slice(1);
+    if (this.type === "bubble") {
+      if (header.length !== 3) throw new TypeError(`Worksheet bubble chart range shortcut requires exactly three columns ordered X | Y | Size; received ${header.length}. Use explicit series configuration for multiple series.`);
+      const numericColumn = (column, label, positive = false) => dataRows.map((row, index) => {
+        const raw = row[column];
+        const number = Number(raw);
+        if (raw == null || raw === "" || !Number.isFinite(number) || positive && number <= 0) {
+          throw new TypeError(`Worksheet bubble chart ${label} value at data row ${index + 1} must be ${positive ? "finite and positive" : "finite"}.`);
+        }
+        return number;
+      });
+      const xValues = numericColumn(0, "X");
+      const yValues = numericColumn(1, "Y");
+      const bubbleSizes = numericColumn(2, "Size", true);
+      const formulaFor = (column) => `'${range.worksheet.name}'!${makeCellAddress(range.bounds.top + 1, range.bounds.left + column)}:${makeCellAddress(range.bounds.bottom, range.bounds.left + column)}`;
+      this.categories = [];
+      this.series.items = [];
+      const series = this.series.add(String(header[1] || "Series 1"), yValues);
+      series.xValues = xValues;
+      series.bubbleSizes = bubbleSizes;
+      series.xFormula = formulaFor(0);
+      series.formula = formulaFor(1);
+      series.bubbleSizeFormula = formulaFor(2);
+      return this;
+    }
     const scatter = this.type === "scatter";
     const xValues = scatter ? dataRows.map((row) => Number(row[0])) : undefined;
     this.categories = scatter ? [] : dataRows.map((row) => String(row[0] ?? ""));
@@ -704,7 +732,8 @@ class WorksheetChart {
     const categories = resolvedWorksheetChartCategories(this);
     const seriesItems = this.series.toJSON().map((series, index) => ({
       ...series,
-      ...(this.type === "scatter" ? { xValues: resolvedWorksheetChartSeriesXValues(this, this.series.items[index]) } : {}),
+      ...(WORKSHEET_NUMERIC_X_CHART_TYPES.has(this.type) ? { xValues: resolvedWorksheetChartSeriesXValues(this, this.series.items[index]) } : {}),
+      ...(this.type === "bubble" ? { bubbleSizes: resolvedWorksheetChartSeriesBubbleSizes(this, this.series.items[index]) } : {}),
       values: resolvedWorksheetChartSeriesValues(this, this.series.items[index]),
     }));
     return { kind: "drawing", drawingType: "chart", id: this.id, sheet: this.worksheet.name, name: this.name, chartType: this.type, title: this.title, titleTextStyle: this.titleTextStyle, lineOptions: this.lineOptions, dataLabels: normalizeSpreadsheetChartDataLabels(this.dataLabels), categories, series: this.series.items.length, seriesItems, xAxis: this.xAxis, yAxis: this.yAxis, bbox: [this.position.left, this.position.top, this.position.width, this.position.height], bboxUnit: "px" };
@@ -1445,12 +1474,18 @@ export class Workbook {
         if (chart.xAxis?.title?.textStyle != null || chart.yAxis?.title?.textStyle != null) issues.push(verificationIssue("workbook", "unsupportedChartTextStyle", `Chart ${chart.name} axis-title text styling is outside the bounded chart profile.`, { sheet: sheet.name, id: chart.id }));
         if (chart.series.items.length === 0) issues.push(verificationIssue("workbook", "emptyChart", `Chart ${chart.name} on ${sheet.name} has no data series.`, { sheet: sheet.name, id: chart.id }));
         for (const series of chart.series.items) {
-          if (chart.type === "scatter") {
-            if (chart.categories.length) issues.push(verificationIssue("workbook", "chartDataMismatch", `Scatter chart ${chart.name} must use per-series numeric xValues instead of shared categories.`, { sheet: sheet.name, id: chart.id, categories: chart.categories.length }));
-            if ((series.xValues?.length || 0) !== series.values.length) issues.push(verificationIssue("workbook", "chartDataMismatch", `Scatter chart ${chart.name} series ${series.name || "Series"} has ${series.xValues?.length || 0} x values for ${series.values.length} y values.`, { sheet: sheet.name, id: chart.id, series: series.name, xValues: series.xValues?.length || 0, yValues: series.values.length }));
+          if (WORKSHEET_NUMERIC_X_CHART_TYPES.has(chart.type)) {
+            if (chart.categories.length) issues.push(verificationIssue("workbook", "chartDataMismatch", `${chart.type === "bubble" ? "Bubble" : "Scatter"} chart ${chart.name} must use per-series numeric xValues instead of shared categories.`, { sheet: sheet.name, id: chart.id, categories: chart.categories.length }));
+            if ((series.xValues?.length || 0) !== series.values.length) issues.push(verificationIssue("workbook", "chartDataMismatch", `${chart.type === "bubble" ? "Bubble" : "Scatter"} chart ${chart.name} series ${series.name || "Series"} has ${series.xValues?.length || 0} x values for ${series.values.length} y values.`, { sheet: sheet.name, id: chart.id, series: series.name, xValues: series.xValues?.length || 0, yValues: series.values.length }));
+            if (series.categoryFormula) issues.push(verificationIssue("workbook", "chartDataMismatch", `${chart.type === "bubble" ? "Bubble" : "Scatter"} chart ${chart.name} series ${series.name || "Series"} must use xFormula rather than categoryFormula.`, { sheet: sheet.name, id: chart.id, series: series.name, categoryFormula: series.categoryFormula }));
+            if (chart.type === "bubble") {
+              if ((series.bubbleSizes?.length || 0) !== series.values.length) issues.push(verificationIssue("workbook", "chartDataMismatch", `Bubble chart ${chart.name} series ${series.name || "Series"} has ${series.bubbleSizes?.length || 0} sizes for ${series.values.length} y values.`, { sheet: sheet.name, id: chart.id, series: series.name, bubbleSizes: series.bubbleSizes?.length || 0, yValues: series.values.length }));
+              if ((series.bubbleSizes || []).some((value) => !Number.isFinite(Number(value)) || Number(value) <= 0)) issues.push(verificationIssue("workbook", "chartDataMismatch", `Bubble chart ${chart.name} series ${series.name || "Series"} requires finite positive sizes.`, { sheet: sheet.name, id: chart.id, series: series.name, bubbleSizes: series.bubbleSizes }));
+            } else if ((series.bubbleSizes?.length || 0) > 0 || series.bubbleSizeFormula) issues.push(verificationIssue("workbook", "chartDataMismatch", `Scatter chart ${chart.name} series ${series.name || "Series"} cannot carry bubble sizes.`, { sheet: sheet.name, id: chart.id, series: series.name }));
           } else if (chart.categories.length && series.values.length && chart.categories.length !== series.values.length) issues.push(verificationIssue("workbook", "chartDataMismatch", `Chart ${chart.name} series ${series.name || "Series"} has ${series.values.length} values for ${chart.categories.length} categories.`, { sheet: sheet.name, id: chart.id, series: series.name, values: series.values.length, categories: chart.categories.length }));
           if (series.formula && !workbookRangeValid(this, sheet, series.formula)) issues.push(verificationIssue("workbook", "chartFormulaInvalid", `Chart ${chart.name} series ${series.name || "Series"} references an invalid range.`, { sheet: sheet.name, id: chart.id, formula: series.formula }));
-          if (series.xFormula && !workbookRangeValid(this, sheet, series.xFormula)) issues.push(verificationIssue("workbook", "chartXFormulaInvalid", `Scatter chart ${chart.name} series ${series.name || "Series"} references an invalid x-value range.`, { sheet: sheet.name, id: chart.id, formula: series.xFormula }));
+          if (series.xFormula && !workbookRangeValid(this, sheet, series.xFormula)) issues.push(verificationIssue("workbook", "chartXFormulaInvalid", `Numeric-X chart ${chart.name} series ${series.name || "Series"} references an invalid x-value range.`, { sheet: sheet.name, id: chart.id, formula: series.xFormula }));
+          if (series.bubbleSizeFormula && !workbookRangeValid(this, sheet, series.bubbleSizeFormula)) issues.push(verificationIssue("workbook", "chartBubbleSizeFormulaInvalid", `Bubble chart ${chart.name} series ${series.name || "Series"} references an invalid size range.`, { sheet: sheet.name, id: chart.id, formula: series.bubbleSizeFormula }));
           if (series.categoryFormula && !workbookRangeValid(this, sheet, series.categoryFormula)) issues.push(verificationIssue("workbook", "chartCategoryFormulaInvalid", `Chart ${chart.name} categories reference an invalid range.`, { sheet: sheet.name, id: chart.id, formula: series.categoryFormula }));
           if (series.fill != null && (typeof series.fill !== "string" || !/^#[0-9a-f]{6}$/i.test(series.fill))) issues.push(verificationIssue("workbook", "invalidChartSeriesFill", `Chart ${chart.name} series ${series.name || "Series"} fill must be a #RRGGBB solid color.`, { sheet: sheet.name, id: chart.id, series: series.name, fill: series.fill }));
           try {
