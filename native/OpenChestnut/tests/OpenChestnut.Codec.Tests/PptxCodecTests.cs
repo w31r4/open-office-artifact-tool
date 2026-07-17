@@ -728,7 +728,9 @@ public sealed class PptxCodecTests
             Assert.Equal("b", Assert.Single(plotArea.Elements(chartNs + "catAx"), item => item.Element(chartNs + "axId")!.Attribute("val")!.Value == "1").Element(chartNs + "axPos")!.Attribute("val")!.Value);
             Assert.Equal("t", Assert.Single(plotArea.Elements(chartNs + "catAx"), item => item.Element(chartNs + "axId")!.Attribute("val")!.Value == "3").Element(chartNs + "axPos")!.Attribute("val")!.Value);
             Assert.Equal("l", Assert.Single(plotArea.Elements(chartNs + "valAx"), item => item.Element(chartNs + "axId")!.Attribute("val")!.Value == "2").Element(chartNs + "axPos")!.Attribute("val")!.Value);
-            Assert.Equal("r", Assert.Single(plotArea.Elements(chartNs + "valAx"), item => item.Element(chartNs + "axId")!.Attribute("val")!.Value == "4").Element(chartNs + "axPos")!.Attribute("val")!.Value);
+            var secondaryValueAxis = Assert.Single(plotArea.Elements(chartNs + "valAx"), item => item.Element(chartNs + "axId")!.Attribute("val")!.Value == "4");
+            Assert.Equal("r", secondaryValueAxis.Element(chartNs + "axPos")!.Attribute("val")!.Value);
+            Assert.Equal("max", secondaryValueAxis.Element(chartNs + "crosses")!.Attribute("val")!.Value);
         }
 
         var imported = Import(authored.File.ToByteArray());

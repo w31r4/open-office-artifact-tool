@@ -171,7 +171,7 @@ slide.charts.add("combo", {
     value: { title: "Revenue ($M)" },
     secondary: {
       category: { title: "Quarter" },
-      value: { title: "Margin (%)", minimum: 0, maximum: 25 },
+      value: { title: "Margin (%)", min: 0, max: 25 },
     },
   },
   dataLabels: { showValue: true, position: "top" },

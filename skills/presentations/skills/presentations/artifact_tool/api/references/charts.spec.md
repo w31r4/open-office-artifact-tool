@@ -24,7 +24,10 @@ OpenChestnut PPTX creation/import/edit is deliberately narrower:
 
 Use `inspect` before editing an imported chart, make the smallest supported
 change, export to a distinct output, import once more, and render the final
-slide for visual QA.
+slide for visual QA. The bundled LibreOfficeDev 26.8 alpha currently overlaps
+the dual value-axis tick labels for cache-only PPTX secondary-axis combos even
+though its series and right-axis title render; retain the OOXML/round-trip gate
+and use a Microsoft PowerPoint/native-host lane for release-grade placement QA.
 
 ### Canonical secondary-line combo
 
@@ -40,7 +43,7 @@ slide.charts.add("combo", {
     value: { title: "Revenue ($M)" },
     secondary: {
       category: { title: "Quarter" },
-      value: { title: "Margin (%)", minimum: 0, maximum: 25 },
+      value: { title: "Margin (%)", min: 0, max: 25 },
     },
   },
 });

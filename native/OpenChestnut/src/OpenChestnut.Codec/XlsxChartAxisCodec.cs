@@ -72,7 +72,11 @@ internal static class XlsxChartAxisCodec
     {
         var xAxis = chart.XAxis ?? new SpreadsheetChartAxisArtifact();
         var yAxis = chart.YAxis ?? new SpreadsheetChartAxisArtifact();
-        plotArea.Add(BuildCategoryAxis(xAxis, "3", "4", "t"), BuildValueAxis(yAxis, "4", "3", "r"));
+        // A right-hand value axis crosses its paired category axis at the
+        // category maximum. Besides being the interoperable DrawingML form,
+        // this makes the intended side explicit to hosts instead of relying on
+        // their default crossing inference.
+        plotArea.Add(BuildCategoryAxis(xAxis, "3", "4", "t"), BuildValueAxis(yAxis, "4", "3", "r", crosses: "max"));
     }
 
     internal static void Patch(XElement plotArea, XElement plot, SpreadsheetChartArtifact target)
@@ -224,7 +228,7 @@ internal static class XlsxChartAxisCodec
         return output;
     }
 
-    private static XElement BuildValueAxis(SpreadsheetChartAxisArtifact axis, string axisId, string crossAxisId, string position)
+    private static XElement BuildValueAxis(SpreadsheetChartAxisArtifact axis, string axisId, string crossAxisId, string position, string? crosses = null)
     {
         var scaling = new XElement(ChartNs + "scaling", new XElement(ChartNs + "orientation", new XAttribute("val", "minMax")));
         if (axis.HasMaximum) scaling.Add(ValueElement("max", axis.Maximum));
@@ -235,6 +239,7 @@ internal static class XlsxChartAxisCodec
         AppendTitleAndNumberFormat(output, axis);
         XlsxChartTextStyleCodec.AppendAuthoredAxis(output, axis.TextStyle);
         output.Add(new XElement(ChartNs + "crossAx", new XAttribute("val", crossAxisId)));
+        if (crosses is not null) output.Add(new XElement(ChartNs + "crosses", new XAttribute("val", crosses)));
         if (axis.HasMajorUnit) output.Add(ValueElement("majorUnit", axis.MajorUnit));
         return output;
     }
