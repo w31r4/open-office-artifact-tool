@@ -1,8 +1,8 @@
 # open-office-artifact-tool
 
-面向 Agent 的 Office 与 PDF 创建、读取、编辑和验证工具箱。
+**简体中文** | [English](README.en.md)
 
-> A clean-room, agent-facing toolkit for creating, editing, inspecting, rendering, and verifying Office and PDF artifacts.
+面向 Agent 的 Office 与 PDF 创建、读取、编辑、检查、渲染和验证工具箱。
 
 `open-office-artifact-tool` 提供统一的 JavaScript 对象模型。DOCX、XLSX 和 PPTX 由仓库内的 **OpenChestnut**（C# + Open XML SDK + .NET WebAssembly）读写；PDF 使用独立语义模型和显式 Provider 路由。
 
@@ -19,7 +19,7 @@ npm install
 node examples/create-xlsx-dashboard.mjs
 ```
 
-当前发布门禁验证 Node.js 26。普通调用加载仓库或 npm 包内的 WASM，不要求本机安装 .NET；只有重建 OpenChestnut 才需要 .NET SDK 8。
+本地发布门禁已在 Node.js 26.5.0 通过，托管 CI 使用 Node.js 22；这是已验证环境，并非已固化的最低版本。普通消费者直接加载仓库或 npm 包内的 WASM，不需要本机 .NET；重建 OpenChestnut，或构建/测试可选的 OfficeBridge，需要 .NET SDK 8。
 
 也可以直接使用公共 API：
 
@@ -50,7 +50,7 @@ console.log(reopened.inspect({ kind: "worksheet,table,chart" }).ndjson);
 
 - **为 Agent 设计**：文件模型自带 `inspect`、`resolve`、`verify`、render 和 visual QA 原语。
 - **保真优先**：无法安全建模的 Office 内容绑定原始包并原样保留；不支持的修改明确失败。
-- **Skill 可直接使用**：仓库随包提供 Documents、Spreadsheets、Presentations 和 PDF 四个原生 Codex 插件包。
+- **内置原生 Skills**：仓库随包提供 Documents、Spreadsheets、Presentations 和 PDF 四个 Codex 插件包；需要宿主会话或外部 Provider 的工作流会明确说明前置条件。
 
 ## 支持范围
 
@@ -58,8 +58,8 @@ console.log(reopened.inspect({ kind: "worksheet,table,chart" }).ndjson);
 | --- | --- | --- |
 | XLSX | OpenChestnut C# WASM | 单元格与公式、样式与布局、表格、图片、基础验证/条件格式、评论、图表和 sparklines。 |
 | DOCX | OpenChestnut C# WASM | 结构化文本与样式、分节、页眉页脚、列表、表格、链接、字段、图片和经典评论。 |
-| PPTX | OpenChestnut C# WASM | 形状与富文本、图片及可逆裁剪、表格、连接线、图表、直接背景和纯文本演讲者备注；Master/Layout 只读保真。 |
-| PDF | 独立模型与 Provider 路由 | Tagged PDF 创建、提取与阅读顺序、表格/图片/链接、表单、批注、有界原文件编辑、合并重排、水印、Provider 脱敏和渲染 QA。 |
+| PPTX | OpenChestnut C# WASM | 形状与富文本、图片及可逆裁剪、表格、连接线、图表、直接背景和纯文本演讲者备注；Master/Layout 仅保真、不可编辑。 |
+| PDF | 独立模型与 Provider 路由 | 内置 Tagged PDF 创建、结构与阅读顺序、表格/图片/链接和模型 QA；外部 Provider 承担表单、批注、有界原文件编辑、合并重排、水印、脱敏和原生渲染。 |
 
 完整且持续更新的边界见 [能力矩阵](https://github.com/w31r4/open-office-artifact-tool/blob/main/docs/coverage.md)。
 
@@ -84,11 +84,11 @@ OpenChestnut 是普通 Office 导入/导出的唯一 parser/writer。显式 OOXM
 - [Presentations](skills/presentations/skills/presentations/SKILL.md)
 - [PDF](skills/pdf/skills/pdf/SKILL.md)
 
-发布前可直接使用仓库中的插件目录。Office Skill 的普通文件工作流统一调用 OpenChestnut。PDF npm 表面包含 JavaScript 模型和薄路由脚本，不捆绑外部 Provider 本身；缺少依赖时会明确失败。安装与职责见 [PDF Provider Matrix](skills/pdf/skills/pdf/references/PROVIDER_MATRIX.md)。
+四个 `skills/<name>` 目录都是完整的 Codex 插件根目录；发布前需先创建一个引用这些目录的本地 marketplace，再从该 marketplace 安装插件。Office Skill 的普通文件工作流统一调用 OpenChestnut。PDF npm 表面包含 JavaScript 模型和薄路由脚本，不捆绑外部 Provider 本身；缺少必需依赖时会明确失败。安装与职责见 [PDF Provider Matrix](skills/pdf/skills/pdf/references/PROVIDER_MATRIX.md)。
 
 ## 必须知道的边界
 
-- 导入 Office 文件时，未建模对象只有在模型仍携带原始包快照且相关拓扑未被不支持的操作改变时才能原样保留；否则导出失败。
+- 要保留导入 Office 文件中的未建模对象，必须继续使用 import 返回的模型，并保持这些对象的结构不变；丢失源快照或修改不支持的拓扑时，导出失败。
 - 任意已有 PDF 不能像 Word 一样可靠地自动重排全文；原文件编辑必须落在明确、可验证的有界操作中。
 - PDF 签名、时间戳与 LTV 依赖外部 pyHanko 工作流，PDF/A 与 PDF/UA 机器验证依赖外部 veraPDF；它们不是随包提供的完整适配器。
 - PyMuPDF/MuPDF 不随 MIT npm 包分发。使用者必须单独安装，并明确接受 GNU AGPL 或商业许可。

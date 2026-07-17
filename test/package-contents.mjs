@@ -18,6 +18,8 @@ const maxPackedBytes = 9_500_000;
 const maxUnpackedBytes = 22_750_000;
 
 for (const required of [
+  "README.md",
+  "README.en.md",
   "THIRD_PARTY_NOTICES.md",
   "docs/api.md",
   "docs/reference-skills.md",
