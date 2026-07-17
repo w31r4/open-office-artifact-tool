@@ -5,6 +5,7 @@ import { Workbook } from "../spreadsheet/index.mjs";
 import { DocumentModel } from "../document/index.mjs";
 import { FileBlob } from "../shared/file-blob.mjs";
 import { XLSX_THEME_COLOR_NAMES, normalizeXlsxStyle, normalizeXlsxThemeConfig } from "../spreadsheet/ooxml-styles.mjs";
+import { deterministicSpreadsheetGuid } from "../spreadsheet/ooxml-threaded-comments.mjs";
 import {
   ArtifactFamily,
   CellFormulaKind,
@@ -621,26 +622,52 @@ function publicConditionalFormat(item) {
   };
 }
 
+function publicThreadedComment(item) {
+  return {
+    ...(item.nativeCommentId || item.id ? { id: item.nativeCommentId || item.id } : {}),
+    ...(item.personId ? { personId: item.personId } : {}),
+    ...(item.dateTime ? { date: item.dateTime } : {}),
+    ...(item.parentNativeCommentId ? { parentId: item.parentNativeCommentId } : {}),
+    author: item.author || "User",
+    person: {
+      displayName: item.author || "User",
+      ...(item.userId ? { userId: item.userId } : {}),
+      ...(item.providerId ? { providerId: item.providerId } : {}),
+    },
+    done: Boolean(item.resolved),
+  };
+}
+
 function wireThreadedComments(workbook, sheet) {
   const activeSheetName = workbook.worksheets.getActiveWorksheet().name;
-  return (workbook.comments?.threads || []).filter((thread) => (thread.target?.sheetName || activeSheetName) === sheet.name).map((thread) => {
-    if (thread.comments?.length !== 1) throw new OpenChestnutCodecError(`Worksheet ${sheet.name} threaded comment ${thread.id} has replies; only a single root comment is editable.`, [], { code: "unsupported_threaded_comment_replies" });
-    const comment = thread.comments[0];
+  return (workbook.comments?.threads || []).filter((thread) => (thread.target?.sheetName || activeSheetName) === sheet.name).flatMap((thread) => {
     const address = String(thread.target?.address || "").toUpperCase();
     if (!/^[A-Z]{1,3}[1-9]\d*$/.test(address)) throw new OpenChestnutCodecError(`Worksheet ${sheet.name} threaded comment ${thread.id} must target one cell.`, [], { code: "invalid_threaded_comment_target" });
-    const person = comment.person || {};
-    return {
-      id: String(thread.id || ""),
-      cellReference: address,
-      nativeCommentId: BRACED_GUID.test(comment.id || "") ? String(comment.id).toUpperCase() : "",
-      text: String(comment.text ?? ""),
-      personId: BRACED_GUID.test(comment.personId || person.id || "") ? String(comment.personId || person.id).toUpperCase() : "",
-      author: String(person.displayName || comment.author || thread.author || "User"),
-      userId: String(person.userId ?? comment.userId ?? ""),
-      providerId: String(person.providerId ?? comment.providerId ?? ""),
-      dateTime: comment.date ? new Date(comment.date).toISOString() : "1970-01-01T00:00:00.000Z",
-      resolved: Boolean(comment.done ?? thread.resolved),
-    };
+    const comments = thread.comments || [];
+    if (!comments.length) throw new OpenChestnutCodecError(`Worksheet ${sheet.name} threaded comment ${thread.id} has no root comment.`, [], { code: "invalid_spreadsheet_threaded_comment" });
+    const nativeIds = comments.map((comment, index) => BRACED_GUID.test(comment.id || "")
+      ? String(comment.id).toUpperCase()
+      : deterministicSpreadsheetGuid(`open-chestnut:${sheet.id}:${thread.id}:${address}:${index}`));
+    const rootModelIds = new Set([String(thread.id || ""), String(comments[0]?.id || ""), nativeIds[0]].filter(Boolean));
+    return comments.map((comment, index) => {
+      if (index > 0 && comment.parentId != null && !rootModelIds.has(String(comment.parentId))) {
+        throw new OpenChestnutCodecError(`Worksheet ${sheet.name} threaded comment ${thread.id} contains a nested or branched reply graph.`, [], { code: "unsupported_threaded_comment_reply_topology" });
+      }
+      const person = comment.person || {};
+      return {
+        id: String(index === 0 ? thread.id || "" : comment.modelId || comment.id || `${thread.id}/reply/${index}`),
+        cellReference: address,
+        nativeCommentId: nativeIds[index],
+        text: String(comment.text ?? ""),
+        personId: BRACED_GUID.test(comment.personId || person.id || "") ? String(comment.personId || person.id).toUpperCase() : "",
+        author: String(person.displayName || comment.author || thread.author || "User"),
+        userId: String(person.userId ?? comment.userId ?? ""),
+        providerId: String(person.providerId ?? comment.providerId ?? ""),
+        dateTime: comment.date ? new Date(comment.date).toISOString() : "1970-01-01T00:00:00.000Z",
+        resolved: Boolean(comment.done ?? thread.resolved),
+        ...(index > 0 ? { parentNativeCommentId: nativeIds[0] } : {}),
+      };
+    });
   });
 }
 
@@ -1348,7 +1375,10 @@ function workbookFromEnvelope(envelope) {
     sheet.sortState = publicTableSortState(sourceSheet.sortState);
     sheet.dataValidations.items = (sourceSheet.dataValidations || []).map(publicDataValidation);
     sheet.conditionalFormattings.items = (sourceSheet.conditionalFormats || []).map(publicConditionalFormat);
-    for (const sourceComment of sourceSheet.threadedComments || []) {
+    const sourceComments = sourceSheet.threadedComments || [];
+    const rootComments = sourceComments.filter((item) => !item.parentNativeCommentId);
+    const consumedReplies = new Set();
+    for (const sourceComment of rootComments) {
       const thread = workbook.comments.addThread(
         { sheetName: sheet.name, address: sourceComment.cellReference },
         sourceComment.text,
@@ -1356,20 +1386,17 @@ function workbookFromEnvelope(envelope) {
           id: sourceComment.id || undefined,
           author: sourceComment.author || "User",
           resolved: sourceComment.resolved,
-          comment: {
-            ...(sourceComment.nativeCommentId ? { id: sourceComment.nativeCommentId } : {}),
-            ...(sourceComment.personId ? { personId: sourceComment.personId } : {}),
-            ...(sourceComment.dateTime ? { date: sourceComment.dateTime } : {}),
-            person: {
-              displayName: sourceComment.author || "User",
-              ...(sourceComment.userId ? { userId: sourceComment.userId } : {}),
-              ...(sourceComment.providerId ? { providerId: sourceComment.providerId } : {}),
-            },
-            done: sourceComment.resolved,
-          },
+          comment: publicThreadedComment(sourceComment),
         },
       );
       if (sourceComment.id) thread.id = sourceComment.id;
+      for (const reply of sourceComments.filter((item) => item.parentNativeCommentId === sourceComment.nativeCommentId)) {
+        thread.addReply(reply.text, publicThreadedComment(reply));
+        consumedReplies.add(reply);
+      }
+    }
+    if (rootComments.length + consumedReplies.size !== sourceComments.length) {
+      throw new OpenChestnutCodecError(`Worksheet ${sheet.name} contains an unsupported threaded-comment reply graph.`, [], { code: "unsupported_threaded_comment_reply_topology" });
     }
     const dynamicArraySlots = new Map();
     for (const sourceCell of sourceSheet.cells) {

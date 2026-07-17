@@ -12,9 +12,10 @@ using TC = DocumentFormat.OpenXml.Office2019.Excel.ThreadedComments;
 namespace OpenChestnut.Codec;
 
 // Owns the small worksheet-native slice used by the Spreadsheet skill:
-// ordinary validation rules, four conditional-format profiles, and root-only
-// Office 2019 threaded comments. Unsupported native collections stay hidden
-// behind the validated source package and reject any attempted replacement.
+// ordinary validation rules, four conditional-format profiles, and bounded
+// Office 2019 threaded comments with one root plus direct replies. Nested,
+// branched, mention-bearing, or otherwise unsupported native collections stay
+// hidden behind the validated source package and reject replacement.
 internal sealed class XlsxWorksheetFeatureCodec
 {
     private const int MaxRulesPerSheet = 4_096;
@@ -329,32 +330,64 @@ internal sealed class XlsxWorksheetFeatureCodec
                 if (nativeParts.Length == 0) { comments[part] = []; continue; }
                 var root = nativeParts[0].ThreadedComments;
                 if (root is null || root.ChildElements.Any(item => item is not TC.ThreadedComment)) return ThreadedProfile.Unsupported;
-                var output = new List<SpreadsheetThreadedCommentArtifact>();
+                var native = new List<NativeThreadedComment>();
                 foreach (var item in root.Elements<TC.ThreadedComment>())
                 {
-                    if (!OnlyAttributes(item, "ref", "dT", "personId", "id", "parentId", "done") || item.ParentId?.HasValue == true ||
+                    if (!OnlyAttributes(item, "ref", "dT", "personId", "id", "parentId", "done") ||
                         item.ChildElements.Count != 1 || item.GetFirstChild<TC.ThreadedCommentText>() is not { } text) return ThreadedProfile.Unsupported;
                     var nativeId = NormalizeGuid(item.Id?.Value);
+                    var hasParent = item.ParentId?.HasValue == true;
+                    var parentId = hasParent ? NormalizeGuid(item.ParentId!.Value) : null;
                     var personId = NormalizeGuid(item.PersonId?.Value);
-                    var cellReference = CanonicalSingleCell(item.Ref?.Value);
-                    if (nativeId is null || personId is null || cellReference is null || !ids.Add(nativeId) || !people.TryGetValue(personId, out var person)) return ThreadedProfile.Unsupported;
+                    var hasReference = item.Ref?.HasValue == true;
+                    var cellReference = hasReference ? CanonicalSingleCell(item.Ref!.Value) : null;
+                    if (nativeId is null || hasParent && parentId is null || personId is null || !ids.Add(nativeId) ||
+                        !people.TryGetValue(personId, out var person) || !hasParent && cellReference is null || hasReference && cellReference is null)
+                        return ThreadedProfile.Unsupported;
                     usedPeople.Add(personId);
                     var dateTime = CanonicalDate(item.DT?.Value);
                     if (dateTime is null || !ValidText(text.Text, 32_767, allowLineBreaks: true)) return ThreadedProfile.Unsupported;
+                    native.Add(new NativeThreadedComment(nativeId, parentId, cellReference, personId, text.Text, dateTime, item.Done?.Value ?? false, person));
+                }
+                var byId = native.ToDictionary(item => item.NativeId, StringComparer.Ordinal);
+                var output = new List<SpreadsheetThreadedCommentArtifact>(native.Count);
+                foreach (var rootComment in native.Where(item => item.ParentId is null))
+                {
                     output.Add(new SpreadsheetThreadedCommentArtifact
                     {
-                        Id = $"thread/{nativeId}",
-                        CellReference = cellReference,
-                        NativeCommentId = nativeId,
-                        Text = text.Text,
-                        PersonId = personId,
-                        Author = person.Author,
-                        UserId = person.UserId,
-                        ProviderId = person.ProviderId,
-                        DateTime = dateTime,
-                        Resolved = item.Done?.Value ?? false,
+                        Id = $"thread/{rootComment.NativeId}",
+                        CellReference = rootComment.CellReference!,
+                        NativeCommentId = rootComment.NativeId,
+                        Text = rootComment.Text,
+                        PersonId = rootComment.PersonId,
+                        Author = rootComment.Person.Author,
+                        UserId = rootComment.Person.UserId,
+                        ProviderId = rootComment.Person.ProviderId,
+                        DateTime = rootComment.DateTime,
+                        Resolved = rootComment.Resolved,
                     });
+                    foreach (var reply in native.Where(item => item.ParentId == rootComment.NativeId))
+                    {
+                        if (reply.CellReference is not null && !reply.CellReference.Equals(rootComment.CellReference, StringComparison.OrdinalIgnoreCase))
+                            return ThreadedProfile.Unsupported;
+                        output.Add(new SpreadsheetThreadedCommentArtifact
+                        {
+                            Id = $"reply/{reply.NativeId}",
+                            CellReference = rootComment.CellReference!,
+                            NativeCommentId = reply.NativeId,
+                            ParentNativeCommentId = rootComment.NativeId,
+                            Text = reply.Text,
+                            PersonId = reply.PersonId,
+                            Author = reply.Person.Author,
+                            UserId = reply.Person.UserId,
+                            ProviderId = reply.Person.ProviderId,
+                            DateTime = reply.DateTime,
+                            Resolved = reply.Resolved,
+                        });
+                    }
                 }
+                if (output.Count != native.Count || native.Any(item => item.ParentId is not null && (!byId.TryGetValue(item.ParentId, out var parent) || parent.ParentId is not null)))
+                    return ThreadedProfile.Unsupported;
                 comments[part] = output;
             }
             if (usedPeople.Count != people.Count) return ThreadedProfile.Unsupported;
@@ -420,14 +453,16 @@ internal sealed class XlsxWorksheetFeatureCodec
             var root = new TC.ThreadedComments();
             foreach (var comment in comments)
             {
-                root.Append(new TC.ThreadedComment(new TC.ThreadedCommentText(comment.Text))
+                var native = new TC.ThreadedComment(new TC.ThreadedCommentText(comment.Text))
                 {
                     Ref = comment.CellReference,
                     DT = DateTime.Parse(comment.DateTime, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal),
                     PersonId = comment.PersonId,
                     Id = comment.NativeCommentId,
                     Done = comment.Resolved,
-                });
+                };
+                if (comment.ParentNativeCommentId.Length > 0) native.ParentId = comment.ParentNativeCommentId;
+                root.Append(native);
             }
             part.ThreadedComments = root;
             root.Save();
@@ -449,6 +484,9 @@ internal sealed class XlsxWorksheetFeatureCodec
             target.ProviderId = string.IsNullOrEmpty(source.ProviderId) ? "None" : source.ProviderId;
             target.PersonId = NormalizeGuid(source.PersonId) ?? DeterministicGuid($"person:{target.Author}:{target.UserId}:{target.ProviderId}");
             target.DateTime = CanonicalDate(source.DateTime) ?? source.DateTime;
+            target.ParentNativeCommentId = source.ParentNativeCommentId.Length == 0
+                ? string.Empty
+                : NormalizeGuid(source.ParentNativeCommentId) ?? source.ParentNativeCommentId;
             result.Add(target);
         }
         return result;
@@ -531,15 +569,28 @@ internal sealed class XlsxWorksheetFeatureCodec
         if (sheet.ThreadedComments.Count > MaxCommentsPerSheet) throw InvalidComment(sheet.Name, "exceeds the 4096-comment budget.");
         var ids = new HashSet<string>(StringComparer.Ordinal);
         var nativeIds = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var item in NormalizeThreadedComments(sheet))
+        var comments = NormalizeThreadedComments(sheet);
+        foreach (var item in comments)
         {
             if (string.IsNullOrWhiteSpace(item.Id) || !ids.Add(item.Id)) throw InvalidComment(sheet.Name, "IDs must be non-empty and unique.");
             if (CanonicalSingleCell(item.CellReference) is null) throw InvalidComment(sheet.Name, $"{item.Id} must target one valid cell.");
             if (!BracedGuidPattern.IsMatch(item.NativeCommentId) || !nativeIds.Add(item.NativeCommentId) || !BracedGuidPattern.IsMatch(item.PersonId))
                 throw InvalidComment(sheet.Name, $"{item.Id} has invalid or duplicate native GUID identity.");
+            if (item.ParentNativeCommentId.Length > 0 && !BracedGuidPattern.IsMatch(item.ParentNativeCommentId))
+                throw InvalidComment(sheet.Name, $"{item.Id} has an invalid parent GUID.");
             if (!ValidText(item.Text, 32_767, allowLineBreaks: true) || !ValidText(item.Author, 255, allowLineBreaks: false) ||
                 !ValidText(item.UserId, 2_048, allowLineBreaks: false) || !ValidText(item.ProviderId, 255, allowLineBreaks: false) || CanonicalDate(item.DateTime) is null)
                 throw InvalidComment(sheet.Name, $"{item.Id} has invalid text, person metadata, or date-time.");
+        }
+        var byNativeId = comments.ToDictionary(item => item.NativeCommentId, StringComparer.Ordinal);
+        foreach (var item in comments.Where(item => item.ParentNativeCommentId.Length > 0))
+        {
+            if (!byNativeId.TryGetValue(item.ParentNativeCommentId, out var parent))
+                throw InvalidComment(sheet.Name, $"{item.Id} references a missing parent.");
+            if (parent.ParentNativeCommentId.Length > 0)
+                throw InvalidComment(sheet.Name, $"{item.Id} is nested below another reply; only direct replies are supported.");
+            if (!item.CellReference.Equals(parent.CellReference, StringComparison.OrdinalIgnoreCase))
+                throw InvalidComment(sheet.Name, $"{item.Id} and its root must target the same cell.");
         }
     }
 
@@ -568,7 +619,8 @@ internal sealed class XlsxWorksheetFeatureCodec
     private static bool ThreadedCommentEqual(SpreadsheetThreadedCommentArtifact left, SpreadsheetThreadedCommentArtifact right) =>
         left.CellReference.Equals(right.CellReference, StringComparison.OrdinalIgnoreCase) && left.NativeCommentId == right.NativeCommentId &&
         left.Text == right.Text && left.PersonId == right.PersonId && left.Author == right.Author && left.UserId == right.UserId &&
-        left.ProviderId == right.ProviderId && CanonicalDate(left.DateTime) == CanonicalDate(right.DateTime) && left.Resolved == right.Resolved;
+        left.ProviderId == right.ProviderId && CanonicalDate(left.DateTime) == CanonicalDate(right.DateTime) && left.Resolved == right.Resolved &&
+        left.ParentNativeCommentId == right.ParentNativeCommentId;
 
     private static string? SingleReference(ListValue<StringValue>? references)
     {
@@ -782,6 +834,15 @@ internal sealed class XlsxWorksheetFeatureCodec
     private static CodecException InvalidComment(string sheetName, string message) => new("invalid_spreadsheet_threaded_comment", $"Worksheet {sheetName} threaded comment {message}", sheetName);
 
     private sealed record PersonProfile(string Author, string UserId, string ProviderId);
+    private sealed record NativeThreadedComment(
+        string NativeId,
+        string? ParentId,
+        string? CellReference,
+        string PersonId,
+        string Text,
+        string DateTime,
+        bool Resolved,
+        PersonProfile Person);
     private sealed record ThreadedProfile(bool Recognized, IReadOnlyDictionary<WorksheetPart, IReadOnlyList<SpreadsheetThreadedCommentArtifact>> Comments)
     {
         internal static ThreadedProfile Empty { get; } = new(true, new Dictionary<WorksheetPart, IReadOnlyList<SpreadsheetThreadedCommentArtifact>>(ReferenceEqualityComparer.Instance));

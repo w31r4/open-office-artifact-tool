@@ -349,8 +349,9 @@ message WorksheetArtifact {
   // Bounded cellIs/expression/containsText/colorScale rules. Differential
   // formatting reuses the static style projection instead of a second model.
   repeated SpreadsheetConditionalFormatArtifact conditional_formats = 16;
-  // One root threaded comment per entry. Replies and mentions are outside the
-  // editable profile and remain source-preserved.
+  // One flattened root/direct-reply record per entry. Parent identity is
+  // explicit on direct replies; nested/branched graphs and mentions remain
+  // source-preserved and outside the editable profile.
   repeated SpreadsheetThreadedCommentArtifact threaded_comments = 17;
   // Bounded Office 2010 x14 sparkline groups. One-dimensional target ranges
   // map to row- or column-oriented source slices; arbitrary/non-contiguous
@@ -391,6 +392,8 @@ message SpreadsheetThreadedCommentArtifact {
   string provider_id = 8;
   string date_time = 9;
   bool resolved = 10;
+  // Empty for a thread root. Direct replies reference the root's native GUID.
+  string parent_native_comment_id = 11;
 }
 
 enum SpreadsheetSparklineType {

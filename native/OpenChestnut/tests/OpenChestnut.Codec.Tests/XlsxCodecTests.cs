@@ -99,12 +99,21 @@ public sealed class XlsxCodecTests
             Assert.Equal(2U, worksheetPart.Worksheet!.GetFirstChild<DataValidations>()!.Count!.Value);
             Assert.Equal(2, worksheetPart.Worksheet.Elements<ConditionalFormatting>().Count());
             var people = Assert.Single(document.WorkbookPart.WorkbookPersonParts).PersonList!;
-            Assert.Equal("Analyst", Assert.Single(people.Elements<TC.Person>()).DisplayName!.Value);
+            Assert.Equal(["Analyst", "Lead analyst"], people.Elements<TC.Person>().Select(item => item.DisplayName?.Value ?? string.Empty).Order().ToArray());
             var comments = Assert.Single(worksheetPart.WorksheetThreadedCommentsParts).ThreadedComments!;
-            var comment = Assert.Single(comments.Elements<TC.ThreadedComment>());
-            Assert.Equal("C2", comment.Ref!.Value);
-            Assert.Equal("Review the revenue total.", comment.ThreadedCommentText!.Text);
-            Assert.Null(comment.ParentId);
+            Assert.Collection(comments.Elements<TC.ThreadedComment>(),
+                root =>
+                {
+                    Assert.Equal("C2", root.Ref!.Value);
+                    Assert.Equal("Review the revenue total.", root.ThreadedCommentText!.Text);
+                    Assert.Null(root.ParentId);
+                },
+                reply =>
+                {
+                    Assert.Equal("C2", reply.Ref!.Value);
+                    Assert.Equal("Confirmed against source data.", reply.ThreadedCommentText!.Text);
+                    Assert.Equal("{11111111-1111-4111-8111-111111111111}", reply.ParentId!.Value);
+                });
         }
 
         var imported = Import(authored.File.ToByteArray());
@@ -138,10 +147,22 @@ public sealed class XlsxCodecTests
                 Assert.Equal("colorScale", item.RuleType);
                 Assert.Equal(["FEE2E2", "FEF3C7", "22C55E"], item.Colors.Select(color => color.Rgb));
             });
-        var threaded = Assert.Single(sheet.ThreadedComments);
-        Assert.Equal("{11111111-1111-4111-8111-111111111111}", threaded.NativeCommentId);
-        Assert.Equal("analyst@example.com", threaded.UserId);
-        Assert.False(threaded.Resolved);
+        Assert.Collection(sheet.ThreadedComments,
+            threaded =>
+            {
+                Assert.Equal("{11111111-1111-4111-8111-111111111111}", threaded.NativeCommentId);
+                Assert.Empty(threaded.ParentNativeCommentId);
+                Assert.Equal("analyst@example.com", threaded.UserId);
+                Assert.False(threaded.Resolved);
+            },
+            reply =>
+            {
+                Assert.Equal("{22222222-2222-4222-8222-222222222222}", reply.NativeCommentId);
+                Assert.Equal("{11111111-1111-4111-8111-111111111111}", reply.ParentNativeCommentId);
+                Assert.Equal("lead@example.com", reply.UserId);
+            });
+        var threaded = sheet.ThreadedComments[0];
+        var threadedReply = sheet.ThreadedComments[1];
 
         sheet.DataValidations[1].Formula2 = "12";
         sheet.ConditionalFormats[0].Formulas[0] = "60";
@@ -151,6 +172,8 @@ public sealed class XlsxCodecTests
         threaded.UserId = "lead@example.com";
         threaded.DateTime = "2026-07-16T10:30:00.000Z";
         threaded.Resolved = true;
+        threadedReply.Text = "Reply verified after recalculation.";
+        threadedReply.Resolved = true;
         var preserved = Export(imported.Artifact);
         Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
         AssertOffice2021Valid(preserved.File.ToByteArray());
@@ -161,12 +184,16 @@ public sealed class XlsxCodecTests
         Assert.Equal("12", edited.DataValidations[1].Formula2);
         Assert.Equal("60", edited.ConditionalFormats[0].Formulas[0]);
         Assert.Equal("BBF7D0", edited.ConditionalFormats[0].Format.Fill.Foreground.Rgb);
-        var editedComment = Assert.Single(edited.ThreadedComments);
+        Assert.Equal(2, edited.ThreadedComments.Count);
+        var editedComment = edited.ThreadedComments[0];
         Assert.Equal("Revenue total reviewed.", editedComment.Text);
         Assert.Equal("Lead analyst", editedComment.Author);
         Assert.Equal("lead@example.com", editedComment.UserId);
         Assert.Equal("2026-07-16T10:30:00.000Z", editedComment.DateTime);
         Assert.True(editedComment.Resolved);
+        Assert.Equal("Reply verified after recalculation.", edited.ThreadedComments[1].Text);
+        Assert.Equal(editedComment.NativeCommentId, edited.ThreadedComments[1].ParentNativeCommentId);
+        Assert.True(edited.ThreadedComments[1].Resolved);
     }
 
     [Fact]
@@ -218,7 +245,7 @@ public sealed class XlsxCodecTests
         var sheet = Assert.Single(imported.Artifact.Workbook.Worksheets);
         Assert.Empty(sheet.ConditionalFormats);
         Assert.Equal(2, sheet.DataValidations.Count);
-        Assert.Single(sheet.ThreadedComments);
+        Assert.Equal(2, sheet.ThreadedComments.Count);
 
         var exact = Export(imported.Artifact);
         Assert.True(exact.Ok, string.Join("\n", exact.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
@@ -3884,6 +3911,19 @@ public sealed class XlsxCodecTests
             ProviderId = "None",
             DateTime = "2026-07-16T09:00:00.000Z",
         });
+        sheet.ThreadedComments.Add(new SpreadsheetThreadedCommentArtifact
+        {
+            Id = "reply/revenue-confirmed",
+            CellReference = "C2",
+            NativeCommentId = "{22222222-2222-4222-8222-222222222222}",
+            ParentNativeCommentId = "{11111111-1111-4111-8111-111111111111}",
+            Text = "Confirmed against source data.",
+            PersonId = "{BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB}",
+            Author = "Lead analyst",
+            UserId = "lead@example.com",
+            ProviderId = "None",
+            DateTime = "2026-07-16T09:30:00.000Z",
+        });
         return request;
     }
 
@@ -5623,14 +5663,14 @@ public sealed class XlsxCodecTests
             worksheetPart.Worksheet.Save();
 
             var comments = Assert.Single(worksheetPart.WorksheetThreadedCommentsParts).ThreadedComments!;
-            var root = Assert.Single(comments.Elements<TC.ThreadedComment>());
-            comments.Append(new TC.ThreadedComment(new TC.ThreadedCommentText("Reply"))
+            var root = Assert.Single(comments.Elements<TC.ThreadedComment>(), item => item.ParentId is null);
+            comments.Append(new TC.ThreadedComment(new TC.ThreadedCommentText("Nested reply"))
             {
                 Ref = root.Ref!.Value,
-                DT = new DateTime(2026, 7, 16, 9, 30, 0, DateTimeKind.Utc),
+                DT = new DateTime(2026, 7, 16, 9, 45, 0, DateTimeKind.Utc),
                 PersonId = root.PersonId!.Value,
-                Id = "{22222222-2222-4222-8222-222222222222}",
-                ParentId = root.Id!.Value,
+                Id = "{33333333-3333-4333-8333-333333333333}",
+                ParentId = "{22222222-2222-4222-8222-222222222222}",
                 Done = false,
             });
             comments.Save();

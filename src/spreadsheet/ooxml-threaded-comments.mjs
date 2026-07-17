@@ -32,7 +32,7 @@ function hashWords(value) {
   return [first, second, (first ^ Math.imul(second, 33)) >>> 0, (second ^ Math.imul(first, 97)) >>> 0];
 }
 
-function deterministicSpreadsheetGuid(seed) {
+export function deterministicSpreadsheetGuid(seed) {
   const words = hashWords(seed).map((word) => word.toString(16).toUpperCase().padStart(8, "0")).join("");
   return `{${words.slice(0, 8)}-${words.slice(8, 12)}-4${words.slice(13, 16)}-8${words.slice(17, 20)}-${words.slice(20, 32)}}`;
 }
