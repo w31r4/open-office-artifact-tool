@@ -5,7 +5,7 @@ import path from "node:path";
 import JSZip from "jszip";
 
 import { FileBlob, SpreadsheetFile } from "open-office-artifact-tool";
-import { createWorkbookFromFixture, runSpreadsheetFixture, verifyWorkbookFile } from "./skill-harness/spreadsheets/scripts/workflow.mjs";
+import { createWorkbookFromFixture, nativeSpreadsheetRenderStatus, runSpreadsheetFixture, verifyWorkbookFile } from "./skill-harness/spreadsheets/scripts/workflow.mjs";
 
 const repoRoot = path.resolve(new URL("..", import.meta.url).pathname);
 const fixtureDir = path.join(repoRoot, "test", "skill-harness", "spreadsheets", "fixtures");
@@ -134,7 +134,18 @@ try {
   const scatterXml = await scatterZip.file(scatterChartPath).async("text");
   assert.match(scatterXml, /<c:scatterChart>/);
   assert.match(scatterXml, /<c:scatterStyle val="marker"/);
+  assert.equal((scatterXml.match(/<a:ln><a:noFill\/><\/a:ln>/g) || []).length, 2);
   assert.equal((scatterXml.match(/<c:valAx>/g) || []).length, 2);
+  const scatterQa = await verifyWorkbookFile(scatterPath, {
+    outputDir: path.join(outputDir, "openchestnut-scatter-native-qa"),
+    sheetName: "Relationship Analysis",
+    renderFormat: "svg",
+    nativeRender: "auto",
+  });
+  if (nativeSpreadsheetRenderStatus().available) {
+    assert.equal(scatterQa.summary.nativeRender.status, "passed");
+    assert.equal(scatterQa.summary.nativeRender.pageCount, 1);
+  }
 
   const queryResult = await runFixture("open-chestnut-query-table");
   assert.equal(queryResult.sourceQueryTable.sheet, "External Data");

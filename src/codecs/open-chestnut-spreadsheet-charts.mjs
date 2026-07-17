@@ -274,6 +274,7 @@ function validateSnapshot(snapshot, chart) {
     formula(series.xFormula, `series ${seriesIndex + 1} xFormula`, chart);
     formula(series.formula, `series ${seriesIndex + 1} formula`, chart);
     series.fill = seriesFill(series.fill, `series ${seriesIndex + 1} fill`, chart);
+    if (snapshot.type === "scatter" && series.line != null) fail(chart, `series ${seriesIndex + 1} marker-only scatter data cannot carry line/stroke; use marker.line to style the marker border.`, "unsupported_spreadsheet_chart");
     if (series.marker != null && snapshot.type !== "line" && snapshot.type !== "scatter") fail(chart, `series ${seriesIndex + 1} markers require a line or scatter chart.`, "unsupported_spreadsheet_chart");
     points += series.values.length;
     if (points > MAX_POINTS) fail(chart, `exceeds the ${MAX_POINTS}-value budget.`);

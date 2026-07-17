@@ -30,7 +30,7 @@ export function buildScatterWorkbook() {
   chart.yAxis = { title: { text: "Outcome count" }, min: 0, max: 100, majorUnit: 20, numberFormatCode: "0" };
   chart.series.items[0].marker = { symbol: "circle", size: 8, fill: "#0EA5E9", line: { fill: "#075985", width: 1 } };
   chart.series.items[1].marker = { symbol: "diamond", size: 8, fill: "#F97316", line: { fill: "#9A3412", width: 1 } };
-  chart.setPosition("E2", "L20");
+  chart.setPosition("A8", "H23");
   return workbook;
 }
 

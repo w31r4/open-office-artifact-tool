@@ -312,6 +312,17 @@ await assert.rejects(
   (error) => error?.code === "invalid_spreadsheet_chart" && /xValue.*finite/i.test(error.message),
 );
 
+const scatterWithSeriesLine = Workbook.create();
+const scatterWithSeriesLineSheet = scatterWithSeriesLine.worksheets.add("Scatter line boundary");
+scatterWithSeriesLineSheet.getRange("A1:B3").values = [["X", "Y"], [1, 2], [2, 4]];
+const scatterWithSeriesLineChart = scatterWithSeriesLineSheet.charts.add("scatter", scatterWithSeriesLineSheet.getRange("A1:B3"));
+scatterWithSeriesLineChart.series.items[0].line = { fill: "#2563EB", width: 2 };
+assert.equal(scatterWithSeriesLine.verify().ok, false);
+await assert.rejects(
+  () => SpreadsheetFile.exportXlsx(scatterWithSeriesLine),
+  (error) => error?.code === "unsupported_spreadsheet_chart" && /marker-only scatter.*marker\.line/i.test(error.message),
+);
+
 const unsupportedBubble = chartBoundaryWorkbook("bubble");
 await assert.rejects(
   () => SpreadsheetFile.exportXlsx(unsupportedBubble.candidate),

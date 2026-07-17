@@ -38,9 +38,10 @@ internal static class XlsxChartSeriesLineStyleCodec
             throw Invalid(worksheetId, chartId, seriesName, subject, $"width must be from 0 through {MaxWidthPoints} points");
     }
 
-    internal static bool TryRead(XElement nativeSeries, SpreadsheetChartSeriesArtifact series)
+    internal static bool TryRead(XElement nativeSeries, SpreadsheetChartSeriesArtifact series, SpreadsheetChartType chartType = SpreadsheetChartType.Unspecified)
     {
         var shapeProperties = nativeSeries.Element(ChartNs + "spPr");
+        if (chartType == SpreadsheetChartType.Scatter) return TryReadMarkerOnlyLine(shapeProperties);
         if (!TryReadLine(shapeProperties, out var line)) return false;
         if (line is not null) series.Line = line;
         return true;
@@ -89,8 +90,13 @@ internal static class XlsxChartSeriesLineStyleCodec
         return true;
     }
 
-    internal static XElement? Element(SpreadsheetChartLineStyleArtifact? line)
+    internal static XElement? Element(SpreadsheetChartLineStyleArtifact? line, bool markerOnly = false)
     {
+        if (markerOnly)
+        {
+            if (line is not null) throw new InvalidOperationException("Validated marker-only scatter series unexpectedly carried a line style.");
+            return new XElement(DrawingNs + "ln", new XElement(DrawingNs + "noFill"));
+        }
         if (line is null) return null;
         var output = new XElement(DrawingNs + "ln");
         if (line.HasWidthPoints) output.SetAttributeValue("w", WidthEmu(line.WidthPoints).ToString(CultureInfo.InvariantCulture));
@@ -99,10 +105,28 @@ internal static class XlsxChartSeriesLineStyleCodec
         return output;
     }
 
-    internal static void Patch(XElement nativeSeries, SpreadsheetChartSeriesArtifact target)
+    internal static void Patch(XElement nativeSeries, SpreadsheetChartSeriesArtifact target, bool markerOnly = false)
     {
         var shapeProperties = nativeSeries.Element(ChartNs + "spPr");
         var existing = shapeProperties?.Element(DrawingNs + "ln");
+        if (markerOnly)
+        {
+            if (target.Line is not null) throw new InvalidOperationException("Validated marker-only scatter series unexpectedly carried a line style.");
+            if (shapeProperties is null)
+            {
+                shapeProperties = CreateShapeProperties(nativeSeries);
+                existing = null;
+            }
+            var markerOnlyLine = Element(null, markerOnly: true)!;
+            if (existing is not null) existing.ReplaceWith(markerOnlyLine);
+            else
+            {
+                var before = shapeProperties.Elements().FirstOrDefault(item => IsShapePropertyTail(item.Name));
+                if (before is null) shapeProperties.Add(markerOnlyLine);
+                else before.AddBeforeSelf(markerOnlyLine);
+            }
+            return;
+        }
         if (target.Line is null)
         {
             existing?.Remove();
@@ -111,10 +135,7 @@ internal static class XlsxChartSeriesLineStyleCodec
         }
         if (shapeProperties is null)
         {
-            shapeProperties = new XElement(ChartNs + "spPr");
-            var before = nativeSeries.Elements().FirstOrDefault(item => item.Name != ChartNs + "idx" && item.Name != ChartNs + "order" && item.Name != ChartNs + "tx");
-            if (before is null) nativeSeries.Add(shapeProperties);
-            else before.AddBeforeSelf(shapeProperties);
+            shapeProperties = CreateShapeProperties(nativeSeries);
         }
         var replacement = Element(target.Line)!;
         if (existing is not null) existing.ReplaceWith(replacement);
@@ -162,6 +183,29 @@ internal static class XlsxChartSeriesLineStyleCodec
     private static bool IsShapePropertyTail(XName name) =>
         name == DrawingNs + "effectLst" || name == DrawingNs + "effectDag" || name == DrawingNs + "scene3d" ||
         name == DrawingNs + "sp3d" || name == DrawingNs + "extLst";
+
+    private static bool TryReadMarkerOnlyLine(XElement? shapeProperties)
+    {
+        if (shapeProperties is null) return true;
+        var lines = shapeProperties.Elements(DrawingNs + "ln").ToArray();
+        if (lines.Length == 0) return true;
+        if (lines.Length != 1) return false;
+        var line = lines[0];
+        if (line.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration)) return false;
+        var children = line.Elements().ToArray();
+        if (children.Length != 1 || children[0].Name != DrawingNs + "noFill") return false;
+        var noFill = children[0];
+        return !noFill.HasElements && noFill.Attributes().All(attribute => attribute.IsNamespaceDeclaration);
+    }
+
+    private static XElement CreateShapeProperties(XElement nativeSeries)
+    {
+        var shapeProperties = new XElement(ChartNs + "spPr");
+        var before = nativeSeries.Elements().FirstOrDefault(item => item.Name != ChartNs + "idx" && item.Name != ChartNs + "order" && item.Name != ChartNs + "tx");
+        if (before is null) nativeSeries.Add(shapeProperties);
+        else before.AddBeforeSelf(shapeProperties);
+        return shapeProperties;
+    }
 
     private static void RemoveEmpty(XElement? shapeProperties)
     {

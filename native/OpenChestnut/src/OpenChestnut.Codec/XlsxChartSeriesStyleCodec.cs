@@ -69,10 +69,10 @@ internal static class XlsxChartSeriesStyleCodec
         return true;
     }
 
-    internal static XElement? PropertiesElement(SpreadsheetChartSeriesArtifact series)
+    internal static XElement? PropertiesElement(SpreadsheetChartSeriesArtifact series, bool markerOnly = false)
     {
         var fill = series.Fill is null ? null : SolidFillElement(series.Fill.Rgb);
-        var line = XlsxChartSeriesLineStyleCodec.Element(series.Line);
+        var line = XlsxChartSeriesLineStyleCodec.Element(series.Line, markerOnly);
         return fill is null && line is null ? null : new XElement(ChartNs + "spPr", fill, line);
     }
 

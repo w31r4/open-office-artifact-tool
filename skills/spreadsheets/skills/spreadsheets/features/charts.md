@@ -18,6 +18,10 @@ smooth variants remain source-bound. Other reference chart names and advanced
 plot options require a separately verified provider or must fail closed; never
 substitute a different chart family without telling the user.
 
+For marker-only scatter, do not set the series-level `line` or `stroke` fields:
+OpenChestnut emits an explicit native no-fill series outline so Office hosts do
+not connect the points. Style the point border through `series.marker.line`.
+
 1. Choose the takeaway and most suitable chart type for the data.
 Examples below are guidance, not hard rules:
 - For category comparison or ranking, consider a sorted bar/column chart.

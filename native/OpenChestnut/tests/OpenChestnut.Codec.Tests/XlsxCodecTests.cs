@@ -3517,6 +3517,7 @@ public sealed class XlsxCodecTests
         series.CategoryFormula = string.Empty;
         series.XValueFormula = "'Summary'!$A$1:$A$2";
         series.ValueFormula = "'Summary'!$B$1:$B$2";
+        series.Line = null;
         series.XValues.Add([10, 20]);
 
         var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
@@ -3527,6 +3528,7 @@ public sealed class XlsxCodecTests
         Assert.Contains("<c:scatterStyle val=\"marker\"", authoredXml, StringComparison.Ordinal);
         Assert.Contains("<c:xVal>", authoredXml, StringComparison.Ordinal);
         Assert.Contains("<c:yVal>", authoredXml, StringComparison.Ordinal);
+        AssertMarkerOnlyScatterLines(authored.File.ToByteArray());
         Assert.DoesNotContain("<c:cat>", authoredXml, StringComparison.Ordinal);
         Assert.Equal(2, authoredXml.Split("<c:valAx>", StringSplitOptions.None).Length - 1);
 
@@ -3562,6 +3564,7 @@ public sealed class XlsxCodecTests
         Assert.Equal(SpreadsheetChartMarkerSymbol.Circle, secondChart.Series[0].Marker.Symbol);
         Assert.Equal(40, secondChart.XAxis.Maximum);
         Assert.Equal(10, secondChart.YAxis.MajorUnit);
+        AssertMarkerOnlyScatterLines(edited.File.ToByteArray());
 
         var lineMarkerSource = SetChartScalar(authored.File.ToByteArray(), "scatterChart", "scatterStyle", "lineMarker");
         AssertOffice2021Valid(lineMarkerSource);
@@ -3655,6 +3658,19 @@ public sealed class XlsxCodecTests
         var unknownDash = ChartExportRequest();
         unknownDash.Artifact.Workbook.Worksheets[0].Charts[0].Series[0].Line.DashStyle = (SpreadsheetChartLineDashStyle)99;
         rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(unknownDash.ToByteArray()));
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_spreadsheet_chart", Assert.Single(rejected.Diagnostics).Code);
+
+        var markerOnlyScatter = ChartExportRequest();
+        var scatter = markerOnlyScatter.Artifact.Workbook.Worksheets[0].Charts[0];
+        scatter.Type = SpreadsheetChartType.Scatter;
+        scatter.Categories.Clear();
+        scatter.LineOptions = null;
+        scatter.DataLabels = null;
+        scatter.Series[0].CategoryFormula = string.Empty;
+        scatter.Series[0].XValueFormula = "'Summary'!$A$1:$A$2";
+        scatter.Series[0].XValues.Add([10, 20]);
+        rejected = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(markerOnlyScatter.ToByteArray()));
         Assert.False(rejected.Ok);
         Assert.Equal("invalid_spreadsheet_chart", Assert.Single(rejected.Diagnostics).Code);
     }
@@ -5166,6 +5182,22 @@ public sealed class XlsxCodecTests
         Assert.Equal(expectedLine, (string?)line?.Element(a + "solidFill")?.Element(a + "srgbClr")?.Attribute("val"));
         Assert.Equal(expectedDash, (string?)line?.Element(a + "prstDash")?.Attribute("val"));
         Assert.Equal(expectedWidthPoints is null ? null : Math.Round(expectedWidthPoints.Value * 12_700, MidpointRounding.AwayFromZero).ToString(CultureInfo.InvariantCulture), (string?)line?.Attribute("w"));
+    }
+
+    private static void AssertMarkerOnlyScatterLines(byte[] bytes)
+    {
+        var chart = XDocument.Parse(ReadChartXml(bytes));
+        XNamespace c = "http://schemas.openxmlformats.org/drawingml/2006/chart";
+        XNamespace a = "http://schemas.openxmlformats.org/drawingml/2006/main";
+        var series = chart.Descendants(c + "scatterChart").Single().Elements(c + "ser").ToArray();
+        Assert.NotEmpty(series);
+        Assert.All(series, item =>
+        {
+            var line = item.Element(c + "spPr")?.Element(a + "ln");
+            Assert.NotNull(line);
+            Assert.NotNull(line!.Element(a + "noFill"));
+            Assert.Null(line.Element(a + "solidFill"));
+        });
     }
 
     private static void AssertChartLineGrouping(byte[] bytes, string expected)

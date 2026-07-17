@@ -112,6 +112,7 @@ internal sealed class XlsxChartCodec
             {
                 if (series.Name.Length > 255 || HasControls(series.Name)) throw InvalidChart(worksheetId, chart.Id, "contains an invalid series name.");
                 XlsxChartSeriesStyleCodec.Validate(series, worksheetId, chart.Id);
+                if (chart.Type == SpreadsheetChartType.Scatter && series.Line is not null) throw InvalidChart(worksheetId, chart.Id, $"marker-only scatter series {series.Name} cannot carry a series line; use marker.line to style the marker border.");
                 XlsxChartSeriesLineStyleCodec.Validate(series, worksheetId, chart.Id);
                 XlsxChartSeriesMarkerCodec.Validate(series, chart.Type, worksheetId, chart.Id);
                 if (series.CategoryFormula.Length > 8_192 || series.XValueFormula.Length > 8_192 || series.ValueFormula.Length > 8_192 || HasControls(series.CategoryFormula) || HasControls(series.XValueFormula) || HasControls(series.ValueFormula) || series.CategoryFormula.StartsWith('=') || series.XValueFormula.StartsWith('=') || series.ValueFormula.StartsWith('=')) throw InvalidChart(worksheetId, chart.Id, "contains an invalid category/x-value/value formula.");
@@ -403,7 +404,7 @@ internal sealed class XlsxChartCodec
             series.Values.Add(values);
         }
         editable &= XlsxChartSeriesStyleCodec.TryRead(source, series);
-        editable &= XlsxChartSeriesLineStyleCodec.TryRead(source, series);
+        editable &= XlsxChartSeriesLineStyleCodec.TryRead(source, series, chartType);
         editable &= XlsxChartSeriesMarkerCodec.TryRead(source, series, chartType);
         return true;
     }
@@ -466,7 +467,7 @@ internal sealed class XlsxChartCodec
 
     private static XDocument BuildChartDocument(SpreadsheetChartArtifact chart)
     {
-        var series = chart.Series.Select((item, index) => SeriesElement(item, chart.Categories, index)).ToArray();
+        var series = chart.Series.Select((item, index) => SeriesElement(item, chart.Categories, index, chart.Type)).ToArray();
         XElement plot;
         if (chart.Type == SpreadsheetChartType.Bar)
             plot = new XElement(ChartNs + "barChart", new XElement(ChartNs + "barDir", new XAttribute("val", "col")), new XElement(ChartNs + "grouping", new XAttribute("val", "clustered")), series, XlsxChartDataLabelsCodec.Element(chart.DataLabels), new XElement(ChartNs + "axId", new XAttribute("val", "1")), new XElement(ChartNs + "axId", new XAttribute("val", "2")));
@@ -489,13 +490,13 @@ internal sealed class XlsxChartCodec
         return new XDocument(new XDeclaration("1.0", "UTF-8", "yes"), new XElement(ChartNs + "chartSpace", new XAttribute(XNamespace.Xmlns + "c", ChartNs), new XAttribute(XNamespace.Xmlns + "a", DrawingNs), nativeChart));
     }
 
-    private static XElement SeriesElement(SpreadsheetChartSeriesArtifact series, IEnumerable<string> categories, int index)
+    private static XElement SeriesElement(SpreadsheetChartSeriesArtifact series, IEnumerable<string> categories, int index, SpreadsheetChartType chartType)
     {
         var output = new XElement(ChartNs + "ser",
             new XElement(ChartNs + "idx", new XAttribute("val", index)),
             new XElement(ChartNs + "order", new XAttribute("val", index)),
             new XElement(ChartNs + "tx", new XElement(ChartNs + "v", series.Name)),
-            XlsxChartSeriesStyleCodec.PropertiesElement(series),
+            XlsxChartSeriesStyleCodec.PropertiesElement(series, markerOnly: chartType == SpreadsheetChartType.Scatter),
             XlsxChartSeriesMarkerCodec.Element(series.Marker));
         if (series.XValues.Count > 0 || series.XValueFormula.Length > 0)
             output.Add(new XElement(ChartNs + "xVal", NumericData(series.XValues, series.XValueFormula)), new XElement(ChartNs + "yVal", NumericData(series.Values, series.ValueFormula)));
@@ -615,7 +616,7 @@ internal sealed class XlsxChartCodec
     {
         native.Element(ChartNs + "tx")!.Element(ChartNs + "v")!.Value = target.Name;
         XlsxChartSeriesStyleCodec.Patch(native, target);
-        XlsxChartSeriesLineStyleCodec.Patch(native, target);
+        XlsxChartSeriesLineStyleCodec.Patch(native, target, markerOnly: chartType == SpreadsheetChartType.Scatter);
         XlsxChartSeriesMarkerCodec.Patch(native, target);
         if (chartType == SpreadsheetChartType.Scatter)
         {

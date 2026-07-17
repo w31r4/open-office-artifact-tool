@@ -404,6 +404,9 @@ const scatter = sheet.charts.add("scatter", {
   yAxis: { title: { text: "Conversion (%)" }, min: 0, max: 100, majorUnit: 20 },
 });
 ```
+Marker-only scatter rejects the series-level `line`/`stroke` aliases. Use
+`series.marker.line` when a marker needs a styled border; OpenChestnut writes a
+native no-fill series outline so LibreOffice and Office do not connect points.
 - For internal A1 range formulas, inspect, SVG render, and OpenChestnut export resolve the current category/value caches from the referenced cells. This makes the formula-only series pattern above runnable; external-workbook references or invalid ranges are not silently substituted.
 - After creating a chart with data, specify position, title, axis via the following:
 ```js
@@ -422,7 +425,7 @@ chart.yAxis.title.text = "Revenue and EBITDA";
 - If using compat positioning, always set position: `chart.setPosition("F2", "M20")`.
 - `sheet.charts.getItemOrNullObject("Chart 1")`, `sheet.charts.deleteAll()`
 - For month/date x-axes, prefer a chart helper range with text labels such as `Jan 2025` or `2025-01`. Do not rely on date axis number formats alone; rendered previews can show Excel serial numbers.
-- Canonical OpenChestnut XLSX types are `"bar" | "line" | "area" | "pie" | "doughnut" | "scatter"`. Area uses the standard grouping; doughnut uses a 50% hole; scatter uses marker-only `xVal/yVal` series and two numeric value axes. Imported scatter line/smooth variants remain source-bound. Bubble, radar, stock, treemap, sunburst, histogram, box-whisker, waterfall, funnel, map, stacked-area variants, custom doughnut holes, and exploded points are not silently substituted: imported graphs remain source-bound, while unsupported source-free creation fails closed.
+- Canonical OpenChestnut XLSX types are `"bar" | "line" | "area" | "pie" | "doughnut" | "scatter"`. Area uses the standard grouping; doughnut uses a 50% hole; scatter uses marker-only `xVal/yVal` series, two numeric value axes, and an explicit native no-fill series outline. Imported scatter line/smooth variants remain source-bound. Bubble, radar, stock, treemap, sunburst, histogram, box-whisker, waterfall, funnel, map, stacked-area variants, custom doughnut holes, and exploded points are not silently substituted: imported graphs remain source-bound, while unsupported source-free creation fails closed.
 
 ### Sparklines
 ```

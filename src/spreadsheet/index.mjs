@@ -1453,7 +1453,10 @@ export class Workbook {
           if (series.xFormula && !workbookRangeValid(this, sheet, series.xFormula)) issues.push(verificationIssue("workbook", "chartXFormulaInvalid", `Scatter chart ${chart.name} series ${series.name || "Series"} references an invalid x-value range.`, { sheet: sheet.name, id: chart.id, formula: series.xFormula }));
           if (series.categoryFormula && !workbookRangeValid(this, sheet, series.categoryFormula)) issues.push(verificationIssue("workbook", "chartCategoryFormulaInvalid", `Chart ${chart.name} categories reference an invalid range.`, { sheet: sheet.name, id: chart.id, formula: series.categoryFormula }));
           if (series.fill != null && (typeof series.fill !== "string" || !/^#[0-9a-f]{6}$/i.test(series.fill))) issues.push(verificationIssue("workbook", "invalidChartSeriesFill", `Chart ${chart.name} series ${series.name || "Series"} fill must be a #RRGGBB solid color.`, { sheet: sheet.name, id: chart.id, series: series.name, fill: series.fill }));
-          try { normalizeSpreadsheetChartSeriesLine(series); } catch (error) { issues.push(verificationIssue("workbook", "invalidChartSeriesLine", String(error?.message || error), { sheet: sheet.name, id: chart.id, series: series.name, line: series.line, stroke: series.stroke })); }
+          try {
+            const line = normalizeSpreadsheetChartSeriesLine(series);
+            if (chart.type === "scatter" && line != null) issues.push(verificationIssue("workbook", "unsupportedChartSeriesLine", `Marker-only scatter chart ${chart.name} series ${series.name || "Series"} cannot carry line/stroke; use marker.line to style the marker border.`, { sheet: sheet.name, id: chart.id, series: series.name, line }));
+          } catch (error) { issues.push(verificationIssue("workbook", "invalidChartSeriesLine", String(error?.message || error), { sheet: sheet.name, id: chart.id, series: series.name, line: series.line, stroke: series.stroke })); }
           try {
             const marker = normalizeSpreadsheetChartSeriesMarker(series.marker);
             if (marker != null && chart.type !== "line" && chart.type !== "scatter") issues.push(verificationIssue("workbook", "invalidChartSeriesMarker", `Chart ${chart.name} series markers require a line or scatter chart.`, { sheet: sheet.name, id: chart.id, series: series.name, marker }));
