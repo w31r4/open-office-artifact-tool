@@ -158,7 +158,7 @@ try {
   const commentAuthorsXml = await legacyZip.file("ppt/commentAuthors.xml").async("text");
   const commentXml = await legacyZip.file("ppt/comments/comment1.xml").async("text");
   assert.match(commentAuthorsXml, /<p:cmAuthor[^>]*name="Presentation Reviewer"/);
-  assert.match(commentXml, /<p:cm[^>]*authorId="0"[^>]*idx="0"/);
+  assert.match(commentXml, /<p:cm[^>]*authorId="0"[^>]*idx="1"/);
   assert.match(commentXml, /Confirm the source before delivery\./);
 
   const coreEvidence = await runPresentationFixture(path.join(fixtureDir, "package-notes-comments.json"), {

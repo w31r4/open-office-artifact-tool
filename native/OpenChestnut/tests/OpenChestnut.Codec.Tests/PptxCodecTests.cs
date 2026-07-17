@@ -84,9 +84,10 @@ public sealed class PptxCodecTests
             var author = Assert.Single(package.PresentationPart!.CommentAuthorsPart!.CommentAuthorList!.Elements<P.CommentAuthor>());
             Assert.Equal("Review Owner", author.Name!.Value);
             Assert.Equal(0U, author.Id!.Value);
+            Assert.Equal(1U, author.LastIndex!.Value);
             var comment = Assert.Single(Assert.Single(package.PresentationPart.SlideParts).SlideCommentsPart!.CommentList!.Elements<P.Comment>());
             Assert.Equal(0U, comment.AuthorId!.Value);
-            Assert.Equal(0U, comment.Index!.Value);
+            Assert.Equal(1U, comment.Index!.Value);
             Assert.Equal("Confirm the customer evidence before delivery.", comment.Text!.Text);
             Assert.Equal(1_234_500L, comment.Position!.X!.Value);
             Assert.Equal(2_345_600L, comment.Position.Y!.Value);
@@ -101,7 +102,7 @@ public sealed class PptxCodecTests
         Assert.Equal(1_234_500L, importedComment.PositionXEmu);
         Assert.Equal(2_345_600L, importedComment.PositionYEmu);
         Assert.Equal(0U, importedComment.NativeAuthorId);
-        Assert.Equal(0U, importedComment.NativeIndex);
+        Assert.Equal(1U, importedComment.NativeIndex);
 
         var unchanged = Export(imported.Artifact);
         Assert.True(unchanged.Ok, Diagnostics(unchanged));

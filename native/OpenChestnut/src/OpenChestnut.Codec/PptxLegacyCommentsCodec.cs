@@ -70,13 +70,16 @@ internal static class PptxLegacyCommentsCodec
                 Id = author.NativeId,
                 Name = author.Name,
                 Initials = Initials(author.Name),
-                LastIndex = checked(author.LastIndex - 1),
+                LastIndex = author.LastIndex,
                 ColorIndex = author.NativeId % 10,
             });
         }
         authorsPart.CommentAuthorList = authorList;
 
-        var nextIndexByAuthor = authorsByName.Values.ToDictionary(author => author.Name, _ => 0U, StringComparer.Ordinal);
+        // PresentationML comment indexes are one-based per author. Keep
+        // lastIdx equal to the highest emitted index so package-level
+        // semantic validation and host readers agree on the same invariant.
+        var nextIndexByAuthor = authorsByName.Values.ToDictionary(author => author.Name, _ => 1U, StringComparer.Ordinal);
         for (var slideIndex = 0; slideIndex < slides.Count; slideIndex++)
         {
             var comments = slides[slideIndex].LegacyComments;
@@ -166,7 +169,7 @@ internal static class PptxLegacyCommentsCodec
         {
             if (comment.ChildElements.Count != 2 || comment.Position is null || comment.Text is null ||
                 comment.Position.X?.Value is not long x || comment.Position.Y?.Value is not long y ||
-                comment.AuthorId?.Value is not uint authorId || comment.Index?.Value is not uint nativeIndex ||
+                comment.AuthorId?.Value is not uint authorId || comment.Index?.Value is not uint nativeIndex || nativeIndex == 0 ||
                 comment.DateTime?.Value is not DateTime created ||
                 comment.Text.Text is not { } text || text.Length > MaxCommentTextLength ||
                 !authors.TryGetValue(authorId, out var author) || !nativeIds.Add((authorId, nativeIndex)))

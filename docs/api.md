@@ -1275,7 +1275,7 @@ Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or 
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
 | `slide.charts.add` | api | Add a source-free bar, line, or pie chart with literal categories and numeric values, title, legend, basic series fill/line/marker formatting, chart-level data labels, primary axes, layout JSON, SVG preview, and native PPTX output. Combo charts, external data, secondary axes, point overrides, trendlines, error bars, and per-series data labels are model-only and fail closed on export. |
 | `slide.clearBackground` | api | Remove the direct slide background so preview and PPTX output inherit from the preserved Layout/Master chain. Unsupported imported background graphs fail closed rather than being flattened or discarded. |
-| `slide.comments.addThread` | api | Create model-level comment threads for inspect and preview. OpenChestnut 0.2 does not author legacy or modern PPTX comments; imported comment graphs are source-bound and read-only. |
+| `slide.comments.addThread` | api | Create a bounded legacy PPTX annotation with one author, one text item, and an explicit slide coordinate. Recognized imported legacy comments are source-bound and read-only; modern comment graphs remain opaque/source-bound. |
 | `slide.compose` | api | Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph/text, shape, table, chart, image, and rule nodes into editable slide objects. |
 | `slide.connectors.add` | api | Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA. |
 | `slide.groups.add` | api | Author recursive native DrawingML p:grpSp trees with outer off/ext and local chOff/chExt coordinates. The bounded profile supports modeled shapes, connectors, images, tables, charts, and nested groups; canonical imported groups allow fixed-topology semantic edits, while group-level fills/effects, locks, transforms, extensions, or unsupported descendants remain opaque and read-only. |
@@ -1411,7 +1411,7 @@ Create a deck model whose canonical OpenChestnut export supports ordinary slides
 - `master` (object) — Model-level first Slide Master configuration. Canonical source-free PPTX export rejects configured masters.
 - `masters` (object[]) — Model-level Slide Master definitions. OpenChestnut 0.2 preserves imported masters unchanged but does not author or edit them.
 - `layouts` (object[]) — Model-level slide layouts. OpenChestnut 0.2 preserves imported layouts unchanged but does not author or edit them.
-- `commentFormat` (string) — Model comment format. OpenChestnut 0.2 does not author legacy or modern PPTX comments.
+- `commentFormat` (string) — Comment wire family. Canonical PPTX export supports the bounded legacy profile (the default); modern comment graphs remain opaque and source-bound.
 
 **Schema returns:**
 
@@ -1735,7 +1735,7 @@ Import PPTX through the single bundled OpenChestnut codec with source-bound opaq
 
 **Schema returns:**
 
-- `presentation` (Presentation) — Imported presentation facade with editable core objects, recognized direct slide backgrounds, canonical fixed-topology recursive groups, simple plain-text speaker notes, and payload-only replacement for eligible source-bound OLE workbooks; complex backgrounds/groups, rich notes, Master/Layout, comments, themes, other native objects, placeholders, and unsupported package graphs remain source-bound.
+- `presentation` (Presentation) — Imported presentation facade with editable core objects, recognized direct slide backgrounds, canonical fixed-topology recursive groups, simple plain-text speaker notes, bounded legacy slide-level comments (unchanged-only), and payload-only replacement for eligible source-bound OLE workbooks; complex backgrounds/groups, rich notes, Master/Layout, modern comments, themes, other native objects, placeholders, and unsupported package graphs remain source-bound.
 
 #### `PresentationFile.inspectPptx`
 
@@ -1879,20 +1879,21 @@ Remove the direct slide background so preview and PPTX output inherit from the p
 
 #### `slide.comments.addThread`
 
-Create model-level comment threads for inspect and preview. OpenChestnut 0.2 does not author legacy or modern PPTX comments; imported comment graphs are source-bound and read-only.
+Create a bounded legacy PPTX annotation with one author, one text item, and an explicit slide coordinate. Recognized imported legacy comments are source-bound and read-only; modern comment graphs remain opaque/source-bound.
 
 **Schema parameters:**
 
-- `target` (string|object) required — Stable model element/text-range ID or facade. OpenChestnut 0.2 does not author PPTX comment bindings.
-- `text` (string) required — Initial comment text.
-- `author` (string) — Comment author.
-- `resolved` (boolean) — Initial resolution state.
-- `created` (string) — XML date-time for the root comment.
-- `comments` (object[]) — Model-only root/reply metadata. Imported legacy/modern comment graphs are source-bound and read-only.
+- `target` (undefined) — Must be omitted (pass undefined) for canonical legacy PPTX export. Element and text anchors stay model-only and fail closed.
+- `text` (string) required — The one required root comment text item.
+- `author` (string) — Legacy comment author; defaults to User.
+- `position` (object) required — Explicit slide coordinate { x, y, unit?: 'px'|'emu' }.
+- `resolved` (boolean) — Must be false; legacy PresentationML has no resolved state.
+- `created` (string) — ISO-8601 creation time for the root comment; defaults to the Unix epoch for deterministic output.
+- `comments` (object[]) — When supplied, must contain exactly one root item with the same author/text/time. Replies and reaction metadata fail closed.
 
 **Schema returns:**
 
-- `thread` (SlideCommentThread) — Attached model-level thread for inspect/preview; canonical PPTX export rejects comments.
+- `thread` (SlideCommentThread) — Create a bounded legacy PPTX annotation for inspect and canonical export. Recognized imported legacy comments are source-bound and read-only; modern comment graphs remain opaque/source-bound.
 
 #### `slide.compose`
 
