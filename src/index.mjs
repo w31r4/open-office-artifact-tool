@@ -4903,6 +4903,7 @@ class SlideCommentCollection {
 class ConnectorElement {
   constructor(slide, config = {}) {
     this.slide = slide;
+    this.kind = "connector";
     this.id = config.id || aid("cx");
     this.nativeId = config.nativeId;
     this.creationId = config.creationId;

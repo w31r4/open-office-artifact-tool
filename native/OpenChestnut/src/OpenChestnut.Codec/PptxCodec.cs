@@ -1950,6 +1950,97 @@ internal static class PptxCodec
         }
     }
 
+    private static void ValidateGroupOutput(
+        P.GroupShape before,
+        P.GroupShape after,
+        PresentationElement request,
+        PptxPartContext sourceContext,
+        PptxPartContext outputContext,
+        IReadOnlyDictionary<uint, string> afterIds,
+        int slideIndex,
+        string location)
+    {
+        if (!GroupShellResidualHash(before).Equals(GroupShellResidualHash(after), StringComparison.OrdinalIgnoreCase))
+            throw new CodecException("presentation_unmodeled_group_content_changed", $"PPTX slide {slideIndex + 1} {location} changed unmodeled group-shell content.", PartPath(outputContext.Owner));
+        var beforeChildren = GroupElements(before);
+        var afterChildren = GroupElements(after);
+        if (beforeChildren.Length != request.Group.Children.Count || afterChildren.Length != request.Group.Children.Count)
+            throw new CodecException("presentation_postwrite_topology_changed", $"PPTX slide {slideIndex + 1} {location} group topology changed during export.", PartPath(outputContext.Owner));
+
+        for (var index = 0; index < request.Group.Children.Count; index++)
+        {
+            var child = request.Group.Children[index];
+            var binding = child.Source ?? throw new CodecException("missing_presentation_element_binding", $"PPTX slide {slideIndex + 1} {location} child {index + 1} is missing its source binding.", PartPath(outputContext.Owner));
+            var changed = !SemanticHash(child).Equals(binding.SemanticSha256, StringComparison.OrdinalIgnoreCase);
+            if (!changed)
+            {
+                if (!HashElement(beforeChildren[index]).Equals(HashElement(afterChildren[index]), StringComparison.OrdinalIgnoreCase))
+                    throw new CodecException("presentation_unchanged_element_modified", $"PPTX slide {slideIndex + 1} {location} unchanged child {index + 1} was modified during export.", PartPath(outputContext.Owner));
+                continue;
+            }
+
+            if (child.ContentCase == PresentationElement.ContentOneofCase.Group)
+            {
+                if (beforeChildren[index] is not P.GroupShape beforeGroup || afterChildren[index] is not P.GroupShape afterGroup)
+                    throw new CodecException("presentation_postwrite_element_mismatch", $"PPTX slide {slideIndex + 1} {location} child group {index + 1} changed native element type.", PartPath(outputContext.Owner));
+                ValidateGroupOutput(beforeGroup, afterGroup, child, sourceContext, outputContext, afterIds, slideIndex, $"{location} child {index + 1}");
+            }
+            else if (child.ContentCase == PresentationElement.ContentOneofCase.Image)
+            {
+                if (beforeChildren[index] is not P.Picture beforePicture || afterChildren[index] is not P.Picture afterPicture ||
+                    !PictureResidualHash(beforePicture).Equals(PictureResidualHash(afterPicture), StringComparison.OrdinalIgnoreCase))
+                    throw new CodecException("presentation_unmodeled_picture_content_changed", $"PPTX slide {slideIndex + 1} {location} child image {index + 1} changed unmodeled content.", PartPath(outputContext.Owner));
+            }
+            else if (child.ContentCase == PresentationElement.ContentOneofCase.Table)
+            {
+                if (beforeChildren[index] is not P.GraphicFrame beforeTable || afterChildren[index] is not P.GraphicFrame afterTable ||
+                    !TableResidualHash(beforeTable).Equals(TableResidualHash(afterTable), StringComparison.OrdinalIgnoreCase))
+                    throw new CodecException("presentation_unmodeled_table_content_changed", $"PPTX slide {slideIndex + 1} {location} child table {index + 1} changed unmodeled content.", PartPath(outputContext.Owner));
+            }
+            else if (child.ContentCase == PresentationElement.ContentOneofCase.Connector)
+            {
+                if (beforeChildren[index] is not P.ConnectionShape beforeConnector || afterChildren[index] is not P.ConnectionShape afterConnector ||
+                    !ConnectorResidualHash(beforeConnector).Equals(ConnectorResidualHash(afterConnector), StringComparison.OrdinalIgnoreCase))
+                    throw new CodecException("presentation_unmodeled_connector_content_changed", $"PPTX slide {slideIndex + 1} {location} child connector {index + 1} changed unmodeled content.", PartPath(outputContext.Owner));
+            }
+            else if (child.ContentCase == PresentationElement.ContentOneofCase.Chart)
+            {
+                if (beforeChildren[index] is not P.GraphicFrame beforeChart || afterChildren[index] is not P.GraphicFrame afterChart ||
+                    !ChartFrameResidualHash(beforeChart).Equals(ChartFrameResidualHash(afterChart), StringComparison.OrdinalIgnoreCase))
+                    throw new CodecException("presentation_unmodeled_chart_frame_changed", $"PPTX slide {slideIndex + 1} {location} child chart {index + 1} changed unmodeled frame content.", PartPath(outputContext.Owner));
+            }
+            else
+            {
+                if (beforeChildren[index] is not P.Shape beforeShape || afterChildren[index] is not P.Shape afterShape ||
+                    !ShapeResidualHash(beforeShape, sourceContext).Equals(ShapeResidualHash(afterShape, outputContext), StringComparison.OrdinalIgnoreCase))
+                    throw new CodecException("presentation_unmodeled_shape_content_changed", $"PPTX slide {slideIndex + 1} {location} child shape {index + 1} changed unmodeled content.", PartPath(outputContext.Owner));
+            }
+
+            var outputSemantic = ReadElement(afterChildren[index], request.Id, index, outputContext, elementIdsByNativeId: afterIds);
+            if (!SemanticHash(outputSemantic).Equals(SemanticHash(child), StringComparison.OrdinalIgnoreCase))
+                throw new CodecException("presentation_postwrite_semantics_mismatch", $"PPTX slide {slideIndex + 1} {location} child {index + 1} does not match requested semantics after export.", PartPath(outputContext.Owner));
+        }
+    }
+
+    private static string GroupShellResidualHash(P.GroupShape source)
+    {
+        var clone = (P.GroupShape)source.CloneNode(true);
+        foreach (var child in GroupElements(clone)) child.Remove();
+        if (clone.NonVisualGroupShapeProperties?.NonVisualDrawingProperties is { } nonVisual) nonVisual.Name = string.Empty;
+        if (clone.GroupShapeProperties?.GetFirstChild<A.TransformGroup>() is { } transform)
+        {
+            transform.Offset!.X = 0L;
+            transform.Offset.Y = 0L;
+            transform.Extents!.Cx = 1L;
+            transform.Extents.Cy = 1L;
+            transform.ChildOffset!.X = 0L;
+            transform.ChildOffset.Y = 0L;
+            transform.ChildExtents!.Cx = 1L;
+            transform.ChildExtents.Cy = 1L;
+        }
+        return HashElement(clone);
+    }
+
     private static void ValidatePreservedMasterAndLayoutContent(byte[] sourceBytes, byte[] outputBytes, PresentationArtifact requested, EffectiveCodecLimits limits)
     {
         using var sourceStream = new MemoryStream(sourceBytes, writable: false);

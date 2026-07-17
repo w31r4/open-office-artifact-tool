@@ -85,6 +85,8 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "compose.text"));
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.summary || "", /picture-bullet.*relative-action hyperlinks.*Custom-show links.*fail closed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /nextSlide.*previousSlide.*firstSlide.*lastSlide.*endShow.*customShow links.*fail closed/);
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.groups.add"));
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.groups.add")?.summary || "", /native DrawingML p:grpSp.*chOff\/chExt.*fixed-topology semantic edits.*opaque and read-only/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.groups.add")?.schema?.returns?.group?.description || "", /native p:grpSp export.*without changing child topology.*opaque read-only object/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "nativeObject.setName")?.schema?.parameters?.name?.description || "", /1,024/);
 assert.match(HELP_CATALOG.find((item) => item.name === "nativeObject.setPosition")?.schema?.returns?.nativeObject?.description || "", /No mutation.*source-bound and read-only/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.addNotes"));

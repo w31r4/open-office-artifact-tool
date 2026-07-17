@@ -3,6 +3,7 @@ using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Validation;
 using Google.Protobuf;
 using System.IO.Compression;
+using System.Text.RegularExpressions;
 using OpenOffice.Artifact.Wire.V1;
 using A = DocumentFormat.OpenXml.Drawing;
 using C = DocumentFormat.OpenXml.Drawing.Charts;
@@ -1255,7 +1256,12 @@ public sealed class PptxCodecTests
         Assert.Equal("presentation_group_topology_changed", Assert.Single(topologyRejected.Diagnostics).Code);
 
         var irregularSource = ReplaceZipText(authored.File.ToByteArray(), "ppt/slides/slide1.xml", xml =>
-            xml.Replace("<p:cNvPr id=\"3\" name=\"Agent card group\" />", "<p:cNvPr id=\"3\" name=\"Agent card group\"><a:extLst /></p:cNvPr>", StringComparison.Ordinal));
+            Regex.Replace(
+                xml,
+                "(<p:grpSp><p:nvGrpSpPr><p:cNvPr\\b[^>]*name=\"Agent card group\"[^>]*/>[\\s\\S]*?<p:grpSpPr)(>)",
+                "$1 bwMode=\"gray\"$2",
+                RegexOptions.CultureInvariant,
+                TimeSpan.FromSeconds(1)));
         var irregularImported = Import(irregularSource);
         Assert.True(irregularImported.Ok, Diagnostics(irregularImported));
         var irregular = Assert.Single(Assert.Single(irregularImported.Artifact.Presentation.Slides).Elements, item => item.Name == "Agent card group");

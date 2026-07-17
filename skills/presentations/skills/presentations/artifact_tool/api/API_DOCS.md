@@ -213,6 +213,7 @@ Open these references as needed:
 - [`references/cookbook/imported-deck.md`](./references/cookbook/imported-deck.md) — safe inspect, resolve, edit, preview, and re-inspect loops for existing decks.
 - [`references/presentation.spec.md`](./references/presentation.spec.md) — `Presentation` facade, slide collection, export/toProto, scripts.
 - [`references/slide.spec.md`](./references/slide.spec.md) — `Slide` API, backgrounds, placeholders, notes, export, auto-layout.
+- [`references/grouping.spec.md`](./references/grouping.spec.md) — recursive native `p:grpSp` authoring, local child coordinates, fixed-topology imported edits, and opaque fail-closed boundaries.
 - [`references/inspect.md`](./references/inspect.md) — grep-first snapshot (`inspect → rg → resolve/edit → re-inspect`) for loaded presentation data and templates.
 - [`references/help.md`](./references/help.md) — grep-first API and template lookup (`help → build/edit → inspect`) for presentation JS workflows.
 - [`references/layout.spec.md`](./references/layout.spec.md) — layouts, placeholders, and slide layout assignment.

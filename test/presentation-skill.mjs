@@ -33,11 +33,11 @@ try {
   assert.equal(Object.hasOwn(readiness, "roundtripCodec"), false);
   assert.equal(readiness.qa.verify.ok, true);
   assert.equal(readiness.qa.summary.packageOk, true);
-  assert.equal(readiness.qa.presentation.slides.count, 2);
-  assert.equal(readiness.qa.modelRender.slides.length, 2);
+  assert.equal(readiness.qa.presentation.slides.count, 3);
+  assert.equal(readiness.qa.modelRender.slides.length, 3);
   assert.equal(readiness.qa.modelRender.montage.ok, true);
   assert.equal(readiness.qa.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
-  if (nativeStatus.available) assert.equal(readiness.qa.nativeRender.pageCount, 2);
+  if (nativeStatus.available) assert.equal(readiness.qa.nativeRender.pageCount, 3);
 
   const workflowSlide = readiness.qa.presentation.slides.getItem(0);
   assert.deepEqual(workflowSlide.background, { fill: "#f1f5f9", mode: "solid" });
@@ -57,8 +57,15 @@ try {
   assert.equal(charts[0].dataLabels.showValue, true);
   assert.equal(charts[1].series[0].marker.symbol, "circle");
   assert.equal(charts[2].dataLabels.showCategoryName, true);
+  const groupedWorkflowSlide = readiness.qa.presentation.slides.getItem(2);
+  const nativeGroup = itemByName(groupedWorkflowSlide.groups.items, "native-agent-group");
+  assert.deepEqual(nativeGroup.childFrame, { left: -80, top: 40, width: 1280, height: 540 });
+  assert.deepEqual(nativeGroup.children.map((child) => child.layoutJson().kind), ["textbox", "textbox", "textbox", "groupShape", "connector"]);
+  assert.equal(itemByName(nativeGroup.groups.items, "nested-qa-group").shapes.items[0].text.value, "Render + verify");
+  assert.equal(itemByName(nativeGroup.connectors.items, "grouped-flow").line.endArrow, "triangle");
   assert.match(readiness.qa.inspect.ndjson, /OpenChestnut closes the presentation loop/);
   assert.match(readiness.qa.inspect.ndjson, /Coverage mix/);
+  assert.match(readiness.qa.inspect.ndjson, /native-agent-group/);
 
   const readinessZip = await JSZip.loadAsync(await fs.readFile(readiness.pptxPath));
   const firstSlideXml = await readinessZip.file("ppt/slides/slide1.xml").async("text");
@@ -66,6 +73,9 @@ try {
   assert.match(firstSlideXml, /<a:prstGeom prst="roundRect"[^>]*>/);
   assert.match(firstSlideXml, /<p:cNvSpPr txBox="1"\s*\/>/);
   assert.match(firstSlideXml, /<p:cxnSp>/);
+  const groupedSlideXml = await readinessZip.file("ppt/slides/slide3.xml").async("text");
+  assert.equal((groupedSlideXml.match(/<p:grpSp>/g) || []).length, 2);
+  assert.match(groupedSlideXml, /<a:chOff x="-762000" y="381000"\s*\/>/);
   assert.equal(Object.keys(readinessZip.files).filter((name) => /^ppt\/(?:slides\/)?charts\/chart\d+\.xml$/.test(name)).length, 3);
 
   const compared = await verifyPresentationFile(readiness.pptxPath, {
@@ -74,11 +84,11 @@ try {
     baselineDir,
   });
   assert.equal(compared.verify.ok, true);
-  assert.equal(compared.modelRender.baselinePageCount, 2);
+  assert.equal(compared.modelRender.baselinePageCount, 3);
   assert.equal(compared.modelRender.pageCountMatches, true);
   assert.ok(compared.modelRender.slides.every((slide) => slide.baselineCompared && slide.pixelDiff?.changed === false && slide.ok));
   if (nativeStatus.available) {
-    assert.equal(compared.nativeRender.baselinePageCount, 2);
+    assert.equal(compared.nativeRender.baselinePageCount, 3);
     assert.equal(compared.nativeRender.pageCountMatches, true);
     assert.ok(compared.nativeRender.pages.every((slide) => slide.baselineCompared && slide.pixelDiff?.changed === false && slide.ok));
   }
@@ -173,6 +183,12 @@ try {
   assert.match(imageReferenceText, /DrawingML `a:srcRect`/);
   assert.match(imageReferenceText, /PPTX has no native fit keyword/i);
   assert.match(imageReferenceText, /unsafe edits fail\s+closed/i);
+  const groupingReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/grouping.spec.md", "utf8");
+  assert.match(skillText, /artifact_tool\/api\/references\/grouping\.spec\.md/);
+  assert.match(groupingReferenceText, /real `p:grpSp`/);
+  assert.match(groupingReferenceText, /a:chOff\/a:chExt/);
+  assert.match(groupingReferenceText, /presentation_group_topology_changed/);
+  assert.match(groupingReferenceText, /one opaque, read-only native object/i);
 
   console.log("presentation skill smoke ok");
 } finally {

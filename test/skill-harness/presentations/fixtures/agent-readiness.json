@@ -150,17 +150,88 @@
           "dataLabels": { "showCategoryName": true, "showValue": true }
         }
       ]
+    },
+    {
+      "name": "Native grouped workflow",
+      "background": { "fill": "#F8FAFC", "mode": "solid" },
+      "groups": [
+        {
+          "name": "native-agent-group",
+          "position": { "left": 120, "top": 110, "width": 1040, "height": 430 },
+          "childFrame": { "left": -80, "top": 40, "width": 1280, "height": 540 },
+          "shapes": [
+            {
+              "name": "group-title",
+              "geometry": "textbox",
+              "position": { "left": 0, "top": 70, "width": 1000, "height": 80 },
+              "fill": "transparent",
+              "line": { "fill": "transparent", "width": 0 },
+              "text": "Native p:grpSp keeps local coordinates and ownership",
+              "textStyle": { "fontFamily": "Arial", "fontSize": 34, "bold": true, "color": "#0F172A" }
+            },
+            {
+              "name": "group-model-card",
+              "geometry": "roundRect",
+              "position": { "left": 0, "top": 200, "width": 300, "height": 140 },
+              "fill": "#DBEAFE",
+              "line": { "fill": "#2563EB", "width": 2 },
+              "text": "Model",
+              "textStyle": { "fontFamily": "Arial", "fontSize": 28, "bold": true, "color": "#1E3A8A" }
+            },
+            {
+              "name": "group-native-card",
+              "geometry": "roundRect",
+              "position": { "left": 450, "top": 200, "width": 300, "height": 140 },
+              "fill": "#DCFCE7",
+              "line": { "fill": "#16A34A", "width": 2 },
+              "text": "OpenChestnut",
+              "textStyle": { "fontFamily": "Arial", "fontSize": 28, "bold": true, "color": "#14532D" }
+            }
+          ],
+          "groups": [
+            {
+              "name": "nested-qa-group",
+              "position": { "left": 900, "top": 180, "width": 300, "height": 220 },
+              "childFrame": { "left": 0, "top": 0, "width": 300, "height": 220 },
+              "shapes": [
+                {
+                  "name": "nested-qa-card",
+                  "geometry": "rect",
+                  "position": { "left": 20, "top": 30, "width": 260, "height": 150 },
+                  "fill": "#F3E8FF",
+                  "line": { "fill": "#7C3AED", "width": 2 },
+                  "text": "Render + verify",
+                  "textStyle": { "fontFamily": "Arial", "fontSize": 24, "bold": true, "color": "#581C87" }
+                }
+              ]
+            }
+          ],
+          "connectors": [
+            {
+              "name": "grouped-flow",
+              "connectorType": "straight",
+              "fromName": "group-model-card",
+              "toName": "group-native-card",
+              "start": { "x": 300, "y": 270 },
+              "end": { "x": 450, "y": 270 },
+              "line": { "fill": "#475569", "width": 2, "endArrow": "triangle" }
+            }
+          ]
+        }
+      ]
     }
   ],
   "expectInspect": [
     { "kind": "shape", "pattern": "OpenChestnut closes the presentation loop" },
     { "kind": "table", "pattern": "workflow-matrix" },
     { "kind": "connector", "pattern": "verify-to-deliver" },
-    { "kind": "chart", "pattern": "Coverage mix" }
+    { "kind": "chart", "pattern": "Coverage mix" },
+    { "kind": "groupShape", "pattern": "native-agent-group" },
+    { "kind": "connector", "pattern": "grouped-flow" }
   ],
   "qa": {
     "nativeRender": "auto",
-    "inspectKind": "deck,slide,textbox,shape,table,chart,connector,textRange",
+    "inspectKind": "deck,slide,textbox,shape,groupShape,table,chart,connector,textRange",
     "maxChars": 24000
   }
 }

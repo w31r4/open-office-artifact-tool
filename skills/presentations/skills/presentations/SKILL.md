@@ -175,6 +175,12 @@ backgrounds cross the canonical OpenChestnut PPTX path. Never flatten an
 inherited Layout/Master background or silently replace an advanced imported
 background graph; preserve it unchanged or let the export fail closed.
 
+For compound objects that must retain one ownership tree and local coordinate
+space, use native `slide.groups.add(...)` and read
+`artifact_tool/api/references/grouping.spec.md`. Canonical recursive groups
+cross the OpenChestnut PPTX path; imported topology is fixed, and complex group
+shells remain one opaque read-only object rather than being flattened.
+
 Before running any generated presentation module, initialize its workspace so
 Node.js can resolve the bundled `open-office-artifact-tool` package:
 

@@ -101,6 +101,146 @@ assert.throws(
   /width and height must be positive/,
 );
 
+// Groups are a recursive DrawingML ownership boundary, not flattened children
+// with synthetic parent IDs. The public model keeps child coordinates local and
+// OpenChestnut authors/imports native p:grpSp trees with fixed-topology edits.
+const groupedPresentation = Presentation.create({ slideSize: { width: 960, height: 540 } });
+const groupedSlide = groupedPresentation.slides.add({ name: "Native group tree" });
+const authoredGroup = groupedSlide.groups.add({
+  name: "Agent evidence group",
+  position: { left: 100, top: 80, width: 600, height: 320 },
+  childFrame: { left: -100, top: 50, width: 1200, height: 640 },
+});
+const groupedBefore = authoredGroup.shapes.add({
+  name: "grouped-before",
+  geometry: "roundRect",
+  position: { left: 0, top: 100, width: 300, height: 120 },
+  fill: "#DBEAFE",
+  line: { fill: "#2563EB", width: 2 },
+  text: "Before",
+});
+const groupedTarget = authoredGroup.shapes.add({
+  name: "grouped-target",
+  geometry: "rect",
+  position: { left: 450, top: 100, width: 300, height: 120 },
+  fill: "#DCFCE7",
+  line: { fill: "#16A34A", width: 2 },
+  text: "Target",
+});
+authoredGroup.connectors.add({
+  name: "grouped-connector",
+  connectorType: "straight",
+  from: groupedBefore,
+  to: groupedTarget,
+  start: { x: 300, y: 160 },
+  end: { x: 450, y: 160 },
+  line: { fill: "#334155", width: 2, endArrow: "triangle" },
+});
+authoredGroup.images.add({
+  name: "grouped-image",
+  alt: "Grouped image evidence",
+  position: { left: 800, top: 100, width: 120, height: 120 },
+  fit: "stretch",
+  dataUrl: PNG,
+});
+authoredGroup.tables.add({
+  name: "grouped-table",
+  position: { left: 0, top: 300, width: 400, height: 180 },
+  values: [["Gate", "State"], ["Import", "Before"]],
+  styleOptions: { headerRow: true, bandedRows: true },
+});
+authoredGroup.charts.add("bar", {
+  name: "grouped-chart",
+  title: "Grouped readiness",
+  position: { left: 450, top: 300, width: 350, height: 200 },
+  categories: ["Create", "Edit"],
+  series: [{ name: "Score", values: [7, 9], color: "#7C3AED" }],
+  legend: false,
+});
+const nestedGroup = authoredGroup.groups.add({
+  name: "nested-group",
+  position: { left: 850, top: 300, width: 250, height: 220 },
+  childFrame: { left: 0, top: 0, width: 250, height: 220 },
+});
+nestedGroup.shapes.add({
+  name: "nested-shape",
+  geometry: "rect",
+  position: { left: 20, top: 30, width: 200, height: 120 },
+  fill: "#FCE7F3",
+  line: { fill: "#BE185D", width: 1 },
+  text: "Nested",
+});
+assert.equal(groupedPresentation.resolve(groupedBefore.id), groupedBefore);
+assert.match(groupedPresentation.inspect({ kind: "groupShape,shape,connector,table,chart,image", maxChars: 20_000 }).ndjson, /Agent evidence group/);
+assert.match(authoredGroup.toSvg(), /translate\(100 80\) scale\(0\.5 0\.5\) translate\(100 -50\)/);
+assert.equal(groupedPresentation.verify().ok, true);
+assert.equal(groupedPresentation.validateLayout().ok, true);
+
+const groupedFirstExport = await PresentationFile.exportPptx(groupedPresentation);
+const groupedFirstZip = await JSZip.loadAsync(new Uint8Array(await groupedFirstExport.arrayBuffer()));
+const groupedFirstXml = await groupedFirstZip.file("ppt/slides/slide1.xml").async("text");
+assert.equal((groupedFirstXml.match(/<p:grpSp>/g) || []).length, 2);
+assert.match(groupedFirstXml, /<a:chOff x="-952500" y="476250"\s*\/>/);
+assert.match(groupedFirstXml, /<a:chExt cx="11430000" cy="6096000"\s*\/>/);
+
+const groupedImported = await PresentationFile.importPptx(groupedFirstExport);
+const importedGroup = itemByName(groupedImported.slides.getItem(0).groups.items, "Agent evidence group");
+assert.deepEqual(importedGroup.children.map((child) => child.layoutJson().kind), ["textbox", "textbox", "connector", "image", "table", "chart", "groupShape"]);
+assert.deepEqual(importedGroup.childFrame, { left: -100, top: 50, width: 1200, height: 640 });
+assert.equal(groupedImported.resolve(itemByName(importedGroup.shapes.items, "grouped-before").id).text.value, "Before");
+
+importedGroup.name = "Edited agent evidence group";
+importedGroup.position.left = 120;
+importedGroup.childFrame.left = -50;
+itemByName(importedGroup.shapes.items, "grouped-before").text.set("After");
+delete itemByName(importedGroup.connectors.items, "grouped-connector").line.endArrow;
+itemByName(importedGroup.images.items, "grouped-image").alt = "Edited grouped image evidence";
+itemByName(importedGroup.tables.items, "grouped-table").cells.set(1, 1, "After");
+const importedGroupedChart = itemByName(importedGroup.charts.items, "grouped-chart");
+importedGroupedChart.title = "Edited grouped readiness";
+importedGroupedChart.series[0].values = [8, 10];
+const importedNestedGroup = itemByName(importedGroup.groups.items, "nested-group");
+importedNestedGroup.position.top = 320;
+itemByName(importedNestedGroup.shapes.items, "nested-shape").fill = "#FDE68A";
+
+const groupedSecondExport = await PresentationFile.exportPptx(groupedImported);
+const groupedRoundTrip = await PresentationFile.importPptx(groupedSecondExport);
+const roundTripGroup = itemByName(groupedRoundTrip.slides.getItem(0).groups.items, "Edited agent evidence group");
+assert.equal(roundTripGroup.position.left, 120);
+assert.equal(roundTripGroup.childFrame.left, -50);
+assert.equal(itemByName(roundTripGroup.shapes.items, "grouped-before").text.value, "After");
+assert.equal(itemByName(roundTripGroup.connectors.items, "grouped-connector").line.endArrow, undefined);
+assert.equal(itemByName(roundTripGroup.images.items, "grouped-image").alt, "Edited grouped image evidence");
+assert.equal(itemByName(roundTripGroup.tables.items, "grouped-table").values[1][1], "After");
+assert.deepEqual(itemByName(roundTripGroup.charts.items, "grouped-chart").series[0].values, [8, 10]);
+assert.equal(itemByName(itemByName(roundTripGroup.groups.items, "nested-group").shapes.items, "nested-shape").fill, "#FDE68A");
+
+const removedGroupedChild = roundTripGroup.children.pop();
+await assert.rejects(
+  () => PresentationFile.exportPptx(groupedRoundTrip),
+  (error) => error?.code === "presentation_group_topology_changed",
+);
+roundTripGroup.children.push(removedGroupedChild);
+
+const irregularGroupXml = groupedFirstXml.replace(
+  /(<p:grpSp><p:nvGrpSpPr><p:cNvPr\b[^>]*name="Agent evidence group"[^>]*\/>[\s\S]*?<p:grpSpPr)(>)/,
+  "$1 bwMode=\"gray\"$2",
+);
+assert.notEqual(irregularGroupXml, groupedFirstXml);
+const irregularGroupFile = await PresentationFile.patchPptx(groupedFirstExport, [{ path: "ppt/slides/slide1.xml", xml: irregularGroupXml }]);
+const irregularGroupZip = await JSZip.loadAsync(new Uint8Array(await irregularGroupFile.arrayBuffer()));
+assert.match(await irregularGroupZip.file("ppt/slides/slide1.xml").async("text"), /<p:grpSpPr bwMode="gray">/);
+const irregularGroupPresentation = await PresentationFile.importPptx(irregularGroupFile);
+const irregularGroupSlide = irregularGroupPresentation.slides.getItem(0);
+assert.equal(irregularGroupSlide.groups.items.length, 0);
+const opaqueGroup = itemByName(irregularGroupSlide.nativeObjects.items, "Agent evidence group");
+assert.equal(opaqueGroup.editable, false);
+opaqueGroup.name = "Unsafe group edit";
+await assert.rejects(
+  () => PresentationFile.exportPptx(irregularGroupPresentation),
+  (error) => error?.code === "unsupported_presentation_edit",
+);
+
 // The canonical file facade always crosses the OpenChestnut C# WASM layer.
 const deck = Presentation.create({ slideSize: { width: 1280, height: 720 } });
 const coreSlide = deck.slides.add({ name: "Core objects", background: { fill: "#F1F5F9", mode: "solid" } });

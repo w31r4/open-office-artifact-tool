@@ -39,8 +39,32 @@ function addSlideShape(slide, config = {}) {
   return shape;
 }
 
+function addGroupShape(slide, group, config = {}) {
+  const shape = group.shapes.add({ ...config, text: config.text || "" });
+  if (config.textStyle) shape.text.style = { fontFamily: slide.presentation.theme.fonts.minor, ...config.textStyle };
+  if (config.paragraphStyles || config.inheritedParagraphStyles) shape.text.inheritedParagraphStyles = config.paragraphStyles || config.inheritedParagraphStyles;
+  return shape;
+}
+
+function addFixtureGroup(slide, owner, config, byName, remember) {
+  const { shapes = [], tables = [], charts = [], images = [], groups = [], connectors = [], children, nativeObjects, ...groupConfig } = config;
+  if (children != null || nativeObjects != null) throw new Error(`Presentation fixture group ${config.name || "group"} uses unsupported raw children or nativeObjects.`);
+  const group = remember(owner.groups.add(groupConfig), config.name);
+  for (const shape of shapes) remember(addGroupShape(slide, group, shape), shape.name);
+  for (const table of tables) remember(group.tables.add(table), table.name);
+  for (const chart of charts) remember(group.charts.add(chart.chartType || chart.type || "bar", chart), chart.name);
+  for (const image of images) remember(group.images.add(image), image.name);
+  for (const nested of groups) addFixtureGroup(slide, group, nested, byName, remember);
+  for (const connector of connectors) {
+    const from = byName.get(connector.fromName) || connector.from || connector.start;
+    const to = byName.get(connector.toName) || connector.to || connector.end;
+    remember(group.connectors.add({ ...connector, from, to }), connector.name);
+  }
+  return group;
+}
+
 async function addFixtureSlide(presentation, config = {}) {
-  for (const field of ["layoutId", "notes", "applyLayoutPlaceholders", "groups", "comments"]) {
+  for (const field of ["layoutId", "notes", "applyLayoutPlaceholders", "comments"]) {
     if (config[field] != null) throw new Error(`Presentation fixture ${config.name || "slide"} uses unsupported 0.2 field ${field}.`);
   }
   const slide = presentation.slides.add({ name: config.name, ...(config.background ? { background: config.background } : {}) });
@@ -52,6 +76,7 @@ async function addFixtureSlide(presentation, config = {}) {
     remember(slide.charts.add(chart.chartType || chart.type || "bar", chart), chart.name);
   }
   for (const image of config.images || []) remember(slide.images.add(image), image.name);
+  for (const group of config.groups || []) addFixtureGroup(slide, slide, group, byName, remember);
   for (const connector of config.connectors || []) {
     const from = byName.get(connector.fromName) || connector.from || connector.start;
     const to = byName.get(connector.toName) || connector.to || connector.end;
