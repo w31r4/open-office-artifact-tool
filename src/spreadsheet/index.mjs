@@ -6,6 +6,7 @@ import { normalizeSpreadsheetChartSeriesMarker } from "./chart-marker-style.mjs"
 import { normalizeSpreadsheetChartDataLabels } from "./chart-data-labels.mjs";
 import { resolvedWorksheetChartCategories, resolvedWorksheetChartSeriesValues } from "./chart-source-data.mjs";
 import { renderWorksheetChartSvg } from "./chart-preview.mjs";
+import { WorksheetDataTableCollection } from "./data-tables.mjs";
 import { computePivotValues, normalizePivotConfig } from "./pivots.mjs";
 import { formatSpreadsheetDisplayValue, normalizeXlsxColor, normalizeXlsxThemeConfig, xlsxColorCss, xlsxFillSvgPaint } from "./ooxml-styles.mjs";
 import { planSpreadsheetThreadedComments, validateSpreadsheetThreadedCommentPackageSemantics } from "./ooxml-threaded-comments.mjs";
@@ -44,6 +45,8 @@ import { filterInspectRecords, inspectRecordMatchesTarget, inspectTargetTokens, 
 import { fileBlobFromRenderOutput, LAYOUT_MIME, renderTypeForOptions } from "../shared/render-output.mjs";
 import { attrEscape, xmlEscape } from "../shared/xml.mjs";
 import { queryHelpRecords } from "../help/index.mjs";
+
+export { WorksheetDataTableCollection } from "./data-tables.mjs";
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const XLSX_DYNAMIC_ARRAY_METADATA_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml";
@@ -1305,6 +1308,7 @@ export class Workbook {
       if (kinds.has("drawing") || kinds.has("chart")) records.push(...sheet.charts.inspectRecords());
       if (kinds.has("drawing") || kinds.has("image")) records.push(...sheet.images.inspectRecords());
       if (kinds.has("sparkline") || kinds.has("drawing")) records.push(...sheet.sparklineGroups.inspectRecords());
+      if (kinds.has("dataTable")) records.push(...sheet.dataTables.inspectRecords());
       if (kinds.has("merge") || kinds.has("mergedCell")) records.push(...sheet.mergeRecords());
       if (kinds.has("dimension") || kinds.has("column") || kinds.has("row")) records.push(...sheet.dimensionRecords(kinds));
       if (kinds.has("formula")) records.push(...sheet.formulaRecords({ ...options, graph }));
@@ -1787,6 +1791,7 @@ export class Worksheet {
     this.pivots = this.pivotTables;
     this.sparklineGroups = new SparklineGroupCollection(this);
     this.sparklines = this.sparklineGroups;
+    this.dataTables = new WorksheetDataTableCollection(this);
     this.dataValidations = new WorksheetRuleCollection(this, "dataValidation");
     this.conditionalFormattings = new WorksheetRuleCollection(this, "conditionalFormat");
     this.freezePanes = new WorksheetFreezePanes(this);
@@ -4066,6 +4071,7 @@ function workbookMetadata(workbook) {
       charts: sheet.charts.toJSON(),
       images: sheet.images.toJSON(),
       sparklineGroups: sheet.sparklineGroups.toJSON(),
+      dataTables: sheet.dataTables.toJSON(),
     })),
   };
 }
@@ -4119,6 +4125,8 @@ function applyWorkbookMetadata(workbook, metadata = {}) {
       const group = sheet.sparklineGroups.add({ ...sparklineData });
       group.id = sparklineData.id || group.id;
     }
+    sheet.dataTables._definitions = [];
+    for (const dataTable of sheetData.dataTables || []) sheet.dataTables._hydrate(dataTable);
   }
   if (Array.isArray(metadata.workbookWindows) && metadata.workbookWindows.length) {
     workbook.windows._clearAdditional();

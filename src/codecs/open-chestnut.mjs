@@ -27,6 +27,7 @@ import { presentationEnvelope, presentationFromEnvelope } from "./open-chestnut-
 import { spreadsheetChartFromWire, spreadsheetChartSnapshot, wireWorksheetCharts } from "./open-chestnut-spreadsheet-charts.mjs";
 import { spreadsheetImageFromWire, spreadsheetImageSnapshot, wireWorksheetImages } from "./open-chestnut-spreadsheet-images.mjs";
 import { spreadsheetSparklineFromWire, spreadsheetSparklineSnapshot, wireWorksheetSparklines } from "./open-chestnut-spreadsheet-sparklines.mjs";
+import { hydrateWorksheetDataTable, wireWorksheetDataTables } from "./open-chestnut-spreadsheet-data-tables.mjs";
 
 export { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
 
@@ -300,7 +301,7 @@ function validateFormulaTopology(cells, sheetName) {
   if (byCoordinate.size !== cells.length) throw new OpenChestnutCodecError(`Worksheet ${sheetName} contains duplicate cell coordinates.`, [], { code: "duplicate_cell" });
   const sharedGroups = new Map();
   for (const cell of cells) {
-    validateFormulaText(cell.formula, `${sheetName}!${cellAddress(cell.row, cell.column)}`, Boolean(cell.formulaMetadata));
+    validateFormulaText(cell.formula, `${sheetName}!${cellAddress(cell.row, cell.column)}`, Boolean(cell.formulaMetadata) && cell.formulaMetadata.kind !== CellFormulaKind.DATA_TABLE);
     if (cell.formulaMetadata?.kind === CellFormulaKind.SHARED) {
       const key = cell.formulaMetadata.sharedIndex;
       if (!sharedGroups.has(key)) sharedGroups.set(key, []);
@@ -328,7 +329,7 @@ function validateFormulaTopology(cells, sheetName) {
   }
   const occupied = new Map();
   const sharedRoots = [...sharedGroups.values()].map((members) => members[0]);
-  const topologyRoots = [...sharedRoots, ...cells.filter((item) => [CellFormulaKind.ARRAY, CellFormulaKind.DYNAMIC_ARRAY].includes(item.formulaMetadata?.kind))];
+  const topologyRoots = [...sharedRoots, ...cells.filter((item) => [CellFormulaKind.ARRAY, CellFormulaKind.DYNAMIC_ARRAY, CellFormulaKind.DATA_TABLE].includes(item.formulaMetadata?.kind))];
   let topologyCellCount = 0;
   for (const cell of topologyRoots) {
     const metadata = cell.formulaMetadata;
@@ -337,15 +338,16 @@ function validateFormulaTopology(cells, sheetName) {
     if (topologyCellCount > MAX_XLSX_FORMULA_TOPOLOGY_CELLS) throw new OpenChestnutCodecError(`Cell ${sheetName}!${cellAddress(cell.row, cell.column)} native formula topology exceeds ${MAX_XLSX_FORMULA_TOPOLOGY_CELLS} cells.`, [], { code: "invalid_cell_formula" });
     const dynamic = metadata.kind === CellFormulaKind.DYNAMIC_ARRAY;
     const array = metadata.kind === CellFormulaKind.ARRAY || dynamic;
-    const owner = metadata.kind === CellFormulaKind.SHARED ? `shared:${metadata.sharedIndex}` : `${dynamic ? "dynamic" : "array"}:${cell.row}:${cell.column}`;
-    if (array && (cell.row !== bounds.top || cell.column !== bounds.left)) throw new OpenChestnutCodecError(`Cell ${sheetName}!${cellAddress(cell.row, cell.column)} ${dynamic ? "dynamic" : "legacy"} array formula must be the top-left anchor of ${metadata.reference}.`, [], { code: "invalid_cell_formula" });
+    const dataTable = metadata.kind === CellFormulaKind.DATA_TABLE;
+    const owner = metadata.kind === CellFormulaKind.SHARED ? `shared:${metadata.sharedIndex}` : `${dataTable ? "data-table" : dynamic ? "dynamic" : "array"}:${cell.row}:${cell.column}`;
+    if ((array || dataTable) && (cell.row !== bounds.top || cell.column !== bounds.left)) throw new OpenChestnutCodecError(`Cell ${sheetName}!${cellAddress(cell.row, cell.column)} ${dataTable ? "data table" : `${dynamic ? "dynamic" : "legacy"} array`} formula must be the top-left anchor of ${metadata.reference}.`, [], { code: "invalid_cell_formula" });
     for (let row = bounds.top; row <= bounds.bottom; row += 1) {
       for (let column = bounds.left; column <= bounds.right; column += 1) {
         const key = `${row}:${column}`;
         if (occupied.has(key) && occupied.get(key) !== owner) throw new OpenChestnutCodecError(`Cell ${sheetName}!${cellAddress(cell.row, cell.column)} formula range ${metadata.reference} overlaps another native formula range.`, [], { code: "invalid_cell_formula" });
         occupied.set(key, owner);
         const nested = byCoordinate.get(key);
-        if (array && (row !== cell.row || column !== cell.column) && nested?.formula) throw new OpenChestnutCodecError(`Cell ${sheetName}!${cellAddress(row, column)} must not contain another formula inside ${dynamic ? "dynamic" : "legacy"} array range ${metadata.reference}.`, [], { code: "invalid_cell_formula" });
+        if ((array || dataTable) && (row !== cell.row || column !== cell.column) && nested?.formula) throw new OpenChestnutCodecError(`Cell ${sheetName}!${cellAddress(row, column)} must not contain another formula inside ${dataTable ? "data table" : `${dynamic ? "dynamic" : "legacy"} array`} range ${metadata.reference}.`, [], { code: "invalid_cell_formula" });
       }
     }
   }
@@ -1287,6 +1289,7 @@ function workbookEnvelope(workbook) {
         const cells = entries
           .filter(([, cell]) => cell.value != null || cell.formula || cell.formulaType || Object.keys(cell.style || {}).some((key) => cell.style[key] != null))
           .map(([address, cell]) => dynamicSlots.get(address)?.wire || wireCell(address, cell, workbook.dateSystem));
+        wireWorksheetDataTables(sheet, state?.dataTablesBySheet?.get(sheet.id), cells);
         validateFormulaTopology(cells, sheet.name);
         return cells;
       })(),
@@ -1352,6 +1355,7 @@ function workbookFromEnvelope(envelope) {
   const imagesBySheet = new Map();
   const chartsBySheet = new Map();
   const sparklinesBySheet = new Map();
+  const dataTablesBySheet = new Map();
   const dynamicArraySlotsBySheet = new Map();
   const worksheetSlots = new Map();
   const assets = new Map((envelope.assets || []).map((asset) => [asset.id, asset]));
@@ -1399,6 +1403,7 @@ function workbookFromEnvelope(envelope) {
       throw new OpenChestnutCodecError(`Worksheet ${sheet.name} contains an unsupported threaded-comment reply graph.`, [], { code: "unsupported_threaded_comment_reply_topology" });
     }
     const dynamicArraySlots = new Map();
+    const dataTableSlots = [];
     for (const sourceCell of sourceSheet.cells) {
       const address = cellAddress(sourceCell.row, sourceCell.column);
       const cell = sheet.store.get(address);
@@ -1425,9 +1430,12 @@ function workbookFromEnvelope(envelope) {
       }
       if (sourceCell.formulaMetadata?.kind === CellFormulaKind.DYNAMIC_ARRAY) {
         dynamicArraySlots.set(address, { wire: sourceCell, cell, publicSnapshot: dynamicArrayCellSnapshot(cell) });
+      } else if (sourceCell.formulaMetadata?.kind === CellFormulaKind.DATA_TABLE) {
+        dataTableSlots.push(hydrateWorksheetDataTable(sheet, sourceCell));
       }
     }
     dynamicArraySlotsBySheet.set(sheet.id, dynamicArraySlots);
+    dataTablesBySheet.set(sheet.id, { slots: dataTableSlots });
     const slots = [];
     for (const sourceTable of sourceSheet.tables || []) {
       if (!sourceTable.name || !sourceTable.reference || !sourceTable.columnNames?.length) {
@@ -1513,6 +1521,7 @@ function workbookFromEnvelope(envelope) {
       imagesBySheet,
       chartsBySheet,
       sparklinesBySheet,
+      dataTablesBySheet,
     },
     writable: true,
   });

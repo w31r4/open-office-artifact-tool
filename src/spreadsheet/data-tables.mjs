@@ -123,13 +123,13 @@ export class WorksheetDataTableCollection {
   }
 
   _hydrate(wire) {
-    const bounds = parseRangeAddress(wire.reference);
+    const bounds = parseRangeAddress(wire.reference || wire.formulaRef);
     const definition = definitionFromResultRange(this.worksheet, bounds, {
       rowInput: wire.rowInput,
       columnInput: wire.columnInput,
     });
     if (definition.rowOriented !== Boolean(wire.rowOriented) || definition.twoVariable !== Boolean(wire.twoVariable)) {
-      throw new Error(`Imported data table ${wire.reference} has inconsistent orientation metadata.`);
+      throw new Error(`Imported data table ${wire.reference || wire.formulaRef} has inconsistent orientation metadata.`);
     }
     this._append(definition);
     return definition;
