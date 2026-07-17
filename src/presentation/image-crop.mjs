@@ -71,10 +71,15 @@ export function presentationImageDataUrlDimensions(value) {
   if (!match) throw new TypeError("Presentation image contain/cover fitting requires an embedded base64 PNG, JPEG, GIF, or SVG dataUrl.");
   const bytes = Buffer.from(match[2].replace(/\s/g, ""), "base64");
   const type = match[1].toLowerCase().replace("image/jpg", "image/jpeg");
-  if (type === "image/png") return pngDimensions(bytes) || dimensions(0, 0, "Presentation PNG image");
-  if (type === "image/jpeg") return jpegDimensions(bytes) || dimensions(0, 0, "Presentation JPEG image");
-  if (type === "image/gif") return gifDimensions(bytes) || dimensions(0, 0, "Presentation GIF image");
-  return svgDimensions(bytes) || dimensions(0, 0, "Presentation SVG image");
+  const parsed = type === "image/png"
+    ? pngDimensions(bytes)
+    : type === "image/jpeg"
+      ? jpegDimensions(bytes)
+      : type === "image/gif"
+        ? gifDimensions(bytes)
+        : svgDimensions(bytes);
+  if (!parsed) throw new TypeError(`Presentation ${type} image does not expose bounded positive intrinsic dimensions.`);
+  return parsed;
 }
 
 export function normalizePresentationImageFit(value = "contain") {

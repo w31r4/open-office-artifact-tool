@@ -34,11 +34,11 @@ type ImageSource =
 
 type ImageAddOptions = ImageSource & {
   alt?: string;
-  fit?: "contain" | "cover";
+  fit?: "contain" | "cover" | "stretch";
   contentType?: string;
   position?: { left?: number; top?: number; width?: number; height?: number };
   frame?: { left?: number; top?: number; width?: number; height?: number };
-  crop?: { left: number; top: number; right: number; bottom: number }; // normalized 0..1 insets removed from source image
+  crop?: { left: number; top: number; right: number; bottom: number }; // signed normalized -1..1 source edges
   geometry?: string; // common: "rect", "roundRect", "ellipse"; full list is the shape preset list
   borderRadius?: number | string; // number = pixels; string = supported rounded-* token
 };
@@ -104,11 +104,25 @@ image.height = 180;
 image.alt = altText;
 ```
 
-`crop` edges are normalized `0..1` fractions removed from the source image and
-are clamped. `fit="cover"` fills the frame and may crop; `fit="contain"`
-preserves the full image. `geometry="ellipse"` or `geometry="roundRect"` clips
-the image. `borderRadius` is for rect/roundRect masks; numbers are pixels and
-strings use supported `rounded-*` tokens.
+`crop` uses signed normalized source edges in `-1..1`. Positive values crop;
+negative values expand the source rectangle for contain/letterbox semantics.
+Opposing sums must remain below `1`; invalid input is rejected rather than
+clamped. Manual crop is applied before `contain` or `cover` fitting.
+
+Canonical PPTX export computes a DrawingML `a:srcRect` for embedded base64
+PNG, JPEG, GIF, or safe SVG data with bounded intrinsic dimensions.
+`fit="cover"` fills the frame, `fit="contain"` preserves the full image, and
+`fit="stretch"` uses only the explicit crop. PPTX has no native fit keyword,
+so import normalizes a recognized source rectangle to `fit="stretch"` plus the
+explicit signed crop. Recognized source-bound rectangular pictures can add,
+edit, or remove that crop without rebuilding the rest of the package.
+
+External images, non-rectangular masks, `borderRadius`, and pictures with blip
+effects or unsupported transforms remain outside this bounded native slice.
+They are preserved unchanged when source evidence is valid; unsafe edits fail
+closed instead of flattening the picture. The JavaScript preview model may
+still display `ellipse` or `roundRect`, but do not use those fields in a
+canonical PPTX export workflow yet.
 
 ## Replace Source
 
@@ -134,7 +148,7 @@ radius on the image facade itself.
 type ImageReplaceOptions =
   {
     alt?: string;
-    fit?: "contain" | "cover";
+    fit?: "contain" | "cover" | "stretch";
     contentType?: string;
     blob?: ArrayBuffer | Uint8Array;
     dataUrl?: string;
@@ -145,7 +159,7 @@ type ImageReplaceOptions =
 type ImageRegenerateOptions = {
   prompt?: string;
   kind?: "sticker" | "layout" | "content" | "infographic";
-  fit?: "contain" | "cover";
+  fit?: "contain" | "cover" | "stretch";
   size?: "1024x1024" | "1536x1024" | "1024x1536";
   quality?: "low" | "medium" | "high";
   background?: "auto" | "transparent" | "opaque";
@@ -245,4 +259,14 @@ slide.images.add({
 // Manual crop when the subject is off-center.
 image.fit = "cover";
 image.crop = { left: 0.08, top: 0.02, right: 0.18, bottom: 0.06 };
+```
+
+```ts
+// Edit or remove a recognized imported DrawingML source rectangle.
+const importedImage = presentation.resolve("im/c3d4e5f6");
+importedImage.fit = "stretch";
+importedImage.crop = { left: -0.08, top: 0, right: -0.08, bottom: 0 };
+
+// Remove a:srcRect on the next canonical OpenChestnut export.
+importedImage.crop = undefined;
 ```

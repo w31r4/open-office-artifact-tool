@@ -168,6 +168,11 @@ try {
   const slideReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/slide.spec.md", "utf8");
   assert.match(slideReferenceText, /never flattens the\s+inherited color/i);
   assert.match(slideReferenceText, /Gradient,\s+pattern, image.*opaque-preserved/is);
+  const imageReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/images.spec.md", "utf8");
+  assert.match(imageReferenceText, /signed normalized source edges in `-1\.\.1`/i);
+  assert.match(imageReferenceText, /DrawingML `a:srcRect`/);
+  assert.match(imageReferenceText, /PPTX has no native fit keyword/i);
+  assert.match(imageReferenceText, /unsafe edits fail\s+closed/i);
 
   console.log("presentation skill smoke ok");
 } finally {

@@ -10,16 +10,34 @@ import {
   run,
   shape as composeShape,
 } from "../src/index.mjs";
+import {
+  effectivePresentationImageCrop,
+  presentationImageDataUrlDimensions,
+} from "../src/presentation/image-crop.mjs";
 
 const PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 const JPEG = "data:image/jpeg;base64,/9j/2Q==";
 const WIDE_SVG = `data:image/svg+xml;base64,${Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200" viewBox="0 0 400 200"><rect width="200" height="200" fill="#2563eb"/><rect x="200" width="200" height="200" fill="#f97316"/></svg>').toString("base64")}`;
+const TALL_SVG = `data:image/svg+xml;base64,${Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 400"><rect width="200" height="200" fill="#2563eb"/><rect y="200" width="200" height="200" fill="#f97316"/></svg>').toString("base64")}`;
 
 function itemByName(items, name) {
   const item = items.find((candidate) => candidate.name === name);
   assert.ok(item, "Missing presentation object " + name);
   return item;
 }
+
+assert.deepEqual(presentationImageDataUrlDimensions(WIDE_SVG), { width: 400, height: 200 });
+assert.deepEqual(effectivePresentationImageCrop({ fit: "cover", dataUrl: WIDE_SVG, frame: { width: 200, height: 200 } }), { left: 0.25, top: 0, right: 0.25, bottom: 0 });
+assert.deepEqual(effectivePresentationImageCrop({ fit: "contain", dataUrl: WIDE_SVG, frame: { width: 200, height: 200 } }), { left: 0, top: -0.5, right: 0, bottom: -0.5 });
+assert.deepEqual(effectivePresentationImageCrop({ fit: "cover", dataUrl: TALL_SVG, frame: { width: 200, height: 200 } }), { left: 0, top: 0.25, right: 0, bottom: 0.25 });
+assert.deepEqual(effectivePresentationImageCrop({ fit: "contain", dataUrl: TALL_SVG, frame: { width: 200, height: 200 } }), { left: -0.5, top: 0, right: -0.5, bottom: 0 });
+assert.deepEqual(effectivePresentationImageCrop({
+  fit: "cover",
+  crop: { left: 0.1, right: 0.1 },
+  dataUrl: WIDE_SVG,
+  frame: { width: 200, height: 200 },
+}), { left: 0.25, top: 0, right: 0.25, bottom: 0 });
+assert.throws(() => effectivePresentationImageCrop({ fit: "cover", dataUrl: "data:image/png;base64,AA==", frame: { width: 100, height: 100 } }), /intrinsic dimensions/);
 
 // The JavaScript layer remains the object model, Compose, inspect, resolve,
 // semantic verification, and rendering surface.

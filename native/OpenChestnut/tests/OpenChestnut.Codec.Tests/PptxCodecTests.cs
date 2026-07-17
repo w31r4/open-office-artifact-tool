@@ -1169,6 +1169,7 @@ public sealed class PptxCodecTests
         var irregularCropSource = ReplaceZipText(source, "ppt/slides/slide1.xml", xml =>
             xml.Replace("<a:stretch>", "<a:srcRect l=\"1000\" fixture:unknown=\"1\" xmlns:fixture=\"urn:open-chestnut:test\"/><a:stretch>", StringComparison.Ordinal));
         var irregularCropImported = Import(irregularCropSource);
+        Assert.True(irregularCropImported.Ok, Diagnostics(irregularCropImported));
         var irregularCropPicture = Assert.Single(Assert.Single(irregularCropImported.Artifact.Presentation.Slides).Elements, item => item.ContentCase == PresentationElement.ContentOneofCase.Opaque);
         Assert.False(irregularCropPicture.Source.Editable);
     }

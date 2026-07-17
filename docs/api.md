@@ -1049,8 +1049,8 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `compose.column` | api | Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels. |
 | `compose.paragraph` | api | Create an editable text block with name, className/style text tokens, and stable inspect output. |
 | `compose.text` | api | Create the same editable paragraph node through the reference-template-compatible children-first text(children, props) helper. |
-| `exportPptxWithOpenChestnut` | api | Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures, fixed-grid plain-text tables, plain-text speaker notes, and source-free bar/line/pie charts. Recognized imported direct backgrounds and simple notes bodies are hash-bound and editable; inherited or complex graphs remain preserved and fail closed on unsupported mutation. |
-| `importPptxWithOpenChestnut` | api | Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich text, pictures, tables, connectors, bar/line/pie charts, and plain-text speaker notes. Complex backgrounds, rich notes, and other unsupported content remain source-bound and read-only. |
+| `exportPptxWithOpenChestnut` | api | Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures with native crop/contain/cover semantics, fixed-grid plain-text tables, plain-text speaker notes, and source-free bar/line/pie charts. Recognized imported direct backgrounds, picture source rectangles, and simple notes bodies are hash-bound and editable; inherited or complex graphs remain preserved and fail closed on unsupported mutation. |
+| `importPptxWithOpenChestnut` | api | Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich text, rectangular pictures and native source rectangles, tables, connectors, bar/line/pie charts, and plain-text speaker notes. Complex backgrounds/blips, rich notes, and other unsupported content remain source-bound and read-only. |
 | `nativeObject.getEmbeddedWorkbook` | api | Read a defensive FileBlob copy of the XLSX payload from an eligible source-bound top-level OLE object without exposing arbitrary native-part mutation. |
 | `nativeObject.replaceEmbeddedWorkbook` | api | OLE payload replacement is unsupported in OpenChestnut 0.2. The method fails explicitly; getEmbeddedWorkbook remains available for read-only inspection of a uniquely bound XLSX payload. |
 | `nativeObject.setName` | api | Native OLE, SmartArt/diagram, and contentPart objects imported through OpenChestnut are source-bound and read-only; setName rejects instead of mutating the preserved package graph. |
@@ -1089,7 +1089,7 @@ Inspect PDF bytes as bounded file/object records including page/object counts, e
 | `slide.compose` | api | Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph/text, shape, table, chart, image, and rule nodes into editable slide objects. |
 | `slide.connectors.add` | api | Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA. |
 | `slide.groups.add` | api | Build grouped-shape trees for model inspect, layout, and SVG preview. Source-free p:grpSp authoring is outside the OpenChestnut 0.2 boundary, while imported groups remain opaque and read-only. |
-| `slide.images.add` | api | Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, direct rotation/flips, layout JSON, SVG preview, and PPTX output. OpenChestnut owns a bounded embedded rectangular picture profile. |
+| `slide.images.add` | api | Add an inspectable image facade with alt text, embedded data, contain/cover/stretch fitting, explicit crop, frame, direct rotation/flips, layout JSON, crop-aware SVG preview, and PPTX output. OpenChestnut maps the bounded rectangular profile to native DrawingML a:srcRect. |
 | `slide.setBackground` | api | Set a direct slide background to a six-digit RGB/theme color solid fill or a native style reference. Recognized imported direct backgrounds are hash-bound and editable; inherited Layout/Master backgrounds remain inherited. |
 | `slide.shapes.add` | api | Add a shape/textbox with preset or bounded literal custom geometry, position, optional center-based rotation/flips, fill, line, text, and DrawingML text-body layout. |
 | `slide.tables.add` | api | Add an inspectable table facade with rows, columns, values, cells, layout JSON, SVG preview, and canonical OpenChestnut fixed-grid plain-text PPTX output. |
@@ -1142,7 +1142,7 @@ Create the same editable paragraph node through the reference-template-compatibl
 
 #### `exportPptxWithOpenChestnut`
 
-Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures, fixed-grid plain-text tables, plain-text speaker notes, and source-free bar/line/pie charts. Recognized imported direct backgrounds and simple notes bodies are hash-bound and editable; inherited or complex graphs remain preserved and fail closed on unsupported mutation.
+Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures with native crop/contain/cover semantics, fixed-grid plain-text tables, plain-text speaker notes, and source-free bar/line/pie charts. Recognized imported direct backgrounds, picture source rectangles, and simple notes bodies are hash-bound and editable; inherited or complex graphs remain preserved and fail closed on unsupported mutation.
 
 **Schema parameters:**
 
@@ -1155,7 +1155,7 @@ Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse sha
 
 #### `importPptxWithOpenChestnut`
 
-Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich text, pictures, tables, connectors, bar/line/pie charts, and plain-text speaker notes. Complex backgrounds, rich notes, and other unsupported content remain source-bound and read-only.
+Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich text, rectangular pictures and native source rectangles, tables, connectors, bar/line/pie charts, and plain-text speaker notes. Complex backgrounds/blips, rich notes, and other unsupported content remain source-bound and read-only.
 
 **Schema parameters:**
 
@@ -1731,7 +1731,7 @@ Build grouped-shape trees for model inspect, layout, and SVG preview. Source-fre
 
 #### `slide.images.add`
 
-Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit, frame, direct rotation/flips, layout JSON, SVG preview, and PPTX output. OpenChestnut owns a bounded embedded rectangular picture profile.
+Add an inspectable image facade with alt text, embedded data, contain/cover/stretch fitting, explicit crop, frame, direct rotation/flips, layout JSON, crop-aware SVG preview, and PPTX output. OpenChestnut maps the bounded rectangular profile to native DrawingML a:srcRect.
 
 **Schema parameters:**
 
@@ -1739,13 +1739,14 @@ Add an inspectable image facade with alt text, prompt/URI/data URL metadata, fit
 - `uri` (string) — External image URI metadata.
 - `prompt` (string) — Generation/source prompt metadata.
 - `alt` (string) — Alternative text.
-- `fit` (string) — contain, cover, or stretch rendering intent. The bounded OpenChestnut p:pic profile accepts contain/stretch and imports native stretch as stretch; crop/cover remains outside that codec slice.
+- `fit` (string) — contain, cover, or stretch. For embedded images, OpenChestnut computes a bounded native a:srcRect from intrinsic dimensions; imported native source rectangles normalize to fit stretch plus explicit crop because PPTX has no fit keyword.
+- `crop` (object) — Optional normalized { left, top, right, bottom } source edges in -1..1 with opposing sums below 1. Positive values crop; negative values expand for contain/letterbox semantics. Manual crop is applied before contain/cover fitting.
 - `position` (object) — Pixel left/top/width/height frame.
 - `transform` (object) — Optional { rotationDegrees, flipHorizontal, flipVertical } center transform. OpenChestnut preserves explicit false and safely edits recognized top-level embedded pictures.
 
 **Schema returns:**
 
-- `image` (ImageElement) — Appended editable image facade. OpenChestnut authors/imports embedded PNG/JPEG/GIF/safe-SVG rectangular stretch pictures and permits same-format byte, name/alt, frame, and direct-transform edits; crop, effects, external sources, complex blips, and non-rectangular geometry remain opaque.
+- `image` (ImageElement) — Appended editable image facade. OpenChestnut authors/imports embedded PNG/JPEG/GIF/safe-SVG rectangular pictures and permits native source-rectangle add/edit/remove plus same-format byte, name/alt, frame, and direct-transform edits; effects, external sources, complex blips, and non-rectangular geometry remain opaque.
 
 #### `slide.setBackground`
 
