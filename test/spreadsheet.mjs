@@ -90,6 +90,14 @@ const doughnut = sheet.charts.add("doughnut", sheet.getRange("A1:B4"));
 doughnut.name = "Doughnut chart";
 doughnut.title = "Revenue mix";
 doughnut.setPosition("H24", "L34");
+sheet.getRange("S1:T4").values = [["Units", "Price"], [10, 30], [20, 55], [30, 88]];
+const scatter = sheet.charts.add("scatter", sheet.getRange("S1:T4"));
+scatter.name = "Scatter chart";
+scatter.title = "Price relationship";
+scatter.xAxis = { title: { text: "Units" }, min: 0, max: 40, majorUnit: 10, numberFormatCode: "0" };
+scatter.yAxis = { title: { text: "Price" }, min: 0, max: 100, majorUnit: 20, numberFormatCode: "$0" };
+scatter.series.items[0].marker = { symbol: "diamond", size: 8, fill: "#38BDF8" };
+scatter.setPosition("M24", "Q34");
 sheet.images.add({
   name: "Status mark",
   alt: "Green status marker",
@@ -161,7 +169,11 @@ assert.ok(firstZip.file("xl/workbook.xml"));
 assert.ok(firstZip.file("xl/worksheets/sheet1.xml"));
 assert.ok(firstZip.file("xl/tables/table1.xml"));
 assert.ok(firstZip.file("xl/drawings/drawing1.xml"));
-assert.equal(Object.keys(firstZip.files).filter((name) => /\/charts\/chart\d+\.xml$/i.test(name)).length, 5);
+const firstChartPaths = Object.keys(firstZip.files).filter((name) => /\/charts\/chart\d+\.xml$/i.test(name));
+assert.equal(firstChartPaths.length, 6);
+const firstChartXml = await Promise.all(firstChartPaths.map((name) => firstZip.file(name).async("text")));
+assert.equal(firstChartXml.filter((xml) => /<c:scatterChart>/.test(xml)).length, 1);
+assert.match(firstChartXml.find((xml) => /<c:scatterChart>/.test(xml)), /<c:xVal>[\s\S]*<c:yVal>/);
 assert.equal(Object.keys(firstZip.files).filter((name) => /^xl\/media\//i.test(name)).length, 1);
 assert.equal(Object.keys(firstZip.files).filter((name) => /^xl\/threadedcomments\/[^/]+\.xml$/i.test(name)).length, 1);
 assert.equal(Object.keys(firstZip.files).filter((name) => /^xl\/persons\/[^/]+\.xml$/i.test(name)).length, 1);
@@ -197,9 +209,16 @@ assert.equal(importedSheet.getRange("A8:F8").format.rowHidden, true);
 assert.deepEqual(importedSheet.freezePanes.toJSON(), { rows: 1, columns: 1, frozen: true, topLeftCell: "B2", activePane: "bottomRight" });
 assert.equal(importedSheet.tables.items[0].name, "SummaryTable");
 assert.equal(importedSheet.images.items[0].alt, "Green status marker");
-assert.deepEqual(importedSheet.charts.items.map((chart) => chart.type), ["bar", "line", "pie", "area", "doughnut"]);
+assert.deepEqual(importedSheet.charts.items.map((chart) => chart.type), ["bar", "line", "pie", "area", "doughnut", "scatter"]);
 assert.match(importedSheet.charts.items[3].toSvg(), /data-series-index="0"/);
 assert.match(importedSheet.charts.items[4].toSvg(), /data-point-index="0"/);
+const importedScatter = importedSheet.charts.items[5];
+assert.deepEqual(importedScatter.categories, []);
+assert.deepEqual(importedScatter.series.items[0].xValues, [10, 20, 30]);
+assert.deepEqual(importedScatter.series.items[0].values, [30, 55, 88]);
+assert.equal(importedScatter.series.items[0].xFormula, "'Summary'!S2:S4");
+assert.equal(importedScatter.xAxis.axisType, "valueAxis");
+assert.match(importedScatter.toSvg(), /<polygon[^>]+38BDF8/i);
 assert.deepEqual(importedSheet.dataValidations.items.map((item) => item.rule.type), ["list", "whole"]);
 assert.deepEqual(importedSheet.conditionalFormattings.items.map((item) => item.ruleType), ["cellIs", "expression", "containsText", "colorScale"]);
 assert.equal(imported.comments.threads.length, 1);
@@ -220,6 +239,9 @@ importedSheet.freezePanes.freezeColumns(1);
 importedSheet.tables.items[0].style = "TableStyleMedium9";
 importedSheet.images.items[0].alt = "Edited green status marker";
 importedSheet.charts.items[1].title = "Edited revenue trend";
+importedScatter.title = "Edited price relationship";
+importedScatter.series.items[0].xValues[1] = 22;
+importedScatter.series.items[0].values[1] = 60;
 const listValidation = importedSheet.dataValidations.items.find((item) => item.rule.type === "list");
 listValidation.rule.values.push("Blocked");
 const marginConditional = importedSheet.conditionalFormattings.items.find((item) => item.ruleType === "cellIs");
@@ -244,6 +266,9 @@ assert.deepEqual(secondSheet.freezePanes.toJSON(), { rows: 2, columns: 1, frozen
 assert.equal(secondSheet.tables.items[0].style, "TableStyleMedium9");
 assert.equal(secondSheet.images.items[0].alt, "Edited green status marker");
 assert.equal(secondSheet.charts.items[1].title, "Edited revenue trend");
+assert.equal(secondSheet.charts.items[5].title, "Edited price relationship");
+assert.deepEqual(secondSheet.charts.items[5].series.items[0].xValues, [10, 22, 30]);
+assert.deepEqual(secondSheet.charts.items[5].series.items[0].values, [30, 60, 88]);
 assert.deepEqual(secondSheet.dataValidations.items.find((item) => item.rule.type === "list").rule.values, ["Planned", "Review", "Done", "Blocked"]);
 assert.equal(secondSheet.conditionalFormattings.items.find((item) => item.ruleType === "cellIs").formula, "0.45");
 assert.equal(second.comments.threads[0].comments.length, 2);
@@ -281,10 +306,16 @@ await assert.rejects(
   (error) => error?.code === "unsupported_spreadsheet_chart" && /lineOptions require a line chart/i.test(error.message),
 );
 
-const unsupportedScatter = chartBoundaryWorkbook("scatter");
+const invalidScatter = chartBoundaryWorkbook("scatter");
 await assert.rejects(
-  () => SpreadsheetFile.exportXlsx(unsupportedScatter.candidate),
-  (error) => error?.code === "unsupported_spreadsheet_chart" && /bar, line, pie, area, or doughnut/i.test(error.message),
+  () => SpreadsheetFile.exportXlsx(invalidScatter.candidate),
+  (error) => error?.code === "invalid_spreadsheet_chart" && /xValue.*finite/i.test(error.message),
+);
+
+const unsupportedBubble = chartBoundaryWorkbook("bubble");
+await assert.rejects(
+  () => SpreadsheetFile.exportXlsx(unsupportedBubble.candidate),
+  (error) => error?.code === "unsupported_spreadsheet_chart" && /bar, line, pie, area, doughnut, or scatter/i.test(error.message),
 );
 
 const connectionWorkbook = Workbook.create({

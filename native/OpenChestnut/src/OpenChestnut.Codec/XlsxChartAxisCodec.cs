@@ -4,7 +4,7 @@ using OpenOffice.Artifact.Wire.V1;
 
 namespace OpenChestnut.Codec;
 
-// Owns the bounded primary category/value-axis projection for worksheet charts.
+// Owns the bounded primary category/value or scatter value/value-axis projection for worksheet charts.
 // Axis identity and all unmodeled formatting remain in the ChartPart; this
 // module reads and patches only titles, number formats, category label interval,
 // linear value-axis bounds/unit, and the delegated bounded tick-label style.
@@ -25,8 +25,8 @@ internal static class XlsxChartAxisCodec
         if ((chart.XAxis is null) != (chart.YAxis is null))
             throw Invalid(worksheetId, chart.Id, "must carry both x_axis and y_axis or neither for backward-compatible default authoring.");
         if (chart.XAxis is null) return;
-        ValidateAxis(chart.XAxis, true, worksheetId, chart.Id);
-        ValidateAxis(chart.YAxis!, false, worksheetId, chart.Id);
+        ValidateAxis(chart.XAxis, chart.Type != SpreadsheetChartType.Scatter, "x", worksheetId, chart.Id);
+        ValidateAxis(chart.YAxis!, false, "y", worksheetId, chart.Id);
     }
 
     internal static bool TryRead(XElement plotArea, XElement plot, SpreadsheetChartArtifact chart, out bool editable)
@@ -37,9 +37,10 @@ internal static class XlsxChartAxisCodec
             editable = !plotArea.Elements().Any(IsAxis);
             return editable;
         }
-        if (!TryLocate(plotArea, plot, out var categoryAxis, out var valueAxis)) return false;
-        if (!TryReadAxis(categoryAxis, true, out var xAxis, out var xEditable) ||
-            !TryReadAxis(valueAxis, false, out var yAxis, out var yEditable)) return false;
+        var scatter = chart.Type == SpreadsheetChartType.Scatter;
+        if (!TryLocate(plotArea, plot, scatter, out var horizontalAxis, out var verticalAxis)) return false;
+        if (!TryReadAxis(horizontalAxis, !scatter, "b", out var xAxis, out var xEditable) ||
+            !TryReadAxis(verticalAxis, false, "l", out var yAxis, out var yEditable)) return false;
         chart.XAxis = xAxis;
         chart.YAxis = yAxis;
         editable = xEditable && yEditable;
@@ -51,57 +52,74 @@ internal static class XlsxChartAxisCodec
         if (chart.Type is SpreadsheetChartType.Pie or SpreadsheetChartType.Doughnut) return;
         var xAxis = chart.XAxis ?? new SpreadsheetChartAxisArtifact();
         var yAxis = chart.YAxis ?? new SpreadsheetChartAxisArtifact();
-        plotArea.Add(BuildCategoryAxis(xAxis), BuildValueAxis(yAxis));
+        if (chart.Type == SpreadsheetChartType.Scatter)
+            plotArea.Add(BuildValueAxis(xAxis, "1", "2", "b"), BuildValueAxis(yAxis, "2", "1", "l"));
+        else
+            plotArea.Add(BuildCategoryAxis(xAxis), BuildValueAxis(yAxis, "2", "1", "l"));
     }
 
     internal static void Patch(XElement plotArea, XElement plot, SpreadsheetChartArtifact target)
     {
         if (target.Type is SpreadsheetChartType.Pie or SpreadsheetChartType.Doughnut) return;
-        if (target.XAxis is null || target.YAxis is null || !TryLocate(plotArea, plot, out var categoryAxis, out var valueAxis))
+        var scatter = target.Type == SpreadsheetChartType.Scatter;
+        if (target.XAxis is null || target.YAxis is null || !TryLocate(plotArea, plot, scatter, out var horizontalAxis, out var verticalAxis))
             throw new CodecException("unsupported_spreadsheet_chart_edit", $"Worksheet chart {target.Id} cannot change its primary-axis topology.");
-        PatchAxis(categoryAxis, target.XAxis, true);
-        PatchAxis(valueAxis, target.YAxis, false);
+        PatchAxis(horizontalAxis, target.XAxis, !scatter);
+        PatchAxis(verticalAxis, target.YAxis, false);
     }
 
     internal static string Semantics(SpreadsheetChartArtifact chart) =>
         string.Join('\u001d', AxisSemantics(chart.XAxis), AxisSemantics(chart.YAxis));
 
-    private static void ValidateAxis(SpreadsheetChartAxisArtifact axis, bool category, string worksheetId, string chartId)
+    private static void ValidateAxis(SpreadsheetChartAxisArtifact axis, bool category, string axisName, string worksheetId, string chartId)
     {
-        if (axis.Title.Length > 32_767 || HasControls(axis.Title)) throw Invalid(worksheetId, chartId, $"{(category ? "x" : "y")}-axis title is invalid.");
-        if (axis.NumberFormatCode.Length > 255 || HasControls(axis.NumberFormatCode)) throw Invalid(worksheetId, chartId, $"{(category ? "x" : "y")}-axis number format is invalid.");
+        if (axis.Title.Length > 32_767 || HasControls(axis.Title)) throw Invalid(worksheetId, chartId, $"{axisName}-axis title is invalid.");
+        if (axis.NumberFormatCode.Length > 255 || HasControls(axis.NumberFormatCode)) throw Invalid(worksheetId, chartId, $"{axisName}-axis number format is invalid.");
         if (category)
         {
-            if (axis.HasMinimum || axis.HasMaximum || axis.HasMajorUnit) throw Invalid(worksheetId, chartId, "x-axis cannot carry numeric minimum, maximum, or major unit.");
-            if (axis.HasTickLabelInterval && axis.TickLabelInterval is < 1 or > MaxTickLabelInterval) throw Invalid(worksheetId, chartId, $"x-axis tick label interval must be 1 through {MaxTickLabelInterval}.");
+            if (axis.HasMinimum || axis.HasMaximum || axis.HasMajorUnit) throw Invalid(worksheetId, chartId, $"{axisName}-axis cannot carry numeric minimum, maximum, or major unit.");
+            if (axis.HasTickLabelInterval && axis.TickLabelInterval is < 1 or > MaxTickLabelInterval) throw Invalid(worksheetId, chartId, $"{axisName}-axis tick label interval must be 1 through {MaxTickLabelInterval}.");
             return;
         }
-        if (axis.HasTickLabelInterval) throw Invalid(worksheetId, chartId, "y-axis cannot carry a category tick label interval.");
-        if (axis.HasMinimum && !double.IsFinite(axis.Minimum) || axis.HasMaximum && !double.IsFinite(axis.Maximum)) throw Invalid(worksheetId, chartId, "y-axis minimum and maximum must be finite.");
-        if (axis.HasMinimum && axis.HasMaximum && axis.Minimum >= axis.Maximum) throw Invalid(worksheetId, chartId, "y-axis minimum must be less than maximum.");
-        if (axis.HasMajorUnit && (!double.IsFinite(axis.MajorUnit) || axis.MajorUnit <= 0)) throw Invalid(worksheetId, chartId, "y-axis major unit must be finite and positive.");
+        if (axis.HasTickLabelInterval) throw Invalid(worksheetId, chartId, $"{axisName}-axis cannot carry a category tick label interval.");
+        if (axis.HasMinimum && !double.IsFinite(axis.Minimum) || axis.HasMaximum && !double.IsFinite(axis.Maximum)) throw Invalid(worksheetId, chartId, $"{axisName}-axis minimum and maximum must be finite.");
+        if (axis.HasMinimum && axis.HasMaximum && axis.Minimum >= axis.Maximum) throw Invalid(worksheetId, chartId, $"{axisName}-axis minimum must be less than maximum.");
+        if (axis.HasMajorUnit && (!double.IsFinite(axis.MajorUnit) || axis.MajorUnit <= 0)) throw Invalid(worksheetId, chartId, $"{axisName}-axis major unit must be finite and positive.");
     }
 
-    private static bool TryLocate(XElement plotArea, XElement plot, out XElement categoryAxis, out XElement valueAxis)
+    private static bool TryLocate(XElement plotArea, XElement plot, bool scatter, out XElement horizontalAxis, out XElement verticalAxis)
     {
-        categoryAxis = null!;
-        valueAxis = null!;
+        horizontalAxis = null!;
+        verticalAxis = null!;
         var axes = plotArea.Elements().Where(IsAxis).ToArray();
         var categories = axes.Where(item => item.Name == ChartNs + "catAx").ToArray();
         var values = axes.Where(item => item.Name == ChartNs + "valAx").ToArray();
-        if (axes.Length != 2 || categories.Length != 1 || values.Length != 1) return false;
-        categoryAxis = categories[0];
-        valueAxis = values[0];
+        if (axes.Length != 2) return false;
+        if (scatter)
+        {
+            if (categories.Length != 0 || values.Length != 2) return false;
+            var horizontal = values.Where(item => AxisValue(item.Element(ChartNs + "axPos")) == "b").ToArray();
+            var vertical = values.Where(item => AxisValue(item.Element(ChartNs + "axPos")) == "l").ToArray();
+            if (horizontal.Length != 1 || vertical.Length != 1 || ReferenceEquals(horizontal[0], vertical[0])) return false;
+            horizontalAxis = horizontal[0];
+            verticalAxis = vertical[0];
+        }
+        else
+        {
+            if (categories.Length != 1 || values.Length != 1) return false;
+            horizontalAxis = categories[0];
+            verticalAxis = values[0];
+        }
         var plotIds = plot.Elements(ChartNs + "axId").Select(AxisValue).ToArray();
-        var categoryId = AxisValue(categoryAxis.Element(ChartNs + "axId"));
-        var valueId = AxisValue(valueAxis.Element(ChartNs + "axId"));
+        var horizontalId = AxisValue(horizontalAxis.Element(ChartNs + "axId"));
+        var verticalId = AxisValue(verticalAxis.Element(ChartNs + "axId"));
         if (plotIds.Length != 2 || plotIds.Any(string.IsNullOrEmpty) || plotIds.Distinct(StringComparer.Ordinal).Count() != 2 ||
-            string.IsNullOrEmpty(categoryId) || string.IsNullOrEmpty(valueId) || categoryId == valueId ||
-            !plotIds.Contains(categoryId, StringComparer.Ordinal) || !plotIds.Contains(valueId, StringComparer.Ordinal)) return false;
-        return AxisValue(categoryAxis.Element(ChartNs + "crossAx")) == valueId && AxisValue(valueAxis.Element(ChartNs + "crossAx")) == categoryId;
+            string.IsNullOrEmpty(horizontalId) || string.IsNullOrEmpty(verticalId) || horizontalId == verticalId ||
+            !plotIds.Contains(horizontalId, StringComparer.Ordinal) || !plotIds.Contains(verticalId, StringComparer.Ordinal)) return false;
+        return AxisValue(horizontalAxis.Element(ChartNs + "crossAx")) == verticalId && AxisValue(verticalAxis.Element(ChartNs + "crossAx")) == horizontalId;
     }
 
-    private static bool TryReadAxis(XElement source, bool category, out SpreadsheetChartAxisArtifact axis, out bool editable)
+    private static bool TryReadAxis(XElement source, bool category, string expectedPosition, out SpreadsheetChartAxisArtifact axis, out bool editable)
     {
         axis = new SpreadsheetChartAxisArtifact();
         editable = true;
@@ -111,7 +129,7 @@ internal static class XlsxChartAxisCodec
         if (!Singleton(source, "delete", out var deleted)) return false;
         if (deleted is not null && !IsFalse(AxisValue(deleted))) editable = false;
         if (!Singleton(source, "axPos", out var position) || position is null) return false;
-        if (AxisValue(position) != (category ? "b" : "l")) editable = false;
+        if (AxisValue(position) != expectedPosition) editable = false;
         if (!TryTitle(source, out var title, out var titleEditable) || !TryNumberFormat(source, out var numberFormat, out var numberFormatEditable)) return false;
         axis.Title = title;
         axis.NumberFormatCode = numberFormat;
@@ -175,17 +193,17 @@ internal static class XlsxChartAxisCodec
         return output;
     }
 
-    private static XElement BuildValueAxis(SpreadsheetChartAxisArtifact axis)
+    private static XElement BuildValueAxis(SpreadsheetChartAxisArtifact axis, string axisId, string crossAxisId, string position)
     {
         var scaling = new XElement(ChartNs + "scaling", new XElement(ChartNs + "orientation", new XAttribute("val", "minMax")));
         if (axis.HasMaximum) scaling.Add(ValueElement("max", axis.Maximum));
         if (axis.HasMinimum) scaling.Add(ValueElement("min", axis.Minimum));
         var output = new XElement(ChartNs + "valAx",
-            new XElement(ChartNs + "axId", new XAttribute("val", "2")), scaling,
-            new XElement(ChartNs + "axPos", new XAttribute("val", "l")));
+            new XElement(ChartNs + "axId", new XAttribute("val", axisId)), scaling,
+            new XElement(ChartNs + "axPos", new XAttribute("val", position)));
         AppendTitleAndNumberFormat(output, axis);
         XlsxChartTextStyleCodec.AppendAuthoredAxis(output, axis.TextStyle);
-        output.Add(new XElement(ChartNs + "crossAx", new XAttribute("val", "1")));
+        output.Add(new XElement(ChartNs + "crossAx", new XAttribute("val", crossAxisId)));
         if (axis.HasMajorUnit) output.Add(ValueElement("majorUnit", axis.MajorUnit));
         return output;
     }

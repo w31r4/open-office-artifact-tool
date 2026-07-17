@@ -476,6 +476,8 @@ internal sealed class XlsxChartCodec
             plot = new XElement(ChartNs + "areaChart", new XElement(ChartNs + "grouping", new XAttribute("val", "standard")), series, XlsxChartDataLabelsCodec.Element(chart.DataLabels), new XElement(ChartNs + "axId", new XAttribute("val", "1")), new XElement(ChartNs + "axId", new XAttribute("val", "2")));
         else if (chart.Type == SpreadsheetChartType.Doughnut)
             plot = new XElement(ChartNs + "doughnutChart", new XElement(ChartNs + "varyColors", new XAttribute("val", "1")), series, XlsxChartDataLabelsCodec.Element(chart.DataLabels), new XElement(ChartNs + "firstSliceAng", new XAttribute("val", "0")), new XElement(ChartNs + "holeSize", new XAttribute("val", "50")));
+        else if (chart.Type == SpreadsheetChartType.Scatter)
+            plot = new XElement(ChartNs + "scatterChart", new XElement(ChartNs + "scatterStyle", new XAttribute("val", "marker")), new XElement(ChartNs + "varyColors", new XAttribute("val", "0")), series, XlsxChartDataLabelsCodec.Element(chart.DataLabels), new XElement(ChartNs + "axId", new XAttribute("val", "1")), new XElement(ChartNs + "axId", new XAttribute("val", "2")));
         else plot = new XElement(ChartNs + "pieChart", new XElement(ChartNs + "varyColors", new XAttribute("val", "1")), series, XlsxChartDataLabelsCodec.Element(chart.DataLabels));
         var plotArea = new XElement(ChartNs + "plotArea", new XElement(ChartNs + "layout"), plot);
         XlsxChartAxisCodec.AppendAuthored(plotArea, chart);
@@ -487,15 +489,20 @@ internal sealed class XlsxChartCodec
         return new XDocument(new XDeclaration("1.0", "UTF-8", "yes"), new XElement(ChartNs + "chartSpace", new XAttribute(XNamespace.Xmlns + "c", ChartNs), new XAttribute(XNamespace.Xmlns + "a", DrawingNs), nativeChart));
     }
 
-    private static XElement SeriesElement(SpreadsheetChartSeriesArtifact series, IEnumerable<string> categories, int index) =>
-        new(ChartNs + "ser",
+    private static XElement SeriesElement(SpreadsheetChartSeriesArtifact series, IEnumerable<string> categories, int index)
+    {
+        var output = new XElement(ChartNs + "ser",
             new XElement(ChartNs + "idx", new XAttribute("val", index)),
             new XElement(ChartNs + "order", new XAttribute("val", index)),
             new XElement(ChartNs + "tx", new XElement(ChartNs + "v", series.Name)),
             XlsxChartSeriesStyleCodec.PropertiesElement(series),
-            XlsxChartSeriesMarkerCodec.Element(series.Marker),
-            new XElement(ChartNs + "cat", StringData(categories, series.CategoryFormula)),
-            new XElement(ChartNs + "val", NumericData(series.Values, series.ValueFormula)));
+            XlsxChartSeriesMarkerCodec.Element(series.Marker));
+        if (series.XValues.Count > 0 || series.XValueFormula.Length > 0)
+            output.Add(new XElement(ChartNs + "xVal", NumericData(series.XValues, series.XValueFormula)), new XElement(ChartNs + "yVal", NumericData(series.Values, series.ValueFormula)));
+        else
+            output.Add(new XElement(ChartNs + "cat", StringData(categories, series.CategoryFormula)), new XElement(ChartNs + "val", NumericData(series.Values, series.ValueFormula)));
+        return output;
+    }
 
     private static XElement StringData(IEnumerable<string> values, string formula)
     {
@@ -562,16 +569,16 @@ internal sealed class XlsxChartCodec
         {
             var requested = target.Series[index];
             var original = record.Artifact.Series[index];
-            if (requested.Values.Count != original.Values.Count || string.IsNullOrEmpty(requested.CategoryFormula) != string.IsNullOrEmpty(original.CategoryFormula) || string.IsNullOrEmpty(requested.ValueFormula) != string.IsNullOrEmpty(original.ValueFormula)) throw new CodecException("unsupported_spreadsheet_chart_edit", $"Worksheet chart {target.Id} series {index + 1} cannot change cache count or literal/reference topology.", Path(record.ChartPart));
+            if (requested.Values.Count != original.Values.Count || requested.XValues.Count != original.XValues.Count || string.IsNullOrEmpty(requested.CategoryFormula) != string.IsNullOrEmpty(original.CategoryFormula) || string.IsNullOrEmpty(requested.XValueFormula) != string.IsNullOrEmpty(original.XValueFormula) || string.IsNullOrEmpty(requested.ValueFormula) != string.IsNullOrEmpty(original.ValueFormula)) throw new CodecException("unsupported_spreadsheet_chart_edit", $"Worksheet chart {target.Id} series {index + 1} cannot change cache count or literal/reference topology.", Path(record.ChartPart));
         }
         var nativeChart = record.ChartDocument.Root!.Element(ChartNs + "chart")!;
         PatchTitle(nativeChart, target.Title, target.TitleTextStyle);
         PatchLegend(nativeChart, target.HasLegend);
         var plotArea = nativeChart.Element(ChartNs + "plotArea")!;
-        var plotName = target.Type switch { SpreadsheetChartType.Bar => "barChart", SpreadsheetChartType.Line => "lineChart", SpreadsheetChartType.Pie => "pieChart", SpreadsheetChartType.Area => "areaChart", SpreadsheetChartType.Doughnut => "doughnutChart", _ => throw new InvalidOperationException() };
+        var plotName = target.Type switch { SpreadsheetChartType.Bar => "barChart", SpreadsheetChartType.Line => "lineChart", SpreadsheetChartType.Pie => "pieChart", SpreadsheetChartType.Area => "areaChart", SpreadsheetChartType.Doughnut => "doughnutChart", SpreadsheetChartType.Scatter => "scatterChart", _ => throw new InvalidOperationException() };
         var plot = plotArea.Element(ChartNs + plotName)!;
         var nativeSeries = plot.Elements(ChartNs + "ser").ToArray();
-        for (var index = 0; index < nativeSeries.Length; index++) PatchSeries(nativeSeries[index], target.Series[index], target.Categories);
+        for (var index = 0; index < nativeSeries.Length; index++) PatchSeries(nativeSeries[index], target.Series[index], target.Categories, target.Type);
         if (target.Type == SpreadsheetChartType.Line) XlsxChartLineOptionsCodec.Patch(plot, target.LineOptions);
         XlsxChartDataLabelsCodec.Patch(plot, target.DataLabels);
         XlsxChartAxisCodec.Patch(plotArea, plot, target);
@@ -604,14 +611,22 @@ internal sealed class XlsxChartCodec
         chart.Element(ChartNs + "plotArea")!.AddAfterSelf(LegendElement());
     }
 
-    private static void PatchSeries(XElement native, SpreadsheetChartSeriesArtifact target, IEnumerable<string> categories)
+    private static void PatchSeries(XElement native, SpreadsheetChartSeriesArtifact target, IEnumerable<string> categories, SpreadsheetChartType chartType)
     {
         native.Element(ChartNs + "tx")!.Element(ChartNs + "v")!.Value = target.Name;
         XlsxChartSeriesStyleCodec.Patch(native, target);
         XlsxChartSeriesLineStyleCodec.Patch(native, target);
         XlsxChartSeriesMarkerCodec.Patch(native, target);
-        PatchStringData(native.Element(ChartNs + "cat") ?? native.Element(ChartNs + "xVal")!, categories, target.CategoryFormula);
-        PatchNumericData(native.Element(ChartNs + "val") ?? native.Element(ChartNs + "yVal")!, target.Values, target.ValueFormula);
+        if (chartType == SpreadsheetChartType.Scatter)
+        {
+            PatchNumericData(native.Element(ChartNs + "xVal")!, target.XValues, target.XValueFormula);
+            PatchNumericData(native.Element(ChartNs + "yVal")!, target.Values, target.ValueFormula);
+        }
+        else
+        {
+            PatchStringData(native.Element(ChartNs + "cat")!, categories, target.CategoryFormula);
+            PatchNumericData(native.Element(ChartNs + "val")!, target.Values, target.ValueFormula);
+        }
     }
 
     private static void PatchStringData(XElement holder, IEnumerable<string> values, string formula)
@@ -637,7 +652,7 @@ internal sealed class XlsxChartCodec
         for (var index = 0; index < points.Length; index++) points[index].Element(ChartNs + "v")!.Value = format(requested[index]);
     }
 
-    private static string SemanticHash(SpreadsheetChartArtifact chart) => Hash(string.Join('\0', chart.Id, chart.Name, chart.Title, XlsxChartTextStyleCodec.Semantics(chart.TitleTextStyle), XlsxChartLineOptionsCodec.Semantics(chart.LineOptions), XlsxChartDataLabelsCodec.Semantics(chart.DataLabels), ((int)chart.Type).ToString(CultureInfo.InvariantCulture), chart.HasLegend ? "1" : "0", AnchorSemantics(chart), XlsxChartAxisCodec.Semantics(chart), string.Join('\u001e', chart.Categories), string.Join('\u001d', chart.Series.Select(series => string.Join('\u001f', series.Name, series.CategoryFormula, series.ValueFormula, XlsxChartSeriesStyleCodec.Semantics(series), XlsxChartSeriesLineStyleCodec.Semantics(series.Line), XlsxChartSeriesMarkerCodec.Semantics(series.Marker), string.Join(',', series.Values.Select(value => value.ToString("R", CultureInfo.InvariantCulture))))))));
+    private static string SemanticHash(SpreadsheetChartArtifact chart) => Hash(string.Join('\0', chart.Id, chart.Name, chart.Title, XlsxChartTextStyleCodec.Semantics(chart.TitleTextStyle), XlsxChartLineOptionsCodec.Semantics(chart.LineOptions), XlsxChartDataLabelsCodec.Semantics(chart.DataLabels), ((int)chart.Type).ToString(CultureInfo.InvariantCulture), chart.HasLegend ? "1" : "0", AnchorSemantics(chart), XlsxChartAxisCodec.Semantics(chart), string.Join('\u001e', chart.Categories), string.Join('\u001d', chart.Series.Select(series => string.Join('\u001f', series.Name, series.CategoryFormula, series.XValueFormula, series.ValueFormula, XlsxChartSeriesStyleCodec.Semantics(series), XlsxChartSeriesLineStyleCodec.Semantics(series.Line), XlsxChartSeriesMarkerCodec.Semantics(series.Marker), string.Join(',', series.XValues.Select(value => value.ToString("R", CultureInfo.InvariantCulture))), string.Join(',', series.Values.Select(value => value.ToString("R", CultureInfo.InvariantCulture))))))));
 
     private static string AnchorSemantics(SpreadsheetChartArtifact chart)
     {

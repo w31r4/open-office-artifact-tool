@@ -3502,6 +3502,85 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ProtocolAuthorsImportsAndEditsMarkerScatterWorksheetCharts()
+    {
+        var request = ChartExportRequest();
+        var chart = request.Artifact.Workbook.Worksheets[0].Charts[0];
+        chart.Type = SpreadsheetChartType.Scatter;
+        chart.Title = "Price relationship";
+        chart.Categories.Clear();
+        chart.LineOptions = null;
+        chart.DataLabels = null;
+        chart.XAxis = new SpreadsheetChartAxisArtifact { Title = "Units", NumberFormatCode = "0.0", Minimum = 0, Maximum = 30, MajorUnit = 5 };
+        chart.YAxis = new SpreadsheetChartAxisArtifact { Title = "Price", NumberFormatCode = "$0", Minimum = 0, Maximum = 100, MajorUnit = 20 };
+        var series = chart.Series[0];
+        series.CategoryFormula = string.Empty;
+        series.XValueFormula = "'Summary'!$A$1:$A$2";
+        series.ValueFormula = "'Summary'!$B$1:$B$2";
+        series.XValues.Add([10, 20]);
+
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(authored.File.ToByteArray());
+        var authoredXml = ReadChartXml(authored.File.ToByteArray());
+        Assert.Contains("<c:scatterChart>", authoredXml, StringComparison.Ordinal);
+        Assert.Contains("<c:scatterStyle val=\"marker\"", authoredXml, StringComparison.Ordinal);
+        Assert.Contains("<c:xVal>", authoredXml, StringComparison.Ordinal);
+        Assert.Contains("<c:yVal>", authoredXml, StringComparison.Ordinal);
+        Assert.DoesNotContain("<c:cat>", authoredXml, StringComparison.Ordinal);
+        Assert.Equal(2, authoredXml.Split("<c:valAx>", StringSplitOptions.None).Length - 1);
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var importedChart = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Charts);
+        Assert.Equal(SpreadsheetChartType.Scatter, importedChart.Type);
+        Assert.Empty(importedChart.Categories);
+        Assert.True(importedChart.Source.Editable);
+        Assert.Equal([10, 20], importedChart.Series[0].XValues);
+        Assert.Equal([42.5, 85], importedChart.Series[0].Values);
+        Assert.Equal("'Summary'!$A$1:$A$2", importedChart.Series[0].XValueFormula);
+        Assert.Equal("'Summary'!$B$1:$B$2", importedChart.Series[0].ValueFormula);
+        Assert.True(importedChart.XAxis.HasMinimum);
+        Assert.Equal(0, importedChart.XAxis.Minimum);
+        Assert.Equal(30, importedChart.XAxis.Maximum);
+        Assert.Equal(5, importedChart.XAxis.MajorUnit);
+
+        importedChart.Title = "Edited price relationship";
+        importedChart.Series[0].XValues[1] = 22;
+        importedChart.Series[0].Values[1] = 88;
+        importedChart.Series[0].Marker.Symbol = SpreadsheetChartMarkerSymbol.Circle;
+        importedChart.XAxis.Maximum = 40;
+        importedChart.YAxis.MajorUnit = 10;
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, string.Join("\n", edited.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(edited.File.ToByteArray());
+        var second = Import(edited.File.ToByteArray());
+        var secondChart = Assert.Single(second.Artifact.Workbook.Worksheets[0].Charts);
+        Assert.Equal("Edited price relationship", secondChart.Title);
+        Assert.Equal([10, 22], secondChart.Series[0].XValues);
+        Assert.Equal([42.5, 88], secondChart.Series[0].Values);
+        Assert.Equal(SpreadsheetChartMarkerSymbol.Circle, secondChart.Series[0].Marker.Symbol);
+        Assert.Equal(40, secondChart.XAxis.Maximum);
+        Assert.Equal(10, secondChart.YAxis.MajorUnit);
+
+        var lineMarkerSource = SetChartScalar(authored.File.ToByteArray(), "scatterChart", "scatterStyle", "lineMarker");
+        AssertOffice2021Valid(lineMarkerSource);
+        var lineMarkerXml = ReadChartXml(lineMarkerSource);
+        var lineMarker = Import(lineMarkerSource);
+        Assert.True(lineMarker.Ok, string.Join("\n", lineMarker.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var lineMarkerChart = Assert.Single(lineMarker.Artifact.Workbook.Worksheets[0].Charts);
+        Assert.Equal(SpreadsheetChartType.Scatter, lineMarkerChart.Type);
+        Assert.False(lineMarkerChart.Source.Editable);
+        var preserved = Export(lineMarker.Artifact);
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(lineMarkerXml, ReadChartXml(preserved.File.ToByteArray()));
+        lineMarkerChart.Title = "Rejected line-marker edit";
+        var rejected = Export(lineMarker.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_chart_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void ProtocolRejectsInvalidWorksheetChartAxes()
     {
         var reversed = ChartExportRequest();
