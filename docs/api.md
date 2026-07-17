@@ -2395,6 +2395,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.IFNA` | formula | Return a fallback only when an expression evaluates to #N/A; preserve every other result or error. |
 | `fx.INDEX` | formula | Return a value from a range by 1-based row and optional column index. |
 | `fx.INT` | formula | Round a number down to the nearest integer. |
+| `fx.IRR` | formula | Return a bounded-convergence periodic return rate for a finite cash-flow vector. |
 | `fx.ISBLANK` | formula | Return TRUE when a referenced value is empty. |
 | `fx.ISERR` | formula | Return TRUE for recognized formula errors other than #N/A. |
 | `fx.ISERROR` | formula | Return TRUE when a value is any recognized formula error. |
@@ -2417,8 +2418,9 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.NETWORKDAYS` | formula | Count Monday-through-Friday dates inclusively between two serial dates, excluding optional holidays. |
 | `fx.NETWORKDAYS.INTL` | formula | Count inclusive workdays with a numbered or Monday-first seven-character custom weekend and optional holidays. |
 | `fx.NOT` | formula | Reverse the truth value of a condition. |
+| `fx.NPV` | formula | Discount a finite periodic cash-flow vector beginning one period after the present value date. |
 | `fx.OR` | formula | Return TRUE when any condition is true. |
-| `fx.PMT` | formula | Calculate a loan payment for constant payments and constant interest rate. |
+| `fx.PMT` | formula | Calculate a constant-period loan payment from finite rate, term, present value, optional future value, and payment-timing inputs. |
 | `fx.RANK.EQ` | formula | Return a number's equal rank in a numeric range, descending by default or ascending when order is nonzero. |
 | `fx.RIGHT` | formula | Return characters from the end of a text value. |
 | `fx.ROUND` | formula | Round a numeric value to decimal places or, with negative digits, positions left of the decimal point. |
@@ -2450,8 +2452,10 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.WORKDAY.INTL` | formula | Move by workdays using a numbered or Monday-first seven-character custom weekend and optional holidays. |
 | `fx.WRAPCOLS` | formula | Wrap a one-dimensional vector into columns of a requested height, padding the final column when needed. |
 | `fx.WRAPROWS` | formula | Wrap a one-dimensional vector into rows of a requested width, padding the final row when needed. |
+| `fx.XIRR` | formula | Return a bounded-convergence annualized return rate for date-aligned finite cash flows using a 365-day year. |
 | `fx.XLOOKUP` | formula | Look up a value in one range and return the corresponding value from another range. |
 | `fx.XMATCH` | formula | Return a 1-based lookup position with exact, next-smaller, next-larger, wildcard, and forward or reverse search modes. |
+| `fx.XNPV` | formula | Discount date-aligned finite cash flows by actual day offsets from the first date using a 365-day year. |
 | `fx.YEAR` | formula | Return the year component of a serial in the workbook's 1900 or 1904 date system. |
 | `importXlsxWithOpenChestnut` | api | Import XLSX bytes through OpenChestnut with editable core cells, formulas, styles, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie/area/doughnut charts, marker-only numeric-X/Y scatter charts, and bounded numeric-X/Y/positive-Size bubble charts. Imported data-table topology is source-bound and read-only. Non-marker scatter styles, noncanonical bubble profiles, nested/branched replies, mentions, connections, QueryTables, dynamic-array topology, pivots, non-reversible sparkline graphs, and other advanced package content remain source-bound and read-only. |
 | `invokeOpenChestnut` | api | Advanced experimental byte-boundary API for invoking the public OpenChestnut codec protocol with generated wire-message objects. |
@@ -3063,6 +3067,28 @@ Round a number down to the nearest integer.
 
 - `value` (number) — Calculated cell value or an Excel-style formula error string.
 
+#### `fx.IRR`
+
+Return a bounded-convergence periodic return rate for a finite cash-flow vector.
+
+**Examples:**
+
+- =IRR(B2:B8)
+- =IRR(B2:B8,0.15)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =IRR(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+**Notes:**
+
+- Cash flows must contain both a positive and a negative finite number. The optional finite guess defaults to 0.1; no converged valid root or an invalid rate returns #NUM! rather than a guessed value.
+
 #### `fx.ISBLANK`
 
 Return TRUE when a referenced value is empty.
@@ -3438,6 +3464,27 @@ Reverse the truth value of a condition.
 
 - `value` (boolean) — Calculated cell value or an Excel-style formula error string.
 
+#### `fx.NPV`
+
+Discount a finite periodic cash-flow vector beginning one period after the present value date.
+
+**Examples:**
+
+- =NPV(B1,B2:B6)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =NPV(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+**Notes:**
+
+- Rate must be finite and greater than -1. The bounded evaluator accepts at most 10,000 finite numeric cash flows and returns #VALUE! or #NUM! rather than coercing malformed inputs.
+
 #### `fx.OR`
 
 Return TRUE when any condition is true.
@@ -3457,11 +3504,12 @@ Return TRUE when any condition is true.
 
 #### `fx.PMT`
 
-Calculate a loan payment for constant payments and constant interest rate.
+Calculate a constant-period loan payment from finite rate, term, present value, optional future value, and payment-timing inputs.
 
 **Examples:**
 
-- =PMT(rate,nper,pv)
+- =PMT(B1,B2,B3)
+- =PMT(B1,B2,B3,B4,1)
 
 **Schema parameters:**
 
@@ -3474,7 +3522,7 @@ Calculate a loan payment for constant payments and constant interest rate.
 
 **Notes:**
 
-- Catalog entry only in MVP; full financial formula evaluation is roadmap.
+- The bounded evaluator requires rate > -1, a positive term, and payment type 0 or 1. Invalid numeric inputs return #VALUE! or #NUM!.
 
 #### `fx.RANK.EQ`
 
@@ -4004,6 +4052,28 @@ Wrap a one-dimensional vector into rows of a requested width, padding the final 
 
 - `value` (unknown[][]) — Spilled two-dimensional formula result.
 
+#### `fx.XIRR`
+
+Return a bounded-convergence annualized return rate for date-aligned finite cash flows using a 365-day year.
+
+**Examples:**
+
+- =XIRR(B2:B8,C2:C8)
+- =XIRR(B2:B8,C2:C8,0.15)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =XIRR(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+**Notes:**
+
+- Values and dates must have the same nonzero count, dates must be valid, and cash flows must contain both signs. The optional finite guess defaults to 0.1; invalid or unconverged cases return #VALUE! or #NUM!.
+
 #### `fx.XLOOKUP`
 
 Look up a value in one range and return the corresponding value from another range.
@@ -4037,6 +4107,27 @@ Return a 1-based lookup position with exact, next-smaller, next-larger, wildcard
 **Schema returns:**
 
 - `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.XNPV`
+
+Discount date-aligned finite cash flows by actual day offsets from the first date using a 365-day year.
+
+**Examples:**
+
+- =XNPV(B1,B2:B6,C2:C6)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =XNPV(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+**Notes:**
+
+- Values and dates must have the same nonzero count; each date must be valid in the workbook date system. Rate must be greater than -1 and the vector is bounded to 10,000 entries.
 
 #### `fx.YEAR`
 

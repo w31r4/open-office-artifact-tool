@@ -43,6 +43,70 @@ sheet.getRange("D4").formulasR1C1 = [[sheet.getRange("D4").formulasR1C1[0][0]]];
 assert.equal(sheet.getRange("D4").formulas[0][0], "=SUM($A1,B$2,$C$3,A1:B2,\"A1\")");
 assert.throws(() => { sheet.getRange("A1").formulasR1C1 = [["=R[-1]C"]]; }, /outside worksheet/);
 
+const financialWorkbook = Workbook.create();
+const financialSheet = financialWorkbook.worksheets.add("Cash Flows");
+financialSheet.getRange("A1:A3").values = [[-100], [60], [60]];
+financialSheet.getRange("B1:B3").formulas = [
+  ["=DATE(2017,1,1)"],
+  ["=DATE(2018,1,1)"],
+  ["=DATE(2019,1,1)"],
+];
+financialSheet.getRange("C1:C6").formulas = [
+  ["=NPV(0.1,A1:A3)"],
+  ["=XNPV(0.1,A1:A3,B1:B3)"],
+  ["=IRR(A1:A3)"],
+  ["=XIRR(A1:A3,B1:B3)"],
+  ["=PMT(0.008333333333333333,12,1000)"],
+  ["=PMT(0,2,100)"],
+];
+const financialValues = financialSheet.getRange("C1:C6").values.flat();
+assert.ok(Math.abs(financialValues[0] - 3.7565740045078897) < 1e-10);
+assert.ok(Math.abs(financialValues[1] - 4.132231404958681) < 1e-10);
+assert.ok(Math.abs(financialValues[2] - 0.1306623862918075) < 1e-10);
+assert.ok(Math.abs(financialValues[3] - 0.1306623862918075) < 1e-10);
+assert.ok(Math.abs(financialValues[4] + 87.91588723000957) < 1e-10);
+assert.equal(financialValues[5], -50);
+financialSheet.getRange("G1:G2").values = [[-100], [110]];
+financialSheet.getRange("H1:H2").formulas = [
+  ["=DATE(2017,1,1)"],
+  ["=DATE(2017,7,2)"],
+];
+financialSheet.getRange("I1:I2").formulas = [
+  ["=XNPV(0.1,G1:G2,H1:H2)"],
+  ["=XIRR(G1:G2,H1:H2)"],
+];
+const irregularDateReturns = financialSheet.getRange("I1:I2").values.flat();
+assert.ok(Math.abs(irregularDateReturns[0] - 4.894579157536754) < 1e-10);
+assert.ok(Math.abs(irregularDateReturns[1] - 0.2106338215370842) < 1e-10);
+financialSheet.getRange("J1:J3").values = [[-100], [230], [-132]];
+financialSheet.getRange("K1:K2").formulas = [["=IRR(J1:J3,0.1)"], ["=IRR(J1:J3,0.2)"]];
+assert.ok(Math.abs(financialSheet.getRange("K1").values[0][0] - 0.1) < 1e-10);
+assert.ok(Math.abs(financialSheet.getRange("K2").values[0][0] - 0.2) < 1e-9);
+financialSheet.getRange("D1:D5").formulas = [
+  ["=NPV(-1,A1:A3)"],
+  ["=IRR(A1:A2, -1)"],
+  ["=IRR(B1:B3)"],
+  ["=XIRR(A1:A3,B1:B2)"],
+  ["=XNPV(0.1,A1:A3,B1:B2)"],
+];
+assert.deepEqual(financialSheet.getRange("D1:D5").values, [["#NUM!"], ["#NUM!"], ["#NUM!"], ["#VALUE!"], ["#VALUE!"]]);
+financialSheet.getRange("E1:E2").values = [[-100], ["not a cash flow"]];
+financialSheet.getRange("F1").formulas = [["=IRR(E1:E2)"]];
+assert.equal(financialSheet.getRange("F1").values[0][0], "#VALUE!");
+financialSheet.getRange("M1:M2").values = [[new Date("2017-01-01T00:00:00.000Z")], [new Date("2017-07-02T00:00:00.000Z")]];
+financialSheet.getRange("N1:N2").values = [[-100], [110]];
+financialSheet.getRange("O1:O2").formulas = [["=XNPV(0.1,N1:N2,M1:M2)"], ["=XIRR(N1:N2,M1:M2)"]];
+const dateObjectReturns = financialSheet.getRange("O1:O2").values.flat();
+assert.ok(Math.abs(dateObjectReturns[0] - 4.894579157536754) < 1e-10);
+assert.ok(Math.abs(dateObjectReturns[1] - 0.2106338215370842) < 1e-10);
+const financialRoundTrip = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(financialWorkbook, { recalculate: false }));
+assert.deepEqual(financialRoundTrip.worksheets.getItem("Cash Flows").getRange("C1:C6").formulas, financialSheet.getRange("C1:C6").formulas);
+const financialLimitWorkbook = Workbook.create();
+const financialLimitSheet = financialLimitWorkbook.worksheets.add("Cash flow limit");
+financialLimitSheet.getRange("A1:A10001").values = Array.from({ length: 10_001 }, (_, index) => [index === 0 ? -100 : 1]);
+financialLimitSheet.getRange("B1").formulas = [["=NPV(0.1,A1:A10001)"]];
+assert.equal(financialLimitSheet.getRange("B1").values[0][0], "#NUM!");
+
 sheet.getRange("T2").formulas = [["=SEQUENCE(2,2,10,1)"]];
 const spill = sheet.getRange("T2:U3");
 assert.deepEqual(spill.values, [[10, 11], [12, 13]]);

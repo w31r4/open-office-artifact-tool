@@ -35,6 +35,7 @@ import {
 } from "./range-operations.mjs";
 import { createSpreadsheetSparklineClasses } from "./sparklines.mjs";
 import { formulaTimeParts, formulaTimeSerial, parseFormulaDateText, parseFormulaNumberText, parseFormulaTimeText } from "./formula-coercion.mjs";
+import { calculateIrr, calculateNpv, calculatePmt, calculateXirr, calculateXnpv } from "./financial-formulas.mjs";
 import { createWorkbookWindowCollection, worksheetWindowMemberships } from "./workbook-windows.mjs";
 import { decoder, encoder, toUint8Array } from "../shared/binary.mjs";
 import { FileBlob } from "../shared/file-blob.mjs";
@@ -3640,6 +3641,15 @@ function uniqueFormulaRows(matrix) {
 function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
   const values = (parts = args) => parts.flatMap((part) => formulaReferenceValues(sheet, part, context));
   const dateSystem = excelFormulaDateSystem(sheet);
+  const financialHelpers = {
+    errorCode: formulaErrorCode,
+    dateNumber: (value) => {
+      if (!(value instanceof Date)) return excelFormulaDateNumber(value);
+      if (!Number.isFinite(value.getTime())) return "#VALUE!";
+      return excelGregorianSerial(value.getUTCFullYear(), value.getUTCMonth() + 1, value.getUTCDate(), dateSystem);
+    },
+    isValidDate: (serial) => Boolean(excelDateParts(serial, dateSystem)),
+  };
   const scalar = (index, fallback = undefined) => {
     const value = formulaScalar(sheet, args[index], context);
     return value === undefined ? fallback : value;
@@ -3701,6 +3711,21 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
     case "INT": return Math.floor(formulaNumber(scalar(0, 0)));
     case "CEILING": return Math.ceil(formulaNumber(scalar(0, 0)) / Math.max(1, formulaNumber(scalar(1, 1)))) * Math.max(1, formulaNumber(scalar(1, 1)));
     case "FLOOR": return Math.floor(formulaNumber(scalar(0, 0)) / Math.max(1, formulaNumber(scalar(1, 1)))) * Math.max(1, formulaNumber(scalar(1, 1)));
+    case "PMT": return args.length >= 3 && args.length <= 5
+      ? calculatePmt({ rate: scalar(0), nper: scalar(1), pv: scalar(2), fv: scalar(3, 0), type: scalar(4, 0) }, financialHelpers)
+      : "#VALUE!";
+    case "NPV": return args.length >= 2
+      ? calculateNpv({ rate: scalar(0), cashFlows: values(args.slice(1)) }, financialHelpers)
+      : "#VALUE!";
+    case "XNPV": return args.length === 3
+      ? calculateXnpv({ rate: scalar(0), cashFlows: values([args[1]]), dates: values([args[2]]) }, financialHelpers)
+      : "#VALUE!";
+    case "IRR": return args.length >= 1 && args.length <= 2
+      ? calculateIrr({ cashFlows: values([args[0]]), guess: args.length === 2 ? scalar(1) : undefined }, financialHelpers)
+      : "#VALUE!";
+    case "XIRR": return args.length >= 2 && args.length <= 3
+      ? calculateXirr({ cashFlows: values([args[0]]), dates: values([args[1]]), guess: args.length === 3 ? scalar(2) : undefined }, financialHelpers)
+      : "#VALUE!";
     case "DATE": {
       const parts = [0, 1, 2].map((index) => excelFormulaDateNumber(scalar(index, 0)));
       return parts.find(formulaErrorCode) || excelDateSerial(parts[0], parts[1], parts[2], dateSystem);

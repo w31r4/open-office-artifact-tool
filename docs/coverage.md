@@ -29,7 +29,7 @@ Status meanings:
 | --- | --- | --- |
 | Cells and scalar values | done | Text, number, boolean, blank, error, formulas, cached values, and Date-to-Excel-serial conversion. |
 | Range Quick API | done | A1/R1C1 formulas, stored/projected formula evidence, anchor-sized block writes, values/formulas/all copy with relative translation and even tiling, clear modes, used/current regions, bounded navigation aliases, and scalar/matrix number formats. The shipped workflow exercises these through canonical OpenChestnut export/import/edit/re-export. |
-| Formula calculation | partial | JavaScript model evaluates the bounded catalog; OpenChestnut writes/reads formulas and honors the XLSX export `recalculate` option. Unsupported Excel functions remain host-calculated or explicit model errors. |
+| Formula calculation | partial | JavaScript model evaluates the bounded catalog, including PMT plus NPV/XNPV/IRR/XIRR under a finite cash-flow profile: at most 10,000 numeric entries, rate `> -1`, aligned valid dates for X variants, and positive/negative sign plus bounded root convergence for return rates. Invalid inputs fail as `#VALUE!`/`#NUM!`; OpenChestnut writes/reads formulas and honors the XLSX export `recalculate` option. Unsupported Excel functions remain host-calculated or explicit model errors. |
 | Static cell styles | done | Number format, font, fill, border, alignment, and protection within the modeled profile. |
 | Geometry and views | done | Merges, row heights, column widths, hidden state, and frozen rows/columns. |
 | Tables | done | Basic fixed-range worksheet tables and styles. |
