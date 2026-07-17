@@ -65,6 +65,45 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### DOCX canonical inline SEQ/REF/PAGEREF field runs
+
+On 2026-07-17, the Documents paragraph/run model, versioned protobuf wire,
+OpenChestnut C# codec, bundled WASM runtime, Help catalog, and native Documents
+plugin converged on one bounded inline-field profile. A paragraph can mix
+ordinary runs with logical `SEQ <label> \\* ARABIC`, `REF <bookmark> \\h`, and
+`PAGEREF <bookmark> \\h` fields through `paragraph.addField(...)`.
+OpenChestnut materializes each logical field as the canonical five-run native
+begin/instruction/separate/cached-result/end graph and imports that exact graph
+back into one `run.inlineField` object.
+
+Source-free cached results and ordinary text survive export, import, edits,
+second export, and second import. On imported paragraphs, field positions and
+instructions remain source-bound while cached display text remains editable;
+topology or target changes fail closed. Non-canonical switches, partial or rich
+field graphs, inline bookmarks around only a caption number, and automatic
+SEQ/REF materialization remain opaque or explicit advanced package workflows.
+The shipped native fixture covers all three commands, native XML evidence,
+semantic inspection, cache edits, and real LibreOffice/Poppler page QA.
+
+The complete local gate passed `npm test` including Playwright and all five
+published Skills, `npm run docs:api`, `npm run proto:check`,
+`npm run test:pack`, isolated `npm run verify:open-chestnut-build`,
+OpenChestnut `183/183`, and OfficeBridge `5/5`. Two isolated clean WASM builds
+produced the same 39 audited files and the same manifest-bound 38-file,
+14,309,564-byte runtime. The clean-install tarball contains 422 files, is
+9,270,563 bytes compressed and 23,092,374 bytes unpacked. No npm publish, tag,
+or GitHub release operation was attempted.
+
+The completed inline-field candidate at commit
+`05713031054388f92c0586e7f6547a407544c696` passed the hosted Linux `ci`
+workflow in [GitHub Actions run 29584754018](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29584754018)
+on 2026-07-17. The run completed with conclusion `success` in 4m58s and covered
+protocol/runtime determinism, Chromium/LibreOffice/Poppler tool checks, the
+complete npm suite including the native inline-field Documents fixture and
+source-bound topology regression, generated API-doc cleanliness, offline
+release metadata, the 422-file clean-install tarball, OfficeBridge `5/5`, and
+OpenChestnut `183/183`.
+
 ### DOCX canonical complex TOC and field-refresh workflow
 
 On 2026-07-17, the Documents public model, versioned protobuf wire,
