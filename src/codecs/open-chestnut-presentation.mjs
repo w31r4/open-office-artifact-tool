@@ -29,6 +29,7 @@ const MAX_PARAGRAPH_SPACING_POINTS = 1584;
 const MAX_PARAGRAPH_SPACING_MULTIPLIER = 132;
 const MAX_PRESENTATION_CHART_POINTS = 1_048_576;
 const PRESENTATION_STATE = Symbol.for("open-office-artifact-tool.open-chestnut-presentation-state");
+const PRESENTATION_SLIDE_DUPLICATOR = Symbol.for("open-office-artifact-tool.open-chestnut-presentation-duplicate");
 const PRESENTATION_SCHEME_COLORS = new Set([
   "dk1", "lt1", "dk2", "lt2", "tx1", "bg1", "tx2", "bg2",
   "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink", "folHlink",
@@ -130,10 +131,9 @@ function assertTrustedPresentationState(state) {
 }
 
 // A source-bound slide stays attached to its imported SlidePart by object
-// identity, not by whichever array index it happens to occupy now. That keeps
-// moveTo() reversible and lets the codec distinguish a genuine deletion from
-// an added object. The C# layer owns the stricter OPC graph preflight for a
-// requested deletion; additions and duplicate source slides still fail closed.
+// identity, not by whichever array index it happens to occupy now. Clone
+// instances deliberately live in their own map: their source points at an
+// origin Part, but they must never masquerade as a second binding to it.
 function presentationSourceSlideStateMap(presentation, state) {
   if (!state) return undefined;
   const sourceBySlide = new Map();
@@ -143,10 +143,89 @@ function presentationSourceSlideStateMap(presentation, state) {
     }
     sourceBySlide.set(sourceState.slide, sourceState);
   }
-  if (presentation.slides.items.some((slide) => !sourceBySlide.has(slide))) {
-    throw new OpenChestnutCodecError("Source-preserving PPTX export does not accept newly added or duplicated source slides. Use an explicit OPC graph-clone operation when it becomes available.", [], { code: "presentation_topology_changed" });
+  const cloneBySlide = new Map();
+  for (const cloneState of state.clones || []) {
+    if (!(cloneState?.slide instanceof Slide) || cloneState.slide.presentation !== presentation ||
+        !sourceBySlide.has(cloneState.source) || cloneBySlide.has(cloneState.slide) || sourceBySlide.has(cloneState.slide)) {
+      throw new OpenChestnutCodecError("Imported presentation clone bindings are invalid or ambiguous.", [], { code: "presentation_topology_changed" });
+    }
+    cloneBySlide.set(cloneState.slide, cloneState);
   }
-  return sourceBySlide;
+  if (presentation.slides.items.some((slide) => !sourceBySlide.has(slide) && !cloneBySlide.has(slide))) {
+    throw new OpenChestnutCodecError("Source-preserving PPTX export does not accept newly added slides. Use a supported imported-slide clone operation or a source-free presentation.", [], { code: "presentation_topology_changed" });
+  }
+  return { sourceBySlide, cloneBySlide };
+}
+
+function clonedPresentationValue(value) {
+  return value === undefined ? undefined : structuredClone(value);
+}
+
+function cloneImportedPresentationShape(slide, source) {
+  const clone = slide.shapes.add({
+    name: source.name,
+    geometry: source.geometry,
+    ...(source.customPaths?.length ? { customPaths: clonedPresentationValue(source.customPaths) } : {}),
+    position: clonedPresentationValue(source.position),
+    ...(source.transform ? { transform: clonedPresentationValue(source.transform) } : {}),
+    fill: clonedPresentationValue(source.fill),
+    line: clonedPresentationValue(source.line),
+    ...(source.borderRadius === undefined ? {} : { borderRadius: source.borderRadius }),
+    ...(source.shadow ? { shadow: clonedPresentationValue(source.shadow) } : {}),
+    ...(source.placeholder ? { placeholder: clonedPresentationValue(source.placeholder) } : {}),
+    ...(source.useBackgroundFill === undefined ? {} : { _openChestnutUseBackgroundFill: source.useBackgroundFill }),
+    text: clonedPresentationValue(source.text.paragraphs),
+    textBodyProperties: clonedPresentationValue(source.text.bodyProperties),
+    textStyle: clonedPresentationValue(source.text.style),
+  });
+  clone.text.inheritedParagraphStyles = clonedPresentationValue(source.text.inheritedParagraphStyles);
+  return clone;
+}
+
+function duplicateImportedPresentationSlide(presentation, state, slide) {
+  const source = (state.slides || []).find((entry) => entry.slide === slide);
+  if (!source) {
+    throw new OpenChestnutCodecError("Only an original imported PPTX slide can be duplicated in this bounded clone profile.", [], { code: "unsupported_presentation_slide_clone" });
+  }
+  if (source.entries.some((entry) => entry.wire.content.case !== "shape")) {
+    throw new OpenChestnutCodecError("The first imported-slide clone profile supports shape-only slides; images, tables, charts, groups, connectors, and native objects require a broader OPC graph clone.", [], { code: "unsupported_presentation_slide_clone" });
+  }
+  if (slide.comments.items.length || slide.speakerNotes?.text) {
+    throw new OpenChestnutCodecError("The first imported-slide clone profile does not clone comments or speaker notes.", [], { code: "unsupported_presentation_slide_clone" });
+  }
+  const clone = presentation.slides.insert({
+    after: slide,
+    name: slide.name,
+    ...(slide.background?.fill ? { background: clonedPresentationValue(slide.background) } : {}),
+  });
+  clone.layoutId = slide.layoutId;
+  const entries = source.entries.map((entry) => {
+    const model = cloneImportedPresentationShape(clone, entry.model);
+    return {
+      wire: entry.wire,
+      model,
+      placeholderSnapshot: entry.wire.content.case === "shape" && entry.wire.content.value.placeholder
+        ? slidePlaceholderSnapshot(model)
+        : undefined,
+    };
+  });
+  const cloneState = {
+    source,
+    slide: clone,
+    name: clone.name,
+    commentSnapshot: presentationSlideCommentSnapshot(clone),
+    entries,
+  };
+  state.clones.push(cloneState);
+  return clone;
+}
+
+function presentationCloneComparable(slide) {
+  const comparable = structuredClone(slide);
+  delete comparable.id;
+  delete comparable.source;
+  delete comparable.cloneSource;
+  return JSON.stringify(comparable);
 }
 
 function emuFromPixels(value, name) {
@@ -1534,36 +1613,39 @@ export function presentationEnvelope(presentation, protocolVersion) {
   const masters = presentationMasters(presentation, state, assetCatalog);
   const layouts = presentationLayouts(presentation, state, assetCatalog);
   const slides = presentation.slides.items.map((slide, slideIndex) => {
-    const sourceState = sourceStates?.get(slide);
-    if (sourceState) {
-      if (slide.name !== sourceState.name) throw new OpenChestnutCodecError(`Source-preserving PPTX export does not yet support renaming slide ${slideIndex + 1}.`, [], { code: "unsupported_presentation_edit" });
-      if ((slide.layoutId || "") !== (sourceState.wire.layoutId || "")) throw new OpenChestnutCodecError(`Source-preserving PPTX export cannot change slide ${slideIndex + 1}'s layout binding.`, [], { code: "presentation_slide_layout_binding_changed" });
-      if (presentationSlideCommentSnapshot(slide) !== sourceState.commentSnapshot) {
+    const sourceState = sourceStates?.sourceBySlide.get(slide);
+    const cloneState = sourceStates?.cloneBySlide.get(slide);
+    const bindingState = sourceState || cloneState?.source;
+    if (bindingState) {
+      if (slide.name !== bindingState.name) throw new OpenChestnutCodecError(`Source-preserving PPTX export does not yet support renaming slide ${slideIndex + 1}.`, [], { code: cloneState ? "unsupported_presentation_slide_clone" : "unsupported_presentation_edit" });
+      if ((slide.layoutId || "") !== (bindingState.wire.layoutId || "")) throw new OpenChestnutCodecError(`Source-preserving PPTX export cannot change slide ${slideIndex + 1}'s layout binding.`, [], { code: cloneState ? "unsupported_presentation_slide_clone" : "presentation_slide_layout_binding_changed" });
+      if (presentationSlideCommentSnapshot(slide) !== bindingState.commentSnapshot) {
         throw new OpenChestnutCodecError(`Imported presentation slide ${slideIndex + 1} comments are source-bound and read-only in OpenChestnut 0.2.`, [], { code: "unsupported_presentation_edit" });
       }
       const current = directSlideElements(slide);
-      if (current.length !== sourceState.entries.length || sourceState.entries.some((entry) => !current.includes(entry.model))) {
-        throw new OpenChestnutCodecError(`Source-preserving PPTX export requires slide ${slideIndex + 1}'s original ${sourceState.entries.length}-element topology.`, [], { code: "presentation_element_topology_changed" });
+      const entries = cloneState?.entries || bindingState.entries;
+      if (current.length !== entries.length || entries.some((entry) => !current.includes(entry.model))) {
+        throw new OpenChestnutCodecError(`Source-preserving PPTX export requires slide ${slideIndex + 1}'s original ${entries.length}-element topology.`, [], { code: cloneState ? "unsupported_presentation_slide_clone" : "presentation_element_topology_changed" });
       }
-      if (!sourceState.wire.speakerNotes && slide.speakerNotes?.text) {
+      if (!bindingState.wire.speakerNotes && slide.speakerNotes?.text) {
         throw new OpenChestnutCodecError(`Source-preserving PPTX export cannot add speaker notes to slide ${slideIndex + 1} because the source slide has no notes part.`, [], { code: "unsupported_presentation_edit" });
       }
     }
-    const legacyComments = presentationLegacyComments(slide, Number(sourceState?.wire.source?.slideIndex ?? slideIndex));
-    return {
+    const legacyComments = presentationLegacyComments(slide, Number(bindingState?.wire.source?.slideIndex ?? slideIndex));
+    const requested = {
       id: sourceState?.wire.id || slide.id,
       name: slide.name,
       source: sourceState?.wire.source,
       ...(slide.layoutId ? { layoutId: slide.layoutId } : {}),
       ...(slide.background?.fill ? { background: wireBackground(slide.background, `slide ${slideIndex + 1}`) } : {}),
-      ...(sourceState?.wire.speakerNotes
-        ? { speakerNotes: { text: slide.speakerNotes?.text || "", source: sourceState.wire.speakerNotes.source } }
+      ...(bindingState?.wire.speakerNotes
+        ? { speakerNotes: { text: slide.speakerNotes?.text || "", source: bindingState.wire.speakerNotes.source } }
         : slide.speakerNotes?.text
           ? { speakerNotes: { text: slide.speakerNotes.text } }
           : {}),
       ...(legacyComments.length ? { legacyComments } : {}),
-      elements: sourceState
-          ? sourceState.entries.map((entry) => {
+      elements: bindingState
+          ? (cloneState?.entries || bindingState.entries).map((entry) => {
             if (entry.wire.content.case === "shape") {
               if (entry.wire.content.value.placeholder) {
                 if (slidePlaceholderSnapshot(entry.model) !== entry.placeholderSnapshot) {
@@ -1594,6 +1676,13 @@ export function presentationEnvelope(presentation, protocolVersion) {
           .filter((element) => element instanceof Shape || element instanceof ImageElement || element instanceof TableElement || element instanceof ChartElement || element instanceof GroupShape || slide.connectors.items.includes(element))
           .map((element) => presentationElement(element, undefined, assetCatalog)),
     };
+    if (!cloneState) return requested;
+    if (presentationCloneComparable(requested) !== presentationCloneComparable(cloneState.source.wire)) {
+      throw new OpenChestnutCodecError(`Imported presentation clone ${slideIndex + 1} must remain untouched until it has been exported and imported again.`, [], { code: "unsupported_presentation_slide_clone" });
+    }
+    delete requested.source;
+    requested.cloneSource = cloneState.source.wire.source;
+    return requested;
   });
   return {
     protocolVersion,
@@ -2313,22 +2402,28 @@ export async function presentationFromEnvelope(envelope) {
       entries,
     });
   }
+  const presentationState = {
+    source: envelope.source,
+    opaqueOpc: envelope.opaqueOpc,
+    diagnostics: envelope.diagnostics,
+    name: source.name,
+    slideWidthEmu: source.slideWidthEmu,
+    slideHeightEmu: source.slideHeightEmu,
+    viewProperties: source.viewProperties,
+    advancedSnapshot: presentationAdvancedSnapshot(presentation),
+    masters: masterStates,
+    layouts: layoutStates,
+    slides: slideStates,
+    clones: [],
+  };
   Object.defineProperty(presentation, PRESENTATION_STATE, {
     configurable: true,
-    value: {
-      source: envelope.source,
-      opaqueOpc: envelope.opaqueOpc,
-      diagnostics: envelope.diagnostics,
-      name: source.name,
-      slideWidthEmu: source.slideWidthEmu,
-      slideHeightEmu: source.slideHeightEmu,
-      viewProperties: source.viewProperties,
-      advancedSnapshot: presentationAdvancedSnapshot(presentation),
-      masters: masterStates,
-      layouts: layoutStates,
-      slides: slideStates,
-    },
+    value: presentationState,
     writable: true,
+  });
+  Object.defineProperty(presentation, PRESENTATION_SLIDE_DUPLICATOR, {
+    configurable: true,
+    value: (slide) => duplicateImportedPresentationSlide(presentation, presentationState, slide),
   });
   return presentation;
 }

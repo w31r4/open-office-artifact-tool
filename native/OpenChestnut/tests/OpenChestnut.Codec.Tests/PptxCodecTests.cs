@@ -2264,6 +2264,38 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void SourcePreservingExportClonesAnUnchangedIsolatedShapeOnlySlide()
+    {
+        var authored = Invoke(HyperlinkExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var sourceSlide = ZipBytes(authored.File.ToByteArray(), "ppt/slides/slide3.xml");
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var source = imported.Artifact.Presentation.Slides[2];
+        var clone = source.Clone();
+        clone.Id = "presentation/clone/shape-only";
+        clone.Source = null;
+        clone.CloneSource = source.Source.Clone();
+        imported.Artifact.Presentation.Slides.Add(clone);
+
+        var duplicated = Export(imported.Artifact);
+        Assert.True(duplicated.Ok, Diagnostics(duplicated));
+        using (var stream = new MemoryStream(duplicated.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            Assert.Equal(4, package.PresentationPart!.SlideParts.Count());
+        }
+        Assert.Equal(sourceSlide, ZipBytes(duplicated.File.ToByteArray(), "ppt/slides/slide3.xml"));
+        Assert.NotNull(ZipBytes(duplicated.File.ToByteArray(), "ppt/slides/slide4.xml"));
+
+        var roundTrip = Import(duplicated.File.ToByteArray());
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        Assert.Equal(["Links", "Details", "Appendix", "Appendix"], roundTrip.Artifact.Presentation.Slides.Select(slide => slide.Name));
+    }
+
+    [Fact]
     public void ProtocolReturnsStructuredSlideAndItemBudgetFailures()
     {
         var exported = Invoke(ExportRequest());
