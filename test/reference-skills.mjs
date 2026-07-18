@@ -104,6 +104,8 @@ assert.match(spreadsheetSkillText, /features\/charts\.md/);
 assert.match(spreadsheetSkillText, /openchestnut-financial-returns-workflow\.mjs/);
 assert.match(spreadsheetSkillText, /openchestnut-loan-amortization-workflow\.mjs/);
 assert.match(spreadsheetSkillText, /openchestnut-asset-depreciation-workflow\.mjs/);
+assert.match(spreadsheetSkillText, /openchestnut-growth-assumption-edit-workflow\.mjs/);
+assert.ok(await exists(path.join(skillsRoot, "spreadsheets", "skills", "spreadsheets", "examples", "openchestnut-growth-assumption-edit-workflow.mjs")));
 
 const presentationApiRoot = path.join(skillsRoot, "presentations", "skills", "presentations", "artifact_tool", "api");
 const presentationApiDocs = await fs.readFile(path.join(presentationApiRoot, "API_DOCS.md"), "utf8");

@@ -5,8 +5,9 @@ import path from "node:path";
 import JSZip from "jszip";
 
 import { FileBlob, SpreadsheetFile } from "open-office-artifact-tool";
-import { generateOfficeInput } from "../scripts/agent-eval-office-fixtures.mjs";
+import { XLSX_GROWTH_UPDATE_FIXTURE, generateOfficeInput } from "../scripts/agent-eval-office-fixtures.mjs";
 import { replyAndResolveThreadedComment } from "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-threaded-comment-reply-workflow.mjs";
+import { updateXlsxGrowthAssumption } from "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-growth-assumption-edit-workflow.mjs";
 import { createWorkbookFromFixture, nativeSpreadsheetRenderStatus, runSpreadsheetFixture, verifyWorkbookFile } from "./skill-harness/spreadsheets/scripts/workflow.mjs";
 
 const repoRoot = path.resolve(new URL("..", import.meta.url).pathname);
@@ -103,6 +104,32 @@ try {
   assert.equal(threadedThread.resolved, true);
   assert.equal(threadedThread.comments.every((comment) => comment.done), true);
   assert.equal(JSON.parse(await fs.readFile(threadedEvalAudit, "utf8")).validation.reimport.ok, true);
+
+  const growthEvalInput = path.join(outputDir, XLSX_GROWTH_UPDATE_FIXTURE.workbookName);
+  const growthEvalOutput = path.join(outputDir, "operating-plan-updated.xlsx");
+  const growthEvalAudit = path.join(outputDir, "operating-plan-audit.json");
+  await generateOfficeInput("xlsx-growth-update", growthEvalInput);
+  const growthSourceBefore = await fs.readFile(growthEvalInput);
+  const growthResult = await updateXlsxGrowthAssumption({
+    inputPath: growthEvalInput,
+    outputPath: growthEvalOutput,
+    auditPath: growthEvalAudit,
+  });
+  assert.equal(growthResult.audit.provider.actual, "open-chestnut");
+  assert.equal(growthResult.audit.savePolicy.strategy, "rewrite");
+  assert.equal(growthResult.audit.validation.reimport.ok, true);
+  assert.deepEqual(await fs.readFile(growthEvalInput), growthSourceBefore);
+  const growthRoundTrip = await SpreadsheetFile.importXlsx(await FileBlob.load(growthEvalOutput));
+  const growthForecast = growthRoundTrip.worksheets.getItem(XLSX_GROWTH_UPDATE_FIXTURE.targetSheetName);
+  const growthBaseline = growthRoundTrip.worksheets.getItem(XLSX_GROWTH_UPDATE_FIXTURE.canarySheetName);
+  assert.ok(growthForecast);
+  assert.ok(growthBaseline);
+  assert.equal(growthForecast.getRange(XLSX_GROWTH_UPDATE_FIXTURE.growthAddress).values[0][0], XLSX_GROWTH_UPDATE_FIXTURE.replacementGrowth);
+  assert.equal(growthForecast.getRange(XLSX_GROWTH_UPDATE_FIXTURE.marginAddress).values[0][0], XLSX_GROWTH_UPDATE_FIXTURE.grossMargin);
+  assert.deepEqual(growthForecast.getRange("B5:B7").formulas.flat(), XLSX_GROWTH_UPDATE_FIXTURE.revenueFormulas);
+  assert.ok(growthForecast.getRange("B5:B7").values.flat().every((value, index) => Math.abs(value - XLSX_GROWTH_UPDATE_FIXTURE.revisedRevenue[index]) < 1e-7));
+  assert.equal(growthBaseline.getRange("A1").values[0][0], XLSX_GROWTH_UPDATE_FIXTURE.canaryText);
+  assert.deepEqual(JSON.parse(await fs.readFile(growthEvalAudit, "utf8")).validation.reimport.revisedRevenue, growthResult.audit.validation.reimport.revisedRevenue);
 
   const financialFixture = await runFixture("financial-returns");
   const financialFixtureWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(financialFixture.workbookPath));

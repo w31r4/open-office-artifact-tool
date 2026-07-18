@@ -15,8 +15,8 @@ The suite is evaluator-side repository infrastructure. `evals/`, the runner, loc
 
 ## Current suite
 
-- 30 cases: 19 PDF, 4 Documents, 4 Spreadsheets, and 3 Presentations.
-- 10 `ready` cases use deterministic generated or inline inputs: seven PDF cases plus one bounded XLSX threaded-comment, DOCX classic-comment, and PPTX title-and-speaker-notes workflow each.
+- 31 cases: 19 PDF, 4 Documents, 5 Spreadsheets, and 3 Presentations.
+- 11 `ready` cases use deterministic generated or inline inputs: seven PDF cases, two bounded XLSX workflows (threaded-comment and formula-assumption update), plus one DOCX classic-comment and one PPTX title-and-speaker-notes workflow.
 - 20 `asset-required` cases define fixture specifications but do not run until licensed, version-pinned corpus files or test PKI are placed under `evals/assets/`.
 - Every family has both a success and a fail-closed case. Some advanced PDF cases accept either verified success or an explicit safe refusal.
 - The default policy uses three trials per subject. Trial count is recorded per case rather than silently inferred by the Agent.
@@ -35,6 +35,8 @@ npm run eval:agents -- run pdf-overflow-replace-refusal --subject candidate --tr
 npm run eval:agents -- score pdf-overflow-replace-refusal --trial-root /absolute/trial/path
 npm run eval:agents -- prepare xlsx-threaded-reply-resolve --subject candidate --trial 1
 npm run eval:agents -- run xlsx-threaded-reply-resolve --subject candidate --trial 1
+npm run eval:agents -- prepare xlsx-growth-assumption-update --subject candidate --trial 1
+npm run eval:agents -- run xlsx-growth-assumption-update --subject candidate --trial 1
 npm run eval:agents -- prepare docx-classic-comment-text-edit --subject candidate --trial 1
 npm run eval:agents -- run docx-classic-comment-text-edit --subject candidate --trial 1
 npm run eval:agents -- prepare pptx-title-and-notes-edit --subject candidate --trial 1
@@ -108,6 +110,8 @@ The PDF oracle is evaluator-side and never copied into the Agent workspace. It u
 The bounded contract deliberately rejects reply-of-reply and branched graphs. The separate `xlsx-threaded-nested-reply-boundary` corpus case requires a safe refusal until a larger identity-preserving threaded-comment graph operation is explicitly modeled. The fixture/oracle and public Skill example are tested in-repository; an autonomous Agent result is recorded only after the runner executes it, rather than inferred from those unit tests.
 
 One clean candidate trial at commit `d558a924ad63528f2b2dca5e1bbeb1fb0dc120a7` passed `100/100`: all 6 machine, 1 visual, 2 security, and 6 trace checks passed, including immutable prompt/Skill/package/input gates. It bound package SHA-256 `f6889efc2cff246b59bc557761e998299fdb30466d98111096d25d562d72f618`, copied-Skill SHA-256 `17a4b6a9f13e7921f953ac704ac353ce0d55267ac722a84615d1dfee2fe63d53`, input SHA-256 `f2b0839f53a6e875af27d65291352e191774207e0d55a613d08f016407884208`, and oracle SHA-256 `c5696086a6a840c0e448983da895381338c4243043b7214c92d8a71c004cc991`. This is one candidate trial, not the default three-repeat matrix and not a reference-Skill comparison.
+
+`xlsx-growth-assumption-update` adds a second, non-comment Spreadsheet path: the generated two-sheet operating plan allows only `Forecast!B9` to move from 8% to 10%. The independent XLSX grader decodes both packages, requires the `B5:B7` formula chain and recalculated values `110`, `121`, and `133.1`, protects `Forecast!B10`, sheet names/order/identity, and the byte-stable `Approved Baseline` worksheet. It permits exactly `xl/workbook.xml` and the target worksheet part to change, binds a public OpenChestnut rewrite audit to source/output bytes, requires a second import, and uses LibreOffice/Poppler to require changed Forecast pages plus a pixel-stable baseline page. The published workflow is an explicit bounded profile, not a claim that arbitrary imported workbooks can be safely reconstructed or globally recalculated.
 
 `docx-classic-comment-text-edit` adds a deliberately narrower Documents slice. The runner generates a DOCX with one uniquely anchored classic Word comment, then the public workflow may change only that comment's text. The independent oracle decodes `word/comments.xml` and `word/document.xml`: it requires the same native comment ID, author, initials, creation time, target paragraph, `commentRangeStart`, `commentRangeEnd`, and `commentReference`, plus unchanged visible paragraph text and the requested comment text. It rejects a modern/reply graph (`commentsExtended.xml` or `people.xml`), a deleted/recreated comment, any topology change, a model-to-plain-text downgrade, missing byte-bound OpenChestnut/rewrite audit evidence, or an unshipped/scratch workflow. LibreOffice-to-PDF plus Poppler requires the same nonblank page count and pixel-identical body render; structural XML is authoritative for comment balloons because headless LibreOffice does not make their visual treatment a stable oracle.
 

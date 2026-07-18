@@ -395,6 +395,23 @@ const roundTrip = await SpreadsheetFile.importXlsx(output);
 sequence into a command-line workflow with source/output SHA-256 audit records,
 second-import checks, and a model render of every worksheet.
 
+### Bounded imported formula-assumption update
+
+For an imported operating model, inspect the named input and its dependent
+formulas before changing it. Keep derived cells as formulas, call
+`workbook.recalculate()`, export with `recalculate: false` only after the model
+has updated cached values, then import the bytes again to prove the expected
+formula/value pair survived. A protected sheet or range should be snapshotted
+before the edit and compared after reimport; do not rebuild an imported workbook
+to make a local assumption edit appear successful.
+
+`examples/openchestnut-growth-assumption-edit-workflow.mjs` is the runnable
+two-sheet profile: it changes only `Forecast!B9` from 8% to 10%, preserves
+`Forecast!B10`, formulas, sheet identity/order, and `Approved Baseline`, and
+writes a byte-bound OpenChestnut rewrite audit with second-import and all-sheet
+SVG evidence. Adapt it only after replacing its explicit preconditions and
+canaries with ones that match the requested workbook.
+
 ### Charts
 - When adding or moving charts, do not cover existing data. Put charts in a reserved rectangle with blank gutter columns/rows around the chart area.
 - If chart data comes from editable/source data, ensure data/series is formula-backed instead of literal values.

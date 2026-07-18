@@ -9,6 +9,7 @@ import { DocumentFile, FileBlob, PresentationFile, SpreadsheetFile } from "../sr
 import {
   DOCX_CLASSIC_COMMENT_FIXTURE,
   PPTX_TITLE_NOTES_FIXTURE,
+  XLSX_GROWTH_UPDATE_FIXTURE,
   XLSX_THREADED_REVIEW_FIXTURE,
   generateOfficeInput,
 } from "../scripts/agent-eval-office-fixtures.mjs";
@@ -16,7 +17,13 @@ import {
   gradeDocxClassicCommentEvidence,
   inspectClassicCommentDocx,
 } from "../scripts/agent-eval-docx-graders.mjs";
-import { gradeOfficeCase, gradeXlsxThreadedReplyEvidence, inspectThreadedWorkbook } from "../scripts/agent-eval-office-graders.mjs";
+import { gradeOfficeCase } from "../scripts/agent-eval-office-graders.mjs";
+import {
+  gradeXlsxGrowthUpdateEvidence,
+  gradeXlsxThreadedReplyEvidence,
+  inspectGrowthWorkbook,
+  inspectThreadedWorkbook,
+} from "../scripts/agent-eval-spreadsheet-graders.mjs";
 import {
   gradePptxTitleNotesEvidence,
   inspectTitleNotesPptx,
@@ -47,10 +54,10 @@ import {
 } from "../scripts/run-agent-evals.mjs";
 
 const { suite, cases } = await loadSuite();
-assert.deepEqual(validateSuite(suite, cases), { cases: 30, pdfCases: 19, ready: 10 });
+assert.deepEqual(validateSuite(suite, cases), { cases: 31, pdfCases: 19, ready: 11 });
 assert.equal(MINIMUM_PDF_CASE_SHARE, 0.6);
 assert.equal(cases.filter((item) => item.family === "pdf" && item.status === "ready").length, 7);
-assert.equal(cases.filter((item) => item.family === "spreadsheets" && item.status === "ready").length, 1);
+assert.equal(cases.filter((item) => item.family === "spreadsheets" && item.status === "ready").length, 2);
 assert.equal(cases.filter((item) => item.family === "documents" && item.status === "ready").length, 1);
 assert.equal(cases.filter((item) => item.family === "presentations" && item.status === "ready").length, 1);
 
@@ -126,6 +133,100 @@ try {
   }
 } finally {
   await fs.rm(threadedReplyRoot, { recursive: true, force: true });
+}
+
+const growthUpdateItem = cases.find((item) => item.id === "xlsx-growth-assumption-update");
+assert.ok(growthUpdateItem);
+const growthUpdateRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-eval-xlsx-growth-"));
+try {
+  const growthInput = path.join(growthUpdateRoot, "inputs", XLSX_GROWTH_UPDATE_FIXTURE.workbookName);
+  const growthOutput = path.join(growthUpdateRoot, "outputs", "operating-plan-updated.xlsx");
+  await generateOfficeInput("xlsx-growth-update", growthInput);
+  const growthSource = await fs.readFile(growthInput);
+  const growthWorkbook = await SpreadsheetFile.importXlsx(new FileBlob(growthSource, {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    name: XLSX_GROWTH_UPDATE_FIXTURE.workbookName,
+  }));
+  const forecast = growthWorkbook.worksheets.getItem(XLSX_GROWTH_UPDATE_FIXTURE.targetSheetName);
+  const baseline = growthWorkbook.worksheets.getItem(XLSX_GROWTH_UPDATE_FIXTURE.canarySheetName);
+  assert.ok(forecast);
+  assert.ok(baseline);
+  const baselineSnapshot = structuredClone(baseline.getRange("A1:C5").values);
+  assert.equal(forecast.getRange(XLSX_GROWTH_UPDATE_FIXTURE.growthAddress).values[0][0], XLSX_GROWTH_UPDATE_FIXTURE.originalGrowth);
+  assert.equal(forecast.getRange(XLSX_GROWTH_UPDATE_FIXTURE.marginAddress).values[0][0], XLSX_GROWTH_UPDATE_FIXTURE.grossMargin);
+  assert.deepEqual(forecast.getRange("B5:B7").formulas.flat(), XLSX_GROWTH_UPDATE_FIXTURE.revenueFormulas);
+  forecast.getRange(XLSX_GROWTH_UPDATE_FIXTURE.growthAddress).values = [[XLSX_GROWTH_UPDATE_FIXTURE.replacementGrowth]];
+  growthWorkbook.recalculate();
+  assert.ok(forecast.getRange("B5:B7").values.flat().every((value, index) => Math.abs(value - XLSX_GROWTH_UPDATE_FIXTURE.revisedRevenue[index]) < 1e-7));
+  assert.deepEqual(baseline.getRange("A1:C5").values, baselineSnapshot);
+  const growthExport = await SpreadsheetFile.exportXlsx(growthWorkbook, { recalculate: false });
+  const growthBytes = new Uint8Array(await growthExport.arrayBuffer());
+  await fs.mkdir(path.dirname(growthOutput), { recursive: true });
+  await fs.writeFile(growthOutput, growthBytes);
+  const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
+  const growthAudit = {
+    status: "succeeded",
+    source: { sha256: hash(growthSource) },
+    output: { sha256: hash(growthBytes) },
+    provider: { actual: "open-chestnut", version: "test", silentFallback: false },
+    savePolicy: { strategy: "rewrite" },
+    operation: { type: "growth-assumption-update" },
+    validation: { reimport: { ok: true } },
+  };
+  await fs.writeFile(path.join(growthUpdateRoot, "outputs", "audit.json"), JSON.stringify(growthAudit, null, 2));
+  const growthEvidence = {
+    source: await inspectGrowthWorkbook(growthInput),
+    output: await inspectGrowthWorkbook(growthOutput),
+    visual: {
+      source: { available: true, ok: true, pageCount: 3, pages: [
+        { width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "growth-source-page-1" },
+        { width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "growth-source-page-2" },
+        { width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "baseline-stable" },
+      ] },
+      output: { available: true, ok: true, pageCount: 3, pages: [
+        { width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "growth-output-page-1" },
+        { width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "growth-output-page-2" },
+        { width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "baseline-stable" },
+      ] },
+    },
+  };
+  const growthTrace = JSON.stringify({ type: "item.completed", item: { type: "command_execution", id: "xlsx-growth", command: "node -e 'SpreadsheetFile.importXlsx(); SpreadsheetFile.exportXlsx()'" } });
+  const growthChecks = gradeXlsxGrowthUpdateEvidence({
+    evidence: growthEvidence,
+    audit: growthAudit,
+    commands: extractCompletedCommands(growthTrace),
+    item: growthUpdateItem,
+  });
+  assert.equal(growthChecks.every((check) => check.passed), true);
+  const publishedGrowthWorkflowChecks = gradeXlsxGrowthUpdateEvidence({
+    evidence: growthEvidence,
+    audit: growthAudit,
+    commands: ["node .agents/skills/spreadsheets/examples/openchestnut-growth-assumption-edit-workflow.mjs inputs/operating-plan.xlsx outputs/operating-plan-updated.xlsx outputs/audit.json"],
+    item: growthUpdateItem,
+  });
+  assert.equal(publishedGrowthWorkflowChecks.find((check) => check.id === "xlsx-growth-trace:typed-roundtrip")?.passed, true);
+  const untrustedGrowthWorkflowChecks = gradeXlsxGrowthUpdateEvidence({
+    evidence: growthEvidence,
+    audit: growthAudit,
+    commands: ["node scratch/growth-update.mjs inputs/operating-plan.xlsx outputs/operating-plan-updated.xlsx outputs/audit.json"],
+    item: growthUpdateItem,
+  });
+  assert.equal(untrustedGrowthWorkflowChecks.find((check) => check.id === "xlsx-growth-trace:typed-roundtrip")?.passed, false);
+  const nativeGrowthResult = await gradeOfficeCase({
+    item: growthUpdateItem,
+    workspace: growthUpdateRoot,
+    evaluator: path.join(growthUpdateRoot, "evaluator"),
+    finalMessage: "completed",
+    trace: growthTrace,
+  });
+  if (nativeGrowthResult.graded) {
+    assert.equal(nativeGrowthResult.rawScorePercent, 100);
+    assert.equal(nativeGrowthResult.caseSpecificPassed, true);
+  } else {
+    assert.ok(nativeGrowthResult.infrastructureErrors?.length);
+  }
+} finally {
+  await fs.rm(growthUpdateRoot, { recursive: true, force: true });
 }
 
 const classicCommentItem = cases.find((item) => item.id === "docx-classic-comment-text-edit");

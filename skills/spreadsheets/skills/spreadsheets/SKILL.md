@@ -43,6 +43,7 @@ Other documents:
 - `examples/openchestnut-scatter-chart-workflow.mjs`: Run or adapt this canonical example for formula-backed numeric X/Y scatter series, dual value axes, marker styling, SVG verification, and fixed-topology OpenChestnut edits.
 - `examples/openchestnut-bubble-chart-workflow.mjs`: Run or adapt this canonical example for one formula-backed numeric X/Y/Size bubble series, dual value axes, proportional SVG/native bubbles, and fixed-topology OpenChestnut edits.
 - `examples/openchestnut-threaded-comment-reply-workflow.mjs`: Run or adapt this imported-workbook example when an existing canonical Excel threaded-comment root needs one or more direct replies plus an explicit resolve/reopen transition; it preserves existing IDs, people, dates, text, and direct-reply order, performs a second import and all-sheet SVG review, and writes a byte-bound audit. Nested/branched reply graphs remain source-bound and fail closed.
+- `examples/openchestnut-growth-assumption-edit-workflow.mjs`: Run or adapt this bounded imported-workbook example when exactly one named growth assumption may change. It protects a second-sheet canary, formula topology, a separate margin assumption, sheet identity/order, source bytes, and writes a byte-bound OpenChestnut rewrite audit after recalculation, second import, and all-sheet SVG review.
 
 ## Domain Requirements
 You must read these domain rules when the request clearly relates to the domain, but do not load domain guidance for unrelated tasks unless asked:

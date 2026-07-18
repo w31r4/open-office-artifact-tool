@@ -148,6 +148,7 @@ for (const required of [
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-asset-depreciation-workflow.mjs",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-scatter-chart-workflow.mjs",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-bubble-chart-workflow.mjs",
+  "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-growth-assumption-edit-workflow.mjs",
   "skills/spreadsheets/skills/excel-live-control/SKILL.md",
   "skills/spreadsheets/skills/excel-live-control/agents/openai.yaml",
   "skills/spreadsheets/skills/excel-live-control/assets/file-spreadsheet.png",
