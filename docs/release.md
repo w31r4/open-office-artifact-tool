@@ -1023,6 +1023,16 @@ On 2026-07-17, the native reference-plugin/OpenChestnut compatibility worktree p
 
 ## Hosted evidence
 
+The bounded imported SlidePart placeholder-text candidate at commit
+`f37d8adbcd5d0637efcbf6fcf10ef9821bfb4216` passed the hosted Linux `ci`
+workflow in [GitHub Actions run 29655361922](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29655361922)
+on 2026-07-19. The run completed with conclusion `success` in 13m22s and
+covered npm installation, generated protocol plus deterministic bundled-runtime
+verification, Chromium/LibreOffice/Poppler tool checks, the complete npm suite
+including all seven retained PPTX placeholder edits and native renders,
+generated API-doc cleanliness, offline release metadata, the 447-file
+clean-install tarball, OfficeBridge `5/5`, and OpenChestnut `260/260`.
+
 The reference 2.8.24 Skill sync, Presentation view-properties codec, and completed DOCX note workflow candidate at commit `5cf2eb629f4612314d34c73041a5f1296a9ff145` passed the hosted Linux `ci` workflow in [GitHub Actions run 29569265350](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29569265350) on 2026-07-17. The run completed with conclusion `success` in 4m15s and covered generated protocol plus deterministic bundled-runtime verification, Chromium/LibreOffice/Poppler tool checks, the complete npm suite including the native Spreadsheet path migration, Presentation `view/grid/guides` import/export/fail-closed regressions, Documents note workflow, generated API-doc cleanliness, offline release metadata, the 421-file clean-install tarball, OfficeBridge `5/5`, and OpenChestnut `177/177`.
 
 The DOCX whole-block bookmark and Documents navigation candidate through commit `b161676d1e68df8acdc7bd3a4a3640fbcf267b3c` passed the hosted Linux `ci` workflow in [GitHub Actions run 29564975672](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29564975672) on 2026-07-17. The run completed with conclusion `success` in 5m09s and covered generated protocol plus deterministic bundled-runtime verification, Chromium/native-tool checks, the complete npm suite including the public bookmark/internal-link Skill workflow and fail-closed topology regressions, generated API-doc cleanliness, offline release metadata, the 421-file clean-install tarball, OfficeBridge `5/5`, and OpenChestnut `174/174`.
