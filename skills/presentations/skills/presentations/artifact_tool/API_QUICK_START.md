@@ -296,6 +296,33 @@ const pptx = await PresentationFile.exportPptx(presentation);
 await pptx.save("output/edited-deck.pptx");
 ```
 
+## Bounded Imported Title And Speaker-Notes Edit
+
+When the source deck has one uniquely named slide, one uniquely named title
+shape, and one canonical plain-text Notes part, use the shipped workflow rather
+than reconstructing the slide or editing OOXML directly:
+
+```ts
+import { editPptxTitleAndNotes } from "../examples/openchestnut-title-notes-edit-workflow.mjs";
+
+await editPptxTitleAndNotes({
+  inputPath: "input.pptx",
+  outputPath: "output/edited.pptx",
+  auditPath: "output/audit.json",
+  slideName: "Go-no-go decision",
+  titleShapeName: "approval-title",
+  expectedTitle: "Decision: hold for legal review",
+  replacementTitle: "Decision: approve controlled rollout",
+  expectedNotes: "Lead with the pending legal condition.\nClose with the accountable owner.",
+  replacementNotes: "Lead with the approved controls.\nClose with the accountable rollout owner.",
+});
+```
+
+It requires a distinct output path and fails closed if the target is ambiguous,
+the source text is not exact, the notes part is missing/rich, or reimport shows
+an identity, geometry, background, slide-order, or slide-name change. It emits
+only model-render evidence; use the native render route for final visual QA.
+
 ## Bounded Legacy Slide Comments
 
 For a simple slide-level review annotation, use the standard legacy PPTX

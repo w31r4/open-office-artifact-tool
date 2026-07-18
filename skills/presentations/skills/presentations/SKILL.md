@@ -239,6 +239,32 @@ step.
 
 You MUST NOT use `python-pptx` or the old Python `artifact_tool` API.
 
+### Bounded Imported Title And Speaker-Notes Edit
+
+For one known slide with one known text shape and a canonical plain-text Notes
+part, prefer the shipped public-API/OpenChestnut workflow over an ad-hoc package
+patch. It imports, checks the exact source title and notes, changes only those
+two text values, exports to a distinct path, reimports, verifies the retained
+slide/title/notes identities, produces a model SVG check, and writes a
+byte-bound audit.
+
+```bash
+node examples/openchestnut-title-notes-edit-workflow.mjs \
+  input.pptx output.pptx audit.json
+```
+
+The optional remaining arguments are, in order: slide name, title-shape name,
+expected title, replacement title, expected notes, and replacement notes. The
+workflow deliberately fails closed for duplicate/missing slide or shape names,
+changed expected source text, absent/rich notes, slide-name/order changes, or
+any identity/geometry/direct-background change after reimport. It does not
+claim universal template editing: SmartArt, modern comment replies, rich notes,
+animations, and other connected PresentationML graphs stay source-bound.
+
+Run the native render/QA route after delivery when LibreOffice/Poppler is
+available; the workflow's SVG check is model evidence, not a substitute for a
+native-host review.
+
 ## Template Following
 
 Use template-following mode only when a user-provided source PPTX supplies the

@@ -113,6 +113,9 @@ assert.match(presentationApiDocs, /presentation\.view/);
 assert.match(presentationSpec, /showGridlines\(\).*showGuides\(\)/s);
 assert.match(presentationSpec, /gridSpacingCxEmu.*gridSpacingCyEmu/s);
 assert.match(presentationLayoutSpec, /read-only `slideGuides`/);
+const presentationSkillText = await fs.readFile(path.join(skillsRoot, "presentations", "skills", "presentations", "SKILL.md"), "utf8");
+assert.match(presentationSkillText, /openchestnut-title-notes-edit-workflow\.mjs/);
+assert.ok(await exists(path.join(skillsRoot, "presentations", "skills", "presentations", "examples", "openchestnut-title-notes-edit-workflow.mjs")));
 
 const documentsSkillRoot = path.join(skillsRoot, "documents", "skills", "documents");
 const documentsManifest = (await fs.readFile(path.join(documentsSkillRoot, "manifest.txt"), "utf8"))

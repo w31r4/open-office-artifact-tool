@@ -5,9 +5,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { DocumentFile, FileBlob, SpreadsheetFile } from "../src/index.mjs";
+import { DocumentFile, FileBlob, PresentationFile, SpreadsheetFile } from "../src/index.mjs";
 import {
   DOCX_CLASSIC_COMMENT_FIXTURE,
+  PPTX_TITLE_NOTES_FIXTURE,
   XLSX_THREADED_REVIEW_FIXTURE,
   generateOfficeInput,
 } from "../scripts/agent-eval-office-fixtures.mjs";
@@ -16,6 +17,10 @@ import {
   inspectClassicCommentDocx,
 } from "../scripts/agent-eval-docx-graders.mjs";
 import { gradeOfficeCase, gradeXlsxThreadedReplyEvidence, inspectThreadedWorkbook } from "../scripts/agent-eval-office-graders.mjs";
+import {
+  gradePptxTitleNotesEvidence,
+  inspectTitleNotesPptx,
+} from "../scripts/agent-eval-presentation-graders.mjs";
 import {
   extractCompletedCommands,
   gradeAcroFormEvidence,
@@ -36,15 +41,18 @@ import {
   removePreparedTree,
   repositoryProvenance,
   scorePrepared,
+  MINIMUM_PDF_CASE_SHARE,
   validateSuite,
   visibleCase,
 } from "../scripts/run-agent-evals.mjs";
 
 const { suite, cases } = await loadSuite();
-assert.deepEqual(validateSuite(suite, cases), { cases: 29, pdfCases: 19, ready: 9 });
+assert.deepEqual(validateSuite(suite, cases), { cases: 30, pdfCases: 19, ready: 10 });
+assert.equal(MINIMUM_PDF_CASE_SHARE, 0.6);
 assert.equal(cases.filter((item) => item.family === "pdf" && item.status === "ready").length, 7);
 assert.equal(cases.filter((item) => item.family === "spreadsheets" && item.status === "ready").length, 1);
 assert.equal(cases.filter((item) => item.family === "documents" && item.status === "ready").length, 1);
+assert.equal(cases.filter((item) => item.family === "presentations" && item.status === "ready").length, 1);
 
 const repository = repositoryProvenance();
 assert.match(repository.head, /^[0-9a-f]{40}$/);
@@ -197,6 +205,85 @@ try {
   }
 } finally {
   await fs.rm(classicCommentRoot, { recursive: true, force: true });
+}
+
+const titleNotesItem = cases.find((item) => item.id === "pptx-title-and-notes-edit");
+const titleNotesRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-eval-pptx-title-notes-"));
+try {
+  const titleNotesInput = path.join(titleNotesRoot, "inputs", PPTX_TITLE_NOTES_FIXTURE.presentationName);
+  const titleNotesOutput = path.join(titleNotesRoot, "outputs", "launch-review-updated.pptx");
+  await generateOfficeInput("pptx-title-notes-review", titleNotesInput);
+  const titleNotesSource = await fs.readFile(titleNotesInput);
+  const titleNotesPresentation = await PresentationFile.importPptx(new FileBlob(titleNotesSource, {
+    type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    name: PPTX_TITLE_NOTES_FIXTURE.presentationName,
+  }));
+  const titleNotesSlide = titleNotesPresentation.slides.items.find((slide) => slide.name === PPTX_TITLE_NOTES_FIXTURE.targetSlideName);
+  assert.ok(titleNotesSlide);
+  const titleShape = titleNotesSlide.shapes.items.find((shape) => shape.name === PPTX_TITLE_NOTES_FIXTURE.titleShapeName);
+  assert.ok(titleShape);
+  titleShape.text.set(PPTX_TITLE_NOTES_FIXTURE.replacementTitle);
+  titleNotesSlide.speakerNotes.textFrame.setText(PPTX_TITLE_NOTES_FIXTURE.replacementNotes);
+  const titleNotesExport = await PresentationFile.exportPptx(titleNotesPresentation);
+  const titleNotesBytes = new Uint8Array(await titleNotesExport.arrayBuffer());
+  await fs.mkdir(path.dirname(titleNotesOutput), { recursive: true });
+  await fs.writeFile(titleNotesOutput, titleNotesBytes);
+  const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
+  const titleNotesAudit = {
+    status: "succeeded",
+    source: { sha256: hash(titleNotesSource) },
+    output: { sha256: hash(titleNotesBytes) },
+    provider: { actual: "open-chestnut", version: "test", silentFallback: false },
+    savePolicy: { strategy: "rewrite" },
+    operation: { type: "title-and-speaker-notes-text-edit" },
+    validation: { reimport: { ok: true } },
+  };
+  await fs.writeFile(path.join(titleNotesRoot, "outputs", "audit.json"), JSON.stringify(titleNotesAudit, null, 2));
+  const titleNotesEvidence = {
+    source: await inspectTitleNotesPptx(titleNotesInput),
+    output: await inspectTitleNotesPptx(titleNotesOutput),
+    visual: {
+      source: { available: true, ok: true, pageCount: 2, pages: [{ width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "source" }, { width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "stable" }] },
+      output: { available: true, ok: true, pageCount: 2, pages: [{ width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "output" }, { width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "stable" }] },
+    },
+  };
+  const titleNotesTrace = JSON.stringify({ type: "item.completed", item: { type: "command_execution", id: "pptx-title-notes", command: "node -e 'PresentationFile.importPptx(); PresentationFile.exportPptx()'" } });
+  const titleNotesChecks = gradePptxTitleNotesEvidence({
+    evidence: titleNotesEvidence,
+    audit: titleNotesAudit,
+    commands: extractCompletedCommands(titleNotesTrace),
+    item: titleNotesItem,
+  });
+  assert.equal(titleNotesChecks.every((check) => check.passed), true);
+  const publishedTitleNotesWorkflowChecks = gradePptxTitleNotesEvidence({
+    evidence: titleNotesEvidence,
+    audit: titleNotesAudit,
+    commands: ["node .agents/skills/presentations/examples/openchestnut-title-notes-edit-workflow.mjs inputs/launch-review.pptx outputs/launch-review-updated.pptx outputs/audit.json"],
+    item: titleNotesItem,
+  });
+  assert.equal(publishedTitleNotesWorkflowChecks.find((check) => check.id === "pptx-trace:typed-roundtrip")?.passed, true);
+  const untrustedTitleNotesWorkflowChecks = gradePptxTitleNotesEvidence({
+    evidence: titleNotesEvidence,
+    audit: titleNotesAudit,
+    commands: ["node scratch/title-notes-edit.mjs inputs/launch-review.pptx outputs/launch-review-updated.pptx outputs/audit.json"],
+    item: titleNotesItem,
+  });
+  assert.equal(untrustedTitleNotesWorkflowChecks.find((check) => check.id === "pptx-trace:typed-roundtrip")?.passed, false);
+  const nativeTitleNotesResult = await gradeOfficeCase({
+    item: titleNotesItem,
+    workspace: titleNotesRoot,
+    evaluator: path.join(titleNotesRoot, "evaluator"),
+    finalMessage: "completed",
+    trace: titleNotesTrace,
+  });
+  if (nativeTitleNotesResult.graded) {
+    assert.equal(nativeTitleNotesResult.rawScorePercent, 100);
+    assert.equal(nativeTitleNotesResult.caseSpecificPassed, true);
+  } else {
+    assert.ok(nativeTitleNotesResult.infrastructureErrors?.length);
+  }
+} finally {
+  await fs.rm(titleNotesRoot, { recursive: true, force: true });
 }
 
 const accessibleItem = cases.find((item) => item.id === "pdf-greenfield-accessible-report");

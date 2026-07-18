@@ -4,6 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
 
+import { FileBlob, PresentationFile } from "../src/index.mjs";
+import {
+  generateOfficeInput,
+  PPTX_TITLE_NOTES_FIXTURE,
+} from "../scripts/agent-eval-office-fixtures.mjs";
 import {
   nativePresentationRenderStatus,
   runPresentationFixture,
@@ -175,6 +180,43 @@ try {
   });
   assert.equal(itemByName(evidenceSlide.charts.items, "evidence-pie").chartType, "pie");
 
+  const titleNotesDir = path.join(root, "title-notes-workflow");
+  const titleNotesInput = path.join(titleNotesDir, PPTX_TITLE_NOTES_FIXTURE.presentationName);
+  const titleNotesOutput = path.join(titleNotesDir, "launch-review-updated.pptx");
+  const titleNotesAudit = path.join(titleNotesDir, "audit.json");
+  await generateOfficeInput("pptx-title-notes-review", titleNotesInput);
+  const titleNotesSource = await fs.readFile(titleNotesInput);
+  const { editPptxTitleAndNotes } = await import(
+    "../skills/presentations/skills/presentations/examples/openchestnut-title-notes-edit-workflow.mjs"
+  );
+  const titleNotesResult = await editPptxTitleAndNotes({
+    inputPath: titleNotesInput,
+    outputPath: titleNotesOutput,
+    auditPath: titleNotesAudit,
+    slideName: PPTX_TITLE_NOTES_FIXTURE.targetSlideName,
+    titleShapeName: PPTX_TITLE_NOTES_FIXTURE.titleShapeName,
+    expectedTitle: PPTX_TITLE_NOTES_FIXTURE.originalTitle,
+    replacementTitle: PPTX_TITLE_NOTES_FIXTURE.replacementTitle,
+    expectedNotes: PPTX_TITLE_NOTES_FIXTURE.originalNotes,
+    replacementNotes: PPTX_TITLE_NOTES_FIXTURE.replacementNotes,
+  });
+  assert.equal(titleNotesResult.audit.provider.actual, "open-chestnut");
+  assert.equal(titleNotesResult.audit.validation.reimport.ok, true);
+  assert.equal(titleNotesResult.audit.validation.modelRender.renderer, "model-svg");
+  assert.deepEqual(await fs.readFile(titleNotesInput), titleNotesSource);
+  const titleNotesRoundTrip = await PresentationFile.importPptx(new FileBlob(await fs.readFile(titleNotesOutput), {
+    type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    name: "launch-review-updated.pptx",
+  }));
+  assert.deepEqual(titleNotesRoundTrip.slides.items.map((slide) => slide.name), [
+    PPTX_TITLE_NOTES_FIXTURE.targetSlideName,
+    PPTX_TITLE_NOTES_FIXTURE.untouchedSlideName,
+  ]);
+  const titleNotesSlide = titleNotesRoundTrip.slides.getItem(0);
+  assert.equal(itemByName(titleNotesSlide.shapes.items, PPTX_TITLE_NOTES_FIXTURE.titleShapeName).text.value, PPTX_TITLE_NOTES_FIXTURE.replacementTitle);
+  assert.equal(titleNotesSlide.speakerNotes.text, PPTX_TITLE_NOTES_FIXTURE.replacementNotes);
+  assert.deepEqual(titleNotesSlide.background, { fill: "#f1f5f9", mode: "solid" });
+
   const convergenceFiles = [
     "test/skill-harness/presentations/scripts/workflow.mjs",
     "test/skill-harness/presentations/scripts/run-fixture.mjs",
@@ -194,6 +236,7 @@ try {
   const skillText = await fs.readFile("skills/presentations/skills/presentations/SKILL.md", "utf8");
   const quickStartText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/API_QUICK_START.md", "utf8");
   assert.match(skillText, /open-office-artifact-tool/);
+  assert.match(skillText, /openchestnut-title-notes-edit-workflow\.mjs/);
   assert.match(quickStartText, /PresentationFile\.exportPptx/);
   assert.match(quickStartText, /open-office-artifact-tool/);
   assert.match(skillText, /slides_test\.py/);
