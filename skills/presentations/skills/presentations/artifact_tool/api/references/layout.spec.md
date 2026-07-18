@@ -81,6 +81,19 @@ Use `presentation.layouts.getById(layout.id)` when an exact stable lookup is
 needed. `layouts.getItem(...)` also accepts a name or type and is convenient
 only when the result cannot be ambiguous.
 
+Use a defensive snapshot before an agent decides which text slots to fill:
+
+```js
+const summary = layout.placeholders.summary();
+// { ownerId, count, requiredCount, types, items }
+```
+
+Each `items` entry has copied `id`, `name`, native `type`, `idx`/`index`,
+`required`, `hasDirectPosition`, and (when direct) `position` fields. Mutating
+the returned object never mutates the layout. Imported inherited placeholders
+are visible with `hasDirectPosition: false`; that is discovery evidence, not an
+invitation to reconstruct their geometry.
+
 ## Imported decks and boundaries
 
 Imported Master/Layout graphs are source-bound. They can be inspected, guide

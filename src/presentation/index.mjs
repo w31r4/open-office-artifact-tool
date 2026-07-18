@@ -189,6 +189,26 @@ function presentationPlaceholderLookup(placeholders, idOrName) {
     (Number.isInteger(index) && placeholder.idx === index));
 }
 
+function presentationPlaceholderSummary(owner, placeholders) {
+  const items = placeholders.map((placeholder) => ({
+    id: placeholder.id,
+    name: placeholder.name,
+    type: placeholder.type,
+    idx: placeholder.idx,
+    index: placeholder.idx,
+    required: Boolean(placeholder.required),
+    hasDirectPosition: Boolean(placeholder.position),
+    ...(placeholder.position ? { position: { ...placeholder.position } } : {}),
+  }));
+  return {
+    ownerId: owner.id,
+    count: items.length,
+    requiredCount: items.filter((placeholder) => placeholder.required).length,
+    types: [...new Set(items.map((placeholder) => placeholder.type))].sort(),
+    items,
+  };
+}
+
 function attachPresentationPlaceholderCollectionApi(owner, placeholders, { allowMissingPosition = false } = {}) {
   Object.defineProperties(placeholders, {
     add: {
@@ -208,6 +228,7 @@ function attachPresentationPlaceholderCollectionApi(owner, placeholders, { allow
       },
     },
     getItem: { enumerable: false, value(idOrName) { return presentationPlaceholderLookup(placeholders, idOrName); } },
+    summary: { enumerable: false, value() { return presentationPlaceholderSummary(owner, placeholders); } },
     count: { enumerable: false, get() { return placeholders.length; } },
   });
   return placeholders;

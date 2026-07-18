@@ -230,6 +230,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "presentation.master.setTheme", summary: "Set a model-level master theme override for preview only. Canonical PPTX export rejects that source-free override; imported-master mutation remains source-bound and fails closed." },
   { artifactKind: "presentation", kind: "api", name: "presentation.layouts.add", summary: "Create one bounded source-free layout under the canonical master. Use blank, title, titleOnly, or obj/titleAndContent plus direct-frame text placeholders; imported layouts remain source-bound and read-only." },
   { artifactKind: "presentation", kind: "api", name: "presentation.layout.placeholders.add", summary: "Append a direct-frame title/body/ctrTitle/subTitle text placeholder to a source-free layout. It becomes a native p:ph and must be materialized on each slide through applyLayout/setLayout; object/media/chart/table placeholders remain source-bound." },
+  { artifactKind: "presentation", kind: "api", name: "presentation.layout.placeholders.summary", summary: "Return a defensive layout-placeholder discovery snapshot with stable IDs, names, native types/indexes, required flags, and direct-frame presence/geometry; editing the snapshot cannot mutate the model." },
   { artifactKind: "presentation", kind: "api", name: "presentation.layouts.getById", summary: "Resolve a layout by its stable ID without falling back to a same-named or same-typed layout." },
   { artifactKind: "presentation", kind: "api", name: "presentation.layout.setBackground", summary: "Set a direct background on a bounded source-free layout. Imported-layout mutation remains source-bound and fails closed." },
   { artifactKind: "presentation", kind: "api", name: "presentation.layout.clearBackground", summary: "Clear a direct background on a bounded source-free layout. Imported-layout mutation remains source-bound and fails closed." },
@@ -1417,6 +1418,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     text: { type: "string|string[]|object|object[]", description: "Optional prompt/default text using the bounded presentation text profile." },
     style: { type: "object", description: "Optional bounded default run/paragraph style." },
   }, "placeholder", "object", "Appended source-free layout placeholder definition. Use slide.applyLayout/setLayout to materialize it on a slide."),
+  "presentation.layout.placeholders.summary": helpSchema({}, "summary", "object", "Fresh defensive snapshot of the layout placeholder collection. It reports ownerId, count, requiredCount, sorted types, and copied items; imported inherited placeholders explicitly report hasDirectPosition: false."),
   "presentation.layouts.getById": helpSchema({
     id: { type: "string", required: true, description: "Exact stable layout ID." },
   }, "layout", "SlideLayoutTemplate|undefined", "Matching layout or undefined."),

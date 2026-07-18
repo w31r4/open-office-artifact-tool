@@ -121,6 +121,25 @@ authoredLayout.placeholders.add({
 });
 assert.equal(authoredLayoutPresentation.layouts.getById(authoredLayout.id), authoredLayout);
 assert.equal(authoredLayout.placeholders.count, 1);
+const authoredLayoutPlaceholderSummary = authoredLayout.placeholders.summary();
+assert.deepEqual(authoredLayoutPlaceholderSummary, {
+  ownerId: authoredLayout.id,
+  count: 1,
+  requiredCount: 0,
+  types: ["body"],
+  items: [{
+    id: authoredLayout.placeholders.getItem("body").id,
+    name: "Body",
+    type: "body",
+    idx: 1,
+    index: 1,
+    required: false,
+    hasDirectPosition: true,
+    position: { left: 72, top: 154, width: 1136, height: 490 },
+  }],
+});
+authoredLayoutPlaceholderSummary.items[0].position.left = -1;
+assert.equal(authoredLayout.placeholders.getItem("body").position.left, 72);
 const authoredLayoutSlide = authoredLayoutPresentation.slides.add({ name: "Reusable layout", layout: "Title and body" });
 assert.equal(authoredLayoutSlide.layoutId, authoredLayout.id);
 assert.equal(authoredLayoutSlide.placeholders.count, 2);

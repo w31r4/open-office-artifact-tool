@@ -133,6 +133,7 @@ tags default `width` to `"fill"` when you omit it.
 
 - Create presentations with `Presentation.create({ slideSize })` to control default slide dimensions.
 - Add source-free slides with `presentation.slides.add({ layout, layoutId })`, or use `presentation.slides.insert({ after, layout, ... })` to insert after a Slide/0-based index (or first with `after: null`). A supplied bounded layout is resolved and its direct-frame text placeholders are materialized transactionally. Use `slide.setLayout(layout)` when binding after creation; reapplying the same layout is idempotent, while switching an already-materialized layout fails closed.
+- Discover a layout before filling it with `layout.placeholders.summary()`. It returns a fresh copied snapshot of placeholder identity/type/index/direct-frame evidence and never grants mutation of an imported template graph.
 - Use `slide.compose(nodeOrJsx, { frame, baseUnit })` for compose-first layouts. JSX lowers into the same compose runtime as the helper-based API.
 - Author content with config-first calls: `slide.shapes.add({ geometry, position, fill, line })`, `slide.images.add({ ... })`, `slide.tables.add({ ... })`, and `slide.charts.add(chartType, { ... })`.
 - Format whole-shape text with grouped configs such as `shape.text.style = { fontSize, bold, color, alignment }`.

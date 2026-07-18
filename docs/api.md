@@ -1250,6 +1250,7 @@ Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or 
 | `presentation.inspect` | api | Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, tables, charts, images, and native contentPart/OLE/diagram objects with bounded editability, relationship-reference, root-relationship, preserved-part, and eligible embedded-workbook summaries; narrow with search/target anchors and shape fields with include/exclude. |
 | `presentation.layout.clearBackground` | api | Clear a direct background on a bounded source-free layout. Imported-layout mutation remains source-bound and fails closed. |
 | `presentation.layout.placeholders.add` | api | Append a direct-frame title/body/ctrTitle/subTitle text placeholder to a source-free layout. It becomes a native p:ph and must be materialized on each slide through applyLayout/setLayout; object/media/chart/table placeholders remain source-bound. |
+| `presentation.layout.placeholders.summary` | api | Return a defensive layout-placeholder discovery snapshot with stable IDs, names, native types/indexes, required flags, and direct-frame presence/geometry; editing the snapshot cannot mutate the model. |
 | `presentation.layout.setBackground` | api | Set a direct background on a bounded source-free layout. Imported-layout mutation remains source-bound and fails closed. |
 | `presentation.layouts.add` | api | Create one bounded source-free layout under the canonical master. Use blank, title, titleOnly, or obj/titleAndContent plus direct-frame text placeholders; imported layouts remain source-bound and read-only. |
 | `presentation.layouts.getById` | api | Resolve a layout by its stable ID without falling back to a same-named or same-typed layout. |
@@ -1533,6 +1534,14 @@ Append a direct-frame title/body/ctrTitle/subTitle text placeholder to a source-
 **Schema returns:**
 
 - `placeholder` (object) — Appended source-free layout placeholder definition. Use slide.applyLayout/setLayout to materialize it on a slide.
+
+#### `presentation.layout.placeholders.summary`
+
+Return a defensive layout-placeholder discovery snapshot with stable IDs, names, native types/indexes, required flags, and direct-frame presence/geometry; editing the snapshot cannot mutate the model.
+
+**Schema returns:**
+
+- `summary` (object) — Fresh defensive snapshot of the layout placeholder collection. It reports ownerId, count, requiredCount, sorted types, and copied items; imported inherited placeholders explicitly report hasDirectPosition: false.
 
 #### `presentation.layout.setBackground`
 
