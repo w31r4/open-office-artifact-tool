@@ -2623,6 +2623,37 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void SourcePreservingExportRejectsCloneWithConnectedLegacyCommentAuthorsCatalog()
+    {
+        var request = ExportRequest();
+        request.Artifact.Presentation.Slides[0].LegacyComments.Add(new PresentationLegacyComment
+        {
+            Id = "presentation/slide/1/legacy-comment/1",
+            Author = "Review Owner",
+            Text = "Keep the author catalog closed too.",
+            CreatedAt = "2026-07-18T06:25:00Z",
+        });
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var connectedAuthors = AddZipText(
+            authored.File.ToByteArray(),
+            "ppt/_rels/commentAuthors.xml.rels",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rIdUnsafeAuthorLink\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.invalid/comment-authors\" TargetMode=\"External\"/></Relationships>");
+        var imported = Import(connectedAuthors);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var source = Assert.Single(imported.Artifact.Presentation.Slides);
+        var clone = source.Clone();
+        clone.Id = "presentation/clone/connected-comment-authors";
+        clone.Source = null;
+        clone.CloneSource = source.Source.Clone();
+        imported.Artifact.Presentation.Slides.Add(clone);
+
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void SourcePreservingExportRejectsAnEditedCloneBeforeWritingItsGraph()
     {
         var authored = Invoke(ExportRequest());

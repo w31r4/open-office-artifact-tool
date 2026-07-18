@@ -202,14 +202,16 @@ try {
   assert.match(skillText, /starter-deck command below still needs a\s+broad imported-slide graph clone and broad graph delete semantics/is);
   assert.match(skillText, /slide\.duplicate\(\).*canonical shapes.*canonical embedded rectangular images.*new\s+`?SlidePart`?.*export plus reimport/is);
   assert.match(skillText, /NotesSlide.*NotesMaster.*byte-for-byte.*back-reference.*clone/is);
+  assert.match(skillText, /SlideCommentsPart.*CommentAuthorsPart.*byte-for-byte/is);
   assert.match(skillText, /artifact_tool\/api\/references\/comments\.md/);
   const commentsReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/comments.md", "utf8");
   assert.match(commentsReferenceText, /Pass `undefined` as the target/);
   assert.match(commentsReferenceText, /one author, one text item, and one explicit\s+slide coordinate/is);
   assert.match(commentsReferenceText, /Modern threaded-comment graphs remain opaque and source-bound/);
+  assert.match(commentsReferenceText, /slide\.duplicate\(\).*byte-cop(?:y|ied).*author\s+catalog/is);
   const slideReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/slide.spec.md", "utf8");
   assert.match(slideReferenceText, /never flattens the\s+inherited color/i);
-  assert.match(slideReferenceText, /NotesSlide.*NotesMaster.*exactly those two relationships.*byte-for-byte/is);
+  assert.match(slideReferenceText, /NotesSlide.*NotesMaster.*exactly those two\s+relationships.*byte-for-byte/is);
   assert.match(slideReferenceText, /Gradient,\s+pattern, image.*opaque-preserved/is);
   const imageReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/images.spec.md", "utf8");
   assert.match(imageReferenceText, /signed normalized source edges in `-1\.\.1`/i);

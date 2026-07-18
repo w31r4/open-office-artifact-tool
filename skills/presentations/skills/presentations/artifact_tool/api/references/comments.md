@@ -29,10 +29,10 @@ reference examples describe richer workflow material; they do not claim that
 the narrow legacy codec can serialize modern comment semantics.
 
 The narrow imported-slide `slide.duplicate()` profile may carry one unchanged
-canonical legacy comments part. It creates a fresh slide-local comments part by
-copying its XML bytes and reuses the original immutable presentation-wide author
-catalog; neither part may have a connected relationship graph. This is only a
-preservation primitive: the pending clone must not change its comments before
+canonical legacy comments part. It creates a fresh slide-local comments part
+whose XML is byte-copied and reuses the original immutable presentation-wide
+author catalog; neither part may have a connected relationship graph. This is
+only a preservation primitive: the pending clone must not change its comments before
 export/reimport, and imported legacy comments remain read-only after it.
 
 ## Current Author
