@@ -793,6 +793,72 @@ await assert.rejects(
   (error) => error?.code === "unsupported_presentation_slide_clone",
 );
 
+// The next clone leaf includes canonical embedded images. The fresh SlidePart
+// owns a fresh relationship, but both slides deliberately point at the same
+// immutable media part; no source slide XML or media bytes are rewritten.
+const imageCloneFixture = Presentation.create({ slideSize: { width: 640, height: 360 } });
+const imageCloneOriginal = imageCloneFixture.slides.add({ name: "Image original" });
+imageCloneOriginal.shapes.add({ name: "image-clone-copy", position: { left: 48, top: 48, width: 300, height: 72 }, text: "Image original" });
+imageCloneOriginal.images.add({
+  name: "image-clone-asset",
+  alt: "Shared immutable clone asset",
+  position: { left: 48, top: 150, width: 120, height: 120 },
+  dataUrl: PNG,
+  fit: "stretch",
+});
+const imageCloneSourcePptx = await PresentationFile.exportPptx(imageCloneFixture);
+const imageCloneSourceZip = await JSZip.loadAsync(imageCloneSourcePptx.bytes);
+const imageCloneSourceMediaPaths = Object.keys(imageCloneSourceZip.files)
+  .filter((path) => /^ppt\/media\/[^/]+\.(?:png|jpe?g|gif|svg)$/i.test(path));
+assert.equal(imageCloneSourceMediaPaths.length, 1, "the source fixture must contain exactly one embedded image part");
+const [imageCloneSourceMediaPath] = imageCloneSourceMediaPaths;
+const imageCloneImportedDeck = await PresentationFile.importPptx(imageCloneSourcePptx);
+const imageCloneImportedSource = imageCloneImportedDeck.slides.getItem(0);
+const imageClone = imageCloneImportedSource.duplicate();
+assert.equal(imageClone.images.items.length, 1);
+assert.notEqual(imageClone.images.items[0].id, imageCloneImportedSource.images.items[0].id);
+assert.equal(imageClone.images.items[0].alt, "Shared immutable clone asset");
+assert.equal(imageClone.images.items[0].dataUrl, PNG);
+const imageClonePptx = await PresentationFile.exportPptx(imageCloneImportedDeck);
+const imageCloneZip = await JSZip.loadAsync(imageClonePptx.bytes);
+assert.deepEqual(
+  await imageCloneZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  await imageCloneSourceZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  "cloning a slide with an embedded image must retain the origin SlidePart byte-for-byte",
+);
+assert.deepEqual(
+  await imageCloneZip.file(imageCloneSourceMediaPath).async("uint8array"),
+  await imageCloneSourceZip.file(imageCloneSourceMediaPath).async("uint8array"),
+  "cloning a slide with an embedded image must retain the shared media bytes",
+);
+assert.ok(imageCloneZip.file("ppt/slides/slide2.xml"), "the image clone must own a new SlidePart");
+const imageParts = Object.keys(imageCloneZip.files).filter((path) => /^ppt\/media\/[^/]+\.(?:png|jpe?g|gif|svg)$/i.test(path));
+assert.deepEqual(imageParts, [imageCloneSourceMediaPath], "the clone must reuse the source ImagePart instead of duplicating media bytes");
+const imageRelationshipTargets = (relationships) => [...relationships.matchAll(/<Relationship\b[^>]*>/g)]
+  .filter(([tag]) => /\bType="[^\"]*\/image"/.test(tag))
+  .map(([tag]) => /\bTarget="([^\"]+)"/.exec(tag)?.[1]);
+const sourceImageRelationships = await imageCloneZip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
+const cloneImageRelationships = await imageCloneZip.file("ppt/slides/_rels/slide2.xml.rels").async("text");
+assert.deepEqual(
+  imageRelationshipTargets(cloneImageRelationships),
+  imageRelationshipTargets(sourceImageRelationships),
+  "the clone must own equivalent image relationships to the same media targets",
+);
+const imageCloneRoundTrip = await PresentationFile.importPptx(imageClonePptx);
+assert.deepEqual(imageCloneRoundTrip.slides.items.map((slide) => slide.name), ["Image original", "Image original"]);
+assert.equal(imageCloneRoundTrip.slides.getItem(1).images.items[0].alt, "Shared immutable clone asset");
+imageCloneRoundTrip.slides.getItem(1).images.items[0].alt = "Edited after image clone reimport";
+const imageCloneEditedPptx = await PresentationFile.exportPptx(imageCloneRoundTrip);
+const imageCloneEditedRoundTrip = await PresentationFile.importPptx(imageCloneEditedPptx);
+assert.equal(imageCloneEditedRoundTrip.slides.getItem(1).images.items[0].alt, "Edited after image clone reimport");
+
+const immediateImageCloneEdit = await PresentationFile.importPptx(imageCloneSourcePptx);
+immediateImageCloneEdit.slides.getItem(0).duplicate().images.items[0].alt = "Too soon";
+await assert.rejects(
+  () => PresentationFile.exportPptx(immediateImageCloneEdit),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+);
+
 // The ordinary deck carries media/shape relationships, so delete must stop at
 // the C# OPC preflight instead of silently reconstructing a lossy template.
 const complexImportedDeletion = await PresentationFile.importPptx(firstExport);

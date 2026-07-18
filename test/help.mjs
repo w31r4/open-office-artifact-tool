@@ -87,7 +87,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "presentation.master")?.s
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.moveTo")?.schema?.parameters?.index?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.moveTo")?.schema?.returns?.slide?.description || "", /p:sldIdLst.*retained source SlideParts.*broad graph clones.*fail closed/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.duplicate")?.schema?.returns?.slide?.type, "Slide");
-assert.match(HELP_CATALOG.find((item) => item.name === "slide.duplicate")?.schema?.returns?.slide?.description || "", /original imported PPTX.*shape-only.*exactly one internal layout relationship.*distinct SlidePart.*unchanged.*second import.*fail closed/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.duplicate")?.schema?.returns?.slide?.description || "", /original imported PPTX.*canonical simple shapes.*embedded rectangular images.*exactly one internal layout relationship.*distinct SlidePart.*immutable ImageParts.*unchanged.*second import.*fail closed/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.delete")?.schema?.returns?.result?.type, "undefined");
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.delete")?.schema?.returns?.result?.description || "", /actual SlidePart.*only its layout relationship.*inbound relationship.*fail closed/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "SpreadsheetFile.patchXlsx"));
@@ -328,7 +328,7 @@ assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.sc
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "presentation.slides.insert")?.schema?.parameters?.after?.type, "Slide|number|null");
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.moveTo")?.summary || "", /retained source SlidePart.*broad graph clones.*fail-closed/i);
-assert.match(HELP_CATALOG.find((item) => item.name === "slide.duplicate")?.summary || "", /unchanged graph.*shape-only.*distinct SlidePart.*untouched.*complex graph fails closed/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.duplicate")?.summary || "", /unchanged graph.*canonical shapes.*embedded rectangular images.*distinct SlidePart.*untouched.*complex graphs fail closed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.delete")?.summary || "", /real OPC deletion.*isolated slide.*custom shows.*clone requests fail closed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.layout.placeholders.summary")?.summary || "", /defensive.*snapshot/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.importPptx")?.schema?.returns?.presentation?.type, "Presentation");

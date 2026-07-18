@@ -2296,6 +2296,91 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void SourcePreservingExportClonesAnUnchangedLayoutAndEmbeddedImageLeaf()
+    {
+        var authored = Invoke(ExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var sourceBytes = AddPicture(authored.File.ToByteArray());
+        var sourceSlide = ZipBytes(sourceBytes, "ppt/slides/slide1.xml");
+        var sourceMediaPath = SingleZipEntryPath(sourceBytes, path => path.StartsWith("ppt/media/", StringComparison.OrdinalIgnoreCase));
+        var sourceMedia = ZipBytes(sourceBytes, sourceMediaPath);
+
+        var imported = Import(sourceBytes);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var source = Assert.Single(imported.Artifact.Presentation.Slides);
+        Assert.Equal(2, source.Elements.Count);
+        Assert.Equal(PresentationElement.ContentOneofCase.Image, source.Elements[1].ContentCase);
+        var clone = source.Clone();
+        clone.Id = "presentation/clone/layout-and-image";
+        clone.Source = null;
+        clone.CloneSource = source.Source.Clone();
+        imported.Artifact.Presentation.Slides.Add(clone);
+
+        var duplicated = Export(imported.Artifact);
+        Assert.True(duplicated.Ok, Diagnostics(duplicated));
+        using (var stream = new MemoryStream(duplicated.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var slideParts = package.PresentationPart!.SlideParts.ToArray();
+            Assert.Equal(2, slideParts.Length);
+            var origin = slideParts.Single(part => part.Uri.OriginalString.EndsWith("/slide1.xml", StringComparison.Ordinal));
+            var outputClone = slideParts.Single(part => part.Uri.OriginalString.EndsWith("/slide2.xml", StringComparison.Ordinal));
+            var originImage = Assert.Single(origin.ImageParts);
+            var cloneImage = Assert.Single(outputClone.ImageParts);
+            Assert.Equal(originImage.Uri, cloneImage.Uri);
+            Assert.Equal(origin.GetIdOfPart(originImage), outputClone.GetIdOfPart(cloneImage));
+        }
+        Assert.Equal(sourceSlide, ZipBytes(duplicated.File.ToByteArray(), "ppt/slides/slide1.xml"));
+        Assert.Equal(sourceMedia, ZipBytes(duplicated.File.ToByteArray(), sourceMediaPath));
+
+        var roundTrip = Import(duplicated.File.ToByteArray());
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        Assert.Equal(2, roundTrip.Artifact.Presentation.Slides.Count);
+        Assert.All(roundTrip.Artifact.Presentation.Slides, slide =>
+            Assert.Equal(PresentationElement.ContentOneofCase.Image, slide.Elements[1].ContentCase));
+    }
+
+    [Fact]
+    public void SourcePreservingExportRejectsAnEditedEmbeddedImageCloneBeforeWritingItsGraph()
+    {
+        var authored = Invoke(ExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var imported = Import(AddPicture(authored.File.ToByteArray()));
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var source = Assert.Single(imported.Artifact.Presentation.Slides);
+        var clone = source.Clone();
+        clone.Id = "presentation/clone/edited-image";
+        clone.Source = null;
+        clone.CloneSource = source.Source.Clone();
+        clone.Elements[1].Image.AltText = "Changed before the clone crossed an export/import boundary";
+        imported.Artifact.Presentation.Slides.Add(clone);
+
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("presentation_slide_clone_mismatch", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void SourcePreservingExportRejectsCloneWithAnUnboundImageRelationship()
+    {
+        var authored = Invoke(ExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var imported = Import(AddUnboundPictureRelationship(authored.File.ToByteArray()));
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var source = Assert.Single(imported.Artifact.Presentation.Slides);
+        var clone = source.Clone();
+        clone.Id = "presentation/clone/unbound-image-relationship";
+        clone.Source = null;
+        clone.CloneSource = source.Source.Clone();
+        imported.Artifact.Presentation.Slides.Add(clone);
+
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void SourcePreservingExportRejectsAnEditedCloneBeforeWritingItsGraph()
     {
         var authored = Invoke(ExportRequest());
@@ -4166,6 +4251,13 @@ public sealed class PptxCodecTests
         return copy.ToArray();
     }
 
+    private static string SingleZipEntryPath(byte[] bytes, Func<string, bool> predicate)
+    {
+        using var stream = new MemoryStream(bytes, writable: false);
+        using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
+        return Assert.Single(archive.Entries, entry => predicate(entry.FullName)).FullName;
+    }
+
     private static void AddZipText(ZipArchive archive, string path, string text)
     {
         using var writer = new StreamWriter(archive.CreateEntry(path).Open());
@@ -4247,6 +4339,21 @@ public sealed class PptxCodecTests
                         new A.Extents { Cx = 1_714_500L, Cy = 1_143_000L }),
                     new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle })));
             slidePart.Slide.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddUnboundPictureRelationship(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var presentation = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var slidePart = presentation.PresentationPart!.SlideParts.Single();
+            var imagePart = slidePart.AddImagePart(ImagePartType.Png, "rIdUnboundImage");
+            using var image = new MemoryStream(Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="));
+            imagePart.FeedData(image);
         }
         return stream.ToArray();
     }

@@ -63,13 +63,17 @@ SlidePart with no outbound non-layout relationship, inbound relationship, or
 presentation identity reference; it then removes the actual part and relation.
 
 `slide.duplicate()` returns a new adjacent `Slide` only under the bounded
-imported shape-only layout-leaf profile. It creates a distinct native SlidePart
-and presentation relationship, shares the verified layout relationship, and
-preserves the origin part. The clone is intentionally read-only until it has
-crossed one export/reimport boundary; it then imports as its own source-bound
-slide. Imported add, repeat/mutated clone, immediate clone edit, and every
-media/note/comment/chart/OLE/hyperlink/custom-show/section/extension or
-otherwise connected clone/delete graph fail closed.
+imported shape-and-embedded-image layout-leaf profile. Its unchanged graph may
+contain canonical simple shapes plus canonical embedded rectangular images,
+exactly one layout relationship, and image relationships bound only by those
+pictures. It creates a distinct native SlidePart and presentation relationship,
+shares the verified layout and immutable ImageParts through fresh clone-local
+relationships, and preserves the origin part. The clone is intentionally
+read-only until it has crossed one export/reimport boundary; it then imports as
+its own source-bound slide. Imported add, repeat/mutated clone, immediate clone
+edit, and every note/comment/chart/OLE/hyperlink/custom-show/section/extension,
+external-or-irregular-image, or otherwise connected clone/delete graph fails
+closed.
 
 ## Discover And Edit
 

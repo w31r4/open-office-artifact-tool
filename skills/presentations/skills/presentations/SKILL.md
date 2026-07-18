@@ -191,13 +191,15 @@ identity reference. It
 removes the source slide part and its relationship part while preserving every
 survivor. Media, notes, comments, charts, OLE, hyperlinks, data parts, or any
 other connected graph fail closed. `slide.duplicate()` is a separate, much
-narrower operation: only an original imported slide whose unchanged graph is
-shape-only with exactly one internal layout relationship may receive a new
-`SlidePart` and presentation relationship. It deliberately shares that verified
-layout, preserves the origin part, and requires export plus reimport before the
-clone may be edited. Imported add, repeat/mutated clone, and every broad graph
-clone remain unsupported until an explicit OPC graph-clone transaction is
-available.
+narrower operation: only an original imported slide whose unchanged graph has
+canonical shapes plus canonical embedded rectangular images, exactly one
+internal layout relationship, and picture-bound image relationships may receive
+a new `SlidePart` and presentation relationship. It deliberately shares that
+verified layout and immutable image Parts through fresh clone-local
+relationships, preserves the origin part, and requires export plus reimport
+before the clone may be edited. Imported add, repeat/mutated clone, and every
+broad graph clone remain unsupported until an explicit OPC graph-clone
+transaction is available.
 
 When an imported top-level OLE object contains one uniquely bound XLSX package,
 read `artifact_tool/api/references/ole-workbooks.spec.md` before changing it.
@@ -240,12 +242,13 @@ layout, style, or template. Read `references/template-following.md`, use
 Current availability: the reference starter-deck command below still needs a
 broad imported-slide graph clone and broad graph delete semantics, so it
 deliberately fails closed in the canonical codec. The isolated layout-only
-`slide.delete()` and unchanged shape-only `slide.duplicate()` profiles are not
-substitutes: the latter creates an independent part but cannot be edited before
-an export/reimport boundary. Do not rebuild or share slide parts to emulate a
-clone. Until the broader milestone exists, use this mode only for source
-inventory, plan validation, and render/QA evidence; report the clone limitation
-before promising a derived starter deck.
+`slide.delete()` and unchanged shape-and-embedded-image `slide.duplicate()`
+profiles are not substitutes: the latter creates an independent part but cannot
+be edited before an export/reimport boundary, and it cannot carry arbitrary
+template graph edges. Do not rebuild or share slide parts to emulate a clone.
+Until the broader milestone exists, use this mode only for source inventory,
+plan validation, and render/QA evidence; report the clone limitation before
+promising a derived starter deck.
 
 Preserve the source deck's typography, palette, spacing, layout, placeholders,
 footers, page markers, and brand chrome unless the user explicitly asks to

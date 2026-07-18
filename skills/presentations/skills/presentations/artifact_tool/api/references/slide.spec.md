@@ -53,7 +53,7 @@ a simple solid and describe that as a faithful edit.
 
 ```ts
 slide.moveTo(0); // existing 0-based destination index
-const clone = slide.duplicate(); // narrow imported shape-only profile only
+const clone = slide.duplicate(); // narrow imported shape-and-embedded-image profile only
 slide.delete(); // removes a non-final source-free slide, or a qualified imported source slide
 ```
 
@@ -74,21 +74,25 @@ surviving source slides byte-identical. Any other imported delete fails closed.
 
 `duplicate()` is not a visual-only copy and never creates a second
 `p:sldId` reference to one source part. It is available only on an **original
-imported** source slide with an unchanged shape-only body and exactly one
-internal `SlidePart -> SlideLayoutPart` relationship. Export allocates a
-distinct new `SlidePart` and a new presentation relationship, intentionally
-reuses the verified layout part, and preserves the required original source
-part. The new clone must remain semantically unchanged and cannot replace or
-delete its origin until that export has completed and the resulting PPTX has
-been imported again; afterward it is an ordinary source-bound slide and may
-use the supported fixed-topology edit path.
+imported** source slide with an unchanged body of canonical simple shapes plus
+canonical embedded rectangular images, exactly one internal
+`SlidePart -> SlideLayoutPart` relationship, and image relationships bound only
+by those pictures. Export allocates a distinct new `SlidePart` and a new
+presentation relationship, intentionally reuses the verified layout and
+immutable ImageParts through fresh clone-local image relationships, and
+preserves the required original source part. The new clone must remain
+semantically unchanged and cannot replace or delete its origin until that
+export has completed and the resulting PPTX has been imported again; afterward
+it is an ordinary source-bound slide and may use the supported fixed-topology
+edit path.
 
-Source-free slides, already-cloned slides, comments, speaker notes, media,
-charts, OLE, hyperlinks, external/data relationships, non-shape elements,
-renames/layout/background changes, immediate clone edits, and all broader
-relationship graphs fail closed. Adding imported slides still fails closed. A
-template-derived deck still needs a broader explicit OPC graph-clone
-transaction rather than this bounded leaf operation.
+Source-free slides, already-cloned slides, comments, speaker notes, charts,
+OLE, hyperlinks, external/data relationships, external/unbound/irregular
+images, non-shape-and-image elements, renames/layout/background changes,
+immediate clone edits, and all broader relationship graphs fail closed. Adding
+imported slides still fails closed. A template-derived deck still needs a
+broader explicit OPC graph-clone transaction rather than this bounded leaf
+operation.
 
 ## Layouts And Placeholders
 

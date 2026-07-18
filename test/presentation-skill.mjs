@@ -200,7 +200,7 @@ try {
   assert.match(skillText, /slide\.setBackground.*slide\.clearBackground/s);
   assert.match(skillText, /slide\.moveTo\(existingZeroBasedIndex\).*retained source.*p:sldIdLst.*slide\.delete\(\).*isolated.*layout relationship/is);
   assert.match(skillText, /starter-deck command below still needs a\s+broad imported-slide graph clone and broad graph delete semantics/is);
-  assert.match(skillText, /slide\.duplicate\(\).*shape-only.*new\s+`?SlidePart`?.*export plus reimport/is);
+  assert.match(skillText, /slide\.duplicate\(\).*canonical shapes.*canonical embedded rectangular images.*new\s+`?SlidePart`?.*export plus reimport/is);
   assert.match(skillText, /artifact_tool\/api\/references\/comments\.md/);
   const commentsReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/comments.md", "utf8");
   assert.match(commentsReferenceText, /Pass `undefined` as the target/);
