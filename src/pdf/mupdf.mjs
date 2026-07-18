@@ -949,7 +949,6 @@ function withSourceBoundLink(document, operation, context = {}, operationName, m
       links,
       target,
       matched,
-      locator,
       readRetained() {
         if (retained.length) throw new Error(`${operationName} read native links more than once while verifying one mutation.`);
         retained = page.getLinks();
