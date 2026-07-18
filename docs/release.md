@@ -95,6 +95,32 @@ verify:open-chestnut-build`; OpenChestnut passed `211/211` and OfficeBridge
 `5/5`. Two clean WASM builds produced the same 39 audited files and the same
 manifest-bound 38-file, 14,417,084-byte runtime.
 
+### PPTX bounded source-bound connector clone
+
+On 2026-07-18, the existing imported `slide.duplicate()` transaction gained one
+additional inline leaf: a canonical straight or elbow connector. It remains a
+closed, unchanged SlidePart copy rather than a general relationship-graph
+clone. Every present endpoint must resolve to an element in that same copied
+SlidePart tree; a missing or cross-tree target fails before a pending clone can
+be inserted.
+
+The pending JavaScript clone exposes fresh clone-local element identities, so
+Agent `inspect`/`resolve` operations follow the copied targets naturally. The
+first export keeps the source-bound endpoint identities private at the codec
+boundary, letting OpenChestnut byte-copy the original Slide XML while the
+connector still binds to the copied shapes in the new SlidePart. The connector
+adds no OPC relationship. Unsupported connector forms, targets outside the
+clone tree, edits before export/reimport, and all broader graph edges remain
+fail-closed.
+
+The JavaScript regression proves cloned group connector endpoints resolve to
+the fresh copied child identities, source `slide1.xml` remains byte-identical,
+the second import resolves the copied endpoints, immediate clone mutation is
+rejected, and an unresolved source target leaves no partial clone. The C#
+regression validates the exported package with Open XML SDK Office 2021 and
+asserts that the cloned SlidePart contains the connector while the source slide
+bytes remain unchanged.
+
 ### PPTX auditable imported slide-name workflow
 
 On 2026-07-18, the native Presentation plugin added

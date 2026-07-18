@@ -192,7 +192,7 @@ removes the source slide part and its relationship part while preserving every
 survivor. Media, notes, comments, charts, OLE, hyperlinks, data parts, or any
 other connected graph fail closed. `slide.duplicate()` is a separate, much
 narrower operation: only an original imported slide whose unchanged graph has
-canonical shapes, canonical inline fixed-grid tables, canonical embedded rectangular images, plus recursively canonical groups whose descendants contain only those same leaf kinds, exactly one
+canonical shapes, canonical inline fixed-grid tables, canonical embedded rectangular images, bounded canonical straight/elbow connectors, plus recursively canonical groups whose descendants contain only those same leaf kinds, exactly one
 internal layout relationship, picture-bound image relationships, and optionally
 one closed `NotesSlide -> NotesMaster` / back-to-source-slide leaf plus one
 canonical legacy `SlideCommentsPart` leaf may receive a new `SlidePart` and
@@ -202,11 +202,16 @@ through fresh clone-local relationships; it copies accepted NotesSlide and
 SlideComments XML byte-for-byte and points only the preserved notes
 back-reference at the clone. The comments part and author catalog must have no
 connected relationship graph. Accepted tables are inline-only: table fills,
-links, and every other package edge remain outside this profile. Accepted groups add no relationship themselves, and every nested picture must consume one exact verified image relationship. It preserves the origin part and requires export plus reimport before the clone, its notes, or its comments may be edited;
+links, and every other package edge remain outside this profile. Every present
+connector endpoint must resolve to an element in the same copied `SlidePart`
+tree; accepted connectors add no relationship, and their pending clone targets
+resolve to fresh clone-local elements. Accepted groups add no relationship
+themselves, and every nested picture must consume one exact verified image
+relationship. It preserves the origin part and requires export plus reimport before the clone, its notes, or its comments may be edited;
 imported legacy comments remain source-bound read-only after that boundary.
-Imported add, repeat/mutated clone, rich/connected comments, and every broad
-graph clone remain unsupported until an explicit OPC graph-clone transaction is
-available.
+Imported add, repeat/mutated clone, rich/connected comments, unsupported
+connector forms or targets, and every broad graph clone remain unsupported until
+an explicit OPC graph-clone transaction is available.
 
 For an original imported slide, `slide.name = "Decision review"` is a narrow
 in-place metadata edit: OpenChestnut changes only that SlidePart's

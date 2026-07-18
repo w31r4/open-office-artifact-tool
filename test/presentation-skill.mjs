@@ -307,7 +307,7 @@ try {
   assert.match(skillText, /slide\.setBackground.*slide\.clearBackground/s);
   assert.match(skillText, /slide\.moveTo\(existingZeroBasedIndex\).*retained source.*p:sldIdLst.*slide\.delete\(\).*isolated.*layout relationship/is);
   assert.match(skillText, /starter-deck command below still needs a\s+broad imported-slide graph clone and broad graph delete semantics/is);
-  assert.match(skillText, /slide\.duplicate\(\).*canonical shapes.*canonical inline fixed-grid tables.*canonical embedded rectangular images.*new\s+`?SlidePart`?.*export plus reimport/is);
+  assert.match(skillText, /slide\.duplicate\(\).*canonical shapes.*canonical inline fixed-grid tables.*canonical embedded rectangular images.*bounded canonical straight\/elbow connectors.*new\s+`?SlidePart`?.*every present\s+connector endpoint.*same copied\s+`?SlidePart`?.*export plus reimport/is);
   assert.match(skillText, /NotesSlide.*NotesMaster.*byte-for-byte.*back-reference.*clone/is);
   assert.match(skillText, /SlideCommentsPart.*CommentAuthorsPart.*byte-for-byte/is);
   assert.match(skillText, /artifact_tool\/api\/references\/comments\.md/);
