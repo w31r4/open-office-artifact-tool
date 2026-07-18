@@ -36,8 +36,12 @@ const files = report.files.map((item) => item.path);
 const maxPackedBytes = 9_750_000;
 // The bundled OpenChestnut runtime is an audited product payload, not an
 // optional download. Keep its unpacked budget tight while allowing the
-// audited PDF provider/docs growth shipped with the bounded edit surface.
-const maxUnpackedBytes = 23_600_000;
+// audited PDF provider/docs growth shipped with the bounded edit surface. The
+// prior 23.6 MB ceiling left only 741 bytes after the preceding audited
+// release; the source-bound native-link add/move slice adds 9,905 published
+// bytes. 23.625 MB leaves this complete vertical slice under a 16 KB margin
+// instead of ratcheting the limit to one machine's exact package size.
+const maxUnpackedBytes = 23_625_000;
 
 for (const required of [
   "LICENSE",
