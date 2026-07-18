@@ -61,7 +61,7 @@ The official `mupdf@1.28.0` package is a required npm dependency and is resolved
 | Format | File pipeline | Current core capabilities |
 | --- | --- | --- |
 | XLSX | OpenChestnut C# WASM | Cells and formulas, styles and layout, tables, images, basic validation and conditional formatting, comments, charts, sparklines, and bounded What-If data tables. |
-| DOCX | OpenChestnut C# WASM | Structured text and styles, sections, headers and footers, lists, tables, links, fields, images, classic comments, and inline plain-text content controls. |
+| DOCX | OpenChestnut C# WASM | Structured text and styles, sections, headers and footers, lists, tables, links, fields, images, classic comments, bounded modern comment threads, and inline plain-text content controls. |
 | PPTX | OpenChestnut C# WASM | Shapes and rich text, images with reversible cropping, tables, connectors, charts, direct backgrounds, and plain-text speaker notes; slide masters and layouts are preserved but cannot be edited. |
 | PDF | Independent model + MuPDF.js | Tagged PDF authoring; native read/inspect/render for arbitrary PDFs; bounded annotation, form, page, metadata, link, rewrite, and incremental edits; real rewrite redaction. Specialist tools verify strict sanitization, signatures, PDF/UA, and OCR. |
 

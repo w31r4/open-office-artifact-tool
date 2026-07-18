@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 333);
+assert.equal(HELP_CATALOG.length, 335);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -141,6 +141,8 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.replaceText")?
 assert.match(HELP_CATALOG.find((item) => item.name === "documentTableCell.replaceText")?.summary || "", /source-bound text patch.*whole-cell replacement.*fail closed/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "documentTableCell.replaceText")?.schema?.parameters?.replacement?.required, true);
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.replyToComment"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "documentComment.resolve"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "documentComment.reopen"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.applyDesignPreset"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.setSettings"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.setSectionSettings"));
@@ -155,7 +157,8 @@ assert.match(HELP_CATALOG.find((item) => item.name === "document.addBookmark")?.
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addBibliographySource")?.summary || "", /native b:Sources authoring.*source order.*tags.*source-bound/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addCitation")?.summary || "", /w:fldSimple CITATION.*display-text edits.*topology remain fixed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addChange")?.summary || "", /native w:ins\/w:del.*fixed-topology/i);
-assert.match(HELP_CATALOG.find((item) => item.name === "document.replyToComment")?.summary || "", /does not author modern\/extended reply graphs.*preservation-only/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "document.replyToComment")?.summary || "", /source-free direct reply.*commentsExtended.*nested replies.*imported topology.*fail closed/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "documentComment.resolve")?.summary || "", /resolved=true.*source hashes.*commentsExtended topology/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.setSettings")?.summary || "", /evenAndOddHeaders.*updateFields.*trackRevisions.*unsupported/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.extractTables"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.addPage"));
@@ -327,7 +330,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.sc
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.schema?.returns?.inspection?.description || "", /mupdfWidget.*mupdfFormField/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.summary || "", /MuPDF/);
 const documentCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "document");
-assert.equal(documentCatalog.length, 45);
+assert.equal(documentCatalog.length, 47);
 assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.schema?.parameters?.pictureBullet?.type, "string|object");

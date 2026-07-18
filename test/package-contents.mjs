@@ -36,13 +36,14 @@ const files = report.files.map((item) => item.path);
 const maxPackedBytes = 9_750_000;
 // The bundled OpenChestnut runtime is an audited product payload, not an
 // optional download. Keep its unpacked budget tight while allowing the
-// audited PDF provider/docs growth shipped with the bounded edit surface. The
-// prior 23.625 MB ceiling left only 7,147 bytes after the source-bound
-// single-widget form update slice (23,632,147 bytes on the audit host).
+// audited PDF provider/docs growth plus the bounded DOCX modern-comment codec
+// and runnable workflow. The prior 23.825 MB ceiling was exceeded by 41,257
+// bytes after that source-built runtime/Skill slice (23,866,257 bytes on the
+// audit host), so this keeps less than 85 KB of explicit headroom.
 // The repository-only MIT Default Template Library is excluded from the npm
 // tarball. Its retained Office/PNG sources must never consume this consumer
 // package budget.
-const maxUnpackedBytes = 23_825_000;
+const maxUnpackedBytes = 23_950_000;
 
 for (const required of [
   "LICENSE",

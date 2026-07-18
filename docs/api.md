@@ -10,7 +10,7 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.addBookmark` | api | Wrap exactly one paragraph-like block in a native Word bookmark for inspect, resolve, and internal hyperlinks. Recognized imported whole-block bookmarks are exposed with source identity but remain fixed-topology/read-only; cross-block, nested, crossing, table-cell, and otherwise complex ranges stay opaque-preserved and fail closed on mutation. |
 | `document.addChange` | api | Append one bounded whole-paragraph tracked insertion or deletion. OpenChestnut authors native w:ins/w:del markup and permits fixed-topology imported text/author/date edits; mixed or nested revision graphs remain source-bound. |
 | `document.addCitation` | api | Add a whole-paragraph bibliography-backed citation exported as a native w:fldSimple CITATION field plus a bounded bookmark. Recognized imports allow display-text edits while source tags and topology remain fixed. |
-| `document.addComment` | api | Attach a classic whole-paragraph Word comment with author, initials, date, and text. Replies, resolution metadata, durable IDs, UTC/person data, and other modern comment extensions fail closed. |
+| `document.addComment` | api | Attach a whole-paragraph Word comment. Classic roots remain minimal; bounded modern roots may carry resolved, durable/UTC, and provider-person metadata through OpenChestnut. |
 | `document.addDeletion` | api | Append one bounded whole-paragraph tracked deletion using native w:del/w:delText markup. In-paragraph replacements, mixed normal/revision runs, moves, and property changes require an explicit advanced package workflow. |
 | `document.addEndnote` | api | Append one native plain-text endnote at the end of one paragraph or list item. Recognized imported canonical endnotes permit body-text edits only; anchor, kind, native ID, and note topology remain source-bound. |
 | `document.addField` | api | Append a bounded w:fldSimple block for PAGE, NUMPAGES, SECTION, date/time, and selected document-property commands. External-content and arbitrary reference commands fail closed. |
@@ -33,18 +33,20 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.layoutJson` | api | Return page-aware layout JSON with block bounding boxes, section/page ordinals, effective inherited header/footer selections, styles, and target/search slicing. |
 | `document.materializeFields` | api | Transactionally compute canonical inline SEQ counters and REF cached results from native bookmark targets, with dry-run evidence and strict missing-target failure. PAGEREF remains skipped because trustworthy page numbers require a real pagination host. |
 | `document.render` | api | Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs. |
-| `document.replyToComment` | api | Create a model-level comment reply for inspect and preview. OpenChestnut 0.2 does not author modern/extended reply graphs, and imported replies are preservation-only. |
+| `document.replyToComment` | api | Add one source-free direct reply to a root comment. OpenChestnut authors the bounded commentsExtended graph; nested replies and imported topology changes fail closed. |
 | `document.resolve` | api | Resolve stable document, block, table-cell, content-control, bookmark, footnote/endnote, bibliography source ID/tag, header/footer, comment, style, and advertised text-range IDs. |
 | `document.setSectionSettings` | api | Set per-section Word behavior such as different-first-page header/footer activation without changing preserved header/footer references. |
 | `document.setSettings` | api | Set model settings. evenAndOddHeaders and the updateFields refresh hint are inside the OpenChestnut 0.2 DOCX boundary; trackRevisions, mirrorMargins, and documentProtection remain unsupported through the facade. |
 | `document.styles.effective` | api | Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata. |
 | `document.textRange` | api | Inspect or resolve stable textRange anchors such as blockId/text and tableId/cell/row/column/text. Assignment is limited to fully editable text; replace() also supports explicitly advertised source-bound literal patches. |
 | `document.verify` | api | Return QA issues for invalid/duplicate content-control IDs and native IDs, malformed tags/aliases, fake lists, invalid links/citations/bibliography sources, malformed tracked changes, duplicate/dangling/reversed bookmark ranges, invalid footnotes/endnotes, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells. |
+| `documentComment.reopen` | api | Clear the resolved state of a bounded modern comment without changing its root/reply topology or durable identity. |
+| `documentComment.resolve` | api | Set resolved=true for a bounded modern comment. Imported edits re-prove source hashes and commentsExtended topology while keeping thread identity fixed. |
 | `DocumentFile.exportDocx` | api | Export DocumentModel to DOCX through the single bundled OpenChestnut codec. Only limits is accepted; legacy codec and lossy-fallback options fail explicitly. |
 | `DocumentFile.importDocx` | api | Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Recognized inline controls, fields, revisions, notes, citations, simple tables, and other exact profiles are fixed-topology editable; otherwise read-only paragraphs and complex table cells separately advertise textPatchable when one ordinary native text node can be patched without rebuilding the surrounding graph. |
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
-| `DocumentModel.create` | api | Create a document with paragraph/character styles, formatted paragraphs/runs, inline plain-text content controls, canonical inline SEQ/REF/PAGEREF fields, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, bounded whole-block bookmarks, plain-text footnotes/endnotes, canonical bibliography-backed citations, simple fields, a canonical complex TOC placeholder, bounded whole-paragraph tracked insertions/deletions, classic comments, and PNG/JPEG images. Rich/block/data-bound/dropdown/date/checkbox SDTs, other complex field graphs, arbitrary table-style graphs, complex bookmark/note/revision graphs, modern comment graphs, and advanced settings remain unsupported or import-preserved read only. |
+| `DocumentModel.create` | api | Create a document with paragraph/character styles, formatted paragraphs/runs, inline plain-text content controls, canonical inline SEQ/REF/PAGEREF fields, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, bounded whole-block bookmarks, plain-text footnotes/endnotes, canonical bibliography-backed citations, simple fields, a canonical complex TOC placeholder, bounded whole-paragraph tracked insertions/deletions, classic comments, bounded modern root/direct-reply threads, and PNG/JPEG images. Nested/irregular modern threads, rich comment bodies, rich/block/data-bound/dropdown/date/checkbox SDTs, other complex field graphs, arbitrary table-style graphs, complex bookmark/note/revision graphs, and advanced settings remain unsupported or source-bound. |
 | `documentTableCell.replaceText` | api | Apply a literal source-bound text patch to one table cell that advertises textPatchable. The search must resolve to exactly one ordinary native w:t node; whole-cell replacement, cross-run matches, fields, controls, revisions, and ambiguous matches fail closed. |
 | `exportDocxWithOpenChestnut` | api | Export bounded DocumentModel paragraphs/runs, fields, tables, bookmarks, notes, citations, tracked changes, comments, images, sections, numbering, and settings; recognized imports permit exact-profile semantic edits plus hash-bound literal patches to one uniquely matched ordinary paragraph or table-cell w:t node while preserving all surrounding native markup. |
 | `importDocxWithOpenChestnut` | api | Import DOCX bytes through OpenChestnut with source-bound blocks, exact-profile editable semantics, and separate textEditable/textPatchable capability evidence. Literal patch capability never implies whole-paragraph/cell editability; cross-node, ambiguous, field/control/revision text remains fail-closed. |
@@ -121,7 +123,7 @@ Add a whole-paragraph bibliography-backed citation exported as a native w:fldSim
 
 #### `document.addComment`
 
-Attach a classic whole-paragraph Word comment with author, initials, date, and text. Replies, resolution metadata, durable IDs, UTC/person data, and other modern comment extensions fail closed.
+Attach a whole-paragraph Word comment. Classic roots remain minimal; bounded modern roots may carry resolved, durable/UTC, and provider-person metadata through OpenChestnut.
 
 **Schema parameters:**
 
@@ -130,17 +132,17 @@ Attach a classic whole-paragraph Word comment with author, initials, date, and t
 - `author` (string) — Comment author.
 - `initials` (string) — Author initials written to w:initials; derived deterministically from author when omitted.
 - `date` (string) — Optional ISO-style comment timestamp written to w:date.
-- `resolved` (boolean) — Model-only modern resolution metadata; setting it makes canonical DOCX export fail closed.
-- `parentId` (string) — Model-only reply identity; extended comment threads are not authored by OpenChestnut 0.2.
-- `paraId` (string) — Import-preserved commentsExtended identity; edits are unsupported.
-- `durableId` (string) — Import-preserved Office durable identity; source-free use or edits are unsupported.
-- `dateUtc` (string) — Import-preserved Office 2021 UTC metadata; source-free use or edits are unsupported.
-- `person` (object) — Import-preserved people metadata; source-free use or edits are unsupported.
-- `intelligentPlaceholder` (boolean) — Unsupported Office 2021 extension metadata.
+- `resolved` (boolean) — Optional w15:done state. Its presence selects the bounded modern comment graph.
+- `parentId` (string) — Root comment model ID for a direct reply; prefer document.replyToComment().
+- `paraId` (string) — Optional eight-hex-digit w14/w15 paragraph identity; generated deterministically when omitted for a modern source-free graph.
+- `durableId` (string) — Optional Office 2019 durable identity from 00000001 through 7FFFFFFE; generated for the complete thread when required.
+- `dateUtc` (string) — Optional ISO 8601 Office 2021 UTC metadata.
+- `person` (object) — Optional presence identity for this author: providerId is 1-100 characters and userId is 1-300. Every comment with the same author must use the same identity or omit it consistently.
+- `intelligentPlaceholder` (boolean) — Optional Office 2021 intelligent-placeholder flag.
 
 **Schema returns:**
 
-- `comment` (DocumentComment) — Attached classic whole-paragraph comment. Any modern/extended fields make canonical export fail closed.
+- `comment` (DocumentComment) — Attached classic or bounded modern whole-paragraph root comment. Rich bodies and irregular support-part graphs fail closed.
 
 #### `document.addDeletion`
 
@@ -509,7 +511,7 @@ Render an SVG preview by default, return layout JSON with { format: 'layout' }, 
 
 #### `document.replyToComment`
 
-Create a model-level comment reply for inspect and preview. OpenChestnut 0.2 does not author modern/extended reply graphs, and imported replies are preservation-only.
+Add one source-free direct reply to a root comment. OpenChestnut authors the bounded commentsExtended graph; nested replies and imported topology changes fail closed.
 
 **Schema parameters:**
 
@@ -525,7 +527,7 @@ Create a model-level comment reply for inspect and preview. OpenChestnut 0.2 doe
 
 **Schema returns:**
 
-- `comment` (DocumentComment) — Model-level reply for inspect/preview; OpenChestnut 0.2 rejects reply authoring and preserves imported reply graphs read-only.
+- `comment` (DocumentComment) — Source-free direct reply authored through commentsExtended. Replies to replies and additions/removals in an imported fixed-topology thread fail closed.
 
 #### `document.resolve`
 
@@ -601,6 +603,22 @@ Return QA issues for invalid/duplicate content-control IDs and native IDs, malfo
 
 - `report` (object) — Document semantic/layout QA result.
 
+#### `documentComment.reopen`
+
+Clear the resolved state of a bounded modern comment without changing its root/reply topology or durable identity.
+
+**Schema returns:**
+
+- `comment` (DocumentComment) — The same comment facade with resolved=false; root/reply, paragraph, durable, UTC, and people identity remain fixed.
+
+#### `documentComment.resolve`
+
+Set resolved=true for a bounded modern comment. Imported edits re-prove source hashes and commentsExtended topology while keeping thread identity fixed.
+
+**Schema returns:**
+
+- `comment` (DocumentComment) — The same comment facade with resolved=true; imported edits re-prove source hashes and commentsExtended topology.
+
 #### `DocumentFile.exportDocx`
 
 Export DocumentModel to DOCX through the single bundled OpenChestnut codec. Only limits is accepted; legacy codec and lossy-fallback options fail explicitly.
@@ -673,7 +691,7 @@ Apply DOCX part patches with path traversal validation for settings, classic-com
 
 #### `DocumentModel.create`
 
-Create a document with paragraph/character styles, formatted paragraphs/runs, inline plain-text content controls, canonical inline SEQ/REF/PAGEREF fields, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, bounded whole-block bookmarks, plain-text footnotes/endnotes, canonical bibliography-backed citations, simple fields, a canonical complex TOC placeholder, bounded whole-paragraph tracked insertions/deletions, classic comments, and PNG/JPEG images. Rich/block/data-bound/dropdown/date/checkbox SDTs, other complex field graphs, arbitrary table-style graphs, complex bookmark/note/revision graphs, modern comment graphs, and advanced settings remain unsupported or import-preserved read only.
+Create a document with paragraph/character styles, formatted paragraphs/runs, inline plain-text content controls, canonical inline SEQ/REF/PAGEREF fields, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, bounded whole-block bookmarks, plain-text footnotes/endnotes, canonical bibliography-backed citations, simple fields, a canonical complex TOC placeholder, bounded whole-paragraph tracked insertions/deletions, classic comments, bounded modern root/direct-reply threads, and PNG/JPEG images. Nested/irregular modern threads, rich comment bodies, rich/block/data-bound/dropdown/date/checkbox SDTs, other complex field graphs, arbitrary table-style graphs, complex bookmark/note/revision graphs, and advanced settings remain unsupported or source-bound.
 
 **Schema parameters:**
 

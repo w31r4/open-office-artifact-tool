@@ -2035,6 +2035,26 @@ message DocumentComment {
   // authored timestamp so source documents are not assigned synthetic dates.
   optional string created_at = 6;
   DocumentCommentSourceBinding source = 7;
+  // Model identity of the root comment for one bounded direct reply. Empty
+  // means this comment is a root with a real document-story anchor.
+  string parent_comment_id = 8;
+  // Office 2013 commentsExtended thread state. Presence remains distinct from
+  // legacy comments that do not carry a commentsExtended record.
+  optional bool resolved = 9;
+  // Eight hexadecimal digits used by w14:paraId / w15:commentEx.
+  string paragraph_id = 10;
+  // Eight hexadecimal digits used by commentsIds/commentsExtensible.
+  string durable_id = 11;
+  optional string date_utc = 12;
+  DocumentCommentPerson person = 13;
+  optional bool intelligent_placeholder = 14;
+}
+
+// One bounded Word comments-person presence record. Author remains on the
+// classic w:comment; this record only carries provider/user identity.
+message DocumentCommentPerson {
+  string provider_id = 1;
+  string user_id = 2;
 }
 
 // Source-only locators and integrity evidence for a recognized classic DOCX
@@ -2047,6 +2067,11 @@ message DocumentCommentSourceBinding {
   string residual_sha256 = 5;
   string anchor_sha256 = 6;
   bool editable = 7;
+  string extended_graph_sha256 = 8;
+  string comments_ids_graph_sha256 = 9;
+  string comments_extensible_graph_sha256 = 10;
+  string people_graph_sha256 = 11;
+  bool thread_editable = 12;
 }
 
 message DocumentBlock {

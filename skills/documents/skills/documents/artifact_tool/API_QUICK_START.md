@@ -168,6 +168,33 @@ anchor topology are source-bound. Do not use this slice to add/delete comments,
 reply, resolve/reopen, or manipulate `commentsExtended.xml`/`people.xml`;
 modern comment and reply graphs must be preserved or explicitly refused.
 
+## Bounded modern comment thread
+
+For source-free authoring, a root may have direct replies. OpenChestnut writes
+the native commentsExtended graph and optional durable/UTC/person parts:
+
+```js
+const root = document.addComment(target, "Please confirm the evidence.", {
+  author: "Lead reviewer",
+  resolved: false,
+  dateUtc: "2026-07-19T08:00:00Z",
+  person: { providerId: "directory", userId: "lead@example.test" },
+});
+document.replyToComment(root, "Evidence confirmed.", {
+  author: "Release reviewer",
+  dateUtc: "2026-07-19T08:05:00Z",
+  person: { providerId: "directory", userId: "release@example.test" },
+});
+```
+
+For an imported recognized thread, locate the root and reply unambiguously,
+change only `.text`, and call `root.resolve()` or `root.reopen()`. The shipped
+`examples/openchestnut-modern-comment-thread-workflow.mjs` performs the full
+source-hash-bound transaction, second import, identity/topology checks, model
+render, and audit. Imported parentage, paragraph/durable IDs, UTC/person data,
+anchors, and comment count cannot change. Nested replies and irregular support
+parts fail closed.
+
 ## Inline plain-text content controls
 
 Use a paragraph run-level content control when an Agent must fill a bounded
@@ -382,12 +409,12 @@ For final visual QA, export the DOCX and use the packaged `render_docx.py` workf
 - External/internal hyperlinks and source-free bookmarks around one paragraph-like block
 - Plain-text footnotes/endnotes anchored at the end of one paragraph or list item; recognized imported note bodies allow text-only edits
 - PNG/JPEG inline images
-- Classic whole-paragraph comments
+- Classic whole-paragraph comments and bounded modern root/direct-reply threads
 - Standalone whole-paragraph tracked insertions/deletions with one text run, author, and optional ISO timestamp
 - Inline plain-text content-control runs with tag/alias identity, transactional fill-by-tag, and fixed-topology imported edits
 - Canonical bibliography source catalogs and whole-paragraph `CITATION` fields with fixed imported source/tag topology
 
-In-paragraph tracked replacements, mixed accepted/revision runs, nested revisions, moves, property changes, and automatic future-change tracking are advanced package workflows, not ordinary public-model authoring. Bookmarks spanning multiple blocks or table cells, nested/crossing ranges, multi-paragraph or reused note graphs, complex bibliography contributor roles/field switches/output fields, modern comment replies, rich/block/cell/data-bound/dropdown/date/checkbox content controls, complex fields other than the canonical one-paragraph TOC placeholder, floating drawings, and other advanced graphs are likewise outside source-free authoring. Recognized imported whole-block bookmarks are inspectable/resolvable but fixed-topology and read-only. Canonical imported footnote/endnote text, bounded citation/source content, bounded inline plain-text control text/tag/alias, and canonical unrefreshed TOC instruction/display may change, but their anchors, native IDs, tags, and topology remain source-bound; refreshed cross-paragraph TOC graphs and other imported advanced graphs are preserved only while their source evidence remains valid.
+In-paragraph tracked replacements, mixed accepted/revision runs, nested revisions, moves, property changes, and automatic future-change tracking are advanced package workflows, not ordinary public-model authoring. Bookmarks spanning multiple blocks or table cells, nested/crossing ranges, multi-paragraph or reused note graphs, complex bibliography contributor roles/field switches/output fields, nested/irregular modern comment graphs, rich/block/cell/data-bound/dropdown/date/checkbox content controls, complex fields other than the canonical one-paragraph TOC placeholder, floating drawings, and other advanced graphs are likewise outside source-free authoring. Recognized imported whole-block bookmarks are inspectable/resolvable but fixed-topology and read-only. Canonical imported footnote/endnote text, bounded citation/source content, bounded inline plain-text control text/tag/alias, canonical modern-comment text/resolved state, and canonical unrefreshed TOC instruction/display may change, but their anchors, native IDs, tags, and topology remain source-bound; refreshed cross-paragraph TOC graphs and other imported advanced graphs are preserved only while their source evidence remains valid.
 
 Use `DocumentFile.inspectDocx` or `DocumentFile.patchDocx` only when the user explicitly requests package-level inspection or patching. These are deliberate low-level operations, never an automatic fallback for ordinary authoring.
 

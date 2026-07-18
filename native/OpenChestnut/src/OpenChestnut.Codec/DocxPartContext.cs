@@ -180,6 +180,18 @@ internal sealed class DocxPartContext
         _mutatedCommentsPartPath = part.Uri.OriginalString.TrimStart('/');
     }
 
+    internal void MarkCommentSupportPartMutated(OpenXmlPart part)
+    {
+        var pair = Owner.Parts.FirstOrDefault(item => ReferenceEquals(item.OpenXmlPart, part));
+        if (pair.OpenXmlPart is null)
+            throw new CodecException(
+                "document_comment_source_binding_mismatch",
+                "The modeled comment support part is not related from word/document.xml.",
+                part.Uri.OriginalString.TrimStart('/'));
+        _mutatedRelationshipIds.Add(pair.RelationshipId);
+        _mutatedPartPaths.Add(part.Uri.OriginalString.TrimStart('/'));
+    }
+
     internal void MarkNotesMutated(OpenXmlPart part)
     {
         var pair = Owner.Parts.FirstOrDefault(item => ReferenceEquals(item.OpenXmlPart, part));
@@ -219,6 +231,11 @@ internal sealed class DocxPartContext
     internal bool IgnoresModeledRelationship(OpenOffice.Artifact.Wire.V1.OpaqueOpcRelationship relationship) =>
         relationship.SourcePath.Equals("word/document.xml", StringComparison.OrdinalIgnoreCase) &&
         ((relationship.Type.EndsWith("/hyperlink", StringComparison.Ordinal) &&
+          _mutatedRelationshipIds.Contains(relationship.Id)) ||
+         ((relationship.Type.EndsWith("/commentsExtended", StringComparison.OrdinalIgnoreCase) ||
+           relationship.Type.EndsWith("/commentsIds", StringComparison.OrdinalIgnoreCase) ||
+           relationship.Type.EndsWith("/commentsExtensible", StringComparison.OrdinalIgnoreCase) ||
+           relationship.Type.EndsWith("/people", StringComparison.OrdinalIgnoreCase)) &&
           _mutatedRelationshipIds.Contains(relationship.Id)) ||
          (relationship.Type.EndsWith("/comments", StringComparison.Ordinal) &&
           relationship.Id.Equals(_mutatedCommentsRelationshipId, StringComparison.Ordinal)) ||

@@ -569,16 +569,21 @@ class DocumentComment {
     this.date = config.date || undefined;
     this.text = String(text ?? "");
     this.resolved = Boolean(config.resolved);
+    Object.defineProperty(this, "_resolvedSpecified", { value: config.resolved !== undefined, writable: true });
     this.parentId = typeof (config.parentId ?? config.replyToId ?? config.replyTo) === "object" ? (config.parentId ?? config.replyToId ?? config.replyTo)?.id : (config.parentId ?? config.replyToId ?? config.replyTo);
     this.paraId = config.paraId ? String(config.paraId).toUpperCase() : undefined;
     this.durableId = config.durableId ? String(config.durableId).toUpperCase() : undefined;
     this.dateUtc = config.dateUtc;
-    this.person = config.person ? { ...config.person } : (config.providerId || config.userId ? { providerId: config.providerId, userId: config.userId } : undefined);
+    this.person = config.person
+      ? { providerId: String(config.person.providerId ?? ""), userId: String(config.person.userId ?? "") }
+      : (config.providerId || config.userId ? { providerId: String(config.providerId ?? ""), userId: String(config.userId ?? "") } : undefined);
     this.intelligentPlaceholder = Boolean(config.intelligentPlaceholder);
   }
 
   inspectRecord() { return { kind: "comment", id: this.id, targetId: this.targetId, parentId: this.parentId, paraId: this.paraId, durableId: this.durableId, author: this.author, initials: this.initials, date: this.date, dateUtc: this.dateUtc, person: this.person, intelligentPlaceholder: this.intelligentPlaceholder || undefined, resolved: this.resolved, textPreview: this.text.slice(0, 300) }; }
-  toProto() { return { kind: "comment", id: this.id, targetId: this.targetId, parentId: this.parentId, paraId: this.paraId, durableId: this.durableId, author: this.author, initials: this.initials, date: this.date, dateUtc: this.dateUtc, person: this.person, intelligentPlaceholder: this.intelligentPlaceholder || undefined, text: this.text, resolved: this.resolved }; }
+  toProto() { return { kind: "comment", id: this.id, targetId: this.targetId, parentId: this.parentId, paraId: this.paraId, durableId: this.durableId, author: this.author, initials: this.initials, date: this.date, dateUtc: this.dateUtc, person: this.person, intelligentPlaceholder: this.intelligentPlaceholder || undefined, text: this.text, resolved: this._resolvedSpecified ? this.resolved : undefined }; }
+  resolve() { this.resolved = true; this._resolvedSpecified = true; return this; }
+  reopen() { this.resolved = false; this._resolvedSpecified = true; return this; }
 }
 
 function documentBlockHeight(document, block, pageWidth = 612, margin = 72) {

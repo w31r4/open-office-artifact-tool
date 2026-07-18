@@ -8,7 +8,7 @@ Common situations:
 - **Final mode**: remove comments (and optionally accept tracked changes) and deliver a clean `.docx`.
 - **Triage mode**: extract comments into a machine-readable report (JSON/Markdown) for summarization.
 
-> Ordinary classic comment creation and text edits use `DocumentModel`. Modern reply/presence graphs and resolved-state package metadata remain source-bound or explicit low-level operations.
+> Use `DocumentModel` for classic comments and the bounded modern profile: one root with direct replies, optional durable/UTC/person metadata, and resolved state. Imported modern identity, people metadata, anchors, and topology remain source-bound.
 
 ## Add an ordinary classic Word comment
 
@@ -28,9 +28,27 @@ document.addComment(target, "Please confirm Net 45 is acceptable.", {
 await (await DocumentFile.exportDocx(document)).save("reviewed.docx");
 ```
 
-Re-import and assert the comment text, author, and target before rendering. Use
-the OOXML guide only for an explicitly requested advanced anchor/reply graph
-outside the public classic-comment boundary.
+Re-import and assert the comment text, author, and target before rendering.
+
+## Add a bounded modern thread
+
+```js
+const root = document.addComment(target, "Please confirm the evidence.", {
+  author: "Lead reviewer",
+  resolved: false,
+  dateUtc: "2026-07-19T08:00:00Z",
+  person: { providerId: "directory", userId: "lead@example.test" },
+});
+document.replyToComment(root, "Evidence confirmed.", {
+  author: "Release reviewer",
+  dateUtc: "2026-07-19T08:05:00Z",
+  person: { providerId: "directory", userId: "release@example.test" },
+});
+```
+
+OpenChestnut authors `commentsExtended.xml` and any required IDs, extensible,
+and people parts. Only direct replies are supported. A reply to a reply,
+cross-target parent, mention/rich body, or irregular imported graph fails closed.
 
 ## Add comments at scale (review mode)
 For an explicit package-level batch over imported tracked/deleted text, use:
@@ -48,8 +66,16 @@ anchors and modern/reply/resolved/presence metadata, changes only text, then
 re-imports, verifies, model-renders, atomically writes the DOCX, and records a
 source/output-hash-bound audit. For ordinary imported classic comment text,
 edit `document.comments[index].text` only after the same uniqueness and
-source-bound identity checks. For explicitly marking package-level resolved
-state or manipulating unsupported modern metadata:
+source-bound identity checks.
+
+For one recognized modern root plus one direct reply, use
+`examples/openchestnut-modern-comment-thread-workflow.mjs`. It changes only the
+two texts and root resolved state through `.resolve()`/`.reopen()`, then proves
+the same paragraph/durable/person identities and fixed topology after re-import.
+Adding/removing/reparenting an imported comment remains unsupported.
+
+Use the explicit package helper only for comment shapes outside these public
+profiles:
 ```bash
 python scripts/comments_extract.py reviewed.docx --out comments.json
 

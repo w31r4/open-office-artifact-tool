@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
 
-import { DocumentFile, FileBlob } from "open-office-artifact-tool";
+import { DocumentFile, DocumentModel, FileBlob } from "open-office-artifact-tool";
 import {
   createDocumentFromFixture,
   nativeDocumentRenderStatus,
@@ -222,6 +222,81 @@ try {
   assert.equal(classicWorkflowDocument.comments[0].author, "QA Lead");
   assert.equal(classicWorkflowDocument.comments[0].text, "Decision paragraph approved after QA.");
 
+  const modernSourceDocument = DocumentModel.create({ name: "Modern review thread", blocks: [] });
+  const modernTarget = modernSourceDocument.addParagraph("Decision: ship the bounded modern review thread.");
+  const modernRoot = modernSourceDocument.addComment(modernTarget, "Please confirm the release evidence.", {
+    author: "Lead reviewer",
+    initials: "LR",
+    date: "2026-07-19T08:00:00Z",
+    resolved: false,
+    paraId: "11111111",
+    durableId: "33333333",
+    dateUtc: "2026-07-19T08:00:00Z",
+    person: { providerId: "provider-a", userId: "lead@example.test" },
+  });
+  modernSourceDocument.replyToComment(modernRoot, "The evidence is attached.", {
+    author: "Release reviewer",
+    initials: "RR",
+    date: "2026-07-19T08:05:00Z",
+    paraId: "22222222",
+    durableId: "44444444",
+    dateUtc: "2026-07-19T08:05:00Z",
+    person: { providerId: "provider-b", userId: "release@example.test" },
+  });
+  const modernSourcePath = path.join(outputDir, "modern-comment-source.docx");
+  await (await DocumentFile.exportDocx(modernSourceDocument)).save(modernSourcePath);
+  const modernSourceBytes = await fs.readFile(modernSourcePath);
+  const { editModernCommentThread } = await import(
+    "../skills/documents/skills/documents/examples/openchestnut-modern-comment-thread-workflow.mjs"
+  );
+  const modernWorkflowOutput = path.join(outputDir, "modern-comment-reviewed.docx");
+  const modernWorkflowAudit = path.join(outputDir, "modern-comment-audit.json");
+  const modernWorkflow = await editModernCommentThread({
+    inputPath: modernSourcePath,
+    outputPath: modernWorkflowOutput,
+    auditPath: modernWorkflowAudit,
+    anchorText: "bounded modern review thread",
+    expectedRootText: "Please confirm the release evidence.",
+    replacementRootText: "Release evidence approved.",
+    expectedReplyText: "The evidence is attached.",
+    replacementReplyText: "Evidence retained with the approval.",
+    resolved: true,
+  });
+  assert.equal(modernWorkflow.audit.provider.actual, "open-chestnut");
+  assert.equal(modernWorkflow.audit.operation.resolved, true);
+  assert.equal(modernWorkflow.audit.validation.reimport.commentCount, 2);
+  assert.deepEqual(await fs.readFile(modernSourcePath), modernSourceBytes);
+  const modernWorkflowDocument = await DocumentFile.importDocx(await FileBlob.load(modernWorkflowOutput));
+  assert.deepEqual(modernWorkflowDocument.comments.map((comment) => [comment.text, comment.resolved]), [
+    ["Release evidence approved.", true],
+    ["Evidence retained with the approval.", false],
+  ]);
+  assert.equal(modernWorkflowDocument.comments[1].parentId, modernWorkflowDocument.comments[0].id);
+  assert.equal(modernWorkflowDocument.comments[0].durableId, "33333333");
+  assert.deepEqual(modernWorkflowDocument.comments[1].person, {
+    providerId: "provider-b",
+    userId: "release@example.test",
+  });
+  const modernZip = await JSZip.loadAsync(await fs.readFile(modernWorkflowOutput));
+  for (const part of [
+    "word/comments.xml",
+    "word/commentsExtended.xml",
+    "word/commentsIds.xml",
+    "word/commentsExtensible.xml",
+    "word/people.xml",
+  ]) assert.ok(modernZip.file(part), `Expected ${part}`);
+  const modernDocumentXml = await modernZip.file("word/document.xml").async("text");
+  assert.equal((modernDocumentXml.match(/<w:commentRangeStart\b/g) || []).length, 1);
+  assert.equal((modernDocumentXml.match(/<w:commentRangeEnd\b/g) || []).length, 1);
+  assert.equal((modernDocumentXml.match(/<w:commentReference\b/g) || []).length, 1);
+  const modernRender = await verifyDocumentFile(modernWorkflowOutput, {
+    outputDir: path.join(outputDir, "modern-comment-render"),
+    previewFormat: "png",
+    nativeRender: nativeStatus.available ? "required" : "auto",
+  });
+  assert.equal(modernRender.summary.verifyOk, true);
+  assert.equal(modernRender.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+
   const directNumbering = await runFixture("package-numbering");
   const directNumberingDocument = await DocumentFile.importDocx(await FileBlob.load(directNumbering.docxPath));
   assert.equal(directNumberingDocument.blocks.filter((block) => block.kind === "listItem").length, 2);
@@ -284,10 +359,15 @@ try {
   assert.match(skillText, /document\.addTableOfContents/);
   assert.match(skillText, /paragraph\.addField/);
   assert.match(skillText, /openchestnut-classic-comment-edit-workflow\.mjs/);
+  assert.match(skillText, /openchestnut-modern-comment-thread-workflow\.mjs/);
   assert.doesNotMatch(skillText, /Author\/edit with `python-docx`|Default tool: python-docx/);
   const commentsGuide = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "tasks", "comments_manage.md"), "utf8");
   assert.match(commentsGuide, /document\.addComment/);
+  assert.match(commentsGuide, /document\.replyToComment/);
+  assert.match(commentsGuide, /\.resolve\(\)/);
   assert.doesNotMatch(commentsGuide, /If the task is to \*insert\* new comments.+use the OOXML-level guide/);
+  const manifestText = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "manifest.txt"), "utf8");
+  assert.match(manifestText, /^examples\/openchestnut-modern-comment-thread-workflow\.mjs$/m);
   const controlsGuide = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "tasks", "forms_content_controls.md"), "utf8");
   assert.match(controlsGuide, /paragraph\.addTextContentControl/);
   assert.match(controlsGuide, /document\.fillContentControls/);

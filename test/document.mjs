@@ -356,6 +356,111 @@ assert.equal(roundTrip.contentControls[0].text, "Grace Hopper");
 assert.equal(roundTrip.resolve(roundTrip.contentControls[0].targetId)?.text, "Customer: Grace Hopper.");
 assert.equal(roundTrip.verify({ visualQa: true }).ok, true);
 
+const modernCommentDocument = DocumentModel.create({ name: "Modern comment thread", blocks: [] });
+const modernCommentTarget = modernCommentDocument.addParagraph("Review the bounded modern comment thread.");
+const modernRoot = modernCommentDocument.addComment(modernCommentTarget, "Please confirm the evidence.", {
+  author: "Lead reviewer",
+  initials: "LR",
+  date: "2026-07-19T08:00:00Z",
+  resolved: false,
+  paraId: "11111111",
+  durableId: "33333333",
+  dateUtc: "2026-07-19T08:00:00Z",
+  person: { providerId: "provider-a", userId: "lead@example.test" },
+});
+const modernReply = modernCommentDocument.replyToComment(modernRoot, "Evidence confirmed.", {
+  author: "Second reviewer",
+  initials: "SR",
+  date: "2026-07-19T08:05:00Z",
+  paraId: "22222222",
+  durableId: "44444444",
+  dateUtc: "2026-07-19T08:05:00Z",
+  person: { providerId: "provider-b", userId: "second@example.test" },
+});
+assert.equal(modernReply.parentId, modernRoot.id);
+const modernDocx = await DocumentFile.exportDocx(modernCommentDocument);
+const importedModernComments = await DocumentFile.importDocx(modernDocx);
+assert.equal(importedModernComments.comments.length, 2);
+assert.equal(importedModernComments.comments[0].resolved, false);
+assert.equal(importedModernComments.comments[0].paraId, "11111111");
+assert.equal(importedModernComments.comments[0].durableId, "33333333");
+assert.deepEqual(importedModernComments.comments[0].person, { providerId: "provider-a", userId: "lead@example.test" });
+assert.equal(importedModernComments.comments[1].parentId, importedModernComments.comments[0].id);
+assert.equal(importedModernComments.comments[1].targetId, importedModernComments.comments[0].targetId);
+assert.match(importedModernComments.inspect({ kind: "comment" }).ndjson, /"parentId":"document\/comment\/1"/);
+importedModernComments.comments[0].text = "Resolved after public-facade review.";
+importedModernComments.comments[0].resolve();
+importedModernComments.comments[1].text = "Reply retained with the root.";
+const editedModernDocx = await DocumentFile.exportDocx(importedModernComments);
+const roundTripModernComments = await DocumentFile.importDocx(editedModernDocx);
+assert.equal(roundTripModernComments.comments[0].resolved, true);
+assert.equal(roundTripModernComments.comments[0].text, "Resolved after public-facade review.");
+assert.equal(roundTripModernComments.comments[1].text, "Reply retained with the root.");
+assert.equal(roundTripModernComments.comments[1].parentId, roundTripModernComments.comments[0].id);
+roundTripModernComments.comments[0].reopen();
+assert.equal(roundTripModernComments.comments[0].resolved, false);
+
+const explicitOpenCommentDocument = DocumentModel.create({ name: "Explicit open modern comment", blocks: [] });
+const explicitOpenTarget = explicitOpenCommentDocument.addParagraph("Explicit resolved=false selects the modern graph.");
+explicitOpenCommentDocument.addComment(explicitOpenTarget, "Open modern root", {
+  author: "Reviewer",
+  resolved: false,
+});
+const explicitOpenDocx = await DocumentFile.exportDocx(explicitOpenCommentDocument);
+const importedExplicitOpen = await DocumentFile.importDocx(explicitOpenDocx);
+assert.equal(importedExplicitOpen.comments[0].resolved, false);
+assert.match(importedExplicitOpen.comments[0].paraId, /^[0-9A-F]{8}$/);
+assert.equal(importedExplicitOpen.comments[0]._resolvedSpecified, true);
+
+const nestedCommentDocument = DocumentModel.create({ name: "Nested comment rejection", blocks: [] });
+const nestedTarget = nestedCommentDocument.addParagraph("Nested replies fail closed.");
+const nestedRoot = nestedCommentDocument.addComment(nestedTarget, "Root", { author: "Reviewer" });
+const directReply = nestedCommentDocument.replyToComment(nestedRoot, "Direct", { author: "Reviewer" });
+nestedCommentDocument.replyToComment(directReply, "Nested", { author: "Reviewer" });
+await assert.rejects(
+  () => DocumentFile.exportDocx(nestedCommentDocument),
+  (error) => error?.code === "unsupported_document_comment_thread" && /nested reply/i.test(error.message),
+);
+
+const importedModernMetadataEdit = await DocumentFile.importDocx(modernDocx);
+importedModernMetadataEdit.comments[0].person.userId = "tampered@example.test";
+await assert.rejects(
+  () => DocumentFile.exportDocx(importedModernMetadataEdit),
+  (error) => error?.code === "unsupported_document_comment_edit" && /source-bound/i.test(error.message),
+);
+
+const importedModernTopologyEdit = await DocumentFile.importDocx(modernDocx);
+importedModernTopologyEdit.replyToComment(importedModernTopologyEdit.comments[0], "A new imported reply is outside the fixed topology.", { author: "Reviewer" });
+await assert.rejects(
+  () => DocumentFile.exportDocx(importedModernTopologyEdit),
+  (error) => error?.code === "document_comment_topology_changed",
+);
+
+const invalidDurableCommentDocument = DocumentModel.create({ name: "Invalid durable comment", blocks: [] });
+const invalidDurableTarget = invalidDurableCommentDocument.addParagraph("Invalid durable IDs fail closed.");
+invalidDurableCommentDocument.addComment(invalidDurableTarget, "Invalid durable ID", {
+  author: "Reviewer",
+  resolved: false,
+  durableId: "FFFFFFFF",
+});
+await assert.rejects(
+  () => DocumentFile.exportDocx(invalidDurableCommentDocument),
+  (error) => error?.code === "invalid_document_comment" && /00000001.*7FFFFFFE/i.test(error.message),
+);
+
+const inconsistentPeopleDocument = DocumentModel.create({ name: "Inconsistent people", blocks: [] });
+const inconsistentPeopleTarget = inconsistentPeopleDocument.addParagraph("People metadata must remain author-consistent.");
+const inconsistentPeopleRoot = inconsistentPeopleDocument.addComment(inconsistentPeopleTarget, "Root", {
+  author: "Same reviewer",
+  resolved: false,
+  person: { providerId: "directory", userId: "reviewer@example.test" },
+});
+inconsistentPeopleDocument.replyToComment(inconsistentPeopleRoot, "Reply", { author: "Same reviewer" });
+await assert.rejects(
+  () => DocumentFile.exportDocx(inconsistentPeopleDocument),
+  (error) => error?.code === "invalid_document_comment" && /inconsistent people metadata/i.test(error.message),
+);
+
 const importedWithChangedContentControlTopology = await DocumentFile.importDocx(firstDocx);
 const removedControl = importedWithChangedContentControlTopology.contentControls[0];
 delete importedWithChangedContentControlTopology.resolve(removedControl.targetId).runs[removedControl.runIndex].contentControl;

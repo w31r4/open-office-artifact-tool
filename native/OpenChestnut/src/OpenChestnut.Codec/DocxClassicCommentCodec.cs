@@ -20,16 +20,19 @@ internal sealed record DocxClassicCommentSource(
 
 internal sealed record DocxClassicCommentGraph(
     WordprocessingCommentsPart Part,
-    IReadOnlyList<DocxClassicCommentSource> Comments);
+    IReadOnlyList<DocxClassicCommentSource> Comments,
+    DocxExtendedCommentGraph Extended);
 
-// Owns a deliberately bounded classic WordprocessingML comment profile:
-// one top-level body paragraph is anchored by exactly one start/end/reference
-// triplet, and the comment body contains one paragraph/run/text. Rich or
-// extended comment graphs remain in the opaque source package and fail closed.
+// Owns classic w:comment bodies and their document-story anchors. The optional
+// Office 2013+ thread/support parts are delegated to DocxExtendedCommentCodec.
+// Roots use one exact whole-paragraph anchor; direct replies share that root
+// anchor and never pretend to own an independent story range.
 internal static class DocxClassicCommentCodec
 {
     private const string WordprocessingNamespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
     private const int MaxAuthorLength = 255;
+    private const int MaxProviderIdLength = 100;
+    private const int MaxUserIdLength = 300;
     private const int MaxInitialsLength = 9;
     private const int MaxTimestampLength = 64;
     private const int MaxTextLength = 1_000_000;
@@ -47,7 +50,7 @@ internal static class DocxClassicCommentCodec
         {
             diagnostics.Add(CodecProtocol.Warning(
                 "unsupported_document_comments_preserved",
-                $"Preserved a DOCX comment graph that is outside the editable classic-comment profile: {reason}",
+                $"Preserved a DOCX comment graph that is outside the editable bounded-comment profile: {reason}",
                 "word/comments.xml"));
             return;
         }
@@ -81,10 +84,12 @@ internal static class DocxClassicCommentCodec
                 $"Document has {document.Comments.Count} comments and exceeds max_cells ({limits.MaxCells}).");
 
         var ids = new HashSet<string>(StringComparer.Ordinal);
+        var commentsById = new Dictionary<string, DocumentComment>(StringComparer.Ordinal);
         foreach (var comment in document.Comments)
         {
             if (string.IsNullOrWhiteSpace(comment.Id) || !ids.Add(comment.Id))
                 throw new CodecException("invalid_document_comment", "Document comments require unique, non-empty IDs.");
+            commentsById.Add(comment.Id, comment);
             if (!blocks.TryGetValue(comment.TargetBlockId, out var target))
                 throw new CodecException(
                     "invalid_document_comment",
@@ -112,6 +117,19 @@ internal static class DocxClassicCommentCodec
                         "invalid_document_comment",
                         $"Document comment {comment.Id} created_at must be an ISO 8601 date-time.");
             }
+            ValidateOptionalHex(comment.ParagraphId, $"Document comment {comment.Id} paragraph_id");
+            ValidateOptionalDurableId(comment.DurableId, $"Document comment {comment.Id} durable_id");
+            if (comment.HasDateUtc)
+            {
+                ValidateText(comment.DateUtc, $"Document comment {comment.Id} date_utc", 1, MaxTimestampLength);
+                if (!DateTimeOffset.TryParse(comment.DateUtc, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out _))
+                    throw new CodecException("invalid_document_comment", $"Document comment {comment.Id} date_utc must be an ISO 8601 date-time.");
+            }
+            if (comment.Person is not null)
+            {
+                ValidateText(comment.Person.ProviderId, $"Document comment {comment.Id} person provider_id", 1, MaxProviderIdLength);
+                ValidateText(comment.Person.UserId, $"Document comment {comment.Id} person user_id", 1, MaxUserIdLength);
+            }
 
             if (comment.Source is { } source)
             {
@@ -123,7 +141,33 @@ internal static class DocxClassicCommentCodec
                     throw new CodecException(
                         "invalid_document_comment_source_binding",
                         $"Document comment {comment.Id} has an incomplete source binding.");
+                if (source.ThreadEditable && string.IsNullOrWhiteSpace(source.ExtendedGraphSha256))
+                    throw new CodecException(
+                        "invalid_document_comment_source_binding",
+                        $"Modern document comment {comment.Id} has no extended graph binding.");
             }
+        }
+
+        foreach (var comment in document.Comments.Where(comment => comment.ParentCommentId.Length > 0))
+        {
+            if (!commentsById.TryGetValue(comment.ParentCommentId, out var parent))
+                throw new CodecException("invalid_document_comment_thread", $"Document comment {comment.Id} references missing parent {comment.ParentCommentId}.");
+            if (parent.ParentCommentId.Length > 0)
+                throw new CodecException("unsupported_document_comment_thread", $"Document comment {comment.Id} is nested; only direct replies to roots are supported.");
+            if (!parent.TargetBlockId.Equals(comment.TargetBlockId, StringComparison.Ordinal))
+                throw new CodecException("invalid_document_comment_thread", $"Document comment {comment.Id} and root {parent.Id} must target the same block.");
+            if (comment.HasIntelligentPlaceholder && comment.IntelligentPlaceholder)
+                throw new CodecException("invalid_document_comment_thread", $"Document reply {comment.Id} cannot be an intelligent placeholder.");
+        }
+        foreach (var authorGroup in document.Comments.GroupBy(comment => comment.Author, StringComparer.Ordinal))
+        {
+            var profiles = authorGroup.Select(comment => comment.Person is null
+                    ? string.Empty
+                    : Convert.ToBase64String(comment.Person.ToByteArray()))
+                .Distinct(StringComparer.Ordinal)
+                .Count();
+            if (profiles != 1)
+                throw new CodecException("invalid_document_comment", $"Document comment author {authorGroup.Key} has conflicting people metadata.");
         }
     }
 
@@ -140,7 +184,7 @@ internal static class DocxClassicCommentCodec
             targets[document.Blocks[index].Id] = paragraph;
         }
 
-        var authored = new List<(DocumentComment Artifact, string NativeId, W.Paragraph Target)>();
+        var authored = new List<(DocumentComment Artifact, string NativeId, W.Paragraph Target, W.Comment Element)>();
         for (var index = 0; index < document.Comments.Count; index++)
         {
             var artifact = document.Comments[index];
@@ -149,12 +193,14 @@ internal static class DocxClassicCommentCodec
                     "unsupported_document_comment_target",
                     $"Document comment {artifact.Id} does not resolve to an authored top-level paragraph.");
             var nativeId = index.ToString(CultureInfo.InvariantCulture);
-            part.Comments.Append(BuildComment(artifact, nativeId));
-            authored.Add((artifact, nativeId, target));
+            var element = BuildComment(artifact, nativeId);
+            part.Comments.Append(element);
+            authored.Add((artifact, nativeId, target, element));
         }
 
-        foreach (var group in authored.GroupBy(item => item.Target))
-            AddWholeParagraphAnchors(group.Key, group.ToArray());
+        foreach (var group in authored.Where(item => item.Artifact.ParentCommentId.Length == 0).GroupBy(item => item.Target))
+            AddWholeParagraphAnchors(group.Key, group.Select(item => (item.Artifact, item.NativeId, item.Target)).ToArray());
+        DocxExtendedCommentCodec.Author(context.Owner, authored.Select(item => (item.Artifact, item.NativeId, item.Element)).ToArray());
         part.Comments.Save();
     }
 
@@ -208,7 +254,8 @@ internal static class DocxClassicCommentCodec
         var sourceByNativeId = graph.Comments.ToDictionary(
             item => item.Artifact.Source.NativeCommentId,
             StringComparer.Ordinal);
-        var changed = false;
+        var classicChanged = false;
+        var extendedChanged = false;
         foreach (var requested in document.Comments)
         {
             var binding = requested.Source ?? throw new CodecException(
@@ -221,17 +268,28 @@ internal static class DocxClassicCommentCodec
                     $"Document comment {requested.Id} does not resolve to its native source comment.",
                     "word/comments.xml");
             var original = source.Artifact;
-            AssertBindingMatches(requested, binding, graph.Part.Comments!, source, original);
+            AssertBindingMatches(requested, binding, graph, source, original);
 
             var requestedHash = SemanticHash(requested);
             if (requestedHash.Equals(binding.SemanticSha256, StringComparison.OrdinalIgnoreCase)) continue;
-            if (!binding.Editable || requested.Id != original.Id || requested.TargetBlockId != original.TargetBlockId)
+            if (!binding.Editable || requested.Id != original.Id || requested.TargetBlockId != original.TargetBlockId ||
+                requested.ParentCommentId != original.ParentCommentId || requested.ParagraphId != original.ParagraphId ||
+                requested.DurableId != original.DurableId || requested.HasDateUtc != original.HasDateUtc ||
+                requested.DateUtc != original.DateUtc || requested.HasIntelligentPlaceholder != original.HasIntelligentPlaceholder ||
+                requested.IntelligentPlaceholder != original.IntelligentPlaceholder ||
+                !Equals(requested.Person, original.Person) ||
+                graph.Extended.PeoplePart is not null && requested.Author != original.Author)
                 throw new CodecException(
                     "unsupported_document_comment_edit",
-                    $"Document comment {requested.Id} changes source-bound identity or target topology.",
+                    $"Document comment {requested.Id} changes source-bound identity, thread topology, durable/person metadata, or a people-bound author.",
                     "word/comments.xml");
 
-            ApplyValues(source.Element, requested);
+            if (!ClassicValuesEqual(requested, original))
+            {
+                ApplyValues(source.Element, requested);
+                classicChanged = true;
+            }
+            extendedChanged |= DocxExtendedCommentCodec.ApplyResolved(graph.Extended, binding.NativeCommentId, requested);
             if (!GraphResidualHash(graph.Part.Comments!).Equals(binding.ResidualSha256, StringComparison.OrdinalIgnoreCase))
                 throw new CodecException(
                     "document_comment_residual_not_preserved",
@@ -242,32 +300,38 @@ internal static class DocxClassicCommentCodec
                     "document_comment_anchor_not_preserved",
                     $"Document comment {requested.Id} changed its source anchor triplet.",
                     "word/document.xml");
-            var verified = ReadArtifact(
-                graph.Part.Comments!,
-                source.Element,
-                requested.Id,
-                original.TargetBlockId,
-                original.Source.TargetBodyIndex,
-                source.Start,
-                source.End,
-                source.ReferenceRun);
-            if (!SemanticHash(verified).Equals(requestedHash, StringComparison.OrdinalIgnoreCase))
+        }
+
+        if (!classicChanged && !extendedChanged) return;
+        if (classicChanged)
+        {
+            graph.Part.Comments!.Save();
+            context.MarkCommentsMutated(graph.Part);
+        }
+        if (extendedChanged) DocxExtendedCommentCodec.SaveResolved(graph.Extended, context);
+
+        if (!TryReadGraph(context, body, document, out var verifiedGraph, out var verifyReason))
+            throw new CodecException(
+                "document_comment_semantics_not_applied",
+                $"Edited document comments no longer match the bounded profile: {verifyReason}",
+                "word/comments.xml");
+        var verifiedByNativeId = verifiedGraph.Comments.ToDictionary(item => item.Artifact.Source.NativeCommentId, StringComparer.Ordinal);
+        foreach (var requested in document.Comments)
+        {
+            var nativeId = requested.Source!.NativeCommentId;
+            if (!verifiedByNativeId.TryGetValue(nativeId, out var verified) ||
+                !SemanticHash(verified.Artifact).Equals(SemanticHash(requested), StringComparison.OrdinalIgnoreCase))
                 throw new CodecException(
                     "document_comment_semantics_not_applied",
                     $"Document comment {requested.Id} does not match the requested semantics after editing.",
                     "word/comments.xml");
-            changed = true;
         }
-
-        if (!changed) return;
-        graph.Part.Comments!.Save();
-        context.MarkCommentsMutated(graph.Part);
     }
 
     private static void AssertBindingMatches(
         DocumentComment requested,
         DocumentCommentSourceBinding binding,
-        W.Comments commentsRoot,
+        DocxClassicCommentGraph graph,
         DocxClassicCommentSource source,
         DocumentComment original)
     {
@@ -279,8 +343,17 @@ internal static class DocxClassicCommentCodec
             !binding.ResidualSha256.Equals(actual.ResidualSha256, StringComparison.OrdinalIgnoreCase) ||
             !binding.AnchorSha256.Equals(actual.AnchorSha256, StringComparison.OrdinalIgnoreCase) ||
             binding.Editable != actual.Editable ||
+            !binding.ExtendedGraphSha256.Equals(actual.ExtendedGraphSha256, StringComparison.OrdinalIgnoreCase) ||
+            !binding.CommentsIdsGraphSha256.Equals(actual.CommentsIdsGraphSha256, StringComparison.OrdinalIgnoreCase) ||
+            !binding.CommentsExtensibleGraphSha256.Equals(actual.CommentsExtensibleGraphSha256, StringComparison.OrdinalIgnoreCase) ||
+            !binding.PeopleGraphSha256.Equals(actual.PeopleGraphSha256, StringComparison.OrdinalIgnoreCase) ||
+            binding.ThreadEditable != actual.ThreadEditable ||
             !HashElement(source.Element).Equals(binding.CommentElementSha256, StringComparison.OrdinalIgnoreCase) ||
-            !GraphResidualHash(commentsRoot).Equals(binding.ResidualSha256, StringComparison.OrdinalIgnoreCase) ||
+            !GraphResidualHash(graph.Part.Comments!).Equals(binding.ResidualSha256, StringComparison.OrdinalIgnoreCase) ||
+            !graph.Extended.ExtendedGraphSha256.Equals(binding.ExtendedGraphSha256, StringComparison.OrdinalIgnoreCase) ||
+            !graph.Extended.CommentsIdsGraphSha256.Equals(binding.CommentsIdsGraphSha256, StringComparison.OrdinalIgnoreCase) ||
+            !graph.Extended.CommentsExtensibleGraphSha256.Equals(binding.CommentsExtensibleGraphSha256, StringComparison.OrdinalIgnoreCase) ||
+            !graph.Extended.PeopleGraphSha256.Equals(binding.PeopleGraphSha256, StringComparison.OrdinalIgnoreCase) ||
             !AnchorHash(source.Start, source.End, source.ReferenceRun).Equals(binding.AnchorSha256, StringComparison.OrdinalIgnoreCase) ||
             !SemanticHash(original).Equals(binding.SemanticSha256, StringComparison.OrdinalIgnoreCase))
             throw new CodecException(
@@ -298,11 +371,6 @@ internal static class DocxClassicCommentCodec
     {
         graph = null!;
         reason = string.Empty;
-        if (context.Owner.Parts.Any(pair => IsExtendedCommentRelationship(pair.OpenXmlPart.RelationshipType)))
-        {
-            reason = "extended, durable, or people comment relationships are present";
-            return false;
-        }
         var part = context.Owner.WordprocessingCommentsPart;
         if (part?.Comments is null)
         {
@@ -334,18 +402,27 @@ internal static class DocxClassicCommentCodec
                 return false;
             }
         }
+        if (!DocxExtendedCommentCodec.TryRead(context.Owner, elements, out var extended, out reason)) return false;
+
+        var modelIdByNativeId = elements.Select((element, index) => (NativeId: element.Id!.Value!, ModelId: $"document/comment/{index + 1}"))
+            .ToDictionary(item => item.NativeId, item => item.ModelId, StringComparer.Ordinal);
+        var nativeIdByParagraphId = extended.ByNativeCommentId
+            .ToDictionary(item => item.Value.ParagraphId, item => item.Key, StringComparer.Ordinal);
+        var rootNativeIds = elements.Select(element => element.Id!.Value!)
+            .Where(nativeId => !extended.IsModern || extended.ByNativeCommentId[nativeId].ParentParagraphId.Length == 0)
+            .ToHashSet(StringComparer.Ordinal);
 
         var starts = body.Descendants<W.CommentRangeStart>().ToArray();
         var ends = body.Descendants<W.CommentRangeEnd>().ToArray();
         var references = body.Descendants<W.CommentReference>().ToArray();
-        if (starts.Length != elements.Length || ends.Length != elements.Length || references.Length != elements.Length)
+        if (starts.Length != rootNativeIds.Count || ends.Length != rootNativeIds.Count || references.Length != rootNativeIds.Count)
         {
-            reason = "comment/start/end/reference counts do not match";
+            reason = "root-comment/start/end/reference counts do not match";
             return false;
         }
-        if (starts.Any(item => !nativeIds.Contains(item.Id?.Value ?? string.Empty)) ||
-            ends.Any(item => !nativeIds.Contains(item.Id?.Value ?? string.Empty)) ||
-            references.Any(item => !nativeIds.Contains(item.Id?.Value ?? string.Empty)))
+        if (starts.Any(item => !rootNativeIds.Contains(item.Id?.Value ?? string.Empty)) ||
+            ends.Any(item => !rootNativeIds.Contains(item.Id?.Value ?? string.Empty)) ||
+            references.Any(item => !rootNativeIds.Contains(item.Id?.Value ?? string.Empty)))
         {
             reason = "the body contains a dangling or foreign comment anchor";
             return false;
@@ -360,11 +437,9 @@ internal static class DocxClassicCommentCodec
                 return false;
             }
         }
-        var sources = new List<DocxClassicCommentSource>(elements.Length);
-        for (var index = 0; index < elements.Length; index++)
+        var rootAnchors = new Dictionary<string, (W.Paragraph Target, W.CommentRangeStart Start, W.CommentRangeEnd End, W.Run ReferenceRun, uint BodyIndex, DocumentBlock Block)>(StringComparer.Ordinal);
+        foreach (var nativeId in rootNativeIds)
         {
-            var element = elements[index];
-            var nativeId = element.Id!.Value!;
             var matchingStarts = starts.Where(item => item.Id?.Value == nativeId).ToArray();
             var matchingEnds = ends.Where(item => item.Id?.Value == nativeId).ToArray();
             var matchingReferences = references.Where(item => item.Id?.Value == nativeId).ToArray();
@@ -386,25 +461,52 @@ internal static class DocxClassicCommentCodec
                 reason = $"comment {nativeId} target does not resolve to a modeled body block";
                 return false;
             }
+            rootAnchors.Add(nativeId, (target, matchingStarts[0], matchingEnds[0], referenceRun, bodyIndex, block));
+        }
+
+        var sources = new List<DocxClassicCommentSource>(elements.Length);
+        for (var index = 0; index < elements.Length; index++)
+        {
+            var element = elements[index];
+            var nativeId = element.Id!.Value!;
+            var extendedInfo = extended.IsModern ? extended.ByNativeCommentId[nativeId] : null;
+            var rootNativeId = nativeId;
+            var parentModelId = string.Empty;
+            if (extendedInfo?.ParentParagraphId.Length > 0)
+            {
+                if (!nativeIdByParagraphId.TryGetValue(extendedInfo.ParentParagraphId, out rootNativeId) || !modelIdByNativeId.TryGetValue(rootNativeId, out parentModelId))
+                {
+                    reason = $"comment {nativeId} parent does not resolve to a root comment";
+                    return false;
+                }
+            }
+            if (!rootAnchors.TryGetValue(rootNativeId, out var anchor))
+            {
+                reason = $"comment {nativeId} does not resolve to a root anchor";
+                return false;
+            }
             var artifact = ReadArtifact(
                 part.Comments,
                 element,
                 $"document/comment/{index + 1}",
-                block.Id,
-                bodyIndex,
-                matchingStarts[0],
-                matchingEnds[0],
-                referenceRun);
+                anchor.Block.Id,
+                anchor.BodyIndex,
+                anchor.Start,
+                anchor.End,
+                anchor.ReferenceRun,
+                extended,
+                extendedInfo,
+                parentModelId);
             sources.Add(new DocxClassicCommentSource(
                 element,
-                target,
-                matchingStarts[0],
-                matchingEnds[0],
-                referenceRun,
+                anchor.Target,
+                anchor.Start,
+                anchor.End,
+                anchor.ReferenceRun,
                 artifact));
         }
 
-        graph = new DocxClassicCommentGraph(part, sources);
+        graph = new DocxClassicCommentGraph(part, sources, extended);
         return true;
     }
 
@@ -416,7 +518,10 @@ internal static class DocxClassicCommentCodec
         uint bodyIndex,
         W.CommentRangeStart start,
         W.CommentRangeEnd end,
-        W.Run referenceRun)
+        W.Run referenceRun,
+        DocxExtendedCommentGraph extended,
+        DocxExtendedCommentInfo? extendedInfo,
+        string parentCommentId)
     {
         var artifact = new DocumentComment
         {
@@ -429,6 +534,16 @@ internal static class DocxClassicCommentCodec
         if (initials is not null) artifact.Initials = initials;
         var createdAt = AttributeValue(element, "date");
         if (createdAt is not null) artifact.CreatedAt = createdAt;
+        if (extendedInfo is not null)
+        {
+            artifact.ParentCommentId = parentCommentId;
+            artifact.Resolved = extendedInfo.Resolved;
+            artifact.ParagraphId = extendedInfo.ParagraphId;
+            artifact.DurableId = extendedInfo.DurableId;
+            if (extendedInfo.DateUtc.Length > 0) artifact.DateUtc = extendedInfo.DateUtc;
+            if (extendedInfo.Person is not null) artifact.Person = extendedInfo.Person.Clone();
+            if (extendedInfo.IntelligentPlaceholder) artifact.IntelligentPlaceholder = true;
+        }
         artifact.Source = new DocumentCommentSourceBinding
         {
             NativeCommentId = element.Id?.Value ?? string.Empty,
@@ -437,6 +552,11 @@ internal static class DocxClassicCommentCodec
             ResidualSha256 = GraphResidualHash(commentsRoot),
             AnchorSha256 = AnchorHash(start, end, referenceRun),
             Editable = true,
+            ExtendedGraphSha256 = extended.ExtendedGraphSha256,
+            CommentsIdsGraphSha256 = extended.CommentsIdsGraphSha256,
+            CommentsExtensibleGraphSha256 = extended.CommentsExtensibleGraphSha256,
+            PeopleGraphSha256 = extended.PeopleGraphSha256,
+            ThreadEditable = extended.IsModern,
         };
         artifact.Source.SemanticSha256 = SemanticHash(artifact);
         return artifact;
@@ -533,11 +653,10 @@ internal static class DocxClassicCommentCodec
                (startIndex < contentIndexes.Min() && endIndex > contentIndexes.Max());
     }
 
-    private static bool IsExtendedCommentRelationship(string relationshipType) =>
-        relationshipType.EndsWith("/commentsExtended", StringComparison.OrdinalIgnoreCase) ||
-        relationshipType.EndsWith("/commentsIds", StringComparison.OrdinalIgnoreCase) ||
-        relationshipType.EndsWith("/commentsExtensible", StringComparison.OrdinalIgnoreCase) ||
-        relationshipType.EndsWith("/people", StringComparison.OrdinalIgnoreCase);
+    private static bool ClassicValuesEqual(DocumentComment left, DocumentComment right) =>
+        left.Author == right.Author && left.Text == right.Text &&
+        left.HasInitials == right.HasInitials && left.Initials == right.Initials &&
+        left.HasCreatedAt == right.HasCreatedAt && left.CreatedAt == right.CreatedAt;
 
     private static string SemanticHash(DocumentComment comment)
     {
@@ -606,5 +725,21 @@ internal static class DocxClassicCommentCodec
                 $"{name} contains characters that cannot be represented in XML.",
                 innerException: exception);
         }
+    }
+
+    private static void ValidateOptionalHex(string value, string name)
+    {
+        if (value.Length == 0) return;
+        if (value.Length != 8 || value.Any(character => !Uri.IsHexDigit(character)))
+            throw new CodecException("invalid_document_comment", $"{name} must contain exactly eight hexadecimal digits when present.");
+    }
+
+    private static void ValidateOptionalDurableId(string value, string name)
+    {
+        if (value.Length == 0) return;
+        ValidateOptionalHex(value, name);
+        if (!uint.TryParse(value, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var number) ||
+            number == 0 || number >= 0x7FFFFFFF)
+            throw new CodecException("invalid_document_comment", $"{name} must be between 00000001 and 7FFFFFFE when present.");
     }
 }

@@ -35,6 +35,7 @@ references/header_templates.md
 artifact_tool/API_QUICK_START.md
 examples/openchestnut-end-to-end.mjs
 examples/openchestnut-classic-comment-edit-workflow.mjs
+examples/openchestnut-modern-comment-thread-workflow.mjs
 scripts/watermark_audit_remove.py
 scripts/internal_nav.py
 scripts/xlsx_to_docx_table.py

@@ -2221,6 +2221,74 @@ function documentCommentSnapshot(comment) {
   };
 }
 
+const DOCUMENT_COMMENT_HEX_ID = /^[0-9A-F]{8}$/;
+
+function validateDocumentCommentThreads(document) {
+  const byId = new Map();
+  for (const comment of document.comments) {
+    const id = String(comment.id || "");
+    if (!id || byId.has(id)) {
+      throw new OpenChestnutCodecError("Document comments require unique, non-empty IDs.", [], { code: "invalid_document_comment" });
+    }
+    byId.set(id, comment);
+  }
+  for (const comment of document.comments) {
+    if (comment.parentId) {
+      const parent = byId.get(String(comment.parentId));
+      if (!parent) {
+        throw new OpenChestnutCodecError(`Document comment ${comment.id} references missing parent ${comment.parentId}.`, [], { code: "invalid_document_comment_thread" });
+      }
+      if (parent.parentId) {
+        throw new OpenChestnutCodecError(`Document comment ${comment.id} is a nested reply; OpenChestnut supports roots plus direct replies only.`, [], { code: "unsupported_document_comment_thread" });
+      }
+      if (parent.targetId !== comment.targetId) {
+        throw new OpenChestnutCodecError(`Document comment ${comment.id} and root ${parent.id} must target the same block.`, [], { code: "invalid_document_comment_thread" });
+      }
+      if (comment.intelligentPlaceholder) {
+        throw new OpenChestnutCodecError(`Document reply ${comment.id} cannot be an intelligent placeholder.`, [], { code: "invalid_document_comment_thread" });
+      }
+    }
+    for (const [name, value] of [["paraId", comment.paraId], ["durableId", comment.durableId]]) {
+      if (value != null && value !== "" && !DOCUMENT_COMMENT_HEX_ID.test(String(value).toUpperCase())) {
+        throw new OpenChestnutCodecError(`Document comment ${comment.id} ${name} must contain exactly eight hexadecimal digits.`, [], { code: "invalid_document_comment" });
+      }
+    }
+    if (comment.durableId) {
+      const durableNumber = Number.parseInt(comment.durableId, 16);
+      if (durableNumber <= 0 || durableNumber >= 0x7FFFFFFF) {
+        throw new OpenChestnutCodecError(`Document comment ${comment.id} durableId must be between 00000001 and 7FFFFFFE.`, [], { code: "invalid_document_comment" });
+      }
+    }
+    if (comment.dateUtc != null) {
+      const dateUtc = String(comment.dateUtc);
+      if (!dateUtc || dateUtc.length > 64 || Number.isNaN(Date.parse(dateUtc))) {
+        throw new OpenChestnutCodecError(`Document comment ${comment.id} dateUtc must be an ISO 8601 date-time of at most 64 characters.`, [], { code: "invalid_document_comment" });
+      }
+    }
+    if (comment.person) {
+      const providerId = String(comment.person.providerId ?? "");
+      const userId = String(comment.person.userId ?? "");
+      if (!providerId || !userId || providerId.length > 100 || userId.length > 300) {
+        throw new OpenChestnutCodecError(`Document comment ${comment.id} person requires providerId of 1 through 100 characters and userId of 1 through 300 characters.`, [], { code: "invalid_document_comment" });
+      }
+    }
+  }
+  const commentsByAuthor = new Map();
+  for (const comment of document.comments) {
+    const author = String(comment.author || "");
+    if (!commentsByAuthor.has(author)) commentsByAuthor.set(author, []);
+    commentsByAuthor.get(author).push(comment);
+  }
+  for (const comments of commentsByAuthor.values()) {
+    const profiles = new Set(comments.map((comment) => comment.person
+      ? `${comment.person.providerId}\u0000${comment.person.userId}`
+      : ""));
+    if (profiles.size > 1) {
+      throw new OpenChestnutCodecError(`Document comment author ${comments[0].author} has inconsistent people metadata.`, [], { code: "invalid_document_comment" });
+    }
+  }
+}
+
 function documentBookmarkSnapshot(bookmark) {
   return {
     id: bookmark.id,
@@ -2401,20 +2469,29 @@ function documentBookmark(bookmark, slot, document) {
 }
 
 function documentComment(comment, slot) {
-  const advanced = [
-    ["parentId", comment.parentId],
-    ["resolved", comment.resolved === true],
-    ["paraId", comment.paraId],
-    ["durableId", comment.durableId],
-    ["dateUtc", comment.dateUtc],
-    ["person", comment.person],
-    ["intelligentPlaceholder", comment.intelligentPlaceholder === true],
-  ].filter(([, value]) => value != null && value !== false);
-  if (advanced.length) {
-    throw new OpenChestnutCodecError(`Document comment ${comment.id} uses extended comment fields outside the classic OpenChestnut slice: ${advanced.map(([name]) => name).join(", ")}.`, [], { code: "unsupported_document_comment_features" });
-  }
   if (slot && (comment.id !== slot.wire.id || comment.targetId !== slot.wire.targetBlockId)) {
     throw new OpenChestnutCodecError(`Document comment ${comment.id} identity and target are source-bound.`, [], { code: "unsupported_document_comment_edit" });
+  }
+  if (slot) {
+    const immutable = {
+      parentId: slot.wire.parentCommentId || undefined,
+      paraId: slot.wire.paragraphId || undefined,
+      durableId: slot.wire.durableId || undefined,
+      dateUtc: slot.wire.dateUtc,
+      person: slot.wire.person ? { providerId: slot.wire.person.providerId, userId: slot.wire.person.userId } : undefined,
+      intelligentPlaceholder: Boolean(slot.wire.intelligentPlaceholder),
+    };
+    const requested = {
+      parentId: comment.parentId || undefined,
+      paraId: comment.paraId || undefined,
+      durableId: comment.durableId || undefined,
+      dateUtc: comment.dateUtc,
+      person: comment.person ? { providerId: String(comment.person.providerId ?? ""), userId: String(comment.person.userId ?? "") } : undefined,
+      intelligentPlaceholder: Boolean(comment.intelligentPlaceholder),
+    };
+    if (JSON.stringify(requested) !== JSON.stringify(immutable)) {
+      throw new OpenChestnutCodecError(`Document comment ${comment.id} parent, paragraph/durable identity, UTC/person metadata, and intelligent-placeholder state are source-bound.`, [], { code: "unsupported_document_comment_edit" });
+    }
   }
   if (slot && JSON.stringify(documentCommentSnapshot(comment)) === JSON.stringify(slot.publicSnapshot)) return slot.wire;
   const author = String(comment.author ?? "");
@@ -2430,6 +2507,7 @@ function documentComment(comment, slot) {
     createdAt = String(comment.date);
     if (createdAt.length > 64 || Number.isNaN(Date.parse(createdAt))) throw new OpenChestnutCodecError(`Document comment ${comment.id} date must be an ISO 8601 date-time of at most 64 characters.`, [], { code: "invalid_document_comment" });
   }
+  const modern = Boolean(comment.parentId || comment.paraId || comment.durableId || comment.dateUtc || comment.person || comment.intelligentPlaceholder || comment._resolvedSpecified || slot?.wire.resolved !== undefined);
   return {
     id: slot?.wire.id || comment.id,
     targetBlockId: comment.targetId,
@@ -2438,6 +2516,13 @@ function documentComment(comment, slot) {
     initials,
     createdAt,
     source: slot?.wire.source,
+    parentCommentId: comment.parentId || "",
+    resolved: modern ? Boolean(comment.resolved) : undefined,
+    paragraphId: comment.paraId ? String(comment.paraId).toUpperCase() : "",
+    durableId: comment.durableId ? String(comment.durableId).toUpperCase() : "",
+    dateUtc: comment.dateUtc == null ? undefined : String(comment.dateUtc),
+    person: comment.person ? { providerId: String(comment.person.providerId), userId: String(comment.person.userId) } : undefined,
+    intelligentPlaceholder: modern && comment.intelligentPlaceholder ? true : undefined,
   };
 }
 
@@ -2837,6 +2922,7 @@ function documentEnvelope(document) {
   if (state && state.comments.length !== document.comments.length) {
     throw new OpenChestnutCodecError(`Source-preserving DOCX export requires the original ${state.comments.length}-comment topology; the document contains ${document.comments.length} comments.`, [], { code: "document_comment_topology_changed" });
   }
+  validateDocumentCommentThreads(document);
   if (state && state.bookmarks.length !== document.bookmarks.length) {
     throw new OpenChestnutCodecError(`Source-preserving DOCX export requires the original ${state.bookmarks.length}-bookmark topology; the document contains ${document.bookmarks.length} bookmarks.`, [], { code: "document_bookmark_topology_changed" });
   }
@@ -3080,10 +3166,17 @@ function documentFromEnvelope(envelope) {
   const comments = source.comments.map((comment) => ({
     id: comment.id,
     targetId: comment.targetBlockId,
+    parentId: comment.parentCommentId || undefined,
     author: comment.author,
     initials: comment.initials,
     date: comment.createdAt,
     text: comment.text,
+    resolved: comment.resolved,
+    paraId: comment.paragraphId || undefined,
+    durableId: comment.durableId || undefined,
+    dateUtc: comment.dateUtc,
+    person: comment.person ? { providerId: comment.person.providerId, userId: comment.person.userId } : undefined,
+    intelligentPlaceholder: comment.intelligentPlaceholder ?? false,
   }));
   const bookmarks = (source.bookmarks || []).map((bookmark) => ({
     id: bookmark.id,
