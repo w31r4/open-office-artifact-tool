@@ -181,6 +181,13 @@ space, use native `slide.groups.add(...)` and read
 cross the OpenChestnut PPTX path; imported topology is fixed, and complex group
 shells remain one opaque read-only object rather than being flattened.
 
+For imported deck order, `slide.moveTo(existingZeroBasedIndex)` is the one
+supported topology operation: every original `SlidePart` must remain exactly
+once, so OpenChestnut changes only `p:sldIdLst` and preserves every slide part
+and relationship graph. Do not treat it as clone/delete support. Imported
+slide add, remove, and duplicate operations remain fail-closed until an explicit
+OPC graph-clone transaction is available.
+
 When an imported top-level OLE object contains one uniquely bound XLSX package,
 read `artifact_tool/api/references/ole-workbooks.spec.md` before changing it.
 Only `getEmbeddedWorkbook()` and `replaceEmbeddedWorkbook(...)` are allowed:
@@ -219,6 +226,13 @@ layout, style, or template. Read `references/template-following.md`, use
 `$TMP_DIR` from the Workspace section, and set
 `TEMPLATE_PPTX="<absolute path to the user-provided PPTX>"`.
 
+Current availability: the reference starter-deck command below needs imported
+slide duplicate/delete semantics and deliberately fails closed in the canonical
+codec. Do not run it as a substitute for an OPC graph clone, and do not rebuild
+or share slide parts to emulate one. Until that milestone exists, use this mode
+only for source inventory, plan validation, and render/QA evidence; report the
+clone/delete limitation before promising a derived starter deck.
+
 Preserve the source deck's typography, palette, spacing, layout, placeholders,
 footers, page markers, and brand chrome unless the user explicitly asks to
 restyle. Do not use template-following mode for a deck created from scratch.
@@ -228,7 +242,6 @@ Create:
 - `$TMP_DIR/template-audit.txt`
 - `$TMP_DIR/template-frame-map.json`
 - `$TMP_DIR/deviation-log.txt`
-- `$TMP_DIR/template-starter.pptx`
 
 Keep `$TMP_DIR/source-notes.txt` for content and asset provenance.
 
@@ -241,7 +254,9 @@ node "$SKILL_DIR/template_following_scripts/inspect_template_deck.mjs" \
 ```
 
 Map each output slide to an inherited source slide and identify element-level
-`editTargets`. Then validate the map and build the starter deck:
+`editTargets`. Then validate the map. The later starter-deck command is retained
+for the future graph-clone milestone, but currently rejects before writing an
+output deck:
 
 ```bash
 node "$SKILL_DIR/template_following_scripts/validate_template_plan.mjs" \
@@ -258,9 +273,10 @@ node "$SKILL_DIR/template_following_scripts/prepare_template_starter_deck.mjs" \
   --contact-sheet "$TMP_DIR/template-starter-contact-sheet.png"
 ```
 
-Import `template-starter.pptx` with artifact-tool and edit only inherited
-slides/objects unless the validated frame map explicitly allows an insertion.
-If no source slide can support requested content without a parallel rebuild,
+When a future graph-clone milestone enables `template-starter.pptx`, import it
+with `open-office-artifact-tool` and edit only inherited slides/objects unless the validated
+frame map explicitly allows an insertion. Today, if a source slide cannot
+support requested content without duplicate/delete or a parallel rebuild,
 report the blocker and the closest viable source-slide options.
 
 ## QA Reminder

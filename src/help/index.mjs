@@ -1240,6 +1240,9 @@ const PRESENTATION_HELP_SCHEMAS = {
     background: { type: "string|object", description: "Optional direct slide background: RGB/theme color or { fill, mode: 'solid'|'reference', index? }." },
     notes: { type: "string", description: "Optional plain-text speaker notes authored into the canonical PresentationML notes graph." },
   }, "slide", "Slide", "Inserted source-free slide. Unknown insertion targets or layouts leave the collection unchanged; imported source topology remains read-only."),
+  "slide.moveTo": helpSchema({
+    index: { type: "number", required: true, description: "Existing zero-based destination index. It must be an integer from 0 through presentation.slides.items.length - 1." },
+  }, "slide", "Slide", "The same slide at its new collection position. Imported PPTX export succeeds only when the exact original SlidePart set still occurs once each; OpenChestnut rewrites only p:sldIdLst. Add, remove, duplicate, and source-part clone operations remain fail-closed."),
   "slide.setBackground": helpSchema({
     background: { type: "string|object", required: true, description: "Direct RGB/theme color or { fill, mode: 'solid'|'reference', index? }; reference index must be an unsigned 32-bit integer." },
   }, "slide", "Slide", "The same slide with a normalized direct background; canonical PPTX export never flattens inherited Layout/Master backgrounds."),

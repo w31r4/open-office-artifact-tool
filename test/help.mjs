@@ -84,6 +84,8 @@ assert.match(HELP_CATALOG.find((item) => item.name === "presentation.master")?.s
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.view")?.summary || "", /local editor gridline\/guide visibility.*grid spacing.*read-only slide guides.*source\/hash-bound/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.view")?.schema?.returns?.view?.description || "", /show\/hide\/toggle.*gridSpacingCxEmu.*hidden guide visibility.*slideGuides/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.master")?.schema?.parameters?.slideGuides?.description || "", /Read-only imported PowerPoint guide definitions/i);
+assert.equal(HELP_CATALOG.find((item) => item.name === "slide.moveTo")?.schema?.parameters?.index?.required, true);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.moveTo")?.schema?.returns?.slide?.description || "", /original SlidePart set.*once each.*p:sldIdLst.*fail-closed/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "SpreadsheetFile.patchXlsx"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.masters.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.masters.getItem"));

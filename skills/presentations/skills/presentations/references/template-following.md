@@ -3,6 +3,14 @@
 Use when the user provides an existing PPTX, asks to follow a presentation, or
 attaches a PPTX that is clearly or implicitly a template.
 
+> Current canonical codec boundary: the reference starter-deck route requires
+> imported-slide duplication and deletion. OpenChestnut currently supports
+> only source-preserving reordering (`slide.moveTo`) when every original
+> `SlidePart` remains exactly once. Do not substitute a reconstructed or
+> shared-part copy. If the task requires `duplicate-slide`, report that the
+> OPC graph-clone milestone is unavailable and preserve the source deck; use
+> the inspection/planning/QA portions of this workflow only.
+
 This is the entire template-following mode. Do not run template codegen, do not
 build or consume a reusable template registry, and do not rebuild a fresh deck
 from palette, fonts, screenshots, or vibes. Use a source slide inventory only:

@@ -198,6 +198,8 @@ try {
   assert.match(quickStartText, /open-office-artifact-tool/);
   assert.match(skillText, /slides_test\.py/);
   assert.match(skillText, /slide\.setBackground.*slide\.clearBackground/s);
+  assert.match(skillText, /slide\.moveTo\(existingZeroBasedIndex\).*p:sldIdLst.*duplicate.*fail-closed/is);
+  assert.match(skillText, /starter-deck command below needs imported\s+slide duplicate\/delete semantics and deliberately fails closed/is);
   assert.match(skillText, /artifact_tool\/api\/references\/comments\.md/);
   const commentsReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/comments.md", "utf8");
   assert.match(commentsReferenceText, /Pass `undefined` as the target/);
@@ -224,6 +226,9 @@ try {
   assert.match(oleWorkbookReferenceText, /Microsoft Open XML\s+SDK/);
   assert.match(oleWorkbookReferenceText, /shared, external, ambiguous, or non-XLSX/);
   assert.match(oleWorkbookReferenceText, /no lossy reconstruction or silent fallback/i);
+  const templateFollowingText = await fs.readFile("skills/presentations/skills/presentations/references/template-following.md", "utf8");
+  assert.match(templateFollowingText, /only source-preserving reordering.*SlidePart.*exactly once/is);
+  assert.match(templateFollowingText, /OPC graph-clone milestone is unavailable/i);
 
   console.log("presentation skill smoke ok");
 } finally {

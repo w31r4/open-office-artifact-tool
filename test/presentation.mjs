@@ -694,6 +694,13 @@ for (const path of Object.keys(originalImportedZip.files).filter((path) => /^ppt
 }
 const reorderedImportedRoundTrip = await PresentationFile.importPptx(reorderedImportedPptx);
 assert.deepEqual(reorderedImportedRoundTrip.slides.items.map((slide) => slide.name), [...originalImportedSlideNames.slice(1), originalImportedSlideNames[0]]);
+const reorderedEditedDeck = await PresentationFile.importPptx(firstExport);
+const reorderedEditedSlide = reorderedEditedDeck.slides.getItem(0);
+reorderedEditedSlide.moveTo(2);
+itemByName(reorderedEditedSlide.shapes.items, "rounded-card").text.set("Edited after reorder");
+const reorderedEditedPptx = await PresentationFile.exportPptx(reorderedEditedDeck);
+const reorderedEditedRoundTrip = await PresentationFile.importPptx(reorderedEditedPptx);
+assert.equal(itemByName(reorderedEditedRoundTrip.slides.getItem(2).shapes.items, "rounded-card").text.value, "Edited after reorder");
 const importedTopologyChange = await PresentationFile.importPptx(firstExport);
 importedTopologyChange.slides.add({ name: "Not source-bound" });
 await assert.rejects(

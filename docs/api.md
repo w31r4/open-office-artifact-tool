@@ -1262,7 +1262,7 @@ Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or 
 | `presentation.masters.getItem` | api | Resolve a model-level or imported Slide Master by stable ID or name. |
 | `presentation.resolve` | api | Map stable inspect anchor IDs back to facade objects; imported advanced package objects may be read-only. |
 | `presentation.slides.add` | api | Append an editable core slide with an optional bounded source-free layout, direct solid/style-reference background, and plain-text speaker notes. A supplied layout is resolved and materialized transactionally; effective imported Layout/Master inheritance is never flattened. |
-| `presentation.slides.insert` | api | Insert a source-free slide after an existing Slide or 0-based index, or at the beginning with after: null. It uses the same transactional layout materialization as slides.add; imported deck topology remains source-bound. |
+| `presentation.slides.insert` | api | Insert a source-free slide after an existing Slide or 0-based index, or at the beginning with after: null. It uses the same transactional layout materialization as slides.add; imported deck add/remove/clone topology remains source-bound. |
 | `presentation.textRange` | api | Inspect or resolve stable textRange anchors such as shapeId/text for editable slide text frames. |
 | `presentation.theme` | api | Inspect the model theme and theme inheritance. Custom source-free themes are not authored by OpenChestnut 0.2, and imported themes are source-bound and read-only. |
 | `presentation.validateLayout` | api | Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow. |
@@ -1284,6 +1284,7 @@ Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or 
 | `slide.connectors.add` | api | Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA. |
 | `slide.groups.add` | api | Author recursive native DrawingML p:grpSp trees with outer off/ext and local chOff/chExt coordinates. The bounded profile supports modeled shapes, connectors, images, tables, charts, and nested groups; canonical imported groups allow fixed-topology semantic edits, while group-level fills/effects, locks, transforms, extensions, or unsupported descendants remain opaque and read-only. |
 | `slide.images.add` | api | Add an inspectable image facade with alt text, embedded data, contain/cover/stretch fitting, explicit crop, frame, direct rotation/flips, layout JSON, crop-aware SVG preview, and PPTX output. OpenChestnut maps the bounded rectangular profile to native DrawingML a:srcRect. |
+| `slide.moveTo` | api | Move this slide to an existing 0-based deck index. On an imported PPTX, OpenChestnut preserves each original SlidePart exactly once and rewrites only the presentation slide-ID order; duplicate, delete, and source-part cloning remain fail-closed. |
 | `slide.placeholders.getItem` | api | Resolve a materialized slide placeholder shape by stable ID, name, placeholder type, or numeric index. |
 | `slide.setBackground` | api | Set a direct slide background to a six-digit RGB/theme color solid fill or a native style reference. Recognized imported direct backgrounds are hash-bound and editable; inherited Layout/Master backgrounds remain inherited. |
 | `slide.setLayout` | api | Alias of slide.applyLayout(layout): bind and materialize a bounded source-free layout for native PPTX export. |
@@ -1692,7 +1693,7 @@ Append an editable core slide with an optional bounded source-free layout, direc
 
 #### `presentation.slides.insert`
 
-Insert a source-free slide after an existing Slide or 0-based index, or at the beginning with after: null. It uses the same transactional layout materialization as slides.add; imported deck topology remains source-bound.
+Insert a source-free slide after an existing Slide or 0-based index, or at the beginning with after: null. It uses the same transactional layout materialization as slides.add; imported deck add/remove/clone topology remains source-bound.
 
 **Schema parameters:**
 
@@ -2023,6 +2024,18 @@ Add an inspectable image facade with alt text, embedded data, contain/cover/stre
 **Schema returns:**
 
 - `image` (ImageElement) — Appended editable image facade. OpenChestnut authors/imports embedded PNG/JPEG/GIF/safe-SVG rectangular pictures and permits native source-rectangle add/edit/remove plus same-format byte, name/alt, frame, and direct-transform edits; effects, external sources, complex blips, and non-rectangular geometry remain opaque.
+
+#### `slide.moveTo`
+
+Move this slide to an existing 0-based deck index. On an imported PPTX, OpenChestnut preserves each original SlidePart exactly once and rewrites only the presentation slide-ID order; duplicate, delete, and source-part cloning remain fail-closed.
+
+**Schema parameters:**
+
+- `index` (number) required — Existing zero-based destination index. It must be an integer from 0 through presentation.slides.items.length - 1.
+
+**Schema returns:**
+
+- `slide` (Slide) — The same slide at its new collection position. Imported PPTX export succeeds only when the exact original SlidePart set still occurs once each; OpenChestnut rewrites only p:sldIdLst. Add, remove, duplicate, and source-part clone operations remain fail-closed.
 
 #### `slide.placeholders.getItem`
 
