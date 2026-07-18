@@ -74,6 +74,12 @@ const visible = visibleCase(suite, cases.find((item) => item.id === "pdf-bounded
 assert.match(visible.prompt, /outputs\/contract-updated\.pdf/);
 assert.match(visible.prompt, /outputs\/audit\.json/);
 assert.doesNotMatch(visible.prompt, /expectedOutcome|oracleSha256|pymupdf\.readthedocs|"grade"/i);
+const runnerHelp = spawnSync(process.execPath, ["scripts/run-agent-evals.mjs", "help"], {
+  cwd: path.resolve(import.meta.dirname, ".."),
+  encoding: "utf8",
+});
+assert.equal(runnerHelp.status, 0, runnerHelp.stderr);
+assert.match(runnerHelp.stdout, /two PPTX cases.*source-bound slide-name edit/i);
 const highlightVisible = visibleCase(suite, cases.find((item) => item.id === "pdf-source-bound-text-highlight"));
 assert.match(highlightVisible.prompt, /add_text_highlight/);
 assert.match(highlightVisible.prompt, /outputs\/review-highlighted\.pdf/);
