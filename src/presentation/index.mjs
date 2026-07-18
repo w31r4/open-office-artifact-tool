@@ -102,10 +102,80 @@ function normalizePresentationPlaceholderTransform(value, name = "Presentation p
   return output;
 }
 
+const PRESENTATION_PLACEHOLDER_TYPE_ALIASES = new Map([
+  ["title", "title"],
+  ["body", "body"],
+  ["ctrTitle", "ctrTitle"],
+  ["centeredTitle", "ctrTitle"],
+  ["subTitle", "subTitle"],
+  ["subtitle", "subTitle"],
+  ["dt", "dt"],
+  ["dateAndTime", "dt"],
+  ["sldNum", "sldNum"],
+  ["slideNumber", "sldNum"],
+  ["ftr", "ftr"],
+  ["footer", "ftr"],
+  ["hdr", "hdr"],
+  ["header", "hdr"],
+  ["obj", "obj"],
+  ["object", "obj"],
+  ["chart", "chart"],
+  ["tbl", "tbl"],
+  ["table", "tbl"],
+  ["clipArt", "clipArt"],
+  ["dgm", "dgm"],
+  ["diagram", "dgm"],
+  ["media", "media"],
+  ["sldImg", "sldImg"],
+  ["slideImage", "sldImg"],
+  ["pic", "pic"],
+  ["picture", "pic"],
+]);
+
+function normalizePresentationPlaceholderType(value) {
+  const requested = String(value || "body").trim();
+  const type = PRESENTATION_PLACEHOLDER_TYPE_ALIASES.get(requested);
+  if (!type) throw new TypeError(`Unsupported Presentation placeholder type: ${requested || "(empty)"}.`);
+  return type;
+}
+
+function presentationPlaceholderLookup(placeholders, idOrName) {
+  const key = String(idOrName ?? "");
+  const index = Number(idOrName);
+  return placeholders.find((placeholder) =>
+    placeholder.id === idOrName || placeholder.name === idOrName || placeholder.type === idOrName ||
+    (Number.isInteger(index) && placeholder.idx === index));
+}
+
+function attachPresentationPlaceholderCollectionApi(owner, placeholders, { allowMissingPosition = false } = {}) {
+  Object.defineProperties(placeholders, {
+    add: {
+      enumerable: false,
+      value(config = {}) {
+        if (!config || typeof config !== "object" || Array.isArray(config)) throw new TypeError("Presentation placeholder config must be an object.");
+        const placeholder = normalizePresentationPlaceholders([{
+          ...config,
+          id: config.id || `${owner.id}/ph/${placeholders.length + 1}`,
+          idx: config.idx ?? config.index ?? placeholders.length,
+        }], `${owner.id}/ph`, { allowMissingPosition })[0];
+        if (placeholders.some((current) => current.id === placeholder.id || (current.type === placeholder.type && current.idx === placeholder.idx))) {
+          throw new Error(`Presentation placeholder ${placeholder.name || placeholder.id} duplicates an existing id or type/index pair.`);
+        }
+        placeholders.push(placeholder);
+        return placeholder;
+      },
+    },
+    getItem: { enumerable: false, value(idOrName) { return presentationPlaceholderLookup(placeholders, idOrName); } },
+    count: { enumerable: false, get() { return placeholders.length; } },
+  });
+  return placeholders;
+}
+
 function normalizePresentationPlaceholders(value = [], idPrefix = "placeholder", options = {}) {
   if (!Array.isArray(value)) throw new TypeError("Presentation placeholders must be an array.");
   if (value.length > 128) throw new RangeError("Presentation placeholders exceed 128 entries.");
   const placeholders = value.map((placeholder, index) => {
+    if (!placeholder || typeof placeholder !== "object" || Array.isArray(placeholder)) throw new TypeError("Presentation placeholder entries must be objects.");
     const position = options.allowMissingPosition && !placeholder.position && !placeholder.frame && !["left", "top", "width", "height"].some((key) => placeholder[key] != null)
       ? undefined
       : normalizeFrame(placeholder, { left: 80, top: 80 + index * 80, width: 640, height: 64 });
@@ -113,9 +183,9 @@ function normalizePresentationPlaceholders(value = [], idPrefix = "placeholder",
     if (transform && !position) throw new TypeError(`Presentation placeholder ${placeholder.name || index + 1} cannot define a transform without a direct position.`);
     return {
       id: placeholder.id || `${idPrefix}/${index + 1}`,
-      type: placeholder.type || "body",
-      idx: Number(placeholder.idx ?? index + 1),
-      name: placeholder.name || `${placeholder.type || "body"} placeholder`,
+      type: normalizePresentationPlaceholderType(placeholder.type),
+      idx: Number(placeholder.idx ?? placeholder.index ?? index + 1),
+      name: placeholder.name || `${normalizePresentationPlaceholderType(placeholder.type)} placeholder`,
       position,
       transform,
       text: placeholder.text ?? "",
@@ -227,7 +297,7 @@ class PresentationSlideMaster {
     this.background = Object.hasOwn(config, "background")
       ? normalizePresentationBackground(config.background)
       : normalizePresentationBackground(presentation.theme.colors.bg1);
-    this.placeholders = normalizePresentationPlaceholders(config.placeholders || [], `${this.id}/ph`);
+    this.placeholders = attachPresentationPlaceholderCollectionApi(this, normalizePresentationPlaceholders(config.placeholders || [], `${this.id}/ph`));
     this.textParagraphStyles = normalizePresentationMasterParagraphStyles(config.textParagraphStyles || {});
     Object.defineProperty(this, "slideGuides", { value: normalizePresentationSlideGuides(config.slideGuides), enumerable: true });
   }
@@ -243,7 +313,7 @@ class PresentationSlideMaster {
       this.background = config.background == null ? undefined : normalizePresentationBackground(config.background, this.background);
       this._backgroundClearRequested = false;
     }
-    if (config.placeholders) this.placeholders = normalizePresentationPlaceholders(config.placeholders, `${this.id}/ph`);
+    if (config.placeholders) this.placeholders = attachPresentationPlaceholderCollectionApi(this, normalizePresentationPlaceholders(config.placeholders, `${this.id}/ph`));
     if (config.textParagraphStyles) this.textParagraphStyles = normalizePresentationMasterParagraphStyles(config.textParagraphStyles);
     return this;
   }
@@ -283,7 +353,7 @@ class SlideLayoutTemplate {
     this.masterId = config.masterId || presentation.master.id;
     Object.defineProperty(this, "_backgroundClearRequested", { value: false, writable: true });
     this.background = config.background ? normalizePresentationBackground(config.background) : undefined;
-    this.placeholders = normalizePresentationPlaceholders(config.placeholders || [], `${this.id}/ph`, { allowMissingPosition: true });
+    this.placeholders = attachPresentationPlaceholderCollectionApi(this, normalizePresentationPlaceholders(config.placeholders || [], `${this.id}/ph`, { allowMissingPosition: true }), { allowMissingPosition: true });
     Object.defineProperty(this, "slideGuides", { value: normalizePresentationSlideGuides(config.slideGuides), enumerable: true });
   }
 
@@ -328,8 +398,15 @@ class SlideLayoutTemplate {
 
 class SlideLayoutCollection {
   constructor(presentation) { this.presentation = presentation; this.items = []; }
-  add(config = {}) { const layout = new SlideLayoutTemplate(this.presentation, config); this.items.push(layout); return layout; }
+  add(config = {}) {
+    const normalized = typeof config === "string" ? { name: config } : config;
+    if (!normalized || typeof normalized !== "object" || Array.isArray(normalized)) throw new TypeError("Presentation layout config must be an object or name string.");
+    const layout = new SlideLayoutTemplate(this.presentation, normalized);
+    this.items.push(layout);
+    return layout;
+  }
   getItem(idOrName) { return this.items.find((layout) => layout.id === idOrName || layout.name === idOrName || layout.type === idOrName); }
+  getById(id) { return this.items.find((layout) => layout.id === id); }
   inspectRecords() { return this.items.map((layout) => layout.inspectRecord()); }
   [Symbol.iterator]() { return this.items[Symbol.iterator](); }
 }
@@ -771,6 +848,21 @@ export class Slide {
 
   get index() { return this.presentation.slides.items.indexOf(this); }
   get frame() { return { left: 0, top: 0, ...this.presentation.slideSize }; }
+  get placeholders() {
+    const items = this.shapes.items.filter((shape) => shape.placeholder);
+    return {
+      items,
+      get count() { return items.length; },
+      getItem(idOrName) {
+        const key = String(idOrName ?? "");
+        const index = Number(idOrName);
+        return items.find((shape) => shape.id === idOrName || shape.name === idOrName ||
+          shape.placeholder?.type === key || shape.placeholder?.name === key ||
+          (Number.isInteger(index) && Number(shape.placeholder?.idx) === index));
+      },
+      [Symbol.iterator]() { return items[Symbol.iterator](); },
+    };
+  }
 
   addNotes(text) { return this.speakerNotes.setText(text); }
   addComment(target, text, config = {}) { return this.comments.addThread(target, text, config); }
@@ -779,6 +871,7 @@ export class Slide {
   setBackground(background) { this.background = normalizePresentationBackground(background, this.background); return this; }
   clearBackground() { this.background = {}; return this; }
   applyLayout(layoutOrName) { const layout = typeof layoutOrName === "string" ? this.presentation.layouts.getItem(layoutOrName) : layoutOrName; if (!layout) throw new Error(`Unknown slide layout: ${layoutOrName}`); return layout.apply(this); }
+  setLayout(layoutOrName) { this.applyLayout(layoutOrName); return this; }
   effectiveBackground() { const layout = this.presentation.layouts.getItem(this.layoutId); return this.background.fill ? this.background : layout?.effectiveBackground() || this.presentation.master.effectiveBackground(); }
   effectiveTheme() { const layout = this.presentation.layouts.getItem(this.layoutId); return layout?.effectiveTheme() || this.presentation.master.effectiveTheme(); }
 
