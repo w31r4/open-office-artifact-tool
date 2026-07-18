@@ -13,7 +13,13 @@
       "artifactKind": "document",
       "displayName": "Design Report",
       "intent": "Present a technical or product design decision with evidence and recommended next actions.",
-      "status": "planned"
+      "status": "ready",
+      "implementation": {
+        "skill": "skills/artifact-template-design-report",
+        "generator": "scripts/generate-template.mjs",
+        "extension": ".docx",
+        "assetMode": "project-authored-source-free"
+      }
     },
     {
       "id": "artifact-template-experiment-analysis",
@@ -82,7 +88,13 @@
       "artifactKind": "presentation",
       "displayName": "Operating Review",
       "intent": "Run a recurring review around scorecards, blockers, decisions, and owners.",
-      "status": "planned"
+      "status": "ready",
+      "implementation": {
+        "skill": "skills/artifact-template-operating-review",
+        "generator": "scripts/generate-template.mjs",
+        "extension": ".pptx",
+        "assetMode": "project-authored-source-free"
+      }
     },
     {
       "id": "artifact-template-project-kickoff",
@@ -150,7 +162,13 @@
       "artifactKind": "workbook",
       "displayName": "Project Tracker",
       "intent": "Track deliverables, owners, dates, risks, and completion evidence.",
-      "status": "planned"
+      "status": "ready",
+      "implementation": {
+        "skill": "skills/artifact-template-project-tracker",
+        "generator": "scripts/generate-template.mjs",
+        "extension": ".xlsx",
+        "assetMode": "project-authored-source-free"
+      }
     },
     {
       "id": "artifact-template-sales-pipeline",

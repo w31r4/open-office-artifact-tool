@@ -24,8 +24,11 @@ const expectedSkills = new Map([
   ["pdf", ["pdf"]],
   ["template-creator", ["template-creator"]],
   ["default-template-library", [
+    "artifact-template-design-report",
     "artifact-template-financial-budget",
+    "artifact-template-operating-review",
     "artifact-template-project-kickoff",
+    "artifact-template-project-tracker",
     "artifact-template-strategy-memorandum",
     "office-template-catalog",
   ]],
@@ -37,8 +40,11 @@ const expectedDeclaredSkillNames = new Map([
   ["presentations", "Presentations"],
   ["pdf", "pdf"],
   ["template-creator", "template-creator"],
+  ["artifact-template-design-report", "artifact-template-design-report"],
   ["artifact-template-financial-budget", "artifact-template-financial-budget"],
+  ["artifact-template-operating-review", "artifact-template-operating-review"],
   ["artifact-template-project-kickoff", "artifact-template-project-kickoff"],
+  ["artifact-template-project-tracker", "artifact-template-project-tracker"],
   ["artifact-template-strategy-memorandum", "artifact-template-strategy-memorandum"],
   ["office-template-catalog", "office-template-catalog"],
 ]);
@@ -104,7 +110,7 @@ const defaultTemplateCatalog = JSON.parse(await fs.readFile(path.join(skillsRoot
 assert.equal(defaultTemplateManifest.schemaVersion, 1);
 assert.equal(defaultTemplateManifest.catalog, "catalog.json");
 assert.equal(defaultTemplateCatalog.templates.length, 20);
-assert.equal(defaultTemplateCatalog.templates.filter((template) => template.status === "ready").length, 3);
+assert.equal(defaultTemplateCatalog.templates.filter((template) => template.status === "ready").length, 6);
 assert.equal(defaultTemplateCatalog.provenancePolicy.retainedReferenceFiles, false);
 assert.equal(defaultTemplateCatalog.provenancePolicy.retainedPreviewFiles, false);
 

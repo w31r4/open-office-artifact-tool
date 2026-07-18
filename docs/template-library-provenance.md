@@ -13,13 +13,13 @@ The 20 catalog intents are therefore compatibility requirements only. They are u
 `skills/default-template-library/` is a normal AGPL plugin bundle. It contains:
 
 - a `catalog.json` with 20 document, presentation, and workbook intents;
-- one routing Skill plus three ready template Skills;
-- reviewed JavaScript generators for Strategy Memorandum (DOCX), Project Kickoff (PPTX), and Financial Budget (XLSX);
+- one routing Skill plus six ready template Skills;
+- family-specific reviewed JavaScript generators for Design Report and Strategy Memorandum (DOCX), Operating Review and Project Kickoff (PPTX), and Financial Budget and Project Tracker (XLSX);
 - project-authored SVG icons and no Office or preview binaries.
 
 The ready generator is the source of truth. It creates a new file at an explicit path, refuses to overwrite an existing output or audit, verifies the model, exports through OpenChestnut, imports it again, performs a second export/import, renders an SVG preview, and writes a hash-bound audit with `source: null` and `provenance: project-authored-source-free`.
 
-The automated smoke test also makes one bounded edit to each generated DOCX/PPTX/XLSX and repeats its public import/export path. When LibreOffice and Poppler are installed, it converts each result to PDF, checks page count, and rasterizes the first page. A missing native tool skips only that native-render check; it does not turn a planned catalog item into a ready one.
+The automated smoke test also makes one bounded edit to each generated DOCX/PPTX/XLSX and repeats its public import/export path. When LibreOffice and Poppler are installed, it converts each result to PDF, checks the intentional page-count contract, and rasterizes every native page. Financial Budget and Project Tracker require exactly one native PDF page per worksheet, so a horizontal table split is a test failure. A missing native tool skips only that native-render check; it does not turn a planned catalog item into a ready one.
 
 ## Catalog state
 
@@ -30,7 +30,7 @@ The catalog intentionally has two states:
 | `ready` | A self-authored generator and its round-trip tests ship in this package. | Generate it through the declared Skill, inspect the audit, then edit and verify through the matching Office workflow. |
 | `planned` | The task intent is recorded, but no self-authored design has cleared the source, codec, and QA gates. | Explain that it is unavailable. Do not substitute a nearby visual design, search a cache, or download a reference file. |
 
-At this milestone, three of twenty entries are `ready`; the other seventeen are intentionally `planned`.
+At this milestone, six of twenty entries are `ready`; the other fourteen are intentionally `planned`.
 
 ## How a new template becomes ready
 

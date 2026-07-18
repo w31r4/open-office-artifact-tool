@@ -1,0 +1,6 @@
+interface:
+  display_name: "Project Tracker"
+  short_description: "Create a source-free project tracker workbook"
+  icon_small: "assets/icon.svg"
+  icon_large: "assets/icon.svg"
+  default_prompt: "Create a project tracker with deliverables, owners, risks, decisions, and formula-driven checks."

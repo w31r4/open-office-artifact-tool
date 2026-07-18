@@ -18,6 +18,23 @@ const catalog = JSON.parse(await fs.readFile(path.join(pluginRoot, "catalog.json
 const manifest = JSON.parse(await fs.readFile(path.join(pluginRoot, "manifest.json"), "utf8"));
 const plugin = JSON.parse(await fs.readFile(path.join(pluginRoot, ".codex-plugin", "plugin.json"), "utf8"));
 
+const EXPECTED_READY = [
+  ["artifact-template-design-report", "document", ".docx", "Design Report"],
+  ["artifact-template-strategy-memorandum", "document", ".docx", "Strategy Memorandum"],
+  ["artifact-template-operating-review", "presentation", ".pptx", "Operating Review"],
+  ["artifact-template-project-kickoff", "presentation", ".pptx", "Project Kickoff"],
+  ["artifact-template-financial-budget", "workbook", ".xlsx", "Financial Budget"],
+  ["artifact-template-project-tracker", "workbook", ".xlsx", "Project Tracker"],
+];
+const NATIVE_PDF_PAGE_CONTRACTS = new Map([
+  ["artifact-template-design-report", { pages: 3, reason: "three deliberate decision-record pages" }],
+  ["artifact-template-strategy-memorandum", { pages: 2, reason: "one decision frame and one action page" }],
+  ["artifact-template-operating-review", { pages: 3, reason: "one native page per slide" }],
+  ["artifact-template-project-kickoff", { pages: 3, reason: "one native page per slide" }],
+  ["artifact-template-financial-budget", { pages: 3, reason: "one native page per worksheet" }],
+  ["artifact-template-project-tracker", { pages: 3, reason: "one native page per worksheet" }],
+]);
+
 function sha256(bytes) {
   return crypto.createHash("sha256").update(bytes).digest("hex");
 }
@@ -37,12 +54,11 @@ function yamlValue(source, key) {
 }
 
 function runGenerator(args, options = {}) {
-  const result = spawnSync(process.execPath, [generatorPath, ...args], {
+  return spawnSync(process.execPath, [generatorPath, ...args], {
     cwd: repoRoot,
     encoding: "utf8",
     ...options,
   });
-  return result;
 }
 
 function commandAvailable(command) {
@@ -50,7 +66,7 @@ function commandAvailable(command) {
   return !probe.error && probe.status === 0;
 }
 
-function assertNativePdfPreview(sourcePath, outputDirectory) {
+async function assertNativePdfPreview(sourcePath, outputDirectory) {
   const converted = spawnSync("soffice", ["--headless", "--convert-to", "pdf", "--outdir", outputDirectory, sourcePath], {
     encoding: "utf8",
   });
@@ -59,12 +75,23 @@ function assertNativePdfPreview(sourcePath, outputDirectory) {
   const pdfPath = path.join(outputDirectory, `${stem}.pdf`);
   const info = spawnSync("pdfinfo", [pdfPath], { encoding: "utf8" });
   assert.equal(info.status, 0, `Poppler could not inspect ${pdfPath}\nSTDOUT:\n${info.stdout}\nSTDERR:\n${info.stderr}`);
-  assert.match(info.stdout, /^Pages:\s*[1-9]\d*/m, `native rendering must produce at least one page for ${sourcePath}`);
+  const pages = Number(info.stdout.match(/^Pages:\s*([1-9]\d*)/m)?.[1]);
+  assert.ok(Number.isInteger(pages), `native rendering must produce at least one page for ${sourcePath}`);
   const previewPrefix = path.join(outputDirectory, `${stem}-preview`);
-  const preview = spawnSync("pdftoppm", ["-png", "-f", "1", "-l", "1", pdfPath, previewPrefix], { encoding: "utf8" });
+  const preview = spawnSync("pdftoppm", ["-png", "-f", "1", "-l", String(pages), pdfPath, previewPrefix], { encoding: "utf8" });
   assert.equal(preview.status, 0, `Poppler could not rasterize ${pdfPath}\nSTDOUT:\n${preview.stdout}\nSTDERR:\n${preview.stderr}`);
-  const previewPath = `${previewPrefix}-1.png`;
-  return fs.stat(previewPath).then((stat) => assert.ok(stat.size > 0, `native preview is empty: ${previewPath}`));
+  for (let page = 1; page <= pages; page += 1) {
+    const previewPath = `${previewPrefix}-${page}.png`;
+    const stat = await fs.stat(previewPath);
+    assert.ok(stat.size > 0, `native preview is empty: ${previewPath}`);
+  }
+  return pages;
+}
+
+function resultFor(generatedById, id) {
+  const result = generatedById.get(id);
+  assert.ok(result, `missing generated result for ${id}`);
+  return result;
 }
 
 assert.equal(plugin.name, "default-template-library");
@@ -76,9 +103,7 @@ assert.equal(manifest.schemaVersion, 1);
 assert.equal(manifest.catalog, "catalog.json");
 assert.deepEqual(manifest.skills, [
   "skills/office-template-catalog",
-  "skills/artifact-template-strategy-memorandum",
-  "skills/artifact-template-project-kickoff",
-  "skills/artifact-template-financial-budget",
+  ...EXPECTED_READY.map(([id]) => `skills/${id}`),
 ]);
 assert.equal(catalog.schemaVersion, 1);
 assert.equal(catalog.templates.length, 20);
@@ -91,20 +116,22 @@ assert.deepEqual(catalog.provenancePolicy, {
 
 const ready = catalog.templates.filter((template) => template.status === "ready");
 const planned = catalog.templates.filter((template) => template.status === "planned");
-assert.equal(ready.length, 3);
-assert.equal(planned.length, 17);
-assert.deepEqual(ready.map((template) => [template.id, template.artifactKind, template.implementation.extension]), [
-  ["artifact-template-strategy-memorandum", "document", ".docx"],
-  ["artifact-template-project-kickoff", "presentation", ".pptx"],
-  ["artifact-template-financial-budget", "workbook", ".xlsx"],
-]);
+assert.equal(ready.length, 6);
+assert.equal(planned.length, 14);
+assert.deepEqual(ready.map((template) => [
+  template.id,
+  template.artifactKind,
+  template.implementation.extension,
+  template.displayName,
+]), EXPECTED_READY);
 for (const template of catalog.templates) {
   assert.match(template.id, /^artifact-template-[a-z0-9-]+$/);
   assert.ok(["document", "presentation", "workbook"].includes(template.artifactKind));
   assert.ok(["ready", "planned"].includes(template.status));
   if (template.status === "ready") {
     assert.equal(template.implementation.assetMode, "project-authored-source-free");
-    assert.ok(template.implementation.generator);
+    assert.equal(template.implementation.generator, "scripts/generate-template.mjs");
+    assert.equal(template.implementation.skill, `skills/${template.id}`);
   } else {
     assert.equal(template.implementation, undefined);
   }
@@ -115,11 +142,9 @@ const skillDirectories = (await fs.readdir(path.join(pluginRoot, "skills"), { wi
   .map((entry) => entry.name)
   .sort();
 assert.deepEqual(skillDirectories, [
-  "artifact-template-financial-budget",
-  "artifact-template-project-kickoff",
-  "artifact-template-strategy-memorandum",
+  ...EXPECTED_READY.map(([id]) => id),
   "office-template-catalog",
-]);
+].sort());
 for (const skillName of skillDirectories) {
   const skillRoot = path.join(pluginRoot, "skills", skillName);
   const skillText = await fs.readFile(path.join(skillRoot, "SKILL.md"), "utf8");
@@ -157,17 +182,17 @@ for (const file of pluginFiles) {
 
 const help = runGenerator(["--help"]);
 assert.equal(help.status, 0, help.stderr);
-assert.match(help.stdout, /artifact-template-strategy-memorandum/);
+for (const [id] of EXPECTED_READY) assert.match(help.stdout, new RegExp(id));
 const unavailable = runGenerator([
-  "--template-id", "artifact-template-design-report",
-  "--output", path.join(os.tmpdir(), "design-report.docx"),
+  "--template-id", "artifact-template-experiment-analysis",
+  "--output", path.join(os.tmpdir(), "experiment-analysis.docx"),
 ]);
 assert.notEqual(unavailable.status, 0);
 assert.match(unavailable.stderr, /Unknown or unavailable source-free template/);
 
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-artifact-tool-default-template-library-"));
 try {
-  const generated = [];
+  const generatedById = new Map();
   for (const template of ready) {
     const output = path.join(temporary, `${template.id}${template.implementation.extension}`);
     const audit = path.join(temporary, `${template.id}.audit.json`);
@@ -194,57 +219,84 @@ try {
     assert.equal(report.validation.secondImport, true);
     assert.equal(report.validation.modelRender.type, "image/svg+xml");
     assert.ok(report.validation.modelRender.bytes > 0);
-    generated.push({ template, output, audit, bytes });
+    generatedById.set(template.id, { template, output, audit, bytes });
   }
 
-  const [documentResult, presentationResult, workbookResult] = generated;
-  const document = await DocumentFile.importDocx(documentResult.bytes);
-  const documentTitle = document.blocks.find((block) => block.text === "Strategy Memorandum");
-  assert.ok(documentTitle);
-  document.resolve(`${documentTitle.id}/text`).text = "Strategy Memorandum — reviewed";
-  const editedDocumentBlob = await DocumentFile.exportDocx(document);
-  const editedDocumentOutput = path.join(temporary, "reviewed-strategy-memorandum.docx");
-  await fs.writeFile(editedDocumentOutput, editedDocumentBlob.bytes);
-  const editedDocument = await DocumentFile.importDocx(editedDocumentBlob);
-  assert.equal(editedDocument.blocks.some((block) => block.text === "Strategy Memorandum — reviewed"), true);
-  assert.equal(editedDocument.verify({ visualQa: true }).ok, true);
+  const editedOutputs = [];
+  for (const [id, , extension, title] of EXPECTED_READY.filter(([, kind]) => kind === "document")) {
+    const result = resultFor(generatedById, id);
+    const document = await DocumentFile.importDocx(result.bytes);
+    const titleBlock = document.blocks.find((block) => block.text === title);
+    assert.ok(titleBlock, `${title} title block is required`);
+    document.resolve(`${titleBlock.id}/text`).text = `${title} — reviewed`;
+    const editedBlob = await DocumentFile.exportDocx(document);
+    const output = path.join(temporary, `reviewed-${id}${extension}`);
+    await fs.writeFile(output, editedBlob.bytes);
+    const reimported = await DocumentFile.importDocx(editedBlob);
+    assert.equal(reimported.blocks.some((block) => block.text === `${title} — reviewed`), true);
+    assert.equal(reimported.verify({ visualQa: true }).ok, true);
+    editedOutputs.push({ templateId: id, output });
+  }
 
-  const presentation = await PresentationFile.importPptx(presentationResult.bytes);
-  assert.deepEqual(presentation.slides.items.map((slide) => slide.name), ["Kickoff overview", "Scope and plan", "Owners and decisions"]);
-  const kickoffTitle = presentation.slides.getItem(0).shapes.items.find((shape) => shape.name === "kickoff-title");
-  assert.ok(kickoffTitle);
-  kickoffTitle.text.set("Project Kickoff — reviewed");
-  const editedPresentationBlob = await PresentationFile.exportPptx(presentation);
-  const editedPresentationOutput = path.join(temporary, "reviewed-project-kickoff.pptx");
-  await fs.writeFile(editedPresentationOutput, editedPresentationBlob.bytes);
-  const editedPresentation = await PresentationFile.importPptx(editedPresentationBlob);
-  assert.equal(editedPresentation.slides.getItem(0).shapes.items.some((shape) => shape.text.value === "Project Kickoff — reviewed"), true);
-  assert.equal(editedPresentation.verify({ visualQa: true }).ok, true);
+  for (const [id, , extension, title] of EXPECTED_READY.filter(([, kind]) => kind === "presentation")) {
+    const result = resultFor(generatedById, id);
+    const presentation = await PresentationFile.importPptx(result.bytes);
+    const titleShape = presentation.slides.getItem(0).shapes.items.find((shape) => shape.text.value === title);
+    assert.ok(titleShape, `${title} title shape is required`);
+    titleShape.text.set(`${title} — reviewed`);
+    const editedBlob = await PresentationFile.exportPptx(presentation);
+    const output = path.join(temporary, `reviewed-${id}${extension}`);
+    await fs.writeFile(output, editedBlob.bytes);
+    const reimported = await PresentationFile.importPptx(editedBlob);
+    assert.equal(reimported.slides.getItem(0).shapes.items.some((shape) => shape.text.value === `${title} — reviewed`), true);
+    assert.equal(reimported.verify({ visualQa: true }).ok, true);
+    editedOutputs.push({ templateId: id, output });
+  }
 
-  const workbook = await SpreadsheetFile.importXlsx(workbookResult.bytes);
-  workbook.worksheets.getItem("Assumptions").getRange("B5").values = [[125000]];
-  workbook.recalculate();
-  const editedWorkbookBlob = await SpreadsheetFile.exportXlsx(workbook, { recalculate: false });
-  const editedWorkbookOutput = path.join(temporary, "reviewed-financial-budget.xlsx");
-  await fs.writeFile(editedWorkbookOutput, editedWorkbookBlob.bytes);
-  const editedWorkbook = await SpreadsheetFile.importXlsx(editedWorkbookBlob);
-  editedWorkbook.recalculate();
-  assert.equal(editedWorkbook.worksheets.getItem("Assumptions").getRange("B5").values[0][0], 125000);
-  assert.deepEqual(editedWorkbook.worksheets.getItem("Budget Summary").getRange("D4:D7").values, [["OK"], ["OK"], ["OK"], ["OK"]]);
-  assert.equal(editedWorkbook.verify({ visualQa: true }).ok, true);
+  const budgetResult = resultFor(generatedById, "artifact-template-financial-budget");
+  const budget = await SpreadsheetFile.importXlsx(budgetResult.bytes);
+  budget.worksheets.getItem("Assumptions").getRange("B5").values = [[125000]];
+  budget.recalculate();
+  const editedBudgetBlob = await SpreadsheetFile.exportXlsx(budget, { recalculate: false });
+  const editedBudgetOutput = path.join(temporary, "reviewed-financial-budget.xlsx");
+  await fs.writeFile(editedBudgetOutput, editedBudgetBlob.bytes);
+  const editedBudget = await SpreadsheetFile.importXlsx(editedBudgetBlob);
+  editedBudget.recalculate();
+  assert.equal(editedBudget.worksheets.getItem("Assumptions").getRange("B5").values[0][0], 125000);
+  assert.deepEqual(editedBudget.worksheets.getItem("Budget Summary").getRange("D4:D7").values, [["OK"], ["OK"], ["OK"], ["OK"]]);
+  assert.equal(editedBudget.verify({ visualQa: true }).ok, true);
+  editedOutputs.push({ templateId: "artifact-template-financial-budget", output: editedBudgetOutput });
+
+  const trackerResult = resultFor(generatedById, "artifact-template-project-tracker");
+  const tracker = await SpreadsheetFile.importXlsx(trackerResult.bytes);
+  tracker.worksheets.getItem("Work Plan").getRange("D9").values = [["Done"]];
+  tracker.recalculate();
+  const editedTrackerBlob = await SpreadsheetFile.exportXlsx(tracker, { recalculate: false });
+  const editedTrackerOutput = path.join(temporary, "reviewed-project-tracker.xlsx");
+  await fs.writeFile(editedTrackerOutput, editedTrackerBlob.bytes);
+  const editedTracker = await SpreadsheetFile.importXlsx(editedTrackerBlob);
+  editedTracker.recalculate();
+  assert.equal(editedTracker.worksheets.getItem("Work Plan").getRange("D9").values[0][0], "Done");
+  assert.equal(editedTracker.worksheets.getItem("Project Summary").getRange("B4").values[0][0], 3);
+  assert.deepEqual(editedTracker.worksheets.getItem("Project Summary").getRange("D4:D8").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
+  assert.equal(editedTracker.verify({ visualQa: true }).ok, true);
+  editedOutputs.push({ templateId: "artifact-template-project-tracker", output: editedTrackerOutput });
 
   if (commandAvailable("soffice") && commandAvailable("pdfinfo") && commandAvailable("pdftoppm")) {
     const rendered = path.join(temporary, "native-render");
     await fs.mkdir(rendered);
-    for (const output of [editedDocumentOutput, editedPresentationOutput, editedWorkbookOutput]) {
-      await assertNativePdfPreview(output, rendered);
+    for (const { templateId, output } of editedOutputs) {
+      const pages = await assertNativePdfPreview(output, rendered);
+      const expected = NATIVE_PDF_PAGE_CONTRACTS.get(templateId);
+      if (expected) assert.equal(pages, expected.pages, `${templateId} must render ${expected.pages} native PDF page(s): ${expected.reason}.`);
     }
   }
 
+  const firstReady = resultFor(generatedById, EXPECTED_READY[0][0]);
   const repeated = runGenerator([
-    "--template-id", documentResult.template.id,
-    "--output", documentResult.output,
-    "--audit", documentResult.audit,
+    "--template-id", firstReady.template.id,
+    "--output", firstReady.output,
+    "--audit", firstReady.audit,
   ]);
   assert.notEqual(repeated.status, 0);
   assert.match(repeated.stderr, /already exists/);

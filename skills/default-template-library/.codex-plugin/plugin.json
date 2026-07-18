@@ -35,9 +35,12 @@
     "composerIcon": "./assets/icon.svg",
     "logo": "./assets/icon.svg",
     "defaultPrompt": [
+      "Create a source-free Design Report",
       "Create a source-free Strategy Memorandum",
+      "Create a source-free Operating Review presentation",
       "Create a source-free Project Kickoff presentation",
-      "Create a source-free Financial Budget workbook"
+      "Create a source-free Financial Budget workbook",
+      "Create a source-free Project Tracker workbook"
     ],
     "brandColor": "#0F766E",
     "screenshots": []

@@ -5,9 +5,12 @@
   "owner": "w31r4",
   "skills": [
     "skills/office-template-catalog",
+    "skills/artifact-template-design-report",
     "skills/artifact-template-strategy-memorandum",
+    "skills/artifact-template-operating-review",
     "skills/artifact-template-project-kickoff",
-    "skills/artifact-template-financial-budget"
+    "skills/artifact-template-financial-budget",
+    "skills/artifact-template-project-tracker"
   ],
   "catalog": "catalog.json",
   "assets": {

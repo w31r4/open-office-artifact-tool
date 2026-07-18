@@ -212,10 +212,13 @@ try {
     );
     if (!fs.existsSync(defaultTemplateGeneratorPath)) process.exit(55);
     const generatedTemplates = [
-      ["artifact-template-strategy-memorandum", ".docx"],
-      ["artifact-template-project-kickoff", ".pptx"],
-      ["artifact-template-financial-budget", ".xlsx"],
-    ].map(([templateId, extension]) => {
+      ["artifact-template-design-report", ".docx", "document", "Design Report"],
+      ["artifact-template-strategy-memorandum", ".docx", "document", "Strategy Memorandum"],
+      ["artifact-template-operating-review", ".pptx", "presentation", "Operating Review"],
+      ["artifact-template-project-kickoff", ".pptx", "presentation", "Project Kickoff"],
+      ["artifact-template-financial-budget", ".xlsx", "workbook", "Financial Budget"],
+      ["artifact-template-project-tracker", ".xlsx", "workbook", "Project Tracker"],
+    ].map(([templateId, extension, artifactKind, title]) => {
       const outputPath = path.join(process.cwd(), templateId + extension);
       const auditPath = path.join(process.cwd(), templateId + ".audit.json");
       const generated = spawnSync(process.execPath, [
@@ -239,15 +242,28 @@ try {
         audit.validation.secondImport !== true ||
         !fs.existsSync(outputPath)
       ) process.exit(57);
-      return { templateId, outputPath };
+      return { templateId, outputPath, artifactKind, title };
     });
-    const sourceFreeDocument = await DocumentFile.importDocx(fs.readFileSync(generatedTemplates[0].outputPath));
-    if (!sourceFreeDocument.blocks.some((block) => block.text === "Strategy Memorandum")) process.exit(58);
-    const sourceFreePresentation = await PresentationFile.importPptx(fs.readFileSync(generatedTemplates[1].outputPath));
-    if (sourceFreePresentation.slides.count !== 3 || sourceFreePresentation.slides.getItem(0).name !== "Kickoff overview") process.exit(59);
-    const sourceFreeWorkbook = await SpreadsheetFile.importXlsx(fs.readFileSync(generatedTemplates[2].outputPath));
-    sourceFreeWorkbook.recalculate();
-    if (JSON.stringify(sourceFreeWorkbook.worksheets.getItem("Budget Summary").getRange("D4:D7").values) !== JSON.stringify([["OK"], ["OK"], ["OK"], ["OK"]])) process.exit(60);
+    for (const generatedTemplate of generatedTemplates) {
+      const bytes = fs.readFileSync(generatedTemplate.outputPath);
+      if (generatedTemplate.artifactKind === "document") {
+        const document = await DocumentFile.importDocx(bytes);
+        if (!document.blocks.some((block) => block.text === generatedTemplate.title)) process.exit(58);
+      } else if (generatedTemplate.artifactKind === "presentation") {
+        const presentation = await PresentationFile.importPptx(bytes);
+        if (presentation.slides.count !== 3 || !presentation.slides.getItem(0).shapes.items.some((shape) => shape.text.value === generatedTemplate.title)) process.exit(59);
+      } else {
+        const workbook = await SpreadsheetFile.importXlsx(bytes);
+        workbook.recalculate();
+        if (!workbook.worksheets.items.length) process.exit(60);
+      }
+    }
+    const sourceFreeBudget = await SpreadsheetFile.importXlsx(fs.readFileSync(generatedTemplates.find((item) => item.templateId === "artifact-template-financial-budget").outputPath));
+    sourceFreeBudget.recalculate();
+    if (JSON.stringify(sourceFreeBudget.worksheets.getItem("Budget Summary").getRange("D4:D7").values) !== JSON.stringify([["OK"], ["OK"], ["OK"], ["OK"]])) process.exit(61);
+    const sourceFreeTracker = await SpreadsheetFile.importXlsx(fs.readFileSync(generatedTemplates.find((item) => item.templateId === "artifact-template-project-tracker").outputPath));
+    sourceFreeTracker.recalculate();
+    if (JSON.stringify(sourceFreeTracker.worksheets.getItem("Project Summary").getRange("D4:D8").values) !== JSON.stringify([["OK"], ["OK"], ["OK"], ["OK"], ["OK"]])) process.exit(62);
   `;
 
   run(process.execPath, ["--input-type=module", "-e", probe], temporary, {
