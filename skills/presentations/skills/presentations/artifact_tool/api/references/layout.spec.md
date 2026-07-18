@@ -40,18 +40,19 @@ layout.placeholders.add({
   style: { fontSize: 18, color: "#334155" },
 });
 
-const slide = presentation.slides.add({ name: "Overview" });
-slide.setLayout(layout); // alias: slide.applyLayout(layout)
+const slide = presentation.slides.add({ name: "Overview", layout });
 slide.placeholders.getItem("title").text.set("Q3 operating plan");
 slide.placeholders.getItem("body").text.set("Three concise, auditable points.");
 
 const pptx = await PresentationFile.exportPptx(presentation);
 ```
 
-`slide.setLayout()` binds the layout and materializes ordinary editable slide
-shapes with native `p:ph` identity and a direct `a:xfrm`. Use it before
-populating a placeholder. Passing `{ layout }` to `slides.add()` creates only
-the binding; it intentionally does not invent slide placeholder content.
+`slides.add({ layout })` resolves the layout transactionally and materializes
+ordinary editable slide shapes with native `p:ph` identity and a direct
+`a:xfrm`. `slide.setLayout(layout)` / `slide.applyLayout(layout)` provide the
+same binding after creation. Reapplying the same layout is idempotent; changing
+an already materialized layout fails closed rather than leaving an ambiguous
+placeholder topology.
 
 ## Placeholder config
 

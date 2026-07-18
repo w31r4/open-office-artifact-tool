@@ -232,7 +232,7 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "presentation.layouts.getById", summary: "Resolve a layout by its stable ID without falling back to a same-named or same-typed layout." },
   { artifactKind: "presentation", kind: "api", name: "presentation.layout.setBackground", summary: "Set a direct background on a bounded source-free layout. Imported-layout mutation remains source-bound and fails closed." },
   { artifactKind: "presentation", kind: "api", name: "presentation.layout.clearBackground", summary: "Clear a direct background on a bounded source-free layout. Imported-layout mutation remains source-bound and fails closed." },
-  { artifactKind: "presentation", kind: "api", name: "slide.applyLayout", summary: "Bind a slide to a bounded source-free layout and materialize its effective direct-frame placeholder shapes. The resulting p:ph identities and direct frames export natively; imported Layout relationships remain preservation-only." },
+  { artifactKind: "presentation", kind: "api", name: "slide.applyLayout", summary: "Bind a slide to a bounded source-free layout and materialize its effective direct-frame placeholder shapes. Applying the same layout is idempotent; switching a materialized layout fails closed. The resulting p:ph identities and direct frames export natively; imported Layout relationships remain preservation-only." },
   { artifactKind: "presentation", kind: "api", name: "slide.setLayout", summary: "Alias of slide.applyLayout(layout): bind and materialize a bounded source-free layout for native PPTX export." },
   { artifactKind: "presentation", kind: "api", name: "slide.placeholders.getItem", summary: "Resolve a materialized slide placeholder shape by stable ID, name, placeholder type, or numeric index." },
   { artifactKind: "presentation", kind: "api", name: "slide.addNotes", summary: "Set plain-text speaker notes for inspect, preview, and canonical PPTX output. OpenChestnut authors source-free notes and edits hash-bound simple imported notes bodies; rich or irregular imported notes fail closed instead of losing formatting." },
@@ -1226,10 +1226,10 @@ const PRESENTATION_HELP_SCHEMAS = {
   "presentation.view": helpSchema({}, "view", "PresentationView", "Local gridlinesVisible/guidesVisible state with show/hide/toggle methods, optional imported gridSpacingCxEmu/gridSpacingCyEmu, and serialized hidden guide visibility. Imported slide-guide definitions are exposed read-only through master/layout slideGuides and remain source-bound in PPTX output."),
   "presentation.slides.add": helpSchema({
     name: { type: "string", description: "Inspectable slide name." },
-    layout: { type: "string|object", description: "Optional bounded layout name/ID/facade binding. Call slide.applyLayout or slide.setLayout to materialize its text placeholders; a bare binding exports a native relationship but does not create slide placeholder shapes." },
+    layout: { type: "string|object", description: "Optional bounded layout name/ID/facade. slides.add resolves it transactionally and materializes its text placeholders; an unknown or cross-presentation layout leaves no slide behind." },
     background: { type: "string|object", description: "Optional direct slide background: RGB/theme color or { fill, mode: 'solid'|'reference', index? }. Gradient, pattern, image, transform, and effect-bearing backgrounds are preview-only/source-preserved and fail closed on canonical mutation." },
     notes: { type: "string", description: "Optional plain-text speaker notes authored into the canonical PresentationML notes graph." },
-  }, "slide", "Slide", "Appended editable slide."),
+  }, "slide", "Slide", "Appended editable slide. A supplied bounded source-free layout is bound and materialized immediately."),
   "slide.setBackground": helpSchema({
     background: { type: "string|object", required: true, description: "Direct RGB/theme color or { fill, mode: 'solid'|'reference', index? }; reference index must be an unsigned 32-bit integer." },
   }, "slide", "Slide", "The same slide with a normalized direct background; canonical PPTX export never flattens inherited Layout/Master backgrounds."),
@@ -1418,7 +1418,7 @@ const PRESENTATION_HELP_SCHEMAS = {
   "presentation.layout.clearBackground": helpSchema({}, "layout", "SlideLayoutTemplate", "Clears a direct background on a bounded source-free layout. Imported-layout edits fail closed."),
   "slide.applyLayout": helpSchema({
     layout: { type: "string|SlideLayoutTemplate", required: true, description: "Layout name/ID or layout facade." },
-  }, "shapes", "Shape[]", "Binds the slide and materializes effective direct-frame title/body/ctrTitle/subTitle placeholder shapes for native source-free PPTX output."),
+  }, "shapes", "Shape[]", "Binds the slide and materializes effective direct-frame title/body/ctrTitle/subTitle placeholder shapes for native source-free PPTX output. Reapplying the same layout is idempotent; switching an already-materialized layout fails closed."),
   "slide.setLayout": helpSchema({
     layout: { type: "string|SlideLayoutTemplate", required: true, description: "Layout name/ID or layout facade." },
   }, "slide", "Slide", "Alias of applyLayout that returns the slide."),

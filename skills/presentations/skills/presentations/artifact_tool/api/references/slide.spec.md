@@ -52,15 +52,17 @@ a simple solid and describe that as a faithful edit.
 ## Layouts And Placeholders
 
 ```ts
-// Source-free authoring only: materialize direct-frame p:ph shapes from one
-// canonical master/layout before filling them.
-slide.setLayout(layout); // alias: slide.applyLayout(layout)
+// Source-free authoring only: either supply the layout on creation or bind it
+// explicitly before filling direct-frame p:ph shapes.
+const slide = presentation.slides.add({ layout });
 
 const placeholder = slide.placeholders.getItem("title");
 placeholder.text.set("Updated section title");
 ```
 
-This is a bounded authoring path, not a generic template editor. The layout
+`slide.setLayout(layout)` / `slide.applyLayout(layout)` provide the same
+materialization after creation and are idempotent for the same layout. This is
+a bounded authoring path, not a generic template editor. The layout
 must be one of the source-free canonical layouts described in
 [`layout.spec.md`](./layout.spec.md), and source-free `title`, `body`,
 `ctrTitle`, and `subTitle` placeholders need a direct frame. Existing

@@ -1273,7 +1273,7 @@ Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or 
 | `shape.text.set` | api | Set plain or structured text with ordered text, field, and line-break inlines; bounded run formatting; character, picture-bullet, or auto-numbered lists; levels, indents, spacing; and external URI, internal-slide, or relative-action hyperlinks. Custom-show links and unmodeled text graphs fail closed in canonical PPTX export. |
 | `shape.useBackgroundFill` | api | Read the presence-aware imported PresentationML p:sp useBgFill flag. It affects preview paint but remains source-bound and read-only; source-free authoring or wire mutation fails closed. |
 | `slide.addNotes` | api | Set plain-text speaker notes for inspect, preview, and canonical PPTX output. OpenChestnut authors source-free notes and edits hash-bound simple imported notes bodies; rich or irregular imported notes fail closed instead of losing formatting. |
-| `slide.applyLayout` | api | Bind a slide to a bounded source-free layout and materialize its effective direct-frame placeholder shapes. The resulting p:ph identities and direct frames export natively; imported Layout relationships remain preservation-only. |
+| `slide.applyLayout` | api | Bind a slide to a bounded source-free layout and materialize its effective direct-frame placeholder shapes. Applying the same layout is idempotent; switching a materialized layout fails closed. The resulting p:ph identities and direct frames export natively; imported Layout relationships remain preservation-only. |
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
 | `slide.charts.add` | api | Add a source-free bar, line, or pie chart, or a bounded literal clustered bar+line combo. All variants use literal categories/numeric values, title, legend, basic series fill/line/marker formatting, chart-level data labels, layout JSON, SVG preview, and native PPTX output. A combo requires at least one primary bar and one line series; all lines share either the primary category/value pair or the canonical secondary top/right pair, and its plot/series/point topology stays fixed after import. External data, mixed line groups, secondary bars, point overrides, trendlines, error bars, per-series data labels, smooth lines, and irregular combo graphs fail closed on export. |
 | `slide.clearBackground` | api | Remove the direct slide background so preview and PPTX output inherit from the preserved Layout/Master chain. Unsupported imported background graphs fail closed rather than being flattened or discarded. |
@@ -1672,13 +1672,13 @@ Append an editable core slide with an optional direct solid/style-reference back
 **Schema parameters:**
 
 - `name` (string) — Inspectable slide name.
-- `layout` (string|object) — Optional bounded layout name/ID/facade binding. Call slide.applyLayout or slide.setLayout to materialize its text placeholders; a bare binding exports a native relationship but does not create slide placeholder shapes.
+- `layout` (string|object) — Optional bounded layout name/ID/facade. slides.add resolves it transactionally and materializes its text placeholders; an unknown or cross-presentation layout leaves no slide behind.
 - `background` (string|object) — Optional direct slide background: RGB/theme color or { fill, mode: 'solid'|'reference', index? }. Gradient, pattern, image, transform, and effect-bearing backgrounds are preview-only/source-preserved and fail closed on canonical mutation.
 - `notes` (string) — Optional plain-text speaker notes authored into the canonical PresentationML notes graph.
 
 **Schema returns:**
 
-- `slide` (Slide) — Appended editable slide.
+- `slide` (Slide) — Appended editable slide. A supplied bounded source-free layout is bound and materialized immediately.
 
 #### `presentation.textRange`
 
@@ -1848,7 +1848,7 @@ Set plain-text speaker notes for inspect, preview, and canonical PPTX output. Op
 
 #### `slide.applyLayout`
 
-Bind a slide to a bounded source-free layout and materialize its effective direct-frame placeholder shapes. The resulting p:ph identities and direct frames export natively; imported Layout relationships remain preservation-only.
+Bind a slide to a bounded source-free layout and materialize its effective direct-frame placeholder shapes. Applying the same layout is idempotent; switching a materialized layout fails closed. The resulting p:ph identities and direct frames export natively; imported Layout relationships remain preservation-only.
 
 **Schema parameters:**
 
@@ -1856,7 +1856,7 @@ Bind a slide to a bounded source-free layout and materialize its effective direc
 
 **Schema returns:**
 
-- `shapes` (Shape[]) — Binds the slide and materializes effective direct-frame title/body/ctrTitle/subTitle placeholder shapes for native source-free PPTX output.
+- `shapes` (Shape[]) — Binds the slide and materializes effective direct-frame title/body/ctrTitle/subTitle placeholder shapes for native source-free PPTX output. Reapplying the same layout is idempotent; switching an already-materialized layout fails closed.
 
 #### `slide.autoLayout`
 

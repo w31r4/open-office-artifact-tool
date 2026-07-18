@@ -121,10 +121,14 @@ authoredLayout.placeholders.add({
 });
 assert.equal(authoredLayoutPresentation.layouts.getById(authoredLayout.id), authoredLayout);
 assert.equal(authoredLayout.placeholders.count, 1);
-const authoredLayoutSlide = authoredLayoutPresentation.slides.add({ name: "Reusable layout" });
+const authoredLayoutSlide = authoredLayoutPresentation.slides.add({ name: "Reusable layout", layout: "Title and body" });
+assert.equal(authoredLayoutSlide.layoutId, authoredLayout.id);
+assert.equal(authoredLayoutSlide.placeholders.count, 2);
+const materializedPlaceholderCount = authoredLayoutSlide.shapes.items.length;
 assert.equal(authoredLayoutSlide.setLayout(authoredLayout), authoredLayoutSlide);
 assert.equal(authoredLayoutSlide.layoutId, authoredLayout.id);
 assert.equal(authoredLayoutSlide.placeholders.count, 2);
+assert.equal(authoredLayoutSlide.shapes.items.length, materializedPlaceholderCount);
 const authoredTitle = authoredLayoutSlide.placeholders.getItem("title");
 const authoredBody = authoredLayoutSlide.placeholders.getItem(1);
 assert.ok(authoredTitle);
@@ -151,6 +155,26 @@ assert.equal(importedLayoutSlide.placeholders.getItem("title").text.value, "Open
 assert.equal(importedLayoutSlide.placeholders.getItem("body").text.value, "A direct-frame body placeholder survives native export and import.");
 const authoredLayoutRoundTrip = await PresentationFile.exportPptx(authoredLayoutImported);
 assert.equal((await PresentationFile.inspectPptx(authoredLayoutRoundTrip)).ok, true);
+
+const guardedLayoutPresentation = Presentation.create();
+const firstGuardedLayout = guardedLayoutPresentation.layouts.add({
+  name: "First guarded layout",
+  type: "title",
+  placeholders: [{ type: "title", index: 0, position: { left: 80, top: 72, width: 960, height: 88 } }],
+});
+const secondGuardedLayout = guardedLayoutPresentation.layouts.add({ name: "Second guarded layout", type: "blank" });
+const guardedLayoutSlide = guardedLayoutPresentation.slides.add({ layout: firstGuardedLayout });
+assert.throws(
+  () => guardedLayoutSlide.setLayout(secondGuardedLayout),
+  /already has materialized placeholders.*changing layouts/i,
+);
+const slideCountBeforeUnknownLayout = guardedLayoutPresentation.slides.count;
+assert.throws(
+  () => guardedLayoutPresentation.slides.add({ layout: "Missing layout" }),
+  /Unknown presentation layout: Missing layout/,
+);
+assert.equal(guardedLayoutPresentation.slides.count, slideCountBeforeUnknownLayout);
+
 const invalidSourceFreeLayout = Presentation.create();
 const invalidSourceFreeSlide = invalidSourceFreeLayout.slides.add();
 const invalidLayout = invalidSourceFreeLayout.layouts.add({

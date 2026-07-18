@@ -72,9 +72,10 @@ clearly named ordinary shape for a permitted local overlay, use the deck's
 native host for template edits, or rebuild a source-free deck when that is the
 actual intent.
 
-For a new source-free deck, create the canonical master/layout and call
-`slide.setLayout(layout)` before filling the direct-frame `title`, `body`,
-`ctrTitle`, or `subTitle` placeholders; see
+For a new source-free deck, create the canonical master/layout and use
+`slides.add({ layout })` (or call `slide.setLayout(layout)` after creation)
+before filling the direct-frame `title`, `body`, `ctrTitle`, or `subTitle`
+placeholders; see
 [`layout.spec.md`](../layout.spec.md). This is deliberately separate from
 imported-template mutation.
 

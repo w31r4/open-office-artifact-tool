@@ -43,8 +43,26 @@ class SlideCollection {
   }
 
   add(options = {}) {
+    if (!options || typeof options !== "object" || Array.isArray(options)) throw new TypeError("Presentation slide options must be an object.");
     const slide = new Slide(this.presentation, options);
+    const requestedLayout = options.layout ?? options.layoutId;
+    if (requestedLayout == null) {
+      this.items.push(slide);
+      return slide;
+    }
+    const layout = typeof requestedLayout === "string"
+      ? this.presentation.layouts.getItem(requestedLayout)
+      : requestedLayout;
+    if (!(layout instanceof SlideLayoutTemplate) || layout.presentation !== this.presentation) {
+      throw new Error(`Unknown presentation layout: ${typeof requestedLayout === "string" ? requestedLayout : "provided layout"}`);
+    }
     this.items.push(slide);
+    try {
+      layout.apply(slide);
+    } catch (error) {
+      this.items.pop();
+      throw error;
+    }
     return slide;
   }
 
@@ -371,9 +389,22 @@ class SlideLayoutTemplate {
   effectiveBackground() { return this.background || this.effectiveMaster()?.effectiveBackground() || normalizePresentationBackground(this.presentation.theme.colors.bg1, "#ffffff"); }
 
   apply(slide) {
+    if (!(slide instanceof Slide) || slide.presentation !== this.presentation) {
+      throw new TypeError("Presentation layouts can only be applied to a slide from the same presentation.");
+    }
+    const materializedOtherLayout = slide.shapes.items.find((shape) =>
+      shape.placeholder?.layoutId && shape.placeholder.layoutId !== this.id);
+    if (materializedOtherLayout) {
+      throw new Error(`Slide ${slide.id} already has materialized placeholders from layout ${materializedOtherLayout.placeholder.layoutId}; changing layouts would leave an ambiguous placeholder topology.`);
+    }
     slide.layoutId = this.id;
     const placeholders = this.effectivePlaceholders();
     return placeholders.map((placeholder) => {
+      const existing = slide.shapes.items.find((shape) =>
+        shape.placeholder?.layoutId === this.id &&
+        shape.placeholder?.type === placeholder.type &&
+        Number(shape.placeholder?.idx) === placeholder.idx);
+      if (existing) return existing;
       const shape = slide.shapes.add({
         id: placeholder.id,
         name: placeholder.name,
@@ -870,7 +901,13 @@ export class Slide {
   addGroup(config = {}) { return this.groups.add(config); }
   setBackground(background) { this.background = normalizePresentationBackground(background, this.background); return this; }
   clearBackground() { this.background = {}; return this; }
-  applyLayout(layoutOrName) { const layout = typeof layoutOrName === "string" ? this.presentation.layouts.getItem(layoutOrName) : layoutOrName; if (!layout) throw new Error(`Unknown slide layout: ${layoutOrName}`); return layout.apply(this); }
+  applyLayout(layoutOrName) {
+    const layout = typeof layoutOrName === "string" ? this.presentation.layouts.getItem(layoutOrName) : layoutOrName;
+    if (!(layout instanceof SlideLayoutTemplate) || layout.presentation !== this.presentation) {
+      throw new Error(`Unknown slide layout: ${typeof layoutOrName === "string" ? layoutOrName : "provided layout"}`);
+    }
+    return layout.apply(this);
+  }
   setLayout(layoutOrName) { this.applyLayout(layoutOrName); return this; }
   effectiveBackground() { const layout = this.presentation.layouts.getItem(this.layoutId); return this.background.fill ? this.background : layout?.effectiveBackground() || this.presentation.master.effectiveBackground(); }
   effectiveTheme() { const layout = this.presentation.layouts.getItem(this.layoutId); return layout?.effectiveTheme() || this.presentation.master.effectiveTheme(); }
