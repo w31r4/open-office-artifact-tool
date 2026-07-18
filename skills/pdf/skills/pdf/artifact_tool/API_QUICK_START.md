@@ -265,6 +265,34 @@ const withoutObsoleteLink = await PdfFile.editPdf(input, {
 await withoutObsoleteLink.save("third-party-without-obsolete-link.pdf");
 ```
 
+To replace that same link's target without moving its native rectangle, use the
+same locator and snapshot with a URL-only patch:
+
+```js
+const updatedPolicyLink = await PdfFile.editPdf(input, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "update_link",
+    page: link.page,
+    linkId: link.id,
+    sourceSha256: inspection.summary.sourceSha256,
+    expected: {
+      url: link.url,
+      bbox: link.bbox,
+      external: link.external,
+    },
+    patch: { url: "https://example.com/current-policy" },
+  }],
+});
+await updatedPolicyLink.save("third-party-policy-link-updated.pdf");
+```
+
+The patch must contain exactly one non-empty `url`; a link rectangle is
+snapshot evidence, not mutable geometry. MuPDF's bounds setter does not provide
+a stable saved/reloaded coordinate contract for this public API, so move a link
+through an explicit delete-plus-add transaction from a fresh inspection or a
+specialist provider. Re-inspect the rewrite before any later link operation.
+
 `mupdf-link-<page>-<fingerprint>` is source-byte-bound, not a persistent link
 identity. It has no native xref because the MuPDF link API abstracts that
 object away; its fingerprint covers page, URL, rectangle, and externality. A

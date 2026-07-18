@@ -39,6 +39,7 @@ const INCREMENTAL_DESTRUCTIVE_OPERATIONS = new Set([
   "delete_page",
   "delete_embedded_file",
   "delete_link",
+  "update_link",
   "redact_text",
   "redact_rect",
 ]);
@@ -49,6 +50,7 @@ const ANNOTATION_EXPECTATION_FIELDS = new Set(["type", "contents", "name", "auth
 const ANNOTATION_PATCH_FIELDS = new Set(["contents", "author", "subject"]);
 const LINK_ID_PREFIX = "mupdf-link";
 const LINK_EXPECTATION_FIELDS = new Set(["url", "bbox", "external"]);
+const LINK_PATCH_FIELDS = new Set(["url"]);
 
 function limitsFor(options = {}) {
   const topLevel = Object.fromEntries(Object.keys(DEFAULT_LIMITS)
@@ -301,38 +303,38 @@ function linkId(pageNumber, record) {
   return `${LINK_ID_PREFIX}-${pageNumber}-${fingerprint}`;
 }
 
-function parseLinkId(value) {
+function parseLinkId(value, operationName = "delete_link") {
   const match = new RegExp(`^${LINK_ID_PREFIX}-(\\d+)-([a-f0-9]{64})$`, "u").exec(String(value || ""));
-  if (!match) throw new Error(`delete_link linkId must be a ${LINK_ID_PREFIX}-<page>-<fingerprint> locator returned by PdfFile.inspectPdf.`);
+  if (!match) throw new Error(`${operationName} linkId must be a ${LINK_ID_PREFIX}-<page>-<fingerprint> locator returned by PdfFile.inspectPdf.`);
   const page = Number(match[1]);
-  if (!Number.isSafeInteger(page) || page < 1) throw new Error("delete_link linkId contains an invalid page number.");
+  if (!Number.isSafeInteger(page) || page < 1) throw new Error(`${operationName} linkId contains an invalid page number.`);
   return { page, fingerprint: match[2] };
 }
 
-function linkExpectation(value) {
+function linkExpectation(value, operationName = "delete_link") {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("delete_link expected must be an object with at least one source snapshot field.");
+    throw new Error(`${operationName} expected must be an object with at least one source snapshot field.`);
   }
   for (const name of Object.keys(value)) {
     if (!LINK_EXPECTATION_FIELDS.has(name)) {
-      throw new Error(`delete_link expected contains unsupported snapshot field: ${name}.`);
+      throw new Error(`${operationName} expected contains unsupported snapshot field: ${name}.`);
     }
   }
   const expected = {};
   if (value.url !== undefined) {
-    if (typeof value.url !== "string") throw new Error("delete_link expected.url must be a string.");
+    if (typeof value.url !== "string") throw new Error(`${operationName} expected.url must be a string.`);
     expected.url = value.url;
   }
   if (value.bbox !== undefined) {
-    bboxToPdfRect(value.bbox, "delete_link expected.bbox");
+    bboxToPdfRect(value.bbox, `${operationName} expected.bbox`);
     expected.bbox = value.bbox.map(Number);
   }
   if (value.external !== undefined) {
-    if (typeof value.external !== "boolean") throw new Error("delete_link expected.external must be a boolean.");
+    if (typeof value.external !== "boolean") throw new Error(`${operationName} expected.external must be a boolean.`);
     expected.external = value.external;
   }
   if (!Object.keys(expected).length) {
-    throw new Error("delete_link expected must include at least one of url, bbox, or external.");
+    throw new Error(`${operationName} expected must include at least one of url, bbox, or external.`);
   }
   return expected;
 }
@@ -342,6 +344,21 @@ function linkExpectationMismatch(actual, expected) {
   if (expected.external !== undefined && actual.external !== expected.external) return "external";
   if (expected.bbox !== undefined && !pdfRectsEqual(bboxToPdfRect(actual.bbox), bboxToPdfRect(expected.bbox))) return "bbox";
   return undefined;
+}
+
+function linkPatch(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("update_link patch must be an object containing url.");
+  }
+  for (const name of Object.keys(value)) {
+    if (!LINK_PATCH_FIELDS.has(name)) {
+      throw new Error(`update_link patch contains unsupported field: ${name}.`);
+    }
+  }
+  if (typeof value.url !== "string" || !value.url.trim()) {
+    throw new Error("update_link patch.url must be a non-empty string.");
+  }
+  return { url: value.url };
 }
 
 function nativeWidget(widget) {
@@ -898,37 +915,60 @@ function applyAnnotationUpdate(document, operation, context = {}) {
   }
 }
 
-function applyLinkDeletion(document, operation, context = {}) {
+function withSourceBoundLink(document, operation, context = {}, operationName, mutate) {
   const { index, page } = pageFor(document, operation);
   let links = [];
   let retained = [];
   let target;
   try {
     if (!/^[a-f0-9]{64}$/u.test(String(operation.sourceSha256 || "")) || operation.sourceSha256 !== context.sourceSha256) {
-      throw new Error("delete_link sourceSha256 must exactly match PdfFile.inspectPdf(...).summary.sourceSha256 for the current input bytes.");
+      throw new Error(`${operationName} sourceSha256 must exactly match PdfFile.inspectPdf(...).summary.sourceSha256 for the current input bytes.`);
     }
-    const locator = parseLinkId(operation.linkId);
+    const locator = parseLinkId(operation.linkId, operationName);
     if (locator.page !== index + 1) {
-      throw new Error(`delete_link linkId page ${locator.page} does not match operation page ${index + 1}.`);
+      throw new Error(`${operationName} linkId page ${locator.page} does not match operation page ${index + 1}.`);
     }
-    const expected = linkExpectation(operation.expected);
+    const expected = linkExpectation(operation.expected, operationName);
     links = page.getLinks();
     const matches = links.filter((link) => nativeLink(link, index + 1).id === operation.linkId);
     if (matches.length !== 1) {
-      throw new Error(`delete_link could not uniquely find source-bound link ${operation.linkId} on page ${index + 1}. Re-inspect the current source PDF before retrying.`);
+      throw new Error(`${operationName} could not uniquely find source-bound link ${operation.linkId} on page ${index + 1}. Re-inspect the current source PDF before retrying.`);
     }
     target = matches[0];
     const matched = nativeLink(target, index + 1);
     if (matched.id !== operation.linkId || !matched.id.endsWith(locator.fingerprint)) {
-      throw new Error(`delete_link locator ${operation.linkId} did not resolve to the expected native link.`);
+      throw new Error(`${operationName} locator ${operation.linkId} did not resolve to the expected native link.`);
     }
     const mismatch = linkExpectationMismatch(matched, expected);
     if (mismatch) {
-      throw new Error(`delete_link precondition ${mismatch} did not match ${operation.linkId}; refusing a stale or ambiguous mutation.`);
+      throw new Error(`${operationName} precondition ${mismatch} did not match ${operation.linkId}; refusing a stale or ambiguous mutation.`);
     }
+    return mutate({
+      index,
+      page,
+      links,
+      target,
+      matched,
+      locator,
+      readRetained() {
+        if (retained.length) throw new Error(`${operationName} read native links more than once while verifying one mutation.`);
+        retained = page.getLinks();
+        return retained;
+      },
+    });
+  } finally {
+    for (const link of new Set([...links, ...retained, target].filter(Boolean))) link.destroy();
+    page.destroy();
+  }
+}
+
+function applyLinkDeletion(document, operation, context = {}) {
+  return withSourceBoundLink(document, operation, context, "delete_link", ({
+    index, page, links, target, matched, readRetained,
+  }) => {
     const beforeCount = links.length;
     page.deleteLink(target);
-    retained = page.getLinks();
+    const retained = readRetained();
     if (retained.some((link) => nativeLink(link, index + 1).id === operation.linkId)) {
       throw new Error(`MuPDF did not remove link ${operation.linkId}; refusing to save an ambiguous deletion.`);
     }
@@ -940,10 +980,32 @@ function applyLinkDeletion(document, operation, context = {}) {
       beforeCount,
       afterCount: retained.length,
     };
-  } finally {
-    for (const link of new Set([...links, ...retained, target].filter(Boolean))) link.destroy();
-    page.destroy();
-  }
+  });
+}
+
+function applyLinkUpdate(document, operation, context = {}) {
+  const patch = linkPatch(operation.patch);
+  return withSourceBoundLink(document, operation, context, "update_link", ({
+    index, target, matched, readRetained,
+  }) => {
+    target.setURI(patch.url);
+    const retained = readRetained();
+    const updatedMatches = retained
+      .map((link) => nativeLink(link, index + 1))
+      .filter((link) => link.url === patch.url
+        && pdfRectsEqual(bboxToPdfRect(link.bbox), bboxToPdfRect(matched.bbox)));
+    if (updatedMatches.length !== 1) {
+      throw new Error(`MuPDF did not retain one uniquely addressable link after update_link ${operation.linkId}; refusing to save an ambiguous update.`);
+    }
+    return {
+      type: "update_link",
+      page: index + 1,
+      linkId: matched.id,
+      matched,
+      patch,
+      updated: updatedMatches[0],
+    };
+  });
 }
 
 function normalizeCheckboxValue(value, field) {
@@ -1055,6 +1117,7 @@ function applyOperation(document, operation, context) {
       }
     }
     case "delete_link": return applyLinkDeletion(document, operation, context);
+    case "update_link": return applyLinkUpdate(document, operation, context);
     case "redact_text": return applyTextRedaction(document, operation);
     case "redact_rect": return applyRectRedaction(document, operation);
     default: throw new Error(`Unsupported MuPDF edit operation: ${operation.type}.`);

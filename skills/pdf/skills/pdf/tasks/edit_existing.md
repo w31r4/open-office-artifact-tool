@@ -11,14 +11,14 @@ node scripts/mupdf.mjs probe
 node scripts/mupdf.mjs inspect input.pdf
 ```
 
-Its typed operations are `add_text_annotation`, text/choice/checkbox `fill_form`, `delete_page`, source-bound `delete_annotation` and `update_annotation`, complete `rearrange_pages`, visible-only `set_page_crop`, absolute-quarter-turn `rotate_page`, `set_metadata`, `delete_embedded_file`, source-bound `delete_link`, `redact_text`, and `redact_rect`. Run with one explicit save policy:
+Its typed operations are `add_text_annotation`, text/choice/checkbox `fill_form`, `delete_page`, source-bound `delete_annotation` and `update_annotation`, complete `rearrange_pages`, visible-only `set_page_crop`, absolute-quarter-turn `rotate_page`, `set_metadata`, `delete_embedded_file`, source-bound `delete_link` and `update_link`, `redact_text`, and `redact_rect`. Run with one explicit save policy:
 
 ```bash
 node scripts/mupdf.mjs edit input.pdf tmp/pdfs/edit-operations.json tmp/pdfs/edited.pdf \
   --save-policy rewrite
 ```
 
-The CLI refuses source overwrite, writes atomically, and rejects incremental redaction/deletion and signed-PDF incremental edits. Unsupported operations do not route elsewhere.
+The CLI refuses source overwrite, writes atomically, and rejects incremental redaction, source-bound annotation/link mutation, deletion, and signed-PDF incremental edits. Unsupported operations do not route elsewhere.
 
 ## Visible page crop
 
@@ -114,6 +114,38 @@ patched: MuPDF normalizes native Text annotation geometry. For a real move or
 resize, use an explicit delete-plus-add transaction with a fresh inspection, or
 route to a specialist provider. `update_annotation` is rewrite-only, and the
 output must be re-inspected before a subsequent annotation update or deletion.
+
+## Update one imported link URL
+
+Use the same inspect-first source binding to replace one link target while
+retaining its current native rectangle:
+
+```json
+[
+  {
+    "type": "update_link",
+    "page": 2,
+    "linkId": "mupdf-link-2-<inspect fingerprint>",
+    "sourceSha256": "<inspect summary sourceSha256>",
+    "expected": {
+      "url": "https://example.com/obsolete-policy",
+      "bbox": [72, 128, 160, 18],
+      "external": true
+    },
+    "patch": {
+      "url": "https://example.com/current-policy"
+    }
+  }
+]
+```
+
+`update_link` accepts only one non-empty `patch.url` field. The source
+fingerprint, page, and every supplied expected fact must match before mutation.
+It is rewrite-only, and the output must be re-inspected before any later link
+operation. Link geometry is intentionally not patchable: the MuPDF bounds
+setter's saved/reloaded coordinate semantics are not a stable public API
+contract. Use an explicit source-bound delete-plus-add transaction or a
+specialist provider when the rectangle needs to move.
 
 ## Delete one imported link
 

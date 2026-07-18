@@ -313,6 +313,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schem
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schema?.parameters?.operations?.description || "", /delete_annotation.*sourceSha256.*mupdf-annotation/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schema?.parameters?.operations?.description || "", /update_annotation.*contents.*author.*subject.*rectangle.*expected/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schema?.parameters?.operations?.description || "", /delete_link.*sourceSha256.*mupdf-link/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schema?.parameters?.operations?.description || "", /update_link.*non-empty url.*link bounds.*snapshot/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.schema?.parameters?.maxLinks?.type, "number");
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.schema?.returns?.inspection?.description || "", /raw MediaBox\/CropBox.*rotation/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.schema?.returns?.inspection?.description || "", /sourceSha256.*mupdfAnnotation.*mupdfLink/i);

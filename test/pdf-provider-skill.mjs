@@ -99,6 +99,7 @@ assert.match(skillText, /rotate_page/);
 assert.match(skillText, /delete_annotation/);
 assert.match(skillText, /update_annotation/);
 assert.match(skillText, /delete_link/);
+assert.match(skillText, /update_link/);
 assert.match(skillText, /sourceSha256/);
 assert.match(skillText, /mupdf-link/);
 assert.match(skillText, /not redaction/i);
@@ -167,6 +168,8 @@ try {
   const mupdfAnnotationUpdateOutput = path.join(tempRoot, "mupdf-annotation-update-output.pdf");
   const mupdfAnnotationDeleteOperations = path.join(tempRoot, "mupdf-annotation-delete-operations.json");
   const mupdfAnnotationDeleteOutput = path.join(tempRoot, "mupdf-annotation-delete-output.pdf");
+  const mupdfLinkUpdateOperations = path.join(tempRoot, "mupdf-link-update-operations.json");
+  const mupdfLinkUpdateOutput = path.join(tempRoot, "mupdf-link-update-output.pdf");
   const mupdfLinkDeleteOperations = path.join(tempRoot, "mupdf-link-delete-operations.json");
   const mupdfLinkDeleteOutput = path.join(tempRoot, "mupdf-link-delete-output.pdf");
   const mupdfArtifact = PdfArtifact.create({ text: "MuPDF Skill CLI fixture" });
@@ -180,17 +183,37 @@ try {
   assert.equal(mupdfInspection.summary.pages, 1);
   const mupdfLink = mupdfInspection.records.find((record) => record.kind === "mupdfLink");
   assert.match(mupdfLink.id, /^mupdf-link-1-[a-f0-9]{64}$/);
-  await fs.writeFile(mupdfLinkDeleteOperations, JSON.stringify({
+  await fs.writeFile(mupdfLinkUpdateOperations, JSON.stringify({
     savePolicy: "rewrite",
     operations: [{
-      type: "delete_link",
+      type: "update_link",
       page: mupdfLink.page,
       linkId: mupdfLink.id,
       sourceSha256: mupdfInspection.summary.sourceSha256,
       expected: { url: mupdfLink.url, bbox: mupdfLink.bbox, external: mupdfLink.external },
+      patch: { url: "https://example.com/cli-link-updated" },
     }],
   }), "utf8");
-  const mupdfLinkDeleted = parseResult(run(process.execPath, [mupdfCli, "edit", mupdfInput, mupdfLinkDeleteOperations, mupdfLinkDeleteOutput], { status: 0 }));
+  const mupdfLinkUpdated = parseResult(run(process.execPath, [mupdfCli, "edit", mupdfInput, mupdfLinkUpdateOperations, mupdfLinkUpdateOutput], { status: 0 }));
+  assert.equal(mupdfLinkUpdated.savePolicy, "rewrite");
+  assert.equal(mupdfLinkUpdated.operations[0].type, "update_link");
+  const mupdfLinkUpdatedInspection = await PdfFile.inspectPdf(await fs.readFile(mupdfLinkUpdateOutput));
+  const mupdfUpdatedLink = mupdfLinkUpdatedInspection.records.find((record) => record.kind === "mupdfLink");
+  assert.ok(mupdfUpdatedLink);
+  assert.equal(mupdfUpdatedLink.url, "https://example.com/cli-link-updated");
+  assert.deepEqual(mupdfUpdatedLink.bbox, mupdfLink.bbox);
+  assert.notEqual(mupdfLinkUpdatedInspection.summary.sourceSha256, mupdfInspection.summary.sourceSha256);
+  await fs.writeFile(mupdfLinkDeleteOperations, JSON.stringify({
+    savePolicy: "rewrite",
+    operations: [{
+      type: "delete_link",
+      page: mupdfUpdatedLink.page,
+      linkId: mupdfUpdatedLink.id,
+      sourceSha256: mupdfLinkUpdatedInspection.summary.sourceSha256,
+      expected: { url: mupdfUpdatedLink.url, bbox: mupdfUpdatedLink.bbox, external: mupdfUpdatedLink.external },
+    }],
+  }), "utf8");
+  const mupdfLinkDeleted = parseResult(run(process.execPath, [mupdfCli, "edit", mupdfLinkUpdateOutput, mupdfLinkDeleteOperations, mupdfLinkDeleteOutput], { status: 0 }));
   assert.equal(mupdfLinkDeleted.savePolicy, "rewrite");
   assert.equal(mupdfLinkDeleted.operations[0].type, "delete_link");
   assert.equal((await PdfFile.inspectPdf(await fs.readFile(mupdfLinkDeleteOutput))).records.some((record) => record.kind === "mupdfLink"), false);

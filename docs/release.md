@@ -197,6 +197,32 @@ Every rewrite requires a fresh inspect before another link operation. The link
 budget protects both parser reconstruction and native inspection from
 unbounded link-record expansion.
 
+### PDF source-bound link update
+
+Direct-original MuPDF.js editing now adds one bounded `update_link` operation.
+It uses the same exact input SHA-256, inspected page/fingerprint locator, and
+URL/rectangle/externality snapshot as link deletion, then replaces only one
+non-empty target URL. It reads the native link list again before saving and
+requires exactly one retained link with the requested URL and the original
+rectangle; otherwise the whole rewrite fails without output.
+
+This is rewrite-only. A link update is not safe for an incremental revision
+because the prior target remains in older bytes, and every later link operation
+must use a fresh inspected source hash and fingerprint.
+
+The operation deliberately does not expose `patch.bbox`. A direct native probe
+called `setBounds([96, 144, 216, 168])`, but after a save/reload the public
+inspector reported `[96, 624, 120, 24]`. That coordinate-layer leak is not a
+stable public geometry contract, so the API refuses a bounds patch rather than
+publishing a misleading move primitive. To move a link, an agent must explicitly
+delete and add a new link from fresh inspection evidence, or use a specialist
+provider.
+
+Library and published-Skill CLI tests cover stale snapshots, incremental
+refusal, rejected bounds patches, URL update with retained rectangle,
+fresh-output reinspection, and a subsequent delete that only uses the refreshed
+link fingerprint and source hash.
+
 ### XLSX criteria extrema and branch formulas
 
 On 2026-07-18, the bounded JavaScript calculation catalog added `MINIFS` and

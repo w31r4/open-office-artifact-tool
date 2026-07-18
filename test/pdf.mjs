@@ -662,6 +662,61 @@ await assert.rejects(PdfFile.editPdf(arbitraryLinkPdf, {
 await assert.rejects(PdfFile.editPdf(arbitraryLinkPdf, {
   savePolicy: "incremental",
   operations: [{
+    type: "update_link",
+    page: removableLink.page,
+    linkId: removableLink.id,
+    sourceSha256: mupdfLinkInspection.summary.sourceSha256,
+    expected: { url: removableLink.url, bbox: removableLink.bbox },
+    patch: { url: "https://www.w3.org/WAI/ARIA/" },
+  }],
+}), /destructive operation update_link cannot save incrementally/);
+await assert.rejects(PdfFile.editPdf(arbitraryLinkPdf, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "update_link",
+    page: removableLink.page,
+    linkId: removableLink.id,
+    sourceSha256: mupdfLinkInspection.summary.sourceSha256,
+    expected: { url: "https://stale.invalid/" },
+    patch: { url: "https://www.w3.org/WAI/ARIA/" },
+  }],
+}), /precondition url did not match/);
+await assert.rejects(PdfFile.editPdf(arbitraryLinkPdf, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "update_link",
+    page: removableLink.page,
+    linkId: removableLink.id,
+    sourceSha256: mupdfLinkInspection.summary.sourceSha256,
+    expected: { url: removableLink.url, bbox: removableLink.bbox },
+    patch: { bbox: [96, 144, 120, 24] },
+  }],
+}), /patch contains unsupported field: bbox/);
+const mupdfLinkUpdated = await PdfFile.editPdf(arbitraryLinkPdf, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "update_link",
+    page: removableLink.page,
+    linkId: removableLink.id,
+    sourceSha256: mupdfLinkInspection.summary.sourceSha256,
+    expected: { url: removableLink.url, bbox: removableLink.bbox, external: removableLink.external },
+    patch: { url: "https://www.w3.org/WAI/ARIA/" },
+  }],
+});
+assert.equal(mupdfLinkUpdated.metadata.savePolicy, "rewrite");
+assert.equal(mupdfLinkUpdated.metadata.sourceSha256, mupdfLinkInspection.summary.sourceSha256);
+assert.deepEqual(mupdfLinkUpdated.metadata.operations[0].patch, { url: "https://www.w3.org/WAI/ARIA/" });
+const updatedLinkInspection = await PdfFile.inspectPdf(mupdfLinkUpdated);
+const updatedLink = updatedLinkInspection.records.find((record) => record.kind === "mupdfLink" && record.url === "https://www.w3.org/WAI/ARIA/");
+assert.ok(updatedLink);
+assert.match(updatedLink.id, /^mupdf-link-1-[a-f0-9]{64}$/);
+assert.notEqual(updatedLink.id, removableLink.id);
+assert.equal(updatedLink.external, true);
+assert.deepEqual(updatedLink.bbox, removableLink.bbox);
+assert.notEqual(updatedLinkInspection.summary.sourceSha256, mupdfLinkInspection.summary.sourceSha256);
+await assert.rejects(PdfFile.editPdf(arbitraryLinkPdf, {
+  savePolicy: "incremental",
+  operations: [{
     type: "delete_link",
     page: removableLink.page,
     linkId: removableLink.id,
@@ -699,18 +754,18 @@ await assert.rejects(PdfFile.editPdf(arbitraryLinkPdf, {
     expected: { url: removableLink.url, staleGuard: true },
   }],
 }), /expected contains unsupported snapshot field: staleGuard/);
-const mupdfLinkDeleted = await PdfFile.editPdf(arbitraryLinkPdf, {
+const mupdfLinkDeleted = await PdfFile.editPdf(mupdfLinkUpdated, {
   savePolicy: "rewrite",
   operations: [{
     type: "delete_link",
-    page: removableLink.page,
-    linkId: removableLink.id,
-    sourceSha256: mupdfLinkInspection.summary.sourceSha256,
-    expected: { url: removableLink.url, bbox: removableLink.bbox, external: removableLink.external },
+    page: updatedLink.page,
+    linkId: updatedLink.id,
+    sourceSha256: updatedLinkInspection.summary.sourceSha256,
+    expected: { url: updatedLink.url, bbox: updatedLink.bbox, external: updatedLink.external },
   }],
 });
-assert.equal(mupdfLinkDeleted.metadata.operations[0].linkId, removableLink.id);
-assert.equal(mupdfLinkDeleted.metadata.sourceSha256, mupdfLinkInspection.summary.sourceSha256);
+assert.equal(mupdfLinkDeleted.metadata.operations[0].linkId, updatedLink.id);
+assert.equal(mupdfLinkDeleted.metadata.sourceSha256, updatedLinkInspection.summary.sourceSha256);
 assert.equal(mupdfLinkDeleted.metadata.operations[0].beforeCount, 1);
 assert.equal(mupdfLinkDeleted.metadata.operations[0].afterCount, 0);
 assert.equal((await PdfFile.inspectPdf(mupdfLinkDeleted)).records.some((record) => record.kind === "mupdfLink"), false);
