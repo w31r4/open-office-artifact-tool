@@ -86,6 +86,20 @@ try {
   const threadedTrace = JSON.stringify({ type: "item.completed", item: { type: "command_execution", id: "xlsx-threaded", command: "node -e 'SpreadsheetFile.importXlsx(); SpreadsheetFile.exportXlsx()'" } });
   const threadedChecks = gradeXlsxThreadedReplyEvidence({ evidence: threadedEvidence, audit: threadedAudit, commands: extractCompletedCommands(threadedTrace), item: threadedReplyItem });
   assert.equal(threadedChecks.every((check) => check.passed), true);
+  const publishedWorkflowChecks = gradeXlsxThreadedReplyEvidence({
+    evidence: threadedEvidence,
+    audit: threadedAudit,
+    commands: ["node .agents/skills/spreadsheets/examples/openchestnut-threaded-comment-reply-workflow.mjs inputs/reviewed-budget.xlsx outputs/reviewed-budget-resolved.xlsx outputs/audit.json"],
+    item: threadedReplyItem,
+  });
+  assert.equal(publishedWorkflowChecks.find((check) => check.id === "xlsx-trace:typed-roundtrip")?.passed, true);
+  const untrustedWorkflowChecks = gradeXlsxThreadedReplyEvidence({
+    evidence: threadedEvidence,
+    audit: threadedAudit,
+    commands: ["node scratch/threaded-comment-reply-workflow.mjs inputs/reviewed-budget.xlsx outputs/reviewed-budget-resolved.xlsx outputs/audit.json"],
+    item: threadedReplyItem,
+  });
+  assert.equal(untrustedWorkflowChecks.find((check) => check.id === "xlsx-trace:typed-roundtrip")?.passed, false);
   const nativeThreadedResult = await gradeOfficeCase({ item: threadedReplyItem, workspace: threadedReplyRoot, evaluator: path.join(threadedReplyRoot, "evaluator"), finalMessage: "completed", trace: threadedTrace });
   if (nativeThreadedResult.graded) {
     assert.equal(nativeThreadedResult.rawScorePercent, 100);

@@ -14,6 +14,7 @@ import { extractCompletedCommands, summarizeCaseScore } from "./agent-eval-pdf-g
 const supportedCases = new Set(["xlsx-threaded-reply-resolve"]);
 const defaultWeights = { machine: 45, visual: 25, security: 20, trace: 10 };
 const GUID = /^\{[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\}$/i;
+const SHIPPED_THREADED_WORKFLOW = /(?:^|[\s"'`])(?:\.?\/)?(?:\.agents\/skills\/spreadsheets|node_modules\/open-office-artifact-tool\/skills\/spreadsheets\/skills\/spreadsheets)\/examples\/openchestnut-threaded-comment-reply-workflow\.mjs(?:$|[\s"'`])/i;
 
 function check(id, category, passed, details = {}) {
   return { id, category, gate: false, passed: Boolean(passed), ...details };
@@ -189,6 +190,14 @@ function auditHash(audit, side) {
   return String(record.sha256 || audit?.[`${side}Sha256`] || "");
 }
 
+function usedTypedXlsxRoundTrip(commandText) {
+  const directPublicApi = /(?:SpreadsheetFile\.)?importXlsx/i.test(commandText) && /(?:SpreadsheetFile\.)?exportXlsx/i.test(commandText);
+  // The runner fingerprints both the copied .agents Skill and installed package tree
+  // before execution. Accepting this exact published entrypoint therefore preserves
+  // the typed-route requirement without rewarding an arbitrary local wrapper.
+  return directPublicApi || SHIPPED_THREADED_WORKFLOW.test(commandText);
+}
+
 function originalCommentEquivalent(left, right) {
   return left && right
     && left.id === right.id
@@ -258,8 +267,8 @@ export function gradeXlsxThreadedReplyEvidence({ evidence, audit, commands, item
     gate("xlsx-trace:no-silent-fallback", "trace", auditFallbackIsFalse(audit), { provider: audit?.provider || null }),
     check("xlsx-trace:rewrite-policy", "trace", /^rewrite$/i.test(auditStrategy(audit)), { strategy: auditStrategy(audit) }),
     check("xlsx-trace:threaded-operation", "trace", /thread|comment/i.test(auditOperation(audit)), { operation: auditOperation(audit) }),
-    check("xlsx-trace:typed-roundtrip", "trace", /(?:SpreadsheetFile\.)?importXlsx/i.test(commandText) && /(?:SpreadsheetFile\.)?exportXlsx/i.test(commandText), {
-      expected: "public SpreadsheetFile importXlsx/exportXlsx workflow",
+    check("xlsx-trace:typed-roundtrip", "trace", usedTypedXlsxRoundTrip(commandText), {
+      expected: "public SpreadsheetFile importXlsx/exportXlsx calls or the integrity-protected published threaded-comment workflow",
     }),
     check("xlsx-trace:second-import", "trace", audit?.validation?.reimport?.ok === true || audit?.validation?.secondImport?.ok === true, {
       validation: audit?.validation || null,
