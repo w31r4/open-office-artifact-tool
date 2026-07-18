@@ -275,16 +275,49 @@ assert.equal(mupdfPng.type, "image/png");
 assert.deepEqual([...mupdfPng.bytes.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
 assert.equal(mupdfPng.metadata.provider, "mupdf");
 await assert.rejects(renderPdfWithMuPdf(arbitraryPdf.bytes, { dpi: 72, limits: { maxRenderPixels: 1 } }), /exceeds maxRenderPixels/);
-const mupdfIncremental = await PdfFile.editPdf(arbitraryPdf, {
+const mupdfAnnotationSourcePage = mupdfInspect.records.find((record) => record.kind === "mupdfPage" && record.page === 1);
+const sourceBoundTextAnnotation = {
+  type: "add_text_annotation",
+  page: 1,
+  sourceSha256: mupdfInspect.summary.sourceSha256,
+  expectedPage: { bbox: mupdfAnnotationSourcePage.bbox, rotation: mupdfAnnotationSourcePage.rotation },
+  point: [40, 40],
+  contents: "Agent review",
+  author: "Agent",
+};
+await assert.rejects(PdfFile.editPdf(arbitraryPdf, {
   savePolicy: "incremental",
+  operations: [sourceBoundTextAnnotation],
+}), /source-bound operation add_text_annotation cannot save incrementally/);
+await assert.rejects(PdfFile.editPdf(arbitraryPdf, {
+  savePolicy: "rewrite",
+  operations: [{ ...sourceBoundTextAnnotation, sourceSha256: "0".repeat(64) }],
+}), /sourceSha256 must exactly match/);
+await assert.rejects(PdfFile.editPdf(arbitraryPdf, {
+  savePolicy: "rewrite",
+  operations: [{ ...sourceBoundTextAnnotation, expectedPage: { bbox: [1, 1, 600, 780], rotation: 0 } }],
+}), /precondition page bbox did not match/);
+await assert.rejects(PdfFile.editPdf(arbitraryPdf, {
+  savePolicy: "rewrite",
+  operations: [{ ...sourceBoundTextAnnotation, point: [600, 780] }],
+}), /icon footprint must fit fully inside/);
+await assert.rejects(PdfFile.editPdf(arbitraryPdf, {
+  savePolicy: "rewrite",
+  operations: [{ ...sourceBoundTextAnnotation, contents: undefined, text: "legacy text" }],
+}), /uses contents, not the legacy text alias/);
+const mupdfAnnotated = await PdfFile.editPdf(arbitraryPdf, {
+  savePolicy: "rewrite",
   operations: [
-    { type: "add_text_annotation", page: 1, bbox: [40, 40, 24, 24], text: "Agent review", author: "Agent" },
-    { type: "add_text_annotation", page: 1, bbox: [72, 72, 24, 24], text: "Keep this review", author: "Agent" },
+    sourceBoundTextAnnotation,
+    { ...sourceBoundTextAnnotation, point: [72, 72], contents: "Keep this review" },
   ],
 });
-assert.equal(mupdfIncremental.metadata.savePolicy, "incremental");
-assert.equal(Buffer.from(mupdfIncremental.bytes.subarray(0, arbitraryPdf.bytes.length)).equals(Buffer.from(arbitraryPdf.bytes)), true);
-const mupdfAnnotationInspection = await PdfFile.inspectPdf(mupdfIncremental);
+assert.equal(mupdfAnnotated.metadata.savePolicy, "rewrite");
+assert.equal(mupdfAnnotated.metadata.operations[0].beforeCount, 0);
+assert.equal(mupdfAnnotated.metadata.operations[0].afterCount, 1);
+assert.deepEqual(mupdfAnnotated.metadata.operations[0].point, [40, 40]);
+assert.deepEqual(mupdfAnnotated.metadata.operations[0].added.rect, [40, 40, 20, 20]);
+const mupdfAnnotationInspection = await PdfFile.inspectPdf(mupdfAnnotated);
 assert.match(mupdfAnnotationInspection.summary.sourceSha256, /^[a-f0-9]{64}$/);
 assert.equal(mupdfAnnotationInspection.records.find((record) => record.kind === "mupdfPage" && record.page === 1).annotations, 2);
 const removableAnnotation = mupdfAnnotationInspection.records.find((record) => record.kind === "mupdfAnnotation" && record.contents === "Agent review");
@@ -292,10 +325,11 @@ assert.match(removableAnnotation.id, /^mupdf-annotation-1-\d+$/);
 assert.equal(removableAnnotation.type, "Text");
 assert.equal(removableAnnotation.author, "Agent");
 assert.equal(Number.isSafeInteger(removableAnnotation.xref), true);
-const parsedAnnotations = await parsePdfWithMuPdf(mupdfIncremental.bytes);
+const parsedAnnotations = await parsePdfWithMuPdf(mupdfAnnotated.bytes);
 assert.equal(parsedAnnotations.pages[0].native.annotations.find((annotation) => annotation.contents === "Agent review").id, removableAnnotation.id);
-await assert.rejects(PdfFile.inspectPdf(mupdfIncremental, { limits: { maxAnnotations: 1 } }), /annotations exceed maxAnnotations/);
-await assert.rejects(PdfFile.editPdf(mupdfIncremental, {
+assert.deepEqual(removableAnnotation.rect, [40, 40, 20, 20]);
+await assert.rejects(PdfFile.inspectPdf(mupdfAnnotated, { limits: { maxAnnotations: 1 } }), /annotations exceed maxAnnotations/);
+await assert.rejects(PdfFile.editPdf(mupdfAnnotated, {
   savePolicy: "incremental",
   operations: [{
     type: "delete_annotation",
@@ -305,7 +339,7 @@ await assert.rejects(PdfFile.editPdf(mupdfIncremental, {
     expected: { type: removableAnnotation.type, contents: removableAnnotation.contents },
   }],
 }), /destructive operation delete_annotation cannot save incrementally/);
-await assert.rejects(PdfFile.editPdf(mupdfIncremental, {
+await assert.rejects(PdfFile.editPdf(mupdfAnnotated, {
   savePolicy: "rewrite",
   operations: [{
     type: "delete_annotation",
@@ -315,7 +349,7 @@ await assert.rejects(PdfFile.editPdf(mupdfIncremental, {
     expected: { type: removableAnnotation.type, contents: "stale text" },
   }],
 }), /precondition contents did not match/);
-await assert.rejects(PdfFile.editPdf(mupdfIncremental, {
+await assert.rejects(PdfFile.editPdf(mupdfAnnotated, {
   savePolicy: "rewrite",
   operations: [{
     type: "delete_annotation",
@@ -325,7 +359,7 @@ await assert.rejects(PdfFile.editPdf(mupdfIncremental, {
     expected: { type: removableAnnotation.type, contents: removableAnnotation.contents },
   }],
 }), /sourceSha256 must exactly match/);
-await assert.rejects(PdfFile.editPdf(mupdfIncremental, {
+await assert.rejects(PdfFile.editPdf(mupdfAnnotated, {
   savePolicy: "rewrite",
   operations: [{
     type: "delete_annotation",
@@ -335,7 +369,7 @@ await assert.rejects(PdfFile.editPdf(mupdfIncremental, {
     expected: { type: removableAnnotation.type, staleGuard: true },
   }],
 }), /expected contains unsupported snapshot field: staleGuard/);
-const mupdfAnnotationDeleted = await PdfFile.editPdf(mupdfIncremental, {
+const mupdfAnnotationDeleted = await PdfFile.editPdf(mupdfAnnotated, {
   savePolicy: "rewrite",
   operations: [{
     type: "delete_annotation",
@@ -360,7 +394,7 @@ const deletedAnnotationInspection = await PdfFile.inspectPdf(mupdfAnnotationDele
 assert.equal(deletedAnnotationInspection.records.find((record) => record.kind === "mupdfPage" && record.page === 1).annotations, 1);
 assert.deepEqual(deletedAnnotationInspection.records.filter((record) => record.kind === "mupdfAnnotation").map((record) => record.contents), ["Keep this review"]);
 assert.notEqual(deletedAnnotationInspection.summary.sourceSha256, mupdfAnnotationInspection.summary.sourceSha256);
-await assert.rejects(PdfFile.editPdf(mupdfIncremental, {
+await assert.rejects(PdfFile.editPdf(mupdfAnnotated, {
   savePolicy: "incremental",
   operations: [{
     type: "update_annotation",
@@ -371,7 +405,7 @@ await assert.rejects(PdfFile.editPdf(mupdfIncremental, {
     patch: { contents: "Resolved review" },
   }],
 }), /destructive operation update_annotation cannot save incrementally/);
-await assert.rejects(PdfFile.editPdf(mupdfIncremental, {
+await assert.rejects(PdfFile.editPdf(mupdfAnnotated, {
   savePolicy: "rewrite",
   operations: [{
     type: "update_annotation",
@@ -382,7 +416,7 @@ await assert.rejects(PdfFile.editPdf(mupdfIncremental, {
     patch: { contents: "Resolved review" },
   }],
 }), /precondition contents did not match/);
-await assert.rejects(PdfFile.editPdf(mupdfIncremental, {
+await assert.rejects(PdfFile.editPdf(mupdfAnnotated, {
   savePolicy: "rewrite",
   operations: [{
     type: "update_annotation",
@@ -393,7 +427,7 @@ await assert.rejects(PdfFile.editPdf(mupdfIncremental, {
     patch: { rect: [48, 48, 24, 24] },
   }],
 }), /patch contains unsupported field: rect/);
-const mupdfAnnotationUpdated = await PdfFile.editPdf(mupdfIncremental, {
+const mupdfAnnotationUpdated = await PdfFile.editPdf(mupdfAnnotated, {
   savePolicy: "rewrite",
   operations: [{
     type: "update_annotation",
@@ -414,7 +448,7 @@ assert.equal(updatedAnnotation.author, "Reviewer");
 assert.equal(updatedAnnotation.subject, "Board");
 assert.deepEqual(updatedAnnotation.rect, removableAnnotation.rect);
 assert.notEqual(updatedAnnotationInspection.summary.sourceSha256, mupdfAnnotationInspection.summary.sourceSha256);
-const nonTextAnnotationNativeDocument = new mupdf.PDFDocument(mupdfIncremental.bytes);
+const nonTextAnnotationNativeDocument = new mupdf.PDFDocument(mupdfAnnotated.bytes);
 const nonTextAnnotationNativePage = nonTextAnnotationNativeDocument.loadPage(0);
 let nonTextAnnotationNative;
 let nonTextAnnotationNativeOutput;
@@ -660,7 +694,18 @@ await assert.rejects(PdfFile.editPdf(sourceBoundFormPdf, {
   }],
 }), /expected\.widgets must contain exactly one.*shared-widget/);
 const signatureLiteralPdf = await PdfFile.exportPdf(PdfArtifact.create({ text: "Literal /ByteRange [ text is not a signature" }));
-const signatureLiteralEdited = await PdfFile.editPdf(signatureLiteralPdf, { operations: [{ type: "add_text_annotation", page: 1, text: "Not signed" }] });
+const signatureLiteralInspection = await PdfFile.inspectPdf(signatureLiteralPdf);
+const signatureLiteralPage = signatureLiteralInspection.records.find((record) => record.kind === "mupdfPage" && record.page === 1);
+const signatureLiteralEdited = await PdfFile.editPdf(signatureLiteralPdf, {
+  operations: [{
+    type: "add_text_annotation",
+    page: 1,
+    sourceSha256: signatureLiteralInspection.summary.sourceSha256,
+    expectedPage: { bbox: signatureLiteralPage.bbox, rotation: signatureLiteralPage.rotation },
+    point: [40, 40],
+    contents: "Not signed",
+  }],
+});
 assert.equal(signatureLiteralEdited.metadata.signedInput, false);
 assert.equal(typeof createMuPdfParser(), "function");
 const fileInspect = await PdfFile.inspectPdf(blob, { maxChars: 12000 });

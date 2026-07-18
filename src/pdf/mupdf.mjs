@@ -34,6 +34,7 @@ const METADATA_KEYS = Object.freeze({
 });
 
 const INCREMENTAL_DESTRUCTIVE_OPERATIONS = new Set([
+  "add_text_annotation",
   "delete_annotation",
   "update_annotation",
   "delete_page",
@@ -55,8 +56,9 @@ const FORM_FIELD_EXPECTATION_FIELDS = new Set(["name", "type", "value", "readOnl
 const LINK_ID_PREFIX = "mupdf-link";
 const LINK_EXPECTATION_FIELDS = new Set(["url", "bbox", "external"]);
 const LINK_PATCH_FIELDS = new Set(["url"]);
-const LINK_PAGE_EXPECTATION_FIELDS = new Set(["bbox", "rotation"]);
+const PAGE_EXPECTATION_FIELDS = new Set(["bbox", "rotation"]);
 const SAFE_NATIVE_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
+const TEXT_ANNOTATION_ANCHOR_SIZE = 20;
 
 function limitsFor(options = {}) {
   const topLevel = Object.fromEntries(Object.keys(DEFAULT_LIMITS)
@@ -407,12 +409,12 @@ function nativeLinkUri(value, label = "link url") {
   return url;
 }
 
-function linkPageExpectation(value, operationName = "add_link") {
+function pageExpectation(value, operationName) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error(`${operationName} expectedPage must be an inspect-returned object with bbox and rotation.`);
   }
   for (const name of Object.keys(value)) {
-    if (!LINK_PAGE_EXPECTATION_FIELDS.has(name)) {
+    if (!PAGE_EXPECTATION_FIELDS.has(name)) {
       throw new Error(`${operationName} expectedPage contains unsupported snapshot field: ${name}.`);
     }
   }
@@ -427,18 +429,57 @@ function linkPageExpectation(value, operationName = "add_link") {
   return { bbox: pdfRectToBbox(bbox), rotation };
 }
 
-function nativeLinkPageSnapshot(page) {
+function nativePageSnapshot(page, operationName) {
   const bbox = pdfRectToBbox(page.getBounds("CropBox"));
   const rotation = rawPageRotation(page);
   if (rotation === undefined || !PAGE_ROTATIONS.has(rotation)) {
-    throw new Error("add_link requires a finite right-angle inherited Rotate value.");
+    throw new Error(`${operationName} requires a finite right-angle inherited Rotate value.`);
   }
   return { bbox, rotation };
 }
 
-function linkPageExpectationMismatch(actual, expected) {
+function pageExpectationMismatch(actual, expected) {
   if (!pdfRectsEqual(bboxToPdfRect(actual.bbox), bboxToPdfRect(expected.bbox))) return "bbox";
   if (actual.rotation !== expected.rotation) return "rotation";
+  return undefined;
+}
+
+function textAnnotationPoint(value) {
+  if (!Array.isArray(value) || value.length !== 2 || !value.every((coordinate) => Number.isFinite(Number(coordinate)))) {
+    throw new Error("add_text_annotation point must be [x, y] in the inspected raw unrotated PDF page coordinates.");
+  }
+  return value.map(Number);
+}
+
+function textAnnotationRequest(operation) {
+  if (operation.text !== undefined) {
+    throw new Error("add_text_annotation uses contents, not the legacy text alias.");
+  }
+  if (operation.bbox !== undefined || operation.rect !== undefined) {
+    throw new Error("add_text_annotation uses one source-bound point, not a requested rectangle; MuPDF owns the native Text-note icon rectangle.");
+  }
+  if (typeof operation.contents !== "string" || !operation.contents.length) {
+    throw new Error("add_text_annotation requires non-empty contents.");
+  }
+  const request = { contents: operation.contents, point: textAnnotationPoint(operation.point) };
+  for (const name of ["author", "subject"]) {
+    if (operation[name] === undefined) continue;
+    if (typeof operation[name] !== "string" || !operation[name].length) {
+      throw new Error(`add_text_annotation ${name} must be a non-empty string when supplied.`);
+    }
+    request[name] = operation[name];
+  }
+  return request;
+}
+
+function annotationAddedAtPointMismatch(actual, request) {
+  if (actual.type !== "Text") return "type";
+  for (const name of ["contents", "author", "subject"]) {
+    if (request[name] !== undefined && actual[name] !== request[name]) return name;
+  }
+  if (!actual.rect || Math.abs(actual.rect[0] - request.point[0]) > 0.001 || Math.abs(actual.rect[1] - request.point[1]) > 0.001) {
+    return "point";
+  }
   return undefined;
 }
 
@@ -1204,6 +1245,85 @@ function applyPageRotation(document, operation) {
   }
 }
 
+function applyTextAnnotationAddition(document, operation, context = {}) {
+  const { index, page } = pageFor(document, operation);
+  let annotations = [];
+  let retained = [];
+  let created;
+  try {
+    if (!/^[a-f0-9]{64}$/u.test(String(operation.sourceSha256 || "")) || operation.sourceSha256 !== context.sourceSha256) {
+      throw new Error("add_text_annotation sourceSha256 must exactly match PdfFile.inspectPdf(...).summary.sourceSha256 for the current input bytes.");
+    }
+    const expectedPage = pageExpectation(operation.expectedPage, "add_text_annotation");
+    const request = textAnnotationRequest(operation);
+    const actualPage = nativePageSnapshot(page, "add_text_annotation");
+    const pageMismatch = pageExpectationMismatch(actualPage, expectedPage);
+    if (pageMismatch) {
+      throw new Error(`add_text_annotation precondition page ${pageMismatch} did not match page ${index + 1}; refusing stale coordinate evidence.`);
+    }
+    if (actualPage.rotation !== 0) {
+      throw new Error(`add_text_annotation supports only unrotated pages; page ${index + 1} has /Rotate ${actualPage.rotation}. Use a specialist provider for rotated annotation placement.`);
+    }
+    const visibleRect = bboxToPdfRect(actualPage.bbox, "add_text_annotation inspected CropBox");
+    const anchorRect = [
+      request.point[0],
+      request.point[1],
+      request.point[0] + TEXT_ANNOTATION_ANCHOR_SIZE,
+      request.point[1] + TEXT_ANNOTATION_ANCHOR_SIZE,
+    ];
+    if (!pdfRectContains(visibleRect, anchorRect)) {
+      throw new Error(`add_text_annotation point plus its native Text-note icon footprint must fit fully inside the inspected visible CropBox on page ${index + 1}.`);
+    }
+    annotations = page.getAnnotations();
+    // MuPDF's returned annotation list is a live view: creating a note can
+    // mutate its length in place. Snapshot the count before the mutation.
+    const beforeCount = annotations.length;
+    created = page.createAnnotation("Text");
+    created.setRect(anchorRect);
+    created.setContents(request.contents);
+    if (request.author !== undefined) created.setAuthor(request.author);
+    if (request.subject !== undefined) created.setSubject(request.subject);
+    created.update();
+    page.update();
+    const immediate = nativeAnnotation(created, index + 1);
+    if (!immediate.id || !immediate.xref) {
+      throw new Error("MuPDF did not create a uniquely addressable Text annotation; refusing to save an ambiguous addition.");
+    }
+    let mismatch = annotationAddedAtPointMismatch(immediate, request);
+    if (mismatch) {
+      throw new Error(`MuPDF did not preserve add_text_annotation ${mismatch} before save; refusing an ambiguous addition.`);
+    }
+    if (!immediate.rect || !pdfRectContains(visibleRect, bboxToPdfRect(immediate.rect))) {
+      throw new Error("MuPDF placed the Text annotation outside the inspected visible CropBox; refusing an ambiguous addition.");
+    }
+    retained = page.getAnnotations();
+    const added = retained.filter((annotation) => annotationXref(annotation) === immediate.xref);
+    if (retained.length !== beforeCount + 1 || added.length !== 1) {
+      throw new Error(`MuPDF did not retain exactly one uniquely addressable Text annotation on page ${index + 1}; refusing an ambiguous addition.`);
+    }
+    const addedRecord = nativeAnnotation(added[0], index + 1);
+    mismatch = annotationAddedAtPointMismatch(addedRecord, request);
+    if (mismatch) {
+      throw new Error(`MuPDF did not retain add_text_annotation ${mismatch} on page ${index + 1}; refusing an ambiguous addition.`);
+    }
+    if (!addedRecord.rect || !pdfRectContains(visibleRect, bboxToPdfRect(addedRecord.rect))) {
+      throw new Error("MuPDF retained the Text annotation outside the inspected visible CropBox; refusing an ambiguous addition.");
+    }
+    return {
+      type: "add_text_annotation",
+      page: index + 1,
+      expectedPage,
+      point: request.point,
+      added: addedRecord,
+      beforeCount,
+      afterCount: retained.length,
+    };
+  } finally {
+    for (const annotation of new Set([...annotations, ...retained, created].filter(Boolean))) annotation.destroy();
+    page.destroy();
+  }
+}
+
 function applyAnnotationDeletion(document, operation, context = {}) {
   const { index, page } = pageFor(document, operation);
   let annotations = [];
@@ -1415,11 +1535,11 @@ function applyLinkAddition(document, operation, context = {}) {
     if (!/^[a-f0-9]{64}$/u.test(String(operation.sourceSha256 || "")) || operation.sourceSha256 !== context.sourceSha256) {
       throw new Error("add_link sourceSha256 must exactly match PdfFile.inspectPdf(...).summary.sourceSha256 for the current input bytes.");
     }
-    const expectedPage = linkPageExpectation(operation.expectedPage, "add_link");
+    const expectedPage = pageExpectation(operation.expectedPage, "add_link");
     const requestedRect = bboxToPdfRect(operation.bbox, "add_link bbox");
     const url = nativeLinkUri(operation.url, "add_link url");
-    const actualPage = nativeLinkPageSnapshot(page);
-    const pageMismatch = linkPageExpectationMismatch(actualPage, expectedPage);
+    const actualPage = nativePageSnapshot(page, "add_link");
+    const pageMismatch = pageExpectationMismatch(actualPage, expectedPage);
     if (pageMismatch) {
       throw new Error(`add_link precondition page ${pageMismatch} did not match page ${index + 1}; refusing stale coordinate evidence.`);
     }
@@ -1477,27 +1597,7 @@ function normalizeCheckboxValue(value, field, operationName = "fill_form") {
 
 function applyOperation(document, operation, context) {
   switch (operation.type) {
-    case "add_text_annotation": {
-      const { index, page } = pageFor(document, operation);
-      let annotation;
-      try {
-        const rect = operation.bbox || operation.rect || [Number(operation.point?.[0] || 0), Number(operation.point?.[1] || 0), 24, 24];
-        const text = String(operation.text || operation.contents || "");
-        if (!text) throw new Error("add_text_annotation requires non-empty text.");
-        annotation = page.createAnnotation("Text");
-        annotation.setRect(bboxToPdfRect(rect, "annotation rectangle"));
-        annotation.setContents(text);
-        if (operation.author) annotation.setAuthor(String(operation.author));
-        if (operation.subject) annotation.setSubject(String(operation.subject));
-        if (operation.icon) annotation.setIcon(String(operation.icon));
-        annotation.update();
-        page.update();
-        return { type: operation.type, page: index + 1 };
-      } finally {
-        annotation?.destroy();
-        page.destroy();
-      }
-    }
+    case "add_text_annotation": return applyTextAnnotationAddition(document, operation, context);
     case "fill_form": {
       const field = String(operation.field || operation.name || "");
       if (!field) throw new Error("fill_form requires a field name.");
@@ -1597,8 +1697,8 @@ export async function editPdfWithMuPdf(input, options = {}) {
   if (destructiveIncremental) {
     const label = destructiveIncremental.type.startsWith("redact_")
       ? "redaction"
-      : destructiveIncremental.type === "add_link"
-        ? "source-bound operation add_link"
+      : ["add_link", "add_text_annotation"].includes(destructiveIncremental.type)
+        ? `source-bound operation ${destructiveIncremental.type}`
         : `destructive operation ${destructiveIncremental.type}`;
     throw new Error(`MuPDF ${label} cannot save incrementally because prior revisions retain the original content; use rewrite. Rewrite is still not a complete sanitize workflow.`);
   }
