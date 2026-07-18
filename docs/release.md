@@ -1051,6 +1051,17 @@ On 2026-07-17, the native reference-plugin/OpenChestnut compatibility worktree p
 
 ## Hosted evidence
 
+The canonical Default Template Library reference-pin candidate at commit
+`2424ea03d28a7a5a9f2c51695a6113b6d219da78` passed the hosted Linux `ci`
+workflow in [GitHub Actions run 29656750965](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29656750965)
+on 2026-07-19. The run completed with conclusion `success` in 12m14s. It
+recursively checked out public `office-artifact-tool` commit `256cb31`, compared
+all 40 retained Office/PNG assets byte-for-byte, and then passed deterministic
+protocol/runtime verification, Chromium/LibreOffice/Poppler tool checks, the
+complete npm suite and native template corpus, generated API-doc cleanliness,
+offline release metadata, the 447-file clean-install tarball, OfficeBridge
+`5/5`, and OpenChestnut `260/260`.
+
 The bounded imported SlidePart placeholder-text candidate at commit
 `f37d8adbcd5d0637efcbf6fcf10ef9821bfb4216` passed the hosted Linux `ci`
 workflow in [GitHub Actions run 29655361922](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29655361922)
