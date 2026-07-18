@@ -15,8 +15,8 @@ The suite is evaluator-side repository infrastructure. `evals/`, the runner, loc
 
 ## Current suite
 
-- 29 cases: 19 PDF, 4 Documents, 4 Spreadsheets, and 2 Presentations.
-- 9 `ready` cases use deterministic generated or inline inputs: seven PDF cases, one XLSX threaded-comment workflow, and one DOCX classic-comment workflow.
+- 30 cases: 19 PDF, 4 Documents, 4 Spreadsheets, and 3 Presentations.
+- 10 `ready` cases use deterministic generated or inline inputs: seven PDF cases plus one bounded XLSX threaded-comment, DOCX classic-comment, and PPTX title-and-speaker-notes workflow each.
 - 20 `asset-required` cases define fixture specifications but do not run until licensed, version-pinned corpus files or test PKI are placed under `evals/assets/`.
 - Every family has both a success and a fail-closed case. Some advanced PDF cases accept either verified success or an explicit safe refusal.
 - The default policy uses three trials per subject. Trial count is recorded per case rather than silently inferred by the Agent.
@@ -37,11 +37,13 @@ npm run eval:agents -- prepare xlsx-threaded-reply-resolve --subject candidate -
 npm run eval:agents -- run xlsx-threaded-reply-resolve --subject candidate --trial 1
 npm run eval:agents -- prepare docx-classic-comment-text-edit --subject candidate --trial 1
 npm run eval:agents -- run docx-classic-comment-text-edit --subject candidate --trial 1
+npm run eval:agents -- prepare pptx-title-and-notes-edit --subject candidate --trial 1
+npm run eval:agents -- run pptx-title-and-notes-edit --subject candidate --trial 1
 ```
 
 Generated PDF fixtures require Python with ReportLab and pypdf. All seven ready PDF case graders additionally require pdfplumber and Pillow; their applicable visual oracles require `pdftoppm`. Set `OPEN_OFFICE_AGENT_EVAL_PYTHON` to that interpreter and, only when it is not on `PATH`, set `OPEN_OFFICE_AGENT_EVAL_PDFTOPPM`. Prepared PDF prompts explicitly bind that interpreter as `OPEN_OFFICE_PDF_PROVIDER_PYTHON`, because Codex shell policy may not inherit the runner environment. In Codex, use the Python executable returned by `load_workspace_dependencies`.
 
-The ready XLSX and DOCX fixtures are generated through the public OpenChestnut facade and need no Python provider. Their independent native visual graders require `soffice`, `pdfinfo`, and `pdftoppm`; a missing executable reports `grader-unavailable`, never a product pass or failure.
+The ready XLSX, DOCX, and PPTX fixtures are generated through the public OpenChestnut facade and need no Python provider. Their independent native visual graders require `soffice`, `pdfinfo`, and `pdftoppm`; a missing executable reports `grader-unavailable`, never a product pass or failure. The PPTX grader accepts only the canonical two-slide fixture: it requires the named title and plain-text notes replacement, fixed slide topology/direct background/supporting text, exactly the target slide XML and notes XML as changed package parts, a byte-stable appendix, byte-bound audit provenance, second import, and LibreOffice/Poppler page evidence.
 
 `--subject candidate` installs `skills/<family>/skills/<skill>`. `--subject reference` copies the matching handoff reference Skill into that trial and changes only its `office-artifact-tool` package-name occurrences inside the isolated copy. Both subjects install the same freshly packed `open-office-artifact-tool` tarball, so the comparison changes the Skill instructions rather than the product candidate.
 
