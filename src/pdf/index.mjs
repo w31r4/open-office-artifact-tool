@@ -606,6 +606,7 @@ export class PdfFile {
       pages: native.summary.pages,
       nativeProvider: native.summary.provider,
       nativeProviderVersion: native.summary.providerVersion,
+      sourceSha256: native.summary.sourceSha256,
       nativeObjects: native.summary.objects,
       repaired: native.summary.repaired,
       versions: native.summary.versions,

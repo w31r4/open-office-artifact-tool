@@ -160,6 +160,45 @@ await rotated.save("third-party-page-1-rotated.pdf");
 Inspect and render the result before delivery. Rotated-coordinate text/image
 editing remains an explicit specialist-provider task.
 
+For an imported annotation, do not use its array index as identity. Inspect the
+exact input bytes, retain the returned `summary.sourceSha256`, and delete only
+one source-bound annotation locator with a semantic precondition. This is a
+rewrite-only operation because a deletion must not leave the original object in
+an incremental revision:
+
+```js
+const annotation = inspection.records.find((record) =>
+  record.kind === "mupdfAnnotation"
+  && record.page === 2
+  && record.type === "Text"
+  && record.contents === "Resolved in board review"
+);
+if (!annotation?.id || !inspection.summary.sourceSha256) {
+  throw new Error("The target annotation was not uniquely inspectable.");
+}
+
+const withoutReviewNote = await PdfFile.editPdf(input, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "delete_annotation",
+    page: annotation.page,
+    annotationId: annotation.id,
+    sourceSha256: inspection.summary.sourceSha256,
+    expected: {
+      type: annotation.type,
+      contents: annotation.contents,
+      rect: annotation.rect,
+    },
+  }],
+});
+await withoutReviewNote.save("third-party-without-review-note.pdf");
+```
+
+`mupdf-annotation-<page>-<xref>` is a locator for these exact source bytes,
+not a durable annotation identity. Re-inspect after every rewrite: MuPDF may
+renumber or reuse xrefs. A mismatched source hash, page, locator, or expected
+snapshot fails closed before output is written.
+
 ## Render and visual QA
 
 Use the model SVG preview while authoring, then render the exported PDF with Poppler and inspect every page before delivery:

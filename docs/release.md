@@ -120,6 +120,33 @@ docs:api`, `npm run test:pack` (444 files; 9.4 MB packed, 23.6 MB unpacked),
 offline `npm run release:check -- --skip-network --allow-dirty`, OfficeBridge
 `5/5`, and OpenChestnut `210/210`.
 
+### PDF source-bound annotation deletion
+
+On 2026-07-18, direct-original MuPDF.js editing added bounded deletion of one
+imported native annotation. `PdfFile.inspectPdf` now returns a SHA-256 of the
+exact input bytes plus bounded `mupdfAnnotation` records. Each record exposes a
+page/xref locator and semantic facts such as type, contents, author, subject,
+and rectangle.
+
+`delete_annotation` accepts only an inspection-returned locator for the same
+page, the exact source SHA-256, and one or more semantic snapshot
+preconditions. It rejects ignored precondition keys, stale hashes, mismatched
+snapshots, ambiguous/missing locators, signed incremental edits, and every
+incremental delete. A successful operation verifies removal before saving,
+uses rewrite only, and records source/output hashes plus the matched snapshot
+in its operation audit.
+
+The locator is intentionally not a persistent document identity. A rewrite can
+renumber or reuse an xref for a different surviving annotation, so every later
+annotation mutation must start from a new inspection of the exact current
+bytes. This rule avoids mutable annotation-array indexes while also avoiding
+the false promise that an xref survives an arbitrary rewrite.
+
+Library and published-Skill CLI tests cover bounded annotation enumeration,
+source hash propagation, max-annotation rejection, rewrite-only enforcement,
+stale hash and snapshot rejection, ignored-key rejection, exact one-target
+deletion, surviving-note preservation, and output reinspection.
+
 ### XLSX criteria extrema and branch formulas
 
 On 2026-07-18, the bounded JavaScript calculation catalog added `MINIFS` and

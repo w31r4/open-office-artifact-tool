@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 
 import mupdf from "mupdf";
@@ -12,6 +13,7 @@ const DEFAULT_LIMITS = Object.freeze({
   maxBytes: 256 * 1024 * 1024,
   maxPages: 10_000,
   maxObjects: 1_000_000,
+  maxAnnotations: 100_000,
   maxImages: 10_000,
   maxImagePixels: 40_000_000,
   maxTotalImagePixels: 100_000_000,
@@ -31,6 +33,7 @@ const METADATA_KEYS = Object.freeze({
 });
 
 const INCREMENTAL_DESTRUCTIVE_OPERATIONS = new Set([
+  "delete_annotation",
   "delete_page",
   "delete_embedded_file",
   "delete_link",
@@ -39,6 +42,8 @@ const INCREMENTAL_DESTRUCTIVE_OPERATIONS = new Set([
 ]);
 
 const PAGE_ROTATIONS = new Set([0, 90, 180, 270]);
+const ANNOTATION_ID_PREFIX = "mupdf-annotation";
+const ANNOTATION_EXPECTATION_FIELDS = new Set(["type", "contents", "name", "author", "subject", "rect"]);
 
 function limitsFor(options = {}) {
   const topLevel = Object.fromEntries(Object.keys(DEFAULT_LIMITS)
@@ -69,6 +74,10 @@ async function bytesFromInput(input, limits) {
 function copyBytes(value) {
   const bytes = value?.asUint8Array ? value.asUint8Array() : toUint8Array(value);
   return new Uint8Array(bytes);
+}
+
+function sha256(bytes) {
+  return crypto.createHash("sha256").update(bytes).digest("hex");
 }
 
 function pdfRectToBbox(rect) {
@@ -167,8 +176,40 @@ function metadataFor(document) {
     .filter(([, value]) => value !== undefined && value !== ""));
 }
 
-function nativeAnnotation(annotation) {
+function annotationXref(annotation) {
+  let object;
+  try {
+    object = annotation.getObject();
+    if (!object.isIndirect()) return undefined;
+    const xref = object.asIndirect();
+    return Number.isSafeInteger(xref) && xref > 0 ? xref : undefined;
+  } catch {
+    return undefined;
+  } finally {
+    object?.destroy();
+  }
+}
+
+function annotationId(pageNumber, xref) {
+  return `${ANNOTATION_ID_PREFIX}-${pageNumber}-${xref}`;
+}
+
+function parseAnnotationId(value) {
+  const match = new RegExp(`^${ANNOTATION_ID_PREFIX}-(\\d+)-(\\d+)$`, "u").exec(String(value || ""));
+  if (!match) throw new Error(`delete_annotation annotationId must be a ${ANNOTATION_ID_PREFIX}-<page>-<xref> locator returned by PdfFile.inspectPdf.`);
+  const page = Number(match[1]);
+  const xref = Number(match[2]);
+  if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(xref) || xref < 1) {
+    throw new Error("delete_annotation annotationId contains an invalid page or xref number.");
+  }
+  return { page, xref };
+}
+
+function nativeAnnotation(annotation, pageNumber) {
+  const xref = annotationXref(annotation);
   const record = {
+    id: xref ? annotationId(pageNumber, xref) : undefined,
+    xref,
     type: annotation.getType(),
     rect: annotation.hasRect() ? pdfRectToBbox(annotation.getRect()) : undefined,
     contents: annotation.getContents() || undefined,
@@ -178,6 +219,48 @@ function nativeAnnotation(annotation) {
     flags: annotation.getFlags(),
   };
   return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
+}
+
+function consumeAnnotationBudget(budget, count, pageNumber) {
+  budget.used += count;
+  if (budget.used > budget.maxAnnotations) {
+    throw new Error(`MuPDF annotations exceed maxAnnotations (${budget.used} > ${budget.maxAnnotations}) while reading page ${pageNumber}.`);
+  }
+}
+
+function annotationExpectation(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("delete_annotation expected must be an object with at least one source snapshot field.");
+  }
+  for (const name of Object.keys(value)) {
+    if (!ANNOTATION_EXPECTATION_FIELDS.has(name)) {
+      throw new Error(`delete_annotation expected contains unsupported snapshot field: ${name}.`);
+    }
+  }
+  const expected = {};
+  for (const name of ["type", "contents", "name", "author", "subject"]) {
+    if (value[name] === undefined) continue;
+    if (typeof value[name] !== "string") throw new Error(`delete_annotation expected.${name} must be a string.`);
+    expected[name] = value[name];
+  }
+  if (value.rect !== undefined) {
+    bboxToPdfRect(value.rect, "delete_annotation expected.rect");
+    expected.rect = value.rect.map(Number);
+  }
+  if (!Object.keys(expected).length) {
+    throw new Error("delete_annotation expected must include at least one of type, contents, name, author, subject, or rect.");
+  }
+  return expected;
+}
+
+function annotationExpectationMismatch(actual, expected) {
+  for (const name of ["type", "contents", "name", "author", "subject"]) {
+    if (expected[name] !== undefined && actual[name] !== expected[name]) return name;
+  }
+  if (expected.rect !== undefined) {
+    if (!actual.rect || !pdfRectsEqual(bboxToPdfRect(actual.rect), bboxToPdfRect(expected.rect))) return "rect";
+  }
+  return undefined;
 }
 
 function nativeWidget(widget) {
@@ -196,7 +279,7 @@ function nativeLink(link) {
   return { url: link.getURI(), bbox: pdfRectToBbox(link.getBounds()), external: link.isExternal() };
 }
 
-function structuredPage(page, pageNumber, options, imageBudget) {
+function structuredPage(page, pageNumber, options, imageBudget, annotationBudget) {
   const structured = page.toStructuredText(options.includeImages === false ? "preserve-whitespace" : "preserve-whitespace,preserve-images");
   try {
     let json;
@@ -268,7 +351,8 @@ function structuredPage(page, pageNumber, options, imageBudget) {
     const widgetObjects = page.getWidgets();
     const linkObjects = page.getLinks();
     try {
-      const annotations = annotationObjects.map(nativeAnnotation);
+      consumeAnnotationBudget(annotationBudget, annotationObjects.length, pageNumber);
+      const annotations = annotationObjects.map((annotation) => nativeAnnotation(annotation, pageNumber));
       const widgets = widgetObjects.map(nativeWidget);
       const links = linkObjects.map(nativeLink);
       return {
@@ -321,8 +405,9 @@ export async function parsePdfWithMuPdf(input, options = {}) {
   const effectiveOptions = { ...(context?.options || {}), ...options };
   const { document, limits } = await openPdfWithMuPdf(context?.bytes || context?.input || input, effectiveOptions);
   const imageBudget = { maxImages: limits.maxImages, maxImagePixels: limits.maxImagePixels, maxTotalImagePixels: limits.maxTotalImagePixels, maxTotalImageBytes: limits.maxTotalImageBytes, usedImages: 0, usedPixels: 0, usedBytes: 0 };
+  const annotationBudget = { maxAnnotations: limits.maxAnnotations, used: 0 };
   try {
-    const pages = Array.from({ length: document.countPages() }, (_, index) => structuredPage(document.loadPage(index), index + 1, effectiveOptions, imageBudget));
+    const pages = Array.from({ length: document.countPages() }, (_, index) => structuredPage(document.loadPage(index), index + 1, effectiveOptions, imageBudget, annotationBudget));
     return {
       parser: "mupdf",
       metadata: {
@@ -345,8 +430,9 @@ export function createMuPdfParser(defaultOptions = {}) {
 }
 
 export async function inspectPdfWithMuPdf(input, options = {}) {
-  const { document, bytes } = await openPdfWithMuPdf(input, options);
+  const { document, bytes, limits } = await openPdfWithMuPdf(input, options);
   try {
+    const annotationBudget = { maxAnnotations: limits.maxAnnotations, used: 0 };
     const pageRecords = Array.from({ length: document.countPages() }, (_, index) => {
       const page = document.loadPage(index);
       const structured = page.toStructuredText("preserve-whitespace");
@@ -357,18 +443,26 @@ export async function inspectPdfWithMuPdf(input, options = {}) {
         const text = structured.asText();
         const mediaBox = rawPageBox(page, "MediaBox");
         const cropBox = rawPageBox(page, "CropBox") || mediaBox;
-        return {
-          kind: "mupdfPage",
-          page: index + 1,
-          bbox: pdfRectToBbox(page.getBounds("CropBox")),
-          mediaBox: mediaBox && pdfRectToBbox(mediaBox),
-          cropBox: cropBox && pdfRectToBbox(cropBox),
-          rotation: rawPageRotation(page),
-          textChars: text.length,
-          annotations: annotations.length,
-          widgets: widgets.length,
-          links: links.length,
-        };
+        consumeAnnotationBudget(annotationBudget, annotations.length, index + 1);
+        return [
+          {
+            kind: "mupdfPage",
+            page: index + 1,
+            bbox: pdfRectToBbox(page.getBounds("CropBox")),
+            mediaBox: mediaBox && pdfRectToBbox(mediaBox),
+            cropBox: cropBox && pdfRectToBbox(cropBox),
+            rotation: rawPageRotation(page),
+            textChars: text.length,
+            annotations: annotations.length,
+            widgets: widgets.length,
+            links: links.length,
+          },
+          ...annotations.map((annotation) => ({
+            kind: "mupdfAnnotation",
+            page: index + 1,
+            ...nativeAnnotation(annotation, index + 1),
+          })),
+        ];
       } finally {
         annotations.forEach((annotation) => annotation.destroy());
         widgets.forEach((widget) => widget.destroy());
@@ -383,6 +477,7 @@ export async function inspectPdfWithMuPdf(input, options = {}) {
       provider: "mupdf",
       providerVersion: MUPDF_VERSION,
       bytes: bytes.byteLength,
+      sourceSha256: sha256(bytes),
       pages: document.countPages(),
       objects: document.countObjects(),
       repaired: document.wasRepaired(),
@@ -393,7 +488,7 @@ export async function inspectPdfWithMuPdf(input, options = {}) {
       embeddedFiles: Object.keys(embeddedFiles).length,
     };
     Object.values(embeddedFiles).forEach((file) => file.destroy());
-    return { summary, records: [summary, ...pageRecords] };
+    return { summary, records: [summary, ...pageRecords.flat()] };
   } finally {
     document.destroy();
   }
@@ -595,6 +690,55 @@ function applyPageRotation(document, operation) {
   }
 }
 
+function applyAnnotationDeletion(document, operation, context = {}) {
+  const { index, page } = pageFor(document, operation);
+  let annotations = [];
+  let retained = [];
+  let target;
+  try {
+    if (!/^[a-f0-9]{64}$/u.test(String(operation.sourceSha256 || "")) || operation.sourceSha256 !== context.sourceSha256) {
+      throw new Error("delete_annotation sourceSha256 must exactly match PdfFile.inspectPdf(...).summary.sourceSha256 for the current input bytes.");
+    }
+    const locator = parseAnnotationId(operation.annotationId);
+    if (locator.page !== index + 1) {
+      throw new Error(`delete_annotation annotationId page ${locator.page} does not match operation page ${index + 1}.`);
+    }
+    const expected = annotationExpectation(operation.expected);
+    annotations = page.getAnnotations();
+    target = annotations.find((annotation) => annotationXref(annotation) === locator.xref);
+    if (!target) {
+      throw new Error(`delete_annotation could not find source-bound annotation ${operation.annotationId} on page ${index + 1}. Re-inspect the current source PDF before retrying.`);
+    }
+    const matched = nativeAnnotation(target, index + 1);
+    if (matched.id !== operation.annotationId) {
+      throw new Error(`delete_annotation locator ${operation.annotationId} did not resolve to the expected native annotation.`);
+    }
+    const mismatch = annotationExpectationMismatch(matched, expected);
+    if (mismatch) {
+      throw new Error(`delete_annotation precondition ${mismatch} did not match ${operation.annotationId}; refusing a stale or ambiguous mutation.`);
+    }
+    const beforeCount = annotations.length;
+    page.deleteAnnotation(target);
+    page.update();
+    retained = page.getAnnotations();
+    if (retained.some((annotation) => annotationXref(annotation) === locator.xref)) {
+      throw new Error(`MuPDF did not remove annotation ${operation.annotationId}; refusing to save an ambiguous deletion.`);
+    }
+    return {
+      type: "delete_annotation",
+      page: index + 1,
+      annotationId: matched.id,
+      xref: locator.xref,
+      matched,
+      beforeCount,
+      afterCount: retained.length,
+    };
+  } finally {
+    for (const annotation of new Set([...annotations, ...retained, target].filter(Boolean))) annotation.destroy();
+    page.destroy();
+  }
+}
+
 function normalizeCheckboxValue(value, field) {
   if (typeof value === "boolean") return value;
   if (value === 0 || value === 1) return value === 1;
@@ -604,7 +748,7 @@ function normalizeCheckboxValue(value, field) {
   throw new Error(`fill_form checkbox field ${field} requires a boolean, on/off, yes/no, or 1/0 value.`);
 }
 
-function applyOperation(document, operation) {
+function applyOperation(document, operation, context) {
   switch (operation.type) {
     case "add_text_annotation": {
       const { index, page } = pageFor(document, operation);
@@ -668,6 +812,7 @@ function applyOperation(document, operation) {
       document.deletePage(index);
       return { type: operation.type, page: index + 1 };
     }
+    case "delete_annotation": return applyAnnotationDeletion(document, operation, context);
     case "set_page_crop": return applyPageCrop(document, operation);
     case "rotate_page": return applyPageRotation(document, operation);
     case "rearrange_pages": {
@@ -740,7 +885,8 @@ export async function editPdfWithMuPdf(input, options = {}) {
   let saved;
   try {
     const signed = requireUnsignedPolicy(document, { ...options, savePolicy });
-    const applied = operations.map((operation) => applyOperation(document, operation || {}));
+    const sourceSha256 = sha256(bytes);
+    const applied = operations.map((operation) => applyOperation(document, operation || {}, { sourceSha256 }));
     if (savePolicy === "incremental" && !document.canBeSavedIncrementally()) throw new Error("MuPDF cannot save these changes incrementally; refusing a rewrite fallback.");
     saved = savePolicy === "incremental"
       ? document.saveToBuffer({ incremental: true })
@@ -761,6 +907,8 @@ export async function editPdfWithMuPdf(input, options = {}) {
         signaturesInvalidated: signed && savePolicy === "rewrite",
         originalBytes: bytes.byteLength,
         outputBytes: output.byteLength,
+        sourceSha256,
+        outputSha256: sha256(output),
         operations: applied,
       },
     });

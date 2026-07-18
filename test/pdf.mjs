@@ -241,11 +241,89 @@ assert.equal(mupdfPng.metadata.provider, "mupdf");
 await assert.rejects(renderPdfWithMuPdf(arbitraryPdf.bytes, { dpi: 72, limits: { maxRenderPixels: 1 } }), /exceeds maxRenderPixels/);
 const mupdfIncremental = await PdfFile.editPdf(arbitraryPdf, {
   savePolicy: "incremental",
-  operations: [{ type: "add_text_annotation", page: 1, bbox: [40, 40, 24, 24], text: "Agent review" }],
+  operations: [
+    { type: "add_text_annotation", page: 1, bbox: [40, 40, 24, 24], text: "Agent review", author: "Agent" },
+    { type: "add_text_annotation", page: 1, bbox: [72, 72, 24, 24], text: "Keep this review", author: "Agent" },
+  ],
 });
 assert.equal(mupdfIncremental.metadata.savePolicy, "incremental");
 assert.equal(Buffer.from(mupdfIncremental.bytes.subarray(0, arbitraryPdf.bytes.length)).equals(Buffer.from(arbitraryPdf.bytes)), true);
-assert.equal((await PdfFile.inspectPdf(mupdfIncremental)).records.find((record) => record.kind === "mupdfPage" && record.page === 1).annotations, 1);
+const mupdfAnnotationInspection = await PdfFile.inspectPdf(mupdfIncremental);
+assert.match(mupdfAnnotationInspection.summary.sourceSha256, /^[a-f0-9]{64}$/);
+assert.equal(mupdfAnnotationInspection.records.find((record) => record.kind === "mupdfPage" && record.page === 1).annotations, 2);
+const removableAnnotation = mupdfAnnotationInspection.records.find((record) => record.kind === "mupdfAnnotation" && record.contents === "Agent review");
+assert.match(removableAnnotation.id, /^mupdf-annotation-1-\d+$/);
+assert.equal(removableAnnotation.type, "Text");
+assert.equal(removableAnnotation.author, "Agent");
+assert.equal(Number.isSafeInteger(removableAnnotation.xref), true);
+const parsedAnnotations = await parsePdfWithMuPdf(mupdfIncremental.bytes);
+assert.equal(parsedAnnotations.pages[0].native.annotations.find((annotation) => annotation.contents === "Agent review").id, removableAnnotation.id);
+await assert.rejects(PdfFile.inspectPdf(mupdfIncremental, { limits: { maxAnnotations: 1 } }), /annotations exceed maxAnnotations/);
+await assert.rejects(PdfFile.editPdf(mupdfIncremental, {
+  savePolicy: "incremental",
+  operations: [{
+    type: "delete_annotation",
+    page: 1,
+    annotationId: removableAnnotation.id,
+    sourceSha256: mupdfAnnotationInspection.summary.sourceSha256,
+    expected: { type: removableAnnotation.type, contents: removableAnnotation.contents },
+  }],
+}), /destructive operation delete_annotation cannot save incrementally/);
+await assert.rejects(PdfFile.editPdf(mupdfIncremental, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "delete_annotation",
+    page: 1,
+    annotationId: removableAnnotation.id,
+    sourceSha256: mupdfAnnotationInspection.summary.sourceSha256,
+    expected: { type: removableAnnotation.type, contents: "stale text" },
+  }],
+}), /precondition contents did not match/);
+await assert.rejects(PdfFile.editPdf(mupdfIncremental, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "delete_annotation",
+    page: 1,
+    annotationId: removableAnnotation.id,
+    sourceSha256: "0".repeat(64),
+    expected: { type: removableAnnotation.type, contents: removableAnnotation.contents },
+  }],
+}), /sourceSha256 must exactly match/);
+await assert.rejects(PdfFile.editPdf(mupdfIncremental, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "delete_annotation",
+    page: 1,
+    annotationId: removableAnnotation.id,
+    sourceSha256: mupdfAnnotationInspection.summary.sourceSha256,
+    expected: { type: removableAnnotation.type, staleGuard: true },
+  }],
+}), /expected contains unsupported snapshot field: staleGuard/);
+const mupdfAnnotationDeleted = await PdfFile.editPdf(mupdfIncremental, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "delete_annotation",
+    page: 1,
+    annotationId: removableAnnotation.id,
+    sourceSha256: mupdfAnnotationInspection.summary.sourceSha256,
+    expected: {
+      type: removableAnnotation.type,
+      contents: removableAnnotation.contents,
+      author: removableAnnotation.author,
+      rect: removableAnnotation.rect,
+    },
+  }],
+});
+assert.equal(mupdfAnnotationDeleted.metadata.savePolicy, "rewrite");
+assert.equal(mupdfAnnotationDeleted.metadata.sourceSha256, mupdfAnnotationInspection.summary.sourceSha256);
+assert.match(mupdfAnnotationDeleted.metadata.outputSha256, /^[a-f0-9]{64}$/);
+assert.equal(mupdfAnnotationDeleted.metadata.operations[0].annotationId, removableAnnotation.id);
+assert.equal(mupdfAnnotationDeleted.metadata.operations[0].beforeCount, 2);
+assert.equal(mupdfAnnotationDeleted.metadata.operations[0].afterCount, 1);
+const deletedAnnotationInspection = await PdfFile.inspectPdf(mupdfAnnotationDeleted);
+assert.equal(deletedAnnotationInspection.records.find((record) => record.kind === "mupdfPage" && record.page === 1).annotations, 1);
+assert.deepEqual(deletedAnnotationInspection.records.filter((record) => record.kind === "mupdfAnnotation").map((record) => record.contents), ["Keep this review"]);
+assert.notEqual(deletedAnnotationInspection.summary.sourceSha256, mupdfAnnotationInspection.summary.sourceSha256);
 const mupdfCropped = await PdfFile.editPdf(arbitraryPdf, {
   savePolicy: "incremental",
   operations: [{ type: "set_page_crop", page: 1, bbox: [72, 72, 468, 648] }],

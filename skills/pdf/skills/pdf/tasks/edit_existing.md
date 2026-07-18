@@ -11,7 +11,7 @@ node scripts/mupdf.mjs probe
 node scripts/mupdf.mjs inspect input.pdf
 ```
 
-Its typed operations are `add_text_annotation`, text/choice/checkbox `fill_form`, `delete_page`, complete `rearrange_pages`, visible-only `set_page_crop`, absolute-quarter-turn `rotate_page`, `set_metadata`, `delete_embedded_file`, `delete_link`, `redact_text`, and `redact_rect`. Run with one explicit save policy:
+Its typed operations are `add_text_annotation`, text/choice/checkbox `fill_form`, `delete_page`, source-bound `delete_annotation`, complete `rearrange_pages`, visible-only `set_page_crop`, absolute-quarter-turn `rotate_page`, `set_metadata`, `delete_embedded_file`, `delete_link`, `redact_text`, and `redact_rect`. Run with one explicit save policy:
 
 ```bash
 node scripts/mupdf.mjs edit input.pdf tmp/pdfs/edit-operations.json tmp/pdfs/edited.pdf \
@@ -49,6 +49,36 @@ to retain the prior value and prove the requested orientation. This bounded
 unsigned operation may use `incremental` save, subject to the same source-prefix
 and signature refusal rules. It is not a substitute for rotated-coordinate text
 or image editing; route those tasks explicitly to the specialist provider.
+
+## Delete one imported annotation
+
+First run `inspect` on the exact input. Select one `mupdfAnnotation` record by
+semantic facts such as page, type, contents, author, and rectangle; never use
+its array position. Copy its `id`, the inspection `summary.sourceSha256`, and a
+snapshot into a rewrite operation:
+
+```json
+[
+  {
+    "type": "delete_annotation",
+    "page": 2,
+    "annotationId": "mupdf-annotation-2-42",
+    "sourceSha256": "<inspect summary sourceSha256>",
+    "expected": {
+      "type": "Text",
+      "contents": "Resolved in board review",
+      "rect": [72, 128, 20, 20]
+    }
+  }
+]
+```
+
+The source SHA-256, page encoded in the locator, xref, and every supplied
+snapshot field must match before mutation. `delete_annotation` is a destructive
+rewrite-only operation; incremental output is refused. Its locator is bound to
+the inspected source bytes rather than a persistent document identity, so
+re-inspect the output before any later annotation operation. This prevents a
+rewritten PDF's xref reuse from silently targeting a different annotation.
 
 ## Optional PyMuPDF specialist path
 

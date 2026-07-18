@@ -148,7 +148,7 @@ Bind the canonical audit `output` to `attachments.json`, set `savePolicy.strateg
 
 ## Edit An Existing PDF
 
-MuPDF.js is the default native provider. It operates directly on original bytes and currently supports `add_text_annotation`, typed text/choice/checkbox `fill_form`, `delete_page`, complete `rearrange_pages`, raw-coordinate visible-only `set_page_crop`, absolute-quarter-turn `rotate_page`, `set_metadata`, `delete_embedded_file`, `delete_link`, `redact_text`, and `redact_rect`. Unsupported operations, untrusted radio export-value mapping, rotated-page crop requests, invalid limits, and unsafe save policies fail closed.
+MuPDF.js is the default native provider. It operates directly on original bytes and currently supports `add_text_annotation`, typed text/choice/checkbox `fill_form`, `delete_page`, source-bound `delete_annotation`, complete `rearrange_pages`, raw-coordinate visible-only `set_page_crop`, absolute-quarter-turn `rotate_page`, `set_metadata`, `delete_embedded_file`, `delete_link`, `redact_text`, and `redact_rect`. `delete_annotation` requires an inspect-returned `sourceSha256`, `mupdf-annotation-<page>-<xref>` locator, and semantic snapshot, then uses rewrite only; the locator must be re-inspected after any rewrite. Unsupported operations, untrusted radio export-value mapping, rotated-page crop requests, invalid limits, and unsafe save policies fail closed.
 
 Use JSON operations with the thin CLI:
 

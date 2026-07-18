@@ -96,6 +96,8 @@ assert.match(skillText, /scripts\/mupdf\.mjs/);
 assert.match(skillText, /MuPDF\.js/);
 assert.match(skillText, /set_page_crop/);
 assert.match(skillText, /rotate_page/);
+assert.match(skillText, /delete_annotation/);
+assert.match(skillText, /sourceSha256/);
 assert.match(skillText, /not redaction/i);
 for (const pattern of [
   /ReportLab/,
@@ -158,6 +160,8 @@ try {
   const mupdfCropOutput = path.join(tempRoot, "mupdf-crop-output.pdf");
   const mupdfRotationOperations = path.join(tempRoot, "mupdf-rotation-operations.json");
   const mupdfRotationOutput = path.join(tempRoot, "mupdf-rotation-output.pdf");
+  const mupdfAnnotationDeleteOperations = path.join(tempRoot, "mupdf-annotation-delete-operations.json");
+  const mupdfAnnotationDeleteOutput = path.join(tempRoot, "mupdf-annotation-delete-output.pdf");
   const mupdfFixture = await PdfFile.exportPdf(PdfArtifact.create({ text: "MuPDF Skill CLI fixture" }));
   await fs.writeFile(mupdfInput, mupdfFixture.bytes);
   const mupdfProbe = parseResult(run(process.execPath, [mupdfCli, "probe"], { status: 0 }));
@@ -174,7 +178,24 @@ try {
   await fs.writeFile(mupdfOperations, JSON.stringify({ operations: [{ type: "add_text_annotation", page: 1, bbox: [40, 40, 24, 24], text: "CLI review" }], savePolicy: "incremental" }), "utf8");
   const mupdfEdited = parseResult(run(process.execPath, [mupdfCli, "edit", mupdfInput, mupdfOperations, mupdfOutput], { status: 0 }));
   assert.equal(mupdfEdited.savePolicy, "incremental");
-  assert.equal((await PdfFile.inspectPdf(await fs.readFile(mupdfOutput))).records.find((record) => record.kind === "mupdfPage").annotations, 1);
+  const mupdfAnnotationInspection = await PdfFile.inspectPdf(await fs.readFile(mupdfOutput));
+  assert.equal(mupdfAnnotationInspection.records.find((record) => record.kind === "mupdfPage").annotations, 1);
+  const mupdfAnnotation = mupdfAnnotationInspection.records.find((record) => record.kind === "mupdfAnnotation");
+  assert.match(mupdfAnnotation.id, /^mupdf-annotation-1-\d+$/);
+  await fs.writeFile(mupdfAnnotationDeleteOperations, JSON.stringify({
+    savePolicy: "rewrite",
+    operations: [{
+      type: "delete_annotation",
+      page: mupdfAnnotation.page,
+      annotationId: mupdfAnnotation.id,
+      sourceSha256: mupdfAnnotationInspection.summary.sourceSha256,
+      expected: { type: mupdfAnnotation.type, contents: mupdfAnnotation.contents, rect: mupdfAnnotation.rect },
+    }],
+  }), "utf8");
+  const mupdfAnnotationDeleted = parseResult(run(process.execPath, [mupdfCli, "edit", mupdfOutput, mupdfAnnotationDeleteOperations, mupdfAnnotationDeleteOutput], { status: 0 }));
+  assert.equal(mupdfAnnotationDeleted.savePolicy, "rewrite");
+  assert.equal(mupdfAnnotationDeleted.operations[0].type, "delete_annotation");
+  assert.equal((await PdfFile.inspectPdf(await fs.readFile(mupdfAnnotationDeleteOutput))).records.find((record) => record.kind === "mupdfPage").annotations, 0);
   await fs.writeFile(mupdfCropOperations, JSON.stringify({ operations: [{ type: "set_page_crop", page: 1, bbox: [72, 72, 468, 648] }], savePolicy: "incremental" }), "utf8");
   const mupdfCropped = parseResult(run(process.execPath, [mupdfCli, "edit", mupdfInput, mupdfCropOperations, mupdfCropOutput], { status: 0 }));
   assert.equal(mupdfCropped.savePolicy, "incremental");
