@@ -184,9 +184,10 @@ shells remain one opaque read-only object rather than being flattened.
 For imported deck order, `slide.moveTo(existingZeroBasedIndex)` changes only
 the retained source `SlidePart` order in `p:sldIdLst`; it does not copy or
 reconstruct slide graphs. `slide.delete()` is separate and intentionally much
-narrower: it performs a real OPC delete only for a non-final slide whose source
-part has exactly its layout relationship, no inbound relationship, and no
-custom-show/section/extension or presentation-level identity reference. It
+narrower: it performs a real OPC delete only for an isolated layout-only,
+non-final slide whose source part has exactly its layout relationship, no
+inbound relationship, and no custom-show/section/extension or presentation-level
+identity reference. It
 removes the source slide part and its relationship part while preserving every
 survivor. Media, notes, comments, charts, OLE, hyperlinks, data parts, or any
 other connected graph fail closed. Imported add and duplicate/clone remain

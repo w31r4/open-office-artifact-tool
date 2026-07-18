@@ -2495,13 +2495,16 @@ internal static class PptxCodec
         OpaqueOpcGraph opaque)
     {
         var slidePath = PartPath(source.Part);
-        var unsafeChildren = source.Part.Parts
+        var childParts = source.Part.Parts.ToArray();
+        var layoutRelationshipCount = childParts.Count(pair => pair.OpenXmlPart is SlideLayoutPart);
+        var unsafeChildren = childParts
             .Where(pair => pair.OpenXmlPart is not SlideLayoutPart)
             .Select(pair => pair.OpenXmlPart.RelationshipType)
             .Distinct(StringComparer.Ordinal)
             .Take(4)
             .ToArray();
-        if (unsafeChildren.Length > 0 ||
+        if (layoutRelationshipCount != 1 ||
+            unsafeChildren.Length > 0 ||
             source.Part.ExternalRelationships.Any() ||
             source.Part.HyperlinkRelationships.Any() ||
             source.Part.DataPartReferenceRelationships.Any())

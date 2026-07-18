@@ -85,7 +85,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "presentation.view")?.sum
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.view")?.schema?.returns?.view?.description || "", /show\/hide\/toggle.*gridSpacingCxEmu.*hidden guide visibility.*slideGuides/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.master")?.schema?.parameters?.slideGuides?.description || "", /Read-only imported PowerPoint guide definitions/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.moveTo")?.schema?.parameters?.index?.required, true);
-assert.match(HELP_CATALOG.find((item) => item.name === "slide.moveTo")?.schema?.returns?.slide?.description || "", /retained source SlideParts.*p:sldIdLst.*duplicated.*fail closed/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.moveTo")?.schema?.returns?.slide?.description || "", /p:sldIdLst.*retained source SlideParts.*duplicated.*fail closed/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.delete")?.schema?.returns?.result?.type, "undefined");
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.delete")?.schema?.returns?.result?.description || "", /actual SlidePart.*only its layout relationship.*inbound relationship.*fail closed/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "SpreadsheetFile.patchXlsx"));

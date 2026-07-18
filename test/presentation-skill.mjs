@@ -227,7 +227,7 @@ try {
   assert.match(oleWorkbookReferenceText, /shared, external, ambiguous, or non-XLSX/);
   assert.match(oleWorkbookReferenceText, /no lossy reconstruction or silent fallback/i);
   const templateFollowingText = await fs.readFile("skills/presentations/skills/presentations/references/template-following.md", "utf8");
-  assert.match(templateFollowingText, /source-preserving reordering.*isolated\s+layout-only.*slide\.delete/is);
+  assert.match(templateFollowingText, /source-preserving reordering.*isolated[\s>]+layout-only.*slide\.delete/is);
   assert.match(templateFollowingText, /OPC graph-clone milestone is unavailable/i);
 
   console.log("presentation skill smoke ok");
