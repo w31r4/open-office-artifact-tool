@@ -99,6 +99,7 @@ assert.match(skillText, /rotate_page/);
 assert.match(skillText, /delete_annotation/);
 assert.match(skillText, /update_annotation/);
 assert.match(skillText, /add_text_annotation.*source SHA-256.*mupdfPage.*pin.*rewrite/s);
+assert.match(skillText, /add_text_highlight.*source SHA-256.*unique.*text.*rewrite/s);
 assert.match(skillText, /add_link/);
 assert.match(skillText, /delete_link/);
 assert.match(skillText, /update_link/);
@@ -186,6 +187,8 @@ try {
   const mupdfRender = path.join(tempRoot, "mupdf-render.png");
   const mupdfOperations = path.join(tempRoot, "mupdf-operations.json");
   const mupdfOutput = path.join(tempRoot, "mupdf-output.pdf");
+  const mupdfHighlightOperations = path.join(tempRoot, "mupdf-highlight-operations.json");
+  const mupdfHighlightOutput = path.join(tempRoot, "mupdf-highlight-output.pdf");
   const mupdfCropOperations = path.join(tempRoot, "mupdf-crop-operations.json");
   const mupdfCropOutput = path.join(tempRoot, "mupdf-crop-output.pdf");
   const mupdfRotationOperations = path.join(tempRoot, "mupdf-rotation-operations.json");
@@ -281,6 +284,28 @@ try {
   run(process.execPath, [mupdfCli, "render", mupdfInput, mupdfNestedRender, "--page", "1", "--dpi", "72"], { status: 0 });
   assert.deepEqual([...new Uint8Array(await fs.readFile(mupdfNestedRender)).subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
   const mupdfAnnotationPage = mupdfInspection.records.find((record) => record.kind === "mupdfPage" && record.page === 1);
+  await fs.writeFile(mupdfHighlightOperations, JSON.stringify({
+    savePolicy: "rewrite",
+    operations: [{
+      type: "add_text_highlight",
+      page: mupdfAnnotationPage.page,
+      sourceSha256: mupdfInspection.summary.sourceSha256,
+      expectedPage: { bbox: mupdfAnnotationPage.bbox, rotation: mupdfAnnotationPage.rotation },
+      text: "MuPDF Skill CLI fixture",
+      color: [0.2, 0.8, 0.3],
+      contents: "CLI highlight",
+      author: "CLI reviewer",
+    }],
+  }), "utf8");
+  const mupdfHighlighted = parseResult(run(process.execPath, [mupdfCli, "edit", mupdfInput, mupdfHighlightOperations, mupdfHighlightOutput], { status: 0 }));
+  assert.equal(mupdfHighlighted.savePolicy, "rewrite");
+  assert.equal(mupdfHighlighted.operations[0].type, "add_text_highlight");
+  assert.equal(mupdfHighlighted.operations[0].added.contents, "CLI highlight");
+  const mupdfHighlightInspection = await PdfFile.inspectPdf(await fs.readFile(mupdfHighlightOutput));
+  const mupdfHighlight = mupdfHighlightInspection.records.find((record) => record.kind === "mupdfAnnotation" && record.type === "Highlight");
+  assert.ok(mupdfHighlight);
+  assert.deepEqual(mupdfHighlight.color, [0.2, 0.8, 0.3]);
+  assert.equal(mupdfHighlight.quadPoints.length, 1);
   await fs.writeFile(mupdfOperations, JSON.stringify({
     savePolicy: "rewrite",
     operations: [{

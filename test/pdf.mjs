@@ -276,6 +276,76 @@ assert.deepEqual([...mupdfPng.bytes.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 2
 assert.equal(mupdfPng.metadata.provider, "mupdf");
 await assert.rejects(renderPdfWithMuPdf(arbitraryPdf.bytes, { dpi: 72, limits: { maxRenderPixels: 1 } }), /exceeds maxRenderPixels/);
 const mupdfAnnotationSourcePage = mupdfInspect.records.find((record) => record.kind === "mupdfPage" && record.page === 1);
+const sourceBoundTextHighlight = {
+  type: "add_text_highlight",
+  page: 1,
+  sourceSha256: mupdfInspect.summary.sourceSha256,
+  expectedPage: { bbox: mupdfAnnotationSourcePage.bbox, rotation: mupdfAnnotationSourcePage.rotation },
+  text: "PDF research artifact",
+  color: [0.2, 0.8, 0.3],
+  contents: "Review this title.",
+  author: "Agent",
+};
+await assert.rejects(PdfFile.editPdf(arbitraryPdf, {
+  savePolicy: "incremental",
+  operations: [sourceBoundTextHighlight],
+}), /source-bound operation add_text_highlight cannot save incrementally/);
+await assert.rejects(PdfFile.editPdf(arbitraryPdf, {
+  savePolicy: "rewrite",
+  operations: [{ ...sourceBoundTextHighlight, sourceSha256: "0".repeat(64) }],
+}), /sourceSha256 must exactly match/);
+await assert.rejects(PdfFile.editPdf(arbitraryPdf, {
+  savePolicy: "rewrite",
+  operations: [{ ...sourceBoundTextHighlight, expectedPage: { bbox: [1, 1, 600, 780], rotation: 0 } }],
+}), /precondition page bbox did not match/);
+await assert.rejects(PdfFile.editPdf(arbitraryPdf, {
+  savePolicy: "rewrite",
+  operations: [{ ...sourceBoundTextHighlight, text: "not present" }],
+}), /text was not found/);
+await assert.rejects(PdfFile.editPdf(arbitraryPdf, {
+  savePolicy: "rewrite",
+  operations: [{ ...sourceBoundTextHighlight, color: [1, 2, 0] }],
+}), /color must be an RGB/);
+await assert.rejects(PdfFile.editPdf(arbitraryPdf, {
+  savePolicy: "rewrite",
+  operations: [{ ...sourceBoundTextHighlight, bbox: [72, 72, 72, 12] }],
+}), /contains unsupported field: bbox/);
+const duplicateTextHighlightPdf = await PdfFile.exportPdf(PdfArtifact.create({ text: "Duplicate text\nDuplicate text" }));
+const duplicateTextHighlightInspection = await PdfFile.inspectPdf(duplicateTextHighlightPdf);
+const duplicateTextHighlightPage = duplicateTextHighlightInspection.records.find((record) => record.kind === "mupdfPage" && record.page === 1);
+await assert.rejects(PdfFile.editPdf(duplicateTextHighlightPdf, {
+  savePolicy: "rewrite",
+  operations: [{
+    ...sourceBoundTextHighlight,
+    sourceSha256: duplicateTextHighlightInspection.summary.sourceSha256,
+    expectedPage: { bbox: duplicateTextHighlightPage.bbox, rotation: duplicateTextHighlightPage.rotation },
+    text: "Duplicate text",
+  }],
+}), /matched multiple locations/);
+const mupdfHighlighted = await PdfFile.editPdf(arbitraryPdf, {
+  savePolicy: "rewrite",
+  operations: [sourceBoundTextHighlight],
+});
+assert.equal(mupdfHighlighted.metadata.savePolicy, "rewrite");
+assert.equal(mupdfHighlighted.metadata.operations[0].beforeCount, 0);
+assert.equal(mupdfHighlighted.metadata.operations[0].afterCount, 1);
+assert.equal(mupdfHighlighted.metadata.operations[0].text, "PDF research artifact");
+assert.deepEqual(mupdfHighlighted.metadata.operations[0].color, [0.2, 0.8, 0.3]);
+const mupdfHighlightInspection = await PdfFile.inspectPdf(mupdfHighlighted);
+const mupdfHighlight = mupdfHighlightInspection.records.find((record) => record.kind === "mupdfAnnotation" && record.type === "Highlight");
+assert.match(mupdfHighlight.id, /^mupdf-annotation-1-\d+$/);
+assert.equal(mupdfHighlight.contents, "Review this title.");
+assert.equal(mupdfHighlight.author, "Agent");
+assert.deepEqual(mupdfHighlight.color, [0.2, 0.8, 0.3]);
+assert.equal(mupdfHighlight.quadPoints.length, 1);
+assert.equal(mupdfHighlight.quadPoints[0].length, 8);
+const mupdfHighlightPng = await PdfFile.renderPdf(mupdfHighlighted, { page: 1, dpi: 72 });
+const [sourcePixels, highlightPixels] = await Promise.all([
+  sharp(Buffer.from(mupdfPng.bytes)).raw().toBuffer({ resolveWithObject: true }),
+  sharp(Buffer.from(mupdfHighlightPng.bytes)).raw().toBuffer({ resolveWithObject: true }),
+]);
+assert.deepEqual(sourcePixels.info, highlightPixels.info);
+assert.notEqual(Buffer.compare(sourcePixels.data, highlightPixels.data), 0, "the native Highlight annotation must change rendered pixels");
 const sourceBoundTextAnnotation = {
   type: "add_text_annotation",
   page: 1,
