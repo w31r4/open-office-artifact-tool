@@ -2344,6 +2344,78 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void SourcePreservingExportClonesAnUnchangedCanonicalInlineTableLeaf()
+    {
+        var request = ExportRequest();
+        AddCanonicalCloneTable(request.Artifact.Presentation.Slides[0]);
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var sourceBytes = authored.File.ToByteArray();
+        var sourceSlide = ZipBytes(sourceBytes, "ppt/slides/slide1.xml");
+
+        var imported = Import(sourceBytes);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var source = Assert.Single(imported.Artifact.Presentation.Slides);
+        var sourceTable = Assert.Single(source.Elements, element => element.ContentCase == PresentationElement.ContentOneofCase.Table);
+        Assert.Equal("Decision", sourceTable.Table.Rows[1].Cells[0].Text);
+        var clone = source.Clone();
+        clone.Id = "presentation/clone/inline-table";
+        clone.Source = null;
+        clone.CloneSource = source.Source.Clone();
+        imported.Artifact.Presentation.Slides.Add(clone);
+
+        var duplicated = Export(imported.Artifact);
+        Assert.True(duplicated.Ok, Diagnostics(duplicated));
+        var duplicatedBytes = duplicated.File.ToByteArray();
+        using (var stream = new MemoryStream(duplicatedBytes))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var slides = package.PresentationPart!.SlideParts.ToArray();
+            var origin = slides.Single(part => part.Uri.OriginalString.EndsWith("/slide1.xml", StringComparison.Ordinal));
+            var outputClone = slides.Single(part => part.Uri.OriginalString.EndsWith("/slide2.xml", StringComparison.Ordinal));
+            Assert.Single(outputClone.Parts);
+            Assert.IsType<SlideLayoutPart>(Assert.Single(outputClone.Parts).OpenXmlPart);
+            Assert.Equal(origin.GetIdOfPart(origin.SlideLayoutPart!), outputClone.GetIdOfPart(outputClone.SlideLayoutPart!));
+            var cloneTable = Assert.Single(outputClone.Slide!.Descendants<A.Table>());
+            Assert.Equal(["Metric", "Value", "Decision", "Ship"], cloneTable.Descendants<A.Text>().Select(text => text.Text));
+        }
+        Assert.Equal(sourceSlide, ZipBytes(duplicatedBytes, "ppt/slides/slide1.xml"));
+
+        var roundTrip = Import(duplicatedBytes);
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        Assert.Equal(2, roundTrip.Artifact.Presentation.Slides.Count);
+        Assert.All(roundTrip.Artifact.Presentation.Slides, slide =>
+        {
+            var table = Assert.Single(slide.Elements, element => element.ContentCase == PresentationElement.ContentOneofCase.Table);
+            Assert.Equal("Ship", table.Table.Rows[1].Cells[1].Text);
+        });
+    }
+
+    [Fact]
+    public void SourcePreservingExportRejectsAnEditedCanonicalInlineTableCloneBeforeWritingItsGraph()
+    {
+        var request = ExportRequest();
+        AddCanonicalCloneTable(request.Artifact.Presentation.Slides[0]);
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var source = Assert.Single(imported.Artifact.Presentation.Slides);
+        var clone = source.Clone();
+        clone.Id = "presentation/clone/edited-inline-table";
+        clone.Source = null;
+        clone.CloneSource = source.Source.Clone();
+        Assert.Single(clone.Elements, element => element.ContentCase == PresentationElement.ContentOneofCase.Table)
+            .Table.Rows[1].Cells[1].Text = "Changed before the clone boundary";
+        imported.Artifact.Presentation.Slides.Add(clone);
+
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("presentation_slide_clone_mismatch", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void SourcePreservingExportRejectsAnEditedEmbeddedImageCloneBeforeWritingItsGraph()
     {
         var authored = Invoke(ExportRequest());
@@ -4614,6 +4686,36 @@ public sealed class PptxCodecTests
             slidePart.Slide.Save();
         }
         return stream.ToArray();
+    }
+
+    private static void AddCanonicalCloneTable(PresentationSlide slide)
+    {
+        var table = new PresentationTable
+        {
+            LeftEmu = 500_000,
+            TopEmu = 1_300_000,
+            WidthEmu = 4_000_000,
+            HeightEmu = 1_600_000,
+            FirstRow = true,
+            BandedRows = true,
+        };
+        table.ColumnWidthsEmu.Add([1_500_000, 2_500_000]);
+        table.Rows.Add(new PresentationTableRow
+        {
+            HeightEmu = 600_000,
+            Cells = { new PresentationTableCell { Text = "Metric" }, new PresentationTableCell { Text = "Value" } },
+        });
+        table.Rows.Add(new PresentationTableRow
+        {
+            HeightEmu = 1_000_000,
+            Cells = { new PresentationTableCell { Text = "Decision" }, new PresentationTableCell { Text = "Ship" } },
+        });
+        slide.Elements.Add(new PresentationElement
+        {
+            Id = "presentation/slide/1/table/clone-leaf",
+            Name = "Clone-safe decision table",
+            Table = table,
+        });
     }
 
     private static byte[] AddUnboundPictureRelationship(byte[] bytes)

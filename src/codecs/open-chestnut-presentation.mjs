@@ -201,6 +201,25 @@ function cloneImportedPresentationImage(slide, source) {
   });
 }
 
+// Canonical tables are the one accepted GraphicFrame leaf: their bounded
+// DrawingML payload is inline in the SlidePart, so this creates a fresh model
+// without copying an OPC part or relationship. Do not generalize this helper
+// to charts or other GraphicFrames, which own broader relationship graphs.
+function cloneImportedPresentationTable(slide, source) {
+  const clone = slide.tables.add({
+    name: source.name,
+    position: clonedPresentationValue(source.position),
+    rows: source.rows,
+    columns: source.columns,
+    values: clonedPresentationValue(source.values),
+    ...(source.style === undefined ? {} : { style: clonedPresentationValue(source.style) }),
+    ...(source.styleOptions === undefined ? {} : { styleOptions: clonedPresentationValue(source.styleOptions) }),
+  });
+  if (source.border !== undefined) clone.border = clonedPresentationValue(source.border);
+  if (source.mergeRange !== undefined) clone.mergeRange = clonedPresentationValue(source.mergeRange);
+  return clone;
+}
+
 // A legacy comment has no JavaScript object identity that may be shared with
 // its origin. Copy the imported thread record into a fresh slide model while
 // retaining its native author/index evidence; the C# clone preflight then
@@ -221,8 +240,8 @@ function duplicateImportedPresentationSlide(presentation, state, slide) {
   if ((state.clones || []).some((entry) => entry.source === source)) {
     throw new OpenChestnutCodecError("The bounded imported-slide clone profile permits only one pending clone per origin; export and reimport it before cloning that source again.", [], { code: "unsupported_presentation_slide_clone" });
   }
-  if (source.entries.some((entry) => !new Set(["shape", "image"]).has(entry.wire.content.case))) {
-    throw new OpenChestnutCodecError("The bounded imported-slide clone profile supports only canonical shapes and embedded images; tables, charts, groups, connectors, native objects, and other graph edges require a broader OPC graph clone.", [], { code: "unsupported_presentation_slide_clone" });
+  if (source.entries.some((entry) => !new Set(["shape", "table", "image"]).has(entry.wire.content.case))) {
+    throw new OpenChestnutCodecError("The bounded imported-slide clone profile supports only canonical shapes, inline tables, and embedded images; charts, groups, connectors, native objects, and other graph edges require a broader OPC graph clone.", [], { code: "unsupported_presentation_slide_clone" });
   }
   const clone = presentation.slides.insert({
     after: slide,
@@ -235,7 +254,9 @@ function duplicateImportedPresentationSlide(presentation, state, slide) {
   const entries = source.entries.map((entry) => {
     const model = entry.wire.content.case === "shape"
       ? cloneImportedPresentationShape(clone, entry.model)
-      : cloneImportedPresentationImage(clone, entry.model);
+      : entry.wire.content.case === "table"
+        ? cloneImportedPresentationTable(clone, entry.model)
+        : cloneImportedPresentationImage(clone, entry.model);
     return {
       wire: entry.wire,
       model,
@@ -244,7 +265,9 @@ function duplicateImportedPresentationSlide(presentation, state, slide) {
         : undefined,
       snapshot: entry.wire.content.case === "image"
         ? presentationImageReadOnlySnapshot(model)
-        : undefined,
+        : entry.wire.content.case === "table"
+          ? presentationTableReadOnlySnapshot(model)
+          : undefined,
     };
   });
   const cloneState = {

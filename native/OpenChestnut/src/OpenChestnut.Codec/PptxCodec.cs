@@ -2934,6 +2934,12 @@ internal static class PptxCodec
         foreach (var element in sourceElements)
         {
             if (element is P.Shape shape && IsSimpleShape(shape)) continue;
+            // A table is the one GraphicFrame profile that is entirely inline
+            // in the Slide XML. PptxTableCodec rejects charts and every other
+            // GraphicFrame payload. The surrounding relationship inventory
+            // below still proves that no cell fill/link smuggles another
+            // package edge into this otherwise zero-edge clone leaf.
+            if (element is P.GraphicFrame table && PptxTableCodec.TryRead(table, out _)) continue;
             if (element is P.Picture picture && PptxPictureCodec.TryRead(picture, context, out _))
             {
                 var relationshipId = picture.BlipFill?.GetFirstChild<A.Blip>()?.Embed?.Value ?? string.Empty;
@@ -2943,7 +2949,7 @@ internal static class PptxCodec
                     continue;
                 }
             }
-            throw UnsupportedSourceSlideClone(source, "its elements require a broader graph clone than the bounded shape-and-embedded-image profile");
+            throw UnsupportedSourceSlideClone(source, "its elements require a broader graph clone than the bounded shape/inline-table/embedded-image profile");
         }
         if (!imageRelationshipIds.SetEquals(embeddedImageRelationshipIds))
             throw UnsupportedSourceSlideClone(source, "it has an image relationship that is not exactly bound by a canonical embedded picture");

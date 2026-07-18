@@ -859,6 +859,56 @@ await assert.rejects(
   (error) => error?.code === "unsupported_presentation_slide_clone",
 );
 
+// Canonical tables are the one accepted GraphicFrame leaf. They are inline in
+// slide XML, so duplicating them must create fresh model identity and exactly
+// no table-specific OPC relationship. Charts remain outside this profile.
+const tableCloneFixture = Presentation.create({ slideSize: { width: 640, height: 360 } });
+const tableCloneOriginal = tableCloneFixture.slides.add({ name: "Table original" });
+tableCloneOriginal.tables.add({
+  name: "decision-grid",
+  position: { left: 48, top: 48, width: 360, height: 150 },
+  values: [["Metric", "Value"], ["Decision", "Ship"]],
+  rows: 2,
+  columns: 2,
+  styleOptions: { headerRow: true, bandedRows: true },
+});
+const tableCloneSourcePptx = await PresentationFile.exportPptx(tableCloneFixture);
+const tableCloneSourceZip = await JSZip.loadAsync(tableCloneSourcePptx.bytes);
+const tableCloneImportedDeck = await PresentationFile.importPptx(tableCloneSourcePptx);
+const tableCloneImportedSource = tableCloneImportedDeck.slides.getItem(0);
+const tableClone = tableCloneImportedSource.duplicate();
+assert.equal(tableClone.tables.items.length, 1);
+assert.notEqual(tableClone.tables.items[0], tableCloneImportedSource.tables.items[0]);
+assert.notEqual(tableClone.tables.items[0].id, tableCloneImportedSource.tables.items[0].id);
+assert.deepEqual(tableClone.tables.items[0].values, [["Metric", "Value"], ["Decision", "Ship"]]);
+const tableClonePptx = await PresentationFile.exportPptx(tableCloneImportedDeck);
+const tableCloneZip = await JSZip.loadAsync(tableClonePptx.bytes);
+assert.deepEqual(
+  await tableCloneZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  await tableCloneSourceZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  "cloning an inline table must retain the origin SlidePart byte-for-byte",
+);
+assert.ok(tableCloneZip.file("ppt/slides/slide2.xml"), "the table clone must own a new SlidePart");
+const tableCloneRelationships = await tableCloneZip.file("ppt/slides/_rels/slide2.xml.rels").async("text");
+assert.match(tableCloneRelationships, /\/slideLayout/);
+assert.doesNotMatch(tableCloneRelationships, /\/(?:image|chart|hyperlink|oleObject|package)"/i, "canonical table clones must not add a table-specific OPC edge");
+const tableCloneRoundTrip = await PresentationFile.importPptx(tableClonePptx);
+assert.deepEqual(tableCloneRoundTrip.slides.items.map((slide) => slide.tables.items[0].values), [
+  [["Metric", "Value"], ["Decision", "Ship"]],
+  [["Metric", "Value"], ["Decision", "Ship"]],
+]);
+tableCloneRoundTrip.slides.getItem(1).tables.items[0].values[1][1] = "Edited after table clone reimport";
+const tableCloneEditedPptx = await PresentationFile.exportPptx(tableCloneRoundTrip);
+const tableCloneEditedRoundTrip = await PresentationFile.importPptx(tableCloneEditedPptx);
+assert.equal(tableCloneEditedRoundTrip.slides.getItem(1).tables.items[0].values[1][1], "Edited after table clone reimport");
+
+const immediateTableCloneEdit = await PresentationFile.importPptx(tableCloneSourcePptx);
+immediateTableCloneEdit.slides.getItem(0).duplicate().tables.items[0].values[1][1] = "Too soon";
+await assert.rejects(
+  () => PresentationFile.exportPptx(immediateTableCloneEdit),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+);
+
 // Speaker notes add one deliberately closed relationship leaf to the same
 // clone profile. The NotesSlide itself is new and points at the clone, while
 // its NotesMaster stays immutable and shared. This is raw part preservation,
