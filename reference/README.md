@@ -12,16 +12,21 @@ This directory contains project-internal reference material for building `open-o
 Use this submodule to observe the reference package's public package shape, exported API surface, smoke tests, examples, and observable behavior.
 
 The currently pinned reference revision is
-`207ce094a55d82a37efdca42a1c5e9656f696962`, the remotely reachable
-`origin/feat/sync-grid-layout-library-template-creator` commit. Its package
-manifest remains `office-artifact-tool@2.8.24` and it is based on the prior
-`2d0e249ea6b62f55cca22a343b832a38e8f7537c` runtime-sync revision.
+`256cb31bfe0a07b3cef0051b6b159342be381378`, the remotely reachable
+`origin/main` commit **Add default Office template library**. Its package
+manifest remains `office-artifact-tool@2.8.24`; it follows the prior
+`207ce094a55d82a37efdca42a1c5e9656f696962` neutral Grid Layout Library and
+Template Creator sync.
 
-This revision adds the neutral `grid-layout-library` naming and Template Creator
-workflow. Both are adapted into this project's public Skills with independent
-package, security, and workflow tests. Recording the exact remotely obtainable
-commit preserves reproducible submodule checkout without importing the reference
-runtime.
+This revision adds the MIT-licensed, repository-only Default Template Library:
+20 retained Office template Skills containing 7 DOCX, 7 PPTX, and 6 XLSX
+references plus previews. This project retains those assets byte-for-byte under
+`skills/default-template-library`, records their source hashes and license, and
+tests import/export/edit/render behavior independently. The preceding neutral
+`grid-layout-library` naming and Template Creator workflow remain present and
+adapted into this project's public Skills. Pinning the exact remote commit keeps
+both provenance and submodule checkout reproducible without importing the
+reference runtime.
 
 Do **not** vendor the reference package's runtime artifact, runtime module, runtime bindings, or implementation details into `open-office-artifact-tool`. Implement behavior independently using public standards, public libraries, OOXML/PDF specs, OpenXML SDK, Microsoft Office native automation, Playwright, LibreOffice, Poppler, PDF.js, sharp/canvas, and other legally usable technologies.
 

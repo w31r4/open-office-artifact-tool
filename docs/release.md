@@ -72,6 +72,34 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### Canonical Default Template Library reference pin
+
+On 2026-07-19, the public `reference/office-artifact-tool` submodule advanced
+from `207ce094a55d82a37efdca42a1c5e9656f696962` to the canonical MIT template
+commit `256cb31bfe0a07b3cef0051b6b159342be381378`. The retained project library
+already used the latter commit's 20 templates; this closure makes a fresh
+recursive checkout contain the exact authoritative source tree instead of
+requiring an adjacent developer checkout. No retained Office or PNG asset was
+rewritten, and the reference package/runtime remains excluded from the npm
+tarball.
+
+Hosted CI now checks out the fixed submodule and passes its template-library
+root to the existing corpus test. That gate compares all 40 Office/PNG assets
+byte-for-byte before running integrity budgets, transactional materialization,
+all 20 public import/unchanged-export/second-import paths, the bounded edits,
+and LibreOffice/Poppler rendering. The local full suite passed with the same
+source-root setting, proving the checked-in `integrity.json` aggregate and every
+individual asset against the pinned commit.
+
+The complete local gate passed `npm test` including Playwright and native
+template rendering, `npm run docs:api`, `npm run proto:check`, `npm run
+test:pack`, and serial `npm run verify:open-chestnut-build`; OpenChestnut passed
+`260/260` and OfficeBridge passed `5/5`. Two clean WASM builds retained the same
+39 audited files and manifest-bound 38-file, 14,428,348-byte runtime. The npm
+tarball still excludes the reference submodule and repository-only template
+library: it contains 447 files, is 9,440,424 bytes compressed and 23,759,623
+bytes unpacked. No publish or tag operation was attempted.
+
 ### PPTX bounded imported SlidePart placeholder-text edits
 
 On 2026-07-19, the Presentation model, protocol-2 wire, OpenChestnut C# codec,

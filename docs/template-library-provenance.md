@@ -4,6 +4,8 @@
 
 `skills/default-template-library/` is a repository-only import of the 20 Office templates committed in [`office-artifact-tool` `256cb31bfe0a07b3cef0051b6b159342be381378`](https://github.com/w31r4/office-artifact-tool/commit/256cb31bfe0a07b3cef0051b6b159342be381378), **Add default Office template library**.
 
+The checked-in [`reference/office-artifact-tool`](../reference/office-artifact-tool) submodule pins that exact commit, so a fresh recursive checkout contains the authoritative source tree used by the byte-comparison gate.
+
 That repository's root `LICENSE.md` is MIT, `Copyright (c) 2026 w31r4`. The full retained text lives beside the imported library at [`../skills/default-template-library/LICENSE.md`](../skills/default-template-library/LICENSE.md). This is a source/rights record, not legal advice.
 
 ## What is preserved
