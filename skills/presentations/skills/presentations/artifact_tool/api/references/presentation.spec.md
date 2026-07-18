@@ -22,6 +22,7 @@ const slide = presentation.slides.add({ layout, layoutId });
 const inserted = presentation.slides.insert({ after, layout, layoutId });
 const byIndex = presentation.slides.getItem(slideIndex);
 slide.moveTo(destinationIndex);
+const duplicate = slide.duplicate();
 slide.delete();
 ```
 
@@ -60,8 +61,15 @@ neither rebuilds slide parts nor copies their relationship graphs.
 slide. On an imported PPTX it succeeds only for an isolated layout-only source
 SlidePart with no outbound non-layout relationship, inbound relationship, or
 presentation identity reference; it then removes the actual part and relation.
-All media/note/comment/chart/OLE/hyperlink/custom-show/section/extension and
-otherwise connected deletes, plus imported add/duplicate/clone, fail closed.
+
+`slide.duplicate()` returns a new adjacent `Slide` only under the bounded
+imported shape-only layout-leaf profile. It creates a distinct native SlidePart
+and presentation relationship, shares the verified layout relationship, and
+preserves the origin part. The clone is intentionally read-only until it has
+crossed one export/reimport boundary; it then imports as its own source-bound
+slide. Imported add, repeat/mutated clone, immediate clone edit, and every
+media/note/comment/chart/OLE/hyperlink/custom-show/section/extension or
+otherwise connected clone/delete graph fail closed.
 
 ## Discover And Edit
 

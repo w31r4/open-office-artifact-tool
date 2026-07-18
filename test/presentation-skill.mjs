@@ -199,7 +199,8 @@ try {
   assert.match(skillText, /slides_test\.py/);
   assert.match(skillText, /slide\.setBackground.*slide\.clearBackground/s);
   assert.match(skillText, /slide\.moveTo\(existingZeroBasedIndex\).*retained source.*p:sldIdLst.*slide\.delete\(\).*isolated.*layout relationship/is);
-  assert.match(skillText, /starter-deck command below still needs an\s+imported-slide duplicate graph clone and broad graph delete semantics/is);
+  assert.match(skillText, /starter-deck command below still needs a\s+broad imported-slide graph clone and broad graph delete semantics/is);
+  assert.match(skillText, /slide\.duplicate\(\).*shape-only.*new\s+`?SlidePart`?.*export plus reimport/is);
   assert.match(skillText, /artifact_tool\/api\/references\/comments\.md/);
   const commentsReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/comments.md", "utf8");
   assert.match(commentsReferenceText, /Pass `undefined` as the target/);
@@ -228,7 +229,7 @@ try {
   assert.match(oleWorkbookReferenceText, /no lossy reconstruction or silent fallback/i);
   const templateFollowingText = await fs.readFile("skills/presentations/skills/presentations/references/template-following.md", "utf8");
   assert.match(templateFollowingText, /source-preserving reordering.*isolated[\s>]+layout-only.*slide\.delete/is);
-  assert.match(templateFollowingText, /OPC graph-clone milestone is unavailable/i);
+  assert.match(templateFollowingText, /broader OPC graph-clone milestone is unavailable/i);
 
   console.log("presentation skill smoke ok");
 } finally {

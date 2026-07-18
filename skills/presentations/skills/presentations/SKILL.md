@@ -190,8 +190,14 @@ inbound relationship, and no custom-show/section/extension or presentation-level
 identity reference. It
 removes the source slide part and its relationship part while preserving every
 survivor. Media, notes, comments, charts, OLE, hyperlinks, data parts, or any
-other connected graph fail closed. Imported add and duplicate/clone remain
-unsupported until an explicit OPC graph-clone transaction is available.
+other connected graph fail closed. `slide.duplicate()` is a separate, much
+narrower operation: only an original imported slide whose unchanged graph is
+shape-only with exactly one internal layout relationship may receive a new
+`SlidePart` and presentation relationship. It deliberately shares that verified
+layout, preserves the origin part, and requires export plus reimport before the
+clone may be edited. Imported add, repeat/mutated clone, and every broad graph
+clone remain unsupported until an explicit OPC graph-clone transaction is
+available.
 
 When an imported top-level OLE object contains one uniquely bound XLSX package,
 read `artifact_tool/api/references/ole-workbooks.spec.md` before changing it.
@@ -231,13 +237,15 @@ layout, style, or template. Read `references/template-following.md`, use
 `$TMP_DIR` from the Workspace section, and set
 `TEMPLATE_PPTX="<absolute path to the user-provided PPTX>"`.
 
-Current availability: the reference starter-deck command below still needs an
-imported-slide duplicate graph clone and broad graph delete semantics, so it
+Current availability: the reference starter-deck command below still needs a
+broad imported-slide graph clone and broad graph delete semantics, so it
 deliberately fails closed in the canonical codec. The isolated layout-only
-`slide.delete()` profile is not a substitute. Do not rebuild or share slide
-parts to emulate a clone. Until that milestone exists, use this mode only for
-source inventory, plan validation, and render/QA evidence; report the clone
-limitation before promising a derived starter deck.
+`slide.delete()` and unchanged shape-only `slide.duplicate()` profiles are not
+substitutes: the latter creates an independent part but cannot be edited before
+an export/reimport boundary. Do not rebuild or share slide parts to emulate a
+clone. Until the broader milestone exists, use this mode only for source
+inventory, plan validation, and render/QA evidence; report the clone limitation
+before promising a derived starter deck.
 
 Preserve the source deck's typography, palette, spacing, layout, placeholders,
 footers, page markers, and brand chrome unless the user explicitly asks to
@@ -261,8 +269,8 @@ node "$SKILL_DIR/template_following_scripts/inspect_template_deck.mjs" \
 
 Map each output slide to an inherited source slide and identify element-level
 `editTargets`. Then validate the map. The later starter-deck command is retained
-for the future graph-clone milestone, but currently rejects before writing an
-output deck:
+for the future broad graph-clone milestone, but currently rejects before writing
+an output deck:
 
 ```bash
 node "$SKILL_DIR/template_following_scripts/validate_template_plan.mjs" \
@@ -279,11 +287,12 @@ node "$SKILL_DIR/template_following_scripts/prepare_template_starter_deck.mjs" \
   --contact-sheet "$TMP_DIR/template-starter-contact-sheet.png"
 ```
 
-When a future graph-clone milestone enables `template-starter.pptx`, import it
-with `open-office-artifact-tool` and edit only inherited slides/objects unless the validated
-frame map explicitly allows an insertion. Today, if a source slide cannot
-support requested content without duplicate/delete or a parallel rebuild,
-report the blocker and the closest viable source-slide options.
+When a future broad graph-clone milestone enables `template-starter.pptx`,
+import it with `open-office-artifact-tool` and edit only inherited slides/objects
+unless the validated frame map explicitly allows an insertion. Today, if a
+source slide cannot support requested content without broad clone/delete or a
+parallel rebuild, report the blocker and the closest viable source-slide
+options.
 
 ## QA Reminder
 

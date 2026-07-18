@@ -2296,6 +2296,26 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void SourcePreservingExportRejectsAnEditedCloneBeforeWritingItsGraph()
+    {
+        var authored = Invoke(ExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var source = Assert.Single(imported.Artifact.Presentation.Slides);
+        var clone = source.Clone();
+        clone.Id = "presentation/clone/edited";
+        clone.Source = null;
+        clone.CloneSource = source.Source.Clone();
+        clone.Elements[0].Shape.Text = "This clone changed before its first export";
+        imported.Artifact.Presentation.Slides.Add(clone);
+
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("presentation_slide_clone_mismatch", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void ProtocolReturnsStructuredSlideAndItemBudgetFailures()
     {
         var exported = Invoke(ExportRequest());

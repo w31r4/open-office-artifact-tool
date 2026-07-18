@@ -736,6 +736,50 @@ assert.deepEqual(
 const deletionRoundTrip = await PresentationFile.importPptx(deletionPptx);
 assert.deepEqual(deletionRoundTrip.slides.items.map((slide) => slide.name), ["Keep"]);
 
+// Imported duplication is a distinct OPC graph operation, not another
+// p:sldId reference to the same SlidePart. The first profile deliberately
+// stays small: an unchanged shape-only slide with its layout as the only
+// relationship becomes a fresh part; after export/reimport it is an ordinary
+// source-bound slide and can use the normal supported edit path.
+assert.throws(
+  () => deletionFixture.slides.getItem(0).duplicate(),
+  /available only for a supported imported PPTX source slide/i,
+);
+const cloneFixture = Presentation.create({ slideSize: { width: 640, height: 360 } });
+const cloneOriginal = cloneFixture.slides.add({ name: "Original" });
+cloneOriginal.shapes.add({ name: "clone-copy", position: { left: 48, top: 48, width: 300, height: 72 }, text: "Original" });
+cloneFixture.slides.add({ name: "Companion" }).shapes.add({ name: "companion-copy", position: { left: 48, top: 48, width: 300, height: 72 }, text: "Companion" });
+const cloneSourcePptx = await PresentationFile.exportPptx(cloneFixture);
+const cloneSourceZip = await JSZip.loadAsync(cloneSourcePptx.bytes);
+const cloneImportedDeck = await PresentationFile.importPptx(cloneSourcePptx);
+const importedCloneSource = cloneImportedDeck.slides.getItem(0);
+const importedClone = importedCloneSource.duplicate();
+assert.equal(importedClone.index, 1);
+assert.notEqual(importedClone.id, importedCloneSource.id);
+assert.notEqual(importedClone.shapes.items[0].id, importedCloneSource.shapes.items[0].id);
+assert.equal(importedClone.shapes.items[0].text.value, "Original");
+const clonePptx = await PresentationFile.exportPptx(cloneImportedDeck);
+const cloneZip = await JSZip.loadAsync(clonePptx.bytes);
+assert.deepEqual(
+  await cloneZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  await cloneSourceZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  "cloning an imported slide must leave its origin SlidePart byte-for-byte intact",
+);
+assert.ok(cloneZip.file("ppt/slides/slide3.xml"), "the clone must be a new SlidePart rather than another reference to slide1");
+const cloneRoundTrip = await PresentationFile.importPptx(clonePptx);
+assert.deepEqual(cloneRoundTrip.slides.items.map((slide) => slide.name), ["Original", "Original", "Companion"]);
+itemByName(cloneRoundTrip.slides.getItem(1).shapes.items, "clone-copy").text.set("Edited after reimport");
+const cloneEditedPptx = await PresentationFile.exportPptx(cloneRoundTrip);
+const cloneEditedRoundTrip = await PresentationFile.importPptx(cloneEditedPptx);
+assert.equal(itemByName(cloneEditedRoundTrip.slides.getItem(1).shapes.items, "clone-copy").text.value, "Edited after reimport");
+
+const immediateCloneEdit = await PresentationFile.importPptx(cloneSourcePptx);
+immediateCloneEdit.slides.getItem(0).duplicate().shapes.items[0].text.set("Too soon");
+await assert.rejects(
+  () => PresentationFile.exportPptx(immediateCloneEdit),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+);
+
 // The ordinary deck carries media/shape relationships, so delete must stop at
 // the C# OPC preflight instead of silently reconstructing a lossy template.
 const complexImportedDeletion = await PresentationFile.importPptx(firstExport);

@@ -1,7 +1,9 @@
+import { create, toBinary } from "@bufbuild/protobuf";
 import { ChartElement, GroupShape, ImageElement, Presentation, Shape, Slide, TableElement } from "../presentation/index.mjs";
 import {
   ArtifactFamily,
   PresentationChartAxisGroup,
+  PresentationSlideSchema,
   PresentationSlideGuide_Orientation,
   SpreadsheetChartDataLabelPosition,
   SpreadsheetChartLineDashStyle,
@@ -146,7 +148,7 @@ function presentationSourceSlideStateMap(presentation, state) {
   const cloneBySlide = new Map();
   for (const cloneState of state.clones || []) {
     if (!(cloneState?.slide instanceof Slide) || cloneState.slide.presentation !== presentation ||
-        !sourceBySlide.has(cloneState.source) || cloneBySlide.has(cloneState.slide) || sourceBySlide.has(cloneState.slide)) {
+        !sourceBySlide.has(cloneState.source?.slide) || cloneBySlide.has(cloneState.slide) || sourceBySlide.has(cloneState.slide)) {
       throw new OpenChestnutCodecError("Imported presentation clone bindings are invalid or ambiguous.", [], { code: "presentation_topology_changed" });
     }
     cloneBySlide.set(cloneState.slide, cloneState);
@@ -220,12 +222,19 @@ function duplicateImportedPresentationSlide(presentation, state, slide) {
   return clone;
 }
 
-function presentationCloneComparable(slide) {
-  const comparable = structuredClone(slide);
-  delete comparable.id;
-  delete comparable.source;
-  delete comparable.cloneSource;
-  return JSON.stringify(comparable);
+function presentationCloneBytes(slide) {
+  const { id: _id, source: _source, cloneSource: _cloneSource, $typeName: _typeName, ...comparable } = slide;
+  // Compare protobuf wire bytes instead of JavaScript object JSON. The
+  // generated decoder intentionally materializes default nested messages;
+  // the model serializer omits them. Canonical protobuf encoding treats those
+  // forms alike while still detecting every meaningful clone mutation.
+  return toBinary(PresentationSlideSchema, create(PresentationSlideSchema, comparable));
+}
+
+function presentationCloneMatches(requested, source) {
+  const left = presentationCloneBytes(requested);
+  const right = presentationCloneBytes(source);
+  return left.byteLength === right.byteLength && left.every((value, index) => value === right[index]);
 }
 
 function emuFromPixels(value, name) {
@@ -1677,7 +1686,7 @@ export function presentationEnvelope(presentation, protocolVersion) {
           .map((element) => presentationElement(element, undefined, assetCatalog)),
     };
     if (!cloneState) return requested;
-    if (presentationCloneComparable(requested) !== presentationCloneComparable(cloneState.source.wire)) {
+    if (!presentationCloneMatches(requested, cloneState.source.wire)) {
       throw new OpenChestnutCodecError(`Imported presentation clone ${slideIndex + 1} must remain untouched until it has been exported and imported again.`, [], { code: "unsupported_presentation_slide_clone" });
     }
     delete requested.source;

@@ -10,7 +10,7 @@ attaches a PPTX that is clearly or implicitly a template.
 > hyperlinks, inbound relationships, custom-show/section/extension, or other
 > graph edge may be present. It is not a substitute for starter-deck deletion.
 > Do not substitute a reconstructed or shared-part copy. If the task requires
-> `duplicate-slide`, report that the OPC graph-clone milestone is unavailable
+> `duplicate-slide`, report that the broader OPC graph-clone milestone is unavailable
 > and preserve the source deck; use the inspection/planning/QA portions of this
 > workflow only.
 

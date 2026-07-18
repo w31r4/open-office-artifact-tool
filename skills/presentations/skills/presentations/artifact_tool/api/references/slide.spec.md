@@ -49,10 +49,11 @@ imported background graphs are opaque-preserved; leave them unchanged or
 OpenChestnut fails closed. Do not replace an advanced imported background with
 a simple solid and describe that as a faithful edit.
 
-## Slide Order And Constrained Deletion
+## Slide Order, Constrained Deletion, And Bounded Clone
 
 ```ts
 slide.moveTo(0); // existing 0-based destination index
+const clone = slide.duplicate(); // narrow imported shape-only profile only
 slide.delete(); // removes a non-final source-free slide, or a qualified imported source slide
 ```
 
@@ -70,8 +71,23 @@ custom-show, section, extension, or presentation-level identity reference. The
 codec removes the slide part and its relationship part, updates
 `ppt/presentation.xml` plus its relationships/content types, and keeps the
 surviving source slides byte-identical. Any other imported delete fails closed.
-Adding or duplicating imported slides still fails closed; a future clone API
-needs an explicit OPC graph transaction rather than a visual-only copy.
+
+`duplicate()` is not a visual-only copy and never creates a second
+`p:sldId` reference to one source part. It is available only on an **original
+imported** source slide with an unchanged shape-only body and exactly one
+internal `SlidePart -> SlideLayoutPart` relationship. Export allocates a
+distinct new `SlidePart` and a new presentation relationship, intentionally
+reuses the verified layout part, and preserves the original source part. The
+new clone must remain semantically unchanged until that export has completed
+and the resulting PPTX has been imported again; afterward it is an ordinary
+source-bound slide and may use the supported fixed-topology edit path.
+
+Source-free slides, already-cloned slides, comments, speaker notes, media,
+charts, OLE, hyperlinks, external/data relationships, non-shape elements,
+renames/layout/background changes, immediate clone edits, and all broader
+relationship graphs fail closed. Adding imported slides still fails closed. A
+template-derived deck still needs a broader explicit OPC graph-clone
+transaction rather than this bounded leaf operation.
 
 ## Layouts And Placeholders
 
