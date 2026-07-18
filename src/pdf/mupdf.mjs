@@ -49,6 +49,9 @@ const PAGE_ROTATIONS = new Set([0, 90, 180, 270]);
 const ANNOTATION_ID_PREFIX = "mupdf-annotation";
 const ANNOTATION_EXPECTATION_FIELDS = new Set(["type", "contents", "name", "author", "subject", "rect"]);
 const ANNOTATION_PATCH_FIELDS = new Set(["contents", "author", "subject"]);
+const WIDGET_ID_PREFIX = "mupdf-widget";
+const FORM_FIELD_ID_PREFIX = "mupdf-form-field";
+const FORM_FIELD_EXPECTATION_FIELDS = new Set(["name", "type", "value", "readOnly", "options", "exportOptions", "widgets"]);
 const LINK_ID_PREFIX = "mupdf-link";
 const LINK_EXPECTATION_FIELDS = new Set(["url", "bbox", "external"]);
 const LINK_PATCH_FIELDS = new Set(["url"]);
@@ -190,9 +193,7 @@ function annotationXref(annotation) {
   let object;
   try {
     object = annotation.getObject();
-    if (!object.isIndirect()) return undefined;
-    const xref = object.asIndirect();
-    return Number.isSafeInteger(xref) && xref > 0 ? xref : undefined;
+    return pdfObjectXref(object);
   } catch {
     return undefined;
   } finally {
@@ -200,8 +201,36 @@ function annotationXref(annotation) {
   }
 }
 
+function pdfObjectXref(object) {
+  try {
+    if (!object?.isIndirect()) return undefined;
+    const xref = object.asIndirect();
+    return Number.isSafeInteger(xref) && xref > 0 ? xref : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function annotationId(pageNumber, xref) {
   return `${ANNOTATION_ID_PREFIX}-${pageNumber}-${xref}`;
+}
+
+function widgetId(pageNumber, xref) {
+  return `${WIDGET_ID_PREFIX}-${pageNumber}-${xref}`;
+}
+
+function formFieldId(xref) {
+  return `${FORM_FIELD_ID_PREFIX}-${xref}`;
+}
+
+function parseFormFieldId(value, operationName = "update_form_field") {
+  const match = new RegExp(`^${FORM_FIELD_ID_PREFIX}-(\\d+)$`, "u").exec(String(value || ""));
+  if (!match) throw new Error(`${operationName} formFieldId must be a ${FORM_FIELD_ID_PREFIX}-<xref> locator returned by PdfFile.inspectPdf.`);
+  const xref = Number(match[1]);
+  if (!Number.isSafeInteger(xref) || xref < 1) {
+    throw new Error(`${operationName} formFieldId contains an invalid xref number.`);
+  }
+  return { xref };
 }
 
 function parseAnnotationId(value, operationName = "delete_annotation") {
@@ -234,7 +263,7 @@ function nativeAnnotation(annotation, pageNumber) {
 function consumeAnnotationBudget(budget, count, pageNumber) {
   budget.used += count;
   if (budget.used > budget.maxAnnotations) {
-    throw new Error(`MuPDF annotations exceed maxAnnotations (${budget.used} > ${budget.maxAnnotations}) while reading page ${pageNumber}.`);
+    throw new Error(`MuPDF annotations/widgets exceed maxAnnotations (${budget.used} > ${budget.maxAnnotations}) while reading page ${pageNumber}.`);
   }
 }
 
@@ -413,8 +442,32 @@ function linkPageExpectationMismatch(actual, expected) {
   return undefined;
 }
 
-function nativeWidget(widget) {
-  return {
+function widgetIdentity(widget) {
+  let object;
+  let parent;
+  try {
+    object = widget.getObject();
+    const xref = pdfObjectXref(object);
+    if (!xref) return {};
+    parent = object.get("Parent");
+    if (parent.isNull()) return { xref, fieldXref: xref };
+    const fieldXref = pdfObjectXref(parent);
+    return fieldXref ? { xref, fieldXref } : { xref };
+  } catch {
+    return {};
+  } finally {
+    parent?.destroy();
+    object?.destroy();
+  }
+}
+
+function nativeWidget(widget, pageNumber) {
+  const { xref, fieldXref } = widgetIdentity(widget);
+  const record = {
+    id: xref ? widgetId(pageNumber, xref) : undefined,
+    xref,
+    formFieldId: fieldXref ? formFieldId(fieldXref) : undefined,
+    fieldXref,
     type: widget.getFieldType(),
     name: widget.getName(),
     label: widget.getLabel() || undefined,
@@ -422,6 +475,292 @@ function nativeWidget(widget) {
     rect: widget.hasRect() ? pdfRectToBbox(widget.getRect()) : undefined,
     readOnly: widget.isReadOnly(),
     options: widget.isChoice() ? widget.getOptions() : undefined,
+    exportOptions: widget.isChoice() ? widget.getOptions(true) : undefined,
+    maxLength: widget.isText() ? widget.getMaxLen() || undefined : undefined,
+    password: widget.isText() && widget.isPassword() ? true : undefined,
+  };
+  return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
+}
+
+function sameStringArrays(left, right) {
+  return Array.isArray(left)
+    && Array.isArray(right)
+    && left.length === right.length
+    && left.every((value, index) => value === right[index]);
+}
+
+function widgetSnapshot(widget) {
+  return {
+    id: widget.id,
+    page: widget.page,
+    xref: widget.xref,
+    rect: widget.rect,
+  };
+}
+
+function nativeFormFieldRecord(widgets) {
+  const ordered = [...widgets].sort((left, right) => left.page - right.page || left.xref - right.xref);
+  const first = ordered[0];
+  if (!first?.formFieldId || !first.fieldXref) return undefined;
+  const sameField = ordered.every((widget) => widget.formFieldId === first.formFieldId
+    && widget.name === first.name
+    && widget.type === first.type
+    && widget.value === first.value
+    && widget.readOnly === first.readOnly
+    && sameStringArrays(widget.options || [], first.options || [])
+    && sameStringArrays(widget.exportOptions || [], first.exportOptions || []));
+  const record = {
+    kind: "mupdfFormField",
+    id: first.formFieldId,
+    xref: first.fieldXref,
+    name: first.name,
+    type: first.type,
+    label: ordered.every((widget) => widget.label === first.label) ? first.label : undefined,
+    value: first.value,
+    readOnly: first.readOnly,
+    options: first.options,
+    exportOptions: first.exportOptions,
+    widgets: ordered.map(widgetSnapshot),
+  };
+  if (!sameField) {
+    return {
+      ...record,
+      unsupportedReason: "Widgets sharing this form-field locator disagree on semantic state; route the original PDF to the explicit pypdf form workflow.",
+    };
+  }
+  return {
+    ...record,
+    snapshot: Object.fromEntries(Object.entries({
+      name: record.name,
+      type: record.type,
+      value: record.value,
+      readOnly: record.readOnly,
+      options: record.options,
+      exportOptions: record.exportOptions,
+      widgets: record.widgets,
+    }).filter(([, value]) => value !== undefined)),
+  };
+}
+
+function collectNativeFormFields(widgetRecords) {
+  const grouped = new Map();
+  for (const widget of widgetRecords) {
+    if (!widget.formFieldId) continue;
+    const current = grouped.get(widget.formFieldId) || [];
+    current.push(widget);
+    grouped.set(widget.formFieldId, current);
+  }
+  return [...grouped.values()]
+    .map(nativeFormFieldRecord)
+    .filter(Boolean)
+    .sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function formFieldExpectation(value, operationName = "update_form_field") {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${operationName} expected must be the snapshot returned by a mupdfFormField inspection record.`);
+  }
+  for (const name of Object.keys(value)) {
+    if (!FORM_FIELD_EXPECTATION_FIELDS.has(name)) {
+      throw new Error(`${operationName} expected contains unsupported snapshot field: ${name}.`);
+    }
+  }
+  for (const name of ["name", "type", "value"]) {
+    if (typeof value[name] !== "string") throw new Error(`${operationName} expected.${name} must be a string.`);
+  }
+  if (typeof value.readOnly !== "boolean") throw new Error(`${operationName} expected.readOnly must be a boolean.`);
+  if (!Array.isArray(value.widgets) || value.widgets.length !== 1) {
+    throw new Error(`${operationName} expected.widgets must contain exactly one inspect-returned widget; shared-widget fields require the explicit pypdf form workflow.`);
+  }
+  const widgets = value.widgets.map((widget, index) => {
+    if (!widget || typeof widget !== "object" || Array.isArray(widget)) {
+      throw new Error(`${operationName} expected.widgets[${index}] must be an inspect-returned widget snapshot.`);
+    }
+    const allowed = new Set(["id", "page", "xref", "rect"]);
+    for (const name of Object.keys(widget)) {
+      if (!allowed.has(name)) throw new Error(`${operationName} expected.widgets[${index}] contains unsupported snapshot field: ${name}.`);
+    }
+    const page = Number(widget.page);
+    const xref = Number(widget.xref);
+    if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(xref) || xref < 1 || widget.id !== widgetId(page, xref)) {
+      throw new Error(`${operationName} expected.widgets[${index}] must preserve one valid mupdf-widget-<page>-<xref> locator.`);
+    }
+    const rect = bboxToPdfRect(widget.rect, `${operationName} expected.widgets[${index}].rect`);
+    return { id: widget.id, page, xref, rect: pdfRectToBbox(rect) };
+  });
+  const expected = {
+    name: value.name,
+    type: value.type,
+    value: value.value,
+    readOnly: value.readOnly,
+    widgets,
+  };
+  for (const name of ["options", "exportOptions"]) {
+    if (value[name] === undefined) continue;
+    if (!Array.isArray(value[name]) || value[name].some((option) => typeof option !== "string")) {
+      throw new Error(`${operationName} expected.${name} must be an array of strings.`);
+    }
+    expected[name] = [...value[name]];
+  }
+  return expected;
+}
+
+function formFieldExpectationMismatch(actual, expected) {
+  for (const name of ["name", "type", "value", "readOnly"]) {
+    if (actual[name] !== expected[name]) return name;
+  }
+  for (const name of ["options", "exportOptions"]) {
+    if (expected[name] !== undefined && !sameStringArrays(actual[name] || [], expected[name])) return name;
+  }
+  if (!sameStringArrays(actual.widgets.map((widget) => widget.id), expected.widgets.map((widget) => widget.id))) return "widgets";
+  for (let index = 0; index < actual.widgets.length; index += 1) {
+    const left = actual.widgets[index];
+    const right = expected.widgets[index];
+    if (left.page !== right.page || left.xref !== right.xref || !pdfRectsEqual(bboxToPdfRect(left.rect), bboxToPdfRect(right.rect))) return "widgets";
+  }
+  return undefined;
+}
+
+function collectNativeFormField(document, fieldXref, limits = DEFAULT_LIMITS) {
+  const widgets = [];
+  let widgetCount = 0;
+  for (let index = 0; index < document.countPages(); index += 1) {
+    const page = document.loadPage(index);
+    const pageWidgets = page.getWidgets();
+    try {
+      widgetCount += pageWidgets.length;
+      if (widgetCount > limits.maxAnnotations) {
+        throw new Error(`MuPDF annotations/widgets exceed maxAnnotations (${widgetCount} > ${limits.maxAnnotations}) while locating a source-bound form field.`);
+      }
+      for (const widget of pageWidgets) {
+        const record = nativeWidget(widget, index + 1);
+        if (record.fieldXref === fieldXref) widgets.push({ page: index + 1, ...record });
+      }
+    } finally {
+      pageWidgets.forEach((widget) => widget.destroy());
+      page.destroy();
+    }
+  }
+  return nativeFormFieldRecord(widgets);
+}
+
+function withSingleNativeFormWidget(document, field, mutate) {
+  const reference = field.widgets[0];
+  const page = document.loadPage(reference.page - 1);
+  const widgets = page.getWidgets();
+  let target;
+  try {
+    target = widgets.find((widget) => {
+      const record = nativeWidget(widget, reference.page);
+      return record.id === reference.id && record.formFieldId === field.id;
+    });
+    if (!target) {
+      throw new Error(`update_form_field could not resolve ${reference.id} from ${field.id}; re-inspect the current source PDF before retrying.`);
+    }
+    return mutate({ page, target });
+  } finally {
+    widgets.forEach((widget) => widget.destroy());
+    page.destroy();
+  }
+}
+
+function checkboxIsChecked(value) {
+  return !/^\s*(?:|off)\s*$/iu.test(String(value ?? ""));
+}
+
+function sourceBoundFormFieldValue(widget, field, operation) {
+  if (!Object.hasOwn(operation, "value")) throw new Error("update_form_field requires a value property.");
+  if (widget.isText()) {
+    if (widget.isPassword()) throw new Error(`update_form_field refuses password field ${field.name}; use an explicit specialist provider after a security review.`);
+    if (typeof operation.value !== "string") throw new Error(`update_form_field text field ${field.name} requires a string value.`);
+    const maxLength = widget.getMaxLen();
+    if (maxLength > 0 && operation.value.length > maxLength) {
+      throw new Error(`update_form_field text value exceeds the source field maxLength (${operation.value.length} > ${maxLength}).`);
+    }
+    const accepted = widget.setTextValue(operation.value);
+    if (!accepted) throw new Error(`MuPDF rejected value for source-bound text field ${field.name}.`);
+    return { kind: "text", value: operation.value };
+  }
+  if (widget.isChoice()) {
+    if (widget.isListBox() || (widget.getFieldFlags() & mupdf.PDFWidget.CH_FIELD_IS_MULTI_SELECT)) {
+      throw new Error(`update_form_field does not support list or multi-select field ${field.name}; use the explicit pypdf form workflow.`);
+    }
+    if (typeof operation.value !== "string") throw new Error(`update_form_field choice field ${field.name} requires a string value.`);
+    const options = widget.getOptions();
+    const exportOptions = widget.getOptions(true);
+    if (!sameStringArrays(options, exportOptions)) {
+      throw new Error(`update_form_field refuses choice field ${field.name} because its display and export values differ; use the explicit pypdf form workflow.`);
+    }
+    if (!options.includes(operation.value)) {
+      throw new Error(`update_form_field choice value ${JSON.stringify(operation.value)} is not an inspected option for ${field.name}.`);
+    }
+    const accepted = widget.setChoiceValue(operation.value);
+    if (!accepted) throw new Error(`MuPDF rejected value for source-bound choice field ${field.name}.`);
+    return { kind: "choice", value: operation.value };
+  }
+  if (widget.isCheckbox()) {
+    const desired = normalizeCheckboxValue(operation.value, field.name, "update_form_field");
+    const accepted = desired === checkboxIsChecked(widget.getValue()) ? 1 : widget.toggle();
+    if (!accepted) throw new Error(`MuPDF rejected value for source-bound checkbox field ${field.name}.`);
+    return { kind: "checkbox", value: desired };
+  }
+  if (widget.isRadioButton()) {
+    throw new Error(`update_form_field does not expose a trustworthy radio export-value mapping for field ${field.name}; use the explicit pypdf form workflow.`);
+  }
+  throw new Error(`update_form_field does not support widget type ${widget.getFieldType()} for field ${field.name}.`);
+}
+
+function sourceBoundFormValueMismatch(field, requested) {
+  if (requested.kind === "checkbox") return checkboxIsChecked(field.value) === requested.value ? undefined : "value";
+  return field.value === requested.value ? undefined : "value";
+}
+
+function applySourceBoundFormFieldUpdate(document, operation, context = {}) {
+  if (!/^[a-f0-9]{64}$/u.test(String(operation.sourceSha256 || "")) || operation.sourceSha256 !== context.sourceSha256) {
+    throw new Error("update_form_field sourceSha256 must exactly match PdfFile.inspectPdf(...).summary.sourceSha256 for the current input bytes.");
+  }
+  const locator = parseFormFieldId(operation.formFieldId, "update_form_field");
+  const expected = formFieldExpectation(operation.expected, "update_form_field");
+  const matched = collectNativeFormField(document, locator.xref, context.limits);
+  if (!matched) {
+    throw new Error(`update_form_field could not find source-bound form field ${operation.formFieldId}. Re-inspect the current source PDF before retrying.`);
+  }
+  if (matched.id !== operation.formFieldId || !matched.snapshot) {
+    throw new Error(`update_form_field locator ${operation.formFieldId} did not resolve to one consistent inspectable form field.`);
+  }
+  const mismatch = formFieldExpectationMismatch(matched.snapshot, expected);
+  if (mismatch) {
+    throw new Error(`update_form_field precondition ${mismatch} did not match ${operation.formFieldId}; refusing a stale or ambiguous mutation.`);
+  }
+  if (matched.readOnly) throw new Error(`update_form_field refuses read-only form field ${matched.name}.`);
+  if (matched.widgets.length !== 1) {
+    throw new Error(`update_form_field refuses shared-widget form field ${matched.name}; use the explicit pypdf form workflow.`);
+  }
+  const requested = withSingleNativeFormWidget(document, matched, ({ page, target }) => {
+    const value = sourceBoundFormFieldValue(target, matched, operation);
+    target.update();
+    page.update();
+    return value;
+  });
+  const updated = collectNativeFormField(document, locator.xref, context.limits);
+  if (!updated || updated.id !== matched.id || !updated.snapshot || updated.widgets.length !== 1) {
+    throw new Error(`MuPDF did not retain one uniquely addressable source-bound form field ${operation.formFieldId}; refusing to save an ambiguous update.`);
+  }
+  const structureMismatch = formFieldExpectationMismatch(updated.snapshot, { ...matched.snapshot, value: updated.snapshot.value });
+  if (structureMismatch) {
+    throw new Error(`MuPDF changed form-field structure ${structureMismatch} while updating ${operation.formFieldId}; refusing to save an ambiguous update.`);
+  }
+  const valueMismatch = sourceBoundFormValueMismatch(updated, requested);
+  if (valueMismatch) {
+    throw new Error(`MuPDF did not preserve update_form_field ${valueMismatch} for ${operation.formFieldId}; refusing to save an ambiguous update.`);
+  }
+  return {
+    type: "update_form_field",
+    formFieldId: matched.id,
+    xref: locator.xref,
+    matched: matched.snapshot,
+    value: requested.value,
+    updated: updated.snapshot,
   };
 }
 
@@ -509,10 +848,10 @@ function structuredPage(page, pageNumber, options, imageBudget, annotationBudget
     const widgetObjects = page.getWidgets();
     const linkObjects = page.getLinks();
     try {
-      consumeAnnotationBudget(annotationBudget, annotationObjects.length, pageNumber);
+      consumeAnnotationBudget(annotationBudget, annotationObjects.length + widgetObjects.length, pageNumber);
       consumeLinkBudget(linkBudget, linkObjects.length, pageNumber);
       const annotations = annotationObjects.map((annotation) => nativeAnnotation(annotation, pageNumber));
-      const widgets = widgetObjects.map(nativeWidget);
+      const widgets = widgetObjects.map((widget) => nativeWidget(widget, pageNumber));
       const links = linkObjects.map((link) => nativeLink(link, pageNumber));
       return {
         width: bounds[2] - bounds[0],
@@ -604,8 +943,9 @@ export async function inspectPdfWithMuPdf(input, options = {}) {
         const text = structured.asText();
         const mediaBox = rawPageBox(page, "MediaBox");
         const cropBox = rawPageBox(page, "CropBox") || mediaBox;
-        consumeAnnotationBudget(annotationBudget, annotations.length, index + 1);
+        consumeAnnotationBudget(annotationBudget, annotations.length + widgets.length, index + 1);
         consumeLinkBudget(linkBudget, links.length, index + 1);
+        const nativeWidgets = widgets.map((widget) => nativeWidget(widget, index + 1));
         return [
           {
             kind: "mupdfPage",
@@ -623,6 +963,11 @@ export async function inspectPdfWithMuPdf(input, options = {}) {
             kind: "mupdfAnnotation",
             page: index + 1,
             ...nativeAnnotation(annotation, index + 1),
+          })),
+          ...nativeWidgets.map((widget) => ({
+            kind: "mupdfWidget",
+            page: index + 1,
+            ...widget,
           })),
           ...links.map((link) => ({
             kind: "mupdfLink",
@@ -655,7 +1000,9 @@ export async function inspectPdfWithMuPdf(input, options = {}) {
       embeddedFiles: Object.keys(embeddedFiles).length,
     };
     Object.values(embeddedFiles).forEach((file) => file.destroy());
-    return { summary, records: [summary, ...pageRecords.flat()] };
+    const records = pageRecords.flat();
+    const formFields = collectNativeFormFields(records.filter((record) => record.kind === "mupdfWidget"));
+    return { summary, records: [summary, ...records, ...formFields] };
   } finally {
     document.destroy();
   }
@@ -1119,13 +1466,13 @@ function applyLinkAddition(document, operation, context = {}) {
   }
 }
 
-function normalizeCheckboxValue(value, field) {
+function normalizeCheckboxValue(value, field, operationName = "fill_form") {
   if (typeof value === "boolean") return value;
   if (value === 0 || value === 1) return value === 1;
   const normalized = String(value ?? "").trim().toLowerCase();
   if (["true", "yes", "on", "1"].includes(normalized)) return true;
   if (["false", "no", "off", "0", ""].includes(normalized)) return false;
-  throw new Error(`fill_form checkbox field ${field} requires a boolean, on/off, yes/no, or 1/0 value.`);
+  throw new Error(`${operationName} checkbox field ${field} requires a boolean, on/off, yes/no, or 1/0 value.`);
 }
 
 function applyOperation(document, operation, context) {
@@ -1186,6 +1533,7 @@ function applyOperation(document, operation, context) {
       if (!matches.length) throw new Error(`Form field not found: ${field}.`);
       return { type: operation.type, field, widgets: matches };
     }
+    case "update_form_field": return applySourceBoundFormFieldUpdate(document, operation, context);
     case "delete_page": {
       if (document.countPages() <= 1) throw new Error("delete_page cannot remove the final page.");
       const index = pageIndexFor(document, operation);
@@ -1259,7 +1607,7 @@ export async function editPdfWithMuPdf(input, options = {}) {
   try {
     const signed = requireUnsignedPolicy(document, { ...options, savePolicy });
     const sourceSha256 = sha256(bytes);
-    const applied = operations.map((operation) => applyOperation(document, operation || {}, { sourceSha256 }));
+    const applied = operations.map((operation) => applyOperation(document, operation || {}, { sourceSha256, limits }));
     if (savePolicy === "incremental" && !document.canBeSavedIncrementally()) throw new Error("MuPDF cannot save these changes incrementally; refusing a rewrite fallback.");
     saved = savePolicy === "incremental"
       ? document.saveToBuffer({ incremental: true })
