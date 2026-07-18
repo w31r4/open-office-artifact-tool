@@ -12,6 +12,10 @@ import { gradeOfficeCase } from "./agent-eval-office-graders.mjs";
 import { gradePdfCase } from "./agent-eval-pdf-graders.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+// PromptBench remains PDF-led while it grows one independently graded ready
+// workflow per Office Skill. Sixty percent keeps PDF an absolute majority
+// without making one meaningful Office vertical slice require filler cases.
+export const MINIMUM_PDF_CASE_SHARE = 0.6;
 const casesPath = path.join(repoRoot, "evals", "cases.jsonl");
 const families = new Set(["pdf", "documents", "spreadsheets", "presentations"]);
 const skillsByFamily = new Map([
@@ -129,7 +133,9 @@ function validateSuite(suite, cases) {
     for (const source of item.sources || []) if (!/^https:\/\//.test(source)) errors.push(`${prefix}: source must be an HTTPS URL`);
   }
   const pdfCases = cases.filter((item) => item.family === "pdf").length;
-  if (pdfCases / Math.max(cases.length, 1) < 0.65) errors.push(`PDF must be at least 65% of the suite; found ${pdfCases}/${cases.length}`);
+  if (pdfCases / Math.max(cases.length, 1) < MINIMUM_PDF_CASE_SHARE) {
+    errors.push(`PDF must be at least ${Math.round(MINIMUM_PDF_CASE_SHARE * 100)}% of the suite; found ${pdfCases}/${cases.length}`);
+  }
   for (const family of families) {
     const familyCases = cases.filter((item) => item.family === family);
     if (!familyCases.some((item) => item.expectedOutcome === "success")) errors.push(`${family}: missing success case`);

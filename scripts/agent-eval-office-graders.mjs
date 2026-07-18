@@ -8,6 +8,7 @@ import { XLSX_THREADED_REVIEW_FIXTURE } from "./agent-eval-office-fixtures.mjs";
 import { docxGradedCaseIds, gradeDocxCase } from "./agent-eval-docx-graders.mjs";
 import { renderOfficeFile } from "./agent-eval-office-native-render.mjs";
 import { extractCompletedCommands, summarizeCaseScore } from "./agent-eval-pdf-graders.mjs";
+import { gradePptxCase, pptxGradedCaseIds } from "./agent-eval-presentation-graders.mjs";
 
 const xlsxGradedCaseIds = new Set(["xlsx-threaded-reply-resolve"]);
 const defaultWeights = { machine: 45, visual: 25, security: 20, trace: 10 };
@@ -235,7 +236,10 @@ async function readAudit(workspace) {
 }
 
 export async function gradeOfficeCase({ item, workspace, finalMessage, trace, weights = defaultWeights }) {
-  if (!xlsxGradedCaseIds.has(item.id)) return gradeDocxCase({ item, workspace, finalMessage, trace, weights });
+  if (!xlsxGradedCaseIds.has(item.id)) {
+    const docx = await gradeDocxCase({ item, workspace, finalMessage, trace, weights });
+    return docx.supported ? docx : gradePptxCase({ item, workspace, finalMessage, trace, weights });
+  }
   const audit = await readAudit(workspace);
   const commands = extractCompletedCommands(trace);
   let source;
@@ -272,4 +276,4 @@ export async function gradeOfficeCase({ item, workspace, finalMessage, trace, we
   return { supported: true, graded: true, checks, evidence, pending: [], ...score };
 }
 
-export const officeGradedCaseIds = new Set([...xlsxGradedCaseIds, ...docxGradedCaseIds]);
+export const officeGradedCaseIds = new Set([...xlsxGradedCaseIds, ...docxGradedCaseIds, ...pptxGradedCaseIds]);

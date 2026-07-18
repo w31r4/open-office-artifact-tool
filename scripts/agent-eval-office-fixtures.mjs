@@ -1,7 +1,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { DocumentFile, DocumentModel, SpreadsheetFile, Workbook } from "../src/index.mjs";
+import {
+  DocumentFile,
+  DocumentModel,
+  Presentation,
+  PresentationFile,
+  SpreadsheetFile,
+  Workbook,
+} from "../src/index.mjs";
 
 export const XLSX_THREADED_REVIEW_FIXTURE = Object.freeze({
   workbookName: "reviewed-budget.xlsx",
@@ -28,6 +35,7 @@ export const XLSX_THREADED_REVIEW_FIXTURE = Object.freeze({
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 
 export const DOCX_CLASSIC_COMMENT_FIXTURE = Object.freeze({
   documentName: "legal-review.docx",
@@ -41,6 +49,20 @@ export const DOCX_CLASSIC_COMMENT_FIXTURE = Object.freeze({
     originalText: "Please confirm the final retention wording.",
     replacementText: "Approved after legal review.",
   }),
+});
+
+export const PPTX_TITLE_NOTES_FIXTURE = Object.freeze({
+  presentationName: "launch-review.pptx",
+  targetSlideName: "Go-no-go decision",
+  untouchedSlideName: "Unchanged appendix",
+  titleShapeName: "approval-title",
+  originalTitle: "Decision: hold for legal review",
+  replacementTitle: "Decision: approve controlled rollout",
+  supportingText: "The scope, owner, and retained controls remain unchanged.",
+  originalNotes: "Lead with the pending legal condition.\nClose with the accountable owner.",
+  replacementNotes: "Lead with the approved controls.\nClose with the accountable rollout owner.",
+  targetBackground: "#F1F5F9",
+  untouchedBackground: "#FFF7ED",
 });
 
 function commentConfig(comment) {
@@ -139,8 +161,54 @@ export async function generateDocxClassicCommentReview(target) {
   return { path: target, type: DOCX_MIME };
 }
 
+export async function generatePptxTitleNotesReview(target) {
+  const fixture = PPTX_TITLE_NOTES_FIXTURE;
+  const presentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });
+  const decision = presentation.slides.add({ name: fixture.targetSlideName });
+  decision.setBackground({ fill: fixture.targetBackground, mode: "solid" });
+  const title = decision.shapes.add({
+    name: fixture.titleShapeName,
+    geometry: "textbox",
+    position: { left: 72, top: 72, width: 1040, height: 96 },
+    text: fixture.originalTitle,
+    fill: "none",
+    line: { style: "solid", fill: "none", width: 0 },
+  });
+  title.text.style = { fontSize: 34, bold: true, color: "#0F172A" };
+  const supporting = decision.shapes.add({
+    name: "supporting-copy",
+    geometry: "textbox",
+    position: { left: 72, top: 194, width: 880, height: 80 },
+    text: fixture.supportingText,
+    fill: "none",
+    line: { style: "solid", fill: "none", width: 0 },
+  });
+  supporting.text.style = { fontSize: 18, color: "#334155" };
+  decision.addNotes(fixture.originalNotes);
+
+  const appendix = presentation.slides.add({ name: fixture.untouchedSlideName });
+  appendix.setBackground({ fill: fixture.untouchedBackground, mode: "solid" });
+  const appendixTitle = appendix.shapes.add({
+    name: "appendix-title",
+    geometry: "textbox",
+    position: { left: 72, top: 72, width: 900, height: 96 },
+    text: "Appendix: unchanged evidence",
+    fill: "none",
+    line: { style: "solid", fill: "none", width: 0 },
+  });
+  appendixTitle.text.style = { fontSize: 30, bold: true, color: "#7C2D12" };
+
+  const verification = presentation.verify({ visualQa: true });
+  if (!verification.ok) throw new Error("Generated PPTX title/notes fixture failed model verification: " + verification.ndjson);
+  const exported = await PresentationFile.exportPptx(presentation);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, new Uint8Array(await exported.arrayBuffer()));
+  return { path: target, type: PPTX_MIME };
+}
+
 export async function generateOfficeInput(generator, target) {
   if (generator === "xlsx-threaded-review") return generateXlsxThreadedReview(target);
   if (generator === "docx-classic-comment-review") return generateDocxClassicCommentReview(target);
+  if (generator === "pptx-title-notes-review") return generatePptxTitleNotesReview(target);
   return null;
 }
