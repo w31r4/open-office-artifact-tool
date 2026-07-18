@@ -35,6 +35,7 @@ const METADATA_KEYS = Object.freeze({
 
 const INCREMENTAL_DESTRUCTIVE_OPERATIONS = new Set([
   "delete_annotation",
+  "update_annotation",
   "delete_page",
   "delete_embedded_file",
   "delete_link",
@@ -45,6 +46,7 @@ const INCREMENTAL_DESTRUCTIVE_OPERATIONS = new Set([
 const PAGE_ROTATIONS = new Set([0, 90, 180, 270]);
 const ANNOTATION_ID_PREFIX = "mupdf-annotation";
 const ANNOTATION_EXPECTATION_FIELDS = new Set(["type", "contents", "name", "author", "subject", "rect"]);
+const ANNOTATION_PATCH_FIELDS = new Set(["contents", "author", "subject"]);
 const LINK_ID_PREFIX = "mupdf-link";
 const LINK_EXPECTATION_FIELDS = new Set(["url", "bbox", "external"]);
 
@@ -197,13 +199,13 @@ function annotationId(pageNumber, xref) {
   return `${ANNOTATION_ID_PREFIX}-${pageNumber}-${xref}`;
 }
 
-function parseAnnotationId(value) {
+function parseAnnotationId(value, operationName = "delete_annotation") {
   const match = new RegExp(`^${ANNOTATION_ID_PREFIX}-(\\d+)-(\\d+)$`, "u").exec(String(value || ""));
-  if (!match) throw new Error(`delete_annotation annotationId must be a ${ANNOTATION_ID_PREFIX}-<page>-<xref> locator returned by PdfFile.inspectPdf.`);
+  if (!match) throw new Error(`${operationName} annotationId must be a ${ANNOTATION_ID_PREFIX}-<page>-<xref> locator returned by PdfFile.inspectPdf.`);
   const page = Number(match[1]);
   const xref = Number(match[2]);
   if (!Number.isSafeInteger(page) || page < 1 || !Number.isSafeInteger(xref) || xref < 1) {
-    throw new Error("delete_annotation annotationId contains an invalid page or xref number.");
+    throw new Error(`${operationName} annotationId contains an invalid page or xref number.`);
   }
   return { page, xref };
 }
@@ -231,27 +233,27 @@ function consumeAnnotationBudget(budget, count, pageNumber) {
   }
 }
 
-function annotationExpectation(value) {
+function annotationExpectation(value, operationName = "delete_annotation") {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error("delete_annotation expected must be an object with at least one source snapshot field.");
+    throw new Error(`${operationName} expected must be an object with at least one source snapshot field.`);
   }
   for (const name of Object.keys(value)) {
     if (!ANNOTATION_EXPECTATION_FIELDS.has(name)) {
-      throw new Error(`delete_annotation expected contains unsupported snapshot field: ${name}.`);
+      throw new Error(`${operationName} expected contains unsupported snapshot field: ${name}.`);
     }
   }
   const expected = {};
   for (const name of ["type", "contents", "name", "author", "subject"]) {
     if (value[name] === undefined) continue;
-    if (typeof value[name] !== "string") throw new Error(`delete_annotation expected.${name} must be a string.`);
+    if (typeof value[name] !== "string") throw new Error(`${operationName} expected.${name} must be a string.`);
     expected[name] = value[name];
   }
   if (value.rect !== undefined) {
-    bboxToPdfRect(value.rect, "delete_annotation expected.rect");
+    bboxToPdfRect(value.rect, `${operationName} expected.rect`);
     expected.rect = value.rect.map(Number);
   }
   if (!Object.keys(expected).length) {
-    throw new Error("delete_annotation expected must include at least one of type, contents, name, author, subject, or rect.");
+    throw new Error(`${operationName} expected must include at least one of type, contents, name, author, subject, or rect.`);
   }
   return expected;
 }
@@ -264,6 +266,29 @@ function annotationExpectationMismatch(actual, expected) {
     if (!actual.rect || !pdfRectsEqual(bboxToPdfRect(actual.rect), bboxToPdfRect(expected.rect))) return "rect";
   }
   return undefined;
+}
+
+function annotationPatch(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("update_annotation patch must be an object with at least one mutable field.");
+  }
+  for (const name of Object.keys(value)) {
+    if (!ANNOTATION_PATCH_FIELDS.has(name)) {
+      throw new Error(`update_annotation patch contains unsupported field: ${name}.`);
+    }
+  }
+  const patch = {};
+  for (const name of ["contents", "author", "subject"]) {
+    if (value[name] === undefined) continue;
+    if (typeof value[name] !== "string" || !value[name].length) {
+      throw new Error(`update_annotation patch.${name} must be a non-empty string.`);
+    }
+    patch[name] = value[name];
+  }
+  if (!Object.keys(patch).length) {
+    throw new Error("update_annotation patch must include at least one of contents, author, or subject.");
+  }
+  return patch;
 }
 
 function linkId(pageNumber, record) {
@@ -772,11 +797,11 @@ function applyAnnotationDeletion(document, operation, context = {}) {
     if (!/^[a-f0-9]{64}$/u.test(String(operation.sourceSha256 || "")) || operation.sourceSha256 !== context.sourceSha256) {
       throw new Error("delete_annotation sourceSha256 must exactly match PdfFile.inspectPdf(...).summary.sourceSha256 for the current input bytes.");
     }
-    const locator = parseAnnotationId(operation.annotationId);
+    const locator = parseAnnotationId(operation.annotationId, "delete_annotation");
     if (locator.page !== index + 1) {
       throw new Error(`delete_annotation annotationId page ${locator.page} does not match operation page ${index + 1}.`);
     }
-    const expected = annotationExpectation(operation.expected);
+    const expected = annotationExpectation(operation.expected, "delete_annotation");
     annotations = page.getAnnotations();
     target = annotations.find((annotation) => annotationXref(annotation) === locator.xref);
     if (!target) {
@@ -805,6 +830,64 @@ function applyAnnotationDeletion(document, operation, context = {}) {
       matched,
       beforeCount,
       afterCount: retained.length,
+    };
+  } finally {
+    for (const annotation of new Set([...annotations, ...retained, target].filter(Boolean))) annotation.destroy();
+    page.destroy();
+  }
+}
+
+function applyAnnotationUpdate(document, operation, context = {}) {
+  const { index, page } = pageFor(document, operation);
+  let annotations = [];
+  let retained = [];
+  let target;
+  try {
+    if (!/^[a-f0-9]{64}$/u.test(String(operation.sourceSha256 || "")) || operation.sourceSha256 !== context.sourceSha256) {
+      throw new Error("update_annotation sourceSha256 must exactly match PdfFile.inspectPdf(...).summary.sourceSha256 for the current input bytes.");
+    }
+    const locator = parseAnnotationId(operation.annotationId, "update_annotation");
+    if (locator.page !== index + 1) {
+      throw new Error(`update_annotation annotationId page ${locator.page} does not match operation page ${index + 1}.`);
+    }
+    const expected = annotationExpectation(operation.expected, "update_annotation");
+    const patch = annotationPatch(operation.patch);
+    annotations = page.getAnnotations();
+    target = annotations.find((annotation) => annotationXref(annotation) === locator.xref);
+    if (!target) {
+      throw new Error(`update_annotation could not find source-bound annotation ${operation.annotationId} on page ${index + 1}. Re-inspect the current source PDF before retrying.`);
+    }
+    const matched = nativeAnnotation(target, index + 1);
+    if (matched.id !== operation.annotationId) {
+      throw new Error(`update_annotation locator ${operation.annotationId} did not resolve to the expected native annotation.`);
+    }
+    const mismatch = annotationExpectationMismatch(matched, expected);
+    if (mismatch) {
+      throw new Error(`update_annotation precondition ${mismatch} did not match ${operation.annotationId}; refusing a stale or ambiguous mutation.`);
+    }
+    if (patch.contents !== undefined) target.setContents(patch.contents);
+    if (patch.author !== undefined) target.setAuthor(patch.author);
+    if (patch.subject !== undefined) target.setSubject(patch.subject);
+    target.update();
+    page.update();
+    retained = page.getAnnotations();
+    const updatedTargets = retained.filter((annotation) => annotationXref(annotation) === locator.xref);
+    if (updatedTargets.length !== 1) {
+      throw new Error(`MuPDF did not retain one uniquely addressable annotation ${operation.annotationId}; refusing to save an ambiguous update.`);
+    }
+    const updated = nativeAnnotation(updatedTargets[0], index + 1);
+    const patchMismatch = annotationExpectationMismatch(updated, patch);
+    if (patchMismatch) {
+      throw new Error(`MuPDF did not preserve update_annotation patch ${patchMismatch} for ${operation.annotationId}; refusing to save an ambiguous update.`);
+    }
+    return {
+      type: "update_annotation",
+      page: index + 1,
+      annotationId: matched.id,
+      xref: locator.xref,
+      matched,
+      patch,
+      updated,
     };
   } finally {
     for (const annotation of new Set([...annotations, ...retained, target].filter(Boolean))) annotation.destroy();
@@ -934,6 +1017,7 @@ function applyOperation(document, operation, context) {
       return { type: operation.type, page: index + 1 };
     }
     case "delete_annotation": return applyAnnotationDeletion(document, operation, context);
+    case "update_annotation": return applyAnnotationUpdate(document, operation, context);
     case "set_page_crop": return applyPageCrop(document, operation);
     case "rotate_page": return applyPageRotation(document, operation);
     case "rearrange_pages": {

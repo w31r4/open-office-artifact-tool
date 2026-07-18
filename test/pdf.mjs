@@ -324,6 +324,60 @@ const deletedAnnotationInspection = await PdfFile.inspectPdf(mupdfAnnotationDele
 assert.equal(deletedAnnotationInspection.records.find((record) => record.kind === "mupdfPage" && record.page === 1).annotations, 1);
 assert.deepEqual(deletedAnnotationInspection.records.filter((record) => record.kind === "mupdfAnnotation").map((record) => record.contents), ["Keep this review"]);
 assert.notEqual(deletedAnnotationInspection.summary.sourceSha256, mupdfAnnotationInspection.summary.sourceSha256);
+await assert.rejects(PdfFile.editPdf(mupdfIncremental, {
+  savePolicy: "incremental",
+  operations: [{
+    type: "update_annotation",
+    page: removableAnnotation.page,
+    annotationId: removableAnnotation.id,
+    sourceSha256: mupdfAnnotationInspection.summary.sourceSha256,
+    expected: { type: removableAnnotation.type, contents: removableAnnotation.contents },
+    patch: { contents: "Resolved review" },
+  }],
+}), /destructive operation update_annotation cannot save incrementally/);
+await assert.rejects(PdfFile.editPdf(mupdfIncremental, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "update_annotation",
+    page: removableAnnotation.page,
+    annotationId: removableAnnotation.id,
+    sourceSha256: mupdfAnnotationInspection.summary.sourceSha256,
+    expected: { type: removableAnnotation.type, contents: "stale text" },
+    patch: { contents: "Resolved review" },
+  }],
+}), /precondition contents did not match/);
+await assert.rejects(PdfFile.editPdf(mupdfIncremental, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "update_annotation",
+    page: removableAnnotation.page,
+    annotationId: removableAnnotation.id,
+    sourceSha256: mupdfAnnotationInspection.summary.sourceSha256,
+    expected: { type: removableAnnotation.type, contents: removableAnnotation.contents },
+    patch: { rect: [48, 48, 24, 24] },
+  }],
+}), /patch contains unsupported field: rect/);
+const mupdfAnnotationUpdated = await PdfFile.editPdf(mupdfIncremental, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "update_annotation",
+    page: removableAnnotation.page,
+    annotationId: removableAnnotation.id,
+    sourceSha256: mupdfAnnotationInspection.summary.sourceSha256,
+    expected: { type: removableAnnotation.type, contents: removableAnnotation.contents, author: removableAnnotation.author, rect: removableAnnotation.rect },
+    patch: { contents: "Resolved review", author: "Reviewer", subject: "Board" },
+  }],
+});
+assert.equal(mupdfAnnotationUpdated.metadata.savePolicy, "rewrite");
+assert.equal(mupdfAnnotationUpdated.metadata.sourceSha256, mupdfAnnotationInspection.summary.sourceSha256);
+assert.equal(mupdfAnnotationUpdated.metadata.operations[0].annotationId, removableAnnotation.id);
+assert.deepEqual(mupdfAnnotationUpdated.metadata.operations[0].patch, { contents: "Resolved review", author: "Reviewer", subject: "Board" });
+const updatedAnnotationInspection = await PdfFile.inspectPdf(mupdfAnnotationUpdated);
+const updatedAnnotation = updatedAnnotationInspection.records.find((record) => record.kind === "mupdfAnnotation" && record.contents === "Resolved review");
+assert.equal(updatedAnnotation.author, "Reviewer");
+assert.equal(updatedAnnotation.subject, "Board");
+assert.deepEqual(updatedAnnotation.rect, removableAnnotation.rect);
+assert.notEqual(updatedAnnotationInspection.summary.sourceSha256, mupdfAnnotationInspection.summary.sourceSha256);
 const mupdfCropped = await PdfFile.editPdf(arbitraryPdf, {
   savePolicy: "incremental",
   operations: [{ type: "set_page_crop", page: 1, bbox: [72, 72, 468, 648] }],
