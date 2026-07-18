@@ -4,14 +4,21 @@ import path from "node:path";
 
 import JSZip from "jszip";
 
-import { PPTX_TITLE_NOTES_FIXTURE } from "./agent-eval-office-fixtures.mjs";
+import {
+  PPTX_SLIDE_NAME_FIXTURE,
+  PPTX_TITLE_NOTES_FIXTURE,
+} from "./agent-eval-office-fixtures.mjs";
 import { renderOfficeFile } from "./agent-eval-office-native-render.mjs";
 import { extractCompletedCommands, summarizeCaseScore } from "./agent-eval-pdf-graders.mjs";
 
-export const pptxGradedCaseIds = new Set(["pptx-title-and-notes-edit"]);
+export const pptxGradedCaseIds = new Set([
+  "pptx-title-and-notes-edit",
+  "pptx-source-bound-slide-name-edit",
+]);
 
 const defaultWeights = { machine: 45, visual: 25, security: 20, trace: 10 };
 const SHIPPED_TITLE_NOTES_WORKFLOW = /(?:^|[\s"'`])(?:\.?\/)?(?:\.agents\/skills\/presentations|node_modules\/open-office-artifact-tool\/skills\/presentations\/skills\/presentations)\/examples\/openchestnut-title-notes-edit-workflow\.mjs(?:$|[\s"'`])/i;
+const SHIPPED_SLIDE_NAME_WORKFLOW = /(?:^|[\s"'`])(?:\.?\/)?(?:\.agents\/skills\/presentations|node_modules\/open-office-artifact-tool\/skills\/presentations\/skills\/presentations)\/examples\/openchestnut-slide-name-edit-workflow\.mjs(?:$|[\s"'`])/i;
 
 function check(id, category, passed, details = {}) {
   return { id, category, gate: false, passed: Boolean(passed), ...details };
@@ -165,10 +172,35 @@ function visualEvidence(source, output) {
   return { available, rendered, pageCountsMatch, targetChanged, untouchedStable };
 }
 
+function stableVisualEvidence(source, output) {
+  const available = Boolean(source?.available && output?.available);
+  const rendered = source?.ok === true && output?.ok === true
+    && source.pages?.every((page) => page.nonWhitePixels > 0)
+    && output.pages?.every((page) => page.nonWhitePixels > 0);
+  const pageCountsMatch = source?.pageCount === output?.pageCount && source?.pageCount === 2;
+  const pageStable = (index) => pageCountsMatch
+    && source.pages?.[index]?.width === output.pages?.[index]?.width
+    && source.pages?.[index]?.height === output.pages?.[index]?.height
+    && source.pages?.[index]?.pixelSha256 === output.pages?.[index]?.pixelSha256;
+  return {
+    available,
+    rendered,
+    pageCountsMatch,
+    targetStable: pageStable(0),
+    untouchedStable: pageStable(1),
+  };
+}
+
 function usedTypedPptxRoundTrip(commandText) {
   const directPublicApi = /PresentationFile\.importPptx/i.test(commandText)
     && /PresentationFile\.exportPptx/i.test(commandText);
   return directPublicApi || SHIPPED_TITLE_NOTES_WORKFLOW.test(commandText);
+}
+
+function usedTypedSlideNameRoundTrip(commandText) {
+  const directPublicApi = /PresentationFile\.importPptx/i.test(commandText)
+    && /PresentationFile\.exportPptx/i.test(commandText);
+  return directPublicApi || SHIPPED_SLIDE_NAME_WORKFLOW.test(commandText);
 }
 
 export function gradePptxTitleNotesEvidence({ evidence, audit, commands }) {
@@ -264,6 +296,127 @@ export function gradePptxTitleNotesEvidence({ evidence, audit, commands }) {
   ];
 }
 
+/**
+ * Grade the narrow non-visual mutation separately from title/notes. An Open
+ * XML SDK save may canonicalize the target SlidePart, so this oracle checks
+ * the semantic p:cSld name and requires every *other* part to remain byte
+ * identical. Native page pixels must consequently stay stable on both slides.
+ */
+export function gradePptxSlideNameEvidence({ evidence, audit, commands }) {
+  const fixture = PPTX_SLIDE_NAME_FIXTURE;
+  const source = evidence.source;
+  const output = evidence.output;
+  const visual = stableVisualEvidence(evidence.visual?.source, evidence.visual?.output);
+  const sourceTargets = source.slides.filter((slide) => slide.name === fixture.expectedName);
+  const sourceTarget = sourceTargets.length === 1 ? sourceTargets[0] : null;
+  const outputTarget = sourceTarget
+    ? output.slides.find((slide) => slide.path === sourceTarget.path) || null
+    : null;
+  const sourceUntouched = source.slides.find((slide) => slide.name === fixture.untouchedSlideName) || null;
+  const outputUntouched = sourceUntouched
+    ? output.slides.find((slide) => slide.path === sourceUntouched.path) || null
+    : null;
+  const sourceSlideNames = source.slides.map((slide) => slide.name);
+  const expectedSlideNames = sourceSlideNames.map((name) => name === fixture.expectedName ? fixture.replacementName : name);
+  const outputSlideNames = output.slides.map((slide) => slide.name);
+  const changedPaths = packageChanges(source, output);
+  const expectedChangedPaths = sourceTarget ? [sourceTarget.path] : [];
+  const commandText = commands.join("\n");
+  const operation = audit?.operation && typeof audit.operation === "object" ? audit.operation : {};
+  return [
+    check("pptx-name-machine:canonical-fixture", "machine", sourceTargets.length === 1
+      && source.slides.length === 2
+      && sourceTarget?.title === PPTX_TITLE_NOTES_FIXTURE.originalTitle
+      && sourceTarget?.background === PPTX_TITLE_NOTES_FIXTURE.targetBackground
+      && source.targetNotes === PPTX_TITLE_NOTES_FIXTURE.originalNotes
+      && sourceUntouched?.background === PPTX_TITLE_NOTES_FIXTURE.untouchedBackground
+      && sourceTarget?.texts.includes(PPTX_TITLE_NOTES_FIXTURE.supportingText), {
+      sourceTargets,
+      sourceNotes: source.targetNotes,
+      sourceSlideNames,
+    }),
+    check("pptx-name-machine:native-name-edited", "machine", outputTarget?.name === fixture.replacementName, {
+      sourceTarget,
+      outputTarget,
+    }),
+    check("pptx-name-machine:semantic-content-and-order-preserved", "machine", sameArray(outputSlideNames, expectedSlideNames)
+      && sourceTarget?.path === outputTarget?.path
+      && sourceTarget?.title === outputTarget?.title
+      && sameArray(sourceTarget?.texts || [], outputTarget?.texts || [])
+      && sourceTarget?.background === outputTarget?.background
+      && source.targetNotes === output.targetNotes
+      && sourceUntouched?.path === outputUntouched?.path
+      && sourceUntouched?.title === outputUntouched?.title
+      && sameArray(sourceUntouched?.texts || [], outputUntouched?.texts || [])
+      && sourceUntouched?.background === outputUntouched?.background, {
+      sourceSlideNames,
+      expectedSlideNames,
+      outputSlideNames,
+      sourceTarget,
+      outputTarget,
+      sourceUntouched,
+      outputUntouched,
+    }),
+    check("pptx-name-machine:only-target-slide-part-changed", "machine", sameArray(changedPaths, expectedChangedPaths), {
+      changedPaths,
+      expectedChangedPaths,
+    }),
+    check("pptx-name-machine:audit-succeeded", "machine", /^(?:success|succeeded|completed)$/i.test(String(audit?.status || "")), {
+      status: audit?.status || "unreported",
+    }),
+    check("pptx-name-visual:native-render", "visual", visual.available && visual.rendered && visual.pageCountsMatch, {
+      visual: evidence.visual,
+    }),
+    check("pptx-name-visual:all-pages-pixel-stable", "visual", visual.targetStable && visual.untouchedStable, {
+      visual: evidence.visual,
+    }),
+    gate("pptx-name-security:fixed-topology-and-non-target-byte-preservation", "security", sameArray(source.paths, output.paths)
+      && sourceTarget?.path === outputTarget?.path
+      && sourceUntouched?.path === outputUntouched?.path
+      && source.partHashes[sourceUntouched?.path] === output.partHashes[outputUntouched?.path]
+      && sameArray(changedPaths, expectedChangedPaths), {
+      sourcePaths: source.paths,
+      outputPaths: output.paths,
+      changedPaths,
+      targetPath: { source: sourceTarget?.path, output: outputTarget?.path },
+      untouchedPath: { source: sourceUntouched?.path, output: outputUntouched?.path },
+    }),
+    gate("pptx-name-security:byte-bound-audit-provenance", "security", auditHash(audit, "source") === source.sha256
+      && auditHash(audit, "output") === output.sha256
+      && source.sha256 !== output.sha256, {
+      source: { expected: source.sha256, actual: auditHash(audit, "source") },
+      output: { expected: output.sha256, actual: auditHash(audit, "output") },
+    }),
+    check("pptx-name-trace:open-chestnut-provider", "trace", /open[- ]?chestnut/i.test(auditProvider(audit)) && Boolean(auditVersion(audit)), {
+      provider: auditProvider(audit),
+      version: auditVersion(audit),
+    }),
+    gate("pptx-name-trace:no-silent-fallback", "trace", auditFallbackIsFalse(audit), { provider: audit?.provider || null }),
+    check("pptx-name-trace:rewrite-policy", "trace", /^rewrite$/i.test(auditStrategy(audit)), {
+      strategy: auditStrategy(audit),
+    }),
+    check("pptx-name-trace:source-bound-name-operation", "trace", /slide.*name|name.*slide/i.test(auditOperation(audit))
+      && operation.sourcePart === sourceTarget?.path
+      && operation.expectedName === fixture.expectedName
+      && operation.replacementName === fixture.replacementName
+      && operation.nativeAttribute === "p:cSld/@name", {
+      operation: audit?.operation || null,
+      expected: {
+        sourcePart: sourceTarget?.path,
+        expectedName: fixture.expectedName,
+        replacementName: fixture.replacementName,
+        nativeAttribute: "p:cSld/@name",
+      },
+    }),
+    check("pptx-name-trace:typed-roundtrip", "trace", usedTypedSlideNameRoundTrip(commandText), {
+      expected: "public PresentationFile importPptx/exportPptx calls or the integrity-protected published slide-name workflow",
+    }),
+    check("pptx-name-trace:second-import", "trace", audit?.validation?.reimport?.ok === true || audit?.validation?.secondImport?.ok === true, {
+      validation: audit?.validation || null,
+    }),
+  ];
+}
+
 async function readAudit(workspace) {
   try {
     return JSON.parse(await fs.readFile(path.join(workspace, "outputs", "audit.json"), "utf8"));
@@ -274,11 +427,12 @@ async function readAudit(workspace) {
 
 export async function gradePptxCase({ item, workspace, finalMessage, trace, weights = defaultWeights }) {
   if (!pptxGradedCaseIds.has(item.id)) return { supported: false };
-  const fixture = PPTX_TITLE_NOTES_FIXTURE;
+  const isSlideNameCase = item.id === "pptx-source-bound-slide-name-edit";
+  const fixture = isSlideNameCase ? PPTX_SLIDE_NAME_FIXTURE : PPTX_TITLE_NOTES_FIXTURE;
   const audit = await readAudit(workspace);
   const commands = extractCompletedCommands(trace);
   const sourcePath = path.join(workspace, "inputs", fixture.presentationName);
-  const outputPath = path.join(workspace, "outputs", "launch-review-updated.pptx");
+  const outputPath = path.join(workspace, "outputs", isSlideNameCase ? "launch-review-renamed.pptx" : "launch-review-updated.pptx");
   let source;
   let output;
   try {
@@ -311,7 +465,9 @@ export async function gradePptxCase({ item, workspace, finalMessage, trace, weig
     };
   }
   const evidence = { source, output, visual: { source: sourceRender, output: outputRender }, finalMessage };
-  const checks = gradePptxTitleNotesEvidence({ evidence, audit, commands, item });
+  const checks = isSlideNameCase
+    ? gradePptxSlideNameEvidence({ evidence, audit, commands, item })
+    : gradePptxTitleNotesEvidence({ evidence, audit, commands, item });
   const score = summarizeCaseScore(checks, item.grade, weights, checks.filter((entry) => entry.gate).every((entry) => entry.passed));
   return { supported: true, graded: true, checks, evidence, pending: [], ...score };
 }

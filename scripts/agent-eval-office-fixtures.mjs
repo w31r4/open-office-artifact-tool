@@ -83,6 +83,16 @@ export const PPTX_TITLE_NOTES_FIXTURE = Object.freeze({
   untouchedBackground: "#FFF7ED",
 });
 
+// Reuse the same two-slide package for the non-visual source-bound rename
+// case. The title, notes, direct backgrounds, and appendix are deliberate
+// semantic and render canaries: the requested edit is only p:cSld/@name.
+export const PPTX_SLIDE_NAME_FIXTURE = Object.freeze({
+  presentationName: PPTX_TITLE_NOTES_FIXTURE.presentationName,
+  expectedName: PPTX_TITLE_NOTES_FIXTURE.targetSlideName,
+  replacementName: "Go decision: controlled rollout",
+  untouchedSlideName: PPTX_TITLE_NOTES_FIXTURE.untouchedSlideName,
+});
+
 function commentConfig(comment) {
   return {
     id: comment.id,
@@ -287,10 +297,15 @@ export async function generatePptxTitleNotesReview(target) {
   return { path: target, type: PPTX_MIME };
 }
 
+export async function generatePptxSlideNameReview(target) {
+  return generatePptxTitleNotesReview(target);
+}
+
 export async function generateOfficeInput(generator, target) {
   if (generator === "xlsx-threaded-review") return generateXlsxThreadedReview(target);
   if (generator === "xlsx-growth-update") return generateXlsxGrowthUpdate(target);
   if (generator === "docx-classic-comment-review") return generateDocxClassicCommentReview(target);
   if (generator === "pptx-title-notes-review") return generatePptxTitleNotesReview(target);
+  if (generator === "pptx-slide-name-review") return generatePptxSlideNameReview(target);
   return null;
 }
