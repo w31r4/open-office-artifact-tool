@@ -418,7 +418,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "workbook.comments.addThr
 assert.equal(HELP_CATALOG.find((item) => item.name === "thread.addReply")?.schema?.parameters?.text?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "thread.addReply")?.schema?.returns?.thread?.description || "", /direct reply.*nested graph.*fail closed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.tables.add")?.schema?.returns?.table?.description || "", /QueryTable.*import-only and read-only/i);
-assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.returns?.pivot?.description || "", /does not author pivots.*read-only/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.returns?.pivot?.description || "", /native XLSX authoring.*cached output.*read-only/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.sparklineGroups.add")?.schema?.returns?.sparkline?.description || "", /Editable standard Office 2010 x14 sparkline group.*without topology changes.*opaque and unchanged/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.charts.add")?.schema?.parameters?.chartType?.description || "", /bar, line, pie, area, doughnut, scatter, or bubble.*fail closed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.charts.add")?.schema?.parameters?.series?.description || "", /xValues\/xFormula/i);
@@ -436,6 +436,8 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.importDe
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.exportCsv")?.schema?.parameters?.formulas?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.inspectDelimited")?.schema?.returns?.inspection?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.type, "object[]");
+assert.equal(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.rowGrandTotals?.type, "boolean");
+assert.equal(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.columnGrandTotals?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "range.formulasR1C1")?.schema?.parameters?.formulas?.type, "string[][]");
 assert.equal(HELP_CATALOG.find((item) => item.name === "range.formulaInfos")?.schema?.returns?.formulaInfos?.type, "Array<Array<object|null>>");
 assert.equal(HELP_CATALOG.find((item) => item.name === "range.write")?.schema?.returns?.range?.type, "Range");

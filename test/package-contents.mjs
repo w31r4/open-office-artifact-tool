@@ -36,14 +36,15 @@ const files = report.files.map((item) => item.path);
 const maxPackedBytes = 9_750_000;
 // The bundled OpenChestnut runtime is an audited product payload, not an
 // optional download. Keep its unpacked budget tight while allowing the
-// audited PDF provider/docs growth plus the bounded DOCX and PPTX modern-comment
-// codecs and runnable workflows. The prior 23.95 MB ceiling was exceeded by
-// 16,478 bytes after the PPTX source-built runtime/Skill slice (23,966,478 bytes
-// on the audit host), so this keeps less than 85 KB of explicit headroom.
+// audited PDF provider/docs growth plus the bounded DOCX/PPTX modern-comment and
+// native XLSX PivotTable codecs and runnable workflows. The prior 24.05 MB
+// ceiling was exceeded by 3,767 bytes after the PivotTable source-built runtime
+// and Skill slice (24,053,767 bytes on the audit host), so this keeps less than
+// 97 KB of explicit headroom.
 // The repository-only MIT Default Template Library is excluded from the npm
 // tarball. Its retained Office/PNG sources must never consume this consumer
 // package budget.
-const maxUnpackedBytes = 24_050_000;
+const maxUnpackedBytes = 24_150_000;
 
 for (const required of [
   "LICENSE",
@@ -59,6 +60,7 @@ for (const required of [
   "src/codecs/open-chestnut-error.mjs",
   "src/codecs/open-chestnut-assets.mjs",
   "src/codecs/open-chestnut-presentation.mjs",
+  "src/codecs/open-chestnut-spreadsheet-pivots.mjs",
   "runtime/open-chestnut/main.mjs",
   "runtime/open-chestnut/manifest.json",
   "runtime/open-chestnut/sbom.cdx.json",
@@ -147,9 +149,11 @@ for (const required of [
   "skills/spreadsheets/skills/spreadsheets/agents/openai.yaml",
   "skills/spreadsheets/skills/spreadsheets/artifact_tool_docs/API_QUICK_START.md",
   "skills/spreadsheets/skills/spreadsheets/features/charts.md",
+  "skills/spreadsheets/skills/spreadsheets/features/pivot-tables.md",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-range-workflow.mjs",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-sparkline-workflow.mjs",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-data-table-workflow.mjs",
+  "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-pivot-table-workflow.mjs",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-loan-amortization-workflow.mjs",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-asset-depreciation-workflow.mjs",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-scatter-chart-workflow.mjs",

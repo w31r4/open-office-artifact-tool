@@ -1138,6 +1138,46 @@ The Documents native-workflow/OpenChestnut candidate through commit `e07e24382ff
 
 The bounded DOCX modern-comment candidate was locally closed on 2026-07-19. The public model/protobuf/OpenChestnut path now authors one root with direct replies through native `commentsExtended`, optional comments IDs/extensible/people parts, and supports source-bound imported text/resolved-state edits while refusing nested or irregular graphs. The shipped Documents workflow proves fixed identity/topology, second import, model/native rendering, source immutability, atomic output, and a byte-bound audit. `npm test`, generated API docs, deterministic OpenChestnut reconstruction, the production clean-install/package gate, OpenChestnut `271/271`, and OfficeBridge `5/5` passed. The audited package contains 448 files at 9,472,335 packed bytes and 23,866,257 unpacked bytes; its bundled OpenChestnut runtime contains 38 files at 14,489,788 bytes. The full PDF provider test remained contract-only because no explicit `OPEN_OFFICE_PDF_PROVIDER_PYTHON` was configured; core MuPDF.js, Playwright/Chromium, LibreOffice/Poppler, canonical template corpus, and all other npm gates ran locally.
 
+### Bounded native XLSX PivotTable vertical slice
+
+On 2026-07-19, the Spreadsheet public model, versioned protobuf wire,
+OpenChestnut C# codec, Help catalog, and native Spreadsheet Skill converged on
+one source-free PivotTable profile: exactly one row field, zero or one column
+field, one `sum`/`count`/`average`/`min`/`max` value field, optional row/column
+grand totals, explicit refresh/cache policy, derived worksheet cache cells, and
+optional native cache records. OpenChestnut owns the workbook, worksheet,
+PivotTable, cache-definition, cache-record, content-type, and relationship graph.
+Recognized imports expose semantic inspect/resolve/preview but bind that graph,
+configuration, source values, and cached output as read-only; richer or
+unrecognized graphs remain opaque/source-bound and no static-table fallback is
+used.
+
+The complete local gate passed `npm test`, `npm run docs:api`, Buf lint plus a
+byte-idempotent generated binding, `npm run test:pack`, serial
+`npm run verify:open-chestnut-build`, OpenChestnut `277/277`, and OfficeBridge
+`5/5`. The C# suite includes Office 2021 validation, saved and unsaved cache
+records, exact second-export Pivot/cache part preservation, semantic-edit and
+duplicate-name rejection, and unsupported-profile fail-closed coverage. The JS
+suite covers all five aggregations, case-insensitive workbook-wide names,
+pre-styled blank output cells, value/formula collisions, source/cache mutation,
+and two imports. Two clean WASM builds produced the same 39 audited files and
+the same manifest-bound 38-file, 14,607,552-byte runtime.
+
+The production clean-install tarball contains 452 files, is 9,522,788 bytes
+compressed and 24,053,767 bytes unpacked; the repository-only canonical Default
+Template Library remains excluded. The unpacked-size ceiling moved narrowly
+from 24,050,000 to 24,150,000 bytes after the audited payload exceeded the old
+limit by 3,767 bytes, retaining less than 97 KB of headroom. The runnable Pivot
+workflow passed inspect/verify/SVG review, native Open XML round trips, and a
+real LibreOfficeDev 26.8.0.0.alpha0 → two-page PDF → Poppler PNG review: the Data
+and Pivot Summary sheets each fit on one page with visible labels, currency
+values, borders, and grand totals. That native gate caught and fixed an initial
+column-width unit error that had split the summary across four pages. The
+specialist Python PDF provider test remained contract-only because no explicit
+`OPEN_OFFICE_PDF_PROVIDER_PYTHON` was configured; core MuPDF.js, Playwright,
+canonical template rendering, and all other npm gates ran. `npm whoami` still
+returns `ENEEDAUTH`, so no publish or tag operation was attempted.
+
 `npm run release:check` passes the source, documentation, package, license, JavaScript, and .NET gates. Its only remaining blocker is unavailable npm authentication. No `npm publish` or tag/release operation has been performed.
 
 ## Publishing

@@ -148,11 +148,14 @@ assert.equal(await exists(path.join(skillsRoot, "presentations", "fixtures")), f
 assert.ok(await exists(path.join(repoRoot, "test", "skill-harness", "spreadsheets", "scripts", "workflow.mjs")));
 assert.ok(await exists(path.join(skillsRoot, "spreadsheets", "skills", "spreadsheets", "artifact_tool_docs", "API_QUICK_START.md")));
 assert.ok(await exists(path.join(skillsRoot, "spreadsheets", "skills", "spreadsheets", "features", "charts.md")));
+assert.ok(await exists(path.join(skillsRoot, "spreadsheets", "skills", "spreadsheets", "features", "pivot-tables.md")));
 assert.equal(await exists(path.join(skillsRoot, "spreadsheets", "skills", "spreadsheets", "API_QUICK_START.md")), false);
 assert.equal(await exists(path.join(skillsRoot, "spreadsheets", "skills", "spreadsheets", "charts.md")), false);
 const spreadsheetSkillText = await fs.readFile(path.join(skillsRoot, "spreadsheets", "skills", "spreadsheets", "SKILL.md"), "utf8");
 assert.match(spreadsheetSkillText, /artifact_tool_docs\/API_QUICK_START\.md/);
 assert.match(spreadsheetSkillText, /features\/charts\.md/);
+assert.match(spreadsheetSkillText, /features\/pivot-tables\.md/);
+assert.match(spreadsheetSkillText, /openchestnut-pivot-table-workflow\.mjs/);
 assert.match(spreadsheetSkillText, /openchestnut-financial-returns-workflow\.mjs/);
 assert.match(spreadsheetSkillText, /openchestnut-loan-amortization-workflow\.mjs/);
 assert.match(spreadsheetSkillText, /openchestnut-asset-depreciation-workflow\.mjs/);
@@ -426,6 +429,17 @@ try {
     dataTableRoundTrip.worksheets.getItem("Scenario Analysis").dataTables.__getDefinitions().map((item) => item.displayFormula),
     ["{=TABLE(D1)}", "{=TABLE(D1,D2)}"],
   );
+
+  const { createPivotTableWorkbook } = await import(
+    "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-pivot-table-workflow.mjs"
+  );
+  const pivotTablePath = path.join(tempRoot, "openchestnut-pivot-table-workflow.xlsx");
+  const authoredPivotTable = await createPivotTableWorkbook(pivotTablePath);
+  assert.equal(authoredPivotTable.verification.ok, true);
+  assert.match(authoredPivotTable.inspection.ndjson, /"kind":"pivotTable"/);
+  const pivotTableRoundTrip = await SpreadsheetFile.importXlsx(await FileBlob.load(pivotTablePath));
+  assert.equal(pivotTableRoundTrip.worksheets.getItem("Pivot Summary").pivotTables.items[0].name, "Revenue by region");
+  assert.deepEqual(pivotTableRoundTrip.worksheets.getItem("Pivot Summary").pivotTables.items[0].computedValues().at(-1), ["Grand Total", 380, 240, 620]);
 
   const { createFinancialReturnsWorkbook } = await import(
     "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-financial-returns-workflow.mjs"

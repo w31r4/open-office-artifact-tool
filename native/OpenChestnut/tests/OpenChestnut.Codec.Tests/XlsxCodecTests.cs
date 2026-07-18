@@ -4188,6 +4188,181 @@ public sealed class XlsxCodecTests
         Assert.Equal("invalid_spreadsheet_image", Assert.Single(response.Diagnostics).Code);
     }
 
+    [Fact]
+    public void ProtocolAuthorsImportsAndSourcePreservesBoundedPivotTableGraph()
+    {
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(PivotExportRequest().ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(authored.File.ToByteArray());
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+        {
+            var workbookPart = document.WorkbookPart!;
+            var cachePart = Assert.Single(workbookPart.PivotTableCacheDefinitionParts);
+            var recordsPart = Assert.IsType<PivotTableCacheRecordsPart>(cachePart.PivotTableCacheRecordsPart);
+            Assert.Equal(4U, cachePart.PivotCacheDefinition!.RecordCount!.Value);
+            Assert.Equal(4U, recordsPart.PivotCacheRecords!.Count!.Value);
+            var summaryPart = workbookPart.WorksheetParts.Single(part => part.PivotTableParts.Any());
+            var pivotPart = Assert.Single(summaryPart.PivotTableParts);
+            Assert.Same(cachePart, pivotPart.PivotTableCacheDefinitionPart);
+            Assert.Equal("A1:D4", pivotPart.PivotTableDefinition!.Location!.Reference!.Value);
+            Assert.Equal(DataConsolidateFunctionValues.Sum, pivotPart.PivotTableDefinition.DataFields!.Elements<DataField>().Single().Subtotal!.Value);
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var summary = imported.Artifact.Workbook.Worksheets.Single(sheet => sheet.Name == "Summary");
+        var pivot = Assert.Single(summary.PivotTables);
+        Assert.Equal("Sales by region", pivot.Name);
+        Assert.Equal("worksheet/1", pivot.SourceWorksheetId);
+        Assert.Equal("A1:C5", pivot.SourceReference);
+        Assert.Equal("A1:D4", pivot.TargetReference);
+        Assert.Equal(["Region"], pivot.RowFields);
+        Assert.Equal(["Product"], pivot.ColumnFields);
+        Assert.Equal(SpreadsheetPivotAggregation.Sum, Assert.Single(pivot.ValueFields).Aggregation);
+        Assert.True(pivot.RowGrandTotals);
+        Assert.True(pivot.ColumnGrandTotals);
+        Assert.NotNull(pivot.Source);
+        Assert.False(pivot.Source.Editable);
+
+        var beforePivot = ReadEntry(authored.File.ToByteArray(), pivot.Source.PivotTablePartPath);
+        var beforeCache = ReadEntry(authored.File.ToByteArray(), pivot.Source.CacheDefinitionPartPath);
+        var beforeRecords = ReadEntry(authored.File.ToByteArray(), pivot.Source.CacheRecordsPartPath);
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(beforePivot, ReadEntry(preserved.File.ToByteArray(), pivot.Source.PivotTablePartPath));
+        Assert.Equal(beforeCache, ReadEntry(preserved.File.ToByteArray(), pivot.Source.CacheDefinitionPartPath));
+        Assert.Equal(beforeRecords, ReadEntry(preserved.File.ToByteArray(), pivot.Source.CacheRecordsPartPath));
+
+        pivot.Name = "Changed";
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_pivot_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void ProtocolAuthorsImportsAndSourcePreservesPivotTableWithoutSavedCacheRecords()
+    {
+        var request = PivotExportRequest();
+        request.Artifact.Workbook.Worksheets[1].PivotTables[0].RefreshPolicy.SaveData = false;
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(authored.File.ToByteArray());
+
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+        {
+            var cachePart = Assert.Single(document.WorkbookPart!.PivotTableCacheDefinitionParts);
+            Assert.Null(cachePart.PivotTableCacheRecordsPart);
+            Assert.False(cachePart.PivotCacheDefinition!.SaveData!.Value);
+            Assert.Null(cachePart.PivotCacheDefinition.Id);
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var pivot = Assert.Single(imported.Artifact.Workbook.Worksheets.Single(sheet => sheet.Name == "Summary").PivotTables);
+        Assert.False(pivot.RefreshPolicy.SaveData);
+        Assert.NotNull(pivot.Source);
+        Assert.Equal(string.Empty, pivot.Source.CacheRecordsPartPath);
+        Assert.Equal(string.Empty, pivot.Source.CacheRecordsXmlSha256);
+
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(
+            ReadEntry(authored.File.ToByteArray(), pivot.Source.PivotTablePartPath),
+            ReadEntry(preserved.File.ToByteArray(), pivot.Source.PivotTablePartPath));
+        Assert.Equal(
+            ReadEntry(authored.File.ToByteArray(), pivot.Source.CacheDefinitionPartPath),
+            ReadEntry(preserved.File.ToByteArray(), pivot.Source.CacheDefinitionPartPath));
+    }
+
+    [Fact]
+    public void PivotTableAuthoringRejectsUnsupportedSemanticProfiles()
+    {
+        var request = PivotExportRequest();
+        request.Artifact.Workbook.Worksheets[1].PivotTables[0].ValueFields.Add(new SpreadsheetPivotValueFieldArtifact
+        {
+            Field = "Sales",
+            Aggregation = SpreadsheetPivotAggregation.Count,
+        });
+        var response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("unsupported_spreadsheet_pivot_profile", Assert.Single(response.Diagnostics).Code);
+
+        var duplicateRequest = PivotExportRequest();
+        var duplicate = duplicateRequest.Artifact.Workbook.Worksheets[1].PivotTables[0].Clone();
+        duplicate.Id = "pivot/duplicate";
+        duplicate.Name = "sales BY REGION";
+        duplicateRequest.Artifact.Workbook.Worksheets[1].PivotTables.Add(duplicate);
+        var duplicateResponse = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(duplicateRequest.ToByteArray()));
+        Assert.False(duplicateResponse.Ok);
+        Assert.Equal("invalid_spreadsheet_pivot", Assert.Single(duplicateResponse.Diagnostics).Code);
+        Assert.Contains("unique across the workbook", duplicateResponse.Diagnostics[0].Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static CodecRequest PivotExportRequest()
+    {
+        var data = new WorksheetArtifact { Id = "worksheet/data", Name = "Data", ShowGridLines = true };
+        var matrix = new object?[][]
+        {
+            ["Region", "Product", "Sales"],
+            ["East", "A", 10D],
+            ["East", "B", 20D],
+            ["West", "A", 30D],
+            ["West", "B", 40D],
+        };
+        for (var row = 0; row < matrix.Length; row++)
+            for (var column = 0; column < matrix[row].Length; column++)
+            {
+                var cell = new CellArtifact { Row = checked((uint)row), Column = checked((uint)column) };
+                if (matrix[row][column] is string text) cell.StringValue = text;
+                else cell.NumberValue = Convert.ToDouble(matrix[row][column], CultureInfo.InvariantCulture);
+                data.Cells.Add(cell);
+            }
+
+        var summary = new WorksheetArtifact { Id = "worksheet/summary", Name = "Summary", ShowGridLines = true };
+        var output = new object?[][]
+        {
+            ["Region", "A", "B", "Grand Total"],
+            ["East", 10D, 20D, 30D],
+            ["West", 30D, 40D, 70D],
+            ["Grand Total", 40D, 60D, 100D],
+        };
+        for (var row = 0; row < output.Length; row++)
+            for (var column = 0; column < output[row].Length; column++)
+            {
+                var cell = new CellArtifact { Row = checked((uint)row), Column = checked((uint)column) };
+                if (output[row][column] is string text) cell.StringValue = text;
+                else cell.NumberValue = Convert.ToDouble(output[row][column], CultureInfo.InvariantCulture);
+                summary.Cells.Add(cell);
+            }
+        summary.PivotTables.Add(new SpreadsheetPivotTableArtifact
+        {
+            Id = "pivot/sales-by-region",
+            Name = "Sales by region",
+            SourceWorksheetId = data.Id,
+            SourceReference = "A1:C5",
+            TargetReference = "A1:D4",
+            RowFields = { "Region" },
+            ColumnFields = { "Product" },
+            ValueFields = { new SpreadsheetPivotValueFieldArtifact { Field = "Sales", Aggregation = SpreadsheetPivotAggregation.Sum } },
+            RowGrandTotals = true,
+            ColumnGrandTotals = true,
+            RefreshPolicy = new SpreadsheetPivotRefreshPolicyArtifact { RefreshOnLoad = true, SaveData = true, EnableRefresh = true },
+        });
+
+        var workbook = new WorkbookArtifact { Id = "workbook/pivot", DateSystem = WorkbookDateSystem._1900 };
+        workbook.Worksheets.Add(data);
+        workbook.Worksheets.Add(summary);
+        return new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportXlsx,
+            Family = ArtifactFamily.Workbook,
+            Artifact = new ArtifactEnvelope { ProtocolVersion = CodecProtocol.ProtocolVersion, Family = ArtifactFamily.Workbook, Workbook = workbook },
+        };
+    }
+
     private static CodecRequest ExportRequest()
     {
         var sheet = new WorksheetArtifact

@@ -34,9 +34,11 @@ Other documents:
 - `style_guidelines.md`: REQUIRED for formatting requirements
 - `artifact_tool_docs/API_QUICK_START.md`: REQUIRED API documentation for `artifact_tool` JS library, which exposes methods to read, manipulate, edit, recalculate, render, import and save spreadsheets. You must read it entirely to get started.
 - `features/charts.md`: Read when creating or editing charts.
+- `features/pivot-tables.md`: Read when creating, importing, or verifying native PivotTables.
 - `examples/openchestnut-range-workflow.mjs`: Run or adapt this public-package example for R1C1 formulas, block writes, range navigation, formula inspection, OpenChestnut roundtrip, and SVG verification.
 - `examples/openchestnut-sparkline-workflow.mjs`: Run or adapt this canonical example for line/column sparkline authoring, Range aliases, inspect/render/verify, and source-bound OpenChestnut edits.
 - `examples/openchestnut-data-table-workflow.mjs`: Run or adapt this canonical example for one-variable and two-variable What-If data-table authoring, inspect, OpenChestnut roundtrip, and source-bound imported topology.
+- `examples/openchestnut-pivot-table-workflow.mjs`: Run or adapt this canonical example for bounded native PivotTable authoring, source and cached-value audit, inspect/render/verify, OpenChestnut roundtrip, and imported read-only topology.
 - `examples/openchestnut-financial-returns-workflow.mjs`: Run or adapt this three-sheet `Inputs` / `Returns` / `Checks` example for visible finance/reinvestment assumptions, finance color conventions, NPV/XNPV/IRR/XIRR/MIRR/PMT outputs, guarded return checks, SVG review, and canonical OpenChestnut roundtrip.
 - `examples/openchestnut-loan-amortization-workflow.mjs`: Run or adapt this three-sheet `Inputs` / `Amortization` / `Checks` example for a visible loan schedule using PMT/IPMT/PPMT plus RATE/PV/FV/NPER inverse audits and CUMIPMT/CUMPRINC schedule reconciliations, payment-timing-aware first-period checks, finance color conventions, SVG review, and canonical OpenChestnut roundtrip.
 - `examples/openchestnut-asset-depreciation-workflow.mjs`: Run or adapt this three-sheet `Inputs` / `Depreciation` / `Checks` example for visible fixed-asset assumptions, SLN/DB/DDB schedules, salvage-floor and depreciable-basis checks, finance color conventions, SVG review, and canonical OpenChestnut roundtrip.

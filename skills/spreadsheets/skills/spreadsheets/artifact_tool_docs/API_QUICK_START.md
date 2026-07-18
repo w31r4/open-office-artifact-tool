@@ -359,6 +359,33 @@ const definitions = sheet.dataTables.__getDefinitions();
 - OpenChestnut exports canonical native `<f t="dataTable">` markup. Result cells are calculated by Excel, LibreOffice, or another compatible host after opening/recalculation; do not hardcode guessed outputs.
 - Canonical imported definitions are inspectable through `__getDefinitions()`, but their count, order, result range, inputs, and orientation are source-bound and read-only. Make ordinary cell edits around them, or rebuild a new workbook deliberately; there is no silent lossy fallback.
 
+### Native PivotTables
+
+Use `sheet.pivotTables.add(config)` when the output must remain a native Excel
+PivotTable rather than only a static or formula-based summary. Keep source rows
+in one rectangular range with unique, non-empty headers and put the summary on
+a separate sheet when possible.
+
+```js
+const pivot = summary.pivotTables.add({
+  name: "Revenue by region",
+  sourceRange: "Data!A1:C100",
+  targetRange: "A1",
+  rowFields: ["Region"],
+  columnFields: ["Channel"],
+  valueFields: [{ field: "Revenue", summarizeBy: "sum" }],
+  rowGrandTotals: true,
+  columnGrandTotals: true,
+  refreshPolicy: { refreshOnLoad: true, saveData: true },
+});
+```
+
+- Native source-free authoring currently requires exactly one row field, zero or one column field, and exactly one `sum`, `count`, `average`, `min`, or `max` value field.
+- `targetRange` may be the top-left anchor or the exact cached-output rectangle. Empty target cells may be styled before export; an existing value or formula in the output rectangle is rejected as a collision.
+- Verify `pivot.computedValues()` against source totals, inspect `kind: "pivotTable"`, render the summary, then export and import again.
+- Recognized imported native PivotTables are inspectable but their config, source values, cached output, and package topology are read-only in this first profile. Grouping, calculated fields, filters, multiple axes/values, and source-bound additions fail closed rather than becoming a lossy worksheet reconstruction.
+- Read `features/pivot-tables.md` and run `examples/openchestnut-pivot-table-workflow.mjs` for the complete Agent workflow.
+
 ### Images
 - `sheet.images.add({dataUrl: "data:image/png;base64,...", anchor: {from: { row: 1, col: 2 }, extent: { widthPx: 160, heightPx: 120 }}})`
 

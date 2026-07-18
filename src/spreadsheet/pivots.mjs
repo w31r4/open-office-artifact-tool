@@ -116,6 +116,7 @@ export function computePivotValues(matrix = [], config = {}) {
   const rows = projection.rows.filter((row) => (config.filters || []).every((filter) => pivotItemVisible(config.filters, filter.field, row[headers.indexOf(filter.field)], config.dateSystem)));
   const rowGroups = new Map();
   const columnGroups = new Map();
+  const columnRows = new Map();
   for (const row of rows) {
     const rowValues = rowIndexes.length ? rowIndexes.map((index) => row[index]) : ["(all)"];
     const columnValues = columnIndexes.length ? columnIndexes.map((index) => row[index]) : [];
@@ -126,23 +127,39 @@ export function computePivotValues(matrix = [], config = {}) {
     if (!rowGroup.columns.has(columnKey)) rowGroup.columns.set(columnKey, []);
     rowGroup.columns.get(columnKey).push(row);
     if (!columnGroups.has(columnKey)) columnGroups.set(columnKey, columnValues);
+    if (!columnRows.has(columnKey)) columnRows.set(columnKey, []);
+    columnRows.get(columnKey).push(row);
   }
-  if (!columnIndexes.length) columnGroups.set("[]", []);
+  if (!columnIndexes.length) {
+    columnGroups.set("[]", []);
+    columnRows.set("[]", rows);
+  }
   const columnEntries = [...columnGroups.entries()];
   const columnHeaders = columnEntries.flatMap(([, values]) => valueIndexes.map(({ field }) => {
     const prefix = values.map((value) => String(value ?? "")).join(" / ");
     return prefix ? (valueIndexes.length === 1 ? prefix : `${prefix} — ${pivotValueLabel(field)}`) : pivotValueLabel(field);
   }));
-  const header = [...(rowFields.length ? rowFields : ["Group"]), ...columnHeaders];
+  const rowGrandTotals = Boolean(config.rowGrandTotals) && columnIndexes.length > 0;
+  const columnGrandTotals = Boolean(config.columnGrandTotals);
+  const header = [...(rowFields.length ? rowFields : ["Group"]), ...columnHeaders, ...(rowGrandTotals ? valueIndexes.map(({ field }) => valueIndexes.length === 1 ? "Grand Total" : `Grand Total — ${pivotValueLabel(field)}`) : [])];
+  const aggregateRows = (groupedRows, field, index, calculatedField) => {
+    if (!calculatedField) return summarize(groupedRows.map((row) => row[index]), field.summarizeBy);
+    if (calculatedField.supported === false) return "#NAME?";
+    const aggregates = Object.fromEntries(sourceHeaders.map((sourceHeader, fieldIndex) => [sourceHeader, summarize(groupedRows.map((row) => row[fieldIndex]), "sum")]));
+    return evaluatePivotFormula(calculatedField.formula, aggregates, sourceHeaders, { dateSystem: config.dateSystem });
+  };
   const outputRows = [...rowGroups.values()].map((group) => [
     ...group.values,
-    ...columnEntries.flatMap(([key]) => valueIndexes.map(({ field, index, calculated: calculatedField }) => {
-      const groupedRows = group.columns.get(key) || [];
-      if (!calculatedField) return summarize(groupedRows.map((row) => row[index]), field.summarizeBy);
-      if (calculatedField.supported === false) return "#NAME?";
-      const aggregates = Object.fromEntries(sourceHeaders.map((header, fieldIndex) => [header, summarize(groupedRows.map((row) => row[fieldIndex]), "sum")]));
-      return evaluatePivotFormula(calculatedField.formula, aggregates, sourceHeaders, { dateSystem: config.dateSystem });
-    })),
+    ...columnEntries.flatMap(([key]) => valueIndexes.map(({ field, index, calculated: calculatedField }) => aggregateRows(group.columns.get(key) || [], field, index, calculatedField))),
+    ...(rowGrandTotals ? valueIndexes.map(({ field, index, calculated: calculatedField }) => aggregateRows([...group.columns.values()].flat(), field, index, calculatedField)) : []),
   ]);
+  if (columnGrandTotals) {
+    const labels = rowFields.length ? ["Grand Total", ...Array(Math.max(0, rowFields.length - 1)).fill("")] : ["Grand Total"];
+    outputRows.push([
+      ...labels,
+      ...columnEntries.flatMap(([key]) => valueIndexes.map(({ field, index, calculated: calculatedField }) => aggregateRows(columnRows.get(key) || [], field, index, calculatedField))),
+      ...(rowGrandTotals ? valueIndexes.map(({ field, index, calculated: calculatedField }) => aggregateRows(rows, field, index, calculatedField)) : []),
+    ]);
+  }
   return [header, ...outputRows];
 }

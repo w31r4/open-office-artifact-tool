@@ -215,6 +215,39 @@ try {
   const dataTableXml = await dataTableZip.file("xl/worksheets/sheet1.xml").async("text");
   assert.equal((dataTableXml.match(/<x:f\b[^>]*t="dataTable"/g) || []).length, 2);
 
+  const { createPivotTableWorkbook } = await import(
+    "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-pivot-table-workflow.mjs"
+  );
+  const pivotTablePath = path.join(outputDir, "openchestnut-pivot-table-workflow.xlsx");
+  const pivotTableResult = await createPivotTableWorkbook(pivotTablePath);
+  assert.equal(pivotTableResult.verification.ok, true);
+  assert.match(pivotTableResult.inspection.ndjson, /"kind":"pivotTable"/);
+  const pivotTableWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(pivotTablePath));
+  assert.ok(Math.abs(pivotTableWorkbook.worksheets.getItem("Pivot Summary").getRange("A1:A5").format.columnWidthPx - 112) <= 1);
+  assert.ok(Math.abs(pivotTableWorkbook.worksheets.getItem("Pivot Summary").getRange("B1:C5").format.columnWidthPx - 88) <= 1);
+  assert.deepEqual(pivotTableWorkbook.worksheets.getItem("Pivot Summary").pivotTables.items[0].computedValues(), [
+    ["Region", "Direct", "Partner", "Grand Total"],
+    ["East", 120, 80, 200],
+    ["West", 150, 90, 240],
+    ["North", 110, 70, 180],
+    ["Grand Total", 380, 240, 620],
+  ]);
+  const pivotTableZip = await JSZip.loadAsync(await fs.readFile(pivotTablePath));
+  assert.equal(Object.keys(pivotTableZip.files).filter((name) => /pivotTables\/pivotTable.*\.xml$/i.test(name)).length, 1);
+  assert.equal(Object.keys(pivotTableZip.files).filter((name) => /pivotCache\/pivotCacheRecords.*\.xml$/i.test(name)).length, 1);
+  const pivotNativeStatus = nativeSpreadsheetRenderStatus();
+  const pivotQa = await verifyWorkbookFile(pivotTablePath, {
+    outputDir: path.join(outputDir, "pivot-native-qa"),
+    sheetName: "Pivot Summary",
+    renderFormat: "svg",
+    allSheets: true,
+    nativeRender: pivotNativeStatus.available ? "required" : "off",
+  });
+  if (pivotNativeStatus.available) {
+    assert.equal(pivotQa.summary.nativeRender.status, "passed");
+    assert.equal(pivotQa.summary.nativeRender.pageCount, 2, "the Data and Pivot Summary sheets must each fit on one native-rendered page");
+  }
+
   const { createFinancialReturnsWorkbook } = await import(
     "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-financial-returns-workflow.mjs"
   );

@@ -2703,7 +2703,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `sheet.dataTables.__getDefinitions` | api | Return defensive inspectable definitions for the worksheet's canonical What-If data tables, including result range, native anchor, inputs, orientation, and display formula. |
 | `sheet.dataTables.add` | api | Create a canonical native Excel What-If data table from a rectangular formula/input grid and one row input, one column input, or both. Excel or another compatible host calculates the result values; the JavaScript evaluator does not simulate TABLE. |
 | `sheet.images.add` | api | Create an inspectable worksheet image from a data URL, URI, or prompt with one-cell, two-cell, or absolute pixel geometry plus optional percentage crop, bounded grayscale/luminance/opacity effects, rotation, and horizontal/vertical flips. |
-| `sheet.pivotTables.add` | api | Build a model-level pivot facade for calculation, inspect, layout, and preview. OpenChestnut 0.2 does not author pivots; imported pivot package graphs are preserved read-only and any model edit fails closed. |
+| `sheet.pivotTables.add` | api | Create a native bounded XLSX PivotTable with derived cached output and cache records, or use richer model-only grouping/calculation/filter semantics for inspect and preview. Recognized imports are hash-bound and read-only. |
 | `sheet.sparklineGroups.add` | api | Create standard Office 2010 line/column/stacked sparkline groups for inspect, SVG preview, and OpenChestnut XLSX export. Source-free groups use reversible one-dimensional target/source mappings; recognized imported groups support fixed-topology semantic edits while unsupported native graphs remain source-bound. |
 | `sheet.tables.add` | api | Create an ordinary worksheet table over an A1 range with headers, columns, totals metadata, style, and bounded filtering/sorting. QueryTable bindings are import-only and read-only; adding or editing one makes XLSX export fail closed. |
 | `SpreadsheetFile.exportCsv` | api | Export one worksheet or range as UTF-8 CSV, using calculated values unless formula output is explicitly requested. |
@@ -5095,16 +5095,18 @@ Create an inspectable worksheet image from a data URL, URI, or prompt with one-c
 
 #### `sheet.pivotTables.add`
 
-Build a model-level pivot facade for calculation, inspect, layout, and preview. OpenChestnut 0.2 does not author pivots; imported pivot package graphs are preserved read-only and any model edit fails closed.
+Create a native bounded XLSX PivotTable with derived cached output and cache records, or use richer model-only grouping/calculation/filter semantics for inspect and preview. Recognized imports are hash-bound and read-only.
 
 **Schema parameters:**
 
 - `name` (string) — Stable pivot name.
 - `sourceRange` (string|Range) required — Source data range.
 - `targetRange` (string|Range) required — Destination anchor/range.
-- `rowFields` (string[]) — Row field names.
-- `columnFields` (string[]) — Column field names.
-- `valueFields` (object[]) — Value field and aggregation definitions.
+- `rowFields` (string[]) — Row field names. Native source-free OpenChestnut authoring currently requires exactly one.
+- `columnFields` (string[]) — Column field names. Native source-free OpenChestnut authoring currently accepts zero or one.
+- `valueFields` (object[]) — Value field and aggregation definitions. Native source-free authoring requires exactly one sum/count/average/min/max field.
+- `rowGrandTotals` (boolean) — Add a native grand-total column and derived cached values when a column field is present.
+- `columnGrandTotals` (boolean) — Add a native grand-total row and derived cached values.
 - `groupFields` (object[]) — Derived group fields with unique name/sourceField. Calendar/time groupBy values years/quarters/months/days/hours/minutes/seconds form OOXML base/par hierarchies and accept bounded groupInterval values; range uses numeric startNum/endNum/groupInterval buckets; discrete uses named groups of source items.
 - `calculatedFields` (object[]) — Calculated value fields over grouped source-field sums with arithmetic, percent, concatenation, comparisons, string/boolean constants, 12 bounded numeric functions, AND/OR/NOT, lazy IF/IFERROR/IFNA, NA, ISERROR/ISNUMBER/ISTEXT, Excel Compatibility Version 2 surrogate-aware LEN/LEFT/RIGHT/MID, LOWER/UPPER/ASCII-space TRIM, and workbook-date-system-aware DATE/YEAR/MONTH/DAY/EDATE/EOMONTH/DAYS/WEEKDAY/TIME/HOUR/MINUTE/SECOND/NETWORKDAYS/WORKDAY/NETWORKDAYS.INTL/WORKDAY.INTL. Business-day functions accept standard or international weekend rules and one optional scalar holiday. Accepts [Field] or quoted field references; cell references, holiday arrays/ranges, calculated-field chaining, and non-whitelisted functions are rejected.
 - `filters` (object|object[]) — Axis filters. Use include/exclude items; absolute dateEqual/dateNotEqual/dateOlderThan/dateOlderThanOrEqual/dateNewerThan/dateNewerThanOrEqual/dateBetween/dateNotBetween filters with whole-day ISO dates by default or useWholeDay=false plus ISO date-time/Date thresholds at UTC-second precision; or relative UTC types yesterday/today/tomorrow, last/this/next week/month/quarter/year, and yearToDate. Relative filters remain whole-day, accept optional deterministic asOf, and use Monday-start ISO weeks.
@@ -5112,7 +5114,7 @@ Build a model-level pivot facade for calculation, inspect, layout, and preview. 
 
 **Schema returns:**
 
-- `pivot` (WorksheetPivotTable) — Model-level pivot facade for calculation, inspect, layout, and preview. OpenChestnut 0.2 does not author pivots; imported pivot graphs are preservation-only and read-only.
+- `pivot` (WorksheetPivotTable) — Native XLSX authoring is bounded to one row field, optional one column field, and one sum/count/average/min/max value field. Cached output is a derived projection; grouping/calculated/filter profiles remain model-only and fail closed on native export. Recognized imports expose semantics but keep config, source data, cached output, and topology read-only.
 
 #### `sheet.sparklineGroups.add`
 

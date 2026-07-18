@@ -76,6 +76,7 @@ internal static class XlsxCodec
                 sheets.Append(XlsxWorksheetMetadataCodec.Create(source, checked((uint)index), workbookPart.GetIdOfPart(worksheetPart)));
                 worksheetBindings.Add((worksheetPart, source));
             }
+            new XlsxPivotTableCodec(workbookPart).Apply(worksheetBindings, sourceBound: false);
             worksheetFeatures.ApplyThreadedComments(workbookPart, worksheetBindings, sourceBound: false);
             var workbookView = new XlsxWorkbookViewCodec(workbookPart, envelope.Workbook.Worksheets);
             workbookView.Apply(envelope.Workbook.View, envelope.Workbook.AdditionalViews, sourceBound: false, envelope.Workbook.Worksheets);
@@ -113,7 +114,8 @@ internal static class XlsxCodec
             worksheet.Images.Any(image => image.Source is not null) ||
             worksheet.Charts.Any(chart => chart.Source is not null) ||
             worksheet.Tables.Any(table => table.Source is not null || table.QueryTable?.Source is not null) ||
-            worksheet.SparklineGroups.Any(group => group.Source is not null));
+            worksheet.SparklineGroups.Any(group => group.Source is not null) ||
+            worksheet.PivotTables.Any(pivot => pivot.Source is not null));
     }
 
     internal static XlsxImportResult Import(byte[] bytes, EffectiveCodecLimits limits)
@@ -166,6 +168,7 @@ internal static class XlsxCodec
             target.Images.Add(drawings.Read(worksheetPart, target.Id));
             target.Charts.Add(new XlsxChartCodec().Read(worksheetPart, target.Id));
             target.SparklineGroups.Add(new XlsxSparklineCodec().Read(worksheetPart, target.Id));
+            target.PivotTables.Add(new XlsxPivotTableCodec(workbookPart).Read(worksheetPart, target.Id));
             workbook.Worksheets.Add(target);
             worksheetBindings.Add((worksheetPart, target));
         }
@@ -262,6 +265,7 @@ internal static class XlsxCodec
                 worksheetPart.Worksheet!.Save();
                 worksheetBindings.Add((worksheetPart, source));
             }
+            new XlsxPivotTableCodec(workbookPart).Apply(worksheetBindings, sourceBound: true);
             worksheetFeatures.ApplyThreadedComments(workbookPart, worksheetBindings, sourceBound: true);
             dirtyModeledPartPaths.UnionWith(worksheetFeatures.DirtyPartPaths);
             threadedRelationshipsDirty = worksheetFeatures.ThreadedRelationshipGraphDirty;

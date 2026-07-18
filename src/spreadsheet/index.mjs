@@ -542,6 +542,8 @@ class WorksheetPivotTable {
     this.calculatedFields = normalized.calculatedFields;
     this.filters = normalized.filters;
     this.refreshPolicy = normalized.refreshPolicy;
+    this.rowGrandTotals = Boolean(config.rowGrandTotals ?? config.showRowGrandTotals);
+    this.columnGrandTotals = Boolean(config.columnGrandTotals ?? config.showColumnGrandTotals);
   }
 
   get dateSystem() { return this.worksheet.workbook.dateSystem; }
@@ -558,7 +560,7 @@ class WorksheetPivotTable {
 
   inspectRecord() {
     const values = this.computedValues();
-    return { kind: "pivotTable", id: this.id, sheet: this.worksheet.name, name: this.name, sourceRange: this.sourceRange.address, sourceSheet: this.sourceRange.sheetName || this.worksheet.name, targetRange: this.targetRange.address, rowFields: this.rowFields, columnFields: this.columnFields, valueFields: this.valueFields, groupFields: this.groupFields, calculatedFields: this.calculatedFields, filters: this.filters, refreshPolicy: this.refreshPolicy, values, rows: Math.max(0, values.length - 1), cols: values[0]?.length || 0 };
+    return { kind: "pivotTable", id: this.id, sheet: this.worksheet.name, name: this.name, sourceRange: this.sourceRange.address, sourceSheet: this.sourceRange.sheetName || this.worksheet.name, targetRange: this.targetRange.address, rowFields: this.rowFields, columnFields: this.columnFields, valueFields: this.valueFields, groupFields: this.groupFields, calculatedFields: this.calculatedFields, filters: this.filters, refreshPolicy: this.refreshPolicy, rowGrandTotals: this.rowGrandTotals, columnGrandTotals: this.columnGrandTotals, values, rows: Math.max(0, values.length - 1), cols: values[0]?.length || 0 };
   }
 
   layoutJson(bounds) {
@@ -567,7 +569,7 @@ class WorksheetPivotTable {
     const rowCount = Math.max(values.length, target.rowCount || 1);
     const colCount = Math.max(values[0]?.length || 0, target.colCount || 1);
     const frame = worksheetRangeFrame(this.worksheet, { top: target.top, left: target.left, bottom: target.top + rowCount - 1, right: target.left + colCount - 1, rowCount, colCount }, bounds);
-    return { kind: "pivotTable", id: this.id, sheet: this.worksheet.name, name: this.name, sourceRange: this.sourceRange.address, targetRange: this.targetRange.address, rowFields: this.rowFields, columnFields: this.columnFields, valueFields: this.valueFields, groupFields: this.groupFields, calculatedFields: this.calculatedFields, filters: this.filters, refreshPolicy: this.refreshPolicy, values, bbox: [frame.left, frame.top, frame.width, frame.height] };
+    return { kind: "pivotTable", id: this.id, sheet: this.worksheet.name, name: this.name, sourceRange: this.sourceRange.address, targetRange: this.targetRange.address, rowFields: this.rowFields, columnFields: this.columnFields, valueFields: this.valueFields, groupFields: this.groupFields, calculatedFields: this.calculatedFields, filters: this.filters, refreshPolicy: this.refreshPolicy, rowGrandTotals: this.rowGrandTotals, columnGrandTotals: this.columnGrandTotals, values, bbox: [frame.left, frame.top, frame.width, frame.height] };
   }
 
   toSvg(bounds) {
@@ -586,7 +588,7 @@ class WorksheetPivotTable {
     return `<rect x="${left}" y="${Math.max(0, top - 18)}" width="${Math.max(120, layout.bbox[2])}" height="18" fill="#cffafe" stroke="#06b6d4"/><text x="${left + 5}" y="${Math.max(12, top - 5)}" font-family="Arial" font-size="11" font-weight="700" fill="#155e75">${xmlEscape(this.name)}</text>${cells.join("")}`;
   }
 
-  toJSON() { return { id: this.id, name: this.name, sourceRange: this.sourceRange, sourceFields: this.sourceFields, targetRange: this.targetRange, rowFields: this.rowFields, columnFields: this.columnFields, valueFields: this.valueFields, groupFields: this.groupFields, calculatedFields: this.calculatedFields, filters: this.filters, refreshPolicy: this.refreshPolicy }; }
+  toJSON() { return { id: this.id, name: this.name, sourceRange: this.sourceRange, sourceFields: this.sourceFields, targetRange: this.targetRange, rowFields: this.rowFields, columnFields: this.columnFields, valueFields: this.valueFields, groupFields: this.groupFields, calculatedFields: this.calculatedFields, filters: this.filters, refreshPolicy: this.refreshPolicy, rowGrandTotals: this.rowGrandTotals, columnGrandTotals: this.columnGrandTotals }; }
 }
 
 class WorksheetPivotTableCollection {

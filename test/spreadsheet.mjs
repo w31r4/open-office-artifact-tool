@@ -402,6 +402,135 @@ await assert.rejects(
   (error) => error?.code === "invalid_spreadsheet_chart" && /bubbleSizes.*y values/i.test(error.message),
 );
 
+const pivotWorkbook = Workbook.create();
+const pivotData = pivotWorkbook.worksheets.add("Data");
+pivotData.getRange("A1:C5").values = [
+  ["Region", "Product", "Sales"],
+  ["East", "A", 10],
+  ["East", "B", 20],
+  ["West", "A", 30],
+  ["West", "B", 40],
+];
+const pivotSummary = pivotWorkbook.worksheets.add("Summary");
+pivotSummary.getRange("A1:D4").format = { fill: "#ECFEFF" };
+const nativePivot = pivotSummary.pivotTables.add({
+  name: "Sales by region",
+  sourceRange: "Data!A1:C5",
+  targetRange: "A1",
+  rowFields: ["Region"],
+  columnFields: ["Product"],
+  valueFields: [{ field: "Sales", summarizeBy: "sum" }],
+  rowGrandTotals: true,
+  columnGrandTotals: true,
+});
+assert.deepEqual(nativePivot.computedValues(), [
+  ["Region", "A", "B", "Grand Total"],
+  ["East", 10, 20, 30],
+  ["West", 30, 40, 70],
+  ["Grand Total", 40, 60, 100],
+]);
+const nativePivotXlsx = await SpreadsheetFile.exportXlsx(pivotWorkbook);
+const nativePivotZip = await JSZip.loadAsync(new Uint8Array(await nativePivotXlsx.arrayBuffer()));
+const nativePivotPart = Object.keys(nativePivotZip.files).find((name) => /xl\/pivotTables\/pivotTable.*\.xml$/i.test(name));
+const nativePivotCache = Object.keys(nativePivotZip.files).find((name) => /pivotCache\/pivotCacheDefinition.*\.xml$/i.test(name));
+const nativePivotRecords = Object.keys(nativePivotZip.files).find((name) => /pivotCache\/pivotCacheRecords.*\.xml$/i.test(name));
+assert.ok(nativePivotPart);
+assert.ok(nativePivotCache);
+assert.ok(nativePivotRecords);
+assert.match(await nativePivotZip.file(nativePivotPart).async("text"), /name="Sales by region"[\s\S]*location ref="A1:D4"[\s\S]*subtotal="sum"/);
+assert.match(await nativePivotZip.file(nativePivotCache).async("text"), /worksheetSource ref="A1:C5" sheet="Data"/);
+assert.match(await nativePivotZip.file(nativePivotRecords).async("text"), /count="4"/);
+
+const importedPivotWorkbook = await SpreadsheetFile.importXlsx(nativePivotXlsx);
+const importedPivot = importedPivotWorkbook.worksheets.getItem("Summary").pivotTables.items[0];
+assert.equal(importedPivot.name, "Sales by region");
+assert.deepEqual(importedPivot.rowFields, ["Region"]);
+assert.deepEqual(importedPivot.columnFields, ["Product"]);
+assert.deepEqual(importedPivot.valueFields, [{ field: "Sales", summarizeBy: "sum", name: "Sum of Sales" }]);
+assert.deepEqual(importedPivot.computedValues(), nativePivot.computedValues());
+assert.equal(importedPivotWorkbook.worksheets.getItem("Summary").getRange("A1").format.fill, "#ECFEFF");
+const secondPivotXlsx = await SpreadsheetFile.exportXlsx(importedPivotWorkbook);
+const secondPivotZip = await JSZip.loadAsync(new Uint8Array(await secondPivotXlsx.arrayBuffer()));
+assert.equal(await secondPivotZip.file(nativePivotPart).async("text"), await nativePivotZip.file(nativePivotPart).async("text"));
+assert.equal(await secondPivotZip.file(nativePivotCache).async("text"), await nativePivotZip.file(nativePivotCache).async("text"));
+assert.equal(await secondPivotZip.file(nativePivotRecords).async("text"), await nativePivotZip.file(nativePivotRecords).async("text"));
+
+const editedImportedPivot = await SpreadsheetFile.importXlsx(nativePivotXlsx);
+editedImportedPivot.worksheets.getItem("Data").getRange("C2").values = [[11]];
+await assert.rejects(
+  () => SpreadsheetFile.exportXlsx(editedImportedPivot),
+  (error) => error?.code === "unsupported_spreadsheet_pivot_edit" && /source data.*read-only/i.test(error.message),
+);
+const editedPivotOutput = await SpreadsheetFile.importXlsx(nativePivotXlsx);
+editedPivotOutput.worksheets.getItem("Summary").getRange("B2").values = [[11]];
+await assert.rejects(
+  () => SpreadsheetFile.exportXlsx(editedPivotOutput),
+  (error) => error?.code === "unsupported_spreadsheet_pivot_edit" && /cached output.*read-only/i.test(error.message),
+);
+const unsupportedPivotWorkbook = Workbook.create();
+const unsupportedPivotSheet = unsupportedPivotWorkbook.worksheets.add("Data");
+unsupportedPivotSheet.getRange("A1:C3").values = [["Region", "Product", "Sales"], ["East", "A", 10], ["West", "B", 20]];
+unsupportedPivotSheet.pivotTables.add({ sourceRange: "A1:C3", targetRange: "E1", rowFields: ["Region", "Product"], valueFields: [{ field: "Sales" }] });
+await assert.rejects(
+  () => SpreadsheetFile.exportXlsx(unsupportedPivotWorkbook),
+  (error) => error?.code === "unsupported_spreadsheet_pivot_profile" && /exactly one row field/i.test(error.message),
+);
+const collidingPivotWorkbook = Workbook.create();
+const collidingPivotSheet = collidingPivotWorkbook.worksheets.add("Data");
+collidingPivotSheet.getRange("A1:C3").values = [["Region", "Product", "Sales"], ["East", "A", 10], ["West", "B", 20]];
+collidingPivotSheet.getRange("E1").values = [["occupied"]];
+collidingPivotSheet.pivotTables.add({ sourceRange: "A1:C3", targetRange: "E1", rowFields: ["Region"], valueFields: [{ field: "Sales" }] });
+await assert.rejects(
+  () => SpreadsheetFile.exportXlsx(collidingPivotWorkbook),
+  (error) => error?.code === "spreadsheet_pivot_output_collision" && /overlaps existing worksheet cell E1/i.test(error.message),
+);
+const duplicatePivotWorkbook = Workbook.create();
+const duplicatePivotData = duplicatePivotWorkbook.worksheets.add("Data");
+duplicatePivotData.getRange("A1:B3").values = [["Region", "Sales"], ["East", 10], ["West", 20]];
+const duplicatePivotSummaryA = duplicatePivotWorkbook.worksheets.add("Summary A");
+const duplicatePivotSummaryB = duplicatePivotWorkbook.worksheets.add("Summary B");
+duplicatePivotSummaryA.pivotTables.add({ name: "Sales Pivot", sourceRange: "Data!A1:B3", targetRange: "A1", rowFields: ["Region"], valueFields: [{ field: "Sales" }] });
+duplicatePivotSummaryB.pivotTables.add({ name: "sales pivot", sourceRange: "Data!A1:B3", targetRange: "A1", rowFields: ["Region"], valueFields: [{ field: "Sales" }] });
+await assert.rejects(
+  () => SpreadsheetFile.exportXlsx(duplicatePivotWorkbook),
+  (error) => error?.code === "invalid_spreadsheet_pivot" && /name Sales Pivot must be unique across the workbook/i.test(error.message),
+);
+
+for (const [summarizeBy, expected] of [
+  ["sum", 60],
+  ["count", 3],
+  ["average", 20],
+  ["min", 10],
+  ["max", 30],
+]) {
+  const aggregationWorkbook = Workbook.create();
+  const aggregationSheet = aggregationWorkbook.worksheets.add("Data");
+  aggregationSheet.getRange("A1:C4").values = [
+    ["Region", "Product", "Sales"],
+    ["East", "A", 10],
+    ["East", "A", 20],
+    ["East", "A", 30],
+  ];
+  const aggregationSummary = aggregationWorkbook.worksheets.add("Summary");
+  const aggregationPivot = aggregationSummary.pivotTables.add({
+    name: `${summarizeBy} Sales`,
+    sourceRange: "Data!A1:C4",
+    targetRange: "A1",
+    rowFields: ["Region"],
+    columnFields: ["Product"],
+    valueFields: [{ field: "Sales", summarizeBy }],
+  });
+  assert.equal(aggregationPivot.computedValues()[1][1], expected);
+  const aggregationXlsx = await SpreadsheetFile.exportXlsx(aggregationWorkbook);
+  const aggregationZip = await JSZip.loadAsync(new Uint8Array(await aggregationXlsx.arrayBuffer()));
+  const aggregationPivotPart = Object.keys(aggregationZip.files).find((name) => /xl\/pivotTables\/pivotTable.*\.xml$/i.test(name));
+  assert.match(await aggregationZip.file(aggregationPivotPart).async("text"), new RegExp(`subtotal="${summarizeBy}"`));
+  const aggregationImported = await SpreadsheetFile.importXlsx(aggregationXlsx);
+  const importedAggregationPivot = aggregationImported.worksheets.getItem("Summary").pivotTables.items[0];
+  assert.equal(importedAggregationPivot.valueFields[0].summarizeBy, summarizeBy);
+  assert.equal(importedAggregationPivot.computedValues()[1][1], expected);
+}
+
 const connectionWorkbook = Workbook.create({
   connections: [{ connectionId: 1, name: "Source-free connection", type: 1, refreshedVersion: 1 }],
 });

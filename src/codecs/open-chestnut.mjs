@@ -29,6 +29,7 @@ import { spreadsheetChartFromWire, spreadsheetChartSnapshot, wireWorksheetCharts
 import { spreadsheetImageFromWire, spreadsheetImageSnapshot, wireWorksheetImages } from "./open-chestnut-spreadsheet-images.mjs";
 import { spreadsheetSparklineFromWire, spreadsheetSparklineSnapshot, wireWorksheetSparklines } from "./open-chestnut-spreadsheet-sparklines.mjs";
 import { hydrateWorksheetDataTable, wireWorksheetDataTables } from "./open-chestnut-spreadsheet-data-tables.mjs";
+import { hydrateWorkbookPivots, wireWorksheetPivots } from "./open-chestnut-spreadsheet-pivots.mjs";
 
 export { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
 
@@ -574,7 +575,6 @@ function unsupportedWorkbookFeatures(workbook, state) {
   if (workbook.connections?.length && !state) unsupported.push("source-free workbook connections");
   for (const sheet of workbook.worksheets?.items || []) {
     const prefix = `worksheet ${sheet.name}`;
-    if (itemCount(sheet.pivotTables)) unsupported.push(`${prefix} pivot tables`);
     if (sheet.shapes?.length) unsupported.push(`${prefix} shapes`);
     for (const [address, cell] of sheet.store?.entries?.() || []) {
       const dynamicSlot = state?.dynamicArraySlotsBySheet?.get(sheet.id)?.get(address);
@@ -1289,6 +1289,29 @@ function workbookEnvelope(workbook) {
   const assets = new Map();
   const worksheets = workbook.worksheets.items.map((sheet) => {
     const metadata = wireWorksheetMetadata(sheet, state?.worksheetSlots?.get(sheet.id));
+    const cells = (() => {
+      const dynamicSlots = state?.dynamicArraySlotsBySheet?.get(sheet.id) || new Map();
+      const sourceBoundFormulaSlots = state?.sourceBoundFormulaSlotsBySheet?.get(sheet.id) || new Map();
+      const entries = sheet.store?.entries?.() || [];
+      const byAddress = new Map(entries);
+      for (const [address, slot] of dynamicSlots) {
+        if (byAddress.get(address) !== slot.cell || JSON.stringify(dynamicArrayCellSnapshot(slot.cell)) !== JSON.stringify(slot.publicSnapshot)) {
+          throw new OpenChestnutCodecError(`Imported dynamic array ${sheet.name}!${address} is source-bound and read-only in OpenChestnut 0.2.`, [], { code: "unsupported_dynamic_array_edit" });
+        }
+      }
+      for (const [address, slot] of sourceBoundFormulaSlots) {
+        if (byAddress.get(address) !== slot.cell || JSON.stringify(sourceBoundFormulaCellSnapshot(slot.cell)) !== JSON.stringify(slot.publicSnapshot)) {
+          throw new OpenChestnutCodecError(`Imported partial shared formula ${sheet.name}!${address} is source-bound and read-only in OpenChestnut 0.2.`, [], { code: "unsupported_cell_formula_edit" });
+        }
+      }
+      const output = entries
+        .filter(([, cell]) => cell.value != null || cell.formula || cell.formulaType || Object.keys(cell.style || {}).some((key) => cell.style[key] != null))
+        .map(([address, cell]) => sourceBoundFormulaSlots.get(address)?.wire || dynamicSlots.get(address)?.wire || wireCell(address, cell, workbook.dateSystem));
+      wireWorksheetDataTables(sheet, state?.dataTablesBySheet?.get(sheet.id), output);
+      validateFormulaTopology(output, sheet.name);
+      return output;
+    })();
+    const pivotTables = wireWorksheetPivots(workbook, sheet, state?.pivotsBySheet?.get(sheet.id), cells);
     return {
       id: sheet.id,
       name: sheet.name,
@@ -1309,31 +1332,11 @@ function workbookEnvelope(workbook) {
       images: wireWorksheetImages(sheet, state?.imagesBySheet?.get(sheet.id), assets),
       charts: wireWorksheetCharts(sheet, state?.chartsBySheet?.get(sheet.id)),
       sparklineGroups: wireWorksheetSparklines(sheet, state?.sparklinesBySheet?.get(sheet.id)),
+      pivotTables,
       dataValidations: (sheet.dataValidations?.items || []).map((item) => wireDataValidation(item, sheet.name)),
       conditionalFormats: (sheet.conditionalFormattings?.items || []).map((item, index) => wireConditionalFormat(item, sheet.name, index)),
       threadedComments: wireThreadedComments(workbook, sheet),
-      cells: (() => {
-        const dynamicSlots = state?.dynamicArraySlotsBySheet?.get(sheet.id) || new Map();
-        const sourceBoundFormulaSlots = state?.sourceBoundFormulaSlotsBySheet?.get(sheet.id) || new Map();
-        const entries = sheet.store?.entries?.() || [];
-        const byAddress = new Map(entries);
-        for (const [address, slot] of dynamicSlots) {
-          if (byAddress.get(address) !== slot.cell || JSON.stringify(dynamicArrayCellSnapshot(slot.cell)) !== JSON.stringify(slot.publicSnapshot)) {
-            throw new OpenChestnutCodecError(`Imported dynamic array ${sheet.name}!${address} is source-bound and read-only in OpenChestnut 0.2.`, [], { code: "unsupported_dynamic_array_edit" });
-          }
-        }
-        for (const [address, slot] of sourceBoundFormulaSlots) {
-          if (byAddress.get(address) !== slot.cell || JSON.stringify(sourceBoundFormulaCellSnapshot(slot.cell)) !== JSON.stringify(slot.publicSnapshot)) {
-            throw new OpenChestnutCodecError(`Imported partial shared formula ${sheet.name}!${address} is source-bound and read-only in OpenChestnut 0.2.`, [], { code: "unsupported_cell_formula_edit" });
-          }
-        }
-        const cells = entries
-          .filter(([, cell]) => cell.value != null || cell.formula || cell.formulaType || Object.keys(cell.style || {}).some((key) => cell.style[key] != null))
-          .map(([address, cell]) => sourceBoundFormulaSlots.get(address)?.wire || dynamicSlots.get(address)?.wire || wireCell(address, cell, workbook.dateSystem));
-        wireWorksheetDataTables(sheet, state?.dataTablesBySheet?.get(sheet.id), cells);
-        validateFormulaTopology(cells, sheet.name);
-        return cells;
-      })(),
+      cells,
     };
   });
   return {
@@ -1396,6 +1399,7 @@ function workbookFromEnvelope(envelope) {
   const imagesBySheet = new Map();
   const chartsBySheet = new Map();
   const sparklinesBySheet = new Map();
+  let pivotsBySheet;
   const dataTablesBySheet = new Map();
   const dynamicArraySlotsBySheet = new Map();
   const sourceBoundFormulaSlotsBySheet = new Map();
@@ -1540,6 +1544,7 @@ function workbookFromEnvelope(envelope) {
     sparklinesBySheet.set(sheet.id, { slots: sparklineSlots });
   }
   for (const sourceDefinedName of source.definedNames || []) workbook.definedNames.add(publicWorkbookDefinedName(sourceDefinedName));
+  pivotsBySheet = hydrateWorkbookPivots(workbook, source.worksheets);
   const sourceViews = source.view ? [source.view, ...(source.additionalViews || [])] : [];
   if (sourceViews.length) {
     workbook.windows.getItemAt(0).setActiveWorksheet(sourceViews[0].activeWorksheetId);
@@ -1576,6 +1581,7 @@ function workbookFromEnvelope(envelope) {
       imagesBySheet,
       chartsBySheet,
       sparklinesBySheet,
+      pivotsBySheet,
       dataTablesBySheet,
     },
     writable: true,

@@ -357,6 +357,11 @@ message WorksheetArtifact {
   // map to row- or column-oriented source slices; arbitrary/non-contiguous
   // native groups remain source-preserved and hidden from editable semantics.
   repeated SpreadsheetSparklineGroupArtifact sparkline_groups = 18;
+  // Bounded native PivotTables backed by worksheet ranges. The initial
+  // authoring profile owns one row field, at most one column field, and one
+  // sum/count/average/min/max data field. Cached worksheet output and cache
+  // records are derived projections, never an independent document model.
+  repeated SpreadsheetPivotTableArtifact pivot_tables = 19;
 }
 
 message SpreadsheetDataValidationArtifact {
@@ -472,6 +477,70 @@ message SpreadsheetSparklineSourceBinding {
   string group_xml_sha256 = 5;
   string semantic_sha256 = 6;
   bool editable = 7;
+}
+
+enum SpreadsheetPivotAggregation {
+  SPREADSHEET_PIVOT_AGGREGATION_UNSPECIFIED = 0;
+  SPREADSHEET_PIVOT_AGGREGATION_SUM = 1;
+  SPREADSHEET_PIVOT_AGGREGATION_COUNT = 2;
+  SPREADSHEET_PIVOT_AGGREGATION_AVERAGE = 3;
+  SPREADSHEET_PIVOT_AGGREGATION_MIN = 4;
+  SPREADSHEET_PIVOT_AGGREGATION_MAX = 5;
+}
+
+message SpreadsheetPivotValueFieldArtifact {
+  string field = 1;
+  string name = 2;
+  SpreadsheetPivotAggregation aggregation = 3;
+}
+
+message SpreadsheetPivotRefreshPolicyArtifact {
+  bool refresh_on_load = 1;
+  bool save_data = 2;
+  bool enable_refresh = 3;
+  bool invalid = 4;
+  uint32 missing_items_limit = 5;
+  string refreshed_by = 6;
+  string refreshed_date_iso = 7;
+}
+
+// One native worksheet PivotTable plus its workbook-owned cache. source_* is
+// the semantic input range; target_reference is the complete cached output
+// rectangle rather than only its top-left anchor. The bounded protocol keeps
+// field names instead of native indexes so JavaScript remains independent of
+// package-local cache identity.
+message SpreadsheetPivotTableArtifact {
+  string id = 1;
+  string name = 2;
+  string source_worksheet_id = 3;
+  string source_reference = 4;
+  string target_reference = 5;
+  repeated string row_fields = 6;
+  repeated string column_fields = 7;
+  repeated SpreadsheetPivotValueFieldArtifact value_fields = 8;
+  bool row_grand_totals = 9;
+  bool column_grand_totals = 10;
+  SpreadsheetPivotRefreshPolicyArtifact refresh_policy = 11;
+  SpreadsheetPivotTableSourceBinding source = 12;
+}
+
+// Hash-bound locator for one recognized worksheet PivotTable and its cache
+// graph. The first profile is intentionally read-only after import: fixed
+// source/output snapshots can cross a second export unchanged, while edits to
+// native topology or cached data fail closed until an editable profile owns
+// the corresponding rewrite rules.
+message SpreadsheetPivotTableSourceBinding {
+  string worksheet_part_path = 1;
+  string pivot_table_part_path = 2;
+  string pivot_table_xml_sha256 = 3;
+  string cache_definition_part_path = 4;
+  string cache_definition_xml_sha256 = 5;
+  string cache_records_part_path = 6;
+  string cache_records_xml_sha256 = 7;
+  uint32 pivot_ordinal = 8;
+  uint32 cache_id = 9;
+  string semantic_sha256 = 10;
+  bool editable = 11;
 }
 
 message SpreadsheetWorksheetSourceBinding {
