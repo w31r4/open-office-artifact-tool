@@ -672,7 +672,8 @@ assert.equal((await PresentationFile.inspectPptx(firstExport)).ok, true);
 
 // Imported deck reordering is intentionally a shallow package operation: it
 // preserves every original SlidePart exactly once and changes only the
-// p:sldIdLst display order. It is not a disguised clone/delete feature.
+// p:sldIdLst display order. It is separate from the even narrower, isolated
+// layout-only imported-slide deletion profile below.
 const reorderedImportedDeck = await PresentationFile.importPptx(firstExport);
 const originalImportedSlideNames = reorderedImportedDeck.slides.items.map((slide) => slide.name);
 const importedFirstSlide = reorderedImportedDeck.slides.getItem(0);
@@ -706,6 +707,42 @@ importedTopologyChange.slides.add({ name: "Not source-bound" });
 await assert.rejects(
   () => PresentationFile.exportPptx(importedTopologyChange),
   (error) => error?.code === "presentation_topology_changed",
+);
+
+// Imported deletion is a real OPC delete, not hiding a slide from p:sldIdLst.
+// The bounded profile accepts an otherwise isolated SlidePart with only its
+// layout relation, preserves every retained source part byte-for-byte, and
+// refuses to remove the final remaining slide before a package write begins.
+const deletionFixture = Presentation.create({ slideSize: { width: 640, height: 360 } });
+const deletionKeep = deletionFixture.slides.add({ name: "Keep" });
+deletionKeep.shapes.add({ name: "keep-copy", position: { left: 48, top: 48, width: 300, height: 72 }, text: "Keep" });
+const deletionRemove = deletionFixture.slides.add({ name: "Remove" });
+deletionRemove.shapes.add({ name: "remove-copy", position: { left: 48, top: 48, width: 300, height: 72 }, text: "Remove" });
+const deletionSourcePptx = await PresentationFile.exportPptx(deletionFixture);
+const deletionSourceZip = await JSZip.loadAsync(deletionSourcePptx.bytes);
+const deletionImportedDeck = await PresentationFile.importPptx(deletionSourcePptx);
+const deletionImportedSlide = deletionImportedDeck.slides.getItem(1);
+assert.equal(deletionImportedSlide.delete(), undefined);
+assert.throws(() => deletionImportedDeck.slides.getItem(0).delete(), /retain at least one slide/i);
+const deletionPptx = await PresentationFile.exportPptx(deletionImportedDeck);
+const deletionZip = await JSZip.loadAsync(deletionPptx.bytes);
+assert.equal(deletionZip.file("ppt/slides/slide2.xml"), null, "the deleted slide part must not remain in the package");
+assert.equal(deletionZip.file("ppt/slides/_rels/slide2.xml.rels"), null, "the deleted slide relationship part must not remain in the package");
+assert.deepEqual(
+  await deletionZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  await deletionSourceZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  "deleting another imported slide must retain the survivor byte-for-byte",
+);
+const deletionRoundTrip = await PresentationFile.importPptx(deletionPptx);
+assert.deepEqual(deletionRoundTrip.slides.items.map((slide) => slide.name), ["Keep"]);
+
+// The ordinary deck carries media/shape relationships, so delete must stop at
+// the C# OPC preflight instead of silently reconstructing a lossy template.
+const complexImportedDeletion = await PresentationFile.importPptx(firstExport);
+complexImportedDeletion.slides.getItem(0).delete();
+await assert.rejects(
+  () => PresentationFile.exportPptx(complexImportedDeletion),
+  (error) => error?.code === "unsupported_presentation_slide_delete",
 );
 
 // Turn the canonical package into a source-bound template marker without

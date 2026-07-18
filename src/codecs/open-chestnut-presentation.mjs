@@ -1438,6 +1438,13 @@ function presentationAdvancedSnapshot(presentation) {
   });
 }
 
+// Imported comment state belongs to its source SlidePart, not to its current
+// display index. Keeping the snapshot per source-state lets a valid deletion
+// omit that state while every surviving slide remains strictly read-only.
+function presentationSlideCommentSnapshot(slide) {
+  return JSON.stringify(slide.comments.items.map((comment) => comment.toJSON()));
+}
+
 function unsupportedPresentationFeatures(presentation) {
   const unsupported = [];
   if (presentationThemeSnapshot(presentation.theme) !== DEFAULT_PRESENTATION_THEME) unsupported.push("presentation theme customization");
@@ -1531,6 +1538,9 @@ export function presentationEnvelope(presentation, protocolVersion) {
     if (sourceState) {
       if (slide.name !== sourceState.name) throw new OpenChestnutCodecError(`Source-preserving PPTX export does not yet support renaming slide ${slideIndex + 1}.`, [], { code: "unsupported_presentation_edit" });
       if ((slide.layoutId || "") !== (sourceState.wire.layoutId || "")) throw new OpenChestnutCodecError(`Source-preserving PPTX export cannot change slide ${slideIndex + 1}'s layout binding.`, [], { code: "presentation_slide_layout_binding_changed" });
+      if (presentationSlideCommentSnapshot(slide) !== sourceState.commentSnapshot) {
+        throw new OpenChestnutCodecError(`Imported presentation slide ${slideIndex + 1} comments are source-bound and read-only in OpenChestnut 0.2.`, [], { code: "unsupported_presentation_edit" });
+      }
       const current = directSlideElements(slide);
       if (current.length !== sourceState.entries.length || sourceState.entries.some((entry) => !current.includes(entry.model))) {
         throw new OpenChestnutCodecError(`Source-preserving PPTX export requires slide ${slideIndex + 1}'s original ${sourceState.entries.length}-element topology.`, [], { code: "presentation_element_topology_changed" });
@@ -2295,7 +2305,13 @@ export async function presentationFromEnvelope(envelope) {
         }],
       });
     }
-    slideStates.push({ wire: sourceSlide, slide, name: slide.name, entries });
+    slideStates.push({
+      wire: sourceSlide,
+      slide,
+      name: slide.name,
+      commentSnapshot: presentationSlideCommentSnapshot(slide),
+      entries,
+    });
   }
   Object.defineProperty(presentation, PRESENTATION_STATE, {
     configurable: true,

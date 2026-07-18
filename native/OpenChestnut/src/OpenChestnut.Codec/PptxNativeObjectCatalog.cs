@@ -269,7 +269,11 @@ internal sealed class PptxNativeObjectCatalog
         };
     }
 
-    private static string ResolveTarget(string sourcePath, string target)
+    // Keep the OPC target resolver shared with the narrow source-preserving
+    // presentation topology operations. The source package has already passed
+    // the package guard before this is used, but topology edits still need the
+    // same dot-segment and traversal semantics when they inspect inbound links.
+    internal static string ResolveTarget(string sourcePath, string target)
     {
         if (string.IsNullOrWhiteSpace(target) || target.Any(char.IsControl) || target.Contains('\\') || target.Contains('?'))
             throw InvalidTarget(sourcePath, target);

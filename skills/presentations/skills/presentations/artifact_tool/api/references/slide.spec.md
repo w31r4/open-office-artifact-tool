@@ -49,19 +49,29 @@ imported background graphs are opaque-preserved; leave them unchanged or
 OpenChestnut fails closed. Do not replace an advanced imported background with
 a simple solid and describe that as a faithful edit.
 
-## Slide Order
+## Slide Order And Constrained Deletion
 
 ```ts
 slide.moveTo(0); // existing 0-based destination index
+slide.delete(); // removes a non-final source-free slide, or a qualified imported source slide
 ```
 
 `moveTo` returns the same slide facade. For an imported PPTX, it is a narrow
-source-preserving reorder: every original `SlidePart` must still occur exactly
-once, and export changes only the presentation `p:sldIdLst` order. The slide
-parts, their relationship graphs, and opaque package content are not copied or
-reconstructed. Adding, deleting, or duplicating imported slides remains
-fail-closed; a future clone/delete API needs an explicit OPC graph transaction
-rather than a visual-only copy.
+source-preserving reorder: export changes only the presentation `p:sldIdLst`
+order of the retained source parts. The slide parts, their relationship graphs,
+and opaque package content are not copied or reconstructed.
+
+`delete()` returns `undefined` and refuses to remove the final slide. For a
+source-free deck, it removes the selected slide normally. For an imported PPTX,
+it is a real OPC transaction only when the source `SlidePart` is an isolated
+layout-only leaf: it has no media, notes, comments, charts, OLE, hyperlinks,
+data parts, or other child relationship; no inbound relationship; and no
+custom-show, section, extension, or presentation-level identity reference. The
+codec removes the slide part and its relationship part, updates
+`ppt/presentation.xml` plus its relationships/content types, and keeps the
+surviving source slides byte-identical. Any other imported delete fails closed.
+Adding or duplicating imported slides still fails closed; a future clone API
+needs an explicit OPC graph transaction rather than a visual-only copy.
 
 ## Layouts And Placeholders
 

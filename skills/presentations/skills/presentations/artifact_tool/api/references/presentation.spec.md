@@ -22,6 +22,7 @@ const slide = presentation.slides.add({ layout, layoutId });
 const inserted = presentation.slides.insert({ after, layout, layoutId });
 const byIndex = presentation.slides.getItem(slideIndex);
 slide.moveTo(destinationIndex);
+slide.delete();
 ```
 
 ## Presentation Slide Collection Inline Types
@@ -51,12 +52,16 @@ would change its source-bound slide topology and is rejected at export rather
 than silently reconstructing the deck.
 
 `slide.moveTo(destinationIndex)` moves one existing slide to an existing
-0-based deck index. On an imported PPTX it is supported only when every
-original `SlidePart` remains exactly once. OpenChestnut then changes only
-`ppt/presentation.xml`'s `p:sldIdLst`; it neither rebuilds slide parts nor
-copies their relationship graphs. Imported add/remove/duplicate/clone remains
-unsupported and fails closed until that graph operation has its own explicit
-contract.
+0-based deck index. On an imported PPTX it changes only
+`ppt/presentation.xml`'s `p:sldIdLst` for the retained source SlideParts; it
+neither rebuilds slide parts nor copies their relationship graphs.
+
+`slide.delete()` returns `undefined`. It removes any non-final source-free
+slide. On an imported PPTX it succeeds only for an isolated layout-only source
+SlidePart with no outbound non-layout relationship, inbound relationship, or
+presentation identity reference; it then removes the actual part and relation.
+All media/note/comment/chart/OLE/hyperlink/custom-show/section/extension and
+otherwise connected deletes, plus imported add/duplicate/clone, fail closed.
 
 ## Discover And Edit
 

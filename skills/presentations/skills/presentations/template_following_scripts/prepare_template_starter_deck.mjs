@@ -154,8 +154,8 @@ async function main() {
   const outputSlides = validateOutputSlides(map, sourceSlides.length);
   if (sourceSlides.some((slide) => typeof slide.duplicate !== "function" || typeof slide.delete !== "function")) {
     throw new Error(
-      "Template starter generation requires source-preserving imported-slide duplicate/delete support. " +
-      "The current OpenChestnut codec supports only moveTo() reordering of the original SlidePart set; it will not reconstruct or share a clone graph.",
+      "Template starter generation requires source-preserving imported-slide duplication plus broad graph deletion. " +
+      "The current OpenChestnut codec has only an isolated layout-only delete profile and no OPC graph clone; it will not reconstruct or share a clone graph.",
     );
   }
   const planCheck = await validateTemplatePlan({

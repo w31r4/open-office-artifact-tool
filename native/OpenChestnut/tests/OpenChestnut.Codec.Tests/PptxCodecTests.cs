@@ -2211,6 +2211,59 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void SourcePreservingExportDeletesOnlyAnIsolatedLayoutOnlySlide()
+    {
+        var authored = Invoke(HyperlinkExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var sourceSlideOne = ZipBytes(authored.File.ToByteArray(), "ppt/slides/slide1.xml");
+        var sourceSlideTwo = ZipBytes(authored.File.ToByteArray(), "ppt/slides/slide2.xml");
+
+        // The third source slide has only its layout relationship. Deleting it
+        // must remove its real OPC part rather than merely hiding it from the
+        // presentation slide-ID list, while all retained source slide bytes
+        // remain untouched.
+        var isolated = Import(authored.File.ToByteArray());
+        Assert.True(isolated.Ok, Diagnostics(isolated));
+        isolated.Artifact.Presentation.Slides.RemoveAt(2);
+        var deleted = Export(isolated.Artifact);
+        Assert.True(deleted.Ok, Diagnostics(deleted));
+        using (var stream = new MemoryStream(deleted.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            Assert.Equal(2, package.PresentationPart!.SlideParts.Count());
+        }
+        using (var stream = new MemoryStream(deleted.File.ToByteArray(), writable: false))
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Read))
+        {
+            Assert.Null(archive.GetEntry("ppt/slides/slide3.xml"));
+            Assert.Null(archive.GetEntry("ppt/slides/_rels/slide3.xml.rels"));
+        }
+        Assert.Equal(sourceSlideOne, ZipBytes(deleted.File.ToByteArray(), "ppt/slides/slide1.xml"));
+        Assert.Equal(sourceSlideTwo, ZipBytes(deleted.File.ToByteArray(), "ppt/slides/slide2.xml"));
+        var roundTrip = Import(deleted.File.ToByteArray());
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        Assert.Equal(["Links", "Details"], roundTrip.Artifact.Presentation.Slides.Select(slide => slide.Name));
+
+        // Slide two is layout-only itself, but slide one has an internal
+        // hyperlink to it. The source graph must reject that delete instead of
+        // leaving a dangling relationship in an otherwise valid package.
+        var inbound = Import(authored.File.ToByteArray());
+        inbound.Artifact.Presentation.Slides.RemoveAt(1);
+        var inboundRejected = Export(inbound.Artifact);
+        Assert.False(inboundRejected.Ok);
+        Assert.Equal("unsupported_presentation_slide_delete", Assert.Single(inboundRejected.Diagnostics).Code);
+
+        // Slide one owns both an external and internal hyperlink. It is never
+        // eligible for this narrow delete profile either.
+        var outbound = Import(authored.File.ToByteArray());
+        outbound.Artifact.Presentation.Slides.RemoveAt(0);
+        var outboundRejected = Export(outbound.Artifact);
+        Assert.False(outboundRejected.Ok);
+        Assert.Equal("unsupported_presentation_slide_delete", Assert.Single(outboundRejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void ProtocolReturnsStructuredSlideAndItemBudgetFailures()
     {
         var exported = Invoke(ExportRequest());

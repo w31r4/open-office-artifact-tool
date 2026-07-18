@@ -181,12 +181,16 @@ space, use native `slide.groups.add(...)` and read
 cross the OpenChestnut PPTX path; imported topology is fixed, and complex group
 shells remain one opaque read-only object rather than being flattened.
 
-For imported deck order, `slide.moveTo(existingZeroBasedIndex)` is the one
-supported topology operation: every original `SlidePart` must remain exactly
-once, so OpenChestnut changes only `p:sldIdLst` and preserves every slide part
-and relationship graph. Do not treat it as clone/delete support. Imported
-slide add, remove, and duplicate operations remain fail-closed until an explicit
-OPC graph-clone transaction is available.
+For imported deck order, `slide.moveTo(existingZeroBasedIndex)` changes only
+the retained source `SlidePart` order in `p:sldIdLst`; it does not copy or
+reconstruct slide graphs. `slide.delete()` is separate and intentionally much
+narrower: it performs a real OPC delete only for a non-final slide whose source
+part has exactly its layout relationship, no inbound relationship, and no
+custom-show/section/extension or presentation-level identity reference. It
+removes the source slide part and its relationship part while preserving every
+survivor. Media, notes, comments, charts, OLE, hyperlinks, data parts, or any
+other connected graph fail closed. Imported add and duplicate/clone remain
+unsupported until an explicit OPC graph-clone transaction is available.
 
 When an imported top-level OLE object contains one uniquely bound XLSX package,
 read `artifact_tool/api/references/ole-workbooks.spec.md` before changing it.
@@ -226,12 +230,13 @@ layout, style, or template. Read `references/template-following.md`, use
 `$TMP_DIR` from the Workspace section, and set
 `TEMPLATE_PPTX="<absolute path to the user-provided PPTX>"`.
 
-Current availability: the reference starter-deck command below needs imported
-slide duplicate/delete semantics and deliberately fails closed in the canonical
-codec. Do not run it as a substitute for an OPC graph clone, and do not rebuild
-or share slide parts to emulate one. Until that milestone exists, use this mode
-only for source inventory, plan validation, and render/QA evidence; report the
-clone/delete limitation before promising a derived starter deck.
+Current availability: the reference starter-deck command below still needs an
+imported-slide duplicate graph clone and broad graph delete semantics, so it
+deliberately fails closed in the canonical codec. The isolated layout-only
+`slide.delete()` profile is not a substitute. Do not rebuild or share slide
+parts to emulate a clone. Until that milestone exists, use this mode only for
+source inventory, plan validation, and render/QA evidence; report the clone
+limitation before promising a derived starter deck.
 
 Preserve the source deck's typography, palette, spacing, layout, placeholders,
 footers, page markers, and brand chrome unless the user explicitly asks to
