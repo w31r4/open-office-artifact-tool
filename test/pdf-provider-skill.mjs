@@ -162,13 +162,33 @@ try {
   const mupdfRotationOutput = path.join(tempRoot, "mupdf-rotation-output.pdf");
   const mupdfAnnotationDeleteOperations = path.join(tempRoot, "mupdf-annotation-delete-operations.json");
   const mupdfAnnotationDeleteOutput = path.join(tempRoot, "mupdf-annotation-delete-output.pdf");
-  const mupdfFixture = await PdfFile.exportPdf(PdfArtifact.create({ text: "MuPDF Skill CLI fixture" }));
+  const mupdfLinkDeleteOperations = path.join(tempRoot, "mupdf-link-delete-operations.json");
+  const mupdfLinkDeleteOutput = path.join(tempRoot, "mupdf-link-delete-output.pdf");
+  const mupdfArtifact = PdfArtifact.create({ text: "MuPDF Skill CLI fixture" });
+  mupdfArtifact.addLink({ text: "CLI link", url: "https://example.com/cli-link", bbox: [72, 120, 80, 16] });
+  const mupdfFixture = await PdfFile.exportPdf(mupdfArtifact);
   await fs.writeFile(mupdfInput, mupdfFixture.bytes);
   const mupdfProbe = parseResult(run(process.execPath, [mupdfCli, "probe"], { status: 0 }));
   assert.deepEqual({ provider: mupdfProbe.provider, version: mupdfProbe.version, license: mupdfProbe.license }, { provider: "mupdf", version: "1.28.0", license: "AGPL-3.0-or-later" });
   const mupdfInspection = parseResult(run(process.execPath, [mupdfCli, "inspect", mupdfInput], { status: 0 }));
   assert.equal(mupdfInspection.summary.nativeProvider, "mupdf");
   assert.equal(mupdfInspection.summary.pages, 1);
+  const mupdfLink = mupdfInspection.records.find((record) => record.kind === "mupdfLink");
+  assert.match(mupdfLink.id, /^mupdf-link-1-[a-f0-9]{64}$/);
+  await fs.writeFile(mupdfLinkDeleteOperations, JSON.stringify({
+    savePolicy: "rewrite",
+    operations: [{
+      type: "delete_link",
+      page: mupdfLink.page,
+      linkId: mupdfLink.id,
+      sourceSha256: mupdfInspection.summary.sourceSha256,
+      expected: { url: mupdfLink.url, bbox: mupdfLink.bbox, external: mupdfLink.external },
+    }],
+  }), "utf8");
+  const mupdfLinkDeleted = parseResult(run(process.execPath, [mupdfCli, "edit", mupdfInput, mupdfLinkDeleteOperations, mupdfLinkDeleteOutput], { status: 0 }));
+  assert.equal(mupdfLinkDeleted.savePolicy, "rewrite");
+  assert.equal(mupdfLinkDeleted.operations[0].type, "delete_link");
+  assert.equal((await PdfFile.inspectPdf(await fs.readFile(mupdfLinkDeleteOutput))).records.some((record) => record.kind === "mupdfLink"), false);
   const mupdfRendered = parseResult(run(process.execPath, [mupdfCli, "render", mupdfInput, mupdfRender, "--page", "1", "--dpi", "72"], { status: 0 }));
   assert.equal(mupdfRendered.provider, "mupdf");
   assert.deepEqual([...new Uint8Array(await fs.readFile(mupdfRender)).subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);

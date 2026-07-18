@@ -14,6 +14,7 @@ const DEFAULT_LIMITS = Object.freeze({
   maxPages: 10_000,
   maxObjects: 1_000_000,
   maxAnnotations: 100_000,
+  maxLinks: 100_000,
   maxImages: 10_000,
   maxImagePixels: 40_000_000,
   maxTotalImagePixels: 100_000_000,
@@ -44,6 +45,8 @@ const INCREMENTAL_DESTRUCTIVE_OPERATIONS = new Set([
 const PAGE_ROTATIONS = new Set([0, 90, 180, 270]);
 const ANNOTATION_ID_PREFIX = "mupdf-annotation";
 const ANNOTATION_EXPECTATION_FIELDS = new Set(["type", "contents", "name", "author", "subject", "rect"]);
+const LINK_ID_PREFIX = "mupdf-link";
+const LINK_EXPECTATION_FIELDS = new Set(["url", "bbox", "external"]);
 
 function limitsFor(options = {}) {
   const topLevel = Object.fromEntries(Object.keys(DEFAULT_LIMITS)
@@ -263,6 +266,59 @@ function annotationExpectationMismatch(actual, expected) {
   return undefined;
 }
 
+function linkId(pageNumber, record) {
+  const fingerprint = sha256(Buffer.from(JSON.stringify({
+    page: pageNumber,
+    url: record.url,
+    bbox: record.bbox,
+    external: record.external,
+  }), "utf8"));
+  return `${LINK_ID_PREFIX}-${pageNumber}-${fingerprint}`;
+}
+
+function parseLinkId(value) {
+  const match = new RegExp(`^${LINK_ID_PREFIX}-(\\d+)-([a-f0-9]{64})$`, "u").exec(String(value || ""));
+  if (!match) throw new Error(`delete_link linkId must be a ${LINK_ID_PREFIX}-<page>-<fingerprint> locator returned by PdfFile.inspectPdf.`);
+  const page = Number(match[1]);
+  if (!Number.isSafeInteger(page) || page < 1) throw new Error("delete_link linkId contains an invalid page number.");
+  return { page, fingerprint: match[2] };
+}
+
+function linkExpectation(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("delete_link expected must be an object with at least one source snapshot field.");
+  }
+  for (const name of Object.keys(value)) {
+    if (!LINK_EXPECTATION_FIELDS.has(name)) {
+      throw new Error(`delete_link expected contains unsupported snapshot field: ${name}.`);
+    }
+  }
+  const expected = {};
+  if (value.url !== undefined) {
+    if (typeof value.url !== "string") throw new Error("delete_link expected.url must be a string.");
+    expected.url = value.url;
+  }
+  if (value.bbox !== undefined) {
+    bboxToPdfRect(value.bbox, "delete_link expected.bbox");
+    expected.bbox = value.bbox.map(Number);
+  }
+  if (value.external !== undefined) {
+    if (typeof value.external !== "boolean") throw new Error("delete_link expected.external must be a boolean.");
+    expected.external = value.external;
+  }
+  if (!Object.keys(expected).length) {
+    throw new Error("delete_link expected must include at least one of url, bbox, or external.");
+  }
+  return expected;
+}
+
+function linkExpectationMismatch(actual, expected) {
+  if (expected.url !== undefined && actual.url !== expected.url) return "url";
+  if (expected.external !== undefined && actual.external !== expected.external) return "external";
+  if (expected.bbox !== undefined && !pdfRectsEqual(bboxToPdfRect(actual.bbox), bboxToPdfRect(expected.bbox))) return "bbox";
+  return undefined;
+}
+
 function nativeWidget(widget) {
   return {
     type: widget.getFieldType(),
@@ -275,11 +331,19 @@ function nativeWidget(widget) {
   };
 }
 
-function nativeLink(link) {
-  return { url: link.getURI(), bbox: pdfRectToBbox(link.getBounds()), external: link.isExternal() };
+function nativeLink(link, pageNumber) {
+  const record = { url: String(link.getURI() || ""), bbox: pdfRectToBbox(link.getBounds()), external: link.isExternal() };
+  return { id: linkId(pageNumber, record), ...record };
 }
 
-function structuredPage(page, pageNumber, options, imageBudget, annotationBudget) {
+function consumeLinkBudget(budget, count, pageNumber) {
+  budget.used += count;
+  if (budget.used > budget.maxLinks) {
+    throw new Error(`MuPDF links exceed maxLinks (${budget.used} > ${budget.maxLinks}) while reading page ${pageNumber}.`);
+  }
+}
+
+function structuredPage(page, pageNumber, options, imageBudget, annotationBudget, linkBudget) {
   const structured = page.toStructuredText(options.includeImages === false ? "preserve-whitespace" : "preserve-whitespace,preserve-images");
   try {
     let json;
@@ -352,9 +416,10 @@ function structuredPage(page, pageNumber, options, imageBudget, annotationBudget
     const linkObjects = page.getLinks();
     try {
       consumeAnnotationBudget(annotationBudget, annotationObjects.length, pageNumber);
+      consumeLinkBudget(linkBudget, linkObjects.length, pageNumber);
       const annotations = annotationObjects.map((annotation) => nativeAnnotation(annotation, pageNumber));
       const widgets = widgetObjects.map(nativeWidget);
-      const links = linkObjects.map(nativeLink);
+      const links = linkObjects.map((link) => nativeLink(link, pageNumber));
       return {
         width: bounds[2] - bounds[0],
         height: bounds[3] - bounds[1],
@@ -364,7 +429,7 @@ function structuredPage(page, pageNumber, options, imageBudget, annotationBudget
         text: structured.asText().replace(/\s+$/u, ""),
         textItems,
         images,
-        links: links.map((link, index) => ({ id: `mupdf-link-${pageNumber}-${index + 1}`, text: link.url, url: link.url, bbox: link.bbox })),
+        links: links.map((link) => ({ id: link.id, text: link.url, url: link.url, bbox: link.bbox })),
         native: { annotations, widgets, links },
       };
     } finally {
@@ -406,8 +471,9 @@ export async function parsePdfWithMuPdf(input, options = {}) {
   const { document, limits } = await openPdfWithMuPdf(context?.bytes || context?.input || input, effectiveOptions);
   const imageBudget = { maxImages: limits.maxImages, maxImagePixels: limits.maxImagePixels, maxTotalImagePixels: limits.maxTotalImagePixels, maxTotalImageBytes: limits.maxTotalImageBytes, usedImages: 0, usedPixels: 0, usedBytes: 0 };
   const annotationBudget = { maxAnnotations: limits.maxAnnotations, used: 0 };
+  const linkBudget = { maxLinks: limits.maxLinks, used: 0 };
   try {
-    const pages = Array.from({ length: document.countPages() }, (_, index) => structuredPage(document.loadPage(index), index + 1, effectiveOptions, imageBudget, annotationBudget));
+    const pages = Array.from({ length: document.countPages() }, (_, index) => structuredPage(document.loadPage(index), index + 1, effectiveOptions, imageBudget, annotationBudget, linkBudget));
     return {
       parser: "mupdf",
       metadata: {
@@ -433,6 +499,7 @@ export async function inspectPdfWithMuPdf(input, options = {}) {
   const { document, bytes, limits } = await openPdfWithMuPdf(input, options);
   try {
     const annotationBudget = { maxAnnotations: limits.maxAnnotations, used: 0 };
+    const linkBudget = { maxLinks: limits.maxLinks, used: 0 };
     const pageRecords = Array.from({ length: document.countPages() }, (_, index) => {
       const page = document.loadPage(index);
       const structured = page.toStructuredText("preserve-whitespace");
@@ -444,6 +511,7 @@ export async function inspectPdfWithMuPdf(input, options = {}) {
         const mediaBox = rawPageBox(page, "MediaBox");
         const cropBox = rawPageBox(page, "CropBox") || mediaBox;
         consumeAnnotationBudget(annotationBudget, annotations.length, index + 1);
+        consumeLinkBudget(linkBudget, links.length, index + 1);
         return [
           {
             kind: "mupdfPage",
@@ -461,6 +529,11 @@ export async function inspectPdfWithMuPdf(input, options = {}) {
             kind: "mupdfAnnotation",
             page: index + 1,
             ...nativeAnnotation(annotation, index + 1),
+          })),
+          ...links.map((link) => ({
+            kind: "mupdfLink",
+            page: index + 1,
+            ...nativeLink(link, index + 1),
           })),
         ];
       } finally {
@@ -739,6 +812,54 @@ function applyAnnotationDeletion(document, operation, context = {}) {
   }
 }
 
+function applyLinkDeletion(document, operation, context = {}) {
+  const { index, page } = pageFor(document, operation);
+  let links = [];
+  let retained = [];
+  let target;
+  try {
+    if (!/^[a-f0-9]{64}$/u.test(String(operation.sourceSha256 || "")) || operation.sourceSha256 !== context.sourceSha256) {
+      throw new Error("delete_link sourceSha256 must exactly match PdfFile.inspectPdf(...).summary.sourceSha256 for the current input bytes.");
+    }
+    const locator = parseLinkId(operation.linkId);
+    if (locator.page !== index + 1) {
+      throw new Error(`delete_link linkId page ${locator.page} does not match operation page ${index + 1}.`);
+    }
+    const expected = linkExpectation(operation.expected);
+    links = page.getLinks();
+    const matches = links.filter((link) => nativeLink(link, index + 1).id === operation.linkId);
+    if (matches.length !== 1) {
+      throw new Error(`delete_link could not uniquely find source-bound link ${operation.linkId} on page ${index + 1}. Re-inspect the current source PDF before retrying.`);
+    }
+    target = matches[0];
+    const matched = nativeLink(target, index + 1);
+    if (matched.id !== operation.linkId || !matched.id.endsWith(locator.fingerprint)) {
+      throw new Error(`delete_link locator ${operation.linkId} did not resolve to the expected native link.`);
+    }
+    const mismatch = linkExpectationMismatch(matched, expected);
+    if (mismatch) {
+      throw new Error(`delete_link precondition ${mismatch} did not match ${operation.linkId}; refusing a stale or ambiguous mutation.`);
+    }
+    const beforeCount = links.length;
+    page.deleteLink(target);
+    retained = page.getLinks();
+    if (retained.some((link) => nativeLink(link, index + 1).id === operation.linkId)) {
+      throw new Error(`MuPDF did not remove link ${operation.linkId}; refusing to save an ambiguous deletion.`);
+    }
+    return {
+      type: "delete_link",
+      page: index + 1,
+      linkId: matched.id,
+      matched,
+      beforeCount,
+      afterCount: retained.length,
+    };
+  } finally {
+    for (const link of new Set([...links, ...retained, target].filter(Boolean))) link.destroy();
+    page.destroy();
+  }
+}
+
 function normalizeCheckboxValue(value, field) {
   if (typeof value === "boolean") return value;
   if (value === 0 || value === 1) return value === 1;
@@ -846,21 +967,7 @@ function applyOperation(document, operation, context) {
         Object.values(files).forEach((file) => file.destroy());
       }
     }
-    case "delete_link": {
-      const { index, page } = pageFor(document, operation);
-      const allLinks = page.getLinks();
-      try {
-        const links = allLinks.filter((link) => operation.url ? link.getURI() === operation.url : true);
-        const link = operation.index == null ? (links.length === 1 ? links[0] : undefined) : links[Number(operation.index)];
-        if (!link) throw new Error("delete_link must identify exactly one existing link by url or index.");
-        const url = link.getURI();
-        page.deleteLink(link);
-        return { type: operation.type, page: index + 1, url };
-      } finally {
-        allLinks.forEach((link) => link.destroy());
-        page.destroy();
-      }
-    }
+    case "delete_link": return applyLinkDeletion(document, operation, context);
     case "redact_text": return applyTextRedaction(document, operation);
     case "redact_rect": return applyRectRedaction(document, operation);
     default: throw new Error(`Unsupported MuPDF edit operation: ${operation.type}.`);

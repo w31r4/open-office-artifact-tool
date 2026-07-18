@@ -559,9 +559,75 @@ assert.match(accessibleLinkText, /\/S \/Link/);
 assert.match(accessibleLinkText, /\/Type \/OBJR/);
 assert.equal((await PdfFile.importPdf(accessibleLinkBlob)).pages[0].links[0].url, "https://www.w3.org/WAI/");
 const arbitraryLinkBytes = Buffer.from(Buffer.from(accessibleLinkBlob.bytes).toString("latin1").replace(/%OPEN_OFFICE_ARTIFACT [A-Za-z0-9+/=]+/, (match) => `%${"X".repeat(match.length - 1)}`), "latin1");
-const mupdfLinkParsed = await PdfFile.importPdf(new FileBlob(arbitraryLinkBytes, { type: "application/pdf" }));
+const arbitraryLinkPdf = new FileBlob(arbitraryLinkBytes, { type: "application/pdf" });
+const mupdfLinkParsed = await PdfFile.importPdf(arbitraryLinkPdf);
 assert.equal(mupdfLinkParsed.metadata.parser, "mupdf");
 assert.equal(mupdfLinkParsed.pages[0].links[0].url, "https://www.w3.org/WAI/");
+const mupdfLinkInspection = await PdfFile.inspectPdf(arbitraryLinkPdf);
+const removableLink = mupdfLinkInspection.records.find((record) => record.kind === "mupdfLink" && record.url === "https://www.w3.org/WAI/");
+assert.match(removableLink.id, /^mupdf-link-1-[a-f0-9]{64}$/);
+assert.equal(removableLink.external, true);
+assert.equal(mupdfLinkParsed.pages[0].links[0].id, removableLink.id);
+await assert.rejects(PdfFile.editPdf(arbitraryLinkPdf, {
+  savePolicy: "incremental",
+  operations: [{
+    type: "delete_link",
+    page: removableLink.page,
+    linkId: removableLink.id,
+    sourceSha256: mupdfLinkInspection.summary.sourceSha256,
+    expected: { url: removableLink.url, bbox: removableLink.bbox },
+  }],
+}), /destructive operation delete_link cannot save incrementally/);
+await assert.rejects(PdfFile.editPdf(arbitraryLinkPdf, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "delete_link",
+    page: removableLink.page,
+    linkId: removableLink.id,
+    sourceSha256: "0".repeat(64),
+    expected: { url: removableLink.url },
+  }],
+}), /sourceSha256 must exactly match/);
+await assert.rejects(PdfFile.editPdf(arbitraryLinkPdf, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "delete_link",
+    page: removableLink.page,
+    linkId: removableLink.id,
+    sourceSha256: mupdfLinkInspection.summary.sourceSha256,
+    expected: { url: "https://stale.invalid/" },
+  }],
+}), /precondition url did not match/);
+await assert.rejects(PdfFile.editPdf(arbitraryLinkPdf, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "delete_link",
+    page: removableLink.page,
+    linkId: removableLink.id,
+    sourceSha256: mupdfLinkInspection.summary.sourceSha256,
+    expected: { url: removableLink.url, staleGuard: true },
+  }],
+}), /expected contains unsupported snapshot field: staleGuard/);
+const mupdfLinkDeleted = await PdfFile.editPdf(arbitraryLinkPdf, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "delete_link",
+    page: removableLink.page,
+    linkId: removableLink.id,
+    sourceSha256: mupdfLinkInspection.summary.sourceSha256,
+    expected: { url: removableLink.url, bbox: removableLink.bbox, external: removableLink.external },
+  }],
+});
+assert.equal(mupdfLinkDeleted.metadata.operations[0].linkId, removableLink.id);
+assert.equal(mupdfLinkDeleted.metadata.operations[0].beforeCount, 1);
+assert.equal(mupdfLinkDeleted.metadata.operations[0].afterCount, 0);
+assert.equal((await PdfFile.inspectPdf(mupdfLinkDeleted)).records.some((record) => record.kind === "mupdfLink"), false);
+const linkBudgetPdf = PdfArtifact.create({ text: "MuPDF link budget" });
+linkBudgetPdf.addLink({ text: "One", url: "https://example.com/one", bbox: [72, 120, 40, 16] });
+linkBudgetPdf.addLink({ text: "Two", url: "https://example.com/two", bbox: [72, 150, 40, 16] });
+const linkBudgetBlob = await PdfFile.exportPdf(linkBudgetPdf);
+const arbitraryLinkBudgetPdf = new FileBlob(Buffer.from(Buffer.from(linkBudgetBlob.bytes).toString("latin1").replace(/%OPEN_OFFICE_ARTIFACT [A-Za-z0-9+/=]+/, (match) => `%${"X".repeat(match.length - 1)}`), "latin1"), { type: "application/pdf" });
+await assert.rejects(PdfFile.inspectPdf(arbitraryLinkBudgetPdf, { limits: { maxLinks: 1 } }), /links exceed maxLinks/);
 
 const invalidLinkPdf = PdfArtifact.create({ pages: [{ text: "Unsafe link" }] });
 invalidLinkPdf.addLink({ text: "click here", url: "javascript:alert(1)" });

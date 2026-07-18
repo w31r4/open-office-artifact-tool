@@ -199,6 +199,43 @@ not a durable annotation identity. Re-inspect after every rewrite: MuPDF may
 renumber or reuse xrefs. A mismatched source hash, page, locator, or expected
 snapshot fails closed before output is written.
 
+For an imported link, use the same inspect → source-bound locator → snapshot
+pattern. Do not select a link by mutable page-array index or URL alone: several
+links may share a target URL. A duplicate semantic fingerprint fails closed
+rather than choosing one arbitrarily.
+
+```js
+const link = inspection.records.find((record) =>
+  record.kind === "mupdfLink"
+  && record.page === 2
+  && record.url === "https://example.com/obsolete-policy"
+);
+if (!link?.id || !inspection.summary.sourceSha256) {
+  throw new Error("The target link was not uniquely inspectable.");
+}
+
+const withoutObsoleteLink = await PdfFile.editPdf(input, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "delete_link",
+    page: link.page,
+    linkId: link.id,
+    sourceSha256: inspection.summary.sourceSha256,
+    expected: {
+      url: link.url,
+      bbox: link.bbox,
+      external: link.external,
+    },
+  }],
+});
+await withoutObsoleteLink.save("third-party-without-obsolete-link.pdf");
+```
+
+`mupdf-link-<page>-<fingerprint>` is source-byte-bound, not a persistent link
+identity. It has no native xref because the MuPDF link API abstracts that
+object away; its fingerprint covers page, URL, rectangle, and externality. A
+new output must be re-inspected before a later link operation.
+
 ## Render and visual QA
 
 Use the model SVG preview while authoring, then render the exported PDF with Poppler and inspect every page before delivery:

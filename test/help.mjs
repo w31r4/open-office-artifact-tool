@@ -311,8 +311,10 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schem
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schema?.parameters?.operations?.description || "", /set_page_crop.*CropBox.*never redaction/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schema?.parameters?.operations?.description || "", /rotate_page.*0, 90, 180, or 270/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schema?.parameters?.operations?.description || "", /delete_annotation.*sourceSha256.*mupdf-annotation/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schema?.parameters?.operations?.description || "", /delete_link.*sourceSha256.*mupdf-link/i);
+assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.schema?.parameters?.maxLinks?.type, "number");
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.schema?.returns?.inspection?.description || "", /raw MediaBox\/CropBox.*rotation/i);
-assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.schema?.returns?.inspection?.description || "", /sourceSha256.*mupdfAnnotation/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.schema?.returns?.inspection?.description || "", /sourceSha256.*mupdfAnnotation.*mupdfLink/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.summary || "", /MuPDF/);
 const documentCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "document");
 assert.equal(documentCatalog.length, 43);

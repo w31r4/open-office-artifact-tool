@@ -11,7 +11,7 @@ node scripts/mupdf.mjs probe
 node scripts/mupdf.mjs inspect input.pdf
 ```
 
-Its typed operations are `add_text_annotation`, text/choice/checkbox `fill_form`, `delete_page`, source-bound `delete_annotation`, complete `rearrange_pages`, visible-only `set_page_crop`, absolute-quarter-turn `rotate_page`, `set_metadata`, `delete_embedded_file`, `delete_link`, `redact_text`, and `redact_rect`. Run with one explicit save policy:
+Its typed operations are `add_text_annotation`, text/choice/checkbox `fill_form`, `delete_page`, source-bound `delete_annotation`, complete `rearrange_pages`, visible-only `set_page_crop`, absolute-quarter-turn `rotate_page`, `set_metadata`, `delete_embedded_file`, source-bound `delete_link`, `redact_text`, and `redact_rect`. Run with one explicit save policy:
 
 ```bash
 node scripts/mupdf.mjs edit input.pdf tmp/pdfs/edit-operations.json tmp/pdfs/edited.pdf \
@@ -79,6 +79,34 @@ rewrite-only operation; incremental output is refused. Its locator is bound to
 the inspected source bytes rather than a persistent document identity, so
 re-inspect the output before any later annotation operation. This prevents a
 rewritten PDF's xref reuse from silently targeting a different annotation.
+
+## Delete one imported link
+
+Select one `mupdfLink` record from the exact source inspection by page, URL,
+rectangle, and externality. Never pass a mutable link-array index or URL by
+itself. Copy its locator, source hash, and snapshot into a rewrite operation:
+
+```json
+[
+  {
+    "type": "delete_link",
+    "page": 2,
+    "linkId": "mupdf-link-2-<inspect fingerprint>",
+    "sourceSha256": "<inspect summary sourceSha256>",
+    "expected": {
+      "url": "https://example.com/obsolete-policy",
+      "bbox": [72, 128, 160, 18],
+      "external": true
+    }
+  }
+]
+```
+
+`delete_link` verifies every supplied fact and deletes only one unique source
+link. It is rewrite-only. The link fingerprint is derived from source-visible
+page/URL/rectangle/external facts, not a durable PDF object ID; a duplicate
+fingerprint or any later output requires a fresh inspection and fails closed
+instead of selecting by order.
 
 ## Optional PyMuPDF specialist path
 
