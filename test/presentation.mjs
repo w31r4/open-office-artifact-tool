@@ -909,6 +909,119 @@ await assert.rejects(
   (error) => error?.code === "unsupported_presentation_slide_clone",
 );
 
+// A group is clone-safe only when every descendant is already in the narrow
+// shape/table/image leaf. The group and every child receive fresh JS identity,
+// while nested images still consume the same verified SlidePart relationship
+// profile as their top-level counterparts.
+const groupCloneFixture = Presentation.create({ slideSize: { width: 640, height: 360 } });
+const groupCloneOriginal = groupCloneFixture.slides.add({ name: "Recursive group original" });
+const groupCloneRoot = groupCloneOriginal.addGroup({
+  name: "evidence-cluster",
+  position: { left: 48, top: 40, width: 420, height: 220 },
+  childFrame: { left: 0, top: 0, width: 420, height: 220 },
+});
+groupCloneRoot.shapes.add({
+  name: "group-copy",
+  position: { left: 0, top: 0, width: 220, height: 48 },
+  text: "Clone-safe grouped evidence",
+  fill: "#FFFFFF",
+  line: { fill: "#2563EB", width: 1 },
+});
+groupCloneRoot.tables.add({
+  name: "group-decision-grid",
+  position: { left: 0, top: 66, width: 220, height: 110 },
+  values: [["Gate", "State"], ["QA", "Pass"]],
+  rows: 2,
+  columns: 2,
+  styleOptions: { headerRow: true, bandedRows: true },
+});
+groupCloneRoot.images.add({
+  name: "group-immutable-asset",
+  alt: "Shared nested clone asset",
+  position: { left: 246, top: 0, width: 96, height: 96 },
+  dataUrl: PNG,
+  fit: "stretch",
+});
+const groupCloneNested = groupCloneRoot.groups.add({
+  name: "nested-evidence",
+  position: { left: 246, top: 118, width: 150, height: 48 },
+  childFrame: { left: 0, top: 0, width: 150, height: 48 },
+});
+groupCloneNested.shapes.add({
+  name: "nested-copy",
+  position: { left: 0, top: 0, width: 150, height: 48 },
+  text: "Nested",
+  fill: "#DBEAFE",
+  line: { fill: "#2563EB", width: 1 },
+});
+const groupCloneSourcePptx = await PresentationFile.exportPptx(groupCloneFixture);
+const groupCloneSourceZip = await JSZip.loadAsync(groupCloneSourcePptx.bytes);
+const groupCloneSourceMediaPaths = Object.keys(groupCloneSourceZip.files)
+  .filter((path) => /^ppt\/media\/[^/]+\.(?:png|jpe?g|gif|svg)$/i.test(path));
+assert.equal(groupCloneSourceMediaPaths.length, 1, "the recursive group fixture must contain one nested image part");
+const [groupCloneSourceMediaPath] = groupCloneSourceMediaPaths;
+const groupCloneImportedDeck = await PresentationFile.importPptx(groupCloneSourcePptx);
+const groupCloneImportedSource = groupCloneImportedDeck.slides.getItem(0);
+const groupClone = groupCloneImportedSource.duplicate();
+const groupCloneCopy = groupClone.groups.items[0];
+assert.equal(groupClone.groups.items.length, 1);
+assert.notEqual(groupCloneCopy, groupCloneImportedSource.groups.items[0]);
+assert.notEqual(groupCloneCopy.id, groupCloneImportedSource.groups.items[0].id);
+assert.notEqual(groupCloneCopy.shapes.items[0].id, groupCloneImportedSource.groups.items[0].shapes.items[0].id);
+assert.notEqual(groupCloneCopy.tables.items[0].id, groupCloneImportedSource.groups.items[0].tables.items[0].id);
+assert.notEqual(groupCloneCopy.images.items[0].id, groupCloneImportedSource.groups.items[0].images.items[0].id);
+assert.notEqual(groupCloneCopy.groups.items[0].id, groupCloneImportedSource.groups.items[0].groups.items[0].id);
+assert.deepEqual(groupCloneCopy.tables.items[0].values, [["Gate", "State"], ["QA", "Pass"]]);
+assert.equal(groupCloneCopy.groups.items[0].shapes.items[0].text.value, "Nested");
+const groupClonePptx = await PresentationFile.exportPptx(groupCloneImportedDeck);
+const groupCloneZip = await JSZip.loadAsync(groupClonePptx.bytes);
+assert.deepEqual(
+  await groupCloneZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  await groupCloneSourceZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  "cloning a recursively canonical group must retain its origin SlidePart byte-for-byte",
+);
+assert.deepEqual(
+  await groupCloneZip.file(groupCloneSourceMediaPath).async("uint8array"),
+  await groupCloneSourceZip.file(groupCloneSourceMediaPath).async("uint8array"),
+  "cloning a recursively canonical group must retain its shared media bytes",
+);
+assert.deepEqual(
+  imageRelationshipTargets(await groupCloneZip.file("ppt/slides/_rels/slide2.xml.rels").async("text")),
+  imageRelationshipTargets(await groupCloneZip.file("ppt/slides/_rels/slide1.xml.rels").async("text")),
+  "nested clone images must receive the same verified relationship target as the origin",
+);
+const groupCloneRoundTrip = await PresentationFile.importPptx(groupClonePptx);
+assert.equal(groupCloneRoundTrip.slides.items.length, 2);
+assert.equal(groupCloneRoundTrip.slides.getItem(1).groups.items[0].groups.items[0].shapes.items[0].text.value, "Nested");
+groupCloneRoundTrip.slides.getItem(1).groups.items[0].groups.items[0].shapes.items[0].text.set("Edited after group clone reimport");
+const groupCloneEditedPptx = await PresentationFile.exportPptx(groupCloneRoundTrip);
+const groupCloneEditedRoundTrip = await PresentationFile.importPptx(groupCloneEditedPptx);
+assert.equal(groupCloneEditedRoundTrip.slides.getItem(1).groups.items[0].groups.items[0].shapes.items[0].text.value, "Edited after group clone reimport");
+
+const immediateGroupCloneEdit = await PresentationFile.importPptx(groupCloneSourcePptx);
+immediateGroupCloneEdit.slides.getItem(0).duplicate().groups.items[0].groups.items[0].shapes.items[0].text.set("Too soon");
+await assert.rejects(
+  () => PresentationFile.exportPptx(immediateGroupCloneEdit),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+);
+
+const connectedGroupCloneFixture = Presentation.create({ slideSize: { width: 640, height: 360 } });
+const connectedGroupCloneOriginal = connectedGroupCloneFixture.slides.add({ name: "Connected group original" });
+const connectedGroupCloneRoot = connectedGroupCloneOriginal.addGroup({
+  name: "connected-cluster",
+  position: { left: 48, top: 40, width: 320, height: 120 },
+  childFrame: { left: 0, top: 0, width: 320, height: 120 },
+});
+connectedGroupCloneRoot.shapes.add({ name: "left", position: { left: 0, top: 20, width: 90, height: 42 }, text: "Left" });
+connectedGroupCloneRoot.shapes.add({ name: "right", position: { left: 210, top: 20, width: 90, height: 42 }, text: "Right" });
+connectedGroupCloneRoot.connectors.add({ name: "join", start: { x: 90, y: 41 }, end: { x: 210, y: 41 } });
+const connectedGroupCloneImported = await PresentationFile.importPptx(await PresentationFile.exportPptx(connectedGroupCloneFixture));
+assert.throws(
+  () => connectedGroupCloneImported.slides.getItem(0).duplicate(),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+  "a connector inside a group must not be mistaken for the canonical clone leaf",
+);
+
 // Speaker notes add one deliberately closed relationship leaf to the same
 // clone profile. The NotesSlide itself is new and points at the clone, while
 // its NotesMaster stays immutable and shared. This is raw part preservation,

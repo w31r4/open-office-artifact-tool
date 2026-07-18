@@ -2930,26 +2930,19 @@ internal static class PptxCodec
             throw new CodecException("missing_shape_tree", $"Presentation source slide {source.Index + 1} has no shape tree.", PartPath(source.Part));
         var sourceElements = ShapeElements(tree);
         var context = new PptxPartContext(source.Part, slideIdByPartPath, assets: assetCatalog);
+        var elementIdsByNativeId = NativeElementIds(sourceElements, $"presentation/slide/{source.Index + 1}");
         var embeddedImageRelationshipIds = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var element in sourceElements)
+        for (var elementIndex = 0; elementIndex < sourceElements.Length; elementIndex++)
         {
-            if (element is P.Shape shape && IsSimpleShape(shape)) continue;
-            // A table is the one GraphicFrame profile that is entirely inline
-            // in the Slide XML. PptxTableCodec rejects charts and every other
-            // GraphicFrame payload. The surrounding relationship inventory
-            // below still proves that no cell fill/link smuggles another
-            // package edge into this otherwise zero-edge clone leaf.
-            if (element is P.GraphicFrame table && PptxTableCodec.TryRead(table, out _)) continue;
-            if (element is P.Picture picture && PptxPictureCodec.TryRead(picture, context, out _))
-            {
-                var relationshipId = picture.BlipFill?.GetFirstChild<A.Blip>()?.Embed?.Value ?? string.Empty;
-                if (relationshipId.Length > 0 && imageRelationshipIds.Contains(relationshipId))
-                {
-                    embeddedImageRelationshipIds.Add(relationshipId);
-                    continue;
-                }
-            }
-            throw UnsupportedSourceSlideClone(source, "its elements require a broader graph clone than the bounded shape/inline-table/embedded-image profile");
+            if (!TryCollectCanonicalCloneElement(
+                    sourceElements[elementIndex],
+                    $"presentation/slide/{source.Index + 1}",
+                    elementIndex,
+                    context,
+                    elementIdsByNativeId,
+                    imageRelationshipIds,
+                    embeddedImageRelationshipIds))
+                throw UnsupportedSourceSlideClone(source, "its elements require a broader graph clone than the bounded shape/inline-table/embedded-image/recursive-group profile");
         }
         if (!imageRelationshipIds.SetEquals(embeddedImageRelationshipIds))
             throw UnsupportedSourceSlideClone(source, "it has an image relationship that is not exactly bound by a canonical embedded picture");
@@ -2971,7 +2964,6 @@ internal static class PptxCodec
             throw UnsupportedSourceSlideClone(source, "the requested clone changes its source background");
         if (sourceElements.Length != target.Target.Elements.Count)
             throw UnsupportedSourceSlideClone(source, "the requested clone changes source element topology");
-        var elementIdsByNativeId = NativeElementIds(sourceElements, $"presentation/slide/{source.Index + 1}");
         for (var elementIndex = 0; elementIndex < sourceElements.Length; elementIndex++)
         {
             var requested = target.Target.Elements[elementIndex];
@@ -2987,6 +2979,53 @@ internal static class PptxCodec
                 throw new CodecException("presentation_slide_clone_mismatch", $"Presentation clone {target.TargetIndex + 1} element {elementIndex + 1} is not an unchanged source element.", PartPath(source.Part));
         }
         return new PptxCloneLeaf(layoutPart, source.Part.GetIdOfPart(layoutPart), imageEdges, notes, comments);
+    }
+
+    // A p:grpSp is a container, not a clone permission by itself. Its
+    // descendants must recursively stay in the same canonical leaf profile,
+    // and every nested picture must consume one verified SlidePart image
+    // relationship. The clone operation still copies the original Slide XML;
+    // this check only proves that no hidden graph edge is being smuggled in.
+    private static bool TryCollectCanonicalCloneElement(
+        OpenXmlElement element,
+        string ownerId,
+        int elementIndex,
+        PptxPartContext context,
+        IReadOnlyDictionary<uint, string> elementIdsByNativeId,
+        ISet<string> imageRelationshipIds,
+        ISet<string> embeddedImageRelationshipIds)
+    {
+        if (element is P.Shape shape) return IsSimpleShape(shape);
+        // A table is the one GraphicFrame profile that is entirely inline in
+        // its containing XML. PptxTableCodec rejects charts and every other
+        // GraphicFrame payload.
+        if (element is P.GraphicFrame table) return PptxTableCodec.TryRead(table, out _);
+        if (element is P.Picture picture)
+        {
+            if (!PptxPictureCodec.TryRead(picture, context, out _)) return false;
+            var relationshipId = picture.BlipFill?.GetFirstChild<A.Blip>()?.Embed?.Value ?? string.Empty;
+            if (relationshipId.Length == 0 || !imageRelationshipIds.Contains(relationshipId)) return false;
+            embeddedImageRelationshipIds.Add(relationshipId);
+            return true;
+        }
+        if (element is not P.GroupShape group) return false;
+
+        var groupId = $"{ownerId}/element/{elementIndex + 1}";
+        if (!TryReadGroup(group, groupId, context, elementIdsByNativeId, out _)) return false;
+        var children = GroupElements(group);
+        for (var childIndex = 0; childIndex < children.Length; childIndex++)
+        {
+            if (!TryCollectCanonicalCloneElement(
+                    children[childIndex],
+                    groupId,
+                    childIndex,
+                    context,
+                    elementIdsByNativeId,
+                    imageRelationshipIds,
+                    embeddedImageRelationshipIds))
+                return false;
+        }
+        return true;
     }
 
     private static PptxCloneNotesLeaf? AssertSourceSpeakerNotesCanBeCloned(PptxSourceSlideEntry source, PresentationSlide target)

@@ -2416,6 +2416,86 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void SourcePreservingExportClonesAnUnchangedRecursiveCanonicalGroupLeaf()
+    {
+        var request = ExportRequest();
+        AddCanonicalCloneGroup(request);
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var sourceBytes = authored.File.ToByteArray();
+        var sourceSlide = ZipBytes(sourceBytes, "ppt/slides/slide1.xml");
+        var sourceMediaPath = SingleZipEntryPath(sourceBytes, path => path.StartsWith("ppt/media/", StringComparison.OrdinalIgnoreCase));
+        var sourceMedia = ZipBytes(sourceBytes, sourceMediaPath);
+
+        var imported = Import(sourceBytes);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var source = Assert.Single(imported.Artifact.Presentation.Slides);
+        var sourceGroup = Assert.Single(source.Elements, element => element.ContentCase == PresentationElement.ContentOneofCase.Group);
+        Assert.Equal([
+            PresentationElement.ContentOneofCase.Shape,
+            PresentationElement.ContentOneofCase.Shape,
+            PresentationElement.ContentOneofCase.Table,
+            PresentationElement.ContentOneofCase.Image,
+            PresentationElement.ContentOneofCase.Group,
+        ], sourceGroup.Group.Children.Select(child => child.ContentCase));
+        var clone = source.Clone();
+        clone.Id = "presentation/clone/recursive-canonical-group";
+        clone.Source = null;
+        clone.CloneSource = source.Source.Clone();
+        imported.Artifact.Presentation.Slides.Add(clone);
+
+        var duplicated = Export(imported.Artifact);
+        Assert.True(duplicated.Ok, Diagnostics(duplicated));
+        var duplicatedBytes = duplicated.File.ToByteArray();
+        using (var stream = new MemoryStream(duplicatedBytes))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var slides = package.PresentationPart!.SlideParts.ToArray();
+            var origin = slides.Single(part => part.Uri.OriginalString.EndsWith("/slide1.xml", StringComparison.Ordinal));
+            var outputClone = slides.Single(part => part.Uri.OriginalString.EndsWith("/slide2.xml", StringComparison.Ordinal));
+            var originImage = Assert.Single(origin.ImageParts);
+            var cloneImage = Assert.Single(outputClone.ImageParts);
+            Assert.Equal(originImage.Uri, cloneImage.Uri);
+            Assert.Equal(origin.GetIdOfPart(originImage), outputClone.GetIdOfPart(cloneImage));
+            Assert.Equal(2, outputClone.Slide!.Descendants<P.GroupShape>().Count());
+            Assert.Single(outputClone.Slide.Descendants<A.Table>());
+        }
+        Assert.Equal(sourceSlide, ZipBytes(duplicatedBytes, "ppt/slides/slide1.xml"));
+        Assert.Equal(sourceMedia, ZipBytes(duplicatedBytes, sourceMediaPath));
+
+        var roundTrip = Import(duplicatedBytes);
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        Assert.Equal(2, roundTrip.Artifact.Presentation.Slides.Count);
+        Assert.All(roundTrip.Artifact.Presentation.Slides, slide =>
+        {
+            var group = Assert.Single(slide.Elements, element => element.ContentCase == PresentationElement.ContentOneofCase.Group);
+            Assert.Equal("Nested", group.Group.Children[^1].Group.Children[0].Shape.Text);
+        });
+    }
+
+    [Fact]
+    public void SourcePreservingExportRejectsCanonicalGroupCloneWithConnector()
+    {
+        var request = ExportRequest();
+        AddCanonicalCloneGroup(request, includeConnector: true);
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var source = Assert.Single(imported.Artifact.Presentation.Slides);
+        var clone = source.Clone();
+        clone.Id = "presentation/clone/group-connector";
+        clone.Source = null;
+        clone.CloneSource = source.Source.Clone();
+        imported.Artifact.Presentation.Slides.Add(clone);
+
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void SourcePreservingExportRejectsAnEditedEmbeddedImageCloneBeforeWritingItsGraph()
     {
         var authored = Invoke(ExportRequest());
@@ -4716,6 +4796,161 @@ public sealed class PptxCodecTests
             Name = "Clone-safe decision table",
             Table = table,
         });
+    }
+
+    private static void AddCanonicalCloneGroup(CodecRequest request, bool includeConnector = false)
+    {
+        var assetId = AddPictureAsset(
+            request.Artifact,
+            Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="),
+            "image/png");
+        var group = new PresentationElement
+        {
+            Id = "presentation/slide/1/group/clone-leaf",
+            Name = "Clone-safe evidence group",
+            Group = new PresentationGroup
+            {
+                LeftEmu = 500_000,
+                TopEmu = 1_200_000,
+                WidthEmu = 4_600_000,
+                HeightEmu = 2_400_000,
+                ChildLeftEmu = 0,
+                ChildTopEmu = 0,
+                ChildWidthEmu = 4_600_000,
+                ChildHeightEmu = 2_400_000,
+            },
+        };
+        var title = new PresentationElement
+        {
+            Id = "presentation/slide/1/group/clone-leaf/title",
+            Name = "Group title",
+            Shape = new PresentationShape
+            {
+                Geometry = "textbox",
+                LeftEmu = 0,
+                TopEmu = 0,
+                WidthEmu = 2_000_000,
+                HeightEmu = 450_000,
+                Text = "Clone-safe grouped evidence",
+                FillRgb = "FFFFFF",
+                LineRgb = "2563EB",
+                LineWidthEmu = 12_700,
+            },
+        };
+        var status = new PresentationElement
+        {
+            Id = "presentation/slide/1/group/clone-leaf/status",
+            Name = "Group status",
+            Shape = new PresentationShape
+            {
+                Geometry = "roundRect",
+                LeftEmu = 2_300_000,
+                TopEmu = 0,
+                WidthEmu = 900_000,
+                HeightEmu = 450_000,
+                Text = "Ready",
+                FillRgb = "DCFCE7",
+                LineRgb = "16A34A",
+                LineWidthEmu = 12_700,
+            },
+        };
+        group.Group.Children.Add(title);
+        group.Group.Children.Add(status);
+        if (includeConnector)
+        {
+            group.Group.Children.Add(new PresentationElement
+            {
+                Id = "presentation/slide/1/group/clone-leaf/connector",
+                Name = "Unsupported group connector",
+                Connector = new PresentationConnector
+                {
+                    ConnectorType = "straight",
+                    StartXEmu = 2_000_000,
+                    StartYEmu = 225_000,
+                    EndXEmu = 2_300_000,
+                    EndYEmu = 225_000,
+                    LineRgb = "64748B",
+                    LineWidthEmu = 12_700,
+                    StartTargetId = title.Id,
+                    EndTargetId = status.Id,
+                },
+            });
+        }
+        var table = new PresentationTable
+        {
+            LeftEmu = 0,
+            TopEmu = 650_000,
+            WidthEmu = 2_000_000,
+            HeightEmu = 900_000,
+            FirstRow = true,
+            BandedRows = true,
+        };
+        table.ColumnWidthsEmu.Add([1_000_000, 1_000_000]);
+        table.Rows.Add(new PresentationTableRow
+        {
+            HeightEmu = 450_000,
+            Cells = { new PresentationTableCell { Text = "Gate" }, new PresentationTableCell { Text = "State" } },
+        });
+        table.Rows.Add(new PresentationTableRow
+        {
+            HeightEmu = 450_000,
+            Cells = { new PresentationTableCell { Text = "QA" }, new PresentationTableCell { Text = "Pass" } },
+        });
+        group.Group.Children.Add(new PresentationElement
+        {
+            Id = "presentation/slide/1/group/clone-leaf/table",
+            Name = "Group decision table",
+            Table = table,
+        });
+        group.Group.Children.Add(new PresentationElement
+        {
+            Id = "presentation/slide/1/group/clone-leaf/image",
+            Name = "Group image",
+            Image = new PresentationImage
+            {
+                AssetId = assetId,
+                AltText = "Shared nested clone asset",
+                LeftEmu = 2_400_000,
+                TopEmu = 650_000,
+                WidthEmu = 800_000,
+                HeightEmu = 800_000,
+            },
+        });
+        var nested = new PresentationElement
+        {
+            Id = "presentation/slide/1/group/clone-leaf/nested",
+            Name = "Nested group",
+            Group = new PresentationGroup
+            {
+                LeftEmu = 2_400_000,
+                TopEmu = 1_600_000,
+                WidthEmu = 1_300_000,
+                HeightEmu = 450_000,
+                ChildLeftEmu = 0,
+                ChildTopEmu = 0,
+                ChildWidthEmu = 1_300_000,
+                ChildHeightEmu = 450_000,
+            },
+        };
+        nested.Group.Children.Add(new PresentationElement
+        {
+            Id = "presentation/slide/1/group/clone-leaf/nested/label",
+            Name = "Nested label",
+            Shape = new PresentationShape
+            {
+                Geometry = "rect",
+                LeftEmu = 0,
+                TopEmu = 0,
+                WidthEmu = 1_300_000,
+                HeightEmu = 450_000,
+                Text = "Nested",
+                FillRgb = "DBEAFE",
+                LineRgb = "2563EB",
+                LineWidthEmu = 12_700,
+            },
+        });
+        group.Group.Children.Add(nested);
+        request.Artifact.Presentation.Slides[0].Elements.Add(group);
     }
 
     private static byte[] AddUnboundPictureRelationship(byte[] bytes)

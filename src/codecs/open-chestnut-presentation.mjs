@@ -163,8 +163,8 @@ function clonedPresentationValue(value) {
   return value === undefined ? undefined : structuredClone(value);
 }
 
-function cloneImportedPresentationShape(slide, source) {
-  const clone = slide.shapes.add({
+function cloneImportedPresentationShape(container, source) {
+  const clone = container.shapes.add({
     name: source.name,
     geometry: source.geometry,
     ...(source.customPaths?.length ? { customPaths: clonedPresentationValue(source.customPaths) } : {}),
@@ -188,8 +188,8 @@ function cloneImportedPresentationShape(slide, source) {
 // identity with its origin. Its embedded asset stays content-addressed, and
 // the native exporter deliberately shares that immutable ImagePart through a
 // new relationship on the clone SlidePart.
-function cloneImportedPresentationImage(slide, source) {
-  return slide.images.add({
+function cloneImportedPresentationImage(container, source) {
+  return container.images.add({
     name: source.name,
     position: clonedPresentationValue(source.position),
     alt: source.alt,
@@ -205,8 +205,8 @@ function cloneImportedPresentationImage(slide, source) {
 // DrawingML payload is inline in the SlidePart, so this creates a fresh model
 // without copying an OPC part or relationship. Do not generalize this helper
 // to charts or other GraphicFrames, which own broader relationship graphs.
-function cloneImportedPresentationTable(slide, source) {
-  const clone = slide.tables.add({
+function cloneImportedPresentationTable(container, source) {
+  const clone = container.tables.add({
     name: source.name,
     position: clonedPresentationValue(source.position),
     rows: source.rows,
@@ -218,6 +218,37 @@ function cloneImportedPresentationTable(slide, source) {
   if (source.border !== undefined) clone.border = clonedPresentationValue(source.border);
   if (source.mergeRange !== undefined) clone.mergeRange = clonedPresentationValue(source.mergeRange);
   return clone;
+}
+
+// A group is not automatically a clone leaf: it can contain connectors,
+// charts, native objects, or external edges. This recursive helper is called
+// only after the source wire tree has proved every descendant is one of the
+// same bounded clone-safe element kinds. Each new model object has a fresh JS
+// identity; the source bindings still make the pending clone immutable until
+// its export/reimport boundary.
+function cloneImportedPresentationGroup(container, source) {
+  const clone = container.groups.add({
+    name: source.name,
+    position: clonedPresentationValue(source.position),
+    childFrame: clonedPresentationValue(source.childFrame),
+  });
+  for (const child of source.children) cloneImportedPresentationElement(clone, child);
+  return clone;
+}
+
+function cloneImportedPresentationElement(container, source) {
+  if (source instanceof Shape) return cloneImportedPresentationShape(container, source);
+  if (source instanceof TableElement) return cloneImportedPresentationTable(container, source);
+  if (source instanceof ImageElement) return cloneImportedPresentationImage(container, source);
+  if (source instanceof GroupShape) return cloneImportedPresentationGroup(container, source);
+  throw new OpenChestnutCodecError("The bounded imported-slide clone profile encountered an unsupported group descendant.", [], { code: "unsupported_presentation_slide_clone" });
+}
+
+function cloneSupportedPresentationContent(content) {
+  if (content?.case === "shape" || content?.case === "table" || content?.case === "image") return true;
+  if (content?.case !== "group") return false;
+  const children = content.value?.children;
+  return Array.isArray(children) && children.length > 0 && children.every((child) => cloneSupportedPresentationContent(child?.content));
 }
 
 // A legacy comment has no JavaScript object identity that may be shared with
@@ -240,8 +271,8 @@ function duplicateImportedPresentationSlide(presentation, state, slide) {
   if ((state.clones || []).some((entry) => entry.source === source)) {
     throw new OpenChestnutCodecError("The bounded imported-slide clone profile permits only one pending clone per origin; export and reimport it before cloning that source again.", [], { code: "unsupported_presentation_slide_clone" });
   }
-  if (source.entries.some((entry) => !new Set(["shape", "table", "image"]).has(entry.wire.content.case))) {
-    throw new OpenChestnutCodecError("The bounded imported-slide clone profile supports only canonical shapes, inline tables, and embedded images; charts, groups, connectors, native objects, and other graph edges require a broader OPC graph clone.", [], { code: "unsupported_presentation_slide_clone" });
+  if (source.entries.some((entry) => !cloneSupportedPresentationContent(entry.wire.content))) {
+    throw new OpenChestnutCodecError("The bounded imported-slide clone profile supports only canonical shapes, inline tables, embedded images, and recursively canonical groups; charts, connectors, native objects, and other graph edges require a broader OPC graph clone.", [], { code: "unsupported_presentation_slide_clone" });
   }
   const clone = presentation.slides.insert({
     after: slide,
@@ -252,11 +283,7 @@ function duplicateImportedPresentationSlide(presentation, state, slide) {
   clone.layoutId = slide.layoutId;
   cloneImportedPresentationLegacyComments(clone, slide);
   const entries = source.entries.map((entry) => {
-    const model = entry.wire.content.case === "shape"
-      ? cloneImportedPresentationShape(clone, entry.model)
-      : entry.wire.content.case === "table"
-        ? cloneImportedPresentationTable(clone, entry.model)
-        : cloneImportedPresentationImage(clone, entry.model);
+    const model = cloneImportedPresentationElement(clone, entry.model);
     return {
       wire: entry.wire,
       model,
