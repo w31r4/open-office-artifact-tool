@@ -654,6 +654,65 @@ def bounded_replace(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def highlight_annotations(file_path: pathlib.Path) -> list[dict[str, Any]]:
+    """Return only independent, normalized native Highlight facts.
+
+    The candidate provider is MuPDF.js.  This evaluator deliberately reads the
+    saved PDF through pypdf instead of trusting the provider's inspection or
+    audit record.
+    """
+    reader = pypdf.PdfReader(str(file_path), strict=True)
+    records: list[dict[str, Any]] = []
+    for page_index, page in enumerate(reader.pages, 1):
+        for reference in page.get("/Annots", []) or []:
+            annotation = resolve_pdf_value(reference)
+            if not isinstance(annotation, dict) or str(annotation.get("/Subtype", "")) != "/Highlight":
+                continue
+            def numeric_array(value: Any) -> list[float]:
+                resolved = resolve_pdf_value(value)
+                if not isinstance(resolved, (list, tuple)):
+                    return []
+                try:
+                    return [float(item) for item in resolved]
+                except (TypeError, ValueError):
+                    return []
+            records.append({
+                "page": page_index,
+                "contents": str(resolve_pdf_value(annotation.get("/Contents", "")) or ""),
+                "author": str(resolve_pdf_value(annotation.get("/T", "")) or ""),
+                "subject": str(resolve_pdf_value(annotation.get("/Subj", "")) or ""),
+                "color": numeric_array(annotation.get("/C", [])),
+                "quadPoints": numeric_array(annotation.get("/QuadPoints", [])),
+                "rect": numeric_array(annotation.get("/Rect", [])),
+            })
+    return records
+
+
+def source_bound_highlight(payload: dict[str, Any]) -> dict[str, Any]:
+    source = pathlib.Path(payload["source"])
+    output = pathlib.Path(payload["output"])
+    target = str(payload["text"])
+    target_page = int(payload["targetPage"])
+    source_target = literal_style(source, target_page, target)
+    return {
+        "kind": "source-bound-highlight",
+        "source": inspect_pdf(source, [target]),
+        "output": inspect_pdf(output, [target]),
+        "sourceTarget": source_target,
+        "outputTarget": literal_style(output, target_page, target),
+        "sourceHighlights": highlight_annotations(source),
+        "outputHighlights": highlight_annotations(output),
+        "visual": compare_rendered_pages(
+            source,
+            output,
+            pathlib.Path(payload["renderRoot"]),
+            payload["poppler"],
+            source_target,
+            target_page,
+        ),
+    }
+
+
 def overflow_refusal(payload: dict[str, Any]) -> dict[str, Any]:
     source = pathlib.Path(payload["source"])
     old = payload["old"]
@@ -1110,6 +1169,8 @@ def main() -> None:
     kind = payload.get("kind")
     if kind == "bounded-replace":
         evidence = bounded_replace(payload)
+    elif kind == "source-bound-highlight":
+        evidence = source_bound_highlight(payload)
     elif kind == "overflow-refusal":
         evidence = overflow_refusal(payload)
     elif kind == "active-content-sanitize":

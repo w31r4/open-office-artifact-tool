@@ -8,6 +8,7 @@ const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const oracleScript = path.join(scriptDirectory, "agent-eval-pdf-oracle.py");
 const supportedCases = new Set([
   "pdf-bounded-contract-id-replace",
+  "pdf-source-bound-text-highlight",
   "pdf-overflow-replace-refusal",
   "pdf-acroform-visible-preserved",
   "pdf-attachment-quarantine-inventory",
@@ -88,6 +89,13 @@ function auditOperation(audit) {
   if (typeof operation === "string") return operation;
   if (Array.isArray(operation)) return operation.map((value) => typeof value === "string" ? value : value?.type || value?.operation || "").join(" ");
   return operation?.type || operation?.operation || operation?.name || operation?.performed || "";
+}
+
+function auditOperationRecord(audit) {
+  if (audit?.operation && typeof audit.operation === "object" && !Array.isArray(audit.operation)) return audit.operation;
+  if (Array.isArray(audit?.operation)) return audit.operation.find((value) => value && typeof value === "object") || null;
+  if (Array.isArray(audit?.operations)) return audit.operations.find((value) => value && typeof value === "object") || null;
+  return null;
 }
 
 export function extractCompletedCommands(trace) {
@@ -217,6 +225,60 @@ function invocationBefore(left, right) {
 function commandTextAfter(commands, position) {
   if (!position) return "";
   return [String(commands[position.commandIndex]).slice(position.offset), ...commands.slice(position.commandIndex + 1)].join("\n");
+}
+
+function highlightColorMatches(actual, expected, tolerance = 0.001) {
+  return Array.isArray(actual)
+    && Array.isArray(expected)
+    && actual.length === 3
+    && expected.length === 3
+    && actual.every((value, index) => sameNumber(Number(value), Number(expected[index]), tolerance));
+}
+
+function highlightQuadMatchesSourceText(highlight, sourceTarget, pageHeight, tolerance = 4) {
+  const values = highlight?.quadPoints;
+  const bbox = sourceTarget?.bbox;
+  if (!Array.isArray(values) || values.length < 8 || values.length % 8 !== 0 || !Array.isArray(bbox) || bbox.length !== 4 || !Number.isFinite(pageHeight)) return false;
+  const [x0, top, x1, bottom] = bbox.map(Number);
+  const minY = pageHeight - bottom - tolerance;
+  const maxY = pageHeight - top + tolerance;
+  return values.every((value, index) => {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return false;
+    return index % 2 === 0
+      ? numeric >= x0 - tolerance && numeric <= x1 + tolerance
+      : numeric >= minY && numeric <= maxY;
+  });
+}
+
+function sourceBoundHighlightTraceChecks(audit, commands) {
+  const commandText = commands.join("\n");
+  const operation = auditOperation(audit);
+  const operationRecord = auditOperationRecord(audit);
+  const probe = completedInvocation(commands, /mupdf\.mjs["']?\s+probe\b/i);
+  const inspect = completedInvocation(commands, /mupdf\.mjs["']?\s+inspect\b/i);
+  const edit = completedInvocation(commands, /mupdf\.mjs["']?\s+edit\b/i);
+  const afterEdit = commandTextAfter(commands, edit);
+  const outputInspect = /mupdf\.mjs["']?\s+inspect\b/i.test(afterEdit);
+  const outputRender = /mupdf\.mjs["']?\s+render\b/i.test(afterEdit);
+  const directMutationPatterns = [
+    /\baddAnnotation\s*\(/i,
+    /\bsetQuadPoints\s*\(/i,
+    /\bupdate_stream\s*\(/i,
+    /\bset_contents\s*\(/i,
+    /\bxref_set_(?:key|stream)\s*\(/i,
+  ];
+  const callerGeometryFields = ["bbox", "rect", "quadPoints", "quads", "point"];
+  return [
+    check("pdf-trace:provider", "trace", /^mupdf$/i.test(String(auditProvider(audit))), { expected: "mupdf", actual: auditProvider(audit) }),
+    check("pdf-trace:provider-version", "trace", Boolean(String(auditProviderVersion(audit)).trim()), { actual: auditProviderVersion(audit) || "unreported" }),
+    check("pdf-trace:save-policy", "trace", /^rewrite$/i.test(String(auditSaveStrategy(audit))), { expected: "rewrite", actual: auditSaveStrategy(audit) }),
+    gate("pdf-trace:no-silent-fallback", "trace", auditFallback(audit) === true, { expected: false, actual: auditFallback(audit) === null ? "unreported" : !auditFallback(audit) }),
+    check("pdf-trace:probe-inspect-before-edit", "trace", invocationBefore(probe, edit) && invocationBefore(inspect, edit), { actual: { probe: probe?.commandIndex ?? -1, inspect: inspect?.commandIndex ?? -1, edit: edit?.commandIndex ?? -1 } }),
+    check("pdf-trace:typed-source-bound-highlight", "trace", Boolean(edit) && operation === "add_text_highlight" && operationRecord?.type === "add_text_highlight", { actual: operation || "unreported" }),
+    check("pdf-trace:reinspect-and-render-output", "trace", outputInspect && outputRender, { actual: { outputInspect, outputRender } }),
+    gate("pdf-trace:no-caller-coordinate-or-direct-mutation", "trace", !callerGeometryFields.some((field) => Object.hasOwn(operationRecord || {}, field)) && !directMutationPatterns.some((pattern) => pattern.test(commandText)), { forbidden: callerGeometryFields.concat(directMutationPatterns.map(String)) }),
+  ];
 }
 
 function acroformTraceChecks(audit, commands) {
@@ -481,6 +543,57 @@ export function gradeBoundedReplaceEvidence({ evidence, audit, commands, item })
     gate("pdf-security:single-revision", "security", output.startxrefCount === 1 && output.eofCount === 1, { expected: { startxref: 1, eof: 1 }, actual: { startxref: output.startxrefCount, eof: output.eofCount } }),
     gate("pdf-security:audit-provenance", "security", auditSourceHash(audit) === source.sha256 && auditOutputHash(audit) === output.sha256, { expected: { source: source.sha256, output: output.sha256 }, actual: { source: auditSourceHash(audit) || "unreported", output: auditOutputHash(audit) || "unreported" } }),
     ...boundedTraceChecks(audit, commands),
+  ];
+}
+
+export function gradeSourceBoundHighlightEvidence({ evidence, audit, commands, item }) {
+  const source = evidence.source || {};
+  const output = evidence.output || {};
+  const targetText = item.grade.machine.text;
+  const targetPageNumber = Number(item.grade.machine.targetPage);
+  const expectedColor = item.grade.machine.color || [1, 1, 0];
+  const sourcePage = source.pages?.[targetPageNumber - 1] || {};
+  const renderPages = evidence.visual?.pages || [];
+  const targetRender = renderPages.find((page) => page.page === targetPageNumber);
+  const nonTargetRenders = renderPages.filter((page) => page.page !== targetPageNumber);
+  const outputHighlights = evidence.outputHighlights || [];
+  const sourceHighlights = evidence.sourceHighlights || [];
+  const matchingHighlights = outputHighlights.filter((highlight) => (
+    highlight.page === targetPageNumber
+    && highlight.contents === item.grade.machine.contents
+    && highlight.author === item.grade.machine.author
+    && highlight.subject === item.grade.machine.subject
+    && highlightColorMatches(highlight.color, expectedColor)
+  ));
+  const operation = auditOperationRecord(audit);
+  const expectedPage = operation?.expectedPage;
+  const expectedPageBBox = [0, 0, Number(sourcePage.width), Number(sourcePage.height)];
+  const sourceBoundSnapshot = operation?.type === "add_text_highlight"
+    && operation?.sourceSha256 === source.sha256
+    && sameBoundingBox(expectedPage?.bbox || [], expectedPageBBox)
+    && Number(expectedPage?.rotation) === Number(sourcePage.rotation);
+  const unsupportedCallerGeometry = ["bbox", "rect", "quadPoints", "quads", "point"].some((field) => Object.hasOwn(operation || {}, field));
+  const sourceTextStable = output.termCounts?.[targetText] === 1
+    && output.pages?.[targetPageNumber - 1]?.termCounts?.[targetText] === 1;
+  const contentGeometryStable = evidence.sourceTarget?.found
+    && evidence.outputTarget?.found
+    && JSON.stringify(evidence.sourceTarget.fonts) === JSON.stringify(evidence.outputTarget.fonts)
+    && JSON.stringify(evidence.sourceTarget.sizes) === JSON.stringify(evidence.outputTarget.sizes)
+    && sameBoundingBox(evidence.sourceTarget.bbox, evidence.outputTarget.bbox);
+  return [
+    check("pdf-machine:source-target-unique", "machine", source.termCounts?.[targetText] === 1 && source.pages?.[targetPageNumber - 1]?.termCounts?.[targetText] === 1, { expected: { text: targetText, count: 1, page: targetPageNumber }, actual: source.termCounts?.[targetText] }),
+    check("pdf-machine:page-count-and-geometry", "machine", output.pageCount === item.grade.machine.pageCount && samePageBoxes(source.pages, output.pages), { expected: item.grade.machine.pageCount, actual: output.pageCount }),
+    check("pdf-machine:original-text-stable", "machine", sourceTextStable && contentGeometryStable, { actual: { termCount: output.termCounts?.[targetText], targetPageCount: output.pages?.[targetPageNumber - 1]?.termCounts?.[targetText], sourceTarget: evidence.sourceTarget, outputTarget: evidence.outputTarget } }),
+    check("pdf-machine:one-native-highlight", "machine", sourceHighlights.length === 0 && outputHighlights.length === 1 && matchingHighlights.length === 1, { expected: { page: targetPageNumber, contents: item.grade.machine.contents, author: item.grade.machine.author, subject: item.grade.machine.subject, color: expectedColor }, actual: outputHighlights }),
+    check("pdf-machine:highlight-quads-bound-to-target-text", "machine", matchingHighlights.length === 1 && highlightQuadMatchesSourceText(matchingHighlights[0], evidence.sourceTarget, Number(sourcePage.height)), { sourceText: evidence.sourceTarget, actual: matchingHighlights[0]?.quadPoints || [] }),
+    check("pdf-machine:audit-success", "machine", /^(?:success|succeeded|completed)$/i.test(String(audit?.status || "")), { actual: audit?.status || "unreported" }),
+    check("pdf-visual:all-pages-rendered", "visual", evidence.visual?.sourcePageCount === item.grade.machine.pageCount && evidence.visual?.outputPageCount === item.grade.machine.pageCount && renderPages.length === item.grade.machine.pageCount && renderPages.every((page) => page.sameDimensions && page.nonBlank), { renderer: evidence.visual?.renderer, pages: renderPages }),
+    check("pdf-visual:non-target-pages-identical", "visual", nonTargetRenders.length === item.grade.machine.pageCount - 1 && nonTargetRenders.every((page) => page.changedPixelsBBox === null), { actual: nonTargetRenders.map(({ page, changedPixelsBBox }) => ({ page, changedPixelsBBox })) }),
+    check("pdf-visual:highlight-diff-contained", "visual", Boolean(targetRender?.changedPixelsBBox) && targetRender?.changedWithinAllowedMask === true, { allowedMask: evidence.visual?.allowedMask, actual: targetRender?.changedPixelsBBox || null }),
+    gate("pdf-security:source-bound-operation", "security", sourceBoundSnapshot && !unsupportedCallerGeometry, { expected: { sourceSha256: source.sha256, expectedPage: { bbox: expectedPageBBox, rotation: sourcePage.rotation }, forbiddenCallerGeometry: true }, actual: operation || "unreported" }),
+    gate("pdf-security:audit-provenance", "security", auditSourceHash(audit) === source.sha256 && auditOutputHash(audit) === output.sha256 && output.sha256 !== source.sha256, { expected: { source: source.sha256, output: output.sha256 }, actual: { source: auditSourceHash(audit) || "unreported", output: auditOutputHash(audit) || "unreported" } }),
+    gate("pdf-security:single-revision-and-decodable", "security", source.decodedStreamErrors?.length === 0 && output.decodedStreamErrors?.length === 0 && output.startxrefCount === 1 && output.eofCount === 1, { actual: { sourceErrors: source.decodedStreamErrors || [], outputErrors: output.decodedStreamErrors || [], startxref: output.startxrefCount, eof: output.eofCount } }),
+    ...sourceBoundHighlightTraceChecks(audit, commands),
   ];
 }
 
@@ -769,6 +882,24 @@ function unreadableArtifactChecks(audit, commands, oracleError) {
   ];
 }
 
+function missingSourceBoundHighlightChecks(audit, commands) {
+  return [
+    check("pdf-machine:artifact-available-for-oracle", "machine", false),
+    check("pdf-visual:artifact-available-for-oracle", "visual", false),
+    gate("pdf-security:artifact-available-for-oracle", "security", false),
+    ...sourceBoundHighlightTraceChecks(audit, commands),
+  ];
+}
+
+function unreadableSourceBoundHighlightChecks(audit, commands, oracleError) {
+  return [
+    check("pdf-machine:artifact-readable-by-oracle", "machine", false, { actual: oracleError }),
+    check("pdf-visual:artifact-renderable-by-oracle", "visual", false, { actual: oracleError }),
+    gate("pdf-security:artifact-readable-by-oracle", "security", false, { actual: oracleError }),
+    ...sourceBoundHighlightTraceChecks(audit, commands),
+  ];
+}
+
 function missingActiveContentArtifactChecks(audit, commands) {
   return [
     check("pdf-machine:artifact-available-for-oracle", "machine", false),
@@ -888,6 +1019,28 @@ export async function gradePdfCase({ item, workspace, evaluator, finalMessage, t
     }
     if (!oracle.evidence) return { supported: true, graded: false, checks: [], pending: ["PDF case grader infrastructure"], infrastructureErrors: [oracle.infrastructureError] };
     checks = gradeBoundedReplaceEvidence({ evidence: oracle.evidence, audit, commands, item });
+  } else if (item.id === "pdf-source-bound-text-highlight") {
+    const output = path.join(workspace, "outputs", "review-highlighted.pdf");
+    try { await fs.access(output); } catch {
+      checks = missingSourceBoundHighlightChecks(audit, commands);
+      const score = summarizeCaseScore(checks, item.grade, weights, checks.filter((entry) => entry.gate).every((entry) => entry.passed));
+      return { supported: true, graded: true, checks, evidence: null, pending: [], ...score };
+    }
+    oracle = invokeOracle({
+      kind: "source-bound-highlight",
+      source: path.join(workspace, "inputs", "source.pdf"),
+      output,
+      text: item.grade.machine.text,
+      targetPage: item.grade.machine.targetPage,
+      renderRoot: path.join(evaluator, "pdf-oracle-render"),
+    }, true);
+    if (!oracle.evidence && oracle.oracleError) {
+      checks = unreadableSourceBoundHighlightChecks(audit, commands, oracle.oracleError);
+      const score = summarizeCaseScore(checks, item.grade, weights, checks.filter((entry) => entry.gate).every((entry) => entry.passed));
+      return { supported: true, graded: true, checks, evidence: { oracleError: oracle.oracleError }, pending: [], ...score };
+    }
+    if (!oracle.evidence) return { supported: true, graded: false, checks: [], pending: ["PDF case grader infrastructure"], infrastructureErrors: [oracle.infrastructureError] };
+    checks = gradeSourceBoundHighlightEvidence({ evidence: oracle.evidence, audit, commands, item });
   } else if (item.id === "pdf-overflow-replace-refusal") {
     oracle = invokeOracle({
       kind: "overflow-refusal",

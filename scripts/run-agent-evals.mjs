@@ -226,6 +226,20 @@ if kind == "contract-five-page":
         c.drawString(72, 570, "All non-target text and geometry must remain unchanged.")
         c.showPage()
     c.save()
+elif kind == "source-bound-highlight":
+    c = canvas.Canvas(str(out), pagesize=letter, invariant=1)
+    for page in range(1, 4):
+        base_page(c, "Governance Review Memorandum", page, 3)
+        c.setFont("Helvetica", 11)
+        c.drawString(72, 700, f"Review section {page}. Preserve all ordinary text and page geometry.")
+        c.rect(72, 610, 468, 44)
+        if page == 2:
+            c.drawString(84, 628, "Conditional approval pending legal review")
+        else:
+            c.drawString(84, 628, f"Supporting evidence schedule {page}")
+        c.drawString(72, 570, "A review marker may change only the requested source-bound selection.")
+        c.showPage()
+    c.save()
 elif kind == "overflow-table":
     c = canvas.Canvas(str(out), pagesize=letter, invariant=1)
     base_page(c, "Approval Matrix", 1)
