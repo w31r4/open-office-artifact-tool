@@ -4,6 +4,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { FileBlob, SpreadsheetFile } from "../src/index.mjs";
+import { XLSX_THREADED_REVIEW_FIXTURE, generateOfficeInput } from "../scripts/agent-eval-office-fixtures.mjs";
+import { gradeOfficeCase, gradeXlsxThreadedReplyEvidence, inspectThreadedWorkbook } from "../scripts/agent-eval-office-graders.mjs";
 import {
   extractCompletedCommands,
   gradeAcroFormEvidence,
@@ -29,8 +32,9 @@ import {
 } from "../scripts/run-agent-evals.mjs";
 
 const { suite, cases } = await loadSuite();
-assert.deepEqual(validateSuite(suite, cases), { cases: 26, pdfCases: 19, ready: 7 });
+assert.deepEqual(validateSuite(suite, cases), { cases: 27, pdfCases: 19, ready: 8 });
 assert.equal(cases.filter((item) => item.family === "pdf" && item.status === "ready").length, 7);
+assert.equal(cases.filter((item) => item.family === "spreadsheets" && item.status === "ready").length, 1);
 
 const repository = repositoryProvenance();
 assert.match(repository.head, /^[0-9a-f]{40}$/);
@@ -42,6 +46,55 @@ const visible = visibleCase(suite, cases.find((item) => item.id === "pdf-bounded
 assert.match(visible.prompt, /outputs\/contract-updated\.pdf/);
 assert.match(visible.prompt, /outputs\/audit\.json/);
 assert.doesNotMatch(visible.prompt, /expectedOutcome|oracleSha256|pymupdf\.readthedocs|"grade"/i);
+
+const threadedReplyItem = cases.find((item) => item.id === "xlsx-threaded-reply-resolve");
+const threadedReplyRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-eval-xlsx-threaded-"));
+try {
+  const threadedInput = path.join(threadedReplyRoot, "inputs", XLSX_THREADED_REVIEW_FIXTURE.workbookName);
+  const threadedOutput = path.join(threadedReplyRoot, "outputs", "reviewed-budget-resolved.xlsx");
+  await generateOfficeInput("xlsx-threaded-review", threadedInput);
+  const threadedSource = await fs.readFile(threadedInput);
+  const threadedWorkbook = await SpreadsheetFile.importXlsx(new FileBlob(threadedSource, { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", name: XLSX_THREADED_REVIEW_FIXTURE.workbookName }));
+  const threadedReview = threadedWorkbook.comments.threads.find((thread) => thread.target.sheetName === XLSX_THREADED_REVIEW_FIXTURE.sheetName && thread.target.address === XLSX_THREADED_REVIEW_FIXTURE.address);
+  assert.ok(threadedReview);
+  threadedReview.addReply(XLSX_THREADED_REVIEW_FIXTURE.requestedReply, { author: "Board secretary", date: "2026-07-17T10:00:00.000Z" });
+  threadedReview.resolve();
+  const threadedExport = await SpreadsheetFile.exportXlsx(threadedWorkbook, { recalculate: false });
+  const threadedBytes = new Uint8Array(await threadedExport.arrayBuffer());
+  await fs.mkdir(path.dirname(threadedOutput), { recursive: true });
+  await fs.writeFile(threadedOutput, threadedBytes);
+  const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
+  const threadedAudit = {
+    status: "succeeded",
+    source: { sha256: hash(threadedSource) },
+    output: { sha256: hash(threadedBytes) },
+    provider: { actual: "open-chestnut", version: "test", silentFallback: false },
+    savePolicy: { strategy: "rewrite" },
+    operation: { type: "threaded-comment-direct-reply-resolve" },
+    validation: { reimport: { ok: true } },
+  };
+  await fs.writeFile(path.join(threadedReplyRoot, "outputs", "audit.json"), JSON.stringify(threadedAudit, null, 2));
+  const threadedEvidence = {
+    source: await inspectThreadedWorkbook(threadedInput),
+    output: await inspectThreadedWorkbook(threadedOutput),
+    visual: {
+      source: { available: true, ok: true, pageCount: 1, pages: [{ nonWhitePixels: 1 }] },
+      output: { available: true, ok: true, pageCount: 1, pages: [{ nonWhitePixels: 1 }] },
+    },
+  };
+  const threadedTrace = JSON.stringify({ type: "item.completed", item: { type: "command_execution", id: "xlsx-threaded", command: "node -e 'SpreadsheetFile.importXlsx(); SpreadsheetFile.exportXlsx()'" } });
+  const threadedChecks = gradeXlsxThreadedReplyEvidence({ evidence: threadedEvidence, audit: threadedAudit, commands: extractCompletedCommands(threadedTrace), item: threadedReplyItem });
+  assert.equal(threadedChecks.every((check) => check.passed), true);
+  const nativeThreadedResult = await gradeOfficeCase({ item: threadedReplyItem, workspace: threadedReplyRoot, evaluator: path.join(threadedReplyRoot, "evaluator"), finalMessage: "completed", trace: threadedTrace });
+  if (nativeThreadedResult.graded) {
+    assert.equal(nativeThreadedResult.rawScorePercent, 100);
+    assert.equal(nativeThreadedResult.caseSpecificPassed, true);
+  } else {
+    assert.ok(nativeThreadedResult.infrastructureErrors?.length);
+  }
+} finally {
+  await fs.rm(threadedReplyRoot, { recursive: true, force: true });
+}
 
 const accessibleItem = cases.find((item) => item.id === "pdf-greenfield-accessible-report");
 const accessiblePages = Array.from({ length: 6 }, (_, index) => ({ page: index + 1, width: 1224, height: 1584, nonBlank: true, inkBBox: [50, 50, 1100, 1500], touchesEdge: false, bytes: 20_000 }));

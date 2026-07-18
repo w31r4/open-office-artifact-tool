@@ -7,6 +7,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { generateOfficeInput } from "./agent-eval-office-fixtures.mjs";
+import { gradeOfficeCase } from "./agent-eval-office-graders.mjs";
 import { gradePdfCase } from "./agent-eval-pdf-graders.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -347,6 +349,8 @@ else:
 `;
 
 async function generateInput(generator, target) {
+  const officeFixture = await generateOfficeInput(generator, target);
+  if (officeFixture) return officeFixture;
   const python = generatorPythonExecutable();
   run(python, ["-c", pythonGenerators, generator, target], { label: `generate fixture ${generator}` });
 }
@@ -661,7 +665,7 @@ async function scorePrepared(item, prepared, options = {}) {
       }
     }
   }
-  const caseGrade = await gradePdfCase({
+  const caseGrade = await (item.family === "pdf" ? gradePdfCase : gradeOfficeCase)({
     item,
     workspace: prepared.workspace,
     evaluator: prepared.evaluator,
@@ -700,7 +704,7 @@ async function scorePrepared(item, prepared, options = {}) {
 }
 
 function help() {
-  return `Agent artifact PromptBench\n\nCommands:\n  validate\n  list [--family pdf] [--status ready] [--json]\n  show <case-id> [--json]\n  prepare <case-id> [--subject candidate|reference] [--trial 1] [--run-root <path>]\n  run <case-id> [prepare options] [--model <model>] [--codex <path>]\n  score <case-id> --trial-root <prepared trial directory>\n\nThe Agent receives only PROMPT.md, declared inputs, the selected Skill, and an installed candidate tarball. Prepared PDF trials also declare one authoritative provider interpreter in PROMPT.md when the runner was given OPEN_OFFICE_AGENT_EVAL_PYTHON or OPEN_OFFICE_PDF_PROVIDER_PYTHON; the same interpreter is used for generated fixtures and hidden oracles. Fixture specifications and graders are never copied into its workspace; run.json records integrity evidence and only a fingerprint of the hidden oracle, never the grading specification. The default run root is outside the repository in the OS temp directory. A production benchmark must additionally mount only the trial workspace into a no-network container, because a CLI sandbox alone is not an oracle confidentiality boundary. All seven ready PDF cases have independent semantic, Poppler visual where applicable, security, and provider-trace graders. The remaining 19 asset-required cases never claim full success before pinned corpus or PKI fixtures exist.\n`;
+  return `Agent artifact PromptBench\n\nCommands:\n  validate\n  list [--family pdf] [--status ready] [--json]\n  show <case-id> [--json]\n  prepare <case-id> [--subject candidate|reference] [--trial 1] [--run-root <path>]\n  run <case-id> [prepare options] [--model <model>] [--codex <path>]\n  score <case-id> --trial-root <prepared trial directory>\n\nThe Agent receives only PROMPT.md, declared inputs, the selected Skill, and an installed candidate tarball. Prepared PDF trials also declare one authoritative provider interpreter in PROMPT.md when the runner was given OPEN_OFFICE_AGENT_EVAL_PYTHON or OPEN_OFFICE_PDF_PROVIDER_PYTHON; the same interpreter is used for generated fixtures and hidden oracles. Fixture specifications and graders are never copied into its workspace; run.json records integrity evidence and only a fingerprint of the hidden oracle, never the grading specification. The default run root is outside the repository in the OS temp directory. A production benchmark must additionally mount only the trial workspace into a no-network container, because a CLI sandbox alone is not an oracle confidentiality boundary. The seven ready PDF cases and one ready XLSX threaded-comment case have independent semantic, native-render, security, and provider-trace graders. The remaining 19 asset-required cases never claim full success before pinned corpus or PKI fixtures exist.\n`;
 }
 
 export async function main(argv = process.argv.slice(2)) {
@@ -744,7 +748,7 @@ export async function main(argv = process.argv.slice(2)) {
   } else fail(`unknown command ${command}\n\n${help()}`);
 }
 
-export { fingerprintPath, loadSuite, makeReadOnly, oracleFingerprint, removePreparedTree, repositoryProvenance, scorePrepared, validateSuite, visibleCase };
+export { fingerprintPath, generateInput, loadSuite, makeReadOnly, oracleFingerprint, removePreparedTree, repositoryProvenance, scorePrepared, validateSuite, visibleCase };
 
 const entryPath = process.argv[1] ? path.resolve(process.argv[1]) : "";
 if (entryPath === fileURLToPath(import.meta.url)) await main();

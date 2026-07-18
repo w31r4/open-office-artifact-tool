@@ -42,6 +42,7 @@ Other documents:
 - `examples/openchestnut-asset-depreciation-workflow.mjs`: Run or adapt this three-sheet `Inputs` / `Depreciation` / `Checks` example for visible fixed-asset assumptions, SLN/DB/DDB schedules, salvage-floor and depreciable-basis checks, finance color conventions, SVG review, and canonical OpenChestnut roundtrip.
 - `examples/openchestnut-scatter-chart-workflow.mjs`: Run or adapt this canonical example for formula-backed numeric X/Y scatter series, dual value axes, marker styling, SVG verification, and fixed-topology OpenChestnut edits.
 - `examples/openchestnut-bubble-chart-workflow.mjs`: Run or adapt this canonical example for one formula-backed numeric X/Y/Size bubble series, dual value axes, proportional SVG/native bubbles, and fixed-topology OpenChestnut edits.
+- `examples/openchestnut-threaded-comment-reply-workflow.mjs`: Run or adapt this imported-workbook example when an existing canonical Excel threaded-comment root needs one or more direct replies plus an explicit resolve/reopen transition; it preserves existing IDs, people, dates, text, and direct-reply order, performs a second import and all-sheet SVG review, and writes a byte-bound audit. Nested/branched reply graphs remain source-bound and fail closed.
 
 ## Domain Requirements
 You must read these domain rules when the request clearly relates to the domain, but do not load domain guidance for unrelated tasks unless asked:

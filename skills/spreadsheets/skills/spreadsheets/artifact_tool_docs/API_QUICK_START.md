@@ -375,6 +375,26 @@ independent author/person/date/done metadata. Do not set a reply's `parentId`
 to another reply: nested/branched graphs, mentions, orphan parents, and
 cross-cell parents are source-bound and fail closed instead of being flattened.
 
+For an imported canonical thread, locate the unique target, append to the
+thread (not the last reply), resolve or reopen it explicitly, then export and
+re-import before declaring success:
+
+```js
+const workbook = await SpreadsheetFile.importXlsx(await FileBlob.load(inputPath));
+const thread = workbook.comments.threads.find((candidate) => candidate.target.sheetName === "Forecast" && candidate.target.address === "F19");
+if (!thread || thread.comments.some((comment, index) => index > 0 && comment.parentId && comment.parentId !== thread.comments[0].id)) {
+  throw new Error("Only canonical root plus direct-reply threads are editable.");
+}
+thread.addReply("Approved after sensitivity review", { author: "Board secretary" });
+thread.resolve();
+const output = await SpreadsheetFile.exportXlsx(workbook, { recalculate: false });
+const roundTrip = await SpreadsheetFile.importXlsx(output);
+```
+
+`examples/openchestnut-threaded-comment-reply-workflow.mjs` turns that bounded
+sequence into a command-line workflow with source/output SHA-256 audit records,
+second-import checks, and a model render of every worksheet.
+
 ### Charts
 - When adding or moving charts, do not cover existing data. Put charts in a reserved rectangle with blank gutter columns/rows around the chart area.
 - If chart data comes from editable/source data, ensure data/series is formula-backed instead of literal values.

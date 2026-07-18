@@ -5,6 +5,8 @@ import path from "node:path";
 import JSZip from "jszip";
 
 import { FileBlob, SpreadsheetFile } from "open-office-artifact-tool";
+import { generateOfficeInput } from "../scripts/agent-eval-office-fixtures.mjs";
+import { replyAndResolveThreadedComment } from "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-threaded-comment-reply-workflow.mjs";
 import { createWorkbookFromFixture, nativeSpreadsheetRenderStatus, runSpreadsheetFixture, verifyWorkbookFile } from "./skill-harness/spreadsheets/scripts/workflow.mjs";
 
 const repoRoot = path.resolve(new URL("..", import.meta.url).pathname);
@@ -76,6 +78,31 @@ try {
   assert.match(threadedXml, /Confirmed against the modeled source data\./);
   assert.match(await formulaZip.file(personPath).async("text"), /displayName="Reviewer"/);
   assert.match(await formulaZip.file(personPath).async("text"), /displayName="Lead reviewer"/);
+
+  const threadedEvalInput = path.join(outputDir, "threaded-review-input.xlsx");
+  const threadedEvalOutput = path.join(outputDir, "threaded-review-output.xlsx");
+  const threadedEvalAudit = path.join(outputDir, "threaded-review-audit.json");
+  await generateOfficeInput("xlsx-threaded-review", threadedEvalInput);
+  const threadedResult = await replyAndResolveThreadedComment({
+    inputPath: threadedEvalInput,
+    outputPath: threadedEvalOutput,
+    auditPath: threadedEvalAudit,
+    sheetName: "Forecast",
+    cell: "F19",
+    reply: "Approved after sensitivity review",
+    author: "Board secretary",
+  });
+  assert.equal(threadedResult.audit.provider.actual, "open-chestnut");
+  assert.equal(threadedResult.audit.savePolicy.strategy, "rewrite");
+  const threadedRoundTrip = await SpreadsheetFile.importXlsx(await FileBlob.load(threadedEvalOutput));
+  const threadedThread = threadedRoundTrip.comments.threads.find((thread) => thread.target.sheetName === "Forecast" && thread.target.address === "F19");
+  assert.ok(threadedThread);
+  assert.equal(threadedThread.comments.length, 3);
+  assert.equal(threadedThread.comments[2].text, "Approved after sensitivity review");
+  assert.equal(threadedThread.comments[2].parentId, threadedThread.comments[0].id);
+  assert.equal(threadedThread.resolved, true);
+  assert.equal(threadedThread.comments.every((comment) => comment.done), true);
+  assert.equal(JSON.parse(await fs.readFile(threadedEvalAudit, "utf8")).validation.reimport.ok, true);
 
   const financialFixture = await runFixture("financial-returns");
   const financialFixtureWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(financialFixture.workbookPath));
