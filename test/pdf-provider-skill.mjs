@@ -97,7 +97,9 @@ assert.match(skillText, /MuPDF\.js/);
 assert.match(skillText, /set_page_crop/);
 assert.match(skillText, /rotate_page/);
 assert.match(skillText, /delete_annotation/);
+assert.match(skillText, /delete_link/);
 assert.match(skillText, /sourceSha256/);
+assert.match(skillText, /mupdf-link/);
 assert.match(skillText, /not redaction/i);
 for (const pattern of [
   /ReportLab/,

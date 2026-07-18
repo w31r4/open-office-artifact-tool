@@ -147,6 +147,27 @@ source hash propagation, max-annotation rejection, rewrite-only enforcement,
 stale hash and snapshot rejection, ignored-key rejection, exact one-target
 deletion, surviving-note preservation, and output reinspection.
 
+### PDF source-bound link deletion
+
+On 2026-07-18, the same direct-original route made imported link deletion
+agent-safe. Native inspection now emits bounded `mupdfLink` records containing
+a page-bound fingerprint over URL, rectangle, and externality. The direct
+parser uses that same opaque locator instead of its former link-array index.
+
+`delete_link` requires the exact inspected source SHA-256, the page-bound
+locator, and one or more URL/rectangle/external snapshot preconditions. It
+rejects the legacy URL/index-only selection shape, stale hashes or snapshots,
+ignored precondition keys, duplicate equivalent link fingerprints, all
+incremental output, and any ambiguous/missing target. The mutation verifies
+removal before rewrite save and records the matched facts in its operation
+audit.
+
+MuPDF does not expose a native PDF-object xref for every link handle, so the
+fingerprint is deliberately source-byte-bound rather than a durable link ID.
+Every rewrite requires a fresh inspect before another link operation. The link
+budget protects both parser reconstruction and native inspection from
+unbounded link-record expansion.
+
 ### XLSX criteria extrema and branch formulas
 
 On 2026-07-18, the bounded JavaScript calculation catalog added `MINIFS` and

@@ -569,6 +569,10 @@ assert.match(removableLink.id, /^mupdf-link-1-[a-f0-9]{64}$/);
 assert.equal(removableLink.external, true);
 assert.equal(mupdfLinkParsed.pages[0].links[0].id, removableLink.id);
 await assert.rejects(PdfFile.editPdf(arbitraryLinkPdf, {
+  savePolicy: "rewrite",
+  operations: [{ type: "delete_link", page: 1, url: removableLink.url, sourceSha256: mupdfLinkInspection.summary.sourceSha256 }],
+}), /linkId must be a mupdf-link/);
+await assert.rejects(PdfFile.editPdf(arbitraryLinkPdf, {
   savePolicy: "incremental",
   operations: [{
     type: "delete_link",
@@ -619,6 +623,7 @@ const mupdfLinkDeleted = await PdfFile.editPdf(arbitraryLinkPdf, {
   }],
 });
 assert.equal(mupdfLinkDeleted.metadata.operations[0].linkId, removableLink.id);
+assert.equal(mupdfLinkDeleted.metadata.sourceSha256, mupdfLinkInspection.summary.sourceSha256);
 assert.equal(mupdfLinkDeleted.metadata.operations[0].beforeCount, 1);
 assert.equal(mupdfLinkDeleted.metadata.operations[0].afterCount, 0);
 assert.equal((await PdfFile.inspectPdf(mupdfLinkDeleted)).records.some((record) => record.kind === "mupdfLink"), false);
