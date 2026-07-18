@@ -93,6 +93,26 @@ export const PPTX_SLIDE_NAME_FIXTURE = Object.freeze({
   untouchedSlideName: PPTX_TITLE_NOTES_FIXTURE.untouchedSlideName,
 });
 
+// This fixture exercises the narrow imported-slide clone profile rather than
+// treating a presentation relationship graph as generally editable. Its
+// source slide owns exactly two accepted closed leaves: one canonical notes
+// slide and one legacy comments XML leaf with a presentation-wide author
+// catalog. The appendix is a visible/package canary.
+export const PPTX_CLOSED_LEAF_CLONE_FIXTURE = Object.freeze({
+  presentationName: "release-review.pptx",
+  sourceSlideName: "Release decision",
+  appendixSlideName: "Appendix canary",
+  sourceTitle: "Decision: approve controlled rollout",
+  sourceSupportingText: "The original slide, notes, legacy comment, and appendix must remain unchanged.",
+  sourceNotes: "Lead with the approved controls.\nClose with the accountable rollout owner.",
+  sourceComment: "Confirm the original evidence before delivery.",
+  commentAuthor: "Presentation Reviewer",
+  commentCreated: "2026-07-18T03:05:00Z",
+  sourceBackground: "#E0F2FE",
+  appendixBackground: "#FEF3C7",
+  appendixText: "Appendix: immutable evidence",
+});
+
 function commentConfig(comment) {
   return {
     id: comment.id,
@@ -301,11 +321,62 @@ export async function generatePptxSlideNameReview(target) {
   return generatePptxTitleNotesReview(target);
 }
 
+export async function generatePptxClosedLeafClone(target) {
+  const fixture = PPTX_CLOSED_LEAF_CLONE_FIXTURE;
+  const presentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });
+  const source = presentation.slides.add({ name: fixture.sourceSlideName });
+  source.setBackground({ fill: fixture.sourceBackground, mode: "solid" });
+  const title = source.shapes.add({
+    name: "release-title",
+    geometry: "textbox",
+    position: { left: 72, top: 72, width: 1040, height: 96 },
+    text: fixture.sourceTitle,
+    fill: "none",
+    line: { style: "solid", fill: "none", width: 0 },
+  });
+  title.text.style = { fontSize: 34, bold: true, color: "#0C4A6E" };
+  const supporting = source.shapes.add({
+    name: "release-supporting-copy",
+    geometry: "textbox",
+    position: { left: 72, top: 194, width: 920, height: 88 },
+    text: fixture.sourceSupportingText,
+    fill: "none",
+    line: { style: "solid", fill: "none", width: 0 },
+  });
+  supporting.text.style = { fontSize: 18, color: "#334155" };
+  source.addNotes(fixture.sourceNotes);
+  source.comments.addThread(undefined, fixture.sourceComment, {
+    author: fixture.commentAuthor,
+    created: fixture.commentCreated,
+    position: { x: 360, y: 240 },
+  });
+
+  const appendix = presentation.slides.add({ name: fixture.appendixSlideName });
+  appendix.setBackground({ fill: fixture.appendixBackground, mode: "solid" });
+  const appendixTitle = appendix.shapes.add({
+    name: "appendix-title",
+    geometry: "textbox",
+    position: { left: 72, top: 72, width: 900, height: 96 },
+    text: fixture.appendixText,
+    fill: "none",
+    line: { style: "solid", fill: "none", width: 0 },
+  });
+  appendixTitle.text.style = { fontSize: 30, bold: true, color: "#92400E" };
+
+  const verification = presentation.verify({ visualQa: true });
+  if (!verification.ok) throw new Error("Generated PPTX closed-leaf clone fixture failed model verification: " + verification.ndjson);
+  const exported = await PresentationFile.exportPptx(presentation);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, new Uint8Array(await exported.arrayBuffer()));
+  return { path: target, type: PPTX_MIME };
+}
+
 export async function generateOfficeInput(generator, target) {
   if (generator === "xlsx-threaded-review") return generateXlsxThreadedReview(target);
   if (generator === "xlsx-growth-update") return generateXlsxGrowthUpdate(target);
   if (generator === "docx-classic-comment-review") return generateDocxClassicCommentReview(target);
   if (generator === "pptx-title-notes-review") return generatePptxTitleNotesReview(target);
   if (generator === "pptx-slide-name-review") return generatePptxSlideNameReview(target);
+  if (generator === "pptx-closed-leaf-clone") return generatePptxClosedLeafClone(target);
   return null;
 }

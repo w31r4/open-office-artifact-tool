@@ -8,6 +8,7 @@ import path from "node:path";
 import { DocumentFile, FileBlob, PresentationFile, SpreadsheetFile } from "../src/index.mjs";
 import {
   DOCX_CLASSIC_COMMENT_FIXTURE,
+  PPTX_CLOSED_LEAF_CLONE_FIXTURE,
   PPTX_SLIDE_NAME_FIXTURE,
   PPTX_TITLE_NOTES_FIXTURE,
   XLSX_GROWTH_UPDATE_FIXTURE,
@@ -26,10 +27,13 @@ import {
   inspectThreadedWorkbook,
 } from "../scripts/agent-eval-spreadsheet-graders.mjs";
 import {
+  gradePptxClosedLeafCloneEvidence,
   gradePptxSlideNameEvidence,
   gradePptxTitleNotesEvidence,
+  inspectClosedLeafClonePptx,
   inspectTitleNotesPptx,
 } from "../scripts/agent-eval-presentation-graders.mjs";
+import { duplicatePptxSlide } from "../skills/presentations/skills/presentations/examples/openchestnut-slide-duplicate-workflow.mjs";
 import {
   extractCompletedCommands,
   gradeAcroFormEvidence,
@@ -57,12 +61,12 @@ import {
 } from "../scripts/run-agent-evals.mjs";
 
 const { suite, cases } = await loadSuite();
-assert.deepEqual(validateSuite(suite, cases), { cases: 33, pdfCases: 20, ready: 13 });
+assert.deepEqual(validateSuite(suite, cases), { cases: 34, pdfCases: 20, ready: 14 });
 assert.equal(MINIMUM_PDF_CASE_SHARE, 0.6);
 assert.equal(cases.filter((item) => item.family === "pdf" && item.status === "ready").length, 8);
 assert.equal(cases.filter((item) => item.family === "spreadsheets" && item.status === "ready").length, 2);
 assert.equal(cases.filter((item) => item.family === "documents" && item.status === "ready").length, 1);
-assert.equal(cases.filter((item) => item.family === "presentations" && item.status === "ready").length, 2);
+assert.equal(cases.filter((item) => item.family === "presentations" && item.status === "ready").length, 3);
 
 const repository = repositoryProvenance();
 assert.match(repository.head, /^[0-9a-f]{40}$/);
@@ -79,7 +83,7 @@ const runnerHelp = spawnSync(process.execPath, ["scripts/run-agent-evals.mjs", "
   encoding: "utf8",
 });
 assert.equal(runnerHelp.status, 0, runnerHelp.stderr);
-assert.match(runnerHelp.stdout, /two PPTX cases.*source-bound slide-name edit/i);
+assert.match(runnerHelp.stdout, /three PPTX cases.*closed-leaf slide clone/i);
 const highlightVisible = visibleCase(suite, cases.find((item) => item.id === "pdf-source-bound-text-highlight"));
 assert.match(highlightVisible.prompt, /add_text_highlight/);
 assert.match(highlightVisible.prompt, /outputs\/review-highlighted\.pdf/);
@@ -502,6 +506,99 @@ try {
   }
 } finally {
   await fs.rm(slideNameRoot, { recursive: true, force: true });
+}
+
+const closedLeafCloneItem = cases.find((item) => item.id === "pptx-closed-leaf-slide-clone");
+assert.ok(closedLeafCloneItem);
+const closedLeafCloneRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-eval-pptx-closed-leaf-clone-"));
+try {
+  const closedLeafInput = path.join(closedLeafCloneRoot, "inputs", PPTX_CLOSED_LEAF_CLONE_FIXTURE.presentationName);
+  const closedLeafOutput = path.join(closedLeafCloneRoot, "outputs", "release-review-with-copy.pptx");
+  const closedLeafAuditPath = path.join(closedLeafCloneRoot, "outputs", "audit.json");
+  await generateOfficeInput("pptx-closed-leaf-clone", closedLeafInput);
+  const closedLeafSource = await fs.readFile(closedLeafInput);
+  const closedLeafResult = await duplicatePptxSlide({
+    inputPath: closedLeafInput,
+    outputPath: closedLeafOutput,
+    auditPath: closedLeafAuditPath,
+    expectedName: PPTX_CLOSED_LEAF_CLONE_FIXTURE.sourceSlideName,
+    allowClosedLeaves: true,
+  });
+  const closedLeafOutputBytes = await fs.readFile(closedLeafOutput);
+  const closedLeafReimport = await PresentationFile.importPptx(new FileBlob(closedLeafOutputBytes, {
+    type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    name: "release-review-with-copy.pptx",
+  }));
+  assert.deepEqual(closedLeafReimport.slides.items.map((slide) => slide.name), [
+    PPTX_CLOSED_LEAF_CLONE_FIXTURE.sourceSlideName,
+    PPTX_CLOSED_LEAF_CLONE_FIXTURE.sourceSlideName,
+    PPTX_CLOSED_LEAF_CLONE_FIXTURE.appendixSlideName,
+  ]);
+  assert.deepEqual(closedLeafReimport.slides.items.slice(0, 2).map((slide) => slide.speakerNotes.text), [
+    PPTX_CLOSED_LEAF_CLONE_FIXTURE.sourceNotes,
+    PPTX_CLOSED_LEAF_CLONE_FIXTURE.sourceNotes,
+  ]);
+  assert.deepEqual(closedLeafReimport.slides.items.slice(0, 2).map((slide) => slide.comments.items[0]?.comments[0]?.text), [
+    PPTX_CLOSED_LEAF_CLONE_FIXTURE.sourceComment,
+    PPTX_CLOSED_LEAF_CLONE_FIXTURE.sourceComment,
+  ]);
+  const closedLeafEvidence = {
+    source: await inspectClosedLeafClonePptx(closedLeafInput),
+    output: await inspectClosedLeafClonePptx(closedLeafOutput),
+    visual: {
+      source: { available: true, ok: true, pageCount: 2, pages: [
+        { width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "source-slide" },
+        { width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "appendix-slide" },
+      ] },
+      output: { available: true, ok: true, pageCount: 3, pages: [
+        { width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "source-slide" },
+        { width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "source-slide" },
+        { width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "appendix-slide" },
+      ] },
+    },
+  };
+  const closedLeafTrace = JSON.stringify({ type: "item.completed", item: { type: "command_execution", id: "pptx-closed-leaf-clone", command: "node .agents/skills/presentations/examples/openchestnut-slide-duplicate-workflow.mjs inputs/release-review.pptx outputs/release-review-with-copy.pptx outputs/audit.json Release decision --allow-closed-leaves" } });
+  const closedLeafChecks = gradePptxClosedLeafCloneEvidence({
+    evidence: closedLeafEvidence,
+    audit: closedLeafResult.audit,
+    commands: extractCompletedCommands(closedLeafTrace),
+    item: closedLeafCloneItem,
+  });
+  assert.equal(closedLeafChecks.every((check) => check.passed), true);
+  const closedLeafDriftEvidence = structuredClone(closedLeafEvidence);
+  closedLeafDriftEvidence.output.partHashes[closedLeafDriftEvidence.output.commentAuthors.part] = "unexpected-comment-authors-change";
+  const closedLeafDriftChecks = gradePptxClosedLeafCloneEvidence({
+    evidence: closedLeafDriftEvidence,
+    audit: closedLeafResult.audit,
+    commands: extractCompletedCommands(closedLeafTrace),
+    item: closedLeafCloneItem,
+  });
+  assert.equal(closedLeafDriftChecks.find((check) => check.id === "pptx-clone-security:source-parts-byte-preserved-and-graph-bounded")?.passed, false);
+  const missingOptInChecks = gradePptxClosedLeafCloneEvidence({
+    evidence: closedLeafEvidence,
+    audit: closedLeafResult.audit,
+    commands: ["node .agents/skills/presentations/examples/openchestnut-slide-duplicate-workflow.mjs inputs/release-review.pptx outputs/release-review-with-copy.pptx outputs/audit.json Release decision"],
+    item: closedLeafCloneItem,
+  });
+  assert.equal(missingOptInChecks.find((check) => check.id === "pptx-clone-trace:typed-roundtrip")?.passed, false);
+  const nativeClosedLeafResult = await gradeOfficeCase({
+    item: closedLeafCloneItem,
+    workspace: closedLeafCloneRoot,
+    evaluator: path.join(closedLeafCloneRoot, "evaluator"),
+    finalMessage: "completed",
+    trace: closedLeafTrace,
+  });
+  if (nativeClosedLeafResult.graded) {
+    assert.equal(nativeClosedLeafResult.rawScorePercent, 100);
+    assert.equal(nativeClosedLeafResult.caseSpecificPassed, true);
+  } else {
+    assert.ok(nativeClosedLeafResult.infrastructureErrors?.length);
+  }
+  assert.match(closedLeafResult.audit.output.sha256, /^[0-9a-f]{64}$/);
+  assert.notEqual(closedLeafResult.audit.source.sha256, closedLeafResult.audit.output.sha256);
+  assert.notDeepEqual(closedLeafSource, closedLeafOutputBytes);
+} finally {
+  await fs.rm(closedLeafCloneRoot, { recursive: true, force: true });
 }
 
 const accessibleItem = cases.find((item) => item.id === "pdf-greenfield-accessible-report");
