@@ -58,10 +58,22 @@ function slideNameFromXml(xml, partPath) {
 }
 
 function resolveRelationshipTarget(target) {
-  const resolved = new URL(target, "https://openchestnut.invalid/ppt/presentation.xml");
-  if (resolved.origin !== "https://openchestnut.invalid") throw new Error("Unexpected PPTX relationship target origin.");
-  const partPath = resolved.pathname.replace(/^\/+/, "");
-  if (!partPath.startsWith("ppt/") || partPath.split("/").includes("..")) throw new Error("Unsafe PPTX slide relationship target: " + JSON.stringify(target));
+  return resolveRelationshipTargetFromPart("ppt/presentation.xml", target);
+}
+
+function resolveRelationshipTargetFromPart(sourcePart, target) {
+  if (typeof sourcePart !== "string" || !sourcePart.startsWith("ppt/") || !sourcePart.endsWith(".xml")) {
+    throw new Error("Invalid PPTX relationship source part: " + JSON.stringify(sourcePart));
+  }
+  if (typeof target !== "string" || !target || /[\\?#]/.test(target) || /%[0-9a-f]{2}/i.test(target)) {
+    throw new Error("Unsafe PPTX relationship target: " + JSON.stringify(target));
+  }
+  const partPath = target.startsWith("/")
+    ? target.replace(/^\/+/, "")
+    : path.posix.normalize(path.posix.join(path.posix.dirname(sourcePart), target));
+  if (!partPath.startsWith("ppt/") || partPath.split("/").includes("..")) {
+    throw new Error("Unsafe PPTX relationship target: " + JSON.stringify(target));
+  }
   return partPath;
 }
 
@@ -101,6 +113,157 @@ async function orderedSlidePartPaths(zip) {
 
 function relationshipPartPath(partPath) {
   return path.posix.join(path.posix.dirname(partPath), "_rels", path.posix.basename(partPath) + ".rels");
+}
+
+function relationshipTypeMatches(entry, suffix) {
+  return entry.type.toLowerCase().endsWith("/" + suffix.toLowerCase());
+}
+
+function exactlyOneRelationship(entries, suffix, label) {
+  const matches = entries.filter((entry) => relationshipTypeMatches(entry, suffix));
+  if (matches.length !== 1) {
+    throw new Error(label + " must contain exactly one " + suffix + " relationship; found " + matches.length + ".");
+  }
+  return matches[0];
+}
+
+async function relationshipEntriesForPart(zip, sourcePart, { required = true } = {}) {
+  const relationshipPart = relationshipPartPath(sourcePart);
+  const file = zip.file(relationshipPart);
+  if (!file) {
+    if (!required) return [];
+    throw new Error("PPTX part " + sourcePart + " has no relationship part.");
+  }
+  const xml = await file.async("text");
+  const ids = new Set();
+  const entries = [];
+  for (const match of xml.matchAll(/<Relationship\b[^>]*>/gi)) {
+    const attributes = xmlAttributes(match[0]);
+    if (!attributes.Id || !attributes.Type || ids.has(attributes.Id)) {
+      throw new Error("PPTX relationship part " + relationshipPart + " has a missing or duplicate relationship identity.");
+    }
+    ids.add(attributes.Id);
+    const external = attributes.TargetMode?.toLowerCase() === "external";
+    if (!external && !attributes.Target) {
+      throw new Error("PPTX relationship " + JSON.stringify(attributes.Id) + " in " + relationshipPart + " has no internal target.");
+    }
+    entries.push({
+      id: attributes.Id,
+      type: attributes.Type,
+      target: attributes.Target || null,
+      external,
+      targetPart: external ? null : resolveRelationshipTargetFromPart(sourcePart, attributes.Target),
+    });
+  }
+  return entries;
+}
+
+function requireInternalRelationship(entry, label) {
+  if (entry.external || !entry.targetPart) {
+    throw new Error(label + " must be an internal PPTX relationship.");
+  }
+  return entry;
+}
+
+async function assertNoChildRelationshipGraph(zip, partPath, label) {
+  const entries = await relationshipEntriesForPart(zip, partPath, { required: false });
+  if (entries.length) throw new Error(label + " must not have a child relationship graph.");
+}
+
+async function inspectNotesLeaf(zip, sourcePart, relationship) {
+  const notesRelationship = requireInternalRelationship(relationship, "Speaker-notes leaf");
+  const notesPart = notesRelationship.targetPart;
+  if (!/^ppt\/notesSlides\/notesSlide\d+\.xml$/i.test(notesPart)) {
+    throw new Error("Speaker-notes leaf must target one canonical NotesSlide part.");
+  }
+  await requiredZipBytes(zip, notesPart);
+  const entries = await relationshipEntriesForPart(zip, notesPart);
+  if (entries.length !== 2) {
+    throw new Error("Speaker-notes leaf must contain exactly notesMaster and slide relationships.");
+  }
+  const notesMaster = requireInternalRelationship(exactlyOneRelationship(entries, "notesMaster", "Speaker-notes leaf"), "Speaker-notes master");
+  const slide = requireInternalRelationship(exactlyOneRelationship(entries, "slide", "Speaker-notes leaf"), "Speaker-notes back-reference");
+  if (!/^ppt\/notesMasters\/notesMaster\d+\.xml$/i.test(notesMaster.targetPart) || !zip.file(notesMaster.targetPart)) {
+    throw new Error("Speaker-notes leaf must target one existing canonical NotesMaster part.");
+  }
+  if (slide.targetPart !== sourcePart) {
+    throw new Error("Speaker-notes leaf back-reference must point at its source SlidePart.");
+  }
+  return {
+    relationship: notesRelationship,
+    part: notesPart,
+    relationshipPart: relationshipPartPath(notesPart),
+    notesMaster,
+    slide,
+  };
+}
+
+async function inspectLegacyCommentsLeaf(zip, relationship) {
+  const commentsRelationship = requireInternalRelationship(relationship, "Legacy-comments leaf");
+  const commentsPart = commentsRelationship.targetPart;
+  if (!/^ppt\/comments\/comment\d+\.xml$/i.test(commentsPart)) {
+    throw new Error("Legacy-comments leaf must target one canonical SlideComments part.");
+  }
+  await requiredZipBytes(zip, commentsPart);
+  await assertNoChildRelationshipGraph(zip, commentsPart, "Legacy-comments leaf");
+  const presentationRelationships = await relationshipEntriesForPart(zip, "ppt/presentation.xml");
+  const authorCatalog = requireInternalRelationship(
+    exactlyOneRelationship(presentationRelationships, "commentAuthors", "Presentation comment-author catalog"),
+    "Presentation comment-author catalog",
+  );
+  if (authorCatalog.targetPart !== "ppt/commentAuthors.xml") {
+    throw new Error("Legacy-comments leaf must use the canonical presentation-wide comment-author catalog.");
+  }
+  await requiredZipBytes(zip, authorCatalog.targetPart);
+  await assertNoChildRelationshipGraph(zip, authorCatalog.targetPart, "Presentation comment-author catalog");
+  return {
+    relationship: commentsRelationship,
+    part: commentsPart,
+    authorCatalog,
+  };
+}
+
+async function inspectClosedLeaves(zip, sourcePart, { allowClosedLeaves }) {
+  const relationships = await relationshipEntriesForPart(zip, sourcePart);
+  const notesRelationships = relationships.filter((entry) => relationshipTypeMatches(entry, "notesSlide"));
+  const commentsRelationships = relationships.filter((entry) => relationshipTypeMatches(entry, "comments"));
+  if (!allowClosedLeaves) {
+    if (notesRelationships.length) {
+      throw new Error("This duplicate workflow intentionally accepts no speaker-notes leaf unless allowClosedLeaves is explicitly true.");
+    }
+    if (commentsRelationships.length) {
+      throw new Error("This duplicate workflow intentionally accepts no legacy-comments leaf unless allowClosedLeaves is explicitly true.");
+    }
+    return { profile: "canonical-inline-leaves-without-notes-or-comments", notes: null, comments: null };
+  }
+  if (notesRelationships.length > 1 || commentsRelationships.length > 1) {
+    throw new Error("Closed-leaf duplication accepts at most one NotesSlide and one legacy-comments relationship.");
+  }
+  const notes = notesRelationships.length ? await inspectNotesLeaf(zip, sourcePart, notesRelationships[0]) : null;
+  const comments = commentsRelationships.length ? await inspectLegacyCommentsLeaf(zip, commentsRelationships[0]) : null;
+  return {
+    profile: notes || comments
+      ? "canonical-inline-leaves-with-closed-relationship-leaves"
+      : "canonical-inline-leaves-without-notes-or-comments",
+    notes,
+    comments,
+  };
+}
+
+function closedLeafSemanticSnapshot(slide) {
+  return JSON.stringify({
+    speakerNotes: typeof slide.speakerNotes?.text === "string" ? slide.speakerNotes.text : null,
+    legacyComments: (slide.comments?.items || []).map((thread) => ({
+      nativeFormat: thread.nativeFormat || null,
+      targetId: thread.targetId || null,
+      position: thread.position || null,
+      comments: (thread.comments || []).map((comment) => ({
+        author: comment.author || null,
+        text: comment.text || null,
+        created: comment.created || null,
+      })),
+    })),
+  });
 }
 
 function canonicalCloneSnapshot(slide) {
@@ -147,21 +310,80 @@ async function modelSvg(slide) {
   };
 }
 
-async function assertWorkflowScope(zip, sourcePart) {
-  const relationshipPart = zip.file(relationshipPartPath(sourcePart));
-  if (!relationshipPart) throw new Error("Source SlidePart " + sourcePart + " has no relationship part.");
-  const relationshipsXml = await relationshipPart.async("text");
-  const relationshipTypes = [...relationshipsXml.matchAll(/<Relationship\b[^>]*>/gi)]
-    .map((match) => xmlAttributes(match[0]).Type || "");
-  if (relationshipTypes.some((type) => type.endsWith("/notesSlide"))) {
-    throw new Error("This duplicate workflow intentionally accepts no speaker-notes leaf; use an explicit broader closed-graph workflow for notes.");
+async function assertClosedLeafClonePackage(sourceZip, outputZip, sourceLeaves, cloneLeaves, sourcePart, clonePart) {
+  if (Boolean(sourceLeaves.notes) !== Boolean(cloneLeaves.notes) || Boolean(sourceLeaves.comments) !== Boolean(cloneLeaves.comments)) {
+    throw new Error("PPTX duplicate did not retain the exact closed-leaf profile of its source SlidePart.");
   }
-  if (relationshipTypes.some((type) => type.endsWith("/comments"))) {
-    throw new Error("This duplicate workflow intentionally accepts no legacy-comments leaf; use an explicit broader closed-graph workflow for comments.");
+  const validation = { speakerNotes: null, legacyComments: null };
+  if (sourceLeaves.notes) {
+    const sourceNotes = sourceLeaves.notes;
+    const cloneNotes = cloneLeaves.notes;
+    if (sourceNotes.relationship.id !== cloneNotes.relationship.id || sourceNotes.relationship.type !== cloneNotes.relationship.type) {
+      throw new Error("PPTX duplicate changed the source SlidePart NotesSlide relationship identity.");
+    }
+    if (sourceNotes.part === cloneNotes.part || sourceZip.file(cloneNotes.part)) {
+      throw new Error("PPTX duplicate did not allocate a distinct NotesSlide part for the clone.");
+    }
+    if (sourceNotes.notesMaster.id !== cloneNotes.notesMaster.id ||
+        sourceNotes.notesMaster.type !== cloneNotes.notesMaster.type ||
+        sourceNotes.notesMaster.targetPart !== cloneNotes.notesMaster.targetPart) {
+      throw new Error("PPTX duplicate did not retain the immutable NotesMaster relationship.");
+    }
+    if (sourceNotes.slide.id !== cloneNotes.slide.id || sourceNotes.slide.type !== cloneNotes.slide.type ||
+        sourceNotes.slide.targetPart !== sourcePart || cloneNotes.slide.targetPart !== clonePart) {
+      throw new Error("PPTX duplicate did not repoint the cloned NotesSlide back-reference at the clone SlidePart.");
+    }
+    const [sourceNotesBytes, cloneNotesBytes] = await Promise.all([
+      requiredZipBytes(sourceZip, sourceNotes.part),
+      requiredZipBytes(outputZip, cloneNotes.part),
+    ]);
+    if (!Buffer.from(sourceNotesBytes).equals(Buffer.from(cloneNotesBytes))) {
+      throw new Error("PPTX duplicate changed NotesSlide XML instead of verbatim-copying the accepted leaf.");
+    }
+    validation.speakerNotes = {
+      sourcePart: sourceNotes.part,
+      clonePart: cloneNotes.part,
+      sourceRelationshipPart: sourceNotes.relationshipPart,
+      cloneRelationshipPart: cloneNotes.relationshipPart,
+      notesMasterPart: sourceNotes.notesMaster.targetPart,
+      notesXmlByteIdentical: true,
+      notesMasterShared: true,
+      cloneBackReferencePointsAtClone: true,
+    };
   }
+  if (sourceLeaves.comments) {
+    const sourceComments = sourceLeaves.comments;
+    const cloneComments = cloneLeaves.comments;
+    if (sourceComments.relationship.id !== cloneComments.relationship.id || sourceComments.relationship.type !== cloneComments.relationship.type) {
+      throw new Error("PPTX duplicate changed the source SlidePart legacy-comments relationship identity.");
+    }
+    if (sourceComments.part === cloneComments.part || sourceZip.file(cloneComments.part)) {
+      throw new Error("PPTX duplicate did not allocate a distinct SlideComments part for the clone.");
+    }
+    if (sourceComments.authorCatalog.id !== cloneComments.authorCatalog.id ||
+        sourceComments.authorCatalog.type !== cloneComments.authorCatalog.type ||
+        sourceComments.authorCatalog.targetPart !== cloneComments.authorCatalog.targetPart) {
+      throw new Error("PPTX duplicate did not retain the immutable comment-author catalog relationship.");
+    }
+    const [sourceCommentsBytes, cloneCommentsBytes] = await Promise.all([
+      requiredZipBytes(sourceZip, sourceComments.part),
+      requiredZipBytes(outputZip, cloneComments.part),
+    ]);
+    if (!Buffer.from(sourceCommentsBytes).equals(Buffer.from(cloneCommentsBytes))) {
+      throw new Error("PPTX duplicate changed SlideComments XML instead of verbatim-copying the accepted leaf.");
+    }
+    validation.legacyComments = {
+      sourcePart: sourceComments.part,
+      clonePart: cloneComments.part,
+      commentAuthorsPart: sourceComments.authorCatalog.targetPart,
+      commentsXmlByteIdentical: true,
+      commentAuthorsShared: true,
+    };
+  }
+  return validation;
 }
 
-async function assertDuplicatePackageScope(sourceBytes, outputBytes, sourceIndex) {
+async function assertDuplicatePackageScope(sourceBytes, outputBytes, sourceIndex, { allowClosedLeaves }) {
   const [sourceZip, outputZip] = await Promise.all([JSZip.loadAsync(sourceBytes), JSZip.loadAsync(outputBytes)]);
   const sourceParts = packagePartPaths(sourceZip);
   const outputParts = packagePartPaths(outputZip);
@@ -181,10 +403,21 @@ async function assertDuplicatePackageScope(sourceBytes, outputBytes, sourceIndex
   if (sourceZip.file(clonePart) || !/^ppt\/slides\/slide\d+\.xml$/i.test(clonePart)) {
     throw new Error("PPTX duplicate did not allocate a distinct canonical SlidePart path.");
   }
+  const [sourceLeaves, cloneLeaves] = await Promise.all([
+    inspectClosedLeaves(sourceZip, sourcePart, { allowClosedLeaves }),
+    inspectClosedLeaves(outputZip, clonePart, { allowClosedLeaves }),
+  ]);
+  const closedLeaves = await assertClosedLeafClonePackage(sourceZip, outputZip, sourceLeaves, cloneLeaves, sourcePart, clonePart);
   const newParts = outputParts.filter((partPath) => !sourceZip.file(partPath));
-  const expectedNewParts = [clonePart, relationshipPartPath(clonePart)].sort();
+  const expectedNewParts = [clonePart, relationshipPartPath(clonePart)];
+  if (cloneLeaves.notes) expectedNewParts.push(cloneLeaves.notes.part, cloneLeaves.notes.relationshipPart);
+  if (cloneLeaves.comments) expectedNewParts.push(cloneLeaves.comments.part);
+  expectedNewParts.sort();
+  if (new Set(expectedNewParts).size !== expectedNewParts.length) {
+    throw new Error("PPTX duplicate calculated an ambiguous closed-leaf package delta.");
+  }
   if (JSON.stringify(newParts) !== JSON.stringify(expectedNewParts)) {
-    throw new Error("PPTX duplicate created an unexpected package part outside the bare source-bound clone profile.");
+    throw new Error("PPTX duplicate created an unexpected package part outside the selected source-bound clone profile.");
   }
   for (const partPath of sourceParts) {
     if (TOPOLOGY_PARTS.has(partPath)) continue;
@@ -210,16 +443,19 @@ async function assertDuplicatePackageScope(sourceBytes, outputBytes, sourceIndex
     outputPartCount: outputParts.length,
     newPartPaths: newParts,
     retainedSourcePartsByteIdentical: true,
+    profile: sourceLeaves.profile,
+    closedLeaves,
   };
 }
 
-export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, expectedName }) {
+export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, expectedName, allowClosedLeaves = false }) {
   const sourcePath = path.resolve(requiredText(inputPath, "inputPath"));
   const finalPath = path.resolve(requiredText(outputPath, "outputPath"));
   const finalAuditPath = path.resolve(requiredText(auditPath, "auditPath"));
   if (sourcePath === finalPath) throw new Error("outputPath must be distinct from inputPath so the original presentation remains immutable.");
   if (finalAuditPath === sourcePath || finalAuditPath === finalPath) throw new Error("auditPath must be distinct from the source and PPTX output paths.");
   const sourceName = requiredText(expectedName, "expectedName");
+  if (typeof allowClosedLeaves !== "boolean") throw new TypeError("allowClosedLeaves must be a boolean when supplied.");
 
   const source = await fs.readFile(sourcePath);
   const presentation = await PresentationFile.importPptx(new FileBlob(source, { type: PPTX_MIME, name: path.basename(sourcePath) }));
@@ -231,12 +467,13 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
   const sourceSlideParts = await orderedSlidePartPaths(sourceZip);
   if (sourceSlideParts.length !== presentation.slides.count) throw new Error("PPTX package slide order does not match the imported presentation model.");
   const sourcePart = sourceSlideParts[sourceIndex];
-  await assertWorkflowScope(sourceZip, sourcePart);
+  const sourceLeaves = await inspectClosedLeaves(sourceZip, sourcePart, { allowClosedLeaves });
   if (slideNameFromXml(Buffer.from(await requiredZipBytes(sourceZip, sourcePart)).toString("utf8"), sourcePart) !== sourceName) {
     throw new Error("The selected model slide does not match its source SlidePart p:cSld/@name.");
   }
   const originalNames = presentation.slides.items.map((slide) => slide.name);
   const sourceSemantic = canonicalCloneSnapshot(target);
+  const sourceClosedLeafSemantics = closedLeafSemanticSnapshot(target);
   const sourceRender = await modelSvg(target);
   const clone = target.duplicate();
   if (presentation.slides.items.indexOf(clone) !== sourceIndex + 1 || clone.name !== target.name) {
@@ -254,7 +491,7 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
     const exported = await PresentationFile.exportPptx(presentation);
     await exported.save(temporaryPath);
     const output = await fs.readFile(temporaryPath);
-    const packageScope = await assertDuplicatePackageScope(source, output, sourceIndex);
+    const packageScope = await assertDuplicatePackageScope(source, output, sourceIndex, { allowClosedLeaves });
     const reimported = await PresentationFile.importPptx(new FileBlob(output, { type: PPTX_MIME, name: path.basename(finalPath) }));
     const expectedNames = [...originalNames];
     expectedNames.splice(sourceIndex + 1, 0, sourceName);
@@ -265,6 +502,9 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
     const roundTripClone = reimported.slides.items[sourceIndex + 1];
     if (canonicalCloneSnapshot(retained) !== sourceSemantic || canonicalCloneSnapshot(roundTripClone) !== sourceSemantic) {
       throw new Error("PPTX duplicate did not preserve source and clone semantic structure after reimport.");
+    }
+    if (closedLeafSemanticSnapshot(retained) !== sourceClosedLeafSemantics || closedLeafSemanticSnapshot(roundTripClone) !== sourceClosedLeafSemantics) {
+      throw new Error("PPTX duplicate did not preserve source and clone closed-leaf semantics after reimport.");
     }
     const cloneRender = await modelSvg(roundTripClone);
     if (cloneRender.visualSha256 !== sourceRender.visualSha256) throw new Error("PPTX duplicate changed the clone model SVG render.");
@@ -284,7 +524,12 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
         cloneIndex: sourceIndex + 1,
         sourcePart: packageScope.sourcePart,
         clonePart: packageScope.clonePart,
-        scope: "canonical-inline-leaves-without-notes-or-comments",
+        scope: packageScope.profile,
+        allowClosedLeaves,
+        closedLeaves: {
+          speakerNotes: Boolean(sourceLeaves.notes),
+          legacyComments: Boolean(sourceLeaves.comments),
+        },
       },
       warnings: [],
       validation: {
@@ -297,11 +542,13 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
           newPartPaths: packageScope.newPartPaths,
           retainedSourcePartsByteIdentical: packageScope.retainedSourcePartsByteIdentical,
           cloneInsertedAdjacent: true,
+          closedLeaves: packageScope.closedLeaves,
         },
         reimport: {
           ok: true,
           slideCount: reimported.slides.count,
           sourceAndCloneSemanticsEqual: true,
+          sourceAndCloneClosedLeavesEqual: true,
           sourceAndCloneNames: [retained.name, roundTripClone.name],
         },
         modelRender: {
@@ -330,13 +577,21 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
 }
 
 function parseCli(argv) {
-  const [
-    inputPath,
-    outputPath,
-    auditPath,
-    expectedName = "Clone source",
-  ] = argv;
-  return { inputPath, outputPath, auditPath, expectedName };
+  const values = [];
+  let allowClosedLeaves = false;
+  for (const value of argv) {
+    if (value === "--allow-closed-leaves") {
+      if (allowClosedLeaves) throw new Error("--allow-closed-leaves may be supplied only once.");
+      allowClosedLeaves = true;
+      continue;
+    }
+    values.push(value);
+  }
+  if (values.length < 3 || values.length > 4) {
+    throw new Error("Usage: openchestnut-slide-duplicate-workflow.mjs <input.pptx> <output.pptx> <audit.json> [unique source name] [--allow-closed-leaves]");
+  }
+  const [inputPath, outputPath, auditPath, expectedName = "Clone source"] = values;
+  return { inputPath, outputPath, auditPath, expectedName, allowClosedLeaves };
 }
 
 const entry = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : "";
@@ -348,5 +603,6 @@ if (entry === import.meta.url) {
     outputSha256: result.audit.output.sha256,
     sourcePart: result.audit.operation.sourcePart,
     clonePart: result.audit.operation.clonePart,
+    closedLeaves: result.audit.operation.closedLeaves,
   }));
 }

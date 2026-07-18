@@ -384,6 +384,112 @@ try {
   assert.equal(await fs.access(notesOutput).then(() => true, () => false), false);
   assert.equal(await fs.access(notesAudit).then(() => true, () => false), false);
 
+  const closedLeavesInput = path.join(duplicateDir, "closed-leaves-source.pptx");
+  const closedLeavesOutput = path.join(duplicateDir, "closed-leaves-output.pptx");
+  const closedLeavesAudit = path.join(duplicateDir, "closed-leaves-audit.json");
+  const closedLeavesFixture = Presentation.create({ slideSize: { width: 640, height: 360 } });
+  const closedLeavesSource = closedLeavesFixture.slides.add({
+    name: "Closed leaves source",
+    notes: "Open with the decision.\nClose with the owner.",
+  });
+  closedLeavesSource.shapes.add({
+    name: "closed-leaves-title",
+    position: { left: 48, top: 40, width: 300, height: 72 },
+    text: "Closed leaves source",
+  });
+  closedLeavesSource.comments.addThread(undefined, "Confirm the original evidence before delivery.", {
+    author: "Review Owner",
+    created: "2026-07-18T03:05:00Z",
+    position: { x: 360, y: 240 },
+  });
+  await (await PresentationFile.exportPptx(closedLeavesFixture)).save(closedLeavesInput);
+  const closedLeavesSourceBytes = await fs.readFile(closedLeavesInput);
+  const closedLeavesResult = await duplicatePptxSlide({
+    inputPath: closedLeavesInput,
+    outputPath: closedLeavesOutput,
+    auditPath: closedLeavesAudit,
+    expectedName: "Closed leaves source",
+    allowClosedLeaves: true,
+  });
+  assert.equal(closedLeavesResult.audit.operation.scope, "canonical-inline-leaves-with-closed-relationship-leaves");
+  assert.deepEqual(closedLeavesResult.audit.operation.closedLeaves, { speakerNotes: true, legacyComments: true });
+  assert.deepEqual(closedLeavesResult.audit.validation.package.newPartPaths, [
+    "ppt/comments/comment2.xml",
+    "ppt/notesSlides/_rels/notesSlide2.xml.rels",
+    "ppt/notesSlides/notesSlide2.xml",
+    "ppt/slides/_rels/slide2.xml.rels",
+    "ppt/slides/slide2.xml",
+  ]);
+  assert.equal(closedLeavesResult.audit.validation.package.retainedSourcePartsByteIdentical, true);
+  assert.deepEqual(closedLeavesResult.audit.validation.package.closedLeaves.speakerNotes, {
+    sourcePart: "ppt/notesSlides/notesSlide1.xml",
+    clonePart: "ppt/notesSlides/notesSlide2.xml",
+    sourceRelationshipPart: "ppt/notesSlides/_rels/notesSlide1.xml.rels",
+    cloneRelationshipPart: "ppt/notesSlides/_rels/notesSlide2.xml.rels",
+    notesMasterPart: "ppt/notesMasters/notesMaster1.xml",
+    notesXmlByteIdentical: true,
+    notesMasterShared: true,
+    cloneBackReferencePointsAtClone: true,
+  });
+  assert.deepEqual(closedLeavesResult.audit.validation.package.closedLeaves.legacyComments, {
+    sourcePart: "ppt/comments/comment1.xml",
+    clonePart: "ppt/comments/comment2.xml",
+    commentAuthorsPart: "ppt/commentAuthors.xml",
+    commentsXmlByteIdentical: true,
+    commentAuthorsShared: true,
+  });
+  assert.equal(closedLeavesResult.audit.validation.reimport.sourceAndCloneClosedLeavesEqual, true);
+  assert.deepEqual(await fs.readFile(closedLeavesInput), closedLeavesSourceBytes);
+  const closedLeavesRoundTrip = await PresentationFile.importPptx(new FileBlob(await fs.readFile(closedLeavesOutput), {
+    type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    name: "closed-leaves-output.pptx",
+  }));
+  assert.deepEqual(closedLeavesRoundTrip.slides.items.map((slide) => slide.name), ["Closed leaves source", "Closed leaves source"]);
+  assert.deepEqual(closedLeavesRoundTrip.slides.items.map((slide) => slide.speakerNotes.text), [
+    "Open with the decision.\nClose with the owner.",
+    "Open with the decision.\nClose with the owner.",
+  ]);
+  assert.deepEqual(closedLeavesRoundTrip.slides.items.map((slide) => slide.comments.items[0].comments[0].text), [
+    "Confirm the original evidence before delivery.",
+    "Confirm the original evidence before delivery.",
+  ]);
+  await assert.rejects(
+    () => duplicatePptxSlide({
+      inputPath: closedLeavesInput,
+      outputPath: path.join(duplicateDir, "invalid-option.pptx"),
+      auditPath: path.join(duplicateDir, "invalid-option.json"),
+      expectedName: "Closed leaves source",
+      allowClosedLeaves: "yes",
+    }),
+    /allowClosedLeaves must be a boolean/,
+  );
+
+  const irregularLeavesInput = path.join(duplicateDir, "irregular-closed-leaves-source.pptx");
+  const irregularLeavesOutput = path.join(duplicateDir, "irregular-closed-leaves-output.pptx");
+  const irregularLeavesAudit = path.join(duplicateDir, "irregular-closed-leaves-audit.json");
+  const irregularLeavesZip = await JSZip.loadAsync(closedLeavesSourceBytes);
+  const sourceNotesRelationships = await irregularLeavesZip.file("ppt/notesSlides/_rels/notesSlide1.xml.rels").async("text");
+  irregularLeavesZip.file(
+    "ppt/notesSlides/_rels/notesSlide1.xml.rels",
+    sourceNotesRelationships.replace(
+      "</Relationships>",
+      '<Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="/ppt/customXml/item1.xml" Id="rIdUnexpected" /></Relationships>',
+    ),
+  );
+  await fs.writeFile(irregularLeavesInput, await irregularLeavesZip.generateAsync({ type: "nodebuffer" }));
+  await assert.rejects(
+    () => duplicatePptxSlide({
+      inputPath: irregularLeavesInput,
+      outputPath: irregularLeavesOutput,
+      auditPath: irregularLeavesAudit,
+      expectedName: "Closed leaves source",
+      allowClosedLeaves: true,
+    }),
+    /exactly notesMaster and slide relationships/,
+  );
+  assert.equal(await fs.access(irregularLeavesOutput).then(() => true, () => false), false);
+  assert.equal(await fs.access(irregularLeavesAudit).then(() => true, () => false), false);
+
   const duplicateCliOutput = path.join(duplicateDir, "connector-duplicate-cli.pptx");
   const duplicateCliAudit = path.join(duplicateDir, "cli-audit.json");
   const duplicateCli = spawnSync(process.execPath, [
@@ -395,6 +501,19 @@ try {
   ], { encoding: "utf8" });
   assert.equal(duplicateCli.status, 0, `slide-duplicate CLI failed\n${duplicateCli.stdout}\n${duplicateCli.stderr}`);
   assert.equal(JSON.parse(duplicateCli.stdout).clonePart, "ppt/slides/slide3.xml");
+
+  const closedLeavesCliOutput = path.join(duplicateDir, "closed-leaves-cli-output.pptx");
+  const closedLeavesCliAudit = path.join(duplicateDir, "closed-leaves-cli-audit.json");
+  const closedLeavesCli = spawnSync(process.execPath, [
+    "skills/presentations/skills/presentations/examples/openchestnut-slide-duplicate-workflow.mjs",
+    closedLeavesInput,
+    closedLeavesCliOutput,
+    closedLeavesCliAudit,
+    "Closed leaves source",
+    "--allow-closed-leaves",
+  ], { encoding: "utf8" });
+  assert.equal(closedLeavesCli.status, 0, `closed-leaves slide-duplicate CLI failed\n${closedLeavesCli.stdout}\n${closedLeavesCli.stderr}`);
+  assert.deepEqual(JSON.parse(closedLeavesCli.stdout).closedLeaves, { speakerNotes: true, legacyComments: true });
 
   const convergenceFiles = [
     "test/skill-harness/presentations/scripts/workflow.mjs",
