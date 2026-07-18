@@ -15,8 +15,8 @@ The suite is evaluator-side repository infrastructure. `evals/`, the runner, loc
 
 ## Current suite
 
-- 26 cases: 19 PDF, 2 Documents, 3 Spreadsheets, and 2 Presentations.
-- 7 `ready` PDF cases use deterministic generated or inline inputs.
+- 27 cases: 19 PDF, 2 Documents, 4 Spreadsheets, and 2 Presentations.
+- 8 `ready` cases use deterministic generated or inline inputs: seven PDF cases and one XLSX threaded-comment workflow.
 - 19 `asset-required` cases define fixture specifications but do not run until licensed, version-pinned corpus files or test PKI are placed under `evals/assets/`.
 - Every family has both a success and a fail-closed case. Some advanced PDF cases accept either verified success or an explicit safe refusal.
 - The default policy uses three trials per subject. Trial count is recorded per case rather than silently inferred by the Agent.
@@ -33,9 +33,13 @@ npm run eval:agents -- prepare pdf-bounded-contract-id-replace --subject candida
 npm run eval:agents -- prepare pdf-bounded-contract-id-replace --subject reference --trial 1
 npm run eval:agents -- run pdf-overflow-replace-refusal --subject candidate --trial 1
 npm run eval:agents -- score pdf-overflow-replace-refusal --trial-root /absolute/trial/path
+npm run eval:agents -- prepare xlsx-threaded-reply-resolve --subject candidate --trial 1
+npm run eval:agents -- run xlsx-threaded-reply-resolve --subject candidate --trial 1
 ```
 
 Generated PDF fixtures require Python with ReportLab and pypdf. All seven ready PDF case graders additionally require pdfplumber and Pillow; their applicable visual oracles require `pdftoppm`. Set `OPEN_OFFICE_AGENT_EVAL_PYTHON` to that interpreter and, only when it is not on `PATH`, set `OPEN_OFFICE_AGENT_EVAL_PDFTOPPM`. Prepared PDF prompts explicitly bind that interpreter as `OPEN_OFFICE_PDF_PROVIDER_PYTHON`, because Codex shell policy may not inherit the runner environment. In Codex, use the Python executable returned by `load_workspace_dependencies`.
+
+The ready XLSX fixture is generated through the public OpenChestnut facade and needs no Python provider. Its independent native visual grader requires `soffice`, `pdfinfo`, and `pdftoppm`; a missing executable reports `grader-unavailable`, never a product pass or failure.
 
 `--subject candidate` installs `skills/<family>/skills/<skill>`. `--subject reference` copies the matching handoff reference Skill into that trial and changes only its `office-artifact-tool` package-name occurrences inside the isolated copy. Both subjects install the same freshly packed `open-office-artifact-tool` tarball, so the comparison changes the Skill instructions rather than the product candidate.
 
@@ -92,6 +96,12 @@ All seven ready PDF cases now have complete case-specific grading:
 The category weights are machine 45, visual 25, security 20, and trace 10. A category earns its weight only when every check in it passes; a not-applicable category is removed from the denominator. `rawScorePercent` preserves the evidence-weighted result; a failed safety hard gate forces `scorePercent` to zero. `taskPassed` is true only when generic hard gates and every applicable case category pass. Missing evaluator dependencies produce `grader-unavailable` with an infrastructure error, never a candidate failure or an inferred pass. A present but unreadable or unrenderable candidate PDF is instead a definitive graded failure.
 
 The PDF oracle is evaluator-side and never copied into the Agent workspace. It uses pypdf/pdfplumber for semantic and structural evidence and Poppler/Pillow for visual evidence, independently of the PyMuPDF mutation provider. Audit claims and Codex command traces are graded separately from final bytes.
+
+## Ready Office slice
+
+`xlsx-threaded-reply-resolve` begins the same black-box discipline for Office files. The runner generates a canonical `Forecast!F19` workbook with a root threaded comment and one direct reply, then treats it as an immutable uploaded XLSX. The independent grader decodes the output package rather than trusting the model: it checks one threaded-comments part and one persons part, exact preservation of the original comment IDs/person IDs/dates/text/target/order, one new GUID-backed direct root-child reply, resolved state for all three comments, and absence of a legacy `comments*.xml` note downgrade. It also binds audit source/output hashes, explicit OpenChestnut/rewrite/no-fallback evidence, public `SpreadsheetFile.importXlsx`/`exportXlsx` trace evidence, a second-import assertion, and a LibreOffice-to-PDF/Poppler nonblank render of every final page.
+
+The bounded contract deliberately rejects reply-of-reply and branched graphs. The separate `xlsx-threaded-nested-reply-boundary` corpus case requires a safe refusal until a larger identity-preserving threaded-comment graph operation is explicitly modeled. The fixture/oracle and public Skill example are tested in-repository; an autonomous Agent trial is recorded only after the runner executes it, rather than inferred from those unit tests.
 
 ## Pilot findings
 
