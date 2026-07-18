@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { SpreadsheetFile, Workbook } from "../src/index.mjs";
+import { DocumentFile, DocumentModel, SpreadsheetFile, Workbook } from "../src/index.mjs";
 
 export const XLSX_THREADED_REVIEW_FIXTURE = Object.freeze({
   workbookName: "reviewed-budget.xlsx",
@@ -27,6 +27,21 @@ export const XLSX_THREADED_REVIEW_FIXTURE = Object.freeze({
 });
 
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+export const DOCX_CLASSIC_COMMENT_FIXTURE = Object.freeze({
+  documentName: "legal-review.docx",
+  title: "Controlled rollout legal review",
+  anchorText: "Decision: proceed with controlled rollout.",
+  supportingText: "The control plan, owner, and retention schedule remain unchanged.",
+  comment: Object.freeze({
+    author: "Legal reviewer",
+    initials: "LR",
+    date: "2026-07-18T09:00:00Z",
+    originalText: "Please confirm the final retention wording.",
+    replacementText: "Approved after legal review.",
+  }),
+});
 
 function commentConfig(comment) {
   return {
@@ -92,7 +107,40 @@ export async function generateXlsxThreadedReview(target) {
   return { path: target, type: XLSX_MIME };
 }
 
+export async function generateDocxClassicCommentReview(target) {
+  const fixture = DOCX_CLASSIC_COMMENT_FIXTURE;
+  const document = DocumentModel.create({
+    name: fixture.title,
+    defaultRunStyle: { fontFamily: "Aptos", fontSize: 11, color: "#172033" },
+    blocks: [],
+  });
+  document.addParagraph(fixture.title, {
+    paragraphFormat: { spaceAfterTwips: 160 },
+    runs: [{ text: fixture.title, style: { bold: true, fontSize: 16, color: "#123B5D" } }],
+  });
+  const decision = document.addParagraph(fixture.anchorText, {
+    paragraphFormat: { spaceAfterTwips: 120 },
+    runs: [{ text: fixture.anchorText, style: { bold: true } }],
+  });
+  document.addParagraph(fixture.supportingText, {
+    paragraphFormat: { spaceAfterTwips: 120 },
+  });
+  document.addParagraph("Reviewer instruction: preserve the decision text and update only the attached classic comment.");
+  document.addComment(decision, fixture.comment.originalText, {
+    author: fixture.comment.author,
+    initials: fixture.comment.initials,
+    date: fixture.comment.date,
+  });
+  const verification = document.verify({ visualQa: true });
+  if (!verification.ok) throw new Error("Generated DOCX classic-comment fixture failed model verification: " + verification.ndjson);
+  const exported = await DocumentFile.exportDocx(document);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, new Uint8Array(await exported.arrayBuffer()));
+  return { path: target, type: DOCX_MIME };
+}
+
 export async function generateOfficeInput(generator, target) {
   if (generator === "xlsx-threaded-review") return generateXlsxThreadedReview(target);
+  if (generator === "docx-classic-comment-review") return generateDocxClassicCommentReview(target);
   return null;
 }

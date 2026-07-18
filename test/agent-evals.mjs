@@ -5,8 +5,16 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { FileBlob, SpreadsheetFile } from "../src/index.mjs";
-import { XLSX_THREADED_REVIEW_FIXTURE, generateOfficeInput } from "../scripts/agent-eval-office-fixtures.mjs";
+import { DocumentFile, FileBlob, SpreadsheetFile } from "../src/index.mjs";
+import {
+  DOCX_CLASSIC_COMMENT_FIXTURE,
+  XLSX_THREADED_REVIEW_FIXTURE,
+  generateOfficeInput,
+} from "../scripts/agent-eval-office-fixtures.mjs";
+import {
+  gradeDocxClassicCommentEvidence,
+  inspectClassicCommentDocx,
+} from "../scripts/agent-eval-docx-graders.mjs";
 import { gradeOfficeCase, gradeXlsxThreadedReplyEvidence, inspectThreadedWorkbook } from "../scripts/agent-eval-office-graders.mjs";
 import {
   extractCompletedCommands,
@@ -33,9 +41,10 @@ import {
 } from "../scripts/run-agent-evals.mjs";
 
 const { suite, cases } = await loadSuite();
-assert.deepEqual(validateSuite(suite, cases), { cases: 27, pdfCases: 19, ready: 8 });
+assert.deepEqual(validateSuite(suite, cases), { cases: 29, pdfCases: 19, ready: 9 });
 assert.equal(cases.filter((item) => item.family === "pdf" && item.status === "ready").length, 7);
 assert.equal(cases.filter((item) => item.family === "spreadsheets" && item.status === "ready").length, 1);
+assert.equal(cases.filter((item) => item.family === "documents" && item.status === "ready").length, 1);
 
 const repository = repositoryProvenance();
 assert.match(repository.head, /^[0-9a-f]{40}$/);
@@ -109,6 +118,85 @@ try {
   }
 } finally {
   await fs.rm(threadedReplyRoot, { recursive: true, force: true });
+}
+
+const classicCommentItem = cases.find((item) => item.id === "docx-classic-comment-text-edit");
+const classicCommentRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-eval-docx-comment-"));
+try {
+  const classicInput = path.join(classicCommentRoot, "inputs", DOCX_CLASSIC_COMMENT_FIXTURE.documentName);
+  const classicOutput = path.join(classicCommentRoot, "outputs", "legal-review-updated.docx");
+  await generateOfficeInput("docx-classic-comment-review", classicInput);
+  const classicSource = await fs.readFile(classicInput);
+  const classicDocument = await DocumentFile.importDocx(new FileBlob(classicSource, {
+    type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    name: DOCX_CLASSIC_COMMENT_FIXTURE.documentName,
+  }));
+  const classicTarget = classicDocument.blocks.find((block) => block.kind === "paragraph" && block.text === DOCX_CLASSIC_COMMENT_FIXTURE.anchorText);
+  assert.ok(classicTarget);
+  const classicComment = classicDocument.comments.find((comment) => comment.targetId === classicTarget.id);
+  assert.ok(classicComment);
+  assert.equal(classicComment.text, DOCX_CLASSIC_COMMENT_FIXTURE.comment.originalText);
+  classicComment.text = DOCX_CLASSIC_COMMENT_FIXTURE.comment.replacementText;
+  const classicExport = await DocumentFile.exportDocx(classicDocument);
+  const classicBytes = new Uint8Array(await classicExport.arrayBuffer());
+  await fs.mkdir(path.dirname(classicOutput), { recursive: true });
+  await fs.writeFile(classicOutput, classicBytes);
+  const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
+  const classicAudit = {
+    status: "succeeded",
+    source: { sha256: hash(classicSource) },
+    output: { sha256: hash(classicBytes) },
+    provider: { actual: "open-chestnut", version: "test", silentFallback: false },
+    savePolicy: { strategy: "rewrite" },
+    operation: { type: "classic-comment-text-edit" },
+    validation: { reimport: { ok: true } },
+  };
+  await fs.writeFile(path.join(classicCommentRoot, "outputs", "audit.json"), JSON.stringify(classicAudit, null, 2));
+  const classicEvidence = {
+    source: await inspectClassicCommentDocx(classicInput),
+    output: await inspectClassicCommentDocx(classicOutput),
+    visual: {
+      source: { available: true, ok: true, pageCount: 1, pages: [{ width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "stable" }] },
+      output: { available: true, ok: true, pageCount: 1, pages: [{ width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "stable" }] },
+    },
+  };
+  const classicTrace = JSON.stringify({ type: "item.completed", item: { type: "command_execution", id: "docx-comment", command: "node -e 'DocumentFile.importDocx(); DocumentFile.exportDocx()'" } });
+  const classicChecks = gradeDocxClassicCommentEvidence({
+    evidence: classicEvidence,
+    audit: classicAudit,
+    commands: extractCompletedCommands(classicTrace),
+    item: classicCommentItem,
+  });
+  assert.equal(classicChecks.every((check) => check.passed), true);
+  const publishedClassicWorkflowChecks = gradeDocxClassicCommentEvidence({
+    evidence: classicEvidence,
+    audit: classicAudit,
+    commands: ["node .agents/skills/documents/examples/openchestnut-classic-comment-edit-workflow.mjs inputs/legal-review.docx outputs/legal-review-updated.docx outputs/audit.json"],
+    item: classicCommentItem,
+  });
+  assert.equal(publishedClassicWorkflowChecks.find((check) => check.id === "docx-trace:typed-roundtrip")?.passed, true);
+  const untrustedClassicWorkflowChecks = gradeDocxClassicCommentEvidence({
+    evidence: classicEvidence,
+    audit: classicAudit,
+    commands: ["node scratch/classic-comment-edit.mjs inputs/legal-review.docx outputs/legal-review-updated.docx outputs/audit.json"],
+    item: classicCommentItem,
+  });
+  assert.equal(untrustedClassicWorkflowChecks.find((check) => check.id === "docx-trace:typed-roundtrip")?.passed, false);
+  const nativeClassicResult = await gradeOfficeCase({
+    item: classicCommentItem,
+    workspace: classicCommentRoot,
+    evaluator: path.join(classicCommentRoot, "evaluator"),
+    finalMessage: "completed",
+    trace: classicTrace,
+  });
+  if (nativeClassicResult.graded) {
+    assert.equal(nativeClassicResult.rawScorePercent, 100);
+    assert.equal(nativeClassicResult.caseSpecificPassed, true);
+  } else {
+    assert.ok(nativeClassicResult.infrastructureErrors?.length);
+  }
+} finally {
+  await fs.rm(classicCommentRoot, { recursive: true, force: true });
 }
 
 const accessibleItem = cases.find((item) => item.id === "pdf-greenfield-accessible-report");
