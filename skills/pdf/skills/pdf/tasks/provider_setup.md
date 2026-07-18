@@ -45,4 +45,10 @@ export OPEN_OFFICE_PDF_PROVIDER_PYTHON="/absolute/path/to/python"
 
 Every shipped Python entry point re-executes through that interpreter when configured. A missing capability must fail explicitly; never route to another provider or model reconstruction automatically. The `integration` field distinguishes shipped adapters, external documented tools, and planned routes.
 
+If the provider lives in a virtual environment, configure that environment's
+`bin/python` (or Windows `Scripts/python.exe`) directly. The runtime retains
+that executable link instead of resolving it to a base interpreter, so
+`pyvenv.cfg` and the environment's installed PyMuPDF/pypdf/etc. modules remain
+active across probe, plan, mutation, residue scan, and audit.
+
 The project and required MuPDF.js runtime are GNU AGPL-3.0-or-later. Optional tools retain their own upstream licenses and installation obligations; see the repository's third-party notices.

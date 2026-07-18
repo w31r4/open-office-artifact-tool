@@ -26,7 +26,7 @@ The CLI budgets input/page/object/render work, refuses source overwrite includin
 
 ## Specialist Python Runtime Contract
 
-Treat `OPEN_OFFICE_PDF_PROVIDER_PYTHON` as part of provider identity. When it is non-empty, every shipped Python entry point automatically re-executes through that exact interpreter before probing or importing a provider. Do not unset it, replace it after a failed system-Python probe, or infer availability from `which python3`; use one interpreter for probe, plan, mutation, residue scan, and audit. An invalid configured path fails closed. Only when the variable is absent does the current interpreter remain authoritative.
+Treat `OPEN_OFFICE_PDF_PROVIDER_PYTHON` as part of provider identity. When it is non-empty, every shipped Python entry point automatically re-executes through that exact interpreter before probing or importing a provider. Point it at the virtual environment executable itself (`bin/python` or `Scripts/python.exe`): the runtime deliberately preserves that link instead of dereferencing its base interpreter, so the environment's `pyvenv.cfg` and installed provider modules stay active. Do not unset it, replace it after a failed system-Python probe, or infer availability from `which python3`; use one interpreter for probe, plan, mutation, residue scan, and audit. An invalid configured path fails closed. Only when the variable is absent does the current interpreter remain authoritative.
 
 ```bash
 PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"

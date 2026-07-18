@@ -105,6 +105,7 @@ assert.match(skillText, /update_link/);
 assert.match(skillText, /update_form_field/);
 assert.match(skillText, /sourceSha256/);
 assert.match(skillText, /mupdf-link/);
+assert.match(skillText, /virtual environment executable.*pyvenv\.cfg/s);
 assert.match(skillText, /not redaction/i);
 for (const pattern of [
   /ReportLab/,
@@ -158,6 +159,28 @@ assert.equal(fitUnit.stderr, "");
 
 const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-pdf-provider-skill-"));
 try {
+  // A configured provider virtual environment must survive re-exec. Its
+  // bin/python is commonly a symlink to a base interpreter, so resolving the
+  // target before exec would silently lose the venv site-packages.
+  const runtimeVenv = path.join(tempRoot, "provider-runtime-venv");
+  run(python, ["-m", "venv", runtimeVenv], { status: 0 });
+  const runtimePython = process.platform === "win32"
+    ? path.join(runtimeVenv, "Scripts", "python.exe")
+    : path.join(runtimeVenv, "bin", "python");
+  const runtimeProbe = path.join(tempRoot, "provider-runtime-probe.py");
+  await fs.writeFile(runtimeProbe, [
+    "import json, sys",
+    "sys.path.insert(0, sys.argv[1])",
+    "from python_runtime import reexec_configured_provider_python",
+    "reexec_configured_provider_python()",
+    "print(json.dumps({'executable': sys.executable, 'prefix': sys.prefix}))",
+  ].join("\n"), "utf8");
+  const runtimeResult = parseResult(run(python, [runtimeProbe, scriptsRoot], {
+    env: { OPEN_OFFICE_PDF_PROVIDER_PYTHON: runtimePython },
+    status: 0,
+  }));
+  assert.equal(await fs.realpath(runtimeResult.prefix), await fs.realpath(runtimeVenv));
+
   const mupdfCli = path.join(scriptsRoot, "mupdf.mjs");
   const mupdfInput = path.join(tempRoot, "mupdf-input.pdf");
   const mupdfRender = path.join(tempRoot, "mupdf-render.png");
