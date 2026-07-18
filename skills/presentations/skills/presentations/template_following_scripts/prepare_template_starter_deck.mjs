@@ -152,7 +152,7 @@ async function main() {
   const presentation = await PresentationFile.importPptx(await FileBlob.load(pptxPath));
   const sourceSlides = slidesFromPresentation(presentation);
   const outputSlides = validateOutputSlides(map, sourceSlides.length);
-  // `slide.duplicate()` now has a deliberately tiny shape/image/closed-notes
+  // `slide.duplicate()` now has a deliberately tiny shape/inline-table/image/closed-notes
   // leaf profile, but this starter workflow needs arbitrary graph duplication,
   // immediate inherited-object edits, and broad source deletion. Keep the
   // future implementation below as a design skeleton without letting a newly
@@ -161,7 +161,7 @@ async function main() {
   if (!broadTemplateGraphCloneAvailable) {
     throw new Error(
       "Template starter generation requires source-preserving imported-slide duplication plus broad graph deletion. " +
-      "The current OpenChestnut codec has only an isolated layout-only delete profile and an unchanged shape/image/closed-notes clone that requires export/reimport; it will not reconstruct or share a broad clone graph.",
+      "The current OpenChestnut codec has only an isolated layout-only delete profile and an unchanged shape/inline-table/image/closed-notes clone that requires export/reimport; it will not reconstruct or share a broad clone graph.",
     );
   }
   const planCheck = await validateTemplatePlan({

@@ -249,7 +249,7 @@ layout, style, or template. Read `references/template-following.md`, use
 Current availability: the reference starter-deck command below still needs a
 broad imported-slide graph clone and broad graph delete semantics, so it
 deliberately fails closed in the canonical codec. The isolated layout-only
-`slide.delete()` and unchanged shape/image clone profiles with closed notes and
+`slide.delete()` and unchanged shape/inline-table/image clone profiles with closed notes and
 legacy comments are not substitutes: the latter creates an independent part but
 cannot be edited before an export/reimport boundary, and it cannot carry
 arbitrary template graph edges. Do not rebuild or share slide parts to emulate
