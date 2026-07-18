@@ -432,6 +432,27 @@ await assert.rejects(
   (error) => error?.code === "unsupported_workbook_features" && /source-free dynamic array/i.test(error.message),
 );
 
+const ifsFormulaWorkbook = Workbook.create();
+const ifsFormulaSheet = ifsFormulaWorkbook.worksheets.add("Criteria");
+ifsFormulaSheet.getRange("A1:C6").values = [
+  ["Region", "Amount", "Status"],
+  ["East", 14, "Yes"],
+  ["East", 7, "Yes"],
+  ["West", 3, "Yes"],
+  ["East", "n/a", "Yes"],
+  ["West", 20, "No"],
+];
+ifsFormulaSheet.getRange("E1:E4").formulas = [
+  ["=MINIFS(B2:B6,A2:A6,\"East\",C2:C6,\"Yes\")"],
+  ["=MAXIFS(B2:B6,A2:A6,\"East\",C2:C6,\"Yes\")"],
+  ["=MINIFS(B2:B6,A2:A5,\"East\")"],
+  ["=MAXIFS(B2:B6,A2:A6,\"North\")"],
+];
+assert.deepEqual(ifsFormulaSheet.getRange("E1:E4").values, [[7], [14], ["#VALUE!"], [0]]);
+const ifsFormulaXlsx = await SpreadsheetFile.exportXlsx(ifsFormulaWorkbook);
+const importedIfsFormulaWorkbook = await SpreadsheetFile.importXlsx(ifsFormulaXlsx);
+assert.deepEqual(importedIfsFormulaWorkbook.worksheets.getItem("Criteria").getRange("E1:E4").formulas, ifsFormulaSheet.getRange("E1:E4").formulas);
+
 const importedWithoutSourceSnapshot = await SpreadsheetFile.importXlsx(firstXlsx);
 const workbookState = importedWithoutSourceSnapshot[Symbol.for("open-office-artifact-tool.open-chestnut-state")];
 workbookState.opaqueOpc.sourcePackage = undefined;

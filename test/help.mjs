@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 327);
+assert.equal(HELP_CATALOG.length, 329);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -191,6 +191,8 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "fx.SECOND"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.VALUE"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.AVERAGEIF"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.AVERAGEIFS"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "fx.MINIFS"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "fx.MAXIFS"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.NOT"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.TAKE"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.DROP"));
@@ -242,7 +244,7 @@ assert.ok(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.schema
 assert.ok(HELP_CATALOG.find((item) => item.name === "renderArtifact")?.returns?.includes("FileBlob"));
 assert.ok(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.examples?.some((example) => example.includes("pixelDiff")));
 const formulaCatalog = HELP_CATALOG.filter((item) => item.name.startsWith("fx."));
-assert.equal(formulaCatalog.length, 104);
+assert.equal(formulaCatalog.length, 106);
 assert.ok(formulaCatalog.every((item) => item.schema?.parameters?.formula?.required));
 assert.ok(formulaCatalog.every((item) => item.schema?.parameters?.arguments?.type === "unknown[]"));
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.AND")?.schema?.returns?.value?.type, "boolean");
@@ -255,6 +257,8 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "fx.DATE")?.schema?.retur
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.NETWORKDAYS")?.schema?.returns?.value?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.NETWORKDAYS.INTL")?.schema?.returns?.value?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.XLOOKUP")?.schema?.returns?.value?.type, "unknown");
+assert.equal(HELP_CATALOG.find((item) => item.name === "fx.MINIFS")?.schema?.returns?.value?.type, "number");
+assert.equal(HELP_CATALOG.find((item) => item.name === "fx.MAXIFS")?.schema?.returns?.value?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.IPMT")?.schema?.returns?.value?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.PPMT")?.schema?.returns?.value?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "fx.CUMIPMT")?.schema?.returns?.value?.type, "number");
@@ -343,7 +347,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /character.*picture bullets.*auto-numbering.*levels.*indents.*spacing/);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /absolute uri.*slideId.*relative action/);
 const workbookCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "workbook");
-assert.equal(workbookCatalog.length, 188);
+assert.equal(workbookCatalog.length, 190);
 assert.ok(workbookCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "workbook.trace")?.schema?.parameters?.reference?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "Workbook.create")?.schema?.parameters?.dateSystem?.type, "string");
@@ -455,6 +459,8 @@ assert.match(workbook.help("fx.SUMPRODUCT").ndjson, /products/);
 assert.match(workbook.help("fx.HLOOKUP").ndjson, /first row/);
 assert.match(workbook.help("fx.IFERROR").ndjson, /formula error/);
 assert.match(workbook.help("fx.AVERAGEIFS").ndjson, /criteria ranges/);
+assert.match(workbook.help("fx.MINIFS").ndjson, /smallest numeric value/);
+assert.match(workbook.help("fx.MAXIFS").ndjson, /largest numeric value/);
 assert.match(workbook.help("fx.NPV").ndjson, /one period after the present/i);
 assert.match(workbook.help("fx.MIRR").ndjson, /modified periodic internal rate/i);
 assert.match(workbook.help("fx.IPMT").ndjson, /interest component/i);

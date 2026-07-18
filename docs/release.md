@@ -120,6 +120,22 @@ docs:api`, `npm run test:pack` (444 files; 9.4 MB packed, 23.6 MB unpacked),
 offline `npm run release:check -- --skip-network --allow-dirty`, OfficeBridge
 `5/5`, and OpenChestnut `210/210`.
 
+### XLSX criteria extrema formulas
+
+On 2026-07-18, the bounded JavaScript calculation catalog added `MINIFS` and
+`MAXIFS`. Each requires a value range followed by one or more
+criteria-range/criterion pairs with exactly the same rectangular shape. The
+implementation reuses the existing case-insensitive comparison and Excel
+wildcard criteria semantics, considers only finite numeric values in matching
+value cells, returns `0` when no numeric value matches, and fails with
+`#VALUE!` before calculation when a criterion range has a different shape.
+
+The public Help catalog documents both functions and regenerates the API
+reference. Spreadsheet smoke tests cover multi-criterion minimum/maximum,
+ignored nonnumeric matched cells, the no-match `0` result, and mismatched-range
+rejection; Help tests pin the catalog and workbook counts and the numeric
+formula schemas.
+
 ### XLSX bounded 2D bubble charts
 
 On 2026-07-18, the Spreadsheet public model, protocol-2 wire, OpenChestnut C#

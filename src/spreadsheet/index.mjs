@@ -4068,6 +4068,20 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
       const numbers = matched.filter((value) => value !== "" && value != null && Number.isFinite(Number(value))).map(Number);
       return numbers.length ? numbers.reduce((sum, value) => sum + value, 0) / numbers.length : "#DIV/0!";
     }
+    case "MINIFS":
+    case "MAXIFS": {
+      if (args.length < 3 || args.length % 2 === 0) return "#VALUE!";
+      const valueRange = criteriaRange(args[0]);
+      const pairs = [];
+      for (let i = 1; i < args.length; i += 2) pairs.push({ range: criteriaRange(args[i]), criteria: scalar(i + 1, "") });
+      if (pairs.some((pair) => !sameCriteriaShape(pair.range, valueRange))) return "#VALUE!";
+      const matched = valueRange.values.filter((_, index) => pairs.every((pair) => matchesFormulaCriteria(pair.range.values[index], pair.criteria)));
+      const error = matched.map(formulaErrorCode).find(Boolean);
+      if (error) return error;
+      const numbers = matched.filter((value) => typeof value === "number" && Number.isFinite(value));
+      if (!numbers.length) return 0;
+      return fnName === "MINIFS" ? Math.min(...numbers) : Math.max(...numbers);
+    }
     case "SUMPRODUCT": {
       const matrices = args.map((arg) => formulaRangeMatrix(sheet, arg, context) || [[formulaScalar(sheet, arg, context)]]);
       if (!matrices.length) return 0;

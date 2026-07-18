@@ -2528,9 +2528,11 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.LOWER` | formula | Convert text to lowercase. |
 | `fx.MATCH` | formula | Return the 1-based position of a lookup value in a range, with exact match and basic ascending/descending approximate modes. |
 | `fx.MAX` | formula | Return the maximum numeric value across arguments and ranges. |
+| `fx.MAXIFS` | formula | Return the largest numeric value where all supplied criteria ranges have the same size and match case-insensitive comparison or wildcard criteria. |
 | `fx.MEDIAN` | formula | Return the middle numeric value, or the average of the two middle values, across arguments and ranges. |
 | `fx.MID` | formula | Return characters from the middle of a text value. |
 | `fx.MIN` | formula | Return the minimum numeric value across arguments and ranges. |
+| `fx.MINIFS` | formula | Return the smallest numeric value where all supplied criteria ranges have the same size and match case-insensitive comparison or wildcard criteria. |
 | `fx.MINUTE` | formula | Return the 0 through 59 minute component from a nonnegative serial or supported time text. |
 | `fx.MIRR` | formula | Calculate a modified periodic internal rate of return using distinct finance and reinvestment rates for a finite cash-flow vector. |
 | `fx.MODE.SNGL` | formula | Return the most frequently occurring numeric value, or #N/A when no value repeats. |
@@ -3549,6 +3551,23 @@ Return the maximum numeric value across arguments and ranges.
 
 - `value` (number) — Calculated cell value or an Excel-style formula error string.
 
+#### `fx.MAXIFS`
+
+Return the largest numeric value where all supplied criteria ranges have the same size and match case-insensitive comparison or wildcard criteria.
+
+**Examples:**
+
+- =MAXIFS(C1:C10,A1:A10,"East*",B1:B10,">=10")
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =MAXIFS(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
 #### `fx.MEDIAN`
 
 Return the middle numeric value, or the average of the two middle values, across arguments and ranges.
@@ -3594,6 +3613,23 @@ Return the minimum numeric value across arguments and ranges.
 **Schema parameters:**
 
 - `formula` (string) required — Excel-style cell formula beginning with =MIN(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.MINIFS`
+
+Return the smallest numeric value where all supplied criteria ranges have the same size and match case-insensitive comparison or wildcard criteria.
+
+**Examples:**
+
+- =MINIFS(C1:C10,A1:A10,"East*",B1:B10,">=10")
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =MINIFS(...).
 - `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
 
 **Schema returns:**
