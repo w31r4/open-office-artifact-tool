@@ -81,10 +81,16 @@ type PresetShapeConfig = {
   borderRadius?: number | string; // number = pixels; string = supported rounded-* token
   shadow?: string; // shadow token, "shadow-none", or custom "2px 7px 19px #000000/17"
   className?: string;
-  placeholderType?: "title" | "subtitle" | "body" | "picture" | "chart" | "table" | "content";
-  placeholderIndex?: number;
 };
 ```
+
+Placeholder authoring is layout-driven rather than a generic shape option.
+For a new source-free deck, define a direct-frame `title`, `body`, `ctrTitle`,
+or `subTitle` placeholder on the canonical master/layout, then call
+`slide.setLayout(layout)` to materialize the slide shape. Imported `p:ph`
+shapes remain inspectable but source-bound and read-only; picture/chart/table
+placeholder classes and arbitrary inherited template geometry are outside this
+API boundary.
 
 ## Rounded Corners
 

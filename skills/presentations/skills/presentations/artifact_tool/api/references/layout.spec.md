@@ -1,91 +1,98 @@
 # Layouts
 
-Layouts define reusable placeholder structure for slides.
+`open-office-artifact-tool` can author a deliberately small native PresentationML
+layout profile. It is useful for repeated agent-generated title/body slides; it
+is not a generic PowerPoint template editor.
 
-## Create A Layout
+The source-free profile has one canonical master, layouts with type `blank`,
+`title`, `titleOnly`, or `obj` (aliases `object`, `content`, and
+`titleAndContent` normalize to `obj`), and direct-frame text placeholders of
+type `title`, `body`, `ctrTitle`, or `subTitle`.
 
-```ts
-const layout = presentation.layouts.add(layoutName);
-layout.placeholders.add({
-  type: placeholderType,
-  index: placeholderIndex,
-  text: placeholderText,
-  geometry: "textbox",
+## Create and apply
+
+```js
+import { Presentation, PresentationFile } from "open-office-artifact-tool";
+
+const presentation = Presentation.create({
+  master: {
+    name: "Brand master",
+    placeholders: [{
+      type: "title",
+      index: 0,
+      name: "Title",
+      position: { left: 72, top: 56, width: 1136, height: 80 },
+      style: { fontSize: 30, bold: true, color: "#0F172A" },
+    }],
+  },
 });
+
+const layout = presentation.layouts.add({
+  name: "Title and body",
+  type: "titleAndContent",
+});
+
+layout.placeholders.add({
+  type: "body",
+  index: 1,
+  name: "Body",
+  position: { left: 72, top: 168, width: 1136, height: 460 },
+  style: { fontSize: 18, color: "#334155" },
+});
+
+const slide = presentation.slides.add({ name: "Overview" });
+slide.setLayout(layout); // alias: slide.applyLayout(layout)
+slide.placeholders.getItem("title").text.set("Q3 operating plan");
+slide.placeholders.getItem("body").text.set("Three concise, auditable points.");
+
+const pptx = await PresentationFile.exportPptx(presentation);
 ```
 
-## Placeholder Inline Type
+`slide.setLayout()` binds the layout and materializes ordinary editable slide
+shapes with native `p:ph` identity and a direct `a:xfrm`. Use it before
+populating a placeholder. Passing `{ layout }` to `slides.add()` creates only
+the binding; it intentionally does not invent slide placeholder content.
+
+## Placeholder config
 
 ```ts
-type PlaceholderConfig = {
-  type?: "title" | "subtitle" | "body" | "picture" | "chart" | "table" | "content";
+type SourceFreeTextPlaceholder = {
+  id?: string;
+  name?: string;
+  type: "title" | "body" | "ctrTitle" | "subTitle";
+  idx?: number; // `index` is an alias
   index?: number;
-  text?: TextValue;
-  geometry?: "textbox" | "rect" | "roundRect" | string;
-  position?: { left?: number; top?: number; width?: number; height?: number };
-  fill?: FillConfig;
-  line?: LineConfig;
+  position: { left: number; top: number; width: number; height: number };
+  text?: string | Paragraph[];
+  style?: TextStyle;
+  paragraphStyles?: Record<number, ParagraphStyle>;
+  textBodyProperties?: TextBodyProperties;
 };
 ```
 
-## Shape-Based Placeholders
+All source-free placeholders need a complete direct position. There is no
+source-free inherited-geometry mode: a missing frame fails before writing a
+PPTX. The helper accepts common input aliases such as `subtitle` and
+`centeredTitle`, but inspect/import expose the native tokens `subTitle` and
+`ctrTitle`.
 
-```ts
-const placeholder = layout.shapes.addPlaceholder(placeholderName);
-placeholder.placeholder.type = placeholderType;
-placeholder.placeholder.index = placeholderIndex;
-placeholder.text = placeholderText;
-```
+Use `presentation.layouts.getById(layout.id)` when an exact stable lookup is
+needed. `layouts.getItem(...)` also accepts a name or type and is convenient
+only when the result cannot be ambiguous.
 
-## Use A Layout
+## Imported decks and boundaries
 
-```ts
-slide.setLayout(layout);
+Imported Master/Layout graphs are source-bound. They can be inspected, guide
+metadata remains visible, and unchanged export preserves their package graph;
+their semantic properties, placeholder topology, and layout binding cannot be
+rewritten through this API.
 
-const target = slide.placeholders.getItem(placeholderType);
-target.text = textValue;
-```
+Imported layouts also expose read-only `slideGuides` definitions. Use
+`presentation.view` only for local guide/grid visibility; it does not mutate
+the source-bound `viewProps.xml` guide graph.
 
-## Discover
-
-```ts
-const layoutSummary = layout.placeholders.summary();
-const resolved = presentation.layouts.getById(layout.id);
-```
-
-Imported layouts and masters expose preserved PowerPoint guide metadata through
-the read-only `slideGuides` collection. Use `presentation.view` to control local
-editor visibility without changing the source-bound `viewProps.xml` graph.
-
-```ts
-const importedGuides = presentation.layouts.items[0].slideGuides;
-```
-
-## Cookbook
-
-```ts
-// Branded title/body layout.
-const layout = presentation.layouts.add("Title Body");
-layout.placeholders.add({
-  type: "title",
-  index: 0,
-  geometry: "textbox",
-  position: { left: 72, top: 64, width: 920, height: 88 },
-  text: "Title",
-});
-layout.placeholders.add({
-  type: "body",
-  index: 0,
-  geometry: "roundRect",
-  position: { left: 72, top: 180, width: 760, height: 360 },
-  fill: "slate-50",
-  line: { style: "solid", fill: "slate-200", width: 1 },
-});
-```
-
-```ts
-// Use placeholders for repeated structure; override slide content locally.
-const slide = presentation.slides.add({ layout: "Title Body" });
-slide.placeholders.getItem("title").text = "Market overview";
-slide.placeholders.getItem("body").text = "Three editable points go here.";
-```
+Multiple masters, master-specific themes, chart/table/media/object
+placeholders, arbitrary inherited placeholder geometry, custom-template graph
+editing, and layout/slide placeholder topology changes remain explicit
+advanced-package or native-host work. Do not emulate them by flattening an
+imported template into ordinary slide shapes.

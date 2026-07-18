@@ -52,12 +52,21 @@ a simple solid and describe that as a faithful edit.
 ## Layouts And Placeholders
 
 ```ts
-slide.setLayout(layout);
+// Source-free authoring only: materialize direct-frame p:ph shapes from one
+// canonical master/layout before filling them.
+slide.setLayout(layout); // alias: slide.applyLayout(layout)
 
-const placeholder = slide.placeholders.getItem(placeholderName);
-placeholder.text = placeholderText;
-placeholder.text.style = placeholderStyleName;
+const placeholder = slide.placeholders.getItem("title");
+placeholder.text.set("Updated section title");
 ```
+
+This is a bounded authoring path, not a generic template editor. The layout
+must be one of the source-free canonical layouts described in
+[`layout.spec.md`](./layout.spec.md), and source-free `title`, `body`,
+`ctrTitle`, and `subTitle` placeholders need a direct frame. Existing
+placeholders imported from a PPTX remain inspectable but are a source-bound,
+read-only inherited projection: do not change their text, geometry, identity,
+or slide/layout binding through this API.
 
 ## Frame And Export
 
@@ -208,8 +217,8 @@ slide.clearBackground();
 ```
 
 ```ts
-// Clone rhythm from another slide, then change content.
+// Clone direct content from another slide, then change an ordinary shape.
 const next = sourceSlide.duplicate();
 next.moveTo(3);
-next.placeholders.getItem("title").text = "Updated section title";
+next.shapes.getItem("title")?.text.set("Updated section title");
 ```

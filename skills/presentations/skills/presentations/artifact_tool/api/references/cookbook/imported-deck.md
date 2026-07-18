@@ -46,7 +46,7 @@ const after = await presentation.inspect({
 });
 ```
 
-## Placeholder Edit
+## Placeholder Inspection And Source-Free Authoring
 
 ```ts
 const layoutSnapshot = await presentation.inspect({
@@ -58,11 +58,26 @@ const layoutSnapshot = await presentation.inspect({
 // slideAnchorId is the `sl/...` id from inspect for this slide.
 const slide = presentation.resolve(slideAnchorId);
 const title = slide.placeholders.getItem("title");
-title.text = "Updated executive summary";
+const titleEvidence = title && {
+  id: title.id,
+  frame: title.position,
+  text: title.text.value,
+};
 ```
 
-Edit a slide placeholder for a local content change. Edit a layout or master
-only when the intended change is global.
+For an imported deck, a `p:ph` placeholder is inspectable evidence only. It is
+a source-bound inherited projection, so changing its text, geometry, identity,
+or layout binding fails closed rather than rebuilding the template. Add a
+clearly named ordinary shape for a permitted local overlay, use the deck's
+native host for template edits, or rebuild a source-free deck when that is the
+actual intent.
+
+For a new source-free deck, create the canonical master/layout and call
+`slide.setLayout(layout)` before filling the direct-frame `title`, `body`,
+`ctrTitle`, or `subTitle` placeholders; see
+[`layout.spec.md`](../layout.spec.md). This is deliberately separate from
+imported-template mutation.
+
 Inspect records use 1-based `slide` numbers for display; `slides.getItem(index)`
 is 0-based. Prefer resolving the `sl/...` anchor from inspect.
 
@@ -77,10 +92,12 @@ const affected = await presentation.inspect({
 });
 ```
 
-Inspect affected layouts and slides before changing a master, layout, theme
-color, or placeholder geometry. Use layout ids for comparison/search, then
-resolve affected slides through their `sl/...` ids before editing. These edits
-can update many slides.
+Use layout ids for comparison/search and resolve affected slides through their
+`sl/...` ids before deciding on an operation. Imported Master/Layout/theme and
+placeholder graphs are source-bound and cannot be edited through this API.
+For the small source-free authoring profile, configure the one canonical
+master/layout before materializing slide placeholders; it is not a way to
+retroactively rewrite an arbitrary imported template.
 
 ## Preserve Imported Image Placement
 

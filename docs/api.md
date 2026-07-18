@@ -1248,15 +1248,17 @@ Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or 
 | `presentation.export` | api | Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON. |
 | `presentation.fontFamilies` | api | Return a fresh sorted, case-insensitively deduplicated list of explicitly used presentation text and bullet font families. |
 | `presentation.inspect` | api | Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, tables, charts, images, and native contentPart/OLE/diagram objects with bounded editability, relationship-reference, root-relationship, preserved-part, and eligible embedded-workbook summaries; narrow with search/target anchors and shape fields with include/exclude. |
-| `presentation.layout.clearBackground` | api | Clear a model-level layout background for preview only. Canonical PPTX export rejects layout authoring and imported-layout mutation. |
-| `presentation.layout.setBackground` | api | Change a model-level layout background for preview only. Canonical PPTX export rejects layout authoring and imported-layout mutation. |
-| `presentation.layouts.add` | api | Create a model-level slide layout for inspect and preview. OpenChestnut 0.2 does not author Layout graphs, and imported layouts are source-bound and read-only. |
-| `presentation.master` | api | Access the first Slide Master for model inspection. Source-free master configuration is rejected by canonical export; imported Master graphs, placeholders, backgrounds, themes, and styles are preserved read-only. |
-| `presentation.master.clearBackground` | api | Clear the model-level master background for preview only. Canonical PPTX export rejects source-free master authoring and any imported-master mutation. |
-| `presentation.master.setBackground` | api | Change the model-level master background for preview only. Canonical PPTX export rejects source-free master authoring and any imported-master mutation. |
-| `presentation.master.setTheme` | api | Change the model-level master theme for preview only. Canonical PPTX export rejects source-free master authoring and any imported-master mutation. |
-| `presentation.masters.add` | api | Add a model-level Slide Master for inspect and preview. OpenChestnut 0.2 does not author Master graphs, and imported masters are source-bound and read-only. |
-| `presentation.masters.getItem` | api | Resolve a model-level or imported read-only Slide Master by stable ID or name. |
+| `presentation.layout.clearBackground` | api | Clear a direct background on a bounded source-free layout. Imported-layout mutation remains source-bound and fails closed. |
+| `presentation.layout.placeholders.add` | api | Append a direct-frame title/body/ctrTitle/subTitle text placeholder to a source-free layout. It becomes a native p:ph and must be materialized on each slide through applyLayout/setLayout; object/media/chart/table placeholders remain source-bound. |
+| `presentation.layout.setBackground` | api | Set a direct background on a bounded source-free layout. Imported-layout mutation remains source-bound and fails closed. |
+| `presentation.layouts.add` | api | Create one bounded source-free layout under the canonical master. Use blank, title, titleOnly, or obj/titleAndContent plus direct-frame text placeholders; imported layouts remain source-bound and read-only. |
+| `presentation.layouts.getById` | api | Resolve a layout by its stable ID without falling back to a same-named or same-typed layout. |
+| `presentation.master` | api | Access the one canonical source-free Slide Master. It may author a direct background, bounded text styles, and direct-frame title/body/ctrTitle/subTitle placeholders; imported Master graphs remain source-bound and read-only. |
+| `presentation.master.clearBackground` | api | Clear the direct background of the one canonical source-free master. Imported-master mutation remains source-bound and fails closed. |
+| `presentation.master.setBackground` | api | Set the direct background of the one canonical source-free master. Imported-master mutation remains source-bound and fails closed. |
+| `presentation.master.setTheme` | api | Set a model-level master theme override for preview only. Canonical PPTX export rejects that source-free override; imported-master mutation remains source-bound and fails closed. |
+| `presentation.masters.add` | api | Append a model-level Slide Master. Source-free PPTX authoring requires exactly one master, so use Presentation.create({ master }) or presentation.master for the canonical profile; multiple masters and imported-master edits fail closed. |
+| `presentation.masters.getItem` | api | Resolve a model-level or imported Slide Master by stable ID or name. |
 | `presentation.resolve` | api | Map stable inspect anchor IDs back to facade objects; imported advanced package objects may be read-only. |
 | `presentation.slides.add` | api | Append an editable core slide with an optional direct solid/style-reference background and plain-text speaker notes. OpenChestnut authors only the direct slide background; effective Layout/Master inheritance is never flattened. |
 | `presentation.textRange` | api | Inspect or resolve stable textRange anchors such as shapeId/text for editable slide text frames. |
@@ -1271,7 +1273,7 @@ Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or 
 | `shape.text.set` | api | Set plain or structured text with ordered text, field, and line-break inlines; bounded run formatting; character, picture-bullet, or auto-numbered lists; levels, indents, spacing; and external URI, internal-slide, or relative-action hyperlinks. Custom-show links and unmodeled text graphs fail closed in canonical PPTX export. |
 | `shape.useBackgroundFill` | api | Read the presence-aware imported PresentationML p:sp useBgFill flag. It affects preview paint but remains source-bound and read-only; source-free authoring or wire mutation fails closed. |
 | `slide.addNotes` | api | Set plain-text speaker notes for inspect, preview, and canonical PPTX output. OpenChestnut authors source-free notes and edits hash-bound simple imported notes bodies; rich or irregular imported notes fail closed instead of losing formatting. |
-| `slide.applyLayout` | api | Materialize layout placeholders in the model for preview. Source-free layout binding is outside the OpenChestnut 0.2 PPTX boundary; imported Layout relationships are preservation-only. |
+| `slide.applyLayout` | api | Bind a slide to a bounded source-free layout and materialize its effective direct-frame placeholder shapes. The resulting p:ph identities and direct frames export natively; imported Layout relationships remain preservation-only. |
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
 | `slide.charts.add` | api | Add a source-free bar, line, or pie chart, or a bounded literal clustered bar+line combo. All variants use literal categories/numeric values, title, legend, basic series fill/line/marker formatting, chart-level data labels, layout JSON, SVG preview, and native PPTX output. A combo requires at least one primary bar and one line series; all lines share either the primary category/value pair or the canonical secondary top/right pair, and its plot/series/point topology stays fixed after import. External data, mixed line groups, secondary bars, point overrides, trendlines, error bars, per-series data labels, smooth lines, and irregular combo graphs fail closed on export. |
 | `slide.clearBackground` | api | Remove the direct slide background so preview and PPTX output inherit from the preserved Layout/Master chain. Unsupported imported background graphs fail closed rather than being flattened or discarded. |
@@ -1280,7 +1282,9 @@ Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or 
 | `slide.connectors.add` | api | Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA. |
 | `slide.groups.add` | api | Author recursive native DrawingML p:grpSp trees with outer off/ext and local chOff/chExt coordinates. The bounded profile supports modeled shapes, connectors, images, tables, charts, and nested groups; canonical imported groups allow fixed-topology semantic edits, while group-level fills/effects, locks, transforms, extensions, or unsupported descendants remain opaque and read-only. |
 | `slide.images.add` | api | Add an inspectable image facade with alt text, embedded data, contain/cover/stretch fitting, explicit crop, frame, direct rotation/flips, layout JSON, crop-aware SVG preview, and PPTX output. OpenChestnut maps the bounded rectangular profile to native DrawingML a:srcRect. |
+| `slide.placeholders.getItem` | api | Resolve a materialized slide placeholder shape by stable ID, name, placeholder type, or numeric index. |
 | `slide.setBackground` | api | Set a direct slide background to a six-digit RGB/theme color solid fill or a native style reference. Recognized imported direct backgrounds are hash-bound and editable; inherited Layout/Master backgrounds remain inherited. |
+| `slide.setLayout` | api | Alias of slide.applyLayout(layout): bind and materialize a bounded source-free layout for native PPTX export. |
 | `slide.shapes.add` | api | Add a shape/textbox with preset or bounded literal custom geometry, position, optional center-based rotation/flips, fill, line, text, and DrawingML text-body layout. |
 | `slide.tables.add` | api | Add an inspectable table facade with rows, columns, values, cells, layout JSON, SVG preview, and canonical OpenChestnut fixed-grid plain-text PPTX output. |
 
@@ -1408,9 +1412,9 @@ Create a deck model whose canonical OpenChestnut export supports ordinary slides
 
 - `slideSize` (object) — Slide width and height in pixels; defaults to 1280x720.
 - `theme` (object) — Model theme metadata. OpenChestnut 0.2 source-free export requires the default theme; imported themes are read-only.
-- `master` (object) — Model-level first Slide Master configuration. Canonical source-free PPTX export rejects configured masters.
-- `masters` (object[]) — Model-level Slide Master definitions. OpenChestnut 0.2 preserves imported masters unchanged but does not author or edit them.
-- `layouts` (object[]) — Model-level slide layouts. OpenChestnut 0.2 preserves imported layouts unchanged but does not author or edit them.
+- `master` (object) — The one canonical source-free Slide Master: name/background, bounded title/body/ctrTitle/subTitle direct-frame placeholders, and bounded textParagraphStyles. Theme overrides are unsupported.
+- `masters` (object[]) — Model-level Slide Master definitions. Source-free PPTX authoring accepts exactly one master; imported master graphs remain source-bound and read-only.
+- `layouts` (object[]) — Bounded source-free layouts linked to the canonical master. Each uses blank, title, titleOnly, or obj/titleAndContent plus direct-frame text placeholders; imported layouts remain source-bound and read-only.
 - `commentFormat` (string) — Comment wire family. Canonical PPTX export supports the bounded legacy profile (the default); modern comment graphs remain opaque and source-bound.
 
 **Schema returns:**
@@ -1506,15 +1510,32 @@ Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, t
 
 #### `presentation.layout.clearBackground`
 
-Clear a model-level layout background for preview only. Canonical PPTX export rejects layout authoring and imported-layout mutation.
+Clear a direct background on a bounded source-free layout. Imported-layout mutation remains source-bound and fails closed.
 
 **Schema returns:**
 
-- `layout` (SlideLayoutTemplate) — Model-only change for preview; canonical export rejects Layout authoring and imported-layout edits.
+- `layout` (SlideLayoutTemplate) — Clears a direct background on a bounded source-free layout. Imported-layout edits fail closed.
+
+#### `presentation.layout.placeholders.add`
+
+Append a direct-frame title/body/ctrTitle/subTitle text placeholder to a source-free layout. It becomes a native p:ph and must be materialized on each slide through applyLayout/setLayout; object/media/chart/table placeholders remain source-bound.
+
+**Schema parameters:**
+
+- `type` (string) required — title, body, ctrTitle, or subTitle; common aliases centeredTitle and subtitle normalize to native tokens.
+- `idx` (number) — Native unsigned placeholder index; index is accepted as an alias.
+- `index` (number) — Alias of idx.
+- `position` (object) required — Required direct pixel frame { left, top, width, height } for source-free export.
+- `text` (string|string[]|object|object[]) — Optional prompt/default text using the bounded presentation text profile.
+- `style` (object) — Optional bounded default run/paragraph style.
+
+**Schema returns:**
+
+- `placeholder` (object) — Appended source-free layout placeholder definition. Use slide.applyLayout/setLayout to materialize it on a slide.
 
 #### `presentation.layout.setBackground`
 
-Change a model-level layout background for preview only. Canonical PPTX export rejects layout authoring and imported-layout mutation.
+Set a direct background on a bounded source-free layout. Imported-layout mutation remains source-bound and fails closed.
 
 **Schema parameters:**
 
@@ -1522,54 +1543,66 @@ Change a model-level layout background for preview only. Canonical PPTX export r
 
 **Schema returns:**
 
-- `layout` (SlideLayoutTemplate) — Model-only change for preview; canonical export rejects Layout authoring and imported-layout edits.
+- `layout` (SlideLayoutTemplate) — Sets a direct background on a bounded source-free layout. Imported-layout edits fail closed.
 
 #### `presentation.layouts.add`
 
-Create a model-level slide layout for inspect and preview. OpenChestnut 0.2 does not author Layout graphs, and imported layouts are source-bound and read-only.
+Create one bounded source-free layout under the canonical master. Use blank, title, titleOnly, or obj/titleAndContent plus direct-frame text placeholders; imported layouts remain source-bound and read-only.
 
 **Schema parameters:**
 
-- `name` (string) required — Layout name.
-- `type` (string) — Layout type.
+- `name` (string) required — Layout name; passing a name string is also accepted.
+- `type` (string) — Source-free type: blank, title, titleOnly, obj, or aliases object/content/titleAndContent. Imported layouts retain their native type read-only.
 - `masterId` (string) — Master identity.
 - `background` (string|object) — Optional layout background overriding the linked master background.
-- `placeholders` (object[]) — Model-level placeholder definitions; canonical PPTX export does not author or edit Layout graphs.
+- `placeholders` (object[]) — Direct-frame title/body/ctrTitle/subTitle source-free text placeholders. Each needs type, idx/index, and position left/top/width/height; object/chart/table/media placeholders are not authored.
 - `slideGuides` (object[]) — Imported layouts expose the presentation's read-only native guide definitions. Canonical export preserves them through the source-bound view-properties part.
 
 **Schema returns:**
 
-- `layout` (SlideLayoutTemplate) — Appended model-level layout for inspect/preview; canonical PPTX export rejects it.
+- `layout` (SlideLayoutTemplate) — Appended bounded source-free layout under the canonical master. Imported layout graphs remain source-bound and read-only.
+
+#### `presentation.layouts.getById`
+
+Resolve a layout by its stable ID without falling back to a same-named or same-typed layout.
+
+**Schema parameters:**
+
+- `id` (string) required — Exact stable layout ID.
+
+**Schema returns:**
+
+- `layout` (SlideLayoutTemplate|undefined) — Matching layout or undefined.
 
 #### `presentation.master`
 
-Access the first Slide Master for model inspection. Source-free master configuration is rejected by canonical export; imported Master graphs, placeholders, backgrounds, themes, and styles are preserved read-only.
+Access the one canonical source-free Slide Master. It may author a direct background, bounded text styles, and direct-frame title/body/ctrTitle/subTitle placeholders; imported Master graphs remain source-bound and read-only.
 
 **Schema parameters:**
 
 - `id` (string) — Stable master identity used by layouts.
 - `name` (string) — Native Slide Master name.
 - `background` (string|object) — Solid RGB/scheme background or native background reference with index.
-- `theme` (object) — Optional partial theme override inherited from presentation.theme and exported through the master's own Theme relationship.
-- `placeholders` (object[]) — Model-level placeholder definitions. OpenChestnut 0.2 rejects source-free Master authoring and any mutation of imported placeholders.
+- `theme` (object) — Optional model theme override. Canonical source-free export rejects master-specific theme overrides.
+- `placeholders` (object[]) — Source-free direct-frame title/body/ctrTitle/subTitle text placeholders. Each requires type, idx/index, and left/top/width/height; imported placeholders remain source-bound and read-only.
 - `textParagraphStyles` (object) — title/body/other level maps (0-8) using the structured paragraph style fields, including embedded or external bulletImage values.
 - `slideGuides` (object[]) — Read-only imported PowerPoint guide definitions with horizontal/vertical orientation and raw native position. Source-free authoring and imported mutation are unsupported.
 
 **Schema returns:**
 
-- `master` (PresentationSlideMaster) — Model-level first Slide Master; imported masters are source-bound and read-only, and source-free customization is rejected.
+- `master` (PresentationSlideMaster) — One canonical source-free Slide Master or a source-bound imported master. Source-free output supports a direct background, bounded text styles, and direct-frame textual placeholders; imported masters are read-only.
 
 #### `presentation.master.clearBackground`
 
-Clear the model-level master background for preview only. Canonical PPTX export rejects source-free master authoring and any imported-master mutation.
+Clear the direct background of the one canonical source-free master. Imported-master mutation remains source-bound and fails closed.
 
 **Schema returns:**
 
-- `master` (PresentationSlideMaster) — Model-only change for preview; canonical export rejects source-free Master authoring and imported-master edits.
+- `master` (PresentationSlideMaster) — Clears the direct background of the one canonical source-free master. Imported-master edits fail closed.
 
 #### `presentation.master.setBackground`
 
-Change the model-level master background for preview only. Canonical PPTX export rejects source-free master authoring and any imported-master mutation.
+Set the direct background of the one canonical source-free master. Imported-master mutation remains source-bound and fails closed.
 
 **Schema parameters:**
 
@@ -1577,11 +1610,11 @@ Change the model-level master background for preview only. Canonical PPTX export
 
 **Schema returns:**
 
-- `master` (PresentationSlideMaster) — Model-only change for preview; canonical export rejects source-free Master authoring and imported-master edits.
+- `master` (PresentationSlideMaster) — Sets the direct background of the one canonical source-free master. Imported-master edits fail closed.
 
 #### `presentation.master.setTheme`
 
-Change the model-level master theme for preview only. Canonical PPTX export rejects source-free master authoring and any imported-master mutation.
+Set a model-level master theme override for preview only. Canonical PPTX export rejects that source-free override; imported-master mutation remains source-bound and fails closed.
 
 **Schema parameters:**
 
@@ -1589,28 +1622,28 @@ Change the model-level master theme for preview only. Canonical PPTX export reje
 
 **Schema returns:**
 
-- `master` (PresentationSlideMaster) — Model-only change for preview; canonical export rejects source-free Master authoring and imported-master edits.
+- `master` (PresentationSlideMaster) — Model-only theme override for preview; canonical export rejects source-free master-specific themes and imported-master edits.
 
 #### `presentation.masters.add`
 
-Add a model-level Slide Master for inspect and preview. OpenChestnut 0.2 does not author Master graphs, and imported masters are source-bound and read-only.
+Append a model-level Slide Master. Source-free PPTX authoring requires exactly one master, so use Presentation.create({ master }) or presentation.master for the canonical profile; multiple masters and imported-master edits fail closed.
 
 **Schema parameters:**
 
 - `id` (string) required — Stable unique master identity used by layouts.
 - `name` (string) — Native Slide Master name.
 - `background` (string|object) — Solid RGB/scheme background or native background reference with index.
-- `theme` (object) — Optional partial theme override inherited from presentation.theme and exported through the master's own Theme relationship.
-- `placeholders` (object[]) — Model-level placeholder definitions; canonical PPTX export does not author them.
+- `theme` (object) — Optional model theme override; source-free master-specific themes are unsupported.
+- `placeholders` (object[]) — Direct-frame title/body/ctrTitle/subTitle source-free text placeholders. A second master makes source-free export fail closed.
 - `textParagraphStyles` (object) — title/body/other level maps (0-8) using the structured paragraph style fields, including embedded or external bulletImage values.
 
 **Schema returns:**
 
-- `master` (PresentationSlideMaster) — Appended model-level Slide Master; canonical PPTX export rejects source-free Master authoring.
+- `master` (PresentationSlideMaster) — Appended model-level Slide Master. Canonical source-free export accepts exactly one master, so adding another deliberately fails closed.
 
 #### `presentation.masters.getItem`
 
-Resolve a model-level or imported read-only Slide Master by stable ID or name.
+Resolve a model-level or imported Slide Master by stable ID or name.
 
 **Schema parameters:**
 
@@ -1639,7 +1672,7 @@ Append an editable core slide with an optional direct solid/style-reference back
 **Schema parameters:**
 
 - `name` (string) — Inspectable slide name.
-- `layout` (string|object) — Model-only Layout binding; source-free canonical PPTX export rejects it.
+- `layout` (string|object) — Optional bounded layout name/ID/facade binding. Call slide.applyLayout or slide.setLayout to materialize its text placeholders; a bare binding exports a native relationship but does not create slide placeholder shapes.
 - `background` (string|object) — Optional direct slide background: RGB/theme color or { fill, mode: 'solid'|'reference', index? }. Gradient, pattern, image, transform, and effect-bearing backgrounds are preview-only/source-preserved and fail closed on canonical mutation.
 - `notes` (string) — Optional plain-text speaker notes authored into the canonical PresentationML notes graph.
 
@@ -1815,7 +1848,7 @@ Set plain-text speaker notes for inspect, preview, and canonical PPTX output. Op
 
 #### `slide.applyLayout`
 
-Materialize layout placeholders in the model for preview. Source-free layout binding is outside the OpenChestnut 0.2 PPTX boundary; imported Layout relationships are preservation-only.
+Bind a slide to a bounded source-free layout and materialize its effective direct-frame placeholder shapes. The resulting p:ph identities and direct frames export natively; imported Layout relationships remain preservation-only.
 
 **Schema parameters:**
 
@@ -1823,7 +1856,7 @@ Materialize layout placeholders in the model for preview. Source-free layout bin
 
 **Schema returns:**
 
-- `shapes` (Shape[]) — Materialized model placeholder shapes for preview; source-free Layout binding is rejected by canonical PPTX export.
+- `shapes` (Shape[]) — Binds the slide and materializes effective direct-frame title/body/ctrTitle/subTitle placeholder shapes for native source-free PPTX output.
 
 #### `slide.autoLayout`
 
@@ -1965,6 +1998,18 @@ Add an inspectable image facade with alt text, embedded data, contain/cover/stre
 
 - `image` (ImageElement) — Appended editable image facade. OpenChestnut authors/imports embedded PNG/JPEG/GIF/safe-SVG rectangular pictures and permits native source-rectangle add/edit/remove plus same-format byte, name/alt, frame, and direct-transform edits; effects, external sources, complex blips, and non-rectangular geometry remain opaque.
 
+#### `slide.placeholders.getItem`
+
+Resolve a materialized slide placeholder shape by stable ID, name, placeholder type, or numeric index.
+
+**Schema parameters:**
+
+- `idOrNameOrTypeOrIndex` (string|number) required — Materialized placeholder stable ID, display name, type, or numeric idx.
+
+**Schema returns:**
+
+- `shape` (Shape|undefined) — Matching materialized placeholder shape or undefined.
+
 #### `slide.setBackground`
 
 Set a direct slide background to a six-digit RGB/theme color solid fill or a native style reference. Recognized imported direct backgrounds are hash-bound and editable; inherited Layout/Master backgrounds remain inherited.
@@ -1976,6 +2021,18 @@ Set a direct slide background to a six-digit RGB/theme color solid fill or a nat
 **Schema returns:**
 
 - `slide` (Slide) — The same slide with a normalized direct background; canonical PPTX export never flattens inherited Layout/Master backgrounds.
+
+#### `slide.setLayout`
+
+Alias of slide.applyLayout(layout): bind and materialize a bounded source-free layout for native PPTX export.
+
+**Schema parameters:**
+
+- `layout` (string|SlideLayoutTemplate) required — Layout name/ID or layout facade.
+
+**Schema returns:**
+
+- `slide` (Slide) — Alias of applyLayout that returns the slide.
 
 #### `slide.shapes.add`
 
