@@ -476,6 +476,7 @@ try {
       '<Relationship Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="/ppt/customXml/item1.xml" Id="rIdUnexpected" /></Relationships>',
     ),
   );
+  irregularLeavesZip.file("ppt/customXml/item1.xml", "<?xml version=\"1.0\" encoding=\"UTF-8\"?><openchestnut:unexpected xmlns:openchestnut=\"https://openchestnut.invalid\" />");
   await fs.writeFile(irregularLeavesInput, await irregularLeavesZip.generateAsync({ type: "nodebuffer" }));
   await assert.rejects(
     () => duplicatePptxSlide({
@@ -537,9 +538,11 @@ try {
   assert.match(skillText, /openchestnut-title-notes-edit-workflow\.mjs/);
   assert.match(skillText, /openchestnut-slide-name-edit-workflow\.mjs/);
   assert.match(skillText, /openchestnut-slide-duplicate-workflow\.mjs/);
+  assert.match(skillText, /--allow-closed-leaves/);
   assert.match(quickStartText, /PresentationFile\.exportPptx/);
   assert.match(quickStartText, /editPptxSlideName/);
   assert.match(quickStartText, /duplicatePptxSlide/);
+  assert.match(quickStartText, /allowClosedLeaves:\s*true/);
   assert.match(quickStartText, /open-office-artifact-tool/);
   assert.match(skillText, /slides_test\.py/);
   assert.match(skillText, /slide\.setBackground.*slide\.clearBackground/s);

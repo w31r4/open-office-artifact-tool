@@ -88,7 +88,10 @@ try {
     );
     if (!fs.existsSync(duplicateWorkflowPath)) process.exit(23);
     const cloneFixture = Presentation.create({ slideSize: { width: 640, height: 360 } });
-    const cloneSource = cloneFixture.slides.add({ name: "Packed clone source" });
+    const cloneSource = cloneFixture.slides.add({
+      name: "Packed clone source",
+      notes: "Packaged closed-leaf clone notes.",
+    });
     const cloneGroup = cloneSource.addGroup({
       name: "packed-cluster",
       position: { left: 48, top: 40, width: 320, height: 120 },
@@ -100,6 +103,11 @@ try {
       name: "join", from: cloneLeft, to: cloneRight,
       start: { x: 90, y: 41 }, end: { x: 210, y: 41 }, line: { fill: "#64748B", width: 1 },
     });
+    cloneSource.comments.addThread(undefined, "Packaged closed-leaf clone comment.", {
+      author: "Package QA",
+      created: "2026-07-18T03:05:00Z",
+      position: { x: 360, y: 240 },
+    });
     const cloneInput = path.join(process.cwd(), "packed-clone-source.pptx");
     const cloneOutput = path.join(process.cwd(), "packed-clone-output.pptx");
     const cloneAudit = path.join(process.cwd(), "packed-clone-audit.json");
@@ -110,18 +118,29 @@ try {
       outputPath: cloneOutput,
       auditPath: cloneAudit,
       expectedName: "Packed clone source",
+      allowClosedLeaves: true,
     });
     if (
       cloneResult.audit.operation.clonePart !== "ppt/slides/slide2.xml" ||
+      !cloneResult.audit.operation.closedLeaves.speakerNotes ||
+      !cloneResult.audit.operation.closedLeaves.legacyComments ||
       !cloneResult.audit.validation.package.retainedSourcePartsByteIdentical ||
+      !cloneResult.audit.validation.package.closedLeaves.speakerNotes?.notesXmlByteIdentical ||
+      !cloneResult.audit.validation.package.closedLeaves.legacyComments?.commentsXmlByteIdentical ||
       !cloneResult.audit.validation.reimport.sourceAndCloneSemanticsEqual ||
+      !cloneResult.audit.validation.reimport.sourceAndCloneClosedLeavesEqual ||
       !cloneResult.audit.validation.modelRender.visualEquivalent
     ) process.exit(24);
     const packedClone = await PresentationFile.importPptx(new FileBlob(await fs.promises.readFile(cloneOutput), {
       type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
       name: "packed-clone-output.pptx",
     }));
-    if (packedClone.slides.count !== 2 || packedClone.slides.getItem(1).groups.items[0].connectors.items[0].startTargetId !== packedClone.slides.getItem(1).groups.items[0].shapes.items[0].id) process.exit(25);
+    if (
+      packedClone.slides.count !== 2 ||
+      packedClone.slides.getItem(1).groups.items[0].connectors.items[0].startTargetId !== packedClone.slides.getItem(1).groups.items[0].shapes.items[0].id ||
+      packedClone.slides.getItem(1).speakerNotes.text !== "Packaged closed-leaf clone notes." ||
+      packedClone.slides.getItem(1).comments.items[0].comments[0].text !== "Packaged closed-leaf clone comment."
+    ) process.exit(25);
 
     const pdf = PdfArtifact.create({ pages: [{ text: "clean install PDF" }] });
     const pdfFile = await PdfFile.exportPdf(pdf);

@@ -233,6 +233,25 @@ claim that the clone XML is lexically byte-identical. Missing/duplicate names,
 notes/comments, unresolved connector endpoints, unsupported graph leaves, or
 any unexpected package part fail closed without promoting output or audit.
 
+The default is intentionally bare. To copy only the separately supported,
+already-closed relationship leaves, opt in explicitly rather than relying on a
+fallback or ZIP manipulation:
+
+```sh
+node "$SKILL_DIR/examples/openchestnut-slide-duplicate-workflow.mjs" \
+  input/source.pptx output/source-with-copy.pptx output/clone-audit.json \
+  "Unique source slide name" --allow-closed-leaves
+```
+
+This opt-in accepts at most one canonical `NotesSlide` with exactly its
+`NotesMaster` and back-to-source-slide relationships, and at most one canonical
+legacy `SlideCommentsPart` with no child relationship graph plus the immutable
+presentation-wide `CommentAuthorsPart`. The audit lists every new notes/comment
+part, proves NotesSlide and comments XML are verbatim copies, proves the notes
+back-reference points to the clone, and proves the immutable master/catalog are
+shared. Rich/modern comments, any extra relationship, and any graph outside
+that exact profile still fail closed.
+
 For an original imported slide, `slide.name = "Decision review"` is a narrow
 in-place metadata edit: OpenChestnut changes only that SlidePart's
 `p:cSld/@name`, preserves its relationship graph and all other parts, and

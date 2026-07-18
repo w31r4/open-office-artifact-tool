@@ -131,20 +131,38 @@ and OfficeBridge passed `5/5`. The reproducibility check kept the runtime at
 ### PPTX auditable source-bound slide duplicate workflow
 
 On 2026-07-18, the Presentation Skill added
-`openchestnut-slide-duplicate-workflow.mjs` for the bare imported-slide clone
-profile. It is an Agent transaction, not a generic ZIP copier: it selects one
-explicit unique source name, accepts the canonical inline leaf profile including
-same-tree straight/elbow connectors, and deliberately refuses NotesSlide and
-legacy-comments leaves.
+`openchestnut-slide-duplicate-workflow.mjs` for the imported-slide clone
+profile. It is an Agent transaction, not a generic ZIP copier: its safe default
+selects one explicit unique source name, accepts the canonical inline leaf
+profile including same-tree straight/elbow connectors, and deliberately refuses
+NotesSlide and legacy-comments leaves.
 
 The workflow records input/output hashes, the actual source and clone
 `SlidePart` paths, adjacent insertion, the only permitted new parts, retained
 source-part byte preservation, reimported structural equality, and model-SVG
 visual equality. Fresh `data-*-id` locator attributes are removed only for that
 visual comparison; the new clone Slide XML may be canonically serialized and is
-not claimed byte-identical. Missing/ambiguous names, closed leaves outside this
-bare profile, unresolved connector endpoints, unsupported graph content, or an
-unexpected package delta abort and remove temporary outputs/audits.
+not claimed byte-identical. Missing/ambiguous names, closed leaves outside the
+selected profile, unresolved connector endpoints, unsupported graph content, or
+an unexpected package delta abort and remove temporary outputs/audits.
+
+The same workflow now exposes a separate `allowClosedLeaves: true` /
+`--allow-closed-leaves` route; it never activates by inference. It accepts at
+most one canonical NotesSlide with exactly its NotesMaster/back-to-source-slide
+relationships and at most one canonical legacy comments part with no child
+relationship graph plus the immutable presentation-wide author catalog. The
+audit names the added notes/comments parts, proves the leaf XML is verbatim
+copied, proves the clone notes back-reference points to the clone SlidePart,
+and proves the shared immutable resources remain shared after reimport. It does
+not make rich/modern comments or arbitrary graph cloning available.
+
+The complete local gate passed `npm test` (including Playwright), `npm run
+docs:api`, `npm run proto:check`, `npm run test:pack`, and serial `npm run
+verify:open-chestnut-build`; OpenChestnut passed `211/211` and OfficeBridge
+`5/5`. The packed clean-install probe executes the installed workflow with
+`dotnet` absent from `PATH`, including the explicit closed-leaf route. The
+reproducibility check retained 39 audited files and a 38-file,
+14,417,084-byte runtime.
 
 ### PPTX auditable imported slide-name workflow
 

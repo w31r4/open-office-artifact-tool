@@ -327,8 +327,9 @@ semantic change.
 
 When an Agent needs an exact source-bound copy of one imported slide rather
 than a reconstructed slide, use the shipped transaction. It is deliberately
-smaller than the full `slide.duplicate()` codec profile: the selected source
-must have one explicit unique name and no NotesSlide or legacy-comments leaf.
+smaller than the full `slide.duplicate()` codec profile. By default, the
+selected source must have one explicit unique name and no NotesSlide or
+legacy-comments leaf.
 
 ```ts
 import { duplicatePptxSlide } from "../examples/openchestnut-slide-duplicate-workflow.mjs";
@@ -354,6 +355,28 @@ fresh `data-*-id` inspection locators, so it does not claim lexical equality
 for the new clone XML. Ambiguous names, notes/comments, unsupported graph
 leaves, unresolved endpoints, and unexpected package changes reject without
 promoting an output or audit.
+
+For the one opt-in closed-leaf profile, set `allowClosedLeaves: true` explicitly:
+
+```ts
+await duplicatePptxSlide({
+  inputPath: "input.pptx",
+  outputPath: "output/source-with-copy.pptx",
+  auditPath: "output/clone-audit.json",
+  expectedName: "Unique source slide name",
+  allowClosedLeaves: true,
+});
+```
+
+This is not a general relationship-graph clone. It accepts at most one
+canonical NotesSlide whose only relationships are its immutable NotesMaster and
+back-reference to the source SlidePart, plus at most one canonical legacy
+SlideCommentsPart with no child relationship graph and one immutable
+presentation-wide CommentAuthorsPart. The audit records the extra new parts,
+proves notes/comments XML is byte-identical, proves the cloned notes
+back-reference now points to the clone, and verifies source/clone closed-leaf
+semantics after reimport. Rich/modern comments or any extra relationship fail
+closed without a fallback.
 
 ## Bounded Imported Title And Speaker-Notes Edit
 
