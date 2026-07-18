@@ -439,14 +439,56 @@ console.log(evidence.ndjson);
 Use `undefined` for the target. Replies, resolution state, reactions, and
 element/text-range anchors cannot be represented by legacy PresentationML and
 therefore fail closed on canonical export. Recognized imported legacy comments
-are visible for inspection but must remain unchanged; modern comment graphs
-remain opaque and source-bound. An unchanged canonical legacy comments leaf may
-travel with `slide.duplicate()` through one export/reimport boundary: its
+are visible for inspection but must remain unchanged. An unchanged canonical
+legacy comments leaf may travel with `slide.duplicate()` through one
+export/reimport boundary: its
 clone-local `SlideCommentsPart` is byte-copied while the verified immutable
 presentation-wide author catalog is shared. This is not an in-place comment
 edit; both pending clone comments and reimported legacy comments remain
 source-bound read-only. See `api/references/comments.md` for the complete
 boundary.
+
+## Bounded Office 2021 Comment Threads
+
+Select the native modern wire family explicitly, then anchor one root plus
+direct replies to a supported top-level element or shape text range:
+
+```ts
+const presentation = Presentation.create({ commentFormat: "modern" });
+const slide = presentation.slides.add();
+const title = slide.shapes.add({ id: "decision-title", text: "Customer evidence is ready" });
+
+const thread = slide.comments.addThread({
+  textMatch: { element: title, query: "Customer evidence", occurrence: 0 },
+}, "Confirm the evidence.", {
+  id: "{11111111-1111-4111-8111-111111111111}",
+  nativeFormat: "modern",
+  position: { x: 1234500, y: 2345600, unit: "emu" },
+  comments: [{
+    nativeId: "{11111111-1111-4111-8111-111111111111}",
+    author: "Review Owner",
+    person: {
+      id: "{AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA}",
+      name: "Review Owner",
+      initials: "RO",
+      userId: "review.owner@example.test",
+      providerId: "None",
+    },
+    text: "Confirm the evidence.",
+    created: "2026-07-19T02:55:00Z",
+    status: "active",
+  }],
+});
+```
+
+Source-free threads may append direct replies. Recognized imported threads may
+change only existing text and status (`thread.resolve()` / `thread.reopen()`).
+Author/person/date identity, anchor/range, position, reply count/order,
+relationships, and source hashes remain fixed. Reactions, task fields, rich
+text, nested replies, connected comment parts, and unknown/nested anchors stay
+opaque/source-bound and fail closed. Run
+`examples/openchestnut-modern-comment-workflow.mjs` for the complete second-
+import, package-inspect, model-render, and audit loop.
 
 ## Local Image Bytes
 

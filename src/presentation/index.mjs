@@ -769,16 +769,45 @@ function connectorPoint(slide, pointOrTarget, fallback = { x: 0, y: 0 }) {
   return fallback;
 }
 
+function normalizedSlideCommentTarget(slide, target) {
+  if (target == null) return { targetId: undefined };
+  if (typeof target === "string") return { targetId: target };
+  if (target.kind === "textRange" || target.kind === "shape" || target.id) return { targetId: target.id };
+  if (target.slide) return { targetId: undefined };
+  if (target.element) return { targetId: target.element.id };
+  if (target.textRange) return { targetId: target.textRange.id };
+  if (target.textMatch) {
+    const element = target.textMatch.element;
+    const query = String(target.textMatch.query ?? "");
+    const occurrence = Number(target.textMatch.occurrence ?? 0);
+    if (!element?.id || !query || !Number.isInteger(occurrence) || occurrence < 0) throw new TypeError("Comment textMatch requires an element, a non-empty query, and a non-negative integer occurrence.");
+    const text = String(element.text?.value ?? element.text ?? "");
+    let offset = -1;
+    let from = 0;
+    for (let index = 0; index <= occurrence; index += 1) {
+      offset = text.indexOf(query, from);
+      if (offset < 0) throw new RangeError(`Comment textMatch query ${JSON.stringify(query)} occurrence ${occurrence} was not found in ${element.id}.`);
+      from = offset + Math.max(1, query.length);
+    }
+    return {
+      targetId: `${element.id}/text`,
+      nativeAnchor: { type: "textRange", cp: offset, length: query.length },
+    };
+  }
+  return { targetId: undefined };
+}
+
 class SlideCommentThread {
   constructor(slide, target, text, config = {}) {
+    const normalizedTarget = normalizedSlideCommentTarget(slide, target);
     this.slide = slide;
     this.id = config.id || aid("pc");
-    this.targetId = typeof target === "string" ? target : target?.id || config.targetId;
+    this.targetId = normalizedTarget.targetId || config.targetId;
     this.author = config.author || "User";
     this.resolved = Boolean(config.resolved);
     this.created = config.created || new Date(0).toISOString();
     this.nativeFormat = config.nativeFormat;
-    this.nativeAnchor = config.nativeAnchor;
+    this.nativeAnchor = config.nativeAnchor || normalizedTarget.nativeAnchor;
     this.position = config.position;
     this.comments = (config.comments || [{ author: this.author, text: String(text ?? ""), created: this.created }]).map((comment) => ({ ...comment, author: comment.author || this.author, text: String(comment.text ?? ""), created: comment.created || this.created }));
   }
@@ -788,8 +817,16 @@ class SlideCommentThread {
     return this;
   }
 
-  resolve() { this.resolved = true; return this; }
-  reopen() { this.resolved = false; return this; }
+  resolve() {
+    this.resolved = true;
+    if (this.nativeFormat === "modern" || this.comments[0]?.status) this.comments[0].status = "resolved";
+    return this;
+  }
+  reopen() {
+    this.resolved = false;
+    if (this.nativeFormat === "modern" || this.comments[0]?.status) this.comments[0].status = "active";
+    return this;
+  }
 
   inspectRecord() {
     return { kind: "comment", id: this.id, slide: this.slide.index + 1, targetId: this.targetId, author: this.author, resolved: this.resolved, nativeFormat: this.nativeFormat, nativeAnchor: this.nativeAnchor, nativeCommentIds: this.comments.map((comment) => comment.nativeId).filter(Boolean), replies: Math.max(0, this.comments.length - 1), textPreview: this.comments.map((comment) => comment.text).join("\n").slice(0, 300) };

@@ -15,7 +15,8 @@ internal sealed record PptxLegacyCommentProfile(bool Supported, IReadOnlyList<Pr
 // Legacy PresentationML comments are intentionally kept separate from the
 // richer JS thread model. The native format owns one author, one text value,
 // and one slide coordinate per p:cm; it has no replies, resolved state,
-// reactions, or element/text anchors. Modern comment parts stay opaque.
+// reactions, or element/text anchors. Office 2021 threads are handled by the
+// separate bounded PptxModernCommentsCodec profile.
 internal static class PptxLegacyCommentsCodec
 {
     private const int MaxCommentsPerPresentation = 4_096;

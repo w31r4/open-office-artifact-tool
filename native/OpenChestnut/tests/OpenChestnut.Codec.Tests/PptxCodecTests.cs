@@ -158,6 +158,174 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void ModernCommentThreadRoundTripsAndAllowsOnlyTextAndStatusEdits()
+    {
+        var request = ExportRequest();
+        var thread = new PresentationModernCommentThread
+        {
+            Id = "{11111111-1111-4111-8111-111111111111}",
+            TargetId = "presentation/slide/1/title/text",
+            PositionXEmu = 1_234_500,
+            PositionYEmu = 2_345_600,
+            Anchor = new PresentationModernCommentAnchor
+            {
+                Kind = PresentationModernCommentAnchor.Types.Kind.TextRange,
+                NativeSlideId = 256,
+                TextStart = 0,
+                TextLength = 9,
+            },
+            Root = new PresentationModernComment
+            {
+                Id = "{11111111-1111-4111-8111-111111111111}",
+                AuthorId = "{AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA}",
+                Author = "Review Owner",
+                Initials = "RO",
+                UserId = "review.owner@example.test",
+                ProviderId = "None",
+                Text = "Confirm the customer evidence.",
+                CreatedAt = "2026-07-19T02:55:00Z",
+                Status = "active",
+            },
+        };
+        thread.Anchor.Monikers.Add(new PresentationModernCommentMoniker { Type = "spMk", NativeId = 2 });
+        thread.Replies.Add(new PresentationModernComment
+        {
+            Id = "{22222222-2222-4222-8222-222222222222}",
+            AuthorId = "{BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB}",
+            Author = "Evidence Owner",
+            Initials = "EO",
+            UserId = "evidence.owner@example.test",
+            ProviderId = "None",
+            Text = "Evidence is attached.",
+            CreatedAt = "2026-07-19T03:05:00Z",
+            Status = "active",
+        });
+        request.Artifact.Presentation.Slides[0].ModernComments.Add(thread);
+
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var authoredBytes = authored.File.ToByteArray();
+        using (var stream = new MemoryStream(authoredBytes))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var authorsPart = Assert.Single(package.PresentationPart!.Parts.Select(pair => pair.OpenXmlPart).OfType<PowerPointAuthorsPart>());
+            var commentsPart = Assert.Single(Assert.Single(package.PresentationPart.SlideParts).Parts.Select(pair => pair.OpenXmlPart).OfType<PowerPointCommentPart>());
+            Assert.Equal("application/vnd.ms-powerpoint.authors+xml", authorsPart.ContentType);
+            Assert.Equal("application/vnd.ms-powerpoint.comments+xml", commentsPart.ContentType);
+        }
+
+        var imported = Import(authoredBytes);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedThread = Assert.Single(Assert.Single(imported.Artifact.Presentation.Slides).ModernComments);
+        Assert.Equal("presentation/slide/1/element/1/text", importedThread.TargetId);
+        Assert.Equal(PresentationModernCommentAnchor.Types.Kind.TextRange, importedThread.Anchor.Kind);
+        Assert.Equal(0U, importedThread.Anchor.TextStart);
+        Assert.Equal(9U, importedThread.Anchor.TextLength);
+        Assert.Equal("Confirm the customer evidence.", importedThread.Root.Text);
+        Assert.Equal("Evidence is attached.", Assert.Single(importedThread.Replies).Text);
+        Assert.True(importedThread.Source.Editable);
+        Assert.Equal(64, importedThread.Source.CommentXmlSha256.Length);
+        Assert.Equal(64, importedThread.Source.AuthorsXmlSha256.Length);
+        Assert.Equal(64, importedThread.Source.FixedTopologySha256.Length);
+
+        var unchanged = Export(imported.Artifact);
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(
+            ModernPartBytes<PowerPointCommentPart>(authoredBytes),
+            ModernPartBytes<PowerPointCommentPart>(unchanged.File.ToByteArray()));
+        Assert.Equal(
+            ModernPartBytes<PowerPointAuthorsPart>(authoredBytes),
+            ModernPartBytes<PowerPointAuthorsPart>(unchanged.File.ToByteArray()));
+
+        importedThread.Root.Text = "Customer evidence confirmed.";
+        importedThread.Root.Status = "resolved";
+        importedThread.Replies[0].Text = "Recorded in the decision log.";
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        using (var stream = new MemoryStream(edited.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        var roundTrip = Import(edited.File.ToByteArray());
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        var roundTripThread = Assert.Single(Assert.Single(roundTrip.Artifact.Presentation.Slides).ModernComments);
+        Assert.Equal("Customer evidence confirmed.", roundTripThread.Root.Text);
+        Assert.Equal("resolved", roundTripThread.Root.Status);
+        Assert.Equal("Recorded in the decision log.", Assert.Single(roundTripThread.Replies).Text);
+
+        roundTripThread.Root.Author = "Changed identity";
+        var rejected = Export(roundTrip.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("presentation_comment_topology_changed", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void ModernCommentAuthoringRejectsUnresolvedAndOutOfBoundsAnchors()
+    {
+        var request = ExportRequest();
+        var thread = new PresentationModernCommentThread
+        {
+            Id = "{33333333-3333-4333-8333-333333333333}",
+            TargetId = "presentation/slide/1/title/text",
+            Anchor = new PresentationModernCommentAnchor
+            {
+                Kind = PresentationModernCommentAnchor.Types.Kind.TextRange,
+                NativeSlideId = 256,
+                TextStart = 12,
+                TextLength = 99,
+            },
+            Root = new PresentationModernComment
+            {
+                Id = "{33333333-3333-4333-8333-333333333333}",
+                AuthorId = "{AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA}",
+                Author = "Review Owner",
+                Initials = "RO",
+                UserId = "review.owner@example.test",
+                ProviderId = "None",
+                Text = "This range is invalid.",
+                CreatedAt = "2026-07-19T02:55:00Z",
+                Status = "active",
+            },
+        };
+        thread.Anchor.Monikers.Add(new PresentationModernCommentMoniker { Type = "spMk", NativeId = 2 });
+        request.Artifact.Presentation.Slides[0].ModernComments.Add(thread);
+
+        var rejected = Invoke(request);
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_presentation_modern_comment", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void ConnectedModernCommentGraphStaysOpaqueAndRejectsModeledReplacement()
+    {
+        var authored = Invoke(ModernCommentExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var commentPath = SingleZipEntryPath(authored.File.ToByteArray(), path => path.StartsWith("ppt/comments/", StringComparison.Ordinal) && path.EndsWith(".xml", StringComparison.Ordinal));
+        var fileName = Path.GetFileName(commentPath);
+        var relationshipPath = $"ppt/comments/_rels/{fileName}.rels";
+        var connected = AddZipText(
+            authored.File.ToByteArray(),
+            relationshipPath,
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rIdUnexpected\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.invalid/review\" TargetMode=\"External\"/></Relationships>");
+
+        var imported = Import(connected);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.Empty(Assert.Single(imported.Artifact.Presentation.Slides).ModernComments);
+        Assert.Contains(imported.Diagnostics, diagnostic => diagnostic.Code == "unsupported_presentation_modern_comments_preserved");
+
+        var unchanged = Export(imported.Artifact);
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(ZipBytes(connected, commentPath), ZipBytes(unchanged.File.ToByteArray(), commentPath));
+        Assert.Equal(ZipBytes(connected, relationshipPath), ZipBytes(unchanged.File.ToByteArray(), relationshipPath));
+
+        imported.Artifact.Presentation.Slides[0].ModernComments.Add(
+            ModernCommentExportRequest().Artifact.Presentation.Slides[0].ModernComments[0].Clone());
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_presentation_comment_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void ImportedViewPropertiesExposeGridSnapAndGuidesAndRemainSourceBound()
     {
         var authored = Invoke(ExportRequest());
@@ -4181,6 +4349,38 @@ public sealed class PptxCodecTests
         };
     }
 
+    private static CodecRequest ModernCommentExportRequest()
+    {
+        var request = ExportRequest();
+        var thread = new PresentationModernCommentThread
+        {
+            Id = "{44444444-4444-4444-8444-444444444444}",
+            TargetId = "presentation/slide/1/title",
+            PositionXEmu = 914_400,
+            PositionYEmu = 914_400,
+            Anchor = new PresentationModernCommentAnchor
+            {
+                Kind = PresentationModernCommentAnchor.Types.Kind.Element,
+                NativeSlideId = 256,
+            },
+            Root = new PresentationModernComment
+            {
+                Id = "{44444444-4444-4444-8444-444444444444}",
+                AuthorId = "{AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA}",
+                Author = "Review Owner",
+                Initials = "RO",
+                UserId = "review.owner@example.test",
+                ProviderId = "None",
+                Text = "Preserve this graph when it is connected.",
+                CreatedAt = "2026-07-19T05:00:00Z",
+                Status = "active",
+            },
+        };
+        thread.Anchor.Monikers.Add(new PresentationModernCommentMoniker { Type = "spMk", NativeId = 2 });
+        request.Artifact.Presentation.Slides[0].ModernComments.Add(thread);
+        return request;
+    }
+
     private static CodecRequest RichTextExportRequest()
     {
         var first = new PresentationTextParagraph
@@ -4799,6 +4999,21 @@ public sealed class PptxCodecTests
         using var copy = new MemoryStream();
         entry.CopyTo(copy);
         return copy.ToArray();
+    }
+
+    private static byte[] ModernPartBytes<T>(byte[] bytes) where T : OpenXmlPart
+    {
+        using var stream = new MemoryStream(bytes, writable: false);
+        using var package = PresentationDocument.Open(stream, false);
+        var presentationPart = package.PresentationPart!;
+        var part = Assert.Single(
+            presentationPart.Parts.Select(pair => pair.OpenXmlPart)
+                .Concat(presentationPart.SlideParts.SelectMany(slide => slide.Parts.Select(pair => pair.OpenXmlPart)))
+                .OfType<T>());
+        using var source = part.GetStream(FileMode.Open, FileAccess.Read);
+        using var output = new MemoryStream();
+        source.CopyTo(output);
+        return output.ToArray();
     }
 
     private static string SingleZipEntryPath(byte[] bytes, Func<string, bool> predicate)

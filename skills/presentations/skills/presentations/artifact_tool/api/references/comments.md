@@ -1,16 +1,16 @@
 # Comments
 
-Presentation comments use people, threads, replies, reactions, and thread state.
+OpenChestnut exposes two native PPTX comment wire families. Select one for the
+whole presentation with `Presentation.create({ commentFormat })`; never mix
+them in one artifact.
 
-## OpenChestnut codec boundary
+## Legacy slide annotations
 
-The richer workflow below remains useful for model-side review planning, but
-canonical PPTX export has one deliberately narrow interoperable profile:
-standard legacy PresentationML comments. Use it only when one slide-level
-annotation can be represented as one author, one text item, and one explicit
-slide coordinate.
+`commentFormat: "legacy"` is the default. It writes standard legacy
+PresentationML with one author, one text item, and one explicit slide coordinate:
 
-```ts
+```js
+const presentation = Presentation.create({ commentFormat: "legacy" });
 const slide = presentation.slides.add();
 slide.comments.addThread(undefined, "Confirm the source before delivery.", {
   author: "Presentation Reviewer",
@@ -19,118 +19,122 @@ slide.comments.addThread(undefined, "Confirm the source before delivery.", {
 });
 ```
 
-Pass `undefined` as the target. A legacy `p:cm` has no element or text-range
-anchor, reply graph, reaction, or resolved state. Imported comments that match
-this profile are visible to `inspect`/`resolve` and are byte-preserved only
-while unchanged. Do not add replies, resolve/reopen a thread, attach it to an
-element or text range, or replace imported content: those requests fail closed.
-Modern threaded-comment graphs remain opaque and source-bound. The remaining
-reference examples describe richer workflow material; they do not claim that
-the narrow legacy codec can serialize modern comment semantics.
+Pass `undefined` as the target. Legacy `p:cm` has no element/text-range anchor,
+reply graph, reaction, or resolved state. Recognized imported legacy comments
+are inspectable but unchanged-only. The bounded `slide.duplicate()` workflow
+may byte-copy one closed legacy comments leaf and share its verified immutable
+author catalog; that is preservation, not in-place editing.
 
-The narrow imported-slide `slide.duplicate()` profile may carry one unchanged
-canonical legacy comments part. It creates a fresh slide-local comments part
-whose XML is byte-copied and reuses the original immutable presentation-wide
-author catalog; neither part may have a connected relationship graph. This is
-only a preservation primitive: the pending clone must not change its comments before
-export/reimport, and imported legacy comments remain read-only after it.
+## Office 2021 modern threads
 
-## Current Author
+`commentFormat: "modern"` writes a native Office 2021 `p188:authorLst` plus one
+`p188:cmLst` part per commented slide. The bounded profile supports:
 
-```ts
-presentation.comments.setSelf({
-  displayName,
-  initials,
-  email,
+- one root and direct replies;
+- independent GUID/person metadata and ISO-8601 time per comment;
+- `active`, `resolved`, or `closed` status;
+- one top-level shape, image, table/chart, connector, or group anchor;
+- one whole-shape or exact `textMatch` range anchor;
+- explicit DrawingML comment coordinates.
+
+Use stable brace-delimited GUIDs when deterministic output matters:
+
+```js
+const presentation = Presentation.create({ commentFormat: "modern" });
+const slide = presentation.slides.add({ name: "Decision review" });
+const title = slide.shapes.add({
+  id: "decision-title",
+  text: "Customer evidence is ready",
+  position: { left: 80, top: 80, width: 560, height: 96 },
+});
+
+const thread = slide.comments.addThread({
+  textMatch: { element: title, query: "Customer evidence", occurrence: 0 },
+}, "Confirm the evidence before delivery.", {
+  id: "{11111111-1111-4111-8111-111111111111}",
+  nativeFormat: "modern",
+  position: { x: 1234500, y: 2345600, unit: "emu" },
+  comments: [{
+    nativeId: "{11111111-1111-4111-8111-111111111111}",
+    author: "Review Owner",
+    person: {
+      id: "{AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA}",
+      name: "Review Owner",
+      initials: "RO",
+      userId: "review.owner@example.test",
+      providerId: "None",
+    },
+    text: "Confirm the evidence before delivery.",
+    created: "2026-07-19T02:55:00Z",
+    status: "active",
+  }],
+});
+
+thread.addReply("Evidence is attached.", {
+  nativeId: "{22222222-2222-4222-8222-222222222222}",
+  author: "Evidence Owner",
+  person: {
+    id: "{BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB}",
+    name: "Evidence Owner",
+    initials: "EO",
+    userId: "evidence.owner@example.test",
+    providerId: "None",
+  },
+  created: "2026-07-19T03:05:00Z",
+  status: "active",
 });
 ```
 
-## Person Inline Type
+Direct target forms are also accepted:
 
-```ts
-type PersonConfig = {
-  id?: string;
-  displayName: string;
-  initials?: string;
-  email?: string;
-  avatarUrl?: string;
-  userId?: string;
-  providerId?: string;
-};
+```js
+slide.comments.addThread({ element: image }, "Check the crop.", options);
+slide.comments.addThread({ textRange: slide.resolve(`${title.id}/text`) }, "Review all title text.", options);
+slide.comments.addThread(title, "Review this shape.", options);
 ```
 
-## Element Thread
+Modern slide-level anchors and nested group-child moniker chains are not in the
+bounded profile. Use a supported top-level element or text range.
 
-```ts
-const thread = presentation.comments.addThread({ element }, bodyText, {
-  position,
-});
+## Imported edit boundary
 
-const reply = thread.addReply(replyText);
-reply.toggleReaction(reactionText);
-thread.resolve();
-thread.reopen();
+Recognized imported modern threads expose their original root and direct
+replies. Only existing comment text and status are mutable:
+
+```js
+const presentation = await PresentationFile.importPptx(input);
+const records = presentation.inspect({ kind: "comment", maxChars: 4000 });
+console.log(records.ndjson);
+
+const thread = presentation.resolve(threadId);
+thread.comments[0].text = "Evidence confirmed for delivery.";
+thread.comments[1].text = "Recorded in the decision log.";
+thread.resolve(); // root status -> resolved
+
+const output = await PresentationFile.exportPptx(presentation);
+const roundTrip = await PresentationFile.importPptx(output);
 ```
 
-## Thread Inline Types
+Export re-proves the original author catalog, comment-part hash, thread/comment
+GUIDs, author/person metadata, timestamps, target moniker, text range, position,
+reply count/order, relationships, and fixed-topology hash. Changing any of
+those fields, adding/removing a reply, or moving the thread fails closed before
+output. `thread.reopen()` changes the root status back to `active` under the same
+contract.
 
-```ts
-type CommentTarget =
-  | { slide: Slide }
-  | { element: Shape | ImageElement | Table | ChartElement }
-  | { textRange: TextRange }
-  | { textMatch: { element: Shape; query: string; occurrence?: number } };
+## Unsupported graphs
 
-type ThreadAddOptions = {
-  author?: Person | PersonConfig | { id: string };
-  createdAt?: string;
-  position?: { x: number; y: number; unit?: "px" | "emu" };
-};
-```
+Reactions/likes, task fields, extensions, rich text, nested replies, unknown
+anchors, multiple comment parts for one slide, mixed legacy/modern parts, or
+comment/author parts with child, external, hyperlink, or data relationships are
+not flattened. They remain opaque/source-bound; a modeled replacement or edit
+is rejected.
 
-## Slide And Text Threads
+Run the shipped end-to-end example for a source-free root/reply thread followed
+by an imported fixed-topology text/status edit, second import, package inspect,
+model render, and byte-bound audit:
 
-```ts
-presentation.comments.addThread({ slide }, bodyText, { position });
-
-presentation.comments.addThread(
-  { textMatch: { element, query, occurrence } },
-  bodyText,
-);
-```
-
-## Cookbook
-
-```ts
-// Add a review comment to exact text.
-presentation.comments.setSelf({
-  displayName: "Presentation Reviewer",
-  initials: "PR",
-  email: "reviewer@example.com",
-});
-
-const thread = presentation.comments.addThread(
-  { textMatch: { element: titleShape, query: "Q4", occurrence: 0 } },
-  "Check whether this should be FY2026 Q1.",
-);
-thread.addReply("Leaving this unresolved for owner review.");
-```
-
-```ts
-// Resolve an imported thread after an edit.
-const self = presentation.comments.setSelf({
-  displayName: "Presentation Editor",
-  initials: "PE",
-  email: "editor@example.com",
-});
-
-const thread = presentation.resolve(threadAnchorId);
-thread.addReply("Updated the chart title and source note.", { author: self });
-thread.resolve(self);
-
-const verified = await presentation.inspect({
-  kind: "thread",
-  target: { id: threadAnchorId, beforeLines: 0, afterLines: 2 },
-  maxChars: 2000,
-});
+```bash
+node examples/openchestnut-modern-comment-workflow.mjs \
+  output/decision-review.pptx output/modern-comments-audit.json
 ```

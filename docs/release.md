@@ -72,6 +72,42 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### PPTX Office 2021 modern comment threads
+
+On 2026-07-19, the Presentation model, protocol-2 wire, OpenChestnut C# codec,
+Help catalog, generated API reference, and native Presentation Skill closed one
+bounded Office 2021 modern-comment slice. Source-free decks can author one root
+with direct replies, independent person and timestamp metadata, active/resolved/
+closed state, a top-level DrawingML element or exact text-range anchor, and an
+explicit slide coordinate. Recognized imported graphs permit only existing
+comment text and status changes: author/person/date identity, anchor/range,
+position, topology/order, relationships, part paths, and source hashes are
+re-proved and fixed. Reactions, task fields, extensions, rich text, nested
+replies, nested group-child monikers, unknown anchors, connected comment parts,
+mixed legacy/modern graphs, and modern-comment slide clones remain opaque and
+fail closed rather than being flattened.
+
+The shipped workflow proves source-free authoring, export/import, fixed-topology
+root/reply text editing, resolve/reopen state, second import, package inspection,
+model rendering, source immutability, atomic output, and a byte-bound audit. C#
+tests independently exercise native author/comment parts, Office 2021 Open XML
+SDK validation, unchanged-part preservation, identity and anchor mutation
+rejection, out-of-bounds ranges, and connected-graph preservation. Legacy PPTX
+annotations remain a separate unchanged-only import profile.
+
+The complete local gate passed `npm test` including the canonical 20-template
+LibreOffice/Poppler corpus and Playwright, `npm run docs:api`, `npm run
+test:pack`, and serial `npm run verify:open-chestnut-build`; OpenChestnut passed
+`274/274` and OfficeBridge passed `5/5`. Two clean WASM builds produced the same
+39 audited files and the same manifest-bound 38-file, 14,552,252-byte runtime.
+The clean-install tarball contains 449 files, is 9,497,480 bytes compressed and
+23,966,478 bytes unpacked. The real optional Python PDF-provider gate remained
+contract-only because `OPEN_OFFICE_PDF_PROVIDER_PYTHON` was not explicitly
+configured; the required MuPDF.js path and the remaining npm gates ran locally.
+The repository-only canonical Default Template Library remains byte-bound to
+reference commit `256cb31`, excluded from npm, and has no self-authored generator
+or visual fallback. No publish or tag operation was attempted.
+
 ### Canonical Default Template Library reference pin
 
 On 2026-07-19, the public `reference/office-artifact-tool` submodule advanced

@@ -206,6 +206,14 @@ internal static class PptxCodec
             if (PptxSpeakerNotesCodec.Read(slidePart) is { } speakerNotes)
                 target.SpeakerNotes = speakerNotes;
             target.LegacyComments.Add(PptxLegacyCommentsCodec.Read(presentationPart, slidePart, slideIndex, diagnostics));
+            target.ModernComments.Add(PptxModernCommentsCodec.Read(
+                presentationPart,
+                slideId,
+                slidePart,
+                elements,
+                elementIdsByNativeId,
+                slideIndex,
+                diagnostics));
             var slideContext = new PptxPartContext(slidePart, slideIdByPartPath, assets: assetCatalog);
             for (var elementIndex = 0; elementIndex < elements.Length; elementIndex++)
             {
@@ -671,6 +679,18 @@ internal static class PptxCodec
                 {
                     changedParts.Add(notesChange.PartPath);
                     replacedOpaquePartHashes.Add(notesChange.PartPath, notesChange.Sha256);
+                }
+                if (PptxModernCommentsCodec.ApplySourceBound(
+                        presentationPart,
+                        targetSlide.Source.SlideId,
+                        slidePart,
+                        sourceElements,
+                        elementIdsByNativeId,
+                        target,
+                        slideIndex) is { } modernCommentsChange)
+                {
+                    changedParts.Add(modernCommentsChange.PartPath);
+                    replacedOpaquePartHashes.Add(modernCommentsChange.PartPath, modernCommentsChange.Sha256);
                 }
                 TrackContextChanges(slidePart, slideContext, changedParts, addedRelationshipIds, addedPartPaths);
             }
@@ -1210,6 +1230,7 @@ internal static class PptxCodec
             new P.DefaultTextStyle());
         presentationPart.Presentation = presentationRoot;
         PptxLegacyCommentsCodec.BuildSourceFree(presentationPart, slideParts, artifact.Slides);
+        PptxModernCommentsCodec.BuildSourceFree(presentationPart, slideIdList.Elements<P.SlideId>().ToArray(), slideParts, artifact.Slides);
         themePart.Theme.Save();
         foreach (var (_, layoutPart) in layoutEntries) layoutPart.SlideLayout!.Save();
         masterPart.SlideMaster.Save();
@@ -1818,6 +1839,7 @@ internal static class PptxCodec
             PptxSpeakerNotesCodec.Validate(slide.SpeakerNotes);
             PptxBackgroundCodec.Validate(slide.Background);
             PptxLegacyCommentsCodec.Validate(slide, slideIndex);
+            PptxModernCommentsCodec.Validate(slide, slideIndex, hasSourcePackage);
             if (!string.IsNullOrWhiteSpace(slide.LayoutId) && !layoutIds.Contains(slide.LayoutId))
                 throw new CodecException("invalid_presentation_layout", $"Presentation slide {slide.Id} references missing layout {slide.LayoutId}.");
             if (!hasSourcePackage)

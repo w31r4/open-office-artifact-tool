@@ -1616,4 +1616,138 @@ await assert.rejects(
 );
 assert.equal(legacyCommentThread.id.startsWith("pc"), true);
 
+// Office 2021 modern comments use their native author/comments graph instead
+// of the legacy slide annotation part. OpenChestnut owns a bounded root +
+// direct replies profile with top-level drawing and shape-text-range anchors.
+const modernCommentDeck = Presentation.create({
+  slideSize: { width: 1280, height: 720 },
+  commentFormat: "modern",
+});
+const modernCommentSlide = modernCommentDeck.slides.add({ name: "Modern comments" });
+const modernCommentTarget = modernCommentSlide.shapes.add({
+  id: "modern-comment-target",
+  name: "Decision evidence",
+  geometry: "rect",
+  position: { left: 80, top: 80, width: 520, height: 120 },
+  text: "Customer evidence is ready",
+});
+const modernCommentThread = modernCommentSlide.comments.addThread({
+  textMatch: { element: modernCommentTarget, query: "Customer evidence is ready", occurrence: 0 },
+}, "Confirm the customer evidence.", {
+  id: "{11111111-1111-4111-8111-111111111111}",
+  author: "Review Owner",
+  created: "2026-07-19T02:55:00Z",
+  nativeFormat: "modern",
+  position: { x: 1_234_500, y: 2_345_600, unit: "emu" },
+  comments: [{
+    nativeId: "{11111111-1111-4111-8111-111111111111}",
+    author: "Review Owner",
+    person: {
+      id: "{AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA}",
+      name: "Review Owner",
+      initials: "RO",
+      userId: "review.owner@example.test",
+      providerId: "None",
+    },
+    text: "Confirm the customer evidence.",
+    created: "2026-07-19T02:55:00Z",
+    status: "active",
+  }],
+});
+modernCommentThread.addReply("Evidence is attached.", {
+  nativeId: "{22222222-2222-4222-8222-222222222222}",
+  author: "Evidence Owner",
+  person: {
+    id: "{BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB}",
+    name: "Evidence Owner",
+    initials: "EO",
+    userId: "evidence.owner@example.test",
+    providerId: "None",
+  },
+  created: "2026-07-19T03:05:00Z",
+  status: "active",
+});
+assert.equal(modernCommentDeck.verify().ok, true);
+const modernCommentExport = await PresentationFile.exportPptx(modernCommentDeck);
+const modernCommentZip = await JSZip.loadAsync(new Uint8Array(await modernCommentExport.arrayBuffer()));
+const modernCommentPartPath = Object.keys(modernCommentZip.files).find((name) => /^ppt\/comments\/(?:modernComment|comment)\d*\.xml$/.test(name));
+const modernAuthorsPartPath = Object.keys(modernCommentZip.files).find((name) => /^ppt\/(?:authors|authors\/author\d+)\.xml$/.test(name));
+assert.ok(modernCommentPartPath);
+assert.ok(modernAuthorsPartPath);
+const modernCommentXml = await modernCommentZip.file(modernCommentPartPath).async("text");
+const modernAuthorsXml = await modernCommentZip.file(modernAuthorsPartPath).async("text");
+assert.match(modernCommentXml, /<p188:replyLst>/);
+assert.match(modernCommentXml, /<oac:txMkLst>/);
+assert.match(modernCommentXml, /<oac:txMk cp="0" len="26"/);
+assert.match(modernAuthorsXml, /Review Owner/);
+assert.match(modernAuthorsXml, /Evidence Owner/);
+
+const modernCommentImported = await PresentationFile.importPptx(modernCommentExport);
+assert.equal(modernCommentImported.commentFormat, "modern");
+const importedModernSlide = modernCommentImported.slides.getItem(0);
+const importedModernThread = importedModernSlide.comments.items[0];
+assert.equal(importedModernThread.nativeFormat, "modern");
+assert.equal(importedModernThread.comments.length, 2);
+assert.equal(importedModernThread.comments[0].author, "Review Owner");
+assert.equal(importedModernThread.comments[1].author, "Evidence Owner");
+assert.equal(importedModernThread.nativeAnchor.type, "textRange");
+assert.equal(importedModernThread.nativeAnchor.textLength, 26);
+assert.equal(importedModernSlide.resolve(importedModernThread.targetId).kind, "textRange");
+
+const modernUnchanged = await PresentationFile.exportPptx(modernCommentImported);
+const modernUnchangedZip = await JSZip.loadAsync(new Uint8Array(await modernUnchanged.arrayBuffer()));
+assert.deepEqual(
+  await modernUnchangedZip.file(modernCommentPartPath).async("uint8array"),
+  await modernCommentZip.file(modernCommentPartPath).async("uint8array"),
+);
+assert.deepEqual(
+  await modernUnchangedZip.file(modernAuthorsPartPath).async("uint8array"),
+  await modernCommentZip.file(modernAuthorsPartPath).async("uint8array"),
+);
+
+importedModernThread.comments[0].text = "Customer evidence confirmed.";
+importedModernThread.comments[1].text = "Recorded in the decision log.";
+importedModernThread.resolve();
+const modernEdited = await PresentationFile.exportPptx(modernCommentImported);
+const modernEditedRoundTrip = await PresentationFile.importPptx(modernEdited);
+const editedModernThread = modernEditedRoundTrip.slides.getItem(0).comments.items[0];
+assert.equal(editedModernThread.comments[0].text, "Customer evidence confirmed.");
+assert.equal(editedModernThread.comments[1].text, "Recorded in the decision log.");
+assert.equal(editedModernThread.resolved, true);
+assert.equal(editedModernThread.comments[0].status, "resolved");
+
+editedModernThread.comments[0].author = "Changed identity";
+await assert.rejects(
+  () => PresentationFile.exportPptx(modernEditedRoundTrip),
+  (error) => error?.code === "presentation_comment_topology_changed",
+);
+
+const invalidModernCommentDeck = Presentation.create({ commentFormat: "modern" });
+const invalidModernCommentSlide = invalidModernCommentDeck.slides.add();
+const invalidModernTarget = invalidModernCommentSlide.shapes.add({ text: "Short" });
+invalidModernCommentSlide.comments.addThread(`${invalidModernTarget.id}/text`, "Out of bounds.", {
+  nativeFormat: "modern",
+  nativeAnchor: { type: "textRange", cp: 3, length: 99 },
+  author: "Reviewer",
+  created: "2026-07-19T04:00:00Z",
+  position: { x: 100, y: 100, unit: "emu" },
+});
+await assert.rejects(
+  () => PresentationFile.exportPptx(invalidModernCommentDeck),
+  (error) => error?.code === "invalid_presentation_modern_comment",
+);
+
+const missingModernCommentPositionDeck = Presentation.create({ commentFormat: "modern" });
+const missingModernCommentPositionSlide = missingModernCommentPositionDeck.slides.add();
+const missingModernCommentPositionTarget = missingModernCommentPositionSlide.shapes.add({ text: "Coordinate required" });
+missingModernCommentPositionSlide.comments.addThread(missingModernCommentPositionTarget, "No implicit origin.", {
+  nativeFormat: "modern",
+  author: "Reviewer",
+  created: "2026-07-19T04:10:00Z",
+});
+await assert.rejects(
+  () => PresentationFile.exportPptx(missingModernCommentPositionDeck),
+  (error) => error?.code === "invalid_presentation_modern_comment" && /explicit.*position/i.test(error.message),
+);
+
 console.log("presentation smoke ok");

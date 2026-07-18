@@ -1155,7 +1155,6 @@ message PresentationSlide {
   // codec-level record rather than the richer JavaScript thread abstraction:
   // legacy PowerPoint comments have one text item, one author, and one page
   // coordinate, but no replies, resolved state, reactions, or element anchor.
-  // Modern comment graphs remain opaque/source-bound.
   repeated PresentationLegacyComment legacy_comments = 8;
   // A source-preserving clone request. Unlike `source`, this does not claim
   // that the target already owns the referenced SlidePart: the codec must
@@ -1165,6 +1164,12 @@ message PresentationSlide {
   // closed NotesSlide -> NotesMaster/back-to-slide leaf. Richer graph cloning
   // remains an explicit later operation.
   PresentationSlideSourceBinding clone_source = 9;
+  // A bounded Office 2021 p188 modern-comment graph. Source-free authoring
+  // supports one root plus direct replies and element/text-range anchors.
+  // Imported graphs expose text and active/resolved status as the only mutable
+  // fields; author identity, dates, anchor, position, topology, and package
+  // bindings remain hash-proven source evidence.
+  repeated PresentationModernCommentThread modern_comments = 10;
 }
 
 // One p:cm record from a legacy ppt/comments/commentN.xml part. `id` is a
@@ -1179,6 +1184,72 @@ message PresentationLegacyComment {
   int64 position_y_emu = 6;
   uint32 native_author_id = 7;
   uint32 native_index = 8;
+}
+
+message PresentationModernCommentThread {
+  string id = 1;
+  // Public artifact locator for the anchored element or text range.
+  string target_id = 2;
+  PresentationModernCommentAnchor anchor = 3;
+  int64 position_x_emu = 4;
+  int64 position_y_emu = 5;
+  PresentationModernComment root = 6;
+  repeated PresentationModernComment replies = 7;
+  PresentationModernCommentSourceBinding source = 8;
+}
+
+message PresentationModernComment {
+  string id = 1;
+  string author_id = 2;
+  string author = 3;
+  string initials = 4;
+  string user_id = 5;
+  string provider_id = 6;
+  string text = 7;
+  string created_at = 8;
+  // Office 2021 values: active, resolved, or closed. The JavaScript facade
+  // treats resolved and closed as resolved while preserving the exact wire
+  // value for an unchanged imported graph.
+  string status = 9;
+}
+
+message PresentationModernCommentAnchor {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_ELEMENT = 1;
+    KIND_TEXT_RANGE = 2;
+  }
+  Kind kind = 1;
+  // One drawing moniker in the bounded profile. Keeping this repeated makes
+  // unsupported nested/group chains observable without pretending they are
+  // editable; the codec accepts exactly one recognized moniker today.
+  repeated PresentationModernCommentMoniker monikers = 2;
+  optional uint32 text_start = 3;
+  optional uint32 text_length = 4;
+  optional uint32 context_length = 5;
+  optional uint32 context_hash = 6;
+  uint32 native_slide_id = 7;
+}
+
+message PresentationModernCommentMoniker {
+  // spMk, graphicFrameMk, cxnSpMk, picMk, or grpSpMk.
+  string type = 1;
+  uint32 native_id = 2;
+  // Optional a16:creationId evidence, serialized as a brace-delimited GUID.
+  string creation_id = 3;
+}
+
+message PresentationModernCommentSourceBinding {
+  string part_path = 1;
+  string relationship_id = 2;
+  string comment_xml_sha256 = 3;
+  string authors_part_path = 4;
+  string authors_relationship_id = 5;
+  string authors_xml_sha256 = 6;
+  // Hash of immutable identity, author, date, anchor, position, and topology.
+  string fixed_topology_sha256 = 7;
+  uint32 root_index = 8;
+  bool editable = 9;
 }
 
 message PresentationSlideSourceBinding {

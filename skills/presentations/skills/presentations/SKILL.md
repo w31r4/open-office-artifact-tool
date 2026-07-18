@@ -334,12 +334,31 @@ changed expected source text, absent/rich notes, slide-name/order changes, or
 any identity/geometry/direct-background change after reimport. A recognized
 placeholder title must also retain its native newline/inline topology; complex
 multi-run replacements and unrecognized local text graphs fail closed. It does
-not claim universal template editing: SmartArt, modern comment replies, rich
-notes, animations, and other connected PresentationML graphs stay source-bound.
+not claim universal template editing: SmartArt, irregular modern comment
+graphs, rich notes, animations, and other connected PresentationML graphs stay
+source-bound.
 
 Run the native render/QA route after delivery when LibreOffice/Poppler is
 available; the workflow's SVG check is model evidence, not a substitute for a
 native-host review.
+
+For native Office 2021 comment threads, read
+`artifact_tool/api/references/comments.md` before authoring or editing. Use the
+shipped workflow for a complete root/direct-reply create → import → fixed-
+topology text/status edit → second import → inspect/render/audit loop:
+
+```bash
+node examples/openchestnut-modern-comment-workflow.mjs \
+  output/decision-review.pptx output/modern-comments-audit.json
+```
+
+This uses `Presentation.create({ commentFormat: "modern" })`, a top-level
+element or shape-text-range anchor, independent person/GUID/time metadata, and
+`thread.resolve()`/`thread.reopen()`. On imported threads only existing text and
+status may change. Author/date identity, anchor and range, position, root/reply
+topology, relationships, and source hashes remain fixed. Reactions/task fields,
+nested replies, unknown/nested anchors, connected comment parts, and mixed
+legacy/modern graphs remain opaque/source-bound and fail closed.
 
 ## Template Following
 

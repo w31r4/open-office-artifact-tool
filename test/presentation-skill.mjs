@@ -167,6 +167,50 @@ try {
   assert.match(commentXml, /<p:cm[^>]*authorId="0"[^>]*idx="1"/);
   assert.match(commentXml, /Confirm the source before delivery\./);
 
+  const modernCommentsDir = path.join(root, "modern-comments-workflow");
+  const modernCommentsOutput = path.join(modernCommentsDir, "decision-review.pptx");
+  const modernCommentsAudit = path.join(modernCommentsDir, "audit.json");
+  const { createAndEditModernCommentThread } = await import(
+    "../skills/presentations/skills/presentations/examples/openchestnut-modern-comment-workflow.mjs"
+  );
+  const modernCommentsResult = await createAndEditModernCommentThread({
+    outputPath: modernCommentsOutput,
+    auditPath: modernCommentsAudit,
+  });
+  assert.equal(modernCommentsResult.audit.provider.actual, "open-chestnut");
+  assert.equal(modernCommentsResult.audit.provider.silentFallback, false);
+  assert.equal(modernCommentsResult.audit.operation.type, "fixed-topology-modern-comment-text-status-edit");
+  assert.equal(modernCommentsResult.audit.operation.replyCount, 1);
+  assert.equal(modernCommentsResult.audit.validation.fixedIdentityPreserved, true);
+  assert.equal(modernCommentsResult.audit.validation.package.ok, true);
+  assert.equal(modernCommentsResult.audit.validation.modelRender.ok, true);
+  const modernCommentsRoundTrip = await PresentationFile.importPptx(new FileBlob(await fs.readFile(modernCommentsOutput), {
+    type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    name: "decision-review.pptx",
+  }));
+  assert.equal(modernCommentsRoundTrip.commentFormat, "modern");
+  const modernThread = modernCommentsRoundTrip.slides.getItem(0).comments.items[0];
+  assert.equal(modernThread.comments[0].text, "Customer evidence confirmed for delivery.");
+  assert.equal(modernThread.comments[1].text, "Recorded in the decision log.");
+  assert.equal(modernThread.comments[0].author, "Review Owner");
+  assert.equal(modernThread.comments[1].author, "Evidence Owner");
+  assert.equal(modernThread.resolved, true);
+  assert.equal(modernThread.nativeAnchor.type, "textRange");
+  assert.match(modernCommentsRoundTrip.inspect({ kind: "comment" }).ndjson, /Customer evidence confirmed/);
+  const modernCommentsZip = await JSZip.loadAsync(await fs.readFile(modernCommentsOutput));
+  assert.ok(Object.keys(modernCommentsZip.files).some((name) => /^ppt\/comments\/modernComment\d*\.xml$/.test(name)));
+  assert.ok(modernCommentsZip.file("ppt/authors.xml"));
+
+  const modernCommentsCliOutput = path.join(modernCommentsDir, "decision-review-cli.pptx");
+  const modernCommentsCliAudit = path.join(modernCommentsDir, "cli-audit.json");
+  const modernCommentsCli = spawnSync(process.execPath, [
+    "skills/presentations/skills/presentations/examples/openchestnut-modern-comment-workflow.mjs",
+    modernCommentsCliOutput,
+    modernCommentsCliAudit,
+  ], { encoding: "utf8" });
+  assert.equal(modernCommentsCli.status, 0, `modern-comment CLI failed\n${modernCommentsCli.stdout}\n${modernCommentsCli.stderr}`);
+  assert.equal(JSON.parse(modernCommentsCli.stdout).threadId, "{11111111-1111-4111-8111-111111111111}");
+
   const coreEvidence = await runPresentationFixture(path.join(fixtureDir, "package-notes-comments.json"), {
     outputDir: path.join(root, "core-evidence"),
     nativeRender,
@@ -536,6 +580,7 @@ try {
   const quickStartText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/API_QUICK_START.md", "utf8");
   assert.match(skillText, /open-office-artifact-tool/);
   assert.match(skillText, /openchestnut-title-notes-edit-workflow\.mjs/);
+  assert.match(skillText, /openchestnut-modern-comment-workflow\.mjs/);
   assert.match(skillText, /openchestnut-slide-name-edit-workflow\.mjs/);
   assert.match(skillText, /openchestnut-slide-duplicate-workflow\.mjs/);
   assert.match(skillText, /--allow-closed-leaves/);
@@ -543,6 +588,7 @@ try {
   assert.match(quickStartText, /editPptxSlideName/);
   assert.match(quickStartText, /duplicatePptxSlide/);
   assert.match(quickStartText, /allowClosedLeaves:\s*true/);
+  assert.match(quickStartText, /commentFormat:\s*"modern"/);
   assert.match(quickStartText, /open-office-artifact-tool/);
   assert.match(skillText, /slides_test\.py/);
   assert.match(skillText, /slide\.setBackground.*slide\.clearBackground/s);
@@ -555,7 +601,10 @@ try {
   const commentsReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/comments.md", "utf8");
   assert.match(commentsReferenceText, /Pass `undefined` as the target/);
   assert.match(commentsReferenceText, /one author, one text item, and one explicit\s+slide coordinate/is);
-  assert.match(commentsReferenceText, /Modern threaded-comment graphs remain opaque and source-bound/);
+  assert.match(commentsReferenceText, /Office 2021 modern threads/);
+  assert.match(commentsReferenceText, /Only existing comment text and status are mutable/);
+  assert.match(commentsReferenceText, /Reactions\/likes, task fields, extensions, rich text, nested replies/);
+  assert.match(commentsReferenceText, /openchestnut-modern-comment-workflow\.mjs/);
   assert.match(commentsReferenceText, /slide\.duplicate\(\).*byte-cop(?:y|ied).*author\s+catalog/is);
   const slideReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/slide.spec.md", "utf8");
   assert.match(slideReferenceText, /never flattens the\s+inherited color/i);

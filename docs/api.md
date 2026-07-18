@@ -1284,8 +1284,8 @@ Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or 
 | `compose.column` | api | Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels. |
 | `compose.paragraph` | api | Create an editable text block with name, className/style text tokens, and stable inspect output. |
 | `compose.text` | api | Create the same editable paragraph node through the reference-template-compatible children-first text(children, props) helper. |
-| `exportPptxWithOpenChestnut` | api | Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures with native crop/contain/cover semantics, fixed-grid plain-text tables, recursive native p:grpSp trees, plain-text speaker notes, source-free bar/line/pie charts, the bounded literal clustered bar+line combo profile with either shared primary axes or a canonical secondary line pair, and validated payload-only replacement for eligible imported OLE workbooks. Recognized imported direct backgrounds, local SlidePart placeholder text bodies, picture source rectangles, canonical fixed-topology groups, simple notes bodies, eligible OLE bindings, and canonical fixed-topology combos are hash-bound and editable within their explicit component boundaries; inherited or complex graphs remain preserved and fail closed on unsupported mutation. |
-| `importPptxWithOpenChestnut` | api | Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich text, recognized owner-local SlidePart placeholder text, rectangular pictures and native source rectangles, tables, connectors, recursive canonical p:grpSp groups, bar/line/pie charts, the canonical literal clustered bar+line combo profile with either shared primary axes or a secondary line pair, plain-text speaker notes, and defensive payload access for eligible OLE workbooks. Placeholder identity/geometry/formatting, inherited Master/Layout graphs, complex backgrounds/blips/groups, rich notes, mixed line groups, secondary bars, irregular combo graphs, ambiguous OLE graphs, and other unsupported content remain source-bound and read-only. |
+| `exportPptxWithOpenChestnut` | api | Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures with native crop/contain/cover semantics, fixed-grid plain-text tables, recursive native p:grpSp trees, plain-text speaker notes, legacy annotations, Office 2021 modern root/direct-reply threads, source-free bar/line/pie charts, the bounded literal clustered bar+line combo profile with either shared primary axes or a canonical secondary line pair, and validated payload-only replacement for eligible imported OLE workbooks. Recognized imported modern threads allow only existing text/status edits; their identity, author/date metadata, anchor/range, position, topology, relationships, and source hashes remain fixed. Inherited or complex graphs remain preserved and fail closed on unsupported mutation. |
+| `importPptxWithOpenChestnut` | api | Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich text, recognized owner-local SlidePart placeholder text, rectangular pictures and native source rectangles, tables, connectors, recursive canonical p:grpSp groups, bar/line/pie charts, the canonical literal clustered bar+line combo profile with either shared primary axes or a secondary line pair, plain-text speaker notes, unchanged-only legacy comments, fixed-topology modern comment text/status edits, and defensive payload access for eligible OLE workbooks. Reactions/task fields, nested replies/anchors, connected comment parts, inherited Master/Layout graphs, complex backgrounds/blips/groups, rich notes, irregular combos, ambiguous OLE graphs, and other unsupported content remain source-bound and read-only. |
 | `nativeObject.getEmbeddedWorkbook` | api | Read a defensive FileBlob copy of the XLSX payload from an eligible source-bound top-level OLE object without exposing arbitrary native-part mutation. |
 | `nativeObject.replaceEmbeddedWorkbook` | api | Replace only the XLSX payload of an eligible imported top-level OLE object. OpenChestnut validates the new workbook and immutable source binding, preserves the OLE shell, relationships, preview, and all other native parts, and fails closed for malformed or ambiguous graphs. |
 | `nativeObject.setName` | api | Native OLE, SmartArt/diagram, and contentPart objects imported through OpenChestnut are source-bound and read-only; setName rejects instead of mutating the preserved package graph. |
@@ -1318,7 +1318,7 @@ Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or 
 | `presentation.view` | api | Control local editor gridline/guide visibility and inspect imported PowerPoint grid spacing, snap settings, and read-only slide guides. Visibility is local model state; imported viewProps.xml metadata remains source/hash-bound and unchanged by canonical export. |
 | `PresentationFile.exportPptx` | api | Serialize PPTX through the single bundled OpenChestnut codec. Only limits is accepted; legacy codec and lossy-fallback options fail explicitly. |
 | `PresentationFile.importPptx` | api | Import PPTX through the single bundled OpenChestnut codec with source-bound opaque preservation, bounded text-only edits for recognized local SlidePart placeholders, eligible OLE workbook payload access/replacement, and fail-closed unsupported edits. |
-| `PresentationFile.inspectPptx` | api | Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets. |
+| `PresentationFile.inspectPptx` | api | Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, legacy notes/comments evidence, and Office 2021 modern author/thread/anchor semantics under decompression budgets. |
 | `PresentationFile.patchPptx` | api | Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics. |
 | `shape.text.set` | api | Set plain or structured text with ordered text, field, and line-break inlines; bounded run formatting; character, picture-bullet, or auto-numbered lists; levels, indents, spacing; and external URI, internal-slide, or relative-action hyperlinks. Custom-show links and unmodeled text graphs fail closed in canonical PPTX export. |
 | `shape.useBackgroundFill` | api | Read the presence-aware imported PresentationML p:sp useBgFill flag. It affects preview paint but remains source-bound and read-only; source-free authoring or wire mutation fails closed. |
@@ -1327,7 +1327,7 @@ Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or 
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
 | `slide.charts.add` | api | Add a source-free bar, line, or pie chart, or a bounded literal clustered bar+line combo. All variants use literal categories/numeric values, title, legend, basic series fill/line/marker formatting, chart-level data labels, layout JSON, SVG preview, and native PPTX output. A combo requires at least one primary bar and one line series; all lines share either the primary category/value pair or the canonical secondary top/right pair, and its plot/series/point topology stays fixed after import. External data, mixed line groups, secondary bars, point overrides, trendlines, error bars, per-series data labels, smooth lines, and irregular combo graphs fail closed on export. |
 | `slide.clearBackground` | api | Remove the direct slide background so preview and PPTX output inherit from the preserved Layout/Master chain. Unsupported imported background graphs fail closed rather than being flattened or discarded. |
-| `slide.comments.addThread` | api | Create a bounded legacy PPTX annotation with one author, one text item, and an explicit slide coordinate. Recognized imported legacy comments are source-bound and read-only; an unchanged canonical comments leaf may travel with slide.duplicate through one export/reimport boundary, but it is never an in-place comment edit. Modern comment graphs remain opaque/source-bound. |
+| `slide.comments.addThread` | api | Create either a bounded legacy PPTX annotation or an Office 2021 modern thread. Imported legacy records remain source-bound and read-only. Modern mode supports a top-level element/text-range/textMatch anchor, one root, direct replies, independent people/timestamps, and active/resolved/closed state; imported modern graphs permit only fixed-topology text/status edits. |
 | `slide.compose` | api | Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph/text, shape, table, chart, image, and rule nodes into editable slide objects. |
 | `slide.connectors.add` | api | Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA. |
 | `slide.delete` | api | Remove this slide. Source-free decks may remove any non-final slide. An imported PPTX performs a real OPC deletion only for an isolated slide with exactly its layout relationship and no inbound/package-identity references; media, notes, comments, charts, OLE, hyperlinks, custom shows, sections, extensions, and all clone requests fail closed. |
@@ -1340,6 +1340,9 @@ Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or 
 | `slide.setLayout` | api | Alias of slide.applyLayout(layout): bind and materialize a bounded source-free layout for native PPTX export. |
 | `slide.shapes.add` | api | Add a shape/textbox with preset or bounded literal custom geometry, position, optional center-based rotation/flips, fill, line, text, and DrawingML text-body layout. |
 | `slide.tables.add` | api | Add an inspectable table facade with rows, columns, values, cells, layout JSON, SVG preview, and canonical OpenChestnut fixed-grid plain-text PPTX output. |
+| `slideCommentThread.addReply` | api | Append a direct reply to a source-free Office 2021 modern comment thread. Imported reply topology is fixed: existing reply text/status may change, but adding or removing replies fails closed. |
+| `slideCommentThread.reopen` | api | Set the modern root comment status back to active while preserving fixed imported identity, anchor, position, and reply topology. |
+| `slideCommentThread.resolve` | api | Set the modern root comment status to resolved. Imported export re-proves author/date/anchor/position/topology and source-part hashes before changing only status. |
 
 ### presentation details
 
@@ -1389,11 +1392,11 @@ Create the same editable paragraph node through the reference-template-compatibl
 
 #### `exportPptxWithOpenChestnut`
 
-Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures with native crop/contain/cover semantics, fixed-grid plain-text tables, recursive native p:grpSp trees, plain-text speaker notes, source-free bar/line/pie charts, the bounded literal clustered bar+line combo profile with either shared primary axes or a canonical secondary line pair, and validated payload-only replacement for eligible imported OLE workbooks. Recognized imported direct backgrounds, local SlidePart placeholder text bodies, picture source rectangles, canonical fixed-topology groups, simple notes bodies, eligible OLE bindings, and canonical fixed-topology combos are hash-bound and editable within their explicit component boundaries; inherited or complex graphs remain preserved and fail closed on unsupported mutation.
+Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures with native crop/contain/cover semantics, fixed-grid plain-text tables, recursive native p:grpSp trees, plain-text speaker notes, legacy annotations, Office 2021 modern root/direct-reply threads, source-free bar/line/pie charts, the bounded literal clustered bar+line combo profile with either shared primary axes or a canonical secondary line pair, and validated payload-only replacement for eligible imported OLE workbooks. Recognized imported modern threads allow only existing text/status edits; their identity, author/date metadata, anchor/range, position, topology, relationships, and source hashes remain fixed. Inherited or complex graphs remain preserved and fail closed on unsupported mutation.
 
 **Schema parameters:**
 
-- `presentation` (Presentation) required — Presentation facade within the bounded direct-slide-background/shape/rich-text/picture/fixed-table/connector/recursive-group/plain-text-notes/source-free bar-line-pie and literal clustered bar-line combo chart boundary. A combo supports only primary bars plus all-primary lines or all-secondary lines with the canonical top/right axis pair; irregular combos and other imported advanced package graphs must remain unchanged.
+- `presentation` (Presentation) required — Presentation facade within the bounded direct-slide-background/shape/rich-text/picture/fixed-table/connector/recursive-group/plain-text-notes/legacy-comment/Office-2021-modern-comment/source-free bar-line-pie and literal clustered bar-line combo chart boundary. A combo supports only primary bars plus all-primary lines or all-secondary lines with the canonical top/right axis pair; irregular combos and other imported advanced package graphs must remain unchanged.
 - `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets.
 
 **Schema returns:**
@@ -1402,7 +1405,7 @@ Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse sha
 
 #### `importPptxWithOpenChestnut`
 
-Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich text, recognized owner-local SlidePart placeholder text, rectangular pictures and native source rectangles, tables, connectors, recursive canonical p:grpSp groups, bar/line/pie charts, the canonical literal clustered bar+line combo profile with either shared primary axes or a secondary line pair, plain-text speaker notes, and defensive payload access for eligible OLE workbooks. Placeholder identity/geometry/formatting, inherited Master/Layout graphs, complex backgrounds/blips/groups, rich notes, mixed line groups, secondary bars, irregular combo graphs, ambiguous OLE graphs, and other unsupported content remain source-bound and read-only.
+Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich text, recognized owner-local SlidePart placeholder text, rectangular pictures and native source rectangles, tables, connectors, recursive canonical p:grpSp groups, bar/line/pie charts, the canonical literal clustered bar+line combo profile with either shared primary axes or a secondary line pair, plain-text speaker notes, unchanged-only legacy comments, fixed-topology modern comment text/status edits, and defensive payload access for eligible OLE workbooks. Reactions/task fields, nested replies/anchors, connected comment parts, inherited Master/Layout graphs, complex backgrounds/blips/groups, rich notes, irregular combos, ambiguous OLE graphs, and other unsupported content remain source-bound and read-only.
 
 **Schema parameters:**
 
@@ -1468,7 +1471,7 @@ Create a deck model whose canonical OpenChestnut export supports ordinary slides
 - `master` (object) — The one canonical source-free Slide Master: name/background, bounded title/body/ctrTitle/subTitle direct-frame placeholders, and bounded textParagraphStyles. Theme overrides are unsupported.
 - `masters` (object[]) — Model-level Slide Master definitions. Source-free PPTX authoring accepts exactly one master; imported master graphs remain source-bound and read-only.
 - `layouts` (object[]) — Bounded source-free layouts linked to the canonical master. Each uses blank, title, titleOnly, or obj/titleAndContent plus direct-frame text placeholders; imported layouts remain source-bound and read-only.
-- `commentFormat` (string) — Comment wire family. Canonical PPTX export supports the bounded legacy profile (the default); modern comment graphs remain opaque and source-bound.
+- `commentFormat` (string) — Comment wire family: legacy (default) or modern. Modern selects the bounded Office 2021 author/comments graph; the two families cannot be mixed.
 
 **Schema returns:**
 
@@ -1845,11 +1848,11 @@ Import PPTX through the single bundled OpenChestnut codec with source-bound opaq
 
 **Schema returns:**
 
-- `presentation` (Presentation) — Imported presentation facade with editable core objects, bounded text-only replacement for recognized owner-local SlidePart placeholders, recognized direct slide backgrounds, canonical fixed-topology recursive groups, bar/line/pie charts plus the literal clustered bar+line combo profile with either shared primary axes or a secondary line pair, simple plain-text speaker notes, bounded legacy slide-level comments (unchanged-only), and payload-only replacement for eligible source-bound OLE workbooks. Placeholder identity/geometry/formatting and inherited Master/Layout graphs, complex backgrounds/groups, rich notes, mixed line groups, secondary bars, irregular combo graphs, modern comments, themes, other native objects, and unsupported package graphs remain source-bound.
+- `presentation` (Presentation) — Imported presentation facade with editable core objects, bounded text-only replacement for recognized owner-local SlidePart placeholders, recognized direct slide backgrounds, canonical fixed-topology recursive groups, bar/line/pie charts plus the literal clustered bar+line combo profile with either shared primary axes or a secondary line pair, simple plain-text speaker notes, bounded legacy slide-level comments (unchanged-only), bounded Office 2021 modern root/direct-reply threads (text/status editable), and payload-only replacement for eligible source-bound OLE workbooks. Placeholder identity/geometry/formatting and inherited Master/Layout graphs, complex backgrounds/groups, rich notes, mixed line groups, secondary bars, irregular comment anchors/reactions/task fields, themes, other native objects, and unsupported package graphs remain source-bound.
 
 #### `PresentationFile.inspectPptx`
 
-Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets.
+Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, legacy notes/comments evidence, and Office 2021 modern author/thread/anchor semantics under decompression budgets.
 
 **Examples:**
 
@@ -1989,21 +1992,22 @@ Remove the direct slide background so preview and PPTX output inherit from the p
 
 #### `slide.comments.addThread`
 
-Create a bounded legacy PPTX annotation with one author, one text item, and an explicit slide coordinate. Recognized imported legacy comments are source-bound and read-only; an unchanged canonical comments leaf may travel with slide.duplicate through one export/reimport boundary, but it is never an in-place comment edit. Modern comment graphs remain opaque/source-bound.
+Create either a bounded legacy PPTX annotation or an Office 2021 modern thread. Imported legacy records remain source-bound and read-only. Modern mode supports a top-level element/text-range/textMatch anchor, one root, direct replies, independent people/timestamps, and active/resolved/closed state; imported modern graphs permit only fixed-topology text/status edits.
 
 **Schema parameters:**
 
-- `target` (undefined) — Must be omitted (pass undefined) for canonical legacy PPTX export. Element and text anchors stay model-only and fail closed.
-- `text` (string) required — The one required root comment text item.
-- `author` (string) — Legacy comment author; defaults to User.
-- `position` (object) required — Explicit slide coordinate { x, y, unit?: 'px'|'emu' }.
-- `resolved` (boolean) — Must be false; legacy PresentationML has no resolved state.
+- `target` (undefined|string|Shape|ImageElement|TableElement|ChartElement|ConnectorElement|TextRange|object) — Legacy mode requires undefined. Modern mode accepts a top-level element/text-range ID or facade, { element }, { textRange }, or { textMatch: { element, query, occurrence? } }. Nested group-child and slide-level modern anchors remain unsupported.
+- `text` (string) required — Root comment text.
+- `author` (string) — Display author. Modern comments may instead provide comments[0].person with brace-delimited GUID id, name, initials, userId, and providerId.
+- `position` (object) required — Explicit slide coordinate { x, y, unit?: 'px'|'emu' }. Legacy defaults to px; modern defaults to emu.
+- `resolved` (boolean) — Modern root state. Legacy mode requires false.
 - `created` (string) — ISO-8601 creation time for the root comment; defaults to the Unix epoch for deterministic output.
-- `comments` (object[]) — When supplied, must contain exactly one root item with the same author/text/time. Replies and reaction metadata fail closed.
+- `nativeFormat` (string) — Set modern for explicit Office 2021 authoring; Presentation.create({ commentFormat: 'modern' }) must select the same wire family.
+- `comments` (object[]) — Optional root record. Modern records support nativeId/id, authorId/person, text, created, and active/resolved/closed status. Reactions, task fields, extensions, and nested replies fail closed.
 
 **Schema returns:**
 
-- `thread` (SlideCommentThread) — Create a bounded legacy PPTX annotation for inspect and canonical export. Recognized imported legacy comments are source-bound and read-only. An unchanged canonical comments leaf may be carried by slide.duplicate through one export/reimport boundary, but neither the original nor its pending clone may edit it in place; modern comment graphs remain opaque/source-bound.
+- `thread` (SlideCommentThread) — Create a bounded legacy annotation or Office 2021 modern root. Recognized legacy imports remain unchanged-only. Recognized modern imports expose root/direct replies and allow only text/status edits; author/person/date identity, position, target moniker, reply topology, part paths, relationships, and source hashes remain fixed.
 
 #### `slide.compose`
 
@@ -2175,6 +2179,38 @@ Add an inspectable table facade with rows, columns, values, cells, layout JSON, 
 **Schema returns:**
 
 - `table` (TableElement) — Appended editable table facade. OpenChestnut accepts a non-empty rectangular 1-256-column by 1-2048-row plain-text grid; recognized imports may change name, complete frame, and cell text without changing topology or native style flags.
+
+#### `slideCommentThread.addReply`
+
+Append a direct reply to a source-free Office 2021 modern comment thread. Imported reply topology is fixed: existing reply text/status may change, but adding or removing replies fails closed.
+
+**Schema parameters:**
+
+- `text` (string) required — Direct reply text.
+- `author` (string) — Reply display author.
+- `person` (object) — Modern author identity with id/name/initials/userId/providerId.
+- `created` (string) — ISO-8601 timestamp.
+- `status` (string) — active, resolved, or closed; defaults to active.
+
+**Schema returns:**
+
+- `thread` (SlideCommentThread) — Append one direct source-free modern reply and return the thread. Imported topology changes fail closed.
+
+#### `slideCommentThread.reopen`
+
+Set the modern root comment status back to active while preserving fixed imported identity, anchor, position, and reply topology.
+
+**Schema returns:**
+
+- `thread` (SlideCommentThread) — Set resolved=false and the modern root status to active. Legacy comments cannot encode this state.
+
+#### `slideCommentThread.resolve`
+
+Set the modern root comment status to resolved. Imported export re-proves author/date/anchor/position/topology and source-part hashes before changing only status.
+
+**Schema returns:**
+
+- `thread` (SlideCommentThread) — Set resolved=true and the modern root status to resolved. Legacy comments cannot encode this state.
 
 ## shared
 

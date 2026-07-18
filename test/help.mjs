@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 335);
+assert.equal(HELP_CATALOG.length, 338);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -118,8 +118,11 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "slide.setBackground"));
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.clearBackground")?.schema?.returns?.slide?.description || "", /no direct background.*Layout\/Master/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.comments.addThread"));
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.comments.addThread")?.summary || "", /bounded legacy PPTX annotation.*source-bound and read-only/i);
-assert.match(HELP_CATALOG.find((item) => item.name === "slide.comments.addThread")?.schema?.parameters?.target?.description || "", /must be omitted.*legacy PPTX export/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.comments.addThread")?.schema?.parameters?.target?.description || "", /Legacy mode requires undefined.*Modern mode accepts.*textMatch.*Nested group-child.*unsupported/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.comments.addThread")?.schema?.parameters?.position?.description || "", /Explicit slide coordinate/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "slideCommentThread.addReply")?.summary || "", /source-free Office 2021 modern.*Imported reply topology is fixed.*fails closed/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "slideCommentThread.resolve")?.summary || "", /re-proves author.*anchor.*topology.*source-part hashes/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "slideCommentThread.reopen")?.summary || "", /fixed imported identity.*anchor.*reply topology/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.connectors.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.theme"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.master"));
@@ -349,7 +352,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "document.fillContentCont
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.materializeFields")?.schema?.parameters?.dryRun?.type, "boolean");
 assert.match(HELP_CATALOG.find((item) => item.name === "document.materializeFields")?.summary || "", /SEQ counters.*REF cached results.*PAGEREF.*pagination host/i);
 const presentationCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "presentation");
-assert.equal(presentationCatalog.length, 59);
+assert.equal(presentationCatalog.length, 62);
 assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "presentation.slides.insert")?.schema?.parameters?.after?.type, "Slide|number|null");

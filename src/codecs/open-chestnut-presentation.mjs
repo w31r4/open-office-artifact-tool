@@ -3,6 +3,7 @@ import { ChartElement, GroupShape, ImageElement, Presentation, Shape, Slide, Tab
 import {
   ArtifactFamily,
   PresentationChartAxisGroup,
+  PresentationModernCommentAnchor_Kind,
   PresentationSlideSchema,
   PresentationSlideGuide_Orientation,
   SpreadsheetChartDataLabelPosition,
@@ -11,6 +12,7 @@ import {
   SpreadsheetChartType,
 } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
 import { normalizePresentationRunLink } from "../presentation/ooxml-hyperlinks.mjs";
+import { deterministicPresentationGuid } from "../presentation/ooxml-modern-comments.mjs";
 import { normalizePresentationThemeConfig } from "../presentation/ooxml-theme.mjs";
 import { normalizePresentationTextBodyProperties } from "../presentation/text-body-properties.mjs";
 import { effectivePresentationImageCrop, presentationImageCropFromWire, presentationImageCropToWire } from "../presentation/image-crop.mjs";
@@ -1711,6 +1713,145 @@ function presentationLegacyComments(slide, slideIndex) {
   });
 }
 
+const PRESENTATION_MODERN_COMMENT_STATUSES = new Set(["active", "resolved", "closed"]);
+const PRESENTATION_MODERN_COMMENT_GUID = /^\{[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\}$/;
+
+function modernCommentGuid(value, seed, label) {
+  const guid = String(value || deterministicPresentationGuid(seed)).toUpperCase();
+  if (!PRESENTATION_MODERN_COMMENT_GUID.test(guid)) {
+    throw new OpenChestnutCodecError(`${label} must be a brace-delimited GUID.`, [], { code: "invalid_presentation_modern_comment" });
+  }
+  return guid;
+}
+
+function modernCommentTimestamp(value, label) {
+  const timestamp = String(value ?? "");
+  if (!timestamp || Number.isNaN(Date.parse(timestamp))) {
+    throw new OpenChestnutCodecError(`${label} must be an ISO-8601 timestamp.`, [], { code: "invalid_presentation_modern_comment" });
+  }
+  return timestamp;
+}
+
+function modernCommentInitials(name) {
+  const words = String(name || "User").trim().split(/\s+/).filter(Boolean);
+  return (words.length > 1 ? words.slice(0, 2).map((word) => [...word][0]) : [...(words[0] || "U")].slice(0, 2)).join("").toUpperCase();
+}
+
+function modernCommentAuthor(comment, thread) {
+  const person = comment.person || {};
+  const author = String(comment.author || person.name || person.displayName || thread.author || "").trim();
+  if (!author) throw new OpenChestnutCodecError(`Modern comment ${thread.id} requires a non-empty author.`, [], { code: "invalid_presentation_modern_comment" });
+  return {
+    authorId: modernCommentGuid(comment.authorId || person.id, `author:${author}`, `Modern comment author ${author}`),
+    author,
+    initials: String(person.initials || comment.initials || modernCommentInitials(author)),
+    userId: String(person.userId ?? comment.userId ?? author),
+    providerId: String(person.providerId ?? comment.providerId ?? "None"),
+  };
+}
+
+function flattenedPresentationWireElements(elements) {
+  const output = [];
+  const visit = (element) => {
+    output.push(element);
+    if (element.content?.case === "group") for (const child of element.content.value.children || []) visit(child);
+  };
+  for (const element of elements) visit(element);
+  return output;
+}
+
+function modernCommentMoniker(wireElement) {
+  return {
+    shape: "spMk",
+    image: "picMk",
+    table: "graphicFrameMk",
+    chart: "graphicFrameMk",
+    connector: "cxnSpMk",
+    group: "grpSpMk",
+  }[wireElement?.content?.case];
+}
+
+function modernCommentCoordinate(value, unit, label) {
+  const number = Number(value ?? 0);
+  if (!Number.isFinite(number)) throw new OpenChestnutCodecError(`${label} must be finite.`, [], { code: "invalid_presentation_modern_comment" });
+  if (unit === "px") return emuFromPixels(number, label);
+  if (unit === undefined || unit === "emu") return Math.round(number);
+  throw new OpenChestnutCodecError(`${label}.unit must be "emu" or "px".`, [], { code: "invalid_presentation_modern_comment" });
+}
+
+function presentationModernComments(slide, slideIndex, wireElements, originalThreads = []) {
+  const flattened = flattenedPresentationWireElements(wireElements);
+  const wireById = new Map(flattened.map((element, index) => [element.id, { element, nativeId: index + 2 }]));
+  const directIds = new Set(wireElements.map((element) => element.id));
+  return slide.comments.items.map((thread, threadIndex) => {
+    const label = `slide ${slideIndex + 1} modern comment thread ${threadIndex + 1}`;
+    if (thread.nativeFormat && thread.nativeFormat !== "modern") {
+      throw new OpenChestnutCodecError(`${label} uses ${thread.nativeFormat} comments.`, [], { code: "unsupported_presentation_comment" });
+    }
+    if (!Array.isArray(thread.comments) || thread.comments.length === 0) {
+      throw new OpenChestnutCodecError(`${label} requires one root comment.`, [], { code: "invalid_presentation_modern_comment" });
+    }
+    const target = slide.resolve(thread.targetId);
+    const textRange = target?.kind === "textRange";
+    const targetElementId = textRange ? target.parentId : target?.id;
+    const targetWire = wireById.get(targetElementId);
+    if (!targetWire || !directIds.has(targetElementId)) {
+      throw new OpenChestnutCodecError(`${label} must target a supported top-level slide element or its text range.`, [], { code: "unsupported_presentation_comment" });
+    }
+    const sourceAnchor = thread.nativeAnchor?.format === "modern" || thread.nativeAnchor?.type ? thread.nativeAnchor : undefined;
+    const monikerType = sourceAnchor?.moniker || modernCommentMoniker(targetWire.element);
+    if (!monikerType || (textRange && monikerType !== "spMk")) {
+      throw new OpenChestnutCodecError(`${label} has an unsupported target moniker.`, [], { code: "unsupported_presentation_comment" });
+    }
+    const nativeSlideId = Number(sourceAnchor?.nativeSlideId ?? sourceAnchor?.slideId ?? 256 + slideIndex);
+    const nativeId = Number(sourceAnchor?.nativeId ?? targetWire.nativeId);
+    const anchor = {
+      kind: textRange ? PresentationModernCommentAnchor_Kind.TEXT_RANGE : PresentationModernCommentAnchor_Kind.ELEMENT,
+      nativeSlideId,
+      monikers: [{
+        type: monikerType,
+        nativeId,
+        ...(sourceAnchor?.creationId ? { creationId: String(sourceAnchor.creationId).toUpperCase() } : {}),
+      }],
+      ...(textRange ? {
+        textStart: Number(sourceAnchor?.textStart ?? sourceAnchor?.cp ?? 0),
+        textLength: Number(sourceAnchor?.textLength ?? sourceAnchor?.length ?? String(target.text ?? "").length),
+        ...(sourceAnchor?.contextLength === undefined ? {} : { contextLength: Number(sourceAnchor.contextLength) }),
+        ...(sourceAnchor?.contextHash === undefined ? {} : { contextHash: Number(sourceAnchor.contextHash) }),
+      } : {}),
+    };
+    const comments = thread.comments.map((comment, commentIndex) => {
+      const author = modernCommentAuthor(comment, thread);
+      const status = String(comment.status || (commentIndex === 0 && thread.resolved ? "resolved" : "active")).toLowerCase();
+      if (!PRESENTATION_MODERN_COMMENT_STATUSES.has(status)) {
+        throw new OpenChestnutCodecError(`${label} comment ${commentIndex + 1} has invalid status ${status}.`, [], { code: "invalid_presentation_modern_comment" });
+      }
+      return {
+        id: modernCommentGuid(comment.nativeId || comment.id, `comment:${thread.id}:${commentIndex}`, `${label} comment ${commentIndex + 1}`),
+        ...author,
+        text: String(comment.text ?? ""),
+        createdAt: modernCommentTimestamp(comment.created || thread.created, `${label} comment ${commentIndex + 1}.created`),
+        status,
+      };
+    });
+    const original = originalThreads[threadIndex];
+    const position = thread.position;
+    if (!position || typeof position !== "object") {
+      throw new OpenChestnutCodecError(`${label} requires an explicit { x, y, unit? } position.`, [], { code: "invalid_presentation_modern_comment" });
+    }
+    return {
+      id: comments[0].id,
+      targetId: thread.targetId,
+      anchor,
+      positionXEmu: modernCommentCoordinate(position.x, position.unit, `${label}.position.x`),
+      positionYEmu: modernCommentCoordinate(position.y, position.unit, `${label}.position.y`),
+      root: comments[0],
+      replies: comments.slice(1),
+      ...(original?.source ? { source: original.source } : {}),
+    };
+  });
+}
+
 function presentationThemeSnapshot(theme) {
   return JSON.stringify({
     name: theme.name,
@@ -1743,10 +1884,10 @@ function unsupportedPresentationFeatures(presentation) {
   const master = presentation.master;
   if (master?.theme) unsupported.push("master theme override");
   if (presentation.customShows?.items?.length) unsupported.push("custom shows");
-  if (presentation.commentFormat !== "legacy") unsupported.push("modern comments");
+  if (!["legacy", "modern"].includes(presentation.commentFormat)) unsupported.push(`unknown comment format ${presentation.commentFormat}`);
   for (const slide of presentation.slides?.items || []) {
     const prefix = `slide ${slide.index + 1}`;
-    if (slide.comments?.items?.length) {
+    if (presentation.commentFormat === "legacy" && slide.comments?.items?.length) {
       try { presentationLegacyComments(slide, slide.index); }
       catch (error) { unsupported.push(`${prefix} comments (${error.message})`); }
     }
@@ -1814,7 +1955,7 @@ export function presentationEnvelope(presentation, protocolVersion) {
     }
   } else {
     if (presentationAdvancedSnapshot(presentation) !== state.advancedSnapshot) {
-      throw new OpenChestnutCodecError("Imported presentation theme, comments, and custom shows are source-bound and read-only in OpenChestnut 0.2.", [], { code: "unsupported_presentation_edit" });
+      throw new OpenChestnutCodecError("Imported presentation theme, comment wire family, and custom shows are source-bound and read-only in OpenChestnut 0.2.", [], { code: "unsupported_presentation_edit" });
     }
     if (Number(state.slideWidthEmu) !== Math.round(Number(presentation.slideSize.width) * EMU_PER_PIXEL) || Number(state.slideHeightEmu) !== Math.round(Number(presentation.slideSize.height) * EMU_PER_PIXEL)) {
       throw new OpenChestnutCodecError("Source-preserving PPTX export does not yet support changing slide dimensions.", [], { code: "unsupported_presentation_edit" });
@@ -1831,8 +1972,8 @@ export function presentationEnvelope(presentation, protocolVersion) {
     if (bindingState) {
       if (cloneState && slide.name !== bindingState.name) throw new OpenChestnutCodecError(`Source-preserving PPTX export cannot rename pending clone slide ${slideIndex + 1}.`, [], { code: "unsupported_presentation_slide_clone" });
       if ((slide.layoutId || "") !== (bindingState.wire.layoutId || "")) throw new OpenChestnutCodecError(`Source-preserving PPTX export cannot change slide ${slideIndex + 1}'s layout binding.`, [], { code: cloneState ? "unsupported_presentation_slide_clone" : "presentation_slide_layout_binding_changed" });
-      if (presentationSlideCommentSnapshot(slide) !== bindingState.commentSnapshot) {
-        throw new OpenChestnutCodecError(`Imported presentation slide ${slideIndex + 1} comments are source-bound and read-only in OpenChestnut 0.2.`, [], { code: "unsupported_presentation_edit" });
+      if ((!bindingState.wire.modernComments?.length || cloneState) && presentationSlideCommentSnapshot(slide) !== bindingState.commentSnapshot) {
+        throw new OpenChestnutCodecError(`Imported presentation slide ${slideIndex + 1} comments are source-bound outside the bounded modern text/status edit profile.`, [], { code: "unsupported_presentation_edit" });
       }
       const current = directSlideElements(slide);
       const entries = cloneState?.entries || bindingState.entries;
@@ -1843,7 +1984,40 @@ export function presentationEnvelope(presentation, protocolVersion) {
         throw new OpenChestnutCodecError(`Source-preserving PPTX export cannot add speaker notes to slide ${slideIndex + 1} because the source slide has no notes part.`, [], { code: "unsupported_presentation_edit" });
       }
     }
-    const legacyComments = presentationLegacyComments(slide, Number(bindingState?.wire.source?.slideIndex ?? slideIndex));
+    const legacyComments = presentation.commentFormat === "legacy"
+      ? presentationLegacyComments(slide, Number(bindingState?.wire.source?.slideIndex ?? slideIndex))
+      : [];
+    const elements = bindingState
+      ? (cloneState?.entries || bindingState.entries).map((entry) => {
+        if (entry.wire.content.case === "shape") {
+          if (entry.wire.content.value.placeholder) {
+            return presentationSlidePlaceholder(entry.model, entry.wire, entry.placeholderSnapshot, assetCatalog);
+          }
+          return presentationShape(entry.model, entry.wire, assetCatalog);
+        }
+        if (entry.wire.content.case === "image") {
+          if (presentationImageReadOnlySnapshot(entry.model) !== entry.snapshot) {
+            throw new OpenChestnutCodecError(`Presentation image ${entry.model.id} changed outside its embedded rectangular image boundary.`, [], { code: "unsupported_presentation_edit" });
+          }
+          return presentationImage(entry.model, entry.wire, assetCatalog);
+        }
+        if (entry.wire.content.case === "table") {
+          if (presentationTableReadOnlySnapshot(entry.model) !== entry.snapshot) {
+            throw new OpenChestnutCodecError(`Presentation table ${entry.model.id} changed outside its name/frame/plain-text boundary.`, [], { code: "unsupported_presentation_edit" });
+          }
+          return presentationTable(entry.model, entry.wire);
+        }
+        if (entry.wire.content.case === "connector") return presentationConnector(entry.model, entry.wire, cloneState?.sourceIdByCloneId);
+        if (entry.wire.content.case === "chart") return presentationChart(entry.model, entry.wire);
+        if (entry.wire.content.case === "group") return presentationGroup(entry.model, entry.wire, assetCatalog, cloneState?.sourceIdByCloneId);
+        return presentationOpaque(entry.model, entry.wire, entry.snapshot, assetCatalog);
+      })
+      : directSlideElements(slide)
+        .filter((element) => element instanceof Shape || element instanceof ImageElement || element instanceof TableElement || element instanceof ChartElement || element instanceof GroupShape || slide.connectors.items.includes(element))
+        .map((element) => presentationElement(element, undefined, assetCatalog));
+    const modernComments = presentation.commentFormat === "modern"
+      ? presentationModernComments(slide, slideIndex, elements, bindingState?.wire.modernComments || [])
+      : [];
     const requested = {
       id: sourceState?.wire.id || slide.id,
       name: slide.name,
@@ -1856,34 +2030,8 @@ export function presentationEnvelope(presentation, protocolVersion) {
           ? { speakerNotes: { text: slide.speakerNotes.text } }
           : {}),
       ...(legacyComments.length ? { legacyComments } : {}),
-      elements: bindingState
-          ? (cloneState?.entries || bindingState.entries).map((entry) => {
-            if (entry.wire.content.case === "shape") {
-              if (entry.wire.content.value.placeholder) {
-                return presentationSlidePlaceholder(entry.model, entry.wire, entry.placeholderSnapshot, assetCatalog);
-              }
-              return presentationShape(entry.model, entry.wire, assetCatalog);
-            }
-            if (entry.wire.content.case === "image") {
-              if (presentationImageReadOnlySnapshot(entry.model) !== entry.snapshot) {
-                throw new OpenChestnutCodecError(`Presentation image ${entry.model.id} changed outside its embedded rectangular image boundary.`, [], { code: "unsupported_presentation_edit" });
-              }
-              return presentationImage(entry.model, entry.wire, assetCatalog);
-            }
-            if (entry.wire.content.case === "table") {
-              if (presentationTableReadOnlySnapshot(entry.model) !== entry.snapshot) {
-                throw new OpenChestnutCodecError(`Presentation table ${entry.model.id} changed outside its name/frame/plain-text boundary.`, [], { code: "unsupported_presentation_edit" });
-              }
-              return presentationTable(entry.model, entry.wire);
-            }
-            if (entry.wire.content.case === "connector") return presentationConnector(entry.model, entry.wire, cloneState?.sourceIdByCloneId);
-            if (entry.wire.content.case === "chart") return presentationChart(entry.model, entry.wire);
-            if (entry.wire.content.case === "group") return presentationGroup(entry.model, entry.wire, assetCatalog, cloneState?.sourceIdByCloneId);
-            return presentationOpaque(entry.model, entry.wire, entry.snapshot, assetCatalog);
-          })
-        : directSlideElements(slide)
-          .filter((element) => element instanceof Shape || element instanceof ImageElement || element instanceof TableElement || element instanceof ChartElement || element instanceof GroupShape || slide.connectors.items.includes(element))
-          .map((element) => presentationElement(element, undefined, assetCatalog)),
+      ...(modernComments.length ? { modernComments } : {}),
+      elements,
     };
     if (!cloneState) return requested;
     if (!presentationCloneMatches(requested, cloneState.source.wire)) {
@@ -2678,6 +2826,68 @@ export async function presentationFromEnvelope(envelope) {
             : element.content.case === "table"
               ? presentationTableReadOnlySnapshot(model)
             : undefined,
+      });
+    }
+    for (const sourceThread of sourceSlide.modernComments || []) {
+      presentation.commentFormat = "modern";
+      const moniker = sourceThread.anchor?.monikers?.[0];
+      const textRange = sourceThread.anchor?.kind === PresentationModernCommentAnchor_Kind.TEXT_RANGE;
+      const target = slide.resolve(sourceThread.targetId);
+      const targetElement = textRange ? slide.resolve(target?.parentId) : target;
+      if (targetElement && moniker) {
+        targetElement.nativeId = Number(moniker.nativeId);
+        targetElement.creationId = moniker.creationId || undefined;
+        targetElement.moniker = moniker.type;
+      }
+      slide.nativeSlideId = Number(sourceThread.anchor?.nativeSlideId || 0) || undefined;
+      const sourceComments = [sourceThread.root, ...(sourceThread.replies || [])];
+      const comments = sourceComments.map((comment) => ({
+        nativeId: comment.id,
+        authorId: comment.authorId,
+        author: comment.author,
+        initials: comment.initials || undefined,
+        userId: comment.userId || undefined,
+        providerId: comment.providerId || undefined,
+        person: {
+          id: comment.authorId,
+          name: comment.author,
+          initials: comment.initials || undefined,
+          userId: comment.userId || undefined,
+          providerId: comment.providerId || undefined,
+        },
+        text: comment.text,
+        created: comment.createdAt,
+        status: comment.status,
+      }));
+      const root = comments[0];
+      slide.comments.addThread(sourceThread.targetId, root.text, {
+        id: sourceThread.id,
+        author: root.author,
+        created: root.created,
+        resolved: ["resolved", "closed"].includes(root.status),
+        nativeFormat: "modern",
+        nativeAnchor: {
+          format: "modern",
+          type: textRange ? "textRange" : "element",
+          nativeId: Number(moniker?.nativeId || 0),
+          creationId: moniker?.creationId || undefined,
+          moniker: moniker?.type,
+          nativeSlideId: Number(sourceThread.anchor?.nativeSlideId || 0),
+          ...(textRange ? {
+            textStart: Number(sourceThread.anchor?.textStart || 0),
+            textLength: Number(sourceThread.anchor?.textLength || 0),
+            cp: Number(sourceThread.anchor?.textStart || 0),
+            length: Number(sourceThread.anchor?.textLength || 0),
+            ...(sourceThread.anchor?.contextLength === undefined ? {} : { contextLength: Number(sourceThread.anchor.contextLength) }),
+            ...(sourceThread.anchor?.contextHash === undefined ? {} : { contextHash: Number(sourceThread.anchor.contextHash) }),
+          } : {}),
+        },
+        position: {
+          x: Number(sourceThread.positionXEmu || 0),
+          y: Number(sourceThread.positionYEmu || 0),
+          unit: "emu",
+        },
+        comments,
       });
     }
     for (const sourceComment of sourceSlide.legacyComments || []) {
