@@ -16,6 +16,21 @@ internal sealed record PptxExportResult(byte[] File, IReadOnlyList<Diagnostic> D
 internal sealed record PptxLayoutGraphEntry(int Index, string Id, string RelationshipId, SlideLayoutPart Part);
 internal sealed record PptxMasterGraphEntry(int Index, string Id, string RelationshipId, SlideMasterPart Part, IReadOnlyList<PptxLayoutGraphEntry> Layouts);
 internal sealed record PptxSourceSlideEntry(int Index, P.SlideId SlideId, string RelationshipId, SlidePart Part);
+// Clone preflight produces this closed graph plan once. The execution path
+// consumes only this plan so adding a new supported leaf cannot create a
+// second, subtly different relationship inventory after validation.
+internal sealed record PptxCloneImageEdge(ImagePart Part, string RelationshipId);
+internal sealed record PptxCloneNotesLeaf(
+    NotesSlidePart Part,
+    string SlideRelationshipId,
+    NotesMasterPart MasterPart,
+    string MasterRelationshipId,
+    string SlideBackReferenceRelationshipId);
+internal sealed record PptxCloneLeaf(
+    SlideLayoutPart LayoutPart,
+    string LayoutRelationshipId,
+    IReadOnlyList<PptxCloneImageEdge> Images,
+    PptxCloneNotesLeaf? Notes);
 internal sealed class PptxTargetSlideEntry
 {
     internal PptxTargetSlideEntry(int targetIndex, PresentationSlide target, PptxSourceSlideEntry source, bool isClone)
@@ -313,7 +328,8 @@ internal static class PptxCodec
                 slideIdByPartPath,
                 assetCatalog,
                 changedParts,
-                addedRelationshipIds);
+                addedRelationshipIds,
+                addedPartPaths);
             DeleteUnrequestedSourceSlides(
                 presentationPart,
                 slideIds,
@@ -2617,7 +2633,8 @@ internal static class PptxCodec
         IReadOnlyDictionary<string, string> slideIdByPartPath,
         PptxAssetCatalog assetCatalog,
         ISet<string> changedParts,
-        ISet<string> addedRelationshipIds)
+        ISet<string> addedRelationshipIds,
+        ISet<string> addedPartPaths)
     {
         var cloneTargets = targets.Where(target => target.IsClone).ToArray();
         if (cloneTargets.Length == 0) return;
@@ -2632,23 +2649,37 @@ internal static class PptxCodec
 
         foreach (var target in cloneTargets)
         {
-            AssertSourceSlideCanBeCloned(target, layoutIdByPartPath, slideIdByPartPath, assetCatalog);
+            var leaf = AssertSourceSlideCanBeCloned(target, layoutIdByPartPath, slideIdByPartPath, assetCatalog);
             var sourcePart = target.Source.Part;
             var sourceRoot = sourcePart.Slide ??
                 throw new CodecException("missing_slide_root", $"Presentation source slide {target.Source.Index + 1} has no slide root.", PartPath(sourcePart));
-            var layoutPart = sourcePart.SlideLayoutPart ??
-                throw UnsupportedSourceSlideClone(target.Source, "it does not have a resolvable layout relationship");
-            var layoutRelationshipId = sourcePart.GetIdOfPart(layoutPart);
             var clonePart = presentationPart.AddNewPart<SlidePart>();
-            clonePart.AddPart(layoutPart, layoutRelationshipId);
+            clonePart.AddPart(leaf.LayoutPart, leaf.LayoutRelationshipId);
             // The source XML keeps its r:embed values verbatim. Copy each
             // verified internal relationship onto the new SlidePart so those
             // bindings resolve to the same immutable media Parts without
             // duplicating or mutating their bytes.
-            foreach (var imageRelationship in sourcePart.Parts.Where(pair => pair.OpenXmlPart is ImagePart))
+            foreach (var image in leaf.Images)
             {
-                clonePart.AddPart((ImagePart)imageRelationship.OpenXmlPart, imageRelationship.RelationshipId);
-                addedRelationshipIds.Add($"{PartPath(clonePart)}\0{imageRelationship.RelationshipId}");
+                clonePart.AddPart(image.Part, image.RelationshipId);
+                addedRelationshipIds.Add($"{PartPath(clonePart)}\0{image.RelationshipId}");
+            }
+            if (leaf.Notes is { } notes)
+            {
+                var sourceNotes = notes.Part.NotesSlide ??
+                    throw UnsupportedSourceSlideClone(target.Source, "its notes part has no notes root");
+                var cloneNotes = clonePart.AddNewPart<NotesSlidePart>(notes.SlideRelationshipId);
+                cloneNotes.AddPart(notes.MasterPart, notes.MasterRelationshipId);
+                cloneNotes.AddPart(clonePart, notes.SlideBackReferenceRelationshipId);
+                cloneNotes.NotesSlide = (P.NotesSlide)sourceNotes.CloneNode(true);
+                cloneNotes.NotesSlide.Save();
+                addedRelationshipIds.Add($"{PartPath(clonePart)}\0{notes.SlideRelationshipId}");
+                addedRelationshipIds.Add($"{PartPath(cloneNotes)}\0{notes.MasterRelationshipId}");
+                addedRelationshipIds.Add($"{PartPath(cloneNotes)}\0{notes.SlideBackReferenceRelationshipId}");
+                changedParts.Add(PartPath(cloneNotes));
+                changedParts.Add(RelationshipPartPath(cloneNotes));
+                addedPartPaths.Add(PartPath(cloneNotes));
+                addedPartPaths.Add(RelationshipPartPath(cloneNotes));
             }
             clonePart.Slide = (P.Slide)sourceRoot.CloneNode(true);
             clonePart.Slide.Save();
@@ -2661,11 +2692,11 @@ internal static class PptxCodec
                 Id = nextSlideId,
                 RelationshipId = presentationPart.GetIdOfPart(clonePart),
             };
-            // Clone-to-layout and clone-to-image edges are intentionally
-            // opaque in the generic profile. Record only these exact,
-            // verified relationships so the package guard can distinguish
-            // them from an unmodeled graph change.
-            addedRelationshipIds.Add($"{PartPath(clonePart)}\0{layoutRelationshipId}");
+            // Clone-to-layout, clone-to-image, and clone-to-notes edges are
+            // intentionally opaque in the generic profile. Record only these
+            // exact, verified relationships so the package guard can
+            // distinguish them from an unmodeled graph change.
+            addedRelationshipIds.Add($"{PartPath(clonePart)}\0{leaf.LayoutRelationshipId}");
             changedParts.Add(PartPath(clonePart));
             changedParts.Add(RelationshipPartPath(clonePart));
         }
