@@ -274,6 +274,26 @@ assert.deepEqual(restoredRecord.cropBox, [0, 0, 612, 792]);
 await assert.rejects(PdfFile.editPdf(arbitraryPdf, {
   operations: [{ type: "set_page_crop", page: 1, bbox: [-1, 0, 613, 792] }],
 }), /crop rectangle must fit fully inside the page MediaBox/);
+const offsetMediaNativeDocument = new mupdf.PDFDocument(arbitraryPdf.bytes);
+const offsetMediaNativePage = offsetMediaNativeDocument.loadPage(0);
+offsetMediaNativePage.setPageBox("MediaBox", [10, 20, 622, 812]);
+offsetMediaNativePage.update();
+const offsetMediaNativeOutput = offsetMediaNativeDocument.saveToBuffer("garbage=2,compress=yes");
+const offsetMediaPdf = new FileBlob(new Uint8Array(offsetMediaNativeOutput.asUint8Array()), { type: "application/pdf" });
+offsetMediaNativeOutput.destroy();
+offsetMediaNativePage.destroy();
+offsetMediaNativeDocument.destroy();
+const offsetMediaRecord = (await PdfFile.inspectPdf(offsetMediaPdf)).records.find((record) => record.kind === "mupdfPage" && record.page === 1);
+const offsetMediaCrop = [
+  offsetMediaRecord.mediaBox[0] + 72,
+  offsetMediaRecord.mediaBox[1] + 72,
+  offsetMediaRecord.mediaBox[2] - 144,
+  offsetMediaRecord.mediaBox[3] - 144,
+];
+const offsetMediaCropped = await PdfFile.editPdf(offsetMediaPdf, {
+  operations: [{ type: "set_page_crop", page: 1, bbox: offsetMediaCrop }],
+});
+assert.deepEqual((await PdfFile.inspectPdf(offsetMediaCropped)).records.find((record) => record.kind === "mupdfPage" && record.page === 1).cropBox, offsetMediaCrop);
 const rotatedNativeDocument = new mupdf.PDFDocument(arbitraryPdf.bytes);
 const rotatedNativePage = rotatedNativeDocument.loadPage(0);
 const rotatedNativeObject = rotatedNativePage.getObject();

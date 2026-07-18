@@ -35,10 +35,9 @@ const files = report.files.map((item) => item.path);
 // compressed byte count.
 const maxPackedBytes = 9_750_000;
 // The bundled OpenChestnut runtime is an audited product payload, not an
-// optional download. Keep its unpacked budget tight while allowing one small
-// source-built codec leaf to grow without turning an audited ~2 KiB payload
-// delta into a release failure.
-const maxUnpackedBytes = 23_550_000;
+// optional download. Keep its unpacked budget tight while allowing the
+// audited PDF provider/docs growth shipped with the bounded edit surface.
+const maxUnpackedBytes = 23_600_000;
 
 for (const required of [
   "LICENSE",
