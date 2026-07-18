@@ -39,11 +39,12 @@ const maxPackedBytes = 9_750_000;
 // audited PDF provider/docs growth shipped with the bounded edit surface. The
 // prior 23.625 MB ceiling left only 7,147 bytes after the source-bound
 // single-widget form update slice (23,632,147 bytes on the audit host).
-// The native Highlight primitive adds audited implementation, API, and Skill
-// material; its 23,661,767-byte package stays below a still-tight 23.700 MB
-// ceiling, leaving 38,233 bytes of reviewed headroom rather than setting the
-// cap to the current package's exact size.
-const maxUnpackedBytes = 23_700_000;
+// The native Highlight primitive added audited implementation, API, and Skill
+// material; the source-bound PPTX duplicate workflow adds one 17,154-byte
+// packaged transaction plus its narrow documentation. The audited package is
+// now 23,708,735 bytes, so retain a still-tight 23.750 MB ceiling with 41,265
+// bytes of reviewed headroom rather than setting the cap to one exact build.
+const maxUnpackedBytes = 23_750_000;
 
 for (const required of [
   "LICENSE",
@@ -164,6 +165,7 @@ for (const required of [
   "skills/presentations/skills/presentations/artifact_tool/API_QUICK_START.md",
   "skills/presentations/skills/presentations/examples/openchestnut-title-notes-edit-workflow.mjs",
   "skills/presentations/skills/presentations/examples/openchestnut-slide-name-edit-workflow.mjs",
+  "skills/presentations/skills/presentations/examples/openchestnut-slide-duplicate-workflow.mjs",
   "skills/presentations/skills/presentations/artifact_tool/api/references/ole-workbooks.spec.md",
   "skills/presentations/skills/presentations/container_tools/artifact_tool_utils.mjs",
   "skills/presentations/skills/presentations/container_tools/slides_test.py",

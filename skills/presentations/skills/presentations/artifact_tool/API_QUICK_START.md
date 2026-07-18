@@ -323,6 +323,38 @@ byte identity for that one part. It rejects fallback-only names,
 duplicate/missing target names, pending clones, and any unexpected package or
 semantic change.
 
+## Bounded Imported Slide Duplicate
+
+When an Agent needs an exact source-bound copy of one imported slide rather
+than a reconstructed slide, use the shipped transaction. It is deliberately
+smaller than the full `slide.duplicate()` codec profile: the selected source
+must have one explicit unique name and no NotesSlide or legacy-comments leaf.
+
+```ts
+import { duplicatePptxSlide } from "../examples/openchestnut-slide-duplicate-workflow.mjs";
+
+await duplicatePptxSlide({
+  inputPath: "input.pptx",
+  outputPath: "output/source-with-copy.pptx",
+  auditPath: "output/clone-audit.json",
+  expectedName: "Unique source slide name",
+});
+```
+
+The transaction supports the same canonical inline leaves used by the bounded
+clone profile, including straight/elbow connectors whose present endpoints
+resolve inside the source slide tree. It maps source `presentation.xml`
+relationships, calls `slide.duplicate()`, requires the clone immediately after
+the original, and accepts only the necessary presentation/content-type
+topology changes plus one new SlidePart and its relationship part. Every
+retained source part, including the source SlidePart, must remain
+byte-identical. It then reimports and verifies source/clone structural
+semantics, connector bindings, and model-render equivalence. The latter ignores
+fresh `data-*-id` inspection locators, so it does not claim lexical equality
+for the new clone XML. Ambiguous names, notes/comments, unsupported graph
+leaves, unresolved endpoints, and unexpected package changes reject without
+promoting an output or audit.
+
 ## Bounded Imported Title And Speaker-Notes Edit
 
 When the source deck has one uniquely named slide, one uniquely named title

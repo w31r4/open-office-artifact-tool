@@ -107,11 +107,12 @@ be inserted.
 The pending JavaScript clone exposes fresh clone-local element identities, so
 Agent `inspect`/`resolve` operations follow the copied targets naturally. The
 first export keeps the source-bound endpoint identities private at the codec
-boundary, letting OpenChestnut byte-copy the original Slide XML while the
-connector still binds to the copied shapes in the new SlidePart. The connector
-adds no OPC relationship. Unsupported connector forms, targets outside the
-clone tree, edits before export/reimport, and all broader graph edges remain
-fail-closed.
+boundary, preserving the original SlidePart bytes while the connector binds to
+the copied shapes in the new SlidePart. The new clone XML may be canonically
+serialized by Open XML SDK, so its proof is structural/semantic rather than a
+false lexical-byte claim. The connector adds no OPC relationship. Unsupported
+connector forms, targets outside the clone tree, edits before export/reimport,
+and all broader graph edges remain fail-closed.
 
 The JavaScript regression proves cloned group connector endpoints resolve to
 the fresh copied child identities, source `slide1.xml` remains byte-identical,
@@ -126,6 +127,24 @@ Playwright), `npm run docs:api`, `npm run proto:check`, `npm run test:pack`,
 and serial `npm run verify:open-chestnut-build`; OpenChestnut passed `211/211`
 and OfficeBridge passed `5/5`. The reproducibility check kept the runtime at
 39 audited files and 38 bundled files / 14,417,084 bytes.
+
+### PPTX auditable source-bound slide duplicate workflow
+
+On 2026-07-18, the Presentation Skill added
+`openchestnut-slide-duplicate-workflow.mjs` for the bare imported-slide clone
+profile. It is an Agent transaction, not a generic ZIP copier: it selects one
+explicit unique source name, accepts the canonical inline leaf profile including
+same-tree straight/elbow connectors, and deliberately refuses NotesSlide and
+legacy-comments leaves.
+
+The workflow records input/output hashes, the actual source and clone
+`SlidePart` paths, adjacent insertion, the only permitted new parts, retained
+source-part byte preservation, reimported structural equality, and model-SVG
+visual equality. Fresh `data-*-id` locator attributes are removed only for that
+visual comparison; the new clone Slide XML may be canonically serialized and is
+not claimed byte-identical. Missing/ambiguous names, closed leaves outside this
+bare profile, unresolved connector endpoints, unsupported graph content, or an
+unexpected package delta abort and remove temporary outputs/audits.
 
 ### PPTX auditable imported slide-name workflow
 

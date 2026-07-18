@@ -213,6 +213,26 @@ Imported add, repeat/mutated clone, rich/connected comments, unsupported
 connector forms or targets, and every broad graph clone remain unsupported until
 an explicit OPC graph-clone transaction is available.
 
+For the bare agent-facing clone profile, use the shipped transaction rather
+than copying ZIP parts or rebuilding the slide:
+
+```sh
+node "$SKILL_DIR/examples/openchestnut-slide-duplicate-workflow.mjs" \
+  input/source.pptx output/source-with-copy.pptx output/clone-audit.json \
+  "Unique source slide name"
+```
+
+It requires exactly one explicitly named original imported slide and accepts
+only the closed canonical inline leaf profile with no NotesSlide or legacy
+comments leaf. It proves the source part order, inserts one adjacent clone,
+keeps every retained source part byte-identical except the required package
+topology records, allows only the new SlidePart plus its relationship part,
+then reimports and compares the source/clone semantics and model render. Model
+SVG comparison ignores fresh `data-*-id` locator attributes only; it is not a
+claim that the clone XML is lexically byte-identical. Missing/duplicate names,
+notes/comments, unresolved connector endpoints, unsupported graph leaves, or
+any unexpected package part fail closed without promoting output or audit.
+
 For an original imported slide, `slide.name = "Decision review"` is a narrow
 in-place metadata edit: OpenChestnut changes only that SlidePart's
 `p:cSld/@name`, preserves its relationship graph and all other parts, and

@@ -25,9 +25,10 @@ try {
     import { spawnSync } from "node:child_process";
     import fs from "node:fs";
     import path from "node:path";
+    import { pathToFileURL } from "node:url";
 
     import {
-      DocumentFile, DocumentModel, PdfArtifact, PdfFile,
+      DocumentFile, DocumentModel, FileBlob, PdfArtifact, PdfFile,
       Presentation, PresentationFile, SpreadsheetFile, Workbook,
     } from "open-office-artifact-tool";
 
@@ -80,6 +81,48 @@ try {
     if (importedPresentation.slides.getItem(0).shapes.items[0].text.value !== "clean install PPTX") process.exit(21);
     if ((await PresentationFile.importPptx(await PresentationFile.exportPptx(importedPresentation))).slides.count !== 1) process.exit(22);
 
+    const installedPackage = path.join(process.cwd(), "node_modules", "open-office-artifact-tool");
+    const duplicateWorkflowPath = path.join(
+      installedPackage,
+      "skills", "presentations", "skills", "presentations", "examples", "openchestnut-slide-duplicate-workflow.mjs",
+    );
+    if (!fs.existsSync(duplicateWorkflowPath)) process.exit(23);
+    const cloneFixture = Presentation.create({ slideSize: { width: 640, height: 360 } });
+    const cloneSource = cloneFixture.slides.add({ name: "Packed clone source" });
+    const cloneGroup = cloneSource.addGroup({
+      name: "packed-cluster",
+      position: { left: 48, top: 40, width: 320, height: 120 },
+      childFrame: { left: 0, top: 0, width: 320, height: 120 },
+    });
+    const cloneLeft = cloneGroup.shapes.add({ name: "left", position: { left: 0, top: 20, width: 90, height: 42 }, text: "Left" });
+    const cloneRight = cloneGroup.shapes.add({ name: "right", position: { left: 210, top: 20, width: 90, height: 42 }, text: "Right" });
+    cloneGroup.connectors.add({
+      name: "join", from: cloneLeft, to: cloneRight,
+      start: { x: 90, y: 41 }, end: { x: 210, y: 41 }, line: { fill: "#64748B", width: 1 },
+    });
+    const cloneInput = path.join(process.cwd(), "packed-clone-source.pptx");
+    const cloneOutput = path.join(process.cwd(), "packed-clone-output.pptx");
+    const cloneAudit = path.join(process.cwd(), "packed-clone-audit.json");
+    await (await PresentationFile.exportPptx(cloneFixture)).save(cloneInput);
+    const { duplicatePptxSlide } = await import(pathToFileURL(duplicateWorkflowPath).href);
+    const cloneResult = await duplicatePptxSlide({
+      inputPath: cloneInput,
+      outputPath: cloneOutput,
+      auditPath: cloneAudit,
+      expectedName: "Packed clone source",
+    });
+    if (
+      cloneResult.audit.operation.clonePart !== "ppt/slides/slide2.xml" ||
+      !cloneResult.audit.validation.package.retainedSourcePartsByteIdentical ||
+      !cloneResult.audit.validation.reimport.sourceAndCloneSemanticsEqual ||
+      !cloneResult.audit.validation.modelRender.visualEquivalent
+    ) process.exit(24);
+    const packedClone = await PresentationFile.importPptx(new FileBlob(await fs.promises.readFile(cloneOutput), {
+      type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      name: "packed-clone-output.pptx",
+    }));
+    if (packedClone.slides.count !== 2 || packedClone.slides.getItem(1).groups.items[0].connectors.items[0].startTargetId !== packedClone.slides.getItem(1).groups.items[0].shapes.items[0].id) process.exit(25);
+
     const pdf = PdfArtifact.create({ pages: [{ text: "clean install PDF" }] });
     const pdfFile = await PdfFile.exportPdf(pdf);
     if (pdfFile.bytes[0] !== 0x25 || pdfFile.bytes[1] !== 0x50 || pdfFile.bytes[2] !== 0x44 || pdfFile.bytes[3] !== 0x46) process.exit(30);
@@ -88,7 +131,6 @@ try {
     const importedPdf = await PdfFile.importPdf(pdfFile);
     if (!importedPdf.extractText().includes("clean install PDF")) process.exit(32);
 
-    const installedPackage = path.join(process.cwd(), "node_modules", "open-office-artifact-tool");
     const creatorPath = path.join(
       installedPackage,
       "skills", "template-creator", "skills", "template-creator", "scripts", "create-template-skill.mjs",

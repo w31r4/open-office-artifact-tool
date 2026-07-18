@@ -82,6 +82,30 @@ imported-template mutation.
 Inspect records use 1-based `slide` numbers for display; `slides.getItem(index)`
 is 0-based. Prefer resolving the `sl/...` anchor from inspect.
 
+## Source-Bound Duplicate
+
+Use `slide.duplicate()` only for the explicit closed clone profile; it is not a
+generic “copy this slide” shortcut. A present straight/elbow connector endpoint
+must remain inside the copied source SlidePart tree. Pending clone IDs are new
+model IDs, and the clone must export and reimport before any edit.
+
+For an Agent-facing transaction over the bare profile (no notes/comments leaf),
+run the shipped workflow with one unique explicit source name:
+
+```sh
+node "$SKILL_DIR/examples/openchestnut-slide-duplicate-workflow.mjs" \
+  input/source.pptx output/source-with-copy.pptx output/clone-audit.json \
+  "Unique source slide name"
+```
+
+The audit binds input/output hashes, source and clone part paths, adjacent
+insertion, allowed new package parts, retained-source byte preservation,
+reimported structural equivalence, and model-SVG visual equivalence. The SVG
+check removes only fresh `data-*-id` locator attributes; a new SlidePart XML
+may be canonically serialized and is not promised to be lexically identical.
+Missing/duplicate names, notes/comments, unsupported leaves, or an unexpected
+package delta fail closed without output promotion.
+
 ## Master/Layout Blast Radius
 
 ```ts

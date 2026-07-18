@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
 
-import { FileBlob, PresentationFile } from "../src/index.mjs";
+import { FileBlob, Presentation, PresentationFile } from "../src/index.mjs";
 import {
   generateOfficeInput,
   PPTX_TITLE_NOTES_FIXTURE,
@@ -279,6 +279,123 @@ try {
   assert.equal(slideNameCli.status, 0, `slide-name CLI failed\n${slideNameCli.stdout}\n${slideNameCli.stderr}`);
   assert.equal(JSON.parse(slideNameCli.stdout).sourcePart, "ppt/slides/slide1.xml");
 
+  const duplicateDir = path.join(root, "slide-duplicate-workflow");
+  const duplicateInput = path.join(duplicateDir, "connector-source.pptx");
+  const duplicateOutput = path.join(duplicateDir, "connector-duplicate.pptx");
+  const duplicateAudit = path.join(duplicateDir, "audit.json");
+  await fs.mkdir(duplicateDir, { recursive: true });
+  const duplicateFixture = Presentation.create({ slideSize: { width: 640, height: 360 } });
+  const duplicateSourceSlide = duplicateFixture.slides.add({ name: "Clone connector source" });
+  const duplicateGroup = duplicateSourceSlide.addGroup({
+    name: "connector-cluster",
+    position: { left: 48, top: 40, width: 320, height: 120 },
+    childFrame: { left: 0, top: 0, width: 320, height: 120 },
+  });
+  const duplicateLeft = duplicateGroup.shapes.add({ name: "left", position: { left: 0, top: 20, width: 90, height: 42 }, text: "Left" });
+  const duplicateRight = duplicateGroup.shapes.add({ name: "right", position: { left: 210, top: 20, width: 90, height: 42 }, text: "Right" });
+  duplicateGroup.connectors.add({
+    name: "join",
+    from: duplicateLeft,
+    to: duplicateRight,
+    start: { x: 90, y: 41 },
+    end: { x: 210, y: 41 },
+    line: { fill: "#64748B", width: 1 },
+  });
+  duplicateFixture.slides.add({ name: "Untouched canary" }).shapes.add({
+    name: "canary-copy",
+    position: { left: 48, top: 40, width: 260, height: 72 },
+    text: "Unchanged source slide",
+  });
+  const duplicateSourcePptx = await PresentationFile.exportPptx(duplicateFixture);
+  await duplicateSourcePptx.save(duplicateInput);
+  const duplicateSourceBytes = await fs.readFile(duplicateInput);
+  const { duplicatePptxSlide } = await import(
+    "../skills/presentations/skills/presentations/examples/openchestnut-slide-duplicate-workflow.mjs"
+  );
+  const duplicateResult = await duplicatePptxSlide({
+    inputPath: duplicateInput,
+    outputPath: duplicateOutput,
+    auditPath: duplicateAudit,
+    expectedName: "Clone connector source",
+  });
+  assert.equal(duplicateResult.audit.provider.actual, "open-chestnut");
+  assert.equal(duplicateResult.audit.operation.type, "source-bound-slide-duplicate");
+  assert.equal(duplicateResult.audit.operation.sourcePart, "ppt/slides/slide1.xml");
+  assert.equal(duplicateResult.audit.operation.clonePart, "ppt/slides/slide3.xml");
+  assert.equal(duplicateResult.audit.validation.package.retainedSourcePartsByteIdentical, true);
+  assert.deepEqual(duplicateResult.audit.validation.package.newPartPaths, [
+    "ppt/slides/_rels/slide3.xml.rels",
+    "ppt/slides/slide3.xml",
+  ]);
+  assert.equal(duplicateResult.audit.validation.reimport.sourceAndCloneSemanticsEqual, true);
+  assert.equal(duplicateResult.audit.validation.modelRender.visualEquivalent, true);
+  assert.equal(duplicateResult.audit.validation.modelRender.identityAttributesIgnored, true);
+  assert.deepEqual(await fs.readFile(duplicateInput), duplicateSourceBytes);
+  const duplicateRoundTrip = await PresentationFile.importPptx(new FileBlob(await fs.readFile(duplicateOutput), {
+    type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    name: "connector-duplicate.pptx",
+  }));
+  assert.deepEqual(duplicateRoundTrip.slides.items.map((slide) => slide.name), [
+    "Clone connector source",
+    "Clone connector source",
+    "Untouched canary",
+  ]);
+  const duplicateSourceGroup = duplicateRoundTrip.slides.getItem(0).groups.items[0];
+  const duplicateCloneGroup = duplicateRoundTrip.slides.getItem(1).groups.items[0];
+  const duplicateCloneConnector = duplicateCloneGroup.connectors.items[0];
+  assert.notEqual(duplicateCloneGroup.id, duplicateSourceGroup.id);
+  assert.equal(duplicateCloneConnector.startTargetId, duplicateCloneGroup.shapes.items[0].id);
+  assert.equal(duplicateCloneConnector.endTargetId, duplicateCloneGroup.shapes.items[1].id);
+  assert.notEqual(duplicateCloneConnector.startTargetId, duplicateSourceGroup.shapes.items[0].id);
+
+  const duplicateMissingOutput = path.join(duplicateDir, "missing-target.pptx");
+  const duplicateMissingAudit = path.join(duplicateDir, "missing-target.json");
+  await assert.rejects(
+    () => duplicatePptxSlide({
+      inputPath: duplicateInput,
+      outputPath: duplicateMissingOutput,
+      auditPath: duplicateMissingAudit,
+      expectedName: "Missing source slide",
+    }),
+    /Expected exactly one imported source slide named/,
+  );
+  assert.equal(await fs.access(duplicateMissingOutput).then(() => true, () => false), false);
+  assert.equal(await fs.access(duplicateMissingAudit).then(() => true, () => false), false);
+
+  const notesInput = path.join(duplicateDir, "notes-source.pptx");
+  const notesOutput = path.join(duplicateDir, "notes-output.pptx");
+  const notesAudit = path.join(duplicateDir, "notes-audit.json");
+  const notesFixture = Presentation.create({ slideSize: { width: 640, height: 360 } });
+  notesFixture.slides.add({ name: "Source with notes", notes: "This workflow must refuse notes." }).shapes.add({
+    name: "notes-copy",
+    position: { left: 48, top: 40, width: 260, height: 72 },
+    text: "Source with notes",
+  });
+  await (await PresentationFile.exportPptx(notesFixture)).save(notesInput);
+  await assert.rejects(
+    () => duplicatePptxSlide({
+      inputPath: notesInput,
+      outputPath: notesOutput,
+      auditPath: notesAudit,
+      expectedName: "Source with notes",
+    }),
+    /accepts no speaker-notes leaf/,
+  );
+  assert.equal(await fs.access(notesOutput).then(() => true, () => false), false);
+  assert.equal(await fs.access(notesAudit).then(() => true, () => false), false);
+
+  const duplicateCliOutput = path.join(duplicateDir, "connector-duplicate-cli.pptx");
+  const duplicateCliAudit = path.join(duplicateDir, "cli-audit.json");
+  const duplicateCli = spawnSync(process.execPath, [
+    "skills/presentations/skills/presentations/examples/openchestnut-slide-duplicate-workflow.mjs",
+    duplicateInput,
+    duplicateCliOutput,
+    duplicateCliAudit,
+    "Clone connector source",
+  ], { encoding: "utf8" });
+  assert.equal(duplicateCli.status, 0, `slide-duplicate CLI failed\n${duplicateCli.stdout}\n${duplicateCli.stderr}`);
+  assert.equal(JSON.parse(duplicateCli.stdout).clonePart, "ppt/slides/slide3.xml");
+
   const convergenceFiles = [
     "test/skill-harness/presentations/scripts/workflow.mjs",
     "test/skill-harness/presentations/scripts/run-fixture.mjs",
@@ -300,8 +417,10 @@ try {
   assert.match(skillText, /open-office-artifact-tool/);
   assert.match(skillText, /openchestnut-title-notes-edit-workflow\.mjs/);
   assert.match(skillText, /openchestnut-slide-name-edit-workflow\.mjs/);
+  assert.match(skillText, /openchestnut-slide-duplicate-workflow\.mjs/);
   assert.match(quickStartText, /PresentationFile\.exportPptx/);
   assert.match(quickStartText, /editPptxSlideName/);
+  assert.match(quickStartText, /duplicatePptxSlide/);
   assert.match(quickStartText, /open-office-artifact-tool/);
   assert.match(skillText, /slides_test\.py/);
   assert.match(skillText, /slide\.setBackground.*slide\.clearBackground/s);
