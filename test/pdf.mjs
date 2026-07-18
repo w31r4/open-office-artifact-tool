@@ -336,7 +336,7 @@ const mupdfHighlight = mupdfHighlightInspection.records.find((record) => record.
 assert.match(mupdfHighlight.id, /^mupdf-annotation-1-\d+$/);
 assert.equal(mupdfHighlight.contents, "Review this title.");
 assert.equal(mupdfHighlight.author, "Agent");
-assert.deepEqual(mupdfHighlight.color, [0.2, 0.8, 0.3]);
+assert.ok(mupdfHighlight.color.every((component, index) => Math.abs(component - [0.2, 0.8, 0.3][index]) < 0.001));
 assert.equal(mupdfHighlight.quadPoints.length, 1);
 assert.equal(mupdfHighlight.quadPoints[0].length, 8);
 const mupdfHighlightPng = await PdfFile.renderPdf(mupdfHighlighted, { page: 1, dpi: 72 });

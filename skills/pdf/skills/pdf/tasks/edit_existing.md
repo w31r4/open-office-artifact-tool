@@ -11,14 +11,14 @@ node scripts/mupdf.mjs probe
 node scripts/mupdf.mjs inspect input.pdf
 ```
 
-Its typed operations are `add_text_annotation`, legacy text/choice/checkbox `fill_form`, source-bound `update_form_field`, `delete_page`, source-bound `delete_annotation` and `update_annotation`, complete `rearrange_pages`, visible-only `set_page_crop`, absolute-quarter-turn `rotate_page`, `set_metadata`, `delete_embedded_file`, source-bound `add_link`, `delete_link`, and `update_link`, `redact_text`, and `redact_rect`. Run with one explicit save policy:
+Its typed operations are source-bound `add_text_annotation` and `add_text_highlight`, legacy text/choice/checkbox `fill_form`, source-bound `update_form_field`, `delete_page`, source-bound `delete_annotation` and `update_annotation`, complete `rearrange_pages`, visible-only `set_page_crop`, absolute-quarter-turn `rotate_page`, `set_metadata`, `delete_embedded_file`, source-bound `add_link`, `delete_link`, and `update_link`, `redact_text`, and `redact_rect`. Run with one explicit save policy:
 
 ```bash
 node scripts/mupdf.mjs edit input.pdf tmp/pdfs/edit-operations.json tmp/pdfs/edited.pdf \
   --save-policy rewrite
 ```
 
-The CLI refuses source overwrite, writes atomically, and rejects incremental redaction, source-bound annotation/link creation or mutation, deletion, and signed-PDF incremental edits. A bounded source-bound single-widget form-field update may use unsigned incremental save; unsupported operations do not route elsewhere.
+The CLI refuses source overwrite, writes atomically, and rejects incremental redaction, source-bound annotation/link creation or mutation (including text highlights), deletion, and signed-PDF incremental edits. A bounded source-bound single-widget form-field update may use unsigned incremental save; unsupported operations do not route elsewhere.
 
 ## Update one imported form field
 
@@ -122,6 +122,41 @@ content, and incremental output. The operation audit contains the actual
 provider-normalized annotation rectangle; re-inspect the delivered bytes before
 using its fresh `mupdf-annotation-<page>-<xref>` locator for a later update or
 deletion. Do not treat that xref as a persistent document identity.
+
+## Highlight one unique imported text selection
+
+Use a native Highlight only when the requested input text selects exactly one
+native location on the inspected unrotated visible page. This is deliberately
+not a rectangle, quad, or generic search-and-replace API:
+
+```json
+[
+  {
+    "type": "add_text_highlight",
+    "page": 2,
+    "sourceSha256": "<inspect summary sourceSha256>",
+    "expectedPage": {
+      "bbox": [0, 0, 612, 792],
+      "rotation": 0
+    },
+    "text": "Revenue assumptions remain provisional",
+    "color": [1, 0.92, 0.2],
+    "contents": "Validate before approval.",
+    "author": "Reviewer"
+  }
+]
+```
+
+`text` must be non-empty and no longer than 4,096 characters. MuPDF searches
+the exact page and requires exactly one hit; zero or multiple hits fail rather
+than allowing an agent to guess an occurrence. The optional color is RGB in
+the closed `[0,1]` interval (the default is yellow), and optional `contents`,
+`author`, and `subject` must be non-empty strings. Caller-supplied quads,
+rectangles, rotated pages, stale source/page evidence, native selections that
+leave the inspected CropBox, and incremental output fail closed. The rewrite
+audit carries the provider's actual quadrilateral/color evidence; re-inspect
+and render the delivered bytes before handoff. The resulting annotation xref
+is current-source-only, not a persistent document identity.
 
 ## Delete one imported annotation
 

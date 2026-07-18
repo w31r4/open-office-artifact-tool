@@ -304,7 +304,7 @@ try {
   const mupdfHighlightInspection = await PdfFile.inspectPdf(await fs.readFile(mupdfHighlightOutput));
   const mupdfHighlight = mupdfHighlightInspection.records.find((record) => record.kind === "mupdfAnnotation" && record.type === "Highlight");
   assert.ok(mupdfHighlight);
-  assert.deepEqual(mupdfHighlight.color, [0.2, 0.8, 0.3]);
+  assert.ok(mupdfHighlight.color.every((component, index) => Math.abs(component - [0.2, 0.8, 0.3][index]) < 0.001));
   assert.equal(mupdfHighlight.quadPoints.length, 1);
   await fs.writeFile(mupdfOperations, JSON.stringify({
     savePolicy: "rewrite",

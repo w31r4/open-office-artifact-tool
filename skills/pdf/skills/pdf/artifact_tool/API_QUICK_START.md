@@ -218,6 +218,40 @@ The pin must fit within an unrotated inspected `mupdfPage.bbox`; `text`,
 `bbox`, `rect`, icon selection, stale evidence, and incremental save are
 rejected. Re-inspect the rewrite before relying on the fresh annotation locator.
 
+For a review highlight, give the provider one requested text string instead of
+trying to calculate a rectangle or character quadrilaterals. It is accepted
+only if native search finds exactly one selection on the same inspected,
+unrotated visible page:
+
+```js
+const highlightPage = inspection.records.find((record) => record.kind === "mupdfPage"
+  && record.page === 1);
+if (!highlightPage) throw new Error("Expected one inspectable target page.");
+
+const withHighlight = await PdfFile.editPdf(input, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "add_text_highlight",
+    page: highlightPage.page,
+    sourceSha256: inspection.summary.sourceSha256,
+    expectedPage: { bbox: highlightPage.bbox, rotation: highlightPage.rotation },
+    text: "Revenue assumptions remain provisional",
+    color: [1, 0.92, 0.2],
+    contents: "Validate before approval.",
+    author: "Reviewer",
+  }],
+});
+await withHighlight.save("third-party-with-review-highlight.pdf");
+```
+
+`text` is non-empty and at most 4,096 characters. The optional RGB color uses
+three `[0,1]` components (yellow by default), while optional `contents`,
+`author`, and `subject` carry non-empty review metadata. Caller quads or
+rectangles, zero/multiple native hits, a rotated/stale page, a selection beyond
+the visible CropBox, and incremental save are rejected. Re-inspect and render
+the rewrite before handoff; its `mupdfAnnotation` record returns the native
+Highlight quadrilaterals/color and a current-source-only locator.
+
 For an imported annotation, do not use its array index as identity. Inspect the
 exact input bytes, retain the returned `summary.sourceSha256`, and delete only
 one source-bound annotation locator with a semantic precondition. This is a
