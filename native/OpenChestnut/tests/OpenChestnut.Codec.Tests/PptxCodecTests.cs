@@ -2468,6 +2468,34 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void SourcePreservingExportRejectsCloneWithConnectedNotesGraph()
+    {
+        var request = ExportRequest();
+        request.Artifact.Presentation.Slides[0].SpeakerNotes = new PresentationSpeakerNotes { Text = "Keep this closed notes leaf." };
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var connectedNotes = ReplaceZipText(
+            authored.File.ToByteArray(),
+            "ppt/notesSlides/_rels/notesSlide1.xml.rels",
+            xml => xml.Replace(
+                "</Relationships>",
+                "<Relationship Id=\"rIdUnsafeNoteLink\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.invalid/notes\" TargetMode=\"External\"/></Relationships>",
+                StringComparison.Ordinal));
+        var imported = Import(connectedNotes);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var source = Assert.Single(imported.Artifact.Presentation.Slides);
+        var clone = source.Clone();
+        clone.Id = "presentation/clone/connected-notes";
+        clone.Source = null;
+        clone.CloneSource = source.Source.Clone();
+        imported.Artifact.Presentation.Slides.Add(clone);
+
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void SourcePreservingExportRejectsAnEditedCloneBeforeWritingItsGraph()
     {
         var authored = Invoke(ExportRequest());
