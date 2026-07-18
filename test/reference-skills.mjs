@@ -16,13 +16,19 @@ import {
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const skillsRoot = path.join(repoRoot, "skills");
-const pluginNames = ["documents", "spreadsheets", "presentations", "pdf", "template-creator"];
+const pluginNames = ["documents", "spreadsheets", "presentations", "pdf", "template-creator", "default-template-library"];
 const expectedSkills = new Map([
   ["documents", ["documents"]],
   ["spreadsheets", ["excel-live-control", "spreadsheets"]],
   ["presentations", ["presentations"]],
   ["pdf", ["pdf"]],
   ["template-creator", ["template-creator"]],
+  ["default-template-library", [
+    "artifact-template-financial-budget",
+    "artifact-template-project-kickoff",
+    "artifact-template-strategy-memorandum",
+    "office-template-catalog",
+  ]],
 ]);
 const expectedDeclaredSkillNames = new Map([
   ["documents", "documents"],
@@ -31,6 +37,10 @@ const expectedDeclaredSkillNames = new Map([
   ["presentations", "Presentations"],
   ["pdf", "pdf"],
   ["template-creator", "template-creator"],
+  ["artifact-template-financial-budget", "artifact-template-financial-budget"],
+  ["artifact-template-project-kickoff", "artifact-template-project-kickoff"],
+  ["artifact-template-strategy-memorandum", "artifact-template-strategy-memorandum"],
+  ["office-template-catalog", "office-template-catalog"],
 ]);
 
 async function exists(file) {
@@ -89,6 +99,14 @@ for (const pluginName of pluginNames) {
 const templateCreatorManifest = JSON.parse(await fs.readFile(path.join(skillsRoot, "template-creator", "manifest.json"), "utf8"));
 assert.equal(templateCreatorManifest.schemaVersion, 1);
 assert.deepEqual(templateCreatorManifest.skills, ["skills/template-creator"]);
+const defaultTemplateManifest = JSON.parse(await fs.readFile(path.join(skillsRoot, "default-template-library", "manifest.json"), "utf8"));
+const defaultTemplateCatalog = JSON.parse(await fs.readFile(path.join(skillsRoot, "default-template-library", "catalog.json"), "utf8"));
+assert.equal(defaultTemplateManifest.schemaVersion, 1);
+assert.equal(defaultTemplateManifest.catalog, "catalog.json");
+assert.equal(defaultTemplateCatalog.templates.length, 20);
+assert.equal(defaultTemplateCatalog.templates.filter((template) => template.status === "ready").length, 3);
+assert.equal(defaultTemplateCatalog.provenancePolicy.retainedReferenceFiles, false);
+assert.equal(defaultTemplateCatalog.provenancePolicy.retainedPreviewFiles, false);
 
 assert.equal(await exists(path.join(skillsRoot, "documents", "SKILL.md")), false);
 assert.equal(await exists(path.join(skillsRoot, "spreadsheets", "scripts")), false);

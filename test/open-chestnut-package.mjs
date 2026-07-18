@@ -205,6 +205,49 @@ try {
       !fs.readFileSync(path.join(template.skillPath, sidecar.reference)).equals(Buffer.from(xlsx.bytes)) ||
       !fs.readFileSync(path.join(template.skillPath, sidecar.preview)).equals(fs.readFileSync(previewPath))
     ) process.exit(54);
+
+    const defaultTemplateGeneratorPath = path.join(
+      installedPackage,
+      "skills", "default-template-library", "scripts", "generate-template.mjs",
+    );
+    if (!fs.existsSync(defaultTemplateGeneratorPath)) process.exit(55);
+    const generatedTemplates = [
+      ["artifact-template-strategy-memorandum", ".docx"],
+      ["artifact-template-project-kickoff", ".pptx"],
+      ["artifact-template-financial-budget", ".xlsx"],
+    ].map(([templateId, extension]) => {
+      const outputPath = path.join(process.cwd(), templateId + extension);
+      const auditPath = path.join(process.cwd(), templateId + ".audit.json");
+      const generated = spawnSync(process.execPath, [
+        defaultTemplateGeneratorPath,
+        "--template-id", templateId,
+        "--output", outputPath,
+        "--audit", auditPath,
+      ], { cwd: process.cwd(), encoding: "utf8" });
+      if (generated.status !== 0) {
+        process.stderr.write(generated.stderr);
+        process.exit(56);
+      }
+      const audit = JSON.parse(fs.readFileSync(auditPath, "utf8"));
+      if (
+        audit.template.id !== templateId ||
+        audit.template.provenance !== "project-authored-source-free" ||
+        audit.template.retainedReference !== false ||
+        audit.source !== null ||
+        audit.provider.actual !== "open-chestnut" ||
+        audit.provider.silentFallback !== false ||
+        audit.validation.secondImport !== true ||
+        !fs.existsSync(outputPath)
+      ) process.exit(57);
+      return { templateId, outputPath };
+    });
+    const sourceFreeDocument = await DocumentFile.importDocx(fs.readFileSync(generatedTemplates[0].outputPath));
+    if (!sourceFreeDocument.blocks.some((block) => block.text === "Strategy Memorandum")) process.exit(58);
+    const sourceFreePresentation = await PresentationFile.importPptx(fs.readFileSync(generatedTemplates[1].outputPath));
+    if (sourceFreePresentation.slides.count !== 3 || sourceFreePresentation.slides.getItem(0).name !== "Kickoff overview") process.exit(59);
+    const sourceFreeWorkbook = await SpreadsheetFile.importXlsx(fs.readFileSync(generatedTemplates[2].outputPath));
+    sourceFreeWorkbook.recalculate();
+    if (JSON.stringify(sourceFreeWorkbook.worksheets.getItem("Budget Summary").getRange("D4:D7").values) !== JSON.stringify([["OK"], ["OK"], ["OK"], ["OK"]])) process.exit(60);
   `;
 
   run(process.execPath, ["--input-type=module", "-e", probe], temporary, {
@@ -214,7 +257,7 @@ try {
   fs.rmSync(temporary, { force: true, recursive: true });
 }
 
-console.log("OpenChestnut, PDF, and Template Creator clean-install package smoke ok");
+console.log("OpenChestnut, PDF, Template Creator, and source-free Template Library clean-install package smoke ok");
 
 function run(command, args, cwd, environment = {}) {
   const result = spawnSync(command, args, {

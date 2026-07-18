@@ -1,0 +1,170 @@
+{
+  "schemaVersion": 1,
+  "name": "default-template-library",
+  "provenancePolicy": {
+    "assetMode": "project-authored-source-free",
+    "retainedReferenceFiles": false,
+    "retainedPreviewFiles": false,
+    "thirdPartyTemplateAssets": "excluded-until-explicit-redistribution-authorization"
+  },
+  "templates": [
+    {
+      "id": "artifact-template-design-report",
+      "artifactKind": "document",
+      "displayName": "Design Report",
+      "intent": "Present a technical or product design decision with evidence and recommended next actions.",
+      "status": "planned"
+    },
+    {
+      "id": "artifact-template-experiment-analysis",
+      "artifactKind": "document",
+      "displayName": "Experiment Analysis",
+      "intent": "Record a hypothesis, experiment setup, results, interpretation, and follow-up decision.",
+      "status": "planned"
+    },
+    {
+      "id": "artifact-template-investment-committee-memo",
+      "artifactKind": "document",
+      "displayName": "Investment Committee Memo",
+      "intent": "Organize an investment thesis, material assumptions, risks, and recommendation.",
+      "status": "planned"
+    },
+    {
+      "id": "artifact-template-legal-memorandum",
+      "artifactKind": "document",
+      "displayName": "Legal Memorandum",
+      "intent": "Structure a legal issue, authorities, analysis, uncertainty, and conclusion for review.",
+      "status": "planned"
+    },
+    {
+      "id": "artifact-template-minimal-letterhead",
+      "artifactKind": "document",
+      "displayName": "Minimal Letterhead",
+      "intent": "Prepare a restrained formal letter with controlled sender and recipient blocks.",
+      "status": "planned"
+    },
+    {
+      "id": "artifact-template-strategy-memorandum",
+      "artifactKind": "document",
+      "displayName": "Strategy Memorandum",
+      "intent": "Frame a strategic choice, its evidence, constraints, and a committed recommendation.",
+      "status": "ready",
+      "implementation": {
+        "skill": "skills/artifact-template-strategy-memorandum",
+        "generator": "scripts/generate-template.mjs",
+        "extension": ".docx",
+        "assetMode": "project-authored-source-free"
+      }
+    },
+    {
+      "id": "artifact-template-system-design",
+      "artifactKind": "document",
+      "displayName": "System Design",
+      "intent": "Describe a system boundary, proposal, trade-offs, rollout, and verification plan.",
+      "status": "planned"
+    },
+    {
+      "id": "artifact-template-business-review",
+      "artifactKind": "presentation",
+      "displayName": "Business Review",
+      "intent": "Review operating results, decisions, risks, and accountable follow-ups.",
+      "status": "planned"
+    },
+    {
+      "id": "artifact-template-market-trends-report",
+      "artifactKind": "presentation",
+      "displayName": "Market Trends Report",
+      "intent": "Communicate market evidence, trend interpretation, and implications for action.",
+      "status": "planned"
+    },
+    {
+      "id": "artifact-template-operating-review",
+      "artifactKind": "presentation",
+      "displayName": "Operating Review",
+      "intent": "Run a recurring review around scorecards, blockers, decisions, and owners.",
+      "status": "planned"
+    },
+    {
+      "id": "artifact-template-project-kickoff",
+      "artifactKind": "presentation",
+      "displayName": "Project Kickoff",
+      "intent": "Start a project with a shared outcome, scope, plan, ownership, and decision cadence.",
+      "status": "ready",
+      "implementation": {
+        "skill": "skills/artifact-template-project-kickoff",
+        "generator": "scripts/generate-template.mjs",
+        "extension": ".pptx",
+        "assetMode": "project-authored-source-free"
+      }
+    },
+    {
+      "id": "artifact-template-simple-dark-mode",
+      "artifactKind": "presentation",
+      "displayName": "Simple Dark Mode",
+      "intent": "Use a concise dark visual system for a small set of key messages.",
+      "status": "planned"
+    },
+    {
+      "id": "artifact-template-simple-light-mode",
+      "artifactKind": "presentation",
+      "displayName": "Simple Light Mode",
+      "intent": "Use a concise light visual system for a small set of key messages.",
+      "status": "planned"
+    },
+    {
+      "id": "artifact-template-team-alignment",
+      "artifactKind": "presentation",
+      "displayName": "Team Alignment",
+      "intent": "Align a team on outcome, operating principles, open decisions, and next actions.",
+      "status": "planned"
+    },
+    {
+      "id": "artifact-template-analytics-dashboard",
+      "artifactKind": "workbook",
+      "displayName": "Analytics Dashboard",
+      "intent": "Summarize metrics, trends, inputs, and monitored thresholds in one workbook.",
+      "status": "planned"
+    },
+    {
+      "id": "artifact-template-financial-budget",
+      "artifactKind": "workbook",
+      "displayName": "Financial Budget",
+      "intent": "Model a budget with controllable assumptions, monthly plan, variance, and checks.",
+      "status": "ready",
+      "implementation": {
+        "skill": "skills/artifact-template-financial-budget",
+        "generator": "scripts/generate-template.mjs",
+        "extension": ".xlsx",
+        "assetMode": "project-authored-source-free"
+      }
+    },
+    {
+      "id": "artifact-template-operating-calendar",
+      "artifactKind": "workbook",
+      "displayName": "Operating Calendar",
+      "intent": "Plan recurring operating work by date, owner, status, and dependency.",
+      "status": "planned"
+    },
+    {
+      "id": "artifact-template-project-tracker",
+      "artifactKind": "workbook",
+      "displayName": "Project Tracker",
+      "intent": "Track deliverables, owners, dates, risks, and completion evidence.",
+      "status": "planned"
+    },
+    {
+      "id": "artifact-template-sales-pipeline",
+      "artifactKind": "workbook",
+      "displayName": "Sales Pipeline",
+      "intent": "Track opportunities, stages, values, confidence, and next actions.",
+      "status": "planned"
+    },
+    {
+      "id": "artifact-template-three-statement-forecast",
+      "artifactKind": "workbook",
+      "displayName": "Three-Statement Forecast",
+      "intent": "Connect income statement, balance sheet, and cash-flow assumptions in a bounded model.",
+      "status": "planned"
+    }
+  ]
+}

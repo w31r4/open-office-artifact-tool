@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "templateId": "artifact-template-strategy-memorandum",
+  "artifactKind": "document",
+  "generation": {
+    "mode": "project-authored-source-free",
+    "script": "../../scripts/generate-template.mjs",
+    "arguments": [
+      "--template-id",
+      "artifact-template-strategy-memorandum"
+    ]
+  },
+  "retainedReference": null,
+  "retainedPreview": null
+}

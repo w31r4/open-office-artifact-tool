@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "name": "default-template-library",
+  "description": "Source-free, project-authored Office template catalog.",
+  "owner": "w31r4",
+  "skills": [
+    "skills/office-template-catalog",
+    "skills/artifact-template-strategy-memorandum",
+    "skills/artifact-template-project-kickoff",
+    "skills/artifact-template-financial-budget"
+  ],
+  "catalog": "catalog.json",
+  "assets": {
+    "icon": "assets/icon.svg"
+  },
+  "interface": {
+    "displayName": "Office Template Library",
+    "shortDescription": "Source-free Office templates with explicit provenance"
+  }
+}

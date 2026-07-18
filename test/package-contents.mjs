@@ -42,9 +42,10 @@ const maxPackedBytes = 9_750_000;
 // The native Highlight primitive added audited implementation, API, and Skill
 // material; the source-bound PPTX duplicate workflow adds one 17,154-byte
 // packaged transaction plus its narrow documentation. The audited package is
-// now 23,708,735 bytes, so retain a still-tight 23.750 MB ceiling with 41,265
-// bytes of reviewed headroom rather than setting the cap to one exact build.
-const maxUnpackedBytes = 23_750_000;
+// now 23,766,737 bytes after adding the source-free default-template plugin
+// and its three executable Office generators. Keep a 23.825 MB ceiling with
+// only reviewed documentation and source-only template headroom.
+const maxUnpackedBytes = 23_825_000;
 
 for (const required of [
   "LICENSE",
@@ -180,6 +181,27 @@ for (const required of [
   "skills/template-creator/skills/template-creator/agents/agent.yaml",
   "skills/template-creator/skills/template-creator/manifest.txt",
   "skills/template-creator/skills/template-creator/scripts/create-template-skill.mjs",
+  "skills/default-template-library/.codex-plugin/plugin.json",
+  "skills/default-template-library/README.md",
+  "skills/default-template-library/manifest.json",
+  "skills/default-template-library/catalog.json",
+  "skills/default-template-library/assets/icon.svg",
+  "skills/default-template-library/scripts/generate-template.mjs",
+  "skills/default-template-library/skills/office-template-catalog/SKILL.md",
+  "skills/default-template-library/skills/office-template-catalog/agents/openai.yaml",
+  "skills/default-template-library/skills/office-template-catalog/assets/icon.svg",
+  "skills/default-template-library/skills/artifact-template-strategy-memorandum/SKILL.md",
+  "skills/default-template-library/skills/artifact-template-strategy-memorandum/template.json",
+  "skills/default-template-library/skills/artifact-template-strategy-memorandum/agents/openai.yaml",
+  "skills/default-template-library/skills/artifact-template-strategy-memorandum/assets/icon.svg",
+  "skills/default-template-library/skills/artifact-template-project-kickoff/SKILL.md",
+  "skills/default-template-library/skills/artifact-template-project-kickoff/template.json",
+  "skills/default-template-library/skills/artifact-template-project-kickoff/agents/openai.yaml",
+  "skills/default-template-library/skills/artifact-template-project-kickoff/assets/icon.svg",
+  "skills/default-template-library/skills/artifact-template-financial-budget/SKILL.md",
+  "skills/default-template-library/skills/artifact-template-financial-budget/template.json",
+  "skills/default-template-library/skills/artifact-template-financial-budget/agents/openai.yaml",
+  "skills/default-template-library/skills/artifact-template-financial-budget/assets/icon.svg",
   "skills/pdf/.codex-plugin/plugin.json",
   "skills/pdf/README.md",
   "skills/pdf/skills/pdf/SKILL.md",
