@@ -27,16 +27,27 @@ const byIndex = presentation.slides.getItem(slideIndex);
 
 ```ts
 type SlideAddOptions = {
-  layout?: string;
+  name?: string;
+  layout?: string | SlideLayoutTemplate;
   layoutId?: string;
-  width?: number;
-  height?: number;
+  background?: string | BackgroundConfig;
+  notes?: string;
 };
 
 type SlideInsertOptions = SlideAddOptions & {
   after?: Slide | number | null;
 };
 ```
+
+`slides.add(options)` appends. `slides.insert({ after, ...options })` inserts
+after an existing slide facade or its 0-based index; `after: null` inserts at
+the beginning and omitting `after` appends. Both paths resolve a supplied
+source-free layout transactionally and materialize its direct-frame text
+placeholders. Unknown targets/layouts leave the collection unchanged.
+
+This is source-free authoring only. Inserting into an imported PPTX would
+change its source-bound slide topology and is rejected at export rather than
+silently reconstructing the deck.
 
 ## Discover And Edit
 

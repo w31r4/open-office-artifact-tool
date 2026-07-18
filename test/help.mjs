@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 322);
+assert.equal(HELP_CATALOG.length, 323);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -316,9 +316,10 @@ assert.match(HELP_CATALOG.find((item) => item.name === "document.fillContentCont
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.materializeFields")?.schema?.parameters?.dryRun?.type, "boolean");
 assert.match(HELP_CATALOG.find((item) => item.name === "document.materializeFields")?.summary || "", /SEQ counters.*REF cached results.*PAGEREF.*pagination host/i);
 const presentationCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "presentation");
-assert.equal(presentationCatalog.length, 54);
+assert.equal(presentationCatalog.length, 55);
 assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
+assert.equal(HELP_CATALOG.find((item) => item.name === "presentation.slides.insert")?.schema?.parameters?.after?.type, "Slide|number|null");
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.importPptx")?.schema?.returns?.presentation?.type, "Presentation");
 assert.equal(HELP_CATALOG.find((item) => item.name === "nativeObject.getEmbeddedWorkbook")?.schema?.returns?.workbook?.type, "FileBlob");
 assert.equal(HELP_CATALOG.find((item) => item.name === "nativeObject.replaceEmbeddedWorkbook")?.schema?.parameters?.workbook?.required, true);
@@ -483,6 +484,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "presentation.theme")?.sc
 assert.equal(HELP_CATALOG.find((item) => item.name === "presentation.theme")?.schema?.parameters?.colorMap?.type, "object");
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.theme")?.summary || "", /not authored.*read-only/i);
 assert.match(presentation.help("presentation.layouts.add").ndjson, /bounded source-free layout/);
+assert.match(presentation.help("presentation.slides.insert").ndjson, /after an existing Slide or 0-based index/i);
 assert.match(document.help("document.addField").ndjson, /fldSimple/);
 assert.match(document.help("document.addTableOfContents").ndjson, /complex TOC field/);
 assert.match(document.help("paragraph.addField").ndjson, /inline field run/);

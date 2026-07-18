@@ -1260,7 +1260,8 @@ Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or 
 | `presentation.masters.add` | api | Append a model-level Slide Master. Source-free PPTX authoring requires exactly one master, so use Presentation.create({ master }) or presentation.master for the canonical profile; multiple masters and imported-master edits fail closed. |
 | `presentation.masters.getItem` | api | Resolve a model-level or imported Slide Master by stable ID or name. |
 | `presentation.resolve` | api | Map stable inspect anchor IDs back to facade objects; imported advanced package objects may be read-only. |
-| `presentation.slides.add` | api | Append an editable core slide with an optional direct solid/style-reference background and plain-text speaker notes. OpenChestnut authors only the direct slide background; effective Layout/Master inheritance is never flattened. |
+| `presentation.slides.add` | api | Append an editable core slide with an optional bounded source-free layout, direct solid/style-reference background, and plain-text speaker notes. A supplied layout is resolved and materialized transactionally; effective imported Layout/Master inheritance is never flattened. |
+| `presentation.slides.insert` | api | Insert a source-free slide after an existing Slide or 0-based index, or at the beginning with after: null. It uses the same transactional layout materialization as slides.add; imported deck topology remains source-bound. |
 | `presentation.textRange` | api | Inspect or resolve stable textRange anchors such as shapeId/text for editable slide text frames. |
 | `presentation.theme` | api | Inspect the model theme and theme inheritance. Custom source-free themes are not authored by OpenChestnut 0.2, and imported themes are source-bound and read-only. |
 | `presentation.validateLayout` | api | Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow. |
@@ -1667,7 +1668,7 @@ Map stable inspect anchor IDs back to facade objects; imported advanced package 
 
 #### `presentation.slides.add`
 
-Append an editable core slide with an optional direct solid/style-reference background and plain-text speaker notes. OpenChestnut authors only the direct slide background; effective Layout/Master inheritance is never flattened.
+Append an editable core slide with an optional bounded source-free layout, direct solid/style-reference background, and plain-text speaker notes. A supplied layout is resolved and materialized transactionally; effective imported Layout/Master inheritance is never flattened.
 
 **Schema parameters:**
 
@@ -1679,6 +1680,22 @@ Append an editable core slide with an optional direct solid/style-reference back
 **Schema returns:**
 
 - `slide` (Slide) — Appended editable slide. A supplied bounded source-free layout is bound and materialized immediately.
+
+#### `presentation.slides.insert`
+
+Insert a source-free slide after an existing Slide or 0-based index, or at the beginning with after: null. It uses the same transactional layout materialization as slides.add; imported deck topology remains source-bound.
+
+**Schema parameters:**
+
+- `after` (Slide|number|null) — Existing slide facade or 0-based index to insert after; null inserts first. Omit to append.
+- `name` (string) — Inspectable slide name.
+- `layout` (string|object) — Optional bounded layout name/ID/facade. The new source-free slide is created and materialized transactionally.
+- `background` (string|object) — Optional direct slide background: RGB/theme color or { fill, mode: 'solid'|'reference', index? }.
+- `notes` (string) — Optional plain-text speaker notes authored into the canonical PresentationML notes graph.
+
+**Schema returns:**
+
+- `slide` (Slide) — Inserted source-free slide. Unknown insertion targets or layouts leave the collection unchanged; imported source topology remains read-only.
 
 #### `presentation.textRange`
 

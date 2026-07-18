@@ -66,7 +66,7 @@ Status meanings:
 
 | Capability | Status | Notes |
 | --- | --- | --- |
-| Slides and basic shapes | done | Text boxes, rectangles/ellipses, and `roundRect` with bounded transforms. |
+| Slides and basic shapes | done | Text boxes, rectangles/ellipses, and `roundRect` with bounded transforms; source-free slides append or insert after a Slide/0-based index (or first with `after: null`) transactionally. Imported deck topology remains source-bound. |
 | Fill, line, shadow | done | Basic solid/no-fill, line color/width/dash, and bounded outer shadow. Imported presence-aware `p:sp/@useBgFill` is exposed read-only as `shape.useBackgroundFill`, affects SVG preview paint, and is byte-preserved unchanged; source-free authoring or semantic mutation fails closed. Complex theme/effect graphs remain source-bound. |
 | Rich text and lists | done | Paragraphs, runs, common formatting, bullets/numbering, and bounded links. |
 | Connectors | done | Straight and polyline connectors with bounded line/arrow styling. |
