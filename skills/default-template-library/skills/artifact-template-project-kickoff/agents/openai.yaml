@@ -1,6 +1,0 @@
-interface:
-  display_name: "Project Kickoff"
-  short_description: "Create a source-free project kickoff presentation"
-  icon_small: "assets/icon.svg"
-  icon_large: "assets/icon.svg"
-  default_prompt: "Create a project kickoff presentation with outcome, scope, owners, and next decisions."

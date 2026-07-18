@@ -1,43 +1,27 @@
-# Clean-room template-library provenance
+# Default Template Library provenance
 
-## Release decision
+## Source and license
 
-The Office Template Library is a source-free catalog. It must not contain a third-party Office reference file, preview image, package graph, raw XML, binary fingerprint, or source-derived Skill text unless the project has a clear redistribution authorization for that specific material.
+`skills/default-template-library/` is a repository-only import of the 20 Office templates committed in [`office-artifact-tool` `256cb31bfe0a07b3cef0051b6b159342be381378`](https://github.com/w31r4/office-artifact-tool/commit/256cb31bfe0a07b3cef0051b6b159342be381378), **Add default Office template library**.
 
-This is a release policy, not a legal opinion. In the observed upstream template plugin, package metadata declared the material proprietary and did not include a redistribution license or notice. The locally observed migration work also retained those Office and PNG files byte-for-byte. That is insufficient for this AGPL repository and npm package, so those assets are excluded. OpenAI's published terms likewise distinguish permitted service use from a blanket right to copy or distribute the service itself; a future authorization must be explicit and asset-specific. [OpenAI Terms of Use](https://openai.com/policies/row-terms-of-use/)
+That repository's root `LICENSE.md` is MIT, `Copyright (c) 2026 w31r4`. The full retained text lives beside the imported library at [`../skills/default-template-library/LICENSE.md`](../skills/default-template-library/LICENSE.md). This is a source/rights record, not legal advice.
 
-The 20 catalog intents are therefore compatibility requirements only. They are useful descriptions of Agent tasks, not a license to reproduce a visual system or reuse an artifact.
+## What is preserved
 
-## What ships
+- 20 template Skills: 7 DOCX, 7 PPTX, and 6 XLSX;
+- each original `reference.docx`, `reference.pptx`, or `reference.xlsx`;
+- each original `preview.png`;
+- source `SKILL.md`, `artifact-template.json`, `agents/agent.yaml`, manifest, and library icon;
+- individual byte length and SHA-256 values, plus the deterministic binary aggregate, in `skills/default-template-library/integrity.json`.
 
-`skills/default-template-library/` is a normal AGPL plugin bundle. It contains:
+The import changes only the repository-level adapter surface needed here: the plugin manifest, attribution/license record, integrity record, path policy, safety gates, and public-package exclusion. It does not regenerate, normalize, re-compress, or rewrite any retained Office or preview asset.
 
-- a `catalog.json` with 20 document, presentation, and workbook intents;
-- one routing Skill plus six ready template Skills;
-- family-specific reviewed JavaScript generators for Design Report and Strategy Memorandum (DOCX), Operating Review and Project Kickoff (PPTX), and Financial Budget and Project Tracker (XLSX);
-- project-authored SVG icons and no Office or preview binaries.
+## Delivery boundary
 
-The ready generator is the source of truth. It creates a new file at an explicit path, refuses to overwrite an existing output or audit, verifies the model, exports through OpenChestnut, imports it again, performs a second export/import, renders an SVG preview, and writes a hash-bound audit with `source: null` and `provenance: project-authored-source-free`.
+The library is intentionally excluded from the npm tarball. It is available to Agents working from this repository, where a named template Skill uses the retained reference as a read-only starting point and writes a distinct output artifact. `scripts/materialize-template.mjs` first verifies the retained SHA-256, then atomically creates a byte-identical output plus a provenance audit and refuses to overwrite either destination. No source-free substitute or second template-generator fallback remains in this plugin.
 
-The automated smoke test also makes one bounded edit to each generated DOCX/PPTX/XLSX and repeats its public import/export path. When LibreOffice and Poppler are installed, it converts each result to PDF, checks the intentional page-count contract, and rasterizes every native page. Financial Budget and Project Tracker require exactly one native PDF page per worksheet, so a horizontal table split is a test failure. A missing native tool skips only that native-render check; it does not turn a planned catalog item into a ready one.
+The source files may contain rich or source-bound Office topology. A requested operation must use the matching Documents, Presentations, or Spreadsheets workflow and preserve the source boundary; when the public model cannot safely import or modify a graph, it must explain the limitation and fail closed rather than flattening the template or silently replacing its layout.
 
-## Catalog state
+## Verification
 
-The catalog intentionally has two states:
-
-| State | Meaning | Agent behavior |
-| --- | --- | --- |
-| `ready` | A self-authored generator and its round-trip tests ship in this package. | Generate it through the declared Skill, inspect the audit, then edit and verify through the matching Office workflow. |
-| `planned` | The task intent is recorded, but no self-authored design has cleared the source, codec, and QA gates. | Explain that it is unavailable. Do not substitute a nearby visual design, search a cache, or download a reference file. |
-
-At this milestone, six of twenty entries are `ready`; the other fourteen are intentionally `planned`.
-
-## How a new template becomes ready
-
-1. Design the artifact in this repository from a written, project-owned specification. Do not trace, extract, or imitate a prohibited binary reference.
-2. Add a generator using the public `open-office-artifact-tool` API and OpenChestnut. Keep generated files out of the repository unless they are independently authored test fixtures with clear provenance.
-3. Add semantic, import/edit/export/second-import, model-render, and available native-render tests.
-4. Add provenance assertions that reject Office references, preview PNGs, cache paths, and source-derived binary equality checks.
-5. Change the catalog item to `ready` only after the full package gate passes from a clean npm install.
-
-For a user's own DOCX, PPTX, or XLSX reference, use Template Creator instead. It retains the user-supplied source locally in the user's chosen template home and is deliberately separate from the distributable library.
+`test/default-template-library.mjs` checks the canonical file inventory, secure relative paths, no symbolic links, JSON/YAML metadata, PNG structure, Office ZIP signatures, size budgets, every asset's SHA-256, and the source aggregate. It materializes all 20 templates, verifies overwrite refusal, runs every source through the public facade's import / unchanged export / second-import path, and, when LibreOffice plus Poppler are present, renders both source and processed files to non-empty native rasters. It can additionally compare bytes against an explicitly supplied `OFFICE_TEMPLATE_SOURCE_ROOT` checkout. `DefaultTemplateLibraryCodecTests` adds native OpenChestnut no-op and bounded-edit coverage: slide-name metadata for each PPTX, `updateFields` for each DOCX, ordinary string-cell edits for each XLSX, and source-bound rejection for the Financial Budget partial shared-formula range. `test/package-contents.mjs` and the clean-install package probe verify that no default-template-library file enters the npm tarball.

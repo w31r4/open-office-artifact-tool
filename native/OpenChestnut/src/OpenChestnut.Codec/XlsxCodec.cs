@@ -158,7 +158,7 @@ internal static class XlsxCodec
             var sheet = sheets[index];
             if (sheet.Id?.Value is not { Length: > 0 } relationshipId || workbookPart.GetPartById(relationshipId) is not WorksheetPart worksheetPart)
                 throw new CodecException("missing_worksheet_part", $"Worksheet {sheet.Name?.Value ?? index.ToString(CultureInfo.InvariantCulture)} has no readable Worksheet part.");
-            var target = ReadWorksheet(worksheetPart, sheet.Name?.Value ?? $"Sheet{index + 1}", index, sharedStrings, styles, dynamicArrays, ref cellCount, limits);
+            var target = ReadWorksheet(worksheetPart, sheet.Name?.Value ?? $"Sheet{index + 1}", index, sharedStrings, styles, dynamicArrays, diagnostics, ref cellCount, limits);
             worksheetFeatures.ReadRules(worksheetPart.Worksheet!, target);
             worksheetMetadata.ReadInto(target, index);
             var tables = new XlsxTableCodec(worksheetPart, workbookPart, styles, connections);
@@ -449,6 +449,7 @@ internal static class XlsxCodec
             var cell = row.Elements<Cell>().FirstOrDefault(item => string.Equals(item.CellReference?.Value, reference, StringComparison.OrdinalIgnoreCase));
             var current = cell is null ? null : ReadCell(cell, sourceCell.Row, sharedStrings, styles, formulas);
             if (current is not null && CellSemanticallyEqual(current, sourceCell)) continue;
+            formulas.AssertCellEditable(sourceCell);
             if (cell is null)
             {
                 cell = BuildCell(sourceCell, styles, dynamicArrays, sourceBound: true);
@@ -679,10 +680,25 @@ internal static class XlsxCodec
         return cell;
     }
 
-    private static WorksheetArtifact ReadWorksheet(WorksheetPart worksheetPart, string name, int index, IReadOnlyList<string> sharedStrings, XlsxCellStyleCodec styles, XlsxDynamicArrayCodec dynamicArrays, ref ulong cellCount, EffectiveCodecLimits limits)
+    private static WorksheetArtifact ReadWorksheet(
+        WorksheetPart worksheetPart,
+        string name,
+        int index,
+        IReadOnlyList<string> sharedStrings,
+        XlsxCellStyleCodec styles,
+        XlsxDynamicArrayCodec dynamicArrays,
+        ICollection<Diagnostic> diagnostics,
+        ref ulong cellCount,
+        EffectiveCodecLimits limits)
     {
         var worksheet = worksheetPart.Worksheet ?? throw new CodecException("missing_worksheet_root", $"Worksheet {name} has no Worksheet root element.");
         var formulas = XlsxFormulaCodec.ForWorksheet(worksheet, name, dynamicArrays);
+        foreach (var range in formulas.SourceBoundSharedFormulaRanges)
+            diagnostics.Add(CodecProtocol.Warning(
+                "partial_shared_formula_preserved",
+                $"Worksheet {name} retains partial shared formula {range.Display}; its declared range is source-bound and read-only through the current model.",
+                name,
+                range.Reference));
         var target = new WorksheetArtifact { Id = $"worksheet/{index + 1}", Name = name, ShowGridLines = true };
         var view = worksheet.SheetViews?.Elements<SheetView>().FirstOrDefault();
         if (view?.ShowGridLines?.HasValue == true) target.ShowGridLines = view.ShowGridLines.Value;

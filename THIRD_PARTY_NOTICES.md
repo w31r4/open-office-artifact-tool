@@ -18,6 +18,14 @@ The npm package declares or optionally integrates the following public libraries
 | .NET 8 WebAssembly runtime | Bundled execution runtime for the OpenChestnut codec | MIT plus the upstream third-party notices shipped under `runtime/open-chestnut/` |
 | Reference file-type Skill bundles | Agent workflow text, helper scripts, and visual assets adapted for the public package | Retained upstream MIT notices for original material; project modifications and combined distribution are AGPL-3.0-or-later |
 
+## Repository-only Default Template Library
+
+`skills/default-template-library/` is a repository-only import of the 20 Office template skills introduced by [`office-artifact-tool` commit `256cb31bfe0a07b3cef0051b6b159342be381378`](https://github.com/w31r4/office-artifact-tool/commit/256cb31bfe0a07b3cef0051b6b159342be381378), **Add default Office template library**. That source repository declares the following MIT license and copyright:
+
+> MIT License — Copyright (c) 2026 w31r4
+
+The full retained notice is at [`skills/default-template-library/LICENSE.md`](skills/default-template-library/LICENSE.md). The source Office files and PNG previews remain byte-for-byte copies; `skills/default-template-library/integrity.json` records the source commit plus individual and aggregate SHA-256 values. This repository-only directory is intentionally excluded from the npm tarball, so the package's AGPL distribution does not redistribute these assets.
+
 The PDF Skill also ships thin Python scripts that can call the following separately installed providers. These Python packages and binaries are not npm dependencies, are not copied into this repository, and are not included in the npm tarball:
 
 | Optional PDF provider | Skill role | Upstream license |

@@ -414,10 +414,21 @@ function presentationCloneMatches(requested, source) {
   return left.byteLength === right.byteLength && left.every((value, index) => value === right[index]);
 }
 
-function emuFromPixels(value, name) {
+function emuFromPixels(value, name, { allowNegative = false } = {}) {
   const number = Number(value);
-  if (!Number.isFinite(number) || number < 0) throw new OpenChestnutCodecError(`${name} must be a non-negative finite number.`, [], { code: "invalid_presentation_frame" });
+  if (!Number.isFinite(number) || (!allowNegative && number < 0)) {
+    throw new OpenChestnutCodecError(`${name} must be a ${allowNegative ? "finite" : "non-negative finite"} number.`, [], { code: "invalid_presentation_frame" });
+  }
   return BigInt(Math.round(number * EMU_PER_PIXEL));
+}
+
+// DrawingML permits a negative offset. The authoring profile deliberately
+// does not, but an opaque source-bound element can already contain one. C#
+// verifies that such an element remains semantically unchanged before it
+// preserves it, so let the adapter carry exactly that source-bound value
+// instead of inventing a separate per-shape escape hatch.
+function sourceBoundFrameEmuFromPixels(value, name, original) {
+  return emuFromPixels(value, name, { allowNegative: original?.source?.editable === false });
 }
 
 function signedEmuFromPixels(value, name) {
@@ -1197,10 +1208,10 @@ function presentationConnector(connector, original, sourceIdByCloneId) {
       case: "connector",
       value: {
         connectorType: type,
-        startXEmu: emuFromPixels(connector.start?.x, `${connector.id}.start.x`),
-        startYEmu: emuFromPixels(connector.start?.y, `${connector.id}.start.y`),
-        endXEmu: emuFromPixels(connector.end?.x, `${connector.id}.end.x`),
-        endYEmu: emuFromPixels(connector.end?.y, `${connector.id}.end.y`),
+        startXEmu: sourceBoundFrameEmuFromPixels(connector.start?.x, `${connector.id}.start.x`, original),
+        startYEmu: sourceBoundFrameEmuFromPixels(connector.start?.y, `${connector.id}.start.y`, original),
+        endXEmu: sourceBoundFrameEmuFromPixels(connector.end?.x, `${connector.id}.end.x`, original),
+        endYEmu: sourceBoundFrameEmuFromPixels(connector.end?.y, `${connector.id}.end.y`, original),
         lineRgb: presentationRgb(line.fill || line.color || (width > 0 ? "#334155" : "transparent"), `${connector.id}.line.fill`),
         lineWidthEmu: BigInt(Math.round(width * EMU_PER_POINT)),
         startArrow: arrow(line.startArrow ?? connector.startArrow, "start arrow"),
@@ -1350,8 +1361,8 @@ function presentationChart(chart, original) {
     content: {
       case: "chart",
       value: {
-        leftEmu: emuFromPixels(position.left, `${chart.id}.position.left`),
-        topEmu: emuFromPixels(position.top, `${chart.id}.position.top`),
+        leftEmu: sourceBoundFrameEmuFromPixels(position.left, `${chart.id}.position.left`, original),
+        topEmu: sourceBoundFrameEmuFromPixels(position.top, `${chart.id}.position.top`, original),
         widthEmu: emuFromPixels(position.width, `${chart.id}.position.width`),
         heightEmu: emuFromPixels(position.height, `${chart.id}.position.height`),
         type,
@@ -1397,7 +1408,12 @@ function presentationShape(shape, original, assetCatalog) {
       return { command: { case: "close", value: true } };
     }),
   }));
-  if (shape.geometry === "custom" && customPaths.length === 0) {
+  // The model deliberately withholds an unrecognized custom-path grammar.
+  // An unchanged source-bound, non-editable shape can still be carried by the
+  // C# codec, which rechecks its source binding and rejects every mutation.
+  // Source-free or editable shapes must continue to provide the full grammar.
+  const opaqueSourceBoundCustomGeometry = original?.source?.editable === false;
+  if (shape.geometry === "custom" && customPaths.length === 0 && !opaqueSourceBoundCustomGeometry) {
     throw new OpenChestnutCodecError(`Presentation shape ${shape.id} requires custom paths.`, [], { code: "invalid_presentation_geometry" });
   }
   const position = shape.position || {};
@@ -1414,8 +1430,8 @@ function presentationShape(shape, original, assetCatalog) {
       case: "shape",
       value: {
         geometry: shape.geometry,
-        leftEmu: emuFromPixels(position.left, `${shape.id}.position.left`),
-        topEmu: emuFromPixels(position.top, `${shape.id}.position.top`),
+        leftEmu: sourceBoundFrameEmuFromPixels(position.left, `${shape.id}.position.left`, original),
+        topEmu: sourceBoundFrameEmuFromPixels(position.top, `${shape.id}.position.top`, original),
         widthEmu: emuFromPixels(position.width, `${shape.id}.position.width`),
         heightEmu: emuFromPixels(position.height, `${shape.id}.position.height`),
         text: shape.text?.value || "",
@@ -1451,8 +1467,8 @@ function presentationImage(image, original, assetCatalog) {
       value: {
         assetId: assetCatalog.addDataUrl(image.dataUrl),
         altText: image.alt || image.prompt || "",
-        leftEmu: emuFromPixels(position.left, `${image.id}.position.left`),
-        topEmu: emuFromPixels(position.top, `${image.id}.position.top`),
+        leftEmu: sourceBoundFrameEmuFromPixels(position.left, `${image.id}.position.left`, original),
+        topEmu: sourceBoundFrameEmuFromPixels(position.top, `${image.id}.position.top`, original),
         widthEmu: emuFromPixels(position.width, `${image.id}.position.width`),
         heightEmu: emuFromPixels(position.height, `${image.id}.position.height`),
         ...(crop ? { crop: presentationImageCropToWire(crop) } : {}),
@@ -1508,8 +1524,8 @@ function presentationTable(table, original) {
     throw new OpenChestnutCodecError(`Presentation table ${table.id} requires a rectangular 1-2048 by 1-256 value matrix.`, [], { code: "invalid_presentation_table" });
   }
   const position = table.position || {};
-  const leftEmu = emuFromPixels(position.left, `${table.id}.position.left`);
-  const topEmu = emuFromPixels(position.top, `${table.id}.position.top`);
+  const leftEmu = sourceBoundFrameEmuFromPixels(position.left, `${table.id}.position.left`, original);
+  const topEmu = sourceBoundFrameEmuFromPixels(position.top, `${table.id}.position.top`, original);
   const widthEmu = emuFromPixels(position.width, `${table.id}.position.width`);
   const heightEmu = emuFromPixels(position.height, `${table.id}.position.height`);
   if (widthEmu < 1n || heightEmu < 1n) throw new OpenChestnutCodecError(`Presentation table ${table.id} requires positive width and height.`, [], { code: "invalid_presentation_table" });
@@ -1591,8 +1607,8 @@ function presentationGroup(group, original, assetCatalog, sourceIdByCloneId) {
     content: {
       case: "group",
       value: {
-        leftEmu: emuFromPixels(frame.left, `${group.id}.position.left`),
-        topEmu: emuFromPixels(frame.top, `${group.id}.position.top`),
+        leftEmu: sourceBoundFrameEmuFromPixels(frame.left, `${group.id}.position.left`, original),
+        topEmu: sourceBoundFrameEmuFromPixels(frame.top, `${group.id}.position.top`, original),
         widthEmu,
         heightEmu,
         childLeftEmu: signedEmuFromPixels(childFrame.left, `${group.id}.childFrame.left`),

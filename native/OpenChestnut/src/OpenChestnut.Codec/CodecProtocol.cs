@@ -112,11 +112,12 @@ public static class CodecProtocol
         SourcePath = sourcePath ?? string.Empty,
     };
 
-    internal static Diagnostic Warning(string code, string message, string? sourcePath = null) => new()
+    internal static Diagnostic Warning(string code, string message, string? sourcePath = null, string? sourceIdentity = null) => new()
     {
         Severity = DiagnosticSeverity.Warning,
         Code = code,
         Message = message,
         SourcePath = sourcePath ?? string.Empty,
+        SourceIdentity = sourceIdentity ?? string.Empty,
     };
 }

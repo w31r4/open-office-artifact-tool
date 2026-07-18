@@ -10,6 +10,9 @@ namespace OpenChestnut.Codec;
 // Shared and legacy-array formulas are worksheet topology, not just cell text.
 // This codec keeps that topology explicit and refuses malformed groups before
 // package mutation so unrelated edits cannot silently flatten native formulas.
+// A partial shared range emitted by Excel is the narrow exception: retain its
+// original XML untouched, expose only the present cells' expanded formulas,
+// and make every coordinate in that range source-bound/read-only.
 internal sealed class XlsxFormulaCodec
 {
     private const int MaxFormulaLength = 8_192;
@@ -20,20 +23,35 @@ internal sealed class XlsxFormulaCodec
 
     private readonly string _sheetName;
     private readonly Dictionary<(uint Row, uint Column), FormulaRecord> _records;
+    private readonly HashSet<(uint Row, uint Column)> _sourceBoundCoordinates;
+    private readonly SourceBoundSharedFormulaRange[] _sourceBoundSharedFormulaRanges;
     private readonly XlsxDynamicArrayCodec _dynamicArrays;
 
     private sealed record FormulaRecord(string Formula, CellFormulaMetadata? Metadata, CellFormula Source);
+    internal sealed record SourceBoundSharedFormulaRange(uint SharedIndex, string Reference)
+    {
+        internal string Display => $"si={SharedIndex} {Reference}";
+    }
     private readonly record struct RangeBounds(uint Top, uint Left, uint Bottom, uint Right)
     {
         internal ulong CellCount => checked(((ulong)Bottom - Top + 1) * ((ulong)Right - Left + 1));
     }
 
-    private XlsxFormulaCodec(string sheetName, Dictionary<(uint Row, uint Column), FormulaRecord> records, XlsxDynamicArrayCodec dynamicArrays)
+    private XlsxFormulaCodec(
+        string sheetName,
+        Dictionary<(uint Row, uint Column), FormulaRecord> records,
+        HashSet<(uint Row, uint Column)> sourceBoundCoordinates,
+        IEnumerable<SourceBoundSharedFormulaRange> sourceBoundSharedFormulaRanges,
+        XlsxDynamicArrayCodec dynamicArrays)
     {
         _sheetName = sheetName;
         _records = records;
+        _sourceBoundCoordinates = sourceBoundCoordinates;
+        _sourceBoundSharedFormulaRanges = sourceBoundSharedFormulaRanges.OrderBy(value => value.Reference, StringComparer.Ordinal).ThenBy(value => value.SharedIndex).ToArray();
         _dynamicArrays = dynamicArrays;
     }
+
+    internal IReadOnlyList<SourceBoundSharedFormulaRange> SourceBoundSharedFormulaRanges => _sourceBoundSharedFormulaRanges;
 
     internal static XlsxFormulaCodec ForWorksheet(Worksheet worksheet, string sheetName, XlsxDynamicArrayCodec dynamicArrays)
     {
@@ -57,6 +75,8 @@ internal sealed class XlsxFormulaCodec
             throw new CodecException("invalid_cell_formula", $"Worksheet {sheetName} contains duplicate formula cell {CellReference(duplicate.Key.Row, duplicate.Key.Column)}.", sheetName);
         var formulasByCoordinate = formulas.ToDictionary(item => item.Coordinate);
         var topologyRanges = new List<(RangeBounds Bounds, string Owner, (uint Row, uint Column) Anchor, CellFormulaKind Kind)>();
+        var sourceBoundCoordinates = new HashSet<(uint Row, uint Column)>();
+        var sourceBoundSharedFormulaRanges = new List<SourceBoundSharedFormulaRange>();
 
         foreach (var entry in formulas.Where(item => FormulaType(item.Formula) != CellFormulaValues.Shared && FormulaType(item.Formula) != CellFormulaValues.Array))
         {
@@ -89,24 +109,39 @@ internal sealed class XlsxFormulaCodec
             if (master.Coordinate != (bounds.Top, bounds.Left))
                 throw Invalid(master.Cell, sheetName, $"shared formula master must be the top-left cell of {reference}");
             var members = group.ToDictionary(item => item.Coordinate);
-            if ((ulong)members.Count != bounds.CellCount)
-                throw new CodecException("invalid_cell_formula", $"Worksheet {sheetName} shared formula si={group.Key} declares {reference} with {bounds.CellCount} cells but contains {members.Count} members.", sheetName);
+            if (members.Keys.Any(coordinate => coordinate.Row < bounds.Top || coordinate.Row > bounds.Bottom || coordinate.Column < bounds.Left || coordinate.Column > bounds.Right))
+                throw new CodecException("invalid_cell_formula", $"Worksheet {sheetName} shared formula si={group.Key} has a member outside {reference}.", sheetName);
+            var partial = (ulong)members.Count != bounds.CellCount;
+            if (partial)
+            {
+                sourceBoundSharedFormulaRanges.Add(new SourceBoundSharedFormulaRange(group.Key, reference));
+                for (var row = bounds.Top; row <= bounds.Bottom; row++)
+                    for (var column = bounds.Left; column <= bounds.Right; column++)
+                        sourceBoundCoordinates.Add((row, column));
+            }
             var masterBody = ValidateFormulaBody(master.Formula.Text, master.Cell.CellReference?.Value ?? "cell", required: true);
             for (var row = bounds.Top; row <= bounds.Bottom; row++)
             {
                 for (var column = bounds.Left; column <= bounds.Right; column++)
                 {
                     if (!members.TryGetValue((row, column), out var member))
-                        throw new CodecException("invalid_cell_formula", $"Worksheet {sheetName} shared formula si={group.Key} is missing {CellReference(row, column)} from {reference}.", sheetName);
+                    {
+                        if (!partial)
+                            throw new CodecException("invalid_cell_formula", $"Worksheet {sheetName} shared formula si={group.Key} is missing {CellReference(row, column)} from {reference}.", sheetName);
+                        continue;
+                    }
                     if (member.Coordinate != master.Coordinate && (!string.IsNullOrEmpty(member.Formula.Text) || member.Formula.Reference?.Value is { Length: > 0 }))
                         throw Invalid(member.Cell, sheetName, "shared formula follower must not contain formula text or ref");
                     var expanded = TranslateFormula(masterBody, master.Coordinate, member.Coordinate);
-                    records.Add(member.Coordinate, new FormulaRecord($"={expanded}", new CellFormulaMetadata
-                    {
-                        Kind = CellFormulaKind.Shared,
-                        SharedIndex = group.Key,
-                        Reference = reference,
-                    }, member.Formula));
+                    records.Add(member.Coordinate, new FormulaRecord(
+                        $"={expanded}",
+                        partial ? null : new CellFormulaMetadata
+                        {
+                            Kind = CellFormulaKind.Shared,
+                            SharedIndex = group.Key,
+                            Reference = reference,
+                        },
+                        member.Formula));
                 }
             }
         }
@@ -150,7 +185,7 @@ internal sealed class XlsxFormulaCodec
             }
         }
 
-        return new XlsxFormulaCodec(sheetName, records, dynamicArrays);
+        return new XlsxFormulaCodec(sheetName, records, sourceBoundCoordinates, sourceBoundSharedFormulaRanges, dynamicArrays);
     }
 
     internal static void ValidateArtifact(WorksheetArtifact sheet)
@@ -289,11 +324,21 @@ internal sealed class XlsxFormulaCodec
 
     internal void Apply(Cell target, CellArtifact desired)
     {
+        AssertCellEditable(desired);
         var coordinate = (desired.Row, desired.Column);
         if (_records.TryGetValue(coordinate, out var current) && HasUnmodeledAttributes(current.Source))
             throw new CodecException("unsupported_cell_formula_edit", $"Cell {_sheetName}!{CellReference(desired.Row, desired.Column)} has unmodeled formula attributes and cannot be edited losslessly.", _sheetName);
         _dynamicArrays.ApplyFormulaMetadata(target, desired, sourceBound: true);
         target.CellFormula = Build(desired);
+    }
+
+    internal void AssertCellEditable(CellArtifact desired)
+    {
+        if (!_sourceBoundCoordinates.Contains((desired.Row, desired.Column))) return;
+        throw new CodecException(
+            "unsupported_cell_formula_edit",
+            $"Cell {_sheetName}!{CellReference(desired.Row, desired.Column)} belongs to a partial native shared-formula range and is source-bound/read-only.",
+            _sheetName);
     }
 
     internal static bool SemanticallyEqual(CellArtifact left, CellArtifact right)

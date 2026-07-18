@@ -666,7 +666,7 @@ internal static class PptxCodec
 
         var bytes = stream.ToArray();
         ValidateOutputBudget(bytes, limits);
-        ValidateOffice2021(bytes);
+        var retainedValidationErrorCount = ValidateOffice2021AgainstSource(sourceBytes, bytes);
         AssertPackagePartsUnchangedExcept(sourceBytes, bytes, changedParts);
         ValidatePreservedSlideElements(sourceBytes, bytes, envelope.Presentation, limits);
         ValidatePreservedMasterAndLayoutContent(sourceBytes, bytes, envelope.Presentation, limits);
@@ -683,6 +683,10 @@ internal static class PptxCodec
             diagnostics.Add(CodecProtocol.Warning(
                 "opaque_content_preserved",
                 $"Preserved {opaqueCount} opaque OPC parts or relationships while updating modeled presentation content."));
+        if (retainedValidationErrorCount > 0)
+            diagnostics.Add(CodecProtocol.Warning(
+                "source_openxml_validation_warnings_preserved",
+                $"Preserved {retainedValidationErrorCount} pre-existing Office 2021 validation warning(s) from the source package; export introduced none."));
         return new PptxExportResult(bytes, diagnostics);
     }
 
@@ -1845,6 +1849,14 @@ internal static class PptxCodec
         if (string.IsNullOrWhiteSpace(element.Id) || element.Id.Length > 1_024 || element.Name.Length > 1_024)
             throw new CodecException("invalid_presentation_element", "Presentation element IDs and names must be bounded non-empty metadata.");
 
+        // The source-preserving path re-reads this exact bound element before
+        // applying any request, verifies its native and semantic hashes, and
+        // rejects every semantic change when Editable is false. Treat that
+        // contract as one opaque branch here rather than re-implementing a
+        // partial validator for every DrawingML feature we deliberately do
+        // not model. The envelope-wide item/depth/id bounds above still apply.
+        if (hasSourcePackage && element.Source?.Editable == false) return;
+
         if (element.ContentCase == PresentationElement.ContentOneofCase.Shape)
         {
             if (element.Shape.HasUseBackgroundFill && !hasSourcePackage)
@@ -2622,7 +2634,13 @@ internal static class PptxCodec
 
     private static string LayoutTypeName(P.SlideLayout source)
     {
-        var value = source.GetAttribute("type", string.Empty).Value;
+        // `type` is a typed PresentationML attribute. Reading it through the
+        // generic attribute accessor with an empty namespace is rejected by
+        // Open XML SDK 3.x for typed elements, even though it is a valid
+        // unqualified attribute in the serialized package. Use the generated
+        // property so imported layouts from Office-authored templates remain
+        // readable.
+        var value = source.Type?.InnerText;
         return string.IsNullOrWhiteSpace(value) ? "custom" : value;
     }
 
@@ -3401,13 +3419,57 @@ internal static class PptxCodec
             throw new CodecException("output_budget_exceeded", $"Generated PPTX has {bytes.LongLength} bytes and exceeds max_input_bytes ({limits.MaxInputBytes}).");
     }
 
+    private const int MaxOffice2021ValidationErrors = 256;
+
     private static void ValidateOffice2021(byte[] bytes)
+    {
+        var errors = Office2021ValidationErrors(bytes);
+        if (errors.Length == 0) return;
+        var detail = string.Join("; ", errors.Take(8).Select(error => error.Detail));
+        throw new CodecException("openxml_validation_failed", $"Generated PPTX is not valid Office 2021 Open XML: {detail}");
+    }
+
+    // An imported package may use valid-in-host extension markup that the
+    // Open XML SDK's Office 2021 validator does not recognize. Source-bound
+    // export may retain such diagnostics, but must never introduce a new one.
+    // This comparison is intentionally unavailable to source-free export.
+    private static int ValidateOffice2021AgainstSource(byte[] sourceBytes, byte[] outputBytes)
+    {
+        var sourceErrors = Office2021ValidationErrors(sourceBytes);
+        var sourceSignatures = sourceErrors
+            .Select(error => error.Signature)
+            .ToHashSet(StringComparer.Ordinal);
+        var introduced = Office2021ValidationErrors(outputBytes)
+            .Where(error => !sourceSignatures.Contains(error.Signature))
+            .Take(8)
+            .ToArray();
+        if (introduced.Length == 0) return sourceErrors.Length;
+        var detail = string.Join("; ", introduced.Select(error => error.Detail));
+        throw new CodecException("openxml_validation_failed", $"Source-preserving PPTX export introduced Office 2021 Open XML validation error(s): {detail}");
+    }
+
+    private sealed record Office2021ValidationError(string Signature, string Detail);
+
+    private static Office2021ValidationError[] Office2021ValidationErrors(byte[] bytes)
     {
         using var stream = new MemoryStream(bytes, writable: false);
         using var package = PresentationDocument.Open(stream, isEditable: false);
-        var errors = new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package).Take(8).ToArray();
-        if (errors.Length == 0) return;
-        var detail = string.Join("; ", errors.Select(error => $"{error.Path?.XPath ?? error.Part?.Uri.ToString() ?? "package"}: {error.Description}"));
-        throw new CodecException("openxml_validation_failed", $"Generated PPTX is not valid Office 2021 Open XML: {detail}");
+        var errors = new OpenXmlValidator(FileFormatVersions.Office2021)
+            .Validate(package)
+            .Take(MaxOffice2021ValidationErrors + 1)
+            .Select(error =>
+            {
+                var part = error.Part?.Uri.ToString() ?? "package";
+                var path = error.Path?.XPath ?? string.Empty;
+                var detail = $"{(path.Length == 0 ? part : path)}: {error.Description}";
+                var signature = string.Join("\u001f", part, path, error.Id ?? string.Empty, error.Description ?? string.Empty);
+                return new Office2021ValidationError(signature, detail);
+            })
+            .ToArray();
+        if (errors.Length <= MaxOffice2021ValidationErrors) return errors;
+        throw new CodecException(
+            "openxml_validation_budget_exceeded",
+            $"PPTX validation produced more than {MaxOffice2021ValidationErrors} errors; refusing an unbounded validation result.");
     }
+
 }

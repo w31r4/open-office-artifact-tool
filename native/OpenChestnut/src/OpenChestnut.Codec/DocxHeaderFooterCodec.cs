@@ -99,8 +99,8 @@ internal static class DocxHeaderFooterCodec
         {
             var settingsPart = mainPart.AddNewPart<DocumentSettingsPart>();
             settingsPart.Settings = new W.Settings();
-            if (document.EvenAndOddHeaders) settingsPart.Settings.Append(new W.EvenAndOddHeaders());
-            if (document.UpdateFields) settingsPart.Settings.Append(new W.UpdateFieldsOnOpen { Val = true });
+            if (document.EvenAndOddHeaders) settingsPart.Settings.AddChild(new W.EvenAndOddHeaders(), true);
+            if (document.UpdateFields) settingsPart.Settings.AddChild(new W.UpdateFieldsOnOpen { Val = true }, true);
             settingsPart.Settings.Save();
         }
         return plan;
@@ -119,7 +119,11 @@ internal static class DocxHeaderFooterCodec
         settingsPart.Settings ??= new W.Settings();
         settingsPart.Settings.RemoveAllChildren<W.UpdateFieldsOnOpen>();
         if (requested.UpdateFields)
-            settingsPart.Settings.Append(new W.UpdateFieldsOnOpen { Val = true });
+            // Settings has a schema-defined child order. AddChild(..., true)
+            // inserts updateFields alongside an existing Office-authored
+            // settings graph without turning a valid source edit into an
+            // order-only validation failure.
+            settingsPart.Settings.AddChild(new W.UpdateFieldsOnOpen { Val = true }, true);
         settingsPart.Settings.Save();
         context.MarkSettingsMutated(settingsPart);
     }

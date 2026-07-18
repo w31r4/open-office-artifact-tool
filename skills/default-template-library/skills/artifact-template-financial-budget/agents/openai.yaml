@@ -1,6 +1,0 @@
-interface:
-  display_name: "Financial Budget"
-  short_description: "Create a source-free financial budget workbook"
-  icon_small: "assets/icon.svg"
-  icon_large: "assets/icon.svg"
-  default_prompt: "Create a financial budget workbook with assumptions, monthly plan, and checks."

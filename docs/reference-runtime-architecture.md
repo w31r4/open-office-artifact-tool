@@ -132,7 +132,7 @@ The npm package contains:
 - the proto and generated JavaScript wire binding;
 - `runtime/open-chestnut` WASM/runtime assets;
 - integrity manifest, SBOM, and license notices;
-- six native plugin bundles containing thirteen Skills: the four file-type workflows, the separate `excel-live-control` route, the local-only `template-creator` utility, and the source-free `default-template-library` catalog with six ready generators and fourteen explicit planned entries.
+- five npm-distributed native plugin bundles containing six Skills: the four file-type workflows, the separate `excel-live-control` route, and the local-only `template-creator` utility. The source repository additionally contains a sixth, MIT-licensed, repository-only `default-template-library` bundle with twenty retained DOCX/PPTX/XLSX template Skills; it is deliberately excluded from consumer npm tarballs.
 
 It excludes C# source/build output, repository-only scripts/tests, and removed legacy codec modules. Normal package use therefore works without a local .NET SDK.
 

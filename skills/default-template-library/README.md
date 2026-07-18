@@ -1,29 +1,38 @@
-# Office Template Library
+# Default Template Library
 
-This plugin is a clean-room, source-free Office template catalog. It is deliberately not a mirror of any retained third-party Office file, PNG preview, XML package graph, or aggregate binary fingerprint.
+This checked-in catalog provides 20 independently selectable, reference-backed Office templates: 7 documents, 7 presentations, and 6 spreadsheets.
 
-## Ready templates
+The library is copied from the MIT-licensed `office-artifact-tool` repository at commit `256cb31bfe0a07b3cef0051b6b159342be381378` (`Add default Office template library`). The retained Office files and PNG previews are intentionally byte-for-byte source assets; their inventory and individual SHA-256 values are recorded in `integrity.json`. See [LICENSE.md](LICENSE.md).
 
-- Strategy Memorandum (`.docx`)
-- Design Report (`.docx`)
-- Project Kickoff (`.pptx`)
-- Operating Review (`.pptx`)
-- Financial Budget (`.xlsx`)
-- Project Tracker (`.xlsx`)
+## Layout
 
-Each ready entry is generated from reviewed JavaScript source through the public `open-office-artifact-tool` API and bundled OpenChestnut codec. The generator verifies the model, exports it, imports it again, renders a model preview, and records a hash-bound audit. It creates new output paths only; it never silently overwrites a file or substitutes another template.
-
-```sh
-node skills/default-template-library/scripts/generate-template.mjs \
-  --template-id artifact-template-project-kickoff \
-  --output ./project-kickoff.pptx \
-  --audit ./project-kickoff.audit.json
+```text
+skills/default-template-library/
+├── manifest.json
+├── assets/icon.svg
+└── skills/artifact-template-<name>/
+    ├── SKILL.md
+    ├── artifact-template.json
+    ├── agents/agent.yaml
+    └── assets/
+        ├── preview.png
+        └── reference.docx | reference.pptx | reference.xlsx
 ```
 
-## Catalog boundary
+Each nested skill retains its reference Office file and preview image. Use the named template skill to create a new artifact while preserving the retained layout and formatting unless the request calls for a change.
 
-`catalog.json` lists 20 useful document, presentation, and workbook intents. Six are ready, project-authored generators. A `planned` entry is a compatibility target, not an installed template. It must fail explicitly instead of falling back to a visually unrelated design.
+These resources are repository-only and are intentionally excluded from the npm package tarball. Create a distinct output from a selected retained reference; never overwrite or mutate the checked-in reference file.
 
-The catalog ships no Office or preview binaries. A future ready entry must be designed in this repository, generated from its own source, and pass import/edit/export/second-import plus render QA before it changes status.
+For a guarded working copy, run:
 
-For a user-owned reference file, use [Template Creator](../template-creator/README.md). It retains that file locally under the user's selected template home; it is intentionally separate from this distributable source-free catalog.
+```sh
+node skills/default-template-library/scripts/materialize-template.mjs \
+  --template-id artifact-template-system-design \
+  --output /absolute/path/system-design.docx
+```
+
+The materializer checks the retained source hash, refuses existing output and
+audit paths, and writes a byte-identical working copy plus an audit record.
+Use the matching Documents, Presentations, or Spreadsheets Skill to inspect,
+edit, render, and verify that output. Complex source-bound Office graphs are
+preserved only while unchanged; unsupported topology edits fail explicitly.

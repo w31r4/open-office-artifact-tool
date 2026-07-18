@@ -1,6 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Office template library">
-  <rect width="128" height="128" rx="28" fill="#0F766E"/>
-  <path d="M35 31h42l16 16v50H35z" fill="#ECFDF5"/>
-  <path d="M77 31v17h16" fill="none" stroke="#0F766E" stroke-width="7" stroke-linejoin="round"/>
-  <path d="M48 65h32M48 82h24" stroke="#0F766E" stroke-width="7" stroke-linecap="round"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Default Template Library">
+  <rect x="9" y="10" width="30" height="40" rx="4" fill="#f8fafc" stroke="#1f2937" stroke-width="3"/>
+  <rect x="25" y="16" width="30" height="38" rx="4" fill="#dbeafe" stroke="#2563eb" stroke-width="3"/>
+  <path d="M32 27h16M32 35h16M32 43h11" fill="none" stroke="#1d4ed8" stroke-linecap="round" stroke-width="3"/>
 </svg>

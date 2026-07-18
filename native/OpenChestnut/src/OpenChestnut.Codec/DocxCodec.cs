@@ -183,7 +183,10 @@ internal static class DocxCodec
         stream.Write(sourceBytes);
         stream.Position = 0;
         DocxPartContext? context = null;
-        using (var package = WordprocessingDocument.Open(stream, isEditable: true, new OpenSettings { AutoSave = true }))
+        // Only explicitly saved modeled parts may be serialized. AutoSave
+        // would normalize every SDK DOM we inspected (including preserved
+        // styles, headers, and settings) even when the caller made no edit.
+        using (var package = WordprocessingDocument.Open(stream, isEditable: true, new OpenSettings { AutoSave = false }))
         {
             var mainPart = package.MainDocumentPart ??
                 throw new CodecException("missing_document_part", "DOCX package has no Main Document part.", "word/document.xml");
@@ -518,7 +521,7 @@ internal static class DocxCodec
 
         var bytes = stream.ToArray();
         ValidateOutputBudget(bytes, limits);
-        ValidateOffice2021(bytes);
+        var retainedValidationErrorCount = ValidateOffice2021AgainstSource(sourceBytes, bytes);
         var outputOpaque = PackageGuards.ValidateAndCollectOpaque(bytes, limits, OpcPackageProfile.Docx, includeSourcePackage: false);
         PackageGuards.AssertOpaqueGraphMatches(
             envelope.OpaqueOpc,
@@ -531,6 +534,10 @@ internal static class DocxCodec
             diagnostics.Add(CodecProtocol.Warning(
                 "opaque_content_preserved",
                 $"Preserved {opaqueCount} opaque OPC parts or relationships while updating modeled document content."));
+        if (retainedValidationErrorCount > 0)
+            diagnostics.Add(CodecProtocol.Warning(
+                "source_openxml_validation_warnings_preserved",
+                $"Preserved {retainedValidationErrorCount} pre-existing Office 2021 validation warning(s) from the source package; export introduced none."));
         return new DocxExportResult(bytes, diagnostics);
     }
 
@@ -848,7 +855,7 @@ internal static class DocxCodec
         DocxNoteCodec.Validate(envelope.Document);
         DocxDirectStyles.Validate(
             envelope.Document,
-            allowImportedCycles: envelope.OpaqueOpc?.SourcePackage is { Data.IsEmpty: false });
+            allowSourceBoundCatalog: envelope.OpaqueOpc?.SourcePackage is { Data.IsEmpty: false });
         DocxHeaderFooterCodec.Validate(envelope.Document);
         DocxTextContentControlCodec.Validate(envelope.Document);
         DocxBibliographyCodec.Validate(envelope.Document);
@@ -917,13 +924,59 @@ internal static class DocxCodec
             throw new CodecException("output_budget_exceeded", $"Generated DOCX has {bytes.LongLength} bytes and exceeds max_input_bytes ({limits.MaxInputBytes}).");
     }
 
+    // A table-heavy Office-authored source can legitimately trigger hundreds
+    // of SDK diagnostics for producer-specific lexical forms. Keep the
+    // source/output comparison bounded, but large enough to account for a
+    // realistic retained template rather than silently truncating it.
+    private const int MaxOffice2021ValidationErrors = 4_096;
+
     private static void ValidateOffice2021(byte[] bytes)
+    {
+        var errors = Office2021ValidationErrors(bytes);
+        if (errors.Length == 0) return;
+        var detail = string.Join("; ", errors.Take(8).Select(error => error.Detail));
+        throw new CodecException("openxml_validation_failed", $"Generated DOCX is not valid Office 2021 Open XML: {detail}");
+    }
+
+    // Source-bound export can retain extension or producer-specific lexical
+    // forms which the SDK validator reports on the original document. It must
+    // never make that set worse; source-free authoring remains strictly valid.
+    private static int ValidateOffice2021AgainstSource(byte[] sourceBytes, byte[] outputBytes)
+    {
+        var sourceErrors = Office2021ValidationErrors(sourceBytes);
+        var sourceSignatures = sourceErrors
+            .Select(error => error.Signature)
+            .ToHashSet(StringComparer.Ordinal);
+        var introduced = Office2021ValidationErrors(outputBytes)
+            .Where(error => !sourceSignatures.Contains(error.Signature))
+            .Take(8)
+            .ToArray();
+        if (introduced.Length == 0) return sourceErrors.Length;
+        var detail = string.Join("; ", introduced.Select(error => error.Detail));
+        throw new CodecException("openxml_validation_failed", $"Source-preserving DOCX export introduced Office 2021 Open XML validation error(s): {detail}");
+    }
+
+    private sealed record Office2021ValidationError(string Signature, string Detail);
+
+    private static Office2021ValidationError[] Office2021ValidationErrors(byte[] bytes)
     {
         using var stream = new MemoryStream(bytes, writable: false);
         using var package = WordprocessingDocument.Open(stream, isEditable: false);
-        var errors = new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package).Take(8).ToArray();
-        if (errors.Length == 0) return;
-        var detail = string.Join("; ", errors.Select(error => $"{error.Path?.XPath ?? error.Part?.Uri.ToString() ?? "package"}: {error.Description}"));
-        throw new CodecException("openxml_validation_failed", $"Generated DOCX is not valid Office 2021 Open XML: {detail}");
+        var errors = new OpenXmlValidator(FileFormatVersions.Office2021)
+            .Validate(package)
+            .Take(MaxOffice2021ValidationErrors + 1)
+            .Select(error =>
+            {
+                var part = error.Part?.Uri.ToString() ?? "package";
+                var path = error.Path?.XPath ?? string.Empty;
+                var detail = $"{(path.Length == 0 ? part : path)}: {error.Description}";
+                var signature = string.Join("\u001f", part, path, error.Id ?? string.Empty, error.Description ?? string.Empty);
+                return new Office2021ValidationError(signature, detail);
+            })
+            .ToArray();
+        if (errors.Length <= MaxOffice2021ValidationErrors) return errors;
+        throw new CodecException(
+            "openxml_validation_budget_exceeded",
+            $"DOCX validation produced more than {MaxOffice2021ValidationErrors} errors; refusing an unbounded validation result.");
     }
 }

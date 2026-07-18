@@ -298,7 +298,11 @@ internal static class PptxPlaceholderCodec
 
     private static string NativeType(P.PlaceholderShape source)
     {
-        var token = source.GetAttribute("type", string.Empty).Value;
+        // `p:ph/@type` is a typed attribute; Open XML SDK 3.x rejects the
+        // generic empty-namespace lookup for generated elements. The typed
+        // property covers the native enum values and preserves the default
+        // object placeholder semantics when it is omitted.
+        var token = source.Type?.InnerText;
         return string.IsNullOrWhiteSpace(token) ? "obj" : token;
     }
 

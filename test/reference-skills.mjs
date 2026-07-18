@@ -17,21 +17,35 @@ import {
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const skillsRoot = path.join(repoRoot, "skills");
 const pluginNames = ["documents", "spreadsheets", "presentations", "pdf", "template-creator", "default-template-library"];
+const defaultTemplateSkills = [
+  "artifact-template-analytics-dashboard",
+  "artifact-template-business-review",
+  "artifact-template-design-report",
+  "artifact-template-experiment-analysis",
+  "artifact-template-financial-budget",
+  "artifact-template-investment-committee-memo",
+  "artifact-template-legal-memorandum",
+  "artifact-template-market-trends-report",
+  "artifact-template-minimal-letterhead",
+  "artifact-template-operating-calendar",
+  "artifact-template-operating-review",
+  "artifact-template-project-kickoff",
+  "artifact-template-project-tracker",
+  "artifact-template-sales-pipeline",
+  "artifact-template-simple-dark-mode",
+  "artifact-template-simple-light-mode",
+  "artifact-template-strategy-memorandum",
+  "artifact-template-system-design",
+  "artifact-template-team-alignment",
+  "artifact-template-three-statement-forecast",
+];
 const expectedSkills = new Map([
   ["documents", ["documents"]],
   ["spreadsheets", ["excel-live-control", "spreadsheets"]],
   ["presentations", ["presentations"]],
   ["pdf", ["pdf"]],
   ["template-creator", ["template-creator"]],
-  ["default-template-library", [
-    "artifact-template-design-report",
-    "artifact-template-financial-budget",
-    "artifact-template-operating-review",
-    "artifact-template-project-kickoff",
-    "artifact-template-project-tracker",
-    "artifact-template-strategy-memorandum",
-    "office-template-catalog",
-  ]],
+  ["default-template-library", defaultTemplateSkills],
 ]);
 const expectedDeclaredSkillNames = new Map([
   ["documents", "documents"],
@@ -40,14 +54,8 @@ const expectedDeclaredSkillNames = new Map([
   ["presentations", "Presentations"],
   ["pdf", "pdf"],
   ["template-creator", "template-creator"],
-  ["artifact-template-design-report", "artifact-template-design-report"],
-  ["artifact-template-financial-budget", "artifact-template-financial-budget"],
-  ["artifact-template-operating-review", "artifact-template-operating-review"],
-  ["artifact-template-project-kickoff", "artifact-template-project-kickoff"],
-  ["artifact-template-project-tracker", "artifact-template-project-tracker"],
-  ["artifact-template-strategy-memorandum", "artifact-template-strategy-memorandum"],
-  ["office-template-catalog", "office-template-catalog"],
 ]);
+for (const skillName of defaultTemplateSkills) expectedDeclaredSkillNames.set(skillName, skillName);
 
 async function exists(file) {
   return fs.access(file).then(() => true, () => false);
@@ -73,7 +81,7 @@ for (const pluginName of pluginNames) {
   const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8"));
   assert.equal(manifest.name, pluginName);
   assert.equal(manifest.version, "0.2.0");
-  assert.equal(manifest.license, "AGPL-3.0-or-later");
+  assert.equal(manifest.license, pluginName === "default-template-library" ? "MIT" : "AGPL-3.0-or-later");
   assert.equal(manifest.skills, "./skills/");
   assert.match(manifest.repository, /open-office-artifact-tool/);
   assert.ok(await exists(path.join(pluginRoot, "README.md")));
@@ -92,9 +100,10 @@ for (const pluginName of pluginNames) {
     const frontmatter = skillText.match(/^---\n([\s\S]*?)\n---/);
     assert.ok(frontmatter, `${pluginName}/${skillName} is missing YAML frontmatter`);
     assert.equal(yamlValue(frontmatter[1], "name"), expectedDeclaredSkillNames.get(skillName));
-    const agentFilename = skillName === "template-creator" ? "agent.yaml" : "openai.yaml";
+    const retainedTemplateSkill = pluginName === "default-template-library";
+    const agentFilename = skillName === "template-creator" || retainedTemplateSkill ? "agent.yaml" : "openai.yaml";
     const agentText = await fs.readFile(path.join(skillRoot, "agents", agentFilename), "utf8");
-    for (const iconKey of ["icon_small", "icon_large"]) {
+    for (const iconKey of retainedTemplateSkill ? ["icon_large"] : ["icon_small", "icon_large"]) {
       const icon = yamlValue(agentText, iconKey);
       assert.ok(icon, `${pluginName}/${skillName} is missing ${iconKey}`);
       assert.ok(await exists(path.resolve(skillRoot, icon)), `${pluginName}/${skillName} ${iconKey} does not resolve`);
@@ -106,13 +115,32 @@ const templateCreatorManifest = JSON.parse(await fs.readFile(path.join(skillsRoo
 assert.equal(templateCreatorManifest.schemaVersion, 1);
 assert.deepEqual(templateCreatorManifest.skills, ["skills/template-creator"]);
 const defaultTemplateManifest = JSON.parse(await fs.readFile(path.join(skillsRoot, "default-template-library", "manifest.json"), "utf8"));
-const defaultTemplateCatalog = JSON.parse(await fs.readFile(path.join(skillsRoot, "default-template-library", "catalog.json"), "utf8"));
 assert.equal(defaultTemplateManifest.schemaVersion, 1);
-assert.equal(defaultTemplateManifest.catalog, "catalog.json");
-assert.equal(defaultTemplateCatalog.templates.length, 20);
-assert.equal(defaultTemplateCatalog.templates.filter((template) => template.status === "ready").length, 6);
-assert.equal(defaultTemplateCatalog.provenancePolicy.retainedReferenceFiles, false);
-assert.equal(defaultTemplateCatalog.provenancePolicy.retainedPreviewFiles, false);
+assert.deepEqual(defaultTemplateManifest.skills, [
+  "skills/artifact-template-design-report",
+  "skills/artifact-template-experiment-analysis",
+  "skills/artifact-template-investment-committee-memo",
+  "skills/artifact-template-legal-memorandum",
+  "skills/artifact-template-minimal-letterhead",
+  "skills/artifact-template-strategy-memorandum",
+  "skills/artifact-template-system-design",
+  "skills/artifact-template-business-review",
+  "skills/artifact-template-market-trends-report",
+  "skills/artifact-template-operating-review",
+  "skills/artifact-template-project-kickoff",
+  "skills/artifact-template-simple-dark-mode",
+  "skills/artifact-template-simple-light-mode",
+  "skills/artifact-template-team-alignment",
+  "skills/artifact-template-analytics-dashboard",
+  "skills/artifact-template-financial-budget",
+  "skills/artifact-template-operating-calendar",
+  "skills/artifact-template-project-tracker",
+  "skills/artifact-template-sales-pipeline",
+  "skills/artifact-template-three-statement-forecast",
+]);
+assert.equal(await exists(path.join(skillsRoot, "default-template-library", "LICENSE.md")), true);
+assert.equal(await exists(path.join(skillsRoot, "default-template-library", "integrity.json")), true);
+assert.equal(await exists(path.join(skillsRoot, "default-template-library", "catalog.json")), false);
 
 assert.equal(await exists(path.join(skillsRoot, "documents", "SKILL.md")), false);
 assert.equal(await exists(path.join(skillsRoot, "spreadsheets", "scripts")), false);
@@ -219,7 +247,7 @@ for (const file of (await walk(skillsRoot)).filter((item) => /\.(?:md|mjs|js|jso
 
 const officialValidator = path.join(os.homedir(), ".codex", "skills", ".system", "plugin-creator", "scripts", "validate_plugin.py");
 if (await exists(officialValidator)) {
-  for (const pluginName of pluginNames) {
+  for (const pluginName of pluginNames.filter((name) => name !== "default-template-library")) {
     const validation = spawnSync("python3", [officialValidator, path.join(skillsRoot, pluginName)], { encoding: "utf8" });
     assert.equal(validation.status, 0, `${pluginName} failed the official plugin validator\n${validation.stdout}\n${validation.stderr}`);
   }

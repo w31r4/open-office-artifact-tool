@@ -1,19 +1,22 @@
 ---
 name: artifact-template-design-report
-description: Create a source-free Design Report DOCX with a decision summary, success criteria, approach boundary, risks, rollout, and verification plan. Use when the user needs a technical or product design record and does not supply a reference file to preserve.
+description: "Create a document using the Design Report template and its retained reference file. Use when the user selects or names Design Report. Produce design reports with an executive summary, key findings, implications, recommendations, and appendix."
 ---
 
 # Design Report
 
-Generate a new document from the project-authored source-free template:
+Create a new document from this template. Keep the reference file unchanged.
 
-```sh
-node ../../scripts/generate-template.mjs \
-  --template-id artifact-template-design-report \
-  --output /absolute/path/design-report.docx \
-  --audit /absolute/path/design-report.audit.json
-```
+## Workflow
 
-Use the Documents workflow for requested edits. Keep the decision boundary visible: executive summary, success criteria, proposed approach, risks, rollout, verification, and open decisions. Do not present a generic rewrite as evidence that an external reference design was preserved.
+1. Read `artifact-template.json` and resolve its paths relative to this skill directory.
+2. Use the matching Documents workflow with the retained reference file. If that workflow is unavailable, say so and stop; do not recreate or install a replacement.
+3. Treat the user's prompt and available sources as the content input. Do not invent facts merely to fill a template slot.
+4. Clone or import the reference instead of replacing its visual system with generic defaults.
+5. Render and verify the finished document, then return the final artifact.
 
-Before delivery, import the generated or edited DOCX, inspect named blocks, verify it, export to a distinct final path, reimport, render it, and report the audit location.
+## Fidelity
+
+Preserve page setup, sections, styles, lists, tables, headers, footers, and recurring page elements.
+
+User instructions control requested content and explicit deviations. The retained reference controls layout and formatting where the user has not requested a change.

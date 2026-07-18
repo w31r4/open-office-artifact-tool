@@ -1740,7 +1740,7 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
-    public void SourcePreservingExportRejectsInvalidOwnedMarkup()
+    public void SourcePreservingExportRetainsPreExistingOpaqueValidationWarning()
     {
         var exported = Invoke(ExportRequest());
         var imported = Invoke(new CodecRequest
@@ -1751,6 +1751,7 @@ public sealed class DocxCodecTests
             File = ByteString.CopyFrom(AddInvalidParagraphMarkup(exported.File.ToByteArray())),
         });
         Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.False(imported.Artifact.Document.Blocks[0].Source.Editable);
         var response = Invoke(new CodecRequest
         {
             ProtocolVersion = CodecProtocol.ProtocolVersion,
@@ -1758,8 +1759,8 @@ public sealed class DocxCodecTests
             Family = ArtifactFamily.Document,
             Artifact = imported.Artifact,
         });
-        Assert.False(response.Ok);
-        Assert.Equal("openxml_validation_failed", Assert.Single(response.Diagnostics).Code);
+        Assert.True(response.Ok, Diagnostics(response));
+        Assert.Contains(response.Diagnostics, item => item.Code == "source_openxml_validation_warnings_preserved");
     }
 
     [Fact]

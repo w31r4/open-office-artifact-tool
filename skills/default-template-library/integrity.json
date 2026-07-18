@@ -1,0 +1,292 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "repository": "https://github.com/w31r4/office-artifact-tool",
+    "commit": "256cb31bfe0a07b3cef0051b6b159342be381378",
+    "license": "MIT",
+    "copyright": "Copyright (c) 2026 w31r4"
+  },
+  "assetAggregateSha256": "b3b42fd92cab7f0c9fc1bd4ec8bf0ff9c6b199247b1a9729ad04ef6fc0a49b25",
+  "assets": [
+    {
+      "templateId": "artifact-template-analytics-dashboard",
+      "role": "preview",
+      "path": "skills/artifact-template-analytics-dashboard/assets/preview.png",
+      "bytes": 63062,
+      "sha256": "b5c458e744d46ef4211d167d3451864148853aa73708323068504da956ce03b3"
+    },
+    {
+      "templateId": "artifact-template-analytics-dashboard",
+      "role": "reference",
+      "path": "skills/artifact-template-analytics-dashboard/assets/reference.xlsx",
+      "bytes": 26606,
+      "sha256": "ab655c867ea1c9eed617ec0eeec643946c1e49e9d5227e9db740c95daba26e46"
+    },
+    {
+      "templateId": "artifact-template-business-review",
+      "role": "preview",
+      "path": "skills/artifact-template-business-review/assets/preview.png",
+      "bytes": 30573,
+      "sha256": "af6b092987472013920bb251e0e9d60b97fdb02cc1fd3109abf2b0951bc6aa3c"
+    },
+    {
+      "templateId": "artifact-template-business-review",
+      "role": "reference",
+      "path": "skills/artifact-template-business-review/assets/reference.pptx",
+      "bytes": 2035231,
+      "sha256": "595b9a314c7e8e9b5f22180e7c7db167afba2437c8623d57e3f9dbc20af392c1"
+    },
+    {
+      "templateId": "artifact-template-design-report",
+      "role": "preview",
+      "path": "skills/artifact-template-design-report/assets/preview.png",
+      "bytes": 202622,
+      "sha256": "19cd1f36fbc8d7efbf27a674004f2c22145514e77bee3459fb8cc4a89caf870d"
+    },
+    {
+      "templateId": "artifact-template-design-report",
+      "role": "reference",
+      "path": "skills/artifact-template-design-report/assets/reference.docx",
+      "bytes": 2920999,
+      "sha256": "ba1e11258ff52659318a321462a5e598c7bed33cf991329eb91150788fcd1a7b"
+    },
+    {
+      "templateId": "artifact-template-experiment-analysis",
+      "role": "preview",
+      "path": "skills/artifact-template-experiment-analysis/assets/preview.png",
+      "bytes": 15138,
+      "sha256": "847743ae181c5547e9244823c236408765cff5038e2264e3d72c9e958d30929c"
+    },
+    {
+      "templateId": "artifact-template-experiment-analysis",
+      "role": "reference",
+      "path": "skills/artifact-template-experiment-analysis/assets/reference.docx",
+      "bytes": 204643,
+      "sha256": "d823cd0115186b34c01c6e4b4da3be28b64ee73cac849dbd62d6f4bb6385b0fb"
+    },
+    {
+      "templateId": "artifact-template-financial-budget",
+      "role": "preview",
+      "path": "skills/artifact-template-financial-budget/assets/preview.png",
+      "bytes": 39032,
+      "sha256": "ed0298a7e15051887ad2e9ca775314de1dfae41de33f7f82fee89f39cdcf20e3"
+    },
+    {
+      "templateId": "artifact-template-financial-budget",
+      "role": "reference",
+      "path": "skills/artifact-template-financial-budget/assets/reference.xlsx",
+      "bytes": 38153,
+      "sha256": "b15aecd03ee94fc3e29fb5c6de33c6090b75287845ab337afe0376cc0330e052"
+    },
+    {
+      "templateId": "artifact-template-investment-committee-memo",
+      "role": "preview",
+      "path": "skills/artifact-template-investment-committee-memo/assets/preview.png",
+      "bytes": 30330,
+      "sha256": "4f5efed31db5f4468e8619e6ca579be1c57d84d4a023fe9a7c5ec0deafb0812a"
+    },
+    {
+      "templateId": "artifact-template-investment-committee-memo",
+      "role": "reference",
+      "path": "skills/artifact-template-investment-committee-memo/assets/reference.docx",
+      "bytes": 285035,
+      "sha256": "0a8a4c5b8b1d8c055e19c9eadcc7eac898899f067cbbd20602c4e7c078e545de"
+    },
+    {
+      "templateId": "artifact-template-legal-memorandum",
+      "role": "preview",
+      "path": "skills/artifact-template-legal-memorandum/assets/preview.png",
+      "bytes": 64126,
+      "sha256": "362e4d26521d6eadc5be3c0dec37d7000ef8c967883485e94db60149e4f28660"
+    },
+    {
+      "templateId": "artifact-template-legal-memorandum",
+      "role": "reference",
+      "path": "skills/artifact-template-legal-memorandum/assets/reference.docx",
+      "bytes": 593894,
+      "sha256": "d3006f9074e46823d103fe283be19901f55f75c19811558455d7a16c61797355"
+    },
+    {
+      "templateId": "artifact-template-market-trends-report",
+      "role": "preview",
+      "path": "skills/artifact-template-market-trends-report/assets/preview.png",
+      "bytes": 19232,
+      "sha256": "a27d80525678a8b0b4e2242dd13aca95f7920ac790b1a66e96d8b39cc4a74e8f"
+    },
+    {
+      "templateId": "artifact-template-market-trends-report",
+      "role": "reference",
+      "path": "skills/artifact-template-market-trends-report/assets/reference.pptx",
+      "bytes": 1972113,
+      "sha256": "52396c3a70dc11d35989bb4e3f9a96d2c728c5eba8a1aad96920cfe24cff59fa"
+    },
+    {
+      "templateId": "artifact-template-minimal-letterhead",
+      "role": "preview",
+      "path": "skills/artifact-template-minimal-letterhead/assets/preview.png",
+      "bytes": 59454,
+      "sha256": "827df9ab20cdcf07a62955c568343c27f1c597336444c84ad98d7c0ca7983b6b"
+    },
+    {
+      "templateId": "artifact-template-minimal-letterhead",
+      "role": "reference",
+      "path": "skills/artifact-template-minimal-letterhead/assets/reference.docx",
+      "bytes": 10301,
+      "sha256": "5dd55e0f5bbdb603d98db5b8560b8babc6005cbb7f31ce8ed63569417c5cae86"
+    },
+    {
+      "templateId": "artifact-template-operating-calendar",
+      "role": "preview",
+      "path": "skills/artifact-template-operating-calendar/assets/preview.png",
+      "bytes": 91416,
+      "sha256": "9511212decb870cdded2c5ef0388c1bf4b3ee1747020a61f1c3a7078b2cfa6f2"
+    },
+    {
+      "templateId": "artifact-template-operating-calendar",
+      "role": "reference",
+      "path": "skills/artifact-template-operating-calendar/assets/reference.xlsx",
+      "bytes": 46268,
+      "sha256": "fef758154889db179aa701a3916d6e6d30c61935b92ad259dd603322888e7f5f"
+    },
+    {
+      "templateId": "artifact-template-operating-review",
+      "role": "preview",
+      "path": "skills/artifact-template-operating-review/assets/preview.png",
+      "bytes": 37218,
+      "sha256": "e8f1dd91d1258c3bb06d2b1d0c52a49fce454e6682732e2e8f43b37c494e3c19"
+    },
+    {
+      "templateId": "artifact-template-operating-review",
+      "role": "reference",
+      "path": "skills/artifact-template-operating-review/assets/reference.pptx",
+      "bytes": 306716,
+      "sha256": "ec2084d143a4d52857cc06c24129abbb45c45d04b90cca06e319ac26d3cadd4f"
+    },
+    {
+      "templateId": "artifact-template-project-kickoff",
+      "role": "preview",
+      "path": "skills/artifact-template-project-kickoff/assets/preview.png",
+      "bytes": 25166,
+      "sha256": "02823427c2552cc894d333fb96fd2fb3e3ac04503904ab6f73643ca877362df5"
+    },
+    {
+      "templateId": "artifact-template-project-kickoff",
+      "role": "reference",
+      "path": "skills/artifact-template-project-kickoff/assets/reference.pptx",
+      "bytes": 2082300,
+      "sha256": "b1b15cb0c23ad524f9832749ec31b775719bae2bdba897de9c9d8556ca00a44c"
+    },
+    {
+      "templateId": "artifact-template-project-tracker",
+      "role": "preview",
+      "path": "skills/artifact-template-project-tracker/assets/preview.png",
+      "bytes": 40120,
+      "sha256": "02811cec6d9b7d493342e03e08b6b56719af1eb6087a50dc6696c600ada90381"
+    },
+    {
+      "templateId": "artifact-template-project-tracker",
+      "role": "reference",
+      "path": "skills/artifact-template-project-tracker/assets/reference.xlsx",
+      "bytes": 14846,
+      "sha256": "dd8bd283784a189061a328040e845a6d26807e2ee1005a9a195e6dc7baeefe80"
+    },
+    {
+      "templateId": "artifact-template-sales-pipeline",
+      "role": "preview",
+      "path": "skills/artifact-template-sales-pipeline/assets/preview.png",
+      "bytes": 53355,
+      "sha256": "3208ad8051412202774cfe3f34de468d89a6c1e27cf00166933085f6a167cabe"
+    },
+    {
+      "templateId": "artifact-template-sales-pipeline",
+      "role": "reference",
+      "path": "skills/artifact-template-sales-pipeline/assets/reference.xlsx",
+      "bytes": 16979,
+      "sha256": "a6ac1045a0602cbb4d90878949c2970d0e815dd9f98fe34d0ff92b69ebbb4db3"
+    },
+    {
+      "templateId": "artifact-template-simple-dark-mode",
+      "role": "preview",
+      "path": "skills/artifact-template-simple-dark-mode/assets/preview.png",
+      "bytes": 115324,
+      "sha256": "2082897b4e30c9a2ed137e51fa32503b1e85afb53c8555521ba374b75df622ec"
+    },
+    {
+      "templateId": "artifact-template-simple-dark-mode",
+      "role": "reference",
+      "path": "skills/artifact-template-simple-dark-mode/assets/reference.pptx",
+      "bytes": 3244996,
+      "sha256": "042ef2fcb8726524a1e773e3c73bf8b8c10b98f67ae675eb01c4501b9365a897"
+    },
+    {
+      "templateId": "artifact-template-simple-light-mode",
+      "role": "preview",
+      "path": "skills/artifact-template-simple-light-mode/assets/preview.png",
+      "bytes": 28676,
+      "sha256": "9c12751105bbdea9e74df059b0b86c6eef22b3af34ba38c090edb7e2e4acf3ac"
+    },
+    {
+      "templateId": "artifact-template-simple-light-mode",
+      "role": "reference",
+      "path": "skills/artifact-template-simple-light-mode/assets/reference.pptx",
+      "bytes": 1519451,
+      "sha256": "2ae8105571f68403f438458cd51e6ad14f0d989c7af64239e280437a4ac2a633"
+    },
+    {
+      "templateId": "artifact-template-strategy-memorandum",
+      "role": "preview",
+      "path": "skills/artifact-template-strategy-memorandum/assets/preview.png",
+      "bytes": 16294,
+      "sha256": "2a615bd6c983a2a747b8cb5ea82e47e92ff3b1736a1d94742c57a9ce42aa1d55"
+    },
+    {
+      "templateId": "artifact-template-strategy-memorandum",
+      "role": "reference",
+      "path": "skills/artifact-template-strategy-memorandum/assets/reference.docx",
+      "bytes": 2686019,
+      "sha256": "13bd3ae7aef4b3ae76c5d65200acd654c922782974dac18672e973fad93bd453"
+    },
+    {
+      "templateId": "artifact-template-system-design",
+      "role": "preview",
+      "path": "skills/artifact-template-system-design/assets/preview.png",
+      "bytes": 23946,
+      "sha256": "703c8a85a22ebaaa129dc99f82e530532b5b46ad862d7cb253716e9759d5dfe0"
+    },
+    {
+      "templateId": "artifact-template-system-design",
+      "role": "reference",
+      "path": "skills/artifact-template-system-design/assets/reference.docx",
+      "bytes": 501311,
+      "sha256": "13504f6c221a42c1726460a9e865e563355539ff97d702d6c9b2267b4b261d76"
+    },
+    {
+      "templateId": "artifact-template-team-alignment",
+      "role": "preview",
+      "path": "skills/artifact-template-team-alignment/assets/preview.png",
+      "bytes": 66065,
+      "sha256": "8b91c66156be4dec9eca517ca330c246ca8e863ee9b97b3b93cc159eee362c2d"
+    },
+    {
+      "templateId": "artifact-template-team-alignment",
+      "role": "reference",
+      "path": "skills/artifact-template-team-alignment/assets/reference.pptx",
+      "bytes": 7330920,
+      "sha256": "72b9f23a07bfd679cde36757acb11ec99900b4be0f5d393a5b4e8c6fdce4286d"
+    },
+    {
+      "templateId": "artifact-template-three-statement-forecast",
+      "role": "preview",
+      "path": "skills/artifact-template-three-statement-forecast/assets/preview.png",
+      "bytes": 53375,
+      "sha256": "2fb61600384025e1266d5f8b9c641cba4b535b78a03173b5d051662f4df48e68"
+    },
+    {
+      "templateId": "artifact-template-three-statement-forecast",
+      "role": "reference",
+      "path": "skills/artifact-template-three-statement-forecast/assets/reference.xlsx",
+      "bytes": 136927,
+      "sha256": "4a4709ff9b860f762f4c3bb224c5084e9820d9a8d8085395aa121728c899d0c2"
+    }
+  ]
+}

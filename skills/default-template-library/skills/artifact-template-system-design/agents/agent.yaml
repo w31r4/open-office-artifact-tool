@@ -1,0 +1,5 @@
+interface:
+  display_name: "System Design"
+  short_description: "Create documents with the System Design template"
+  icon_large: "./assets/preview.png"
+  default_prompt: "Create a new document with this template."

@@ -1,6 +1,0 @@
-interface:
-  display_name: "Design Report"
-  short_description: "Create a source-free design report"
-  icon_small: "assets/icon.svg"
-  icon_large: "assets/icon.svg"
-  default_prompt: "Create a design report with decision evidence, risks, rollout, and verification criteria."

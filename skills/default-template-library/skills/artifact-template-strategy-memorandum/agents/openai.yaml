@@ -1,6 +1,0 @@
-interface:
-  display_name: "Strategy Memorandum"
-  short_description: "Create a source-free strategy memorandum"
-  icon_small: "assets/icon.svg"
-  icon_large: "assets/icon.svg"
-  default_prompt: "Create a strategy memorandum with a clear decision and recommendation."

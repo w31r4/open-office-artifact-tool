@@ -91,6 +91,19 @@ await assert.rejects(
   () => PresentationFile.exportPptx(unsupportedThemePresentation),
   /presentation theme customization/i,
 );
+// Negative DrawingML offsets are retained only for an imported opaque,
+// source-bound element. New authoring still rejects them instead of widening
+// the public source-free layout profile.
+const negativeSourceFreeFrame = Presentation.create();
+negativeSourceFreeFrame.slides.add().shapes.add({
+  name: "negative-source-free-frame",
+  position: { left: -1, top: 0, width: 100, height: 40 },
+  text: "must fail before export",
+});
+await assert.rejects(
+  () => PresentationFile.exportPptx(negativeSourceFreeFrame),
+  (error) => error?.code === "invalid_presentation_frame",
+);
 
 // A source-free layout is intentionally a small reusable authoring profile:
 // one canonical master, direct-frame title/body text placeholders, and an

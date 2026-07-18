@@ -1,19 +1,22 @@
 ---
 name: artifact-template-project-kickoff
-description: Create a source-free Project Kickoff PPTX with outcome, scope, delivery plan, owners, risks, and decision cadence. Use when the user asks to start or align a project and does not supply a reference deck to preserve.
+description: "Create a presentation using the Project Kickoff template and its retained reference file. Use when the user selects or names Project Kickoff. Align teams on project goals, scope, roles, milestones, risks, and the working model."
 ---
 
 # Project Kickoff
 
-Generate a new presentation from the project-authored source-free template:
+Create a new presentation from this template. Keep the reference file unchanged.
 
-```sh
-node ../../scripts/generate-template.mjs \
-  --template-id artifact-template-project-kickoff \
-  --output /absolute/path/project-kickoff.pptx \
-  --audit /absolute/path/project-kickoff.audit.json
-```
+## Workflow
 
-Use the Presentations workflow for bounded text and layout changes. Retain the three-slide narrative unless the user asks to change it: project outcome, scope and plan, then owners and decisions.
+1. Read `artifact-template.json` and resolve its paths relative to this skill directory.
+2. Use the matching Presentations workflow with the retained reference file. If that workflow is unavailable, say so and stop; do not recreate or install a replacement.
+3. Treat the user's prompt and available sources as the content input. Do not invent facts merely to fill a template slot.
+4. Clone or import the reference instead of replacing its visual system with generic defaults.
+5. Render and verify the finished presentation, then return the final artifact.
 
-Before delivery, import the generated or edited PPTX, inspect named slides and shapes, verify it, export to a distinct final path, reimport, render all slides, and report the audit location. Do not claim that the presentation preserves an external reference: this template has no retained reference or preview asset.
+## Fidelity
+
+Preserve source slides, layouts, masters, typography, geometry, images, charts, tables, and recurring slide chrome.
+
+User instructions control requested content and explicit deviations. The retained reference controls layout and formatting where the user has not requested a change.

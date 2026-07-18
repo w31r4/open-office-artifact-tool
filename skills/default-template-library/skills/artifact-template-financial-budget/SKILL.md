@@ -1,19 +1,22 @@
 ---
 name: artifact-template-financial-budget
-description: Create a source-free Financial Budget XLSX with assumptions, a monthly plan, variance, and formula-driven checks. Use when the user asks for a budget workbook and does not supply a reference workbook to preserve.
+description: "Create a spreadsheet using the Financial Budget template and its retained reference file. Use when the user selects or names Financial Budget. Model actuals, budget and scenario forecasts, variances, cash runway, and departmental plans."
 ---
 
 # Financial Budget
 
-Generate a new workbook from the project-authored source-free template:
+Create a new spreadsheet from this template. Keep the reference file unchanged.
 
-```sh
-node ../../scripts/generate-template.mjs \
-  --template-id artifact-template-financial-budget \
-  --output /absolute/path/financial-budget.xlsx \
-  --audit /absolute/path/financial-budget.audit.json
-```
+## Workflow
 
-Use the Spreadsheets workflow for bounded input, formula, format, and worksheet edits. Preserve the separate Assumptions, Monthly Plan, and Budget Summary sheets unless the user explicitly changes the model design.
+1. Read `artifact-template.json` and resolve its paths relative to this skill directory.
+2. Use the matching Spreadsheets workflow with the retained reference file. If that workflow is unavailable, say so and stop; do not recreate or install a replacement.
+3. Treat the user's prompt and available sources as the content input. Do not invent facts merely to fill a template slot.
+4. Clone or import the reference instead of replacing its visual system with generic defaults.
+5. Render and verify the finished spreadsheet, then return the final artifact.
 
-Before delivery, recalculate, inspect formula and check records, verify the workbook, export to a distinct final path, reimport, render the relevant sheets, and report the audit location. Do not claim that the workbook preserves an external reference: this template has no retained reference or preview asset.
+## Fidelity
+
+Preserve sheet structure, formulas, names, number formats, dimensions, tables, charts, validation, conditional formatting, and frozen panes.
+
+User instructions control requested content and explicit deviations. The retained reference controls layout and formatting where the user has not requested a change.

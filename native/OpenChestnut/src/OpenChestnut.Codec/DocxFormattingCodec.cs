@@ -245,14 +245,21 @@ internal static class DocxFormattingCodec
         if (TryInt(indentation?.Hanging?.Value, out var hanging) && hanging is not null) result.HangingIndentTwips = hanging.Value;
         if (TryInt(spacing?.Before?.Value, out var before) && before is not null) result.SpaceBeforeTwips = before.Value;
         if (TryInt(spacing?.After?.Value, out var after) && after is not null) result.SpaceAfterTwips = after.Value;
-        if (TryInt(spacing?.Line?.Value, out var line) && line is not null) result.LineSpacingTwips = line.Value;
+        var hasLineSpacing = TryInt(spacing?.Line?.Value, out var line) && line is not null;
+        if (hasLineSpacing) result.LineSpacingTwips = line!.Value;
         var nativeRule = spacing?.LineRule?.Value;
         var rule = nativeRule == W.LineSpacingRuleValues.Auto
             ? "auto"
             : nativeRule == W.LineSpacingRuleValues.AtLeast
                 ? "atLeast"
                 : nativeRule == W.LineSpacingRuleValues.Exact ? "exact" : null;
-        if (rule is not null) result.LineSpacingRule = rule;
+        // Word may emit lineRule="auto" alongside before/after spacing while
+        // omitting w:line. That attribute has no modeled line-height value and
+        // cannot round-trip through the source-free authoring contract (which
+        // requires a line value when a rule is explicit). Normalize it away;
+        // source-bound style catalogs remain byte-preserved and edits are
+        // rejected by DocxDirectStyles.AssertSourceUnchanged.
+        if (hasLineSpacing && rule is not null) result.LineSpacingRule = rule;
         if (keepNext is not null) result.KeepNext = IsOn(keepNext);
         if (pageBreakBefore is not null) result.PageBreakBefore = IsOn(pageBreakBefore);
         return result;

@@ -1,64 +1,103 @@
 import assert from "node:assert/strict";
-import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { crc32 } from "node:zlib";
 
 import {
   DocumentFile,
+  FileBlob,
   PresentationFile,
   SpreadsheetFile,
 } from "../src/index.mjs";
+import { materializeTemplate } from "../skills/default-template-library/scripts/materialize-template.mjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
-const pluginRoot = path.join(repoRoot, "skills", "default-template-library");
-const generatorPath = path.join(pluginRoot, "scripts", "generate-template.mjs");
-const catalog = JSON.parse(await fs.readFile(path.join(pluginRoot, "catalog.json"), "utf8"));
-const manifest = JSON.parse(await fs.readFile(path.join(pluginRoot, "manifest.json"), "utf8"));
-const plugin = JSON.parse(await fs.readFile(path.join(pluginRoot, ".codex-plugin", "plugin.json"), "utf8"));
+const libraryRoot = path.join(repoRoot, "skills", "default-template-library");
+const integrity = JSON.parse(await fs.readFile(path.join(libraryRoot, "integrity.json"), "utf8"));
+const manifest = JSON.parse(await fs.readFile(path.join(libraryRoot, "manifest.json"), "utf8"));
+const plugin = JSON.parse(await fs.readFile(path.join(libraryRoot, ".codex-plugin", "plugin.json"), "utf8"));
 
-const EXPECTED_READY = [
-  ["artifact-template-design-report", "document", ".docx", "Design Report"],
-  ["artifact-template-strategy-memorandum", "document", ".docx", "Strategy Memorandum"],
-  ["artifact-template-operating-review", "presentation", ".pptx", "Operating Review"],
-  ["artifact-template-project-kickoff", "presentation", ".pptx", "Project Kickoff"],
-  ["artifact-template-financial-budget", "workbook", ".xlsx", "Financial Budget"],
-  ["artifact-template-project-tracker", "workbook", ".xlsx", "Project Tracker"],
+const TEMPLATES = [
+  ["artifact-template-design-report", "Design Report", "document", ".docx"],
+  ["artifact-template-experiment-analysis", "Experiment Analysis", "document", ".docx"],
+  ["artifact-template-investment-committee-memo", "Investment Committee Memo", "document", ".docx"],
+  ["artifact-template-legal-memorandum", "Legal Memorandum", "document", ".docx"],
+  ["artifact-template-minimal-letterhead", "Minimal Letterhead", "document", ".docx"],
+  ["artifact-template-strategy-memorandum", "Strategy Memorandum", "document", ".docx"],
+  ["artifact-template-system-design", "System Design", "document", ".docx"],
+  ["artifact-template-business-review", "Business Review", "presentation", ".pptx"],
+  ["artifact-template-market-trends-report", "Market Trends Report", "presentation", ".pptx"],
+  ["artifact-template-operating-review", "Operating Review", "presentation", ".pptx"],
+  ["artifact-template-project-kickoff", "Project Kickoff", "presentation", ".pptx"],
+  ["artifact-template-simple-dark-mode", "Simple Dark Mode", "presentation", ".pptx"],
+  ["artifact-template-simple-light-mode", "Simple Light Mode", "presentation", ".pptx"],
+  ["artifact-template-team-alignment", "Team Alignment", "presentation", ".pptx"],
+  ["artifact-template-analytics-dashboard", "Analytics Dashboard", "spreadsheet", ".xlsx"],
+  ["artifact-template-financial-budget", "Financial Budget", "spreadsheet", ".xlsx"],
+  ["artifact-template-operating-calendar", "Operating Calendar", "spreadsheet", ".xlsx"],
+  ["artifact-template-project-tracker", "Project Tracker", "spreadsheet", ".xlsx"],
+  ["artifact-template-sales-pipeline", "Sales Pipeline", "spreadsheet", ".xlsx"],
+  ["artifact-template-three-statement-forecast", "Three-Statement Forecast", "spreadsheet", ".xlsx"],
 ];
-const NATIVE_PDF_PAGE_CONTRACTS = new Map([
-  ["artifact-template-design-report", { pages: 3, reason: "three deliberate decision-record pages" }],
-  ["artifact-template-strategy-memorandum", { pages: 2, reason: "one decision frame and one action page" }],
-  ["artifact-template-operating-review", { pages: 3, reason: "one native page per slide" }],
-  ["artifact-template-project-kickoff", { pages: 3, reason: "one native page per slide" }],
-  ["artifact-template-financial-budget", { pages: 3, reason: "one native page per worksheet" }],
-  ["artifact-template-project-tracker", { pages: 3, reason: "one native page per worksheet" }],
-]);
 
 function sha256(bytes) {
   return crypto.createHash("sha256").update(bytes).digest("hex");
 }
 
-async function walk(root) {
-  const files = [];
-  for (const entry of await fs.readdir(root, { withFileTypes: true })) {
-    const target = path.join(root, entry.name);
-    if (entry.isDirectory()) files.push(...await walk(target));
-    else if (entry.isFile()) files.push(target);
+function yamlValue(text, key) {
+  const value = text.match(new RegExp(`^\\s{2}${key}:\\s*(.+)$`, "mu"))?.[1]?.trim();
+  if (!value) return undefined;
+  if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+    try { return JSON.parse(value); } catch { return value.slice(1, -1); }
   }
-  return files;
+  return value;
 }
 
-function yamlValue(source, key) {
-  return source.match(new RegExp(`^\\s*${key}:\\s*["']?([^"'\\n]+)["']?\\s*$`, "m"))?.[1]?.trim();
+function hasValidPngStructure(bytes) {
+  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  if (bytes.length < signature.length + 12 || !bytes.subarray(0, signature.length).equals(signature)) return false;
+  let offset = signature.length;
+  let sawIhdr = false;
+  while (offset + 12 <= bytes.length) {
+    const length = bytes.readUInt32BE(offset);
+    const dataStart = offset + 8;
+    const dataEnd = dataStart + length;
+    const checksumEnd = dataEnd + 4;
+    if (dataEnd < dataStart || checksumEnd > bytes.length) return false;
+    const type = bytes.toString("ascii", offset + 4, offset + 8);
+    const data = bytes.subarray(dataStart, dataEnd);
+    if ((crc32(Buffer.concat([Buffer.from(type, "ascii"), data])) >>> 0) !== bytes.readUInt32BE(dataEnd)) return false;
+    if (!sawIhdr && (type !== "IHDR" || length !== 13)) return false;
+    sawIhdr ||= type === "IHDR";
+    offset = checksumEnd;
+    if (type === "IEND") return sawIhdr && length === 0 && offset === bytes.length;
+  }
+  return false;
 }
 
-function runGenerator(args, options = {}) {
-  return spawnSync(process.execPath, [generatorPath, ...args], {
-    cwd: repoRoot,
-    encoding: "utf8",
-    ...options,
-  });
+async function walkFiles(root) {
+  const files = [];
+  const entries = await fs.readdir(root, { withFileTypes: true });
+  for (const entry of entries) {
+    const target = path.join(root, entry.name);
+    const stat = await fs.lstat(target);
+    assert.equal(stat.isSymbolicLink(), false, `template library must not contain symbolic links: ${target}`);
+    if (stat.isDirectory()) files.push(...await walkFiles(target));
+    else if (stat.isFile()) files.push(target);
+    else assert.fail(`template library must contain only regular files and directories: ${target}`);
+  }
+  return files.sort();
+}
+
+function updateAggregate(hash, relativePath, bytes) {
+  hash.update(relativePath, "utf8");
+  hash.update("\0", "utf8");
+  hash.update(bytes);
+  hash.update("\0", "utf8");
 }
 
 function commandAvailable(command) {
@@ -66,242 +105,166 @@ function commandAvailable(command) {
   return !probe.error && probe.status === 0;
 }
 
-async function assertNativePdfPreview(sourcePath, outputDirectory) {
-  const converted = spawnSync("soffice", ["--headless", "--convert-to", "pdf", "--outdir", outputDirectory, sourcePath], {
-    encoding: "utf8",
-  });
-  assert.equal(converted.status, 0, `LibreOffice could not render ${sourcePath}\nSTDOUT:\n${converted.stdout}\nSTDERR:\n${converted.stderr}`);
-  const stem = path.basename(sourcePath, path.extname(sourcePath));
-  const pdfPath = path.join(outputDirectory, `${stem}.pdf`);
+async function assertNativeRender(sourcePath, outputDirectory) {
+  const profile = path.join(outputDirectory, "profile");
+  await fs.mkdir(outputDirectory, { recursive: true });
+  const converted = spawnSync("soffice", [
+    `-env:UserInstallation=${pathToFileURL(profile).href}`,
+    "--headless",
+    "--convert-to", "pdf",
+    "--outdir", outputDirectory,
+    sourcePath,
+  ], { encoding: "utf8" });
+  assert.equal(converted.status, 0, `LibreOffice could not render ${sourcePath}\n${converted.stdout}\n${converted.stderr}`);
+  const pdfPath = path.join(outputDirectory, `${path.basename(sourcePath, path.extname(sourcePath))}.pdf`);
   const info = spawnSync("pdfinfo", [pdfPath], { encoding: "utf8" });
-  assert.equal(info.status, 0, `Poppler could not inspect ${pdfPath}\nSTDOUT:\n${info.stdout}\nSTDERR:\n${info.stderr}`);
+  assert.equal(info.status, 0, `Poppler could not inspect ${pdfPath}\n${info.stdout}\n${info.stderr}`);
   const pages = Number(info.stdout.match(/^Pages:\s*([1-9]\d*)/m)?.[1]);
-  assert.ok(Number.isInteger(pages), `native rendering must produce at least one page for ${sourcePath}`);
-  const previewPrefix = path.join(outputDirectory, `${stem}-preview`);
-  const preview = spawnSync("pdftoppm", ["-png", "-f", "1", "-l", String(pages), pdfPath, previewPrefix], { encoding: "utf8" });
-  assert.equal(preview.status, 0, `Poppler could not rasterize ${pdfPath}\nSTDOUT:\n${preview.stdout}\nSTDERR:\n${preview.stderr}`);
+  assert.ok(Number.isInteger(pages), `native render needs at least one page: ${sourcePath}`);
+  const prefix = path.join(outputDirectory, "page");
+  const raster = spawnSync("pdftoppm", ["-png", "-f", "1", "-l", String(pages), pdfPath, prefix], { encoding: "utf8" });
+  assert.equal(raster.status, 0, `Poppler could not rasterize ${pdfPath}\n${raster.stdout}\n${raster.stderr}`);
   for (let page = 1; page <= pages; page += 1) {
-    const previewPath = `${previewPrefix}-${page}.png`;
-    const stat = await fs.stat(previewPath);
-    assert.ok(stat.size > 0, `native preview is empty: ${previewPath}`);
+    assert.ok((await fs.stat(`${prefix}-${page}.png`)).size > 0, `native raster is empty: ${sourcePath} page ${page}`);
   }
-  return pages;
 }
 
-function resultFor(generatedById, id) {
-  const result = generatedById.get(id);
-  assert.ok(result, `missing generated result for ${id}`);
-  return result;
+async function assertPublicOfficeRoundTrip(kind, sourcePath) {
+  const source = await FileBlob.load(sourcePath);
+  if (kind === "document") {
+    const imported = await DocumentFile.importDocx(source);
+    const exported = await DocumentFile.exportDocx(imported);
+    const reimported = await DocumentFile.importDocx(exported);
+    assert.equal(reimported.blocks.length, imported.blocks.length, `Document facade round trip: ${sourcePath}`);
+    return exported;
+  }
+  if (kind === "presentation") {
+    const imported = await PresentationFile.importPptx(source);
+    const exported = await PresentationFile.exportPptx(imported);
+    const reimported = await PresentationFile.importPptx(exported);
+    assert.equal(reimported.slides.items.length, imported.slides.items.length, `Presentation facade round trip: ${sourcePath}`);
+    return exported;
+  }
+  if (kind === "spreadsheet") {
+    const imported = await SpreadsheetFile.importXlsx(source);
+    const exported = await SpreadsheetFile.exportXlsx(imported, { recalculate: false });
+    const reimported = await SpreadsheetFile.importXlsx(exported);
+    assert.equal(reimported.worksheets.items.length, imported.worksheets.items.length, `Spreadsheet facade round trip: ${sourcePath}`);
+    return exported;
+  }
+  assert.fail(`Unknown retained template kind: ${kind}`);
 }
 
 assert.equal(plugin.name, "default-template-library");
-assert.equal(plugin.version, "0.2.0");
-assert.equal(plugin.license, "AGPL-3.0-or-later");
+assert.equal(plugin.license, "MIT");
 assert.equal(plugin.skills, "./skills/");
-assert.match(plugin.repository, /open-office-artifact-tool/);
 assert.equal(manifest.schemaVersion, 1);
-assert.equal(manifest.catalog, "catalog.json");
-assert.deepEqual(manifest.skills, [
-  "skills/office-template-catalog",
-  ...EXPECTED_READY.map(([id]) => `skills/${id}`),
-]);
-assert.equal(catalog.schemaVersion, 1);
-assert.equal(catalog.templates.length, 20);
-assert.deepEqual(catalog.provenancePolicy, {
-  assetMode: "project-authored-source-free",
-  retainedReferenceFiles: false,
-  retainedPreviewFiles: false,
-  thirdPartyTemplateAssets: "excluded-until-explicit-redistribution-authorization",
+assert.equal(manifest.name, "default-template-library");
+assert.deepEqual(manifest.skills, TEMPLATES.map(([id]) => `skills/${id}`));
+assert.deepEqual(integrity.source, {
+  repository: "https://github.com/w31r4/office-artifact-tool",
+  commit: "256cb31bfe0a07b3cef0051b6b159342be381378",
+  license: "MIT",
+  copyright: "Copyright (c) 2026 w31r4",
 });
+assert.match(await fs.readFile(path.join(libraryRoot, "LICENSE.md"), "utf8"), /MIT License\n\nCopyright \(c\) 2026 w31r4/);
+assert.equal(integrity.assets.length, TEMPLATES.length * 2);
 
-const ready = catalog.templates.filter((template) => template.status === "ready");
-const planned = catalog.templates.filter((template) => template.status === "planned");
-assert.equal(ready.length, 6);
-assert.equal(planned.length, 14);
-assert.deepEqual(ready.map((template) => [
-  template.id,
-  template.artifactKind,
-  template.implementation.extension,
-  template.displayName,
-]), EXPECTED_READY);
-for (const template of catalog.templates) {
-  assert.match(template.id, /^artifact-template-[a-z0-9-]+$/);
-  assert.ok(["document", "presentation", "workbook"].includes(template.artifactKind));
-  assert.ok(["ready", "planned"].includes(template.status));
-  if (template.status === "ready") {
-    assert.equal(template.implementation.assetMode, "project-authored-source-free");
-    assert.equal(template.implementation.generator, "scripts/generate-template.mjs");
-    assert.equal(template.implementation.skill, `skills/${template.id}`);
-  } else {
-    assert.equal(template.implementation, undefined);
-  }
-}
-
-const skillDirectories = (await fs.readdir(path.join(pluginRoot, "skills"), { withFileTypes: true }))
-  .filter((entry) => entry.isDirectory())
-  .map((entry) => entry.name)
-  .sort();
-assert.deepEqual(skillDirectories, [
-  ...EXPECTED_READY.map(([id]) => id),
-  "office-template-catalog",
-].sort());
-for (const skillName of skillDirectories) {
-  const skillRoot = path.join(pluginRoot, "skills", skillName);
-  const skillText = await fs.readFile(path.join(skillRoot, "SKILL.md"), "utf8");
-  const frontmatter = skillText.match(/^---\n([\s\S]*?)\n---/);
-  assert.ok(frontmatter, `${skillName} must have frontmatter`);
-  assert.equal(yamlValue(frontmatter[1], "name"), skillName);
-  const agent = await fs.readFile(path.join(skillRoot, "agents", "openai.yaml"), "utf8");
-  for (const key of ["icon_small", "icon_large"]) {
-    const icon = yamlValue(agent, key);
-    assert.ok(icon, `${skillName} must declare ${key}`);
-    await fs.access(path.resolve(skillRoot, icon));
-  }
-}
-
-for (const readyTemplate of ready) {
-  const skillRoot = path.join(pluginRoot, readyTemplate.implementation.skill);
-  const sidecar = JSON.parse(await fs.readFile(path.join(skillRoot, "template.json"), "utf8"));
-  assert.equal(sidecar.templateId, readyTemplate.id);
-  assert.equal(sidecar.artifactKind, readyTemplate.artifactKind);
-  assert.equal(sidecar.generation.mode, "project-authored-source-free");
-  assert.equal(sidecar.retainedReference, null);
-  assert.equal(sidecar.retainedPreview, null);
-}
-
-const pluginFiles = await walk(pluginRoot);
-for (const file of pluginFiles) {
-  const relative = path.relative(pluginRoot, file).replaceAll(path.sep, "/");
-  assert.doesNotMatch(relative, /(^|\/)(?:reference\.(?:docx|pptx|xlsx)|preview\.png)$/i, `template library must not retain a reference or preview binary: ${relative}`);
-  assert.doesNotMatch(relative, /\.(?:docx|pptx|xlsx|png)$/i, `template library must remain source-only: ${relative}`);
-  if (/\.(?:md|mjs|json|ya?ml|svg)$/i.test(relative)) {
-    const source = await fs.readFile(file, "utf8");
-    assert.doesNotMatch(source, /openai-templates|\.codex\/plugins\/cache/i, `template library must not point at a proprietary cache: ${relative}`);
-  }
-}
-
-const help = runGenerator(["--help"]);
-assert.equal(help.status, 0, help.stderr);
-for (const [id] of EXPECTED_READY) assert.match(help.stdout, new RegExp(id));
-const unavailable = runGenerator([
-  "--template-id", "artifact-template-experiment-analysis",
-  "--output", path.join(os.tmpdir(), "experiment-analysis.docx"),
+const expectedFiles = new Set([
+  ".codex-plugin/plugin.json",
+  "LICENSE.md",
+  "README.md",
+  "manifest.json",
+  "integrity.json",
+  "assets/icon.svg",
+  "scripts/materialize-template.mjs",
 ]);
-assert.notEqual(unavailable.status, 0);
-assert.match(unavailable.stderr, /Unknown or unavailable source-free template/);
-
-const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-artifact-tool-default-template-library-"));
-try {
-  const generatedById = new Map();
-  for (const template of ready) {
-    const output = path.join(temporary, `${template.id}${template.implementation.extension}`);
-    const audit = path.join(temporary, `${template.id}.audit.json`);
-    const run = runGenerator([
-      "--template-id", template.id,
-      "--output", output,
-      "--audit", audit,
-    ]);
-    assert.equal(run.status, 0, `${template.id} generator failed\nSTDOUT:\n${run.stdout}\nSTDERR:\n${run.stderr}`);
-    const response = JSON.parse(run.stdout);
-    const bytes = await fs.readFile(output);
-    const report = JSON.parse(await fs.readFile(audit, "utf8"));
-    assert.equal(response.templateId, template.id);
-    assert.equal(response.artifactKind, template.artifactKind);
-    assert.equal(report.template.id, template.id);
-    assert.equal(report.template.provenance, "project-authored-source-free");
-    assert.equal(report.template.retainedReference, false);
-    assert.equal(report.source, null);
-    assert.equal(report.provider.actual, "open-chestnut");
-    assert.equal(report.provider.silentFallback, false);
-    assert.equal(report.savePolicy.strategy, "create-new");
-    assert.equal(report.output.sha256, sha256(bytes));
-    assert.equal(report.validation.verify, true);
-    assert.equal(report.validation.secondImport, true);
-    assert.equal(report.validation.modelRender.type, "image/svg+xml");
-    assert.ok(report.validation.modelRender.bytes > 0);
-    generatedById.set(template.id, { template, output, audit, bytes });
+const aggregate = crypto.createHash("sha256");
+let totalBytes = 0;
+for (const [id, displayName, kind, extension] of [...TEMPLATES].sort((left, right) => left[0].localeCompare(right[0]))) {
+  const skillRoot = path.join(libraryRoot, "skills", id);
+  const referencePath = `assets/reference${extension}`;
+  for (const relativePath of ["SKILL.md", "artifact-template.json", "agents/agent.yaml", "assets/preview.png", referencePath]) {
+    expectedFiles.add(path.posix.join("skills", id, relativePath));
   }
-
-  const editedOutputs = [];
-  for (const [id, , extension, title] of EXPECTED_READY.filter(([, kind]) => kind === "document")) {
-    const result = resultFor(generatedById, id);
-    const document = await DocumentFile.importDocx(result.bytes);
-    const titleBlock = document.blocks.find((block) => block.text === title);
-    assert.ok(titleBlock, `${title} title block is required`);
-    document.resolve(`${titleBlock.id}/text`).text = `${title} — reviewed`;
-    const editedBlob = await DocumentFile.exportDocx(document);
-    const output = path.join(temporary, `reviewed-${id}${extension}`);
-    await fs.writeFile(output, editedBlob.bytes);
-    const reimported = await DocumentFile.importDocx(editedBlob);
-    assert.equal(reimported.blocks.some((block) => block.text === `${title} — reviewed`), true);
-    assert.equal(reimported.verify({ visualQa: true }).ok, true);
-    editedOutputs.push({ templateId: id, output });
-  }
-
-  for (const [id, , extension, title] of EXPECTED_READY.filter(([, kind]) => kind === "presentation")) {
-    const result = resultFor(generatedById, id);
-    const presentation = await PresentationFile.importPptx(result.bytes);
-    const titleShape = presentation.slides.getItem(0).shapes.items.find((shape) => shape.text.value === title);
-    assert.ok(titleShape, `${title} title shape is required`);
-    titleShape.text.set(`${title} — reviewed`);
-    const editedBlob = await PresentationFile.exportPptx(presentation);
-    const output = path.join(temporary, `reviewed-${id}${extension}`);
-    await fs.writeFile(output, editedBlob.bytes);
-    const reimported = await PresentationFile.importPptx(editedBlob);
-    assert.equal(reimported.slides.getItem(0).shapes.items.some((shape) => shape.text.value === `${title} — reviewed`), true);
-    assert.equal(reimported.verify({ visualQa: true }).ok, true);
-    editedOutputs.push({ templateId: id, output });
-  }
-
-  const budgetResult = resultFor(generatedById, "artifact-template-financial-budget");
-  const budget = await SpreadsheetFile.importXlsx(budgetResult.bytes);
-  budget.worksheets.getItem("Assumptions").getRange("B5").values = [[125000]];
-  budget.recalculate();
-  const editedBudgetBlob = await SpreadsheetFile.exportXlsx(budget, { recalculate: false });
-  const editedBudgetOutput = path.join(temporary, "reviewed-financial-budget.xlsx");
-  await fs.writeFile(editedBudgetOutput, editedBudgetBlob.bytes);
-  const editedBudget = await SpreadsheetFile.importXlsx(editedBudgetBlob);
-  editedBudget.recalculate();
-  assert.equal(editedBudget.worksheets.getItem("Assumptions").getRange("B5").values[0][0], 125000);
-  assert.deepEqual(editedBudget.worksheets.getItem("Budget Summary").getRange("D4:D7").values, [["OK"], ["OK"], ["OK"], ["OK"]]);
-  assert.equal(editedBudget.verify({ visualQa: true }).ok, true);
-  editedOutputs.push({ templateId: "artifact-template-financial-budget", output: editedBudgetOutput });
-
-  const trackerResult = resultFor(generatedById, "artifact-template-project-tracker");
-  const tracker = await SpreadsheetFile.importXlsx(trackerResult.bytes);
-  tracker.worksheets.getItem("Work Plan").getRange("D9").values = [["Done"]];
-  tracker.recalculate();
-  const editedTrackerBlob = await SpreadsheetFile.exportXlsx(tracker, { recalculate: false });
-  const editedTrackerOutput = path.join(temporary, "reviewed-project-tracker.xlsx");
-  await fs.writeFile(editedTrackerOutput, editedTrackerBlob.bytes);
-  const editedTracker = await SpreadsheetFile.importXlsx(editedTrackerBlob);
-  editedTracker.recalculate();
-  assert.equal(editedTracker.worksheets.getItem("Work Plan").getRange("D9").values[0][0], "Done");
-  assert.equal(editedTracker.worksheets.getItem("Project Summary").getRange("B4").values[0][0], 3);
-  assert.deepEqual(editedTracker.worksheets.getItem("Project Summary").getRange("D4:D8").values, [["OK"], ["OK"], ["OK"], ["OK"], ["OK"]]);
-  assert.equal(editedTracker.verify({ visualQa: true }).ok, true);
-  editedOutputs.push({ templateId: "artifact-template-project-tracker", output: editedTrackerOutput });
-
-  if (commandAvailable("soffice") && commandAvailable("pdfinfo") && commandAvailable("pdftoppm")) {
-    const rendered = path.join(temporary, "native-render");
-    await fs.mkdir(rendered);
-    for (const { templateId, output } of editedOutputs) {
-      const pages = await assertNativePdfPreview(output, rendered);
-      const expected = NATIVE_PDF_PAGE_CONTRACTS.get(templateId);
-      if (expected) assert.equal(pages, expected.pages, `${templateId} must render ${expected.pages} native PDF page(s): ${expected.reason}.`);
-    }
-  }
-
-  const firstReady = resultFor(generatedById, EXPECTED_READY[0][0]);
-  const repeated = runGenerator([
-    "--template-id", firstReady.template.id,
-    "--output", firstReady.output,
-    "--audit", firstReady.audit,
+  const [skillText, agentText, sidecarText, previewBytes, referenceBytes] = await Promise.all([
+    fs.readFile(path.join(skillRoot, "SKILL.md"), "utf8"),
+    fs.readFile(path.join(skillRoot, "agents", "agent.yaml"), "utf8"),
+    fs.readFile(path.join(skillRoot, "artifact-template.json"), "utf8"),
+    fs.readFile(path.join(skillRoot, "assets", "preview.png")),
+    fs.readFile(path.join(skillRoot, referencePath)),
   ]);
-  assert.notEqual(repeated.status, 0);
-  assert.match(repeated.stderr, /already exists/);
+  assert.equal(skillText.match(/^name:\s*(.+)$/mu)?.[1]?.trim(), id, `${id} frontmatter name`);
+  assert.equal(yamlValue(agentText, "display_name"), displayName, `${id} display name`);
+  assert.equal(yamlValue(agentText, "icon_large"), "./assets/preview.png", `${id} preview icon`);
+  assert.deepEqual(JSON.parse(sidecarText), { schemaVersion: 1, kind, reference: referencePath, preview: "assets/preview.png" }, `${id} sidecar`);
+  assert.equal(hasValidPngStructure(previewBytes), true, `${id} preview PNG structure`);
+  assert.equal(referenceBytes.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04])), true, `${id} Office reference ZIP signature`);
+
+  for (const [role, relativePath, bytes] of [["preview", "assets/preview.png", previewBytes], ["reference", referencePath, referenceBytes]]) {
+    const assetPath = path.posix.join("skills", id, relativePath);
+    const record = integrity.assets.find((asset) => asset.templateId === id && asset.role === role);
+    assert.deepEqual({ templateId: id, role, path: assetPath, bytes: bytes.length, sha256: sha256(bytes) }, record, `${id} ${role} integrity`);
+    updateAggregate(aggregate, assetPath, bytes);
+    totalBytes += bytes.length;
+  }
+}
+assert.equal(aggregate.digest("hex"), integrity.assetAggregateSha256, "binary aggregate SHA-256");
+assert.ok(totalBytes <= 32 * 1024 * 1024, `template binary budget exceeded: ${totalBytes}`);
+assert.ok(integrity.assets.filter((asset) => asset.role === "preview").every((asset) => asset.bytes <= 512 * 1024), "preview budget exceeded");
+assert.ok(integrity.assets.filter((asset) => asset.role === "reference").every((asset) => asset.bytes <= 8 * 1024 * 1024), "Office reference budget exceeded");
+const actualFiles = (await walkFiles(libraryRoot)).map((file) => path.relative(libraryRoot, file).split(path.sep).join("/"));
+assert.deepEqual(actualFiles, [...expectedFiles].sort(), "template library canonical file inventory");
+
+const sourceRoot = process.env.OFFICE_TEMPLATE_SOURCE_ROOT;
+if (sourceRoot) {
+  for (const asset of integrity.assets) {
+    const [sourceBytes, targetBytes] = await Promise.all([fs.readFile(path.join(sourceRoot, asset.path)), fs.readFile(path.join(libraryRoot, asset.path))]);
+    assert.deepEqual(targetBytes, sourceBytes, `source byte match: ${asset.path}`);
+  }
+}
+
+const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-template-library-"));
+try {
+  const materialized = [];
+  for (const [id, , kind, extension] of TEMPLATES) {
+    const output = path.join(temporary, `${id}${extension}`);
+    const audit = path.join(temporary, `${id}.audit.json`);
+    const result = await materializeTemplate({ templateId: id, outputPath: output, auditPath: audit });
+    const reference = integrity.assets.find((asset) => asset.templateId === id && asset.role === "reference");
+    assert.equal(result.audit.operation, "materialize-retained-reference");
+    assert.equal(result.audit.source.sha256, reference.sha256);
+    assert.equal(result.audit.output.sha256, reference.sha256);
+    assert.equal((await fs.readFile(output)).equals(await fs.readFile(path.join(libraryRoot, reference.path))), true, `${id} materialized bytes`);
+    await assert.rejects(materializeTemplate({ templateId: id, outputPath: output, auditPath: audit }), /already exists/);
+    materialized.push({ id, kind, output });
+  }
+
+  const roundTripped = [];
+  for (const { id, kind, output } of materialized) {
+    const exported = await assertPublicOfficeRoundTrip(kind, output);
+    const roundTripOutput = path.join(temporary, `${id}-openchestnut${path.extname(output)}`);
+    await exported.save(roundTripOutput);
+    roundTripped.push({ id, output: roundTripOutput });
+  }
+
+  const financialBudget = materialized.find((item) => item.id === "artifact-template-financial-budget");
+  assert.ok(financialBudget, "Financial Budget retained template must be materialized");
+  const partialSharedFormulaWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(financialBudget.output));
+  partialSharedFormulaWorkbook.worksheets.getItem("Op Build").getRange("C24").values = [[42]];
+  await assert.rejects(
+    () => SpreadsheetFile.exportXlsx(partialSharedFormulaWorkbook, { recalculate: false }),
+    (error) => error?.code === "unsupported_cell_formula_edit",
+    "partial native shared-formula edits must fail closed through the public facade",
+  );
+
+  if (["soffice", "pdfinfo", "pdftoppm"].every(commandAvailable)) {
+    const rendered = path.join(temporary, "native-render");
+    for (const { id, output } of materialized) await assertNativeRender(output, path.join(rendered, id, "source"));
+    for (const { id, output } of roundTripped) await assertNativeRender(output, path.join(rendered, id, "openchestnut"));
+  }
 } finally {
   await fs.rm(temporary, { force: true, recursive: true });
 }
 
-console.log("default template library smoke ok");
+console.log("default template library integrity and materialization smoke ok");

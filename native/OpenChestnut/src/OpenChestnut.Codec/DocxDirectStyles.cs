@@ -88,7 +88,7 @@ internal static class DocxDirectStyles
                 "word/styles.xml");
     }
 
-    internal static void Validate(DocumentArtifact document, bool allowImportedCycles = false)
+    internal static void Validate(DocumentArtifact document, bool allowSourceBoundCatalog = false)
     {
         DocxFormattingCodec.Validate(document.DefaultRunStyle, "Document default run style");
         var ids = new HashSet<string>(StringComparer.Ordinal);
@@ -106,14 +106,18 @@ internal static class DocxDirectStyles
                 throw new CodecException("invalid_document_style", $"Document style {style.Id} based-on ID is invalid.");
             DocxFormattingCodec.Validate(style.RunFormat, $"Document style {style.Id}");
             DocxFormattingCodec.Validate(style.ParagraphFormat, $"Document style {style.Id}");
-            if (style.Type != DocumentStyleType.Paragraph && DocxFormattingCodec.HasParagraphFormatting(style.ParagraphFormat))
+            // Table/character styles can carry WordprocessingML paragraph
+            // property overlays. We do not author that broad style surface,
+            // but a source-bound catalog is verified unchanged before export
+            // and can retain it safely.
+            if (!allowSourceBoundCatalog && style.Type != DocumentStyleType.Paragraph && DocxFormattingCodec.HasParagraphFormatting(style.ParagraphFormat))
                 throw new CodecException("invalid_document_style", $"Document style {style.Id} paragraph formatting requires paragraph type.");
         }
         foreach (var style in document.Styles)
             if (!string.IsNullOrWhiteSpace(style.BasedOn) && !ids.Contains(style.BasedOn) &&
                 BuiltIns.All(item => !item.Id.Equals(style.BasedOn, StringComparison.Ordinal)))
                 throw new CodecException("invalid_document_style", $"Document style {style.Id} is based on missing style {style.BasedOn}.");
-        if (!allowImportedCycles)
+        if (!allowSourceBoundCatalog)
             foreach (var style in document.Styles)
             {
                 var seen = new HashSet<string>(StringComparer.Ordinal) { style.Id };

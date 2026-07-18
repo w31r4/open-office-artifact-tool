@@ -1,19 +1,22 @@
 ---
 name: artifact-template-strategy-memorandum
-description: Create a source-free Strategy Memorandum DOCX with a decision frame, evidence table, constraints, recommendation, and accountable next actions. Use when the user asks for a strategy memo or decision memorandum and does not supply a reference file to preserve.
+description: "Create a document using the Strategy Memorandum template and its retained reference file. Use when the user selects or names Strategy Memorandum. Present strategic context, choices, rationale, risks, milestones, and a clear recommendation."
 ---
 
 # Strategy Memorandum
 
-Generate a new document from the project-authored source-free template:
+Create a new document from this template. Keep the reference file unchanged.
 
-```sh
-node ../../scripts/generate-template.mjs \
-  --template-id artifact-template-strategy-memorandum \
-  --output /absolute/path/strategy-memorandum.docx \
-  --audit /absolute/path/strategy-memorandum.audit.json
-```
+## Workflow
 
-Then use the Documents workflow to replace only the requested content. Preserve the deliberate sections unless the user asks for a structural change: decision, context, options, evidence, constraints, recommendation, and next actions.
+1. Read `artifact-template.json` and resolve its paths relative to this skill directory.
+2. Use the matching Documents workflow with the retained reference file. If that workflow is unavailable, say so and stop; do not recreate or install a replacement.
+3. Treat the user's prompt and available sources as the content input. Do not invent facts merely to fill a template slot.
+4. Clone or import the reference instead of replacing its visual system with generic defaults.
+5. Render and verify the finished document, then return the final artifact.
 
-Before delivery, import the generated or edited DOCX, inspect the named blocks, verify it, export to a distinct final path, reimport, render it, and report the audit location. Do not claim that the document preserves an external reference: this template has no retained reference or preview asset.
+## Fidelity
+
+Preserve page setup, sections, styles, lists, tables, headers, footers, and recurring page elements.
+
+User instructions control requested content and explicit deviations. The retained reference controls layout and formatting where the user has not requested a change.

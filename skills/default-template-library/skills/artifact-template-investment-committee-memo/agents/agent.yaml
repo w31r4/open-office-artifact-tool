@@ -1,0 +1,5 @@
+interface:
+  display_name: "Investment Committee Memo"
+  short_description: "Create documents with the Investment Committee Memo template"
+  icon_large: "./assets/preview.png"
+  default_prompt: "Create a new document with this template."

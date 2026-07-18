@@ -255,7 +255,17 @@ try {
   assert.equal(baselineCompare.summary.visualQaOk, true);
 
   const packageJson = JSON.parse(await fs.readFile(path.join(repoRoot, "package.json"), "utf8"));
-  assert.ok(packageJson.files.includes("skills/**"));
+  for (const shippedSkillPath of [
+    "skills/documents/**",
+    "skills/spreadsheets/**",
+    "skills/presentations/**",
+    "skills/pdf/**",
+    "skills/template-creator/**",
+  ]) {
+    assert.ok(packageJson.files.includes(shippedSkillPath));
+  }
+  assert.ok(!packageJson.files.includes("skills/**"));
+  assert.ok(!packageJson.files.includes("skills/default-template-library/**"));
   const skillText = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "SKILL.md"), "utf8");
   const pluginReadme = await fs.readFile(path.join(repoRoot, "skills", "documents", "README.md"), "utf8");
   assert.match(pluginReadme, /open-office-artifact-tool/);

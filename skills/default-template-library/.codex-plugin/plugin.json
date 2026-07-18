@@ -1,28 +1,18 @@
 {
   "name": "default-template-library",
   "version": "0.2.0",
-  "description": "Source-free Office templates generated and verified with open-office-artifact-tool.",
+  "description": "MIT-licensed, repository-only Office template library with retained reference files and previews.",
   "author": {
     "name": "w31r4",
-    "email": "w31r4@users.noreply.github.com",
-    "url": "https://github.com/w31r4/open-office-artifact-tool"
+    "url": "https://github.com/w31r4/office-artifact-tool"
   },
-  "homepage": "https://github.com/w31r4/open-office-artifact-tool",
   "repository": "https://github.com/w31r4/open-office-artifact-tool",
-  "license": "AGPL-3.0-or-later",
-  "keywords": [
-    "office",
-    "template",
-    "docx",
-    "pptx",
-    "xlsx",
-    "source-free"
-  ],
+  "license": "MIT",
   "skills": "./skills/",
   "interface": {
-    "displayName": "Office Template Library",
-    "shortDescription": "Generate verified source-free Office templates",
-    "longDescription": "Generate project-authored document, presentation, and workbook templates through the public OpenChestnut workflows. Each ready template has an explicit provenance and round-trip contract.",
+    "displayName": "Default Template Library",
+    "shortDescription": "Use retained MIT Office templates from this repository",
+    "longDescription": "Repository-only MIT Office templates with byte-integrity records. Create a new output from a selected reference; never mutate the retained source file.",
     "developerName": "w31r4",
     "category": "Productivity",
     "capabilities": [
@@ -35,12 +25,9 @@
     "composerIcon": "./assets/icon.svg",
     "logo": "./assets/icon.svg",
     "defaultPrompt": [
-      "Create a source-free Design Report",
-      "Create a source-free Strategy Memorandum",
-      "Create a source-free Operating Review presentation",
-      "Create a source-free Project Kickoff presentation",
-      "Create a source-free Financial Budget workbook",
-      "Create a source-free Project Tracker workbook"
+      "Create a document from the System Design template",
+      "Create a presentation from the Business Review template",
+      "Create a workbook from the Sales Pipeline template"
     ],
     "brandColor": "#0F766E",
     "screenshots": []

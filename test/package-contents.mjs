@@ -39,12 +39,9 @@ const maxPackedBytes = 9_750_000;
 // audited PDF provider/docs growth shipped with the bounded edit surface. The
 // prior 23.625 MB ceiling left only 7,147 bytes after the source-bound
 // single-widget form update slice (23,632,147 bytes on the audit host).
-// The native Highlight primitive added audited implementation, API, and Skill
-// material; the source-bound PPTX duplicate workflow adds one 17,154-byte
-// packaged transaction plus its narrow documentation. The audited package is
-// now 23,766,737 bytes after adding the source-free default-template plugin
-// and its three executable Office generators. Keep a 23.825 MB ceiling with
-// only reviewed documentation and source-only template headroom.
+// The repository-only MIT Default Template Library is excluded from the npm
+// tarball. Its retained Office/PNG sources must never consume this consumer
+// package budget.
 const maxUnpackedBytes = 23_825_000;
 
 for (const required of [
@@ -182,44 +179,6 @@ for (const required of [
   "skills/template-creator/skills/template-creator/agents/agent.yaml",
   "skills/template-creator/skills/template-creator/manifest.txt",
   "skills/template-creator/skills/template-creator/scripts/create-template-skill.mjs",
-  "skills/default-template-library/.codex-plugin/plugin.json",
-  "skills/default-template-library/README.md",
-  "skills/default-template-library/manifest.json",
-  "skills/default-template-library/catalog.json",
-  "skills/default-template-library/assets/icon.svg",
-  "skills/default-template-library/scripts/generate-template.mjs",
-  "skills/default-template-library/templates/common.mjs",
-  "skills/default-template-library/templates/definitions.mjs",
-  "skills/default-template-library/templates/documents.mjs",
-  "skills/default-template-library/templates/presentations.mjs",
-  "skills/default-template-library/templates/workbooks.mjs",
-  "skills/default-template-library/skills/office-template-catalog/SKILL.md",
-  "skills/default-template-library/skills/office-template-catalog/agents/openai.yaml",
-  "skills/default-template-library/skills/office-template-catalog/assets/icon.svg",
-  "skills/default-template-library/skills/artifact-template-design-report/SKILL.md",
-  "skills/default-template-library/skills/artifact-template-design-report/template.json",
-  "skills/default-template-library/skills/artifact-template-design-report/agents/openai.yaml",
-  "skills/default-template-library/skills/artifact-template-design-report/assets/icon.svg",
-  "skills/default-template-library/skills/artifact-template-strategy-memorandum/SKILL.md",
-  "skills/default-template-library/skills/artifact-template-strategy-memorandum/template.json",
-  "skills/default-template-library/skills/artifact-template-strategy-memorandum/agents/openai.yaml",
-  "skills/default-template-library/skills/artifact-template-strategy-memorandum/assets/icon.svg",
-  "skills/default-template-library/skills/artifact-template-operating-review/SKILL.md",
-  "skills/default-template-library/skills/artifact-template-operating-review/template.json",
-  "skills/default-template-library/skills/artifact-template-operating-review/agents/openai.yaml",
-  "skills/default-template-library/skills/artifact-template-operating-review/assets/icon.svg",
-  "skills/default-template-library/skills/artifact-template-project-kickoff/SKILL.md",
-  "skills/default-template-library/skills/artifact-template-project-kickoff/template.json",
-  "skills/default-template-library/skills/artifact-template-project-kickoff/agents/openai.yaml",
-  "skills/default-template-library/skills/artifact-template-project-kickoff/assets/icon.svg",
-  "skills/default-template-library/skills/artifact-template-financial-budget/SKILL.md",
-  "skills/default-template-library/skills/artifact-template-financial-budget/template.json",
-  "skills/default-template-library/skills/artifact-template-financial-budget/agents/openai.yaml",
-  "skills/default-template-library/skills/artifact-template-financial-budget/assets/icon.svg",
-  "skills/default-template-library/skills/artifact-template-project-tracker/SKILL.md",
-  "skills/default-template-library/skills/artifact-template-project-tracker/template.json",
-  "skills/default-template-library/skills/artifact-template-project-tracker/agents/openai.yaml",
-  "skills/default-template-library/skills/artifact-template-project-tracker/assets/icon.svg",
   "skills/pdf/.codex-plugin/plugin.json",
   "skills/pdf/README.md",
   "skills/pdf/skills/pdf/SKILL.md",
@@ -274,6 +233,7 @@ assert.ok(!files.includes("skills/documents/skills/documents/examples/end_to_end
 assert.ok(files.every((file) => !file.includes("/tests/") && !file.startsWith("test/")), "npm package must exclude development-only test sources");
 assert.ok(files.every((file) => !file.includes(".DS_Store") && !file.includes("__pycache__") && !file.endsWith(".pyc")), "npm package must exclude local metadata and Python bytecode");
 assert.ok(files.every((file) => !file.startsWith("handoff/") && !file.startsWith("reference/")), "npm package must exclude handoff and reference material");
+assert.ok(files.every((file) => !file.startsWith("skills/default-template-library/")), "npm package must exclude the repository-only retained default template library");
 assert.ok(files.every((file) => !file.startsWith("native/OpenChestnut/") && !file.startsWith("scripts/")), "npm runtime package must not duplicate repository-only OpenChestnut source or build tooling");
 assert.ok(files.every((file) => !file.startsWith("evals/") && file !== "docs/agent-evals.md"), "npm runtime package must exclude the evaluator-side PromptBench and its oracle documentation");
 assert.ok(!files.includes("docs/coverage.md") && !files.includes("docs/release.md") && !files.includes("docs/reference-runtime-architecture.md") && !files.includes("native/OpenChestnut/README.md"), "npm runtime package must exclude repository-only coverage, release history, and subsystem implementation notes");

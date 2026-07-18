@@ -20,7 +20,7 @@ There is no compatibility window or fallback mode.
 
 The repository is the authoritative source distribution. It contains OpenChestnut C# source, locked dependencies, protocol definitions, build scripts, tests, Skills, and reproducibility gates.
 
-The npm tarball is the consumer distribution. It contains the JavaScript object models, OpenChestnut adapter, generated wire binding, public proto, bundled runtime, integrity manifest, SBOM, license notices, render/QA helpers, PDF pipeline, and six native plugin bundles containing thirteen Skills, including the local-only Template Creator utility and the source-free Default Template Library. It excludes C# source, test sources, build output, repository-only build scripts, and the development-only `test/skill-harness` fixtures. MuPDF.js is declared in the required npm dependency graph rather than copied into this project's own tarball, and its WASM runtime is initialized only by a PDF operation.
+The npm tarball is the consumer distribution. It contains the JavaScript object models, OpenChestnut adapter, generated wire binding, public proto, bundled runtime, integrity manifest, SBOM, license notices, render/QA helpers, PDF pipeline, and five native plugin bundles containing six Skills: the four file-type workflows, the separate `excel-live-control` route, and the local-only Template Creator utility. It excludes C# source, test sources, build output, repository-only build scripts, the development-only `test/skill-harness` fixtures, and the MIT-licensed repository-only Default Template Library with its 20 retained Office/PNG assets. MuPDF.js is declared in the required npm dependency graph rather than copied into this project's own tarball, and its WASM runtime is initialized only by a PDF operation.
 
 Installed consumers do not need `dotnet` on `PATH`.
 
@@ -46,12 +46,12 @@ The release candidate is acceptable only when all of the following are true:
 - C# DOCX, XLSX, PPTX, package-boundary, and failure-profile tests pass;
 - default facade create/import/edit/re-export roundtrips pass for all three Office formats;
 - legacy options, old subpath, missing runtime, and opaque-without-source cases fail explicitly;
-- all six native plugin manifests validate, the published ten-Skill topology is complete, and every workflow promoted to compatible in `docs/reference-skills.md` passes from the public package surface;
+- all five npm-distributed native plugin manifests validate, the published six-Skill topology is complete, and every workflow promoted to compatible in `docs/reference-skills.md` passes from the public package surface; the repository-only Default Template Library separately passes its canonical inventory, integrity, source-bound codec, and package-exclusion gates;
 - PDF greenfield authoring plus default MuPDF.js import/inspect/render/bounded-edit, lazy-load, pre-WASM budget, exact-prefix incremental-save, source-bound annotation/link/form-field behavior, signature/redaction/deletion fail-closed, Skill CLI source-protection, and specialist-provider contract tests pass independently;
 - when explicitly configured, the real optional-provider test covers ReportLab creation, pdfplumber extraction, type-aware pypdf text/radio/checkbox forms and annotations, typed pypdf merge/reorder/selective watermarking, PyMuPDF rewrite/incremental/page/text/image/form/annotation edits, real redaction/scrub/residue scans, capped numerical text-fit behavior, canonical audit byte binding, and typed Poppler source/output comparison;
 - Open XML SDK validation passes for generated Office fixtures;
 - configured LibreOffice/Poppler/Playwright/native render gates pass where available;
-- a production-only packed clean install completes all three Office roundtrips, PDF smoke, a real packaged Template Creator invocation, and all six source-free Template Library generators while `dotnet` is absent from `PATH`;
+- a production-only packed clean install completes all three Office roundtrips, PDF smoke, and a real packaged Template Creator invocation while `dotnet` is absent from `PATH`, and proves that the repository-only Default Template Library is absent;
 - two clean OpenChestnut builds produce the same runtime file set and hashes;
 - package contents contain no legacy Office codec files, C# build output, tests, or repository-only scripts;
 - package metadata, version `0.2.0`, licenses, third-party notices, SBOM, and integrity manifest agree;
@@ -563,7 +563,7 @@ Chromium/native-tool setup, the complete npm/Skill/security suite, generated
 API-doc cleanliness, offline release metadata, clean-install packing,
 OfficeBridge `5/5`, and OpenChestnut `185/185`.
 
-### Clean-room default template library
+### Earlier clean-room default template library (superseded)
 
 The subsequent Default Template Library is not a binary migration of an
 observed template pack. Its source plugin metadata marked the observed material
@@ -582,6 +582,30 @@ offline production tarball test invokes all three shipped generators while
 `dotnet` is absent from `PATH`. The remaining 17 catalog entries are explicit
 `planned` records and fail closed rather than silently selecting an unrelated
 design. See [clean-room template-library provenance](template-library-provenance.md).
+
+### MIT reference-backed Default Template Library
+
+Later on 2026-07-18, the template source obtained an explicit public MIT
+distribution record. The canonical source is
+[`office-artifact-tool` commit `256cb31bfe0a07b3cef0051b6b159342be381378`](https://github.com/w31r4/office-artifact-tool/commit/256cb31bfe0a07b3cef0051b6b159342be381378),
+whose root `LICENSE.md` states `Copyright (c) 2026 w31r4`. The current source
+tree therefore replaces the earlier source-free generators and planned catalog
+with that one canonical library: 20 retained Skills (7 DOCX, 7 PPTX, 6 XLSX),
+their original Office/PNG assets, source Skill metadata, an MIT notice, and
+individual plus aggregate SHA-256 records. It is a normal forward migration;
+the earlier commits are not rewritten.
+
+The library is repository-only, not a sixth consumer-package plugin. A named
+template is materialized only to a distinct output after its retained source
+hash is verified, with a provenance audit and overwrite refusal. The source
+files remain immutable. The complete 20-template matrix passes public-facade
+import, unchanged export, second import, and available LibreOffice/Poppler
+source/output rendering. Codec regressions cover one bounded edit per family:
+PPTX slide-name metadata, DOCX `updateFields`, and ordinary XLSX string cells.
+Unmodeled topology remains source-bound and fails closed; in particular, the
+Financial Budget partial shared-formula range is preserved but cannot be
+edited. The package-content and clean-install gates prove the library does not
+enter the npm tarball. See [template-library provenance](template-library-provenance.md).
 
 ### XLSX standard-area and fixed-doughnut chart families
 

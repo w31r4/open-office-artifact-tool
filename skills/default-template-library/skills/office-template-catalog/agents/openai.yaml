@@ -1,6 +1,0 @@
-interface:
-  display_name: "Office Template Catalog"
-  short_description: "Choose a verified source-free Office template"
-  icon_small: "assets/icon.svg"
-  icon_large: "assets/icon.svg"
-  default_prompt: "Choose a source-free Office template for my task."

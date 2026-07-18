@@ -227,6 +227,23 @@ function formulaRangeBounds(reference, location) {
   return { top: first.row, left: first.column, bottom: second.row, right: second.column, cellCount: (second.row - first.row + 1) * (second.column - first.column + 1) };
 }
 
+function partialSharedFormulaRanges(diagnostics) {
+  const byWorksheetName = new Map();
+  for (const diagnostic of diagnostics || []) {
+    if (diagnostic?.code !== "partial_shared_formula_preserved") continue;
+    const worksheetName = String(diagnostic.sourcePath || "");
+    const reference = String(diagnostic.sourceIdentity || "");
+    if (!worksheetName || !reference) {
+      throw new OpenChestnutCodecError("OpenChestnut returned a partial shared-formula diagnostic without a worksheet name and range identity.", [], { code: "invalid_open_chestnut_diagnostic" });
+    }
+    const bounds = formulaRangeBounds(reference, `${worksheetName} partial shared formula`);
+    const ranges = byWorksheetName.get(worksheetName) || [];
+    ranges.push({ reference, bounds });
+    byWorksheetName.set(worksheetName, ranges);
+  }
+  return byWorksheetName;
+}
+
 function normalizedFormula(value) {
   const formula = String(value || "");
   return formula && !formula.startsWith("=") ? `=${formula}` : formula;
@@ -525,6 +542,23 @@ function dynamicArrayCellSnapshot(cell) {
     spillParent: cell.spillParent == null ? null : String(cell.spillParent),
     spillAnchor: cell.spillAnchor == null ? null : String(cell.spillAnchor),
     spillError: cell.spillError == null ? null : String(cell.spillError),
+  };
+}
+
+function sourceBoundFormulaCellSnapshot(cell) {
+  return {
+    value: cell.value instanceof Date ? { type: "date", value: cell.value.getTime() } : cell.value ?? null,
+    formula: cell.formula == null ? null : String(cell.formula),
+    formulaType: cell.formulaType == null ? null : String(cell.formulaType),
+    sharedIndex: cell.sharedIndex == null ? null : Number(cell.sharedIndex),
+    sharedRef: cell.sharedRef == null ? null : String(cell.sharedRef),
+    arrayRef: cell.arrayRef == null ? null : String(cell.arrayRef),
+    dynamicArrayRef: cell.dynamicArrayRef == null ? null : String(cell.dynamicArrayRef),
+    spillParent: cell.spillParent == null ? null : String(cell.spillParent),
+    spillAnchor: cell.spillAnchor == null ? null : String(cell.spillAnchor),
+    spillRange: cell.spillRange == null ? null : String(cell.spillRange),
+    spillError: cell.spillError == null ? null : String(cell.spillError),
+    style: cell.style || {},
   };
 }
 
@@ -1279,6 +1313,7 @@ function workbookEnvelope(workbook) {
       threadedComments: wireThreadedComments(workbook, sheet),
       cells: (() => {
         const dynamicSlots = state?.dynamicArraySlotsBySheet?.get(sheet.id) || new Map();
+        const sourceBoundFormulaSlots = state?.sourceBoundFormulaSlotsBySheet?.get(sheet.id) || new Map();
         const entries = sheet.store?.entries?.() || [];
         const byAddress = new Map(entries);
         for (const [address, slot] of dynamicSlots) {
@@ -1286,9 +1321,14 @@ function workbookEnvelope(workbook) {
             throw new OpenChestnutCodecError(`Imported dynamic array ${sheet.name}!${address} is source-bound and read-only in OpenChestnut 0.2.`, [], { code: "unsupported_dynamic_array_edit" });
           }
         }
+        for (const [address, slot] of sourceBoundFormulaSlots) {
+          if (byAddress.get(address) !== slot.cell || JSON.stringify(sourceBoundFormulaCellSnapshot(slot.cell)) !== JSON.stringify(slot.publicSnapshot)) {
+            throw new OpenChestnutCodecError(`Imported partial shared formula ${sheet.name}!${address} is source-bound and read-only in OpenChestnut 0.2.`, [], { code: "unsupported_cell_formula_edit" });
+          }
+        }
         const cells = entries
           .filter(([, cell]) => cell.value != null || cell.formula || cell.formulaType || Object.keys(cell.style || {}).some((key) => cell.style[key] != null))
-          .map(([address, cell]) => dynamicSlots.get(address)?.wire || wireCell(address, cell, workbook.dateSystem));
+          .map(([address, cell]) => sourceBoundFormulaSlots.get(address)?.wire || dynamicSlots.get(address)?.wire || wireCell(address, cell, workbook.dateSystem));
         wireWorksheetDataTables(sheet, state?.dataTablesBySheet?.get(sheet.id), cells);
         validateFormulaTopology(cells, sheet.name);
         return cells;
@@ -1357,7 +1397,9 @@ function workbookFromEnvelope(envelope) {
   const sparklinesBySheet = new Map();
   const dataTablesBySheet = new Map();
   const dynamicArraySlotsBySheet = new Map();
+  const sourceBoundFormulaSlotsBySheet = new Map();
   const worksheetSlots = new Map();
+  const partialSharedFormulaRangesBySheetName = partialSharedFormulaRanges(envelope.diagnostics);
   const assets = new Map((envelope.assets || []).map((asset) => [asset.id, asset]));
   const connectionSlots = (source.connections || []).map((wire, index) => ({
     wire,
@@ -1403,6 +1445,8 @@ function workbookFromEnvelope(envelope) {
       throw new OpenChestnutCodecError(`Worksheet ${sheet.name} contains an unsupported threaded-comment reply graph.`, [], { code: "unsupported_threaded_comment_reply_topology" });
     }
     const dynamicArraySlots = new Map();
+    const sourceBoundFormulaSlots = new Map();
+    const partialSharedFormulaRanges = partialSharedFormulaRangesBySheetName.get(sourceSheet.name) || [];
     const dataTableSlots = [];
     for (const sourceCell of sourceSheet.cells) {
       const address = cellAddress(sourceCell.row, sourceCell.column);
@@ -1428,6 +1472,11 @@ function workbookFromEnvelope(envelope) {
         case "errorValue": cell.value = sourceCell.value.value; break;
         default: cell.value = null;
       }
+      if (partialSharedFormulaRanges.some(({ bounds }) =>
+        sourceCell.row >= bounds.top && sourceCell.row <= bounds.bottom &&
+        sourceCell.column >= bounds.left && sourceCell.column <= bounds.right)) {
+        sourceBoundFormulaSlots.set(address, { wire: sourceCell, cell, publicSnapshot: sourceBoundFormulaCellSnapshot(cell) });
+      }
       if (sourceCell.formulaMetadata?.kind === CellFormulaKind.DYNAMIC_ARRAY) {
         dynamicArraySlots.set(address, { wire: sourceCell, cell, publicSnapshot: dynamicArrayCellSnapshot(cell) });
       } else if (sourceCell.formulaMetadata?.kind === CellFormulaKind.DATA_TABLE) {
@@ -1435,6 +1484,10 @@ function workbookFromEnvelope(envelope) {
       }
     }
     dynamicArraySlotsBySheet.set(sheet.id, dynamicArraySlots);
+    if (partialSharedFormulaRanges.length && sourceBoundFormulaSlots.size === 0) {
+      throw new OpenChestnutCodecError(`OpenChestnut reported partial shared formulas for ${sourceSheet.name} but returned no matching cells.`, [], { code: "invalid_open_chestnut_diagnostic" });
+    }
+    sourceBoundFormulaSlotsBySheet.set(sheet.id, sourceBoundFormulaSlots);
     dataTablesBySheet.set(sheet.id, { slots: dataTableSlots });
     const slots = [];
     for (const sourceTable of sourceSheet.tables || []) {
@@ -1517,6 +1570,7 @@ function workbookFromEnvelope(envelope) {
       viewSlots,
       worksheetSlots,
       dynamicArraySlotsBySheet,
+      sourceBoundFormulaSlotsBySheet,
       tablesBySheet,
       imagesBySheet,
       chartsBySheet,

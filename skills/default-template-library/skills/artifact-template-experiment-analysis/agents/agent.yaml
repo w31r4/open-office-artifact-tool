@@ -1,0 +1,5 @@
+interface:
+  display_name: "Experiment Analysis"
+  short_description: "Create documents with the Experiment Analysis template"
+  icon_large: "./assets/preview.png"
+  default_prompt: "Create a new document with this template."

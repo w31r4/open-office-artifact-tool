@@ -1,23 +1,35 @@
 {
   "schemaVersion": 1,
   "name": "default-template-library",
-  "description": "Source-free, project-authored Office template catalog.",
+  "description": "Curated reference-backed Office templates.",
   "owner": "w31r4",
   "skills": [
-    "skills/office-template-catalog",
     "skills/artifact-template-design-report",
+    "skills/artifact-template-experiment-analysis",
+    "skills/artifact-template-investment-committee-memo",
+    "skills/artifact-template-legal-memorandum",
+    "skills/artifact-template-minimal-letterhead",
     "skills/artifact-template-strategy-memorandum",
+    "skills/artifact-template-system-design",
+    "skills/artifact-template-business-review",
+    "skills/artifact-template-market-trends-report",
     "skills/artifact-template-operating-review",
     "skills/artifact-template-project-kickoff",
+    "skills/artifact-template-simple-dark-mode",
+    "skills/artifact-template-simple-light-mode",
+    "skills/artifact-template-team-alignment",
+    "skills/artifact-template-analytics-dashboard",
     "skills/artifact-template-financial-budget",
-    "skills/artifact-template-project-tracker"
+    "skills/artifact-template-operating-calendar",
+    "skills/artifact-template-project-tracker",
+    "skills/artifact-template-sales-pipeline",
+    "skills/artifact-template-three-statement-forecast"
   ],
-  "catalog": "catalog.json",
   "assets": {
     "icon": "assets/icon.svg"
   },
   "interface": {
-    "displayName": "Office Template Library",
-    "shortDescription": "Source-free Office templates with explicit provenance"
+    "displayName": "Default Template Library",
+    "shortDescription": "Reference-backed templates for Office artifacts"
   }
 }
