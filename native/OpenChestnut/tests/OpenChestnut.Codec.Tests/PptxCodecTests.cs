@@ -63,6 +63,31 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void ImportedSlideNameCanChangeInPlace()
+    {
+        var authored = Invoke(ExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedSlide = Assert.Single(imported.Artifact.Presentation.Slides);
+
+        importedSlide.Name = "Renamed review";
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        using (var stream = new MemoryStream(edited.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var slide = Assert.Single(package.PresentationPart!.SlideParts).Slide!;
+            Assert.Equal("Renamed review", slide.CommonSlideData!.Name!.Value);
+        }
+
+        var roundTrip = Import(edited.File.ToByteArray());
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        Assert.Equal("Renamed review", Assert.Single(roundTrip.Artifact.Presentation.Slides).Name);
+    }
+
+    [Fact]
     public void LegacyCommentsAuthorImportAndRemainSourceBound()
     {
         var request = ExportRequest();

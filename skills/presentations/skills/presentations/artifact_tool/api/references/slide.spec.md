@@ -72,6 +72,21 @@ codec removes the slide part and its relationship part, updates
 `ppt/presentation.xml` plus its relationships/content types, and keeps the
 surviving source slides byte-identical. Any other imported delete fails closed.
 
+For an original imported slide, assigning `slide.name` is a separate bounded
+source-preserving edit. It changes only the existing SlidePart's native
+`p:cSld/@name` attribute, then requires export/reimport before further work:
+
+```ts
+const imported = await PresentationFile.importPptx(source);
+imported.slides.getItem(0).name = "Decision review";
+const output = await PresentationFile.exportPptx(imported);
+```
+
+The source binding, slide topology, relationship graph, background, notes,
+comments, and element topology remain preconditions. This is not a generic
+presentation metadata editor. A pending clone stays byte-identical and cannot
+be renamed before its export/reimport boundary.
+
 `duplicate()` is not a visual-only copy and never creates a second
 `p:sldId` reference to one source part. It is available only on an **original
 imported** source slide with an unchanged body of canonical simple shapes,
@@ -97,7 +112,7 @@ comments remain source-bound read-only.
 
 Source-free slides, already-cloned slides, rich or connected comments, charts,
 OLE, hyperlinks, external/data relationships, external/unbound/irregular
-images, connectors, non-shape/table/image/recursive-group elements, renames/layout/background changes, note
+images, connectors, non-shape/table/image/recursive-group elements, pending-clone renames, layout/background changes, note
 or comment mutation before the boundary, immediate clone edits, and all broader
 relationship graphs fail closed. Adding imported slides still fails closed. A
 template-derived deck still needs a broader explicit OPC graph-clone transaction

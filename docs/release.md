@@ -72,6 +72,29 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### PPTX source-bound slide-name edits
+
+On 2026-07-18, the canonical OpenChestnut PPTX route gained one deliberately
+small imported-deck metadata edit: an original, source-bound `slide.name`
+changes only that SlidePart's existing `p:cSld/@name` attribute. The source
+binding, layout binding, direct-background contract, notes/comments, and fixed
+element topology remain preconditions; no relationship or presentation graph is
+created, removed, or rebound. The transaction validates the requested name
+after write and then proves every other package part is byte-identical.
+
+The JavaScript regression uses a multi-slide imported deck, changes one name,
+requires all non-target decoded parts to match byte-for-byte, and reimports the
+result. The C# codec regression validates the saved package with Open XML SDK
+Office 2021 validation and checks the native name after a second import. A
+pending clone still must be an exact source copy, so renaming it before its
+export/reimport boundary fails closed.
+
+The complete local gate passed `npm test` (including Playwright), `npm run
+docs:api`, `npm run proto:check`, `npm run test:pack`, and serial `npm run
+verify:open-chestnut-build`; OpenChestnut passed `211/211` and OfficeBridge
+`5/5`. Two clean WASM builds produced the same 39 audited files and the same
+manifest-bound 38-file, 14,417,084-byte runtime.
+
 ### PDF source-bound single-widget form-field updates
 
 On 2026-07-18, the default direct-original MuPDF.js route added

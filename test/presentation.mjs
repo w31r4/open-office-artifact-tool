@@ -695,6 +695,28 @@ for (const path of Object.keys(originalImportedZip.files).filter((path) => /^ppt
 }
 const reorderedImportedRoundTrip = await PresentationFile.importPptx(reorderedImportedPptx);
 assert.deepEqual(reorderedImportedRoundTrip.slides.items.map((slide) => slide.name), [...originalImportedSlideNames.slice(1), originalImportedSlideNames[0]]);
+
+// A retained imported SlidePart may change only its native p:cSld/@name. The
+// transaction must leave every other decoded package part byte-for-byte intact.
+const renamedImportedDeck = await PresentationFile.importPptx(firstExport);
+const renamedImportedSlide = renamedImportedDeck.slides.getItem(0);
+renamedImportedSlide.name = "Renamed imported overview";
+const renamedImportedPptx = await PresentationFile.exportPptx(renamedImportedDeck);
+const renamedImportedZip = await JSZip.loadAsync(renamedImportedPptx.bytes);
+assert.deepEqual(Object.keys(renamedImportedZip.files).sort(), Object.keys(originalImportedZip.files).sort());
+for (const [path, entry] of Object.entries(originalImportedZip.files)) {
+  if (entry.dir || path === "ppt/slides/slide1.xml") continue;
+  assert.deepEqual(
+    await renamedImportedZip.file(path).async("uint8array"),
+    await originalImportedZip.file(path).async("uint8array"),
+    `renaming an imported slide must preserve ${path} byte-for-byte`,
+  );
+}
+assert.match(await renamedImportedZip.file("ppt/slides/slide1.xml").async("text"), /<p:cSld\b[^>]*\bname="Renamed imported overview"/);
+const renamedImportedRoundTrip = await PresentationFile.importPptx(renamedImportedPptx);
+assert.equal(renamedImportedRoundTrip.slides.getItem(0).name, "Renamed imported overview");
+assert.equal(itemByName(renamedImportedRoundTrip.slides.getItem(0).shapes.items, "rounded-card").text.value, "Before edit");
+
 const reorderedEditedDeck = await PresentationFile.importPptx(firstExport);
 const reorderedEditedSlide = reorderedEditedDeck.slides.getItem(0);
 reorderedEditedSlide.moveTo(2);
@@ -781,6 +803,13 @@ const immediateCloneEdit = await PresentationFile.importPptx(cloneSourcePptx);
 immediateCloneEdit.slides.getItem(0).duplicate().shapes.items[0].text.set("Too soon");
 await assert.rejects(
   () => PresentationFile.exportPptx(immediateCloneEdit),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+);
+
+const immediateCloneRename = await PresentationFile.importPptx(cloneSourcePptx);
+immediateCloneRename.slides.getItem(0).duplicate().name = "Too soon";
+await assert.rejects(
+  () => PresentationFile.exportPptx(immediateCloneRename),
   (error) => error?.code === "unsupported_presentation_slide_clone",
 );
 

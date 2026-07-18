@@ -208,6 +208,12 @@ Imported add, repeat/mutated clone, rich/connected comments, and every broad
 graph clone remain unsupported until an explicit OPC graph-clone transaction is
 available.
 
+For an original imported slide, `slide.name = "Decision review"` is a narrow
+in-place metadata edit: OpenChestnut changes only that SlidePart's
+`p:cSld/@name`, preserves its relationship graph and all other parts, and
+requires reimport for a fresh binding. It is not available for a pending clone,
+which must remain an exact source copy until its export/reimport boundary.
+
 When an imported top-level OLE object contains one uniquely bound XLSX package,
 read `artifact_tool/api/references/ole-workbooks.spec.md` before changing it.
 Only `getEmbeddedWorkbook()` and `replaceEmbeddedWorkbook(...)` are allowed:

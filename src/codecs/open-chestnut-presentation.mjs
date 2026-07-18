@@ -1712,7 +1712,7 @@ export function presentationEnvelope(presentation, protocolVersion) {
     const cloneState = sourceStates?.cloneBySlide.get(slide);
     const bindingState = sourceState || cloneState?.source;
     if (bindingState) {
-      if (slide.name !== bindingState.name) throw new OpenChestnutCodecError(`Source-preserving PPTX export does not yet support renaming slide ${slideIndex + 1}.`, [], { code: cloneState ? "unsupported_presentation_slide_clone" : "unsupported_presentation_edit" });
+      if (cloneState && slide.name !== bindingState.name) throw new OpenChestnutCodecError(`Source-preserving PPTX export cannot rename pending clone slide ${slideIndex + 1}.`, [], { code: "unsupported_presentation_slide_clone" });
       if ((slide.layoutId || "") !== (bindingState.wire.layoutId || "")) throw new OpenChestnutCodecError(`Source-preserving PPTX export cannot change slide ${slideIndex + 1}'s layout binding.`, [], { code: cloneState ? "unsupported_presentation_slide_clone" : "presentation_slide_layout_binding_changed" });
       if (presentationSlideCommentSnapshot(slide) !== bindingState.commentSnapshot) {
         throw new OpenChestnutCodecError(`Imported presentation slide ${slideIndex + 1} comments are source-bound and read-only in OpenChestnut 0.2.`, [], { code: "unsupported_presentation_edit" });

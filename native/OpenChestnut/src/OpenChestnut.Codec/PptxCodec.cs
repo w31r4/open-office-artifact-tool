@@ -511,6 +511,15 @@ internal static class PptxCodec
                         $"Presentation slide {slideIndex + 1} background does not match its source binding.",
                         PartPath(slidePart));
                 var changed = false;
+                var sourceName = slideCommon.Name?.Value ?? $"Slide {targetSlide.Source.Index + 1}";
+                if (!string.Equals(target.Name, sourceName, StringComparison.Ordinal))
+                {
+                    // This is deliberately the only source-bound slide metadata
+                    // mutation: p:cSld/@name belongs to the existing SlidePart
+                    // and does not alter its relationship graph or shape tree.
+                    slideCommon.Name = target.Name;
+                    changed = true;
+                }
                 if (!BackgroundSemanticHash(target.Background).Equals(originalBackgroundHash, StringComparison.OrdinalIgnoreCase))
                 {
                     if (!binding.BackgroundEditable || !PptxBackgroundCodec.Supports(slideCommon))
@@ -2159,10 +2168,18 @@ internal static class PptxCodec
             if (sourceTargets[slideIndex].IsClone) continue;
             var sourceSlide = sourceTargets[slideIndex].Source.Part;
             var outputSlide = outputSlides[slideIndex];
+            var outputRoot = outputSlide.Slide ??
+                throw new CodecException("missing_slide_root", $"PPTX output slide {slideIndex + 1} has no slide root.", PartPath(outputSlide));
+            var outputName = outputRoot.CommonSlideData?.Name?.Value ?? $"Slide {sourceTargets[slideIndex].Source.Index + 1}";
+            if (!string.Equals(outputName, requested.Slides[slideIndex].Name, StringComparison.Ordinal))
+                throw new CodecException(
+                    "presentation_postwrite_slide_name_mismatch",
+                    $"PPTX slide {slideIndex + 1} name does not match the requested source-bound value.",
+                    PartPath(outputSlide));
             var sourceContext = new PptxPartContext(sourceSlide, sourceIdByPartPath, assets: sourceAssets);
             var outputContext = new PptxPartContext(outputSlides[slideIndex], outputIdByPartPath, assets: outputAssets);
             var before = ShapeElements(sourceSlide.Slide!.CommonSlideData!.ShapeTree!);
-            var after = ShapeElements(outputSlide.Slide!.CommonSlideData!.ShapeTree!);
+            var after = ShapeElements(outputRoot.CommonSlideData!.ShapeTree!);
             var afterIds = NativeElementIds(after, requested.Slides[slideIndex].Id);
             var elements = requested.Slides[slideIndex].Elements;
             if (before.Length != elements.Count || after.Length != elements.Count)
