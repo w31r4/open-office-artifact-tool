@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -251,16 +252,32 @@ try {
   const slideNameTarget = slideNameRoundTrip.slides.getItem(0);
   assert.equal(itemByName(slideNameTarget.shapes.items, PPTX_TITLE_NOTES_FIXTURE.titleShapeName).text.value, PPTX_TITLE_NOTES_FIXTURE.originalTitle);
   assert.equal(slideNameTarget.speakerNotes.text, PPTX_TITLE_NOTES_FIXTURE.originalNotes);
+  const missingOutput = path.join(slideNameDir, "should-not-exist.pptx");
+  const missingAudit = path.join(slideNameDir, "should-not-exist.json");
   await assert.rejects(
     () => editPptxSlideName({
       inputPath: slideNameInput,
-      outputPath: path.join(slideNameDir, "should-not-exist.pptx"),
-      auditPath: path.join(slideNameDir, "should-not-exist.json"),
+      outputPath: missingOutput,
+      auditPath: missingAudit,
       expectedName: "Missing source slide",
       replacementName: "Never write this",
     }),
     /Expected exactly one imported slide named/,
   );
+  assert.equal(await fs.access(missingOutput).then(() => true, () => false), false);
+  assert.equal(await fs.access(missingAudit).then(() => true, () => false), false);
+  const slideNameCliOutput = path.join(slideNameDir, "launch-review-cli-renamed.pptx");
+  const slideNameCliAudit = path.join(slideNameDir, "cli-audit.json");
+  const slideNameCli = spawnSync(process.execPath, [
+    "skills/presentations/skills/presentations/examples/openchestnut-slide-name-edit-workflow.mjs",
+    slideNameInput,
+    slideNameCliOutput,
+    slideNameCliAudit,
+    PPTX_TITLE_NOTES_FIXTURE.targetSlideName,
+    "Go decision: CLI rollout",
+  ], { encoding: "utf8" });
+  assert.equal(slideNameCli.status, 0, `slide-name CLI failed\n${slideNameCli.stdout}\n${slideNameCli.stderr}`);
+  assert.equal(JSON.parse(slideNameCli.stdout).sourcePart, "ppt/slides/slide1.xml");
 
   const convergenceFiles = [
     "test/skill-harness/presentations/scripts/workflow.mjs",

@@ -95,6 +95,31 @@ verify:open-chestnut-build`; OpenChestnut passed `211/211` and OfficeBridge
 `5/5`. Two clean WASM builds produced the same 39 audited files and the same
 manifest-bound 38-file, 14,417,084-byte runtime.
 
+### PPTX auditable imported slide-name workflow
+
+On 2026-07-18, the native Presentation plugin added
+`openchestnut-slide-name-edit-workflow.mjs` for the preceding bounded
+source-bound name operation. It accepts an immutable input, distinct PPTX and
+audit outputs, one expected name, and one replacement name. It resolves the
+actual `presentation.xml` SlidePart relationship order, refuses duplicate,
+missing, fallback-only, or mismatched names, performs only the typed
+`slide.name` assignment, and promotes output only after package, reimport,
+semantic, model-SVG, and ordinary presentation verification.
+
+Its audit binds source/output hashes, the target SlidePart, requested native
+attribute, and explicit no-fallback rewrite policy. It proves package topology
+and every non-target part byte-identical. The target `SlidePart` itself may be
+XML-canonicalized by Open XML SDK, so its safety proof is the requested native
+name plus typed postwrite/reimport semantics rather than a false lexical-byte
+promise. The plugin regression runs both the programmatic and CLI paths and
+proves a missing target creates neither output nor audit.
+
+The complete local gate passed `npm test` (including Playwright), `npm run
+docs:api`, `npm run proto:check`, `npm run test:pack`, serial `npm run
+verify:open-chestnut-build`, offline release metadata, OpenChestnut `211/211`,
+and OfficeBridge `5/5`. The packed clean install includes the workflow and the
+bundled runtime remains reproducible at 38 files / 14,417,084 bytes.
+
 ### PDF source-bound single-widget form-field updates
 
 On 2026-07-18, the default direct-original MuPDF.js route added
