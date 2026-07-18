@@ -155,6 +155,48 @@ async function assertPublicOfficeRoundTrip(kind, sourcePath) {
   assert.fail(`Unknown retained template kind: ${kind}`);
 }
 
+function presentationPlaceholderIdentity(shape) {
+  const snapshot = structuredClone(shape.layoutJson());
+  delete snapshot.text;
+  delete snapshot.paragraphs;
+  return snapshot;
+}
+
+function presentationTextFormatting(shape) {
+  const paragraphs = structuredClone(shape.text.paragraphs);
+  for (const paragraph of paragraphs) for (const run of paragraph.runs || []) {
+    if (Object.hasOwn(run, "text")) run.text = "";
+    if (run.field) run.field.text = "";
+  }
+  return paragraphs;
+}
+
+async function assertPublicPresentationPlaceholderTextEdit(sourcePath) {
+  const source = await FileBlob.load(sourcePath);
+  const presentation = await PresentationFile.importPptx(source);
+  const target = presentation.slides.items
+    .flatMap((slide) => slide.shapes.items)
+    .find((shape) => shape.placeholder && shape.text.value.trim());
+  assert.ok(target, `Presentation template must expose a visible slide placeholder: ${sourcePath}`);
+  assert.equal(target.placeholder.textEditable, true, `Presentation template placeholder must advertise its verified text capability: ${sourcePath}`);
+  const id = target.id;
+  const identity = presentationPlaceholderIdentity(target);
+  const formatting = presentationTextFormatting(target);
+  const replacement = `${target.text.value} · Agent QA`;
+  // Agent workflows commonly use TextFrame.set(). Imported styled titles must
+  // preserve their native formatting while replacing only the characters.
+  target.text.set(replacement);
+  const exported = await PresentationFile.exportPptx(presentation);
+  const reimported = await PresentationFile.importPptx(exported);
+  const roundTrip = reimported.slides.items.flatMap((slide) => slide.shapes.items).find((shape) => shape.id === id);
+  assert.ok(roundTrip, `Edited placeholder identity must survive reimport: ${sourcePath}`);
+  assert.equal(roundTrip.placeholder.textEditable, true, `Reimported placeholder must re-prove its text capability: ${sourcePath}`);
+  assert.equal(roundTrip.text.value, replacement, `Edited placeholder text must survive reimport: ${sourcePath}`);
+  assert.deepEqual(presentationPlaceholderIdentity(roundTrip), identity, `Placeholder geometry/style/identity must stay source-bound: ${sourcePath}`);
+  assert.deepEqual(presentationTextFormatting(roundTrip), formatting, `Placeholder paragraph/run formatting must stay source-bound: ${sourcePath}`);
+  return exported;
+}
+
 assert.equal(plugin.name, "default-template-library");
 assert.equal(plugin.license, "MIT");
 assert.equal(plugin.skills, "./skills/");
@@ -248,6 +290,27 @@ try {
     roundTripped.push({ id, output: roundTripOutput });
   }
 
+  const editedPresentations = [];
+  for (const { id, kind, output } of materialized.filter((item) => item.kind === "presentation")) {
+    const exported = await assertPublicPresentationPlaceholderTextEdit(output);
+    const editedOutput = path.join(temporary, `${id}-placeholder-edit.pptx`);
+    await exported.save(editedOutput);
+    editedPresentations.push({ id, output: editedOutput });
+  }
+
+  const structuredPresentation = materialized.find((item) => item.id === "artifact-template-market-trends-report");
+  assert.ok(structuredPresentation, "Market Trends retained template must be materialized");
+  const topologyProbe = await PresentationFile.importPptx(await FileBlob.load(structuredPresentation.output));
+  const topologyTarget = topologyProbe.slides.items.flatMap((slide) => slide.shapes.items)
+    .find((shape) => shape.placeholder && shape.text.value.includes("\n"));
+  assert.ok(topologyTarget, "Market Trends template must retain a multi-line placeholder title");
+  topologyTarget.text.set(topologyTarget.text.value.replace("\n", " "));
+  await assert.rejects(
+    () => PresentationFile.exportPptx(topologyProbe),
+    (error) => error?.code === "presentation_text_topology_changed",
+    "imported placeholder text.set must fail closed when it changes the source line-break topology",
+  );
+
   const financialBudget = materialized.find((item) => item.id === "artifact-template-financial-budget");
   assert.ok(financialBudget, "Financial Budget retained template must be materialized");
   const partialSharedFormulaWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(financialBudget.output));
@@ -262,6 +325,7 @@ try {
     const rendered = path.join(temporary, "native-render");
     for (const { id, output } of materialized) await assertNativeRender(output, path.join(rendered, id, "source"));
     for (const { id, output } of roundTripped) await assertNativeRender(output, path.join(rendered, id, "openchestnut"));
+    for (const { id, output } of editedPresentations) await assertNativeRender(output, path.join(rendered, id, "placeholder-edit"));
   }
 } finally {
   await fs.rm(temporary, { force: true, recursive: true });

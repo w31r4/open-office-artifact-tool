@@ -36,3 +36,7 @@ audit paths, and writes a byte-identical working copy plus an audit record.
 Use the matching Documents, Presentations, or Spreadsheets Skill to inspect,
 edit, render, and verify that output. Complex source-bound Office graphs are
 preserved only while unchanged; unsupported topology edits fail explicitly.
+All seven retained PPTX templates expose at least one recognized SlidePart
+placeholder whose existing text can be replaced through the bounded
+Presentations workflow while its native identity, geometry, formatting, and
+layout binding remain source-bound.

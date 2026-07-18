@@ -382,7 +382,10 @@ closed without a fallback.
 
 When the source deck has one uniquely named slide, one uniquely named title
 shape, and one canonical plain-text Notes part, use the shipped workflow rather
-than reconstructing the slide or editing OOXML directly:
+than reconstructing the slide or editing OOXML directly. The title may be an
+ordinary editable shape or a concrete imported SlidePart placeholder with a
+recognized local text body; placeholder text replacement preserves its native
+identity, geometry, formatting, and layout binding:
 
 ```ts
 import { editPptxTitleAndNotes } from "../examples/openchestnut-title-notes-edit-workflow.mjs";
@@ -402,8 +405,11 @@ await editPptxTitleAndNotes({
 
 It requires a distinct output path and fails closed if the target is ambiguous,
 the source text is not exact, the notes part is missing/rich, or reimport shows
-an identity, geometry, background, slide-order, or slide-name change. It emits
-only model-render evidence; use the native render route for final visual QA.
+an identity, geometry, formatting, background, slide-order, or slide-name
+change. A placeholder whole-text replacement must retain the source newline and
+inline topology; use an exact in-run `title.text.replace(...)` when that is the
+narrower operation. It emits only model-render evidence; use the native render
+route for final visual QA.
 
 ## Bounded Legacy Slide Comments
 

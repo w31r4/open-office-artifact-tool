@@ -49,6 +49,7 @@ internal static class PptxPlaceholderCodec
                     ElementSha256 = HashElement(shape),
                     Editable = PptxTextCodec.SupportsEditing(shape.TextBody) || directFrame is not null,
                     DirectFramePresenceEditable = SupportsDirectFramePresenceEditing(shape),
+                    TextEditable = shape.TextBody is not null && PptxTextCodec.SupportsEditing(shape.TextBody),
                 },
             };
             placeholder.Source.Editable = placeholder.Source.Editable || placeholder.Source.DirectFramePresenceEditable;
@@ -151,6 +152,76 @@ internal static class PptxPlaceholderCodec
         }
         ValidateDirectFrame(requested.DirectFrame, requested.Id);
         ApplyDirectFrame(sourceShape, requested.DirectFrame);
+    }
+
+    // A slide placeholder is represented by PresentationShape because it is a
+    // concrete member of p:spTree. Keep that surrounding element source-bound,
+    // but permit the same owner-local p:txBody operation used by Master/Layout
+    // placeholders when the native graph is fully recognized.
+    internal static bool SupportsSlideTextEditing(P.Shape sourceShape) =>
+        NativePlaceholder(sourceShape) is not null &&
+        sourceShape.TextBody is not null &&
+        PptxTextCodec.SupportsEditing(sourceShape.TextBody);
+
+    internal static void ApplySlideText(
+        P.Shape sourceShape,
+        PresentationElement original,
+        PresentationElement requested,
+        PptxPartContext partContext)
+    {
+        if (!SupportsSlideTextEditing(sourceShape) ||
+            original.ContentCase != PresentationElement.ContentOneofCase.Shape ||
+            requested.ContentCase != PresentationElement.ContentOneofCase.Shape)
+            throw new CodecException(
+                "unsupported_presentation_edit",
+                $"Presentation slide placeholder {requested.Id} has no safely editable owner-local text graph.");
+
+        PptxTextCodec.Validate(requested.Shape);
+        var allowed = original.Clone();
+        allowed.Source = requested.Source?.Clone();
+        CopyTextContent(allowed.Shape, requested.Shape, requested.Id);
+        if (!allowed.Equals(requested))
+            throw new CodecException(
+                "unsupported_presentation_edit",
+                $"Presentation slide placeholder {requested.Id} may edit only owner-local text content; identity, geometry, formatting, and shape semantics remain source-bound.");
+
+        PptxTextCodec.Apply(sourceShape, requested.Shape, partContext);
+    }
+
+    private static void CopyTextContent(
+        PresentationShape allowed,
+        PresentationShape requested,
+        string elementId)
+    {
+        if (allowed.TextBody is null || requested.TextBody is null ||
+            allowed.TextBody.Paragraphs.Count != requested.TextBody.Paragraphs.Count)
+            throw new CodecException(
+                "presentation_text_topology_changed",
+                $"Presentation slide placeholder {elementId} must retain its paragraph topology.");
+
+        for (var paragraphIndex = 0; paragraphIndex < allowed.TextBody.Paragraphs.Count; paragraphIndex++)
+        {
+            var allowedParagraph = allowed.TextBody.Paragraphs[paragraphIndex];
+            var requestedParagraph = requested.TextBody.Paragraphs[paragraphIndex];
+            if (allowedParagraph.Runs.Count != requestedParagraph.Runs.Count)
+                throw new CodecException(
+                    "presentation_text_topology_changed",
+                    $"Presentation slide placeholder {elementId} must retain its inline topology.");
+            for (var runIndex = 0; runIndex < allowedParagraph.Runs.Count; runIndex++)
+            {
+                var allowedRun = allowedParagraph.Runs[runIndex];
+                var requestedRun = requestedParagraph.Runs[runIndex];
+                if (allowedRun.ContentCase != requestedRun.ContentCase)
+                    throw new CodecException(
+                        "presentation_text_topology_changed",
+                        $"Presentation slide placeholder {elementId} cannot change inline kinds.");
+                if (allowedRun.ContentCase == PresentationTextRun.ContentOneofCase.Text)
+                    allowedRun.Text = requestedRun.Text;
+                else if (allowedRun.ContentCase == PresentationTextRun.ContentOneofCase.Field)
+                    allowedRun.Field.Text = requestedRun.Field.Text;
+            }
+        }
+        allowed.Text = PptxTextCodec.Flatten(allowed.TextBody);
     }
 
     internal static void ScrubModeledContent(P.ShapeTree? shapeTree, PptxPartContext partContext)

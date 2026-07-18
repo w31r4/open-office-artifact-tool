@@ -1238,8 +1238,8 @@ Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or 
 | `compose.column` | api | Create a vertical compose container. Use width/height fill, hug, or fixed pixels; gap and padding are in pixels. |
 | `compose.paragraph` | api | Create an editable text block with name, className/style text tokens, and stable inspect output. |
 | `compose.text` | api | Create the same editable paragraph node through the reference-template-compatible children-first text(children, props) helper. |
-| `exportPptxWithOpenChestnut` | api | Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures with native crop/contain/cover semantics, fixed-grid plain-text tables, recursive native p:grpSp trees, plain-text speaker notes, source-free bar/line/pie charts, the bounded literal clustered bar+line combo profile with either shared primary axes or a canonical secondary line pair, and validated payload-only replacement for eligible imported OLE workbooks. Recognized imported direct backgrounds, picture source rectangles, canonical fixed-topology groups, simple notes bodies, eligible OLE bindings, and canonical fixed-topology combos are hash-bound and editable; inherited or complex graphs remain preserved and fail closed on unsupported mutation. |
-| `importPptxWithOpenChestnut` | api | Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich text, rectangular pictures and native source rectangles, tables, connectors, recursive canonical p:grpSp groups, bar/line/pie charts, the canonical literal clustered bar+line combo profile with either shared primary axes or a secondary line pair, plain-text speaker notes, and defensive payload access for eligible OLE workbooks. Complex backgrounds/blips/groups, rich notes, mixed line groups, secondary bars, irregular combo graphs, ambiguous OLE graphs, and other unsupported content remain source-bound and read-only. |
+| `exportPptxWithOpenChestnut` | api | Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures with native crop/contain/cover semantics, fixed-grid plain-text tables, recursive native p:grpSp trees, plain-text speaker notes, source-free bar/line/pie charts, the bounded literal clustered bar+line combo profile with either shared primary axes or a canonical secondary line pair, and validated payload-only replacement for eligible imported OLE workbooks. Recognized imported direct backgrounds, local SlidePart placeholder text bodies, picture source rectangles, canonical fixed-topology groups, simple notes bodies, eligible OLE bindings, and canonical fixed-topology combos are hash-bound and editable within their explicit component boundaries; inherited or complex graphs remain preserved and fail closed on unsupported mutation. |
+| `importPptxWithOpenChestnut` | api | Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich text, recognized owner-local SlidePart placeholder text, rectangular pictures and native source rectangles, tables, connectors, recursive canonical p:grpSp groups, bar/line/pie charts, the canonical literal clustered bar+line combo profile with either shared primary axes or a secondary line pair, plain-text speaker notes, and defensive payload access for eligible OLE workbooks. Placeholder identity/geometry/formatting, inherited Master/Layout graphs, complex backgrounds/blips/groups, rich notes, mixed line groups, secondary bars, irregular combo graphs, ambiguous OLE graphs, and other unsupported content remain source-bound and read-only. |
 | `nativeObject.getEmbeddedWorkbook` | api | Read a defensive FileBlob copy of the XLSX payload from an eligible source-bound top-level OLE object without exposing arbitrary native-part mutation. |
 | `nativeObject.replaceEmbeddedWorkbook` | api | Replace only the XLSX payload of an eligible imported top-level OLE object. OpenChestnut validates the new workbook and immutable source binding, preserves the OLE shell, relationships, preview, and all other native parts, and fails closed for malformed or ambiguous graphs. |
 | `nativeObject.setName` | api | Native OLE, SmartArt/diagram, and contentPart objects imported through OpenChestnut are source-bound and read-only; setName rejects instead of mutating the preserved package graph. |
@@ -1271,7 +1271,7 @@ Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or 
 | `presentation.verify` | api | Return QA issues for layout validation, missing master/layout references, placeholder fidelity, chart/data consistency, table shape, image data, and dangling comments. |
 | `presentation.view` | api | Control local editor gridline/guide visibility and inspect imported PowerPoint grid spacing, snap settings, and read-only slide guides. Visibility is local model state; imported viewProps.xml metadata remains source/hash-bound and unchanged by canonical export. |
 | `PresentationFile.exportPptx` | api | Serialize PPTX through the single bundled OpenChestnut codec. Only limits is accepted; legacy codec and lossy-fallback options fail explicitly. |
-| `PresentationFile.importPptx` | api | Import PPTX through the single bundled OpenChestnut codec with source-bound opaque preservation, eligible OLE workbook payload access/replacement, and fail-closed edits. |
+| `PresentationFile.importPptx` | api | Import PPTX through the single bundled OpenChestnut codec with source-bound opaque preservation, bounded text-only edits for recognized local SlidePart placeholders, eligible OLE workbook payload access/replacement, and fail-closed unsupported edits. |
 | `PresentationFile.inspectPptx` | api | Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, and legacy notes/comments author/index semantics under decompression budgets. |
 | `PresentationFile.patchPptx` | api | Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics. |
 | `shape.text.set` | api | Set plain or structured text with ordered text, field, and line-break inlines; bounded run formatting; character, picture-bullet, or auto-numbered lists; levels, indents, spacing; and external URI, internal-slide, or relative-action hyperlinks. Custom-show links and unmodeled text graphs fail closed in canonical PPTX export. |
@@ -1289,7 +1289,7 @@ Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or 
 | `slide.groups.add` | api | Author recursive native DrawingML p:grpSp trees with outer off/ext and local chOff/chExt coordinates. The bounded profile supports modeled shapes, connectors, images, tables, charts, and nested groups; canonical imported groups allow fixed-topology semantic edits, while group-level fills/effects, locks, transforms, extensions, or unsupported descendants remain opaque and read-only. |
 | `slide.images.add` | api | Add an inspectable image facade with alt text, embedded data, contain/cover/stretch fitting, explicit crop, frame, direct rotation/flips, layout JSON, crop-aware SVG preview, and PPTX output. OpenChestnut maps the bounded rectangular profile to native DrawingML a:srcRect. |
 | `slide.moveTo` | api | Move this slide to an existing 0-based deck index. On an imported PPTX, OpenChestnut rewrites only the retained source SlidePart order in the presentation slide-ID list; unrelated topology changes and broad graph clones remain fail-closed. |
-| `slide.placeholders.getItem` | api | Resolve a materialized slide placeholder shape by stable ID, name, placeholder type, or numeric index. |
+| `slide.placeholders.getItem` | api | Resolve a slide placeholder shape by stable ID, name, placeholder type, or numeric index. Imported placeholder.textEditable reports a verified local SlidePart text capability; identity, geometry, formatting, layout binding, and inherited Master/Layout graphs remain source-bound. |
 | `slide.setBackground` | api | Set a direct slide background to a six-digit RGB/theme color solid fill or a native style reference. Recognized imported direct backgrounds are hash-bound and editable; inherited Layout/Master backgrounds remain inherited. |
 | `slide.setLayout` | api | Alias of slide.applyLayout(layout): bind and materialize a bounded source-free layout for native PPTX export. |
 | `slide.shapes.add` | api | Add a shape/textbox with preset or bounded literal custom geometry, position, optional center-based rotation/flips, fill, line, text, and DrawingML text-body layout. |
@@ -1343,7 +1343,7 @@ Create the same editable paragraph node through the reference-template-compatibl
 
 #### `exportPptxWithOpenChestnut`
 
-Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures with native crop/contain/cover semantics, fixed-grid plain-text tables, recursive native p:grpSp trees, plain-text speaker notes, source-free bar/line/pie charts, the bounded literal clustered bar+line combo profile with either shared primary axes or a canonical secondary line pair, and validated payload-only replacement for eligible imported OLE workbooks. Recognized imported direct backgrounds, picture source rectangles, canonical fixed-topology groups, simple notes bodies, eligible OLE bindings, and canonical fixed-topology combos are hash-bound and editable; inherited or complex graphs remain preserved and fail closed on unsupported mutation.
+Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse shapes, rich text and lists, basic fills/lines/shadows, straight/elbow connectors and arrows, embedded pictures with native crop/contain/cover semantics, fixed-grid plain-text tables, recursive native p:grpSp trees, plain-text speaker notes, source-free bar/line/pie charts, the bounded literal clustered bar+line combo profile with either shared primary axes or a canonical secondary line pair, and validated payload-only replacement for eligible imported OLE workbooks. Recognized imported direct backgrounds, local SlidePart placeholder text bodies, picture source rectangles, canonical fixed-topology groups, simple notes bodies, eligible OLE bindings, and canonical fixed-topology combos are hash-bound and editable within their explicit component boundaries; inherited or complex graphs remain preserved and fail closed on unsupported mutation.
 
 **Schema parameters:**
 
@@ -1356,7 +1356,7 @@ Export bounded direct slide backgrounds, textbox/rectangle/roundRect/ellipse sha
 
 #### `importPptxWithOpenChestnut`
 
-Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich text, rectangular pictures and native source rectangles, tables, connectors, recursive canonical p:grpSp groups, bar/line/pie charts, the canonical literal clustered bar+line combo profile with either shared primary axes or a secondary line pair, plain-text speaker notes, and defensive payload access for eligible OLE workbooks. Complex backgrounds/blips/groups, rich notes, mixed line groups, secondary bars, irregular combo graphs, ambiguous OLE graphs, and other unsupported content remain source-bound and read-only.
+Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich text, recognized owner-local SlidePart placeholder text, rectangular pictures and native source rectangles, tables, connectors, recursive canonical p:grpSp groups, bar/line/pie charts, the canonical literal clustered bar+line combo profile with either shared primary axes or a secondary line pair, plain-text speaker notes, and defensive payload access for eligible OLE workbooks. Placeholder identity/geometry/formatting, inherited Master/Layout graphs, complex backgrounds/blips/groups, rich notes, mixed line groups, secondary bars, irregular combo graphs, ambiguous OLE graphs, and other unsupported content remain source-bound and read-only.
 
 **Schema parameters:**
 
@@ -1365,7 +1365,7 @@ Import PPTX bytes with editable bounded direct slide backgrounds, shapes, rich t
 
 **Schema returns:**
 
-- `presentation` (Presentation) — Imported presentation facade with editable bounded direct slide backgrounds, shapes, rich text, pictures, tables, connectors, recursive canonical groups, bar/line/pie charts, and the literal clustered bar+line combo profile with either shared primary axes or a secondary line pair; advanced package graphs are read-only except for validated payload-only replacement on eligible OLE workbooks through getEmbeddedWorkbook and replaceEmbeddedWorkbook.
+- `presentation` (Presentation) — Imported presentation facade with editable bounded direct slide backgrounds, shapes, rich text, recognized owner-local SlidePart placeholder text, pictures, tables, connectors, recursive canonical groups, bar/line/pie charts, and the literal clustered bar+line combo profile with either shared primary axes or a secondary line pair. Placeholder identity/geometry/formatting and inherited template graphs remain source-bound; advanced package graphs are read-only except for validated payload-only replacement on eligible OLE workbooks through getEmbeddedWorkbook and replaceEmbeddedWorkbook.
 
 #### `nativeObject.getEmbeddedWorkbook`
 
@@ -1790,7 +1790,7 @@ Serialize PPTX through the single bundled OpenChestnut codec. Only limits is acc
 
 #### `PresentationFile.importPptx`
 
-Import PPTX through the single bundled OpenChestnut codec with source-bound opaque preservation, eligible OLE workbook payload access/replacement, and fail-closed edits.
+Import PPTX through the single bundled OpenChestnut codec with source-bound opaque preservation, bounded text-only edits for recognized local SlidePart placeholders, eligible OLE workbook payload access/replacement, and fail-closed unsupported edits.
 
 **Schema parameters:**
 
@@ -1799,7 +1799,7 @@ Import PPTX through the single bundled OpenChestnut codec with source-bound opaq
 
 **Schema returns:**
 
-- `presentation` (Presentation) — Imported presentation facade with editable core objects, recognized direct slide backgrounds, canonical fixed-topology recursive groups, bar/line/pie charts plus the literal clustered bar+line combo profile with either shared primary axes or a secondary line pair, simple plain-text speaker notes, bounded legacy slide-level comments (unchanged-only), and payload-only replacement for eligible source-bound OLE workbooks; complex backgrounds/groups, rich notes, mixed line groups, secondary bars, irregular combo graphs, Master/Layout, modern comments, themes, other native objects, placeholders, and unsupported package graphs remain source-bound.
+- `presentation` (Presentation) — Imported presentation facade with editable core objects, bounded text-only replacement for recognized owner-local SlidePart placeholders, recognized direct slide backgrounds, canonical fixed-topology recursive groups, bar/line/pie charts plus the literal clustered bar+line combo profile with either shared primary axes or a secondary line pair, simple plain-text speaker notes, bounded legacy slide-level comments (unchanged-only), and payload-only replacement for eligible source-bound OLE workbooks. Placeholder identity/geometry/formatting and inherited Master/Layout graphs, complex backgrounds/groups, rich notes, mixed line groups, secondary bars, irregular combo graphs, modern comments, themes, other native objects, and unsupported package graphs remain source-bound.
 
 #### `PresentationFile.inspectPptx`
 
@@ -2059,15 +2059,15 @@ Move this slide to an existing 0-based deck index. On an imported PPTX, OpenChes
 
 #### `slide.placeholders.getItem`
 
-Resolve a materialized slide placeholder shape by stable ID, name, placeholder type, or numeric index.
+Resolve a slide placeholder shape by stable ID, name, placeholder type, or numeric index. Imported placeholder.textEditable reports a verified local SlidePart text capability; identity, geometry, formatting, layout binding, and inherited Master/Layout graphs remain source-bound.
 
 **Schema parameters:**
 
-- `idOrNameOrTypeOrIndex` (string|number) required — Materialized placeholder stable ID, display name, type, or numeric idx.
+- `idOrNameOrTypeOrIndex` (string|number) required — Placeholder stable ID, display name, type, or numeric idx.
 
 **Schema returns:**
 
-- `shape` (Shape|undefined) — Matching materialized placeholder shape or undefined.
+- `shape` (Shape|undefined) — Matching placeholder shape or undefined. Imported shape.placeholder.textEditable is true only when the source binding recognizes the concrete SlidePart's local text body. In that case text.set(...) preserves native formatting/topology while replacing characters; use text.replace(...) for an in-run edit. The capability is re-proved from source on export and cannot be granted by mutating the model flag. Identity, geometry, formatting, and layout binding remain read-only.
 
 #### `slide.setBackground`
 

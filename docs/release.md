@@ -72,6 +72,40 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### PPTX bounded imported SlidePart placeholder-text edits
+
+On 2026-07-19, the Presentation model, protocol-2 wire, OpenChestnut C# codec,
+Help catalog, native Presentation Skill, and repository-only Default Template
+Library converged on one bounded edit for a concrete placeholder owned by an
+imported SlidePart. The source binding now reports `text_editable` separately
+from whole-element `editable`: a fully recognized local `p:txBody` may change
+through the ordinary `TextFrame.set(...)` or structured text-replacement path,
+while placeholder identity, geometry, paragraph/run topology and formatting,
+layout/master inheritance, relationships, and every other shape property remain
+source-bound. A model-side capability flag cannot grant permission; export
+re-reads the source package, re-proves its hash and native capability, and
+accepts only the exact text-only protobuf delta.
+
+The corpus regression imports all seven canonical retained PPTX templates
+through the public facade, edits one visible SlidePart placeholder in each,
+exports and reimports, and proves the new text plus stable native placeholder
+identity, frame, paragraph/run formatting, and source capability. LibreOffice
+and Poppler render both the retained inputs and all seven edited outputs. A
+deliberate newline-topology change, formatting change, capability tamper,
+unsupported native run graph, inherited layout/master projection, and pending
+source clone remain fail-closed.
+
+The complete local gate passed `npm test` including Playwright and the native
+template render corpus, `npm run docs:api`, `npm run test:pack`, and serial
+`npm run verify:open-chestnut-build`; OpenChestnut passed `260/260` and
+OfficeBridge passed `5/5`. Two clean WASM builds produced the same 39 audited
+files and the same manifest-bound 38-file, 14,428,348-byte runtime. The
+clean-install tarball contains 447 files, is 9,440,298 bytes compressed and
+23,759,304 bytes unpacked. `npm run release:check` passed every code,
+documentation, package, license, JavaScript, and .NET gate; before this
+candidate commit it reported only the intentionally dirty worktree plus the
+external npm-authentication blocker. No publish or tag operation was attempted.
+
 ### PPTX source-bound slide-name edits
 
 On 2026-07-18, the canonical OpenChestnut PPTX route gained one deliberately

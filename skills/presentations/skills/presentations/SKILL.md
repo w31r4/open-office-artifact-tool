@@ -314,10 +314,13 @@ ambiguous edit fail closed. This is not a generic template metadata editor.
 
 For one known slide with one known text shape and a canonical plain-text Notes
 part, prefer the shipped public-API/OpenChestnut workflow over an ad-hoc package
-patch. It imports, checks the exact source title and notes, changes only those
-two text values, exports to a distinct path, reimports, verifies the retained
-slide/title/notes identities, produces a model SVG check, and writes a
-byte-bound audit.
+patch. The title may be an ordinary editable shape or a concrete imported
+SlidePart placeholder with a recognized local text body. The latter grants only
+fixed-topology character replacement: native placeholder identity, geometry,
+formatting, and layout binding remain source-bound. The workflow imports,
+checks the exact source title and notes, changes only those two text values,
+exports to a distinct path, reimports, verifies the retained slide/title/notes
+identities, produces a model SVG check, and writes a byte-bound audit.
 
 ```bash
 node examples/openchestnut-title-notes-edit-workflow.mjs \
@@ -328,9 +331,11 @@ The optional remaining arguments are, in order: slide name, title-shape name,
 expected title, replacement title, expected notes, and replacement notes. The
 workflow deliberately fails closed for duplicate/missing slide or shape names,
 changed expected source text, absent/rich notes, slide-name/order changes, or
-any identity/geometry/direct-background change after reimport. It does not
-claim universal template editing: SmartArt, modern comment replies, rich notes,
-animations, and other connected PresentationML graphs stay source-bound.
+any identity/geometry/direct-background change after reimport. A recognized
+placeholder title must also retain its native newline/inline topology; complex
+multi-run replacements and unrecognized local text graphs fail closed. It does
+not claim universal template editing: SmartArt, modern comment replies, rich
+notes, animations, and other connected PresentationML graphs stay source-bound.
 
 Run the native render/QA route after delivery when LibreOffice/Poppler is
 available; the workflow's SVG check is model evidence, not a substitute for a

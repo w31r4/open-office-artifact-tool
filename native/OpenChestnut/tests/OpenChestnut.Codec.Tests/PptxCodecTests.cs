@@ -1248,6 +1248,7 @@ public sealed class PptxCodecTests
         Assert.False(masterPlaceholder.DirectFrame.FlipVertical);
         Assert.True(masterPlaceholder.Source.Editable);
         Assert.True(masterPlaceholder.Source.DirectFramePresenceEditable);
+        Assert.True(masterPlaceholder.Source.TextEditable);
         Assert.Equal("body", layoutPlaceholder.Type);
         Assert.Equal(2U, layoutPlaceholder.Index);
         Assert.Equal("Layout prompt", PptxTextCodec.Flatten(layoutPlaceholder.TextBody));
@@ -1257,6 +1258,7 @@ public sealed class PptxCodecTests
         Assert.False(layoutPlaceholder.DirectFrame.HasFlipVertical);
         Assert.True(layoutPlaceholder.Source.Editable);
         Assert.True(layoutPlaceholder.Source.DirectFramePresenceEditable);
+        Assert.True(layoutPlaceholder.Source.TextEditable);
         Assert.NotEqual(uint.MaxValue, masterPlaceholder.Source.ShapeTreeIndex);
 
         masterPlaceholder.TextBody.Paragraphs[0].Runs[0].Text = "Edited master prompt";
@@ -1477,6 +1479,7 @@ public sealed class PptxCodecTests
         Assert.True(inherited.Ok, Diagnostics(inherited));
         var inheritedElement = Assert.Single(Assert.Single(inherited.Artifact.Presentation.Slides).Elements, element => element.Shape?.Placeholder is not null);
         Assert.False(inheritedElement.Source.Editable);
+        Assert.True(inheritedElement.Source.TextEditable);
         Assert.Equal("body", inheritedElement.Shape.Placeholder.Type);
         Assert.Equal(2U, inheritedElement.Shape.Placeholder.Index);
         Assert.True(inheritedElement.Shape.Placeholder.InheritsGeometry);
@@ -1505,7 +1508,10 @@ public sealed class PptxCodecTests
 
         var direct = Import(AddSlidePlaceholder(template, removeTransform: false));
         Assert.True(direct.Ok, Diagnostics(direct));
-        var directShape = Assert.Single(Assert.Single(direct.Artifact.Presentation.Slides).Elements, element => element.Shape?.Placeholder is not null).Shape;
+        var directElement = Assert.Single(Assert.Single(direct.Artifact.Presentation.Slides).Elements, element => element.Shape?.Placeholder is not null);
+        Assert.False(directElement.Source.Editable);
+        Assert.True(directElement.Source.TextEditable);
+        var directShape = directElement.Shape;
         Assert.False(directShape.Placeholder.InheritsGeometry);
         Assert.NotNull(directShape.DirectFrame);
         Assert.Equal(762_000L, directShape.DirectFrame.LeftEmu);
@@ -1513,6 +1519,66 @@ public sealed class PptxCodecTests
         Assert.Equal(120_000, directShape.DirectFrame.RotationAngle60000);
         Assert.True(directShape.DirectFrame.HasFlipVertical);
         Assert.False(directShape.DirectFrame.FlipVertical);
+    }
+
+    [Fact]
+    public void SlidePlaceholderTextEditingPreservesIdentityGeometryAndFormattingAndFailsClosed()
+    {
+        var authored = Invoke(ExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var source = AddSlidePlaceholder(AddTemplatePlaceholders(authored.File.ToByteArray()), removeTransform: true);
+        var imported = Import(source);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var element = Assert.Single(Assert.Single(imported.Artifact.Presentation.Slides).Elements, candidate => candidate.Shape?.Placeholder is not null);
+        Assert.False(element.Source.Editable);
+        Assert.True(element.Source.TextEditable);
+        var originalIdentity = element.Shape.Placeholder.Clone();
+        var originalBody = element.Shape.TextBody.Clone();
+        element.Shape.TextBody.Paragraphs[0].Runs[0].Text = "Agent-edited slide placeholder";
+        element.Shape.Text = PptxTextCodec.Flatten(element.Shape.TextBody);
+
+        var exported = Export(imported.Artifact);
+        Assert.True(exported.Ok, Diagnostics(exported));
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var native = package.PresentationPart!.SlideParts.Single().Slide!.Descendants<P.Shape>()
+                .Single(shape => shape.NonVisualShapeProperties?.ApplicationNonVisualDrawingProperties?.GetFirstChild<P.PlaceholderShape>() is not null);
+            Assert.Equal("Slide inherited body", native.NonVisualShapeProperties!.NonVisualDrawingProperties!.Name!.Value);
+            Assert.Equal(2U, native.NonVisualShapeProperties!.ApplicationNonVisualDrawingProperties!.GetFirstChild<P.PlaceholderShape>()!.Index!.Value);
+            Assert.Null(native.ShapeProperties!.Transform2D);
+            Assert.Equal("Agent-edited slide placeholder", native.TextBody!.InnerText);
+            Assert.Equal("en-US", native.TextBody.Descendants<A.RunProperties>().Single().Language!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+        var roundTrip = Import(exported.File.ToByteArray());
+        var roundTripElement = Assert.Single(Assert.Single(roundTrip.Artifact.Presentation.Slides).Elements, candidate => candidate.Shape?.Placeholder is not null);
+        Assert.Equal(originalIdentity, roundTripElement.Shape.Placeholder);
+        Assert.Equal("Agent-edited slide placeholder", roundTripElement.Shape.Text);
+        Assert.Equal(originalBody.Paragraphs[0].Runs[0].FontFamily, roundTripElement.Shape.TextBody.Paragraphs[0].Runs[0].FontFamily);
+        Assert.True(roundTripElement.Source.TextEditable);
+
+        var formattingEdit = Import(source);
+        var formattingElement = Assert.Single(Assert.Single(formattingEdit.Artifact.Presentation.Slides).Elements, candidate => candidate.Shape?.Placeholder is not null);
+        formattingElement.Shape.TextBody.Paragraphs[0].Runs[0].Bold = true;
+        var formattingRejected = Export(formattingEdit.Artifact);
+        Assert.False(formattingRejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(formattingRejected.Diagnostics).Code);
+
+        var bindingEdit = Import(source);
+        Assert.Single(Assert.Single(bindingEdit.Artifact.Presentation.Slides).Elements, candidate => candidate.Shape?.Placeholder is not null).Source.TextEditable = false;
+        var bindingRejected = Export(bindingEdit.Artifact);
+        Assert.False(bindingRejected.Ok);
+        Assert.Equal("presentation_element_binding_mismatch", Assert.Single(bindingRejected.Diagnostics).Code);
+
+        var unsupported = Import(AddUnsupportedSlidePlaceholderRun(source));
+        var unsupportedElement = Assert.Single(Assert.Single(unsupported.Artifact.Presentation.Slides).Elements, candidate => candidate.Shape?.Placeholder is not null);
+        Assert.False(unsupportedElement.Source.TextEditable);
+        unsupportedElement.Shape.Text = "Rejected text";
+        unsupportedElement.Shape.TextBody.Paragraphs[0].Runs[0].Text = "Rejected text";
+        var unsupportedRejected = Export(unsupported.Artifact);
+        Assert.False(unsupportedRejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(unsupportedRejected.Diagnostics).Code);
     }
 
     [Fact]
@@ -4552,6 +4618,21 @@ public sealed class PptxCodecTests
             placeholder.ShapeProperties.Transform2D.VerticalFlip = false;
             if (removeTransform) placeholder.ShapeProperties!.Transform2D!.Remove();
             package.PresentationPart!.SlideParts.Single().Slide!.CommonSlideData!.ShapeTree!.Append(placeholder);
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddUnsupportedSlidePlaceholderRun(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var package = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var placeholder = package.PresentationPart!.SlideParts.Single().Slide!.Descendants<P.Shape>()
+                .Single(shape => shape.NonVisualShapeProperties?.ApplicationNonVisualDrawingProperties?.GetFirstChild<P.PlaceholderShape>() is not null);
+            placeholder.TextBody!.Descendants<A.Run>().Single().Append(
+                new OpenXmlUnknownElement("a", "opaqueTextRunExtension", "http://schemas.openxmlformats.org/drawingml/2006/main"));
         }
         return stream.ToArray();
     }

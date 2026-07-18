@@ -47,6 +47,49 @@ public sealed class DefaultTemplateLibraryCodecTests
     }
 
     [Theory]
+    [InlineData("artifact-template-business-review")]
+    [InlineData("artifact-template-market-trends-report")]
+    [InlineData("artifact-template-operating-review")]
+    [InlineData("artifact-template-project-kickoff")]
+    [InlineData("artifact-template-simple-dark-mode")]
+    [InlineData("artifact-template-simple-light-mode")]
+    [InlineData("artifact-template-team-alignment")]
+    public void RetainedPresentationTemplateSupportsOneBoundedSlidePlaceholderTextEdit(string templateId)
+    {
+        var limits = EffectiveCodecLimits.From(null);
+        var result = PptxCodec.Import(ReadReference(templateId, ".pptx"), limits);
+        var element = result.Artifact.Presentation.Slides
+            .SelectMany(slide => slide.Elements)
+            .FirstOrDefault(candidate =>
+                candidate.ContentCase == PresentationElement.ContentOneofCase.Shape &&
+                candidate.Shape.Placeholder is not null &&
+                candidate.Source?.TextEditable == true &&
+                candidate.Shape.TextBody.Paragraphs.SelectMany(paragraph => paragraph.Runs)
+                    .Any(run => run.ContentCase == PresentationTextRun.ContentOneofCase.Text && !string.IsNullOrWhiteSpace(run.Text)));
+        Assert.NotNull(element);
+        Assert.False(element!.Source.Editable);
+        var elementId = element.Id;
+        var name = element.Name;
+        var placeholder = element.Shape.Placeholder.Clone();
+        var directFrame = element.Shape.DirectFrame?.Clone();
+        var marker = " · Agent QA";
+        var run = element.Shape.TextBody.Paragraphs.SelectMany(paragraph => paragraph.Runs)
+            .First(candidate => candidate.ContentCase == PresentationTextRun.ContentOneofCase.Text && !string.IsNullOrWhiteSpace(candidate.Text));
+        run.Text += marker;
+        element.Shape.Text = PptxTextCodec.Flatten(element.Shape.TextBody);
+
+        var exported = PptxCodec.Export(result.Artifact, limits);
+        var reimported = PptxCodec.Import(exported.File, limits);
+        var roundTrip = reimported.Artifact.Presentation.Slides.SelectMany(slide => slide.Elements).Single(candidate => candidate.Id == elementId);
+        Assert.Equal(name, roundTrip.Name);
+        Assert.Equal(placeholder, roundTrip.Shape.Placeholder);
+        Assert.Equal(directFrame, roundTrip.Shape.DirectFrame);
+        Assert.Contains(marker, roundTrip.Shape.Text, StringComparison.Ordinal);
+        Assert.False(roundTrip.Source.Editable);
+        Assert.True(roundTrip.Source.TextEditable);
+    }
+
+    [Theory]
     [InlineData("artifact-template-design-report")]
     [InlineData("artifact-template-experiment-analysis")]
     [InlineData("artifact-template-investment-committee-memo")]

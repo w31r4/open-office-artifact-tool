@@ -52,6 +52,16 @@ Insertion remains source-free authoring only: inserting into an imported PPTX
 would change its source-bound slide topology and is rejected at export rather
 than silently reconstructing the deck.
 
+A concrete imported SlidePart `p:sp/p:ph` with a recognized local text body may
+replace existing characters through `shape.text.replace(...)` or a
+newline-topology-preserving `shape.text.set(...)`. This component capability
+is exposed for preflight as `shape.placeholder.textEditable === true`, but is
+re-proved from the source binding during export and cannot be granted by
+changing the model flag. It does not make the placeholder shape editable:
+type/index, name, geometry,
+formatting, layout binding, Master/Layout projections, and unmodeled XML remain
+source-bound, and ambiguous topology changes fail closed.
+
 `slide.moveTo(destinationIndex)` moves one existing slide to an existing
 0-based deck index. On an imported PPTX it changes only
 `ppt/presentation.xml`'s `p:sldIdLst` for the retained source SlideParts; it

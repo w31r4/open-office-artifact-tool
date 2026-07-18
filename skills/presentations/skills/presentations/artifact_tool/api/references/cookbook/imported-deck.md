@@ -62,22 +62,43 @@ const titleEvidence = title && {
   id: title.id,
   frame: title.position,
   text: title.text.value,
+  textEditable: title.placeholder?.textEditable === true,
 };
 ```
 
-For an imported deck, a `p:ph` placeholder is inspectable evidence only. It is
-a source-bound inherited projection, so changing its text, geometry, identity,
-or layout binding fails closed rather than rebuilding the template. Add a
-clearly named ordinary shape for a permitted local overlay, use the deck's
-native host for template edits, or rebuild a source-free deck when that is the
-actual intent.
+For an imported deck, distinguish a concrete placeholder shape owned by the
+SlidePart from an inherited Master/Layout projection. When the concrete
+`p:sp/p:ph` owns a fully recognized local `p:txBody`, its existing text content
+is a bounded editable component even though the surrounding shape remains
+source-bound:
+
+```ts
+if (title.placeholder?.textEditable !== true) {
+  throw new Error("The imported placeholder has no verified local text capability.");
+}
+
+// Fixed-topology, in-run replacement keeps the native paragraph/run style.
+title.text.replace("Quarterly Review", "Quarterly Outlook");
+
+// Whole-text replacement is also supported when the source newline topology
+// is retained and each newline-delimited span maps to one native text run.
+title.text.set(title.text.value.replace("FY25", "FY26"));
+```
+
+Both routes preserve placeholder type/index, name, geometry, formatting, layout
+binding, and unmodeled XML. A changed newline count, ambiguous multi-run span,
+field, unsupported local text graph, or any non-text mutation fails closed.
+Master/Layout placeholder collections and placeholder shapes that exist only as
+inherited projections remain inspection evidence, not a template-rewrite API.
+Use an ordinary overlay, a native host, or an explicit source-free rebuild when
+the requested change exceeds this local text boundary.
 
 For a new source-free deck, create the canonical master/layout and use
 `slides.add({ layout })` (or call `slide.setLayout(layout)` after creation)
 before filling the direct-frame `title`, `body`, `ctrTitle`, or `subTitle`
 placeholders; see
-[`layout.spec.md`](../layout.spec.md). This is deliberately separate from
-imported-template mutation.
+[`layout.spec.md`](../layout.spec.md). This broader source-free materialization
+path is deliberately separate from the bounded imported local-text operation.
 
 Inspect records use 1-based `slide` numbers for display; `slides.getItem(index)`
 is 0-based. Prefer resolving the `sl/...` anchor from inspect.

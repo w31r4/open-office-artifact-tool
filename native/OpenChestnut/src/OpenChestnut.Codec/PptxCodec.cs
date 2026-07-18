@@ -564,7 +564,8 @@ internal static class PptxCodec
                         if (semanticItems > limits.MaxCells)
                             throw new CodecException("presentation_item_budget_exceeded", $"PPTX presentation exceeds max_cells semantic-item budget ({limits.MaxCells}).", PartPath(slidePart));
                     }
-                    if (elementBinding.Editable != original.Source.Editable)
+                    if (elementBinding.Editable != original.Source.Editable ||
+                        elementBinding.TextEditable != original.Source.TextEditable)
                         throw new CodecException(
                             "presentation_element_binding_mismatch",
                             $"Presentation slide {slideIndex + 1} element {elementIndex + 1} changed its source editability contract.",
@@ -584,7 +585,18 @@ internal static class PptxCodec
                     }
                     if (SemanticHash(requested).Equals(elementBinding.SemanticSha256, StringComparison.OrdinalIgnoreCase)) continue;
                     if (!elementBinding.Editable)
+                    {
+                        if (elementBinding.TextEditable &&
+                            sourceElement is P.Shape sourcePlaceholder &&
+                            requested.ContentCase == PresentationElement.ContentOneofCase.Shape &&
+                            PptxPlaceholderCodec.SupportsSlideTextEditing(sourcePlaceholder))
+                        {
+                            PptxPlaceholderCodec.ApplySlideText(sourcePlaceholder, original, requested, slideContext);
+                            changed = true;
+                            continue;
+                        }
                         throw UnsupportedPresentationEdit(slideIndex, elementIndex, slidePart);
+                    }
                     if (sourceElement is P.Shape sourceShape &&
                         requested.ContentCase == PresentationElement.ContentOneofCase.Shape &&
                         IsSimpleShape(sourceShape))
@@ -755,6 +767,7 @@ internal static class PptxCodec
             ShapeTreeIndex = checked((uint)elementIndex),
             ElementSha256 = HashElement(source),
             Editable = editable,
+            TextEditable = source is P.Shape placeholderShape && PptxPlaceholderCodec.SupportsSlideTextEditing(placeholderShape),
         };
         element.Source.SemanticSha256 = SemanticHash(element);
         return element;
@@ -1449,6 +1462,7 @@ internal static class PptxCodec
             if (requestedChild.Id != originalChild.Id || binding.ShapeTreeIndex != index ||
                 !binding.ElementSha256.Equals(HashElement(sourceChild), StringComparison.OrdinalIgnoreCase) ||
                 binding.Editable != originalChild.Source?.Editable ||
+                binding.TextEditable != originalChild.Source?.TextEditable ||
                 !binding.SemanticSha256.Equals(originalChild.Source?.SemanticSha256 ?? string.Empty, StringComparison.OrdinalIgnoreCase) ||
                 !SemanticHash(originalChild).Equals(binding.SemanticSha256, StringComparison.OrdinalIgnoreCase))
                 throw new CodecException(
@@ -3008,6 +3022,7 @@ internal static class PptxCodec
             if (binding.ShapeTreeIndex != elementIndex ||
                 !binding.ElementSha256.Equals(HashElement(sourceElements[elementIndex]), StringComparison.OrdinalIgnoreCase) ||
                 binding.Editable != original.Source?.Editable ||
+                binding.TextEditable != original.Source?.TextEditable ||
                 !binding.SemanticSha256.Equals(original.Source?.SemanticSha256 ?? string.Empty, StringComparison.OrdinalIgnoreCase) ||
                 !SemanticHash(original).Equals(binding.SemanticSha256, StringComparison.OrdinalIgnoreCase) ||
                 !SemanticHash(requested).Equals(binding.SemanticSha256, StringComparison.OrdinalIgnoreCase))
@@ -3227,6 +3242,7 @@ internal static class PptxCodec
                 !binding.SemanticSha256.Equals(sourceBinding.SemanticSha256, StringComparison.OrdinalIgnoreCase) ||
                 binding.Editable != sourceBinding.Editable ||
                 binding.DirectFramePresenceEditable != sourceBinding.DirectFramePresenceEditable ||
+                binding.TextEditable != sourceBinding.TextEditable ||
                 !binding.ElementSha256.Equals(PptxPlaceholderCodec.ElementHash(sourceShape), StringComparison.OrdinalIgnoreCase))
                 throw new CodecException(
                     "presentation_placeholder_binding_mismatch",

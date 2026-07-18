@@ -1343,6 +1343,10 @@ message PresentationElementSourceBinding {
   // either absent or a fully recognized owned transform, so message presence
   // may safely change without flattening a complex native graph.
   bool direct_frame_presence_editable = 5;
+  // Source evidence only: true when the owner-local p:txBody graph is fully
+  // recognized and may change its textual content without granting edit
+  // permission to the surrounding shape, placeholder identity, or geometry.
+  bool text_editable = 6;
 }
 
 // Bounded recursive p:grpSp projection. The outer frame maps the local child
@@ -1378,8 +1382,9 @@ message PresentationShape {
   PresentationTextBody text_body = 10;
   // Present only when the native p:sp is a slide placeholder. PowerPoint
   // resolves an omitted direct frame from the linked Slide Layout placeholder
-  // with the same index. This identity is descriptive and remains read-only in
-  // the current source-preserving slice.
+  // with the same index. This identity remains read-only. A separately proven
+  // source.text_editable claim may permit only owner-local text-body content
+  // changes without granting identity, geometry, formatting, or layout edits.
   PresentationPlaceholderIdentity placeholder = 11;
   // Recognized owner-local a:xfrm only. Absence means either inherited geometry
   // (when placeholder.inherits_geometry is true) or an unrecognized direct
