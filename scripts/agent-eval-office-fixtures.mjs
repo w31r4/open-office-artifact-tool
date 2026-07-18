@@ -33,6 +33,24 @@ export const XLSX_THREADED_REVIEW_FIXTURE = Object.freeze({
   requestedReply: "Approved after sensitivity review",
 });
 
+export const XLSX_GROWTH_UPDATE_FIXTURE = Object.freeze({
+  workbookName: "operating-plan.xlsx",
+  targetSheetName: "Forecast",
+  canarySheetName: "Approved Baseline",
+  growthAddress: "B9",
+  marginAddress: "B10",
+  originalGrowth: 0.08,
+  replacementGrowth: 0.1,
+  grossMargin: 0.6,
+  revenueFormulas: Object.freeze([
+    "=B4*(1+$B$9)",
+    "=B5*(1+$B$9)",
+    "=B6*(1+$B$9)",
+  ]),
+  revisedRevenue: Object.freeze([110, 121, 133.1]),
+  canaryText: "Approved Baseline — do not modify",
+});
+
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
@@ -129,6 +147,69 @@ export async function generateXlsxThreadedReview(target) {
   return { path: target, type: XLSX_MIME };
 }
 
+export async function generateXlsxGrowthUpdate(target) {
+  const fixture = XLSX_GROWTH_UPDATE_FIXTURE;
+  const workbook = Workbook.create();
+  const forecast = workbook.worksheets.add(fixture.targetSheetName);
+  forecast.getRange("A1:D10").values = [
+    ["FY27 Operating Plan", null, null, null],
+    ["Update only the monthly growth assumption; preserve every formula and the approved baseline.", null, null, null],
+    ["Month", "Revenue", "Gross Profit", "Growth"],
+    ["Jan", 100, null, null],
+    ["Feb", null, null, null],
+    ["Mar", null, null, null],
+    ["Apr", null, null, null],
+    [null, null, null, null],
+    ["Monthly growth", fixture.originalGrowth, null, null],
+    ["Gross margin", fixture.grossMargin, null, null],
+  ];
+  forecast.getRange("B5:B7").formulas = fixture.revenueFormulas.map((formula) => [formula]);
+  forecast.getRange("C4:C7").formulas = [
+    ["=B4*$B$10"],
+    ["=B5*$B$10"],
+    ["=B6*$B$10"],
+    ["=B7*$B$10"],
+  ];
+  forecast.getRange("D4").formulas = [["=0"]];
+  forecast.getRange("D5:D7").formulas = [
+    ["=B5/B4-1"],
+    ["=B6/B5-1"],
+    ["=B7/B6-1"],
+  ];
+  forecast.getRange("A1:D1").format = { fill: "#0F172A", font: { bold: true, color: "#FFFFFF", size: 14 } };
+  forecast.getRange("A3:D3").format = { fill: "#E2E8F0", font: { bold: true } };
+  forecast.getRange("A9:B10").format = { fill: "#FEF3C7", font: { bold: true } };
+  forecast.getRange("B4:C7").setNumberFormat("$#,##0.00");
+  forecast.getRange("B9:B10").setNumberFormat("0.0%");
+  forecast.getRange("D4:D7").setNumberFormat("0.0%");
+  forecast.getRange("A1:D10").format.columnWidthPx = 150;
+  forecast.getRange("A1:A10").format.columnWidthPx = 280;
+  forecast.freezePanes.freezeRows(3);
+
+  const baseline = workbook.worksheets.add(fixture.canarySheetName);
+  baseline.getRange("A1:C5").values = [
+    [fixture.canaryText, null, null],
+    ["Metric", "Approved value", "Status"],
+    ["Monthly growth", fixture.originalGrowth, "Board approved"],
+    ["Gross margin", fixture.grossMargin, "Board approved"],
+    ["Scope", "No changes authorized", "Canary"],
+  ];
+  baseline.getRange("A1:C1").format = { fill: "#14532D", font: { bold: true, color: "#FFFFFF", size: 14 } };
+  baseline.getRange("A2:C2").format = { fill: "#DCFCE7", font: { bold: true } };
+  baseline.getRange("B3:B4").setNumberFormat("0.0%");
+  baseline.getRange("A1:C5").format.columnWidthPx = 170;
+  baseline.getRange("A1:A5").format.columnWidthPx = 260;
+  baseline.freezePanes.freezeRows(2);
+
+  workbook.recalculate();
+  const verification = workbook.verify({ visualQa: true });
+  if (!verification.ok) throw new Error("Generated XLSX growth-update fixture failed model verification: " + verification.ndjson);
+  const exported = await SpreadsheetFile.exportXlsx(workbook, { recalculate: false });
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, new Uint8Array(await exported.arrayBuffer()));
+  return { path: target, type: XLSX_MIME };
+}
+
 export async function generateDocxClassicCommentReview(target) {
   const fixture = DOCX_CLASSIC_COMMENT_FIXTURE;
   const document = DocumentModel.create({
@@ -208,6 +289,7 @@ export async function generatePptxTitleNotesReview(target) {
 
 export async function generateOfficeInput(generator, target) {
   if (generator === "xlsx-threaded-review") return generateXlsxThreadedReview(target);
+  if (generator === "xlsx-growth-update") return generateXlsxGrowthUpdate(target);
   if (generator === "docx-classic-comment-review") return generateDocxClassicCommentReview(target);
   if (generator === "pptx-title-notes-review") return generatePptxTitleNotesReview(target);
   return null;
