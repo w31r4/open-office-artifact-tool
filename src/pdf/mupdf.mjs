@@ -83,6 +83,13 @@ function bboxToPdfRect(bbox, label = "rectangle") {
   return [x, y, x + width, y + height];
 }
 
+function pdfRectContains(outer, inner) {
+  return inner[0] >= outer[0]
+    && inner[1] >= outer[1]
+    && inner[2] <= outer[2]
+    && inner[3] <= outer[3];
+}
+
 function hitRect(quads) {
   const points = quads.flatMap((quad) => Array.isArray(quad) && quad.length === 8 ? [quad] : quad);
   const xs = points.flatMap((quad) => [quad[0], quad[2], quad[4], quad[6]]).map(Number);
@@ -205,6 +212,8 @@ function structuredPage(page, pageNumber, options, imageBudget) {
       });
     }
     const bounds = page.getBounds();
+    const mediaBox = pdfRectToBbox(page.getBounds("MediaBox"));
+    const cropBox = pdfRectToBbox(page.getBounds("CropBox"));
     const annotationObjects = page.getAnnotations();
     const widgetObjects = page.getWidgets();
     const linkObjects = page.getLinks();
@@ -215,6 +224,8 @@ function structuredPage(page, pageNumber, options, imageBudget) {
       return {
         width: bounds[2] - bounds[0],
         height: bounds[3] - bounds[1],
+        mediaBox,
+        cropBox,
         text: structured.asText().replace(/\s+$/u, ""),
         textItems,
         images,
@@ -296,7 +307,9 @@ export async function inspectPdfWithMuPdf(input, options = {}) {
         return {
           kind: "mupdfPage",
           page: index + 1,
-          bbox: pdfRectToBbox(page.getBounds()),
+          bbox: pdfRectToBbox(page.getBounds("CropBox")),
+          mediaBox: pdfRectToBbox(page.getBounds("MediaBox")),
+          cropBox: pdfRectToBbox(page.getBounds("CropBox")),
           textChars: text.length,
           annotations: annotations.length,
           widgets: widgets.length,
@@ -460,6 +473,28 @@ function applyRectRedaction(document, operation) {
   }
 }
 
+function applyPageCrop(document, operation) {
+  const { index, page } = pageFor(document, operation);
+  try {
+    const cropRect = bboxToPdfRect(operation.bbox || operation.rect, "crop rectangle");
+    const mediaRect = page.getBounds("MediaBox");
+    if (!pdfRectContains(mediaRect, cropRect)) {
+      throw new Error("set_page_crop crop rectangle must fit fully inside the page MediaBox.");
+    }
+    page.setPageBox("CropBox", cropRect);
+    page.update();
+    return {
+      type: "set_page_crop",
+      page: index + 1,
+      bbox: pdfRectToBbox(cropRect),
+      mediaBox: pdfRectToBbox(mediaRect),
+      contentRemoved: false,
+    };
+  } finally {
+    page.destroy();
+  }
+}
+
 function normalizeCheckboxValue(value, field) {
   if (typeof value === "boolean") return value;
   if (value === 0 || value === 1) return value === 1;
@@ -533,6 +568,7 @@ function applyOperation(document, operation) {
       document.deletePage(index);
       return { type: operation.type, page: index + 1 };
     }
+    case "set_page_crop": return applyPageCrop(document, operation);
     case "rearrange_pages": {
       const pages = operation.pages;
       if (!Array.isArray(pages) || pages.length !== document.countPages()) throw new Error("rearrange_pages requires a complete 1-based page permutation.");
