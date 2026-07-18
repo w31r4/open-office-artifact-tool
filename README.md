@@ -54,7 +54,7 @@ console.log(reopened.inspect({ kind: "worksheet,table,chart" }).ndjson);
 
 - **为 Agent 设计**：文件模型自带 `inspect`、`resolve`、`verify`、render 和 visual QA 原语。
 - **保真优先**：无法安全建模的 Office 内容绑定原始包并原样保留；不支持的修改明确失败。
-- **内置原生 Skills**：仓库随包提供 Documents、Spreadsheets、Presentations、PDF 四个文件工作流包，以及 Template Creator 模板工具包；需要宿主会话或外部 Provider 的工作流会明确说明前置条件。
+- **内置原生 Skills**：仓库随包提供 Documents、Spreadsheets、Presentations、PDF 四个文件工作流包，以及 Template Creator 和 source-free Office Template Library 两个模板包；需要宿主会话或外部 Provider 的工作流会明确说明前置条件。
 
 ## 支持范围
 
@@ -80,7 +80,7 @@ OpenChestnut 是普通 Office 导入/导出的唯一 parser/writer。显式 OOXM
 
 ## 原生 Skills
 
-仓库包含五个插件包、六个 Skill：
+仓库包含六个插件包、十个 Skill：
 
 - [Documents](skills/documents/skills/documents/SKILL.md)
 - [Spreadsheets](skills/spreadsheets/skills/spreadsheets/SKILL.md)
@@ -88,8 +88,9 @@ OpenChestnut 是普通 Office 导入/导出的唯一 parser/writer。显式 OOXM
 - [Presentations](skills/presentations/skills/presentations/SKILL.md)
 - [PDF](skills/pdf/skills/pdf/SKILL.md)
 - [Template Creator](skills/template-creator/skills/template-creator/SKILL.md) — 从本地 DOCX、PPTX 或 XLSX 参考文件创建/显式更新可复用模板
+- [Office Template Library](skills/default-template-library/README.md) — 20 类用途清单中已有 3 个可运行的自建模板：Strategy Memorandum、Project Kickoff 和 Financial Budget
 
-五个 `skills/<name>` 目录都包含随包分发的 Skill 定义和资源；具体加载方式由 Agent 宿主决定。Office Skill 的普通文件工作流统一调用 OpenChestnut。PDF Skill 默认通过随 npm 安装的 MuPDF.js 薄 CLI 调用同一组包 API；Template Creator 只在 `${OFFICE_ARTIFACT_HOME:-~/.office-artifact-tool}/skills` 下事务式保存用户明确提供的本地参考文件与 PNG 预览，不联网、不覆盖未点名模板。Python 与系统工具只承担尚无等价实现的专项工作。职责见 [PDF Provider Matrix](skills/pdf/skills/pdf/references/PROVIDER_MATRIX.md)。
+六个 `skills/<name>` 目录都包含随包分发的 Skill 定义和资源；具体加载方式由 Agent 宿主决定。Office Skill 的普通文件工作流统一调用 OpenChestnut。PDF Skill 默认通过随 npm 安装的 MuPDF.js 薄 CLI 调用同一组包 API；Template Creator 只在 `${OFFICE_ARTIFACT_HOME:-~/.office-artifact-tool}/skills` 下事务式保存用户明确提供的本地参考文件与 PNG 预览，不联网、不覆盖未点名模板。Office Template Library 不含任何第三方 Office/预览二进制；其 ready 条目由随包源码生成并带审计，其他 17 类用途会明确失败而不替换为近似版式。Python 与系统工具只承担尚无等价实现的专项工作。职责见 [PDF Provider Matrix](skills/pdf/skills/pdf/references/PROVIDER_MATRIX.md) 与 [模板来源边界](docs/template-library-provenance.md)。
 
 ## 必须知道的边界
 

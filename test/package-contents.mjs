@@ -54,6 +54,7 @@ for (const required of [
   "THIRD_PARTY_NOTICES.md",
   "docs/api.md",
   "docs/reference-skills.md",
+  "docs/template-library-provenance.md",
   "proto/open_office/artifact/v1/office_artifact.proto",
   "src/generated/open_office/artifact/v1/office_artifact_pb.js",
   "src/codecs/open-chestnut.mjs",

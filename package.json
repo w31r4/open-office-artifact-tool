@@ -33,6 +33,7 @@
     "src/**",
     "docs/api.md",
     "docs/reference-skills.md",
+    "docs/template-library-provenance.md",
     "examples/**",
     "skills/**",
     "proto/**",

@@ -20,7 +20,7 @@ There is no compatibility window or fallback mode.
 
 The repository is the authoritative source distribution. It contains OpenChestnut C# source, locked dependencies, protocol definitions, build scripts, tests, Skills, and reproducibility gates.
 
-The npm tarball is the consumer distribution. It contains the JavaScript object models, OpenChestnut adapter, generated wire binding, public proto, bundled runtime, integrity manifest, SBOM, license notices, render/QA helpers, PDF pipeline, and five native plugin bundles containing six Skills, including the local-only Template Creator utility. It excludes C# source, test sources, build output, repository-only build scripts, and the development-only `test/skill-harness` fixtures. MuPDF.js is declared in the required npm dependency graph rather than copied into this project's own tarball, and its WASM runtime is initialized only by a PDF operation.
+The npm tarball is the consumer distribution. It contains the JavaScript object models, OpenChestnut adapter, generated wire binding, public proto, bundled runtime, integrity manifest, SBOM, license notices, render/QA helpers, PDF pipeline, and six native plugin bundles containing ten Skills, including the local-only Template Creator utility and the source-free Default Template Library. It excludes C# source, test sources, build output, repository-only build scripts, and the development-only `test/skill-harness` fixtures. MuPDF.js is declared in the required npm dependency graph rather than copied into this project's own tarball, and its WASM runtime is initialized only by a PDF operation.
 
 Installed consumers do not need `dotnet` on `PATH`.
 
@@ -46,12 +46,12 @@ The release candidate is acceptable only when all of the following are true:
 - C# DOCX, XLSX, PPTX, package-boundary, and failure-profile tests pass;
 - default facade create/import/edit/re-export roundtrips pass for all three Office formats;
 - legacy options, old subpath, missing runtime, and opaque-without-source cases fail explicitly;
-- all five native plugin manifests validate, the published six-Skill topology is complete, and every workflow promoted to compatible in `docs/reference-skills.md` passes from the public package surface;
+- all six native plugin manifests validate, the published ten-Skill topology is complete, and every workflow promoted to compatible in `docs/reference-skills.md` passes from the public package surface;
 - PDF greenfield authoring plus default MuPDF.js import/inspect/render/bounded-edit, lazy-load, pre-WASM budget, exact-prefix incremental-save, source-bound annotation/link/form-field behavior, signature/redaction/deletion fail-closed, Skill CLI source-protection, and specialist-provider contract tests pass independently;
 - when explicitly configured, the real optional-provider test covers ReportLab creation, pdfplumber extraction, type-aware pypdf text/radio/checkbox forms and annotations, typed pypdf merge/reorder/selective watermarking, PyMuPDF rewrite/incremental/page/text/image/form/annotation edits, real redaction/scrub/residue scans, capped numerical text-fit behavior, canonical audit byte binding, and typed Poppler source/output comparison;
 - Open XML SDK validation passes for generated Office fixtures;
 - configured LibreOffice/Poppler/Playwright/native render gates pass where available;
-- a production-only packed clean install completes all three Office roundtrips, PDF smoke, and a real packaged Template Creator invocation while `dotnet` is absent from `PATH`;
+- a production-only packed clean install completes all three Office roundtrips, PDF smoke, a real packaged Template Creator invocation, and all three source-free Template Library generators while `dotnet` is absent from `PATH`;
 - two clean OpenChestnut builds produce the same runtime file set and hashes;
 - package contents contain no legacy Office codec files, C# build output, tests, or repository-only scripts;
 - package metadata, version `0.2.0`, licenses, third-party notices, SBOM, and integrity manifest agree;
@@ -542,7 +542,7 @@ The implementation performs no network fetch, writes only beneath
 reference and 64 MiB preview budgets, rejects symlink-bearing update trees,
 serializes writers, recovers interrupted replacements, preserves extra
 template-owned files, rolls back failed placement, and proves there is no
-stage/backup/lock residue. All five native plugin manifests pass the official
+stage/backup/lock residue. At that milestone, all five native plugin manifests passed the official
 validator, while the reference-compatible versioned Template Creator manifest
 is retained alongside the native manifest.
 
@@ -562,6 +562,26 @@ in 4m40s, covering npm installation, deterministic OpenChestnut verification,
 Chromium/native-tool setup, the complete npm/Skill/security suite, generated
 API-doc cleanliness, offline release metadata, clean-install packing,
 OfficeBridge `5/5`, and OpenChestnut `185/185`.
+
+### Clean-room default template library
+
+The subsequent Default Template Library is not a binary migration of an
+observed template pack. Its source plugin metadata marked the observed material
+proprietary, and the locally observed migration retained its Office and PNG
+assets byte-for-byte. The public AGPL package therefore ships neither those
+files nor source-derived package graphs, hashes, or Skill text.
+
+Instead, the sixth plugin contains a source-free 20-intent catalog. Three
+independently authored entries are currently ready: Strategy Memorandum DOCX,
+Project Kickoff PPTX, and Financial Budget XLSX. Their bundled generator
+creates new output only, uses OpenChestnut, verifies/export/imports/second
+imports and model-renders each artifact, then emits a hash-bound audit with no
+source file. The direct test edits each result through its public model and,
+when LibreOffice and Poppler are available, performs PDF/page/raster QA. The
+offline production tarball test invokes all three shipped generators while
+`dotnet` is absent from `PATH`. The remaining 17 catalog entries are explicit
+`planned` records and fail closed rather than silently selecting an unrelated
+design. See [clean-room template-library provenance](template-library-provenance.md).
 
 ### XLSX standard-area and fixed-doughnut chart families
 

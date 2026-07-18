@@ -45,6 +45,28 @@ function runGenerator(args, options = {}) {
   return result;
 }
 
+function commandAvailable(command) {
+  const probe = spawnSync(command, ["--version"], { encoding: "utf8" });
+  return !probe.error && probe.status === 0;
+}
+
+function assertNativePdfPreview(sourcePath, outputDirectory) {
+  const converted = spawnSync("soffice", ["--headless", "--convert-to", "pdf", "--outdir", outputDirectory, sourcePath], {
+    encoding: "utf8",
+  });
+  assert.equal(converted.status, 0, `LibreOffice could not render ${sourcePath}\nSTDOUT:\n${converted.stdout}\nSTDERR:\n${converted.stderr}`);
+  const stem = path.basename(sourcePath, path.extname(sourcePath));
+  const pdfPath = path.join(outputDirectory, `${stem}.pdf`);
+  const info = spawnSync("pdfinfo", [pdfPath], { encoding: "utf8" });
+  assert.equal(info.status, 0, `Poppler could not inspect ${pdfPath}\nSTDOUT:\n${info.stdout}\nSTDERR:\n${info.stderr}`);
+  assert.match(info.stdout, /^Pages:\s*[1-9]\d*/m, `native rendering must produce at least one page for ${sourcePath}`);
+  const previewPrefix = path.join(outputDirectory, `${stem}-preview`);
+  const preview = spawnSync("pdftoppm", ["-png", "-f", "1", "-l", "1", pdfPath, previewPrefix], { encoding: "utf8" });
+  assert.equal(preview.status, 0, `Poppler could not rasterize ${pdfPath}\nSTDOUT:\n${preview.stdout}\nSTDERR:\n${preview.stderr}`);
+  const previewPath = `${previewPrefix}-1.png`;
+  return fs.stat(previewPath).then((stat) => assert.ok(stat.size > 0, `native preview is empty: ${previewPath}`));
+}
+
 assert.equal(plugin.name, "default-template-library");
 assert.equal(plugin.version, "0.2.0");
 assert.equal(plugin.license, "AGPL-3.0-or-later");
@@ -180,7 +202,10 @@ try {
   const documentTitle = document.blocks.find((block) => block.text === "Strategy Memorandum");
   assert.ok(documentTitle);
   document.resolve(`${documentTitle.id}/text`).text = "Strategy Memorandum — reviewed";
-  const editedDocument = await DocumentFile.importDocx(await DocumentFile.exportDocx(document));
+  const editedDocumentBlob = await DocumentFile.exportDocx(document);
+  const editedDocumentOutput = path.join(temporary, "reviewed-strategy-memorandum.docx");
+  await fs.writeFile(editedDocumentOutput, editedDocumentBlob.bytes);
+  const editedDocument = await DocumentFile.importDocx(editedDocumentBlob);
   assert.equal(editedDocument.blocks.some((block) => block.text === "Strategy Memorandum — reviewed"), true);
   assert.equal(editedDocument.verify({ visualQa: true }).ok, true);
 
@@ -189,18 +214,32 @@ try {
   const kickoffTitle = presentation.slides.getItem(0).shapes.items.find((shape) => shape.name === "kickoff-title");
   assert.ok(kickoffTitle);
   kickoffTitle.text.set("Project Kickoff — reviewed");
-  const editedPresentation = await PresentationFile.importPptx(await PresentationFile.exportPptx(presentation));
+  const editedPresentationBlob = await PresentationFile.exportPptx(presentation);
+  const editedPresentationOutput = path.join(temporary, "reviewed-project-kickoff.pptx");
+  await fs.writeFile(editedPresentationOutput, editedPresentationBlob.bytes);
+  const editedPresentation = await PresentationFile.importPptx(editedPresentationBlob);
   assert.equal(editedPresentation.slides.getItem(0).shapes.items.some((shape) => shape.text.value === "Project Kickoff — reviewed"), true);
   assert.equal(editedPresentation.verify({ visualQa: true }).ok, true);
 
   const workbook = await SpreadsheetFile.importXlsx(workbookResult.bytes);
   workbook.worksheets.getItem("Assumptions").getRange("B5").values = [[125000]];
   workbook.recalculate();
-  const editedWorkbook = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(workbook, { recalculate: false }));
+  const editedWorkbookBlob = await SpreadsheetFile.exportXlsx(workbook, { recalculate: false });
+  const editedWorkbookOutput = path.join(temporary, "reviewed-financial-budget.xlsx");
+  await fs.writeFile(editedWorkbookOutput, editedWorkbookBlob.bytes);
+  const editedWorkbook = await SpreadsheetFile.importXlsx(editedWorkbookBlob);
   editedWorkbook.recalculate();
   assert.equal(editedWorkbook.worksheets.getItem("Assumptions").getRange("B5").values[0][0], 125000);
   assert.deepEqual(editedWorkbook.worksheets.getItem("Budget Summary").getRange("D4:D7").values, [["OK"], ["OK"], ["OK"], ["OK"]]);
   assert.equal(editedWorkbook.verify({ visualQa: true }).ok, true);
+
+  if (commandAvailable("soffice") && commandAvailable("pdfinfo") && commandAvailable("pdftoppm")) {
+    const rendered = path.join(temporary, "native-render");
+    await fs.mkdir(rendered);
+    for (const output of [editedDocumentOutput, editedPresentationOutput, editedWorkbookOutput]) {
+      await assertNativePdfPreview(output, rendered);
+    }
+  }
 
   const repeated = runGenerator([
     "--template-id", documentResult.template.id,

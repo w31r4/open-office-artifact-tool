@@ -54,7 +54,7 @@ The official `mupdf@1.28.0` package is a required npm dependency and is resolved
 
 - **Designed for agents:** artifact models expose `inspect`, `resolve`, `verify`, render, and visual QA primitives.
 - **Fidelity first:** Office content that cannot be modeled safely stays bound to its source package and is preserved unchanged; unsupported edits fail explicitly.
-- **Native Skills included:** the package ships four file-workflow bundles for Documents, Spreadsheets, Presentations, and PDF, plus a Template Creator utility bundle; workflows that require a host session or an external provider state their prerequisites explicitly.
+- **Native Skills included:** the package ships four file-workflow bundles for Documents, Spreadsheets, Presentations, and PDF, plus Template Creator and a source-free Office Template Library; workflows that require a host session or an external provider state their prerequisites explicitly.
 
 ## Supported surface
 
@@ -80,7 +80,7 @@ OpenChestnut is the only parser/writer used by normal Office import and export. 
 
 ## Native Skills
 
-The repository contains five plugin bundles and six Skills:
+The repository contains six plugin bundles and ten Skills:
 
 - [Documents](skills/documents/skills/documents/SKILL.md)
 - [Spreadsheets](skills/spreadsheets/skills/spreadsheets/SKILL.md)
@@ -88,8 +88,9 @@ The repository contains five plugin bundles and six Skills:
 - [Presentations](skills/presentations/skills/presentations/SKILL.md)
 - [PDF](skills/pdf/skills/pdf/SKILL.md)
 - [Template Creator](skills/template-creator/skills/template-creator/SKILL.md) — creates or explicitly updates reusable local templates from DOCX, PPTX, or XLSX references
+- [Office Template Library](skills/default-template-library/README.md) — three ready project-authored templates among a 20-intent catalog: Strategy Memorandum, Project Kickoff, and Financial Budget
 
-Each `skills/<name>` directory contains the Skill definitions and resources shipped with the package; loading is handled by the Agent host. Normal Office Skill workflows use OpenChestnut. The PDF Skill defaults to a thin MuPDF.js CLI that calls the same package APIs installed by npm. Template Creator writes only below `${OFFICE_ARTIFACT_HOME:-~/.office-artifact-tool}/skills`, transactionally retains the explicitly supplied local reference and PNG preview, performs no network fetch, and never overwrites an unnamed template. Python and system tools are reserved for specialist capabilities without an equivalent implementation. See the [PDF Provider Matrix](skills/pdf/skills/pdf/references/PROVIDER_MATRIX.md).
+Each `skills/<name>` directory contains the Skill definitions and resources shipped with the package; loading is handled by the Agent host. Normal Office Skill workflows use OpenChestnut. The PDF Skill defaults to a thin MuPDF.js CLI that calls the same package APIs installed by npm. Template Creator writes only below `${OFFICE_ARTIFACT_HOME:-~/.office-artifact-tool}/skills`, transactionally retains the explicitly supplied local reference and PNG preview, performs no network fetch, and never overwrites an unnamed template. Office Template Library ships no third-party Office or preview binaries: ready entries are generated from bundled source with an audit, while the other 17 intents fail explicitly rather than substituting a nearby visual design. See the [PDF Provider Matrix](skills/pdf/skills/pdf/references/PROVIDER_MATRIX.md) and [template provenance boundary](docs/template-library-provenance.md).
 
 ## Important boundaries
 
