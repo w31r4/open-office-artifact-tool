@@ -97,6 +97,7 @@ assert.match(skillText, /MuPDF\.js/);
 assert.match(skillText, /set_page_crop/);
 assert.match(skillText, /rotate_page/);
 assert.match(skillText, /delete_annotation/);
+assert.match(skillText, /update_annotation/);
 assert.match(skillText, /delete_link/);
 assert.match(skillText, /sourceSha256/);
 assert.match(skillText, /mupdf-link/);
@@ -162,6 +163,8 @@ try {
   const mupdfCropOutput = path.join(tempRoot, "mupdf-crop-output.pdf");
   const mupdfRotationOperations = path.join(tempRoot, "mupdf-rotation-operations.json");
   const mupdfRotationOutput = path.join(tempRoot, "mupdf-rotation-output.pdf");
+  const mupdfAnnotationUpdateOperations = path.join(tempRoot, "mupdf-annotation-update-operations.json");
+  const mupdfAnnotationUpdateOutput = path.join(tempRoot, "mupdf-annotation-update-output.pdf");
   const mupdfAnnotationDeleteOperations = path.join(tempRoot, "mupdf-annotation-delete-operations.json");
   const mupdfAnnotationDeleteOutput = path.join(tempRoot, "mupdf-annotation-delete-output.pdf");
   const mupdfLinkDeleteOperations = path.join(tempRoot, "mupdf-link-delete-operations.json");
@@ -204,17 +207,37 @@ try {
   assert.equal(mupdfAnnotationInspection.records.find((record) => record.kind === "mupdfPage").annotations, 1);
   const mupdfAnnotation = mupdfAnnotationInspection.records.find((record) => record.kind === "mupdfAnnotation");
   assert.match(mupdfAnnotation.id, /^mupdf-annotation-1-\d+$/);
-  await fs.writeFile(mupdfAnnotationDeleteOperations, JSON.stringify({
+  await fs.writeFile(mupdfAnnotationUpdateOperations, JSON.stringify({
     savePolicy: "rewrite",
     operations: [{
-      type: "delete_annotation",
+      type: "update_annotation",
       page: mupdfAnnotation.page,
       annotationId: mupdfAnnotation.id,
       sourceSha256: mupdfAnnotationInspection.summary.sourceSha256,
       expected: { type: mupdfAnnotation.type, contents: mupdfAnnotation.contents, rect: mupdfAnnotation.rect },
+      patch: { contents: "CLI review updated", author: "CLI reviewer", subject: "Resolved" },
     }],
   }), "utf8");
-  const mupdfAnnotationDeleted = parseResult(run(process.execPath, [mupdfCli, "edit", mupdfOutput, mupdfAnnotationDeleteOperations, mupdfAnnotationDeleteOutput], { status: 0 }));
+  const mupdfAnnotationUpdated = parseResult(run(process.execPath, [mupdfCli, "edit", mupdfOutput, mupdfAnnotationUpdateOperations, mupdfAnnotationUpdateOutput], { status: 0 }));
+  assert.equal(mupdfAnnotationUpdated.savePolicy, "rewrite");
+  assert.equal(mupdfAnnotationUpdated.operations[0].type, "update_annotation");
+  const mupdfAnnotationUpdatedInspection = await PdfFile.inspectPdf(await fs.readFile(mupdfAnnotationUpdateOutput));
+  const mupdfUpdatedAnnotation = mupdfAnnotationUpdatedInspection.records.find((record) => record.kind === "mupdfAnnotation");
+  assert.equal(mupdfUpdatedAnnotation.contents, "CLI review updated");
+  assert.equal(mupdfUpdatedAnnotation.author, "CLI reviewer");
+  assert.equal(mupdfUpdatedAnnotation.subject, "Resolved");
+  assert.notEqual(mupdfAnnotationUpdatedInspection.summary.sourceSha256, mupdfAnnotationInspection.summary.sourceSha256);
+  await fs.writeFile(mupdfAnnotationDeleteOperations, JSON.stringify({
+    savePolicy: "rewrite",
+    operations: [{
+      type: "delete_annotation",
+      page: mupdfUpdatedAnnotation.page,
+      annotationId: mupdfUpdatedAnnotation.id,
+      sourceSha256: mupdfAnnotationUpdatedInspection.summary.sourceSha256,
+      expected: { type: mupdfUpdatedAnnotation.type, contents: mupdfUpdatedAnnotation.contents, rect: mupdfUpdatedAnnotation.rect },
+    }],
+  }), "utf8");
+  const mupdfAnnotationDeleted = parseResult(run(process.execPath, [mupdfCli, "edit", mupdfAnnotationUpdateOutput, mupdfAnnotationDeleteOperations, mupdfAnnotationDeleteOutput], { status: 0 }));
   assert.equal(mupdfAnnotationDeleted.savePolicy, "rewrite");
   assert.equal(mupdfAnnotationDeleted.operations[0].type, "delete_annotation");
   assert.equal((await PdfFile.inspectPdf(await fs.readFile(mupdfAnnotationDeleteOutput))).records.find((record) => record.kind === "mupdfPage").annotations, 0);

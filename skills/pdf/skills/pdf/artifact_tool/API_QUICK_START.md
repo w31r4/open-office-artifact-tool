@@ -199,6 +199,40 @@ not a durable annotation identity. Re-inspect after every rewrite: MuPDF may
 renumber or reuse xrefs. A mismatched source hash, page, locator, or expected
 snapshot fails closed before output is written.
 
+To update one imported Text annotation instead of deleting it, use the same
+inspection evidence. The bounded patch changes only non-empty `contents`,
+`author`, and `subject`; it does not claim arbitrary annotation editing or
+layout reflow:
+
+```js
+const revisedReviewNote = await PdfFile.editPdf(input, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "update_annotation",
+    page: annotation.page,
+    annotationId: annotation.id,
+    sourceSha256: inspection.summary.sourceSha256,
+    expected: {
+      type: annotation.type,
+      contents: annotation.contents,
+      rect: annotation.rect,
+    },
+    patch: {
+      contents: "Resolved in board review",
+      author: "Reviewer",
+      subject: "Resolved",
+    },
+  }],
+});
+await revisedReviewNote.save("third-party-review-note-updated.pdf");
+```
+
+The rectangle can guard the source snapshot but cannot appear in `patch`.
+MuPDF normalizes native Text annotation geometry, so moving or resizing a note
+must be an explicit delete-plus-add transaction from a fresh inspection, or a
+specialist-provider task. Re-inspect this rewrite before any later annotation
+mutation; the old xref locator is not a persistent identity.
+
 For an imported link, use the same inspect → source-bound locator → snapshot
 pattern. Do not select a link by mutable page-array index or URL alone: several
 links may share a target URL. A duplicate semantic fingerprint fails closed

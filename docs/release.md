@@ -147,6 +147,35 @@ source hash propagation, max-annotation rejection, rewrite-only enforcement,
 stale hash and snapshot rejection, ignored-key rejection, exact one-target
 deletion, surviving-note preservation, and output reinspection.
 
+### PDF source-bound annotation update
+
+The same route now supports one bounded `update_annotation` operation. It
+requires the exact input SHA-256, the inspect-returned
+`mupdf-annotation-<page>-<xref>` locator, and one or more semantic snapshot
+facts before changing a Text annotation. Its patch is intentionally narrow:
+only non-empty `contents`, `author`, and `subject` fields are accepted.
+The operation reopens the page-native annotation list after update and verifies
+that the same xref remains uniquely addressable and that every requested patch
+field persisted before saving.
+
+This is rewrite-only. Incremental revisions retain previous annotation values,
+so they cannot satisfy the same audit/security meaning. It likewise requires a
+new inspection for every following annotation mutation because an output rewrite
+can renumber or reuse xrefs.
+
+The geometry boundary is deliberate and fail-closed. A direct MuPDF probe
+showed that a requested Text annotation rectangle is normalized to its native
+minimum geometry (for example, a requested 24-by-24 rectangle was exposed as
+20-by-20 after creation). Therefore `rect` is accepted only as a source
+snapshot precondition; a `patch.rect` fails rather than claiming a move or
+resize that native output cannot verify. An agent must explicitly delete and add
+a replacement note, or route that task to a specialist provider.
+
+Library and published-Skill CLI tests cover stale snapshot rejection,
+incremental refusal, rejected geometry patch, exact text/author/subject update,
+fresh-output reinspection, and a subsequent delete that uses only the refreshed
+source hash and locator.
+
 ### PDF source-bound link deletion
 
 On 2026-07-18, the same direct-original route made imported link deletion

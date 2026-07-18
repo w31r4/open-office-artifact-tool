@@ -378,6 +378,39 @@ assert.equal(updatedAnnotation.author, "Reviewer");
 assert.equal(updatedAnnotation.subject, "Board");
 assert.deepEqual(updatedAnnotation.rect, removableAnnotation.rect);
 assert.notEqual(updatedAnnotationInspection.summary.sourceSha256, mupdfAnnotationInspection.summary.sourceSha256);
+const nonTextAnnotationNativeDocument = new mupdf.PDFDocument(mupdfIncremental.bytes);
+const nonTextAnnotationNativePage = nonTextAnnotationNativeDocument.loadPage(0);
+let nonTextAnnotationNative;
+let nonTextAnnotationNativeOutput;
+let nonTextAnnotationPdf;
+try {
+  nonTextAnnotationNative = nonTextAnnotationNativePage.createAnnotation("Square");
+  nonTextAnnotationNative.setRect([120, 120, 160, 160]);
+  nonTextAnnotationNative.setContents("Square review");
+  nonTextAnnotationNative.update();
+  nonTextAnnotationNativePage.update();
+  nonTextAnnotationNativeOutput = nonTextAnnotationNativeDocument.saveToBuffer("garbage=2,compress=yes");
+  nonTextAnnotationPdf = new FileBlob(new Uint8Array(nonTextAnnotationNativeOutput.asUint8Array()), { type: "application/pdf" });
+} finally {
+  nonTextAnnotationNativeOutput?.destroy();
+  nonTextAnnotationNative?.destroy();
+  nonTextAnnotationNativePage.destroy();
+  nonTextAnnotationNativeDocument.destroy();
+}
+const nonTextAnnotationInspection = await PdfFile.inspectPdf(nonTextAnnotationPdf);
+const nonTextAnnotation = nonTextAnnotationInspection.records.find((record) => record.kind === "mupdfAnnotation" && record.type === "Square");
+assert.ok(nonTextAnnotation);
+await assert.rejects(PdfFile.editPdf(nonTextAnnotationPdf, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "update_annotation",
+    page: nonTextAnnotation.page,
+    annotationId: nonTextAnnotation.id,
+    sourceSha256: nonTextAnnotationInspection.summary.sourceSha256,
+    expected: { type: nonTextAnnotation.type, contents: nonTextAnnotation.contents, rect: nonTextAnnotation.rect },
+    patch: { contents: "Square review resolved" },
+  }],
+}), /supports only native Text annotations/);
 const mupdfCropped = await PdfFile.editPdf(arbitraryPdf, {
   savePolicy: "incremental",
   operations: [{ type: "set_page_crop", page: 1, bbox: [72, 72, 468, 648] }],

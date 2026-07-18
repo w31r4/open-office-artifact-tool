@@ -865,6 +865,9 @@ function applyAnnotationUpdate(document, operation, context = {}) {
     if (mismatch) {
       throw new Error(`update_annotation precondition ${mismatch} did not match ${operation.annotationId}; refusing a stale or ambiguous mutation.`);
     }
+    if (matched.type !== "Text") {
+      throw new Error(`update_annotation supports only native Text annotations; ${operation.annotationId} resolves to ${matched.type}.`);
+    }
     if (patch.contents !== undefined) target.setContents(patch.contents);
     if (patch.author !== undefined) target.setAuthor(patch.author);
     if (patch.subject !== undefined) target.setSubject(patch.subject);

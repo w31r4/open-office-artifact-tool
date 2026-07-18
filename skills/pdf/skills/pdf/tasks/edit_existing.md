@@ -11,7 +11,7 @@ node scripts/mupdf.mjs probe
 node scripts/mupdf.mjs inspect input.pdf
 ```
 
-Its typed operations are `add_text_annotation`, text/choice/checkbox `fill_form`, `delete_page`, source-bound `delete_annotation`, complete `rearrange_pages`, visible-only `set_page_crop`, absolute-quarter-turn `rotate_page`, `set_metadata`, `delete_embedded_file`, source-bound `delete_link`, `redact_text`, and `redact_rect`. Run with one explicit save policy:
+Its typed operations are `add_text_annotation`, text/choice/checkbox `fill_form`, `delete_page`, source-bound `delete_annotation` and `update_annotation`, complete `rearrange_pages`, visible-only `set_page_crop`, absolute-quarter-turn `rotate_page`, `set_metadata`, `delete_embedded_file`, source-bound `delete_link`, `redact_text`, and `redact_rect`. Run with one explicit save policy:
 
 ```bash
 node scripts/mupdf.mjs edit input.pdf tmp/pdfs/edit-operations.json tmp/pdfs/edited.pdf \
@@ -79,6 +79,41 @@ rewrite-only operation; incremental output is refused. Its locator is bound to
 the inspected source bytes rather than a persistent document identity, so
 re-inspect the output before any later annotation operation. This prevents a
 rewritten PDF's xref reuse from silently targeting a different annotation.
+
+## Update one imported text annotation
+
+Use the same inspect-first source binding to edit the semantic text fields of
+one native Text annotation without pretending to reflow or reposition it:
+
+```json
+[
+  {
+    "type": "update_annotation",
+    "page": 2,
+    "annotationId": "mupdf-annotation-2-42",
+    "sourceSha256": "<inspect summary sourceSha256>",
+    "expected": {
+      "type": "Text",
+      "contents": "Needs legal review",
+      "rect": [72, 128, 20, 20]
+    },
+    "patch": {
+      "contents": "Resolved in board review",
+      "author": "Reviewer",
+      "subject": "Resolved"
+    }
+  }
+]
+```
+
+`expected` is a stale-target guard and must contain one or more supported
+snapshot facts. `patch` must contain one or more non-empty `contents`,
+`author`, or `subject` strings; all other patch fields fail closed. In
+particular, `rect` is allowed as an expected snapshot fact but cannot be
+patched: MuPDF normalizes native Text annotation geometry. For a real move or
+resize, use an explicit delete-plus-add transaction with a fresh inspection, or
+route to a specialist provider. `update_annotation` is rewrite-only, and the
+output must be re-inspected before a subsequent annotation update or deletion.
 
 ## Delete one imported link
 
