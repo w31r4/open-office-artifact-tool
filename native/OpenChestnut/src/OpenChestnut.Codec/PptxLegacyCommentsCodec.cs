@@ -6,6 +6,12 @@ using P = DocumentFormat.OpenXml.Presentation;
 
 namespace OpenChestnut.Codec;
 
+internal sealed record PptxLegacyCommentProfile(bool Supported, IReadOnlyList<PresentationLegacyComment> Comments)
+{
+    internal static PptxLegacyCommentProfile Empty { get; } = new(true, []);
+    internal static PptxLegacyCommentProfile Unsupported { get; } = new(false, []);
+}
+
 // Legacy PresentationML comments are intentionally kept separate from the
 // richer JS thread model. The native format owns one author, one text value,
 // and one slide coordinate per p:cm; it has no replies, resolved state,
@@ -23,7 +29,7 @@ internal static class PptxLegacyCommentsCodec
         int slideIndex,
         IList<Diagnostic> diagnostics)
     {
-        var profile = TryReadProfile(presentationPart, slidePart, slideIndex);
+        var profile = Profile(presentationPart, slidePart, slideIndex);
         if (profile.Supported) return profile.Comments;
         diagnostics.Add(CodecProtocol.Warning(
             "unsupported_presentation_legacy_comments_preserved",
@@ -119,7 +125,7 @@ internal static class PptxLegacyCommentsCodec
             var sourceIndex = targetSlide.Source?.SlideIndex is { } boundIndex
                 ? checked((int)boundIndex)
                 : slideIndex;
-            var profile = TryReadProfile(presentationPart, slideParts[slideIndex], sourceIndex);
+            var profile = Profile(presentationPart, slideParts[slideIndex], sourceIndex);
             var target = targetSlide.LegacyComments;
             if (!profile.Supported)
             {
@@ -151,24 +157,28 @@ internal static class PptxLegacyCommentsCodec
         }
     }
 
-    private static CommentProfile TryReadProfile(PresentationPart presentationPart, SlidePart slidePart, int slideIndex)
+    // The clone preflight uses this same parser instead of maintaining an
+    // independent relationship/profile inventory. Its result is deliberately
+    // internal: legacy author/index values are package-local evidence, not a
+    // public cross-file identity contract.
+    internal static PptxLegacyCommentProfile Profile(PresentationPart presentationPart, SlidePart slidePart, int slideIndex)
     {
         var commentsPart = slidePart.SlideCommentsPart;
-        if (commentsPart is null) return CommentProfile.Empty;
+        if (commentsPart is null) return PptxLegacyCommentProfile.Empty;
         var authorList = presentationPart.CommentAuthorsPart?.CommentAuthorList;
         var commentList = commentsPart.CommentList;
         if (authorList is null || commentList is null ||
             authorList.ChildElements.Any(item => item is not P.CommentAuthor) ||
-            commentList.ChildElements.Any(item => item is not P.Comment)) return CommentProfile.Unsupported;
+            commentList.ChildElements.Any(item => item is not P.Comment)) return PptxLegacyCommentProfile.Unsupported;
 
         var authors = new Dictionary<uint, string>();
         foreach (var author in authorList.Elements<P.CommentAuthor>())
         {
             if (author.ChildElements.Count != 0 || author.Id?.Value is not uint nativeId ||
                 string.IsNullOrWhiteSpace(author.Name?.Value) || author.Name.Value.Length > MaxAuthorLength ||
-                !authors.TryAdd(nativeId, author.Name.Value)) return CommentProfile.Unsupported;
+                !authors.TryAdd(nativeId, author.Name.Value)) return PptxLegacyCommentProfile.Unsupported;
         }
-        if (commentList.Elements<P.Comment>().Count() > MaxCommentsPerPresentation) return CommentProfile.Unsupported;
+        if (commentList.Elements<P.Comment>().Count() > MaxCommentsPerPresentation) return PptxLegacyCommentProfile.Unsupported;
 
         var comments = new List<PresentationLegacyComment>();
         var nativeIds = new HashSet<(uint AuthorId, uint Index)>();
@@ -180,7 +190,7 @@ internal static class PptxLegacyCommentsCodec
                 comment.DateTime?.Value is not DateTime created ||
                 comment.Text.Text is not { } text || text.Length > MaxCommentTextLength ||
                 !authors.TryGetValue(authorId, out var author) || !nativeIds.Add((authorId, nativeIndex)))
-                return CommentProfile.Unsupported;
+                return PptxLegacyCommentProfile.Unsupported;
             comments.Add(new PresentationLegacyComment
             {
                 Id = $"presentation/slide/{slideIndex + 1}/legacy-comment/{comments.Count + 1}",
@@ -193,10 +203,10 @@ internal static class PptxLegacyCommentsCodec
                 NativeIndex = nativeIndex,
             });
         }
-        return new CommentProfile(true, comments);
+        return new PptxLegacyCommentProfile(true, comments);
     }
 
-    private static bool Equivalent(IReadOnlyList<PresentationLegacyComment> actual, IList<PresentationLegacyComment> requested) =>
+    internal static bool Equivalent(IReadOnlyList<PresentationLegacyComment> actual, IList<PresentationLegacyComment> requested) =>
         actual.Count == requested.Count && actual.Zip(requested).All(pair =>
             pair.First.Id == pair.Second.Id &&
             pair.First.Author == pair.Second.Author &&
@@ -242,9 +252,4 @@ internal static class PptxLegacyCommentsCodec
         internal uint LastIndex { get; set; }
     }
 
-    private sealed record CommentProfile(bool Supported, IReadOnlyList<PresentationLegacyComment> Comments)
-    {
-        internal static CommentProfile Empty { get; } = new(true, []);
-        internal static CommentProfile Unsupported { get; } = new(false, []);
-    }
 }
