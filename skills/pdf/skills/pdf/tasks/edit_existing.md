@@ -11,14 +11,54 @@ node scripts/mupdf.mjs probe
 node scripts/mupdf.mjs inspect input.pdf
 ```
 
-Its typed operations are `add_text_annotation`, text/choice/checkbox `fill_form`, `delete_page`, source-bound `delete_annotation` and `update_annotation`, complete `rearrange_pages`, visible-only `set_page_crop`, absolute-quarter-turn `rotate_page`, `set_metadata`, `delete_embedded_file`, source-bound `add_link`, `delete_link`, and `update_link`, `redact_text`, and `redact_rect`. Run with one explicit save policy:
+Its typed operations are `add_text_annotation`, legacy text/choice/checkbox `fill_form`, source-bound `update_form_field`, `delete_page`, source-bound `delete_annotation` and `update_annotation`, complete `rearrange_pages`, visible-only `set_page_crop`, absolute-quarter-turn `rotate_page`, `set_metadata`, `delete_embedded_file`, source-bound `add_link`, `delete_link`, and `update_link`, `redact_text`, and `redact_rect`. Run with one explicit save policy:
 
 ```bash
 node scripts/mupdf.mjs edit input.pdf tmp/pdfs/edit-operations.json tmp/pdfs/edited.pdf \
   --save-policy rewrite
 ```
 
-The CLI refuses source overwrite, writes atomically, and rejects incremental redaction, source-bound annotation/link creation or mutation, deletion, and signed-PDF incremental edits. Unsupported operations do not route elsewhere.
+The CLI refuses source overwrite, writes atomically, and rejects incremental redaction, source-bound annotation/link creation or mutation, deletion, and signed-PDF incremental edits. A bounded source-bound single-widget form-field update may use unsigned incremental save; unsupported operations do not route elsewhere.
+
+## Update one imported form field
+
+Inspect the exact input and select one `mupdfFormField` record, not a name or
+array index. Copy its source hash, `id`, and full `snapshot` into the operation
+file. This example is safe only when inspection returned a single-widget field:
+
+```json
+{
+  "savePolicy": "incremental",
+  "operations": [
+    {
+      "type": "update_form_field",
+      "sourceSha256": "<inspect summary sourceSha256>",
+      "formFieldId": "mupdf-form-field-42",
+      "expected": {
+        "name": "sender.city",
+        "type": "text",
+        "value": "",
+        "readOnly": false,
+        "widgets": [{
+          "id": "mupdf-widget-1-42",
+          "page": 1,
+          "xref": 42,
+          "rect": [72, 98, 180, 24]
+        }]
+      },
+      "value": "Shanghai"
+    }
+  ]
+}
+```
+
+The native path permits one non-password text field, one non-multiselect combo
+whose inspected display and export options are identical, or one checkbox. It
+checks the full snapshot before mutation and re-reads the field afterward. A
+shared-widget group, radio/list/multi-select field, password field, choice
+export mismatch, stale snapshot, or unknown option fails closed; use the
+explicit pypdf form workflow instead. The locator is valid only for the exact
+input bytes, so inspect the output before another mutation.
 
 ## Visible page crop
 

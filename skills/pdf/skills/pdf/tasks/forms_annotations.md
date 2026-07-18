@@ -1,6 +1,6 @@
 # Forms and annotations
 
-Use MuPDF.js for bounded text/choice/checkbox form values and text annotations. Use pypdf when radio export values, appearance-state validation, flattening, or more complex AcroForm handling is required. Always open the original PDF directly.
+Use MuPDF.js for bounded source-bound single-widget text/combo/checkbox updates and text annotations. Use pypdf when radio export values, shared widgets, choice display/export mappings, appearance-state validation, flattening, or more complex AcroForm handling is required. Always open the original PDF directly.
 
 ## Inspect first
 
@@ -20,7 +20,42 @@ node scripts/mupdf.mjs edit input.pdf tmp/pdfs/form-operations.json tmp/pdfs/fil
   --save-policy rewrite
 ```
 
-Radio buttons fail closed in this path because the API does not expose a trustworthy widget-to-export-value mapping. Signed-PDF incremental edits are also rejected.
+Native inspection emits individual `mupdfWidget` records and groups them into
+`mupdfFormField` records. For an agent-safe direct field update, select one
+field record by semantic name/type/value, then copy **both** the inspection
+`summary.sourceSha256` and that record's `id`/`snapshot`. Do not select by
+array position or field name alone:
+
+```js
+const inspection = await PdfFile.inspectPdf(input);
+const field = inspection.records.find((record) => record.kind === "mupdfFormField"
+  && record.name === "sender.city");
+if (!field?.snapshot) throw new Error("Expected one inspectable city field.");
+
+const edited = await PdfFile.editPdf(input, {
+  savePolicy: "incremental",
+  operations: [{
+    type: "update_form_field",
+    sourceSha256: inspection.summary.sourceSha256,
+    formFieldId: field.id,
+    expected: field.snapshot,
+    value: "Shanghai",
+  }],
+});
+```
+
+`update_form_field` accepts exactly one non-password text widget, one
+non-multiselect combo whose display and export options are identical, or one
+checkbox. The complete snapshot protects name/type/current value/read-only
+state/options/visible widget geometry. It verifies the field state before save,
+but it is not a durable field identity: re-inspect the output before any second
+mutation. It may use unsigned `incremental` save and proves the exact source
+prefix; it still does not authorize signed changes.
+
+Radio buttons, shared-widget fields, list or multi-select choices, password
+fields, mismatched export values, stale snapshots, and unsupported options fail
+closed in this path. Route them to the explicit pypdf workflow below. Signed
+PDF incremental edits are also rejected.
 
 Before a pypdf mutation, probe and bind the exact route. Change `--task` to `annotate` for notes:
 

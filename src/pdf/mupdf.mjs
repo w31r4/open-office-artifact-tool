@@ -263,7 +263,7 @@ function nativeAnnotation(annotation, pageNumber) {
 function consumeAnnotationBudget(budget, count, pageNumber) {
   budget.used += count;
   if (budget.used > budget.maxAnnotations) {
-    throw new Error(`MuPDF annotations/widgets exceed maxAnnotations (${budget.used} > ${budget.maxAnnotations}) while reading page ${pageNumber}.`);
+    throw new Error(`MuPDF annotations exceed maxAnnotations (${budget.used} > ${budget.maxAnnotations}) while reading page ${pageNumber}.`);
   }
 }
 
@@ -1602,7 +1602,7 @@ export async function editPdfWithMuPdf(input, options = {}) {
         : `destructive operation ${destructiveIncremental.type}`;
     throw new Error(`MuPDF ${label} cannot save incrementally because prior revisions retain the original content; use rewrite. Rewrite is still not a complete sanitize workflow.`);
   }
-  const { document, bytes } = await openPdfWithMuPdf(input, options);
+  const { document, bytes, limits } = await openPdfWithMuPdf(input, options);
   let saved;
   try {
     const signed = requireUnsignedPolicy(document, { ...options, savePolicy });

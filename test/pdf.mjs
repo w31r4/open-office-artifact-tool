@@ -28,6 +28,42 @@ assert.equal(lazyMuPdfProbe.status, 0, `MuPDF lazy-load probe failed\n${lazyMuPd
 await assert.rejects(PdfFile.inspectPdf(new Uint8Array(4), { limits: { maxBytes: 3 } }), /exceeds maxBytes/);
 await assert.rejects(PdfFile.importPdf(new Uint8Array(4), { limits: { maxBytes: 3 } }), /exceeds maxBytes/);
 
+function pdfFromIndirectObjects(objects) {
+  let body = "%PDF-1.7\n";
+  const offsets = [0];
+  for (let index = 1; index < objects.length; index += 1) {
+    offsets[index] = Buffer.byteLength(body);
+    body += `${index} 0 obj\n${objects[index]}\nendobj\n`;
+  }
+  const xref = Buffer.byteLength(body);
+  body += `xref\n0 ${objects.length}\n0000000000 65535 f \n`;
+  for (let index = 1; index < objects.length; index += 1) {
+    body += `${String(offsets[index]).padStart(10, "0")} 00000 n \n`;
+  }
+  body += `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return new Uint8Array(Buffer.from(body, "latin1"));
+}
+
+function sourceBoundFormFixture() {
+  const blankAppearance = "<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] /Resources << >> /Length 0 >>\nstream\n\nendstream";
+  return new FileBlob(pdfFromIndirectObjects([
+    undefined,
+    "<< /Type /Catalog /Pages 2 0 R /AcroForm 12 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << >> /Contents 13 0 R /Annots [5 0 R 6 0 R 7 0 R 10 0 R 11 0 R] >>",
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    "<< /Type /Annot /Subtype /Widget /FT /Tx /T (sender.city) /Rect [72 670 252 694] /P 3 0 R /V () /DA (/Helv 12 Tf 0 g) /AP << /N 9 0 R >> >>",
+    "<< /Type /Annot /Subtype /Widget /FT /Ch /Ff 131072 /T (sender.region) /Rect [72 630 252 654] /P 3 0 R /V (Shanghai) /Opt [(Shanghai) (Beijing)] /DA (/Helv 12 Tf 0 g) /AP << /N 9 0 R >> >>",
+    "<< /Type /Annot /Subtype /Widget /FT /Btn /T (terms_ack) /Rect [72 530 92 550] /P 3 0 R /V /Off /AS /Off /AP << /N << /Off 9 0 R /Yes 9 0 R >> >> >>",
+    "<< /FT /Btn /Ff 49154 /T (company_type) /Kids [10 0 R 11 0 R] >>",
+    blankAppearance,
+    "<< /Type /Annot /Subtype /Widget /Parent 8 0 R /Rect [72 580 92 600] /P 3 0 R /AS /Off /AP << /N << /Off 9 0 R /LLC 9 0 R >> >> >>",
+    "<< /Type /Annot /Subtype /Widget /Parent 8 0 R /Rect [140 580 160 600] /P 3 0 R /AS /Off /AP << /N << /Off 9 0 R /Corporation 9 0 R >> >> >>",
+    "<< /Fields [5 0 R 6 0 R 7 0 R 8 0 R] /DA (/Helv 0 Tf 0 g) /DR << /Font << /Helv 4 0 R >> >> >>",
+    "<< /Length 0 >>\nstream\n\nendstream",
+  ]), { type: "application/pdf" });
+}
+
 const pdf = PdfArtifact.create({
   pages: [
     {
@@ -512,6 +548,117 @@ assert.doesNotMatch(Buffer.from(mupdfRedacted.bytes).toString("latin1"), /Second
 await assert.rejects(PdfFile.editPdf(arbitraryPdf, { savePolicy: "incremental", operations: [{ type: "redact_text", page: 2, term: "Second page notes" }] }), /redaction cannot save incrementally.*prior revisions/is);
 await assert.rejects(PdfFile.editPdf(arbitraryPdf, { savePolicy: "incremental", operations: [{ type: "delete_page", page: 2 }] }), /destructive operation delete_page cannot save incrementally.*prior revisions/is);
 await assert.rejects(PdfFile.editPdf(arbitraryPdf, { operations: [{ type: "replace_text", page: 1, term: "PDF", replacement: "Document" }] }), /Unsupported MuPDF edit operation/);
+
+const sourceBoundFormPdf = sourceBoundFormFixture();
+const sourceBoundFormInspection = await PdfFile.inspectPdf(sourceBoundFormPdf, { maxChars: Infinity });
+const sourceBoundWidgets = sourceBoundFormInspection.records.filter((record) => record.kind === "mupdfWidget");
+const sourceBoundFields = sourceBoundFormInspection.records.filter((record) => record.kind === "mupdfFormField");
+assert.equal(sourceBoundWidgets.length, 5);
+assert.equal(sourceBoundFields.length, 4);
+assert.equal(sourceBoundFormInspection.records.find((record) => record.kind === "mupdfPage" && record.page === 1).widgets, 5);
+assert.match(sourceBoundWidgets[0].id, /^mupdf-widget-1-\d+$/);
+assert.match(sourceBoundWidgets[0].formFieldId, /^mupdf-form-field-\d+$/);
+const sourceBoundTextField = sourceBoundFields.find((field) => field.name === "sender.city");
+const sourceBoundChoiceField = sourceBoundFields.find((field) => field.name === "sender.region");
+const sourceBoundCheckboxField = sourceBoundFields.find((field) => field.name === "terms_ack");
+const sourceBoundRadioField = sourceBoundFields.find((field) => field.name === "company_type");
+assert.ok(sourceBoundTextField?.snapshot);
+assert.deepEqual(sourceBoundChoiceField.options, ["Shanghai", "Beijing"]);
+assert.deepEqual(sourceBoundChoiceField.exportOptions, ["Shanghai", "Beijing"]);
+assert.equal(sourceBoundCheckboxField.value, "Off");
+assert.equal(sourceBoundRadioField.widgets.length, 2);
+await assert.rejects(PdfFile.inspectPdf(sourceBoundFormPdf, { limits: { maxAnnotations: 4 } }), /annotations exceed maxAnnotations/);
+
+const sourceBoundTextUpdated = await PdfFile.editPdf(sourceBoundFormPdf, {
+  savePolicy: "incremental",
+  operations: [{
+    type: "update_form_field",
+    sourceSha256: sourceBoundFormInspection.summary.sourceSha256,
+    formFieldId: sourceBoundTextField.id,
+    expected: sourceBoundTextField.snapshot,
+    value: "Shanghai",
+  }],
+});
+assert.equal(sourceBoundTextUpdated.metadata.savePolicy, "incremental");
+assert.equal(Buffer.from(sourceBoundTextUpdated.bytes.subarray(0, sourceBoundFormPdf.bytes.length)).equals(Buffer.from(sourceBoundFormPdf.bytes)), true);
+assert.equal(sourceBoundTextUpdated.metadata.operations[0].type, "update_form_field");
+assert.equal(sourceBoundTextUpdated.metadata.operations[0].formFieldId, sourceBoundTextField.id);
+assert.deepEqual(sourceBoundTextUpdated.metadata.operations[0].matched, sourceBoundTextField.snapshot);
+assert.equal(sourceBoundTextUpdated.metadata.operations[0].value, "Shanghai");
+const sourceBoundTextOutput = await PdfFile.inspectPdf(sourceBoundTextUpdated, { maxChars: Infinity });
+assert.equal(sourceBoundTextOutput.records.find((field) => field.kind === "mupdfFormField" && field.name === "sender.city").value, "Shanghai");
+assert.notEqual(sourceBoundTextOutput.summary.sourceSha256, sourceBoundFormInspection.summary.sourceSha256);
+
+const sourceBoundChoiceUpdated = await PdfFile.editPdf(sourceBoundFormPdf, {
+  savePolicy: "incremental",
+  operations: [{
+    type: "update_form_field",
+    sourceSha256: sourceBoundFormInspection.summary.sourceSha256,
+    formFieldId: sourceBoundChoiceField.id,
+    expected: sourceBoundChoiceField.snapshot,
+    value: "Beijing",
+  }],
+});
+assert.equal((await PdfFile.inspectPdf(sourceBoundChoiceUpdated, { maxChars: Infinity })).records.find((field) => field.kind === "mupdfFormField" && field.name === "sender.region").value, "Beijing");
+
+const sourceBoundCheckboxUpdated = await PdfFile.editPdf(sourceBoundFormPdf, {
+  savePolicy: "incremental",
+  operations: [{
+    type: "update_form_field",
+    sourceSha256: sourceBoundFormInspection.summary.sourceSha256,
+    formFieldId: sourceBoundCheckboxField.id,
+    expected: sourceBoundCheckboxField.snapshot,
+    value: true,
+  }],
+});
+assert.equal(sourceBoundCheckboxUpdated.metadata.operations[0].value, true);
+assert.equal((await PdfFile.inspectPdf(sourceBoundCheckboxUpdated, { maxChars: Infinity })).records.find((field) => field.kind === "mupdfFormField" && field.name === "terms_ack").value, "Yes");
+
+await assert.rejects(PdfFile.editPdf(sourceBoundFormPdf, {
+  operations: [{
+    type: "update_form_field",
+    sourceSha256: "0".repeat(64),
+    formFieldId: sourceBoundTextField.id,
+    expected: sourceBoundTextField.snapshot,
+    value: "Shanghai",
+  }],
+}), /sourceSha256 must exactly match/);
+await assert.rejects(PdfFile.editPdf(sourceBoundFormPdf, {
+  operations: [{
+    type: "update_form_field",
+    sourceSha256: sourceBoundFormInspection.summary.sourceSha256,
+    formFieldId: sourceBoundTextField.id,
+    expected: { ...sourceBoundTextField.snapshot, value: "stale text" },
+    value: "Shanghai",
+  }],
+}), /precondition value did not match/);
+await assert.rejects(PdfFile.editPdf(sourceBoundFormPdf, {
+  operations: [{
+    type: "update_form_field",
+    sourceSha256: sourceBoundFormInspection.summary.sourceSha256,
+    formFieldId: sourceBoundTextField.id,
+    expected: { ...sourceBoundTextField.snapshot, staleGuard: true },
+    value: "Shanghai",
+  }],
+}), /expected contains unsupported snapshot field: staleGuard/);
+await assert.rejects(PdfFile.editPdf(sourceBoundFormPdf, {
+  operations: [{
+    type: "update_form_field",
+    sourceSha256: sourceBoundFormInspection.summary.sourceSha256,
+    formFieldId: sourceBoundChoiceField.id,
+    expected: sourceBoundChoiceField.snapshot,
+    value: "Shenzhen",
+  }],
+}), /is not an inspected option/);
+await assert.rejects(PdfFile.editPdf(sourceBoundFormPdf, {
+  operations: [{
+    type: "update_form_field",
+    sourceSha256: sourceBoundFormInspection.summary.sourceSha256,
+    formFieldId: sourceBoundRadioField.id,
+    expected: sourceBoundRadioField.snapshot,
+    value: "LLC",
+  }],
+}), /expected\.widgets must contain exactly one.*shared-widget/);
 const signatureLiteralPdf = await PdfFile.exportPdf(PdfArtifact.create({ text: "Literal /ByteRange [ text is not a signature" }));
 const signatureLiteralEdited = await PdfFile.editPdf(signatureLiteralPdf, { operations: [{ type: "add_text_annotation", page: 1, text: "Not signed" }] });
 assert.equal(signatureLiteralEdited.metadata.signedInput, false);

@@ -101,6 +101,7 @@ assert.match(skillText, /update_annotation/);
 assert.match(skillText, /add_link/);
 assert.match(skillText, /delete_link/);
 assert.match(skillText, /update_link/);
+assert.match(skillText, /update_form_field/);
 assert.match(skillText, /sourceSha256/);
 assert.match(skillText, /mupdf-link/);
 assert.match(skillText, /not redaction/i);

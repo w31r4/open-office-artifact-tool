@@ -18,7 +18,7 @@ The plugin tree is versioned directly under `skills/pdf` in the public repositor
 
 ## Compatibility status
 
-The plugin is a reference-compatible capability router. `PdfArtifact` handles greenfield semantic/tagged authoring. `PdfFile` and the bundled `mupdf` npm dependency handle arbitrary-file reading, native inspection, PNG/JPEG rendering, and bounded direct-original edits; `scripts/mupdf.mjs` is the thin Skill CLI over those APIs. The runtime stays lazy until the first PDF operation.
+The plugin is a reference-compatible capability router. `PdfArtifact` handles greenfield semantic/tagged authoring. `PdfFile` and the bundled `mupdf` npm dependency handle arbitrary-file reading, native inspection including source-bound widget/form-field snapshots, PNG/JPEG rendering, and bounded direct-original edits; `scripts/mupdf.mjs` is the thin Skill CLI over those APIs. The runtime stays lazy until the first PDF operation. A direct form update is intentionally narrow: one source-bound non-password text/compatible combo/checkbox widget only; shared or complex fields route explicitly to pypdf.
 
 Existing PDFs stay as original bytes. No failure silently falls back to model reconstruction. Rewrite and byte-prefix-preserving incremental saves are distinct; redaction and delete operations reject incremental output because prior revisions retain the original content. MuPDF rewrite redaction is real removal from the new revision, but it is not the complete high-trust sanitize contract.
 

@@ -129,6 +129,36 @@ await page.save("third-party-page-1.png");
 
 Parser-backed import reconstructs a modeled view for extraction, inspect, and QA. It is not the edit representation and must not be exported as a faithful edit. Table reconstruction is heuristic. Direct-original mutations use `PdfFile.editPdf(input, { operations, savePolicy })`; signatures still route to pyHanko, and strict sanitize/OCR or complex forms/merge route to the documented specialist tools. Inject `createPdfjsParser()` only when an independent PDF.js read adapter is specifically required.
 
+For a bounded imported AcroForm update, inspect first and bind the exact source
+plus the returned grouped `mupdfFormField` snapshot. This direct route supports
+only one non-password text widget, one non-multiselect combo with identical
+display/export options, or one checkbox; radio/shared/list/complex fields route
+explicitly to pypdf:
+
+```js
+const inspection = await PdfFile.inspectPdf(input);
+const city = inspection.records.find((record) => record.kind === "mupdfFormField"
+  && record.name === "sender.city");
+if (!city?.snapshot) throw new Error("Expected one inspectable city field.");
+
+const filled = await PdfFile.editPdf(input, {
+  savePolicy: "incremental",
+  operations: [{
+    type: "update_form_field",
+    sourceSha256: inspection.summary.sourceSha256,
+    formFieldId: city.id,
+    expected: city.snapshot,
+    value: "Shanghai",
+  }],
+});
+await filled.save("third-party-form-filled.pdf");
+```
+
+The output gets new bytes, so source-bound locators/snapshots cannot be reused:
+re-inspect before a second edit. Incremental is available only for unsigned
+input and proves the original byte prefix; it never claims signed-document
+permission or content sanitization.
+
 For a bounded visible crop, take the raw page box from native inspection and edit the original bytes directly. The operation is intentionally not redaction: it changes `CropBox`, retains off-window content, and supports only unrotated pages.
 
 ```js

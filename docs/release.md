@@ -47,7 +47,7 @@ The release candidate is acceptable only when all of the following are true:
 - default facade create/import/edit/re-export roundtrips pass for all three Office formats;
 - legacy options, old subpath, missing runtime, and opaque-without-source cases fail explicitly;
 - all five native plugin manifests validate, the published six-Skill topology is complete, and every workflow promoted to compatible in `docs/reference-skills.md` passes from the public package surface;
-- PDF greenfield authoring plus default MuPDF.js import/inspect/render/bounded-edit, lazy-load, pre-WASM budget, exact-prefix incremental-save, signature/redaction/deletion fail-closed, Skill CLI source-protection, and specialist-provider contract tests pass independently;
+- PDF greenfield authoring plus default MuPDF.js import/inspect/render/bounded-edit, lazy-load, pre-WASM budget, exact-prefix incremental-save, source-bound annotation/link/form-field behavior, signature/redaction/deletion fail-closed, Skill CLI source-protection, and specialist-provider contract tests pass independently;
 - when explicitly configured, the real optional-provider test covers ReportLab creation, pdfplumber extraction, type-aware pypdf text/radio/checkbox forms and annotations, typed pypdf merge/reorder/selective watermarking, PyMuPDF rewrite/incremental/page/text/image/form/annotation edits, real redaction/scrub/residue scans, capped numerical text-fit behavior, canonical audit byte binding, and typed Poppler source/output comparison;
 - Open XML SDK validation passes for generated Office fixtures;
 - configured LibreOffice/Poppler/Playwright/native render gates pass where available;
@@ -71,6 +71,30 @@ LibreOffice, Poppler, Playwright, and the Windows Office bridge are validation/r
 The Office bridge does not participate in normal import/export and must never be used to hide a codec failure.
 
 ## Current local evidence
+
+### PDF source-bound single-widget form-field updates
+
+On 2026-07-18, the default direct-original MuPDF.js route added
+`update_form_field`. Native inspection now emits individual `mupdfWidget`
+records and grouped `mupdfFormField` records whose `id` is a current-source
+`mupdf-form-field-<xref>` locator and whose `snapshot` captures the semantic
+field state plus every visible widget rectangle.
+
+The operation requires the exact inspection SHA-256, that locator, and the full
+snapshot. It deliberately accepts only one non-password text widget, one
+non-multiselect combo whose display/export values match, or one checkbox. It
+verifies the value and field structure after applying the native mutation. A
+shared widget group, radio/list/multi-select/password field, mismatched export
+mapping, stale snapshot, unknown choice, or signed incremental request fails
+closed and is routed to the explicit pypdf workflow instead.
+
+Unlike annotation and link mutation, this narrow non-destructive form update
+may use unsigned byte-prefix-verified incremental save. It remains a current
+byte-sequence locator rather than a durable document identity, so every output
+must be re-inspected before another field update. The native regression fixture
+exercises text, combo, checkbox, shared-radio refusal, stale hash/snapshot,
+unknown-choice, widget budget, and exact-prefix behavior without requiring a
+Python provider.
 
 ### PDF direct-original page rotation
 
