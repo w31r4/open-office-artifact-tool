@@ -1041,15 +1041,59 @@ const connectedGroupCloneRoot = connectedGroupCloneOriginal.addGroup({
   position: { left: 48, top: 40, width: 320, height: 120 },
   childFrame: { left: 0, top: 0, width: 320, height: 120 },
 });
-connectedGroupCloneRoot.shapes.add({ name: "left", position: { left: 0, top: 20, width: 90, height: 42 }, text: "Left" });
-connectedGroupCloneRoot.shapes.add({ name: "right", position: { left: 210, top: 20, width: 90, height: 42 }, text: "Right" });
-connectedGroupCloneRoot.connectors.add({ name: "join", start: { x: 90, y: 41 }, end: { x: 210, y: 41 } });
-const connectedGroupCloneImported = await PresentationFile.importPptx(await PresentationFile.exportPptx(connectedGroupCloneFixture));
-assert.throws(
-  () => connectedGroupCloneImported.slides.getItem(0).duplicate(),
-  (error) => error?.code === "unsupported_presentation_slide_clone",
-  "a connector inside a group must not be mistaken for the canonical clone leaf",
+const connectedGroupCloneLeft = connectedGroupCloneRoot.shapes.add({ name: "left", position: { left: 0, top: 20, width: 90, height: 42 }, text: "Left" });
+const connectedGroupCloneRight = connectedGroupCloneRoot.shapes.add({ name: "right", position: { left: 210, top: 20, width: 90, height: 42 }, text: "Right" });
+connectedGroupCloneRoot.connectors.add({
+  name: "join",
+  from: connectedGroupCloneLeft,
+  to: connectedGroupCloneRight,
+  start: { x: 90, y: 41 },
+  end: { x: 210, y: 41 },
+  line: { fill: "#64748B", width: 1 },
+});
+const connectedGroupCloneSourcePptx = await PresentationFile.exportPptx(connectedGroupCloneFixture);
+const connectedGroupCloneSourceZip = await JSZip.loadAsync(connectedGroupCloneSourcePptx.bytes);
+const connectedGroupCloneImported = await PresentationFile.importPptx(connectedGroupCloneSourcePptx);
+const connectedGroupCloneImportedSource = connectedGroupCloneImported.slides.getItem(0);
+const connectedGroupCloneSourceGroup = connectedGroupCloneImportedSource.groups.items[0];
+const connectedGroupCloneSourceConnector = connectedGroupCloneSourceGroup.connectors.items[0];
+assert.equal(connectedGroupCloneSourceConnector.startTargetId, connectedGroupCloneSourceGroup.shapes.items[0].id);
+assert.equal(connectedGroupCloneSourceConnector.endTargetId, connectedGroupCloneSourceGroup.shapes.items[1].id);
+const connectedGroupClone = connectedGroupCloneImportedSource.duplicate();
+const connectedGroupCloneCopy = connectedGroupClone.groups.items[0];
+const connectedGroupCloneConnector = connectedGroupCloneCopy.connectors.items[0];
+assert.notEqual(connectedGroupCloneConnector.id, connectedGroupCloneSourceConnector.id);
+assert.notEqual(connectedGroupCloneCopy.shapes.items[0].id, connectedGroupCloneSourceGroup.shapes.items[0].id);
+assert.equal(connectedGroupCloneConnector.startTargetId, connectedGroupCloneCopy.shapes.items[0].id);
+assert.equal(connectedGroupCloneConnector.endTargetId, connectedGroupCloneCopy.shapes.items[1].id);
+const connectedGroupClonePptx = await PresentationFile.exportPptx(connectedGroupCloneImported);
+const connectedGroupCloneZip = await JSZip.loadAsync(connectedGroupClonePptx.bytes);
+assert.deepEqual(
+  await connectedGroupCloneZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  await connectedGroupCloneSourceZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  "cloning a group with bounded connectors must retain its origin SlidePart byte-for-byte",
 );
+assert.ok(connectedGroupCloneZip.file("ppt/slides/slide2.xml"), "the connector clone must own a new SlidePart");
+const connectedGroupCloneRoundTrip = await PresentationFile.importPptx(connectedGroupClonePptx);
+const connectedGroupCloneRoundTripGroup = connectedGroupCloneRoundTrip.slides.getItem(1).groups.items[0];
+const connectedGroupCloneRoundTripConnector = connectedGroupCloneRoundTripGroup.connectors.items[0];
+assert.equal(connectedGroupCloneRoundTripConnector.startTargetId, connectedGroupCloneRoundTripGroup.shapes.items[0].id);
+assert.equal(connectedGroupCloneRoundTripConnector.endTargetId, connectedGroupCloneRoundTripGroup.shapes.items[1].id);
+
+const immediateConnectedGroupCloneEdit = await PresentationFile.importPptx(connectedGroupCloneSourcePptx);
+immediateConnectedGroupCloneEdit.slides.getItem(0).duplicate().groups.items[0].connectors.items[0].line.width = 2;
+await assert.rejects(
+  () => PresentationFile.exportPptx(immediateConnectedGroupCloneEdit),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+);
+
+const unresolvedConnectedGroupClone = await PresentationFile.importPptx(connectedGroupCloneSourcePptx);
+unresolvedConnectedGroupClone.slides.getItem(0).groups.items[0].connectors.items[0].startTargetId = "missing-source-target";
+assert.throws(
+  () => unresolvedConnectedGroupClone.slides.getItem(0).duplicate(),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+);
+assert.equal(unresolvedConnectedGroupClone.slides.items.length, 1, "connector-target preflight must not leave a partial clone behind");
 
 // Speaker notes add one deliberately closed relationship leaf to the same
 // clone profile. The NotesSlide itself is new and points at the clone, while

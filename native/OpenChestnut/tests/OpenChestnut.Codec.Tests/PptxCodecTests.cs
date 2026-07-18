@@ -2500,13 +2500,15 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
-    public void SourcePreservingExportRejectsCanonicalGroupCloneWithConnector()
+    public void SourcePreservingExportClonesAnUnchangedCanonicalGroupWithConnector()
     {
         var request = ExportRequest();
         AddCanonicalCloneGroup(request, includeConnector: true);
         var authored = Invoke(request);
         Assert.True(authored.Ok, Diagnostics(authored));
-        var imported = Import(authored.File.ToByteArray());
+        var sourceBytes = authored.File.ToByteArray();
+        var sourceSlide = ZipBytes(sourceBytes, "ppt/slides/slide1.xml");
+        var imported = Import(sourceBytes);
         Assert.True(imported.Ok, Diagnostics(imported));
         var source = Assert.Single(imported.Artifact.Presentation.Slides);
         var clone = source.Clone();
@@ -2515,9 +2517,26 @@ public sealed class PptxCodecTests
         clone.CloneSource = source.Source.Clone();
         imported.Artifact.Presentation.Slides.Add(clone);
 
-        var rejected = Export(imported.Artifact);
-        Assert.False(rejected.Ok);
-        Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(rejected.Diagnostics).Code);
+        var duplicated = Export(imported.Artifact);
+        Assert.True(duplicated.Ok, Diagnostics(duplicated));
+        var duplicatedBytes = duplicated.File.ToByteArray();
+        using (var stream = new MemoryStream(duplicatedBytes))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var slides = package.PresentationPart!.SlideParts.ToArray();
+            Assert.Equal(2, slides.Length);
+            var outputClone = slides.Single(part => part.Uri.OriginalString.EndsWith("/slide2.xml", StringComparison.Ordinal));
+            Assert.Single(outputClone.Slide!.Descendants<P.ConnectionShape>());
+        }
+        Assert.Equal(sourceSlide, ZipBytes(duplicatedBytes, "ppt/slides/slide1.xml"));
+
+        var roundTrip = Import(duplicatedBytes);
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        var cloneGroup = Assert.Single(roundTrip.Artifact.Presentation.Slides[1].Elements, element => element.ContentCase == PresentationElement.ContentOneofCase.Group).Group;
+        var connector = Assert.Single(cloneGroup.Children, child => child.ContentCase == PresentationElement.ContentOneofCase.Connector).Connector;
+        Assert.Equal(cloneGroup.Children[0].Id, connector.StartTargetId);
+        Assert.Equal(cloneGroup.Children[1].Id, connector.EndTargetId);
     }
 
     [Fact]

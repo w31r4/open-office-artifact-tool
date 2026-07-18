@@ -2959,7 +2959,7 @@ internal static class PptxCodec
                     elementIdsByNativeId,
                     imageRelationshipIds,
                     embeddedImageRelationshipIds))
-                throw UnsupportedSourceSlideClone(source, "its elements require a broader graph clone than the bounded shape/inline-table/embedded-image/recursive-group profile");
+                throw UnsupportedSourceSlideClone(source, "its elements require a broader graph clone than the bounded shape/inline-table/embedded-image/connector/recursive-group profile");
         }
         if (!imageRelationshipIds.SetEquals(embeddedImageRelationshipIds))
             throw UnsupportedSourceSlideClone(source, "it has an image relationship that is not exactly bound by a canonical embedded picture");
@@ -3025,6 +3025,12 @@ internal static class PptxCodec
             embeddedImageRelationshipIds.Add(relationshipId);
             return true;
         }
+        // A bounded connection shape is entirely inline in its owning shape
+        // tree. Its endpoints resolve through non-visual IDs in that same
+        // cloned SlidePart, so it adds no OPC edge beyond the already-proved
+        // layout/image/notes/comments graph.
+        if (element is P.ConnectionShape connector)
+            return TryReadConnector(connector, elementIdsByNativeId, out _);
         if (element is not P.GroupShape group) return false;
 
         var groupId = $"{ownerId}/element/{elementIndex + 1}";
@@ -3136,7 +3142,7 @@ internal static class PptxCodec
     private static CodecException UnsupportedSourceSlideClone(PptxSourceSlideEntry source, string reason) =>
         new(
             "unsupported_presentation_slide_clone",
-            $"Source-preserving PPTX cloning is limited to an unchanged shape/inline-table/embedded-image/recursive-group layout leaf with optional closed notes and legacy-comment leaves; slide {source.Index + 1} cannot be cloned because {reason}. Use an explicit broader OPC graph-clone operation for this package.",
+            $"Source-preserving PPTX cloning is limited to an unchanged shape/inline-table/embedded-image/bounded-connector/recursive-group layout leaf with optional closed notes and legacy-comment leaves; slide {source.Index + 1} cannot be cloned because {reason}. Use an explicit broader OPC graph-clone operation for this package.",
             PartPath(source.Part));
 
     private static bool ReorderSourceSlideIdList(PresentationPart presentationPart, IReadOnlyList<PptxTargetSlideEntry> targets)

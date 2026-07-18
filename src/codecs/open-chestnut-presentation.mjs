@@ -163,7 +163,34 @@ function clonedPresentationValue(value) {
   return value === undefined ? undefined : structuredClone(value);
 }
 
-function cloneImportedPresentationShape(container, source) {
+function isPresentationConnectorElement(element) {
+  return element?.kind === "connector" && typeof element.id === "string";
+}
+
+function createPresentationCloneContext() {
+  return {
+    cloneIdBySourceId: new Map(),
+    sourceIdByCloneId: new Map(),
+    pendingConnectors: [],
+  };
+}
+
+// The pending clone has fresh public model IDs, whereas its first export must
+// still prove equality with the origin's source-bound wire. Keep that identity
+// translation private to the clone transaction instead of leaking native IDs
+// through the Agent-facing model.
+function registerPresentationCloneElement(context, source, clone) {
+  const sourceId = String(source?.id || "");
+  const cloneId = String(clone?.id || "");
+  if (!sourceId || !cloneId || context.cloneIdBySourceId.has(sourceId) || context.sourceIdByCloneId.has(cloneId)) {
+    throw new OpenChestnutCodecError("Imported presentation clone element identities are invalid or ambiguous.", [], { code: "unsupported_presentation_slide_clone" });
+  }
+  context.cloneIdBySourceId.set(sourceId, cloneId);
+  context.sourceIdByCloneId.set(cloneId, sourceId);
+  return clone;
+}
+
+function cloneImportedPresentationShape(container, source, context) {
   const clone = container.shapes.add({
     name: source.name,
     geometry: source.geometry,
@@ -181,15 +208,15 @@ function cloneImportedPresentationShape(container, source) {
     textStyle: clonedPresentationValue(source.text.style),
   });
   clone.text.inheritedParagraphStyles = clonedPresentationValue(source.text.inheritedParagraphStyles);
-  return clone;
+  return registerPresentationCloneElement(context, source, clone);
 }
 
 // A clone needs a fresh model object so it cannot share mutable JavaScript
 // identity with its origin. Its embedded asset stays content-addressed, and
 // the native exporter deliberately shares that immutable ImagePart through a
 // new relationship on the clone SlidePart.
-function cloneImportedPresentationImage(container, source) {
-  return container.images.add({
+function cloneImportedPresentationImage(container, source, context) {
+  const clone = container.images.add({
     name: source.name,
     position: clonedPresentationValue(source.position),
     alt: source.alt,
@@ -199,13 +226,14 @@ function cloneImportedPresentationImage(container, source) {
     geometry: source.geometry,
     ...(source.transform ? { transform: clonedPresentationValue(source.transform) } : {}),
   });
+  return registerPresentationCloneElement(context, source, clone);
 }
 
 // Canonical tables are the one accepted GraphicFrame leaf: their bounded
 // DrawingML payload is inline in the SlidePart, so this creates a fresh model
 // without copying an OPC part or relationship. Do not generalize this helper
 // to charts or other GraphicFrames, which own broader relationship graphs.
-function cloneImportedPresentationTable(container, source) {
+function cloneImportedPresentationTable(container, source, context) {
   const clone = container.tables.add({
     name: source.name,
     position: clonedPresentationValue(source.position),
@@ -217,6 +245,19 @@ function cloneImportedPresentationTable(container, source) {
   });
   if (source.border !== undefined) clone.border = clonedPresentationValue(source.border);
   if (source.mergeRange !== undefined) clone.mergeRange = clonedPresentationValue(source.mergeRange);
+  return registerPresentationCloneElement(context, source, clone);
+}
+
+function cloneImportedPresentationConnector(container, source, context) {
+  const clone = container.connectors.add({
+    name: source.name,
+    connectorType: source.connectorType,
+    start: clonedPresentationValue(source.start),
+    end: clonedPresentationValue(source.end),
+    line: clonedPresentationValue(source.line),
+  });
+  registerPresentationCloneElement(context, source, clone);
+  context.pendingConnectors.push({ source, clone });
   return clone;
 }
 
@@ -226,29 +267,73 @@ function cloneImportedPresentationTable(container, source) {
 // same bounded clone-safe element kinds. Each new model object has a fresh JS
 // identity; the source bindings still make the pending clone immutable until
 // its export/reimport boundary.
-function cloneImportedPresentationGroup(container, source) {
+function cloneImportedPresentationGroup(container, source, context) {
   const clone = container.groups.add({
     name: source.name,
     position: clonedPresentationValue(source.position),
     childFrame: clonedPresentationValue(source.childFrame),
   });
-  for (const child of source.children) cloneImportedPresentationElement(clone, child);
+  registerPresentationCloneElement(context, source, clone);
+  for (const child of source.children) cloneImportedPresentationElement(clone, child, context);
   return clone;
 }
 
-function cloneImportedPresentationElement(container, source) {
-  if (source instanceof Shape) return cloneImportedPresentationShape(container, source);
-  if (source instanceof TableElement) return cloneImportedPresentationTable(container, source);
-  if (source instanceof ImageElement) return cloneImportedPresentationImage(container, source);
-  if (source instanceof GroupShape) return cloneImportedPresentationGroup(container, source);
+function cloneImportedPresentationElement(container, source, context) {
+  if (source instanceof Shape) return cloneImportedPresentationShape(container, source, context);
+  if (source instanceof TableElement) return cloneImportedPresentationTable(container, source, context);
+  if (source instanceof ImageElement) return cloneImportedPresentationImage(container, source, context);
+  if (isPresentationConnectorElement(source)) return cloneImportedPresentationConnector(container, source, context);
+  if (source instanceof GroupShape) return cloneImportedPresentationGroup(container, source, context);
   throw new OpenChestnutCodecError("The bounded imported-slide clone profile encountered an unsupported group descendant.", [], { code: "unsupported_presentation_slide_clone" });
 }
 
 function cloneSupportedPresentationContent(content) {
-  if (content?.case === "shape" || content?.case === "table" || content?.case === "image") return true;
+  if (content?.case === "shape" || content?.case === "table" || content?.case === "image" || content?.case === "connector") return true;
   if (content?.case !== "group") return false;
   const children = content.value?.children;
   return Array.isArray(children) && children.length > 0 && children.every((child) => cloneSupportedPresentationContent(child?.content));
+}
+
+function collectPresentationCloneSourceIds(source, ids) {
+  if (!(source instanceof Shape) && !(source instanceof TableElement) && !(source instanceof ImageElement) && !isPresentationConnectorElement(source) && !(source instanceof GroupShape)) {
+    throw new OpenChestnutCodecError("The bounded imported-slide clone profile encountered an unsupported source element.", [], { code: "unsupported_presentation_slide_clone" });
+  }
+  const id = String(source.id || "");
+  if (!id || ids.has(id)) {
+    throw new OpenChestnutCodecError("Imported presentation clone source element identities are invalid or ambiguous.", [], { code: "unsupported_presentation_slide_clone" });
+  }
+  ids.add(id);
+  if (source instanceof GroupShape) {
+    for (const child of source.children) collectPresentationCloneSourceIds(child, ids);
+  }
+}
+
+function assertPresentationCloneConnectorTargets(source, sourceIds) {
+  if (isPresentationConnectorElement(source)) {
+    for (const targetId of [source.startTargetId, source.endTargetId]) {
+      if (targetId && !sourceIds.has(targetId)) {
+        throw new OpenChestnutCodecError("A bounded imported-slide connector may target only an element cloned in the same slide tree.", [], { code: "unsupported_presentation_slide_clone" });
+      }
+    }
+  }
+  if (source instanceof GroupShape) {
+    for (const child of source.children) assertPresentationCloneConnectorTargets(child, sourceIds);
+  }
+}
+
+function bindPresentationCloneConnectorTargets(context) {
+  for (const { source, clone } of context.pendingConnectors) {
+    const targetId = (value, side) => {
+      if (!value) return undefined;
+      const cloneTargetId = context.cloneIdBySourceId.get(value);
+      if (!cloneTargetId) {
+        throw new OpenChestnutCodecError(`Imported presentation clone connector ${source.id} has an unresolved ${side} target.`, [], { code: "unsupported_presentation_slide_clone" });
+      }
+      return cloneTargetId;
+    };
+    clone.startTargetId = targetId(source.startTargetId, "start");
+    clone.endTargetId = targetId(source.endTargetId, "end");
+  }
 }
 
 // A legacy comment has no JavaScript object identity that may be shared with
@@ -272,8 +357,11 @@ function duplicateImportedPresentationSlide(presentation, state, slide) {
     throw new OpenChestnutCodecError("The bounded imported-slide clone profile permits only one pending clone per origin; export and reimport it before cloning that source again.", [], { code: "unsupported_presentation_slide_clone" });
   }
   if (source.entries.some((entry) => !cloneSupportedPresentationContent(entry.wire.content))) {
-    throw new OpenChestnutCodecError("The bounded imported-slide clone profile supports only canonical shapes, inline tables, embedded images, and recursively canonical groups; charts, connectors, native objects, and other graph edges require a broader OPC graph clone.", [], { code: "unsupported_presentation_slide_clone" });
+    throw new OpenChestnutCodecError("The bounded imported-slide clone profile supports only canonical shapes, inline tables, embedded images, bounded connectors, and recursively canonical groups; charts, native objects, and other graph edges require a broader OPC graph clone.", [], { code: "unsupported_presentation_slide_clone" });
   }
+  const sourceIds = new Set();
+  for (const entry of source.entries) collectPresentationCloneSourceIds(entry.model, sourceIds);
+  for (const entry of source.entries) assertPresentationCloneConnectorTargets(entry.model, sourceIds);
   const clone = presentation.slides.insert({
     after: slide,
     name: slide.name,
@@ -282,8 +370,9 @@ function duplicateImportedPresentationSlide(presentation, state, slide) {
   });
   clone.layoutId = slide.layoutId;
   cloneImportedPresentationLegacyComments(clone, slide);
+  const cloneContext = createPresentationCloneContext();
   const entries = source.entries.map((entry) => {
-    const model = cloneImportedPresentationElement(clone, entry.model);
+    const model = cloneImportedPresentationElement(clone, entry.model, cloneContext);
     return {
       wire: entry.wire,
       model,
@@ -294,15 +383,17 @@ function duplicateImportedPresentationSlide(presentation, state, slide) {
         ? presentationImageReadOnlySnapshot(model)
         : entry.wire.content.case === "table"
           ? presentationTableReadOnlySnapshot(model)
-          : undefined,
+      : undefined,
     };
   });
+  bindPresentationCloneConnectorTargets(cloneContext);
   const cloneState = {
     source,
     slide: clone,
     name: clone.name,
     commentSnapshot: presentationSlideCommentSnapshot(clone),
     entries,
+    sourceIdByCloneId: cloneContext.sourceIdByCloneId,
   };
   state.clones.push(cloneState);
   return clone;
@@ -1072,7 +1163,17 @@ function modelPresentationShadow(shadow) {
   };
 }
 
-function presentationConnector(connector, original) {
+function sourceBoundCloneConnectorTargetId(value, sourceIdByCloneId, connector, side) {
+  const targetId = String(value || "");
+  if (!targetId || !sourceIdByCloneId) return targetId;
+  const sourceId = sourceIdByCloneId.get(targetId);
+  if (!sourceId) {
+    throw new OpenChestnutCodecError(`Imported presentation clone connector ${connector.id} has an unresolved ${side} target.`, [], { code: "unsupported_presentation_slide_clone" });
+  }
+  return sourceId;
+}
+
+function presentationConnector(connector, original, sourceIdByCloneId) {
   const type = String(connector.connectorType || "straight");
   if (!new Set(["straight", "elbow"]).has(type)) {
     throw new OpenChestnutCodecError(`Presentation connector ${connector.id} uses unsupported type ${type}.`, [], { code: "unsupported_presentation_features" });
@@ -1104,8 +1205,8 @@ function presentationConnector(connector, original) {
         lineWidthEmu: BigInt(Math.round(width * EMU_PER_POINT)),
         startArrow: arrow(line.startArrow ?? connector.startArrow, "start arrow"),
         endArrow: arrow(line.endArrow ?? connector.endArrow, "end arrow"),
-        startTargetId: connector.startTargetId || "",
-        endTargetId: connector.endTargetId || "",
+        startTargetId: sourceBoundCloneConnectorTargetId(connector.startTargetId, sourceIdByCloneId, connector, "start"),
+        endTargetId: sourceBoundCloneConnectorTargetId(connector.endTargetId, sourceIdByCloneId, connector, "end"),
       },
     },
   };
@@ -1458,17 +1559,17 @@ function presentationTableReadOnlySnapshot(table) {
   });
 }
 
-function presentationElement(element, original, assetCatalog) {
-  if (element instanceof GroupShape) return presentationGroup(element, original, assetCatalog);
+function presentationElement(element, original, assetCatalog, sourceIdByCloneId) {
+  if (element instanceof GroupShape) return presentationGroup(element, original, assetCatalog, sourceIdByCloneId);
   if (element instanceof ImageElement) return presentationImage(element, original, assetCatalog);
   if (element instanceof TableElement) return presentationTable(element, original);
   if (element instanceof ChartElement) return presentationChart(element, original);
-  if (element?.kind === "connector") return presentationConnector(element, original);
+  if (element?.kind === "connector") return presentationConnector(element, original, sourceIdByCloneId);
   if (element instanceof Shape) return presentationShape(element, original, assetCatalog);
   throw new OpenChestnutCodecError(`Presentation element ${element?.id || "<unknown>"} has no supported OpenChestnut wire projection.`, [], { code: "unsupported_presentation_element" });
 }
 
-function presentationGroup(group, original, assetCatalog) {
+function presentationGroup(group, original, assetCatalog, sourceIdByCloneId) {
   const originalGroup = original?.content?.case === "group" ? original.content.value : undefined;
   if (!group.children.length) throw new OpenChestnutCodecError(`Presentation group ${group.id} requires at least one child.`, [], { code: "invalid_presentation_group" });
   if (originalGroup && originalGroup.children.length !== group.children.length) {
@@ -1498,7 +1599,7 @@ function presentationGroup(group, original, assetCatalog) {
         childTopEmu: signedEmuFromPixels(childFrame.top, `${group.id}.childFrame.top`),
         childWidthEmu,
         childHeightEmu,
-        children: group.children.map((child, index) => presentationElement(child, originalGroup?.children[index], assetCatalog)),
+        children: group.children.map((child, index) => presentationElement(child, originalGroup?.children[index], assetCatalog, sourceIdByCloneId)),
       },
     },
   };
@@ -1762,9 +1863,9 @@ export function presentationEnvelope(presentation, protocolVersion) {
               }
               return presentationTable(entry.model, entry.wire);
             }
-            if (entry.wire.content.case === "connector") return presentationConnector(entry.model, entry.wire);
+            if (entry.wire.content.case === "connector") return presentationConnector(entry.model, entry.wire, cloneState?.sourceIdByCloneId);
             if (entry.wire.content.case === "chart") return presentationChart(entry.model, entry.wire);
-            if (entry.wire.content.case === "group") return presentationGroup(entry.model, entry.wire, assetCatalog);
+            if (entry.wire.content.case === "group") return presentationGroup(entry.model, entry.wire, assetCatalog, cloneState?.sourceIdByCloneId);
             return presentationOpaque(entry.model, entry.wire, entry.snapshot, assetCatalog);
           })
         : directSlideElements(slide)
