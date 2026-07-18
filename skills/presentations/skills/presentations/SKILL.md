@@ -192,7 +192,7 @@ removes the source slide part and its relationship part while preserving every
 survivor. Media, notes, comments, charts, OLE, hyperlinks, data parts, or any
 other connected graph fail closed. `slide.duplicate()` is a separate, much
 narrower operation: only an original imported slide whose unchanged graph has
-canonical shapes plus canonical embedded rectangular images, exactly one
+canonical shapes, canonical inline fixed-grid tables, plus canonical embedded rectangular images, exactly one
 internal layout relationship, picture-bound image relationships, and optionally
 one closed `NotesSlide -> NotesMaster` / back-to-source-slide leaf plus one
 canonical legacy `SlideCommentsPart` leaf may receive a new `SlidePart` and
@@ -201,7 +201,8 @@ immutable image Parts, NotesMaster, and presentation-wide `CommentAuthorsPart`
 through fresh clone-local relationships; it copies accepted NotesSlide and
 SlideComments XML byte-for-byte and points only the preserved notes
 back-reference at the clone. The comments part and author catalog must have no
-connected relationship graph. It preserves the origin part and requires export plus reimport before the clone, its notes, or its comments may be edited;
+connected relationship graph. Accepted tables are inline-only: table fills,
+links, and every other package edge remain outside this profile. It preserves the origin part and requires export plus reimport before the clone, its notes, or its comments may be edited;
 imported legacy comments remain source-bound read-only after that boundary.
 Imported add, repeat/mutated clone, rich/connected comments, and every broad
 graph clone remain unsupported until an explicit OPC graph-clone transaction is
