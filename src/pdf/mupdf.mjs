@@ -38,6 +38,7 @@ const INCREMENTAL_DESTRUCTIVE_OPERATIONS = new Set([
   "update_annotation",
   "delete_page",
   "delete_embedded_file",
+  "add_link",
   "delete_link",
   "update_link",
   "redact_text",
@@ -51,6 +52,8 @@ const ANNOTATION_PATCH_FIELDS = new Set(["contents", "author", "subject"]);
 const LINK_ID_PREFIX = "mupdf-link";
 const LINK_EXPECTATION_FIELDS = new Set(["url", "bbox", "external"]);
 const LINK_PATCH_FIELDS = new Set(["url"]);
+const LINK_PAGE_EXPECTATION_FIELDS = new Set(["bbox", "rotation"]);
+const SAFE_NATIVE_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 
 function limitsFor(options = {}) {
   const topLevel = Object.fromEntries(Object.keys(DEFAULT_LIMITS)
@@ -355,10 +358,59 @@ function linkPatch(value) {
       throw new Error(`update_link patch contains unsupported field: ${name}.`);
     }
   }
-  if (typeof value.url !== "string" || !value.url.trim()) {
-    throw new Error("update_link patch.url must be a non-empty string.");
+  return { url: nativeLinkUri(value.url, "update_link patch.url") };
+}
+
+function nativeLinkUri(value, label = "link url") {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new Error(`${label} must be a non-empty string.`);
   }
-  return { url: value.url };
+  const url = value.trim();
+  if (url.startsWith("#")) {
+    if (url.length === 1 || /\s|[\u0000-\u001f\u007f]/u.test(url)) throw new Error(`${label} must be a safe internal destination or an absolute http, https, or mailto URL.`);
+    return url;
+  }
+  let parsed;
+  try { parsed = new URL(url); } catch { throw new Error(`${label} must be a safe internal destination or an absolute http, https, or mailto URL.`); }
+  if (!SAFE_NATIVE_LINK_PROTOCOLS.has(parsed.protocol)) {
+    throw new Error(`${label} uses unsupported protocol ${parsed.protocol || "(none)"}; use an internal destination or an absolute http, https, or mailto URL.`);
+  }
+  return url;
+}
+
+function linkPageExpectation(value, operationName = "add_link") {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${operationName} expectedPage must be an inspect-returned object with bbox and rotation.`);
+  }
+  for (const name of Object.keys(value)) {
+    if (!LINK_PAGE_EXPECTATION_FIELDS.has(name)) {
+      throw new Error(`${operationName} expectedPage contains unsupported snapshot field: ${name}.`);
+    }
+  }
+  if (value.bbox === undefined || value.rotation === undefined) {
+    throw new Error(`${operationName} expectedPage must include both bbox and rotation from the inspected mupdfPage record.`);
+  }
+  const bbox = bboxToPdfRect(value.bbox, `${operationName} expectedPage.bbox`);
+  const rotation = Number(value.rotation);
+  if (!Number.isInteger(rotation) || !PAGE_ROTATIONS.has(rotation)) {
+    throw new Error(`${operationName} expectedPage.rotation must be 0, 90, 180, or 270.`);
+  }
+  return { bbox: pdfRectToBbox(bbox), rotation };
+}
+
+function nativeLinkPageSnapshot(page) {
+  const bbox = pdfRectToBbox(page.getBounds("CropBox"));
+  const rotation = rawPageRotation(page);
+  if (rotation === undefined || !PAGE_ROTATIONS.has(rotation)) {
+    throw new Error("add_link requires a finite right-angle inherited Rotate value.");
+  }
+  return { bbox, rotation };
+}
+
+function linkPageExpectationMismatch(actual, expected) {
+  if (!pdfRectsEqual(bboxToPdfRect(actual.bbox), bboxToPdfRect(expected.bbox))) return "bbox";
+  if (actual.rotation !== expected.rotation) return "rotation";
+  return undefined;
 }
 
 function nativeWidget(widget) {
@@ -1007,6 +1059,66 @@ function applyLinkUpdate(document, operation, context = {}) {
   });
 }
 
+function applyLinkAddition(document, operation, context = {}) {
+  const { index, page } = pageFor(document, operation);
+  let links = [];
+  let retained = [];
+  let created;
+  try {
+    if (!/^[a-f0-9]{64}$/u.test(String(operation.sourceSha256 || "")) || operation.sourceSha256 !== context.sourceSha256) {
+      throw new Error("add_link sourceSha256 must exactly match PdfFile.inspectPdf(...).summary.sourceSha256 for the current input bytes.");
+    }
+    const expectedPage = linkPageExpectation(operation.expectedPage, "add_link");
+    const requestedRect = bboxToPdfRect(operation.bbox, "add_link bbox");
+    const url = nativeLinkUri(operation.url, "add_link url");
+    const actualPage = nativeLinkPageSnapshot(page);
+    const pageMismatch = linkPageExpectationMismatch(actualPage, expectedPage);
+    if (pageMismatch) {
+      throw new Error(`add_link precondition page ${pageMismatch} did not match page ${index + 1}; refusing stale coordinate evidence.`);
+    }
+    if (actualPage.rotation !== 0) {
+      throw new Error(`add_link supports only unrotated pages; page ${index + 1} has /Rotate ${actualPage.rotation}. Use a specialist provider for rotated link placement.`);
+    }
+    if (!pdfRectContains(bboxToPdfRect(actualPage.bbox), requestedRect)) {
+      throw new Error(`add_link bbox must be fully inside the inspected visible CropBox on page ${index + 1}.`);
+    }
+    links = page.getLinks();
+    const beforeMatches = links
+      .map((link) => nativeLink(link, index + 1))
+      .filter((link) => link.url === url && pdfRectsEqual(bboxToPdfRect(link.bbox), requestedRect));
+    if (beforeMatches.length) {
+      throw new Error(`add_link would create a duplicate source-visible link on page ${index + 1}; re-inspect and choose a distinct URL or rectangle.`);
+    }
+    created = page.createLink(requestedRect, url);
+    const immediate = nativeLink(created, index + 1);
+    if (immediate.url !== url || !pdfRectsEqual(bboxToPdfRect(immediate.bbox), requestedRect)) {
+      throw new Error(`MuPDF did not create the requested link URL and rectangle on page ${index + 1}; refusing to save an ambiguous addition.`);
+    }
+    retained = page.getLinks();
+    const addedMatches = retained
+      .map((link) => nativeLink(link, index + 1))
+      .filter((link) => link.url === url && pdfRectsEqual(bboxToPdfRect(link.bbox), requestedRect));
+    if (addedMatches.length !== 1 || retained.length !== links.length + 1) {
+      throw new Error(`MuPDF did not retain exactly one newly addressable link on page ${index + 1}; refusing to save an ambiguous addition.`);
+    }
+    return {
+      type: "add_link",
+      page: index + 1,
+      expectedPage,
+      added: {
+        url: addedMatches[0].url,
+        bbox: addedMatches[0].bbox,
+        external: addedMatches[0].external,
+      },
+      beforeCount: links.length,
+      afterCount: retained.length,
+    };
+  } finally {
+    for (const link of new Set([...links, ...retained, created].filter(Boolean))) link.destroy();
+    page.destroy();
+  }
+}
+
 function normalizeCheckboxValue(value, field) {
   if (typeof value === "boolean") return value;
   if (value === 0 || value === 1) return value === 1;
@@ -1115,6 +1227,7 @@ function applyOperation(document, operation, context) {
         Object.values(files).forEach((file) => file.destroy());
       }
     }
+    case "add_link": return applyLinkAddition(document, operation, context);
     case "delete_link": return applyLinkDeletion(document, operation, context);
     case "update_link": return applyLinkUpdate(document, operation, context);
     case "redact_text": return applyTextRedaction(document, operation);
@@ -1134,7 +1247,11 @@ export async function editPdfWithMuPdf(input, options = {}) {
     ? operations.find((operation) => INCREMENTAL_DESTRUCTIVE_OPERATIONS.has(operation?.type))
     : undefined;
   if (destructiveIncremental) {
-    const label = destructiveIncremental.type.startsWith("redact_") ? "redaction" : `destructive operation ${destructiveIncremental.type}`;
+    const label = destructiveIncremental.type.startsWith("redact_")
+      ? "redaction"
+      : destructiveIncremental.type === "add_link"
+        ? "source-bound operation add_link"
+        : `destructive operation ${destructiveIncremental.type}`;
     throw new Error(`MuPDF ${label} cannot save incrementally because prior revisions retain the original content; use rewrite. Rewrite is still not a complete sanitize workflow.`);
   }
   const { document, bytes } = await openPdfWithMuPdf(input, options);

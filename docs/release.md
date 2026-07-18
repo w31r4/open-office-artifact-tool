@@ -202,7 +202,8 @@ unbounded link-record expansion.
 Direct-original MuPDF.js editing now adds one bounded `update_link` operation.
 It uses the same exact input SHA-256, inspected page/fingerprint locator, and
 URL/rectangle/externality snapshot as link deletion, then replaces only one
-non-empty target URL. It reads the native link list again before saving and
+safe non-empty internal `#...` or absolute `http`, `https`, or `mailto` target
+URL. It reads the native link list again before saving and
 requires exactly one retained link with the requested URL and the original
 rectangle; otherwise the whole rewrite fails without output.
 
@@ -214,14 +215,34 @@ The operation deliberately does not expose `patch.bbox`. A direct native probe
 called `setBounds([96, 144, 216, 168])`, but after a save/reload the public
 inspector reported `[96, 624, 120, 24]`. That coordinate-layer leak is not a
 stable public geometry contract, so the API refuses a bounds patch rather than
-publishing a misleading move primitive. To move a link, an agent must explicitly
-delete and add a new link from fresh inspection evidence, or use a specialist
+publishing a misleading move primitive. To move a link, an agent must use one
+source-bound `delete_link` then `add_link` rewrite transaction, or a specialist
 provider.
 
 Library and published-Skill CLI tests cover stale snapshots, incremental
 refusal, rejected bounds patches, URL update with retained rectangle,
 fresh-output reinspection, and a subsequent delete that only uses the refreshed
 link fingerprint and source hash.
+
+### PDF source-bound link creation
+
+The direct-original route now exposes `add_link` for one bounded imported-PDF
+placement. It is not a generic drawing or hit-testing API: the operation binds
+to the exact inspected source SHA-256 and to the target `mupdfPage` visible
+CropBox/rotation snapshot. It accepts only an unrotated page, a positive
+`[x, y, width, height]` rectangle fully inside that CropBox, and either an
+internal `#...` destination or an absolute `http`, `https`, or `mailto` URL.
+`javascript:`, `file:`, `data:`, malformed URLs, stale page facts, and an
+existing identical URL/rectangle pair fail before save.
+
+`add_link` is rewrite-only and rereads the native page link list to prove that
+exactly one new matching record exists. Its audit records the source page
+snapshot, added URL/rectangle/externality, and pre/post count; callers still
+must inspect the new bytes before using any `mupdf-link` locator. This closes
+the safe public move path: one operation list can delete an old source-bound
+link first, then add its replacement using the same input hash and page
+snapshot. Library and shipped CLI coverage prove add, unsafe-scheme refusal,
+stale-page-field refusal, fresh inspection, and the combined move transaction.
 
 ### XLSX criteria extrema and branch formulas
 

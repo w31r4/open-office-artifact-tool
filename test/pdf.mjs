@@ -652,9 +652,117 @@ assert.equal(mupdfLinkParsed.metadata.parser, "mupdf");
 assert.equal(mupdfLinkParsed.pages[0].links[0].url, "https://www.w3.org/WAI/");
 const mupdfLinkInspection = await PdfFile.inspectPdf(arbitraryLinkPdf);
 const removableLink = mupdfLinkInspection.records.find((record) => record.kind === "mupdfLink" && record.url === "https://www.w3.org/WAI/");
+const removableLinkPage = mupdfLinkInspection.records.find((record) => record.kind === "mupdfPage" && record.page === removableLink.page);
 assert.match(removableLink.id, /^mupdf-link-1-[a-f0-9]{64}$/);
 assert.equal(removableLink.external, true);
 assert.equal(mupdfLinkParsed.pages[0].links[0].id, removableLink.id);
+assert.ok(removableLinkPage);
+await assert.rejects(PdfFile.editPdf(arbitraryLinkPdf, {
+  savePolicy: "incremental",
+  operations: [{
+    type: "add_link",
+    page: removableLinkPage.page,
+    sourceSha256: mupdfLinkInspection.summary.sourceSha256,
+    expectedPage: { bbox: removableLinkPage.bbox, rotation: removableLinkPage.rotation },
+    bbox: [320, 180, 120, 18],
+    url: "https://example.com/new-link",
+  }],
+}), /source-bound operation add_link cannot save incrementally/);
+await assert.rejects(PdfFile.editPdf(arbitraryLinkPdf, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "add_link",
+    page: removableLinkPage.page,
+    sourceSha256: mupdfLinkInspection.summary.sourceSha256,
+    expectedPage: { bbox: removableLinkPage.bbox, rotation: removableLinkPage.rotation, staleGuard: true },
+    bbox: [320, 180, 120, 18],
+    url: "https://example.com/new-link",
+  }],
+}), /expectedPage contains unsupported snapshot field: staleGuard/);
+await assert.rejects(PdfFile.editPdf(arbitraryLinkPdf, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "add_link",
+    page: removableLinkPage.page,
+    sourceSha256: mupdfLinkInspection.summary.sourceSha256,
+    expectedPage: { bbox: removableLinkPage.bbox, rotation: removableLinkPage.rotation },
+    bbox: [320, 180, 120, 18],
+    url: "javascript:alert(1)",
+  }],
+}), /unsupported protocol javascript:/);
+await assert.rejects(PdfFile.editPdf(arbitraryLinkPdf, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "add_link",
+    page: removableLinkPage.page,
+    sourceSha256: mupdfLinkInspection.summary.sourceSha256,
+    expectedPage: { bbox: removableLinkPage.bbox, rotation: removableLinkPage.rotation },
+    bbox: [320, 180, 120, 18],
+    url: "#",
+  }],
+}), /safe internal destination/);
+const rotatedLinkSource = await PdfFile.editPdf(arbitraryLinkPdf, {
+  savePolicy: "rewrite",
+  operations: [{ type: "rotate_page", page: removableLinkPage.page, rotation: 90 }],
+});
+const rotatedLinkInspection = await PdfFile.inspectPdf(rotatedLinkSource);
+const rotatedLinkPage = rotatedLinkInspection.records.find((record) => record.kind === "mupdfPage" && record.page === removableLinkPage.page);
+await assert.rejects(PdfFile.editPdf(rotatedLinkSource, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "add_link",
+    page: rotatedLinkPage.page,
+    sourceSha256: rotatedLinkInspection.summary.sourceSha256,
+    expectedPage: { bbox: rotatedLinkPage.bbox, rotation: rotatedLinkPage.rotation },
+    bbox: [320, 180, 120, 18],
+    url: "https://example.com/new-link",
+  }],
+}), /supports only unrotated pages/);
+const mupdfLinkAdded = await PdfFile.editPdf(arbitraryLinkPdf, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "add_link",
+    page: removableLinkPage.page,
+    sourceSha256: mupdfLinkInspection.summary.sourceSha256,
+    expectedPage: { bbox: removableLinkPage.bbox, rotation: removableLinkPage.rotation },
+    bbox: [320, 180, 120, 18],
+    url: "https://example.com/new-link",
+  }],
+});
+assert.equal(mupdfLinkAdded.metadata.operations[0].type, "add_link");
+assert.equal(mupdfLinkAdded.metadata.operations[0].beforeCount, 1);
+assert.equal(mupdfLinkAdded.metadata.operations[0].afterCount, 2);
+assert.deepEqual(mupdfLinkAdded.metadata.operations[0].added.bbox, [320, 180, 120, 18]);
+const mupdfLinkAddedInspection = await PdfFile.inspectPdf(mupdfLinkAdded);
+const addedLink = mupdfLinkAddedInspection.records.find((record) => record.kind === "mupdfLink" && record.url === "https://example.com/new-link");
+assert.ok(addedLink);
+assert.equal(addedLink.external, true);
+assert.deepEqual(addedLink.bbox, [320, 180, 120, 18]);
+const mupdfLinkMoved = await PdfFile.editPdf(arbitraryLinkPdf, {
+  savePolicy: "rewrite",
+  operations: [
+    {
+      type: "delete_link",
+      page: removableLink.page,
+      linkId: removableLink.id,
+      sourceSha256: mupdfLinkInspection.summary.sourceSha256,
+      expected: { url: removableLink.url, bbox: removableLink.bbox, external: removableLink.external },
+    },
+    {
+      type: "add_link",
+      page: removableLinkPage.page,
+      sourceSha256: mupdfLinkInspection.summary.sourceSha256,
+      expectedPage: { bbox: removableLinkPage.bbox, rotation: removableLinkPage.rotation },
+      bbox: [300, 216, 180, 18],
+      url: removableLink.url,
+    },
+  ],
+});
+const movedLinkInspection = await PdfFile.inspectPdf(mupdfLinkMoved);
+const movedLink = movedLinkInspection.records.find((record) => record.kind === "mupdfLink" && record.url === removableLink.url);
+assert.ok(movedLink);
+assert.deepEqual(movedLink.bbox, [300, 216, 180, 18]);
+assert.equal(movedLinkInspection.records.filter((record) => record.kind === "mupdfLink").length, 1);
 await assert.rejects(PdfFile.editPdf(arbitraryLinkPdf, {
   savePolicy: "rewrite",
   operations: [{ type: "delete_link", page: 1, url: removableLink.url, sourceSha256: mupdfLinkInspection.summary.sourceSha256 }],
@@ -692,6 +800,17 @@ await assert.rejects(PdfFile.editPdf(arbitraryLinkPdf, {
     patch: { bbox: [96, 144, 120, 24] },
   }],
 }), /patch contains unsupported field: bbox/);
+await assert.rejects(PdfFile.editPdf(arbitraryLinkPdf, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "update_link",
+    page: removableLink.page,
+    linkId: removableLink.id,
+    sourceSha256: mupdfLinkInspection.summary.sourceSha256,
+    expected: { url: removableLink.url, bbox: removableLink.bbox },
+    patch: { url: "javascript:alert(1)" },
+  }],
+}), /unsupported protocol javascript:/);
 const mupdfLinkUpdated = await PdfFile.editPdf(arbitraryLinkPdf, {
   savePolicy: "rewrite",
   operations: [{

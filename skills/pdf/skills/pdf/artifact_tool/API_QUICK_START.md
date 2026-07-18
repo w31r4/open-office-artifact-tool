@@ -244,7 +244,10 @@ const link = inspection.records.find((record) =>
   && record.page === 2
   && record.url === "https://example.com/obsolete-policy"
 );
-if (!link?.id || !inspection.summary.sourceSha256) {
+const linkPage = inspection.records.find((record) =>
+  record.kind === "mupdfPage" && record.page === link?.page
+);
+if (!link?.id || !linkPage || !inspection.summary.sourceSha256) {
   throw new Error("The target link was not uniquely inspectable.");
 }
 
@@ -263,6 +266,25 @@ const withoutObsoleteLink = await PdfFile.editPdf(input, {
   }],
 });
 await withoutObsoleteLink.save("third-party-without-obsolete-link.pdf");
+```
+
+To add a new link, bind its rectangle to the same inspected page geometry.
+`add_link` accepts only an unrotated visible CropBox and internal `#...` or
+absolute `http`, `https`, and `mailto` destinations:
+
+```js
+const withCurrentPolicyLink = await PdfFile.editPdf(input, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "add_link",
+    page: linkPage.page,
+    sourceSha256: inspection.summary.sourceSha256,
+    expectedPage: { bbox: linkPage.bbox, rotation: linkPage.rotation },
+    bbox: [72, 128, 160, 18],
+    url: "https://example.com/current-policy",
+  }],
+});
+await withCurrentPolicyLink.save("third-party-current-policy-link.pdf");
 ```
 
 To replace that same link's target without moving its native rectangle, use the
@@ -287,11 +309,13 @@ const updatedPolicyLink = await PdfFile.editPdf(input, {
 await updatedPolicyLink.save("third-party-policy-link-updated.pdf");
 ```
 
-The patch must contain exactly one non-empty `url`; a link rectangle is
-snapshot evidence, not mutable geometry. MuPDF's bounds setter does not provide
-a stable saved/reloaded coordinate contract for this public API, so move a link
-through an explicit delete-plus-add transaction from a fresh inspection or a
-specialist provider. Re-inspect the rewrite before any later link operation.
+The patch must contain exactly one non-empty safe internal `#...` or absolute
+`http`, `https`, or `mailto` `url`; a link rectangle is snapshot evidence, not
+mutable geometry. MuPDF's bounds setter does not provide a stable
+saved/reloaded coordinate contract for this public API, so move a link through
+an explicit `delete_link` + `add_link` transaction in one rewrite using the
+same original link/page evidence, or use a specialist provider. Re-inspect the
+rewrite before any later link operation.
 
 `mupdf-link-<page>-<fingerprint>` is source-byte-bound, not a persistent link
 identity. It has no native xref because the MuPDF link API abstracts that
