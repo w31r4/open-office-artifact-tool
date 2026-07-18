@@ -189,6 +189,9 @@ function duplicateImportedPresentationSlide(presentation, state, slide) {
   if (!source) {
     throw new OpenChestnutCodecError("Only an original imported PPTX slide can be duplicated in this bounded clone profile.", [], { code: "unsupported_presentation_slide_clone" });
   }
+  if ((state.clones || []).some((entry) => entry.source === source)) {
+    throw new OpenChestnutCodecError("The bounded imported-slide clone profile permits only one pending clone per origin; export and reimport it before cloning that source again.", [], { code: "unsupported_presentation_slide_clone" });
+  }
   if (source.entries.some((entry) => entry.wire.content.case !== "shape")) {
     throw new OpenChestnutCodecError("The first imported-slide clone profile supports shape-only slides; images, tables, charts, groups, connectors, and native objects require a broader OPC graph clone.", [], { code: "unsupported_presentation_slide_clone" });
   }

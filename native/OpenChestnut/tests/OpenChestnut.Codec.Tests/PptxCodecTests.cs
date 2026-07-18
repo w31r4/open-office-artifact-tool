@@ -2316,6 +2316,48 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void SourcePreservingExportRejectsRemovingACloneOriginInTheSameTransaction()
+    {
+        var authored = Invoke(ExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var source = Assert.Single(imported.Artifact.Presentation.Slides);
+        var clone = source.Clone();
+        clone.Id = "presentation/clone/without-origin";
+        clone.Source = null;
+        clone.CloneSource = source.Source.Clone();
+        imported.Artifact.Presentation.Slides.Add(clone);
+        imported.Artifact.Presentation.Slides.Remove(source);
+
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void SourcePreservingExportRejectsRepeatedPendingCloneOrigins()
+    {
+        var authored = Invoke(ExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var source = Assert.Single(imported.Artifact.Presentation.Slides);
+        foreach (var cloneId in new[] { "presentation/clone/one", "presentation/clone/two" })
+        {
+            var clone = source.Clone();
+            clone.Id = cloneId;
+            clone.Source = null;
+            clone.CloneSource = source.Source.Clone();
+            imported.Artifact.Presentation.Slides.Add(clone);
+        }
+
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void ProtocolReturnsStructuredSlideAndItemBudgetFailures()
     {
         var exported = Invoke(ExportRequest());

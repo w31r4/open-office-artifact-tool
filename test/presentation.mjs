@@ -758,6 +758,10 @@ assert.equal(importedClone.index, 1);
 assert.notEqual(importedClone.id, importedCloneSource.id);
 assert.notEqual(importedClone.shapes.items[0].id, importedCloneSource.shapes.items[0].id);
 assert.equal(importedClone.shapes.items[0].text.value, "Original");
+assert.throws(
+  () => importedCloneSource.duplicate(),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+);
 const clonePptx = await PresentationFile.exportPptx(cloneImportedDeck);
 const cloneZip = await JSZip.loadAsync(clonePptx.bytes);
 assert.deepEqual(
@@ -777,6 +781,15 @@ const immediateCloneEdit = await PresentationFile.importPptx(cloneSourcePptx);
 immediateCloneEdit.slides.getItem(0).duplicate().shapes.items[0].text.set("Too soon");
 await assert.rejects(
   () => PresentationFile.exportPptx(immediateCloneEdit),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+);
+
+const cloneWithoutOrigin = await PresentationFile.importPptx(cloneSourcePptx);
+const cloneOrigin = cloneWithoutOrigin.slides.getItem(0);
+cloneOrigin.duplicate();
+cloneOrigin.delete();
+await assert.rejects(
+  () => PresentationFile.exportPptx(cloneWithoutOrigin),
   (error) => error?.code === "unsupported_presentation_slide_clone",
 );
 

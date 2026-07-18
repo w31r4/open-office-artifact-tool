@@ -282,6 +282,7 @@ internal static class PptxCodec
                 throw new CodecException("missing_presentation_part", "PPTX package has no Presentation part.", "ppt/presentation.xml");
             var slideIds = presentationPart.Presentation?.SlideIdList?.Elements<P.SlideId>().ToArray() ?? [];
             var targetSlides = BindSourcePreservingSlides(presentationPart, slideIds, envelope.Presentation.Slides);
+            AssertCloneOriginsRetained(targetSlides);
             var retainedTargets = targetSlides.Where(target => !target.IsClone).ToArray();
             var slideParts = retainedTargets.Select(target => target.Source.Part).ToArray();
             var slideIdByPartPath = retainedTargets
@@ -2472,6 +2473,7 @@ internal static class PptxCodec
             .ToArray();
         var targets = new PptxTargetSlideEntry[requested.Count];
         var seenSourceParts = new HashSet<SlidePart>();
+        var seenCloneSourceParts = new HashSet<SlidePart>();
         for (var targetIndex = 0; targetIndex < requested.Count; targetIndex++)
         {
             var target = requested[targetIndex];
@@ -2502,6 +2504,11 @@ internal static class PptxCodec
                     "presentation_topology_changed",
                     "Source-preserving PPTX export cannot bind more than one ordinary target to a source SlidePart.",
                     "ppt/presentation.xml");
+            if (isClone && !seenCloneSourceParts.Add(source.Part))
+                throw new CodecException(
+                    "unsupported_presentation_slide_clone",
+                    "The bounded source-preserving PPTX clone profile permits only one pending clone per source SlidePart.",
+                    PartPath(source.Part));
             targets[targetIndex] = new PptxTargetSlideEntry(targetIndex, target, source, isClone);
         }
         return targets;
@@ -2655,6 +2662,26 @@ internal static class PptxCodec
         changedParts.Add(PartPath(presentationPart));
         changedParts.Add(RelationshipPartPath(presentationPart));
         changedParts.Add("[Content_Types].xml");
+    }
+
+    // The first clone profile preserves the origin SlidePart byte-for-byte.
+    // Allowing its removal in the same transaction would turn this leaf clone
+    // into a topology-replacement primitive before the new graph has crossed
+    // an export/reimport boundary, so reject it before any package mutation.
+    private static void AssertCloneOriginsRetained(IReadOnlyList<PptxTargetSlideEntry> targets)
+    {
+        var retainedSources = targets
+            .Where(target => !target.IsClone)
+            .Select(target => target.Source.Part)
+            .ToHashSet();
+        foreach (var clone in targets.Where(target => target.IsClone))
+        {
+            if (!retainedSources.Contains(clone.Source.Part))
+                throw new CodecException(
+                    "unsupported_presentation_slide_clone",
+                    $"Presentation clone {clone.TargetIndex + 1} cannot remove its origin slide in the same source-preserving export. Export and import the unchanged clone before changing source topology.",
+                    PartPath(clone.Source.Part));
+        }
     }
 
     private static void AssertSourceSlideCanBeCloned(

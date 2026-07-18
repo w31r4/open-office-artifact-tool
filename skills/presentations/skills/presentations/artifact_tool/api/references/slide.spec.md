@@ -77,10 +77,11 @@ surviving source slides byte-identical. Any other imported delete fails closed.
 imported** source slide with an unchanged shape-only body and exactly one
 internal `SlidePart -> SlideLayoutPart` relationship. Export allocates a
 distinct new `SlidePart` and a new presentation relationship, intentionally
-reuses the verified layout part, and preserves the original source part. The
-new clone must remain semantically unchanged until that export has completed
-and the resulting PPTX has been imported again; afterward it is an ordinary
-source-bound slide and may use the supported fixed-topology edit path.
+reuses the verified layout part, and preserves the required original source
+part. The new clone must remain semantically unchanged and cannot replace or
+delete its origin until that export has completed and the resulting PPTX has
+been imported again; afterward it is an ordinary source-bound slide and may
+use the supported fixed-topology edit path.
 
 Source-free slides, already-cloned slides, comments, speaker notes, media,
 charts, OLE, hyperlinks, external/data relationships, non-shape elements,
