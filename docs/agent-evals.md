@@ -15,8 +15,8 @@ The suite is evaluator-side repository infrastructure. `evals/`, the runner, loc
 
 ## Current suite
 
-- 31 cases: 19 PDF, 4 Documents, 5 Spreadsheets, and 3 Presentations.
-- 11 `ready` cases use deterministic generated or inline inputs: seven PDF cases, two bounded XLSX workflows (threaded-comment and formula-assumption update), plus one DOCX classic-comment and one PPTX title-and-speaker-notes workflow.
+- 32 cases: 20 PDF, 4 Documents, 5 Spreadsheets, and 3 Presentations.
+- 12 `ready` cases use deterministic generated or inline inputs: eight PDF cases, two bounded XLSX workflows (threaded-comment and formula-assumption update), plus one DOCX classic-comment and one PPTX title-and-speaker-notes workflow.
 - 20 `asset-required` cases define fixture specifications but do not run until licensed, version-pinned corpus files or test PKI are placed under `evals/assets/`.
 - Every family has both a success and a fail-closed case. Some advanced PDF cases accept either verified success or an explicit safe refusal.
 - The default policy uses three trials per subject. Trial count is recorded per case rather than silently inferred by the Agent.
@@ -31,6 +31,8 @@ npm run eval:agents -- list --family pdf --status ready
 npm run eval:agents -- show pdf-bounded-contract-id-replace
 npm run eval:agents -- prepare pdf-bounded-contract-id-replace --subject candidate --trial 1
 npm run eval:agents -- prepare pdf-bounded-contract-id-replace --subject reference --trial 1
+npm run eval:agents -- prepare pdf-source-bound-text-highlight --subject candidate --trial 1
+npm run eval:agents -- run pdf-source-bound-text-highlight --subject candidate --trial 1
 npm run eval:agents -- run pdf-overflow-replace-refusal --subject candidate --trial 1
 npm run eval:agents -- score pdf-overflow-replace-refusal --trial-root /absolute/trial/path
 npm run eval:agents -- prepare xlsx-threaded-reply-resolve --subject candidate --trial 1
@@ -43,7 +45,7 @@ npm run eval:agents -- prepare pptx-title-and-notes-edit --subject candidate --t
 npm run eval:agents -- run pptx-title-and-notes-edit --subject candidate --trial 1
 ```
 
-Generated PDF fixtures require Python with ReportLab and pypdf. All seven ready PDF case graders additionally require pdfplumber and Pillow; their applicable visual oracles require `pdftoppm`. Set `OPEN_OFFICE_AGENT_EVAL_PYTHON` to that interpreter and, only when it is not on `PATH`, set `OPEN_OFFICE_AGENT_EVAL_PDFTOPPM`. Prepared PDF prompts explicitly bind that interpreter as `OPEN_OFFICE_PDF_PROVIDER_PYTHON`, because Codex shell policy may not inherit the runner environment. In Codex, use the Python executable returned by `load_workspace_dependencies`.
+Generated PDF fixtures require Python with ReportLab and pypdf. All eight ready PDF case graders additionally require pdfplumber and Pillow; their applicable visual oracles require `pdftoppm`. Set `OPEN_OFFICE_AGENT_EVAL_PYTHON` to that interpreter and, only when it is not on `PATH`, set `OPEN_OFFICE_AGENT_EVAL_PDFTOPPM`. Prepared PDF prompts explicitly bind that interpreter as `OPEN_OFFICE_PDF_PROVIDER_PYTHON`, because Codex shell policy may not inherit the runner environment. In Codex, use the Python executable returned by `load_workspace_dependencies`.
 
 The ready XLSX, DOCX, and PPTX fixtures are generated through the public OpenChestnut facade and need no Python provider. Their independent native visual graders require `soffice`, `pdfinfo`, and `pdftoppm`; a missing executable reports `grader-unavailable`, never a product pass or failure. The PPTX grader accepts only the canonical two-slide fixture: it requires the named title and plain-text notes replacement, fixed slide topology/direct background/supporting text, exactly the target slide XML and notes XML as changed package parts, a byte-stable appendix, byte-bound audit provenance, second import, and LibreOffice/Poppler page evidence.
 
@@ -87,11 +89,12 @@ Current generic hard gates verify:
 
 Generic gates alone do **not** constitute a passing task score. Reports for cases without a case grader continue to say `partial-generic-only` or `generic-refusal-gates` and keep their semantic, visual, security, and trace evidence in `pending`.
 
-All seven ready PDF cases now have complete case-specific grading:
+All eight ready PDF cases now have complete case-specific grading:
 
 | Case | Machine | Visual | Security | Trace |
 | --- | --- | --- | --- | --- |
 | `pdf-bounded-contract-id-replace` | Independent page/text/font/box assertions | Poppler renders all five pages; non-target pages must be pixel-identical and the page-3 diff must stay inside the source text mask | Raw, extracted, decoded-stream, and metadata residue scan; one `startxref`/`%%EOF`; canonical audit hashes must match final bytes | PyMuPDF/version, explicit `sanitize`, no fallback, shipped probe before edit, typed mutation, and no low-level stream mutation |
+| `pdf-source-bound-text-highlight` | pypdf confirms exactly one new native `/Highlight` on page 2, exact RGB/review metadata, source-text-stable geometry, and quadrilaterals bounded to the independent pdfplumber text box | Poppler/Pillow requires three nonblank same-size pages, pixel-identical non-target pages, and a page-2 diff contained in the source text mask | Exact input/output hashes, an unrotated source-page snapshot, no caller-supplied coordinates, decodable streams, and one rewrite revision | MuPDF/version, explicit `rewrite`, probe + inspect before typed `add_text_highlight`, output re-inspection/render, no fallback or direct native/object mutation |
 | `pdf-overflow-replace-refusal` | Independent ReportLab font metric plus pdfplumber 70pt-box proof and structured audit geometry | Not applicable | No partial artifact, no mutation claim, and source provenance | PyMuPDF capability evidence, no fallback, and no mutation command after failed preflight |
 | `pdf-acroform-visible-preserved` | Independent pypdf field-tree, exact value, widget-topology, `/AP`, `/V`, `/AS`, `NeedAppearances`, and editability assertions | Poppler renders every page; only the four requested widgets may change; TIN, signature, the unselected radio, and a pre-checked checkbox remain pixel-stable | Exact original-byte prefix plus one appended revision, sensitive fields blank, all streams decodable, canonical audit hashes match | pypdf/version, explicit `incremental`, inspect/check/plan before typed fill, Poppler and audit validation after mutation, no ad-hoc writer |
 | `pdf-attachment-quarantine-inventory` | Independent pypdf enumeration of document/page FileSpecs, exact raw identity/MIME/size/SHA fields, duplicate preservation, and extracted-byte equality | The immutable source remains the only PDF; no page-transform artifact is accepted | Traversal-safe regular files, exact payload set, source/manifest provenance, explicit no-open/no-execute evidence | pypdf/version, explicit `read-only`, inspect/check/plan before typed extraction, audit validation after extraction, no ad-hoc parser or payload execution |

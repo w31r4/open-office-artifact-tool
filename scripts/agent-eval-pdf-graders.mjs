@@ -568,8 +568,11 @@ export function gradeSourceBoundHighlightEvidence({ evidence, audit, commands, i
   const operation = auditOperationRecord(audit);
   const expectedPage = operation?.expectedPage;
   const expectedPageBBox = [0, 0, Number(sourcePage.width), Number(sourcePage.height)];
+  // The provider's applied-operation record intentionally omits the redundant
+  // source hash; its enclosing audit metadata binds that exact input bytes.
+  // Require the applied source-bound type and page snapshot here, then verify
+  // the audit source/output hashes in the provenance gate below.
   const sourceBoundSnapshot = operation?.type === "add_text_highlight"
-    && operation?.sourceSha256 === source.sha256
     && sameBoundingBox(expectedPage?.bbox || [], expectedPageBBox)
     && Number(expectedPage?.rotation) === Number(sourcePage.rotation);
   const unsupportedCallerGeometry = ["bbox", "rect", "quadPoints", "quads", "point"].some((field) => Object.hasOwn(operation || {}, field));

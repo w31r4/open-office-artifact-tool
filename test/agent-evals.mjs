@@ -37,6 +37,7 @@ import {
   gradeBoundedReplaceEvidence,
   gradeMergeStampEvidence,
   gradeOverflowRefusalEvidence,
+  gradeSourceBoundHighlightEvidence,
   summarizeCaseScore,
 } from "../scripts/agent-eval-pdf-graders.mjs";
 import {
@@ -54,9 +55,9 @@ import {
 } from "../scripts/run-agent-evals.mjs";
 
 const { suite, cases } = await loadSuite();
-assert.deepEqual(validateSuite(suite, cases), { cases: 31, pdfCases: 19, ready: 11 });
+assert.deepEqual(validateSuite(suite, cases), { cases: 32, pdfCases: 20, ready: 12 });
 assert.equal(MINIMUM_PDF_CASE_SHARE, 0.6);
-assert.equal(cases.filter((item) => item.family === "pdf" && item.status === "ready").length, 7);
+assert.equal(cases.filter((item) => item.family === "pdf" && item.status === "ready").length, 8);
 assert.equal(cases.filter((item) => item.family === "spreadsheets" && item.status === "ready").length, 2);
 assert.equal(cases.filter((item) => item.family === "documents" && item.status === "ready").length, 1);
 assert.equal(cases.filter((item) => item.family === "presentations" && item.status === "ready").length, 1);
@@ -71,6 +72,10 @@ const visible = visibleCase(suite, cases.find((item) => item.id === "pdf-bounded
 assert.match(visible.prompt, /outputs\/contract-updated\.pdf/);
 assert.match(visible.prompt, /outputs\/audit\.json/);
 assert.doesNotMatch(visible.prompt, /expectedOutcome|oracleSha256|pymupdf\.readthedocs|"grade"/i);
+const highlightVisible = visibleCase(suite, cases.find((item) => item.id === "pdf-source-bound-text-highlight"));
+assert.match(highlightVisible.prompt, /add_text_highlight/);
+assert.match(highlightVisible.prompt, /outputs\/review-highlighted\.pdf/);
+assert.doesNotMatch(highlightVisible.prompt, /oracleSha256|outputHighlights|changedWithinAllowedMask/i);
 
 const threadedReplyItem = cases.find((item) => item.id === "xlsx-threaded-reply-resolve");
 const threadedReplyRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-eval-xlsx-threaded-"));
@@ -629,6 +634,95 @@ const postHocProbeChecks = gradeBoundedReplaceEvidence({
   item: boundedItem,
 });
 assert.equal(postHocProbeChecks.find((entry) => entry.id === "pdf-trace:capability-probe")?.passed, false);
+
+const highlightItem = cases.find((item) => item.id === "pdf-source-bound-text-highlight");
+const highlightText = highlightItem.grade.machine.text;
+const highlightSourcePages = Array.from({ length: 3 }, (_, index) => ({
+  page: index + 1,
+  width: 612,
+  height: 792,
+  rotation: 0,
+  termCounts: { [highlightText]: index === 1 ? 1 : 0 },
+}));
+const highlightEvidence = {
+  source: { sha256: "highlight-source-sha", pageCount: 3, pages: highlightSourcePages, termCounts: { [highlightText]: 1 }, decodedStreamErrors: [] },
+  output: {
+    sha256: "highlight-output-sha",
+    pageCount: 3,
+    pages: highlightSourcePages.map((page) => structuredClone(page)),
+    termCounts: { [highlightText]: 1 },
+    decodedStreamErrors: [],
+    startxrefCount: 1,
+    eofCount: 1,
+  },
+  sourceTarget: { found: true, term: highlightText, page: 2, bbox: [84, 152, 294, 166], fonts: ["Helvetica"], sizes: [11] },
+  outputTarget: { found: true, term: highlightText, page: 2, bbox: [84, 152, 294, 166], fonts: ["Helvetica"], sizes: [11] },
+  sourceHighlights: [],
+  outputHighlights: [{
+    page: 2,
+    contents: highlightItem.grade.machine.contents,
+    author: highlightItem.grade.machine.author,
+    subject: highlightItem.grade.machine.subject,
+    color: [1, 0.92000000298, 0.20000000298],
+    quadPoints: [84, 640, 294, 640, 84, 626, 294, 626],
+    rect: [84, 626, 294, 640],
+  }],
+  visual: {
+    renderer: "poppler-pdftoppm",
+    sourcePageCount: 3,
+    outputPageCount: 3,
+    allowedMask: { page: 2, bboxPx: [160, 296, 596, 340] },
+    pages: [
+      { page: 1, sameDimensions: true, nonBlank: true, changedPixelsBBox: null, changedWithinAllowedMask: false },
+      { page: 2, sameDimensions: true, nonBlank: true, changedPixelsBBox: [168, 301, 588, 338], changedWithinAllowedMask: true },
+      { page: 3, sameDimensions: true, nonBlank: true, changedPixelsBBox: null, changedWithinAllowedMask: false },
+    ],
+  },
+};
+const highlightAudit = {
+  status: "succeeded",
+  source: { sha256: "highlight-source-sha" },
+  output: { sha256: "highlight-output-sha" },
+  provider: { actual: "mupdf", version: "1.28.0", silentFallback: false },
+  savePolicy: { strategy: "rewrite" },
+  operation: {
+    type: "add_text_highlight",
+    page: 2,
+    sourceSha256: "highlight-source-sha",
+    expectedPage: { bbox: [0, 0, 612, 792], rotation: 0 },
+    text: highlightText,
+    color: [1, 0.92, 0.2],
+    contents: highlightItem.grade.machine.contents,
+    author: highlightItem.grade.machine.author,
+    subject: highlightItem.grade.machine.subject,
+  },
+};
+const highlightCommands = [
+  "node .agents/skills/pdf/scripts/mupdf.mjs probe",
+  "node .agents/skills/pdf/scripts/mupdf.mjs inspect inputs/source.pdf > tmp/source-inspection.json",
+  "node .agents/skills/pdf/scripts/mupdf.mjs edit inputs/source.pdf tmp/highlight-operation.json outputs/review-highlighted.pdf --save-policy rewrite",
+  "node .agents/skills/pdf/scripts/mupdf.mjs inspect outputs/review-highlighted.pdf > tmp/output-inspection.json",
+  "node .agents/skills/pdf/scripts/mupdf.mjs render outputs/review-highlighted.pdf outputs/review-highlighted.png --page 2",
+];
+const highlightChecks = gradeSourceBoundHighlightEvidence({ evidence: highlightEvidence, audit: highlightAudit, commands: highlightCommands, item: highlightItem });
+assert.equal(highlightChecks.every((entry) => entry.passed), true);
+assert.deepEqual(summarizeCaseScore(highlightChecks, highlightItem.grade), {
+  categoryScores: {
+    machine: { applicable: true, weight: 45, passed: true, checks: 6 },
+    visual: { applicable: true, weight: 25, passed: true, checks: 3 },
+    security: { applicable: true, weight: 20, passed: true, checks: 3 },
+    trace: { applicable: true, weight: 10, passed: true, checks: 8 },
+  },
+  rawScorePercent: 100,
+  scorePercent: 100,
+  caseSpecificPassed: true,
+});
+const staleHighlightAudit = structuredClone(highlightAudit);
+staleHighlightAudit.operation.expectedPage.rotation = 90;
+const staleHighlightChecks = gradeSourceBoundHighlightEvidence({ evidence: highlightEvidence, audit: staleHighlightAudit, commands: highlightCommands, item: highlightItem });
+assert.equal(staleHighlightChecks.find((entry) => entry.id === "pdf-security:source-bound-operation")?.passed, false);
+const directHighlightChecks = gradeSourceBoundHighlightEvidence({ evidence: highlightEvidence, audit: highlightAudit, commands: [...highlightCommands, "page.addAnnotation('Highlight').setQuadPoints(points)"], item: highlightItem });
+assert.equal(directHighlightChecks.find((entry) => entry.id === "pdf-trace:no-caller-coordinate-or-direct-mutation")?.passed, false);
 
 const overflowItem = cases.find((item) => item.id === "pdf-overflow-replace-refusal");
 const overflowEvidence = {
