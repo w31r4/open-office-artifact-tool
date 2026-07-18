@@ -39,9 +39,11 @@ const maxPackedBytes = 9_750_000;
 // audited PDF provider/docs growth shipped with the bounded edit surface. The
 // prior 23.625 MB ceiling left only 7,147 bytes after the source-bound
 // single-widget form update slice (23,632,147 bytes on the audit host).
-// 23.650 MB restores a deliberately small 17,853-byte margin without
-// ratcheting the limit to one machine's exact package size.
-const maxUnpackedBytes = 23_650_000;
+// The native Highlight primitive adds audited implementation, API, and Skill
+// material; its 23,661,767-byte package stays below a still-tight 23.700 MB
+// ceiling, leaving 38,233 bytes of reviewed headroom rather than setting the
+// cap to the current package's exact size.
+const maxUnpackedBytes = 23_700_000;
 
 for (const required of [
   "LICENSE",
