@@ -21,6 +21,7 @@ type PresentationCreateOptions = {
 const slide = presentation.slides.add({ layout, layoutId });
 const inserted = presentation.slides.insert({ after, layout, layoutId });
 const byIndex = presentation.slides.getItem(slideIndex);
+slide.moveTo(destinationIndex);
 ```
 
 ## Presentation Slide Collection Inline Types
@@ -45,9 +46,17 @@ the beginning and omitting `after` appends. Both paths resolve a supplied
 source-free layout transactionally and materialize its direct-frame text
 placeholders. Unknown targets/layouts leave the collection unchanged.
 
-This is source-free authoring only. Inserting into an imported PPTX would
-change its source-bound slide topology and is rejected at export rather than
-silently reconstructing the deck.
+Insertion remains source-free authoring only: inserting into an imported PPTX
+would change its source-bound slide topology and is rejected at export rather
+than silently reconstructing the deck.
+
+`slide.moveTo(destinationIndex)` moves one existing slide to an existing
+0-based deck index. On an imported PPTX it is supported only when every
+original `SlidePart` remains exactly once. OpenChestnut then changes only
+`ppt/presentation.xml`'s `p:sldIdLst`; it neither rebuilds slide parts nor
+copies their relationship graphs. Imported add/remove/duplicate/clone remains
+unsupported and fails closed until that graph operation has its own explicit
+contract.
 
 ## Discover And Edit
 

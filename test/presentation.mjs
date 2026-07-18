@@ -670,6 +670,37 @@ const firstExport = await PresentationFile.exportPptx(deck);
 assert.equal(firstExport.metadata.codec, "open-chestnut");
 assert.equal((await PresentationFile.inspectPptx(firstExport)).ok, true);
 
+// Imported deck reordering is intentionally a shallow package operation: it
+// preserves every original SlidePart exactly once and changes only the
+// p:sldIdLst display order. It is not a disguised clone/delete feature.
+const reorderedImportedDeck = await PresentationFile.importPptx(firstExport);
+const originalImportedSlideNames = reorderedImportedDeck.slides.items.map((slide) => slide.name);
+const importedFirstSlide = reorderedImportedDeck.slides.getItem(0);
+assert.equal(importedFirstSlide.moveTo(2), importedFirstSlide);
+assert.deepEqual(reorderedImportedDeck.slides.items.map((slide) => slide.name), [...originalImportedSlideNames.slice(1), originalImportedSlideNames[0]]);
+assert.throws(
+  () => importedFirstSlide.moveTo(3),
+  /destination must be an existing 0-based slide index/i,
+);
+const reorderedImportedPptx = await PresentationFile.exportPptx(reorderedImportedDeck);
+const originalImportedZip = await JSZip.loadAsync(firstExport.bytes);
+const reorderedImportedZip = await JSZip.loadAsync(reorderedImportedPptx.bytes);
+for (const path of Object.keys(originalImportedZip.files).filter((path) => /^ppt\/slides\/slide\d+\.xml$/.test(path))) {
+  assert.deepEqual(
+    await reorderedImportedZip.file(path).async("uint8array"),
+    await originalImportedZip.file(path).async("uint8array"),
+    `reordering must preserve ${path} byte-for-byte`,
+  );
+}
+const reorderedImportedRoundTrip = await PresentationFile.importPptx(reorderedImportedPptx);
+assert.deepEqual(reorderedImportedRoundTrip.slides.items.map((slide) => slide.name), [...originalImportedSlideNames.slice(1), originalImportedSlideNames[0]]);
+const importedTopologyChange = await PresentationFile.importPptx(firstExport);
+importedTopologyChange.slides.add({ name: "Not source-bound" });
+await assert.rejects(
+  () => PresentationFile.exportPptx(importedTopologyChange),
+  (error) => error?.code === "presentation_topology_changed",
+);
+
 // Turn the canonical package into a source-bound template marker without
 // creating a second writer, then prove its Master/Layout parts survive a
 // modeled slide edit byte-for-byte.

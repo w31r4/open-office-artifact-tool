@@ -15,6 +15,8 @@ internal sealed record PptxImportResult(ArtifactEnvelope Artifact, IReadOnlyList
 internal sealed record PptxExportResult(byte[] File, IReadOnlyList<Diagnostic> Diagnostics);
 internal sealed record PptxLayoutGraphEntry(int Index, string Id, string RelationshipId, SlideLayoutPart Part);
 internal sealed record PptxMasterGraphEntry(int Index, string Id, string RelationshipId, SlideMasterPart Part, IReadOnlyList<PptxLayoutGraphEntry> Layouts);
+internal sealed record PptxSourceSlideEntry(int Index, P.SlideId SlideId, string RelationshipId, SlidePart Part);
+internal sealed record PptxTargetSlideEntry(int TargetIndex, PresentationSlide Target, PptxSourceSlideEntry Source);
 
 internal static class PptxCodec
 {
@@ -260,17 +262,13 @@ internal static class PptxCodec
             var presentationPart = package.PresentationPart ??
                 throw new CodecException("missing_presentation_part", "PPTX package has no Presentation part.", "ppt/presentation.xml");
             var slideIds = presentationPart.Presentation?.SlideIdList?.Elements<P.SlideId>().ToArray() ?? [];
-            if (slideIds.Length != envelope.Presentation.Slides.Count)
-                throw new CodecException(
-                    "presentation_topology_changed",
-                    $"Source-preserving PPTX export requires the original {slideIds.Length}-slide topology; the artifact contains {envelope.Presentation.Slides.Count} slides.",
-                    "ppt/presentation.xml");
-            var slideParts = ResolveSlideParts(presentationPart, slideIds);
-            var slideIdByPartPath = slideParts
-                .Select((part, index) => (Path: PartPath(part), Id: envelope.Presentation.Slides[index].Id))
+            var targetSlides = BindSourcePreservingSlides(presentationPart, slideIds, envelope.Presentation.Slides);
+            var slideParts = targetSlides.Select(target => target.Source.Part).ToArray();
+            var slideIdByPartPath = targetSlides
+                .Select(target => (Path: PartPath(target.Source.Part), Id: target.Target.Id))
                 .ToDictionary(item => item.Path, item => item.Id, StringComparer.OrdinalIgnoreCase);
-            var slidePartById = slideParts
-                .Select((part, index) => (Part: part, Id: envelope.Presentation.Slides[index].Id))
+            var slidePartById = targetSlides
+                .Select(target => (Part: target.Source.Part, Id: target.Target.Id))
                 .ToDictionary(item => item.Id, item => item.Part, StringComparer.Ordinal);
             var masterGraph = ReadMasterGraph(presentationPart);
             if (masterGraph.Length != envelope.Presentation.Masters.Count)
@@ -287,6 +285,8 @@ internal static class PptxCodec
             var layoutIdByPartPath = layoutGraph.ToDictionary(item => PartPath(item.Layout.Part), item => item.Layout.Id, StringComparer.OrdinalIgnoreCase);
             PptxViewPropertiesCodec.AssertSource(presentationPart, envelope.Presentation.ViewProperties);
             PptxLegacyCommentsCodec.AssertSourceUnchanged(presentationPart, slideParts, envelope.Presentation.Slides);
+            if (ReorderSourceSlideIdList(presentationPart, targetSlides))
+                changedParts.Add(PartPath(presentationPart));
             assetCatalog.IndexExistingParts(slideParts.SelectMany(part => part.ImageParts)
                 .Concat(masterGraph.SelectMany(master => master.Part.Parts.Select(pair => pair.OpenXmlPart).OfType<ImagePart>())));
 
@@ -405,19 +405,19 @@ internal static class PptxCodec
             }
 
             ulong semanticItems = 0;
-            for (var slideIndex = 0; slideIndex < slideIds.Length; slideIndex++)
+            for (var slideIndex = 0; slideIndex < targetSlides.Length; slideIndex++)
             {
-                var sourceSlideId = slideIds[slideIndex];
-                var relationshipId = sourceSlideId.RelationshipId?.Value ?? string.Empty;
-                var slidePart = slideParts[slideIndex];
+                var targetSlide = targetSlides[slideIndex];
+                var relationshipId = targetSlide.Source.RelationshipId;
+                var slidePart = targetSlide.Source.Part;
                 var slideRoot = slidePart.Slide ??
                     throw new CodecException("missing_slide_root", $"Presentation slide {slideIndex + 1} has no slide root.", PartPath(slidePart));
-                var target = envelope.Presentation.Slides[slideIndex];
+                var target = targetSlide.Target;
                 var binding = target.Source ?? throw new CodecException(
                     "missing_presentation_slide_binding",
                     $"Presentation slide {slideIndex + 1} is missing its source binding.",
                     "ppt/presentation.xml");
-                if (binding.SlideIndex != slideIndex ||
+                if (binding.SlideIndex != targetSlide.Source.Index ||
                     !binding.PartPath.Equals(PartPath(slidePart), StringComparison.OrdinalIgnoreCase) ||
                     !binding.RelationshipId.Equals(relationshipId, StringComparison.Ordinal) ||
                     !binding.SlideXmlSha256.Equals(HashElement(slideRoot), StringComparison.OrdinalIgnoreCase))
@@ -1968,29 +1968,38 @@ internal static class PptxCodec
         using var outputStream = new MemoryStream(outputBytes, writable: false);
         using var sourcePackage = PresentationDocument.Open(sourceStream, isEditable: false);
         using var outputPackage = PresentationDocument.Open(outputStream, isEditable: false);
-        var sourceSlides = OrderedSlideParts(sourcePackage);
+        var sourcePresentationPart = sourcePackage.PresentationPart ??
+            throw new CodecException("missing_presentation_part", "PPTX source package has no Presentation part.", "ppt/presentation.xml");
+        var sourceTargets = BindSourcePreservingSlides(
+            sourcePresentationPart,
+            sourcePresentationPart.Presentation?.SlideIdList?.Elements<P.SlideId>().ToArray() ?? [],
+            requested.Slides);
         var outputSlides = OrderedSlideParts(outputPackage);
-        if (sourceSlides.Length != requested.Slides.Count || outputSlides.Length != requested.Slides.Count)
+        if (sourceTargets.Length != requested.Slides.Count || outputSlides.Length != requested.Slides.Count)
             throw new CodecException("presentation_postwrite_topology_changed", "PPTX slide topology changed during source-preserving export.");
-        var sourceIdByPartPath = sourceSlides
-            .Select((part, index) => (Path: PartPath(part), Id: requested.Slides[index].Id))
+        if (outputSlides.Select(PartPath).SequenceEqual(sourceTargets.Select(target => PartPath(target.Source.Part)), StringComparer.Ordinal) == false)
+            throw new CodecException("presentation_postwrite_topology_changed", "PPTX slide order does not match the requested source-bound order.", "ppt/presentation.xml");
+        var sourceIdByPartPath = sourceTargets
+            .Select(target => (Path: PartPath(target.Source.Part), Id: target.Target.Id))
             .ToDictionary(item => item.Path, item => item.Id, StringComparer.OrdinalIgnoreCase);
-        var outputIdByPartPath = outputSlides
-            .Select((part, index) => (Path: PartPath(part), Id: requested.Slides[index].Id))
+        var outputIdByPartPath = sourceTargets
+            .Select(target => (Path: PartPath(target.Source.Part), Id: target.Target.Id))
             .ToDictionary(item => item.Path, item => item.Id, StringComparer.OrdinalIgnoreCase);
         var sourceAssets = new PptxAssetCatalog([], limits);
         var outputAssets = new PptxAssetCatalog([], limits);
 
         for (var slideIndex = 0; slideIndex < requested.Slides.Count; slideIndex++)
         {
-            var sourceContext = new PptxPartContext(sourceSlides[slideIndex], sourceIdByPartPath, assets: sourceAssets);
+            var sourceSlide = sourceTargets[slideIndex].Source.Part;
+            var outputSlide = outputSlides[slideIndex];
+            var sourceContext = new PptxPartContext(sourceSlide, sourceIdByPartPath, assets: sourceAssets);
             var outputContext = new PptxPartContext(outputSlides[slideIndex], outputIdByPartPath, assets: outputAssets);
-            var before = ShapeElements(sourceSlides[slideIndex].Slide!.CommonSlideData!.ShapeTree!);
-            var after = ShapeElements(outputSlides[slideIndex].Slide!.CommonSlideData!.ShapeTree!);
+            var before = ShapeElements(sourceSlide.Slide!.CommonSlideData!.ShapeTree!);
+            var after = ShapeElements(outputSlide.Slide!.CommonSlideData!.ShapeTree!);
             var afterIds = NativeElementIds(after, requested.Slides[slideIndex].Id);
             var elements = requested.Slides[slideIndex].Elements;
             if (before.Length != elements.Count || after.Length != elements.Count)
-                throw new CodecException("presentation_postwrite_topology_changed", $"PPTX slide {slideIndex + 1} element topology changed during source-preserving export.", PartPath(outputSlides[slideIndex]));
+                throw new CodecException("presentation_postwrite_topology_changed", $"PPTX slide {slideIndex + 1} element topology changed during source-preserving export.", PartPath(outputSlide));
             for (var elementIndex = 0; elementIndex < elements.Count; elementIndex++)
             {
                 var request = elements[elementIndex];
@@ -2210,11 +2219,17 @@ internal static class PptxCodec
         var outputGraph = ReadMasterGraph(outputPresentationPart);
         if (sourceGraph.Length != requested.Masters.Count || outputGraph.Length != requested.Masters.Count)
             throw new CodecException("presentation_postwrite_master_topology_changed", "PPTX master topology changed during source-preserving export.");
-        var sourceSlides = OrderedSlideParts(sourcePackage);
+        var sourceTargets = BindSourcePreservingSlides(
+            sourcePresentationPart,
+            sourcePresentationPart.Presentation?.SlideIdList?.Elements<P.SlideId>().ToArray() ?? [],
+            requested.Slides);
         var outputSlides = OrderedSlideParts(outputPackage);
-        var sourceSlideMap = sourceSlides.Select((part, index) => (Path: PartPath(part), Id: requested.Slides[index].Id))
+        if (outputSlides.Length != sourceTargets.Length ||
+            outputSlides.Select(PartPath).SequenceEqual(sourceTargets.Select(target => PartPath(target.Source.Part)), StringComparer.Ordinal) == false)
+            throw new CodecException("presentation_postwrite_topology_changed", "PPTX slide order does not match the requested source-bound order.", "ppt/presentation.xml");
+        var sourceSlideMap = sourceTargets.Select(target => (Path: PartPath(target.Source.Part), Id: target.Target.Id))
             .ToDictionary(item => item.Path, item => item.Id, StringComparer.OrdinalIgnoreCase);
-        var outputSlideMap = outputSlides.Select((part, index) => (Path: PartPath(part), Id: requested.Slides[index].Id))
+        var outputSlideMap = sourceTargets.Select(target => (Path: PartPath(target.Source.Part), Id: target.Target.Id))
             .ToDictionary(item => item.Path, item => item.Id, StringComparer.OrdinalIgnoreCase);
         var sourceAssets = new PptxAssetCatalog([], limits);
         var outputAssets = new PptxAssetCatalog([], limits);
@@ -2363,6 +2378,86 @@ internal static class PptxCodec
         slideIds.Select(slideId => presentationPart.GetPartById(slideId.RelationshipId?.Value ?? string.Empty) as SlidePart ??
             throw new CodecException("missing_slide_part", "PPTX presentation contains an unresolved slide relationship.", "ppt/presentation.xml"))
         .ToArray();
+
+    // Reordering is deliberately narrower than cloning or deletion: every
+    // imported SlidePart must remain exactly once, so only p:sldIdLst order is
+    // changed and no relationship graph, opaque part, or source identity is
+    // reconstructed.
+    private static PptxTargetSlideEntry[] BindSourcePreservingSlides(
+        PresentationPart presentationPart,
+        IReadOnlyList<P.SlideId> sourceSlideIds,
+        IReadOnlyList<PresentationSlide> requested)
+    {
+        if (sourceSlideIds.Count != requested.Count)
+            throw new CodecException(
+                "presentation_topology_changed",
+                $"Source-preserving PPTX export requires the original {sourceSlideIds.Count}-slide topology; the artifact contains {requested.Count} slides.",
+                "ppt/presentation.xml");
+        var sourceParts = ResolveSlideParts(presentationPart, sourceSlideIds);
+        var sourceSlides = sourceSlideIds
+            .Select((slideId, index) => new PptxSourceSlideEntry(
+                index,
+                slideId,
+                slideId.RelationshipId?.Value ?? string.Empty,
+                sourceParts[index]))
+            .ToArray();
+        var targets = new PptxTargetSlideEntry[requested.Count];
+        var seenSourceParts = new HashSet<SlidePart>();
+        for (var targetIndex = 0; targetIndex < requested.Count; targetIndex++)
+        {
+            var target = requested[targetIndex];
+            var binding = target.Source ?? throw new CodecException(
+                "missing_presentation_slide_binding",
+                $"Presentation slide {targetIndex + 1} is missing its source binding.",
+                "ppt/presentation.xml");
+            if (binding.SlideIndex >= sourceSlides.Length)
+                throw new CodecException(
+                    "presentation_slide_binding_mismatch",
+                    $"Presentation slide {targetIndex + 1} references source slide {binding.SlideIndex + 1}, which does not exist.",
+                    "ppt/presentation.xml");
+            var source = sourceSlides[binding.SlideIndex];
+            var sourceRoot = source.Part.Slide ??
+                throw new CodecException("missing_slide_root", $"Presentation source slide {source.Index + 1} has no slide root.", PartPath(source.Part));
+            if (!binding.PartPath.Equals(PartPath(source.Part), StringComparison.OrdinalIgnoreCase) ||
+                !binding.RelationshipId.Equals(source.RelationshipId, StringComparison.Ordinal) ||
+                !binding.SlideXmlSha256.Equals(HashElement(sourceRoot), StringComparison.OrdinalIgnoreCase))
+                throw new CodecException(
+                    "presentation_slide_binding_mismatch",
+                    $"Presentation slide {targetIndex + 1} does not match its hash-bound source slide.",
+                    PartPath(source.Part));
+            if (!seenSourceParts.Add(source.Part))
+                throw new CodecException(
+                    "presentation_topology_changed",
+                    "Source-preserving PPTX reordering requires every original SlidePart exactly once; slide duplication needs a dedicated OPC graph clone operation.",
+                    "ppt/presentation.xml");
+            targets[targetIndex] = new PptxTargetSlideEntry(targetIndex, target, source);
+        }
+        return targets;
+    }
+
+    private static bool ReorderSourceSlideIdList(PresentationPart presentationPart, IReadOnlyList<PptxTargetSlideEntry> targets)
+    {
+        var root = presentationPart.Presentation ??
+            throw new CodecException("missing_presentation_root", "PPTX package has no Presentation root.", "ppt/presentation.xml");
+        var list = root.SlideIdList ??
+            throw new CodecException("missing_slide_id_list", "PPTX package has no slide ID list.", "ppt/presentation.xml");
+        var sourceIds = list.Elements<P.SlideId>().ToArray();
+        var requestedRelationshipIds = targets.Select(target => target.Source.RelationshipId).ToArray();
+        if (sourceIds.Select(slideId => slideId.RelationshipId?.Value ?? string.Empty).SequenceEqual(requestedRelationshipIds, StringComparer.Ordinal)) return false;
+
+        // Keep any future extension child in its original relative position;
+        // only replace the ordered p:sldId entries with exact source clones.
+        var firstNonSlideId = list.ChildElements.FirstOrDefault(item => item is not P.SlideId);
+        var reordered = targets.Select(target => (P.SlideId)target.Source.SlideId.CloneNode(true)).ToArray();
+        foreach (var sourceId in sourceIds) sourceId.Remove();
+        foreach (var slideId in reordered)
+        {
+            if (firstNonSlideId is null) list.Append(slideId);
+            else list.InsertBefore(slideId, firstNonSlideId);
+        }
+        root.Save();
+        return true;
+    }
 
     private static string MasterTextStylesSemanticHash(PresentationMasterTextStyles? source)
     {

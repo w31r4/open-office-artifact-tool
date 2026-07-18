@@ -923,6 +923,17 @@ export class Slide {
   }
 
   get index() { return this.presentation.slides.items.indexOf(this); }
+  moveTo(index) {
+    if (!Number.isInteger(index) || index < 0 || index >= this.presentation.slides.items.length) {
+      throw new RangeError("Presentation slide destination must be an existing 0-based slide index.");
+    }
+    const current = this.index;
+    if (current < 0) throw new Error("Presentation slide must belong to its presentation before it can move.");
+    if (current === index) return this;
+    this.presentation.slides.items.splice(current, 1);
+    this.presentation.slides.items.splice(index, 0, this);
+    return this;
+  }
   get frame() { return { left: 0, top: 0, ...this.presentation.slideSize }; }
   get placeholders() {
     const items = this.shapes.items.filter((shape) => shape.placeholder);

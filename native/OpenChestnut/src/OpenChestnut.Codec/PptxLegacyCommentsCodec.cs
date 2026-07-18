@@ -112,8 +112,15 @@ internal static class PptxLegacyCommentsCodec
             throw new CodecException("presentation_comment_topology_changed", "Presentation slide topology changed before legacy comments could be verified.");
         for (var slideIndex = 0; slideIndex < slideParts.Count; slideIndex++)
         {
-            var profile = TryReadProfile(presentationPart, slideParts[slideIndex], slideIndex);
-            var target = requested[slideIndex].LegacyComments;
+            var targetSlide = requested[slideIndex];
+            // Reordering keeps the original SlidePart and its package-local
+            // comment locator. Use the source index for identity comparison,
+            // not the presentation's current display order.
+            var sourceIndex = targetSlide.Source?.SlideIndex is { } boundIndex
+                ? checked((int)boundIndex)
+                : slideIndex;
+            var profile = TryReadProfile(presentationPart, slideParts[slideIndex], sourceIndex);
+            var target = targetSlide.LegacyComments;
             if (!profile.Supported)
             {
                 if (target.Count > 0)

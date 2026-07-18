@@ -49,6 +49,20 @@ imported background graphs are opaque-preserved; leave them unchanged or
 OpenChestnut fails closed. Do not replace an advanced imported background with
 a simple solid and describe that as a faithful edit.
 
+## Slide Order
+
+```ts
+slide.moveTo(0); // existing 0-based destination index
+```
+
+`moveTo` returns the same slide facade. For an imported PPTX, it is a narrow
+source-preserving reorder: every original `SlidePart` must still occur exactly
+once, and export changes only the presentation `p:sldIdLst` order. The slide
+parts, their relationship graphs, and opaque package content are not copied or
+reconstructed. Adding, deleting, or duplicating imported slides remains
+fail-closed; a future clone/delete API needs an explicit OPC graph transaction
+rather than a visual-only copy.
+
 ## Layouts And Placeholders
 
 ```ts
@@ -219,8 +233,7 @@ slide.clearBackground();
 ```
 
 ```ts
-// Clone direct content from another slide, then change an ordinary shape.
-const next = sourceSlide.duplicate();
-next.moveTo(3);
-next.shapes.getItem("title")?.text.set("Updated section title");
+// Reorder an existing source-bound slide without changing the source-part set.
+const existing = deck.slides.getItem(2);
+existing.moveTo(0);
 ```

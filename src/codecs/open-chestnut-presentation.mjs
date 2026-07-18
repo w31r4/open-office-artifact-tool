@@ -1,4 +1,4 @@
-import { ChartElement, GroupShape, ImageElement, Presentation, Shape, TableElement } from "../presentation/index.mjs";
+import { ChartElement, GroupShape, ImageElement, Presentation, Shape, Slide, TableElement } from "../presentation/index.mjs";
 import {
   ArtifactFamily,
   PresentationChartAxisGroup,
@@ -127,6 +127,26 @@ function assertTrustedPresentationState(state) {
   if (!sourceHash || !snapshotHash || sourceHash !== snapshotHash || !snapshot?.data?.length) {
     throw new OpenChestnutCodecError("PPTX source-bound export requires its validated source package snapshot.", [], { code: "missing_source_package" });
   }
+}
+
+// A source-bound slide stays attached to its imported SlidePart by object
+// identity, not by whichever array index it happens to occupy now. That keeps
+// moveTo() a small, reversible presentation.xml operation while continuing to
+// reject additions, removals, and duplicate source slides until their OPC
+// graph operations have their own codec contract.
+function presentationSourceSlideStateMap(presentation, state) {
+  if (!state) return undefined;
+  const sourceBySlide = new Map();
+  for (const sourceState of state.slides || []) {
+    if (!(sourceState?.slide instanceof Slide) || sourceState.slide.presentation !== presentation || sourceBySlide.has(sourceState.slide)) {
+      throw new OpenChestnutCodecError("Imported presentation source bindings are invalid or ambiguous.", [], { code: "presentation_topology_changed" });
+    }
+    sourceBySlide.set(sourceState.slide, sourceState);
+  }
+  if (sourceBySlide.size !== presentation.slides.items.length || presentation.slides.items.some((slide) => !sourceBySlide.has(slide))) {
+    throw new OpenChestnutCodecError(`Source-preserving PPTX export requires the original ${sourceBySlide.size}-slide set exactly once.`, [], { code: "presentation_topology_changed" });
+  }
+  return sourceBySlide;
 }
 
 function emuFromPixels(value, name) {
@@ -1415,9 +1435,13 @@ function presentationAdvancedSnapshot(presentation) {
     theme: JSON.parse(presentationThemeSnapshot(presentation.theme)),
     commentFormat: presentation.commentFormat,
     customShows: presentation.customShows.items.map((show) => show.toJSON()),
+    // Slide order is an independently modeled source-preserving operation.
+    // Comment content itself is still source-bound, so keep an identity-keyed,
+    // order-independent snapshot here.
     slides: presentation.slides.items.map((slide) => ({
+      id: slide.id,
       comments: slide.comments.items.map((comment) => comment.toJSON()),
-    })),
+    })).sort((left, right) => left.id.localeCompare(right.id)),
   });
 }
 
@@ -1491,6 +1515,7 @@ export function presentationEnvelope(presentation, protocolVersion) {
   if (!presentation.slides?.items?.length) throw new OpenChestnutCodecError("Presentation must contain at least one slide.", [], { code: "missing_slides" });
   const state = presentation[PRESENTATION_STATE];
   assertTrustedPresentationState(state);
+  const sourceStates = presentationSourceSlideStateMap(presentation, state);
   if (!state) {
     const unsupported = unsupportedPresentationFeatures(presentation);
     if (unsupported.length) {
@@ -1500,7 +1525,6 @@ export function presentationEnvelope(presentation, protocolVersion) {
     if (presentationAdvancedSnapshot(presentation) !== state.advancedSnapshot) {
       throw new OpenChestnutCodecError("Imported presentation theme, comments, and custom shows are source-bound and read-only in OpenChestnut 0.2.", [], { code: "unsupported_presentation_edit" });
     }
-    if (state.slides.length !== presentation.slides.items.length) throw new OpenChestnutCodecError(`Source-preserving PPTX export requires the original ${state.slides.length}-slide topology.`, [], { code: "presentation_topology_changed" });
     if (Number(state.slideWidthEmu) !== Math.round(Number(presentation.slideSize.width) * EMU_PER_PIXEL) || Number(state.slideHeightEmu) !== Math.round(Number(presentation.slideSize.height) * EMU_PER_PIXEL)) {
       throw new OpenChestnutCodecError("Source-preserving PPTX export does not yet support changing slide dimensions.", [], { code: "unsupported_presentation_edit" });
     }
@@ -1510,7 +1534,7 @@ export function presentationEnvelope(presentation, protocolVersion) {
   const masters = presentationMasters(presentation, state, assetCatalog);
   const layouts = presentationLayouts(presentation, state, assetCatalog);
   const slides = presentation.slides.items.map((slide, slideIndex) => {
-    const sourceState = state?.slides[slideIndex];
+    const sourceState = sourceStates?.get(slide);
     if (sourceState) {
       if (slide.name !== sourceState.name) throw new OpenChestnutCodecError(`Source-preserving PPTX export does not yet support renaming slide ${slideIndex + 1}.`, [], { code: "unsupported_presentation_edit" });
       if ((slide.layoutId || "") !== (sourceState.wire.layoutId || "")) throw new OpenChestnutCodecError(`Source-preserving PPTX export cannot change slide ${slideIndex + 1}'s layout binding.`, [], { code: "presentation_slide_layout_binding_changed" });
@@ -1522,7 +1546,7 @@ export function presentationEnvelope(presentation, protocolVersion) {
         throw new OpenChestnutCodecError(`Source-preserving PPTX export cannot add speaker notes to slide ${slideIndex + 1} because the source slide has no notes part.`, [], { code: "unsupported_presentation_edit" });
       }
     }
-    const legacyComments = presentationLegacyComments(slide, slideIndex);
+    const legacyComments = presentationLegacyComments(slide, Number(sourceState?.wire.source?.slideIndex ?? slideIndex));
     return {
       id: sourceState?.wire.id || slide.id,
       name: slide.name,
@@ -2278,7 +2302,7 @@ export async function presentationFromEnvelope(envelope) {
         }],
       });
     }
-    slideStates.push({ wire: sourceSlide, name: slide.name, entries });
+    slideStates.push({ wire: sourceSlide, slide, name: slide.name, entries });
   }
   Object.defineProperty(presentation, PRESENTATION_STATE, {
     configurable: true,

@@ -2179,6 +2179,38 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void SourcePreservingExportReordersEachImportedSlideExactlyOnce()
+    {
+        var authored = Invoke(HyperlinkExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var slides = imported.Artifact.Presentation.Slides;
+        var first = slides[0];
+        slides.RemoveAt(0);
+        slides.Add(first);
+
+        var reordered = Export(imported.Artifact);
+        Assert.True(reordered.Ok, Diagnostics(reordered));
+        using (var stream = new MemoryStream(reordered.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        Assert.Equal(ZipBytes(authored.File.ToByteArray(), "ppt/slides/slide1.xml"), ZipBytes(reordered.File.ToByteArray(), "ppt/slides/slide1.xml"));
+        Assert.Equal(ZipBytes(authored.File.ToByteArray(), "ppt/slides/slide2.xml"), ZipBytes(reordered.File.ToByteArray(), "ppt/slides/slide2.xml"));
+        Assert.Equal(ZipBytes(authored.File.ToByteArray(), "ppt/slides/slide3.xml"), ZipBytes(reordered.File.ToByteArray(), "ppt/slides/slide3.xml"));
+
+        var roundTrip = Import(reordered.File.ToByteArray());
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        Assert.Equal(["Details", "Appendix", "Links"], roundTrip.Artifact.Presentation.Slides.Select(slide => slide.Name));
+
+        var duplicate = Import(authored.File.ToByteArray());
+        duplicate.Artifact.Presentation.Slides.Add(duplicate.Artifact.Presentation.Slides[0].Clone());
+        var rejected = Export(duplicate.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("presentation_topology_changed", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void ProtocolReturnsStructuredSlideAndItemBudgetFailures()
     {
         var exported = Invoke(ExportRequest());
