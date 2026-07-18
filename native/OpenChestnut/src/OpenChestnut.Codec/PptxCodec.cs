@@ -26,11 +26,21 @@ internal sealed record PptxCloneNotesLeaf(
     NotesMasterPart MasterPart,
     string MasterRelationshipId,
     string SlideBackReferenceRelationshipId);
+// Legacy comments are a clone-local XML leaf whose author IDs resolve through
+// the presentation-wide immutable catalog. The catalog has no direct OPC edge
+// from the comment part, so keep it explicit in the preflight plan rather than
+// treating that semantic dependency as an incidental implementation detail.
+internal sealed record PptxCloneLegacyCommentsLeaf(
+    SlideCommentsPart Part,
+    string SlideRelationshipId,
+    CommentAuthorsPart AuthorsPart,
+    string AuthorsRelationshipId);
 internal sealed record PptxCloneLeaf(
     SlideLayoutPart LayoutPart,
     string LayoutRelationshipId,
     IReadOnlyList<PptxCloneImageEdge> Images,
-    PptxCloneNotesLeaf? Notes);
+    PptxCloneNotesLeaf? Notes,
+    PptxCloneLegacyCommentsLeaf? LegacyComments);
 internal sealed class PptxTargetSlideEntry
 {
     internal PptxTargetSlideEntry(int targetIndex, PresentationSlide target, PptxSourceSlideEntry source, bool isClone)
@@ -1983,7 +1993,10 @@ internal static class PptxCodec
             var isNotesBackReference = relationship.Type.EndsWith("/slide", StringComparison.Ordinal) &&
                                        !relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase) &&
                                        IsNumberedSlidePath(PptxNativeObjectCatalog.ResolveTarget(relationship.SourcePath, relationship.Target));
-            var allowedFromSlide = IsNumberedSlidePath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage || isSlideLayout || isNotesSlide);
+            var isLegacyComments = relationship.Type.EndsWith("/comments", StringComparison.Ordinal) &&
+                                   !relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase) &&
+                                   IsNumberedCommentsPath(PptxNativeObjectCatalog.ResolveTarget(relationship.SourcePath, relationship.Target));
+            var allowedFromSlide = IsNumberedSlidePath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage || isSlideLayout || isNotesSlide || isLegacyComments);
             var allowedFromMaster = IsNumberedMasterPath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage);
             var allowedFromLayout = IsNumberedLayoutPath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage);
             var allowedFromNotes = IsNumberedNotesSlidePath(relationship.SourcePath) && (isNotesMaster || isNotesBackReference);
@@ -2083,10 +2096,21 @@ internal static class PptxCodec
                path[prefix.Length..^suffix.Length].All(char.IsAsciiDigit);
     }
 
+    private static bool IsNumberedCommentsPath(string path)
+    {
+        const string prefix = "ppt/comments/comment";
+        const string suffix = ".xml";
+        return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+               path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) &&
+               path[prefix.Length..^suffix.Length].Length > 0 &&
+               path[prefix.Length..^suffix.Length].All(char.IsAsciiDigit);
+    }
+
     private static bool IsAllowedAddedClonePartPath(string path) =>
         path.StartsWith("ppt/media/", StringComparison.OrdinalIgnoreCase) ||
         IsNumberedNotesSlidePath(path) ||
-        IsNumberedNotesSlideRelationshipPath(path);
+        IsNumberedNotesSlideRelationshipPath(path) ||
+        IsNumberedCommentsPath(path);
 
     private static void ValidatePreservedSlideElements(byte[] sourceBytes, byte[] outputBytes, PresentationArtifact requested, EffectiveCodecLimits limits)
     {
@@ -2096,6 +2120,8 @@ internal static class PptxCodec
         using var outputPackage = PresentationDocument.Open(outputStream, isEditable: false);
         var sourcePresentationPart = sourcePackage.PresentationPart ??
             throw new CodecException("missing_presentation_part", "PPTX source package has no Presentation part.", "ppt/presentation.xml");
+        var outputPresentationPart = outputPackage.PresentationPart ??
+            throw new CodecException("missing_presentation_part", "PPTX output package has no Presentation part.", "ppt/presentation.xml");
         var sourceTargets = BindSourcePreservingSlides(
             sourcePresentationPart,
             sourcePresentationPart.Presentation?.SlideIdList?.Elements<P.SlideId>().ToArray() ?? [],
@@ -2115,6 +2141,7 @@ internal static class PptxCodec
                     !HashElement(target.Source.Part.Slide!).Equals(HashElement(outputSlide.Slide!), StringComparison.OrdinalIgnoreCase))
                     throw new CodecException("presentation_postwrite_clone_mismatch", $"PPTX clone {targetIndex + 1} is not an independent exact source slide copy.", PartPath(outputSlide));
                 ValidateClonedSpeakerNotes(target.Source.Part, outputSlide, targetIndex);
+                ValidateClonedLegacyComments(sourcePresentationPart, outputPresentationPart, target.Source.Part, outputSlide, targetIndex);
             }
         }
         var retainedTargets = sourceTargets.Where(target => !target.IsClone).ToArray();
@@ -2277,6 +2304,43 @@ internal static class PptxCodec
             sourceNotes.GetIdOfPart(source) != cloneNotes.GetIdOfPart(clone) ||
             cloneNotes.Parts.Count() != 2 || cloneNotes.ExternalRelationships.Any() || cloneNotes.HyperlinkRelationships.Any() || cloneNotes.DataPartReferenceRelationships.Any())
             throw new CodecException("presentation_postwrite_clone_notes_mismatch", $"PPTX clone {targetIndex + 1} does not retain the exact bounded notes relationship graph.", PartPath(cloneNotes));
+    }
+
+    private static void ValidateClonedLegacyComments(
+        PresentationPart sourcePresentation,
+        PresentationPart outputPresentation,
+        SlidePart source,
+        SlidePart clone,
+        int targetIndex)
+    {
+        var sourceComments = source.SlideCommentsPart;
+        var cloneComments = clone.SlideCommentsPart;
+        if (sourceComments is null)
+        {
+            if (cloneComments is not null)
+                throw new CodecException("presentation_postwrite_clone_comments_mismatch", $"PPTX clone {targetIndex + 1} unexpectedly added a comments part.", PartPath(clone));
+            return;
+        }
+        if (cloneComments?.CommentList is null || sourceComments.CommentList is null ||
+            PartPath(sourceComments).Equals(PartPath(cloneComments), StringComparison.OrdinalIgnoreCase) ||
+            !PartBytes(sourceComments).SequenceEqual(PartBytes(cloneComments)) ||
+            source.GetIdOfPart(sourceComments) != clone.GetIdOfPart(cloneComments) ||
+            cloneComments.Parts.Any() || cloneComments.ExternalRelationships.Any() ||
+            cloneComments.HyperlinkRelationships.Any() || cloneComments.DataPartReferenceRelationships.Any())
+            throw new CodecException("presentation_postwrite_clone_comments_mismatch", $"PPTX clone {targetIndex + 1} is not an independent exact source legacy-comments copy.", PartPath(clone));
+
+        // p:cm/@authorId resolves through this shared catalog rather than a
+        // comment-part relationship. Prove that the clone still references
+        // the one untouched catalog in the output package.
+        var sourceAuthors = sourcePresentation.CommentAuthorsPart;
+        var outputAuthors = outputPresentation.CommentAuthorsPart;
+        if (sourceAuthors is null || outputAuthors is null ||
+            !PartPath(sourceAuthors).Equals(PartPath(outputAuthors), StringComparison.OrdinalIgnoreCase) ||
+            !PartBytes(sourceAuthors).SequenceEqual(PartBytes(outputAuthors)) ||
+            sourcePresentation.GetIdOfPart(sourceAuthors) != outputPresentation.GetIdOfPart(outputAuthors) ||
+            outputAuthors.Parts.Any() || outputAuthors.ExternalRelationships.Any() ||
+            outputAuthors.HyperlinkRelationships.Any() || outputAuthors.DataPartReferenceRelationships.Any())
+            throw new CodecException("presentation_postwrite_clone_comments_mismatch", $"PPTX clone {targetIndex + 1} does not retain the bounded shared legacy-comment author catalog.", PartPath(cloneComments));
     }
 
     private static void ValidateGroupOutput(
@@ -2733,7 +2797,7 @@ internal static class PptxCodec
 
         foreach (var target in cloneTargets)
         {
-            var leaf = AssertSourceSlideCanBeCloned(target, layoutIdByPartPath, slideIdByPartPath, assetCatalog);
+            var leaf = AssertSourceSlideCanBeCloned(presentationPart, target, layoutIdByPartPath, slideIdByPartPath, assetCatalog);
             var sourcePart = target.Source.Part;
             var sourceRoot = sourcePart.Slide ??
                 throw new CodecException("missing_slide_root", $"Presentation source slide {target.Source.Index + 1} has no slide root.", PartPath(sourcePart));
@@ -2766,6 +2830,21 @@ internal static class PptxCodec
                 addedPartPaths.Add(PartPath(cloneNotes));
                 addedPartPaths.Add(RelationshipPartPath(cloneNotes));
             }
+            if (leaf.LegacyComments is { } comments)
+            {
+                // Legacy comment XML is another opaque-preserved leaf. Its
+                // author IDs resolve through the already-verified immutable
+                // presentation catalog, so copy the bytes but do not create
+                // a second catalog or rewrite either source part.
+                if (!ReferenceEquals(presentationPart.CommentAuthorsPart, comments.AuthorsPart) ||
+                    presentationPart.GetIdOfPart(comments.AuthorsPart) != comments.AuthorsRelationshipId)
+                    throw new CodecException("presentation_slide_clone_binding_mismatch", "The shared legacy-comment author catalog changed after clone preflight.", PartPath(comments.AuthorsPart));
+                var cloneComments = clonePart.AddNewPart<SlideCommentsPart>(comments.SlideRelationshipId);
+                CopyPartBytes(comments.Part, cloneComments);
+                addedRelationshipIds.Add($"{PartPath(clonePart)}\0{comments.SlideRelationshipId}");
+                changedParts.Add(PartPath(cloneComments));
+                addedPartPaths.Add(PartPath(cloneComments));
+            }
             clonePart.Slide = (P.Slide)sourceRoot.CloneNode(true);
             clonePart.Slide.Save();
             if (nextSlideId == uint.MaxValue)
@@ -2777,10 +2856,10 @@ internal static class PptxCodec
                 Id = nextSlideId,
                 RelationshipId = presentationPart.GetIdOfPart(clonePart),
             };
-            // Clone-to-layout, clone-to-image, and clone-to-notes edges are
-            // intentionally opaque in the generic profile. Record only these
-            // exact, verified relationships so the package guard can
-            // distinguish them from an unmodeled graph change.
+            // Clone-to-layout, clone-to-image, clone-to-notes, and
+            // clone-to-comments edges are intentionally opaque in the generic
+            // profile. Record only these exact, verified relationships so the
+            // package guard can distinguish them from an unmodeled graph change.
             addedRelationshipIds.Add($"{PartPath(clonePart)}\0{leaf.LayoutRelationshipId}");
             changedParts.Add(PartPath(clonePart));
             changedParts.Add(RelationshipPartPath(clonePart));
@@ -2811,6 +2890,7 @@ internal static class PptxCodec
     }
 
     private static PptxCloneLeaf AssertSourceSlideCanBeCloned(
+        PresentationPart presentationPart,
         PptxTargetSlideEntry target,
         IReadOnlyDictionary<string, string> layoutIdByPartPath,
         IReadOnlyDictionary<string, string> slideIdByPartPath,
@@ -2827,19 +2907,21 @@ internal static class PptxCodec
             .Select(edge => edge.RelationshipId)
             .ToHashSet(StringComparer.Ordinal);
         var notesRelationshipCount = childParts.Count(pair => pair.OpenXmlPart is NotesSlidePart);
+        var commentsRelationshipCount = childParts.Count(pair => pair.OpenXmlPart is SlideCommentsPart);
         var unsafeChildren = childParts
-            .Where(pair => pair.OpenXmlPart is not SlideLayoutPart && pair.OpenXmlPart is not ImagePart && pair.OpenXmlPart is not NotesSlidePart)
+            .Where(pair => pair.OpenXmlPart is not SlideLayoutPart && pair.OpenXmlPart is not ImagePart && pair.OpenXmlPart is not NotesSlidePart && pair.OpenXmlPart is not SlideCommentsPart)
             .Select(pair => pair.OpenXmlPart.RelationshipType)
             .Distinct(StringComparer.Ordinal)
             .Take(4)
             .ToArray();
         if (layoutRelationshipCount != 1 ||
             notesRelationshipCount > 1 ||
+            commentsRelationshipCount > 1 ||
             unsafeChildren.Length > 0 ||
             source.Part.ExternalRelationships.Any() ||
             source.Part.HyperlinkRelationships.Any() ||
             source.Part.DataPartReferenceRelationships.Any())
-            throw UnsupportedSourceSlideClone(source, "it owns comments, hyperlinks, data parts, or another non-layout/image/notes relationship");
+            throw UnsupportedSourceSlideClone(source, "it owns hyperlinks, data parts, or another non-layout/image/notes/comments relationship");
         var root = source.Part.Slide ??
             throw new CodecException("missing_slide_root", $"Presentation source slide {source.Index + 1} has no slide root.", PartPath(source.Part));
         var common = root.CommonSlideData ??
@@ -2866,8 +2948,7 @@ internal static class PptxCodec
         if (!imageRelationshipIds.SetEquals(embeddedImageRelationshipIds))
             throw UnsupportedSourceSlideClone(source, "it has an image relationship that is not exactly bound by a canonical embedded picture");
         var notes = AssertSourceSpeakerNotesCanBeCloned(source, target.Target);
-        if (target.Target.LegacyComments.Count > 0)
-            throw UnsupportedSourceSlideClone(source, "the requested clone carries comments");
+        var comments = AssertSourceLegacyCommentsCanBeCloned(presentationPart, source, target.Target);
         if (target.Target.Name != (common.Name?.Value ?? string.Empty))
             throw UnsupportedSourceSlideClone(source, "the requested clone changes its source name");
         var layoutPart = source.Part.SlideLayoutPart ??
@@ -2899,7 +2980,7 @@ internal static class PptxCodec
                 !SemanticHash(requested).Equals(binding.SemanticSha256, StringComparison.OrdinalIgnoreCase))
                 throw new CodecException("presentation_slide_clone_mismatch", $"Presentation clone {target.TargetIndex + 1} element {elementIndex + 1} is not an unchanged source element.", PartPath(source.Part));
         }
-        return new PptxCloneLeaf(layoutPart, source.Part.GetIdOfPart(layoutPart), imageEdges, notes);
+        return new PptxCloneLeaf(layoutPart, source.Part.GetIdOfPart(layoutPart), imageEdges, notes, comments);
     }
 
     private static PptxCloneNotesLeaf? AssertSourceSpeakerNotesCanBeCloned(PptxSourceSlideEntry source, PresentationSlide target)
@@ -2946,10 +3027,54 @@ internal static class PptxCodec
             backReferenceEdges[0].RelationshipId);
     }
 
+    private static PptxCloneLegacyCommentsLeaf? AssertSourceLegacyCommentsCanBeCloned(
+        PresentationPart presentationPart,
+        PptxSourceSlideEntry source,
+        PresentationSlide target)
+    {
+        var commentsPart = source.Part.SlideCommentsPart;
+        if (commentsPart is null)
+        {
+            if (target.LegacyComments.Count > 0)
+                throw UnsupportedSourceSlideClone(source, "the requested clone adds legacy comments where the origin has no comments part");
+            return null;
+        }
+        var profile = PptxLegacyCommentsCodec.Profile(presentationPart, source.Part, source.Index);
+        if (!profile.Supported)
+            throw UnsupportedSourceSlideClone(source, "its legacy comments are outside the bounded single-text profile");
+        if (!PptxLegacyCommentsCodec.Equivalent(profile.Comments, target.LegacyComments))
+            throw new CodecException(
+                "presentation_slide_clone_mismatch",
+                $"Presentation clone {source.Index + 1} legacy comments are not unchanged source comments.",
+                PartPath(commentsPart));
+        if (commentsPart.Parts.Any() || commentsPart.ExternalRelationships.Any() ||
+            commentsPart.HyperlinkRelationships.Any() || commentsPart.DataPartReferenceRelationships.Any())
+            throw UnsupportedSourceSlideClone(source, "its comments part has child, external, hyperlink, or data relationships");
+
+        // A legacy p:cm refers to authorId in the presentation-wide
+        // CommentAuthorsPart rather than through a relationship on the
+        // comments part. The source profile proves every ID resolves; this
+        // additional graph check makes the shared catalog immutable and
+        // explicit in the clone plan.
+        var authorsPart = presentationPart.CommentAuthorsPart;
+        var authorEdges = presentationPart.Parts
+            .Where(pair => ReferenceEquals(pair.OpenXmlPart, authorsPart))
+            .ToArray();
+        if (authorsPart is null || authorEdges.Length != 1 || authorsPart.Parts.Any() ||
+            authorsPart.ExternalRelationships.Any() || authorsPart.HyperlinkRelationships.Any() ||
+            authorsPart.DataPartReferenceRelationships.Any())
+            throw UnsupportedSourceSlideClone(source, "its legacy comment author catalog is missing or has an unbounded relationship graph");
+        return new PptxCloneLegacyCommentsLeaf(
+            commentsPart,
+            source.Part.GetIdOfPart(commentsPart),
+            authorsPart,
+            authorEdges[0].RelationshipId);
+    }
+
     private static CodecException UnsupportedSourceSlideClone(PptxSourceSlideEntry source, string reason) =>
         new(
             "unsupported_presentation_slide_clone",
-            $"Source-preserving PPTX cloning is limited to an unchanged shape-and-embedded-image-and-notes layout leaf; slide {source.Index + 1} cannot be cloned because {reason}. Use an explicit broader OPC graph-clone operation for this package.",
+            $"Source-preserving PPTX cloning is limited to an unchanged shape-and-embedded-image layout leaf with optional closed notes and legacy-comment leaves; slide {source.Index + 1} cannot be cloned because {reason}. Use an explicit broader OPC graph-clone operation for this package.",
             PartPath(source.Part));
 
     private static bool ReorderSourceSlideIdList(PresentationPart presentationPart, IReadOnlyList<PptxTargetSlideEntry> targets)

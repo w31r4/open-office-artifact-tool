@@ -201,6 +201,18 @@ function cloneImportedPresentationImage(slide, source) {
   });
 }
 
+// A legacy comment has no JavaScript object identity that may be shared with
+// its origin. Copy the imported thread record into a fresh slide model while
+// retaining its native author/index evidence; the C# clone preflight then
+// proves the clone-local comments XML and shared immutable author catalog are
+// unchanged before writing any OPC graph.
+function cloneImportedPresentationLegacyComments(slide, source) {
+  for (const thread of source.comments.items) {
+    const snapshot = clonedPresentationValue(thread.toJSON());
+    slide.comments.addThread(undefined, snapshot.comments?.[0]?.text || "", snapshot);
+  }
+}
+
 function duplicateImportedPresentationSlide(presentation, state, slide) {
   const source = (state.slides || []).find((entry) => entry.slide === slide);
   if (!source) {
@@ -212,9 +224,6 @@ function duplicateImportedPresentationSlide(presentation, state, slide) {
   if (source.entries.some((entry) => !new Set(["shape", "image"]).has(entry.wire.content.case))) {
     throw new OpenChestnutCodecError("The bounded imported-slide clone profile supports only canonical shapes and embedded images; tables, charts, groups, connectors, native objects, and other graph edges require a broader OPC graph clone.", [], { code: "unsupported_presentation_slide_clone" });
   }
-  if (slide.comments.items.length) {
-    throw new OpenChestnutCodecError("The bounded imported-slide clone profile does not clone comments.", [], { code: "unsupported_presentation_slide_clone" });
-  }
   const clone = presentation.slides.insert({
     after: slide,
     name: slide.name,
@@ -222,6 +231,7 @@ function duplicateImportedPresentationSlide(presentation, state, slide) {
     ...(source.wire.speakerNotes ? { notes: slide.speakerNotes?.text || "" } : {}),
   });
   clone.layoutId = slide.layoutId;
+  cloneImportedPresentationLegacyComments(clone, slide);
   const entries = source.entries.map((entry) => {
     const model = entry.wire.content.case === "shape"
       ? cloneImportedPresentationShape(clone, entry.model)

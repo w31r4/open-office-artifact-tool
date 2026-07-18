@@ -1299,6 +1299,46 @@ assert.equal(importedLegacyThread.comments.length, 1);
 assert.equal(importedLegacyThread.comments[0].author, "Review Owner");
 assert.equal(importedLegacyThread.comments[0].text, "Confirm the source before delivery.");
 assert.deepEqual(importedLegacyThread.position, { x: 360, y: 240, unit: "px" });
+
+// The bounded imported-slide clone profile may carry a closed legacy-comments
+// leaf. The clone gets a distinct model/thread object and comments part, while
+// both p:cm records keep their IDs against the one immutable author catalog.
+const legacyCommentCloneDeck = await PresentationFile.importPptx(legacyCommentExport);
+const legacyCommentCloneSource = legacyCommentCloneDeck.slides.getItem(0);
+const legacyCommentClone = legacyCommentCloneSource.duplicate();
+assert.equal(legacyCommentClone.comments.items.length, 1);
+assert.notEqual(legacyCommentClone.comments.items[0], legacyCommentCloneSource.comments.items[0]);
+assert.equal(legacyCommentClone.comments.items[0].comments[0].text, "Confirm the source before delivery.");
+const legacyCommentCloneExport = await PresentationFile.exportPptx(legacyCommentCloneDeck);
+const legacyCommentCloneZip = await JSZip.loadAsync(new Uint8Array(await legacyCommentCloneExport.arrayBuffer()));
+assert.ok(legacyCommentCloneZip.file("ppt/comments/comment2.xml"));
+assert.deepEqual(
+  await legacyCommentCloneZip.file("ppt/comments/comment2.xml").async("uint8array"),
+  await legacyCommentZip.file("ppt/comments/comment1.xml").async("uint8array"),
+);
+assert.deepEqual(
+  await legacyCommentCloneZip.file("ppt/comments/comment1.xml").async("uint8array"),
+  await legacyCommentZip.file("ppt/comments/comment1.xml").async("uint8array"),
+);
+assert.deepEqual(
+  await legacyCommentCloneZip.file("ppt/commentAuthors.xml").async("uint8array"),
+  await legacyCommentZip.file("ppt/commentAuthors.xml").async("uint8array"),
+);
+const legacyCommentCloneRoundTrip = await PresentationFile.importPptx(legacyCommentCloneExport);
+assert.equal(legacyCommentCloneRoundTrip.slides.items.length, 2);
+assert.deepEqual(
+  legacyCommentCloneRoundTrip.slides.items.map((slide) => slide.comments.items[0].comments[0].text),
+  ["Confirm the source before delivery.", "Confirm the source before delivery."],
+);
+
+const editedLegacyCommentCloneDeck = await PresentationFile.importPptx(legacyCommentExport);
+const editedLegacyCommentClone = editedLegacyCommentCloneDeck.slides.getItem(0).duplicate();
+editedLegacyCommentClone.comments.items[0].comments[0].text = "This comment cannot change before the clone boundary.";
+await assert.rejects(
+  () => PresentationFile.exportPptx(editedLegacyCommentCloneDeck),
+  (error) => error?.code === "unsupported_presentation_edit",
+);
+
 const legacyCommentRoundTrip = await PresentationFile.exportPptx(legacyCommentImported);
 const legacyCommentRoundTripZip = await JSZip.loadAsync(new Uint8Array(await legacyCommentRoundTrip.arrayBuffer()));
 assert.equal(

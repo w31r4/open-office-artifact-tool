@@ -194,14 +194,18 @@ other connected graph fail closed. `slide.duplicate()` is a separate, much
 narrower operation: only an original imported slide whose unchanged graph has
 canonical shapes plus canonical embedded rectangular images, exactly one
 internal layout relationship, picture-bound image relationships, and optionally
-one closed `NotesSlide -> NotesMaster` / back-to-source-slide leaf may receive
-a new `SlidePart` and presentation relationship. It deliberately shares the
-verified layout, immutable image Parts, and NotesMaster through fresh
-clone-local relationships; it copies accepted NotesSlide XML byte-for-byte and
-points its preserved back-reference at the clone. It preserves the origin part
-and requires export plus reimport before the clone or its notes may be edited.
-Imported add, repeat/mutated clone, and every broad graph clone remain
-unsupported until an explicit OPC graph-clone transaction is available.
+one closed `NotesSlide -> NotesMaster` / back-to-source-slide leaf plus one
+canonical legacy `SlideCommentsPart` leaf may receive a new `SlidePart` and
+presentation relationship. It deliberately shares the verified layout,
+immutable image Parts, NotesMaster, and presentation-wide `CommentAuthorsPart`
+through fresh clone-local relationships; it copies accepted NotesSlide and
+SlideComments XML byte-for-byte and points only the preserved notes
+back-reference at the clone. The comments part and author catalog must have no
+connected relationship graph. It preserves the origin part and requires export plus reimport before the clone, its notes, or its comments may be edited;
+imported legacy comments remain source-bound read-only after that boundary.
+Imported add, repeat/mutated clone, rich/connected comments, and every broad
+graph clone remain unsupported until an explicit OPC graph-clone transaction is
+available.
 
 When an imported top-level OLE object contains one uniquely bound XLSX package,
 read `artifact_tool/api/references/ole-workbooks.spec.md` before changing it.
@@ -244,11 +248,11 @@ layout, style, or template. Read `references/template-following.md`, use
 Current availability: the reference starter-deck command below still needs a
 broad imported-slide graph clone and broad graph delete semantics, so it
 deliberately fails closed in the canonical codec. The isolated layout-only
-`slide.delete()` and unchanged shape-and-embedded-image-with-closed-notes
-`slide.duplicate()` profiles are not substitutes: the latter creates an
-independent part but cannot be edited before an export/reimport boundary, and
-it cannot carry arbitrary template graph edges. Do not rebuild or share slide
-parts to emulate a clone.
+`slide.delete()` and unchanged shape/image clone profiles with closed notes and
+legacy comments are not substitutes: the latter creates an independent part but
+cannot be edited before an export/reimport boundary, and it cannot carry
+arbitrary template graph edges. Do not rebuild or share slide parts to emulate
+a clone.
 Until the broader milestone exists, use this mode only for source inventory,
 plan validation, and render/QA evidence; report the clone limitation before
 promising a derived starter deck.

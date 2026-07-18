@@ -78,25 +78,29 @@ imported** source slide with an unchanged body of canonical simple shapes plus
 canonical embedded rectangular images, exactly one internal
 `SlidePart -> SlideLayoutPart` relationship, and image relationships bound only
 by those pictures. It may also own one closed
-`NotesSlide -> NotesMaster` / back-to-source-slide leaf: the notes part must
-have exactly those two relationships and no external, hyperlink, data, or other
-child relationship. Export allocates a distinct new `SlidePart` and a new
-presentation relationship, intentionally reuses the verified layout and
-immutable ImageParts through fresh clone-local image relationships, shares the
-verified NotesMaster, copies accepted NotesSlide XML byte-for-byte, and points
+`NotesSlide -> NotesMaster` / back-to-source-slide leaf and one canonical
+legacy `SlideCommentsPart` leaf. The notes part must have exactly those two
+relationships; the comments part must have no child, external,
+hyperlink, or data relationship; and every legacy `p:cm/@authorId` must resolve
+through one immutable presentation-wide `CommentAuthorsPart`. Export allocates
+a distinct new `SlidePart` and a new presentation relationship, intentionally
+reuses the verified layout and immutable ImageParts through fresh clone-local
+image relationships, shares the verified NotesMaster and CommentAuthorsPart,
+copies accepted NotesSlide and SlideComments XML byte-for-byte, and points only
 the copied notes part back to the new slide. It preserves the required original
-source part. The new clone and its notes must remain semantically unchanged and
-cannot replace or delete its origin until that export has completed and the
-resulting PPTX has been imported again; afterward it is an ordinary
-source-bound slide and may use the supported fixed-topology edit path.
+source part. The new clone, its notes, and its legacy comments must remain
+semantically unchanged and cannot replace or delete its origin until that
+export has completed and the resulting PPTX has been imported again; afterward
+the slide may use the supported fixed-topology edit path, while imported legacy
+comments remain source-bound read-only.
 
-Source-free slides, already-cloned slides, comments, charts, OLE, hyperlinks,
-external/data relationships, external/unbound/irregular images,
-non-shape-and-image elements, renames/layout/background changes, note mutation
-before the boundary, immediate clone edits, and all broader relationship graphs
-fail closed. Adding imported slides still fails closed. A template-derived deck
-still needs a broader explicit OPC graph-clone transaction rather than this
-bounded leaf operation.
+Source-free slides, already-cloned slides, rich or connected comments, charts,
+OLE, hyperlinks, external/data relationships, external/unbound/irregular
+images, non-shape-and-image elements, renames/layout/background changes, note
+or comment mutation before the boundary, immediate clone edits, and all broader
+relationship graphs fail closed. Adding imported slides still fails closed. A
+template-derived deck still needs a broader explicit OPC graph-clone transaction
+rather than this bounded leaf operation.
 
 ## Layouts And Placeholders
 

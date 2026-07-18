@@ -325,8 +325,13 @@ Use `undefined` for the target. Replies, resolution state, reactions, and
 element/text-range anchors cannot be represented by legacy PresentationML and
 therefore fail closed on canonical export. Recognized imported legacy comments
 are visible for inspection but must remain unchanged; modern comment graphs
-remain opaque and source-bound. See `api/references/comments.md` for the
-complete boundary.
+remain opaque and source-bound. An unchanged canonical legacy comments leaf may
+travel with `slide.duplicate()` through one export/reimport boundary: its
+clone-local `SlideCommentsPart` is byte-copied while the verified immutable
+presentation-wide author catalog is shared. This is not an in-place comment
+edit; both pending clone comments and reimported legacy comments remain
+source-bound read-only. See `api/references/comments.md` for the complete
+boundary.
 
 ## Local Image Bytes
 

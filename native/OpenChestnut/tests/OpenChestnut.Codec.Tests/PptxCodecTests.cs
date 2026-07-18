@@ -2496,6 +2496,133 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void SourcePreservingExportClonesAnUnchangedLegacyCommentsLeaf()
+    {
+        var request = ExportRequest();
+        request.Artifact.Presentation.Slides[0].LegacyComments.Add(new PresentationLegacyComment
+        {
+            Id = "presentation/slide/1/legacy-comment/1",
+            Author = "Review Owner",
+            Text = "Keep the decision trace with this copied slide.",
+            CreatedAt = "2026-07-18T06:10:00Z",
+            PositionXEmu = 1_234_500,
+            PositionYEmu = 2_345_600,
+        });
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var sourceBytes = authored.File.ToByteArray();
+        var sourceComments = ZipBytes(sourceBytes, "ppt/comments/comment1.xml");
+        var sourceAuthors = ZipBytes(sourceBytes, "ppt/commentAuthors.xml");
+        var sourceSlide = ZipBytes(sourceBytes, "ppt/slides/slide1.xml");
+
+        var imported = Import(sourceBytes);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var source = Assert.Single(imported.Artifact.Presentation.Slides);
+        Assert.Single(source.LegacyComments);
+        var clone = source.Clone();
+        clone.Id = "presentation/clone/legacy-comments";
+        clone.Source = null;
+        clone.CloneSource = source.Source.Clone();
+        imported.Artifact.Presentation.Slides.Add(clone);
+
+        var duplicated = Export(imported.Artifact);
+        Assert.True(duplicated.Ok, Diagnostics(duplicated));
+        var duplicatedBytes = duplicated.File.ToByteArray();
+        string cloneCommentsPath;
+        using (var stream = new MemoryStream(duplicatedBytes))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var slides = package.PresentationPart!.SlideParts.ToArray();
+            var origin = slides.Single(part => part.Uri.OriginalString.EndsWith("/slide1.xml", StringComparison.Ordinal));
+            var outputClone = slides.Single(part => part.Uri.OriginalString.EndsWith("/slide2.xml", StringComparison.Ordinal));
+            var originComments = Assert.IsType<SlideCommentsPart>(origin.SlideCommentsPart);
+            var cloneComments = Assert.IsType<SlideCommentsPart>(outputClone.SlideCommentsPart);
+            cloneCommentsPath = cloneComments.Uri.OriginalString.TrimStart('/');
+            Assert.NotEqual(originComments.Uri, cloneComments.Uri);
+            Assert.Equal(origin.GetIdOfPart(originComments), outputClone.GetIdOfPart(cloneComments));
+            Assert.Empty(cloneComments.Parts);
+            Assert.Empty(cloneComments.ExternalRelationships);
+            Assert.Empty(cloneComments.HyperlinkRelationships);
+            Assert.Empty(cloneComments.DataPartReferenceRelationships);
+            Assert.Equal("ppt/commentAuthors.xml", package.PresentationPart.CommentAuthorsPart!.Uri.OriginalString.TrimStart('/'));
+        }
+        Assert.Equal(sourceSlide, ZipBytes(duplicatedBytes, "ppt/slides/slide1.xml"));
+        Assert.Equal(sourceComments, ZipBytes(duplicatedBytes, "ppt/comments/comment1.xml"));
+        Assert.Equal(sourceComments, ZipBytes(duplicatedBytes, cloneCommentsPath));
+        Assert.Equal(sourceAuthors, ZipBytes(duplicatedBytes, "ppt/commentAuthors.xml"));
+
+        var roundTrip = Import(duplicatedBytes);
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        Assert.Equal(2, roundTrip.Artifact.Presentation.Slides.Count);
+        Assert.All(roundTrip.Artifact.Presentation.Slides, slide =>
+        {
+            var comment = Assert.Single(slide.LegacyComments);
+            Assert.Equal("Review Owner", comment.Author);
+            Assert.Equal("Keep the decision trace with this copied slide.", comment.Text);
+        });
+    }
+
+    [Fact]
+    public void SourcePreservingExportRejectsAnEditedLegacyCommentsCloneBeforeWritingItsGraph()
+    {
+        var request = ExportRequest();
+        request.Artifact.Presentation.Slides[0].LegacyComments.Add(new PresentationLegacyComment
+        {
+            Id = "presentation/slide/1/legacy-comment/1",
+            Author = "Review Owner",
+            Text = "Clone this comment unchanged.",
+            CreatedAt = "2026-07-18T06:15:00Z",
+        });
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var source = Assert.Single(imported.Artifact.Presentation.Slides);
+        var clone = source.Clone();
+        clone.Id = "presentation/clone/edited-comments";
+        clone.Source = null;
+        clone.CloneSource = source.Source.Clone();
+        clone.LegacyComments[0].Text = "This edit is not allowed before the clone boundary.";
+        imported.Artifact.Presentation.Slides.Add(clone);
+
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("presentation_slide_clone_mismatch", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void SourcePreservingExportRejectsCloneWithConnectedLegacyCommentsGraph()
+    {
+        var request = ExportRequest();
+        request.Artifact.Presentation.Slides[0].LegacyComments.Add(new PresentationLegacyComment
+        {
+            Id = "presentation/slide/1/legacy-comment/1",
+            Author = "Review Owner",
+            Text = "Keep this comments leaf closed.",
+            CreatedAt = "2026-07-18T06:20:00Z",
+        });
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var connectedComments = AddZipText(
+            authored.File.ToByteArray(),
+            "ppt/comments/_rels/comment1.xml.rels",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rIdUnsafeCommentLink\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.invalid/comments\" TargetMode=\"External\"/></Relationships>");
+        var imported = Import(connectedComments);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var source = Assert.Single(imported.Artifact.Presentation.Slides);
+        var clone = source.Clone();
+        clone.Id = "presentation/clone/connected-comments";
+        clone.Source = null;
+        clone.CloneSource = source.Source.Clone();
+        imported.Artifact.Presentation.Slides.Add(clone);
+
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void SourcePreservingExportRejectsAnEditedCloneBeforeWritingItsGraph()
     {
         var authored = Invoke(ExportRequest());
