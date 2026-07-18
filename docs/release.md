@@ -121,6 +121,12 @@ regression validates the exported package with Open XML SDK Office 2021 and
 asserts that the cloned SlidePart contains the connector while the source slide
 bytes remain unchanged.
 
+The complete local implementation gate passed `npm test` (including
+Playwright), `npm run docs:api`, `npm run proto:check`, `npm run test:pack`,
+and serial `npm run verify:open-chestnut-build`; OpenChestnut passed `211/211`
+and OfficeBridge passed `5/5`. The reproducibility check kept the runtime at
+39 audited files and 38 bundled files / 14,417,084 bytes.
+
 ### PPTX auditable imported slide-name workflow
 
 On 2026-07-18, the native Presentation plugin added
