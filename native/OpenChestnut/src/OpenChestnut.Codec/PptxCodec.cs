@@ -2641,6 +2641,15 @@ internal static class PptxCodec
             var layoutRelationshipId = sourcePart.GetIdOfPart(layoutPart);
             var clonePart = presentationPart.AddNewPart<SlidePart>();
             clonePart.AddPart(layoutPart, layoutRelationshipId);
+            // The source XML keeps its r:embed values verbatim. Copy each
+            // verified internal relationship onto the new SlidePart so those
+            // bindings resolve to the same immutable media Parts without
+            // duplicating or mutating their bytes.
+            foreach (var imageRelationship in sourcePart.Parts.Where(pair => pair.OpenXmlPart is ImagePart))
+            {
+                clonePart.AddPart((ImagePart)imageRelationship.OpenXmlPart, imageRelationship.RelationshipId);
+                addedRelationshipIds.Add($"{PartPath(clonePart)}\0{imageRelationship.RelationshipId}");
+            }
             clonePart.Slide = (P.Slide)sourceRoot.CloneNode(true);
             clonePart.Slide.Save();
             if (nextSlideId == uint.MaxValue)
@@ -2652,9 +2661,10 @@ internal static class PptxCodec
                 Id = nextSlideId,
                 RelationshipId = presentationPart.GetIdOfPart(clonePart),
             };
-            // Slide-to-layout edges are intentionally opaque in the generic
-            // profile. Record this exact, verified clone edge so the package
-            // guard can distinguish it from an unmodeled relationship change.
+            // Clone-to-layout and clone-to-image edges are intentionally
+            // opaque in the generic profile. Record only these exact,
+            // verified relationships so the package guard can distinguish
+            // them from an unmodeled graph change.
             addedRelationshipIds.Add($"{PartPath(clonePart)}\0{layoutRelationshipId}");
             changedParts.Add(PartPath(clonePart));
             changedParts.Add(RelationshipPartPath(clonePart));
@@ -2693,8 +2703,12 @@ internal static class PptxCodec
         var source = target.Source;
         var childParts = source.Part.Parts.ToArray();
         var layoutRelationshipCount = childParts.Count(pair => pair.OpenXmlPart is SlideLayoutPart);
+        var imageRelationshipIds = childParts
+            .Where(pair => pair.OpenXmlPart is ImagePart)
+            .Select(pair => pair.RelationshipId)
+            .ToHashSet(StringComparer.Ordinal);
         var unsafeChildren = childParts
-            .Where(pair => pair.OpenXmlPart is not SlideLayoutPart)
+            .Where(pair => pair.OpenXmlPart is not SlideLayoutPart and not ImagePart)
             .Select(pair => pair.OpenXmlPart.RelationshipType)
             .Distinct(StringComparer.Ordinal)
             .Take(4)
@@ -2704,7 +2718,7 @@ internal static class PptxCodec
             source.Part.ExternalRelationships.Any() ||
             source.Part.HyperlinkRelationships.Any() ||
             source.Part.DataPartReferenceRelationships.Any())
-            throw UnsupportedSourceSlideClone(source, "it owns media, notes, comments, hyperlinks, data parts, or another non-layout relationship");
+            throw UnsupportedSourceSlideClone(source, "it owns notes, comments, hyperlinks, data parts, or another non-layout/image relationship");
         var root = source.Part.Slide ??
             throw new CodecException("missing_slide_root", $"Presentation source slide {source.Index + 1} has no slide root.", PartPath(source.Part));
         var common = root.CommonSlideData ??
@@ -2712,8 +2726,24 @@ internal static class PptxCodec
         var tree = common.ShapeTree ??
             throw new CodecException("missing_shape_tree", $"Presentation source slide {source.Index + 1} has no shape tree.", PartPath(source.Part));
         var sourceElements = ShapeElements(tree);
-        if (sourceElements.Any(element => element is not P.Shape shape || !IsSimpleShape(shape)))
-            throw UnsupportedSourceSlideClone(source, "its elements require a broader graph clone than the bounded shape-only profile");
+        var context = new PptxPartContext(source.Part, slideIdByPartPath, assets: assetCatalog);
+        var embeddedImageRelationshipIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var element in sourceElements)
+        {
+            if (element is P.Shape shape && IsSimpleShape(shape)) continue;
+            if (element is P.Picture picture && PptxPictureCodec.TryRead(picture, context, out _))
+            {
+                var relationshipId = picture.BlipFill?.GetFirstChild<A.Blip>()?.Embed?.Value ?? string.Empty;
+                if (relationshipId.Length > 0 && imageRelationshipIds.Contains(relationshipId))
+                {
+                    embeddedImageRelationshipIds.Add(relationshipId);
+                    continue;
+                }
+            }
+            throw UnsupportedSourceSlideClone(source, "its elements require a broader graph clone than the bounded shape-and-embedded-image profile");
+        }
+        if (!imageRelationshipIds.SetEquals(embeddedImageRelationshipIds))
+            throw UnsupportedSourceSlideClone(source, "it has an image relationship that is not exactly bound by a canonical embedded picture");
         if (target.Target.SpeakerNotes is not null || target.Target.LegacyComments.Count > 0)
             throw UnsupportedSourceSlideClone(source, "the requested clone carries notes or comments");
         if (target.Target.Name != (common.Name?.Value ?? string.Empty))
@@ -2733,7 +2763,6 @@ internal static class PptxCodec
         if (sourceElements.Length != target.Target.Elements.Count)
             throw UnsupportedSourceSlideClone(source, "the requested clone changes source element topology");
         var elementIdsByNativeId = NativeElementIds(sourceElements, $"presentation/slide/{source.Index + 1}");
-        var context = new PptxPartContext(source.Part, slideIdByPartPath, assets: assetCatalog);
         for (var elementIndex = 0; elementIndex < sourceElements.Length; elementIndex++)
         {
             var requested = target.Target.Elements[elementIndex];
@@ -2753,7 +2782,7 @@ internal static class PptxCodec
     private static CodecException UnsupportedSourceSlideClone(PptxSourceSlideEntry source, string reason) =>
         new(
             "unsupported_presentation_slide_clone",
-            $"Source-preserving PPTX cloning is limited to an unchanged shape-only layout leaf; slide {source.Index + 1} cannot be cloned because {reason}. Use an explicit broader OPC graph-clone operation for this package.",
+            $"Source-preserving PPTX cloning is limited to an unchanged shape-and-embedded-image layout leaf; slide {source.Index + 1} cannot be cloned because {reason}. Use an explicit broader OPC graph-clone operation for this package.",
             PartPath(source.Part));
 
     private static bool ReorderSourceSlideIdList(PresentationPart presentationPart, IReadOnlyList<PptxTargetSlideEntry> targets)

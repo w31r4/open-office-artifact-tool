@@ -184,6 +184,23 @@ function cloneImportedPresentationShape(slide, source) {
   return clone;
 }
 
+// A clone needs a fresh model object so it cannot share mutable JavaScript
+// identity with its origin. Its embedded asset stays content-addressed, and
+// the native exporter deliberately shares that immutable ImagePart through a
+// new relationship on the clone SlidePart.
+function cloneImportedPresentationImage(slide, source) {
+  return slide.images.add({
+    name: source.name,
+    position: clonedPresentationValue(source.position),
+    alt: source.alt,
+    dataUrl: source.dataUrl,
+    fit: source.fit,
+    ...(source.crop ? { crop: clonedPresentationValue(source.crop) } : {}),
+    geometry: source.geometry,
+    ...(source.transform ? { transform: clonedPresentationValue(source.transform) } : {}),
+  });
+}
+
 function duplicateImportedPresentationSlide(presentation, state, slide) {
   const source = (state.slides || []).find((entry) => entry.slide === slide);
   if (!source) {
@@ -192,8 +209,8 @@ function duplicateImportedPresentationSlide(presentation, state, slide) {
   if ((state.clones || []).some((entry) => entry.source === source)) {
     throw new OpenChestnutCodecError("The bounded imported-slide clone profile permits only one pending clone per origin; export and reimport it before cloning that source again.", [], { code: "unsupported_presentation_slide_clone" });
   }
-  if (source.entries.some((entry) => entry.wire.content.case !== "shape")) {
-    throw new OpenChestnutCodecError("The first imported-slide clone profile supports shape-only slides; images, tables, charts, groups, connectors, and native objects require a broader OPC graph clone.", [], { code: "unsupported_presentation_slide_clone" });
+  if (source.entries.some((entry) => !new Set(["shape", "image"]).has(entry.wire.content.case))) {
+    throw new OpenChestnutCodecError("The bounded imported-slide clone profile supports only canonical shapes and embedded images; tables, charts, groups, connectors, native objects, and other graph edges require a broader OPC graph clone.", [], { code: "unsupported_presentation_slide_clone" });
   }
   if (slide.comments.items.length || slide.speakerNotes?.text) {
     throw new OpenChestnutCodecError("The first imported-slide clone profile does not clone comments or speaker notes.", [], { code: "unsupported_presentation_slide_clone" });
@@ -205,12 +222,17 @@ function duplicateImportedPresentationSlide(presentation, state, slide) {
   });
   clone.layoutId = slide.layoutId;
   const entries = source.entries.map((entry) => {
-    const model = cloneImportedPresentationShape(clone, entry.model);
+    const model = entry.wire.content.case === "shape"
+      ? cloneImportedPresentationShape(clone, entry.model)
+      : cloneImportedPresentationImage(clone, entry.model);
     return {
       wire: entry.wire,
       model,
       placeholderSnapshot: entry.wire.content.case === "shape" && entry.wire.content.value.placeholder
         ? slidePlaceholderSnapshot(model)
+        : undefined,
+      snapshot: entry.wire.content.case === "image"
+        ? presentationImageReadOnlySnapshot(model)
         : undefined,
     };
   });
