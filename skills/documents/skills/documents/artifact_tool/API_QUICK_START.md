@@ -88,6 +88,44 @@ const output = await DocumentFile.exportDocx(document);
 await output.save("output.docx");
 ```
 
+## Imported classic comment: bounded text-only edit
+
+For one ordinary imported classic comment, locate both its paragraph and
+comment uniquely, preserve its source-bound identity/anchor metadata, change
+only `text`, then export, re-import, verify, and render. The shipped
+`examples/openchestnut-classic-comment-edit-workflow.mjs` performs the full
+transactional workflow and writes a byte-bound audit:
+
+```js
+import { DocumentFile, FileBlob } from "open-office-artifact-tool";
+
+const source = await FileBlob.load("input.docx");
+const document = await DocumentFile.importDocx(source);
+const anchor = document.blocks.filter(
+  (block) => block.kind === "paragraph" && block.text.includes("Decision: proceed with controlled rollout."),
+);
+if (anchor.length !== 1) throw new Error("Expected one target paragraph.");
+const comments = document.comments.filter((comment) => comment.targetId === anchor[0].id);
+if (comments.length !== 1 || comments[0].parentId || comments[0].resolved || comments[0].person) {
+  throw new Error("Only one unresolved classic comment without modern metadata is editable here.");
+}
+comments[0].text = "Approved after legal review.";
+const output = await DocumentFile.exportDocx(document);
+await output.save("reviewed.docx");
+
+const reimported = await DocumentFile.importDocx(await FileBlob.load("reviewed.docx"));
+if (reimported.comments.length !== 1 || reimported.comments[0].text !== "Approved after legal review.") {
+  throw new Error("Classic comment text did not survive the round-trip.");
+}
+if (!reimported.verify({ visualQa: true }).ok) throw new Error("Verification failed.");
+await reimported.render({ format: "svg" });
+```
+
+The imported classic comment's ID, `targetId`, author, initials, date, and
+anchor topology are source-bound. Do not use this slice to add/delete comments,
+reply, resolve/reopen, or manipulate `commentsExtended.xml`/`people.xml`;
+modern comment and reply graphs must be preserved or explicitly refused.
+
 ## Inline plain-text content controls
 
 Use a paragraph run-level content control when an Agent must fill a bounded

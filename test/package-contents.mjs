@@ -130,6 +130,7 @@ for (const required of [
   "skills/documents/skills/documents/LICENSE.txt",
   "skills/documents/skills/documents/artifact_tool/API_QUICK_START.md",
   "skills/documents/skills/documents/examples/openchestnut-end-to-end.mjs",
+  "skills/documents/skills/documents/examples/openchestnut-classic-comment-edit-workflow.mjs",
   "skills/documents/skills/documents/render_docx.py",
   "skills/documents/skills/documents/scripts/docx_ooxml_patch.py",
   "skills/documents/skills/documents/tasks/create_edit.md",

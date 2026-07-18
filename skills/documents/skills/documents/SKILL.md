@@ -202,25 +202,31 @@ When the user asks to edit an existing document, preserve the original and make 
 # 0) Run the shipped public-API/OpenChestnut create-import-edit-export example
 node examples/openchestnut-end-to-end.mjs output.docx
 
-# 1) Sanitize Google Docs-targeted title blocks after OpenChestnut export
+# 1) Apply one bounded imported classic-comment text edit with full reimport/audit evidence
+node examples/openchestnut-classic-comment-edit-workflow.mjs input.docx reviewed.docx audit.json \
+  "Decision: proceed with controlled rollout." \
+  "Please confirm the final retention wording." \
+  "Approved after legal review."
+
+# 2) Sanitize Google Docs-targeted title blocks after OpenChestnut export
 python scripts/google_docs_title_sanitize.py input.docx --out sanitized.docx
 python scripts/google_docs_title_sanitize.py sanitized.docx --check
 
-# 2) Render any DOCX to PNGs (visual QA)
+# 3) Render any DOCX to PNGs (visual QA)
 python render_docx.py input.docx --output_dir out
 
-# 3) Remove reviewer comments (explicit package-level finalization)
+# 4) Remove reviewer comments (explicit package-level finalization)
 python scripts/comments_strip.py input.docx --out no_comments.docx
 
-# 4) Accept tracked changes (explicit package-level finalization)
+# 5) Accept tracked changes (explicit package-level finalization)
 python scripts/accept_tracked_changes.py input.docx --mode accept --out accepted.docx
 
-# 5) Accessibility audit (+ optional explicit package fixes)
+# 6) Accessibility audit (+ optional explicit package fixes)
 python scripts/a11y_audit.py input.docx
 python scripts/a11y_audit.py input.docx --out_json a11y_report.json
 python scripts/a11y_audit.py input.docx --fix_image_alt from_filename --out a11y_fixed.docx
 
-# 6) Redact sensitive text (explicit package patch; layout-preserving by default)
+# 7) Redact sensitive text (explicit package patch; layout-preserving by default)
 python scripts/redact_docx.py input.docx redacted.docx --emails --phones
 ```
 
@@ -313,6 +319,7 @@ Scripts:
 
 Examples:
 - `examples/openchestnut-end-to-end.mjs` — runnable public-API create → export → import → edit → export → import vertical slice
+- `examples/openchestnut-classic-comment-edit-workflow.mjs` — imported classic-comment text-only edit with a unique text anchor, fixed comment topology, second import, model render, byte-bound audit, and atomic output
 
 > Note: `manifest.txt` is **machine-readable** and is used by download tooling. It must contain only relative file paths (one per line).
 
@@ -343,6 +350,7 @@ This is a quick index so you can jump from a helper script to the right task gui
 
 ### Review lifecycle (comments / tracked changes)
 - Public `document.addInsertion(...)` / `document.addDeletion(...)` handles standalone whole-paragraph revisions; `add_tracked_replacements.py` and `accept_tracked_changes.py` handle in-paragraph replacement and explicit finalization → `ooxml/tracked_changes.md`, `tasks/clean_tracked_changes.md`
+- `examples/openchestnut-classic-comment-edit-workflow.mjs` is the preferred public route for one uniquely located imported classic comment when only its text may change; replies, resolved state, presence metadata, native IDs, anchors, and topology fail closed
 - `comments_add.py`, `comments_extract.py`, `comments_apply_patch.py`, `comments_strip.py` → `tasks/comments_manage.md`
 
 ### Privacy / publishing

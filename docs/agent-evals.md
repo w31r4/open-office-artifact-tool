@@ -15,9 +15,9 @@ The suite is evaluator-side repository infrastructure. `evals/`, the runner, loc
 
 ## Current suite
 
-- 27 cases: 19 PDF, 2 Documents, 4 Spreadsheets, and 2 Presentations.
-- 8 `ready` cases use deterministic generated or inline inputs: seven PDF cases and one XLSX threaded-comment workflow.
-- 19 `asset-required` cases define fixture specifications but do not run until licensed, version-pinned corpus files or test PKI are placed under `evals/assets/`.
+- 29 cases: 19 PDF, 4 Documents, 4 Spreadsheets, and 2 Presentations.
+- 9 `ready` cases use deterministic generated or inline inputs: seven PDF cases, one XLSX threaded-comment workflow, and one DOCX classic-comment workflow.
+- 20 `asset-required` cases define fixture specifications but do not run until licensed, version-pinned corpus files or test PKI are placed under `evals/assets/`.
 - Every family has both a success and a fail-closed case. Some advanced PDF cases accept either verified success or an explicit safe refusal.
 - The default policy uses three trials per subject. Trial count is recorded per case rather than silently inferred by the Agent.
 
@@ -35,11 +35,13 @@ npm run eval:agents -- run pdf-overflow-replace-refusal --subject candidate --tr
 npm run eval:agents -- score pdf-overflow-replace-refusal --trial-root /absolute/trial/path
 npm run eval:agents -- prepare xlsx-threaded-reply-resolve --subject candidate --trial 1
 npm run eval:agents -- run xlsx-threaded-reply-resolve --subject candidate --trial 1
+npm run eval:agents -- prepare docx-classic-comment-text-edit --subject candidate --trial 1
+npm run eval:agents -- run docx-classic-comment-text-edit --subject candidate --trial 1
 ```
 
 Generated PDF fixtures require Python with ReportLab and pypdf. All seven ready PDF case graders additionally require pdfplumber and Pillow; their applicable visual oracles require `pdftoppm`. Set `OPEN_OFFICE_AGENT_EVAL_PYTHON` to that interpreter and, only when it is not on `PATH`, set `OPEN_OFFICE_AGENT_EVAL_PDFTOPPM`. Prepared PDF prompts explicitly bind that interpreter as `OPEN_OFFICE_PDF_PROVIDER_PYTHON`, because Codex shell policy may not inherit the runner environment. In Codex, use the Python executable returned by `load_workspace_dependencies`.
 
-The ready XLSX fixture is generated through the public OpenChestnut facade and needs no Python provider. Its independent native visual grader requires `soffice`, `pdfinfo`, and `pdftoppm`; a missing executable reports `grader-unavailable`, never a product pass or failure.
+The ready XLSX and DOCX fixtures are generated through the public OpenChestnut facade and need no Python provider. Their independent native visual graders require `soffice`, `pdfinfo`, and `pdftoppm`; a missing executable reports `grader-unavailable`, never a product pass or failure.
 
 `--subject candidate` installs `skills/<family>/skills/<skill>`. `--subject reference` copies the matching handoff reference Skill into that trial and changes only its `office-artifact-tool` package-name occurrences inside the isolated copy. Both subjects install the same freshly packed `open-office-artifact-tool` tarball, so the comparison changes the Skill instructions rather than the product candidate.
 
@@ -97,13 +99,17 @@ The category weights are machine 45, visual 25, security 20, and trace 10. A cat
 
 The PDF oracle is evaluator-side and never copied into the Agent workspace. It uses pypdf/pdfplumber for semantic and structural evidence and Poppler/Pillow for visual evidence, independently of the PyMuPDF mutation provider. Audit claims and Codex command traces are graded separately from final bytes.
 
-## Ready Office slice
+## Ready Office slices
 
 `xlsx-threaded-reply-resolve` begins the same black-box discipline for Office files. The runner generates a canonical `Forecast!F19` workbook with a root threaded comment and one direct reply, then treats it as an immutable uploaded XLSX. The independent grader decodes the output package rather than trusting the model: it checks one threaded-comments part and one persons part, exact preservation of the original comment IDs/person IDs/dates/text/target/order, one new GUID-backed direct root-child reply, resolved state for all three comments, and absence of a legacy `comments*.xml` note downgrade. It also binds audit source/output hashes, explicit OpenChestnut/rewrite/no-fallback evidence, public `SpreadsheetFile.importXlsx`/`exportXlsx` trace evidence, a second-import assertion, and a LibreOffice-to-PDF/Poppler nonblank render of every final page.
 
 The bounded contract deliberately rejects reply-of-reply and branched graphs. The separate `xlsx-threaded-nested-reply-boundary` corpus case requires a safe refusal until a larger identity-preserving threaded-comment graph operation is explicitly modeled. The fixture/oracle and public Skill example are tested in-repository; an autonomous Agent result is recorded only after the runner executes it, rather than inferred from those unit tests.
 
 One clean candidate trial at commit `d558a924ad63528f2b2dca5e1bbeb1fb0dc120a7` passed `100/100`: all 6 machine, 1 visual, 2 security, and 6 trace checks passed, including immutable prompt/Skill/package/input gates. It bound package SHA-256 `f6889efc2cff246b59bc557761e998299fdb30466d98111096d25d562d72f618`, copied-Skill SHA-256 `17a4b6a9f13e7921f953ac704ac353ce0d55267ac722a84615d1dfee2fe63d53`, input SHA-256 `f2b0839f53a6e875af27d65291352e191774207e0d55a613d08f016407884208`, and oracle SHA-256 `c5696086a6a840c0e448983da895381338c4243043b7214c92d8a71c004cc991`. This is one candidate trial, not the default three-repeat matrix and not a reference-Skill comparison.
+
+`docx-classic-comment-text-edit` adds a deliberately narrower Documents slice. The runner generates a DOCX with one uniquely anchored classic Word comment, then the public workflow may change only that comment's text. The independent oracle decodes `word/comments.xml` and `word/document.xml`: it requires the same native comment ID, author, initials, creation time, target paragraph, `commentRangeStart`, `commentRangeEnd`, and `commentReference`, plus unchanged visible paragraph text and the requested comment text. It rejects a modern/reply graph (`commentsExtended.xml` or `people.xml`), a deleted/recreated comment, any topology change, a model-to-plain-text downgrade, missing byte-bound OpenChestnut/rewrite audit evidence, or an unshipped/scratch workflow. LibreOffice-to-PDF plus Poppler requires the same nonblank page count and pixel-identical body render; structural XML is authoritative for comment balloons because headless LibreOffice does not make their visual treatment a stable oracle.
+
+The neighboring `docx-modern-comment-reply-boundary` case remains asset-required and requires a safe refusal for replies, resolved state, presence metadata, and other modern comment graph operations. The ready classic-comment fixture, public Skill workflow, second import, native rendering, and independent grader are covered in-repository. One isolated development candidate trial produced `100/100` across all 5 machine, 2 visual, 2 security, and 6 trace checks. It bound `c0be338ccc6c5c37a5cb47567650a57ab9363485`, package SHA-256 `917617cda7b904f35e71beddcd5486b25244c9585eb8d33b00dad29e8de3bf57`, copied-Skill SHA-256 `5149fbb64f218d1055dae989274cdcd22370804df726a0d1e9b37f84c2c88cb9`, input SHA-256 `1dc1cd515118efcf30de96bfce019b126e87f2829ca3193d95d55fd0f30e7300`, and oracle SHA-256 `6ba4e588ffea975566048c1bebe33301f8208ab1c06f97671ed10e82ec2361e6`. Its worktree was dirty, so it validates the packaged development candidate but is not release evidence; a clean-commit repeat remains required.
 
 ## Pilot findings
 

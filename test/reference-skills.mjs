@@ -127,6 +127,7 @@ for (const entry of documentsManifest) {
 }
 assert.ok(documentsManifest.includes("artifact_tool/API_QUICK_START.md"));
 assert.ok(documentsManifest.includes("examples/openchestnut-end-to-end.mjs"));
+assert.ok(documentsManifest.includes("examples/openchestnut-classic-comment-edit-workflow.mjs"));
 assert.ok(!documentsManifest.includes("examples/end_to_end_smoke_test.md"));
 
 const pdfSkillRoot = path.join(skillsRoot, "pdf", "skills", "pdf");

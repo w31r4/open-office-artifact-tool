@@ -42,8 +42,13 @@ Notes:
 - The script warns on patterns with no matches; add `--require_all` to fail fast.
 
 ## Patch / resolve existing comments
-For ordinary imported classic comment text, edit `document.comments[index].text`
-and export through OpenChestnut. For explicitly marking package-level resolved
+For one uniquely located imported classic comment, prefer the shipped
+`examples/openchestnut-classic-comment-edit-workflow.mjs`: it refuses ambiguous
+anchors and modern/reply/resolved/presence metadata, changes only text, then
+re-imports, verifies, model-renders, atomically writes the DOCX, and records a
+source/output-hash-bound audit. For ordinary imported classic comment text,
+edit `document.comments[index].text` only after the same uniqueness and
+source-bound identity checks. For explicitly marking package-level resolved
 state or manipulating unsupported modern metadata:
 ```bash
 python scripts/comments_extract.py reviewed.docx --out comments.json

@@ -195,6 +195,32 @@ try {
   assert.equal(classicDocument.comments.length, 1);
   assert.equal(classicDocument.comments[0].author, "QA Lead");
   assert.equal(classicDocument.comments[0].text, "Decision paragraph confirmed.");
+  const classicSourceBytes = await fs.readFile(classicFixture.docxPath);
+  const classicTarget = classicDocument.blocks.find((block) => block.id === classicDocument.comments[0].targetId);
+  assert.equal(classicTarget?.kind, "paragraph");
+  const { editClassicComment } = await import(
+    "../skills/documents/skills/documents/examples/openchestnut-classic-comment-edit-workflow.mjs"
+  );
+  const classicWorkflowOutput = path.join(outputDir, "classic-comment-updated.docx");
+  const classicWorkflowAudit = path.join(outputDir, "classic-comment-audit.json");
+  const classicWorkflow = await editClassicComment({
+    inputPath: classicFixture.docxPath,
+    outputPath: classicWorkflowOutput,
+    auditPath: classicWorkflowAudit,
+    anchorText: classicTarget.text,
+    expectedCommentText: classicDocument.comments[0].text,
+    replacementText: "Decision paragraph approved after QA.",
+  });
+  assert.equal(classicWorkflow.audit.provider.actual, "open-chestnut");
+  assert.equal(classicWorkflow.audit.validation.reimport.ok, true);
+  assert.equal(classicWorkflow.audit.validation.modelRender.renderer, "model-svg");
+  assert.deepEqual(await fs.readFile(classicFixture.docxPath), classicSourceBytes);
+  const classicWorkflowDocument = await DocumentFile.importDocx(await FileBlob.load(classicWorkflowOutput));
+  assert.equal(classicWorkflowDocument.comments.length, 1);
+  assert.equal(classicWorkflowDocument.comments[0].id, classicDocument.comments[0].id);
+  assert.equal(classicWorkflowDocument.comments[0].targetId, classicDocument.comments[0].targetId);
+  assert.equal(classicWorkflowDocument.comments[0].author, "QA Lead");
+  assert.equal(classicWorkflowDocument.comments[0].text, "Decision paragraph approved after QA.");
 
   const directNumbering = await runFixture("package-numbering");
   const directNumberingDocument = await DocumentFile.importDocx(await FileBlob.load(directNumbering.docxPath));
@@ -247,6 +273,7 @@ try {
   assert.match(skillText, /document\.addCitation/);
   assert.match(skillText, /document\.addTableOfContents/);
   assert.match(skillText, /paragraph\.addField/);
+  assert.match(skillText, /openchestnut-classic-comment-edit-workflow\.mjs/);
   assert.doesNotMatch(skillText, /Author\/edit with `python-docx`|Default tool: python-docx/);
   const commentsGuide = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "tasks", "comments_manage.md"), "utf8");
   assert.match(commentsGuide, /document\.addComment/);
