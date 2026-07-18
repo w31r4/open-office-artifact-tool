@@ -863,19 +863,98 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
-    public void SourceFreeSlidePlaceholderAuthoringFailsClosed()
+    public void SourceFreeMasterLayoutAndSlidePlaceholdersRoundTrip()
     {
         var request = ExportRequest();
-        request.Artifact.Presentation.Slides[0].Elements[0].Shape.Placeholder = new PresentationPlaceholderIdentity
+        var master = new PresentationMaster { Id = "master/authored", Name = "Authored master" };
+        master.Placeholders.Add(new PresentationPlaceholder
+        {
+            Id = "master/authored/title",
+            Name = "Master title",
+            Type = "title",
+            Index = 0U,
+            DirectFrame = new PresentationPlaceholderFrame
+            {
+                LeftEmu = 571_500L,
+                TopEmu = 381_000L,
+                WidthEmu = 8_191_500L,
+                HeightEmu = 666_750L,
+            },
+        });
+        request.Artifact.Presentation.Masters.Add(master);
+        var layout = new PresentationLayout
+        {
+            Id = "layout/title-body",
+            Name = "Title and body",
+            MasterId = master.Id,
+            Type = "obj",
+        };
+        layout.Placeholders.Add(new PresentationPlaceholder
+        {
+            Id = "layout/title-body/body",
+            Name = "Layout body",
+            Type = "body",
+            Index = 1U,
+            DirectFrame = new PresentationPlaceholderFrame
+            {
+                LeftEmu = 571_500L,
+                TopEmu = 1_333_500L,
+                WidthEmu = 8_191_500L,
+                HeightEmu = 4_381_500L,
+            },
+        });
+        request.Artifact.Presentation.Layouts.Add(layout);
+        var slide = request.Artifact.Presentation.Slides[0];
+        slide.LayoutId = layout.Id;
+        var shape = slide.Elements[0].Shape;
+        shape.Placeholder = new PresentationPlaceholderIdentity
         {
             Type = "title",
             Index = 0U,
-            InheritsGeometry = true,
+            InheritsGeometry = false,
+        };
+        shape.DirectFrame = new PresentationPlaceholderFrame
+        {
+            LeftEmu = shape.LeftEmu,
+            TopEmu = shape.TopEmu,
+            WidthEmu = shape.WidthEmu,
+            HeightEmu = shape.HeightEmu,
         };
 
         var response = Invoke(request);
-        Assert.False(response.Ok);
-        Assert.Equal("unsupported_presentation_features", Assert.Single(response.Diagnostics).Code);
+        Assert.True(response.Ok, Diagnostics(response));
+        using (var stream = new MemoryStream(response.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var masterPart = Assert.Single(package.PresentationPart!.SlideMasterParts);
+            var nativeMaster = Assert.Single(masterPart.SlideMaster!.CommonSlideData!.ShapeTree!.Elements<P.Shape>());
+            Assert.Equal("title", nativeMaster.NonVisualShapeProperties!.ApplicationNonVisualDrawingProperties!.GetFirstChild<P.PlaceholderShape>()!.GetAttribute("type", string.Empty).Value);
+            Assert.Equal(0U, nativeMaster.NonVisualShapeProperties.ApplicationNonVisualDrawingProperties.GetFirstChild<P.PlaceholderShape>()!.Index!.Value);
+            var nativeLayout = Assert.Single(masterPart.SlideLayoutParts);
+            Assert.Equal("obj", nativeLayout.SlideLayout!.GetAttribute("type", string.Empty).Value);
+            var nativeLayoutPlaceholder = Assert.Single(nativeLayout.SlideLayout.CommonSlideData!.ShapeTree!.Elements<P.Shape>());
+            Assert.Equal("body", nativeLayoutPlaceholder.NonVisualShapeProperties!.ApplicationNonVisualDrawingProperties!.GetFirstChild<P.PlaceholderShape>()!.GetAttribute("type", string.Empty).Value);
+            var nativeSlide = Assert.Single(package.PresentationPart.SlideParts).Slide!;
+            var nativeSlidePlaceholder = Assert.Single(nativeSlide.CommonSlideData!.ShapeTree!.Elements<P.Shape>());
+            Assert.Equal("title", nativeSlidePlaceholder.NonVisualShapeProperties!.ApplicationNonVisualDrawingProperties!.GetFirstChild<P.PlaceholderShape>()!.GetAttribute("type", string.Empty).Value);
+            Assert.Equal(571_500L, nativeSlidePlaceholder.ShapeProperties!.Transform2D!.Offset!.X!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Import(response.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedMaster = Assert.Single(imported.Artifact.Presentation.Masters);
+        Assert.Single(importedMaster.Placeholders);
+        var importedLayout = Assert.Single(imported.Artifact.Presentation.Layouts);
+        Assert.Equal("obj", importedLayout.Type);
+        Assert.Single(importedLayout.Placeholders);
+        var importedShape = Assert.Single(Assert.Single(imported.Artifact.Presentation.Slides).Elements).Shape;
+        Assert.NotNull(importedShape.Placeholder);
+        Assert.False(importedShape.Placeholder.InheritsGeometry);
+        Assert.NotNull(importedShape.DirectFrame);
+        Assert.Equal(571_500L, importedShape.DirectFrame.LeftEmu);
+        var roundTrip = Export(imported.Artifact);
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
     }
 
     [Fact]

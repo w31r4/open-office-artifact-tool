@@ -987,28 +987,62 @@ internal static class PptxCodec
 
     private static void BuildPresentation(PresentationDocument package, PresentationArtifact artifact, PptxAssetCatalog assetCatalog)
     {
-        if (artifact.Masters.Count > 1 || artifact.Layouts.Count > 0 ||
-            artifact.Masters.Any(master => master.Placeholders.Count > 0) ||
-            artifact.Slides.Any(slide => !string.IsNullOrWhiteSpace(slide.LayoutId)))
+        if (artifact.Masters.Count > 1)
             throw new CodecException(
                 "unsupported_presentation_features",
-                "New PPTX authoring currently supports one canonical master, its internal blank layout, bounded master text styles/backgrounds, and no template placeholders; custom master/layout graphs require a validated source package.");
+                "New PPTX authoring supports one canonical master. Multiple slide-master graphs require a validated source package.");
         var authoredMaster = artifact.Masters.FirstOrDefault();
+        var canonicalMasterId = authoredMaster?.Id ?? "__openchestnut/default-master";
         var presentationPart = package.AddPresentationPart();
         var masterPart = presentationPart.AddNewPart<SlideMasterPart>("rIdMaster1");
-        var layoutPart = masterPart.AddNewPart<SlideLayoutPart>("rIdLayout1");
         var themePart = masterPart.AddNewPart<ThemePart>("rIdTheme1");
-        layoutPart.AddPart(masterPart, "rIdMaster1");
 
         themePart.Theme = BasicTheme();
-        layoutPart.SlideLayout = new P.SlideLayout(
-            new P.CommonSlideData(BasicShapeTree()) { Name = "Blank" },
-            new P.ColorMapOverride(new A.MasterColorMapping()))
-        { Type = P.SlideLayoutValues.Blank, Preserve = true };
+        var sourceLayouts = artifact.Layouts.ToList();
+        PresentationLayout? fallbackLayout = null;
+        if (sourceLayouts.Count == 0 || artifact.Slides.Any(slide => string.IsNullOrWhiteSpace(slide.LayoutId)))
+        {
+            var fallbackId = "__openchestnut/default-layout";
+            while (sourceLayouts.Any(layout => layout.Id.Equals(fallbackId, StringComparison.Ordinal))) fallbackId += "-";
+            fallbackLayout = new PresentationLayout
+            {
+                Id = fallbackId,
+                Name = "Blank",
+                MasterId = canonicalMasterId,
+                Type = "blank",
+            };
+            sourceLayouts.Insert(0, fallbackLayout);
+        }
+
+        var layoutIdList = new P.SlideLayoutIdList();
+        var layoutEntries = new List<(PresentationLayout Layout, SlideLayoutPart Part)>();
+        for (var layoutIndex = 0; layoutIndex < sourceLayouts.Count; layoutIndex++)
+        {
+            var sourceLayout = sourceLayouts[layoutIndex];
+            var relationshipId = $"rIdLayout{layoutIndex + 1}";
+            var layoutPart = masterPart.AddNewPart<SlideLayoutPart>(relationshipId);
+            layoutPart.AddPart(masterPart, "rIdMaster1");
+            var layoutRoot = new P.SlideLayout(
+                new P.CommonSlideData(BasicShapeTree()) { Name = string.IsNullOrWhiteSpace(sourceLayout.Name) ? "Blank" : sourceLayout.Name },
+                new P.ColorMapOverride(new A.MasterColorMapping()))
+            { Preserve = true };
+            layoutRoot.SetAttribute(new OpenXmlAttribute("type", string.Empty, SourceFreeLayoutType(sourceLayout)));
+            layoutPart.SlideLayout = layoutRoot;
+            layoutIdList.Append(new P.SlideLayoutId
+            {
+                Id = checked(2_147_483_649U + (uint)layoutIndex),
+                RelationshipId = relationshipId,
+            });
+            layoutEntries.Add((sourceLayout, layoutPart));
+        }
+        var layoutPartById = layoutEntries.ToDictionary(entry => entry.Layout.Id, entry => entry.Part, StringComparer.Ordinal);
+        var defaultLayoutPart = fallbackLayout is not null
+            ? layoutPartById[fallbackLayout.Id]
+            : layoutEntries[0].Part;
         masterPart.SlideMaster = new P.SlideMaster(
             new P.CommonSlideData(BasicShapeTree()) { Name = string.IsNullOrWhiteSpace(authoredMaster?.Name) ? "Office Clean Room" : authoredMaster.Name },
             BasicColorMap(),
-            new P.SlideLayoutIdList(new P.SlideLayoutId { Id = 2_147_483_649U, RelationshipId = "rIdLayout1" }),
+            layoutIdList,
             new P.TextStyles(new P.TitleStyle(), new P.BodyStyle(), new P.OtherStyle()));
 
         var slideIdList = new P.SlideIdList();
@@ -1019,6 +1053,10 @@ internal static class PptxCodec
             var relationshipId = $"rIdSlide{slideIndex + 1}";
             var slidePart = presentationPart.AddNewPart<SlidePart>(relationshipId);
             slideParts[slideIndex] = slidePart;
+            var layoutPart = string.IsNullOrWhiteSpace(source.LayoutId)
+                ? defaultLayoutPart
+                : layoutPartById.GetValueOrDefault(source.LayoutId) ??
+                  throw new CodecException("invalid_presentation_layout", $"Presentation slide {source.Id} references missing layout {source.LayoutId}.");
             slidePart.AddPart(layoutPart, "rIdLayout1");
             slidePart.Slide = new P.Slide(
                 new P.CommonSlideData(BasicShapeTree()) { Name = source.Name },
@@ -1034,6 +1072,18 @@ internal static class PptxCodec
         var masterContext = new PptxPartContext(masterPart, slideIdByPartPath, slidePartById, assetCatalog);
         PptxBackgroundCodec.Build(masterPart.SlideMaster.CommonSlideData!, authoredMaster?.Background);
         PptxMasterTextStylesCodec.Build(masterPart.SlideMaster, authoredMaster?.TextStyles, masterContext);
+        var masterShapeTree = masterPart.SlideMaster.CommonSlideData!.ShapeTree!;
+        foreach (var (placeholder, index) in (authoredMaster?.Placeholders ?? []).Select((placeholder, index) => (placeholder, index)))
+            masterShapeTree.Append(PptxPlaceholderCodec.Build(placeholder, checked((uint)(index + 2)), masterContext));
+        foreach (var (layout, layoutPart) in layoutEntries)
+        {
+            var layoutContext = new PptxPartContext(layoutPart, slideIdByPartPath, slidePartById, assetCatalog);
+            var layoutCommon = layoutPart.SlideLayout!.CommonSlideData!;
+            PptxBackgroundCodec.Build(layoutCommon, layout.Background);
+            var layoutShapeTree = layoutCommon.ShapeTree!;
+            foreach (var (placeholder, index) in layout.Placeholders.Select((placeholder, index) => (placeholder, index)))
+                layoutShapeTree.Append(PptxPlaceholderCodec.Build(placeholder, checked((uint)(index + 2)), layoutContext));
+        }
         for (var slideIndex = 0; slideIndex < artifact.Slides.Count; slideIndex++)
         {
             var source = artifact.Slides[slideIndex];
@@ -1066,9 +1116,39 @@ internal static class PptxCodec
         presentationPart.Presentation = presentationRoot;
         PptxLegacyCommentsCodec.BuildSourceFree(presentationPart, slideParts, artifact.Slides);
         themePart.Theme.Save();
-        layoutPart.SlideLayout.Save();
+        foreach (var (_, layoutPart) in layoutEntries) layoutPart.SlideLayout!.Save();
         masterPart.SlideMaster.Save();
         presentationPart.Presentation.Save();
+    }
+
+    private static string SourceFreeLayoutType(PresentationLayout layout)
+    {
+        var type = string.IsNullOrWhiteSpace(layout.Type) ? "blank" : layout.Type;
+        return type switch
+        {
+            "blank" or "title" or "titleOnly" or "obj" => type,
+            _ => throw new CodecException(
+                "unsupported_presentation_features",
+                $"Source-free presentation layout {layout.Id} uses unsupported type {type}. Use blank, title, titleOnly, or obj."),
+        };
+    }
+
+    private static void ValidateSourceFreeTextPlaceholder(PresentationPlaceholder placeholder, string ownerId)
+    {
+        ValidateSourceFreeTextPlaceholderType(placeholder.Type, placeholder.Id);
+        if (placeholder.DirectFrame is null)
+            throw new CodecException("invalid_presentation_placeholder", $"Source-free {ownerId} placeholder {placeholder.Id} requires a direct frame.");
+    }
+
+    private static void ValidateSourceFreeTextPlaceholderIdentity(PresentationPlaceholderIdentity placeholder, string elementId) =>
+        ValidateSourceFreeTextPlaceholderType(placeholder.Type, elementId);
+
+    private static void ValidateSourceFreeTextPlaceholderType(string type, string ownerId)
+    {
+        if (type is "title" or "body" or "ctrTitle" or "subTitle") return;
+        throw new CodecException(
+            "unsupported_presentation_features",
+            $"Source-free presentation placeholder {ownerId} uses {type}; only title, body, ctrTitle, and subTitle text placeholders are supported.");
     }
 
     private static IEnumerable<PresentationElement> FlattenPresentationElements(IEnumerable<PresentationElement> elements)
@@ -1121,10 +1201,20 @@ internal static class PptxCodec
     private static P.Shape BuildShape(PresentationElement source, uint nativeId, PptxPartContext slideContext)
     {
         var semantic = source.Shape;
+        var directFrame = semantic.DirectFrame;
         var transform = new A.Transform2D(
-            new A.Offset { X = semantic.LeftEmu, Y = semantic.TopEmu },
-            new A.Extents { Cx = semantic.WidthEmu, Cy = semantic.HeightEmu });
-        PptxShapeTransformCodec.Apply(transform, semantic.Transform);
+            new A.Offset { X = directFrame?.LeftEmu ?? semantic.LeftEmu, Y = directFrame?.TopEmu ?? semantic.TopEmu },
+            new A.Extents { Cx = directFrame?.WidthEmu ?? semantic.WidthEmu, Cy = directFrame?.HeightEmu ?? semantic.HeightEmu });
+        if (directFrame is not null)
+        {
+            transform.Rotation = directFrame.HasRotationAngle60000 ? directFrame.RotationAngle60000 : null;
+            transform.HorizontalFlip = directFrame.HasFlipHorizontal ? directFrame.FlipHorizontal : null;
+            transform.VerticalFlip = directFrame.HasFlipVertical ? directFrame.FlipVertical : null;
+        }
+        else
+        {
+            PptxShapeTransformCodec.Apply(transform, semantic.Transform);
+        }
         var properties = new P.ShapeProperties(transform);
         PptxCustomGeometryCodec.Apply(properties, semantic);
         properties.Append(string.IsNullOrWhiteSpace(semantic.FillRgb)
@@ -1136,11 +1226,18 @@ internal static class PptxCodec
             : new A.SolidFill(new A.RgbColorModelHex { Val = PptxColor.Normalize(semantic.LineRgb) }));
         properties.Append(outline);
         ApplyShadow(properties, semantic.Shadow);
+        var applicationProperties = new P.ApplicationNonVisualDrawingProperties();
+        if (semantic.Placeholder is not null)
+        {
+            var nativePlaceholder = new P.PlaceholderShape { Index = semantic.Placeholder.Index };
+            nativePlaceholder.SetAttribute(new OpenXmlAttribute("type", string.Empty, semantic.Placeholder.Type));
+            applicationProperties.Append(nativePlaceholder);
+        }
         return new P.Shape(
             new P.NonVisualShapeProperties(
                 new P.NonVisualDrawingProperties { Id = nativeId, Name = source.Name },
                 new P.NonVisualShapeDrawingProperties { TextBox = semantic.Geometry == "textbox" ? true : null },
-                new P.ApplicationNonVisualDrawingProperties()),
+                applicationProperties),
             properties,
             PptxTextCodec.Build(semantic, slideContext));
     }
@@ -1591,6 +1688,21 @@ internal static class PptxCodec
             ValidatePlaceholders(layout.Id, layout.Placeholders, assetCatalog, limits, ref items);
         }
 
+        var mastersById = envelope.Presentation.Masters.ToDictionary(master => master.Id, StringComparer.Ordinal);
+        var layoutsById = envelope.Presentation.Layouts.ToDictionary(layout => layout.Id, StringComparer.Ordinal);
+        if (!hasSourcePackage)
+        {
+            foreach (var master in envelope.Presentation.Masters)
+                foreach (var placeholder in master.Placeholders)
+                    ValidateSourceFreeTextPlaceholder(placeholder, master.Id);
+            foreach (var layout in envelope.Presentation.Layouts)
+            {
+                _ = SourceFreeLayoutType(layout);
+                foreach (var placeholder in layout.Placeholders)
+                    ValidateSourceFreeTextPlaceholder(placeholder, layout.Id);
+            }
+        }
+
         for (var slideIndex = 0; slideIndex < envelope.Presentation.Slides.Count; slideIndex++)
         {
             var slide = envelope.Presentation.Slides[slideIndex];
@@ -1599,6 +1711,27 @@ internal static class PptxCodec
             PptxLegacyCommentsCodec.Validate(slide, slideIndex);
             if (!string.IsNullOrWhiteSpace(slide.LayoutId) && !layoutIds.Contains(slide.LayoutId))
                 throw new CodecException("invalid_presentation_layout", $"Presentation slide {slide.Id} references missing layout {slide.LayoutId}.");
+            if (!hasSourcePackage)
+            {
+                var placeholderShapes = slide.Elements.Where(element =>
+                    element.ContentCase == PresentationElement.ContentOneofCase.Shape && element.Shape.Placeholder is not null).ToArray();
+                if (placeholderShapes.Length > 0)
+                {
+                    if (string.IsNullOrWhiteSpace(slide.LayoutId) || !layoutsById.TryGetValue(slide.LayoutId, out var layout))
+                        throw new CodecException("invalid_presentation_layout", $"Source-free presentation slide {slide.Id} has placeholders but no explicit layout binding.");
+                    var master = mastersById[layout.MasterId];
+                    foreach (var element in placeholderShapes)
+                    {
+                        var placeholder = element.Shape.Placeholder;
+                        if (placeholder.InheritsGeometry || element.Shape.DirectFrame is null)
+                            throw new CodecException("invalid_presentation_placeholder", $"Source-free presentation slide placeholder {element.Id} must use a direct frame.");
+                        ValidateSourceFreeTextPlaceholderIdentity(placeholder, element.Id);
+                        if (!master.Placeholders.Concat(layout.Placeholders).Any(candidate =>
+                                candidate.Type.Equals(placeholder.Type, StringComparison.Ordinal) && candidate.Index == placeholder.Index))
+                            throw new CodecException("presentation_placeholder_binding_mismatch", $"Source-free presentation slide placeholder {element.Id} has no matching master/layout placeholder.");
+                    }
+                }
+            }
             foreach (var element in slide.Elements)
                 ValidatePresentationElement(element, hasSourcePackage, assetCatalog, limits, ref items, 0);
         }
@@ -1625,8 +1758,9 @@ internal static class PptxCodec
         {
             if (element.Shape.HasUseBackgroundFill && !hasSourcePackage)
                 throw new CodecException("unsupported_presentation_features", $"Presentation shape {element.Id} cannot author useBgFill without a validated source package.");
-            if (element.Shape.Placeholder is not null && !hasSourcePackage)
-                throw new CodecException("unsupported_presentation_features", $"Presentation shape {element.Id} uses source-free slide placeholder authoring, which is not supported by this codec slice.");
+            if (element.Shape.Placeholder is not null && !hasSourcePackage &&
+                (element.Shape.Placeholder.InheritsGeometry || element.Shape.DirectFrame is null))
+                throw new CodecException("invalid_presentation_placeholder", $"Source-free presentation slide placeholder {element.Id} must use a direct frame.");
             if (element.Shape.Placeholder is not null && element.Shape.Transform is not null)
                 throw new CodecException("invalid_presentation_transform", $"Presentation placeholder shape {element.Id} cannot carry an ordinary shape transform.");
             var inheritedPlaceholderGeometry = element.Shape.Placeholder?.InheritsGeometry == true &&

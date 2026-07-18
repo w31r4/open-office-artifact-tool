@@ -81,6 +81,35 @@ internal static class PptxPlaceholderCodec
         PptxTextCodec.Validate(TextShape(source.TextBody));
     }
 
+    // Source-free authoring has no inherited native geometry to resolve. The
+    // caller therefore supplies an explicit direct frame and this builder owns
+    // only the canonical text-placeholder p:sp profile; richer placeholder
+    // graphs remain source-bound and use Apply instead.
+    internal static P.Shape Build(
+        PresentationPlaceholder source,
+        uint nativeId,
+        PptxPartContext partContext)
+    {
+        Validate(source);
+        if (source.DirectFrame is null)
+            throw new CodecException("invalid_presentation_placeholder", $"Source-free presentation placeholder {source.Id} requires a direct frame.");
+
+        var nativePlaceholder = new P.PlaceholderShape { Index = source.Index };
+        nativePlaceholder.SetAttribute(new OpenXmlAttribute("type", string.Empty, source.Type));
+        var output = new P.Shape(
+            new P.NonVisualShapeProperties(
+                new P.NonVisualDrawingProperties { Id = nativeId, Name = source.Name },
+                new P.NonVisualShapeDrawingProperties(new A.ShapeLocks { NoGrouping = true }),
+                new P.ApplicationNonVisualDrawingProperties(nativePlaceholder)),
+            new P.ShapeProperties(
+                new A.Transform2D(new A.Offset(), new A.Extents()),
+                new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle },
+                new A.NoFill()),
+            PptxTextCodec.Build(TextShape(source.TextBody), partContext));
+        ApplyDirectFrame(output, source.DirectFrame);
+        return output;
+    }
+
     internal static void Apply(
         P.Shape sourceShape,
         PresentationPlaceholder source,

@@ -33,6 +33,18 @@ const PRESENTATION_SCHEME_COLORS = new Set([
   "dk1", "lt1", "dk2", "lt2", "tx1", "bg1", "tx2", "bg2",
   "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink", "folHlink",
 ]);
+const SOURCE_FREE_LAYOUT_TYPES = new Map([
+  ["blank", "blank"],
+  ["title", "title"],
+  ["titleOnly", "titleOnly"],
+  ["title-only", "titleOnly"],
+  ["obj", "obj"],
+  ["object", "obj"],
+  ["content", "obj"],
+  ["titleAndContent", "obj"],
+  ["title-and-content", "obj"],
+]);
+const SOURCE_FREE_TEXT_PLACEHOLDER_TYPES = new Set(["title", "body", "ctrTitle", "subTitle"]);
 const DEFAULT_PRESENTATION_THEME = JSON.stringify(normalizePresentationThemeConfig({}));
 const RUN_STYLE_KEYS = new Set(["bold", "italic", "fontSize", "fontFamily", "color"]);
 const TEXT_FRAME_PARAGRAPH_KEYS = new Set(["alignment", "tabStops", "marginLeft", "indent", "lineSpacing", "spaceBefore", "spaceBeforePercent", "spaceAfter", "spaceAfterPercent"]);
@@ -680,6 +692,92 @@ function layoutReadOnlySnapshot(layout) {
   return JSON.stringify(layout.toJSON());
 }
 
+function sourceFreeLayoutType(type, layoutId) {
+  const requested = String(type || "blank").trim();
+  const normalized = SOURCE_FREE_LAYOUT_TYPES.get(requested);
+  if (!normalized) {
+    throw new OpenChestnutCodecError(
+      `Presentation layout ${layoutId} uses unsupported source-free type ${requested || "(empty)"}. Use blank, title, titleOnly, or obj/titleAndContent.`,
+      [],
+      { code: "unsupported_presentation_features" },
+    );
+  }
+  return normalized;
+}
+
+function sourceFreePlaceholder(placeholder, ownerId, assetCatalog) {
+  const type = String(placeholder.type || "");
+  if (!SOURCE_FREE_TEXT_PLACEHOLDER_TYPES.has(type)) {
+    throw new OpenChestnutCodecError(
+      `Presentation placeholder ${placeholder.id || ownerId} uses ${type || "(empty)"}; source-free layouts currently author only title, body, ctrTitle, and subTitle text placeholders.`,
+      [],
+      { code: "unsupported_presentation_features" },
+    );
+  }
+  if (!placeholder.position) {
+    throw new OpenChestnutCodecError(
+      `Presentation placeholder ${placeholder.id || ownerId} requires a direct position for source-free PPTX export.`,
+      [],
+      { code: "invalid_presentation_placeholder" },
+    );
+  }
+  const index = Number(placeholder.idx);
+  if (!Number.isInteger(index) || index < 0 || index > 4_294_967_295) {
+    throw new OpenChestnutCodecError(`Presentation placeholder ${placeholder.id || ownerId} has an invalid idx.`, [], { code: "invalid_presentation_placeholder" });
+  }
+  const shape = {
+    id: placeholder.id || `${ownerId}/placeholder/${index}`,
+    text: {
+      style: { ...(placeholder.style || {}) },
+      paragraphs: normalizePresentationParagraphs(placeholder.text ?? ""),
+      inheritedParagraphStyles: { ...(placeholder.paragraphStyles || {}) },
+      bodyProperties: placeholder.textBodyProperties,
+    },
+  };
+  const position = placeholder.position;
+  return {
+    id: shape.id,
+    name: String(placeholder.name || `${type} placeholder`),
+    type,
+    index,
+    textBody: presentationTextBody(shape, undefined, assetCatalog),
+    directFrame: {
+      leftEmu: emuFromPixels(position.left, `${shape.id}.position.left`),
+      topEmu: emuFromPixels(position.top, `${shape.id}.position.top`),
+      widthEmu: emuFromPixels(position.width, `${shape.id}.position.width`),
+      heightEmu: emuFromPixels(position.height, `${shape.id}.position.height`),
+      ...wirePresentationTransform(placeholder.transform, `placeholder ${shape.id}`),
+    },
+  };
+}
+
+function sourceFreeSlidePlaceholder(shape) {
+  if (!shape.placeholder) return undefined;
+  const type = String(shape.placeholder.type || "");
+  if (!SOURCE_FREE_TEXT_PLACEHOLDER_TYPES.has(type)) {
+    throw new OpenChestnutCodecError(
+      `Presentation slide placeholder ${shape.id} uses ${type || "(empty)"}; source-free layouts currently author only title, body, ctrTitle, and subTitle text placeholders.`,
+      [],
+      { code: "unsupported_presentation_features" },
+    );
+  }
+  const index = Number(shape.placeholder.idx ?? shape.placeholder.index);
+  if (!Number.isInteger(index) || index < 0 || index > 4_294_967_295) {
+    throw new OpenChestnutCodecError(`Presentation slide placeholder ${shape.id} has an invalid idx.`, [], { code: "invalid_presentation_placeholder" });
+  }
+  const position = shape.position || {};
+  return {
+    placeholder: { type, index, inheritsGeometry: false },
+    directFrame: {
+      leftEmu: emuFromPixels(position.left, `${shape.id}.position.left`),
+      topEmu: emuFromPixels(position.top, `${shape.id}.position.top`),
+      widthEmu: emuFromPixels(position.width, `${shape.id}.position.width`),
+      heightEmu: emuFromPixels(position.height, `${shape.id}.position.height`),
+      ...wirePresentationTransform(shape.transform, `placeholder ${shape.id}`),
+    },
+  };
+}
+
 function presentationMasters(presentation, state, assetCatalog) {
   if (state) {
     if (presentation.masters.items.length !== state.masters.length || state.masters.some((entry, index) => presentation.masters.items[index] !== entry.model)) {
@@ -693,11 +791,26 @@ function presentationMasters(presentation, state, assetCatalog) {
     });
   }
   const master = presentation.master;
-  return master ? [{ id: master.id, name: master.name, textStyles: wireMasterTextStyles(master, undefined, assetCatalog), background: wireBackground(master.background, `master ${master.id}`) }] : [];
+  return master ? [{
+    id: master.id,
+    name: master.name,
+    textStyles: wireMasterTextStyles(master, undefined, assetCatalog),
+    background: wireBackground(master.background, `master ${master.id}`),
+    placeholders: master.placeholders.map((placeholder) => sourceFreePlaceholder(placeholder, master.id, assetCatalog)),
+  }] : [];
 }
 
 function presentationLayouts(presentation, state, assetCatalog) {
-  if (!state) return [];
+  if (!state) {
+    return presentation.layouts.items.map((layout) => ({
+      id: layout.id,
+      name: layout.name,
+      masterId: layout.masterId,
+      type: sourceFreeLayoutType(layout.type, layout.id),
+      ...(layout.background ? { background: wireBackground(layout.background, `layout ${layout.id}`) } : {}),
+      placeholders: layout.placeholders.map((placeholder) => sourceFreePlaceholder(placeholder, layout.id, assetCatalog)),
+    }));
+  }
   if (presentation.layouts.items.length !== state.layouts.length || state.layouts.some((entry, index) => presentation.layouts.items[index] !== entry.model)) {
     throw new OpenChestnutCodecError(`Source-preserving PPTX export requires the original ${state.layouts.length}-layout topology.`, [], { code: "presentation_layout_topology_changed" });
   }
@@ -995,6 +1108,7 @@ function presentationShape(shape, original, assetCatalog) {
   const position = shape.position || {};
   const lineWidth = Number(shape.line?.width ?? 1);
   if (!Number.isFinite(lineWidth) || lineWidth < 0) throw new OpenChestnutCodecError(`Presentation shape ${shape.id} has an invalid line width.`, [], { code: "invalid_presentation_frame" });
+  const placeholder = !original && shape.placeholder ? sourceFreeSlidePlaceholder(shape) : undefined;
   const textBody = presentationTextBody(shape, originalShape, assetCatalog);
   const shadow = presentationShadow(shape.shadow, shape.id);
   return {
@@ -1014,7 +1128,8 @@ function presentationShape(shape, original, assetCatalog) {
         fillRgb: presentationRgb(shape.fill, `${shape.id}.fill`),
         lineRgb: presentationRgb(shape.line?.fill || shape.line?.color || (lineWidth > 0 ? "#334155" : "transparent"), `${shape.id}.line.fill`),
         lineWidthEmu: BigInt(Math.round(lineWidth * EMU_PER_POINT)),
-        ...(shape.transform == null ? {} : { transform: wirePresentationTransform(shape.transform, `shape ${shape.id}`) }),
+        ...(placeholder || {}),
+        ...(placeholder || shape.transform == null ? {} : { transform: wirePresentationTransform(shape.transform, `shape ${shape.id}`) }),
         ...(shadow ? { shadow } : {}),
         ...(customPaths.length ? { customPaths } : {}),
         ...(shape.useBackgroundFill === undefined ? {} : { useBackgroundFill: shape.useBackgroundFill }),
@@ -1309,23 +1424,18 @@ function presentationAdvancedSnapshot(presentation) {
 function unsupportedPresentationFeatures(presentation) {
   const unsupported = [];
   if (presentationThemeSnapshot(presentation.theme) !== DEFAULT_PRESENTATION_THEME) unsupported.push("presentation theme customization");
-  if (presentation.layouts?.items?.length) unsupported.push("slide layouts");
   if (presentation.masters?.items?.length !== 1) unsupported.push("multiple slide masters");
   const master = presentation.master;
-  if (master?.configured) unsupported.push("slide master authoring");
   if (master?.theme) unsupported.push("master theme override");
-  if (master?.placeholders?.length) unsupported.push("master placeholders");
   if (presentation.customShows?.items?.length) unsupported.push("custom shows");
   if (presentation.commentFormat !== "legacy") unsupported.push("modern comments");
   for (const slide of presentation.slides?.items || []) {
     const prefix = `slide ${slide.index + 1}`;
-    if (slide.layoutId) unsupported.push(`${prefix} layout binding`);
     if (slide.comments?.items?.length) {
       try { presentationLegacyComments(slide, slide.index); }
       catch (error) { unsupported.push(`${prefix} comments (${error.message})`); }
     }
     if (slide.nativeObjects?.items?.length) unsupported.push(`${prefix} native objects`);
-    if (slide.shapes?.items?.some((shape) => shape.placeholder)) unsupported.push(`${prefix} source-free placeholder authoring`);
   }
   return unsupported;
 }

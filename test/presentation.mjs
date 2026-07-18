@@ -92,6 +92,78 @@ await assert.rejects(
   /presentation theme customization/i,
 );
 
+// A source-free layout is intentionally a small reusable authoring profile:
+// one canonical master, direct-frame title/body text placeholders, and an
+// explicit slide binding. It is native PresentationML, not preview-only model
+// metadata or a reconstructed imported template graph.
+const authoredLayoutPresentation = Presentation.create({
+  slideSize: { width: 1280, height: 720 },
+  master: {
+    name: "Authoring master",
+    placeholders: [{
+      type: "title",
+      index: 0,
+      name: "Title",
+      text: "Master title prompt",
+      position: { left: 60, top: 44, width: 1160, height: 82 },
+      style: { fontSize: 30, bold: true, color: "#0F172A" },
+    }],
+  },
+});
+const authoredLayout = authoredLayoutPresentation.layouts.add({ name: "Title and body", type: "titleAndContent" });
+authoredLayout.placeholders.add({
+  type: "body",
+  index: 1,
+  name: "Body",
+  text: "Master body prompt",
+  position: { left: 72, top: 154, width: 1136, height: 490 },
+  style: { fontSize: 18, color: "#334155" },
+});
+assert.equal(authoredLayoutPresentation.layouts.getById(authoredLayout.id), authoredLayout);
+assert.equal(authoredLayout.placeholders.count, 1);
+const authoredLayoutSlide = authoredLayoutPresentation.slides.add({ name: "Reusable layout" });
+assert.equal(authoredLayoutSlide.setLayout(authoredLayout), authoredLayoutSlide);
+assert.equal(authoredLayoutSlide.layoutId, authoredLayout.id);
+assert.equal(authoredLayoutSlide.placeholders.count, 2);
+const authoredTitle = authoredLayoutSlide.placeholders.getItem("title");
+const authoredBody = authoredLayoutSlide.placeholders.getItem(1);
+assert.ok(authoredTitle);
+assert.ok(authoredBody);
+authoredTitle.text.set("OpenChestnut layout title");
+authoredBody.text.set("A direct-frame body placeholder survives native export and import.");
+const authoredLayoutExport = await PresentationFile.exportPptx(authoredLayoutPresentation);
+const authoredLayoutZip = await JSZip.loadAsync(new Uint8Array(await authoredLayoutExport.arrayBuffer()));
+const authoredMasterXml = await authoredLayoutZip.file("ppt/slideMasters/slideMaster1.xml").async("text");
+const authoredLayoutXml = await authoredLayoutZip.file("ppt/slideLayouts/slideLayout1.xml").async("text");
+const authoredSlideXml = await authoredLayoutZip.file("ppt/slides/slide1.xml").async("text");
+assert.match(authoredMasterXml, /<p:ph[^>]*type="title"[^>]*idx="0"/);
+assert.match(authoredLayoutXml, /<p:sldLayout[^>]*type="obj"/);
+assert.match(authoredLayoutXml, /<p:ph[^>]*type="body"[^>]*idx="1"/);
+assert.match(authoredSlideXml, /<p:ph[^>]*type="title"[^>]*idx="0"/);
+assert.match(authoredSlideXml, /<p:ph[^>]*type="body"[^>]*idx="1"/);
+const authoredLayoutImported = await PresentationFile.importPptx(authoredLayoutExport);
+assert.equal(authoredLayoutImported.master.placeholders.length, 1);
+assert.equal(authoredLayoutImported.layouts.items.length, 1);
+assert.equal(authoredLayoutImported.layouts.items[0].type, "obj");
+const importedLayoutSlide = authoredLayoutImported.slides.getItem(0);
+assert.equal(importedLayoutSlide.layoutId, authoredLayoutImported.layouts.items[0].id);
+assert.equal(importedLayoutSlide.placeholders.getItem("title").text.value, "OpenChestnut layout title");
+assert.equal(importedLayoutSlide.placeholders.getItem("body").text.value, "A direct-frame body placeholder survives native export and import.");
+const authoredLayoutRoundTrip = await PresentationFile.exportPptx(authoredLayoutImported);
+assert.equal((await PresentationFile.inspectPptx(authoredLayoutRoundTrip)).ok, true);
+const invalidSourceFreeLayout = Presentation.create();
+const invalidSourceFreeSlide = invalidSourceFreeLayout.slides.add();
+const invalidLayout = invalidSourceFreeLayout.layouts.add({
+  name: "Missing direct placeholder frame",
+  type: "title",
+  placeholders: [{ type: "title", index: 0 }],
+});
+invalidSourceFreeSlide.setLayout(invalidLayout);
+await assert.rejects(
+  () => PresentationFile.exportPptx(invalidSourceFreeLayout),
+  /requires a direct position/i,
+);
+
 const customGeometryPresentation = Presentation.create({ slideSize: { width: 400, height: 240 } });
 const customGeometrySlide = customGeometryPresentation.slides.add({ name: "Custom geometry" });
 const customGeometryShape = customGeometrySlide.shapes.add({
