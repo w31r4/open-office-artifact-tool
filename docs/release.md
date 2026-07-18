@@ -72,6 +72,23 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### PDF direct-original page rotation
+
+On 2026-07-18, the default direct-original MuPDF.js route added
+`PdfFile.editPdf(..., { operations: [{ type: "rotate_page", page, rotation }] })`.
+The operation accepts only absolute `0`, `90`, `180`, or `270` degree clockwise
+values, reports the prior normalized page value, writes only the page's
+`/Rotate` entry, and verifies the value after writing. It does not transform,
+reflow, or remove page content.
+
+Native inspection now emits normalized page rotation alongside raw `MediaBox`
+and `CropBox` facts. On unsigned input the operation can use byte-prefix-verified
+incremental save; malformed inherited rotation, unsupported angles, signed
+incremental edits, and every other unsafe save mode fail closed. The library
+and published Skill CLI regressions prove raw page-box preservation, the
+90-degree rendered dimension swap, absolute reset back to `0`, exact source
+prefix preservation, and rejection of `45` degrees.
+
 ### PDF direct-original visible CropBox edits
 
 On 2026-07-18, the independent PDF path added one bounded existing-file page

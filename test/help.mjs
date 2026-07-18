@@ -303,7 +303,8 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.exportPdf")?.sch
 assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.renderPdf")?.schema?.returns?.blob?.type, "FileBlob");
 assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schema?.parameters?.operations?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schema?.parameters?.operations?.description || "", /set_page_crop.*CropBox.*never redaction/i);
-assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.schema?.returns?.inspection?.description || "", /raw MediaBox\/CropBox/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schema?.parameters?.operations?.description || "", /rotate_page.*0, 90, 180, or 270/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.schema?.returns?.inspection?.description || "", /raw MediaBox\/CropBox.*rotation/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.summary || "", /MuPDF/);
 const documentCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "document");
 assert.equal(documentCatalog.length, 43);

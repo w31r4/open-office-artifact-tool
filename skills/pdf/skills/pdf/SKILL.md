@@ -148,7 +148,7 @@ Bind the canonical audit `output` to `attachments.json`, set `savePolicy.strateg
 
 ## Edit An Existing PDF
 
-MuPDF.js is the default native provider. It operates directly on original bytes and currently supports `add_text_annotation`, typed text/choice/checkbox `fill_form`, `delete_page`, complete `rearrange_pages`, raw-coordinate visible-only `set_page_crop`, `set_metadata`, `delete_embedded_file`, `delete_link`, `redact_text`, and `redact_rect`. Unsupported operations, untrusted radio export-value mapping, rotated-page crop requests, invalid limits, and unsafe save policies fail closed.
+MuPDF.js is the default native provider. It operates directly on original bytes and currently supports `add_text_annotation`, typed text/choice/checkbox `fill_form`, `delete_page`, complete `rearrange_pages`, raw-coordinate visible-only `set_page_crop`, absolute-quarter-turn `rotate_page`, `set_metadata`, `delete_embedded_file`, `delete_link`, `redact_text`, and `redact_rect`. Unsupported operations, untrusted radio export-value mapping, rotated-page crop requests, invalid limits, and unsafe save policies fail closed.
 
 Use JSON operations with the thin CLI:
 
@@ -157,7 +157,7 @@ node scripts/mupdf.mjs edit input.pdf tmp/pdfs/edit-operations.json tmp/pdfs/edi
   --save-policy rewrite
 ```
 
-`set_page_crop` accepts a `[x, y, width, height]` box in the raw unrotated PDF page coordinate system reported by `inspect`; it must lie fully inside `MediaBox`. It changes only `CropBox`, keeps content outside the visible region in the file, and is therefore not redaction or sanitize. `incremental` preserves the exact source-byte prefix and is permitted for that non-destructive operation, but remains forbidden for redaction, delete operations, and any signed input. A signed rewrite requires deliberate invalidation, and the API reports signature validity as unknown; use pyHanko for actual trust and policy validation.
+`set_page_crop` accepts a `[x, y, width, height]` box in the raw unrotated PDF page coordinate system reported by `inspect`; it must lie fully inside `MediaBox`. It changes only `CropBox`, keeps content outside the visible region in the file, and is therefore not redaction or sanitize. `rotate_page` accepts an absolute `0`, `90`, `180`, or `270` degree clockwise `/Rotate` value, reports the prior normalized value, and changes viewer orientation without transforming or deleting page content. Both are unsigned non-destructive operations that may use byte-prefix-verified `incremental` save; it remains forbidden for redaction, delete operations, and any signed input. A signed rewrite requires deliberate invalidation, and the API reports signature validity as unknown; use pyHanko for actual trust and policy validation.
 
 The optional PyMuPDF specialist script remains available for operations not yet migrated, including bounded positioned text/image workflows and the strict sanitize path. Run its provider probe and route plan above before use. For `replace_text` under `sanitize`, use `--task redact --strategy sanitize --invalidate-signatures` in the plan.
 
@@ -168,7 +168,7 @@ The optional PyMuPDF specialist script remains available for operations not yet 
   --accept-license agpl
 ```
 
-The specialist Python operation contract includes `insert_textbox`, `insert_image`, `replace_image`, `add_text_annotation`, `fill_form`, `rotate_page`, `delete_page`, `redact_text`, `redact_rect`, `replace_text`, and `scrub`. It is not a fallback from MuPDF.js; select it only when the task requires that explicit capability.
+The specialist Python operation contract includes `insert_textbox`, `insert_image`, `replace_image`, `add_text_annotation`, `fill_form`, `delete_page`, `redact_text`, `redact_rect`, `replace_text`, and `scrub`. It is not a fallback from MuPDF.js; select it only when the task requires that explicit capability.
 
 General Word-style reflow is not available for an ordinary imported PDF. `replace_text` is a bounded redaction plus same-box overlay for one horizontal source span: it preserves the source baseline and default style, reports its measured fit evidence, and allows only a fixed sub-millipoint numerical tolerance. Cross-span, rotated, or genuinely overflowing replacements fail closed. Use a trusted source model or explicitly create a reconstructed new document when broad reflow is required. See [edit existing](tasks/edit_existing.md).
 

@@ -144,6 +144,22 @@ await cropped.save("third-party-page-1-cropped.pdf");
 
 The requested `[x, y, width, height]` must fit fully inside the inspected raw `MediaBox`. Reopen and render the result; use a rewrite-plus-sanitize route for any task that requires actual removal of sensitive content.
 
+For an orientation-only edit, use the same direct-original route. `rotation` is
+an absolute clockwise `/Rotate` value, not a relative turn; it must be `0`,
+`90`, `180`, or `270`. It changes viewer orientation without transforming or
+removing content, so unsigned byte-prefix-verified incremental save is allowed:
+
+```js
+const rotated = await PdfFile.editPdf(input, {
+  savePolicy: "incremental",
+  operations: [{ type: "rotate_page", page: 1, rotation: 90 }],
+});
+await rotated.save("third-party-page-1-rotated.pdf");
+```
+
+Inspect and render the result before delivery. Rotated-coordinate text/image
+editing remains an explicit specialist-provider task.
+
 ## Render and visual QA
 
 Use the model SVG preview while authoring, then render the exported PDF with Poppler and inspect every page before delivery:

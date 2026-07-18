@@ -11,7 +11,7 @@ node scripts/mupdf.mjs probe
 node scripts/mupdf.mjs inspect input.pdf
 ```
 
-Its typed operations are `add_text_annotation`, text/choice/checkbox `fill_form`, `delete_page`, complete `rearrange_pages`, visible-only `set_page_crop`, `set_metadata`, `delete_embedded_file`, `delete_link`, `redact_text`, and `redact_rect`. Run with one explicit save policy:
+Its typed operations are `add_text_annotation`, text/choice/checkbox `fill_form`, `delete_page`, complete `rearrange_pages`, visible-only `set_page_crop`, absolute-quarter-turn `rotate_page`, `set_metadata`, `delete_embedded_file`, `delete_link`, `redact_text`, and `redact_rect`. Run with one explicit save policy:
 
 ```bash
 node scripts/mupdf.mjs edit input.pdf tmp/pdfs/edit-operations.json tmp/pdfs/edited.pdf \
@@ -31,6 +31,24 @@ Use `set_page_crop` only when the task is to change the visible page window with
 ```
 
 The box must be fully inside the inspected `MediaBox`; rotated pages fail closed and need an explicitly selected specialist route. This operation writes only `CropBox`, retains content outside the crop, and may use unsigned `incremental` save. It is never a redaction, deletion, or sanitize substitute.
+
+## Page rotation
+
+Use `rotate_page` when the task is only to change the viewer orientation of one
+existing page. It writes an absolute normalized `/Rotate` value and does not
+transform, reflow, or remove content:
+
+```json
+[
+  { "type": "rotate_page", "page": 2, "rotation": 90 }
+]
+```
+
+`rotation` must be exactly `0`, `90`, `180`, or `270`; inspect before and after
+to retain the prior value and prove the requested orientation. This bounded
+unsigned operation may use `incremental` save, subject to the same source-prefix
+and signature refusal rules. It is not a substitute for rotated-coordinate text
+or image editing; route those tasks explicitly to the specialist provider.
 
 ## Optional PyMuPDF specialist path
 
@@ -65,11 +83,6 @@ Prepare an operation list:
     "font_size": 12,
     "font_name": "helv",
     "color": [0.06, 0.36, 0.42]
-  },
-  {
-    "type": "rotate_page",
-    "page": 2,
-    "rotation": 90
   },
   {
     "type": "insert_image",

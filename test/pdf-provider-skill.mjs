@@ -95,6 +95,7 @@ const skillText = await fs.readFile(path.join(skillRoot, "SKILL.md"), "utf8");
 assert.match(skillText, /scripts\/mupdf\.mjs/);
 assert.match(skillText, /MuPDF\.js/);
 assert.match(skillText, /set_page_crop/);
+assert.match(skillText, /rotate_page/);
 assert.match(skillText, /not redaction/i);
 for (const pattern of [
   /ReportLab/,
@@ -155,6 +156,8 @@ try {
   const mupdfOutput = path.join(tempRoot, "mupdf-output.pdf");
   const mupdfCropOperations = path.join(tempRoot, "mupdf-crop-operations.json");
   const mupdfCropOutput = path.join(tempRoot, "mupdf-crop-output.pdf");
+  const mupdfRotationOperations = path.join(tempRoot, "mupdf-rotation-operations.json");
+  const mupdfRotationOutput = path.join(tempRoot, "mupdf-rotation-output.pdf");
   const mupdfFixture = await PdfFile.exportPdf(PdfArtifact.create({ text: "MuPDF Skill CLI fixture" }));
   await fs.writeFile(mupdfInput, mupdfFixture.bytes);
   const mupdfProbe = parseResult(run(process.execPath, [mupdfCli, "probe"], { status: 0 }));
@@ -181,6 +184,20 @@ try {
   assert.deepEqual(cropPage.cropBox, [72, 72, 468, 648]);
   const cropRender = await PdfFile.renderPdf(await fs.readFile(mupdfCropOutput), { page: 1, dpi: 72 });
   assert.deepEqual([cropRender.metadata.width, cropRender.metadata.height], [468, 648]);
+  await fs.writeFile(mupdfRotationOperations, JSON.stringify({ operations: [{ type: "rotate_page", page: 1, rotation: 90 }], savePolicy: "incremental" }), "utf8");
+  const mupdfRotated = parseResult(run(process.execPath, [mupdfCli, "edit", mupdfInput, mupdfRotationOperations, mupdfRotationOutput], { status: 0 }));
+  assert.equal(mupdfRotated.savePolicy, "incremental");
+  assert.deepEqual(mupdfRotated.operations[0], {
+    type: "rotate_page",
+    page: 1,
+    rotation: 90,
+    previousRotation: 0,
+    contentRemoved: false,
+  });
+  const rotationPage = (await PdfFile.inspectPdf(await fs.readFile(mupdfRotationOutput))).records.find((record) => record.kind === "mupdfPage");
+  assert.equal(rotationPage.rotation, 90);
+  const rotationRender = await PdfFile.renderPdf(await fs.readFile(mupdfRotationOutput), { page: 1, dpi: 72 });
+  assert.deepEqual([rotationRender.metadata.width, rotationRender.metadata.height], [792, 612]);
   const mupdfInputAlias = path.join(tempRoot, "mupdf-input-alias.pdf");
   await fs.symlink(mupdfInput, mupdfInputAlias);
   const sourceOverwrite = run(process.execPath, [mupdfCli, "edit", mupdfInputAlias, mupdfOperations, mupdfInput], { status: 2 });

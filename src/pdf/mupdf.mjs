@@ -38,6 +38,8 @@ const INCREMENTAL_DESTRUCTIVE_OPERATIONS = new Set([
   "redact_rect",
 ]);
 
+const PAGE_ROTATIONS = new Set([0, 90, 180, 270]);
+
 function limitsFor(options = {}) {
   const topLevel = Object.fromEntries(Object.keys(DEFAULT_LIMITS)
     .filter((name) => options[name] !== undefined)
@@ -274,6 +276,7 @@ function structuredPage(page, pageNumber, options, imageBudget) {
         height: bounds[3] - bounds[1],
         mediaBox: mediaBox && pdfRectToBbox(mediaBox),
         cropBox: cropBox && pdfRectToBbox(cropBox),
+        rotation: rawPageRotation(page),
         text: structured.asText().replace(/\s+$/u, ""),
         textItems,
         images,
@@ -360,6 +363,7 @@ export async function inspectPdfWithMuPdf(input, options = {}) {
           bbox: pdfRectToBbox(page.getBounds("CropBox")),
           mediaBox: mediaBox && pdfRectToBbox(mediaBox),
           cropBox: cropBox && pdfRectToBbox(cropBox),
+          rotation: rawPageRotation(page),
           textChars: text.length,
           annotations: annotations.length,
           widgets: widgets.length,
@@ -559,6 +563,38 @@ function applyPageCrop(document, operation) {
   }
 }
 
+function applyPageRotation(document, operation) {
+  const { index, page } = pageFor(document, operation);
+  let pageObject;
+  try {
+    const rotation = operation.rotation;
+    if (!Number.isInteger(rotation) || !PAGE_ROTATIONS.has(rotation)) {
+      throw new Error("rotate_page rotation must be 0, 90, 180, or 270.");
+    }
+    const previousRotation = rawPageRotation(page);
+    if (previousRotation === undefined || !PAGE_ROTATIONS.has(previousRotation)) {
+      throw new Error("rotate_page requires a finite right-angle inherited Rotate value.");
+    }
+    pageObject = page.getObject();
+    pageObject.put("Rotate", rotation);
+    page.update();
+    const writtenRotation = rawPageRotation(page);
+    if (writtenRotation !== rotation) {
+      throw new Error("MuPDF did not preserve the requested page rotation; refusing to save an ambiguous rotation.");
+    }
+    return {
+      type: "rotate_page",
+      page: index + 1,
+      rotation,
+      previousRotation,
+      contentRemoved: false,
+    };
+  } finally {
+    pageObject?.destroy();
+    page.destroy();
+  }
+}
+
 function normalizeCheckboxValue(value, field) {
   if (typeof value === "boolean") return value;
   if (value === 0 || value === 1) return value === 1;
@@ -633,6 +669,7 @@ function applyOperation(document, operation) {
       return { type: operation.type, page: index + 1 };
     }
     case "set_page_crop": return applyPageCrop(document, operation);
+    case "rotate_page": return applyPageRotation(document, operation);
     case "rearrange_pages": {
       const pages = operation.pages;
       if (!Array.isArray(pages) || pages.length !== document.countPages()) throw new Error("rearrange_pages requires a complete 1-based page permutation.");

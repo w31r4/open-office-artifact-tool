@@ -225,7 +225,9 @@ assert.match(mupdfParsed.extractText(), /PDF research artifact/);
 assert.ok(mupdfParsed.pages[0].textItems.some((item) => item.text.includes("PDF research artifact")));
 assert.ok(mupdfParsed.pages[0].images.some((item) => item.dataUrl?.startsWith("data:image\/png;base64,")));
 assert.equal(mupdfParsed.pages[0].images[0].transform.length, 6);
-assert.equal((await parsePdfWithMuPdf({ bytes: arbitraryPdf.bytes, options: { includeImages: false } })).pages[0].images.length, 0);
+const mupdfRawWithoutImages = await parsePdfWithMuPdf({ bytes: arbitraryPdf.bytes, options: { includeImages: false } });
+assert.equal(mupdfRawWithoutImages.pages[0].rotation, 0);
+assert.equal(mupdfRawWithoutImages.pages[0].images.length, 0);
 await assert.rejects(parsePdfWithMuPdf(arbitraryPdf.bytes, { limits: { maxPages: Number.NaN } }), /limit maxPages must be a positive finite number/);
 const mupdfInspect = await PdfFile.inspectPdf(arbitraryPdf, { maxChars: 20_000 });
 assert.equal(mupdfInspect.summary.nativeProvider, "mupdf");
@@ -264,6 +266,34 @@ assert.deepEqual(croppedRecord.bbox, [0, 0, 468, 648]);
 const croppedRender = await PdfFile.renderPdf(mupdfCropped, { page: 1, dpi: 72 });
 assert.equal(croppedRender.metadata.width, 468);
 assert.equal(croppedRender.metadata.height, 648);
+const mupdfRotated = await PdfFile.editPdf(arbitraryPdf, {
+  savePolicy: "incremental",
+  operations: [{ type: "rotate_page", page: 1, rotation: 90 }],
+});
+assert.equal(Buffer.from(mupdfRotated.bytes.subarray(0, arbitraryPdf.bytes.length)).equals(Buffer.from(arbitraryPdf.bytes)), true);
+assert.deepEqual(mupdfRotated.metadata.operations[0], {
+  type: "rotate_page",
+  page: 1,
+  rotation: 90,
+  previousRotation: 0,
+  contentRemoved: false,
+});
+const rotatedRecord = (await PdfFile.inspectPdf(mupdfRotated)).records.find((record) => record.kind === "mupdfPage" && record.page === 1);
+assert.equal(rotatedRecord.rotation, 90);
+assert.deepEqual(rotatedRecord.mediaBox, [0, 0, 612, 792]);
+assert.deepEqual(rotatedRecord.cropBox, [0, 0, 612, 792]);
+const rotatedRender = await PdfFile.renderPdf(mupdfRotated, { page: 1, dpi: 72 });
+assert.equal(rotatedRender.metadata.width, 792);
+assert.equal(rotatedRender.metadata.height, 612);
+const mupdfRotationRestored = await PdfFile.editPdf(mupdfRotated, {
+  savePolicy: "incremental",
+  operations: [{ type: "rotate_page", page: 1, rotation: 0 }],
+});
+assert.equal(Buffer.from(mupdfRotationRestored.bytes.subarray(0, mupdfRotated.bytes.length)).equals(Buffer.from(mupdfRotated.bytes)), true);
+assert.equal((await PdfFile.inspectPdf(mupdfRotationRestored)).records.find((record) => record.kind === "mupdfPage" && record.page === 1).rotation, 0);
+await assert.rejects(PdfFile.editPdf(arbitraryPdf, {
+  operations: [{ type: "rotate_page", page: 1, rotation: 45 }],
+}), /rotate_page rotation must be 0, 90, 180, or 270/);
 const mupdfCropRestored = await PdfFile.editPdf(mupdfCropped, {
   savePolicy: "incremental",
   operations: [{ type: "set_page_crop", page: 1, bbox: [0, 0, 612, 792] }],
