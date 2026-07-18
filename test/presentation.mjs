@@ -859,6 +859,93 @@ await assert.rejects(
   (error) => error?.code === "unsupported_presentation_slide_clone",
 );
 
+// Speaker notes add one deliberately closed relationship leaf to the same
+// clone profile. The NotesSlide itself is new and points at the clone, while
+// its NotesMaster stays immutable and shared. This is raw part preservation,
+// not permission to edit notes before the export/reimport boundary.
+const notesCloneFixture = Presentation.create({ slideSize: { width: 640, height: 360 } });
+const notesCloneOriginal = notesCloneFixture.slides.add({
+  name: "Notes image original",
+  notes: "Open with the customer outcome.\nClose with the operating decision.",
+});
+notesCloneOriginal.shapes.add({ name: "notes-clone-copy", position: { left: 48, top: 48, width: 300, height: 72 }, text: "Notes image original" });
+notesCloneOriginal.images.add({
+  name: "notes-clone-asset",
+  alt: "Notes clone immutable asset",
+  position: { left: 48, top: 150, width: 120, height: 120 },
+  dataUrl: PNG,
+  fit: "stretch",
+});
+const notesCloneSourcePptx = await PresentationFile.exportPptx(notesCloneFixture);
+const notesCloneSourceZip = await JSZip.loadAsync(notesCloneSourcePptx.bytes);
+const notesCloneSourceNotesPaths = Object.keys(notesCloneSourceZip.files)
+  .filter((path) => /^ppt\/notesSlides\/notesSlide\d+\.xml$/i.test(path));
+assert.deepEqual(notesCloneSourceNotesPaths, ["ppt/notesSlides/notesSlide1.xml"]);
+const [notesCloneSourceNotesPath] = notesCloneSourceNotesPaths;
+const notesCloneSourceMediaPath = Object.keys(notesCloneSourceZip.files)
+  .find((path) => /^ppt\/media\/[^/]+\.(?:png|jpe?g|gif|svg)$/i.test(path));
+assert.ok(notesCloneSourceMediaPath, "the notes clone fixture must contain one embedded image part");
+const notesCloneImportedDeck = await PresentationFile.importPptx(notesCloneSourcePptx);
+const notesCloneImportedSource = notesCloneImportedDeck.slides.getItem(0);
+const notesClone = notesCloneImportedSource.duplicate();
+assert.equal(notesClone.speakerNotes.text, "Open with the customer outcome.\nClose with the operating decision.");
+const notesClonePptx = await PresentationFile.exportPptx(notesCloneImportedDeck);
+const notesCloneZip = await JSZip.loadAsync(notesClonePptx.bytes);
+assert.deepEqual(
+  await notesCloneZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  await notesCloneSourceZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  "cloning a slide with notes must retain the origin SlidePart byte-for-byte",
+);
+assert.deepEqual(
+  await notesCloneZip.file(notesCloneSourceNotesPath).async("uint8array"),
+  await notesCloneSourceZip.file(notesCloneSourceNotesPath).async("uint8array"),
+  "cloning a slide with notes must retain the origin NotesSlide byte-for-byte",
+);
+assert.deepEqual(
+  await notesCloneZip.file(notesCloneSourceMediaPath).async("uint8array"),
+  await notesCloneSourceZip.file(notesCloneSourceMediaPath).async("uint8array"),
+  "cloning a slide with notes must retain the shared media bytes",
+);
+const notesClonePaths = Object.keys(notesCloneZip.files)
+  .filter((path) => /^ppt\/notesSlides\/notesSlide\d+\.xml$/i.test(path));
+assert.deepEqual(notesClonePaths, ["ppt/notesSlides/notesSlide1.xml", "ppt/notesSlides/notesSlide2.xml"]);
+assert.equal(
+  await notesCloneZip.file("ppt/notesSlides/notesSlide2.xml").async("text"),
+  await notesCloneZip.file(notesCloneSourceNotesPath).async("text"),
+  "the clone NotesSlide XML must be a verbatim copy of the source notes XML",
+);
+const relationshipTagForType = (relationships, suffix) => [...relationships.matchAll(/<Relationship\b[^>]*>/gi)]
+  .find(([tag]) => new RegExp(`\\bType="[^"]*\\/${suffix}"`, "i").test(tag))?.[0];
+const relationshipAttributeForType = (relationships, suffix, attribute) => {
+  const tag = relationshipTagForType(relationships, suffix);
+  return tag && new RegExp(`\\b${attribute}="([^"]+)"`, "i").exec(tag)?.[1];
+};
+const sourceSlideRelationships = await notesCloneZip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
+const cloneSlideRelationships = await notesCloneZip.file("ppt/slides/_rels/slide2.xml.rels").async("text");
+const sourceNotesRelationships = await notesCloneZip.file("ppt/notesSlides/_rels/notesSlide1.xml.rels").async("text");
+const cloneNotesRelationships = await notesCloneZip.file("ppt/notesSlides/_rels/notesSlide2.xml.rels").async("text");
+assert.equal(relationshipAttributeForType(cloneSlideRelationships, "notesSlide", "Id"), relationshipAttributeForType(sourceSlideRelationships, "notesSlide", "Id"));
+assert.equal(relationshipAttributeForType(cloneNotesRelationships, "notesMaster", "Id"), relationshipAttributeForType(sourceNotesRelationships, "notesMaster", "Id"));
+assert.equal(relationshipAttributeForType(cloneNotesRelationships, "notesMaster", "Target"), relationshipAttributeForType(sourceNotesRelationships, "notesMaster", "Target"));
+assert.equal(relationshipAttributeForType(cloneNotesRelationships, "slide", "Id"), relationshipAttributeForType(sourceNotesRelationships, "slide", "Id"));
+assert.equal(relationshipAttributeForType(cloneNotesRelationships, "slide", "Target"), "/ppt/slides/slide2.xml");
+const notesCloneRoundTrip = await PresentationFile.importPptx(notesClonePptx);
+assert.deepEqual(notesCloneRoundTrip.slides.items.map((slide) => slide.speakerNotes.text), [
+  "Open with the customer outcome.\nClose with the operating decision.",
+  "Open with the customer outcome.\nClose with the operating decision.",
+]);
+notesCloneRoundTrip.slides.getItem(1).speakerNotes.text = "Edited after notes clone reimport.";
+const notesCloneEditedPptx = await PresentationFile.exportPptx(notesCloneRoundTrip);
+const notesCloneEditedRoundTrip = await PresentationFile.importPptx(notesCloneEditedPptx);
+assert.equal(notesCloneEditedRoundTrip.slides.getItem(1).speakerNotes.text, "Edited after notes clone reimport.");
+
+const immediateNotesCloneEdit = await PresentationFile.importPptx(notesCloneSourcePptx);
+immediateNotesCloneEdit.slides.getItem(0).duplicate().speakerNotes.text = "Too soon";
+await assert.rejects(
+  () => PresentationFile.exportPptx(immediateNotesCloneEdit),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+);
+
 // The ordinary deck carries media/shape relationships, so delete must stop at
 // the C# OPC preflight instead of silently reconstructing a lossy template.
 const complexImportedDeletion = await PresentationFile.importPptx(firstExport);

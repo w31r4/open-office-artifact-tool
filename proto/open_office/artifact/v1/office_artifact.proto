@@ -1160,8 +1160,10 @@ message PresentationSlide {
   // A source-preserving clone request. Unlike `source`, this does not claim
   // that the target already owns the referenced SlidePart: the codec must
   // create a distinct slide part and relationship graph from this verified
-  // origin. The first bounded profile permits only an untouched, layout-only
-  // source slide; richer graph cloning remains an explicit later operation.
+  // origin. The bounded profile permits an untouched source slide with its
+  // verified layout, canonical picture-bound ImageParts, and an optional
+  // closed NotesSlide -> NotesMaster/back-to-slide leaf. Richer graph cloning
+  // remains an explicit later operation.
   PresentationSlideSourceBinding clone_source = 9;
 }
 

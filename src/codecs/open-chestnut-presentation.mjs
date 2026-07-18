@@ -212,13 +212,14 @@ function duplicateImportedPresentationSlide(presentation, state, slide) {
   if (source.entries.some((entry) => !new Set(["shape", "image"]).has(entry.wire.content.case))) {
     throw new OpenChestnutCodecError("The bounded imported-slide clone profile supports only canonical shapes and embedded images; tables, charts, groups, connectors, native objects, and other graph edges require a broader OPC graph clone.", [], { code: "unsupported_presentation_slide_clone" });
   }
-  if (slide.comments.items.length || slide.speakerNotes?.text) {
-    throw new OpenChestnutCodecError("The first imported-slide clone profile does not clone comments or speaker notes.", [], { code: "unsupported_presentation_slide_clone" });
+  if (slide.comments.items.length) {
+    throw new OpenChestnutCodecError("The bounded imported-slide clone profile does not clone comments.", [], { code: "unsupported_presentation_slide_clone" });
   }
   const clone = presentation.slides.insert({
     after: slide,
     name: slide.name,
     ...(slide.background?.fill ? { background: clonedPresentationValue(slide.background) } : {}),
+    ...(source.wire.speakerNotes ? { notes: slide.speakerNotes?.text || "" } : {}),
   });
   clone.layoutId = slide.layoutId;
   const entries = source.entries.map((entry) => {

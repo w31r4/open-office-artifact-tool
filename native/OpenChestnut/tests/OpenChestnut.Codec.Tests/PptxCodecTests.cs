@@ -2281,7 +2281,8 @@ public sealed class PptxCodecTests
 
         var duplicated = Export(imported.Artifact);
         Assert.True(duplicated.Ok, Diagnostics(duplicated));
-        using (var stream = new MemoryStream(duplicated.File.ToByteArray()))
+        var duplicatedBytes = duplicated.File.ToByteArray();
+        using (var stream = new MemoryStream(duplicatedBytes))
         using (var package = PresentationDocument.Open(stream, false))
         {
             Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
@@ -2318,7 +2319,8 @@ public sealed class PptxCodecTests
 
         var duplicated = Export(imported.Artifact);
         Assert.True(duplicated.Ok, Diagnostics(duplicated));
-        using (var stream = new MemoryStream(duplicated.File.ToByteArray()))
+        var duplicatedBytes = duplicated.File.ToByteArray();
+        using (var stream = new MemoryStream(duplicatedBytes))
         using (var package = PresentationDocument.Open(stream, false))
         {
             Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
@@ -2378,6 +2380,91 @@ public sealed class PptxCodecTests
         var rejected = Export(imported.Artifact);
         Assert.False(rejected.Ok);
         Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void SourcePreservingExportClonesAnUnchangedLayoutImageAndNotesLeaf()
+    {
+        var request = ExportRequest();
+        request.Artifact.Presentation.Slides[0].SpeakerNotes = new PresentationSpeakerNotes
+        {
+            Text = "Open with the customer outcome.\nClose with the operating decision.",
+        };
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var sourceBytes = AddPicture(authored.File.ToByteArray());
+        var sourceSlide = ZipBytes(sourceBytes, "ppt/slides/slide1.xml");
+        var sourceNotesPath = SingleZipEntryPath(sourceBytes, path => path.StartsWith("ppt/notesSlides/notesSlide", StringComparison.OrdinalIgnoreCase));
+        var sourceNotes = ZipBytes(sourceBytes, sourceNotesPath);
+        var sourceMediaPath = SingleZipEntryPath(sourceBytes, path => path.StartsWith("ppt/media/", StringComparison.OrdinalIgnoreCase));
+        var sourceMedia = ZipBytes(sourceBytes, sourceMediaPath);
+
+        var imported = Import(sourceBytes);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var source = Assert.Single(imported.Artifact.Presentation.Slides);
+        Assert.NotNull(source.SpeakerNotes);
+        var clone = source.Clone();
+        clone.Id = "presentation/clone/layout-image-notes";
+        clone.Source = null;
+        clone.CloneSource = source.Source.Clone();
+        imported.Artifact.Presentation.Slides.Add(clone);
+
+        var duplicated = Export(imported.Artifact);
+        Assert.True(duplicated.Ok, Diagnostics(duplicated));
+        var duplicatedBytes = duplicated.File.ToByteArray();
+        using (var stream = new MemoryStream(duplicatedBytes))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var slides = package.PresentationPart!.SlideParts.ToArray();
+            var origin = slides.Single(part => part.Uri.OriginalString.EndsWith("/slide1.xml", StringComparison.Ordinal));
+            var outputClone = slides.Single(part => part.Uri.OriginalString.EndsWith("/slide2.xml", StringComparison.Ordinal));
+            var originNotes = Assert.IsType<NotesSlidePart>(origin.NotesSlidePart);
+            var cloneNotes = Assert.IsType<NotesSlidePart>(outputClone.NotesSlidePart);
+            Assert.NotEqual(originNotes.Uri, cloneNotes.Uri);
+            Assert.Equal(origin.GetIdOfPart(originNotes), outputClone.GetIdOfPart(cloneNotes));
+            Assert.Equal(originNotes.GetIdOfPart(origin), cloneNotes.GetIdOfPart(outputClone));
+            Assert.Equal(originNotes.GetIdOfPart(originNotes.NotesMasterPart!), cloneNotes.GetIdOfPart(cloneNotes.NotesMasterPart!));
+            Assert.Equal(originNotes.NotesMasterPart!.Uri, cloneNotes.NotesMasterPart!.Uri);
+        }
+        Assert.Equal(sourceSlide, ZipBytes(duplicatedBytes, "ppt/slides/slide1.xml"));
+        Assert.Equal(sourceNotes, ZipBytes(duplicatedBytes, sourceNotesPath));
+        Assert.Equal(sourceNotes, ZipBytes(duplicatedBytes, "ppt/notesSlides/notesSlide2.xml"));
+        Assert.Equal(sourceMedia, ZipBytes(duplicatedBytes, sourceMediaPath));
+
+        var roundTrip = Import(duplicatedBytes);
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        Assert.Equal(2, roundTrip.Artifact.Presentation.Slides.Count);
+        Assert.All(roundTrip.Artifact.Presentation.Slides, slide =>
+            Assert.Equal("Open with the customer outcome.\nClose with the operating decision.", slide.SpeakerNotes.Text));
+        roundTrip.Artifact.Presentation.Slides[1].SpeakerNotes.Text = "Edited after the clone export/import boundary.";
+        var edited = Export(roundTrip.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var editedRoundTrip = Import(edited.File.ToByteArray());
+        Assert.True(editedRoundTrip.Ok, Diagnostics(editedRoundTrip));
+        Assert.Equal("Edited after the clone export/import boundary.", editedRoundTrip.Artifact.Presentation.Slides[1].SpeakerNotes.Text);
+    }
+
+    [Fact]
+    public void SourcePreservingExportRejectsAnEditedNotesCloneBeforeWritingItsGraph()
+    {
+        var request = ExportRequest();
+        request.Artifact.Presentation.Slides[0].SpeakerNotes = new PresentationSpeakerNotes { Text = "Clone this note unchanged." };
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var source = Assert.Single(imported.Artifact.Presentation.Slides);
+        var clone = source.Clone();
+        clone.Id = "presentation/clone/edited-notes";
+        clone.Source = null;
+        clone.CloneSource = source.Source.Clone();
+        clone.SpeakerNotes.Text = "This edit is not allowed before the clone boundary.";
+        imported.Artifact.Presentation.Slides.Add(clone);
+
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("presentation_slide_clone_mismatch", Assert.Single(rejected.Diagnostics).Code);
     }
 
     [Fact]

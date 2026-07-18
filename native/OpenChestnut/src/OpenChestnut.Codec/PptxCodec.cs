@@ -1695,6 +1695,19 @@ internal static class PptxCodec
         var fileName = separator < 0 ? path : path[(separator + 1)..];
         return directory.Length == 0 ? $"_rels/{fileName}.rels" : $"{directory}/_rels/{fileName}.rels";
     }
+    private static byte[] PartBytes(OpenXmlPart part)
+    {
+        using var stream = part.GetStream(FileMode.Open, FileAccess.Read);
+        using var copy = new MemoryStream();
+        stream.CopyTo(copy);
+        return copy.ToArray();
+    }
+    private static void CopyPartBytes(OpenXmlPart source, OpenXmlPart target)
+    {
+        using var input = source.GetStream(FileMode.Open, FileAccess.Read);
+        using var output = target.GetStream(FileMode.Create, FileAccess.Write);
+        input.CopyTo(output);
+    }
     private static string HashElement(OpenXmlElement element) => Hash(Encoding.UTF8.GetBytes(element.OuterXml));
     private static string Hash(ReadOnlySpan<byte> bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
@@ -1961,10 +1974,20 @@ internal static class PptxCodec
             var isSlideLayout = relationship.Type.EndsWith("/slideLayout", StringComparison.Ordinal) &&
                                 !relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase) &&
                                 IsNumberedLayoutPath(PptxNativeObjectCatalog.ResolveTarget(relationship.SourcePath, relationship.Target));
-            var allowedFromSlide = IsNumberedSlidePath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage || isSlideLayout);
+            var isNotesSlide = relationship.Type.EndsWith("/notesSlide", StringComparison.Ordinal) &&
+                               !relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase) &&
+                               IsNumberedNotesSlidePath(PptxNativeObjectCatalog.ResolveTarget(relationship.SourcePath, relationship.Target));
+            var isNotesMaster = relationship.Type.EndsWith("/notesMaster", StringComparison.Ordinal) &&
+                                !relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase) &&
+                                IsNumberedNotesMasterPath(PptxNativeObjectCatalog.ResolveTarget(relationship.SourcePath, relationship.Target));
+            var isNotesBackReference = relationship.Type.EndsWith("/slide", StringComparison.Ordinal) &&
+                                       !relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase) &&
+                                       IsNumberedSlidePath(PptxNativeObjectCatalog.ResolveTarget(relationship.SourcePath, relationship.Target));
+            var allowedFromSlide = IsNumberedSlidePath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage || isSlideLayout || isNotesSlide);
             var allowedFromMaster = IsNumberedMasterPath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage);
             var allowedFromLayout = IsNumberedLayoutPath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage);
-            if (!allowedFromSlide && !allowedFromMaster && !allowedFromLayout)
+            var allowedFromNotes = IsNumberedNotesSlidePath(relationship.SourcePath) && (isNotesMaster || isNotesBackReference);
+            if (!allowedFromSlide && !allowedFromMaster && !allowedFromLayout && !allowedFromNotes)
                 throw new CodecException("opaque_content_not_preserved", $"Modeled PPTX edit added unsupported relationship {relationship.Id} from {relationship.SourcePath}.");
             guarded.PackageRelationships.Remove(relationship);
             removed.Add(key);
@@ -1975,13 +1998,13 @@ internal static class PptxCodec
         foreach (var part in guarded.Parts.ToArray())
         {
             if (!allowedAddedPartPaths.Contains(part.Path)) continue;
-            if (!part.Path.StartsWith("ppt/media/", StringComparison.OrdinalIgnoreCase))
+            if (!IsAllowedAddedClonePartPath(part.Path))
                 throw new CodecException("opaque_content_not_preserved", $"Modeled PPTX edit added unsupported part {part.Path}.");
             guarded.Parts.Remove(part);
             removedParts.Add(part.Path);
         }
         if (!removedParts.SetEquals(allowedAddedPartPaths))
-            throw new CodecException("opaque_content_not_preserved", "Modeled PPTX image additions do not match the parts written to the package.");
+            throw new CodecException("opaque_content_not_preserved", "Modeled PPTX clone additions do not match the parts written to the package.");
         foreach (var (path, requestedHash) in allowedChangedPartHashes)
         {
             var before = expected.Parts.SingleOrDefault(part => part.Path.Equals(path, StringComparison.OrdinalIgnoreCase));
@@ -2030,6 +2053,41 @@ internal static class PptxCodec
                path[prefix.Length..^suffix.Length].All(char.IsAsciiDigit);
     }
 
+    private static bool IsNumberedNotesSlidePath(string path)
+    {
+        const string prefix = "ppt/notesSlides/notesSlide";
+        const string suffix = ".xml";
+        return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+               path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) &&
+               path[prefix.Length..^suffix.Length].Length > 0 &&
+               path[prefix.Length..^suffix.Length].All(char.IsAsciiDigit);
+    }
+
+    private static bool IsNumberedNotesSlideRelationshipPath(string path)
+    {
+        const string prefix = "ppt/notesSlides/_rels/notesSlide";
+        const string suffix = ".xml.rels";
+        return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+               path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) &&
+               path[prefix.Length..^suffix.Length].Length > 0 &&
+               path[prefix.Length..^suffix.Length].All(char.IsAsciiDigit);
+    }
+
+    private static bool IsNumberedNotesMasterPath(string path)
+    {
+        const string prefix = "ppt/notesMasters/notesMaster";
+        const string suffix = ".xml";
+        return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+               path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) &&
+               path[prefix.Length..^suffix.Length].Length > 0 &&
+               path[prefix.Length..^suffix.Length].All(char.IsAsciiDigit);
+    }
+
+    private static bool IsAllowedAddedClonePartPath(string path) =>
+        path.StartsWith("ppt/media/", StringComparison.OrdinalIgnoreCase) ||
+        IsNumberedNotesSlidePath(path) ||
+        IsNumberedNotesSlideRelationshipPath(path);
+
     private static void ValidatePreservedSlideElements(byte[] sourceBytes, byte[] outputBytes, PresentationArtifact requested, EffectiveCodecLimits limits)
     {
         using var sourceStream = new MemoryStream(sourceBytes, writable: false);
@@ -2056,6 +2114,7 @@ internal static class PptxCodec
                 if (PartPath(outputSlide).Equals(PartPath(target.Source.Part), StringComparison.OrdinalIgnoreCase) ||
                     !HashElement(target.Source.Part.Slide!).Equals(HashElement(outputSlide.Slide!), StringComparison.OrdinalIgnoreCase))
                     throw new CodecException("presentation_postwrite_clone_mismatch", $"PPTX clone {targetIndex + 1} is not an independent exact source slide copy.", PartPath(outputSlide));
+                ValidateClonedSpeakerNotes(target.Source.Part, outputSlide, targetIndex);
             }
         }
         var retainedTargets = sourceTargets.Where(target => !target.IsClone).ToArray();
@@ -2193,6 +2252,31 @@ internal static class PptxCodec
                         PartPath(outputSlides[slideIndex]));
             }
         }
+    }
+
+    private static void ValidateClonedSpeakerNotes(SlidePart source, SlidePart clone, int targetIndex)
+    {
+        var sourceNotes = source.NotesSlidePart;
+        var cloneNotes = clone.NotesSlidePart;
+        if (sourceNotes is null)
+        {
+            if (cloneNotes is not null)
+                throw new CodecException("presentation_postwrite_clone_notes_mismatch", $"PPTX clone {targetIndex + 1} unexpectedly added a notes part.", PartPath(clone));
+            return;
+        }
+        if (cloneNotes?.NotesSlide is null || sourceNotes.NotesSlide is null ||
+            PartPath(sourceNotes).Equals(PartPath(cloneNotes), StringComparison.OrdinalIgnoreCase) ||
+            !PartBytes(sourceNotes).SequenceEqual(PartBytes(cloneNotes)))
+            throw new CodecException("presentation_postwrite_clone_notes_mismatch", $"PPTX clone {targetIndex + 1} is not an independent exact source notes copy.", PartPath(clone));
+        var sourceMaster = sourceNotes.NotesMasterPart;
+        var cloneMaster = cloneNotes.NotesMasterPart;
+        if (sourceMaster is null || cloneMaster is null ||
+            !PartPath(sourceMaster).Equals(PartPath(cloneMaster), StringComparison.OrdinalIgnoreCase) ||
+            source.GetIdOfPart(sourceNotes) != clone.GetIdOfPart(cloneNotes) ||
+            sourceNotes.GetIdOfPart(sourceMaster) != cloneNotes.GetIdOfPart(cloneMaster) ||
+            sourceNotes.GetIdOfPart(source) != cloneNotes.GetIdOfPart(clone) ||
+            cloneNotes.Parts.Count() != 2 || cloneNotes.ExternalRelationships.Any() || cloneNotes.HyperlinkRelationships.Any() || cloneNotes.DataPartReferenceRelationships.Any())
+            throw new CodecException("presentation_postwrite_clone_notes_mismatch", $"PPTX clone {targetIndex + 1} does not retain the exact bounded notes relationship graph.", PartPath(cloneNotes));
     }
 
     private static void ValidateGroupOutput(
@@ -2666,13 +2750,14 @@ internal static class PptxCodec
             }
             if (leaf.Notes is { } notes)
             {
-                var sourceNotes = notes.Part.NotesSlide ??
-                    throw UnsupportedSourceSlideClone(target.Source, "its notes part has no notes root");
                 var cloneNotes = clonePart.AddNewPart<NotesSlidePart>(notes.SlideRelationshipId);
                 cloneNotes.AddPart(notes.MasterPart, notes.MasterRelationshipId);
                 cloneNotes.AddPart(clonePart, notes.SlideBackReferenceRelationshipId);
-                cloneNotes.NotesSlide = (P.NotesSlide)sourceNotes.CloneNode(true);
-                cloneNotes.NotesSlide.Save();
+                // The NotesSlide is an opaque-preserved leaf here. Assigning
+                // its DOM would normalize namespace declarations on save, so
+                // copy the OPC payload bytes after wiring its two verified
+                // relationships. It remains untouched until export/reimport.
+                CopyPartBytes(notes.Part, cloneNotes);
                 addedRelationshipIds.Add($"{PartPath(clonePart)}\0{notes.SlideRelationshipId}");
                 addedRelationshipIds.Add($"{PartPath(cloneNotes)}\0{notes.MasterRelationshipId}");
                 addedRelationshipIds.Add($"{PartPath(cloneNotes)}\0{notes.SlideBackReferenceRelationshipId}");
@@ -2725,7 +2810,7 @@ internal static class PptxCodec
         }
     }
 
-    private static void AssertSourceSlideCanBeCloned(
+    private static PptxCloneLeaf AssertSourceSlideCanBeCloned(
         PptxTargetSlideEntry target,
         IReadOnlyDictionary<string, string> layoutIdByPartPath,
         IReadOnlyDictionary<string, string> slideIdByPartPath,
@@ -2734,22 +2819,27 @@ internal static class PptxCodec
         var source = target.Source;
         var childParts = source.Part.Parts.ToArray();
         var layoutRelationshipCount = childParts.Count(pair => pair.OpenXmlPart is SlideLayoutPart);
-        var imageRelationshipIds = childParts
+        var imageEdges = childParts
             .Where(pair => pair.OpenXmlPart is ImagePart)
-            .Select(pair => pair.RelationshipId)
+            .Select(pair => new PptxCloneImageEdge((ImagePart)pair.OpenXmlPart, pair.RelationshipId))
+            .ToArray();
+        var imageRelationshipIds = imageEdges
+            .Select(edge => edge.RelationshipId)
             .ToHashSet(StringComparer.Ordinal);
+        var notesRelationshipCount = childParts.Count(pair => pair.OpenXmlPart is NotesSlidePart);
         var unsafeChildren = childParts
-            .Where(pair => pair.OpenXmlPart is not SlideLayoutPart and not ImagePart)
+            .Where(pair => pair.OpenXmlPart is not SlideLayoutPart && pair.OpenXmlPart is not ImagePart && pair.OpenXmlPart is not NotesSlidePart)
             .Select(pair => pair.OpenXmlPart.RelationshipType)
             .Distinct(StringComparer.Ordinal)
             .Take(4)
             .ToArray();
         if (layoutRelationshipCount != 1 ||
+            notesRelationshipCount > 1 ||
             unsafeChildren.Length > 0 ||
             source.Part.ExternalRelationships.Any() ||
             source.Part.HyperlinkRelationships.Any() ||
             source.Part.DataPartReferenceRelationships.Any())
-            throw UnsupportedSourceSlideClone(source, "it owns notes, comments, hyperlinks, data parts, or another non-layout/image relationship");
+            throw UnsupportedSourceSlideClone(source, "it owns comments, hyperlinks, data parts, or another non-layout/image/notes relationship");
         var root = source.Part.Slide ??
             throw new CodecException("missing_slide_root", $"Presentation source slide {source.Index + 1} has no slide root.", PartPath(source.Part));
         var common = root.CommonSlideData ??
@@ -2775,8 +2865,9 @@ internal static class PptxCodec
         }
         if (!imageRelationshipIds.SetEquals(embeddedImageRelationshipIds))
             throw UnsupportedSourceSlideClone(source, "it has an image relationship that is not exactly bound by a canonical embedded picture");
-        if (target.Target.SpeakerNotes is not null || target.Target.LegacyComments.Count > 0)
-            throw UnsupportedSourceSlideClone(source, "the requested clone carries notes or comments");
+        var notes = AssertSourceSpeakerNotesCanBeCloned(source, target.Target);
+        if (target.Target.LegacyComments.Count > 0)
+            throw UnsupportedSourceSlideClone(source, "the requested clone carries comments");
         if (target.Target.Name != (common.Name?.Value ?? string.Empty))
             throw UnsupportedSourceSlideClone(source, "the requested clone changes its source name");
         var layoutPart = source.Part.SlideLayoutPart ??
@@ -2808,12 +2899,57 @@ internal static class PptxCodec
                 !SemanticHash(requested).Equals(binding.SemanticSha256, StringComparison.OrdinalIgnoreCase))
                 throw new CodecException("presentation_slide_clone_mismatch", $"Presentation clone {target.TargetIndex + 1} element {elementIndex + 1} is not an unchanged source element.", PartPath(source.Part));
         }
+        return new PptxCloneLeaf(layoutPart, source.Part.GetIdOfPart(layoutPart), imageEdges, notes);
+    }
+
+    private static PptxCloneNotesLeaf? AssertSourceSpeakerNotesCanBeCloned(PptxSourceSlideEntry source, PresentationSlide target)
+    {
+        var notesPart = source.Part.NotesSlidePart;
+        if (notesPart is null)
+        {
+            if (target.SpeakerNotes is not null)
+                throw UnsupportedSourceSlideClone(source, "the requested clone adds speaker notes where the origin has no notes part");
+            return null;
+        }
+        var original = PptxSpeakerNotesCodec.Read(source.Part) ??
+            throw UnsupportedSourceSlideClone(source, "its notes relationship has no readable notes root");
+        var requested = target.SpeakerNotes;
+        if (requested?.Source is not { } binding)
+            throw new CodecException("missing_presentation_notes_binding", $"Presentation clone {source.Index + 1} speaker notes are missing their source binding.", PartPath(notesPart));
+        var sourceBinding = original.Source;
+        if (!requested.Text.Equals(original.Text, StringComparison.Ordinal) ||
+            !binding.PartPath.Equals(sourceBinding.PartPath, StringComparison.OrdinalIgnoreCase) ||
+            !binding.RelationshipId.Equals(sourceBinding.RelationshipId, StringComparison.Ordinal) ||
+            !binding.NotesXmlSha256.Equals(sourceBinding.NotesXmlSha256, StringComparison.OrdinalIgnoreCase) ||
+            !binding.SemanticSha256.Equals(sourceBinding.SemanticSha256, StringComparison.OrdinalIgnoreCase) ||
+            binding.Editable != sourceBinding.Editable)
+            throw new CodecException("presentation_slide_clone_mismatch", $"Presentation clone {source.Index + 1} speaker notes are not unchanged source notes.", PartPath(notesPart));
+
+        var relationships = notesPart.Parts.ToArray();
+        var masterEdges = relationships.Where(pair => pair.OpenXmlPart is NotesMasterPart).ToArray();
+        var backReferenceEdges = relationships.Where(pair => ReferenceEquals(pair.OpenXmlPart, source.Part)).ToArray();
+        var unsafeChildren = relationships
+            .Where(pair => pair.OpenXmlPart is not NotesMasterPart && !ReferenceEquals(pair.OpenXmlPart, source.Part))
+            .Select(pair => pair.OpenXmlPart.RelationshipType)
+            .Distinct(StringComparer.Ordinal)
+            .Take(4)
+            .ToArray();
+        if (masterEdges.Length != 1 || backReferenceEdges.Length != 1 || unsafeChildren.Length > 0 ||
+            notesPart.ExternalRelationships.Any() || notesPart.HyperlinkRelationships.Any() || notesPart.DataPartReferenceRelationships.Any())
+            throw UnsupportedSourceSlideClone(source, "its notes part has relationships beyond one NotesMaster and one back-reference to the source slide");
+        var masterPart = (NotesMasterPart)masterEdges[0].OpenXmlPart;
+        return new PptxCloneNotesLeaf(
+            notesPart,
+            source.Part.GetIdOfPart(notesPart),
+            masterPart,
+            masterEdges[0].RelationshipId,
+            backReferenceEdges[0].RelationshipId);
     }
 
     private static CodecException UnsupportedSourceSlideClone(PptxSourceSlideEntry source, string reason) =>
         new(
             "unsupported_presentation_slide_clone",
-            $"Source-preserving PPTX cloning is limited to an unchanged shape-and-embedded-image layout leaf; slide {source.Index + 1} cannot be cloned because {reason}. Use an explicit broader OPC graph-clone operation for this package.",
+            $"Source-preserving PPTX cloning is limited to an unchanged shape-and-embedded-image-and-notes layout leaf; slide {source.Index + 1} cannot be cloned because {reason}. Use an explicit broader OPC graph-clone operation for this package.",
             PartPath(source.Part));
 
     private static bool ReorderSourceSlideIdList(PresentationPart presentationPart, IReadOnlyList<PptxTargetSlideEntry> targets)
