@@ -27,6 +27,7 @@ import { planPresentationModernComments } from "./ooxml-modern-comments.mjs";
 
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 const importedShapeBackgroundFill = new WeakMap();
+const PRESENTATION_SLIDE_DUPLICATOR = Symbol.for("open-office-artifact-tool.open-chestnut-presentation-duplicate");
 
 const PPTX_PACKAGE_CONFIG = {
   family: "PPTX",
@@ -933,6 +934,13 @@ export class Slide {
     this.presentation.slides.items.splice(current, 1);
     this.presentation.slides.items.splice(index, 0, this);
     return this;
+  }
+  duplicate() {
+    const duplicate = this.presentation[PRESENTATION_SLIDE_DUPLICATOR];
+    if (typeof duplicate !== "function") {
+      throw new Error("Presentation slide duplication is available only for a supported imported PPTX source slide.");
+    }
+    return duplicate(this);
   }
   delete() {
     const current = this.index;

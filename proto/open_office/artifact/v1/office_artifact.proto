@@ -1157,6 +1157,12 @@ message PresentationSlide {
   // coordinate, but no replies, resolved state, reactions, or element anchor.
   // Modern comment graphs remain opaque/source-bound.
   repeated PresentationLegacyComment legacy_comments = 8;
+  // A source-preserving clone request. Unlike `source`, this does not claim
+  // that the target already owns the referenced SlidePart: the codec must
+  // create a distinct slide part and relationship graph from this verified
+  // origin. The first bounded profile permits only an untouched, layout-only
+  // source slide; richer graph cloning remains an explicit later operation.
+  PresentationSlideSourceBinding clone_source = 9;
 }
 
 // One p:cm record from a legacy ppt/comments/commentN.xml part. `id` is a
