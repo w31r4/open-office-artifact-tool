@@ -87,6 +87,10 @@ comments, and element topology remain preconditions. This is not a generic
 presentation metadata editor. A pending clone stays byte-identical and cannot
 be renamed before its export/reimport boundary.
 
+For a distinct-path, auditable transaction with package and model-render
+evidence, see
+[`openchestnut-slide-name-edit-workflow.mjs`](../../../examples/openchestnut-slide-name-edit-workflow.mjs).
+
 `duplicate()` is not a visual-only copy and never creates a second
 `p:sldId` reference to one source part. It is available only on an **original
 imported** source slide with an unchanged body of canonical simple shapes,

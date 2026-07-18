@@ -217,6 +217,51 @@ try {
   assert.equal(titleNotesSlide.speakerNotes.text, PPTX_TITLE_NOTES_FIXTURE.replacementNotes);
   assert.deepEqual(titleNotesSlide.background, { fill: "#f1f5f9", mode: "solid" });
 
+  const slideNameDir = path.join(root, "slide-name-workflow");
+  const slideNameInput = path.join(slideNameDir, PPTX_TITLE_NOTES_FIXTURE.presentationName);
+  const slideNameOutput = path.join(slideNameDir, "launch-review-renamed.pptx");
+  const slideNameAudit = path.join(slideNameDir, "audit.json");
+  await generateOfficeInput("pptx-title-notes-review", slideNameInput);
+  const slideNameSource = await fs.readFile(slideNameInput);
+  const { editPptxSlideName } = await import(
+    "../skills/presentations/skills/presentations/examples/openchestnut-slide-name-edit-workflow.mjs"
+  );
+  const slideNameResult = await editPptxSlideName({
+    inputPath: slideNameInput,
+    outputPath: slideNameOutput,
+    auditPath: slideNameAudit,
+    expectedName: PPTX_TITLE_NOTES_FIXTURE.targetSlideName,
+    replacementName: "Go decision: controlled rollout",
+  });
+  assert.equal(slideNameResult.audit.provider.actual, "open-chestnut");
+  assert.equal(slideNameResult.audit.operation.nativeAttribute, "p:cSld/@name");
+  assert.equal(slideNameResult.audit.validation.package.targetNameVerified, true);
+  assert.equal(slideNameResult.audit.validation.package.targetPartMayBeCanonicalized, true);
+  assert.equal(slideNameResult.audit.validation.package.nonTargetPartsByteIdentical, true);
+  assert.equal(slideNameResult.audit.validation.modelRender.byteIdentical, true);
+  assert.deepEqual(await fs.readFile(slideNameInput), slideNameSource);
+  const slideNameRoundTrip = await PresentationFile.importPptx(new FileBlob(await fs.readFile(slideNameOutput), {
+    type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    name: "launch-review-renamed.pptx",
+  }));
+  assert.deepEqual(slideNameRoundTrip.slides.items.map((slide) => slide.name), [
+    "Go decision: controlled rollout",
+    PPTX_TITLE_NOTES_FIXTURE.untouchedSlideName,
+  ]);
+  const slideNameTarget = slideNameRoundTrip.slides.getItem(0);
+  assert.equal(itemByName(slideNameTarget.shapes.items, PPTX_TITLE_NOTES_FIXTURE.titleShapeName).text.value, PPTX_TITLE_NOTES_FIXTURE.originalTitle);
+  assert.equal(slideNameTarget.speakerNotes.text, PPTX_TITLE_NOTES_FIXTURE.originalNotes);
+  await assert.rejects(
+    () => editPptxSlideName({
+      inputPath: slideNameInput,
+      outputPath: path.join(slideNameDir, "should-not-exist.pptx"),
+      auditPath: path.join(slideNameDir, "should-not-exist.json"),
+      expectedName: "Missing source slide",
+      replacementName: "Never write this",
+    }),
+    /Expected exactly one imported slide named/,
+  );
+
   const convergenceFiles = [
     "test/skill-harness/presentations/scripts/workflow.mjs",
     "test/skill-harness/presentations/scripts/run-fixture.mjs",
@@ -237,7 +282,9 @@ try {
   const quickStartText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/API_QUICK_START.md", "utf8");
   assert.match(skillText, /open-office-artifact-tool/);
   assert.match(skillText, /openchestnut-title-notes-edit-workflow\.mjs/);
+  assert.match(skillText, /openchestnut-slide-name-edit-workflow\.mjs/);
   assert.match(quickStartText, /PresentationFile\.exportPptx/);
+  assert.match(quickStartText, /editPptxSlideName/);
   assert.match(quickStartText, /open-office-artifact-tool/);
   assert.match(skillText, /slides_test\.py/);
   assert.match(skillText, /slide\.setBackground.*slide\.clearBackground/s);
@@ -257,6 +304,7 @@ try {
   assert.match(slideReferenceText, /NotesSlide.*NotesMaster.*exactly those two\s+relationships.*byte-for-byte/is);
   assert.match(slideReferenceText, /canonical inline fixed-grid tables[\s\S]*cannot introduce a fill, link/i);
   assert.match(slideReferenceText, /Gradient,\s+pattern, image.*opaque-preserved/is);
+  assert.match(slideReferenceText, /p:cSld\/@name.*export\/reimport/is);
   const imageReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/images.spec.md", "utf8");
   assert.match(imageReferenceText, /signed normalized source edges in `-1\.\.1`/i);
   assert.match(imageReferenceText, /DrawingML `a:srcRect`/);

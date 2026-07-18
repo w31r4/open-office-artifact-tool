@@ -296,6 +296,33 @@ const pptx = await PresentationFile.exportPptx(presentation);
 await pptx.save("output/edited-deck.pptx");
 ```
 
+## Bounded Imported Slide Name Edit
+
+When one original imported slide has one explicit, unique native name, use the
+shipped transaction rather than manipulating the package:
+
+```ts
+import { editPptxSlideName } from "../examples/openchestnut-slide-name-edit-workflow.mjs";
+
+await editPptxSlideName({
+  inputPath: "input.pptx",
+  outputPath: "output/renamed.pptx",
+  auditPath: "output/rename-audit.json",
+  expectedName: "Go-no-go decision",
+  replacementName: "Go decision: controlled rollout",
+});
+```
+
+The workflow changes only `slide.name`, which crosses OpenChestnut as the
+existing SlidePart's `p:cSld/@name`. It requires an exact source name, maps
+the actual `presentation.xml` relationship order to the target part, checks
+the saved target name, keeps every non-target part byte-identical, reimports,
+and requires a byte-identical model SVG. Open XML SDK may canonicalize the
+target SlidePart XML serialization, so the workflow does not promise lexical
+byte identity for that one part. It rejects fallback-only names,
+duplicate/missing target names, pending clones, and any unexpected package or
+semantic change.
+
 ## Bounded Imported Title And Speaker-Notes Edit
 
 When the source deck has one uniquely named slide, one uniquely named title

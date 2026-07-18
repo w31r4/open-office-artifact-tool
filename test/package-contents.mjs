@@ -163,6 +163,7 @@ for (const required of [
   "skills/presentations/skills/presentations/agents/openai.yaml",
   "skills/presentations/skills/presentations/artifact_tool/API_QUICK_START.md",
   "skills/presentations/skills/presentations/examples/openchestnut-title-notes-edit-workflow.mjs",
+  "skills/presentations/skills/presentations/examples/openchestnut-slide-name-edit-workflow.mjs",
   "skills/presentations/skills/presentations/artifact_tool/api/references/ole-workbooks.spec.md",
   "skills/presentations/skills/presentations/container_tools/artifact_tool_utils.mjs",
   "skills/presentations/skills/presentations/container_tools/slides_test.py",

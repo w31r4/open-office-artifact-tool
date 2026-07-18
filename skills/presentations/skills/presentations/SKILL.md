@@ -245,6 +245,27 @@ step.
 
 You MUST NOT use `python-pptx` or the old Python `artifact_tool` API.
 
+### Bounded Imported Slide Name Edit
+
+For one uniquely named original imported slide, use the shipped public
+OpenChestnut workflow rather than patching `ppt/slides/slide*.xml` directly:
+
+```bash
+node examples/openchestnut-slide-name-edit-workflow.mjs \
+  input.pptx output.pptx audit.json \
+  "Go-no-go decision" "Go decision: controlled rollout"
+```
+
+It checks the exact source name, maps the source presentation relationship list
+to the target SlidePart, changes only `slide.name`, and then proves the saved
+package has the same part topology, byte-identical non-target parts, and the
+requested target `p:cSld/@name`. Open XML SDK may canonicalize the target
+SlidePart's XML serialization; the workflow therefore reimports, preserves the
+rest of the target slide's semantics, requires a byte-identical model SVG, and
+writes a source/output-bound audit. Duplicate/missing names, fallback-only
+native names, unexpected package changes, pending clones, and any other
+ambiguous edit fail closed. This is not a generic template metadata editor.
+
 ### Bounded Imported Title And Speaker-Notes Edit
 
 For one known slide with one known text shape and a canonical plain-text Notes
