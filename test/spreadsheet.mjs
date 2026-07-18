@@ -449,9 +449,20 @@ ifsFormulaSheet.getRange("E1:E4").formulas = [
   ["=MAXIFS(B2:B6,A2:A6,\"North\")"],
 ];
 assert.deepEqual(ifsFormulaSheet.getRange("E1:E4").values, [[7], [14], ["#VALUE!"], [0]]);
+ifsFormulaSheet.getRange("G1:G7").formulas = [
+  ["=IFS(FALSE,\"wrong\",TRUE,\"selected\")"],
+  ["=IFS(FALSE,\"no match\")"],
+  ["=IFS(TRUE,\"short circuit\",TRUE,1/0)"],
+  ["=SWITCH(A2,\"West\",1,\"East\",2,0)"],
+  ["=SWITCH(\"North\",\"West\",1,\"East\",2,0)"],
+  ["=SWITCH(\"North\",\"West\",1)"],
+  ["=IFS(TRUE)"],
+];
+assert.deepEqual(ifsFormulaSheet.getRange("G1:G7").values, [["selected"], ["#N/A"], ["short circuit"], [2], [0], ["#N/A"], ["#VALUE!"]]);
 const ifsFormulaXlsx = await SpreadsheetFile.exportXlsx(ifsFormulaWorkbook);
 const importedIfsFormulaWorkbook = await SpreadsheetFile.importXlsx(ifsFormulaXlsx);
 assert.deepEqual(importedIfsFormulaWorkbook.worksheets.getItem("Criteria").getRange("E1:E4").formulas, ifsFormulaSheet.getRange("E1:E4").formulas);
+assert.deepEqual(importedIfsFormulaWorkbook.worksheets.getItem("Criteria").getRange("G1:G7").formulas, ifsFormulaSheet.getRange("G1:G7").formulas);
 
 const importedWithoutSourceSnapshot = await SpreadsheetFile.importXlsx(firstXlsx);
 const workbookState = importedWithoutSourceSnapshot[Symbol.for("open-office-artifact-tool.open-chestnut-state")];

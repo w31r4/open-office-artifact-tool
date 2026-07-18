@@ -3833,6 +3833,28 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
     case "NETWORKDAYS.INTL": return excelNetworkDays(scalar(0, 0), scalar(1, 0), args[3] == null ? [] : values([args[3]]), dateSystem, scalar(2, 1), true);
     case "WORKDAY.INTL": return excelWorkday(scalar(0, 0), scalar(1, 0), args[3] == null ? [] : values([args[3]]), dateSystem, scalar(2, 1));
     case "IF": return evaluateFormulaCondition(sheet, args[0], context) ? scalar(1, true) : scalar(2, false);
+    case "IFS": {
+      if (args.length < 2 || args.length % 2 !== 0) return "#VALUE!";
+      for (let index = 0; index < args.length; index += 2) {
+        if (evaluateFormulaCondition(sheet, args[index], context)) return scalar(index + 1);
+      }
+      return "#N/A";
+    }
+    case "SWITCH": {
+      if (args.length < 3) return "#VALUE!";
+      const expression = scalar(0);
+      const expressionError = formulaErrorCode(expression);
+      if (expressionError) return expressionError;
+      const hasDefault = args.length % 2 === 0;
+      const pairEnd = hasDefault ? args.length - 1 : args.length;
+      for (let index = 1; index < pairEnd; index += 2) {
+        const candidate = scalar(index);
+        const candidateError = formulaErrorCode(candidate);
+        if (candidateError) return candidateError;
+        if (compareFormulaValues(expression, "=", candidate)) return scalar(index + 1);
+      }
+      return hasDefault ? scalar(args.length - 1) : "#N/A";
+    }
     case "IFERROR": { const value = scalar(0); return formulaErrorCode(value) ? scalar(1, "") : value; }
     case "IFNA": { const value = scalar(0); return formulaErrorCode(value) === "#N/A" ? scalar(1, "") : value; }
     case "AND": return args.every((arg) => evaluateFormulaCondition(sheet, arg, context));

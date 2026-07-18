@@ -2512,6 +2512,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.IF` | formula | Return one value when a condition is true and another when false. |
 | `fx.IFERROR` | formula | Return a fallback value when an expression evaluates to a formula error. |
 | `fx.IFNA` | formula | Return a fallback only when an expression evaluates to #N/A; preserve every other result or error. |
+| `fx.IFS` | formula | Evaluate condition/value pairs in order and return the first matching value, or #N/A when no condition matches. |
 | `fx.INDEX` | formula | Return a value from a range by 1-based row and optional column index. |
 | `fx.INT` | formula | Round a number down to the nearest integer. |
 | `fx.IPMT` | formula | Calculate the interest component of one constant-payment loan period from finite rate, period, term, present value, optional future value, and payment-timing inputs. |
@@ -2562,6 +2563,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.SUMIF` | formula | Sum corresponding values using case-insensitive numeric/text criteria and Excel ?, *, and ~ wildcards. |
 | `fx.SUMIFS` | formula | Sum values where all supplied criteria ranges have the same size and match case-insensitive comparison or wildcard criteria. |
 | `fx.SUMPRODUCT` | formula | Multiply corresponding numeric values in equally sized arrays and return the sum of those products. |
+| `fx.SWITCH` | formula | Match an expression against ordered value/result pairs and return an optional default or #N/A when no value matches. |
 | `fx.TAKE` | formula | Take rows and optional columns from the start or end of an array and spill the result. |
 | `fx.TEXTJOIN` | formula | Join text values with a delimiter and optional empty-value skipping. |
 | `fx.TIME` | formula | Return a time fraction from hour, minute, and second values from 0 through 32767, carrying overflow and wrapping at 24 hours. |
@@ -3263,6 +3265,23 @@ Return a fallback only when an expression evaluates to #N/A; preserve every othe
 **Schema parameters:**
 
 - `formula` (string) required — Excel-style cell formula beginning with =IFNA(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (boolean) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.IFS`
+
+Evaluate condition/value pairs in order and return the first matching value, or #N/A when no condition matches.
+
+**Examples:**
+
+- =IFS(A1>=90,"A",A1>=80,"B",TRUE,"C")
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =IFS(...).
 - `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
 
 **Schema returns:**
@@ -4166,6 +4185,23 @@ Multiply corresponding numeric values in equally sized arrays and return the sum
 **Schema returns:**
 
 - `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.SWITCH`
+
+Match an expression against ordered value/result pairs and return an optional default or #N/A when no value matches.
+
+**Examples:**
+
+- =SWITCH(A1,"East",1,"West",2,0)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =SWITCH(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (boolean) — Calculated cell value or an Excel-style formula error string.
 
 #### `fx.TAKE`
 

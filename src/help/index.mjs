@@ -101,6 +101,8 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "fx.SMALL", category: "statistical", summary: "Return the k-th smallest numeric value in an array or range.", examples: ["=SMALL(A1:A10,2)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.RANK.EQ", category: "statistical", summary: "Return a number's equal rank in a numeric range, descending by default or ascending when order is nonzero.", examples: ["=RANK.EQ(A1,A1:A10,0)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.IF", category: "logical", summary: "Return one value when a condition is true and another when false.", examples: ["=IF(A1>0,\"ok\",\"bad\")"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.IFS", category: "logical", summary: "Evaluate condition/value pairs in order and return the first matching value, or #N/A when no condition matches.", examples: ["=IFS(A1>=90,\"A\",A1>=80,\"B\",TRUE,\"C\")"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.SWITCH", category: "logical", summary: "Match an expression against ordered value/result pairs and return an optional default or #N/A when no value matches.", examples: ["=SWITCH(A1,\"East\",1,\"West\",2,0)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.AND", category: "logical", summary: "Return TRUE when all conditions are true.", examples: ["=AND(A1>0,B1>0)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.OR", category: "logical", summary: "Return TRUE when any condition is true.", examples: ["=OR(A1>0,B1>0)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.NOT", category: "logical", summary: "Reverse the truth value of a condition.", examples: ["=NOT(A1>0)"] },

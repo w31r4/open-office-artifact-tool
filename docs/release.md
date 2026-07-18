@@ -120,7 +120,7 @@ docs:api`, `npm run test:pack` (444 files; 9.4 MB packed, 23.6 MB unpacked),
 offline `npm run release:check -- --skip-network --allow-dirty`, OfficeBridge
 `5/5`, and OpenChestnut `210/210`.
 
-### XLSX criteria extrema formulas
+### XLSX criteria extrema and branch formulas
 
 On 2026-07-18, the bounded JavaScript calculation catalog added `MINIFS` and
 `MAXIFS`. Each requires a value range followed by one or more
@@ -130,11 +130,18 @@ wildcard criteria semantics, considers only finite numeric values in matching
 value cells, returns `0` when no numeric value matches, and fails with
 `#VALUE!` before calculation when a criterion range has a different shape.
 
-The public Help catalog documents both functions and regenerates the API
+The same catalog now adds `IFS` and `SWITCH` for concise agent-authored branch
+logic. `IFS` walks condition/value pairs in order and evaluates only the first
+selected result; it returns `#N/A` for no match and `#VALUE!` for malformed
+pairs. `SWITCH` matches one expression against ordered value/result pairs,
+supports an optional default, and otherwise returns `#N/A`.
+
+The public Help catalog documents all four functions and regenerates the API
 reference. Spreadsheet smoke tests cover multi-criterion minimum/maximum,
-ignored nonnumeric matched cells, the no-match `0` result, and mismatched-range
-rejection; Help tests pin the catalog and workbook counts and the numeric
-formula schemas.
+ignored nonnumeric matched cells, the no-match `0` result, mismatched-range
+rejection, short-circuit branch behavior, `SWITCH` default/no-match behavior,
+and canonical OpenChestnut XLSX export/import; Help tests pin the catalog and
+workbook counts and the numeric formula schemas.
 
 ### XLSX bounded 2D bubble charts
 
