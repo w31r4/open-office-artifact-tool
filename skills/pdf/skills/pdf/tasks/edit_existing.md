@@ -90,6 +90,39 @@ unsigned operation may use `incremental` save, subject to the same source-prefix
 and signature refusal rules. It is not a substitute for rotated-coordinate text
 or image editing; route those tasks explicitly to the specialist provider.
 
+## Add one imported Text annotation
+
+Copy the exact inspection hash and target `mupdfPage` evidence. This is a
+source-bound **pin** operation, not a rectangle/layout API: MuPDF normalizes
+the native Text-note icon size. `point` is `[x, y]` in the inspected visible
+`mupdfPage.bbox` coordinate space, and its native footprint must fit fully
+inside the unrotated page:
+
+```json
+[
+  {
+    "type": "add_text_annotation",
+    "page": 2,
+    "sourceSha256": "<inspect summary sourceSha256>",
+    "expectedPage": {
+      "bbox": [0, 0, 612, 792],
+      "rotation": 0
+    },
+    "point": [72, 128],
+    "contents": "Review this assumption.",
+    "author": "Reviewer",
+    "subject": "Board review"
+  }
+]
+```
+
+This operation is rewrite-only. It rejects stale hashes/page geometry, rotated
+pages, out-of-window pins, `text`/`bbox`/`rect` aliases, icon choices, empty
+content, and incremental output. The operation audit contains the actual
+provider-normalized annotation rectangle; re-inspect the delivered bytes before
+using its fresh `mupdf-annotation-<page>-<xref>` locator for a later update or
+deletion. Do not treat that xref as a persistent document identity.
+
 ## Delete one imported annotation
 
 First run `inspect` on the exact input. Select one `mupdfAnnotation` record by

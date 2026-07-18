@@ -200,6 +200,27 @@ incremental refusal, rejected geometry patch, exact text/author/subject update,
 fresh-output reinspection, and a subsequent delete that uses only the refreshed
 source hash and locator.
 
+### PDF source-bound Text annotation creation
+
+On 2026-07-18, `add_text_annotation` was moved from a direct convenience
+mutation to the same agent-safe source-bound contract. It now requires the
+exact input SHA-256 and an inspected target `mupdfPage` bbox/rotation snapshot,
+accepts only an unrotated in-window `[x,y]` pin with non-empty `contents` and
+optional non-empty author/subject, and is rewrite-only.
+
+The contract intentionally does not accept a requested rectangle, `text` alias,
+or icon selection. A native probe proved that MuPDF normalizes Text-note
+geometry, so the operation verifies one new `Text` annotation at the requested
+pin, records the provider's actual normalized rectangle, and requires a fresh
+inspection before that result can be updated or deleted. The implementation
+also snapshots the native annotation count before creation because MuPDF's
+enumeration list is live and otherwise makes a false count delta appear valid.
+
+Library and shipped CLI tests cover source-hash/page-snapshot binding,
+incremental refusal, stale page rejection, out-of-window and rotated-page
+failure, legacy alias refusal, exactly-one addition, normalized geometry, and
+fresh-output inspection.
+
 ### PDF source-bound link deletion
 
 On 2026-07-18, the same direct-original route made imported link deletion

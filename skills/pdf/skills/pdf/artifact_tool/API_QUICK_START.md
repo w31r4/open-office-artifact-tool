@@ -190,6 +190,34 @@ await rotated.save("third-party-page-1-rotated.pdf");
 Inspect and render the result before delivery. Rotated-coordinate text/image
 editing remains an explicit specialist-provider task.
 
+For a new Text review note on an imported PDF, bind the exact source hash and
+target page snapshot first. This is a pin, not a rectangle API: MuPDF owns the
+native icon's normalized size and returns its actual rectangle in the audit:
+
+```js
+const notePage = inspection.records.find((record) => record.kind === "mupdfPage"
+  && record.page === 1);
+if (!notePage) throw new Error("Expected one inspectable target page.");
+
+const withReviewNote = await PdfFile.editPdf(input, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "add_text_annotation",
+    page: notePage.page,
+    sourceSha256: inspection.summary.sourceSha256,
+    expectedPage: { bbox: notePage.bbox, rotation: notePage.rotation },
+    point: [72, 128],
+    contents: "Review this assumption.",
+    author: "Reviewer",
+  }],
+});
+await withReviewNote.save("third-party-with-review-note.pdf");
+```
+
+The pin must fit within an unrotated inspected `mupdfPage.bbox`; `text`,
+`bbox`, `rect`, icon selection, stale evidence, and incremental save are
+rejected. Re-inspect the rewrite before relying on the fresh annotation locator.
+
 For an imported annotation, do not use its array index as identity. Inspect the
 exact input bytes, retain the returned `summary.sourceSha256`, and delete only
 one source-bound annotation locator with a semantic precondition. This is a

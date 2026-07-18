@@ -59,6 +59,7 @@ const LINK_PATCH_FIELDS = new Set(["url"]);
 const PAGE_EXPECTATION_FIELDS = new Set(["bbox", "rotation"]);
 const SAFE_NATIVE_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 const TEXT_ANNOTATION_ANCHOR_SIZE = 20;
+const TEXT_ANNOTATION_OPERATION_FIELDS = new Set(["type", "page", "pageIndex", "sourceSha256", "expectedPage", "point", "contents", "author", "subject"]);
 
 function limitsFor(options = {}) {
   const topLevel = Object.fromEntries(Object.keys(DEFAULT_LIMITS)
@@ -446,7 +447,7 @@ function pageExpectationMismatch(actual, expected) {
 
 function textAnnotationPoint(value) {
   if (!Array.isArray(value) || value.length !== 2 || !value.every((coordinate) => Number.isFinite(Number(coordinate)))) {
-    throw new Error("add_text_annotation point must be [x, y] in the inspected raw unrotated PDF page coordinates.");
+    throw new Error("add_text_annotation point must be [x, y] in the inspected unrotated mupdfPage.bbox coordinate space.");
   }
   return value.map(Number);
 }
@@ -458,13 +459,21 @@ function textAnnotationRequest(operation) {
   if (operation.bbox !== undefined || operation.rect !== undefined) {
     throw new Error("add_text_annotation uses one source-bound point, not a requested rectangle; MuPDF owns the native Text-note icon rectangle.");
   }
-  if (typeof operation.contents !== "string" || !operation.contents.length) {
+  if (operation.icon !== undefined) {
+    throw new Error("add_text_annotation does not expose icon selection; use the native provider's verified default Text-note icon.");
+  }
+  for (const name of Object.keys(operation)) {
+    if (!TEXT_ANNOTATION_OPERATION_FIELDS.has(name)) {
+      throw new Error(`add_text_annotation contains unsupported field: ${name}.`);
+    }
+  }
+  if (typeof operation.contents !== "string" || !operation.contents.trim()) {
     throw new Error("add_text_annotation requires non-empty contents.");
   }
   const request = { contents: operation.contents, point: textAnnotationPoint(operation.point) };
   for (const name of ["author", "subject"]) {
     if (operation[name] === undefined) continue;
-    if (typeof operation[name] !== "string" || !operation[name].length) {
+    if (typeof operation[name] !== "string" || !operation[name].trim()) {
       throw new Error(`add_text_annotation ${name} must be a non-empty string when supplied.`);
     }
     request[name] = operation[name];

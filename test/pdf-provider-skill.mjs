@@ -98,6 +98,7 @@ assert.match(skillText, /set_page_crop/);
 assert.match(skillText, /rotate_page/);
 assert.match(skillText, /delete_annotation/);
 assert.match(skillText, /update_annotation/);
+assert.match(skillText, /add_text_annotation.*source SHA-256.*mupdfPage.*pin.*rewrite/s);
 assert.match(skillText, /add_link/);
 assert.match(skillText, /delete_link/);
 assert.match(skillText, /update_link/);
@@ -256,9 +257,21 @@ try {
   const mupdfNestedRender = path.join(tempRoot, "nested", "qa", "mupdf-render.png");
   run(process.execPath, [mupdfCli, "render", mupdfInput, mupdfNestedRender, "--page", "1", "--dpi", "72"], { status: 0 });
   assert.deepEqual([...new Uint8Array(await fs.readFile(mupdfNestedRender)).subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
-  await fs.writeFile(mupdfOperations, JSON.stringify({ operations: [{ type: "add_text_annotation", page: 1, bbox: [40, 40, 24, 24], text: "CLI review" }], savePolicy: "incremental" }), "utf8");
+  const mupdfAnnotationPage = mupdfInspection.records.find((record) => record.kind === "mupdfPage" && record.page === 1);
+  await fs.writeFile(mupdfOperations, JSON.stringify({
+    savePolicy: "rewrite",
+    operations: [{
+      type: "add_text_annotation",
+      page: 1,
+      sourceSha256: mupdfInspection.summary.sourceSha256,
+      expectedPage: { bbox: mupdfAnnotationPage.bbox, rotation: mupdfAnnotationPage.rotation },
+      point: [40, 40],
+      contents: "CLI review",
+    }],
+  }), "utf8");
   const mupdfEdited = parseResult(run(process.execPath, [mupdfCli, "edit", mupdfInput, mupdfOperations, mupdfOutput], { status: 0 }));
-  assert.equal(mupdfEdited.savePolicy, "incremental");
+  assert.equal(mupdfEdited.savePolicy, "rewrite");
+  assert.equal(mupdfEdited.operations[0].added.contents, "CLI review");
   const mupdfAnnotationInspection = await PdfFile.inspectPdf(await fs.readFile(mupdfOutput));
   assert.equal(mupdfAnnotationInspection.records.find((record) => record.kind === "mupdfPage").annotations, 1);
   const mupdfAnnotation = mupdfAnnotationInspection.records.find((record) => record.kind === "mupdfAnnotation");

@@ -1,6 +1,6 @@
 # Forms and annotations
 
-Use MuPDF.js for bounded source-bound single-widget text/combo/checkbox updates and text annotations. Use pypdf when radio export values, shared widgets, choice display/export mappings, appearance-state validation, flattening, or more complex AcroForm handling is required. Always open the original PDF directly.
+Use MuPDF.js for bounded source-bound single-widget text/combo/checkbox updates and source-bound Text-note pins. Use pypdf when radio export values, shared widgets, choice display/export mappings, appearance-state validation, flattening, or more complex AcroForm handling is required. Always open the original PDF directly.
 
 ## Inspect first
 
@@ -56,6 +56,39 @@ Radio buttons, shared-widget fields, list or multi-select choices, password
 fields, mismatched export values, stale snapshots, and unsupported options fail
 closed in this path. Route them to the explicit pypdf workflow below. Signed
 PDF incremental edits are also rejected.
+
+## Add one source-bound Text note
+
+Select the target `mupdfPage` record from the same inspection. Use its `bbox`
+and `rotation` as an exact coordinate precondition, then place one Text-note
+pin with non-empty `contents`:
+
+```js
+const page = inspection.records.find((record) => record.kind === "mupdfPage"
+  && record.page === 1);
+if (!page) throw new Error("Expected an inspectable first page.");
+
+const annotated = await PdfFile.editPdf(input, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "add_text_annotation",
+    page: page.page,
+    sourceSha256: inspection.summary.sourceSha256,
+    expectedPage: { bbox: page.bbox, rotation: page.rotation },
+    point: [72, 128],
+    contents: "Review this assumption.",
+    author: "Reviewer",
+  }],
+});
+```
+
+`point` is in the inspected unrotated visible `mupdfPage.bbox` coordinate
+space. It is not a request for a specific note rectangle: the provider
+normalizes the native icon geometry, verifies exactly one new Text annotation,
+and records the actual rectangle in the operation audit. A `text` alias,
+`bbox`/`rect`, icon selection, rotated page, stale hash/page snapshot, or
+incremental save fails closed. Re-inspect the rewrite before a later
+annotation update/deletion; the returned xref is current-source-only.
 
 Before a pypdf mutation, probe and bind the exact route. Change `--task` to `annotate` for notes:
 

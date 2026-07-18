@@ -305,6 +305,14 @@ await assert.rejects(PdfFile.editPdf(arbitraryPdf, {
   savePolicy: "rewrite",
   operations: [{ ...sourceBoundTextAnnotation, contents: undefined, text: "legacy text" }],
 }), /uses contents, not the legacy text alias/);
+await assert.rejects(PdfFile.editPdf(arbitraryPdf, {
+  savePolicy: "rewrite",
+  operations: [{ ...sourceBoundTextAnnotation, icon: "Comment" }],
+}), /does not expose icon selection/);
+await assert.rejects(PdfFile.editPdf(arbitraryPdf, {
+  savePolicy: "rewrite",
+  operations: [{ ...sourceBoundTextAnnotation, unsupported: true }],
+}), /contains unsupported field: unsupported/);
 const mupdfAnnotated = await PdfFile.editPdf(arbitraryPdf, {
   savePolicy: "rewrite",
   operations: [
@@ -328,6 +336,34 @@ assert.equal(Number.isSafeInteger(removableAnnotation.xref), true);
 const parsedAnnotations = await parsePdfWithMuPdf(mupdfAnnotated.bytes);
 assert.equal(parsedAnnotations.pages[0].native.annotations.find((annotation) => annotation.contents === "Agent review").id, removableAnnotation.id);
 assert.deepEqual(removableAnnotation.rect, [40, 40, 20, 20]);
+const mupdfAnnotatedPage = mupdfAnnotationInspection.records.find((record) => record.kind === "mupdfPage" && record.page === 1);
+const mupdfAnnotationMoved = await PdfFile.editPdf(mupdfAnnotated, {
+  savePolicy: "rewrite",
+  operations: [
+    {
+      type: "delete_annotation",
+      page: removableAnnotation.page,
+      annotationId: removableAnnotation.id,
+      sourceSha256: mupdfAnnotationInspection.summary.sourceSha256,
+      expected: { type: removableAnnotation.type, contents: removableAnnotation.contents, author: removableAnnotation.author, rect: removableAnnotation.rect },
+    },
+    {
+      type: "add_text_annotation",
+      page: 1,
+      sourceSha256: mupdfAnnotationInspection.summary.sourceSha256,
+      expectedPage: { bbox: mupdfAnnotatedPage.bbox, rotation: mupdfAnnotatedPage.rotation },
+      point: [120, 120],
+      contents: "Moved review",
+      author: "Agent",
+    },
+  ],
+});
+assert.deepEqual(mupdfAnnotationMoved.metadata.operations.map((operation) => operation.type), ["delete_annotation", "add_text_annotation"]);
+assert.equal(mupdfAnnotationMoved.metadata.operations[1].beforeCount, 1);
+assert.deepEqual(mupdfAnnotationMoved.metadata.operations[1].added.rect, [120, 120, 20, 20]);
+const movedAnnotationInspection = await PdfFile.inspectPdf(mupdfAnnotationMoved);
+assert.equal(movedAnnotationInspection.records.some((record) => record.kind === "mupdfAnnotation" && record.contents === "Agent review"), false);
+assert.deepEqual(movedAnnotationInspection.records.find((record) => record.kind === "mupdfAnnotation" && record.contents === "Moved review").rect, [120, 120, 20, 20]);
 await assert.rejects(PdfFile.inspectPdf(mupdfAnnotated, { limits: { maxAnnotations: 1 } }), /annotations exceed maxAnnotations/);
 await assert.rejects(PdfFile.editPdf(mupdfAnnotated, {
   savePolicy: "incremental",
@@ -573,6 +609,19 @@ rotatedNativeDocument.destroy();
 await assert.rejects(PdfFile.editPdf(rotatedPdf, {
   operations: [{ type: "set_page_crop", page: 1, bbox: [72, 72, 468, 648] }],
 }), /set_page_crop supports only unrotated pages/);
+const rotatedAnnotationInspection = await PdfFile.inspectPdf(rotatedPdf);
+const rotatedAnnotationPage = rotatedAnnotationInspection.records.find((record) => record.kind === "mupdfPage" && record.page === 1);
+await assert.rejects(PdfFile.editPdf(rotatedPdf, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "add_text_annotation",
+    page: 1,
+    sourceSha256: rotatedAnnotationInspection.summary.sourceSha256,
+    expectedPage: { bbox: rotatedAnnotationPage.bbox, rotation: rotatedAnnotationPage.rotation },
+    point: [40, 40],
+    contents: "Rotated review",
+  }],
+}), /add_text_annotation supports only unrotated pages/);
 const mupdfRedacted = await PdfFile.editPdf(arbitraryPdf, {
   savePolicy: "rewrite",
   operations: [{ type: "redact_text", page: 2, term: "Second page notes" }],
