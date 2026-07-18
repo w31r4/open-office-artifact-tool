@@ -12,7 +12,7 @@ import { aid } from "../shared/ids.mjs";
 import { imageDataFromDataUrl } from "../shared/images.mjs";
 import { filterInspectRecords, inspectRecordMatchesTarget, inspectTargetTokens, ndjson, normalizeKinds, verificationIssue, verificationResult } from "../shared/inspection.mjs";
 import { fileBlobFromRenderOutput, LAYOUT_MIME, renderTypeForOptions } from "../shared/render-output.mjs";
-import { attrEscape, xmlEscape } from "../shared/xml.mjs";
+import { attrEscape, isXmlSafeText, xmlEscape } from "../shared/xml.mjs";
 import { createTextRange, textRangeRecord } from "../shared/text-range.mjs";
 import { queryHelpRecords } from "../help/index.mjs";
 
@@ -75,14 +75,43 @@ class DocumentTableCell {
     this.id = `${table.id}/cell/${this.row}/${this.column}`;
   }
   _record() { return this.table.cells?.find((cell) => cell.row === this.row && cell.column === this.column); }
-  get value() { return this.table.values[this.row]?.[this.column] ?? ""; }
-  set value(value) { this.table.ensureCell(this.row, this.column); this.table.values[this.row][this.column] = value; }
+  get value() {
+    let value = String(this.table.values[this.row]?.[this.column] ?? "");
+    for (const patch of this.table.textPatches.filter((item) => item.row === this.row && item.column === this.column)) {
+      value = value.replace(patch.search, patch.replacement);
+    }
+    return value;
+  }
+  set value(value) {
+    if (!this.editable) throw new Error(`Document table cell ${this.id} is source-bound and does not support whole-cell replacement; use its text range replace() operation when textPatchable is true.`);
+    this.table.ensureCell(this.row, this.column);
+    this.table.textPatches = this.table.textPatches.filter((item) => item.row !== this.row || item.column !== this.column);
+    this.table.values[this.row][this.column] = String(value ?? "");
+  }
+  replaceText(search, replacement) {
+    if (!this.textPatchable) throw new Error(`Document table cell ${this.id} does not advertise source-bound text replacement capability.`);
+    if (search instanceof RegExp) throw new TypeError("Document table cell text replacement requires a literal search string.");
+    const expected = String(search ?? "");
+    const next = String(replacement ?? "");
+    if (!expected) throw new TypeError("Document table cell text replacement requires a non-empty search string.");
+    if (expected.length > 1_000_000 || next.length > 1_000_000 || !isXmlSafeText(expected) || !isXmlSafeText(next)) {
+      throw new TypeError("Document table cell text replacement must use XML-safe strings of at most 1,000,000 characters.");
+    }
+    const value = this.value;
+    const first = value.indexOf(expected);
+    if (first < 0 || value.indexOf(expected, first + 1) >= 0) {
+      throw new Error(`Document table cell ${this.id} text replacement requires exactly one visible match.`);
+    }
+    this.table.textPatches.push({ row: this.row, column: this.column, search: expected, replacement: next });
+    return this;
+  }
   get gridColumn() { return this._record()?.gridColumn ?? this.column; }
   get columnSpan() { return this._record()?.columnSpan ?? 1; }
   get rowSpan() { return this._record()?.rowSpan ?? 1; }
   get verticalMerge() { return this._record()?.verticalMerge ?? "none"; }
   get editable() { return this._record()?.editable ?? true; }
-  inspectRecord() { return { kind: this.kind, id: this.id, tableId: this.tableId, row: this.row, column: this.column, gridColumn: this.gridColumn, columnSpan: this.columnSpan, rowSpan: this.rowSpan, verticalMerge: this.verticalMerge, editable: this.editable, value: this.value }; }
+  get textPatchable() { return this._record()?.textPatchable === true; }
+  inspectRecord() { return { kind: this.kind, id: this.id, textRangeId: this.textPatchable || this.editable ? `${this.id}/text` : undefined, tableId: this.tableId, row: this.row, column: this.column, gridColumn: this.gridColumn, columnSpan: this.columnSpan, rowSpan: this.rowSpan, verticalMerge: this.verticalMerge, editable: this.editable, textPatchable: this.textPatchable, pendingTextPatches: this.table.textPatches.filter((item) => item.row === this.row && item.column === this.column).length, value: this.value }; }
 }
 
 function documentTableDefaultColumnWidths(columns, widthDxa) {
@@ -112,8 +141,15 @@ class DocumentTableBlock {
         rowSpan: Math.max(0, Math.round(Number(cell.rowSpan ?? (verticalMerge === "continue" ? 0 : 1)) || 0)),
         verticalMerge,
         editable: verticalMerge === "continue" ? false : cell.editable !== false,
+        textPatchable: verticalMerge === "continue" ? false : cell.textPatchable === true,
       };
     }) : undefined;
+    this.textPatches = Array.isArray(config.textPatches) ? config.textPatches.map((patch) => ({
+      row: Math.max(0, Math.round(Number(patch.row) || 0)),
+      column: Math.max(0, Math.round(Number(patch.column) || 0)),
+      search: String(patch.search ?? ""),
+      replacement: String(patch.replacement ?? ""),
+    })) : [];
     const derivedGridColumns = this.cells?.reduce((maximum, cell) => Math.max(maximum, cell.gridColumn + cell.columnSpan), 0) || 0;
     this.gridColumns = Math.max(0, Math.round(Number(config.gridColumns ?? Math.max(this.columns, derivedGridColumns))));
     const formattingColumns = this.cells?.length ? this.gridColumns : this.columns;
@@ -135,8 +171,8 @@ class DocumentTableBlock {
 
   ensureCell(row, column) { while (this.values.length <= row) this.values.push([]); while (this.values[row].length <= column) this.values[row].push(""); this.rows = this.values.length; this.columns = Math.max(this.columns, column + 1); }
   getCell(row, column) { return new DocumentTableCell(this, row, column); }
-  inspectRecord(index) { return { kind: "table", id: this.id, index, name: this.name || undefined, rows: this.rows, cols: this.columns, gridColumns: this.gridColumns, cells: this.cells, styleId: this.styleId, widthDxa: this.widthDxa, indentDxa: this.indentDxa, columnWidthsDxa: this.columnWidthsDxa, cellMarginsDxa: this.cellMarginsDxa, borderColor: this.borderColor, borderSize: this.borderSize, headerFill: this.headerFill, values: this.values }; }
-  toProto() { return { kind: "table", id: this.id, name: this.name, styleId: this.styleId, gridColumns: this.gridColumns, cells: this.cells, widthDxa: this.widthDxa, indentDxa: this.indentDxa, columnWidthsDxa: this.columnWidthsDxa, cellMarginsDxa: this.cellMarginsDxa, borderColor: this.borderColor, borderSize: this.borderSize, headerFill: this.headerFill, values: this.values }; }
+  inspectRecord(index) { return { kind: "table", id: this.id, index, name: this.name || undefined, rows: this.rows, cols: this.columns, gridColumns: this.gridColumns, cells: this.cells, pendingTextPatches: this.textPatches.length, styleId: this.styleId, widthDxa: this.widthDxa, indentDxa: this.indentDxa, columnWidthsDxa: this.columnWidthsDxa, cellMarginsDxa: this.cellMarginsDxa, borderColor: this.borderColor, borderSize: this.borderSize, headerFill: this.headerFill, values: this.values.map((row, rowIndex) => row.map((_, columnIndex) => this.getCell(rowIndex, columnIndex).value)) }; }
+  toProto() { return { kind: "table", id: this.id, name: this.name, styleId: this.styleId, gridColumns: this.gridColumns, cells: this.cells, textPatches: this.textPatches, widthDxa: this.widthDxa, indentDxa: this.indentDxa, columnWidthsDxa: this.columnWidthsDxa, cellMarginsDxa: this.cellMarginsDxa, borderColor: this.borderColor, borderSize: this.borderSize, headerFill: this.headerFill, values: this.values }; }
 }
 
 function normalizeDocumentTextContentControl(value) {
@@ -214,6 +250,9 @@ class DocumentParagraphBlock {
     this.styleId = config.styleId || config.style || "Normal";
     this.name = config.name || "";
     this.paragraphFormat = { ...(config.paragraphFormat || config.formatting || {}) };
+    this.textEditable = config.textEditable !== false;
+    this.textPatchable = config.textPatchable === true;
+    this.textPatches = Array.isArray(config.textPatches) ? config.textPatches.map((patch) => ({ search: String(patch.search ?? ""), replacement: String(patch.replacement ?? "") })) : [];
   }
 
   _syncText() { this.text = this.runs.map((run) => String(run.text ?? "")).join(""); return this.text; }
@@ -229,8 +268,32 @@ class DocumentParagraphBlock {
       },
     });
   }
-  inspectRecord(index) { return { kind: "paragraph", id: this.id, index, name: this.name || undefined, styleId: this.styleId, paragraphFormat: Object.keys(this.paragraphFormat).length ? this.paragraphFormat : undefined, text: this.text, textChars: this.text.length, runs: documentRunsNeedSerialization(this.runs) ? this.runs : undefined }; }
-  toProto() { return { kind: "paragraph", id: this.id, name: this.name, styleId: this.styleId, paragraphFormat: Object.keys(this.paragraphFormat).length ? this.paragraphFormat : undefined, text: this.text, runs: documentRunsNeedSerialization(this.runs) ? this.runs : undefined }; }
+  replaceText(search, replacement) {
+    if (this.textEditable) {
+      const value = String(this.text).replace(search, replacement);
+      if (this.runs.length > 1 && value !== this.text) throw new Error(`Document paragraph ${this.id} contains multiple source runs; edit the intended run(s) explicitly so formatting boundaries are not flattened.`);
+      this.text = value;
+      if (this.runs.length === 1) this.runs[0].text = value;
+      else if (!this.runs.length && value) this.runs = [{ text: value, style: {} }];
+      return this;
+    }
+    if (!this.textPatchable) throw new Error(`Document paragraph ${this.id} does not advertise source-bound text replacement capability.`);
+    if (search instanceof RegExp) throw new TypeError("Document paragraph source-bound text replacement requires a literal search string.");
+    const expected = String(search ?? "");
+    const next = String(replacement ?? "");
+    if (!expected) throw new TypeError("Document paragraph text replacement requires a non-empty search string.");
+    if (expected.length > 1_000_000 || next.length > 1_000_000 || !isXmlSafeText(expected) || !isXmlSafeText(next)) {
+      throw new TypeError("Document paragraph text replacement must use XML-safe strings of at most 1,000,000 characters.");
+    }
+    const first = this.text.indexOf(expected);
+    if (first < 0 || this.text.indexOf(expected, first + 1) >= 0) throw new Error(`Document paragraph ${this.id} text replacement requires exactly one visible match.`);
+    this.textPatches.push({ search: expected, replacement: next });
+    this.text = this.text.replace(expected, next);
+    if (this.runs.length === 1) this.runs[0].text = this.text;
+    return this;
+  }
+  inspectRecord(index) { return { kind: "paragraph", id: this.id, index, name: this.name || undefined, styleId: this.styleId, textEditable: this.textEditable, textPatchable: this.textPatchable, pendingTextPatches: this.textPatches.length, textRangeId: this.textEditable || this.textPatchable ? `${this.id}/text` : undefined, paragraphFormat: Object.keys(this.paragraphFormat).length ? this.paragraphFormat : undefined, text: this.text, textChars: this.text.length, runs: documentRunsNeedSerialization(this.runs) ? this.runs : undefined }; }
+  toProto() { return { kind: "paragraph", id: this.id, name: this.name, styleId: this.styleId, textEditable: this.textEditable, textPatchable: this.textPatchable, textPatches: this.textPatches, paragraphFormat: Object.keys(this.paragraphFormat).length ? this.paragraphFormat : undefined, text: this.text, runs: documentRunsNeedSerialization(this.runs) ? this.runs : undefined }; }
 }
 
 class DocumentTextContentControlHandle {
@@ -618,17 +681,46 @@ function documentTextParent(document, parentId) {
 
 function documentTextRange(document, id) {
   const parentId = String(id || "").endsWith("/text") ? String(id).slice(0, -5) : undefined;
+  const cellMatch = /^(.+)\/cell\/(\d+)\/(\d+)$/.exec(parentId || "");
+  if (cellMatch) {
+    const table = document.blocks.find((block) => block.kind === "table" && block.id === cellMatch[1]);
+    const cell = table?.getCell(Number(cellMatch[2]), Number(cellMatch[3]));
+    if (!cell || (!cell.editable && !cell.textPatchable)) return undefined;
+    return createTextRange(cell, id, {
+      parentKind: cell.kind,
+      getText: () => cell.value,
+      setText: (value) => { cell.value = value; },
+      replace: (search, replacement) => {
+        if (cell.textPatchable) cell.replaceText(search, replacement);
+        else cell.value = String(cell.value).replace(search, replacement);
+      },
+    });
+  }
   const parent = parentId ? documentTextParent(document, parentId) : undefined;
   if (!parent) return undefined;
+  if (parent.kind === "paragraph" && parent.textEditable === false && parent.textPatchable === false) return undefined;
+  const setText = (value) => {
+    if (parent.kind === "field" || ("display" in parent && !("text" in parent))) parent.display = String(value ?? "");
+    else {
+      const text = String(value ?? "");
+      if (parent.kind === "paragraph" && parent.textEditable === false) throw new Error(`Document paragraph ${parent.id} is source-bound; use replace() for a bounded literal text patch.`);
+      if (parent.kind === "paragraph" && parent.runs?.length > 1 && text !== parent.text) {
+        throw new Error(`Document paragraph ${parent.id} contains multiple source runs; edit the intended run(s) explicitly so formatting boundaries are not flattened.`);
+      }
+      parent.text = text;
+      if (parent.kind === "paragraph") {
+        if (parent.runs?.length === 1) parent.runs[0].text = text;
+        else if (!parent.runs?.length) parent.runs = text ? [{ text, style: {} }] : [];
+      }
+    }
+  };
   return createTextRange(parent, id, {
     parentKind: parent.kind,
     getText: () => parent.text ?? parent.display ?? "",
-    setText: (value) => {
-      if (parent.kind === "field" || ("display" in parent && !("text" in parent))) parent.display = String(value ?? "");
-      else {
-        parent.text = String(value ?? "");
-        if (parent.kind === "paragraph") parent.runs = parent.text ? [{ text: parent.text, style: {} }] : [];
-      }
+    setText,
+    replace: (search, replacement) => {
+      if (parent.kind === "paragraph") parent.replaceText(search, replacement);
+      else setText(String(parent.text ?? parent.display ?? "").replace(search, replacement));
     },
   });
 }
@@ -641,11 +733,23 @@ function documentInspectRecord(document, block, index) {
 
 function documentTextRangeRecords(document) {
   const parents = [...document.blocks, ...document.headers, ...document.footers, ...document.comments, ...document.notes].filter((item) => item && ("text" in item || "display" in item));
-  return parents.map((parent, index) => textRangeRecord(parent, {
+  const records = parents.map((parent, index) => textRangeRecord(parent, {
     parentKind: parent.kind,
     getText: () => parent.text ?? parent.display ?? "",
-    record: { index, styleId: parent.styleId, targetId: parent.targetId },
+    record: { index, styleId: parent.styleId, targetId: parent.targetId, textEditable: parent.textEditable, textPatchable: parent.textPatchable },
   }));
+  for (const table of document.blocks.filter((block) => block.kind === "table")) {
+    for (let row = 0; row < table.rows; row += 1) for (let column = 0; column < table.columns; column += 1) {
+      const cell = table.getCell(row, column);
+      if (!cell.editable && !cell.textPatchable) continue;
+      records.push(textRangeRecord(cell, {
+        parentKind: cell.kind,
+        getText: () => cell.value,
+        record: { tableId: table.id, row, column, editable: cell.editable, textPatchable: cell.textPatchable },
+      }));
+    }
+  }
+  return records;
 }
 
 function documentRenderUsesDocxSource(options = {}) {

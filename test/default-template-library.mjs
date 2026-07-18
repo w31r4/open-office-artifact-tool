@@ -197,6 +197,64 @@ async function assertPublicPresentationPlaceholderTextEdit(sourcePath) {
   return exported;
 }
 
+function documentParagraphFormattingIdentity(block) {
+  return {
+    styleId: block.styleId,
+    paragraphFormat: structuredClone(block.paragraphFormat),
+    runStyles: block.runs.map((run) => structuredClone(run.style)),
+  };
+}
+
+async function assertPublicDocumentTextEdit(sourcePath) {
+  const source = await FileBlob.load(sourcePath);
+  const document = await DocumentFile.importDocx(source);
+  const editable = document.blocks.find((block) =>
+    block.kind === "paragraph" && block.textEditable && block.runs.length === 1 && block.text.trim());
+  const patchable = document.blocks.find((block) =>
+    block.kind === "paragraph" && block.textPatchable && block.text.trim());
+  const target = editable || patchable;
+  if (target) {
+    const identity = documentParagraphFormattingIdentity(target);
+    const replacement = `${target.text} · Agent QA`;
+    const range = document.resolve(`${target.id}/text`);
+    assert.ok(range, `Document template must resolve its advertised paragraph text range: ${sourcePath}`);
+    if (target.textEditable) range.text = replacement;
+    else {
+      assert.throws(() => { range.text = replacement; }, /source-bound.*replace/i, `Source-bound paragraph assignment must fail early: ${sourcePath}`);
+      range.replace(target.text, replacement);
+    }
+    const exported = await DocumentFile.exportDocx(document);
+    const reimported = await DocumentFile.importDocx(exported);
+    const roundTrip = reimported.blocks.find((block) => block.id === target.id);
+    assert.ok(roundTrip, `Edited paragraph identity must survive reimport: ${sourcePath}`);
+    assert.equal(roundTrip.text, replacement, `Edited paragraph text must survive reimport: ${sourcePath}`);
+    assert.deepEqual(documentParagraphFormattingIdentity(roundTrip), identity, `Paragraph/run formatting must stay source-bound: ${sourcePath}`);
+    return exported;
+  }
+
+  const table = document.blocks.find((block) => block.kind === "table" && block.cells.some((cell) => cell.textPatchable));
+  assert.ok(table, `Document template must expose a paragraph or table-cell source text capability: ${sourcePath}`);
+  const cellRecord = table.cells.find((cell) => cell.textPatchable && table.getCell(cell.row, cell.column).value.includes("[Greeting]")) || table.cells.find((cell) => cell.textPatchable);
+  const cell = table.getCell(cellRecord.row, cellRecord.column);
+  assert.equal(cell.textPatchable, true, `Complex document cell must advertise textPatchable: ${sourcePath}`);
+  if (!cell.editable) assert.throws(() => { cell.value = "Unsafe whole-cell replacement"; }, /whole-cell replacement/i, `Complex cell assignment must fail early: ${sourcePath}`);
+  const search = cell.value.includes("[Greeting]") ? "[Greeting]" : cell.value;
+  const replacement = search === "[Greeting]" ? "Hello · Agent QA" : `${search} · Agent QA`;
+  const range = document.resolve(`${cell.id}/text`);
+  assert.ok(range, `Document template must resolve its advertised table-cell text range: ${sourcePath}`);
+  range.replace(search, replacement);
+  const tableInspection = JSON.parse(document.inspect({ kind: "table", target: table.id }).ndjson.trim());
+  assert.equal(tableInspection.pendingTextPatches, 1, `Parent table inspection must expose the pending patch: ${sourcePath}`);
+  assert.equal(tableInspection.values[cellRecord.row][cellRecord.column].includes(replacement), true, `Parent table inspection must project patched cell text: ${sourcePath}`);
+  const exported = await DocumentFile.exportDocx(document);
+  const reimported = await DocumentFile.importDocx(exported);
+  const roundTrip = reimported.resolve(cell.id);
+  assert.ok(roundTrip, `Edited table-cell identity must survive reimport: ${sourcePath}`);
+  assert.equal(roundTrip.value.includes(replacement), true, `Edited table-cell text must survive reimport: ${sourcePath}`);
+  assert.equal(roundTrip.textPatchable, true, `Reimported table cell must re-prove textPatchable: ${sourcePath}`);
+  return exported;
+}
+
 assert.equal(plugin.name, "default-template-library");
 assert.equal(plugin.license, "MIT");
 assert.equal(plugin.skills, "./skills/");
@@ -298,6 +356,14 @@ try {
     editedPresentations.push({ id, output: editedOutput });
   }
 
+  const editedDocuments = [];
+  for (const { id, kind, output } of materialized.filter((item) => item.kind === "document")) {
+    const exported = await assertPublicDocumentTextEdit(output);
+    const editedOutput = path.join(temporary, `${id}-text-edit.docx`);
+    await exported.save(editedOutput);
+    editedDocuments.push({ id, output: editedOutput });
+  }
+
   const structuredPresentation = materialized.find((item) => item.id === "artifact-template-market-trends-report");
   assert.ok(structuredPresentation, "Market Trends retained template must be materialized");
   const topologyProbe = await PresentationFile.importPptx(await FileBlob.load(structuredPresentation.output));
@@ -325,6 +391,7 @@ try {
     const rendered = path.join(temporary, "native-render");
     for (const { id, output } of materialized) await assertNativeRender(output, path.join(rendered, id, "source"));
     for (const { id, output } of roundTripped) await assertNativeRender(output, path.join(rendered, id, "openchestnut"));
+    for (const { id, output } of editedDocuments) await assertNativeRender(output, path.join(rendered, id, "text-edit"));
     for (const { id, output } of editedPresentations) await assertNativeRender(output, path.join(rendered, id, "placeholder-edit"));
   }
 } finally {

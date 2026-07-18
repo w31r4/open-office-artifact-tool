@@ -2054,6 +2054,10 @@ message DocumentBlock {
   string name = 2;
   string style_id = 3;
   DocumentSourceBinding source = 4;
+  // Source-bound literal replacements inside one uniquely matched ordinary
+  // paragraph w:t node. The semantic payload remains the original imported
+  // snapshot; these patches do not grant whole-paragraph editability.
+  repeated DocumentTextPatch text_patches = 5;
 
   oneof content {
     DocumentParagraph paragraph = 10;
@@ -2085,6 +2089,15 @@ message DocumentSourceBinding {
   // Package-local w:id for a recognized tracked insertion/deletion. It is
   // source identity, not durable agent-facing revision identity.
   string native_revision_id = 6;
+  // True when this otherwise source-bound paragraph exposes at least one
+  // ordinary w:r/w:t node suitable for a bounded literal replacement.
+  bool text_patchable = 7;
+}
+
+message DocumentTextPatch {
+  string search = 1;
+  string replacement = 2;
+  string source_text_sha256 = 3;
 }
 
 message DocumentParagraph {
@@ -2224,6 +2237,12 @@ message DocumentTable {
   // profile; imported profiles remain source-bound until structural table
   // editing is explicitly supported.
   DocumentTableFormatting formatting = 3;
+  // Source-bound, literal replacements inside one uniquely matched plain
+  // w:t node. These patches let an agent update complex multi-paragraph table
+  // cells without flattening the cell into the simple authoring profile.
+  // They are rejected for source-free authoring and never imply whole-cell
+  // editability.
+  repeated DocumentTableTextPatch text_patches = 4;
 }
 
 message DocumentTableFormatting {
@@ -2272,6 +2291,18 @@ message DocumentTableCell {
   uint32 row_span = 3;
   DocumentTableVerticalMerge vertical_merge = 4;
   bool editable = 5;
+  // True when the cell contains at least one plain source text node that can
+  // be targeted by a bounded literal text patch. The actual patch still must
+  // match exactly one node and is validated against the source cell hash.
+  bool text_patchable = 6;
+}
+
+message DocumentTableTextPatch {
+  uint32 row = 1;
+  uint32 column = 2;
+  string search = 3;
+  string replacement = 4;
+  string source_text_sha256 = 5;
 }
 
 message DocumentOpaqueBlock {

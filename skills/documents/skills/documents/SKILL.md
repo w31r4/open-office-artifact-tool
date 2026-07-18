@@ -192,6 +192,7 @@ While making and revising the DOCX, please adhere to and check against these qua
 When the user asks to edit an existing document, preserve the original and make minimal, local changes:
 
 - Prefer inline edits (small replacements) over rewriting whole paragraphs.
+- Inspect the target's `textEditable` and `textPatchable` evidence before mutation. Use text assignment only when `textEditable` is true; use `resolve(.../text).replace(old, next)` for one unique literal match when only `textPatchable` is true. If neither capability is advertised, or the match crosses native runs/fields/controls/revisions, fail closed instead of rebuilding the paragraph or cell.
 - Use clear inline annotations/comments at the point of change (margin comments or comment markers). Don’t move all feedback to the end.
 - Keep the original structure unless there’s a strong reason; if a restructure is needed, do it surgically and explain via comments.
 - Don’t “cross out everything and rewrite”; avoid heavy, blanket deletions. The goal is trackable improvements, not a fresh draft unless explicitly requested.

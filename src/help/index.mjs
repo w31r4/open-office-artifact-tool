@@ -259,6 +259,7 @@ export const HELP_CATALOG = [
 
   { artifactKind: "document", kind: "api", name: "DocumentModel.create", summary: "Create a document with paragraph/character styles, formatted paragraphs/runs, inline plain-text content controls, canonical inline SEQ/REF/PAGEREF fields, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, bounded whole-block bookmarks, plain-text footnotes/endnotes, canonical bibliography-backed citations, simple fields, a canonical complex TOC placeholder, bounded whole-paragraph tracked insertions/deletions, classic comments, and PNG/JPEG images. Rich/block/data-bound/dropdown/date/checkbox SDTs, other complex field graphs, arbitrary table-style graphs, complex bookmark/note/revision graphs, modern comment graphs, and advanced settings remain unsupported or import-preserved read only." },
   { artifactKind: "document", kind: "api", name: "document.addParagraph", summary: "Append a styled paragraph with optional run spans, including character-style runStyleId references plus direct/theme and complex-script semantics." },
+  { artifactKind: "document", kind: "api", name: "paragraph.replaceText", summary: "Replace literal paragraph text without flattening formatting boundaries. Fully editable one-run paragraphs update their existing run; imported source-bound paragraphs advertise textPatchable only when OpenChestnut can replace one unique ordinary w:r/w:t node while preserving all other native markup." },
   { artifactKind: "document", kind: "api", name: "paragraph.addTextContentControl", summary: "Append one inline plain-text Word content-control run with agent ID, tag, alias, text, and optional run formatting. OpenChestnut assigns native w:id identity and authors canonical w:sdt markup." },
   { artifactKind: "document", kind: "api", name: "document.contentControls", summary: "List mutable handles for recognized inline plain-text controls with stable model ID, target paragraph, run index, tag, alias, native w:id, and text." },
   { artifactKind: "document", kind: "api", name: "document.fillContentControls", summary: "Transactionally fill every recognized inline plain-text control matching an object or Map of tag-to-value entries. Unknown tags fail before mutation by default." },
@@ -281,6 +282,7 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.addInsertion", summary: "Append one bounded whole-paragraph tracked insertion using native w:ins markup. In-paragraph replacements, mixed normal/revision runs, moves, and property changes require an explicit advanced package workflow." },
   { artifactKind: "document", kind: "api", name: "document.addDeletion", summary: "Append one bounded whole-paragraph tracked deletion using native w:del/w:delText markup. In-paragraph replacements, mixed normal/revision runs, moves, and property changes require an explicit advanced package workflow." },
   { artifactKind: "document", kind: "api", name: "document.addTable", summary: "Append a Word-style table with physical cell values, optional logical merge geometry, and fixed-layout width/margin/border/header formatting." },
+  { artifactKind: "document", kind: "api", name: "documentTableCell.replaceText", summary: "Apply a literal source-bound text patch to one table cell that advertises textPatchable. The search must resolve to exactly one ordinary native w:t node; whole-cell replacement, cross-run matches, fields, controls, revisions, and ambiguous matches fail closed." },
   { artifactKind: "document", kind: "api", name: "document.addComment", summary: "Attach a classic whole-paragraph Word comment with author, initials, date, and text. Replies, resolution metadata, durable IDs, UTC/person data, and other modern comment extensions fail closed." },
   { artifactKind: "document", kind: "api", name: "document.replyToComment", summary: "Create a model-level comment reply for inspect and preview. OpenChestnut 0.2 does not author modern/extended reply graphs, and imported replies are preservation-only." },
   { artifactKind: "document", kind: "api", name: "document.setSettings", summary: "Set model settings. evenAndOddHeaders and the updateFields refresh hint are inside the OpenChestnut 0.2 DOCX boundary; trackRevisions, mirrorMargins, and documentProtection remain unsupported through the facade." },
@@ -288,15 +290,15 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.applyDesignPreset", summary: "Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews." },
   { artifactKind: "document", kind: "api", name: "document.styles.effective", summary: "Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata." },
   { artifactKind: "document", kind: "api", name: "document.inspect", summary: "Emit bounded NDJSON for document blocks including inline plain-text content controls and fields, tracked changes, bookmark ranges, footnotes/endnotes, bibliography sources, comments, styles, headers/footers, and layout; narrow with search/target anchors and fields with include/exclude." },
-  { artifactKind: "document", kind: "api", name: "document.resolve", summary: "Resolve stable document, block, content-control, bookmark, footnote/endnote, bibliography source ID/tag, header/footer, comment, style, and editable text-range IDs." },
-  { artifactKind: "document", kind: "api", name: "document.textRange", summary: "Inspect or resolve stable textRange anchors such as blockId/text for editable document block, header/footer, and comment text." },
+  { artifactKind: "document", kind: "api", name: "document.resolve", summary: "Resolve stable document, block, table-cell, content-control, bookmark, footnote/endnote, bibliography source ID/tag, header/footer, comment, style, and advertised text-range IDs." },
+  { artifactKind: "document", kind: "api", name: "document.textRange", summary: "Inspect or resolve stable textRange anchors such as blockId/text and tableId/cell/row/column/text. Assignment is limited to fully editable text; replace() also supports explicitly advertised source-bound literal patches." },
   { artifactKind: "document", kind: "api", name: "document.layoutJson", summary: "Return page-aware layout JSON with block bounding boxes, section/page ordinals, effective inherited header/footer selections, styles, and target/search slicing." },
   { artifactKind: "document", kind: "api", name: "document.render", summary: "Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs." },
   { artifactKind: "document", kind: "api", name: "document.verify", summary: "Return QA issues for invalid/duplicate content-control IDs and native IDs, malformed tags/aliases, fake lists, invalid links/citations/bibliography sources, malformed tracked changes, duplicate/dangling/reversed bookmark ranges, invalid footnotes/endnotes, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.exportDocx", summary: "Export DocumentModel to DOCX through the single bundled OpenChestnut codec. Only limits is accepted; legacy codec and lossy-fallback options fail explicitly." },
-  { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Recognized inline plain-text content controls, canonical inline SEQ/REF/PAGEREF fields and caption-number bookmarks, whole-paragraph tracked revisions, whole-block bookmarks, canonical plain-text footnotes/endnotes, bounded bibliography/citation graphs, simple fields, and canonical unrefreshed TOC placeholders are semantic and fixed-topology editable while richer graphs stay source-bound." },
-  { artifactKind: "document", kind: "api", name: "exportDocxWithOpenChestnut", summary: "Export bounded DocumentModel paragraphs/runs with inline plain-text w:sdt controls, canonical five-run SEQ/REF/PAGEREF fields and narrow SEQ-result bookmarks, tables, whole-block bookmarks and internal links, plain-text footnotes/endnotes, canonical b:Sources plus whole-paragraph CITATION fields, simple fields, canonical complex TOC placeholders plus updateFields hints, whole-paragraph tracked insertions/deletions, classic comments, validated source-free gridSpan/vMerge tables, and direct text-marker numbering graphs; recognized imports permit bounded fixed-topology content edits through bundled OpenChestnut." },
-  { artifactKind: "document", kind: "api", name: "importDocxWithOpenChestnut", summary: "Import DOCX bytes through OpenChestnut with source-bound blocks plus exact-profile inline plain-text content controls, canonical five-run SEQ/REF/PAGEREF fields with optional caption-number bookmarks, classic comments, whole-paragraph tracked changes, canonical whole-block bookmarks, canonical plain-text footnote/endnote bindings, bounded bibliography/citation semantics, simple fields, and canonical one-paragraph TOC placeholders; automatic materialization, refreshed cross-paragraph TOCs, complex contributor roles, multiple catalogs, and rich result graphs remain opaque-preserved or explicit package workflows." },
+  { artifactKind: "document", kind: "api", name: "DocumentFile.importDocx", summary: "Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Recognized inline controls, fields, revisions, notes, citations, simple tables, and other exact profiles are fixed-topology editable; otherwise read-only paragraphs and complex table cells separately advertise textPatchable when one ordinary native text node can be patched without rebuilding the surrounding graph." },
+  { artifactKind: "document", kind: "api", name: "exportDocxWithOpenChestnut", summary: "Export bounded DocumentModel paragraphs/runs, fields, tables, bookmarks, notes, citations, tracked changes, comments, images, sections, numbering, and settings; recognized imports permit exact-profile semantic edits plus hash-bound literal patches to one uniquely matched ordinary paragraph or table-cell w:t node while preserving all surrounding native markup." },
+  { artifactKind: "document", kind: "api", name: "importDocxWithOpenChestnut", summary: "Import DOCX bytes through OpenChestnut with source-bound blocks, exact-profile editable semantics, and separate textEditable/textPatchable capability evidence. Literal patch capability never implies whole-paragraph/cell editability; cross-node, ambiguous, field/control/revision text remains fail-closed." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.inspectDocx", summary: "Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets." },
   { artifactKind: "document", kind: "api", name: "DocumentFile.patchDocx", summary: "Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs." },
 
@@ -963,6 +965,10 @@ const DOCUMENT_HELP_SCHEMAS = {
     name: { type: "string", description: "Inspectable block name." },
     runs: { type: "object[]", description: "Optional run spans whose style may include runStyleId plus direct/theme formatting. A run may carry contentControl { id, tag, alias, nativeId? } or inlineField { instruction, bookmarkName?, bookmarkNativeId? } for the bounded inline profiles." },
   }, "paragraph", "DocumentParagraphBlock", "Appended paragraph block with stable ID."),
+  "paragraph.replaceText": helpSchema({
+    search: { type: "string", required: true, description: "Non-empty literal text that must occur exactly once for a source-bound patch." },
+    replacement: { type: "string", required: true, description: "XML-safe replacement text, up to 1,000,000 characters." },
+  }, "paragraph", "DocumentParagraphBlock", "Mutated paragraph facade. Source-bound patches are applied only after native-node and source-hash validation during export."),
   "paragraph.addField": helpSchema({
     instruction: { type: "string", required: true, description: "Canonical SEQ <label> \\* ARABIC, REF <bookmark> \\h, or PAGEREF <bookmark> \\h instruction using a bounded Word-compatible name." },
     display: { type: "string", description: "Cached visible result before host refresh; defaults to 0." },
@@ -1122,6 +1128,10 @@ const DOCUMENT_HELP_SCHEMAS = {
     borderSize: { type: "number", description: "Uniform border width in eighths of a point; zero disables borders." },
     headerFill: { type: "string", description: "Header-row fill color." },
   }, "table", "DocumentTableBlock", "Appended table block."),
+  "documentTableCell.replaceText": helpSchema({
+    search: { type: "string", required: true, description: "Non-empty literal text that must occur exactly once in the visible cell and exactly once in one ordinary native w:t node." },
+    replacement: { type: "string", required: true, description: "XML-safe replacement text, up to 1,000,000 characters." },
+  }, "cell", "DocumentTableCell", "Mutated table-cell facade with one pending source-bound text patch."),
   "document.addComment": helpSchema({
     target: { type: "string|object", required: true, description: "Stable block ID or block facade." },
     text: { type: "string", required: true, description: "Comment text." },
@@ -1162,7 +1172,7 @@ const DOCUMENT_HELP_SCHEMAS = {
     styleId: { type: "string", required: true, description: "Named style ID to resolve through basedOn inheritance." },
   }, "style", "object|undefined", "Resolved effective style or undefined."),
   "document.inspect": helpSchema({
-    kind: { type: "string", description: "Comma-separated block/comment/style/textRange/layout kinds." },
+    kind: { type: "string", description: "Comma-separated block/tableCell/comment/style/textRange/layout kinds; paragraph and table-cell records expose textEditable/textPatchable capability evidence." },
     search: { type: "string", description: "Case-insensitive record filter." },
     target: { type: "string", description: "Stable target ID/anchor." },
     before: { type: "number", description: "Context records before matches." },
@@ -1172,11 +1182,11 @@ const DOCUMENT_HELP_SCHEMAS = {
     maxChars: { type: "number", description: "Maximum bounded NDJSON output size." },
   }, "inspection", "object", "Bounded { ndjson, truncated } inspection result."),
   "document.resolve": helpSchema({
-    id: { type: "string", required: true, description: "Stable document, block, header/footer, comment, style, or text-range ID." },
+    id: { type: "string", required: true, description: "Stable document, block, table-cell, header/footer, comment, style, or advertised text-range ID." },
   }, "object", "object|undefined", "Resolved editable facade/record or undefined."),
   "document.textRange": helpSchema({
-    id: { type: "string", required: true, description: "Stable text range ID ending in /text." },
-  }, "textRange", "TextRange|undefined", "Editable text-range facade or undefined."),
+    id: { type: "string", required: true, description: "Stable blockId/text or tableId/cell/row/column/text range ID." },
+  }, "textRange", "TextRange|undefined", "Advertised text-range facade. Assignment requires textEditable; replace() may instead use the narrower textPatchable contract."),
   "document.layoutJson": helpSchema({
     pageWidth: { type: "number", description: "Modeled page width in pixels." },
     pageHeight: { type: "number", description: "Modeled page height in pixels." },

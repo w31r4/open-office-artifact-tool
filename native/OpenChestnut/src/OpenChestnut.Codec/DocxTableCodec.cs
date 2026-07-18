@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Xml;
 using DocumentFormat.OpenXml;
 using OpenOffice.Artifact.Wire.V1;
 using W = DocumentFormat.OpenXml.Wordprocessing;
@@ -18,8 +19,7 @@ internal static class DocxTableCodec
         var artifact = DocxTableGeometry.Read(table, out var validGeometry);
         artifact.Formatting = DocxTableFormatting.Read(table, artifact);
         editable = validGeometry && HasSafeContainerTopology(table) &&
-                   table.Descendants<W.TableCell>().All(DocxTableGeometry.IsSimpleCell) &&
-                   artifact.Rows.SelectMany(row => row.RichCells).Any(cell => cell.Editable);
+                   artifact.Rows.SelectMany(row => row.RichCells).Any(cell => cell.Editable || cell.TextPatchable);
         return artifact;
     }
 
@@ -58,11 +58,14 @@ internal static class DocxTableCodec
                 text.Space = value.Length != value.Trim().Length ? SpaceProcessingModeValues.Preserve : null;
             }
         }
+        ApplyTextPatches(rows, requested, source);
     }
 
     internal static W.Table Build(DocumentBlock block)
     {
         Validate(block.Table);
+        if (block.Table.TextPatches.Count > 0)
+            throw Unsupported("DOCX table text patches require a validated imported source package.");
         if (!string.IsNullOrWhiteSpace(block.StyleId) && !block.StyleId.Equals("TableGrid", StringComparison.Ordinal))
             throw new CodecException(
                 "unsupported_document_features",
@@ -138,6 +141,7 @@ internal static class DocxTableCodec
     internal static void Validate(DocumentTable? table)
     {
         if (table is null) throw Invalid("Document table payload is missing.");
+        if (table.TextPatches.Count > 10_000) throw Invalid("Document table exceeds 10,000 source text patches.");
         DocxTableFormatting.Validate(table);
         for (var rowIndex = 0; rowIndex < table.Rows.Count; rowIndex++)
         {
@@ -160,12 +164,90 @@ internal static class DocxTableCodec
                     throw Invalid($"Document table cell {rowIndex},{cellIndex} has invalid bounded grid geometry.");
                 if (cell.VerticalMerge == DocumentTableVerticalMerge.Continue && (cell.RowSpan != 0 || cell.Editable))
                     throw Invalid($"Document table continuation cell {rowIndex},{cellIndex} must be read-only with row_span zero.");
+                if (cell.VerticalMerge == DocumentTableVerticalMerge.Continue && cell.TextPatchable)
+                    throw Invalid($"Document table continuation cell {rowIndex},{cellIndex} cannot be text-patchable.");
                 if (cell.VerticalMerge != DocumentTableVerticalMerge.Continue && cell.RowSpan == 0)
                     throw Invalid($"Document table origin cell {rowIndex},{cellIndex} must have a positive row_span.");
             }
         }
+        foreach (var patch in table.TextPatches)
+        {
+            if (patch.Row >= table.Rows.Count || patch.Column >= table.Rows[(int)patch.Row].Cells.Count)
+                throw Invalid($"Document table text patch {patch.Row},{patch.Column} is outside the physical cell matrix.");
+            if (string.IsNullOrEmpty(patch.Search) || patch.Search.Length > 1_000_000 || patch.Replacement.Length > 1_000_000 ||
+                !XmlSafe(patch.Search) || !XmlSafe(patch.Replacement))
+                throw Invalid($"Document table text patch {patch.Row},{patch.Column} requires bounded XML-safe search and replacement strings.");
+            if (patch.SourceTextSha256.Length != 64 || patch.SourceTextSha256.Any(character => !Uri.IsHexDigit(character)))
+                throw Invalid($"Document table text patch {patch.Row},{patch.Column} requires a SHA-256 source text binding.");
+        }
         if (table.Rows.Any(row => row.RichCells.Count > 0) && table.GridColumns is 0 or > 4_096)
             throw Invalid("Document table grid_columns must be between 1 and 4096 when rich cell geometry is present.");
+    }
+
+    internal static bool SemanticsMatchRequested(W.Table table, DocumentTable requested)
+    {
+        var actual = Read(table, out _);
+        var expected = requested.Clone();
+        foreach (var patch in expected.TextPatches)
+        {
+            var value = expected.Rows[(int)patch.Row].Cells[(int)patch.Column];
+            var index = value.IndexOf(patch.Search, StringComparison.Ordinal);
+            if (index < 0 || value.IndexOf(patch.Search, index + 1, StringComparison.Ordinal) >= 0) return false;
+            expected.Rows[(int)patch.Row].Cells[(int)patch.Column] =
+                value.Remove(index, patch.Search.Length).Insert(index, patch.Replacement);
+        }
+        expected.TextPatches.Clear();
+        return expected.Equals(actual);
+    }
+
+    private static void ApplyTextPatches(W.TableRow[] rows, DocumentTable requested, DocumentTable source)
+    {
+        foreach (var group in requested.TextPatches.GroupBy(patch => (patch.Row, patch.Column)))
+        {
+            var rowIndex = checked((int)group.Key.Row);
+            var cellIndex = checked((int)group.Key.Column);
+            var sourceValue = source.Rows[rowIndex].Cells[cellIndex];
+            if (requested.Rows[rowIndex].Cells[cellIndex] != sourceValue)
+                throw Unsupported($"Source-preserving DOCX table cell {rowIndex},{cellIndex} cannot combine whole-cell and native text-patch edits.");
+            var sourceCell = source.Rows[rowIndex].RichCells[cellIndex];
+            if (!sourceCell.TextPatchable)
+                throw Unsupported($"Source-preserving DOCX table cell {rowIndex},{cellIndex} contains no safely patchable plain text node.");
+            var sourceHash = Hash(Encoding.UTF8.GetBytes(sourceValue));
+            var cell = rows[rowIndex].Elements<W.TableCell>().ElementAt(cellIndex);
+            foreach (var patch in group)
+            {
+                if (!sourceHash.Equals(patch.SourceTextSha256, StringComparison.OrdinalIgnoreCase))
+                    throw Unsupported($"Source-preserving DOCX table cell {rowIndex},{cellIndex} text no longer matches the patch source binding.");
+                var matches = new List<(W.Text Text, int Index)>();
+                foreach (var text in DocxTableGeometry.PatchableTexts(cell))
+                {
+                    var index = text.Text.IndexOf(patch.Search, StringComparison.Ordinal);
+                    if (index < 0) continue;
+                    if (text.Text.IndexOf(patch.Search, index + 1, StringComparison.Ordinal) >= 0)
+                        throw Unsupported($"Source-preserving DOCX table cell {rowIndex},{cellIndex} text patch is ambiguous within one native text node.");
+                    matches.Add((text, index));
+                }
+                if (matches.Count != 1)
+                    throw Unsupported($"Source-preserving DOCX table cell {rowIndex},{cellIndex} text patch must match exactly one plain native text node; found {matches.Count}.");
+                var (target, offset) = matches[0];
+                var value = target.Text.Remove(offset, patch.Search.Length).Insert(offset, patch.Replacement);
+                target.Text = value;
+                target.Space = value.Length != value.Trim().Length ? SpaceProcessingModeValues.Preserve : null;
+            }
+        }
+    }
+
+    private static bool XmlSafe(string value)
+    {
+        try
+        {
+            XmlConvert.VerifyXmlChars(value);
+            return !value.Contains('\u007f');
+        }
+        catch (XmlException)
+        {
+            return false;
+        }
     }
 
     private static void ValidateAuthoredGeometry(DocumentTable table)

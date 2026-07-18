@@ -47,12 +47,18 @@ import {
 } from "open-office-artifact-tool";
 
 const document = await DocumentFile.importDocx(await FileBlob.load("input.docx"));
-const target = document.blocks.find(
+const targets = document.blocks.filter(
   (block) => block.kind === "paragraph" && block.text.includes("old wording"),
 );
-if (!target) throw new Error("Target paragraph was not found.");
+if (targets.length !== 1) throw new Error(`Expected one target paragraph, found ${targets.length}.`);
+const target = targets[0];
+if (!target.textEditable && !target.textPatchable) {
+  throw new Error("Target text is source-bound and has no safe public edit capability.");
+}
 
-document.resolve(`${target.id}/text`).text = "replacement wording";
+const range = document.resolve(`${target.id}/text`);
+if (!range) throw new Error("Advertised text range did not resolve.");
+range.replace("old wording", "replacement wording");
 const report = document.verify({ visualQa: true });
 if (!report.ok) throw new Error(report.ndjson || JSON.stringify(report.issues));
 
@@ -60,9 +66,19 @@ const output = await DocumentFile.exportDocx(document);
 await output.save("edited.docx");
 ```
 
-Preserve the original and make minimal, local changes. Imported advanced
-content is source-bound: if OpenChestnut rejects an edit, narrow the edit or
-report the unsupported boundary instead of flattening or rebuilding the file.
+For an imported paragraph or table cell, `textEditable` means the whole modeled
+text value can be assigned without changing its verified topology.
+`textPatchable` is deliberately narrower: `range.replace(old, next)` must use a
+non-empty literal that occurs exactly once in one ordinary native `w:t` node.
+Cross-run matches, duplicate matches, fields, content controls, revisions, and
+other complex text graphs fail closed. A table cell exposes the same operation
+through `document.resolve(cell.id + "/text")` or
+`table.getCell(row, column).replaceText(old, next)`; whole-cell assignment still
+fails when `cell.editable` is false.
+
+Preserve the original and make minimal, local changes. If OpenChestnut rejects
+an edit, narrow the edit or report the unsupported boundary instead of
+flattening or rebuilding the file.
 
 ## Explicit low-level package patches
 

@@ -6,6 +6,31 @@ import { DocumentFile as DocumentFileModule, DocumentModel as DocumentModelModul
 assert.strictEqual(DocumentModel, DocumentModelModule);
 assert.strictEqual(DocumentFile, DocumentFileModule);
 
+const textRangeFixture = DocumentModel.create({ name: "Text range formatting guard" });
+const singleRunRangeTarget = textRangeFixture.addParagraph("Original", {
+  runs: [{ text: "Original", style: { bold: true, color: "#315A83" } }],
+});
+const singleRunStyle = structuredClone(singleRunRangeTarget.runs[0].style);
+textRangeFixture.resolve(`${singleRunRangeTarget.id}/text`).text = "Replacement";
+assert.equal(singleRunRangeTarget.text, "Replacement");
+assert.equal(singleRunRangeTarget.runs[0].text, "Replacement");
+assert.deepEqual(singleRunRangeTarget.runs[0].style, singleRunStyle);
+const multiRunRangeTarget = textRangeFixture.addParagraph("Two runs", {
+  runs: [{ text: "Two ", style: { bold: true } }, { text: "runs", style: { italic: true } }],
+});
+assert.throws(
+  () => { textRangeFixture.resolve(`${multiRunRangeTarget.id}/text`).text = "Flattened"; },
+  /multiple source runs.*formatting boundaries/i,
+);
+const sourceBoundPatchTarget = textRangeFixture.addParagraph("Patch target", {
+  textEditable: false,
+  textPatchable: true,
+});
+assert.throws(
+  () => sourceBoundPatchTarget.replaceText("target", "\ud800"),
+  /XML-safe strings/i,
+);
+
 const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
 const jpeg = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAACAAIDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAABQf/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCQAHTd/9k=";
 

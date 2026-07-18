@@ -278,7 +278,16 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
     (block) => block.kind === "paragraph" && block.text.startsWith("Recommendation:"),
   );
   assert.ok(recommendation, "OpenChestnut must re-import the recommendation paragraph");
-  imported.resolve(`${recommendation.id}/text`).text = `Recommendation: ${spec.recommendation}`;
+  assert.equal(recommendation.text, `Recommendation: ${spec.recommendation}`);
+  assert.equal(
+    recommendation.textEditable || recommendation.textPatchable,
+    true,
+    "OpenChestnut must advertise an explicit recommendation text capability",
+  );
+  assert.ok(
+    imported.resolve(`${recommendation.id}/text`),
+    "OpenChestnut must resolve the advertised recommendation text range",
+  );
 
   const evidence = imported.blocks.find((block) => block.kind === "table");
   assert.ok(evidence, "OpenChestnut must re-import the evidence table");

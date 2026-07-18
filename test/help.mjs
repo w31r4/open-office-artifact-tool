@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 331);
+assert.equal(HELP_CATALOG.length, 333);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -136,6 +136,10 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "document.addHyperlink"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.addBibliographySource"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.addTableOfContents"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "paragraph.addField"));
+assert.match(HELP_CATALOG.find((item) => item.name === "paragraph.replaceText")?.summary || "", /textPatchable.*unique ordinary w:r\/w:t.*preserving all other native markup/i);
+assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.replaceText")?.schema?.parameters?.search?.required, true);
+assert.match(HELP_CATALOG.find((item) => item.name === "documentTableCell.replaceText")?.summary || "", /source-bound text patch.*whole-cell replacement.*fail closed/i);
+assert.equal(HELP_CATALOG.find((item) => item.name === "documentTableCell.replaceText")?.schema?.parameters?.replacement?.required, true);
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.replyToComment"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.applyDesignPreset"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "document.setSettings"));
@@ -323,7 +327,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.sc
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.schema?.returns?.inspection?.description || "", /mupdfWidget.*mupdfFormField/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.summary || "", /MuPDF/);
 const documentCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "document");
-assert.equal(documentCatalog.length, 43);
+assert.equal(documentCatalog.length, 45);
 assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.schema?.parameters?.pictureBullet?.type, "string|object");
@@ -523,6 +527,8 @@ assert.match(presentation.help("presentation.layout.placeholders.summary").ndjso
 assert.match(document.help("document.addField").ndjson, /fldSimple/);
 assert.match(document.help("document.addTableOfContents").ndjson, /complex TOC field/);
 assert.match(document.help("paragraph.addField").ndjson, /inline field run/);
+assert.match(document.help("paragraph.replaceText").ndjson, /source-bound patches.*native-node.*source-hash validation/i);
+assert.match(document.help("documentTableCell.replaceText").ndjson, /visible cell.*ordinary native w:t node/i);
 assert.match(document.help("document.addBookmark").ndjson, /native Word bookmark/);
 assert.match(document.help("document.addFootnote").ndjson, /native bounded footnote/i);
 assert.match(document.help("document.addEndnote").ndjson, /native bounded endnote/i);

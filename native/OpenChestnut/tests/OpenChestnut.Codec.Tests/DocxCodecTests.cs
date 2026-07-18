@@ -733,7 +733,9 @@ public sealed class DocxCodecTests
             File = ByteString.CopyFrom(AddSecondTableParagraph(authored.File.ToByteArray())),
         });
         Assert.True(complex.Ok, Diagnostics(complex));
-        Assert.False(complex.Artifact.Document.Blocks[1].Source.Editable);
+        Assert.True(complex.Artifact.Document.Blocks[1].Source.Editable);
+        Assert.False(complex.Artifact.Document.Blocks[1].Table.Rows[0].RichCells[0].Editable);
+        Assert.True(complex.Artifact.Document.Blocks[1].Table.Rows[0].RichCells[0].TextPatchable);
         var unchanged = Invoke(new CodecRequest
         {
             ProtocolVersion = CodecProtocol.ProtocolVersion,
@@ -788,6 +790,97 @@ public sealed class DocxCodecTests
         });
         Assert.False(styleRejected.Ok);
         Assert.Equal("unsupported_document_edit", Assert.Single(styleRejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void SourcePreservingExportPatchesOnePlainTextNodeInComplexTableCell()
+    {
+        var authored = Invoke(ExportRequest());
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(AddSecondTableParagraph(authored.File.ToByteArray())),
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var table = imported.Artifact.Document.Blocks[1].Table;
+        Assert.Equal("Revenue detail", table.Rows[0].Cells[0]);
+        Assert.False(table.Rows[0].RichCells[0].Editable);
+        Assert.True(table.Rows[0].RichCells[0].TextPatchable);
+        table.TextPatches.Add(new DocumentTableTextPatch
+        {
+            Row = 0,
+            Column = 0,
+            Search = " detail",
+            Replacement = " detail updated",
+            SourceTextSha256 = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("Revenue detail"))).ToLowerInvariant(),
+        });
+
+        var exported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(exported.Ok, Diagnostics(exported));
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = WordprocessingDocument.Open(stream, false))
+        {
+            var cell = document.MainDocumentPart!.Document!.Body!.Elements<W.Table>().Single().Descendants<W.TableCell>().First();
+            Assert.Equal(2, cell.Elements<W.Paragraph>().Count());
+            Assert.Equal("Revenue", cell.Elements<W.Paragraph>().First().InnerText);
+            Assert.Equal(" detail updated", cell.Elements<W.Paragraph>().Last().InnerText);
+        }
+        var roundTrip = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = exported.File,
+        });
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        Assert.Equal("Revenue detail updated", roundTrip.Artifact.Document.Blocks[1].Table.Rows[0].Cells[0]);
+        Assert.True(roundTrip.Artifact.Document.Blocks[1].Table.Rows[0].RichCells[0].TextPatchable);
+
+        var ambiguous = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(AddSecondTableParagraph(authored.File.ToByteArray())),
+        });
+        ambiguous.Artifact.Document.Blocks[1].Table.TextPatches.Add(new DocumentTableTextPatch
+        {
+            Row = 0,
+            Column = 0,
+            Search = "e",
+            Replacement = "E",
+            SourceTextSha256 = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("Revenue detail"))).ToLowerInvariant(),
+        });
+        var ambiguousRejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = ambiguous.Artifact,
+        });
+        Assert.False(ambiguousRejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(ambiguousRejected.Diagnostics).Code);
+
+        var invalidTable = imported.Artifact.Document.Blocks[1].Table.Clone();
+        invalidTable.TextPatches.Clear();
+        invalidTable.TextPatches.Add(new DocumentTableTextPatch
+        {
+            Row = 0,
+            Column = 0,
+            Search = "Revenue",
+            Replacement = "\ud800",
+            SourceTextSha256 = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("Revenue detail"))).ToLowerInvariant(),
+        });
+        var invalidTableException = Assert.Throws<CodecException>(() => DocxTableCodec.Validate(invalidTable));
+        Assert.Equal("invalid_document_table", invalidTableException.Code);
     }
 
     [Fact]
@@ -1714,6 +1807,86 @@ public sealed class DocxCodecTests
         });
         Assert.False(rejected.Ok);
         Assert.Equal("unsupported_document_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void SourcePreservingExportPatchesPlainTextInsideReadOnlyParagraph()
+    {
+        var authored = Invoke(ExportRequest(includeSecondParagraph: true));
+        var source = AddUnsupportedParagraphProperty(authored.File.ToByteArray());
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(source),
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var block = imported.Artifact.Document.Blocks[1];
+        Assert.False(block.Source.Editable);
+        Assert.True(block.Source.TextPatchable);
+        block.TextPatches.Add(new DocumentTextPatch
+        {
+            Search = "Editable",
+            Replacement = "Reviewed",
+            SourceTextSha256 = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("Editable paragraph"))).ToLowerInvariant(),
+        });
+
+        var exported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(exported.Ok, Diagnostics(exported));
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = WordprocessingDocument.Open(stream, false))
+        {
+            var paragraph = document.MainDocumentPart!.Document!.Body!.Elements<W.Paragraph>().ElementAt(1);
+            Assert.Equal("Reviewed paragraph", paragraph.InnerText);
+            Assert.NotNull(paragraph.ParagraphProperties?.GetFirstChild<W.WidowControl>());
+        }
+        var roundTrip = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = exported.File,
+        });
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        Assert.Equal("Reviewed paragraph", roundTrip.Artifact.Document.Blocks[1].Paragraph.Text);
+        Assert.False(roundTrip.Artifact.Document.Blocks[1].Source.Editable);
+        Assert.True(roundTrip.Artifact.Document.Blocks[1].Source.TextPatchable);
+
+        var tampered = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(source),
+        });
+        tampered.Artifact.Document.Blocks[1].Source.TextPatchable = false;
+        var tamperedRejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = tampered.Artifact,
+        });
+        Assert.False(tamperedRejected.Ok);
+        Assert.Equal("document_source_binding_mismatch", Assert.Single(tamperedRejected.Diagnostics).Code);
+
+        var invalidBlock = block.Clone();
+        invalidBlock.TextPatches.Clear();
+        invalidBlock.TextPatches.Add(new DocumentTextPatch
+        {
+            Search = "Editable",
+            Replacement = "\ud800",
+            SourceTextSha256 = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("Editable paragraph"))).ToLowerInvariant(),
+        });
+        var invalidBlockException = Assert.Throws<CodecException>(() => DocxPlainTextPatchCodec.Validate(invalidBlock));
+        Assert.Equal("invalid_document_text_patch", invalidBlockException.Code);
     }
 
     [Fact]
@@ -3430,6 +3603,21 @@ public sealed class DocxCodecTests
         {
             var cell = document.MainDocumentPart!.Document!.Body!.Elements<W.Table>().Single().Descendants<W.TableCell>().First();
             cell.Append(new W.Paragraph(new W.Run(new W.Text(" detail"))));
+            document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddUnsupportedParagraphProperty(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true))
+        {
+            var paragraph = document.MainDocumentPart!.Document!.Body!.Elements<W.Paragraph>().ElementAt(1);
+            var properties = paragraph.ParagraphProperties ?? paragraph.PrependChild(new W.ParagraphProperties());
+            properties.Append(new W.WidowControl());
             document.MainDocumentPart.Document.Save();
         }
         return stream.ToArray();

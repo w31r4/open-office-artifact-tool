@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { Workbook } from "../spreadsheet/index.mjs";
 import { DocumentModel } from "../document/index.mjs";
 import { FileBlob } from "../shared/file-blob.mjs";
+import { isXmlSafeText } from "../shared/xml.mjs";
 import { XLSX_THEME_COLOR_NAMES, normalizeXlsxStyle, normalizeXlsxThemeConfig } from "../spreadsheet/ooxml-styles.mjs";
 import { deterministicSpreadsheetGuid } from "../spreadsheet/ooxml-threaded-comments.mjs";
 import {
@@ -1793,6 +1794,7 @@ function documentTableCells(table) {
     rowSpan: cell.rowSpan,
     verticalMerge: mergeName(cell.verticalMerge),
     editable: cell.editable,
+    textPatchable: cell.textPatchable,
   })));
 }
 
@@ -1805,7 +1807,39 @@ function sameDocumentTableGeometry(block, table) {
     return cell.row === source.row && cell.column === source.column &&
       cell.gridColumn === source.gridColumn && cell.columnSpan === source.columnSpan &&
       cell.rowSpan === source.rowSpan && cell.verticalMerge === source.verticalMerge &&
-      cell.editable === source.editable;
+      cell.editable === source.editable && cell.textPatchable === source.textPatchable;
+  });
+}
+
+function wireDocumentTableTextPatches(block, source) {
+  const patches = Array.isArray(block.textPatches) ? block.textPatches : [];
+  if (!patches.length) return [];
+  if (!source) throw new OpenChestnutCodecError(`Document table ${block.id} text patches require a validated imported source.`, [], { code: "unsupported_document_edit" });
+  if (patches.length > 10_000) throw new OpenChestnutCodecError(`Document table ${block.id} exceeds 10,000 source text patches.`, [], { code: "invalid_document_table" });
+  return patches.map((patch) => {
+    const row = Number(patch.row);
+    const column = Number(patch.column);
+    const sourceRow = source.rows?.[row];
+    const sourceCell = sourceRow?.richCells?.[column];
+    if (!Number.isInteger(row) || !Number.isInteger(column) || row < 0 || column < 0 || !sourceCell) {
+      throw new OpenChestnutCodecError(`Document table ${block.id} text patch ${row},${column} is outside the source cell matrix.`, [], { code: "invalid_document_table" });
+    }
+    if (!sourceCell.textPatchable) {
+      throw new OpenChestnutCodecError(`Document table ${block.id} cell ${row},${column} does not advertise source-bound text replacement capability.`, [], { code: "unsupported_document_edit" });
+    }
+    const search = String(patch.search ?? "");
+    const replacement = String(patch.replacement ?? "");
+    if (!search || search.length > 1_000_000 || replacement.length > 1_000_000 || !isXmlSafeText(search) || !isXmlSafeText(replacement)) {
+      throw new OpenChestnutCodecError(`Document table ${block.id} cell ${row},${column} text patch requires bounded XML-safe strings.`, [], { code: "invalid_document_table" });
+    }
+    const sourceText = String(sourceRow.cells[column] ?? "");
+    return {
+      row,
+      column,
+      search,
+      replacement,
+      sourceTextSha256: createHash("sha256").update(sourceText, "utf8").digest("hex"),
+    };
   });
 }
 
@@ -2564,7 +2598,7 @@ function unchangedSourceBlock(block, original) {
       return block.runs.every((run) => Object.keys(run.style || {}).length === 0);
     }
     case "table": {
-      if (block.kind !== "table" || !sameTableValues(block, original) ||
+      if (block.kind !== "table" || block.textPatches?.length || !sameTableValues(block, original) ||
           !sameDocumentTableGeometry(block, original.content.value) ||
           !sameDocumentTableFormatting(block, original.content.value)) return false;
       return block.styleId === original.styleId || (!original.styleId && block.styleId === "TableGrid");
@@ -2608,7 +2642,44 @@ function documentBlockSnapshot(block) {
   });
 }
 
+function patchedSourceParagraphBlock(block, original) {
+  if (block.kind !== "paragraph") return undefined;
+  const patches = Array.isArray(block.textPatches) ? block.textPatches : [];
+  if (!patches.length) return undefined;
+  if (original?.content.case !== "paragraph" || original.source?.textPatchable !== true || original.source?.editable !== false) {
+    throw new OpenChestnutCodecError(`Document paragraph ${block.id} text patches require a non-editable imported paragraph that advertises textPatchable.`, [], { code: "unsupported_document_edit" });
+  }
+  if (patches.length > 10_000) throw new OpenChestnutCodecError(`Document paragraph ${block.id} exceeds 10,000 source text patches.`, [], { code: "invalid_document_text_patch" });
+  let expected = String(original.content.value.text ?? "");
+  const sourceTextSha256 = createHash("sha256").update(expected, "utf8").digest("hex");
+  const wirePatches = patches.map((patch) => {
+    const search = String(patch.search ?? "");
+    const replacement = String(patch.replacement ?? "");
+    if (!search || search.length > 1_000_000 || replacement.length > 1_000_000 || !isXmlSafeText(search) || !isXmlSafeText(replacement)) {
+      throw new OpenChestnutCodecError(`Document paragraph ${block.id} text patch requires bounded XML-safe strings.`, [], { code: "invalid_document_text_patch" });
+    }
+    const first = expected.indexOf(search);
+    if (first < 0 || expected.indexOf(search, first + 1) >= 0) {
+      throw new OpenChestnutCodecError(`Document paragraph ${block.id} text patch requires exactly one visible match.`, [], { code: "unsupported_document_edit" });
+    }
+    expected = expected.replace(search, replacement);
+    return { search, replacement, sourceTextSha256 };
+  });
+  const baselineFormat = publicDocumentParagraphFormatting(original.content.value.formatting) || {};
+  const plainSyntheticRuns = block.runs.length === (expected ? 1 : 0) && block.runs.every((run) =>
+    !run.contentControl && !run.inlineField && Object.keys(run.style || {}).length === 0 && run.text === expected);
+  if (block.kind !== "paragraph" || block.id !== original.id || block.name !== (original.name || "") ||
+      block.styleId !== (original.styleId || "Normal") || block.text !== expected || !plainSyntheticRuns ||
+      JSON.stringify(block.paragraphFormat || {}) !== JSON.stringify(baselineFormat)) {
+    throw new OpenChestnutCodecError(`Document paragraph ${block.id} cannot combine a native text patch with other semantic or formatting edits.`, [], { code: "unsupported_document_edit" });
+  }
+  const { $typeName: _typeName, ...sourceBlock } = original;
+  return { ...sourceBlock, textPatches: wirePatches };
+}
+
 function documentBlock(block, original, directNumbering, assets, contentControlNativeIds) {
+  const patchedParagraph = patchedSourceParagraphBlock(block, original);
+  if (patchedParagraph) return patchedParagraph;
   if (original && unchangedSourceBlock(block, original)) return original;
   const common = {
     id: original?.id || block.id,
@@ -2678,6 +2749,7 @@ function documentBlock(block, original, directNumbering, assets, contentControlN
         }
       }
     }
+    const textPatches = wireDocumentTableTextPatches(block, source);
     return {
       ...common,
       content: {
@@ -2699,6 +2771,7 @@ function documentBlock(block, original, directNumbering, assets, contentControlN
               gridAfter: source.rows[rowIndex]?.gridAfter || 0,
             } : {}),
           })),
+          textPatches,
         },
       },
     };
@@ -2872,6 +2945,9 @@ function documentFromEnvelope(envelope) {
           id: block.id,
           name: block.name,
           styleId: block.styleId || "Normal",
+          textEditable: block.source?.editable !== false,
+          textPatchable: block.source?.textPatchable === true,
+          textPatches: [],
           text: block.content.value.text,
           paragraphFormat: publicDocumentParagraphFormatting(block.content.value.formatting),
           runs: block.content.value.runs.length ? block.content.value.runs.map((run) => ({
@@ -2907,6 +2983,7 @@ function documentFromEnvelope(envelope) {
           values: block.content.value.rows.map((row) => [...row.cells]),
           gridColumns: block.content.value.gridColumns,
           cells: documentTableCells(block.content.value),
+          textPatches: [],
           ...formatting,
         };
         }
@@ -2992,6 +3069,8 @@ function documentFromEnvelope(envelope) {
           id: block.id,
           name: block.name || `Preserved ${block.content.value.elementName}`,
           styleId: "Normal",
+          textEditable: false,
+          textPatchable: false,
           text: block.content.value.text,
         };
       default:
@@ -3053,7 +3132,7 @@ function documentFromEnvelope(envelope) {
     publicSnapshot: documentNoteSnapshot(document.notes[index]),
   }));
   const readOnlyBlockSlots = source.blocks.flatMap((wire, index) => {
-    if (wire.content.case !== "opaque" && wire.source?.editable !== false) return [];
+    if (wire.content.case !== "opaque" && (wire.source?.editable !== false || wire.source?.textPatchable === true)) return [];
     const block = document.blocks[index];
     return [{ wire, index, block, publicSnapshot: documentBlockSnapshot(block) }];
   });

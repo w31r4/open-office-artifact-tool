@@ -6,6 +6,10 @@ export function createTextRange(parent, id, options = {}) {
     else if ("text" in parent) parent.text = String(value ?? "");
     else if ("display" in parent) parent.display = String(value ?? "");
   });
+  const replaceText = options.replace || ((search, replacement) => {
+    const next = String(getText()).replace(search, replacement);
+    setText(next);
+  });
   return {
     kind: "textRange",
     id,
@@ -13,7 +17,7 @@ export function createTextRange(parent, id, options = {}) {
     parentKind: options.parentKind || parent.kind || parent.constructor?.name,
     get text() { return getText(); },
     set text(value) { setText(value); },
-    replace(search, replacement) { const next = String(getText()).replace(search, replacement); setText(next); return this; },
+    replace(search, replacement) { replaceText(search, replacement); return this; },
   };
 }
 

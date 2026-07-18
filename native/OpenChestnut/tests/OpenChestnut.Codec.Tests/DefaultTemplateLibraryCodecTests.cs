@@ -130,6 +130,57 @@ public sealed class DefaultTemplateLibraryCodecTests
     }
 
     [Theory]
+    [InlineData("artifact-template-design-report")]
+    [InlineData("artifact-template-experiment-analysis")]
+    [InlineData("artifact-template-investment-committee-memo")]
+    [InlineData("artifact-template-legal-memorandum")]
+    [InlineData("artifact-template-minimal-letterhead")]
+    [InlineData("artifact-template-strategy-memorandum")]
+    [InlineData("artifact-template-system-design")]
+    public void RetainedDocumentTemplateSupportsOneBoundedSourceTextEdit(string templateId)
+    {
+        var limits = EffectiveCodecLimits.From(null);
+        var result = DocxCodec.Import(ReadReference(templateId, ".docx"), limits);
+        const string marker = " · Agent QA";
+
+        if (templateId == "artifact-template-minimal-letterhead")
+        {
+            var table = result.Artifact.Document.Blocks.Single(block => block.ContentCase == DocumentBlock.ContentOneofCase.Table).Table;
+            var sourceText = table.Rows[0].Cells[2];
+            Assert.True(table.Rows[0].RichCells[2].TextPatchable);
+            Assert.False(table.Rows[0].RichCells[2].Editable);
+            table.TextPatches.Add(new DocumentTableTextPatch
+            {
+                Row = 0,
+                Column = 2,
+                Search = "[Greeting]",
+                Replacement = $"Hello{marker}",
+                SourceTextSha256 = Sha256(sourceText),
+            });
+            var exported = DocxCodec.Export(result.Artifact, limits);
+            var reimported = DocxCodec.Import(exported.File, limits);
+            Assert.Contains($"Hello{marker}", reimported.Artifact.Document.Blocks.Single(block => block.ContentCase == DocumentBlock.ContentOneofCase.Table).Table.Rows[0].Cells[2], StringComparison.Ordinal);
+            return;
+        }
+
+        var paragraph = result.Artifact.Document.Blocks.First(block =>
+            block.ContentCase == DocumentBlock.ContentOneofCase.Paragraph &&
+            block.Source?.TextPatchable == true &&
+            !string.IsNullOrWhiteSpace(block.Paragraph.Text));
+        Assert.False(paragraph.Source.Editable);
+        var sourceParagraphText = paragraph.Paragraph.Text;
+        paragraph.TextPatches.Add(new DocumentTextPatch
+        {
+            Search = sourceParagraphText,
+            Replacement = sourceParagraphText + marker,
+            SourceTextSha256 = Sha256(sourceParagraphText),
+        });
+        var paragraphExported = DocxCodec.Export(result.Artifact, limits);
+        var paragraphReimported = DocxCodec.Import(paragraphExported.File, limits);
+        Assert.Equal(sourceParagraphText + marker, paragraphReimported.Artifact.Document.Blocks.Single(block => block.Id == paragraph.Id).Paragraph.Text);
+    }
+
+    [Theory]
     [InlineData("artifact-template-analytics-dashboard")]
     [InlineData("artifact-template-financial-budget")]
     [InlineData("artifact-template-operating-calendar")]
@@ -204,6 +255,9 @@ public sealed class DefaultTemplateLibraryCodecTests
         var root = FindRepositoryRoot();
         return File.ReadAllBytes(Path.Combine(root, "skills", "default-template-library", "skills", templateId, "assets", $"reference{extension}"));
     }
+
+    private static string Sha256(string value) =>
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 
     private static string FindRepositoryRoot()
     {

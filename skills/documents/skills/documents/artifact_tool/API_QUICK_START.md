@@ -17,6 +17,48 @@ import {
 Use `document.fontFamilies` when you need a fresh sorted inventory of theme and
 explicit run/style fonts before render or handoff QA.
 
+## Imported text: capability-routed local edits
+
+Imported paragraphs and table cells advertise separate capabilities. Use
+`textEditable` for modeled whole-text assignment and `textPatchable` for a
+source-bound, unique literal replacement that preserves the surrounding native
+OOXML graph. Never infer either capability from visible text alone.
+
+```js
+const source = await FileBlob.load("input.docx");
+const document = await DocumentFile.importDocx(source);
+const candidates = document.blocks.filter(
+  (block) => block.kind === "paragraph" && block.text.includes("old wording"),
+);
+if (candidates.length !== 1) {
+  throw new Error(`Expected one target paragraph, found ${candidates.length}.`);
+}
+
+const target = candidates[0];
+if (!target.textEditable && !target.textPatchable) {
+  throw new Error("Target text is source-bound and has no safe public edit capability.");
+}
+const range = document.resolve(`${target.id}/text`);
+if (!range) throw new Error("Advertised text range did not resolve.");
+range.replace("old wording", "replacement wording");
+
+const output = await DocumentFile.exportDocx(document);
+await output.save("edited.docx");
+const reimported = await DocumentFile.importDocx(await FileBlob.load("edited.docx"));
+if (!reimported.blocks.some((block) => block.id === target.id && block.text.includes("replacement wording"))) {
+  throw new Error("Edited text did not survive the OpenChestnut round-trip.");
+}
+```
+
+When only `textPatchable` is true, assignment to `range.text` is rejected. The
+literal search must be non-empty and resolve to exactly one ordinary native
+`w:r/w:t` node. Matches spanning runs, hyperlinks, fields, content controls,
+tracked revisions, or duplicate native text nodes fail closed. Complex table
+cells use the same contract through `document.resolve(cell.id + "/text")` or
+`table.getCell(row, column).replaceText(old, next)`; `cell.value = ...` remains
+unavailable when `cell.editable` is false. Export, re-import, and native-render
+every result before delivery.
+
 ## Create and export
 
 ```js

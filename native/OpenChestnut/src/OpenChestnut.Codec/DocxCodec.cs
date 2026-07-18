@@ -242,6 +242,11 @@ internal static class DocxCodec
                         "document_source_semantics_mismatch",
                         $"Document block {ordinal} source semantics do not match its binding.",
                         "word/document.xml");
+                if (original.Source is null || binding.Editable != original.Source.Editable || binding.TextPatchable != original.Source.TextPatchable)
+                    throw new CodecException(
+                        "document_source_binding_mismatch",
+                        $"Document block {ordinal} edit capabilities do not match its source element.",
+                        "word/document.xml");
                 if (block.ContentCase == DocumentBlock.ContentOneofCase.Hyperlink &&
                     !block.Hyperlink.RelationshipId.Equals(original.Hyperlink.RelationshipId, StringComparison.Ordinal))
                     throw new CodecException(
@@ -292,6 +297,23 @@ internal static class DocxCodec
                 var original = sourceBlock.Original;
                 var binding = sourceBlock.Binding;
 
+                if (block.TextPatches.Count > 0)
+                {
+                    var semantic = block.Clone();
+                    semantic.TextPatches.Clear();
+                    if (!SemanticHash(semantic).Equals(binding.SemanticSha256, StringComparison.OrdinalIgnoreCase))
+                        throw new CodecException(
+                            "unsupported_document_edit",
+                            $"Document block {ordinal} cannot combine a native text patch with other semantic edits.",
+                            "word/document.xml");
+                    if (!binding.TextPatchable || element is not W.Paragraph patchableParagraph || original.ContentCase != DocumentBlock.ContentOneofCase.Paragraph)
+                        throw new CodecException(
+                            "unsupported_document_edit",
+                            $"Document block {ordinal} contains no safely patchable plain source text node.",
+                            "word/document.xml");
+                    DocxPlainTextPatchCodec.Apply(patchableParagraph, block, original.Paragraph.Text);
+                    continue;
+                }
                 if (SemanticHash(block).Equals(binding.SemanticSha256, StringComparison.OrdinalIgnoreCase)) continue;
                 if (!binding.Editable || block.ContentCase != original.ContentCase || block.ContentCase == DocumentBlock.ContentOneofCase.Opaque)
                     throw new CodecException(
@@ -434,7 +456,8 @@ internal static class DocxCodec
                             "word/document.xml");
                     ulong verificationItems = 0;
                     var verified = ReadBodyBlock(sourceTable, ordinal, binding.BodyIndex, ref verificationItems, limits, context);
-                    if (!SemanticHash(verified).Equals(SemanticHash(block), StringComparison.OrdinalIgnoreCase))
+                    if (verified.ContentCase != DocumentBlock.ContentOneofCase.Table ||
+                        !DocxTableCodec.SemanticsMatchRequested(sourceTable, block.Table))
                         throw new CodecException(
                             "document_semantics_not_applied",
                             $"Document table block {ordinal} does not match the requested modeled semantics after editing.",
@@ -648,6 +671,9 @@ internal static class DocxCodec
             ElementSha256 = HashElement(element),
             Editable = editable,
             NativeRevisionId = nativeRevisionId,
+            TextPatchable = element is W.Paragraph patchableParagraph &&
+                            block.ContentCase == DocumentBlock.ContentOneofCase.Paragraph &&
+                            DocxPlainTextPatchCodec.IsPatchable(patchableParagraph),
         };
         if (element is W.Paragraph sourceParagraph)
         {
@@ -863,6 +889,7 @@ internal static class DocxCodec
         ulong semanticItems = checked((ulong)envelope.Document.Comments.Count + (ulong)envelope.Document.Bookmarks.Count + (ulong)envelope.Document.Notes.Count);
         foreach (var block in envelope.Document.Blocks)
         {
+            DocxPlainTextPatchCodec.Validate(block);
             switch (block.ContentCase)
             {
                 case DocumentBlock.ContentOneofCase.Paragraph:
