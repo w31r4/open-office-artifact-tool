@@ -934,6 +934,14 @@ export class Slide {
     this.presentation.slides.items.splice(index, 0, this);
     return this;
   }
+  delete() {
+    const current = this.index;
+    if (current < 0) throw new Error("Presentation slide must belong to its presentation before it can be deleted.");
+    if (this.presentation.slides.items.length <= 1) {
+      throw new RangeError("Presentation must retain at least one slide.");
+    }
+    this.presentation.slides.items.splice(current, 1);
+  }
   get frame() { return { left: 0, top: 0, ...this.presentation.slideSize }; }
   get placeholders() {
     const items = this.shapes.items.filter((shape) => shape.placeholder);

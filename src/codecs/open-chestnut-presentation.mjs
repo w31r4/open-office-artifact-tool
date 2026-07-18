@@ -131,9 +131,9 @@ function assertTrustedPresentationState(state) {
 
 // A source-bound slide stays attached to its imported SlidePart by object
 // identity, not by whichever array index it happens to occupy now. That keeps
-// moveTo() a small, reversible presentation.xml operation while continuing to
-// reject additions, removals, and duplicate source slides until their OPC
-// graph operations have their own codec contract.
+// moveTo() reversible and lets the codec distinguish a genuine deletion from
+// an added object. The C# layer owns the stricter OPC graph preflight for a
+// requested deletion; additions and duplicate source slides still fail closed.
 function presentationSourceSlideStateMap(presentation, state) {
   if (!state) return undefined;
   const sourceBySlide = new Map();
@@ -143,8 +143,8 @@ function presentationSourceSlideStateMap(presentation, state) {
     }
     sourceBySlide.set(sourceState.slide, sourceState);
   }
-  if (sourceBySlide.size !== presentation.slides.items.length || presentation.slides.items.some((slide) => !sourceBySlide.has(slide))) {
-    throw new OpenChestnutCodecError(`Source-preserving PPTX export requires the original ${sourceBySlide.size}-slide set exactly once.`, [], { code: "presentation_topology_changed" });
+  if (presentation.slides.items.some((slide) => !sourceBySlide.has(slide))) {
+    throw new OpenChestnutCodecError("Source-preserving PPTX export does not accept newly added or duplicated source slides. Use an explicit OPC graph-clone operation when it becomes available.", [], { code: "presentation_topology_changed" });
   }
   return sourceBySlide;
 }
@@ -1435,13 +1435,6 @@ function presentationAdvancedSnapshot(presentation) {
     theme: JSON.parse(presentationThemeSnapshot(presentation.theme)),
     commentFormat: presentation.commentFormat,
     customShows: presentation.customShows.items.map((show) => show.toJSON()),
-    // Slide order is an independently modeled source-preserving operation.
-    // Comment content itself is still source-bound, so keep an identity-keyed,
-    // order-independent snapshot here.
-    slides: presentation.slides.items.map((slide) => ({
-      id: slide.id,
-      comments: slide.comments.items.map((comment) => comment.toJSON()),
-    })).sort((left, right) => left.id.localeCompare(right.id)),
   });
 }
 
