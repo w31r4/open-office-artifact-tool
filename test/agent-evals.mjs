@@ -8,6 +8,7 @@ import path from "node:path";
 import { DocumentFile, FileBlob, PresentationFile, SpreadsheetFile } from "../src/index.mjs";
 import {
   DOCX_CLASSIC_COMMENT_FIXTURE,
+  PPTX_SLIDE_NAME_FIXTURE,
   PPTX_TITLE_NOTES_FIXTURE,
   XLSX_GROWTH_UPDATE_FIXTURE,
   XLSX_THREADED_REVIEW_FIXTURE,
@@ -25,6 +26,7 @@ import {
   inspectThreadedWorkbook,
 } from "../scripts/agent-eval-spreadsheet-graders.mjs";
 import {
+  gradePptxSlideNameEvidence,
   gradePptxTitleNotesEvidence,
   inspectTitleNotesPptx,
 } from "../scripts/agent-eval-presentation-graders.mjs";
@@ -55,12 +57,12 @@ import {
 } from "../scripts/run-agent-evals.mjs";
 
 const { suite, cases } = await loadSuite();
-assert.deepEqual(validateSuite(suite, cases), { cases: 32, pdfCases: 20, ready: 12 });
+assert.deepEqual(validateSuite(suite, cases), { cases: 33, pdfCases: 20, ready: 13 });
 assert.equal(MINIMUM_PDF_CASE_SHARE, 0.6);
 assert.equal(cases.filter((item) => item.family === "pdf" && item.status === "ready").length, 8);
 assert.equal(cases.filter((item) => item.family === "spreadsheets" && item.status === "ready").length, 2);
 assert.equal(cases.filter((item) => item.family === "documents" && item.status === "ready").length, 1);
-assert.equal(cases.filter((item) => item.family === "presentations" && item.status === "ready").length, 1);
+assert.equal(cases.filter((item) => item.family === "presentations" && item.status === "ready").length, 2);
 
 const repository = repositoryProvenance();
 assert.match(repository.head, /^[0-9a-f]{40}$/);
@@ -390,6 +392,110 @@ try {
   }
 } finally {
   await fs.rm(titleNotesRoot, { recursive: true, force: true });
+}
+
+const slideNameItem = cases.find((item) => item.id === "pptx-source-bound-slide-name-edit");
+assert.ok(slideNameItem);
+const slideNameRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-eval-pptx-slide-name-"));
+try {
+  const slideNameInput = path.join(slideNameRoot, "inputs", PPTX_SLIDE_NAME_FIXTURE.presentationName);
+  const slideNameOutput = path.join(slideNameRoot, "outputs", "launch-review-renamed.pptx");
+  await generateOfficeInput("pptx-slide-name-review", slideNameInput);
+  const slideNameSource = await fs.readFile(slideNameInput);
+  const slideNamePresentation = await PresentationFile.importPptx(new FileBlob(slideNameSource, {
+    type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    name: PPTX_SLIDE_NAME_FIXTURE.presentationName,
+  }));
+  const slideNameTarget = slideNamePresentation.slides.items.find((slide) => slide.name === PPTX_SLIDE_NAME_FIXTURE.expectedName);
+  assert.ok(slideNameTarget);
+  slideNameTarget.name = PPTX_SLIDE_NAME_FIXTURE.replacementName;
+  const slideNameExport = await PresentationFile.exportPptx(slideNamePresentation);
+  const slideNameBytes = new Uint8Array(await slideNameExport.arrayBuffer());
+  await fs.mkdir(path.dirname(slideNameOutput), { recursive: true });
+  await fs.writeFile(slideNameOutput, slideNameBytes);
+  const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
+  const slideNameSourceEvidence = await inspectTitleNotesPptx(slideNameInput);
+  const sourceSlidePart = slideNameSourceEvidence.slides.find((slide) => slide.name === PPTX_SLIDE_NAME_FIXTURE.expectedName)?.path;
+  assert.ok(sourceSlidePart);
+  const slideNameAudit = {
+    status: "succeeded",
+    source: { sha256: hash(slideNameSource) },
+    output: { sha256: hash(slideNameBytes) },
+    provider: { actual: "open-chestnut", version: "test", silentFallback: false },
+    savePolicy: { strategy: "rewrite" },
+    operation: {
+      type: "source-bound-slide-name-edit",
+      sourcePart: sourceSlidePart,
+      expectedName: PPTX_SLIDE_NAME_FIXTURE.expectedName,
+      replacementName: PPTX_SLIDE_NAME_FIXTURE.replacementName,
+      nativeAttribute: "p:cSld/@name",
+    },
+    validation: { reimport: { ok: true } },
+  };
+  await fs.writeFile(path.join(slideNameRoot, "outputs", "audit.json"), JSON.stringify(slideNameAudit, null, 2));
+  const slideNameEvidence = {
+    source: slideNameSourceEvidence,
+    output: await inspectTitleNotesPptx(slideNameOutput),
+    visual: {
+      source: { available: true, ok: true, pageCount: 2, pages: [{ width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "target-stable" }, { width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "appendix-stable" }] },
+      output: { available: true, ok: true, pageCount: 2, pages: [{ width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "target-stable" }, { width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "appendix-stable" }] },
+    },
+  };
+  const slideNameTrace = JSON.stringify({ type: "item.completed", item: { type: "command_execution", id: "pptx-slide-name", command: "node -e 'PresentationFile.importPptx(); PresentationFile.exportPptx()'" } });
+  const slideNameChecks = gradePptxSlideNameEvidence({
+    evidence: slideNameEvidence,
+    audit: slideNameAudit,
+    commands: extractCompletedCommands(slideNameTrace),
+    item: slideNameItem,
+  });
+  assert.equal(slideNameChecks.every((check) => check.passed), true);
+  const semanticDriftEvidence = structuredClone(slideNameEvidence);
+  semanticDriftEvidence.output.slides.find((slide) => slide.path === sourceSlidePart).title = "Unexpected visible title change";
+  const semanticDriftChecks = gradePptxSlideNameEvidence({
+    evidence: semanticDriftEvidence,
+    audit: slideNameAudit,
+    commands: extractCompletedCommands(slideNameTrace),
+    item: slideNameItem,
+  });
+  assert.equal(semanticDriftChecks.find((check) => check.id === "pptx-name-machine:semantic-content-and-order-preserved")?.passed, false);
+  const packageDriftEvidence = structuredClone(slideNameEvidence);
+  packageDriftEvidence.output.partHashes["ppt/slides/slide2.xml"] = "unexpected-appendix-part-change";
+  const packageDriftChecks = gradePptxSlideNameEvidence({
+    evidence: packageDriftEvidence,
+    audit: slideNameAudit,
+    commands: extractCompletedCommands(slideNameTrace),
+    item: slideNameItem,
+  });
+  assert.equal(packageDriftChecks.find((check) => check.id === "pptx-name-security:fixed-topology-and-non-target-byte-preservation")?.passed, false);
+  const publishedSlideNameWorkflowChecks = gradePptxSlideNameEvidence({
+    evidence: slideNameEvidence,
+    audit: slideNameAudit,
+    commands: ["node .agents/skills/presentations/examples/openchestnut-slide-name-edit-workflow.mjs inputs/launch-review.pptx outputs/launch-review-renamed.pptx outputs/audit.json"],
+    item: slideNameItem,
+  });
+  assert.equal(publishedSlideNameWorkflowChecks.find((check) => check.id === "pptx-name-trace:typed-roundtrip")?.passed, true);
+  const untrustedSlideNameWorkflowChecks = gradePptxSlideNameEvidence({
+    evidence: slideNameEvidence,
+    audit: slideNameAudit,
+    commands: ["node scratch/slide-name-edit.mjs inputs/launch-review.pptx outputs/launch-review-renamed.pptx outputs/audit.json"],
+    item: slideNameItem,
+  });
+  assert.equal(untrustedSlideNameWorkflowChecks.find((check) => check.id === "pptx-name-trace:typed-roundtrip")?.passed, false);
+  const nativeSlideNameResult = await gradeOfficeCase({
+    item: slideNameItem,
+    workspace: slideNameRoot,
+    evaluator: path.join(slideNameRoot, "evaluator"),
+    finalMessage: "completed",
+    trace: slideNameTrace,
+  });
+  if (nativeSlideNameResult.graded) {
+    assert.equal(nativeSlideNameResult.rawScorePercent, 100);
+    assert.equal(nativeSlideNameResult.caseSpecificPassed, true);
+  } else {
+    assert.ok(nativeSlideNameResult.infrastructureErrors?.length);
+  }
+} finally {
+  await fs.rm(slideNameRoot, { recursive: true, force: true });
 }
 
 const accessibleItem = cases.find((item) => item.id === "pdf-greenfield-accessible-report");
