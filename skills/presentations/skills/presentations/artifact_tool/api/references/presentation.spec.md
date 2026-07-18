@@ -63,8 +63,8 @@ SlidePart with no outbound non-layout relationship, inbound relationship, or
 presentation identity reference; it then removes the actual part and relation.
 
 `slide.duplicate()` returns a new adjacent `Slide` only under the bounded
-imported shape/inline-table/embedded-image layout-leaf profile. Its unchanged graph may
-contain canonical simple shapes, canonical inline fixed-grid tables, plus canonical embedded rectangular images,
+imported shape/inline-table/embedded-image/recursive-group layout-leaf profile. Its unchanged graph may
+contain canonical simple shapes, canonical inline fixed-grid tables, canonical embedded rectangular images, plus recursively canonical groups whose descendants contain only those same leaf kinds,
 exactly one layout relationship, image relationships bound only by those
 pictures, and optionally one closed `NotesSlide -> NotesMaster` /
 back-to-source-slide leaf plus one canonical legacy `SlideCommentsPart` leaf.
@@ -74,11 +74,11 @@ the verified layout, immutable ImageParts, NotesMaster, and presentation-wide
 byte-for-byte, and repoints only the notes leaf at the clone while preserving
 the origin part. The comments leaf and author catalog must have no child,
 external, hyperlink, or data relationship graph. Accepted tables are inline-only
-and cannot introduce a fill, link, or another package relationship. The clone is intentionally
+and cannot introduce a fill, link, or another package relationship. Accepted groups add no relationship themselves, and every nested picture must consume one exact verified ImagePart relationship. The clone is intentionally
 read-only until it has crossed one export/reimport boundary; it then imports as
 its own source-bound slide, with legacy comments still read-only. Imported add,
 repeat/mutated clone, immediate clone edit, rich/connected comments, and every
-chart/OLE/hyperlink/custom-show/section/extension, external-or-irregular-image,
+connector/chart/OLE/hyperlink/custom-show/section/extension, external-or-irregular-image,
 or otherwise connected clone/delete graph fails closed.
 
 ## Discover And Edit

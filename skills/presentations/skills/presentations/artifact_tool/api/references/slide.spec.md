@@ -53,7 +53,7 @@ a simple solid and describe that as a faithful edit.
 
 ```ts
 slide.moveTo(0); // existing 0-based destination index
-const clone = slide.duplicate(); // narrow imported shape/inline-table/image/closed-notes profile only
+const clone = slide.duplicate(); // narrow imported shape/inline-table/image/recursive-group/closed-notes profile only
 slide.delete(); // removes a non-final source-free slide, or a qualified imported source slide
 ```
 
@@ -75,7 +75,7 @@ surviving source slides byte-identical. Any other imported delete fails closed.
 `duplicate()` is not a visual-only copy and never creates a second
 `p:sldId` reference to one source part. It is available only on an **original
 imported** source slide with an unchanged body of canonical simple shapes,
-canonical inline fixed-grid tables, plus canonical embedded rectangular images, exactly one internal
+canonical inline fixed-grid tables, canonical embedded rectangular images, plus recursively canonical groups whose descendants contain only those same leaf kinds, exactly one internal
 `SlidePart -> SlideLayoutPart` relationship, and image relationships bound only
 by those pictures. It may also own one closed
 `NotesSlide -> NotesMaster` / back-to-source-slide leaf and one canonical
@@ -89,7 +89,7 @@ image relationships, shares the verified NotesMaster and CommentAuthorsPart,
 copies accepted NotesSlide and SlideComments XML byte-for-byte, and points only
 the copied notes part back to the new slide. It preserves the required original
 source part. Accepted tables are inline-only and cannot introduce a fill, link,
-or any other package relationship. The new clone, its notes, and its legacy comments must remain
+or any other package relationship. Accepted groups add no relationship themselves, and every nested picture must consume one exact verified ImagePart relationship. The new clone, its notes, and its legacy comments must remain
 semantically unchanged and cannot replace or delete its origin until that
 export has completed and the resulting PPTX has been imported again; afterward
 the slide may use the supported fixed-topology edit path, while imported legacy
@@ -97,7 +97,7 @@ comments remain source-bound read-only.
 
 Source-free slides, already-cloned slides, rich or connected comments, charts,
 OLE, hyperlinks, external/data relationships, external/unbound/irregular
-images, non-shape/table/image elements, renames/layout/background changes, note
+images, connectors, non-shape/table/image/recursive-group elements, renames/layout/background changes, note
 or comment mutation before the boundary, immediate clone edits, and all broader
 relationship graphs fail closed. Adding imported slides still fails closed. A
 template-derived deck still needs a broader explicit OPC graph-clone transaction
