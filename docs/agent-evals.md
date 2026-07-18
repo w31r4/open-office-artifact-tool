@@ -15,9 +15,9 @@ The suite is evaluator-side repository infrastructure. `evals/`, the runner, loc
 
 ## Current suite
 
-- 33 cases: 20 PDF, 4 Documents, 5 Spreadsheets, and 4 Presentations.
-- 13 `ready` cases use deterministic generated or inline inputs: eight PDF cases, two bounded XLSX workflows (threaded-comment and formula-assumption update), one DOCX classic-comment, and two PPTX workflows (title-and-speaker-notes plus source-bound slide-name edit).
-- 20 `asset-required` cases define fixture specifications but do not run until licensed, version-pinned corpus files or test PKI are placed under `evals/assets/`.
+- 35 cases: 21 PDF, 4 Documents, 5 Spreadsheets, and 5 Presentations.
+- 14 `ready` cases use deterministic generated or inline inputs: eight PDF cases, two bounded XLSX workflows (threaded-comment and formula-assumption update), one DOCX classic-comment, and three PPTX workflows (title-and-speaker-notes, source-bound slide-name edit, and closed-leaf slide clone).
+- 21 `asset-required` cases define fixture specifications but do not run until licensed, version-pinned corpus files or test PKI are placed under `evals/assets/`.
 - Every family has both a success and a fail-closed case. Some advanced PDF cases accept either verified success or an explicit safe refusal.
 - The default policy uses three trials per subject. Trial count is recorded per case rather than silently inferred by the Agent.
 
@@ -45,9 +45,13 @@ npm run eval:agents -- prepare pptx-title-and-notes-edit --subject candidate --t
 npm run eval:agents -- run pptx-title-and-notes-edit --subject candidate --trial 1
 npm run eval:agents -- prepare pptx-source-bound-slide-name-edit --subject candidate --trial 1
 npm run eval:agents -- run pptx-source-bound-slide-name-edit --subject candidate --trial 1
+npm run eval:agents -- prepare pptx-closed-leaf-slide-clone --subject candidate --trial 1
+npm run eval:agents -- run pptx-closed-leaf-slide-clone --subject candidate --trial 1
 ```
 
 Generated PDF fixtures require Python with ReportLab and pypdf. All eight ready PDF case graders additionally require pdfplumber and Pillow; their applicable visual oracles require `pdftoppm`. Set `OPEN_OFFICE_AGENT_EVAL_PYTHON` to that interpreter and, only when it is not on `PATH`, set `OPEN_OFFICE_AGENT_EVAL_PDFTOPPM`. Prepared PDF prompts explicitly bind that interpreter as `OPEN_OFFICE_PDF_PROVIDER_PYTHON`, because Codex shell policy may not inherit the runner environment. In Codex, use the Python executable returned by `load_workspace_dependencies`.
+
+There are three ready PPTX graders. Two share the canonical `launch-review.pptx` two-slide fixture; the third uses a separate `release-review.pptx` source with a deliberately small notes/comments leaf profile.
 
 The ready XLSX, DOCX, and PPTX fixtures are generated through the public OpenChestnut facade and need no Python provider. Their independent native visual graders require `soffice`, `pdfinfo`, and `pdftoppm`; a missing executable reports `grader-unavailable`, never a product pass or failure. The two ready PPTX graders use the same canonical two-slide fixture. The title/notes case requires the named title and plain-text notes replacement, fixed slide topology/direct background/supporting text, exactly the target slide XML and notes XML as changed package parts, a byte-stable appendix, byte-bound audit provenance, second import, and LibreOffice/Poppler page evidence. The source-bound slide-name case changes only the first SlidePart's `p:cSld/@name`; it independently requires fixed topology, all non-target package parts byte-identical, source-part/name/attribute audit binding, successful second import, and pixel-identical native renders of both pages. It deliberately permits Open XML SDK canonicalization inside the changed target SlidePart rather than claiming a lexical one-attribute XML delta.
 
@@ -133,6 +137,8 @@ One clean candidate trial at `450017eb8acb209f6ceb161d247f6c8059ab2571` produced
 `pptx-source-bound-slide-name-edit` exercises the complementary non-visual boundary. It gives the Agent the same immutable two-slide package but permits only the unique first-slide `p:cSld/@name` change from `Go-no-go decision` to `Go decision: controlled rollout`. The independent grader identifies the SlidePart by its original package path, requires the output to retain slide order and every visible title/notes/background/text canary, permits exactly that SlidePart to differ, and requires both native-rendered pages to be pixel-identical. It rejects an apparent title edit, a notes edit, a package topology/relationship change, a modified appendix, a missing source-bound audit record, a skipped second import, or a scratch/untyped workflow. Because the Open XML SDK can serialize the one changed XML part canonically, its promise is semantic `p:cSld/@name` correctness plus byte-identical non-target parts, not a byte-level claim about the changed XML's attribute ordering or namespace declarations.
 
 One clean candidate trial at `ffdaca79014afd82038dfcbf0002dcaacb51c54d` produced `100/100`: all hard gates plus 5 machine, 2 visual, 2 security, and 6 trace checks passed. It bound tarball SHA-256 `cfdda4953699f45443006005391dc72ee5fa29372e3f6dfbb2ac27ea98d6a063`, copied-Skill SHA-256 `5e2b9019cc499898b7b85f76577cf20547e4df9db6c33462b31ecd5f82c744fd`, immutable input SHA-256 `4ef9783e70e94a643e723b37f76515127aa1d56ed8bd2c3ec7f888f030842239`, and oracle SHA-256 `5318bad1c5a6028346c3515ee9bb5fb9700dabe109e61d2c482c49b2b71f644d`. The source worktree was clean. This is one candidate trial, not the default three-repeat matrix or a reference-Skill comparison.
+
+`pptx-closed-leaf-slide-clone` is the complementary bounded graph slice. Its generated source contains a named `Release decision` SlidePart with exactly one canonical NotesSlide leaf and one legacy SlideComments leaf, plus a visible `Appendix canary`. The Agent must invoke the shipped duplicate workflow with `--allow-closed-leaves`; it may add only the adjacent clone SlidePart, its relationship part, a new NotesSlide plus its relationship part, and a new SlideComments part. The oracle independently reads the OPC relationships and raw part hashes: it requires byte-identical retained source parts, verbatim copied notes/comments XML, a clone NotesSlide back-reference to the clone, and shared NotesMaster and CommentAuthors catalog parts. Native LibreOffice/Poppler evidence must retain the source page, make the clone pixel-identical to it, and keep the appendix pixel-identical. A clean packed-candidate preparation plus direct published workflow execution scored `100/100` through all case-specific machine, visual, security, and trace checks; this validates the packaged primitive and evaluator, not a completed autonomous-Agent repeat matrix or reference-Skill comparison.
 
 ## Pilot findings
 

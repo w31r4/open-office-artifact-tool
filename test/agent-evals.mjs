@@ -61,7 +61,7 @@ import {
 } from "../scripts/run-agent-evals.mjs";
 
 const { suite, cases } = await loadSuite();
-assert.deepEqual(validateSuite(suite, cases), { cases: 34, pdfCases: 20, ready: 14 });
+assert.deepEqual(validateSuite(suite, cases), { cases: 35, pdfCases: 21, ready: 14 });
 assert.equal(MINIMUM_PDF_CASE_SHARE, 0.6);
 assert.equal(cases.filter((item) => item.family === "pdf" && item.status === "ready").length, 8);
 assert.equal(cases.filter((item) => item.family === "spreadsheets" && item.status === "ready").length, 2);
@@ -743,14 +743,15 @@ assert.match(providerInstruction, /OPEN_OFFICE_PDF_PROVIDER_PYTHON="\/opt\/eval 
 assert.match(providerInstruction, /Do not replace it/);
 assert.equal(providerRuntimeInstruction({ family: "xlsx" }, { OPEN_OFFICE_AGENT_EVAL_PYTHON: "/opt/python" }), "");
 
+const validationSampleId = "pdf-bounded-contract-id-replace";
 const badNetwork = structuredClone(cases);
-badNetwork[0].policy.network = true;
+badNetwork.find((item) => item.id === validationSampleId).policy.network = true;
 assert.throws(() => validateSuite(suite, badNetwork), /network must be false/);
 const badPath = structuredClone(cases);
-badPath[0].inputs[0].to = "../source.pdf";
+badPath.find((item) => item.id === validationSampleId).inputs[0].to = "../source.pdf";
 assert.throws(() => validateSuite(suite, badPath), /escapes the workspace|under inputs/);
 const normalizedEscape = structuredClone(cases);
-normalizedEscape[0].deliverables[0].path = "outputs/../inputs/source.pdf";
+normalizedEscape.find((item) => item.id === validationSampleId).deliverables[0].path = "outputs/../inputs/source.pdf";
 assert.throws(() => validateSuite(suite, normalizedEscape), /deliverable must stay under outputs/);
 
 const boundedItem = cases.find((item) => item.id === "pdf-bounded-contract-id-replace");
