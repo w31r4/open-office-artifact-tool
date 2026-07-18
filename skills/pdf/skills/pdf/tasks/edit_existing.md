@@ -11,7 +11,7 @@ node scripts/mupdf.mjs probe
 node scripts/mupdf.mjs inspect input.pdf
 ```
 
-Its typed operations are `add_text_annotation`, text/choice/checkbox `fill_form`, `delete_page`, complete `rearrange_pages`, `set_metadata`, `delete_embedded_file`, `delete_link`, `redact_text`, and `redact_rect`. Run with one explicit save policy:
+Its typed operations are `add_text_annotation`, text/choice/checkbox `fill_form`, `delete_page`, complete `rearrange_pages`, visible-only `set_page_crop`, `set_metadata`, `delete_embedded_file`, `delete_link`, `redact_text`, and `redact_rect`. Run with one explicit save policy:
 
 ```bash
 node scripts/mupdf.mjs edit input.pdf tmp/pdfs/edit-operations.json tmp/pdfs/edited.pdf \
@@ -19,6 +19,18 @@ node scripts/mupdf.mjs edit input.pdf tmp/pdfs/edit-operations.json tmp/pdfs/edi
 ```
 
 The CLI refuses source overwrite, writes atomically, and rejects incremental redaction/deletion and signed-PDF incremental edits. Unsupported operations do not route elsewhere.
+
+## Visible page crop
+
+Use `set_page_crop` only when the task is to change the visible page window without deleting underlying content. Inspect first and use the raw unrotated `MediaBox`/`CropBox` coordinates returned for the target page:
+
+```json
+[
+  { "type": "set_page_crop", "page": 1, "bbox": [72, 72, 468, 648] }
+]
+```
+
+The box must be fully inside the inspected `MediaBox`; rotated pages fail closed and need an explicitly selected specialist route. This operation writes only `CropBox`, retains content outside the crop, and may use unsigned `incremental` save. It is never a redaction, deletion, or sanitize substitute.
 
 ## Optional PyMuPDF specialist path
 

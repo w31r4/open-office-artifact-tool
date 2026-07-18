@@ -72,6 +72,37 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### PDF direct-original visible CropBox edits
+
+On 2026-07-18, the independent PDF path added one bounded existing-file page
+geometry primitive: `PdfFile.editPdf(..., { operations: [{ type:
+"set_page_crop", ... }] })`. MuPDF.js now exposes raw `MediaBox` and
+`CropBox` evidence for every native inspected page, accepts a raw unrotated
+`[x, y, width, height]` CropBox wholly inside the inspected MediaBox, maps it
+through any existing crop-origin shift, verifies the raw written box, and
+renders the resulting visible size from the original bytes.
+
+This is deliberately a visible-window operation, not content removal. The
+operation records `contentRemoved: false`; off-window content remains in the
+file, so it is never a redaction or sanitize route. It may use unsigned
+byte-prefix-verified incremental save, while deletion/redaction and every
+signed incremental edit remain rejected. Rotated pages fail closed rather than
+exposing ambiguous page-box coordinates; callers must select an explicit
+specialist provider for that case.
+
+Library regressions prove raw box inspection, crop rendering dimensions,
+incremental prefix preservation, restoring a pre-existing crop in the original
+page coordinate system, out-of-MediaBox rejection, and rotated-page rejection.
+The published PDF Skill CLI regression performs the same crop from an
+operations JSON, reopens it through `PdfFile.inspectPdf`, and renders it at
+72 DPI. The API reference, provider matrix, save-policy guide, and
+existing-PDF workflow all state the visible-only boundary.
+
+The complete local gate passed `npm test` (including Playwright), `npm run
+docs:api`, `npm run test:pack` (444 files; 9.4 MB packed, 23.6 MB unpacked),
+offline `npm run release:check -- --skip-network --allow-dirty`, OfficeBridge
+`5/5`, and OpenChestnut `210/210`.
+
 ### XLSX bounded 2D bubble charts
 
 On 2026-07-18, the Spreadsheet public model, protocol-2 wire, OpenChestnut C#

@@ -775,10 +775,10 @@ Append one inline plain-text Word content-control run with agent ID, tag, alias,
 | `pdf.resolve` | api | Resolve stable PDF artifact IDs for pages, page text blocks, positioned text items, reading-order entries, layout regions, tables/table cells, images, charts, and links. |
 | `pdf.verify` | api | Return QA issues for invalid H1-H6 nesting, missing/generic Figure alternative text, meaningless/unsafe links, cross-page logical-table continuity, incomplete/duplicate/unknown reading-order targets, empty pages, text extraction sanity, geometry/bounds, invalid images, table semantics, and chart data. |
 | `PdfArtifact.create` | api | Create a modeled PDF artifact with pages, text, span-aware accessible table regions, image regions, charts, links, and explicit reading order. |
-| `PdfFile.editPdf` | api | Apply bounded direct-original MuPDF.js operations with explicit rewrite or byte-prefix-verified incremental save, object-level signature detection, atomic caller-controlled output, and fail-closed rejection of incremental redaction/deletion, signed incremental edits, radio export ambiguity, and unsupported operations. |
+| `PdfFile.editPdf` | api | Apply bounded direct-original MuPDF.js operations with explicit rewrite or byte-prefix-verified incremental save, object-level signature detection, atomic caller-controlled output, and fail-closed rejection of incremental redaction/deletion, signed incremental edits, ambiguous radio export values, rotated-page crop requests, and unsupported operations. set_page_crop changes only the visible CropBox and never removes hidden original content. |
 | `PdfFile.exportPdf` | api | Export a modeled artifact as a real multi-page tagged PDF 1.7 whose logical structure follows explicit page reading order without changing paint order, emits semantic H1-H6 headings, meaningful Figure /Alt text, Link annotations with OBJR associations, /Artifact marked content, and constrained logical Tables spanning consecutive pages, and preserves language/title, Table/TR/TH/TD hierarchy, optional Unicode TrueType embedding, positioned text, vector charts, and PNG/JPEG images. |
 | `PdfFile.importPdf` | api | Reopen package-generated metadata losslessly or lazily use required MuPDF.js for arbitrary PDFs, producing a bounded reconstructed extraction/QA view with text geometry, raster placements and transforms, links, annotations, widgets, and heuristic table candidates; the view is never an edit representation. |
-| `PdfFile.inspectPdf` | api | Inspect a path or PDF bytes after a pre-WASM input budget, combining native MuPDF page/object/annotation/widget/link facts with bounded tagged-PDF, language, reading-order, heading, Figure, Link, Artifact, font, and table-structure evidence. |
+| `PdfFile.inspectPdf` | api | Inspect a path or PDF bytes after a pre-WASM input budget, combining native MuPDF page/object/annotation/widget/link and raw MediaBox/CropBox facts with bounded tagged-PDF, language, reading-order, heading, Figure, Link, Artifact, font, and table-structure evidence. |
 | `PdfFile.renderPdf` | api | Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or JPEG, enforcing input, page/object, DPI, and preallocation pixel budgets before returning a FileBlob. |
 
 ### pdf details
@@ -1123,7 +1123,7 @@ Create a modeled PDF artifact with pages, text, span-aware accessible table regi
 
 #### `PdfFile.editPdf`
 
-Apply bounded direct-original MuPDF.js operations with explicit rewrite or byte-prefix-verified incremental save, object-level signature detection, atomic caller-controlled output, and fail-closed rejection of incremental redaction/deletion, signed incremental edits, radio export ambiguity, and unsupported operations.
+Apply bounded direct-original MuPDF.js operations with explicit rewrite or byte-prefix-verified incremental save, object-level signature detection, atomic caller-controlled output, and fail-closed rejection of incremental redaction/deletion, signed incremental edits, ambiguous radio export values, rotated-page crop requests, and unsupported operations. set_page_crop changes only the visible CropBox and never removes hidden original content.
 
 **Examples:**
 
@@ -1132,8 +1132,8 @@ Apply bounded direct-original MuPDF.js operations with explicit rewrite or byte-
 **Schema parameters:**
 
 - `pdf` (string|FileBlob|Uint8Array|ArrayBuffer) required — Original PDF path or bytes.
-- `operations` (object[]) required — Typed MuPDF operations: add_text_annotation, fill_form, delete_page, rearrange_pages, set_metadata, delete_embedded_file, delete_link, redact_text, or redact_rect.
-- `savePolicy` (string) — rewrite or incremental. Incremental is forbidden for redaction, delete operations, and signed input.
+- `operations` (object[]) required — Typed MuPDF operations: add_text_annotation, fill_form, delete_page, rearrange_pages, set_page_crop, set_metadata, delete_embedded_file, delete_link, redact_text, or redact_rect. set_page_crop accepts a raw unrotated PDF-space bbox [x,y,width,height] fully inside the inspected MediaBox, changes only CropBox, and is never redaction.
+- `savePolicy` (string) — rewrite or incremental. Incremental is forbidden for redaction, delete operations, and signed input; set_page_crop is non-destructive and may be incremental.
 - `allowSigned` (boolean) — Acknowledge signed input after external review; never bypasses the incremental prohibition.
 - `invalidateSignatures` (boolean) — Required with allowSigned for a deliberate signed-PDF rewrite.
 - `password` (string) — Password for an encrypted PDF.
@@ -1190,7 +1190,7 @@ Reopen package-generated metadata losslessly or lazily use required MuPDF.js for
 
 #### `PdfFile.inspectPdf`
 
-Inspect a path or PDF bytes after a pre-WASM input budget, combining native MuPDF page/object/annotation/widget/link facts with bounded tagged-PDF, language, reading-order, heading, Figure, Link, Artifact, font, and table-structure evidence.
+Inspect a path or PDF bytes after a pre-WASM input budget, combining native MuPDF page/object/annotation/widget/link and raw MediaBox/CropBox facts with bounded tagged-PDF, language, reading-order, heading, Figure, Link, Artifact, font, and table-structure evidence.
 
 **Examples:**
 
@@ -1205,7 +1205,7 @@ Inspect a path or PDF bytes after a pre-WASM input budget, combining native MuPD
 
 **Schema returns:**
 
-- `inspection` (object) — PDF file summary with tagged/language/structure evidence plus bounded indirect object records.
+- `inspection` (object) — PDF file summary with tagged/language/structure evidence plus bounded indirect object records. Native page records include raw MediaBox/CropBox [x,y,width,height] values; bbox is the effective visible page-space rectangle.
 
 #### `PdfFile.renderPdf`
 

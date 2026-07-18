@@ -94,6 +94,8 @@ for (const file of requiredFiles) assert.ok(manifest.includes(file), `PDF manife
 const skillText = await fs.readFile(path.join(skillRoot, "SKILL.md"), "utf8");
 assert.match(skillText, /scripts\/mupdf\.mjs/);
 assert.match(skillText, /MuPDF\.js/);
+assert.match(skillText, /set_page_crop/);
+assert.match(skillText, /not redaction/i);
 for (const pattern of [
   /ReportLab/,
   /pdfplumber/,
@@ -151,6 +153,8 @@ try {
   const mupdfRender = path.join(tempRoot, "mupdf-render.png");
   const mupdfOperations = path.join(tempRoot, "mupdf-operations.json");
   const mupdfOutput = path.join(tempRoot, "mupdf-output.pdf");
+  const mupdfCropOperations = path.join(tempRoot, "mupdf-crop-operations.json");
+  const mupdfCropOutput = path.join(tempRoot, "mupdf-crop-output.pdf");
   const mupdfFixture = await PdfFile.exportPdf(PdfArtifact.create({ text: "MuPDF Skill CLI fixture" }));
   await fs.writeFile(mupdfInput, mupdfFixture.bytes);
   const mupdfProbe = parseResult(run(process.execPath, [mupdfCli, "probe"], { status: 0 }));
@@ -168,6 +172,15 @@ try {
   const mupdfEdited = parseResult(run(process.execPath, [mupdfCli, "edit", mupdfInput, mupdfOperations, mupdfOutput], { status: 0 }));
   assert.equal(mupdfEdited.savePolicy, "incremental");
   assert.equal((await PdfFile.inspectPdf(await fs.readFile(mupdfOutput))).records.find((record) => record.kind === "mupdfPage").annotations, 1);
+  await fs.writeFile(mupdfCropOperations, JSON.stringify({ operations: [{ type: "set_page_crop", page: 1, bbox: [72, 72, 468, 648] }], savePolicy: "incremental" }), "utf8");
+  const mupdfCropped = parseResult(run(process.execPath, [mupdfCli, "edit", mupdfInput, mupdfCropOperations, mupdfCropOutput], { status: 0 }));
+  assert.equal(mupdfCropped.savePolicy, "incremental");
+  assert.equal(mupdfCropped.operations[0].contentRemoved, false);
+  const cropPage = (await PdfFile.inspectPdf(await fs.readFile(mupdfCropOutput))).records.find((record) => record.kind === "mupdfPage");
+  assert.deepEqual(cropPage.mediaBox, [0, 0, 612, 792]);
+  assert.deepEqual(cropPage.cropBox, [72, 72, 468, 648]);
+  const cropRender = await PdfFile.renderPdf(await fs.readFile(mupdfCropOutput), { page: 1, dpi: 72 });
+  assert.deepEqual([cropRender.metadata.width, cropRender.metadata.height], [468, 648]);
   const mupdfInputAlias = path.join(tempRoot, "mupdf-input-alias.pdf");
   await fs.symlink(mupdfInput, mupdfInputAlias);
   const sourceOverwrite = run(process.execPath, [mupdfCli, "edit", mupdfInputAlias, mupdfOperations, mupdfInput], { status: 2 });

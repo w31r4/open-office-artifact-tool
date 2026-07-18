@@ -313,10 +313,10 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "pdf.layoutJson", summary: "Return modeled PDF page layout JSON with page text, positioned text items, explicit/effective reading order, layout regions, normalized table cells/spans/header IDs, images, charts, links, and target/search context slicing." },
   { artifactKind: "pdf", kind: "api", name: "pdf.verify", summary: "Return QA issues for invalid H1-H6 nesting, missing/generic Figure alternative text, meaningless/unsafe links, cross-page logical-table continuity, incomplete/duplicate/unknown reading-order targets, empty pages, text extraction sanity, geometry/bounds, invalid images, table semantics, and chart data." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.exportPdf", summary: "Export a modeled artifact as a real multi-page tagged PDF 1.7 whose logical structure follows explicit page reading order without changing paint order, emits semantic H1-H6 headings, meaningful Figure /Alt text, Link annotations with OBJR associations, /Artifact marked content, and constrained logical Tables spanning consecutive pages, and preserves language/title, Table/TR/TH/TD hierarchy, optional Unicode TrueType embedding, positioned text, vector charts, and PNG/JPEG images." },
-  { artifactKind: "pdf", kind: "api", name: "PdfFile.inspectPdf", summary: "Inspect a path or PDF bytes after a pre-WASM input budget, combining native MuPDF page/object/annotation/widget/link facts with bounded tagged-PDF, language, reading-order, heading, Figure, Link, Artifact, font, and table-structure evidence." },
+  { artifactKind: "pdf", kind: "api", name: "PdfFile.inspectPdf", summary: "Inspect a path or PDF bytes after a pre-WASM input budget, combining native MuPDF page/object/annotation/widget/link and raw MediaBox/CropBox facts with bounded tagged-PDF, language, reading-order, heading, Figure, Link, Artifact, font, and table-structure evidence." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.importPdf", summary: "Reopen package-generated metadata losslessly or lazily use required MuPDF.js for arbitrary PDFs, producing a bounded reconstructed extraction/QA view with text geometry, raster placements and transforms, links, annotations, widgets, and heuristic table candidates; the view is never an edit representation." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.renderPdf", summary: "Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or JPEG, enforcing input, page/object, DPI, and preallocation pixel budgets before returning a FileBlob." },
-  { artifactKind: "pdf", kind: "api", name: "PdfFile.editPdf", summary: "Apply bounded direct-original MuPDF.js operations with explicit rewrite or byte-prefix-verified incremental save, object-level signature detection, atomic caller-controlled output, and fail-closed rejection of incremental redaction/deletion, signed incremental edits, radio export ambiguity, and unsupported operations." },
+  { artifactKind: "pdf", kind: "api", name: "PdfFile.editPdf", summary: "Apply bounded direct-original MuPDF.js operations with explicit rewrite or byte-prefix-verified incremental save, object-level signature detection, atomic caller-controlled output, and fail-closed rejection of incremental redaction/deletion, signed incremental edits, ambiguous radio export values, rotated-page crop requests, and unsupported operations. set_page_crop changes only the visible CropBox and never removes hidden original content." },
   { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter to extract page geometry, positioned text, heuristic tables, and bounded embedded raster or stencil-mask PNG images with placement boxes." },
 
   {
@@ -556,7 +556,7 @@ const HELP_DETAIL_OVERRIDES = {
         maxObjects: { type: "number", description: "Maximum indirect object records to inspect." },
         maxChars: { type: "number", description: "Maximum bounded NDJSON output size." },
       },
-      returns: { inspection: { type: "object", description: "PDF file summary with tagged/language/structure evidence plus bounded indirect object records." } },
+      returns: { inspection: { type: "object", description: "PDF file summary with tagged/language/structure evidence plus bounded indirect object records. Native page records include raw MediaBox/CropBox [x,y,width,height] values; bbox is the effective visible page-space rectangle." } },
     },
   },
   "PdfFile.renderPdf": {
@@ -579,8 +579,8 @@ const HELP_DETAIL_OVERRIDES = {
     schema: {
       parameters: {
         pdf: { type: "string|FileBlob|Uint8Array|ArrayBuffer", required: true, description: "Original PDF path or bytes." },
-        operations: { type: "object[]", required: true, description: "Typed MuPDF operations: add_text_annotation, fill_form, delete_page, rearrange_pages, set_metadata, delete_embedded_file, delete_link, redact_text, or redact_rect." },
-        savePolicy: { type: "string", description: "rewrite or incremental. Incremental is forbidden for redaction, delete operations, and signed input." },
+        operations: { type: "object[]", required: true, description: "Typed MuPDF operations: add_text_annotation, fill_form, delete_page, rearrange_pages, set_page_crop, set_metadata, delete_embedded_file, delete_link, redact_text, or redact_rect. set_page_crop accepts a raw unrotated PDF-space bbox [x,y,width,height] fully inside the inspected MediaBox, changes only CropBox, and is never redaction." },
+        savePolicy: { type: "string", description: "rewrite or incremental. Incremental is forbidden for redaction, delete operations, and signed input; set_page_crop is non-destructive and may be incremental." },
         allowSigned: { type: "boolean", description: "Acknowledge signed input after external review; never bypasses the incremental prohibition." },
         invalidateSignatures: { type: "boolean", description: "Required with allowSigned for a deliberate signed-PDF rewrite." },
         password: { type: "string", description: "Password for an encrypted PDF." },

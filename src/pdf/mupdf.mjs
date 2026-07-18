@@ -90,6 +90,54 @@ function pdfRectContains(outer, inner) {
     && inner[3] <= outer[3];
 }
 
+function rawPageBox(page, name) {
+  let pageObject;
+  let box;
+  try {
+    pageObject = page.getObject();
+    box = pageObject.getInheritable(name);
+    if (!box.isArray() || box.length !== 4) return undefined;
+    const values = [];
+    for (let index = 0; index < box.length; index += 1) {
+      let value;
+      try {
+        value = box.get(index);
+        if (!value.isNumber()) return undefined;
+        const number = value.asNumber();
+        if (!Number.isFinite(number)) return undefined;
+        values.push(number);
+      } finally {
+        if (value && value !== mupdf.PDFObject.Null) value.destroy();
+      }
+    }
+    return values;
+  } finally {
+    if (box && box !== mupdf.PDFObject.Null) box.destroy();
+    pageObject?.destroy();
+  }
+}
+
+function rawPageRotation(page) {
+  let pageObject;
+  let rotation;
+  try {
+    pageObject = page.getObject();
+    rotation = pageObject.getInheritable("Rotate");
+    if (rotation.isNull()) return 0;
+    if (!rotation.isNumber()) return undefined;
+    const value = rotation.asNumber();
+    return Number.isInteger(value) ? ((value % 360) + 360) % 360 : undefined;
+  } finally {
+    if (rotation && rotation !== mupdf.PDFObject.Null) rotation.destroy();
+    pageObject?.destroy();
+  }
+}
+
+function pdfRectsEqual(left, right, tolerance = 0.001) {
+  return left.length === right.length
+    && left.every((value, index) => Math.abs(value - right[index]) <= tolerance);
+}
+
 function hitRect(quads) {
   const points = quads.flatMap((quad) => Array.isArray(quad) && quad.length === 8 ? [quad] : quad);
   const xs = points.flatMap((quad) => [quad[0], quad[2], quad[4], quad[6]]).map(Number);
@@ -212,8 +260,8 @@ function structuredPage(page, pageNumber, options, imageBudget) {
       });
     }
     const bounds = page.getBounds();
-    const mediaBox = pdfRectToBbox(page.getBounds("MediaBox"));
-    const cropBox = pdfRectToBbox(page.getBounds("CropBox"));
+    const mediaBox = rawPageBox(page, "MediaBox");
+    const cropBox = rawPageBox(page, "CropBox") || mediaBox;
     const annotationObjects = page.getAnnotations();
     const widgetObjects = page.getWidgets();
     const linkObjects = page.getLinks();
@@ -224,8 +272,8 @@ function structuredPage(page, pageNumber, options, imageBudget) {
       return {
         width: bounds[2] - bounds[0],
         height: bounds[3] - bounds[1],
-        mediaBox,
-        cropBox,
+        mediaBox: mediaBox && pdfRectToBbox(mediaBox),
+        cropBox: cropBox && pdfRectToBbox(cropBox),
         text: structured.asText().replace(/\s+$/u, ""),
         textItems,
         images,
@@ -304,12 +352,14 @@ export async function inspectPdfWithMuPdf(input, options = {}) {
       const links = page.getLinks();
       try {
         const text = structured.asText();
+        const mediaBox = rawPageBox(page, "MediaBox");
+        const cropBox = rawPageBox(page, "CropBox") || mediaBox;
         return {
           kind: "mupdfPage",
           page: index + 1,
           bbox: pdfRectToBbox(page.getBounds("CropBox")),
-          mediaBox: pdfRectToBbox(page.getBounds("MediaBox")),
-          cropBox: pdfRectToBbox(page.getBounds("CropBox")),
+          mediaBox: mediaBox && pdfRectToBbox(mediaBox),
+          cropBox: cropBox && pdfRectToBbox(cropBox),
           textChars: text.length,
           annotations: annotations.length,
           widgets: widgets.length,
@@ -477,12 +527,26 @@ function applyPageCrop(document, operation) {
   const { index, page } = pageFor(document, operation);
   try {
     const cropRect = bboxToPdfRect(operation.bbox || operation.rect, "crop rectangle");
-    const mediaRect = page.getBounds("MediaBox");
+    const mediaRect = rawPageBox(page, "MediaBox");
+    if (!mediaRect) throw new Error("set_page_crop requires a finite four-number MediaBox.");
+    const rotation = rawPageRotation(page);
+    if (rotation !== 0) throw new Error("set_page_crop supports only unrotated pages; use an explicit specialist provider for rotated page boxes.");
     if (!pdfRectContains(mediaRect, cropRect)) {
       throw new Error("set_page_crop crop rectangle must fit fully inside the page MediaBox.");
     }
-    page.setPageBox("CropBox", cropRect);
+    const currentCropRect = rawPageBox(page, "CropBox") || mediaRect;
+    const pageCoordinates = [
+      cropRect[0] - currentCropRect[0],
+      cropRect[1] - currentCropRect[1],
+      cropRect[2] - currentCropRect[0],
+      cropRect[3] - currentCropRect[1],
+    ];
+    page.setPageBox("CropBox", pageCoordinates);
     page.update();
+    const writtenCropRect = rawPageBox(page, "CropBox");
+    if (!writtenCropRect || !pdfRectsEqual(writtenCropRect, cropRect)) {
+      throw new Error("MuPDF did not preserve the requested raw CropBox; refusing to save an ambiguous crop.");
+    }
     return {
       type: "set_page_crop",
       page: index + 1,

@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { inflateSync } from "node:zlib";
+import mupdf from "mupdf";
 import sharp from "sharp";
 import { createPdfjsParser } from "open-office-artifact-tool/pdf/pdfjs";
 import { MUPDF_VERSION, createMuPdfParser, parsePdfWithMuPdf, renderPdfWithMuPdf } from "open-office-artifact-tool/pdf/mupdf";
@@ -243,6 +244,50 @@ const mupdfIncremental = await PdfFile.editPdf(arbitraryPdf, {
 assert.equal(mupdfIncremental.metadata.savePolicy, "incremental");
 assert.equal(Buffer.from(mupdfIncremental.bytes.subarray(0, arbitraryPdf.bytes.length)).equals(Buffer.from(arbitraryPdf.bytes)), true);
 assert.equal((await PdfFile.inspectPdf(mupdfIncremental)).records.find((record) => record.kind === "mupdfPage" && record.page === 1).annotations, 1);
+const mupdfCropped = await PdfFile.editPdf(arbitraryPdf, {
+  savePolicy: "incremental",
+  operations: [{ type: "set_page_crop", page: 1, bbox: [72, 72, 468, 648] }],
+});
+assert.equal(mupdfCropped.metadata.savePolicy, "incremental");
+assert.equal(Buffer.from(mupdfCropped.bytes.subarray(0, arbitraryPdf.bytes.length)).equals(Buffer.from(arbitraryPdf.bytes)), true);
+assert.deepEqual(mupdfCropped.metadata.operations[0], {
+  type: "set_page_crop",
+  page: 1,
+  bbox: [72, 72, 468, 648],
+  mediaBox: [0, 0, 612, 792],
+  contentRemoved: false,
+});
+const croppedRecord = (await PdfFile.inspectPdf(mupdfCropped)).records.find((record) => record.kind === "mupdfPage" && record.page === 1);
+assert.deepEqual(croppedRecord.mediaBox, [0, 0, 612, 792]);
+assert.deepEqual(croppedRecord.cropBox, [72, 72, 468, 648]);
+assert.deepEqual(croppedRecord.bbox, [0, 0, 468, 648]);
+const croppedRender = await PdfFile.renderPdf(mupdfCropped, { page: 1, dpi: 72 });
+assert.equal(croppedRender.metadata.width, 468);
+assert.equal(croppedRender.metadata.height, 648);
+const mupdfCropRestored = await PdfFile.editPdf(mupdfCropped, {
+  savePolicy: "incremental",
+  operations: [{ type: "set_page_crop", page: 1, bbox: [0, 0, 612, 792] }],
+});
+assert.equal(Buffer.from(mupdfCropRestored.bytes.subarray(0, mupdfCropped.bytes.length)).equals(Buffer.from(mupdfCropped.bytes)), true);
+const restoredRecord = (await PdfFile.inspectPdf(mupdfCropRestored)).records.find((record) => record.kind === "mupdfPage" && record.page === 1);
+assert.deepEqual(restoredRecord.cropBox, [0, 0, 612, 792]);
+await assert.rejects(PdfFile.editPdf(arbitraryPdf, {
+  operations: [{ type: "set_page_crop", page: 1, bbox: [-1, 0, 613, 792] }],
+}), /crop rectangle must fit fully inside the page MediaBox/);
+const rotatedNativeDocument = new mupdf.PDFDocument(arbitraryPdf.bytes);
+const rotatedNativePage = rotatedNativeDocument.loadPage(0);
+const rotatedNativeObject = rotatedNativePage.getObject();
+rotatedNativeObject.put("Rotate", 90);
+rotatedNativePage.update();
+const rotatedNativeOutput = rotatedNativeDocument.saveToBuffer("garbage=2,compress=yes");
+const rotatedPdf = new FileBlob(new Uint8Array(rotatedNativeOutput.asUint8Array()), { type: "application/pdf" });
+rotatedNativeOutput.destroy();
+rotatedNativeObject.destroy();
+rotatedNativePage.destroy();
+rotatedNativeDocument.destroy();
+await assert.rejects(PdfFile.editPdf(rotatedPdf, {
+  operations: [{ type: "set_page_crop", page: 1, bbox: [72, 72, 468, 648] }],
+}), /set_page_crop supports only unrotated pages/);
 const mupdfRedacted = await PdfFile.editPdf(arbitraryPdf, {
   savePolicy: "rewrite",
   operations: [{ type: "redact_text", page: 2, term: "Second page notes" }],

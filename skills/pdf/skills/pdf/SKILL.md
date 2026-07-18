@@ -148,7 +148,7 @@ Bind the canonical audit `output` to `attachments.json`, set `savePolicy.strateg
 
 ## Edit An Existing PDF
 
-MuPDF.js is the default native provider. It operates directly on original bytes and currently supports `add_text_annotation`, typed text/choice/checkbox `fill_form`, `delete_page`, complete `rearrange_pages`, `set_metadata`, `delete_embedded_file`, `delete_link`, `redact_text`, and `redact_rect`. Unsupported operations, untrusted radio export-value mapping, invalid limits, and unsafe save policies fail closed.
+MuPDF.js is the default native provider. It operates directly on original bytes and currently supports `add_text_annotation`, typed text/choice/checkbox `fill_form`, `delete_page`, complete `rearrange_pages`, raw-coordinate visible-only `set_page_crop`, `set_metadata`, `delete_embedded_file`, `delete_link`, `redact_text`, and `redact_rect`. Unsupported operations, untrusted radio export-value mapping, rotated-page crop requests, invalid limits, and unsafe save policies fail closed.
 
 Use JSON operations with the thin CLI:
 
@@ -157,7 +157,7 @@ node scripts/mupdf.mjs edit input.pdf tmp/pdfs/edit-operations.json tmp/pdfs/edi
   --save-policy rewrite
 ```
 
-`incremental` preserves the exact source-byte prefix but is forbidden for redaction, delete operations, and any signed input. A signed rewrite requires deliberate invalidation, and the API reports signature validity as unknown; use pyHanko for actual trust and policy validation.
+`set_page_crop` accepts a `[x, y, width, height]` box in the raw unrotated PDF page coordinate system reported by `inspect`; it must lie fully inside `MediaBox`. It changes only `CropBox`, keeps content outside the visible region in the file, and is therefore not redaction or sanitize. `incremental` preserves the exact source-byte prefix and is permitted for that non-destructive operation, but remains forbidden for redaction, delete operations, and any signed input. A signed rewrite requires deliberate invalidation, and the API reports signature validity as unknown; use pyHanko for actual trust and policy validation.
 
 The optional PyMuPDF specialist script remains available for operations not yet migrated, including bounded positioned text/image workflows and the strict sanitize path. Run its provider probe and route plan above before use. For `replace_text` under `sanitize`, use `--task redact --strategy sanitize --invalidate-signatures` in the plan.
 

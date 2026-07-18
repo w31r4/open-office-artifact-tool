@@ -129,6 +129,21 @@ await page.save("third-party-page-1.png");
 
 Parser-backed import reconstructs a modeled view for extraction, inspect, and QA. It is not the edit representation and must not be exported as a faithful edit. Table reconstruction is heuristic. Direct-original mutations use `PdfFile.editPdf(input, { operations, savePolicy })`; signatures still route to pyHanko, and strict sanitize/OCR or complex forms/merge route to the documented specialist tools. Inject `createPdfjsParser()` only when an independent PDF.js read adapter is specifically required.
 
+For a bounded visible crop, take the raw page box from native inspection and edit the original bytes directly. The operation is intentionally not redaction: it changes `CropBox`, retains off-window content, and supports only unrotated pages.
+
+```js
+const pageRecord = inspection.records.find((record) => record.kind === "mupdfPage" && record.page === 1);
+if (!pageRecord?.mediaBox) throw new Error("Missing native MediaBox evidence.");
+
+const cropped = await PdfFile.editPdf(input, {
+  savePolicy: "incremental",
+  operations: [{ type: "set_page_crop", page: 1, bbox: [72, 72, 468, 648] }],
+});
+await cropped.save("third-party-page-1-cropped.pdf");
+```
+
+The requested `[x, y, width, height]` must fit fully inside the inspected raw `MediaBox`. Reopen and render the result; use a rewrite-plus-sanitize route for any task that requires actual removal of sensitive content.
+
 ## Render and visual QA
 
 Use the model SVG preview while authoring, then render the exported PDF with Poppler and inspect every page before delivery:
