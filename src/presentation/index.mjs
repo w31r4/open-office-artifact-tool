@@ -43,11 +43,35 @@ class SlideCollection {
   }
 
   add(options = {}) {
+    return this.#insertAt(options, this.items.length);
+  }
+
+  insert(options = {}) {
+    if (!options || typeof options !== "object" || Array.isArray(options)) throw new TypeError("Presentation slide options must be an object.");
+    const { after, ...slideOptions } = options;
+    let index = this.items.length;
+    if (after === null) {
+      index = 0;
+    } else if (after !== undefined) {
+      if (after instanceof Slide) {
+        index = this.items.indexOf(after);
+        if (index < 0 || after.presentation !== this.presentation) throw new Error("Presentation slide insertion target must belong to this presentation.");
+      } else if (Number.isInteger(after) && after >= 0 && after < this.items.length) {
+        index = after;
+      } else {
+        throw new RangeError("Presentation slide insertion after must be an existing Slide, a 0-based slide index, or null.");
+      }
+      index += 1;
+    }
+    return this.#insertAt(slideOptions, index);
+  }
+
+  #insertAt(options, index) {
     if (!options || typeof options !== "object" || Array.isArray(options)) throw new TypeError("Presentation slide options must be an object.");
     const slide = new Slide(this.presentation, options);
     const requestedLayout = options.layout ?? options.layoutId;
     if (requestedLayout == null) {
-      this.items.push(slide);
+      this.items.splice(index, 0, slide);
       return slide;
     }
     const layout = typeof requestedLayout === "string"
@@ -56,11 +80,11 @@ class SlideCollection {
     if (!(layout instanceof SlideLayoutTemplate) || layout.presentation !== this.presentation) {
       throw new Error(`Unknown presentation layout: ${typeof requestedLayout === "string" ? requestedLayout : "provided layout"}`);
     }
-    this.items.push(slide);
+    this.items.splice(index, 0, slide);
     try {
       layout.apply(slide);
     } catch (error) {
-      this.items.pop();
+      this.items.splice(index, 1);
       throw error;
     }
     return slide;

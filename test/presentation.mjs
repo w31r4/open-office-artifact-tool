@@ -175,6 +175,34 @@ assert.throws(
 );
 assert.equal(guardedLayoutPresentation.slides.count, slideCountBeforeUnknownLayout);
 
+const insertionPresentation = Presentation.create();
+const insertionLayout = insertionPresentation.layouts.add({
+  name: "Inserted title",
+  type: "title",
+  placeholders: [{ type: "title", index: 0, position: { left: 88, top: 68, width: 920, height: 92 } }],
+});
+const insertionFirst = insertionPresentation.slides.add({ name: "First" });
+const insertionThird = insertionPresentation.slides.add({ name: "Third" });
+const insertionFront = insertionPresentation.slides.insert({ after: null, name: "Front" });
+const insertionSecond = insertionPresentation.slides.insert({ after: 0, name: "Second" });
+const insertionAfterFirst = insertionPresentation.slides.insert({ after: insertionFirst, name: "After first", layout: insertionLayout });
+assert.deepEqual(insertionPresentation.slides.items.map((slide) => slide.name), ["Front", "Second", "First", "After first", "Third"]);
+assert.equal(insertionAfterFirst.placeholders.count, 1);
+assert.equal(insertionAfterFirst.placeholders.getItem("title").placeholder.layoutId, insertionLayout.id);
+const insertionCountBeforeRejectedTarget = insertionPresentation.slides.count;
+const foreignSlide = Presentation.create().slides.add({ name: "Foreign" });
+assert.throws(
+  () => insertionPresentation.slides.insert({ after: foreignSlide, name: "Rejected" }),
+  /insertion target must belong to this presentation/i,
+);
+assert.throws(
+  () => insertionPresentation.slides.insert({ after: 99, name: "Rejected" }),
+  /after must be an existing Slide, a 0-based slide index, or null/i,
+);
+assert.equal(insertionPresentation.slides.count, insertionCountBeforeRejectedTarget);
+const insertionRoundTrip = await PresentationFile.importPptx(await PresentationFile.exportPptx(insertionPresentation));
+assert.deepEqual(insertionRoundTrip.slides.items.map((slide) => slide.name), ["Front", "Second", "First", "After first", "Third"]);
+
 const invalidSourceFreeLayout = Presentation.create();
 const invalidSourceFreeSlide = invalidSourceFreeLayout.slides.add();
 const invalidLayout = invalidSourceFreeLayout.layouts.add({
