@@ -1674,6 +1674,45 @@ force, leaving about 7 KiB rather than hiding this growth behind a wider budget.
 Hosted results are recorded after the candidate commit; no publish or tag
 operation was attempted.
 
+### Lossless public-Skill PNG package headroom
+
+On 2026-07-19, the production package recovered sustainable growth headroom
+without deleting OpenChestnut, any public Skill, or any user-facing asset, and
+without widening the existing package ceilings. A pinned repository-only pako
+1.0.11 tool now parses every PNG under the four npm file-type plugins with
+strict signature, chunk-boundary, CRC, ordering, dimension, and inflated-stream
+budgets. It replaces only the consecutive IDAT representation when a level-9
+deflate is smaller. Every non-IDAT chunk remains byte-for-byte identical,
+including EXIF, XMP, ICC, palette, and physical-size metadata; the complete
+inflated filtered scanline stream also remains byte-for-byte identical.
+
+The checker is idempotent and fail-closed. It inventories exactly 40 published
+PNG paths, compares all 39 reference-backed paths against the pinned reference
+checkout, separately binds the Excel live-control compatibility icon to its
+canonical spreadsheet icon, rejects bad CRCs and trailing bytes, and proves the
+write path on an unoptimized source image. A dedicated package-category gate
+keeps those 40 assets below 3,550,000 bytes, while the total unpacked ceiling
+remains 24,380,000 bytes. The repository-only Default Template Library and its
+byte-identity hashes are not rewritten.
+
+The PNG payload fell from 4,397,178 to 3,548,674 bytes, recovering exactly
+848,504 unpacked bytes. After the added license, package metadata, and Skill
+compatibility documentation, the complete local tarball contains the same 461
+files, is 8,959,764 bytes compressed and 23,525,110 bytes unpacked: a net
+847,473-byte unpacked reduction from the preceding candidate and about 835 KiB
+of explicit headroom under the unchanged ceiling. The bundled OpenChestnut
+runtime remains the same manifest-bound 38 files and 14,644,416 bytes.
+
+The complete local gate passed `npm test` including Playwright,
+LibreOffice/Poppler, qpdf, and the 20-template corpus; `npm run docs:api`, `npm
+run proto:check`, `npm run test:pack`, OfficeBridge `5/5`, OpenChestnut
+`285/285`, and two-build deterministic OpenChestnut verification also passed.
+Explicit real-provider environments for pikepdf, pyHanko, veraPDF, and
+OCRmyPDF were not configured in this pass, so their contract/adversarial gates
+ran while their environment-gated real-provider repeats remained skipped.
+Hosted results are recorded after the candidate commit; no publish or tag
+operation was attempted.
+
 `npm run release:check` passes the source, documentation, package, license, JavaScript, and .NET gates. Its only remaining blocker is unavailable npm authentication. No `npm publish` or tag/release operation has been performed.
 
 ## Publishing

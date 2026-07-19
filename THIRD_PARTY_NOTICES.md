@@ -8,6 +8,7 @@ The npm package declares or optionally integrates the following public libraries
 | --- | --- | --- |
 | Buf Protobuf (`@bufbuild/protobuf`) | Public protobuf wire-schema runtime for JavaScript | Apache-2.0 AND BSD-3-Clause |
 | JSZip | OOXML ZIP package reading/writing | MIT option from `(MIT OR GPL-3.0-or-later)` |
+| pako | Pinned, repository-only deterministic PNG IDAT recompression tool | MIT AND Zlib |
 | MuPDF.js (`mupdf`) | Required, runtime-lazy arbitrary-PDF parsing, inspection, rendering, and bounded native editing | GNU AGPL-3.0-or-later |
 | PDF.js (`pdfjs-dist`) | Optional arbitrary-PDF parsing | Apache-2.0 |
 | Playwright | Optional deterministic browser rendering | Apache-2.0 |

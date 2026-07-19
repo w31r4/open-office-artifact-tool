@@ -30,21 +30,25 @@ assert.equal(result.status, 0, `npm pack manifest failed\nSTDOUT:\n${result.stdo
 const report = JSON.parse(result.stdout)[0];
 const files = report.files.map((item) => item.path);
 // npm's gzip output varies between the macOS and Linux npm builds used by local
-// and hosted gates. The largest observed Linux-vs-macOS delta is about 203 KiB;
-// the local PPTX canonical-run-hyperlink clone candidate measures 9,613,431
-// bytes. Keep about 18 KiB beyond that observed cross-platform projection
-// rather than budgeting to one machine's exact gzip result.
+// and hosted gates. Keep the existing cross-platform ceiling: deterministic
+// lossless Skill-PNG recompression reduced the local candidate to 8,959,764
+// bytes without hiding future product growth behind a smaller replacement cap.
 const maxPackedBytes = 9_840_000;
 // The bundled OpenChestnut runtime is an audited product payload, not an
 // optional download. Keep its unpacked budget tight while allowing the
 // audited PDF provider/docs growth plus the bounded DOCX/PPTX modern-comment and
 // native XLSX PivotTable codecs and runnable workflows. The local PPTX
-// canonical-run-hyperlink clone candidate measures 24,372,583 unpacked bytes,
-// so this keeps about 7 KiB of explicit headroom.
+// losslessly recompressed candidate measures 23,525,110 unpacked bytes, so the
+// unchanged ceiling restores about 835 KiB of explicit product-growth headroom.
 // The repository-only MIT Default Template Library is excluded from the npm
 // tarball. Its retained Office/PNG sources must never consume this consumer
 // package budget.
 const maxUnpackedBytes = 24_380_000;
+// Public Skill PNGs are required user-facing assets. They are retained with
+// byte-identical non-IDAT chunks and inflated scanline streams, but their IDAT
+// payloads are deterministically recompressed. Prevent future PNG tooling from
+// silently consuming the recovered product-growth headroom.
+const maxSkillPngBytes = 3_550_000;
 
 for (const required of [
   "LICENSE",
@@ -253,6 +257,10 @@ assert.ok(files.every((file) => !file.startsWith("skills/default-template-librar
 assert.ok(files.every((file) => !file.startsWith("native/OpenChestnut/") && !file.startsWith("scripts/")), "npm runtime package must not duplicate repository-only OpenChestnut source or build tooling");
 assert.ok(files.every((file) => !file.startsWith("evals/") && file !== "docs/agent-evals.md"), "npm runtime package must exclude the evaluator-side PromptBench and its oracle documentation");
 assert.ok(!files.includes("docs/coverage.md") && !files.includes("docs/release.md") && !files.includes("docs/reference-runtime-architecture.md") && !files.includes("native/OpenChestnut/README.md"), "npm runtime package must exclude repository-only coverage, release history, and subsystem implementation notes");
+const skillPngs = report.files.filter(({ path: filename }) => /^skills\/(?:documents|spreadsheets|presentations|pdf)\/.*\.png$/.test(filename));
+const skillPngBytes = skillPngs.reduce((total, { size }) => total + size, 0);
+assert.equal(skillPngs.length, 40, "npm package must retain all 40 public Skill PNG assets");
+assert.ok(skillPngBytes < maxSkillPngBytes, `public Skill PNG payload unexpectedly large: ${skillPngBytes} (limit ${maxSkillPngBytes})`);
 assert.ok(report.size < maxPackedBytes, `npm package archive unexpectedly large: ${report.size} (limit ${maxPackedBytes})`);
 assert.ok(report.unpackedSize < maxUnpackedBytes, `npm package unpacked size unexpectedly large: ${report.unpackedSize} (limit ${maxUnpackedBytes})`);
 
