@@ -119,8 +119,11 @@ node "$SKILL_DIR/template_following_scripts/prepare_template_starter_deck.mjs" \
   --contact-sheet "$TMP_DIR/template-starter-contact-sheet.png"
 ```
 
-The starter deck script calls `validate_template_plan.mjs` to validate
-`template-frame-map.json` before duplication. For template-following,
+Run `validate_template_plan.mjs` explicitly before the starter command. The
+starter command currently performs only a read-only path/input preflight and
+then fails closed before installing dependencies, importing the PPTX, or
+writing output; its future implementation is intentionally not kept as dead
+code. For template-following,
 `editTargets` must resolve to inherited source elements with `shapeId`,
 `shapeIds`, `sourceElementId`, or `sourceElementIds`.
 `action: "add"` is rejected by default because it usually creates new content

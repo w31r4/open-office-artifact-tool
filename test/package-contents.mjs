@@ -238,7 +238,8 @@ for (const removed of [
 assert.ok(!files.includes("skills/reference-sync.json"), "npm package must exclude the repository-only reference source snapshot");
 assert.ok(files.every((file) => !file.includes("/tests/") && !file.startsWith("test/")), "npm package must exclude development-only test sources");
 assert.ok(files.every((file) => !file.includes(".DS_Store") && !file.includes("__pycache__") && !file.endsWith(".pyc")), "npm package must exclude local metadata and Python bytecode");
-assert.ok(files.every((file) => !file.startsWith("handoff/") && !file.startsWith("reference/")), "npm package must exclude handoff and reference material");
+assert.ok(files.every((file) => !file.startsWith("reference/")), "npm package must exclude reference material");
+assert.ok(!files.includes("native/OfficeBridge/OfficeBridge.sln"), "npm package must not publish a solution whose test project is repository-only");
 assert.ok(files.every((file) => !file.startsWith("skills/default-template-library/")), "npm package must exclude the repository-only retained default template library");
 assert.ok(files.every((file) => !file.startsWith("native/OpenChestnut/") && !file.startsWith("scripts/")), "npm runtime package must not duplicate repository-only OpenChestnut source or build tooling");
 assert.ok(files.every((file) => !file.startsWith("evals/") && file !== "docs/agent-evals.md"), "npm runtime package must exclude the evaluator-side PromptBench and its oracle documentation");

@@ -30,6 +30,12 @@ reference runtime.
 
 Do **not** vendor the reference package's runtime artifact, runtime module, runtime bindings, or implementation details into `open-office-artifact-tool`. Implement behavior independently using public standards, public libraries, OOXML/PDF specs, OpenXML SDK, Microsoft Office native automation, Playwright, LibreOffice, Poppler, PDF.js, sharp/canvas, and other legally usable technologies.
 
-## Relationship to `handoff/reference-skills`
+## Reference Skill source
 
-The reference skills under `handoff/2026-07-11/reference-skills/` capture the agent workflows that should eventually operate `open-office-artifact-tool` itself for Documents, Spreadsheets, Presentations, and PDF editing/rendering/verification.
+The pinned submodule is the sole upstream reference Skill source. Its commit and
+complete Skill-tree hashes are recorded in `skills/reference-sync.json` and
+verified by `scripts/reference-skill-sync.mjs`. Project-adapted runnable Skills
+live under `skills/`; PromptBench copies the pinned upstream Skill directly for
+its reference subject, then patches only the package name inside the isolated
+trial. Historical handoff snapshots are retained in Git history rather than as
+a second live Skill tree.

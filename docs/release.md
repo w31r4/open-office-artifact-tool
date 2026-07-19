@@ -20,7 +20,7 @@ There is no compatibility window or fallback mode.
 
 The repository is the authoritative source distribution. It contains OpenChestnut C# source, locked dependencies, protocol definitions, build scripts, tests, Skills, and reproducibility gates.
 
-The npm tarball is the consumer distribution. It contains the JavaScript object models, OpenChestnut adapter, generated wire binding, public proto, bundled runtime, integrity manifest, SBOM, license notices, render/QA helpers, PDF pipeline, and five native plugin bundles containing six Skills: the four file-type workflows, the separate `excel-live-control` route, and the local-only Template Creator utility. It excludes C# source, test sources, build output, repository-only build scripts, the development-only `test/skill-harness` fixtures, and the MIT-licensed repository-only Default Template Library with its 20 retained Office/PNG assets. MuPDF.js is declared in the required npm dependency graph rather than copied into this project's own tarball, and its WASM runtime is initialized only by a PDF operation.
+The npm tarball is the consumer distribution. It contains the JavaScript object models, OpenChestnut adapter, generated wire binding, public proto, bundled runtime, integrity manifest, SBOM, license notices, render/QA helpers, PDF pipeline, the optional buildable OfficeBridge source project, and five native plugin bundles containing six Skills: the four file-type workflows, the separate `excel-live-control` route, and the local-only Template Creator utility. It excludes OpenChestnut C# source, every C# test and solution, all build output, repository-only build scripts, the development-only `test/skill-harness` fixtures, and the MIT-licensed repository-only Default Template Library with its 20 retained Office/PNG assets. MuPDF.js is declared in the required npm dependency graph rather than copied into this project's own tarball, and its WASM runtime is initialized only by a PDF operation.
 
 Installed consumers do not need `dotnet` on `PATH`.
 
@@ -53,7 +53,7 @@ The release candidate is acceptable only when all of the following are true:
 - configured LibreOffice/Poppler/Playwright/native render gates pass where available;
 - a production-only packed clean install completes all three Office roundtrips, PDF smoke, and a real packaged Template Creator invocation while `dotnet` is absent from `PATH`, and proves that the repository-only Default Template Library is absent;
 - two clean OpenChestnut builds produce the same runtime file set and hashes;
-- package contents contain no legacy Office codec files, C# build output, tests, or repository-only scripts;
+- package contents contain no legacy Office codec files, OpenChestnut C# source, incomplete OfficeBridge solution, C# build output, tests, or repository-only scripts;
 - package metadata, version `0.2.0`, licenses, third-party notices, SBOM, and integrity manifest agree;
 - hosted Linux runs the same required non-optional gates.
 
@@ -71,6 +71,35 @@ LibreOffice, Poppler, Playwright, and the Windows Office bridge are validation/r
 The Office bridge does not participate in normal import/export and must never be used to hide a codec failure.
 
 ## Current local evidence
+
+### Repository structure convergence
+
+On 2026-07-19, a whole-repository reachability, package, generated-artifact,
+native-project, and duplicate-asset audit found no orphaned production module:
+all 95 `src` modules are reachable from the public package entries, all 98 C#
+files belong to their MSBuild projects, and the runtime manifest exactly covers
+the bundled OpenChestnut payload. The current tree therefore keeps the source,
+generated wire binding, bundled runtime, test harnesses, canonical templates,
+and self-contained Skill assets rather than deleting files merely because they
+look duplicated.
+
+The audit did remove the obsolete `handoff/2026-07-11` tree: 236 tracked files
+and 6,098,763 bytes whose live reference-Skill consumer was PromptBench. The
+reference subject now copies directly from the pinned
+`reference/office-artifact-tool/skills` submodule after the deterministic
+`skills/reference-sync.json` gate passes, so there is one upstream reference
+source instead of a drifting second snapshot. Git history remains the archive
+for the old handoff. The template starter helper also dropped 190 net lines of
+scaffolding, including its fixed-false future implementation; its
+current command performs a read-only preflight and fails closed without writing.
+
+The npm manifest no longer publishes `OfficeBridge.sln`, because that solution
+references a repository-only test project. It continues to publish the complete,
+optional `native/OfficeBridge/src` project. An isolated checkout containing only
+this convergence passed `npm test`, API-document regeneration with a clean diff,
+the clean-install package smoke, and the offline release check including
+OfficeBridge and OpenChestnut .NET tests. Its tarball contains 452 files, no
+handoff/reference tree or incomplete solution, and 24,087,732 unpacked bytes.
 
 ### Reference Skill source synchronization
 

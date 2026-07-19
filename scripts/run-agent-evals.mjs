@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { generateOfficeInput } from "./agent-eval-office-fixtures.mjs";
 import { gradeOfficeCase } from "./agent-eval-office-graders.mjs";
 import { gradePdfCase } from "./agent-eval-pdf-graders.mjs";
+import { checkReferenceSkillSync, REFERENCE_SKILLS_ROOT } from "./reference-skill-sync.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // PromptBench remains PDF-led while it grows one independently graded ready
@@ -420,10 +421,10 @@ async function patchReferenceSkillPackageName(root) {
   return changed.sort();
 }
 
-function skillSource(item, subject) {
+export function skillSource(item, subject) {
   const skillName = item.skill;
   if (subject === "candidate") return path.join(repoRoot, "skills", item.family, "skills", skillName);
-  if (subject === "reference") return path.join(repoRoot, "handoff", "2026-07-11", "reference-skills", item.family, "skills", skillName);
+  if (subject === "reference") return path.join(REFERENCE_SKILLS_ROOT, item.family, "skills", skillName);
   fail(`unknown subject ${subject}`);
 }
 
@@ -504,7 +505,12 @@ async function prepareCase(suite, item, options) {
   await removePreparedTree(trialRoot);
   await fs.mkdir(path.join(workspace, "outputs"), { recursive: true });
   await fs.mkdir(evaluator, { recursive: true });
+  if (subject === "reference") await checkReferenceSkillSync();
   const sourceSkill = skillSource(item, subject);
+  const sourceSkillStat = await fs.stat(sourceSkill).catch(() => null);
+  if (!sourceSkillStat?.isDirectory()) {
+    fail(`missing ${subject} Skill source: ${path.relative(repoRoot, sourceSkill)}${subject === "reference" ? " (initialize the pinned reference submodule first)" : ""}`);
+  }
   const installedSkill = path.join(workspace, ".agents", "skills", item.skill);
   await copySkillTree(sourceSkill, installedSkill);
   const referencePackageNamePatches = subject === "reference" ? await patchReferenceSkillPackageName(installedSkill) : [];

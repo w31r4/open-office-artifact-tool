@@ -578,6 +578,21 @@ try {
   }
   const skillText = await fs.readFile("skills/presentations/skills/presentations/SKILL.md", "utf8");
   const quickStartText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/API_QUICK_START.md", "utf8");
+  const starterRoot = path.join(root, "starter-fail-closed");
+  const starterMap = path.join(starterRoot, "template-frame-map.json");
+  const starterOutput = path.join(starterRoot, "template-starter.pptx");
+  await fs.mkdir(starterRoot, { recursive: true });
+  await fs.writeFile(starterMap, JSON.stringify({ outputSlides: [] }));
+  const starterResult = spawnSync(process.execPath, [
+    "skills/presentations/skills/presentations/template_following_scripts/prepare_template_starter_deck.mjs",
+    "--workspace", starterRoot,
+    "--pptx", readiness.pptxPath,
+    "--map", starterMap,
+    "--out", starterOutput,
+  ], { encoding: "utf8" });
+  assert.notEqual(starterResult.status, 0);
+  assert.match(starterResult.stderr, /broad graph deletion[\s\S]*No output was written/);
+  assert.deepEqual((await fs.readdir(starterRoot)).sort(), ["template-frame-map.json"]);
   assert.match(skillText, /open-office-artifact-tool/);
   assert.match(skillText, /openchestnut-title-notes-edit-workflow\.mjs/);
   assert.match(skillText, /openchestnut-modern-comment-workflow\.mjs/);
@@ -633,6 +648,7 @@ try {
   const templateFollowingText = await fs.readFile("skills/presentations/skills/presentations/references/template-following.md", "utf8");
   assert.match(templateFollowingText, /source-preserving reordering.*isolated[\s>]+layout-only.*slide\.delete/is);
   assert.match(templateFollowingText, /broader OPC graph-clone milestone is unavailable/i);
+  assert.match(templateFollowingText, /read-only path\/input preflight[\s\S]*then fails closed[\s\S]*not kept as dead\s+code/i);
 
   console.log("presentation skill smoke ok");
 } finally {

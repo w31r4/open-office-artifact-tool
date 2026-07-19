@@ -9,7 +9,7 @@ import { isDeepStrictEqual } from "node:util";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const referenceRepoRoot = path.join(repoRoot, "reference", "office-artifact-tool");
-const referenceSkillsRoot = path.join(referenceRepoRoot, "skills");
+export const REFERENCE_SKILLS_ROOT = path.join(referenceRepoRoot, "skills");
 const projectSkillsRoot = path.join(repoRoot, "skills");
 const snapshotPath = path.join(projectSkillsRoot, "reference-sync.json");
 
@@ -50,7 +50,7 @@ function sourceCommit() {
 }
 
 async function bundleSnapshot(bundle) {
-  const root = path.join(referenceSkillsRoot, bundle);
+  const root = path.join(REFERENCE_SKILLS_ROOT, bundle);
   const files = await regularFiles(root);
   let bytes = 0;
   const digest = createHash("sha256");

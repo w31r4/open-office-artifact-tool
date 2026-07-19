@@ -55,18 +55,24 @@ import {
   removePreparedTree,
   repositoryProvenance,
   scorePrepared,
+  skillSource,
   MINIMUM_PDF_CASE_SHARE,
   validateSuite,
   visibleCase,
 } from "../scripts/run-agent-evals.mjs";
 
 const { suite, cases } = await loadSuite();
+const repoRoot = path.resolve(import.meta.dirname, "..");
 assert.deepEqual(validateSuite(suite, cases), { cases: 35, pdfCases: 21, ready: 14 });
 assert.equal(MINIMUM_PDF_CASE_SHARE, 0.6);
 assert.equal(cases.filter((item) => item.family === "pdf" && item.status === "ready").length, 8);
 assert.equal(cases.filter((item) => item.family === "spreadsheets" && item.status === "ready").length, 2);
 assert.equal(cases.filter((item) => item.family === "documents" && item.status === "ready").length, 1);
 assert.equal(cases.filter((item) => item.family === "presentations" && item.status === "ready").length, 3);
+const referenceDocumentSkill = skillSource({ family: "documents", skill: "documents" }, "reference");
+assert.equal(referenceDocumentSkill, path.join(repoRoot, "reference", "office-artifact-tool", "skills", "documents", "skills", "documents"));
+assert.doesNotMatch(referenceDocumentSkill, /handoff/);
+assert.equal((await fs.stat(path.join(referenceDocumentSkill, "SKILL.md"))).isFile(), true);
 
 const repository = repositoryProvenance();
 assert.match(repository.head, /^[0-9a-f]{40}$/);

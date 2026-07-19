@@ -42,7 +42,6 @@
     "skills/template-creator/**",
     "proto/**",
     "runtime/open-chestnut/**",
-    "native/OfficeBridge/*.sln",
     "native/OfficeBridge/src/*.cs",
     "native/OfficeBridge/src/*.csproj",
     "README.md",
