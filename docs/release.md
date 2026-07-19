@@ -99,7 +99,7 @@ proto:check`, `npm run test:pack`, and serial `npm run
 verify:open-chestnut-build`; OpenChestnut passed `280/280` and OfficeBridge
 passed `5/5`. Two clean WASM builds produced the same 39 audited files and the
 same manifest-bound 38-file, 14,610,112-byte runtime. The clean-install tarball
-contains 452 files, is 9,524,005 bytes compressed and 24,057,948 bytes
+contains 452 files, is 9,523,989 bytes compressed and 24,058,003 bytes
 unpacked. The optional specialist Python PDF-provider gate remained
 contract-only because `OPEN_OFFICE_PDF_PROVIDER_PYTHON` was not explicitly
 configured; the required MuPDF.js path and all other npm gates ran locally. No

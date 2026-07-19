@@ -224,9 +224,10 @@ try {
   assert.equal(pivotTableResult.verification.ok, true);
   assert.match(pivotTableResult.inspection.ndjson, /"kind":"pivotTable"/);
   const pivotTableWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(pivotTablePath));
-  assert.ok(Math.abs(pivotTableWorkbook.worksheets.getItem("Pivot Summary").getRange("A1:A5").format.columnWidthPx - 112) <= 1);
-  assert.ok(Math.abs(pivotTableWorkbook.worksheets.getItem("Pivot Summary").getRange("B1:E5").format.columnWidthPx - 80) <= 1);
-  assert.ok(Math.abs(pivotTableWorkbook.worksheets.getItem("Pivot Summary").getRange("F1:G5").format.columnWidthPx - 96) <= 1);
+  assert.ok(Math.abs(pivotTableWorkbook.worksheets.getItem("Pivot Summary").getRange("A1:A5").format.columnWidthPx - 100) <= 1);
+  assert.ok(Math.abs(pivotTableWorkbook.worksheets.getItem("Pivot Summary").getRange("B1:E5").format.columnWidthPx - 76) <= 1);
+  assert.ok(Math.abs(pivotTableWorkbook.worksheets.getItem("Pivot Summary").getRange("F1:F5").format.columnWidthPx - 96) <= 1);
+  assert.ok(Math.abs(pivotTableWorkbook.worksheets.getItem("Pivot Summary").getRange("G1:G5").format.columnWidthPx - 88) <= 1);
   assert.deepEqual(pivotTableWorkbook.worksheets.getItem("Pivot Summary").pivotTables.items[0].computedValues(), [
     ["Region", "Direct — Revenue", "Direct — Units", "Partner — Revenue", "Partner — Units", "Grand Total — Revenue", "Grand Total — Units"],
     ["East", 120, 12, 80, 8, 200, 20],

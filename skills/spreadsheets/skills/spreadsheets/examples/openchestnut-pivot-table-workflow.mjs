@@ -32,9 +32,10 @@ export function buildPivotTableWorkbook() {
   summary.getRange("A5:G5").format = { fill: "#E2E8F0", font: { bold: true, color: "#0F172A" } };
   for (const range of ["B2:B5", "D2:D5", "F2:F5"]) summary.getRange(range).setNumberFormat("$#,##0");
   for (const range of ["C2:C5", "E2:E5", "G2:G5"]) summary.getRange(range).setNumberFormat("#,##0");
-  summary.getRange("A1:A5").format.columnWidthPx = 112;
-  summary.getRange("B1:E5").format.columnWidthPx = 80;
-  summary.getRange("F1:G5").format.columnWidthPx = 96;
+  summary.getRange("A1:A5").format.columnWidthPx = 100;
+  summary.getRange("B1:E5").format.columnWidthPx = 76;
+  summary.getRange("F1:F5").format.columnWidthPx = 96;
+  summary.getRange("G1:G5").format.columnWidthPx = 88;
   summary.showGridLines = false;
   summary.pivotTables.add({
     name: "Revenue and units by region",
