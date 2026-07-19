@@ -30,11 +30,27 @@ Install a specialist provider yourself only when the task requires a capability 
 - pypdf: typed attachment quarantine, complex AcroForm appearance handling, and complete-source merge/reorder/stamp workflows.
 - PyMuPDF: retained specialist adapter for strict scrub, residue/OCR gates, and legacy high-level operations not yet migrated to JavaScript.
 - Poppler: independent `pdfinfo` and `pdftoppm` file/render QA.
-- qpdf: structural diagnosis, recovery, encryption, and rewrite.
+- qpdf 11+: separately installed structural diagnosis, recovery rewrite, and
+  linearization through the shipped `scripts/qpdf_provider.py`; configure an
+  exact executable with `OPEN_OFFICE_PDF_QPDF` when it is not on `PATH`.
 - pyHanko: signing, trust validation, timestamps, LTV/PAdES, DocMDP, and FieldMDP.
 - veraPDF: PDF/A and PDF/UA machine validation.
 - Tesseract: OCR evidence for image-bearing high-trust sanitization.
 - pikepdf and OCRmyPDF: planned routes without a shipped mutation adapter in this release.
+
+Probe qpdf through both the registry and its executable adapter:
+
+```bash
+# macOS/Homebrew: brew install qpdf
+# Debian/Ubuntu: sudo apt-get install qpdf
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+"$PYTHON_BIN" scripts/pdf_provider.py check --provider qpdf --require
+"$PYTHON_BIN" scripts/qpdf_provider.py probe
+```
+
+The wrapper requires qpdf JSON v2 (qpdf 11 or newer). It does not install qpdf,
+accept passwords, expose arbitrary qpdf flags, or fall back to pikepdf. See
+[inspect, repair, and linearize](repair_linearize.md).
 
 When Python tools are installed, set one interpreter as provider identity:
 

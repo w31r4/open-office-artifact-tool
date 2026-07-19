@@ -10,7 +10,9 @@ Read-only review never needs model re-export.
 - pypdf: metadata, fields, annotations, outlines, attachments, encryption, and object-level quick checks.
 - MuPDF.js through `scripts/mupdf.mjs inspect`: default native page/object/text/image/link/annotation/widget evidence.
 - PyMuPDF: optional specialist inspection when its separate workflow is selected.
-- qpdf: xref/object-stream structure, warnings, JSON/QDF inspection, and repair diagnosis.
+- qpdf through `scripts/qpdf_provider.py inspect`: bounded xref/object-stream
+  structure, warnings/recovery evidence, encryption/linearization facts, and
+  signature-policy indicators bound to the source SHA-256.
 - pyHanko: signature and trust validation.
 - veraPDF: PDF/A or PDF/UA machine-verifiable rules.
 
@@ -23,6 +25,19 @@ python3 scripts/pdfplumber_extract.py input.pdf \
 ```
 
 Extraction is not layout fidelity. Compare extracted text/table candidates against rendered pages, especially multi-column layouts, rotated text, merged cells, OCR layers, and scanned pages.
+
+For qpdf structural evidence:
+
+```bash
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+"$PYTHON_BIN" scripts/qpdf_provider.py probe
+"$PYTHON_BIN" scripts/qpdf_provider.py inspect input.pdf \
+  > tmp/pdfs/qpdf-inspect.json
+```
+
+qpdf warning exit status is evidence, not automatic permission to rewrite. Use
+the returned source hash and the separate [repair/linearize workflow](repair_linearize.md)
+only after reviewing encryption and signature constraints.
 
 `PdfFile.importPdf(...)` uses MuPDF.js by default for agent-facing extraction/QA of an arbitrary PDF; the result remains a reconstructed view. Never export that model as an edit to the original file. Use `PdfFile.editPdf(...)` or `scripts/mupdf.mjs edit` on the original bytes for supported mutations. PDF.js is an optional explicitly injected independent parser.
 

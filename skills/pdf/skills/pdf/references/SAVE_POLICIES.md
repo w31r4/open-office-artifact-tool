@@ -18,6 +18,7 @@ Consequences:
 - Original incremental revisions are not intentionally retained.
 - Existing signatures will normally become invalid or be removed. Require explicit acknowledgement before rewriting a signed file.
 - A rewrite is not automatically a security scrub: unreferenced objects, attachments, XMP, JavaScript, hidden text, and image pixels must be addressed explicitly when sensitive data is involved.
+- The shipped qpdf adapter permits only source-hash-bound `repair` or `linearize` full rewrites, requires a clean re-inspection and stable page/form/attachment/outline counts, rejects encrypted inputs, and requires explicit signature invalidation when signature-policy evidence exists.
 
 ## `incremental`
 
@@ -51,7 +52,7 @@ Mandatory sequence:
 4. Save a full non-incremental rewrite with garbage collection and stream cleanup.
 5. Prove the output does not retain the original byte prefix.
 6. Run residue scans over raw bytes, decoded objects/streams, extracted text, metadata/XMP, attachments, annotations, widgets, and OCR of image-bearing pages.
-7. Run `qpdf --check` when available, signature/conformance checks when relevant, then Poppler-render and inspect every page.
+7. Run `qpdf_provider.py inspect` when qpdf 11+ is available, signature/conformance checks when relevant, then Poppler-render and inspect every page. Do not call qpdf repair a sanitize step.
 8. If any scanner/provider is unavailable, any sensitive token remains, or OCR cannot be performed on an image-bearing page, fail closed and do not deliver.
 
 Sanitization invalidates existing signatures. Require explicit `--invalidate-signatures` acknowledgement.

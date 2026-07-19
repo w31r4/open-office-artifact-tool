@@ -46,7 +46,7 @@ Read the [provider matrix](references/PROVIDER_MATRIX.md), [save policies](refer
 | Default arbitrary-PDF read/inspect/render and bounded native edit | `PdfFile` + MuPDF.js through `scripts/mupdf.mjs` |
 | Strict scrub/residue/OCR and retained high-level edits not yet migrated | optional PyMuPDF specialist path |
 | Native page/file evidence and final raster QA | Poppler |
-| Structural diagnosis/recovery/rewrite | qpdf; pikepdf is planned but has no shipped adapter |
+| Structural diagnosis, recovery rewrite, and linearization | separately installed qpdf through `scripts/qpdf_provider.py`; pikepdf active-content cleanup remains planned |
 | Signing, timestamps/LTV, DocMDP/FieldMDP, signature validation | pyHanko |
 | PDF/A or PDF/UA machine rules | veraPDF |
 | Scanned-PDF OCR | OCRmyPDF is planned; strict image residue OCR currently uses separately installed Tesseract through PyMuPDF |
@@ -145,6 +145,29 @@ For untrusted embedded files, use the typed read-only quarantine primitive. It i
 
 Treat `attachments.json` as the authoritative mapping from raw display name/internal key/scope to the sanitized saved path. Do not derive output paths yourself, and do not inspect archive or executable contents unless a later explicitly sandboxed workflow requests it.
 Bind the canonical audit `output` to `attachments.json`, set `savePolicy.strategy` to `read-only` and `operation.type` to `extract-attachments`, then run `pdf_audit.py validate --source input.pdf --artifact outputs/attachments.json --require-operation extract-attachments`.
+
+## Structural Repair And Linearization
+
+The shipped qpdf wrapper is a thin external-provider boundary, not another PDF
+model. `inspect` binds the source SHA-256 and reports qpdf warnings, page/object/
+form/attachment counts, encryption/linearization state, and signature/ByteRange/
+DocMDP evidence. `rewrite` accepts only that fresh source SHA-256, works on a
+private snapshot, and atomically publishes a distinct clean output:
+
+```bash
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+"$PYTHON_BIN" scripts/qpdf_provider.py probe
+"$PYTHON_BIN" scripts/qpdf_provider.py inspect input.pdf > tmp/pdfs/qpdf-inspect.json
+"$PYTHON_BIN" scripts/qpdf_provider.py rewrite input.pdf outputs/repaired.pdf \
+  --mode repair --expected-sha256 '<sha256-from-inspect>'
+```
+
+Use `--mode linearize` only when linearization is the requested rewrite
+postcondition. Signature evidence requires explicit `--invalidate-signatures`
+after pyHanko/DocMDP review; encrypted rewrites fail closed. qpdf repair does
+not remove active content, metadata, attachments, hidden/OCR text, or sensitive
+content and must never be described as sanitize or redaction. See
+[inspect, repair, and linearize](tasks/repair_linearize.md).
 
 ## Edit An Existing PDF
 

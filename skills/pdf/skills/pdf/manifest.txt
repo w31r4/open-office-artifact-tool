@@ -8,6 +8,7 @@ tasks/redact.md
 tasks/accessibility.md
 tasks/render_review.md
 tasks/provider_setup.md
+tasks/repair_linearize.md
 manifest.txt
 references/PROVIDER_MATRIX.md
 references/SAVE_POLICIES.md
@@ -24,6 +25,7 @@ examples/pymupdf-edit-operations.json
 examples/pymupdf-redaction-operations.json
 examples/merge-stamp-manifest.json
 scripts/pdf_provider.py
+scripts/qpdf_provider.py
 scripts/mupdf.mjs
 scripts/reportlab_create.py
 scripts/pdfplumber_extract.py

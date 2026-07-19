@@ -16,6 +16,32 @@ node scripts/mupdf.mjs edit input.pdf tmp/pdfs/edit-operations.json tmp/pdfs/edi
 
 The CLI rejects direct or symlink-alias source overwrite and writes output atomically. `incremental` is limited to unsigned, non-destructive operations and must preserve the exact source byte prefix. A MuPDF.js rewrite redaction is real page-content redaction, but it is not the strict metadata/attachment/hidden-layer/OCR sanitization workflow below.
 
+## qpdf structure inspection and repair
+
+qpdf is separately installed. The shipped wrapper exposes only bounded inspect,
+recovery rewrite, and linearize operations; it does not pass arbitrary flags
+through to the provider:
+
+```bash
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+"$PYTHON_BIN" scripts/pdf_provider.py check --provider qpdf --require
+"$PYTHON_BIN" scripts/qpdf_provider.py inspect input.pdf \
+  > tmp/pdfs/qpdf-inspect.json
+"$PYTHON_BIN" scripts/pdf_provider.py plan \
+  --task repair --provider qpdf --strategy rewrite \
+  --input input.pdf --output outputs/repaired.pdf --require-provider
+"$PYTHON_BIN" scripts/qpdf_provider.py rewrite \
+  input.pdf outputs/repaired.pdf \
+  --mode repair --expected-sha256 '<sha256-from-inspect>' \
+  > tmp/pdfs/qpdf-repair.json
+```
+
+The source hash is a required precondition. A recoverable damaged xref may enter
+with warning status, but the promoted result must re-inspect cleanly and preserve
+page/form/attachment/outline counts. Use `--mode linearize` for an explicit linearized
+rewrite. Signature evidence requires `--invalidate-signatures` after pyHanko and
+DocMDP review. This route is never sanitize; run Poppler over every final page.
+
 ## pypdf attachment quarantine
 
 ```bash

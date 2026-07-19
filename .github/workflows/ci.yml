@@ -27,16 +27,17 @@ jobs:
           npm run proto:check
           dotnet restore native/OpenChestnut/OpenChestnut.sln --locked-mode
           npm run verify:open-chestnut-build
-      - name: Install Chromium and native render tools
+      - name: Install Chromium and native document tools
         run: |
           npx playwright install --with-deps chromium
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libreoffice-writer libreoffice-calc libreoffice-impress poppler-utils
+          sudo apt-get install -y --no-install-recommends libreoffice-writer libreoffice-calc libreoffice-impress poppler-utils qpdf
       - name: Verify render/runtime tools
         run: |
           node -e "const fs = require('fs'); const { chromium } = require('playwright'); if (!fs.existsSync(chromium.executablePath())) process.exit(1)"
           soffice --version
           pdftoppm -v
+          qpdf --version
           pdfinfo -v
           dotnet --version
       - name: Run tests

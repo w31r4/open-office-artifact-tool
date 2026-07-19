@@ -9,6 +9,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -21,7 +22,7 @@ PROVIDERS = {
     "pypdf": {"kind": "module", "module": "pypdf", "role": "basic structure, attachment quarantine, complete-source merge/reorder/selective stamp, forms, annotations, rewrite/incremental", "integration": "shipped-thin-script"},
     "pymupdf": {"kind": "module", "module": "pymupdf", "role": "advanced imported-PDF editing and sanitize", "license": "agpl-or-commercial", "integration": "shipped-thin-script"},
     "poppler": {"kind": "command", "commands": ["pdfinfo", "pdftoppm"], "role": "native file/render QA", "integration": "shipped-js-adapter-and-cli-workflow"},
-    "qpdf": {"kind": "command", "commands": ["qpdf"], "role": "structure inspection, recovery, encryption, and rewrite", "integration": "external-documented"},
+    "qpdf": {"kind": "command", "commands": ["qpdf"], "environment": "OPEN_OFFICE_PDF_QPDF", "minimum_major": 11, "require_version_output": True, "role": "bounded structure inspection, recovery rewrite, and linearization", "integration": "shipped-thin-script-external-cli"},
     "pikepdf": {"kind": "module", "module": "pikepdf", "role": "Python qpdf structure, attachment, and active-content operations", "integration": "planned-no-shipped-adapter"},
     "pyhanko": {"kind": "command_or_module", "commands": ["pyhanko"], "module": "pyhanko", "role": "signing and signature validation", "integration": "external-documented"},
     "verapdf": {"kind": "command", "commands": ["verapdf"], "role": "PDF/A and PDF/UA validation", "integration": "external-documented"},
@@ -40,8 +41,9 @@ TASKS = {
     "fill-form": {"providers": ["pypdf", "pymupdf"], "strategies": ["rewrite", "incremental"], "input": "existing", "mutation": True},
     "annotate": {"providers": ["pypdf", "pymupdf"], "strategies": ["rewrite", "incremental"], "input": "existing", "mutation": True},
     "merge-stamp": {"providers": ["pypdf"], "strategies": ["rewrite"], "input": "existing", "mutation": True},
-    "repair": {"providers": ["qpdf", "pikepdf"], "strategies": ["rewrite"], "input": "existing", "mutation": True},
-    "structure-clean": {"providers": ["qpdf", "pikepdf"], "strategies": ["rewrite"], "input": "existing", "mutation": True, "invalidate_signatures": True},
+    "repair": {"providers": ["qpdf"], "strategies": ["rewrite"], "input": "existing", "mutation": True},
+    "linearize": {"providers": ["qpdf"], "strategies": ["rewrite"], "input": "existing", "mutation": True},
+    "structure-clean": {"providers": ["pikepdf"], "strategies": ["rewrite"], "input": "existing", "mutation": True, "invalidate_signatures": True},
     "ocr": {"providers": ["ocrmypdf"], "strategies": ["rewrite"], "input": "existing", "mutation": True},
     "sign": {"providers": ["pyhanko"], "strategies": ["incremental"], "input": "existing", "mutation": True},
     "verify-signature": {"providers": ["pyhanko"], "strategies": ["read-only"], "input": "existing"},
@@ -74,8 +76,15 @@ def module_version(name: str) -> str | None:
         return f"import-error: {exc}"
 
 
-def command_version(command: str) -> str | None:
-    resolved = shutil.which(command)
+def command_version(command: str, environment: str | None = None, require_version_output: bool = False) -> str | None:
+    configured = str(os.environ.get(environment, "")).strip() if environment else ""
+    if configured:
+        candidate = Path(configured).expanduser()
+        if not candidate.is_file() or not os.access(candidate, os.X_OK):
+            return None
+        resolved = str(candidate.resolve())
+    else:
+        resolved = shutil.which(command)
     if not resolved:
         return None
     for args in (["-v"], ["--version"], ["-version"]):
@@ -86,7 +95,14 @@ def command_version(command: str) -> str | None:
         output = (result.stdout or result.stderr).strip().splitlines()
         if output and result.returncode == 0 and not any("couldn't open file" in line.lower() for line in output):
             return output[0][:300]
-    return resolved
+    return None if require_version_output else resolved
+
+
+def command_major(version: str | None) -> int | None:
+    if not version:
+        return None
+    match = re.search(r"(?<!\d)(\d+)(?:\.\d+)", version)
+    return int(match.group(1)) if match else None
 
 
 def probe_provider(name: str) -> dict:
@@ -98,11 +114,24 @@ def probe_provider(name: str) -> dict:
         result["evidence"]["module"] = config["module"]
         result["evidence"]["version"] = version
     elif config["kind"] == "command":
-        versions = {command: command_version(command) for command in config["commands"]}
+        versions = {
+            command: command_version(command, config.get("environment"), config.get("require_version_output", False))
+            for command in config["commands"]
+        }
         result["available"] = all(versions.values())
         result["evidence"]["commands"] = versions
+        if config.get("minimum_major") is not None:
+            majors = {command: command_major(version) for command, version in versions.items()}
+            result["evidence"].update({"majorVersions": majors, "minimumMajor": config["minimum_major"]})
+            result["available"] = all(
+                major is not None and major >= config["minimum_major"]
+                for major in majors.values()
+            )
     else:
-        versions = {command: command_version(command) for command in config["commands"]}
+        versions = {
+            command: command_version(command, config.get("environment"), config.get("require_version_output", False))
+            for command in config["commands"]
+        }
         module = module_version(config["module"])
         result["available"] = any(versions.values()) or (module is not None and not module.startswith("import-error:"))
         result["evidence"].update({"commands": versions, "module": config["module"], "version": module})

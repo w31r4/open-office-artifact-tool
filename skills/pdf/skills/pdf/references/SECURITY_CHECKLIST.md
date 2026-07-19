@@ -23,7 +23,7 @@ Treat PDFs as untrusted structured programs.
 
 - Reopen with an independent parser where practical.
 - Compare page count, page boxes, forms/annotations, attachment count, metadata, and signatures against the intended delta.
-- Run `pdfinfo`, `qpdf --check` where installed, and applicable pyHanko/veraPDF validation.
+- Run `pdfinfo`, the shipped `qpdf_provider.py inspect` when qpdf 11+ is installed, and applicable pyHanko/veraPDF validation; retain qpdf warning status rather than suppressing it.
 - Render every page from final bytes with Poppler; model/SVG preview is not enough.
 - For sanitize/redaction, run the strict residue scan including image OCR and reject any incomplete evidence. For an inert public copy, also pass `--require-inert`; zero sensitive terms are valid only for a scrub-only operation.
 

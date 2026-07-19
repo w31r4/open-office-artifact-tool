@@ -438,4 +438,4 @@ for (let pageIndex = 0; pageIndex < pdf.pages.length; pageIndex += 1) {
 
 `PdfFile.inspectPdf(...)` verifies byte-level evidence such as PDF version, page/object counts, EOF, tagged structure, reading-order IDs, headings, Figure alternative text, Table/TR/TH/TD roles, spans, and font evidence. It complements semantic `pdf.verify()` and visual page review; none of the three replaces the others.
 
-Use `pdftoppm`/`pdfinfo` as independent native render and file QA tools. The surrounding PDF Skill defines the MuPDF.js, ReportLab, pdfplumber, pypdf, PyMuPDF, qpdf, pyHanko, veraPDF, and OCR routing contract.
+Use `pdftoppm`/`pdfinfo` as independent native render and file QA tools. The surrounding PDF Skill defines the MuPDF.js, ReportLab, pdfplumber, pypdf, PyMuPDF, pyHanko, veraPDF, and OCR routing contract; its shipped `scripts/qpdf_provider.py` provides bounded source-hash-bound qpdf 11+ structure inspection, recovery rewrite, and linearization without exposing qpdf as a generic flag passthrough.

@@ -46,7 +46,7 @@ The following external programs are invoked only when installed separately. They
 - Chromium or another Playwright-managed browser: see the browser distribution's own third-party notices.
 - LibreOffice: MPL-2.0 and LGPL-3.0-or-later licensing applies to the separately installed application.
 - Poppler command-line tools: GPL licensing applies to the separately installed binaries.
-- qpdf: optional separately installed structural inspection/rewrite CLI; retain its Apache-2.0 and applicable embedded-component notices.
+- qpdf 11+: optional separately installed structural inspection/recovery/linearization CLI used through the shipped thin provider script; retain its Apache-2.0 and applicable embedded-component notices.
 - pikepdf: planned optional qpdf-based Python provider; no mutation adapter is shipped in this release.
 - pyHanko: optional separately installed PDF signing and signature-validation provider; retain its package and transitive cryptography notices.
 - veraPDF: optional separately installed PDF/A and PDF/UA validation distribution; retain the notices shipped by the selected veraPDF components.

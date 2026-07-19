@@ -1272,6 +1272,15 @@ On 2026-07-17, the native reference-plugin/OpenChestnut compatibility worktree p
 
 ## Hosted evidence
 
+The repository-structure convergence candidate at commit
+`b11a249b2bcd2397b5355c4986a2cd08f0aee39a` passed the hosted Linux `ci`
+workflow in [GitHub Actions run 29675702140](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29675702140)
+on 2026-07-19. The run covered npm installation, deterministic protocol and
+bundled OpenChestnut runtime verification, Chromium/LibreOffice/Poppler tool
+checks, the complete npm suite, generated API-doc cleanliness, offline release
+metadata, the production clean-install tarball, and both OfficeBridge and
+OpenChestnut .NET suites.
+
 The bounded native XLSX PivotTable candidate at commit
 `4aac21752d502ed8b37c6574d205c8f06679d805` passed the hosted Linux `ci`
 workflow in [GitHub Actions run 29666171276](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29666171276)
@@ -1372,6 +1381,41 @@ specialist Python PDF provider test remained contract-only because no explicit
 `OPEN_OFFICE_PDF_PROVIDER_PYTHON` was configured; core MuPDF.js, Playwright,
 canonical template rendering, and all other npm gates ran. `npm whoami` still
 returns `ENEEDAUTH`, so no publish or tag operation was attempted.
+
+### Bounded qpdf structural provider
+
+On 2026-07-19, the PDF Skill gained a shipped thin adapter for separately
+installed qpdf 11+ JSON v2. The adapter exposes only bounded read-only structural
+inspection and exact-source-bound full-rewrite repair or linearization. It
+records source identity, qpdf diagnostics, bounded topology counts,
+encryption/linearization state, and object-level signature, ByteRange, Perms,
+DocMDP, and FieldMDP indicators without claiming signature trust. Rewrites use
+a private source snapshot, reject encrypted input, require explicit signature
+invalidation, re-inspect a clean output, preserve page/form/attachment/outline
+counts, re-prove the source hash, and publish a distinct nonexisting output
+without replacement. The adapter exposes no arbitrary qpdf flags and is not a
+sanitizer, redactor, renderer, text extractor, strict conformance validator, or
+password/signature authority.
+
+The hermetic provider suite proved qpdf 10 rejection, registry routing, stale
+hash and symlink refusal, missing-provider no-fallback behavior, hard JSON
+output budgets, malformed JSON rejection, and timeout termination. With local
+qpdf 12.3.2 it also inspected and rewrote a generated PDF, recovered a broken
+cross-reference table, preserved an embedded attachment, detected a synthetic
+signature/ByteRange/DocMDP graph, blocked a signed rewrite by default, and
+required explicit invalidation. Poppler 26.05.0 rendered the source, repaired,
+and linearized files to byte-identical PNGs.
+
+The complete local gate passed `npm test`, `npm run docs:api` with no generated
+diff, `npm run proto:check`, `npm run test:pack`,
+`npm run verify:open-chestnut-build`, `npm run release:check`, OfficeBridge
+`5/5`, and OpenChestnut `283/283`. Two deterministic WASM builds matched across
+39 files; the bundled runtime contains 38 files at 14,635,200 bytes. The
+production clean-install tarball contains 454 files, is 9,546,746 bytes
+compressed and 24,123,780 bytes unpacked. The full npm suite also used
+LibreOfficeDev 26.8.0.0.alpha0, Poppler 26.05.0, the installed Playwright
+Chromium runtime, and the real qpdf adapter. `npm whoami` still returns
+`ENEEDAUTH`; no publish or tag operation was attempted.
 
 `npm run release:check` passes the source, documentation, package, license, JavaScript, and .NET gates. Its only remaining blocker is unavailable npm authentication. No `npm publish` or tag/release operation has been performed.
 

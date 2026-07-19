@@ -204,6 +204,7 @@ for (const required of [
   "skills/pdf/skills/pdf/references/AUDIT_SCHEMA.md",
   "skills/pdf/skills/pdf/references/pdf-audit-v1.schema.json",
   "skills/pdf/skills/pdf/scripts/pdf_provider.py",
+  "skills/pdf/skills/pdf/scripts/qpdf_provider.py",
   "skills/pdf/skills/pdf/scripts/mupdf.mjs",
   "skills/pdf/skills/pdf/scripts/reportlab_create.py",
   "skills/pdf/skills/pdf/scripts/pdfplumber_extract.py",
@@ -221,6 +222,7 @@ for (const required of [
   "skills/pdf/skills/pdf/tasks/accessibility.md",
   "skills/pdf/skills/pdf/tasks/render_review.md",
   "skills/pdf/skills/pdf/tasks/provider_setup.md",
+  "skills/pdf/skills/pdf/tasks/repair_linearize.md",
 ]) {
   assert.ok(files.includes(required), `npm package is missing ${required}`);
 }
