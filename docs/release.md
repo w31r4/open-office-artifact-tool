@@ -1087,6 +1087,16 @@ On 2026-07-17, the native reference-plugin/OpenChestnut compatibility worktree p
 
 ## Hosted evidence
 
+The bounded native XLSX PivotTable candidate at commit
+`4aac21752d502ed8b37c6574d205c8f06679d805` passed the hosted Linux `ci`
+workflow in [GitHub Actions run 29666171276](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29666171276)
+on 2026-07-19. The job completed with conclusion `success` in 10m07s and
+covered npm installation, deterministic protocol/OpenChestnut runtime
+verification, Chromium/LibreOffice/Poppler tool checks, the complete npm suite
+including the native two-page PivotTable Skill render, generated API-doc
+cleanliness, offline release metadata, the 452-file clean-install tarball,
+OfficeBridge `5/5`, and OpenChestnut `277/277`.
+
 The canonical Default Template Library reference-pin candidate at commit
 `2424ea03d28a7a5a9f2c51695a6113b6d219da78` passed the hosted Linux `ci`
 workflow in [GitHub Actions run 29656750965](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29656750965)
