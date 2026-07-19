@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import JSZip from "jszip";
 
 import { DocumentFile, FileBlob, PresentationFile, SpreadsheetFile } from "../src/index.mjs";
 import {
@@ -517,8 +518,11 @@ try {
 const closedLeafCloneItem = cases.find((item) => item.id === "pptx-closed-leaf-slide-clone");
 assert.ok(closedLeafCloneItem);
 assert.equal(closedLeafCloneItem.grade.machine.chartParts, 1);
+assert.equal(closedLeafCloneItem.grade.machine.customShowRunLink, true);
 assert.equal(closedLeafCloneItem.grade.security.independentChartPart, true);
+assert.equal(closedLeafCloneItem.grade.security.customShowMembershipStable, true);
 assert.match(closedLeafCloneItem.prompt, /独立 ChartPart/);
+assert.match(closedLeafCloneItem.prompt, /custom show/i);
 const closedLeafCloneRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-eval-pptx-closed-leaf-clone-"));
 try {
   const closedLeafInput = path.join(closedLeafCloneRoot, "inputs", PPTX_CLOSED_LEAF_CLONE_FIXTURE.presentationName);
@@ -567,9 +571,21 @@ try {
       values: [...PPTX_CLOSED_LEAF_CLONE_FIXTURE.chartValues],
     },
   ]);
+  assert.deepEqual(closedLeafReimport.customShows.getItem(PPTX_CLOSED_LEAF_CLONE_FIXTURE.customShowName).slideIds, [
+    closedLeafReimport.slides.getItem(0).id,
+    closedLeafReimport.slides.getItem(2).id,
+  ]);
+  assert.ok(!closedLeafReimport.customShows.getItem(PPTX_CLOSED_LEAF_CLONE_FIXTURE.customShowName).slideIds.includes(closedLeafReimport.slides.getItem(1).id));
+  assert.deepEqual(
+    closedLeafReimport.slides.getItem(1).shapes.items.find((shape) => shape.name === "board-route-link").text.paragraphs[0].runs[0].link,
+    { customShow: PPTX_CLOSED_LEAF_CLONE_FIXTURE.customShowName, returnToSlide: true, tooltip: "Open the board route" },
+  );
   assert.equal(closedLeafResult.audit.operation.chartParts.count, 1);
+  assert.equal(closedLeafResult.audit.operation.runHyperlinks.customShowCount, 1);
+  assert.equal(closedLeafResult.audit.operation.customShows.count, 1);
   assert.equal(closedLeafResult.audit.validation.package.chartParts.independentParts, true);
   assert.equal(closedLeafResult.audit.validation.package.chartParts.allPayloadsByteIdentical, true);
+  assert.equal(closedLeafResult.audit.validation.package.customShows.exactSourceMembershipRetained, true);
   const closedLeafEvidence = {
     source: await inspectClosedLeafClonePptx(closedLeafInput),
     output: await inspectClosedLeafClonePptx(closedLeafOutput),
@@ -593,6 +609,16 @@ try {
     item: closedLeafCloneItem,
   });
   assert.equal(closedLeafChecks.every((check) => check.passed), true);
+  const irregularCustomShowPath = path.join(closedLeafCloneRoot, "outputs", "irregular-custom-show.pptx");
+  const irregularCustomShowZip = await JSZip.loadAsync(closedLeafOutputBytes);
+  const irregularPresentationXml = await irregularCustomShowZip.file("ppt/presentation.xml").async("text");
+  assert.match(irregularPresentationXml, /<p:custShow\b/);
+  irregularCustomShowZip.file(
+    "ppt/presentation.xml",
+    irregularPresentationXml.replace("</p:custShow>", "<p:extLst /></p:custShow>"),
+  );
+  await fs.writeFile(irregularCustomShowPath, await irregularCustomShowZip.generateAsync({ type: "nodebuffer" }));
+  await assert.rejects(() => inspectClosedLeafClonePptx(irregularCustomShowPath), /non-canonical custom show/);
   const closedLeafDriftEvidence = structuredClone(closedLeafEvidence);
   closedLeafDriftEvidence.output.partHashes[closedLeafDriftEvidence.output.commentAuthors.part] = "unexpected-comment-authors-change";
   const closedLeafDriftChecks = gradePptxClosedLeafCloneEvidence({
@@ -612,6 +638,16 @@ try {
   });
   assert.equal(chartAliasingChecks.find((check) => check.id === "pptx-clone-machine:chart-part-copied-to-independent-leaf")?.passed, false);
   assert.equal(chartAliasingChecks.find((check) => check.id === "pptx-clone-security:source-parts-byte-preserved-and-graph-bounded")?.passed, false);
+  const customShowMembershipDriftEvidence = structuredClone(closedLeafEvidence);
+  customShowMembershipDriftEvidence.output.customShows[0].slideParts.splice(1, 0, customShowMembershipDriftEvidence.output.slides[1].part);
+  const customShowMembershipDriftChecks = gradePptxClosedLeafCloneEvidence({
+    evidence: customShowMembershipDriftEvidence,
+    audit: closedLeafResult.audit,
+    commands: extractCompletedCommands(closedLeafTrace),
+    item: closedLeafCloneItem,
+  });
+  assert.equal(customShowMembershipDriftChecks.find((check) => check.id === "pptx-clone-machine:custom-show-action-retained-without-membership-drift")?.passed, false);
+  assert.equal(customShowMembershipDriftChecks.find((check) => check.id === "pptx-clone-security:source-parts-byte-preserved-and-graph-bounded")?.passed, false);
   const missingOptInChecks = gradePptxClosedLeafCloneEvidence({
     evidence: closedLeafEvidence,
     audit: closedLeafResult.audit,

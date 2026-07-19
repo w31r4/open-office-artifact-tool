@@ -1846,6 +1846,46 @@ and OCRmyPDF were not configured, so their contract/adversarial gates passed
 while their environment-gated real repeats were skipped. Hosted results are
 recorded after the candidate commit. No publish or tag operation was attempted.
 
+### PPTX custom-show run-link cloning
+
+On 2026-07-20, the strict imported `slide.duplicate()` profile gained the
+canonical relationship-free custom-show action already supported by the run
+hyperlink codec. Clone preflight resolves
+`ppaction://customshow?id=<native-id>[&return=true|false]` through the complete
+`PptxCustomShowCatalog`; it retains the exact native show ID and return policy,
+creates no OPC relationship, and still rejects malformed, relationship-bearing,
+or dangling actions. The origin SlidePart and relationship part remain
+byte-identical while the clone receives a distinct SlidePart.
+
+Cloning does not imply custom-show route mutation. The same export transaction
+must retain every custom show's ordered stable-ID membership, and the new slide
+is not inserted implicitly. A same-transaction show rename is accepted because
+the link and membership graph are stable-ID-bound; a membership change combined
+with the clone fails as `unsupported_presentation_slide_clone` and must be
+performed after export/reimport. Opaque or extension-bearing show graphs remain
+outside this operation.
+
+The shipped Presentation workflow independently parses the native show catalog,
+records every accepted custom-show action, compares source/output membership,
+checks the exact relationship-free action on the clone, and proves the boundary
+again after second import. The ready PromptBench clone case now carries the same
+action and has an evaluator-owned OPC oracle. Adversarial fixtures reject native
+membership drift and unmodeled show extensions instead of trusting the workflow
+audit.
+
+The complete local gate passed `npm test` including Playwright,
+LibreOffice/Poppler, qpdf, and the 20-template corpus; `npm run docs:api`, `npm
+run proto:check`, `npm run test:pack`, OfficeBridge `5/5`, and OpenChestnut
+`291/291` also passed. Two deterministic OpenChestnut builds reproduced 39
+audited files and the same manifest-bound 38-file, 14,676,160-byte runtime. The
+production tarball contains 463 files, is 8,975,778 bytes compressed and
+23,607,273 bytes unpacked, leaving 772,727 bytes below the unchanged
+24,380,000-byte ceiling. The qpdf real-provider lane passed; dedicated
+real-provider environments for pikepdf, pyHanko, veraPDF, and OCRmyPDF were not
+configured, so their contract/adversarial gates passed while their
+environment-gated real repeats remained skipped. Hosted results are recorded
+after the candidate commit. No publish or tag operation was attempted.
+
 `npm run release:check` passes the source, documentation, package, license, JavaScript, and .NET gates. Its only remaining blocker is unavailable npm authentication. No `npm publish` or tag/release operation has been performed.
 
 ## Publishing

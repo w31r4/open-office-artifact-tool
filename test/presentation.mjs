@@ -190,9 +190,48 @@ await assert.rejects(
 );
 const customShowCloneImport = await PresentationFile.importPptx(customShowFirstExport);
 customShowCloneImport.slides.items[0].duplicate();
+customShowCloneImport.customShows.getItem("Board route").name = "Cloned executive route";
+const customShowCloneExport = await PresentationFile.exportPptx(customShowCloneImport);
+const customShowCloneZip = await JSZip.loadAsync(customShowCloneExport.bytes);
+assert.deepEqual(
+  await customShowCloneZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  await customShowFirstZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  "cloning a custom-show run link must preserve the retained source SlidePart byte-for-byte",
+);
+assert.deepEqual(
+  await customShowCloneZip.file("ppt/slides/_rels/slide1.xml.rels").async("uint8array"),
+  await customShowFirstZip.file("ppt/slides/_rels/slide1.xml.rels").async("uint8array"),
+  "a relationship-free custom-show action must not rewrite the retained source relationship graph",
+);
+assert.match(
+  await customShowCloneZip.file("ppt/slides/slide4.xml").async("string"),
+  /<a:hlinkClick\b[^>]*r:id=""[^>]*action="ppaction:\/\/customshow\?id=7&amp;return=true"[^>]*tooltip="Open board route"/,
+);
+assert.doesNotMatch(
+  await customShowCloneZip.file("ppt/slides/_rels/slide4.xml.rels").async("string"),
+  /relationships\/(?:hyperlink|slide)"/,
+  "custom-show run links must remain relationship-free on the cloned SlidePart",
+);
+const customShowCloneRoundTrip = await PresentationFile.importPptx(customShowCloneExport);
+assert.deepEqual(customShowCloneRoundTrip.slides.items.map((slide) => slide.name), ["Overview", "Overview", "Evidence", "Appendix"]);
+assert.deepEqual(customShowCloneRoundTrip.customShows.getItem("Cloned executive route").slideIds, [
+  customShowCloneRoundTrip.slides.items[0].id,
+  customShowCloneRoundTrip.slides.items[3].id,
+]);
+assert.ok(!customShowCloneRoundTrip.customShows.getItem("Cloned executive route").slideIds.includes(customShowCloneRoundTrip.slides.items[1].id));
+for (const slideIndex of [0, 1]) {
+  assert.deepEqual(
+    itemByName(customShowCloneRoundTrip.slides.items[slideIndex].shapes.items, "overview-title").text.paragraphs[0].runs[0].link,
+    { customShow: "Cloned executive route", returnToSlide: true, tooltip: "Open board route" },
+  );
+}
+const customShowCompoundCloneImport = await PresentationFile.importPptx(customShowFirstExport);
+const customShowCompoundClone = customShowCompoundCloneImport.slides.items[0].duplicate();
+customShowCompoundCloneImport.customShows.getItem("Board route").setSlides([customShowCompoundClone]);
 await assert.rejects(
-  () => PresentationFile.exportPptx(customShowCloneImport),
+  () => PresentationFile.exportPptx(customShowCompoundCloneImport),
   (error) => error?.code === "unsupported_presentation_slide_clone",
+  "custom-show membership changes must cross a separate export/reimport boundary from slide cloning",
 );
 const customShowMovedImport = await PresentationFile.importPptx(customShowFirstExport);
 customShowMovedImport.slides.items[2].moveTo(0);

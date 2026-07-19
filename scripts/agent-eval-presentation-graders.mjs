@@ -27,6 +27,7 @@ const CLONE_TOPOLOGY_PARTS = new Set([
   "ppt/presentation.xml",
   "ppt/_rels/presentation.xml.rels",
 ]);
+const CUSTOM_SHOW_ACTION = /^ppaction:\/\/customshow\?id=([0-9]+)(?:&return=(true|false))?$/i;
 
 function check(id, category, passed, details = {}) {
   return { id, category, gate: false, passed: Boolean(passed), ...details };
@@ -55,6 +56,10 @@ function xmlAttributes(opening = "") {
     attributes[match[1].split(":").at(-1)] = decodeXml(match[2]);
   }
   return attributes;
+}
+
+function semanticXmlAttributes(opening = "") {
+  return xmlAttributes(String(opening).replace(/\sxmlns(?::[\w.-]+)?="[^"]*"/gi, ""));
 }
 
 function drawingTexts(xml = "") {
@@ -204,6 +209,63 @@ async function orderedSlideParts(zip) {
   return parts;
 }
 
+async function inspectCanonicalCustomShows(zip) {
+  const [presentationXml, entries] = await Promise.all([
+    zip.file("ppt/presentation.xml")?.async("text"),
+    relationshipEntries(zip, "ppt/presentation.xml"),
+  ]);
+  if (!presentationXml) throw new Error("PPTX has no ppt/presentation.xml.");
+  const slidePartByRelationshipId = new Map(
+    relationshipWithSuffix(entries, "slide").map((entry) => [entry.id, entry.targetPart]),
+  );
+  const listPattern = /<(?:[\w.-]+:)?custShowLst\b([^>]*)>([\s\S]*?)<\/(?:[\w.-]+:)?custShowLst>/gi;
+  const lists = [...presentationXml.matchAll(listPattern)];
+  const listOpeningCount = [...presentationXml.matchAll(/<(?:[\w.-]+:)?custShowLst\b/gi)].length;
+  if (!listOpeningCount) return [];
+  if (lists.length !== 1 || listOpeningCount !== 1 || Object.keys(semanticXmlAttributes(lists[0][1])).length) {
+    throw new Error("PPTX closed-leaf fixture contains a non-canonical custom-show list.");
+  }
+  const list = lists[0];
+  const showPattern = /<(?:[\w.-]+:)?custShow\b([^>]*)>([\s\S]*?)<\/(?:[\w.-]+:)?custShow>/gi;
+  const showMatches = [...list[2].matchAll(showPattern)];
+  if (!showMatches.length || list[2].replace(showPattern, "").trim()) {
+    throw new Error("PPTX closed-leaf fixture contains an unmodeled custom-show child.");
+  }
+  const shows = [];
+  const names = new Set();
+  const nativeIds = new Set();
+  for (const match of showMatches) {
+    const attributes = semanticXmlAttributes(match[1]);
+    const nativeId = Number(attributes.id);
+    const normalizedName = String(attributes.name || "").toLowerCase();
+    const slideList = /^\s*<(?:[\w.-]+:)?sldLst\b([^>]*)>([\s\S]*?)<\/(?:[\w.-]+:)?sldLst>\s*$/i.exec(match[2]);
+    if (Object.keys(attributes).length !== 2 || !attributes.name || names.has(normalizedName)
+        || !/^[0-9]+$/.test(attributes.id || "") || !Number.isInteger(nativeId)
+        || nativeId < 0 || nativeId > 0xffffffff || nativeIds.has(nativeId)
+        || !slideList || Object.keys(semanticXmlAttributes(slideList?.[1] || "")).length) {
+      throw new Error("PPTX closed-leaf fixture contains a non-canonical custom show.");
+    }
+    const entryPattern = /<(?:[\w.-]+:)?sld\b([^>]*)\/\s*>/gi;
+    const entryMatches = [...slideList[2].matchAll(entryPattern)];
+    if (!entryMatches.length || slideList[2].replace(entryPattern, "").trim()) {
+      throw new Error("PPTX custom show contains an unmodeled slide-list child.");
+    }
+    const slideParts = entryMatches.map((entry) => {
+      const entryAttributes = semanticXmlAttributes(entry[1]);
+      if (Object.keys(entryAttributes).length !== 1 || !entryAttributes.id) {
+        throw new Error("PPTX custom-show member is not one relationship-only slide entry.");
+      }
+      const target = slidePartByRelationshipId.get(entryAttributes.id);
+      if (!target || !zip.file(target)) throw new Error("PPTX custom show references an unresolved SlidePart.");
+      return target;
+    });
+    names.add(normalizedName);
+    nativeIds.add(nativeId);
+    shows.push({ name: attributes.name, nativeId, slideParts });
+  }
+  return shows;
+}
+
 function elementTexts(xml, localName) {
   const expression = new RegExp(`<([\\w.-]+:)?${localName}\\b[^>]*>([\\s\\S]*?)<\\/([\\w.-]+:)?${localName}>`, "gi");
   return [...String(xml).matchAll(expression)].map((match) => decodeXml(match[2].replace(/<[^>]+>/g, "")));
@@ -218,6 +280,18 @@ async function inspectClosedLeafSlide(zip, partPath) {
   const notesRelationships = relationshipWithSuffix(entries, "notesSlide");
   const commentRelationships = relationshipWithSuffix(entries, "comments");
   const chartRelationships = relationshipWithSuffix(entries, "chart");
+  const customShowActions = [...xml.matchAll(/<(?:[\w.-]+:)?hlinkClick\b[^>]*>/gi)]
+    .map((match) => xmlAttributes(match[0]))
+    .filter((attributes) => String(attributes.action || "").toLowerCase().startsWith("ppaction://customshow"))
+    .map((attributes) => {
+      const parsed = CUSTOM_SHOW_ACTION.exec(attributes.action || "");
+      return {
+        action: attributes.action || "",
+        relationshipId: attributes.id || "",
+        nativeId: parsed ? Number(parsed[1]) : null,
+        returnToSlide: parsed?.[2] ? parsed[2].toLowerCase() === "true" : null,
+      };
+    });
   if (notesRelationships.length > 1 || commentRelationships.length > 1) {
     throw new Error("PPTX closed-leaf fixture has ambiguous slide relationships.");
   }
@@ -292,6 +366,7 @@ async function inspectClosedLeafSlide(zip, partPath) {
     notes,
     comments,
     charts,
+    customShowActions,
   };
 }
 
@@ -304,9 +379,10 @@ export async function inspectClosedLeafClonePptx(filePath) {
   const bytes = await fs.readFile(filePath);
   const zip = await JSZip.loadAsync(bytes);
   const paths = Object.keys(zip.files).filter((name) => !zip.files[name].dir).sort();
-  const [slideParts, presentationRelationships] = await Promise.all([
+  const [slideParts, presentationRelationships, customShows] = await Promise.all([
     orderedSlideParts(zip),
     relationshipEntries(zip, "ppt/presentation.xml"),
+    inspectCanonicalCustomShows(zip),
   ]);
   const authorRelationships = relationshipWithSuffix(presentationRelationships, "commentAuthors");
   if (authorRelationships.length > 1) throw new Error("PPTX has more than one CommentAuthors relationship.");
@@ -322,6 +398,7 @@ export async function inspectClosedLeafClonePptx(filePath) {
     paths,
     partHashes: await partHashes(zip, paths),
     slides,
+    customShows,
     commentAuthors: authorRelationship ? {
       part: authorPart,
       relationship: { id: authorRelationship.id, type: authorRelationship.type },
@@ -458,7 +535,8 @@ function closedLeafSemanticsEqual(left, right) {
     && left?.background === right?.background
     && left?.notes?.text === right?.notes?.text
     && sameArray(left?.comments?.texts || [], right?.comments?.texts || [])
-    && closedChartSemanticsEqual(left?.charts, right?.charts);
+    && closedChartSemanticsEqual(left?.charts, right?.charts)
+    && JSON.stringify(left?.customShowActions || []) === JSON.stringify(right?.customShowActions || []);
 }
 
 /**
@@ -493,6 +571,10 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
   const cloneLeaves = clone?.notes && clone?.comments;
   const sourceChart = sourceSlide?.charts?.[0] || null;
   const cloneChart = clone?.charts?.[0] || null;
+  const sourceCustomShow = source.customShows?.[0] || null;
+  const outputCustomShow = output.customShows?.[0] || null;
+  const sourceCustomShowAction = sourceSlide?.customShowActions?.[0] || null;
+  const cloneCustomShowAction = clone?.customShowActions?.[0] || null;
   const expectedChartValues = [
     fixture.chartSeriesName,
     ...fixture.chartCategories,
@@ -502,6 +584,7 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
     && sourceSlide?.name === fixture.sourceSlideName
     && sourceSlide?.texts.includes(fixture.sourceTitle)
     && sourceSlide?.texts.includes(fixture.sourceSupportingText)
+    && sourceSlide?.texts.includes(fixture.customShowText)
     && sourceSlide?.background === fixture.sourceBackground
     && sourceSlide?.notes?.text === fixture.sourceNotes
     && sameArray(sourceSlide?.comments?.texts || [], [fixture.sourceComment])
@@ -514,6 +597,14 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
     && sourceAppendix?.texts.includes(fixture.appendixText)
     && sourceAppendix?.background === fixture.appendixBackground
     && sourceAppendix?.charts?.length === 0
+    && source.customShows?.length === 1
+    && sourceCustomShow?.name === fixture.customShowName
+    && sourceCustomShow?.nativeId === fixture.customShowNativeId
+    && sameArray(sourceCustomShow?.slideParts || [], [sourceSlide?.part, sourceAppendix?.part])
+    && sourceSlide?.customShowActions?.length === 1
+    && sourceCustomShowAction?.relationshipId === ""
+    && sourceCustomShowAction?.nativeId === fixture.customShowNativeId
+    && sourceCustomShowAction?.returnToSlide === true
     && Boolean(source.commentAuthors?.part);
   const cloneSemantics = output.slides.length === 3
     && retainedSource?.part === sourceSlide?.part
@@ -553,8 +644,21 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
     && clone.comments.childRelationshipCount === 0
     && source.commentAuthors?.part === output.commentAuthors?.part
     && source.commentAuthors?.sha256 === output.commentAuthors?.sha256;
+  const customShowGraph = Boolean(sourceCustomShow && outputCustomShow && sourceCustomShowAction && cloneCustomShowAction)
+    && output.customShows.length === 1
+    && JSON.stringify(sourceCustomShow) === JSON.stringify(outputCustomShow)
+    && sameArray(outputCustomShow.slideParts, [retainedSource?.part, outputAppendix?.part])
+    && !outputCustomShow.slideParts.includes(clone?.part)
+    && sourceCustomShowAction.action === cloneCustomShowAction.action
+    && sourceCustomShowAction.relationshipId === ""
+    && cloneCustomShowAction.relationshipId === ""
+    && sourceCustomShowAction.nativeId === fixture.customShowNativeId
+    && cloneCustomShowAction.nativeId === fixture.customShowNativeId
+    && sourceCustomShowAction.returnToSlide === true
+    && cloneCustomShowAction.returnToSlide === true;
   const packageScope = sameArray(newPaths, expectedNewPaths)
     && changedSourcePaths.length === 0
+    && customShowGraph
     && sourceSlide?.sha256 === retainedSource?.sha256
     && sourceAppendix?.sha256 === outputAppendix?.sha256
     && source.paths.every((entry) => !CLONE_TOPOLOGY_PARTS.has(entry)
@@ -583,6 +687,12 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
       sourceChart,
       cloneChart,
     }),
+    check("pptx-clone-machine:custom-show-action-retained-without-membership-drift", "machine", customShowGraph, {
+      sourceCustomShow,
+      outputCustomShow,
+      sourceCustomShowAction,
+      cloneCustomShowAction,
+    }),
     check("pptx-clone-machine:only-approved-clone-parts-added", "machine", sameArray(newPaths, expectedNewPaths), {
       newPaths,
       expectedNewPaths,
@@ -595,7 +705,7 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
     }),
     check("pptx-clone-visual:source-clone-and-appendix-pixels-stable", "visual", visual.retainedSourceStable
       && visual.cloneMatchesSource && visual.appendixStable, { visual }),
-    gate("pptx-clone-security:source-parts-byte-preserved-and-graph-bounded", "security", packageScope && closedLeafGraph && closedChartGraph, {
+    gate("pptx-clone-security:source-parts-byte-preserved-and-graph-bounded", "security", packageScope && closedLeafGraph && closedChartGraph && customShowGraph, {
       changedSourcePaths,
       newPaths,
       expectedNewPaths,
@@ -624,6 +734,10 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
       && closedLeaves.speakerNotes === true
       && closedLeaves.legacyComments === true
       && operation.chartParts?.count === 1
+      && operation.runHyperlinks?.customShowCount === 1
+      && operation.runHyperlinks?.customShowActions?.[0]?.nativeId === fixture.customShowNativeId
+      && operation.customShows?.count === 1
+      && operation.customShows?.shows?.[0]?.nativeId === fixture.customShowNativeId
       && sameArray(operation.chartParts?.sourceParts || [], [sourceChart?.part])
       && sameArray(operation.chartParts?.relationshipIds || [], [sourceChart?.relationship?.id]), {
       operation: audit?.operation || null,
@@ -638,6 +752,9 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
       && packageValidation.chartParts?.parts?.[0]?.sourcePart === sourceChart?.part
       && packageValidation.chartParts?.parts?.[0]?.clonePart === cloneChart?.part
       && packageValidation.chartParts?.parts?.[0]?.sourceSha256 === sourceChart?.sha256
+      && packageValidation.runHyperlinks?.customShowCount === 1
+      && packageValidation.customShows?.count === 1
+      && packageValidation.customShows?.exactSourceMembershipRetained === true
       && packageValidation.closedLeaves?.speakerNotes?.notesXmlByteIdentical === true
       && packageValidation.closedLeaves?.legacyComments?.commentsXmlByteIdentical === true, {
       packageValidation,
@@ -647,7 +764,8 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
     }),
     check("pptx-clone-trace:second-import", "trace", audit?.validation?.reimport?.ok === true
       && audit?.validation?.reimport?.sourceAndCloneSemanticsEqual === true
-      && audit?.validation?.reimport?.sourceAndCloneClosedLeavesEqual === true, {
+      && audit?.validation?.reimport?.sourceAndCloneClosedLeavesEqual === true
+      && audit?.validation?.reimport?.customShowMembershipRetained === true, {
       validation: audit?.validation?.reimport || null,
     }),
   ];

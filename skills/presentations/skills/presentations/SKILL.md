@@ -222,13 +222,17 @@ edit capability can use that path without affecting the origin. Formula or
 external-data charts, embedded workbooks, duplicate/orphan chart relations, and
 any connected chart graph fail closed.
 Accepted run links are limited to modeled external absolute URIs, internal jumps
-to a retained SlidePart, and `nextSlide`/`previousSlide`/`firstSlide`/`lastSlide`/
-`endShow` actions. The clone keeps each relationship-backed link's exact `r:id`
-and target; internal jumps keep pointing to the same retained source target.
-Every hyperlink relationship must be consumed by one of those inline clicks.
+to a retained SlidePart, `nextSlide`/`previousSlide`/`firstSlide`/`lastSlide`/
+`endShow` actions, and relationship-free custom-show actions whose native ID
+resolves through the canonical presentation-wide show catalog. The clone keeps
+each relationship-backed link's exact `r:id` and target; internal jumps keep
+pointing to the same retained source target. A custom-show link keeps the same
+stable native show ID and optional return policy, creates no package
+relationship, and never inserts the clone into the show's membership. Every
+hyperlink relationship must be consumed by one of the other inline clicks.
 Shape-level clicks, hover links, malformed or orphan relationships, links in
-tables/pictures/connectors, unknown actions, and jumps to a removed slide fail
-closed.
+tables/pictures/connectors, unknown actions, malformed/relationship-bearing/
+dangling custom-show actions, and jumps to a removed slide fail closed.
 Imported add, repeat/mutated clone, rich/connected comments, unsupported
 connector forms or targets, and every broad graph clone remain unsupported until
 an explicit OPC graph-clone transaction is available.
@@ -364,9 +368,12 @@ and all non-target shows, counts any run links bound to that fixed identity,
 reimports, compares normalized visual SVG content, and writes a
 source/output-bound audit. Lists with extensions, unknown children, unresolved
 relationships, duplicate identities, or another noncanonical graph remain
-opaque and fail closed. Missing targets, malformed or relationship-bearing
-custom-show actions, and custom-show identity links during clone/delete also
-fail closed. Run LibreOffice/Poppler review after delivery when available.
+opaque and fail closed. Missing targets and malformed, relationship-bearing,
+or dangling custom-show actions fail closed. The bounded clone workflow accepts
+only the canonical relationship-free run action and proves that show membership
+did not change; slide deletion and custom-show topology mutation remain separate
+fail-closed operations. Run LibreOffice/Poppler review after delivery when
+available.
 
 ### Bounded Imported Title And Speaker-Notes Edit
 

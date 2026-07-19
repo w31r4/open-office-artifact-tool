@@ -323,6 +323,35 @@ internal static class PptxCustomShowCodec
         return true;
     }
 
+    internal static void AssertMembershipUnchangedForSlideClone(
+        PresentationPart owner,
+        PresentationArtifact requested,
+        IReadOnlyDictionary<string, string> slideIdByRelationshipId,
+        EffectiveCodecLimits limits)
+    {
+        var actual = Read(owner, slideIdByRelationshipId, limits);
+        if (actual.Opaque)
+        {
+            if (!requested.CustomShowsOpaque || requested.CustomShows.Count != 0)
+                throw new CodecException(
+                    "unsupported_presentation_slide_clone",
+                    "The bounded slide-clone profile cannot combine a clone with replacement of an opaque custom-show graph.",
+                    "ppt/presentation.xml");
+            return;
+        }
+        if (requested.CustomShowsOpaque || actual.Shows.Count != requested.CustomShows.Count)
+            throw new CodecException(
+                "unsupported_presentation_slide_clone",
+                "The bounded slide-clone profile requires the imported custom-show topology to remain fixed.",
+                "ppt/presentation.xml");
+        for (var index = 0; index < actual.Shows.Count; index++)
+            if (!actual.Shows[index].SlideIds.SequenceEqual(requested.CustomShows[index].SlideIds, StringComparer.Ordinal))
+                throw new CodecException(
+                    "unsupported_presentation_slide_clone",
+                    "The bounded slide-clone profile cannot change custom-show membership in the same export; export and reimport the clone first.",
+                    "ppt/presentation.xml");
+    }
+
     private static PptxCustomShowReadResult Opaque(string reason, ulong semanticItems) =>
         new([], true, semanticItems, reason);
 

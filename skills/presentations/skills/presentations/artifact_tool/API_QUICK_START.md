@@ -384,20 +384,25 @@ profile, including recognized literal-data charts whose unique ChartParts have
 no child/external/hyperlink/data relationship and straight/elbow connectors whose present endpoints
 resolve inside the source slide tree and canonical run-level clicks to an
 external absolute URI, a retained internal SlidePart, or a supported relative
-slide action. It maps source `presentation.xml`
+slide action, plus a relationship-free custom-show action whose native ID must
+resolve in the canonical presentation-wide catalog. It maps source `presentation.xml`
 relationships, calls `slide.duplicate()`, requires the clone immediately after
 the original, and accepts only the necessary presentation/content-type
 topology changes plus one new SlidePart, its relationship part, and one
 distinct byte-copied ChartPart for every accepted chart. Every
 retained source part, including the source SlidePart, must remain
-byte-identical. It requires exact source/clone chart and hyperlink `r:id`, URI, target
-SlidePart, and action-only inventories with no orphan relationship. It then
+byte-identical. It requires exact source/clone chart and hyperlink `r:id`, URI,
+target SlidePart, and action-only inventories with no orphan relationship. For
+a custom-show action it additionally proves exact native ID/return policy,
+zero relationship edge, unchanged show identity/membership, and that the clone
+was not silently added to the route. It then
 reimports and verifies source/clone structural semantics, connector/link
 bindings, chart semantics, and model-render equivalence. The latter ignores
 fresh `data-*-id` inspection locators, so it does not claim lexical equality
 for the new clone XML. Ambiguous names, notes/comments, unsupported graph
 leaves, formula/external-data/embedded-workbook/connected/orphan charts,
-shape-level/hover/unknown/orphan links, unresolved endpoints, and unexpected package changes reject without
+shape-level/hover/unknown/orphan links, malformed/relationship-bearing/dangling
+custom-show actions, unresolved endpoints, and unexpected package changes reject without
 promoting an output or audit.
 
 For the one opt-in closed-leaf profile, set `allowClosedLeaves: true` explicitly:

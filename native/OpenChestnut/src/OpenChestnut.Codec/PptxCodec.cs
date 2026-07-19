@@ -351,6 +351,17 @@ internal static class PptxCodec
                 .Select(target => (Part: target.Source.Part, Id: target.Target.Id))
                 .ToDictionary(item => item.Id, item => item.Part, StringComparer.Ordinal);
             var customShowCatalog = PptxCustomShowCatalog.From(envelope.Presentation.CustomShows);
+            if (targetSlides.Any(target => target.IsClone))
+            {
+                var sourcePublicSlideIdByRelationshipId = BuildCustomShowSlideIdMap(retainedTargets.Select(target => (
+                    RelationshipId: target.Source.RelationshipId,
+                    PublicId: target.Target.Id)));
+                PptxCustomShowCodec.AssertMembershipUnchangedForSlideClone(
+                    presentationPart,
+                    envelope.Presentation,
+                    sourcePublicSlideIdByRelationshipId,
+                    limits);
+            }
             var masterGraph = ReadMasterGraph(presentationPart);
             if (masterGraph.Length != envelope.Presentation.Masters.Count)
                 throw new CodecException(
@@ -3341,8 +3352,7 @@ internal static class PptxCodec
             if (click.Parent is not A.RunProperties properties ||
                 properties.Parent is not (A.Run or A.Break or A.Field) ||
                 properties.Elements<A.HyperlinkOnClick>().Count() != 1 ||
-                !PptxHyperlinkCodec.TryRead(click, context, out var hyperlink) ||
-                hyperlink.TargetCase == PresentationRunHyperlink.TargetOneofCase.CustomShowId)
+                !PptxHyperlinkCodec.TryRead(click, context, out _))
                 return false;
             var relationshipId = click.Id?.Value ?? string.Empty;
             if (relationshipId.Length > 0) usedRelationshipIds.Add(relationshipId);

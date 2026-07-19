@@ -80,8 +80,9 @@ charts, canonical embedded rectangular images, bounded straight/elbow
 connectors, plus recursively canonical groups whose descendants contain only
 those same leaf kinds,
 exactly one layout relationship, image relationships bound only by those
-pictures, canonical run-level external/internal/action click links whose exact
-relationship IDs and retained targets are copied, and optionally one closed `NotesSlide -> NotesMaster` /
+pictures, canonical run-level external/internal/relative-action click links
+whose exact relationship IDs and retained targets are copied, relationship-free
+custom-show actions resolved through the fixed native-ID catalog, and optionally one closed `NotesSlide -> NotesMaster` /
 back-to-source-slide leaf plus one canonical legacy `SlideCommentsPart` leaf.
 Each chart frame must uniquely bind one numbered ChartPart with no child,
 external, hyperlink, or data relationship. It creates a distinct native
@@ -98,8 +99,13 @@ its own source-bound slide with independent ChartParts. A chart that advertises
 the ordinary fixed-topology edit capability can use that path without affecting
 the origin, with legacy comments still read-only. Imported add,
 repeat/mutated clone, immediate clone edit, rich/connected comments, and every
-unsupported-connector/formula-or-external-data-or-embedded-workbook-or-connected-or-orphan-chart/OLE/shape-level-or-unmodeled-hyperlink/custom-show/section/extension, external-or-irregular-image,
+unsupported-connector/formula-or-external-data-or-embedded-workbook-or-connected-or-orphan-chart/OLE/shape-level-or-unmodeled-hyperlink/malformed-or-dangling-custom-show/section/extension, external-or-irregular-image,
 or otherwise connected clone/delete graph fails closed.
+
+A canonical custom-show run action is copied as an inline, relationship-free
+reference to the same stable native show ID. Cloning never changes the
+presentation-wide show list or inserts the clone into membership. Custom-show
+deletion/topology changes remain outside this profile.
 
 ## Custom Shows
 

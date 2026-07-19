@@ -440,8 +440,14 @@ try {
     text: [{ runs: [
       { text: "Guide ", link: { uri: "https://example.com/clone-guide", tooltip: "Open guide" } },
       { text: "Canary ", link: { slideId: duplicateCanary.id } },
-      { text: "Next", link: { action: "nextSlide" } },
+      { text: "Next ", link: { action: "nextSlide" } },
+      { text: "Board route", link: { customShow: "Clone route", returnToSlide: true, tooltip: "Open clone route" } },
     ] }],
+  });
+  duplicateFixture.customShows.add({
+    name: "Clone route",
+    nativeId: 17,
+    slides: [duplicateSourceSlide, duplicateCanary],
   });
   duplicateSourceSlide.charts.add("bar", {
     name: "clone-pipeline-chart",
@@ -470,12 +476,25 @@ try {
   assert.equal(duplicateResult.audit.operation.clonePart, "ppt/slides/slide3.xml");
   assert.equal(duplicateResult.audit.operation.scope, "canonical-inline-leaves-with-closed-chart-leaves");
   assert.equal(duplicateResult.audit.validation.package.retainedSourcePartsByteIdentical, true);
-  assert.deepEqual(duplicateResult.audit.operation.runHyperlinks, { relationshipCount: 2, actionOnlyCount: 1 });
+  assert.deepEqual(duplicateResult.audit.operation.runHyperlinks, {
+    relationshipCount: 2,
+    actionOnlyCount: 2,
+    customShowCount: 1,
+    customShowActions: [{ nativeId: 17, name: "Clone route", returnToSlide: true }],
+  });
+  assert.deepEqual(duplicateResult.audit.operation.customShows, {
+    count: 1,
+    shows: [{ name: "Clone route", nativeId: 17, slideParts: ["ppt/slides/slide1.xml", "ppt/slides/slide2.xml"] }],
+  });
   assert.deepEqual(duplicateResult.audit.validation.package.runHyperlinks, {
     relationshipCount: 2,
-    actionOnlyCount: 1,
+    actionOnlyCount: 2,
+    customShowCount: 1,
+    customShowActions: [{ nativeId: 17, name: "Clone route", returnToSlide: true }],
     exactSourceGraphRetained: true,
   });
+  assert.equal(duplicateResult.audit.validation.package.customShows.exactSourceMembershipRetained, true);
+  assert.equal(duplicateResult.audit.validation.reimport.customShowMembershipRetained, true);
   assert.equal(duplicateResult.audit.operation.chartParts.count, 1);
   assert.equal(duplicateResult.audit.validation.package.chartParts.count, 1);
   assert.equal(duplicateResult.audit.validation.package.chartParts.independentParts, true);
@@ -513,6 +532,16 @@ try {
   assert.equal(duplicateCloneLinks[0].link.uri, "https://example.com/clone-guide");
   assert.equal(duplicateCloneLinks[1].link.slideId, duplicateRoundTrip.slides.getItem(2).id);
   assert.equal(duplicateCloneLinks[2].link.action, "nextSlide");
+  assert.deepEqual(duplicateCloneLinks[3].link, {
+    customShow: "Clone route",
+    returnToSlide: true,
+    tooltip: "Open clone route",
+  });
+  assert.deepEqual(duplicateRoundTrip.customShows.getItem("Clone route").slideIds, [
+    duplicateRoundTrip.slides.getItem(0).id,
+    duplicateRoundTrip.slides.getItem(2).id,
+  ]);
+  assert.ok(!duplicateRoundTrip.customShows.getItem("Clone route").slideIds.includes(duplicateRoundTrip.slides.getItem(1).id));
   const duplicateSourceChart = duplicateRoundTrip.slides.getItem(0).charts.items[0];
   const duplicateCloneChart = duplicateRoundTrip.slides.getItem(1).charts.items[0];
   assert.notEqual(duplicateCloneChart.id, duplicateSourceChart.id);
@@ -582,6 +611,29 @@ try {
   );
   assert.equal(await fs.access(orphanLinkOutput).then(() => true, () => false), false);
   assert.equal(await fs.access(orphanLinkAudit).then(() => true, () => false), false);
+
+  const danglingCustomShowInput = path.join(duplicateDir, "dangling-custom-show-source.pptx");
+  const danglingCustomShowOutput = path.join(duplicateDir, "dangling-custom-show-output.pptx");
+  const danglingCustomShowAudit = path.join(duplicateDir, "dangling-custom-show-audit.json");
+  const danglingCustomShowZip = await JSZip.loadAsync(duplicateSourceBytes);
+  const danglingCustomShowSlide = await danglingCustomShowZip.file("ppt/slides/slide1.xml").async("text");
+  assert.match(danglingCustomShowSlide, /customshow\?id=17&amp;return=true/);
+  danglingCustomShowZip.file(
+    "ppt/slides/slide1.xml",
+    danglingCustomShowSlide.replace("customshow?id=17&amp;return=true", "customshow?id=999&amp;return=true"),
+  );
+  await fs.writeFile(danglingCustomShowInput, await danglingCustomShowZip.generateAsync({ type: "nodebuffer" }));
+  await assert.rejects(
+    () => duplicatePptxSlide({
+      inputPath: danglingCustomShowInput,
+      outputPath: danglingCustomShowOutput,
+      auditPath: danglingCustomShowAudit,
+      expectedName: "Clone connector source",
+    }),
+    /custom-show run action with an unresolved native ID/,
+  );
+  assert.equal(await fs.access(danglingCustomShowOutput).then(() => true, () => false), false);
+  assert.equal(await fs.access(danglingCustomShowAudit).then(() => true, () => false), false);
 
   const notesInput = path.join(duplicateDir, "notes-source.pptx");
   const notesOutput = path.join(duplicateDir, "notes-output.pptx");
@@ -722,7 +774,10 @@ try {
     "Clone connector source",
   ], { encoding: "utf8" });
   assert.equal(duplicateCli.status, 0, `slide-duplicate CLI failed\n${duplicateCli.stdout}\n${duplicateCli.stderr}`);
-  assert.equal(JSON.parse(duplicateCli.stdout).clonePart, "ppt/slides/slide3.xml");
+  const duplicateCliSummary = JSON.parse(duplicateCli.stdout);
+  assert.equal(duplicateCliSummary.clonePart, "ppt/slides/slide3.xml");
+  assert.equal(duplicateCliSummary.customShowActionCount, 1);
+  assert.equal(duplicateCliSummary.customShowCount, 1);
 
   const closedLeavesCliOutput = path.join(duplicateDir, "closed-leaves-cli-output.pptx");
   const closedLeavesCliAudit = path.join(duplicateDir, "closed-leaves-cli-audit.json");
@@ -788,7 +843,9 @@ try {
   assert.match(skillText, /starter-deck command below still needs a\s+broad imported-slide graph clone and broad graph delete semantics/is);
   assert.match(skillText, /slide\.duplicate\(\).*canonical shapes.*canonical inline fixed-grid tables.*recognized closed\s+literal-data charts.*canonical embedded rectangular images.*bounded canonical\s+straight\/elbow connectors.*new `SlidePart`.*every present\s+connector endpoint.*same copied `SlidePart`.*export plus reimport/is);
   assert.match(skillText, /recognized closed\s+literal-data charts.*unique internal relationship.*numbered `ChartPart`.*byte-copies.*distinct clone-local ChartPart.*ChartParts are independent.*advertises the ordinary fixed-topology\s+edit capability/is);
+  assert.match(skillText, /relationship-free custom-show actions.*stable native show ID.*never inserts the clone into the show's membership/is);
   assert.match(quickStartText, /recognized literal-data charts.*no child\/external\/hyperlink\/data relationship.*distinct byte-copied ChartPart/is);
+  assert.match(quickStartText, /relationship-free custom-show action.*exact native ID\/return policy.*clone.*not silently added to the route/is);
   assert.match(skillText, /NotesSlide.*NotesMaster.*byte-for-byte.*back-reference.*clone/is);
   assert.match(skillText, /SlideCommentsPart.*CommentAuthorsPart.*byte-for-byte/is);
   assert.match(skillText, /artifact_tool\/api\/references\/comments\.md/);
@@ -807,6 +864,8 @@ try {
   assert.match(slideReferenceText, /recognized closed literal-data charts.*numbered\s+`ChartPart`.*no child, external, hyperlink, or data relationship.*distinct clone-local ChartPart/is);
   assert.match(slideReferenceText, /Gradient,\s+pattern, image.*opaque-preserved/is);
   assert.match(slideReferenceText, /p:cSld\/@name.*export\/reimport/is);
+  const customShowReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/custom-shows.spec.md", "utf8");
+  assert.match(customShowReferenceText, /bounded slide clone profile.*relationship-free action.*creates no hyperlink\/slide relationship.*clone is not implicitly added/is);
   const imageReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/images.spec.md", "utf8");
   assert.match(imageReferenceText, /signed normalized source edges in `-1\.\.1`/i);
   assert.match(imageReferenceText, /DrawingML `a:srcRect`/);

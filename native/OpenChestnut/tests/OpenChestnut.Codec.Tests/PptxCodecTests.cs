@@ -4027,7 +4027,7 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
-    public void CustomShowRunHyperlinksKeepStableIdentityAcrossShowRenameAndFailClosedOnClone()
+    public void CustomShowRunHyperlinksKeepStableIdentityAcrossShowRenameAndClone()
     {
         var authored = Invoke(CustomShowHyperlinkExportRequest());
         Assert.True(authored.Ok, Diagnostics(authored));
@@ -4083,11 +4083,57 @@ public sealed class PptxCodecTests
         Assert.False(missingRejected.Ok);
         Assert.Equal("invalid_presentation_hyperlink", Assert.Single(missingRejected.Diagnostics).Code);
 
-        var clone = Import(sourceBytes);
+        var clone = Import(renamedBytes);
         AddPendingClone(clone.Artifact.Presentation, 0, "presentation/clone/custom-show-link");
-        var cloneRejected = Export(clone.Artifact);
-        Assert.False(cloneRejected.Ok);
-        Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(cloneRejected.Diagnostics).Code);
+        var cloned = Export(clone.Artifact);
+        Assert.True(cloned.Ok, Diagnostics(cloned));
+        var clonedBytes = cloned.File.ToByteArray();
+        Assert.Equal(ZipBytes(renamedBytes, "ppt/slides/slide1.xml"), ZipBytes(clonedBytes, "ppt/slides/slide1.xml"));
+        Assert.Equal(ZipBytes(renamedBytes, "ppt/slides/_rels/slide1.xml.rels"), ZipBytes(clonedBytes, "ppt/slides/_rels/slide1.xml.rels"));
+        using (var stream = new MemoryStream(clonedBytes))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var slides = OrderedSlides(package);
+            Assert.Equal(4, slides.Length);
+            var origin = slides[0];
+            var outputClone = slides[3];
+            var originCustom = origin.Slide!.Descendants<A.HyperlinkOnClick>().Last();
+            var cloneCustom = outputClone.Slide!.Descendants<A.HyperlinkOnClick>().Last();
+            Assert.Equal(originCustom.OuterXml, cloneCustom.OuterXml);
+            Assert.Equal(string.Empty, cloneCustom.Id!.Value);
+            Assert.Equal("ppaction://customshow?id=7&return=true", cloneCustom.Action!.Value);
+            Assert.Equal(origin.HyperlinkRelationships.Count(), outputClone.HyperlinkRelationships.Count());
+            Assert.Equal(origin.Parts.Count(pair => pair.OpenXmlPart is SlidePart), outputClone.Parts.Count(pair => pair.OpenXmlPart is SlidePart));
+
+            var board = Assert.Single(
+                package.PresentationPart!.Presentation!.CustomShowList!.Elements<P.CustomShow>(),
+                show => show.Id?.Value == 7u);
+            var memberships = board.GetFirstChild<P.SlideList>()!.Elements<P.SlideListEntry>()
+                .Select(entry => entry.Id!.Value!)
+                .ToArray();
+            Assert.Equal(2, memberships.Length);
+            Assert.DoesNotContain(package.PresentationPart.GetIdOfPart(outputClone), memberships);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var clonedImport = Import(clonedBytes);
+        Assert.True(clonedImport.Ok, Diagnostics(clonedImport));
+        Assert.Equal("Executive route", clonedImport.Artifact.Presentation.CustomShows[0].Name);
+        Assert.DoesNotContain(
+            clonedImport.Artifact.Presentation.Slides[3].Id,
+            clonedImport.Artifact.Presentation.CustomShows[0].SlideIds);
+        var clonedRun = clonedImport.Artifact.Presentation.Slides[3].Elements[0].Shape.TextBody.Paragraphs[0].Runs[4].RunHyperlink;
+        Assert.Equal("custom-show/1", clonedRun.CustomShowId);
+        Assert.True(clonedRun.HasReturnToSlide);
+        Assert.True(clonedRun.ReturnToSlide);
+
+        var compoundMembershipEdit = Import(renamedBytes);
+        AddPendingClone(compoundMembershipEdit.Artifact.Presentation, 0, "presentation/clone/custom-show-membership-edit");
+        compoundMembershipEdit.Artifact.Presentation.CustomShows[0].SlideIds.Clear();
+        compoundMembershipEdit.Artifact.Presentation.CustomShows[0].SlideIds.Add("presentation/clone/custom-show-membership-edit");
+        var compoundMembershipRejected = Export(compoundMembershipEdit.Artifact);
+        Assert.False(compoundMembershipRejected.Ok);
+        Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(compoundMembershipRejected.Diagnostics).Code);
     }
 
     [Fact]
@@ -4109,6 +4155,11 @@ public sealed class PptxCodecTests
             "ppaction://customshow?id=7&amp;return=maybe",
             System.Text.Encoding.UTF8.GetString(ZipBytes(preserved.File.ToByteArray(), "ppt/slides/slide1.xml")),
             StringComparison.Ordinal);
+        var malformedClone = Import(malformed);
+        AddPendingClone(malformedClone.Artifact.Presentation, 0, "presentation/clone/malformed-custom-show-link");
+        var malformedCloneRejected = Export(malformedClone.Artifact);
+        Assert.False(malformedCloneRejected.Ok);
+        Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(malformedCloneRejected.Diagnostics).Code);
 
         var replacementImport = Import(malformed);
         replacementImport.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].Runs[4].RunHyperlink =
@@ -4124,6 +4175,10 @@ public sealed class PptxCodecTests
         Assert.Equal(
             PresentationTextRun.HyperlinkOneofCase.None,
             relationshipImport.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].Runs[4].HyperlinkCase);
+        AddPendingClone(relationshipImport.Artifact.Presentation, 0, "presentation/clone/relationship-custom-show-link");
+        var relationshipCloneRejected = Export(relationshipImport.Artifact);
+        Assert.False(relationshipCloneRejected.Ok);
+        Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(relationshipCloneRejected.Diagnostics).Code);
     }
 
     [Fact]

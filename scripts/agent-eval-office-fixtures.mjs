@@ -113,6 +113,9 @@ export const PPTX_CLOSED_LEAF_CLONE_FIXTURE = Object.freeze({
   chartCategories: Object.freeze(["Ready", "Watch", "Blocked"]),
   chartSeriesName: "Controls",
   chartValues: Object.freeze([68, 24, 8]),
+  customShowName: "Board review route",
+  customShowNativeId: 31,
+  customShowText: "Open board review route",
   sourceBackground: "#E0F2FE",
   appendixBackground: "#FEF3C7",
   appendixText: "Appendix: immutable evidence",
@@ -349,6 +352,18 @@ export async function generatePptxClosedLeafClone(target) {
     line: { style: "solid", fill: "none", width: 0 },
   });
   supporting.text.style = { fontSize: 18, color: "#334155" };
+  const route = source.shapes.add({
+    name: "board-route-link",
+    geometry: "textbox",
+    position: { left: 1048, top: 194, width: 184, height: 108 },
+    text: [{ runs: [{
+      text: fixture.customShowText,
+      link: { customShow: fixture.customShowName, returnToSlide: true, tooltip: "Open the board route" },
+    }] }],
+    fill: "none",
+    line: { style: "solid", fill: "none", width: 0 },
+  });
+  route.text.style = { fontSize: 15, bold: true, color: "#0369A1" };
   source.addNotes(fixture.sourceNotes);
   source.comments.addThread(undefined, fixture.sourceComment, {
     author: fixture.commentAuthor,
@@ -380,6 +395,11 @@ export async function generatePptxClosedLeafClone(target) {
     line: { style: "solid", fill: "none", width: 0 },
   });
   appendixTitle.text.style = { fontSize: 30, bold: true, color: "#92400E" };
+  presentation.customShows.add({
+    name: fixture.customShowName,
+    nativeId: fixture.customShowNativeId,
+    slides: [source, appendix],
+  });
 
   const verification = presentation.verify({ visualQa: true });
   if (!verification.ok) throw new Error("Generated PPTX closed-leaf clone fixture failed model verification: " + verification.ndjson);

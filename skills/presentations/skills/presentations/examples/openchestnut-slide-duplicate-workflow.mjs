@@ -22,6 +22,7 @@ const INLINE_ACTIONS = new Set([
   "ppaction://hlinkshowjump?jump=endshow",
 ]);
 const SLIDE_JUMP_ACTION = "ppaction://hlinksldjump";
+const CUSTOM_SHOW_ACTION = /^ppaction:\/\/customshow\?id=([0-9]+)(?:&return=(true|false))?$/i;
 const MAX_CLOSED_CHART_PARTS = 256;
 
 function sha256(bytes) {
@@ -43,6 +44,10 @@ function xmlAttributes(tag) {
   const attributes = Object.create(null);
   for (const match of tag.matchAll(/([A-Za-z_][\w:.-]*)\s*=\s*(["'])([\s\S]*?)\2/g)) attributes[match[1]] = match[3];
   return attributes;
+}
+
+function semanticXmlAttributes(tag) {
+  return Object.fromEntries(Object.entries(xmlAttributes(tag)).filter(([name]) => !/^xmlns(?::|$)/i.test(name)));
 }
 
 function unescapeXml(value) {
@@ -120,6 +125,80 @@ async function orderedSlidePartPaths(zip) {
   return paths;
 }
 
+async function inspectCanonicalCustomShows(zip) {
+  const [presentationXml, relationshipsXml] = await Promise.all([
+    requiredZipBytes(zip, "ppt/presentation.xml").then((bytes) => Buffer.from(bytes).toString("utf8")),
+    requiredZipBytes(zip, "ppt/_rels/presentation.xml.rels").then((bytes) => Buffer.from(bytes).toString("utf8")),
+  ]);
+  const slidePartByRelationshipId = new Map();
+  for (const match of relationshipsXml.matchAll(/<Relationship\b[^>]*>/gi)) {
+    const attributes = xmlAttributes(match[0]);
+    if (!attributes.Id || !attributes.Type?.toLowerCase().endsWith("/slide")) continue;
+    if (attributes.TargetMode?.toLowerCase() === "external" || !attributes.Target) {
+      throw new Error("Custom-show membership references a non-internal presentation slide relationship.");
+    }
+    slidePartByRelationshipId.set(attributes.Id, resolveRelationshipTarget(attributes.Target));
+  }
+
+  const listMatches = [...presentationXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?custShowLst\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?custShowLst\s*>/gi)];
+  const listOpeningCount = [...presentationXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?custShowLst\b/gi)].length;
+  if (!listMatches.length) {
+    if (listOpeningCount) {
+      throw new Error("Canonical duplicate workflow found a non-canonical custom-show list.");
+    }
+    return { shows: [], byNativeId: new Map(), fingerprint: "[]" };
+  }
+  if (listMatches.length !== 1 || listOpeningCount !== 1 || Object.keys(semanticXmlAttributes(listMatches[0][1])).length) {
+    throw new Error("Canonical duplicate workflow requires exactly one unextended custom-show list.");
+  }
+
+  const showPattern = /<(?:[A-Za-z_][\w.-]*:)?custShow\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?custShow\s*>/gi;
+  const listBody = listMatches[0][2];
+  const showMatches = [...listBody.matchAll(showPattern)];
+  if (!showMatches.length || listBody.replace(showPattern, "").trim()) {
+    throw new Error("Canonical duplicate workflow found a non-canonical custom-show child.");
+  }
+  const names = new Set();
+  const byNativeId = new Map();
+  const shows = [];
+  for (const match of showMatches) {
+    const attributes = semanticXmlAttributes(match[1]);
+    if (Object.keys(attributes).length !== 2 || !("name" in attributes) || !("id" in attributes)) {
+      throw new Error("Canonical custom shows require exactly name and id attributes.");
+    }
+    const name = unescapeXml(attributes.name);
+    const normalizedName = name.toLowerCase();
+    const nativeId = Number(attributes.id);
+    if (!name || names.has(normalizedName) || !/^[0-9]+$/.test(attributes.id) || !Number.isInteger(nativeId) || nativeId < 0 || nativeId > 0xffffffff || byNativeId.has(nativeId)) {
+      throw new Error("Canonical custom shows require unique non-empty names and unsigned 32-bit native IDs.");
+    }
+
+    const slideList = match[2].match(/^\s*<(?:[A-Za-z_][\w.-]*:)?sldLst\b([^>]*)>([\s\S]*?)<\/(?:[A-Za-z_][\w.-]*:)?sldLst\s*>\s*$/i);
+    if (!slideList || Object.keys(semanticXmlAttributes(slideList[1])).length) throw new Error("Canonical custom shows require one unextended slide list.");
+    const entryPattern = /<(?:[A-Za-z_][\w.-]*:)?sld\b([^>]*)\/\s*>/gi;
+    const entryMatches = [...slideList[2].matchAll(entryPattern)];
+    if (!entryMatches.length || slideList[2].replace(entryPattern, "").trim()) {
+      throw new Error("Canonical custom shows require one or more relationship-only slide entries.");
+    }
+    const slideParts = entryMatches.map((entry) => {
+      const entryAttributes = semanticXmlAttributes(entry[1]);
+      if (Object.keys(entryAttributes).length !== 1 || !("r:id" in entryAttributes)) {
+        throw new Error("Canonical custom-show slide entries require exactly one r:id attribute.");
+      }
+      const slidePart = slidePartByRelationshipId.get(entryAttributes["r:id"]);
+      if (!slidePart || !zip.file(slidePart)) {
+        throw new Error("Canonical custom-show membership references an unresolved SlidePart.");
+      }
+      return slidePart;
+    });
+    const show = { name, nativeId, slideParts };
+    names.add(normalizedName);
+    byNativeId.set(nativeId, show);
+    shows.push(show);
+  }
+  return { shows, byNativeId, fingerprint: JSON.stringify(shows) };
+}
+
 function relationshipPartPath(partPath) {
   return path.posix.join(path.posix.dirname(partPath), "_rels", path.posix.basename(partPath) + ".rels");
 }
@@ -167,7 +246,7 @@ async function relationshipEntriesForPart(zip, sourcePart, { required = true } =
   return entries;
 }
 
-async function inspectCanonicalRunHyperlinks(zip, slidePart) {
+async function inspectCanonicalRunHyperlinks(zip, slidePart, customShows) {
   const slideXml = Buffer.from(await requiredZipBytes(zip, slidePart)).toString("utf8");
   if (/<(?:[A-Za-z_][\w.-]*:)?hlinkHover\b/i.test(slideXml)) {
     throw new Error("Canonical duplicate workflow does not accept hover hyperlinks in " + slidePart + ".");
@@ -177,12 +256,25 @@ async function inspectCanonicalRunHyperlinks(zip, slidePart) {
   const relationshipById = new Map(relationships.map((entry) => [entry.id, entry]));
   const usedRelationshipIds = new Set();
   const clicks = [];
+  const customShowActions = [];
   for (const match of slideXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?hlinkClick\b[^>]*>/gi)) {
     const attributes = xmlAttributes(match[0]);
     const relationshipId = attributes["r:id"] || "";
     const action = unescapeXml(attributes.action || "");
     if (!relationshipId) {
-      if (!INLINE_ACTIONS.has(action)) {
+      const customShow = CUSTOM_SHOW_ACTION.exec(action);
+      if (customShow) {
+        const nativeId = Number(customShow[1]);
+        const target = customShows.byNativeId.get(nativeId);
+        if (!target || !Number.isInteger(nativeId) || nativeId > 0xffffffff) {
+          throw new Error("Canonical duplicate workflow found a custom-show run action with an unresolved native ID in " + slidePart + ".");
+        }
+        customShowActions.push({
+          nativeId,
+          name: target.name,
+          returnToSlide: customShow[2] ? customShow[2].toLowerCase() === "true" : null,
+        });
+      } else if (!INLINE_ACTIONS.has(action)) {
         throw new Error("Canonical duplicate workflow found an unsupported relationship-free click action in " + slidePart + ".");
       }
     } else {
@@ -220,6 +312,8 @@ async function inspectCanonicalRunHyperlinks(zip, slidePart) {
     relationships: relationshipFingerprint,
     relationshipCount: relationships.length,
     actionOnlyCount: clicks.filter((click) => !(click["r:id"] || "")).length,
+    customShowCount: customShowActions.length,
+    customShowActions,
     fingerprint: JSON.stringify({ clicks, relationships: relationshipFingerprint }),
   };
 }
@@ -410,6 +504,14 @@ function canonicalCloneSnapshot(slide, slidePartById = new Map()) {
   return JSON.stringify(normalize(proto));
 }
 
+function canonicalCustomShowSnapshot(presentation, slidePartById) {
+  return JSON.stringify((presentation.customShows?.items || []).map((show) => ({
+    name: show.name,
+    nativeId: show.nativeId,
+    slideParts: show.slideIds.map((slideId) => slidePartById.get(slideId) || "unresolved:" + slideId),
+  })));
+}
+
 async function modelSvg(slide) {
   const svg = await slide.export({ format: "svg" });
   const text = await svg.text();
@@ -554,13 +656,20 @@ async function assertDuplicatePackageScope(sourceBytes, outputBytes, sourceIndex
   if (sourceZip.file(clonePart) || !/^ppt\/slides\/slide\d+\.xml$/i.test(clonePart)) {
     throw new Error("PPTX duplicate did not allocate a distinct canonical SlidePart path.");
   }
+  const [sourceCustomShows, outputCustomShows] = await Promise.all([
+    inspectCanonicalCustomShows(sourceZip),
+    inspectCanonicalCustomShows(outputZip),
+  ]);
+  if (sourceCustomShows.fingerprint !== outputCustomShows.fingerprint) {
+    throw new Error("PPTX duplicate changed custom-show identity or membership instead of retaining the presentation-wide catalog.");
+  }
   const [sourceLeaves, cloneLeaves] = await Promise.all([
     inspectClosedLeaves(sourceZip, sourcePart, { allowClosedLeaves }),
     inspectClosedLeaves(outputZip, clonePart, { allowClosedLeaves }),
   ]);
   const [sourceRunHyperlinks, cloneRunHyperlinks] = await Promise.all([
-    inspectCanonicalRunHyperlinks(sourceZip, sourcePart),
-    inspectCanonicalRunHyperlinks(outputZip, clonePart),
+    inspectCanonicalRunHyperlinks(sourceZip, sourcePart, sourceCustomShows),
+    inspectCanonicalRunHyperlinks(outputZip, clonePart, outputCustomShows),
   ]);
   const [sourceCharts, cloneCharts] = await Promise.all([
     inspectClosedChartParts(sourceZip, sourcePart),
@@ -616,7 +725,14 @@ async function assertDuplicatePackageScope(sourceBytes, outputBytes, sourceIndex
     runHyperlinks: {
       relationshipCount: sourceRunHyperlinks.relationshipCount,
       actionOnlyCount: sourceRunHyperlinks.actionOnlyCount,
+      customShowCount: sourceRunHyperlinks.customShowCount,
+      customShowActions: sourceRunHyperlinks.customShowActions,
       exactSourceGraphRetained: true,
+    },
+    customShows: {
+      count: sourceCustomShows.shows.length,
+      shows: sourceCustomShows.shows,
+      exactSourceMembershipRetained: true,
     },
     chartParts,
     closedLeaves,
@@ -642,9 +758,10 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
   const sourceSlideParts = await orderedSlidePartPaths(sourceZip);
   if (sourceSlideParts.length !== presentation.slides.count) throw new Error("PPTX package slide order does not match the imported presentation model.");
   const sourcePart = sourceSlideParts[sourceIndex];
+  const sourceCustomShows = await inspectCanonicalCustomShows(sourceZip);
   const sourceLeaves = await inspectClosedLeaves(sourceZip, sourcePart, { allowClosedLeaves });
   const sourceCharts = await inspectClosedChartParts(sourceZip, sourcePart);
-  const sourceRunHyperlinks = await inspectCanonicalRunHyperlinks(sourceZip, sourcePart);
+  const sourceRunHyperlinks = await inspectCanonicalRunHyperlinks(sourceZip, sourcePart, sourceCustomShows);
   if (slideNameFromXml(Buffer.from(await requiredZipBytes(sourceZip, sourcePart)).toString("utf8"), sourcePart) !== sourceName) {
     throw new Error("The selected model slide does not match its source SlidePart p:cSld/@name.");
   }
@@ -652,12 +769,16 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
   const sourceSlidePartById = new Map(presentation.slides.items.map((slide, index) => [slide.id, sourceSlideParts[index]]));
   const sourceSemantic = canonicalCloneSnapshot(target, sourceSlidePartById);
   const sourceClosedLeafSemantics = closedLeafSemanticSnapshot(target);
+  const sourceCustomShowSemantics = canonicalCustomShowSnapshot(presentation, sourceSlidePartById);
   const clone = target.duplicate();
   if (presentation.slides.items.indexOf(clone) !== sourceIndex + 1 || clone.name !== target.name) {
     throw new Error("slide.duplicate did not create an adjacent same-name pending clone.");
   }
   if (canonicalCloneSnapshot(clone, sourceSlidePartById) !== sourceSemantic) {
     throw new Error("Pending slide clone changed the canonical source semantics before export.");
+  }
+  if (canonicalCustomShowSnapshot(presentation, sourceSlidePartById) !== sourceCustomShowSemantics) {
+    throw new Error("slide.duplicate changed custom-show membership before export.");
   }
 
   const temporaryPath = finalPath + ".tmp-" + process.pid + "-" + Date.now();
@@ -683,6 +804,9 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
     }
     if (closedLeafSemanticSnapshot(retained) !== sourceClosedLeafSemantics || closedLeafSemanticSnapshot(roundTripClone) !== sourceClosedLeafSemantics) {
       throw new Error("PPTX duplicate did not preserve source and clone closed-leaf semantics after reimport.");
+    }
+    if (canonicalCustomShowSnapshot(reimported, outputSlidePartById) !== sourceCustomShowSemantics) {
+      throw new Error("PPTX duplicate changed custom-show identity or membership after reimport.");
     }
     // Compare both slides inside the same reimport identity domain. Inserting
     // the clone can renumber public model slide IDs even though the internal
@@ -715,6 +839,12 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
         runHyperlinks: {
           relationshipCount: sourceRunHyperlinks.relationshipCount,
           actionOnlyCount: sourceRunHyperlinks.actionOnlyCount,
+          customShowCount: sourceRunHyperlinks.customShowCount,
+          customShowActions: sourceRunHyperlinks.customShowActions,
+        },
+        customShows: {
+          count: sourceCustomShows.shows.length,
+          shows: sourceCustomShows.shows,
         },
         chartParts: {
           count: sourceCharts.count,
@@ -734,6 +864,7 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
           retainedSourcePartsByteIdentical: packageScope.retainedSourcePartsByteIdentical,
           cloneInsertedAdjacent: true,
           runHyperlinks: packageScope.runHyperlinks,
+          customShows: packageScope.customShows,
           chartParts: packageScope.chartParts,
           closedLeaves: packageScope.closedLeaves,
         },
@@ -742,6 +873,7 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
           slideCount: reimported.slides.count,
           sourceAndCloneSemanticsEqual: true,
           sourceAndCloneClosedLeavesEqual: true,
+          customShowMembershipRetained: true,
           sourceAndCloneNames: [retained.name, roundTripClone.name],
         },
         modelRender: {
@@ -796,6 +928,8 @@ if (entry === import.meta.url) {
     outputSha256: result.audit.output.sha256,
     sourcePart: result.audit.operation.sourcePart,
     clonePart: result.audit.operation.clonePart,
+    customShowActionCount: result.audit.operation.runHyperlinks.customShowCount,
+    customShowCount: result.audit.operation.customShows.count,
     chartPartCount: result.audit.operation.chartParts.count,
     closedLeaves: result.audit.operation.closedLeaves,
   }));

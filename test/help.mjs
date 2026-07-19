@@ -105,7 +105,7 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "fx.RANK.EQ"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.ROUNDUP"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.compose"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "compose.text"));
-assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.summary || "", /picture-bullet.*relative-action hyperlinks.*Custom-show links.*fail closed/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.summary || "", /picture-bullet.*relative-action.*existing custom-show hyperlinks.*dangling custom-show targets.*fail closed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /nextSlide.*previousSlide.*firstSlide.*lastSlide.*endShow.*customShow.*returnToSlide.*fail closed/);
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.groups.add"));
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.groups.add")?.summary || "", /native DrawingML p:grpSp.*chOff\/chExt.*fixed-topology semantic edits.*opaque and read-only/i);
@@ -360,6 +360,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.sche
 assert.equal(HELP_CATALOG.find((item) => item.name === "presentation.slides.insert")?.schema?.parameters?.after?.type, "Slide|number|null");
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.moveTo")?.summary || "", /retained source SlidePart.*broad graph clones.*fail-closed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.duplicate")?.summary || "", /unchanged graph.*canonical shapes.*canonical inline fixed-grid tables.*recognized closed literal-data charts.*numbered ChartPart.*relationship sets are empty.*every present connector endpoint.*same copied SlidePart tree.*distinct SlidePart.*distinct byte-identical ChartPart.*ChartParts are then independent.*advertises the ordinary fixed-topology edit capability.*formula\/external-data\/embedded-workbook\/connected\/orphan chart graphs.*fail closed/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.duplicate")?.summary || "", /relationship-free custom-show links.*stable native show ID.*add no relationship.*never inserted into show membership/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.delete")?.summary || "", /real OPC deletion.*isolated slide.*custom shows.*clone requests fail closed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.layout.placeholders.summary")?.summary || "", /defensive.*snapshot/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.importPptx")?.schema?.returns?.presentation?.type, "Presentation");
@@ -370,6 +371,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "nativeObject.replaceEmbe
 assert.equal(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /character.*picture bullets.*auto-numbering.*levels.*indents.*spacing/);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /absolute uri.*slideId.*relative action/);
+assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /customShow.*survives the bounded slide clone.*without adding the clone to show membership/i);
 const workbookCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "workbook");
 assert.equal(workbookCatalog.length, 192);
 assert.ok(workbookCatalog.every((item) => item.schema?.parameters && item.schema?.returns));

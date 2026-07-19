@@ -111,9 +111,11 @@ try {
       line: { fill: "transparent", width: 0 },
       text: [{ runs: [
         { text: "Guide ", link: { uri: "https://example.com/packed-clone" } },
-        { text: "Next", link: { action: "nextSlide" } },
+        { text: "Next ", link: { action: "nextSlide" } },
+        { text: "Review route", link: { customShow: "Packed route", returnToSlide: true } },
       ] }],
     });
+    cloneFixture.customShows.add({ name: "Packed route", nativeId: 23, slides: [cloneSource] });
     cloneSource.comments.addThread(undefined, "Packaged closed-leaf clone comment.", {
       author: "Package QA",
       created: "2026-07-18T03:05:00Z",
@@ -134,8 +136,11 @@ try {
     if (
       cloneResult.audit.operation.clonePart !== "ppt/slides/slide2.xml" ||
       cloneResult.audit.operation.runHyperlinks.relationshipCount !== 1 ||
-      cloneResult.audit.operation.runHyperlinks.actionOnlyCount !== 1 ||
+      cloneResult.audit.operation.runHyperlinks.actionOnlyCount !== 2 ||
+      cloneResult.audit.operation.runHyperlinks.customShowCount !== 1 ||
       !cloneResult.audit.validation.package.runHyperlinks.exactSourceGraphRetained ||
+      !cloneResult.audit.validation.package.customShows.exactSourceMembershipRetained ||
+      !cloneResult.audit.validation.reimport.customShowMembershipRetained ||
       !cloneResult.audit.operation.closedLeaves.speakerNotes ||
       !cloneResult.audit.operation.closedLeaves.legacyComments ||
       !cloneResult.audit.validation.package.retainedSourcePartsByteIdentical ||
@@ -153,7 +158,9 @@ try {
       packedClone.slides.count !== 2 ||
       packedClone.slides.getItem(1).groups.items[0].connectors.items[0].startTargetId !== packedClone.slides.getItem(1).groups.items[0].shapes.items[0].id ||
       packedClone.slides.getItem(1).speakerNotes.text !== "Packaged closed-leaf clone notes." ||
-      packedClone.slides.getItem(1).comments.items[0].comments[0].text !== "Packaged closed-leaf clone comment."
+      packedClone.slides.getItem(1).comments.items[0].comments[0].text !== "Packaged closed-leaf clone comment." ||
+      packedClone.slides.getItem(1).shapes.items.find((shape) => shape.name === "packed-clone-links").text.paragraphs[0].runs[2].link.customShow !== "Packed route" ||
+      JSON.stringify(packedClone.customShows.getItem("Packed route").slideIds) !== JSON.stringify([packedClone.slides.getItem(0).id])
     ) process.exit(25);
 
     const pdf = PdfArtifact.create({ pages: [{ text: "clean install PDF" }] });

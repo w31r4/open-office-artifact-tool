@@ -63,8 +63,12 @@ run's target name retargets it only to another existing canonical show.
 Missing names, opaque show lists, dangling native IDs, malformed action URIs,
 or custom-show actions that carry a relationship ID are not guessed. Imported
 unknown actions remain exact-source-preserved and replacing them fails closed.
-The bounded slide clone/delete profiles still reject custom-show identity
-references because those operations require a wider presentation graph plan.
+The bounded slide clone profile accepts a canonical relationship-free action
+only after resolving its native ID through this catalog. It copies the action
+onto the new SlidePart, creates no hyperlink/slide relationship, and proves the
+presentation-wide show identity and ordered membership are unchanged; the
+clone is not implicitly added to the show. Slide deletion still rejects
+custom-show identity references.
 
 ## Imported Canonical Shows
 
@@ -77,8 +81,9 @@ evidence. OpenChestnut permits two edits in place:
 
 The show count/order, facade ID, and native `p:custShow/@id` remain fixed.
 Adding, removing, reordering, or replacing show objects fails closed. Slide
-deletion and source-bound slide cloning still reject a deck containing custom
-shows because those operations change presentation identity topology;
+deletion still rejects a deck when the target participates in custom-show
+identity topology. Source-bound slide cloning is allowed only for the canonical
+run-action profile above and leaves every show member list fixed.
 `slide.moveTo(...)` is safe because show entries reference retained
 presentation relationships rather than display indexes.
 
