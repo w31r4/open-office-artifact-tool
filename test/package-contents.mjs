@@ -29,11 +29,11 @@ const result = spawnSync("npm", ["pack", "--dry-run", "--json", "--ignore-script
 assert.equal(result.status, 0, `npm pack manifest failed\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`);
 const report = JSON.parse(result.stdout)[0];
 const files = report.files.map((item) => item.path);
-// npm's gzip output varies slightly between the macOS and Linux npm builds used
-// by local and hosted gates. Keep a small, explicit cross-platform allowance
-// above the audited payload instead of setting the budget to one machine's exact
-// compressed byte count.
-const maxPackedBytes = 9_750_000;
+// npm's gzip output varies between the macOS and Linux npm builds used by local
+// and hosted gates. The qpdf slice measured 9,750,068 bytes on hosted Linux, so
+// keep less than 25 KB of explicit cross-platform headroom instead of setting
+// the budget to one machine's exact compressed byte count.
+const maxPackedBytes = 9_775_000;
 // The bundled OpenChestnut runtime is an audited product payload, not an
 // optional download. Keep its unpacked budget tight while allowing the
 // audited PDF provider/docs growth plus the bounded DOCX/PPTX modern-comment and
