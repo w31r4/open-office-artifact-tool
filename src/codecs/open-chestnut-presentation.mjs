@@ -287,6 +287,11 @@ const CLONE_DIAGRAM_CONTENT_TYPES = new Set([
   "application/vnd.openxmlformats-officedocument.drawingml.diagramStyle+xml",
   "application/vnd.openxmlformats-officedocument.drawingml.diagramColors+xml",
 ]);
+const CLONE_INK_CONTENT_TYPE = "application/inkml+xml";
+const CLONE_CUSTOM_XML_RELATIONSHIPS = new Set([
+  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml",
+  "http://purl.oclc.org/ooxml/officeDocument/relationships/customXml",
+]);
 const CLONE_RELATIONSHIP_NAMESPACES = new Set([
   "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
   "http://purl.oclc.org/ooxml/officeDocument/relationships",
@@ -339,15 +344,53 @@ function cloneablePresentationDiagramModel(source) {
   return contentTypes.size === 4;
 }
 
-// Eligible OLE and SmartArt frames remain opaque PresentationML, but their
+function isCloneInkContentPart(source) {
+  return /^<(?:[A-Za-z_][\w.-]*:)?contentPart(?:\s|>)/.test(String(source?.rawXml || "").trimStart());
+}
+
+function cloneInkContentReference(source) {
+  const references = source?.relationshipReferences;
+  if (!Array.isArray(references) || references.length !== 1) return undefined;
+  const reference = references[0];
+  return String(reference.attribute || "").split(":").at(-1) === "id" &&
+    CLONE_RELATIONSHIP_NAMESPACES.has(String(reference.namespaceUri || "")) &&
+    String(reference.id ?? reference.relationshipId ?? "")
+    ? String(reference.id ?? reference.relationshipId)
+    : undefined;
+}
+
+function cloneablePresentationInkContentWire(source) {
+  const relationshipId = source?.nativeKind === "contentPart" ? cloneInkContentReference(source) : undefined;
+  return Boolean(relationshipId && isCloneInkContentPart(source) && Array.isArray(source.preservedPartPaths) &&
+    source.preservedPartPaths.length === 1 && source.preservedPartPaths[0]);
+}
+
+function cloneablePresentationInkContentModel(source) {
+  const relationshipId = source?.kind === "nativeObject" && source.nativeKind === "contentPart"
+    ? cloneInkContentReference(source)
+    : undefined;
+  if (!relationshipId || !isCloneInkContentPart(source) || source.oleWorkbook ||
+      !Array.isArray(source.rootRelationships) || source.rootRelationships.length !== 1 ||
+      !Array.isArray(source.parts) || source.parts.length !== 1) return false;
+  const relationship = source.rootRelationships[0];
+  const part = source.parts[0];
+  return relationship.id === relationshipId &&
+    String(relationship.targetMode || "").toLowerCase() !== "external" &&
+    CLONE_CUSTOM_XML_RELATIONSHIPS.has(String(relationship.type || "")) &&
+    part.contentType === CLONE_INK_CONTENT_TYPE && Boolean(part.path) && Boolean(part.bytes?.length) &&
+    /^[0-9a-f]{64}$/i.test(String(part.sourceSha256 || "")) &&
+    Array.isArray(part.relationships) && part.relationships.length === 0;
+}
+
+// Eligible OLE, SmartArt, and InkML content parts remain opaque PresentationML, but their
 // package graphs have already been proved closed. Give the pending slide clone
 // a fresh JavaScript object while retaining the exact source graph snapshot;
 // C# allocates independent mutable parts during the first export.
 function cloneImportedPresentationNativeObject(container, source, context) {
   const cloneableOle = source?.kind === "nativeObject" && source.nativeKind === "oleObject" && source.oleWorkbook &&
     !source._embeddedWorkbookReplacementBytes?.();
-  if (!cloneableOle && !cloneablePresentationDiagramModel(source)) {
-    throw new OpenChestnutCodecError("The bounded imported-slide clone profile accepts only an unchanged eligible embedded-XLSX OLE object or a canonical closed four-part SmartArt frame.", [], { code: "unsupported_presentation_slide_clone" });
+  if (!cloneableOle && !cloneablePresentationDiagramModel(source) && !cloneablePresentationInkContentModel(source)) {
+    throw new OpenChestnutCodecError("The bounded imported-slide clone profile accepts only an unchanged eligible embedded-XLSX OLE object, canonical closed four-part SmartArt frame, or canonical top-level closed InkML content part.", [], { code: "unsupported_presentation_slide_clone" });
   }
   const clone = container.nativeObjects.add({
     name: source.name,
@@ -413,7 +456,7 @@ function cloneSupportedPresentationContent(content, allowNativeGraphLeaf = true)
     const opaque = content.value;
     const cloneableOle = opaque?.nativeKind === "oleObject" && Boolean(opaque.oleWorkbook?.partPath) &&
       Boolean(opaque.oleWorkbook?.sourceSha256) && !opaque.oleWorkbook?.replacementAssetId;
-    return allowNativeGraphLeaf && (cloneableOle || cloneablePresentationDiagramWire(opaque));
+    return allowNativeGraphLeaf && (cloneableOle || cloneablePresentationDiagramWire(opaque) || cloneablePresentationInkContentWire(opaque));
   }
   if (content?.case !== "group") return false;
   const children = content.value?.children;
@@ -423,7 +466,8 @@ function cloneSupportedPresentationContent(content, allowNativeGraphLeaf = true)
 function collectPresentationCloneSourceIds(source, ids, allowNativeGraphLeaf = true) {
   const cloneableOle = allowNativeGraphLeaf && source?.kind === "nativeObject" && source.nativeKind === "oleObject" && Boolean(source.oleWorkbook) && !source._embeddedWorkbookReplacementBytes?.();
   const cloneableDiagram = allowNativeGraphLeaf && cloneablePresentationDiagramModel(source);
-  if (!(source instanceof Shape) && !(source instanceof TableElement) && !(source instanceof ChartElement) && !(source instanceof ImageElement) && !isPresentationConnectorElement(source) && !(source instanceof GroupShape) && !cloneableOle && !cloneableDiagram) {
+  const cloneableInkContent = allowNativeGraphLeaf && cloneablePresentationInkContentModel(source);
+  if (!(source instanceof Shape) && !(source instanceof TableElement) && !(source instanceof ChartElement) && !(source instanceof ImageElement) && !isPresentationConnectorElement(source) && !(source instanceof GroupShape) && !cloneableOle && !cloneableDiagram && !cloneableInkContent) {
     throw new OpenChestnutCodecError("The bounded imported-slide clone profile encountered an unsupported source element.", [], { code: "unsupported_presentation_slide_clone" });
   }
   const id = String(source.id || "");
@@ -485,7 +529,7 @@ function duplicateImportedPresentationSlide(presentation, state, slide) {
     throw new OpenChestnutCodecError("The bounded imported-slide clone profile permits only one pending clone per origin; export and reimport it before cloning that source again.", [], { code: "unsupported_presentation_slide_clone" });
   }
   if (source.entries.some((entry) => !cloneSupportedPresentationContent(entry.wire.content))) {
-    throw new OpenChestnutCodecError("The bounded imported-slide clone profile supports only canonical shapes, inline tables, closed literal-data charts, embedded images, eligible embedded-XLSX OLE frames, closed four-part SmartArt frames, bounded connectors, and recursively canonical groups; other native objects and graph edges require a broader OPC graph clone.", [], { code: "unsupported_presentation_slide_clone" });
+    throw new OpenChestnutCodecError("The bounded imported-slide clone profile supports only canonical shapes, inline tables, closed literal-data charts, embedded images, eligible embedded-XLSX OLE frames, closed four-part SmartArt frames, top-level closed InkML content parts, bounded connectors, and recursively canonical groups; other native objects and graph edges require a broader OPC graph clone.", [], { code: "unsupported_presentation_slide_clone" });
   }
   const sourceIds = new Set();
   for (const entry of source.entries) collectPresentationCloneSourceIds(entry.model, sourceIds);

@@ -385,7 +385,9 @@ no child/external/hyperlink/data relationship, eligible top-level OLE frames
 whose uniquely inbound internal XLSX package has no child graph and whose
 preview is one internal ImagePart, canonical top-level SmartArt frames whose
 single `dgm:relIds` root binds exactly four relationship-free data/layout/
-quick-style/colors parts, and straight/elbow connectors whose present endpoints
+quick-style/colors parts, canonical top-level `p:contentPart` objects whose one
+internal `customXml` relationship binds a closed standard InkML part, and
+straight/elbow connectors whose present endpoints
 resolve inside the source slide tree and canonical run-level clicks to an
 external absolute URI, a retained internal SlidePart, or a supported relative
 slide action, plus a relationship-free custom-show action whose native ID must
@@ -396,8 +398,10 @@ topology changes plus one new SlidePart, its relationship part, and one
 distinct byte-copied ChartPart for every accepted chart plus one distinct
 byte-copied EmbeddedPackagePart for every accepted OLE workbook plus four
 distinct typed diagram parts for every accepted SmartArt frame. The clone
-retains the package relationship ID but shares only the immutable preview
-ImagePart. Every
+also receives one distinct byte-identical SDK `CustomXmlPart` for every
+accepted InkML object. For each OLE frame it shares only the immutable preview
+ImagePart. It retains every slide-local relationship ID; ordinary embedded
+ImageParts are also deliberately shared. Every
 retained source part, including the source SlidePart, must remain
 byte-identical. It requires exact source/clone chart and hyperlink `r:id`, URI,
 target SlidePart, and action-only inventories with no orphan relationship. For
@@ -408,18 +412,23 @@ reimports and verifies source/clone structural semantics, connector/link
 bindings, chart semantics, independent OLE workbook bindings, and model-render
 equivalence. SmartArt validation additionally requires the same slide-local
 relationship IDs/types, standard content types, byte-identical payload hashes,
-and disjoint source/clone part paths after reimport. The latter ignores
+and disjoint source/clone part paths after reimport. InkML validation requires
+the same evidence for one `application/inkml+xml` part with an `ink` document
+element in the standard namespace and no child graph. The model comparison ignores
 fresh `data-*-id` inspection locators, so it does not claim lexical equality
 for the new clone XML. Ambiguous names, notes/comments, unsupported graph
 leaves, formula/external-data/embedded-workbook/connected/orphan charts,
 shared/external/non-XLSX/nested/relationship-bearing/replacement-pending OLE
 graphs, nested/incomplete/mistyped/external/relationship-bearing SmartArt,
+non-top-level/extension-bearing/mistyped/non-InkML-root/connected content parts,
 shape-level/hover/unknown/orphan links, malformed/relationship-bearing/dangling
 custom-show actions, unresolved endpoints, and unexpected package changes reject without
 promoting an output or audit.
 
 See `api/references/smartart-clone.spec.md` for the exact diagram-part roles,
 failure modes, and audit evidence.
+See `api/references/inkml-content-part-clone.spec.md` for the exact InkML
+CustomXmlPart contract and its read-only boundary.
 
 For the one opt-in closed-leaf profile, set `allowClosedLeaves: true` explicitly:
 

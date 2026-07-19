@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
+using System.Xml;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Validation;
@@ -9,6 +10,7 @@ using OpenOffice.Artifact.Wire.V1;
 using A = DocumentFormat.OpenXml.Drawing;
 using C = DocumentFormat.OpenXml.Drawing.Charts;
 using P = DocumentFormat.OpenXml.Presentation;
+using P14 = DocumentFormat.OpenXml.Office2010.PowerPoint;
 
 namespace OpenChestnut.Codec;
 
@@ -24,6 +26,7 @@ internal sealed record PptxCloneImageEdge(ImagePart Part, string RelationshipId)
 internal sealed record PptxCloneChartLeaf(ChartPart Part, string SlideRelationshipId);
 internal sealed record PptxCloneOlePackageLeaf(EmbeddedPackagePart Part, string SlideRelationshipId);
 internal sealed record PptxCloneDiagramPartLeaf(OpenXmlPart Part, string SlideRelationshipId);
+internal sealed record PptxCloneInkContentLeaf(CustomXmlPart Part, string SlideRelationshipId);
 internal sealed record PptxCloneExternalHyperlinkEdge(Uri Uri, string RelationshipId);
 internal sealed record PptxCloneSlideHyperlinkEdge(SlidePart Part, string RelationshipId);
 internal sealed record PptxCloneNotesLeaf(
@@ -48,6 +51,7 @@ internal sealed record PptxCloneLeaf(
     IReadOnlyList<PptxCloneChartLeaf> Charts,
     IReadOnlyList<PptxCloneOlePackageLeaf> OlePackages,
     IReadOnlyList<PptxCloneDiagramPartLeaf> DiagramParts,
+    IReadOnlyList<PptxCloneInkContentLeaf> InkContentParts,
     IReadOnlyList<PptxCloneExternalHyperlinkEdge> ExternalHyperlinks,
     IReadOnlyList<PptxCloneSlideHyperlinkEdge> SlideHyperlinks,
     PptxCloneNotesLeaf? Notes,
@@ -79,12 +83,16 @@ internal static class PptxCodec
     private const int MaxCloneChartParts = 256;
     private const int MaxCloneOlePackageParts = 64;
     private const int MaxCloneDiagramParts = 256;
+    private const int MaxCloneInkContentParts = 256;
     private const int MaxCloneHyperlinkRelationships = 4_096;
     private const string SpreadsheetContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     private const string DiagramDataContentType = "application/vnd.openxmlformats-officedocument.drawingml.diagramData+xml";
     private const string DiagramLayoutContentType = "application/vnd.openxmlformats-officedocument.drawingml.diagramLayout+xml";
     private const string DiagramStyleContentType = "application/vnd.openxmlformats-officedocument.drawingml.diagramStyle+xml";
     private const string DiagramColorsContentType = "application/vnd.openxmlformats-officedocument.drawingml.diagramColors+xml";
+    private const string InkContentType = "application/inkml+xml";
+    private const string TransitionalCustomXmlRelationship = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml";
+    private const string StrictCustomXmlRelationship = "http://purl.oclc.org/ooxml/officeDocument/relationships/customXml";
     private static readonly (string RelationshipSuffix, string PathStem, string ContentType)[] CloneDiagramParts =
     [
         ("/diagramData", "data", DiagramDataContentType),
@@ -1771,7 +1779,8 @@ internal static class PptxCodec
         for (var index = 0; index < elements.Count; index++)
         {
             var elementId = $"{ownerId}/element/{index + 1}";
-            var nativeId = elements[index].Descendants<P.NonVisualDrawingProperties>().FirstOrDefault()?.Id?.Value;
+            var nativeId = elements[index].Descendants<P.NonVisualDrawingProperties>().FirstOrDefault()?.Id?.Value ??
+                           elements[index].Descendants<P14.NonVisualDrawingProperties>().FirstOrDefault()?.Id?.Value;
             if (nativeId is not null) output[nativeId.Value] = elementId;
             if (elements[index] is P.GroupShape group)
                 CollectNativeElementIds(GroupElements(group), elementId, output);
@@ -1784,6 +1793,8 @@ internal static class PptxCodec
             return (graphicOffset.X?.Value ?? 0, graphicOffset.Y?.Value ?? 0, graphicExtents.Cx?.Value ?? 0, graphicExtents.Cy?.Value ?? 0);
         if (element is P.GroupShape group && group.GetFirstChild<P.GroupShapeProperties>()?.GetFirstChild<A.TransformGroup>() is { Offset: { } groupOffset, Extents: { } groupExtents })
             return (groupOffset.X?.Value ?? 0, groupOffset.Y?.Value ?? 0, groupExtents.Cx?.Value ?? 0, groupExtents.Cy?.Value ?? 0);
+        if (element is P.ContentPart contentPart && contentPart.Transform2D is { Offset: { } contentOffset, Extents: { } contentExtents })
+            return (contentOffset.X?.Value ?? 0, contentOffset.Y?.Value ?? 0, contentExtents.Cx?.Value ?? 0, contentExtents.Cy?.Value ?? 0);
         var transform = element.Descendants<A.Transform2D>().FirstOrDefault();
         if (transform?.Offset is not null && transform.Extents is not null)
             return (transform.Offset.X?.Value ?? 0, transform.Offset.Y?.Value ?? 0, transform.Extents.Cx?.Value ?? 0, transform.Extents.Cy?.Value ?? 0);
@@ -1804,7 +1815,9 @@ internal static class PptxCodec
     }
 
     private static string ElementName(OpenXmlElement element, int index) =>
-        element.Descendants<P.NonVisualDrawingProperties>().FirstOrDefault()?.Name?.Value ?? $"{element.LocalName} {index + 1}";
+        element.Descendants<P.NonVisualDrawingProperties>().FirstOrDefault()?.Name?.Value ??
+        element.Descendants<P14.NonVisualDrawingProperties>().FirstOrDefault()?.Name?.Value ??
+        $"{element.LocalName} {index + 1}";
 
     private static string DescendantText(OpenXmlElement? element) =>
         element is null ? string.Empty : string.Concat(element.Descendants<A.Text>().Select(text => text.Text));
@@ -2129,6 +2142,9 @@ internal static class PptxCodec
                                  IsCloneXlsxEmbeddingPath(resolvedTarget);
             var isDiagram = !relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase) &&
                             IsCloneDiagramRelationship(relationship.Type, resolvedTarget);
+            var isInkContent = !relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase) &&
+                               IsCustomXmlRelationship(relationship.Type) &&
+                               IsNumberedCloneInkContentPath(resolvedTarget);
             // A bounded source-preserving clone owns one new internal edge:
             // its new SlidePart points at the original shared SlideLayoutPart.
             // Keep that exception typed and target-checked; an arbitrary added
@@ -2148,7 +2164,7 @@ internal static class PptxCodec
             var isLegacyComments = relationship.Type.EndsWith("/comments", StringComparison.Ordinal) &&
                                    !relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase) &&
                                    IsNumberedCommentsPath(resolvedTarget);
-            var allowedFromSlide = IsNumberedSlidePath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage || isChart || isEmbeddedXlsx || isDiagram || isSlideLayout || isNotesSlide || isLegacyComments);
+            var allowedFromSlide = IsNumberedSlidePath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage || isChart || isEmbeddedXlsx || isDiagram || isInkContent || isSlideLayout || isNotesSlide || isLegacyComments);
             var allowedFromMaster = IsNumberedMasterPath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage);
             var allowedFromLayout = IsNumberedLayoutPath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage);
             var allowedFromNotes = IsNumberedNotesSlidePath(relationship.SourcePath) && (isNotesMaster || isNotesBackReference);
@@ -2277,6 +2293,7 @@ internal static class PptxCodec
         IsNumberedChartPath(part.Path) ||
         (IsCloneXlsxEmbeddingPath(part.Path) && part.ContentType.Equals(SpreadsheetContentType, StringComparison.OrdinalIgnoreCase)) ||
         IsCloneDiagramPart(part.Path, part.ContentType) ||
+        (IsNumberedCloneInkContentPath(part.Path) && part.ContentType.Equals(InkContentType, StringComparison.OrdinalIgnoreCase)) ||
         IsNumberedNotesSlidePath(part.Path) ||
         IsNumberedNotesSlideRelationshipPath(part.Path) ||
         IsNumberedCommentsPath(part.Path);
@@ -2310,6 +2327,19 @@ internal static class PptxCodec
                 return true;
         }
         return false;
+    }
+
+    private static bool IsCustomXmlRelationship(string relationshipType) =>
+        relationshipType is TransitionalCustomXmlRelationship or StrictCustomXmlRelationship;
+
+    private static bool IsNumberedCloneInkContentPath(string path)
+    {
+        const string prefix = "ppt/customXml/item";
+        const string suffix = ".xml";
+        return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+               path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) &&
+               path[prefix.Length..^suffix.Length].Length > 0 &&
+               path[prefix.Length..^suffix.Length].All(char.IsAsciiDigit);
     }
 
     private static bool IsCloneXlsxEmbeddingPath(string path)
@@ -3198,6 +3228,18 @@ internal static class PptxCodec
                 changedParts.Add(PartPath(cloneDiagram));
                 addedPartPaths.Add(PartPath(cloneDiagram));
             }
+            foreach (var ink in leaf.InkContentParts)
+            {
+                // A PresentationML contentPart owns mutable InkML XML. Keep
+                // the original r:id in the copied Slide XML, but allocate a
+                // distinct SDK CustomXmlPart so a later package-level edit to
+                // either slide cannot couple the origin and clone.
+                var cloneInk = clonePart.AddCustomXmlPart(CustomXmlPartType.InkContent, ink.SlideRelationshipId);
+                CopyPartBytes(ink.Part, cloneInk);
+                addedRelationshipIds.Add($"{PartPath(clonePart)}\0{ink.SlideRelationshipId}");
+                changedParts.Add(PartPath(cloneInk));
+                addedPartPaths.Add(PartPath(cloneInk));
+            }
             foreach (var hyperlink in leaf.ExternalHyperlinks)
             {
                 clonePart.AddHyperlinkRelationship(hyperlink.Uri, true, hyperlink.RelationshipId);
@@ -3252,7 +3294,7 @@ internal static class PptxCodec
                 Id = nextSlideId,
                 RelationshipId = presentationPart.GetIdOfPart(clonePart),
             };
-            // Clone-to-layout, clone-to-image, clone-to-chart/embedded-XLSX/SmartArt,
+            // Clone-to-layout, clone-to-image, clone-to-chart/embedded-XLSX/SmartArt/InkML,
             // clone-to-run-hyperlink, clone-to-notes, and clone-to-comments
             // edges are intentionally opaque in the generic profile. Record
             // only these exact, verified relationships so the package guard
@@ -3327,6 +3369,13 @@ internal static class PptxCodec
         var diagramRelationshipIds = diagramEdges
             .Select(edge => edge.SlideRelationshipId)
             .ToHashSet(StringComparer.Ordinal);
+        var inkContentEdges = childParts
+            .Where(pair => pair.OpenXmlPart is CustomXmlPart)
+            .Select(pair => new PptxCloneInkContentLeaf((CustomXmlPart)pair.OpenXmlPart, pair.RelationshipId))
+            .ToArray();
+        var inkContentRelationshipIds = inkContentEdges
+            .Select(edge => edge.SlideRelationshipId)
+            .ToHashSet(StringComparer.Ordinal);
         var externalHyperlinkEdges = source.Part.HyperlinkRelationships
             .Select(relationship => new PptxCloneExternalHyperlinkEdge(relationship.Uri, relationship.Id))
             .ToArray();
@@ -3343,6 +3392,7 @@ internal static class PptxCodec
         var unsafeChildren = childParts
             .Where(pair => pair.OpenXmlPart is not SlideLayoutPart && pair.OpenXmlPart is not ImagePart && pair.OpenXmlPart is not ChartPart && pair.OpenXmlPart is not EmbeddedPackagePart &&
                            pair.OpenXmlPart is not DiagramDataPart && pair.OpenXmlPart is not DiagramLayoutDefinitionPart && pair.OpenXmlPart is not DiagramStylePart && pair.OpenXmlPart is not DiagramColorsPart &&
+                           pair.OpenXmlPart is not CustomXmlPart &&
                            pair.OpenXmlPart is not SlidePart && pair.OpenXmlPart is not NotesSlidePart && pair.OpenXmlPart is not SlideCommentsPart)
             .Select(pair => pair.OpenXmlPart.RelationshipType)
             .Distinct(StringComparer.Ordinal)
@@ -3354,12 +3404,13 @@ internal static class PptxCodec
             chartEdges.Length > MaxCloneChartParts ||
             olePackageEdges.Length > MaxCloneOlePackageParts ||
             diagramEdges.Length > MaxCloneDiagramParts ||
+            inkContentEdges.Length > MaxCloneInkContentParts ||
             unsafeChildren.Length > 0 ||
             source.Part.ExternalRelationships.Any() ||
             source.Part.DataPartReferenceRelationships.Any() ||
             hyperlinkRelationshipIds.Count > MaxCloneHyperlinkRelationships ||
             slideHyperlinkEdges.Any(edge => !retainedSlideParts.Contains(edge.Part)))
-            throw UnsupportedSourceSlideClone(source, "it owns data parts, an unretained slide jump, too many charts, OLE packages, diagram parts, or hyperlinks, or another non-layout/image/chart/embedded-XLSX/closed-diagram/run-hyperlink/notes/comments relationship");
+            throw UnsupportedSourceSlideClone(source, "it owns data parts, an unretained slide jump, too many charts, OLE packages, diagram/InkML parts, or hyperlinks, or another non-layout/image/chart/embedded-XLSX/closed-diagram/closed-InkML/run-hyperlink/notes/comments relationship");
         if (chartEdges.Any(edge => edge.Part.Parts.Any() || edge.Part.ExternalRelationships.Any() ||
                                          edge.Part.HyperlinkRelationships.Any() || edge.Part.DataPartReferenceRelationships.Any()))
             throw UnsupportedSourceSlideClone(source, "one of its chart parts owns a child, external, hyperlink, or data relationship");
@@ -3369,6 +3420,8 @@ internal static class PptxCodec
             throw UnsupportedSourceSlideClone(source, "one of its embedded packages is not a closed XLSX part");
         if (diagramEdges.Any(edge => !IsClosedCloneDiagramPart(edge.Part)))
             throw UnsupportedSourceSlideClone(source, "one of its SmartArt diagram parts has an unexpected content type or owns a child, external, hyperlink, or data relationship");
+        if (inkContentEdges.Any(edge => !IsClosedCloneInkContentPart(edge.Part)))
+            throw UnsupportedSourceSlideClone(source, "one of its content parts is not a closed standard InkML CustomXmlPart");
         var root = source.Part.Slide ??
             throw new CodecException("missing_slide_root", $"Presentation source slide {source.Index + 1} has no slide root.", PartPath(source.Part));
         var common = root.CommonSlideData ??
@@ -3384,6 +3437,7 @@ internal static class PptxCodec
         var usedChartRelationshipIds = new HashSet<string>(StringComparer.Ordinal);
         var usedOlePackageRelationshipIds = new HashSet<string>(StringComparer.Ordinal);
         var usedDiagramRelationshipIds = new HashSet<string>(StringComparer.Ordinal);
+        var usedInkContentRelationshipIds = new HashSet<string>(StringComparer.Ordinal);
         var usedHyperlinkRelationshipIds = new HashSet<string>(StringComparer.Ordinal);
         for (var elementIndex = 0; elementIndex < sourceElements.Length; elementIndex++)
         {
@@ -3401,10 +3455,12 @@ internal static class PptxCodec
                     usedOlePackageRelationshipIds,
                     diagramRelationshipIds,
                     usedDiagramRelationshipIds,
+                    inkContentRelationshipIds,
+                    usedInkContentRelationshipIds,
                     nativeObjects,
                     true,
                     usedHyperlinkRelationshipIds))
-                throw UnsupportedSourceSlideClone(source, "its elements require a broader graph clone than the bounded shape-with-canonical-run-hyperlinks/inline-table/closed-chart/embedded-image/embedded-XLSX-OLE/closed-SmartArt/connector/recursive-group profile");
+                throw UnsupportedSourceSlideClone(source, "its elements require a broader graph clone than the bounded shape-with-canonical-run-hyperlinks/inline-table/closed-chart/embedded-image/embedded-XLSX-OLE/closed-SmartArt/top-level-InkML/connector/recursive-group profile");
         }
         if (!imageRelationshipIds.SetEquals(embeddedImageRelationshipIds))
             throw UnsupportedSourceSlideClone(source, "it has an image relationship that is not exactly bound by a canonical embedded picture");
@@ -3414,6 +3470,8 @@ internal static class PptxCodec
             throw UnsupportedSourceSlideClone(source, "it has an embedded package relationship that is not exactly and uniquely bound by an eligible OLE frame");
         if (!diagramRelationshipIds.SetEquals(usedDiagramRelationshipIds))
             throw UnsupportedSourceSlideClone(source, "its SmartArt relationships are not exactly and uniquely bound by canonical four-part diagram frames");
+        if (!inkContentRelationshipIds.SetEquals(usedInkContentRelationshipIds))
+            throw UnsupportedSourceSlideClone(source, "its custom XML relationships are not exactly and uniquely bound by canonical top-level InkML content parts");
         if (!hyperlinkRelationshipIds.SetEquals(usedHyperlinkRelationshipIds))
             throw UnsupportedSourceSlideClone(source, "its hyperlink relationships are not exactly bound by canonical inline run click actions");
         var notes = AssertSourceSpeakerNotesCanBeCloned(source, target.Target);
@@ -3456,6 +3514,7 @@ internal static class PptxCodec
             chartEdges,
             olePackageEdges,
             diagramEdges,
+            inkContentEdges,
             externalHyperlinkEdges,
             slideHyperlinkEdges,
             notes,
@@ -3481,6 +3540,8 @@ internal static class PptxCodec
         ISet<string> usedOlePackageRelationshipIds,
         ISet<string> diagramRelationshipIds,
         ISet<string> usedDiagramRelationshipIds,
+        ISet<string> inkContentRelationshipIds,
+        ISet<string> usedInkContentRelationshipIds,
         PptxNativeObjectCatalog nativeObjects,
         bool allowNativeGraphLeaf,
         ISet<string> usedHyperlinkRelationshipIds)
@@ -3537,6 +3598,19 @@ internal static class PptxCodec
             embeddedImageRelationshipIds.Add(relationshipId);
             return true;
         }
+        if (element is P.ContentPart contentPart)
+        {
+            if (!allowNativeGraphLeaf) return false;
+            return TryCollectCanonicalCloneInkContent(
+                contentPart,
+                ownerId,
+                elementIndex,
+                context,
+                elementIdsByNativeId,
+                inkContentRelationshipIds,
+                usedInkContentRelationshipIds,
+                nativeObjects);
+        }
         // A bounded connection shape is entirely inline in its owning shape
         // tree. Its endpoints resolve through non-visual IDs in that same
         // cloned SlidePart, so it adds no OPC edge beyond the already-proved
@@ -3569,6 +3643,8 @@ internal static class PptxCodec
                     usedOlePackageRelationshipIds,
                     diagramRelationshipIds,
                     usedDiagramRelationshipIds,
+                    inkContentRelationshipIds,
+                    usedInkContentRelationshipIds,
                     nativeObjects,
                     false,
                     usedHyperlinkRelationshipIds))
@@ -3711,6 +3787,81 @@ internal static class PptxCodec
         };
         return contentTypeMatches && !part.Parts.Any() && !part.ExternalRelationships.Any() &&
                !part.HyperlinkRelationships.Any() && !part.DataPartReferenceRelationships.Any();
+    }
+
+    // PresentationML contentPart is used by Office for InkML. Keep the clone
+    // profile deliberately narrower than arbitrary custom XML: one top-level
+    // p:contentPart owns one internal, relationship-free InkML CustomXmlPart.
+    private static bool TryCollectCanonicalCloneInkContent(
+        P.ContentPart contentPart,
+        string ownerId,
+        int elementIndex,
+        PptxPartContext context,
+        IReadOnlyDictionary<uint, string> elementIdsByNativeId,
+        ISet<string> inkContentRelationshipIds,
+        ISet<string> usedInkContentRelationshipIds,
+        PptxNativeObjectCatalog nativeObjects)
+    {
+        if (contentPart.ExtensionListModify is not null ||
+            contentPart.NonVisualContentPartProperties is null ||
+            contentPart.Transform2D?.Offset is null ||
+            contentPart.Transform2D.Extents is null ||
+            contentPart.Transform2D.Extents.Cx?.Value <= 0 ||
+            contentPart.Transform2D.Extents.Cy?.Value <= 0)
+            return false;
+
+        var relationshipAttributes = new[] { (OpenXmlElement)contentPart }
+            .Concat(contentPart.Descendants())
+            .SelectMany(element => element.GetAttributes())
+            .Where(attribute => PptxNativeObjectCatalog.IsRelationshipNamespace(attribute.NamespaceUri))
+            .ToArray();
+        var relationshipId = contentPart.Id?.Value ?? string.Empty;
+        if (relationshipAttributes.Length != 1 || relationshipAttributes[0].LocalName != "id" ||
+            relationshipAttributes[0].Value != relationshipId || relationshipId.Length == 0 ||
+            !inkContentRelationshipIds.Contains(relationshipId) ||
+            !usedInkContentRelationshipIds.Add(relationshipId) ||
+            context.Owner.GetPartById(relationshipId) is not CustomXmlPart part ||
+            !IsClosedCloneInkContentPart(part))
+            return false;
+
+        var semantic = ReadElement(contentPart, ownerId, elementIndex, context, nativeObjects, elementIdsByNativeId);
+        return semantic.ContentCase == PresentationElement.ContentOneofCase.Opaque &&
+               semantic.Opaque.NativeKind == "contentPart" &&
+               semantic.Opaque.RelationshipReferences.Count == 1 &&
+               semantic.Opaque.RelationshipReferences[0].RelationshipId == relationshipId &&
+               PptxNativeObjectCatalog.IsRelationshipNamespace(semantic.Opaque.RelationshipReferences[0].NamespaceUri) &&
+               semantic.Opaque.PreservedPartPaths.Count == 1 &&
+               semantic.Opaque.PreservedPartPaths[0].Equals(PartPath(part), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsClosedCloneInkContentPart(CustomXmlPart part)
+    {
+        if (!part.ContentType.Equals(InkContentType, StringComparison.OrdinalIgnoreCase) ||
+            !IsCustomXmlRelationship(part.RelationshipType) || part.Parts.Any() ||
+            part.ExternalRelationships.Any() || part.HyperlinkRelationships.Any() ||
+            part.DataPartReferenceRelationships.Any())
+            return false;
+        try
+        {
+            using var stream = part.GetStream(FileMode.Open, FileAccess.Read);
+            using var reader = XmlReader.Create(stream, new XmlReaderSettings
+            {
+                DtdProcessing = DtdProcessing.Prohibit,
+                XmlResolver = null,
+                IgnoreComments = false,
+                IgnoreProcessingInstructions = false,
+                IgnoreWhitespace = false,
+            });
+            reader.MoveToContent();
+            if (reader.LocalName != "ink" || reader.NamespaceURI != "http://www.w3.org/2003/InkML")
+                return false;
+            while (reader.Read()) { }
+            return true;
+        }
+        catch (XmlException)
+        {
+            return false;
+        }
     }
 
     private static bool TryCollectCanonicalRunHyperlinks(

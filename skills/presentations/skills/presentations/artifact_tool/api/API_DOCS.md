@@ -22,6 +22,7 @@ Use the presentation facades to create PowerPoint-style decks in TypeScript.
 - Inspect, resolve, edit, preview, and re-inspect loops: [`references/cookbook/imported-deck.md`](./references/cookbook/imported-deck.md).
 - Read or replace a uniquely bound embedded XLSX payload without rewriting its OLE shell: [`references/ole-workbooks.spec.md`](./references/ole-workbooks.spec.md).
 - Duplicate one canonical closed four-part SmartArt frame without sharing mutable diagram parts: [`references/smartart-clone.spec.md`](./references/smartart-clone.spec.md).
+- Duplicate one canonical top-level closed InkML content part without sharing mutable Custom XML: [`references/inkml-content-part-clone.spec.md`](./references/inkml-content-part-clone.spec.md).
 
 ## Quick start
 

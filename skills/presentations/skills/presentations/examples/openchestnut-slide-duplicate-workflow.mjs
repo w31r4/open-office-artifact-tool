@@ -26,7 +26,13 @@ const CUSTOM_SHOW_ACTION = /^ppaction:\/\/customshow\?id=([0-9]+)(?:&return=(tru
 const MAX_CLOSED_CHART_PARTS = 256;
 const MAX_CLOSED_OLE_WORKBOOK_PARTS = 64;
 const MAX_CLOSED_DIAGRAM_PARTS = 256;
+const MAX_CLOSED_INK_CONTENT_PARTS = 256;
 const XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const INK_CONTENT_TYPE = "application/inkml+xml";
+const CUSTOM_XML_RELATIONSHIP_TYPES = new Set([
+  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml",
+  "http://purl.oclc.org/ooxml/officeDocument/relationships/customXml",
+]);
 const CLOSED_DIAGRAM_PARTS = [
   { attribute: "dm", suffix: "diagramData", contentType: "application/vnd.openxmlformats-officedocument.drawingml.diagramData+xml" },
   { attribute: "lo", suffix: "diagramLayout", contentType: "application/vnd.openxmlformats-officedocument.drawingml.diagramLayout+xml" },
@@ -61,6 +67,13 @@ function xmlAttributes(tag) {
 
 function semanticXmlAttributes(tag) {
   return Object.fromEntries(Object.entries(xmlAttributes(tag)).filter(([name]) => !/^xmlns(?::|$)/i.test(name)));
+}
+
+function hasStandardInkMlRoot(xml) {
+  const root = String(xml).match(/^\s*(?:<\?xml\b[^>]*>\s*)?<(?:(?<prefix>[A-Za-z_][\w.-]*):)?ink\b[^>]*>/i);
+  if (!root) return false;
+  const namespaceAttribute = root.groups?.prefix ? `xmlns:${root.groups.prefix}` : "xmlns";
+  return xmlAttributes(root[0])[namespaceAttribute] === "http://www.w3.org/2003/InkML";
 }
 
 function unescapeXml(value) {
@@ -690,6 +703,81 @@ async function inspectClosedDiagramParts(zip, slidePart) {
   };
 }
 
+async function inspectClosedInkContentParts(zip, slidePart) {
+  const relationships = await relationshipEntriesForPart(zip, slidePart);
+  const inkRelationships = relationships.filter((entry) => CUSTOM_XML_RELATIONSHIP_TYPES.has(entry.type));
+  if (inkRelationships.length > MAX_CLOSED_INK_CONTENT_PARTS) {
+    throw new Error("InkML duplication exceeds the " + MAX_CLOSED_INK_CONTENT_PARTS + "-part budget.");
+  }
+  const relationshipById = new Map(inkRelationships.map((entry) => [entry.id, entry]));
+  const slideXml = Buffer.from(await requiredZipBytes(zip, slidePart)).toString("utf8");
+  const relationshipPrefixes = new Set([...slideXml.matchAll(/\bxmlns:([A-Za-z_][\w.-]*)\s*=\s*(["'])([^"']+)\2/gi)]
+    .filter((match) => OOXML_RELATIONSHIP_NAMESPACES.has(match[3]))
+    .map((match) => match[1]));
+  const elements = [...slideXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?contentPart\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?contentPart\s*>/gi)];
+  const openingCount = [...slideXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?contentPart\b/gi)].length;
+  if (elements.length !== openingCount || elements.length !== inkRelationships.length) {
+    throw new Error("InkML duplication found an orphan, nested, self-closing, or non-canonical contentPart relationship graph in " + slidePart + ".");
+  }
+
+  const usedRelationshipIds = new Set();
+  const contents = [];
+  for (const elementMatch of elements) {
+    const element = elementMatch[0];
+    const groupPrefix = slideXml.slice(0, elementMatch.index);
+    const groupDepth = [...groupPrefix.matchAll(/<(\/)?(?:[A-Za-z_][\w.-]*:)?grpSp\b[^>]*>/gi)]
+      .reduce((depth, match) => depth + (match[1] ? -1 : /\/\s*>$/.test(match[0]) ? 0 : 1), 0);
+    if (groupDepth !== 0) throw new Error("InkML duplication accepts only a top-level p:contentPart.");
+    const relationshipAttributes = [...element.matchAll(/\b([A-Za-z_][\w.-]*):([A-Za-z_][\w.-]*)\s*=\s*(["'])([^"']*)\3/gi)]
+      .filter((match) => relationshipPrefixes.has(match[1]));
+    if (relationshipAttributes.length !== 1 || relationshipAttributes[0][2] !== "id") {
+      throw new Error("InkML contentPart must contain exactly one standard OOXML relationship binding.");
+    }
+    if ([...element.matchAll(/<(?:[A-Za-z_][\w.-]*:)?nvContentPartPr\b/gi)].length !== 1 ||
+        [...element.matchAll(/<(?:[A-Za-z_][\w.-]*:)?xfrm\b/gi)].length !== 1 ||
+        /<(?:[A-Za-z_][\w.-]*:)?extLst\b/i.test(element)) {
+      throw new Error("InkML contentPart must contain one bounded non-visual record and transform with no extension list.");
+    }
+    const relationshipId = unescapeXml(relationshipAttributes[0][4]);
+    const relationship = relationshipById.get(relationshipId);
+    if (!relationship || !CUSTOM_XML_RELATIONSHIP_TYPES.has(relationship.type) || !usedRelationshipIds.add(relationshipId)) {
+      throw new Error("InkML contentPart has a missing, mistyped, duplicate, or shared customXml relationship.");
+    }
+    requireInternalRelationship(relationship, "InkML contentPart");
+    if (!/^ppt\/customXml\/[^/]+\.xml$/i.test(relationship.targetPart)) {
+      throw new Error("InkML contentPart must target one XML part under ppt/customXml.");
+    }
+    if (await contentTypeForPart(zip, relationship.targetPart) !== INK_CONTENT_TYPE) {
+      throw new Error("InkML contentPart has an unexpected content type.");
+    }
+    await assertNoChildRelationshipGraph(zip, relationship.targetPart, "InkML content part");
+    const bytes = await requiredZipBytes(zip, relationship.targetPart);
+    const xml = Buffer.from(bytes).toString("utf8");
+    if (!bytes.length || !hasStandardInkMlRoot(xml)) {
+      throw new Error("InkML content part must contain a non-empty standard InkML root.");
+    }
+    contents.push({
+      relationship,
+      part: relationship.targetPart,
+      contentType: INK_CONTENT_TYPE,
+      sha256: sha256(bytes),
+      bytes: bytes.length,
+    });
+  }
+  if (usedRelationshipIds.size !== relationshipById.size) {
+    throw new Error("InkML duplication found an orphan customXml relationship in " + slidePart + ".");
+  }
+  return {
+    count: contents.length,
+    contents,
+    fingerprint: JSON.stringify(contents.map((content) => ({
+      id: content.relationship.id,
+      type: content.relationship.type,
+      sha256: content.sha256,
+    }))),
+  };
+}
+
 function modelDiagramBindings(slide) {
   return (slide.nativeObjects?.items || [])
     .filter((object) => object.nativeKind === "diagram")
@@ -738,6 +826,52 @@ function assertModelDiagramBindings(bindings, inspected) {
       if (!inspectedRoot || root.partPath !== inspectedRoot.part || root.contentType !== inspectedRoot.contentType || root.sourceSha256 !== inspectedRoot.sha256) {
         throw new Error("Imported model and independent OPC inspection disagree on a SmartArt part binding.");
       }
+    }
+  }
+}
+
+function modelInkContentBindings(slide) {
+  return (slide.nativeObjects?.items || [])
+    .filter((object) => object.nativeKind === "contentPart")
+    .map((object) => {
+      if (!/^<(?:[A-Za-z_][\w.-]*:)?contentPart(?:\s|>)/.test(String(object.rawXml || "").trimStart())) {
+        throw new Error("Selected slide contains an InkML object outside the top-level contentPart clone profile.");
+      }
+      const references = (object.relationshipReferences || []).filter((reference) =>
+        OOXML_RELATIONSHIP_NAMESPACES.has(String(reference.namespaceUri || "")));
+      if (references.length !== 1 || String(references[0].attribute || "").split(":").at(-1) !== "id") {
+        throw new Error("Selected slide InkML model must expose exactly one standard relationship reference.");
+      }
+      const relationshipId = references[0].id;
+      const relationship = (object.rootRelationships || []).find((candidate) => candidate.id === relationshipId);
+      const part = (object.parts || [])[0];
+      if ((object.rootRelationships || []).length !== 1 || (object.parts || []).length !== 1 ||
+          !relationship || !CUSTOM_XML_RELATIONSHIP_TYPES.has(relationship.type) ||
+          String(relationship.targetMode || "").toLowerCase() === "external" ||
+          !part || part.contentType !== INK_CONTENT_TYPE || !part.path ||
+          !Array.isArray(part.relationships) || part.relationships.length ||
+          !/^[0-9a-f]{64}$/i.test(part.sourceSha256 || "")) {
+        throw new Error("Selected slide InkML model does not match one closed CustomXmlPart binding.");
+      }
+      return {
+        relationshipId,
+        relationshipType: relationship.type,
+        partPath: part.path,
+        contentType: part.contentType,
+        sourceSha256: part.sourceSha256,
+      };
+    });
+}
+
+function assertModelInkContentBindings(bindings, inspected, expectedParts = new Map()) {
+  if (bindings.length !== inspected.count) throw new Error("Imported model and independent OPC inspection disagree on InkML contentPart count.");
+  const byRelationshipId = new Map(bindings.map((binding) => [binding.relationshipId, binding]));
+  for (const content of inspected.contents) {
+    const binding = byRelationshipId.get(content.relationship.id);
+    const expectedPart = expectedParts.get(content.relationship.id) || content.part;
+    if (!binding || binding.relationshipType !== content.relationship.type || binding.partPath !== expectedPart ||
+        binding.contentType !== INK_CONTENT_TYPE || binding.sourceSha256 !== content.sha256) {
+      throw new Error("Imported model and independent OPC inspection disagree on an InkML content-part binding.");
     }
   }
 }
@@ -1050,6 +1184,48 @@ async function assertClosedDiagramClonePackage(sourceZip, outputZip, sourceDiagr
   };
 }
 
+async function assertClosedInkContentClonePackage(sourceZip, outputZip, sourceContents, cloneContents) {
+  if (sourceContents.count !== cloneContents.count) {
+    throw new Error("PPTX duplicate changed the number of closed InkML content parts.");
+  }
+  const cloneByRelationshipId = new Map(cloneContents.contents.map((content) => [content.relationship.id, content]));
+  const validation = [];
+  for (const sourceContent of sourceContents.contents) {
+    const cloneContent = cloneByRelationshipId.get(sourceContent.relationship.id);
+    if (!cloneContent || cloneContent.relationship.type !== sourceContent.relationship.type ||
+        cloneContent.contentType !== sourceContent.contentType) {
+      throw new Error("PPTX duplicate changed an InkML relationship identity, type, or content type.");
+    }
+    if (sourceContent.part === cloneContent.part || sourceZip.file(cloneContent.part) ||
+        !/^ppt\/customXml\/item\d+\.xml$/i.test(cloneContent.part)) {
+      throw new Error("PPTX duplicate must allocate a distinct canonical CustomXmlPart for every cloned InkML object.");
+    }
+    const [sourceBytes, cloneBytes] = await Promise.all([
+      requiredZipBytes(sourceZip, sourceContent.part),
+      requiredZipBytes(outputZip, cloneContent.part),
+    ]);
+    if (!Buffer.from(sourceBytes).equals(Buffer.from(cloneBytes)) || sourceContent.sha256 !== cloneContent.sha256) {
+      throw new Error("PPTX duplicate changed InkML XML instead of byte-copying the accepted closed part.");
+    }
+    validation.push({
+      relationshipId: sourceContent.relationship.id,
+      relationshipType: sourceContent.relationship.type,
+      sourcePart: sourceContent.part,
+      clonePart: cloneContent.part,
+      contentType: sourceContent.contentType,
+      sourceSha256: sourceContent.sha256,
+      inkXmlByteIdentical: true,
+      independentPart: true,
+    });
+  }
+  return {
+    count: validation.length,
+    independentParts: true,
+    allPayloadsByteIdentical: true,
+    parts: validation,
+  };
+}
+
 async function assertDuplicatePackageScope(sourceBytes, outputBytes, sourceIndex, { allowClosedLeaves }) {
   const [sourceZip, outputZip] = await Promise.all([JSZip.loadAsync(sourceBytes), JSZip.loadAsync(outputBytes)]);
   const sourceParts = packagePartPaths(sourceZip);
@@ -1097,6 +1273,10 @@ async function assertDuplicatePackageScope(sourceBytes, outputBytes, sourceIndex
     inspectClosedDiagramParts(sourceZip, sourcePart),
     inspectClosedDiagramParts(outputZip, clonePart),
   ]);
+  const [sourceInkContents, cloneInkContents] = await Promise.all([
+    inspectClosedInkContentParts(sourceZip, sourcePart),
+    inspectClosedInkContentParts(outputZip, clonePart),
+  ]);
   if (sourceRunHyperlinks.fingerprint !== cloneRunHyperlinks.fingerprint) {
     throw new Error("PPTX duplicate changed the canonical run-hyperlink XML/relationship graph.");
   }
@@ -1104,11 +1284,13 @@ async function assertDuplicatePackageScope(sourceBytes, outputBytes, sourceIndex
   const chartParts = await assertClosedChartClonePackage(sourceZip, outputZip, sourceCharts, cloneCharts);
   const oleWorkbookParts = await assertClosedOleWorkbookClonePackage(sourceZip, outputZip, sourceOleWorkbooks, cloneOleWorkbooks);
   const diagramParts = await assertClosedDiagramClonePackage(sourceZip, outputZip, sourceDiagrams, cloneDiagrams);
+  const inkContentParts = await assertClosedInkContentClonePackage(sourceZip, outputZip, sourceInkContents, cloneInkContents);
   const newParts = outputParts.filter((partPath) => !sourceZip.file(partPath));
   const expectedNewParts = [clonePart, relationshipPartPath(clonePart)];
   expectedNewParts.push(...cloneCharts.charts.map((chart) => chart.part));
   expectedNewParts.push(...cloneOleWorkbooks.workbooks.map((workbook) => workbook.part));
   expectedNewParts.push(...cloneDiagrams.diagrams.flatMap((diagram) => diagram.roots.map((root) => root.part)));
+  expectedNewParts.push(...cloneInkContents.contents.map((content) => content.part));
   if (cloneLeaves.notes) expectedNewParts.push(cloneLeaves.notes.part, cloneLeaves.notes.relationshipPart);
   if (cloneLeaves.comments) expectedNewParts.push(cloneLeaves.comments.part);
   expectedNewParts.sort();
@@ -1142,7 +1324,11 @@ async function assertDuplicatePackageScope(sourceBytes, outputBytes, sourceIndex
     outputPartCount: outputParts.length,
     newPartPaths: newParts,
     retainedSourcePartsByteIdentical: true,
-    profile: sourceDiagrams.count
+    profile: sourceInkContents.count
+      ? sourceDiagrams.count || sourceCharts.count || sourceOleWorkbooks.count || sourceLeaves.notes || sourceLeaves.comments
+        ? "canonical-inline-leaves-with-closed-inkml-and-other-relationship-leaves"
+        : "canonical-inline-leaves-with-closed-inkml-leaves"
+      : sourceDiagrams.count
       ? sourceCharts.count || sourceOleWorkbooks.count || sourceLeaves.notes || sourceLeaves.comments
         ? "canonical-inline-leaves-with-closed-smartart-and-other-relationship-leaves"
         : "canonical-inline-leaves-with-closed-smartart-leaves"
@@ -1171,6 +1357,7 @@ async function assertDuplicatePackageScope(sourceBytes, outputBytes, sourceIndex
     chartParts,
     oleWorkbookParts,
     diagramParts,
+    inkContentParts,
     closedLeaves,
   };
 }
@@ -1199,9 +1386,11 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
   const sourceCharts = await inspectClosedChartParts(sourceZip, sourcePart);
   const sourceOleWorkbooks = await inspectClosedOleWorkbookParts(sourceZip, sourcePart);
   const sourceDiagrams = await inspectClosedDiagramParts(sourceZip, sourcePart);
+  const sourceInkContents = await inspectClosedInkContentParts(sourceZip, sourcePart);
   const sourceRunHyperlinks = await inspectCanonicalRunHyperlinks(sourceZip, sourcePart, sourceCustomShows);
   assertModelOleWorkbookBindings(modelOleWorkbookBindings(target), sourceOleWorkbooks);
   assertModelDiagramBindings(modelDiagramBindings(target), sourceDiagrams);
+  assertModelInkContentBindings(modelInkContentBindings(target), sourceInkContents);
   if (slideNameFromXml(Buffer.from(await requiredZipBytes(sourceZip, sourcePart)).toString("utf8"), sourcePart) !== sourceName) {
     throw new Error("The selected model slide does not match its source SlidePart p:cSld/@name.");
   }
@@ -1239,16 +1428,20 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
     const retained = reimported.slides.items[sourceIndex];
     const roundTripClone = reimported.slides.items[sourceIndex + 1];
     const outputZip = await JSZip.loadAsync(output);
-    const [retainedOleWorkbooks, roundTripCloneOleWorkbooks, retainedDiagrams, roundTripCloneDiagrams] = await Promise.all([
+    const [retainedOleWorkbooks, roundTripCloneOleWorkbooks, retainedDiagrams, roundTripCloneDiagrams, retainedInkContents, roundTripCloneInkContents] = await Promise.all([
       inspectClosedOleWorkbookParts(outputZip, packageScope.sourcePart),
       inspectClosedOleWorkbookParts(outputZip, packageScope.clonePart),
       inspectClosedDiagramParts(outputZip, packageScope.sourcePart),
       inspectClosedDiagramParts(outputZip, packageScope.clonePart),
+      inspectClosedInkContentParts(outputZip, packageScope.sourcePart),
+      inspectClosedInkContentParts(outputZip, packageScope.clonePart),
     ]);
     assertModelOleWorkbookBindings(modelOleWorkbookBindings(retained), retainedOleWorkbooks);
     assertModelOleWorkbookBindings(modelOleWorkbookBindings(roundTripClone), roundTripCloneOleWorkbooks);
     assertModelDiagramBindings(modelDiagramBindings(retained), retainedDiagrams);
     assertModelDiagramBindings(modelDiagramBindings(roundTripClone), roundTripCloneDiagrams);
+    assertModelInkContentBindings(modelInkContentBindings(retained), retainedInkContents);
+    assertModelInkContentBindings(modelInkContentBindings(roundTripClone), roundTripCloneInkContents);
     const outputSlidePartById = new Map(reimported.slides.items.map((slide, index) => [slide.id, packageScope.outputSlideParts[index]]));
     if (canonicalCloneSnapshot(retained, outputSlidePartById) !== sourceSemantic || canonicalCloneSnapshot(roundTripClone, outputSlidePartById) !== sourceSemantic) {
       throw new Error("PPTX duplicate did not preserve source and clone semantic structure after reimport.");
@@ -1314,6 +1507,11 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
           sourceParts: sourceDiagrams.diagrams.flatMap((diagram) => diagram.roots.map((root) => root.part)),
           relationshipIds: sourceDiagrams.diagrams.flatMap((diagram) => diagram.roots.map((root) => root.relationship.id)),
         },
+        inkContentParts: {
+          count: sourceInkContents.count,
+          sourceParts: sourceInkContents.contents.map((content) => content.part),
+          relationshipIds: sourceInkContents.contents.map((content) => content.relationship.id),
+        },
       },
       warnings: [],
       validation: {
@@ -1331,6 +1529,7 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
           chartParts: packageScope.chartParts,
           oleWorkbookParts: packageScope.oleWorkbookParts,
           diagramParts: packageScope.diagramParts,
+          inkContentParts: packageScope.inkContentParts,
           closedLeaves: packageScope.closedLeaves,
         },
         reimport: {
@@ -1340,6 +1539,7 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
           sourceAndCloneClosedLeavesEqual: true,
           sourceAndCloneOleWorkbookBindingsIndependent: packageScope.oleWorkbookParts.independentParts,
           sourceAndCloneDiagramBindingsIndependent: packageScope.diagramParts.independentParts,
+          sourceAndCloneInkContentBindingsIndependent: packageScope.inkContentParts.independentParts,
           customShowMembershipRetained: true,
           sourceAndCloneNames: [retained.name, roundTripClone.name],
         },
@@ -1400,6 +1600,7 @@ if (entry === import.meta.url) {
     chartPartCount: result.audit.operation.chartParts.count,
     oleWorkbookPartCount: result.audit.operation.oleWorkbookParts.count,
     smartArtPartCount: result.audit.operation.diagramParts.partCount,
+    inkContentPartCount: result.audit.operation.inkContentParts.count,
     closedLeaves: result.audit.operation.closedLeaves,
   }));
 }

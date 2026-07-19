@@ -1976,6 +1976,53 @@ reported `publishReady: true` with network checks intentionally skipped. Hosted
 results are recorded after the candidate commit. No publish or tag operation
 was attempted.
 
+### PPTX closed InkML content-part slide cloning
+
+On 2026-07-20, the strict imported `slide.duplicate()` profile gained the
+standard PresentationML carrier for digital ink. An accepted unchanged object
+must be one direct top-level `p:contentPart` with bounded non-visual properties,
+a positive transform, no extension list, and exactly one relationship
+attribute. That ID must uniquely consume an internal standard or strict OOXML
+`customXml` relationship to a non-empty, fully well-formed, relationship-free
+`application/inkml+xml` part whose document element is `ink` in the
+`http://www.w3.org/2003/InkML` namespace. Nested, ambiguous, mistyped,
+wrong-root, malformed/multi-root, extension-bearing, external, or connected
+graphs fail before model or package mutation.
+
+OpenChestnut retains the origin SlidePart and relationship part byte-for-byte,
+preserves the slide-local relationship ID, and uses the Open XML SDK
+`CustomXmlPartType.InkContent` API to allocate a distinct clone-owned
+`ppt/customXml/itemN.xml` part. The InkML bytes and content type are copied
+exactly. Post-write validation admits only that typed package delta, and second
+import proves disjoint source/clone part paths with equal hashes. This is
+source-bound preservation for slide cloning; both resulting contentPart objects
+remain opaque and read-only, with no claim of ink authoring, stroke editing, or
+arbitrary Custom XML support.
+
+The shipped Presentation workflow independently parses the source and output
+OPC graphs, supports default or explicitly prefixed standard InkML roots,
+records `operation.inkContentParts`, exact source/clone relationships, part
+paths, hashes, and package delta, then repeats the binding check after import.
+Its real fixture also requires model-render equivalence and pixel-identical
+LibreOffice/Poppler source/clone pages when the native tools are present. A
+connected InkML part publishes neither output nor audit. Focused C# and
+JavaScript regressions additionally cover source immutability, Open XML SDK
+validation, wrong-root and multi-root rejection, raw-root tampering, and
+pre-mutation failure.
+
+The complete local gate passed `npm test` including Playwright,
+LibreOffice/Poppler, qpdf, and the 20-template corpus; `npm run docs:api`, `npm
+run proto:check`, `npm run test:pack`, OfficeBridge `5/5`, and OpenChestnut
+`294/294` also passed. Two deterministic OpenChestnut builds reproduced 39
+audited files and the same manifest-bound 38-file, 14,702,784-byte runtime. The
+production tarball contains 465 files, is 9,005,273 bytes compressed and
+23,700,096 bytes unpacked, leaving 679,904 bytes below the unchanged
+24,380,000-byte ceiling. The qpdf real-provider lane passed; dedicated
+real-provider environments for pikepdf, pyHanko, veraPDF, and OCRmyPDF were not
+configured, so their contract/adversarial gates passed while their
+environment-gated real repeats were skipped. Hosted results are recorded after
+the candidate commit. No publish or tag operation was attempted.
+
 `npm run release:check` passes the source, documentation, package, license, JavaScript, and .NET gates. Its only remaining blocker is unavailable npm authentication. No `npm publish` or tag/release operation has been performed.
 
 ## Publishing

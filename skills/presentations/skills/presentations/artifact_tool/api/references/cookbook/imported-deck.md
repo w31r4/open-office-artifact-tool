@@ -134,7 +134,8 @@ The audit binds input/output hashes, source and clone part paths, adjacent
 insertion, allowed new package parts, retained-source byte preservation,
 exact source/clone ChartPart bytes and relationship IDs, exact run-link
 relationship IDs and targets, reimported structural
-equivalence, and model-SVG visual equivalence. The SVG
+equivalence, independent clone-local SmartArt and closed InkML parts, and
+model-SVG visual equivalence. The SVG
 check removes only fresh `data-*-id` locator attributes; a new SlidePart XML
 may be canonically serialized and is not promised to be lexically identical.
 Missing/duplicate names, notes/comments, unsupported link markup, nonliteral

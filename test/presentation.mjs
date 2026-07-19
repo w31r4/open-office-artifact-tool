@@ -1985,6 +1985,90 @@ assert.throws(
 );
 assert.equal(foreignRelationshipNamespaceSmartArt.slides.items.length, foreignNamespaceSlideCount);
 
+// A canonical top-level p:contentPart is the PresentationML carrier for one
+// standard InkML CustomXmlPart. The clone must allocate a new InkML part under
+// the same slide-local r:id rather than sharing mutable ink XML.
+const inkContentElement = '<p:contentPart xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rIdAgentInk"><p14:nvContentPartPr><p14:cNvPr id="121" name="Clone-safe ink"/><p14:cNvContentPartPr/><p14:nvPr/></p14:nvContentPartPr><p14:xfrm><a:off x="914400" y="1828800"/><a:ext cx="4572000" cy="2286000"/></p14:xfrm></p:contentPart>';
+const inkRelationship = '<Relationship Id="rIdAgentInk" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="../customXml/agent-ink.xml"/>';
+const inkXml = '<ink xmlns="http://www.w3.org/2003/InkML"><trace>0 0, 100 100, 200 0</trace></ink>';
+const inkSource = await PresentationFile.patchPptx(cloneSourcePptx, [
+  { path: "ppt/slides/slide1.xml", xml: oleCloneBaseSlideXml.replace("</p:spTree>", `${inkContentElement}</p:spTree>`) },
+  { path: "ppt/slides/_rels/slide1.xml.rels", xml: oleCloneBaseRelationships.replace("</Relationships>", `${inkRelationship}</Relationships>`) },
+  { path: "ppt/customXml/agent-ink.xml", contentType: "application/inkml+xml", xml: inkXml },
+]);
+const inkSourceSnapshot = Uint8Array.from(inkSource.bytes);
+const inkImported = await PresentationFile.importPptx(inkSource);
+const inkOriginSlide = inkImported.slides.getItem(0);
+const inkOrigin = itemByName(inkOriginSlide.nativeObjects.items, "Clone-safe ink");
+assert.equal(inkOrigin.nativeKind, "contentPart");
+assert.deepEqual(inkOrigin.position, { left: 96, top: 192, width: 480, height: 240 });
+assert.equal(inkOrigin.parts.length, 1);
+assert.equal(inkOrigin.parts[0].contentType, "application/inkml+xml");
+assert.equal(inkOrigin.parts[0].relationships.length, 0);
+const inkPendingSlide = inkOriginSlide.duplicate();
+const inkPending = itemByName(inkPendingSlide.nativeObjects.items, "Clone-safe ink");
+assert.notEqual(inkPending, inkOrigin);
+assert.notEqual(inkPending.id, inkOrigin.id);
+assert.equal(inkPending.parts[0].path, inkOrigin.parts[0].path);
+
+const inkExport = await PresentationFile.exportPptx(inkImported);
+assert.deepEqual(inkSource.bytes, inkSourceSnapshot);
+const inkSourceZip = await JSZip.loadAsync(inkSource.bytes);
+const inkOutputZip = await JSZip.loadAsync(inkExport.bytes);
+assert.deepEqual(
+  await inkOutputZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  await inkSourceZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  "InkML cloning must retain the origin SlidePart byte-for-byte",
+);
+assert.deepEqual(
+  await inkOutputZip.file("ppt/slides/_rels/slide1.xml.rels").async("uint8array"),
+  await inkSourceZip.file("ppt/slides/_rels/slide1.xml.rels").async("uint8array"),
+  "InkML cloning must retain the origin relationship part byte-for-byte",
+);
+const inkSourceRelationship = relationshipForType(await inkOutputZip.file("ppt/slides/_rels/slide1.xml.rels").async("text"), "customXml");
+const inkCloneRelationship = relationshipForType(await inkOutputZip.file("ppt/slides/_rels/slide3.xml.rels").async("text"), "customXml");
+const inkSourcePartPath = resolveSlideRelationshipTarget(inkSourceRelationship.target);
+const inkClonePartPath = resolveSlideRelationshipTarget(inkCloneRelationship.target);
+assert.equal(inkCloneRelationship.id, inkSourceRelationship.id);
+assert.equal(inkSourcePartPath, "ppt/customXml/agent-ink.xml");
+assert.match(inkClonePartPath, /^ppt\/customXml\/item\d+\.xml$/i);
+assert.notEqual(inkClonePartPath, inkSourcePartPath);
+assert.deepEqual(
+  await inkOutputZip.file(inkClonePartPath).async("uint8array"),
+  await inkSourceZip.file(inkSourcePartPath).async("uint8array"),
+  "InkML cloning must byte-copy the closed content part",
+);
+
+const inkRoundTrip = await PresentationFile.importPptx(inkExport);
+const inkRoundTripOrigin = itemByName(inkRoundTrip.slides.getItem(0).nativeObjects.items, "Clone-safe ink");
+const inkRoundTripClone = itemByName(inkRoundTrip.slides.getItem(1).nativeObjects.items, "Clone-safe ink");
+assert.notEqual(inkRoundTripOrigin.parts[0].path, inkRoundTripClone.parts[0].path);
+assert.equal(inkRoundTripOrigin.parts[0].sourceSha256, inkRoundTripClone.parts[0].sourceSha256);
+
+const connectedInkSource = await PresentationFile.patchPptx(inkSource, [{
+  path: "ppt/customXml/_rels/agent-ink.xml.rels",
+  xml: '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdUnsafeInkLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.invalid/ink" TargetMode="External"/></Relationships>',
+}]);
+const connectedInk = await PresentationFile.importPptx(connectedInkSource);
+const connectedInkSlideCount = connectedInk.slides.items.length;
+assert.throws(
+  () => connectedInk.slides.getItem(0).duplicate(),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+  "a relationship-bearing InkML part must fail before mutating the model",
+);
+assert.equal(connectedInk.slides.items.length, connectedInkSlideCount);
+
+const nestedInk = await PresentationFile.importPptx(inkSource);
+const nestedInkObject = itemByName(nestedInk.slides.getItem(0).nativeObjects.items, "Clone-safe ink");
+nestedInkObject.rawXml = nestedInkObject.rawXml.replace(/^<p:contentPart/, "<p:grpSp");
+const nestedInkSlideCount = nestedInk.slides.items.length;
+assert.throws(
+  () => nestedInk.slides.getItem(0).duplicate(),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+  "an InkML graph whose source binding is not a top-level contentPart must fail before mutating the model",
+);
+assert.equal(nestedInk.slides.items.length, nestedInkSlideCount);
+
 const masterPath = "ppt/slideMasters/slideMaster1.xml";
 const layoutPath = "ppt/slideLayouts/slideLayout1.xml";
 const masterXml = await firstZip.file(masterPath).async("text");

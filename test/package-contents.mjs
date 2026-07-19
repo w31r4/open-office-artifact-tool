@@ -179,6 +179,7 @@ for (const required of [
   "skills/presentations/skills/presentations/artifact_tool/api/references/custom-shows.spec.md",
   "skills/presentations/skills/presentations/artifact_tool/api/references/ole-workbooks.spec.md",
   "skills/presentations/skills/presentations/artifact_tool/api/references/smartart-clone.spec.md",
+  "skills/presentations/skills/presentations/artifact_tool/api/references/inkml-content-part-clone.spec.md",
   "skills/presentations/skills/presentations/container_tools/artifact_tool_utils.mjs",
   "skills/presentations/skills/presentations/container_tools/slides_test.py",
   "skills/presentations/skills/presentations/builtin_templates_support/scripts/create-presentation.mjs",

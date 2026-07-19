@@ -404,6 +404,11 @@ const HELP_DETAIL_OVERRIDES = {
     options: ["kind", "search", "target/targetId/id/anchor", "before/after/context", "include/fields", "exclude/omit", "maxChars"],
     returns: "{ ndjson, truncated } bounded NDJSON records",
   },
+  "slide.duplicate": {
+    notes: [
+      "The closed native-leaf profile also accepts an unchanged top-level p:contentPart only when it uniquely binds one internal relationship-free application/inkml+xml CustomXmlPart whose document element is ink in the standard InkML namespace. Export preserves the slide-local relationship ID, byte-copies the payload into a distinct SDK-typed clone part, and second import must prove disjoint paths with equal hashes. The object remains opaque and read-only; nested, extension-bearing, ambiguous, mistyped, non-InkML-root, or connected content parts fail closed.",
+    ],
+  },
   "document.inspect": {
     examples: ["document.inspect({ kind: 'paragraph,comment', target: comment.id, maxChars: 4000 })"],
     options: ["kind", "search", "target/targetId/id/anchor", "before/after/context", "include/fields", "exclude/omit", "maxChars"],

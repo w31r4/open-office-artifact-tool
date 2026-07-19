@@ -756,6 +756,94 @@ try {
   assert.equal(await fs.access(connectedSmartArtOutput).then(() => true, () => false), false);
   assert.equal(await fs.access(connectedSmartArtAudit).then(() => true, () => false), false);
 
+  const inkDuplicateInput = path.join(duplicateDir, "inkml-source.pptx");
+  const inkDuplicateOutput = path.join(duplicateDir, "inkml-output.pptx");
+  const inkDuplicateAudit = path.join(duplicateDir, "inkml-audit.json");
+  const inkContentPart = '<p:contentPart xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:id="rIdSkillInk"><p14:nvContentPartPr><p14:cNvPr id="121" name="Closed InkML"/><p14:cNvContentPartPr/><p14:nvPr/></p14:nvContentPartPr><p14:xfrm><a:off x="914400" y="1143000"/><a:ext cx="4572000" cy="2286000"/></p14:xfrm></p:contentPart>';
+  const inkRelationship = '<Relationship Id="rIdSkillInk" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="../customXml/skill-ink.xml"/>';
+  const inkSource = await PresentationFile.patchPptx(oleDuplicateBase, [
+    { path: "ppt/slides/slide1.xml", xml: oleDuplicateSlideXml.replace('name="OLE clone source"', 'name="InkML clone source"').replace("</p:spTree>", `${inkContentPart}</p:spTree>`) },
+    { path: "ppt/slides/_rels/slide1.xml.rels", xml: oleDuplicateRelationships.replace("</Relationships>", `${inkRelationship}</Relationships>`) },
+    { path: "ppt/customXml/skill-ink.xml", contentType: "application/inkml+xml", xml: '<inkml:ink xmlns:inkml="http://www.w3.org/2003/InkML"><inkml:trace>0 0, 100 100, 200 0</inkml:trace></inkml:ink>' },
+  ]);
+  await inkSource.save(inkDuplicateInput);
+  const inkSourceBytes = await fs.readFile(inkDuplicateInput);
+  const inkDuplicateResult = await duplicatePptxSlide({
+    inputPath: inkDuplicateInput,
+    outputPath: inkDuplicateOutput,
+    auditPath: inkDuplicateAudit,
+    expectedName: "InkML clone source",
+  });
+  assert.equal(inkDuplicateResult.audit.operation.scope, "canonical-inline-leaves-with-closed-inkml-leaves");
+  assert.deepEqual(inkDuplicateResult.audit.operation.inkContentParts, {
+    count: 1,
+    sourceParts: ["ppt/customXml/skill-ink.xml"],
+    relationshipIds: ["rIdSkillInk"],
+  });
+  const inkPackageAudit = inkDuplicateResult.audit.validation.package.inkContentParts;
+  assert.equal(inkPackageAudit.count, 1);
+  assert.equal(inkPackageAudit.independentParts, true);
+  assert.equal(inkPackageAudit.allPayloadsByteIdentical, true);
+  const [inkPartAudit] = inkPackageAudit.parts;
+  assert.equal(inkPartAudit.sourcePart, "ppt/customXml/skill-ink.xml");
+  assert.match(inkPartAudit.clonePart, /^ppt\/customXml\/item\d+\.xml$/i);
+  assert.equal(inkPartAudit.relationshipId, "rIdSkillInk");
+  assert.equal(inkPartAudit.inkXmlByteIdentical, true);
+  assert.equal(inkPartAudit.independentPart, true);
+  assert.deepEqual(inkDuplicateResult.audit.validation.package.newPartPaths, [
+    "ppt/slides/_rels/slide2.xml.rels",
+    inkPartAudit.clonePart,
+    "ppt/slides/slide2.xml",
+  ].sort());
+  assert.equal(inkDuplicateResult.audit.validation.reimport.sourceAndCloneInkContentBindingsIndependent, true);
+  assert.deepEqual(await fs.readFile(inkDuplicateInput), inkSourceBytes);
+  const inkRoundTrip = await PresentationFile.importPptx(new FileBlob(await fs.readFile(inkDuplicateOutput), {
+    type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    name: "inkml-output.pptx",
+  }));
+  const inkSourceObject = itemByName(inkRoundTrip.slides.getItem(0).nativeObjects.items, "Closed InkML");
+  const inkCloneObject = itemByName(inkRoundTrip.slides.getItem(1).nativeObjects.items, "Closed InkML");
+  assert.equal(inkSourceObject.parts.length, 1);
+  assert.equal(inkCloneObject.parts.length, 1);
+  assert.notEqual(inkSourceObject.parts[0].path, inkCloneObject.parts[0].path);
+  assert.equal(inkSourceObject.parts[0].sourceSha256, inkCloneObject.parts[0].sourceSha256);
+  const inkQa = await verifyPresentationFile(inkDuplicateOutput, {
+    outputDir: path.join(duplicateDir, "inkml-render-qa"),
+    nativeRender,
+  });
+  assert.equal(inkQa.verify.ok, true);
+  assert.equal(inkQa.packageInspect.ok, true);
+  assert.equal(inkQa.modelRender.ok, true);
+  if (nativeStatus.available) {
+    assert.equal(inkQa.nativeRender.status, "passed");
+    assert.deepEqual(
+      await fs.readFile(inkQa.nativeRender.pages[0].path),
+      await fs.readFile(inkQa.nativeRender.pages[1].path),
+      "LibreOffice/Poppler must render the source and closed InkML clone identically",
+    );
+  }
+
+  const connectedInkInput = path.join(duplicateDir, "connected-inkml-source.pptx");
+  const connectedInkOutput = path.join(duplicateDir, "connected-inkml-output.pptx");
+  const connectedInkAudit = path.join(duplicateDir, "connected-inkml-audit.json");
+  const connectedInkZip = await JSZip.loadAsync(inkSourceBytes);
+  connectedInkZip.file(
+    "ppt/customXml/_rels/skill-ink.xml.rels",
+    '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdUnsafeSkillInk" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.invalid/ink" TargetMode="External"/></Relationships>',
+  );
+  await fs.writeFile(connectedInkInput, await connectedInkZip.generateAsync({ type: "nodebuffer" }));
+  await assert.rejects(
+    () => duplicatePptxSlide({
+      inputPath: connectedInkInput,
+      outputPath: connectedInkOutput,
+      auditPath: connectedInkAudit,
+      expectedName: "InkML clone source",
+    }),
+    /InkML content part must not have a child relationship graph/,
+  );
+  assert.equal(await fs.access(connectedInkOutput).then(() => true, () => false), false);
+  assert.equal(await fs.access(connectedInkAudit).then(() => true, () => false), false);
+
   const sharedOleInput = path.join(duplicateDir, "shared-ole-workbook-source.pptx");
   const sharedOleOutput = path.join(duplicateDir, "shared-ole-workbook-output.pptx");
   const sharedOleAudit = path.join(duplicateDir, "shared-ole-workbook-audit.json");
@@ -1071,10 +1159,12 @@ try {
   assert.match(skillText, /slide\.duplicate\(\).*canonical shapes.*canonical inline fixed-grid tables.*recognized closed\s+literal-data charts.*eligible top-level embedded-XLSX OLE frames.*canonical\s+embedded rectangular images.*bounded canonical\s+straight\/elbow connectors.*new `SlidePart`.*every present\s+connector endpoint.*same copied `SlidePart`.*export plus reimport/is);
   assert.match(skillText, /recognized closed\s+literal-data charts.*unique internal relationship.*numbered `ChartPart`.*byte-copies.*distinct clone-local ChartPart.*ChartParts are independent.*advertises the ordinary fixed-topology\s+edit capability/is);
   assert.match(skillText, /accepted OLE frame.*uniquely inbound XLSX.*no child relationship graph.*preview `ImagePart`.*distinct clone-local\s+package.*sharing the immutable\s+preview.*replaceEmbeddedWorkbook/is);
+  assert.match(skillText, /accepted InkML object.*top-level `p:contentPart`.*internal `customXml` relationship.*`application\/inkml\+xml`.*distinct SDK-typed clone part.*source-bound preservation.*fail closed/is);
   assert.match(skillText, /relationship-free custom-show actions.*stable native show ID.*never inserts the clone into the show's membership/is);
   assert.match(quickStartText, /recognized literal-data charts.*no child\/external\/hyperlink\/data relationship.*distinct byte-copied ChartPart/is);
   assert.match(quickStartText, /eligible top-level OLE frames.*uniquely inbound internal XLSX package.*distinct\s+byte-copied EmbeddedPackagePart.*shares only the immutable preview/is);
   assert.match(quickStartText, /canonical top-level SmartArt frames.*data\/layout\/\s*quick-style\/colors parts.*four\s+distinct typed diagram parts/is);
+  assert.match(quickStartText, /canonical top-level `p:contentPart`.*closed standard InkML part.*distinct byte-identical SDK `CustomXmlPart`/is);
   assert.match(quickStartText, /relationship-free custom-show action.*exact native ID\/return policy.*clone.*not silently added to the route/is);
   assert.match(skillText, /NotesSlide.*NotesMaster.*byte-for-byte.*back-reference.*clone/is);
   assert.match(skillText, /SlideCommentsPart.*CommentAuthorsPart.*byte-for-byte/is);
@@ -1094,6 +1184,7 @@ try {
   assert.match(slideReferenceText, /recognized closed literal-data charts.*numbered\s+`ChartPart`.*no child, external, hyperlink, or data relationship.*distinct clone-local ChartPart/is);
   assert.match(slideReferenceText, /eligible top-level embedded-XLSX OLE frames.*uniquely binds one\s+closed, uniquely inbound internal XLSX.*distinct clone-local package.*replaceEmbeddedWorkbook/is);
   assert.match(slideReferenceText, /SmartArt frame.*dgm:relIds.*dm\/lo\/qs\/cs.*distinct clone-local typed parts.*source-bound\/read-only/is);
+  assert.match(slideReferenceText, /InkML object.*top-level `p:contentPart`.*`application\/inkml\+xml`.*distinct SDK `CustomXmlPart`.*source-bound\/read-only/is);
   assert.match(slideReferenceText, /Gradient,\s+pattern, image.*opaque-preserved/is);
   assert.match(slideReferenceText, /p:cSld\/@name.*export\/reimport/is);
   const customShowReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/custom-shows.spec.md", "utf8");
@@ -1122,6 +1213,12 @@ try {
   assert.match(smartArtReferenceText, /top-level `p:graphicFrame`.*exactly one `dgm:relIds`/is);
   assert.match(smartArtReferenceText, /four distinct typed diagram parts.*disjoint part paths.*per-role hashes/is);
   assert.match(smartArtReferenceText, /not SmartArt\s+authoring.*fail closed/is);
+  const inkMlReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/inkml-content-part-clone.spec.md", "utf8");
+  assert.match(skillText, /artifact_tool\/api\/references\/inkml-content-part-clone\.spec\.md/);
+  assert.match(inkMlReferenceText, /top-level child.*`p:spTree`.*exactly one relationship attribute/is);
+  assert.match(inkMlReferenceText, /`application\/inkml\+xml`.*`http:\/\/www\.w3\.org\/2003\/InkML`/is);
+  assert.match(inkMlReferenceText, /distinct Open\s+XML SDK `CustomXmlPart`.*disjoint part paths.*equal payload hashes/is);
+  assert.match(inkMlReferenceText, /opaque and read-only.*fail closed/is);
   const templateFollowingText = await fs.readFile("skills/presentations/skills/presentations/references/template-following.md", "utf8");
   assert.match(templateFollowingText, /source-preserving reordering.*isolated[\s>]+layout-only.*slide\.delete/is);
   assert.match(templateFollowingText, /broader OPC graph-clone milestone is unavailable/i);

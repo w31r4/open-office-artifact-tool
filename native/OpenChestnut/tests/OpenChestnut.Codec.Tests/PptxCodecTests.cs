@@ -2658,6 +2658,86 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void ClosedInkMlContentPartCloneCopiesIndependentCustomXmlPart()
+    {
+        var source = AddCloneableInkContentPart(Invoke(ExportRequest()).File.ToByteArray());
+        var imported = Import(source);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var sourceInk = Assert.Single(imported.Artifact.Presentation.Slides[0].Elements, element =>
+            element.ContentCase == PresentationElement.ContentOneofCase.Opaque && element.Opaque.NativeKind == "contentPart");
+        Assert.Equal("Clone-safe ink", sourceInk.Name);
+        Assert.Equal(914_400L, sourceInk.Opaque.LeftEmu);
+        Assert.Equal(4_572_000L, sourceInk.Opaque.WidthEmu);
+        Assert.Single(sourceInk.Opaque.RelationshipReferences);
+        Assert.Single(sourceInk.Opaque.PreservedPartPaths);
+
+        AddPendingClone(imported.Artifact.Presentation, 0, "presentation/clone/closed-inkml");
+        var cloned = Export(imported.Artifact);
+        Assert.True(cloned.Ok, Diagnostics(cloned));
+        var clonedBytes = cloned.File.ToByteArray();
+        Assert.Equal(ZipBytes(source, "ppt/slides/slide1.xml"), ZipBytes(clonedBytes, "ppt/slides/slide1.xml"));
+        Assert.Equal(ZipBytes(source, "ppt/slides/_rels/slide1.xml.rels"), ZipBytes(clonedBytes, "ppt/slides/_rels/slide1.xml.rels"));
+
+        using (var stream = new MemoryStream(clonedBytes))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var slides = OrderedSlides(package);
+            Assert.Equal(2, slides.Length);
+            var sourcePart = Assert.Single(slides[0].Parts, pair => pair.OpenXmlPart is CustomXmlPart);
+            var clonePart = Assert.Single(slides[1].Parts, pair => pair.OpenXmlPart is CustomXmlPart);
+            Assert.Equal("rIdCloneInk", sourcePart.RelationshipId);
+            Assert.Equal(sourcePart.RelationshipId, clonePart.RelationshipId);
+            Assert.Equal("application/inkml+xml", sourcePart.OpenXmlPart.ContentType);
+            Assert.Equal(sourcePart.OpenXmlPart.ContentType, clonePart.OpenXmlPart.ContentType);
+            Assert.NotEqual(sourcePart.OpenXmlPart.Uri, clonePart.OpenXmlPart.Uri);
+            Assert.Matches("^/ppt/customXml/item[0-9]+\\.xml$", clonePart.OpenXmlPart.Uri.OriginalString);
+            Assert.Equal(
+                ZipBytes(clonedBytes, sourcePart.OpenXmlPart.Uri.OriginalString.TrimStart('/')),
+                ZipBytes(clonedBytes, clonePart.OpenXmlPart.Uri.OriginalString.TrimStart('/')));
+            Assert.Empty(clonePart.OpenXmlPart.Parts);
+            Assert.Empty(clonePart.OpenXmlPart.ExternalRelationships);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var roundTrip = Import(clonedBytes);
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        var roundTripSource = Assert.Single(roundTrip.Artifact.Presentation.Slides[0].Elements, element => element.Opaque?.NativeKind == "contentPart");
+        var roundTripClone = Assert.Single(roundTrip.Artifact.Presentation.Slides[1].Elements, element => element.Opaque?.NativeKind == "contentPart");
+        Assert.Empty(roundTripSource.Opaque.PreservedPartPaths.Intersect(roundTripClone.Opaque.PreservedPartPaths, StringComparer.OrdinalIgnoreCase));
+
+        var connected = AddZipText(
+            source,
+            "ppt/customXml/_rels/clone-ink.xml.rels",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rIdUnsafeInkLink\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.invalid/ink\" TargetMode=\"External\"/></Relationships>");
+        var connectedImport = Import(connected);
+        Assert.True(connectedImport.Ok, Diagnostics(connectedImport));
+        AddPendingClone(connectedImport.Artifact.Presentation, 0, "presentation/clone/connected-inkml");
+        var connectedRejected = Export(connectedImport.Artifact);
+        Assert.False(connectedRejected.Ok);
+        Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(connectedRejected.Diagnostics).Code);
+
+        var wrongRoot = ReplaceZipText(source, "ppt/customXml/clone-ink.xml", xml => xml.Replace(
+            "<ink xmlns=\"http://www.w3.org/2003/InkML\"",
+            "<notInk xmlns=\"http://www.w3.org/2003/InkML\"",
+            StringComparison.Ordinal).Replace("</ink>", "</notInk>", StringComparison.Ordinal));
+        var wrongRootImport = Import(wrongRoot);
+        Assert.True(wrongRootImport.Ok, Diagnostics(wrongRootImport));
+        AddPendingClone(wrongRootImport.Artifact.Presentation, 0, "presentation/clone/non-ink-root");
+        var wrongRootRejected = Export(wrongRootImport.Artifact);
+        Assert.False(wrongRootRejected.Ok);
+        Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(wrongRootRejected.Diagnostics).Code);
+
+        var multipleRoots = ReplaceZipText(source, "ppt/customXml/clone-ink.xml", xml =>
+            $"{xml}<ink xmlns=\"http://www.w3.org/2003/InkML\"/>");
+        var multipleRootsImport = Import(multipleRoots);
+        Assert.True(multipleRootsImport.Ok, Diagnostics(multipleRootsImport));
+        AddPendingClone(multipleRootsImport.Artifact.Presentation, 0, "presentation/clone/multiple-ink-roots");
+        var multipleRootsRejected = Export(multipleRootsImport.Artifact);
+        Assert.False(multipleRootsRejected.Ok);
+        Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(multipleRootsRejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void NativeObjectGraphRejectsMissingRelationshipsPartsAndExcessiveTraversal()
     {
         var source = AddNativeObjectGraph(Invoke(ExportRequest()).File.ToByteArray());
@@ -5590,6 +5670,24 @@ public sealed class PptxCodecTests
             AddZipText(archive, "ppt/diagrams/clone-layout.xml", "<dgm:layoutDef xmlns:dgm=\"http://schemas.openxmlformats.org/drawingml/2006/diagram\" uniqueId=\"urn:open-office:clone-layout\"><dgm:title val=\"Clone\"/><dgm:desc val=\"Clone layout\"/><dgm:catLst/><dgm:layoutNode name=\"root\"/></dgm:layoutDef>");
             AddZipText(archive, "ppt/diagrams/clone-style.xml", "<dgm:styleDef xmlns:dgm=\"http://schemas.openxmlformats.org/drawingml/2006/diagram\" uniqueId=\"urn:open-office:clone-style\"><dgm:title val=\"Clone\"/><dgm:desc val=\"Clone style\"/><dgm:catLst/><dgm:styleLbl name=\"node0\"/></dgm:styleDef>");
             AddZipText(archive, "ppt/diagrams/clone-colors.xml", "<dgm:colorsDef xmlns:dgm=\"http://schemas.openxmlformats.org/drawingml/2006/diagram\" uniqueId=\"urn:open-office:clone-colors\"><dgm:title val=\"Clone\"/><dgm:desc val=\"Clone colors\"/><dgm:catLst/></dgm:colorsDef>");
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddCloneableInkContentPart(byte[] bytes)
+    {
+        const string contentPart = "<p:contentPart xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:p14=\"http://schemas.microsoft.com/office/powerpoint/2010/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" r:id=\"rIdCloneInk\"><p14:nvContentPartPr><p14:cNvPr id=\"31\" name=\"Clone-safe ink\"/><p14:cNvContentPartPr/><p14:nvPr/></p14:nvContentPartPr><p14:xfrm><a:off x=\"914400\" y=\"1828800\"/><a:ext cx=\"4572000\" cy=\"2286000\"/></p14:xfrm></p:contentPart>";
+        const string relationship = "<Relationship Id=\"rIdCloneInk\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml\" Target=\"../customXml/clone-ink.xml\"/>";
+        const string contentType = "<Override PartName=\"/ppt/customXml/clone-ink.xml\" ContentType=\"application/inkml+xml\"/>";
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Update, leaveOpen: true))
+        {
+            ReplaceZipText(archive, "ppt/slides/slide1.xml", xml => xml.Replace("</p:spTree>", $"{contentPart}</p:spTree>", StringComparison.Ordinal));
+            ReplaceZipText(archive, "ppt/slides/_rels/slide1.xml.rels", xml => xml.Replace("</Relationships>", $"{relationship}</Relationships>", StringComparison.Ordinal));
+            ReplaceZipText(archive, "[Content_Types].xml", xml => xml.Replace("</Types>", $"{contentType}</Types>", StringComparison.Ordinal));
+            AddZipText(archive, "ppt/customXml/clone-ink.xml", "<ink xmlns=\"http://www.w3.org/2003/InkML\"><trace>0 0, 100 100, 200 0</trace></ink>");
         }
         return stream.ToArray();
     }

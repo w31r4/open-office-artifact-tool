@@ -167,6 +167,7 @@ const presentationApiDocs = await fs.readFile(path.join(presentationApiRoot, "AP
 const presentationSpec = await fs.readFile(path.join(presentationApiRoot, "references", "presentation.spec.md"), "utf8");
 const presentationLayoutSpec = await fs.readFile(path.join(presentationApiRoot, "references", "layout.spec.md"), "utf8");
 assert.match(presentationApiDocs, /presentation\.view/);
+assert.match(presentationApiDocs, /inkml-content-part-clone\.spec\.md/);
 assert.match(presentationSpec, /showGridlines\(\).*showGuides\(\)/s);
 assert.match(presentationSpec, /gridSpacingCxEmu.*gridSpacingCyEmu/s);
 assert.match(presentationLayoutSpec, /read-only `slideGuides`/);

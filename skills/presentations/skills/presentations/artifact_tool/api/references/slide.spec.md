@@ -96,7 +96,7 @@ evidence, see
 imported** source slide with an unchanged body of canonical simple shapes,
 canonical inline fixed-grid tables, recognized closed literal-data charts,
 eligible top-level embedded-XLSX OLE frames, canonical top-level four-part
-SmartArt frames, canonical embedded rectangular images,
+SmartArt frames, canonical top-level closed InkML content parts, canonical embedded rectangular images,
 bounded straight/elbow connectors, plus recursively canonical groups whose
 descendants contain only the non-native-graph leaf kinds, exactly one internal
 `SlidePart -> SlideLayoutPart` relationship, and image relationships bound only
@@ -125,6 +125,13 @@ origin. Every accepted SmartArt frame has exactly one `dgm:relIds` root whose
 colors parts. Export preserves those relationship IDs and byte-copies all four
 parts into distinct clone-local typed parts; after reimport the paths are
 disjoint and per-role hashes match. SmartArt remains source-bound/read-only.
+
+Every accepted InkML object is one top-level `p:contentPart` with exactly one
+internal `customXml` relationship to a relationship-free
+`application/inkml+xml` part whose document element is `ink` in the standard
+InkML namespace. Export keeps its slide-local relationship ID and byte-copies
+the payload into a distinct SDK `CustomXmlPart`; after reimport, the two paths
+are disjoint and hashes match. InkML remains source-bound/read-only.
 It intentionally
 reuses the verified layout and immutable ImageParts through fresh clone-local
 image relationships, shares the verified NotesMaster and CommentAuthorsPart,
@@ -142,9 +149,10 @@ Source-free slides, already-cloned slides, rich or connected comments,
 formula/external-data/embedded-workbook/connected/orphan charts,
 shared/external/non-XLSX/nested/relationship-bearing/replacement-pending OLE graphs,
 nested/incomplete/mistyped/external/relationship-bearing SmartArt graphs,
+non-top-level/extension-bearing/mistyped/non-InkML-root/relationship-bearing content parts,
 shape-level/hover/unknown/orphan hyperlinks, external/data relationships,
 external/unbound/irregular images, unsupported connectors,
-non-shape/table/closed-chart/closed-SmartArt/image/connector/recursive-group elements, pending-clone renames, layout/background changes, note
+non-shape/table/closed-chart/closed-SmartArt/closed-InkML/image/connector/recursive-group elements, pending-clone renames, layout/background changes, note
 or comment mutation before the boundary, immediate clone edits, and all broader
 relationship graphs fail closed. Adding imported slides still fails closed. A
 template-derived deck still needs a broader explicit OPC graph-clone transaction
@@ -152,6 +160,9 @@ rather than this bounded leaf operation.
 
 For the exact four-part diagram contract and Agent audit fields, see
 [`smartart-clone.spec.md`](./smartart-clone.spec.md).
+
+For the exact InkML CustomXmlPart contract and Agent audit fields, see
+[`inkml-content-part-clone.spec.md`](./inkml-content-part-clone.spec.md).
 
 ## Layouts And Placeholders
 

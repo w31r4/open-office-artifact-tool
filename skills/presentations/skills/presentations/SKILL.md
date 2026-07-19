@@ -194,7 +194,8 @@ other connected graph fail closed. `slide.duplicate()` is a separate, much
 narrower operation: only an original imported slide whose unchanged graph has
 canonical shapes, canonical inline fixed-grid tables, recognized closed
 literal-data charts, eligible top-level embedded-XLSX OLE frames, canonical
-top-level four-part SmartArt frames, canonical
+top-level four-part SmartArt frames, canonical top-level closed InkML
+`p:contentPart` objects, canonical
 embedded rectangular images, bounded canonical
 straight/elbow connectors, plus recursively canonical groups whose descendants
 contain only the non-native-graph leaf kinds, exactly one
@@ -243,6 +244,16 @@ Nested, incomplete, duplicated, mistyped, external, relationship-bearing, or
 otherwise noncanonical diagram graphs fail closed.
 Read `artifact_tool/api/references/smartart-clone.spec.md` before accepting a
 slide whose duplicate profile includes SmartArt.
+Each accepted InkML object must be one top-level `p:contentPart` with one exact
+internal `customXml` relationship to a non-empty, relationship-free
+`application/inkml+xml` CustomXmlPart whose document element is `ink` in the
+standard InkML namespace. Export preserves the slide-local relationship ID but
+byte-copies the payload into a distinct SDK-typed clone part; reimport proves
+disjoint paths and equal hashes. This is opaque source-bound preservation, not
+ink authoring or Custom XML editing. Nested, extension-bearing, ambiguous,
+mistyped, non-InkML-root, or connected content parts fail closed. Read
+`artifact_tool/api/references/inkml-content-part-clone.spec.md` before accepting
+a slide whose duplicate profile includes InkML.
 Accepted run links are limited to modeled external absolute URIs, internal jumps
 to a retained SlidePart, `nextSlide`/`previousSlide`/`firstSlide`/`lastSlide`/
 `endShow` actions, and relationship-free custom-show actions whose native ID
@@ -278,11 +289,14 @@ including one unique inbound package edge, empty child graph, exact content
 type/hash, same slide-local `r:id`, distinct clone package, and shared preview
 ImagePart. It also proves every accepted SmartArt frame's exact four
 `dm/lo/qs/cs` roles, relationship IDs/types, standard content types, empty
-child graphs, distinct clone-local targets, and byte-identical XML. It proves the
+child graphs, distinct clone-local targets, and byte-identical XML. For every
+accepted InkML content part it independently proves one exact `customXml`
+relationship, the standard content type and root namespace, an empty child
+graph, a distinct clone-local `CustomXmlPart`, and byte-identical XML. It proves the
 source part order, inserts one adjacent clone, keeps every retained source part
 byte-identical except the required package topology records, allows only the
 new SlidePart, its relationship part, the exact cloned ChartParts, and the exact
-cloned XLSX package and SmartArt parts, checks
+cloned XLSX package, SmartArt, and InkML parts, checks
 exact source/clone external and internal run-link relationship IDs and targets
 with no orphan edge, then reimports and compares the source/clone semantics and
 model render. Model
@@ -292,7 +306,8 @@ notes/comments, unresolved connector endpoints, unsupported link markup,
 nonliteral or connected charts, other graph leaves, or any unexpected package
 part fail closed without promoting output or audit. In particular, a nested,
 incomplete, duplicated-relationship binding, mistyped, external, or connected SmartArt
-graph is rejected before `slide.duplicate()` or publication.
+graph, or a nested, extension-bearing, mistyped, non-InkML-root, ambiguous, or
+connected content part, is rejected before `slide.duplicate()` or publication.
 
 The default is intentionally bare. To copy only the separately supported,
 already-closed relationship leaves, opt in explicitly rather than relying on a

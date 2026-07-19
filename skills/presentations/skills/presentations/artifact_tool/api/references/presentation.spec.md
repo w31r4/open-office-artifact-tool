@@ -73,13 +73,15 @@ SlidePart with no outbound non-layout relationship, inbound relationship, or
 presentation identity reference; it then removes the actual part and relation.
 
 `slide.duplicate()` returns a new adjacent `Slide` only under the bounded
-imported shape/inline-table/closed-literal-chart/closed-SmartArt/embedded-image/connector/
+imported shape/inline-table/closed-literal-chart/closed-SmartArt/closed-InkML/embedded-image/connector/
 recursive-group layout-leaf profile. Its unchanged graph may contain canonical
 simple shapes, canonical inline fixed-grid tables, recognized literal-data
 charts, eligible top-level embedded-XLSX OLE frames, canonical embedded
 rectangular images, bounded straight/elbow
 connectors, canonical top-level SmartArt frames whose exact `dm/lo/qs/cs`
-relationships bind four closed standard diagram parts, plus recursively
+relationships bind four closed standard diagram parts,
+canonical top-level `p:contentPart` objects whose one `customXml` relationship
+binds a closed standard InkML part, plus recursively
 canonical groups whose descendants contain only
 those same leaf kinds,
 exactly one layout relationship, image relationships bound only by those
@@ -91,12 +93,15 @@ Each chart frame must uniquely bind one numbered ChartPart with no child,
 external, hyperlink, or data relationship. Each OLE frame must uniquely bind
 one closed internal XLSX package plus one immutable preview ImagePart. Each
 SmartArt frame must bind exactly the four closed standard diagram parts and
-must not be nested. It creates a distinct native
+must not be nested. Each InkML object must bind exactly one relationship-free
+`application/inkml+xml` CustomXmlPart whose root has the standard InkML
+namespace and must not be nested. It creates a distinct native
 SlidePart and presentation relationship, byte-copies each accepted chart into
 a distinct clone-local ChartPart, each OLE workbook into an independent
 EmbeddedPackagePart, and each accepted SmartArt frame into four distinct typed
-diagram parts, shares
-the verified layout, immutable ImageParts, NotesMaster, and presentation-wide
+diagram parts, and each accepted InkML payload into a distinct SDK-typed
+CustomXmlPart. It shares the verified layout, immutable ImageParts, NotesMaster,
+and presentation-wide
 `CommentAuthorsPart`, copies accepted NotesSlide and SlideComments XML
 byte-for-byte, and repoints only the notes leaf at the clone while preserving
 the origin part. The comments leaf and author catalog must have no child,
@@ -104,11 +109,11 @@ external, hyperlink, or data relationship graph. Accepted tables are inline-only
 and cannot introduce a fill, link, or another package relationship. Accepted groups add no relationship themselves, and every nested picture must consume one exact verified ImagePart relationship. The clone is intentionally
 read-only until it has crossed one export/reimport boundary; it then imports as
 its own source-bound slide with independent ChartParts, OLE workbook packages,
-and SmartArt parts. A chart that advertises
+SmartArt parts, and InkML parts. A chart that advertises
 the ordinary fixed-topology edit capability can use that path without affecting
 the origin, with legacy comments still read-only. Imported add,
 repeat/mutated clone, immediate clone edit, rich/connected comments, and every
-unsupported-connector/formula-or-external-data-or-embedded-workbook-or-connected-or-orphan-chart/OLE/noncanonical-or-connected-SmartArt/shape-level-or-unmodeled-hyperlink/malformed-or-dangling-custom-show/section/extension, external-or-irregular-image,
+unsupported-connector/formula-or-external-data-or-embedded-workbook-or-connected-or-orphan-chart/OLE/noncanonical-or-connected-SmartArt/noncanonical-or-connected-InkML/shape-level-or-unmodeled-hyperlink/malformed-or-dangling-custom-show/section/extension, external-or-irregular-image,
 or otherwise connected clone/delete graph fails closed.
 
 A canonical custom-show run action is copied as an inline, relationship-free
