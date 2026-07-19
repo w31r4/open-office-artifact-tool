@@ -32,20 +32,20 @@ export function buildPivotTableWorkbook() {
 
   const summary = workbook.worksheets.add("Pivot Summary");
   summary.getRange("A1:H6").format = { border: { bottom: { style: "thin", color: "#CBD5E1" } } };
-  summary.getRange("A1:H1").format = { fill: "#DBEAFE", font: { bold: true, color: "#1E3A8A" } };
+  summary.getRange("A1:H1").format = { fill: "#DBEAFE", font: { bold: true, color: "#1E3A8A", size: 9 } };
   summary.getRange("A1:H1").format.wrapText = true;
-  summary.getRange("A1:H1").format.rowHeightPx = 34;
+  summary.getRange("A1:H1").format.rowHeightPx = 42;
   summary.getRange("A6:H6").format = { fill: "#E2E8F0", font: { bold: true, color: "#0F172A" } };
   for (const range of ["C2:C6", "E2:E6", "G2:G6"]) summary.getRange(range).setNumberFormat("$#,##0");
   for (const range of ["D2:D6", "F2:F6", "H2:H6"]) summary.getRange(range).setNumberFormat("#,##0");
-  // Keep a deliberate Linux LibreOffice print margin: the seven native Pivot
-  // columns must remain readable while fitting one A4/Letter page without host
-  // font metrics pushing the two grand-total columns onto a third PDF page.
-  summary.getRange("A1:A6").format.columnWidthPx = 70;
-  summary.getRange("B1:B6").format.columnWidthPx = 66;
-  summary.getRange("C1:F6").format.columnWidthPx = 48;
-  summary.getRange("G1:G6").format.columnWidthPx = 88;
-  summary.getRange("H1:H6").format.columnWidthPx = 76;
+  // Keep the eight-column summary within the same 440 px width budget that was
+  // stable on GitHub's Linux LibreOffice/metric stack. The smaller header font
+  // and explicit wrap height preserve the long value labels without clipping.
+  summary.getRange("A1:A6").format.columnWidthPx = 58;
+  summary.getRange("B1:B6").format.columnWidthPx = 54;
+  summary.getRange("C1:F6").format.columnWidthPx = 46;
+  summary.getRange("G1:G6").format.columnWidthPx = 78;
+  summary.getRange("H1:H6").format.columnWidthPx = 66;
   summary.showGridLines = false;
   summary.pivotTables.add({
     name: "Revenue and units by region",

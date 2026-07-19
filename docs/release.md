@@ -92,10 +92,12 @@ subtotal-bearing multi-row graph remains opaque/source-bound or fails closed;
 none is flattened into the tabular model.
 
 The shipped workflow now exercises two row fields, one column field, two value
-fields, and an exact region filter with independently checked totals. Bundled
-LibreOfficeDev 26.8 rendered and resaved both sheets. An Ubuntu 24.04 amd64
-LibreOffice 24.2.7 resave normalized the native display range and omitted the
-optional axis caches, then OpenChestnut recovered `Region -> Channel`, Product,
+fields, and an exact region filter with independently checked totals. Its
+eight-column summary keeps the previously CI-proven 440-pixel print-width
+budget, with a smaller wrapped header, so both sheets remain one native page.
+Bundled LibreOfficeDev 26.8 rendered and resaved both sheets. An Ubuntu 24.04
+amd64 LibreOffice 24.2.7 resave normalized the native display range and omitted
+the optional axis caches, then OpenChestnut recovered `Region -> Channel`, Product,
 the filter, and the `440 / 44` grand totals and preserved that host graph. An
 independently generated LibreOffice 24.2 DataPilot oracle confirmed the same
 ordered `rowFields`, `firstDataCol`, and optional-cache structure. Open XML SDK
@@ -106,8 +108,8 @@ The complete local gate passed `npm test`, `npm run docs:api`,
 `npm run verify:open-chestnut-build`, OpenChestnut `283/283`, and OfficeBridge
 `5/5`. Two clean WASM builds reproduced all 39 audited package-layer files and
 the same manifest-bound 38-file, 14,635,200-byte runtime. The production
-clean-install tarball contains 452 files at 9,536,999 compressed bytes and
-24,094,029 unpacked bytes; the repository-only canonical template library
+clean-install tarball contains 452 files at 9,537,005 compressed bytes and
+24,094,042 unpacked bytes; the repository-only canonical template library
 remains excluded. The specialist Python PDF provider test remained
 contract-only because no explicit `OPEN_OFFICE_PDF_PROVIDER_PYTHON` was
 configured; core MuPDF.js, Playwright/Chromium, LibreOffice/Poppler, canonical
