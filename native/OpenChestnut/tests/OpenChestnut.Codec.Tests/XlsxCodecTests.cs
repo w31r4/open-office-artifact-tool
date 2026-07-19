@@ -4277,14 +4277,134 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ProtocolAuthorsImportsAndSourcePreservesMultiplePivotValueFields()
+    {
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(MultiValuePivotExportRequest().ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(authored.File.ToByteArray());
+
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+        {
+            var pivotPart = Assert.Single(document.WorkbookPart!.WorksheetParts.SelectMany(part => part.PivotTableParts));
+            var definition = pivotPart.PivotTableDefinition!;
+            Assert.Equal("A1:G4", definition.Location!.Reference!.Value);
+            var dataFields = definition.DataFields!.Elements<DataField>().ToArray();
+            Assert.Equal(2, dataFields.Length);
+            Assert.Equal(["Revenue", "Average units"], dataFields.Select(field => field.Name!.Value));
+            Assert.Equal([DataConsolidateFunctionValues.Sum, DataConsolidateFunctionValues.Average], dataFields.Select(field => field.Subtotal!.Value));
+
+            var xml = XDocument.Parse(definition.OuterXml);
+            var ns = xml.Root!.Name.Namespace;
+            Assert.Equal(["1", "-2"], xml.Root.Element(ns + "colFields")!.Elements(ns + "field").Select(field => field.Attribute("x")!.Value));
+            var items = xml.Root.Element(ns + "colItems")!.Elements(ns + "i").ToArray();
+            Assert.Equal(6, items.Length);
+            Assert.Equal(["0", "1", "0", "1", "0", "1"], items.Select(item => item.Attribute("i")!.Value));
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var pivot = Assert.Single(imported.Artifact.Workbook.Worksheets.Single(sheet => sheet.Name == "Summary").PivotTables);
+        Assert.Equal(["Region"], pivot.RowFields);
+        Assert.Equal(["Product"], pivot.ColumnFields);
+        Assert.Equal(["Sales", "Units"], pivot.ValueFields.Select(value => value.Field));
+        Assert.Equal(["Revenue", "Average units"], pivot.ValueFields.Select(value => value.Name));
+        Assert.Equal([SpreadsheetPivotAggregation.Sum, SpreadsheetPivotAggregation.Average], pivot.ValueFields.Select(value => value.Aggregation));
+        Assert.NotNull(pivot.Source);
+        Assert.False(pivot.Source.Editable);
+
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(ReadEntry(authored.File.ToByteArray(), pivot.Source.PivotTablePartPath), ReadEntry(preserved.File.ToByteArray(), pivot.Source.PivotTablePartPath));
+        Assert.Equal(ReadEntry(authored.File.ToByteArray(), pivot.Source.CacheDefinitionPartPath), ReadEntry(preserved.File.ToByteArray(), pivot.Source.CacheDefinitionPartPath));
+        Assert.Equal(ReadEntry(authored.File.ToByteArray(), pivot.Source.CacheRecordsPartPath), ReadEntry(preserved.File.ToByteArray(), pivot.Source.CacheRecordsPartPath));
+    }
+
+    [Fact]
+    public void ProtocolAuthorsMultiplePivotValueFieldsWithoutColumnField()
+    {
+        var request = MultiValuePivotExportRequest();
+        var summary = request.Artifact.Workbook.Worksheets[1];
+        var pivot = summary.PivotTables[0];
+        pivot.ColumnFields.Clear();
+        pivot.TargetReference = "A1:C4";
+        summary.Cells.Clear();
+        var output = new object?[][]
+        {
+            ["Region", "Revenue", "Average units"],
+            ["East", 30D, 3D],
+            ["West", 70D, 7D],
+            ["Grand Total", 100D, 5D],
+        };
+        for (var row = 0; row < output.Length; row++)
+            for (var column = 0; column < output[row].Length; column++)
+            {
+                var cell = new CellArtifact { Row = checked((uint)row), Column = checked((uint)column) };
+                if (output[row][column] is string text) cell.StringValue = text;
+                else cell.NumberValue = Convert.ToDouble(output[row][column], CultureInfo.InvariantCulture);
+                summary.Cells.Add(cell);
+            }
+
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(authored.File.ToByteArray());
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+        {
+            var definition = Assert.Single(document.WorkbookPart!.WorksheetParts.SelectMany(part => part.PivotTableParts)).PivotTableDefinition!;
+            Assert.Equal("A1:C4", definition.Location!.Reference!.Value);
+            var xml = XDocument.Parse(definition.OuterXml);
+            var ns = xml.Root!.Name.Namespace;
+            Assert.Equal("-2", Assert.Single(xml.Root.Element(ns + "colFields")!.Elements(ns + "field")).Attribute("x")!.Value);
+            Assert.Equal(2, xml.Root.Element(ns + "colItems")!.Elements(ns + "i").Count());
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var importedPivot = Assert.Single(imported.Artifact.Workbook.Worksheets.Single(sheet => sheet.Name == "Summary").PivotTables);
+        Assert.Empty(importedPivot.ColumnFields);
+        Assert.Equal(["Sales", "Units"], importedPivot.ValueFields.Select(value => value.Field));
+    }
+
+    [Fact]
+    public void UnsupportedMultiplePivotValueTopologyRemainsOpaqueAndSourcePreserved()
+    {
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(MultiValuePivotExportRequest().ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var pivotPath = FindEntryPath(
+            authored.File.ToByteArray(),
+            path => path.StartsWith("xl/pivotTables/pivotTable", StringComparison.Ordinal)
+                && path.EndsWith(".xml", StringComparison.Ordinal));
+        var malformed = RewriteEntry(authored.File.ToByteArray(), pivotPath, xml =>
+        {
+            var document = XDocument.Parse(xml, LoadOptions.PreserveWhitespace);
+            var ns = document.Root!.Name.Namespace;
+            var fields = document.Root.Element(ns + "colFields")!;
+            fields.Elements(ns + "field").Single(field => field.Attribute("x")?.Value == "-2").Remove();
+            fields.SetAttributeValue("count", fields.Elements(ns + "field").Count());
+            return document.ToString(SaveOptions.DisableFormatting);
+        });
+
+        var imported = Import(malformed);
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Empty(imported.Artifact.Workbook.Worksheets.Single(sheet => sheet.Name == "Summary").PivotTables);
+
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(ReadEntry(malformed, pivotPath), ReadEntry(preserved.File.ToByteArray(), pivotPath));
+    }
+
+    [Fact]
     public void PivotTableAuthoringRejectsUnsupportedSemanticProfiles()
     {
         var request = PivotExportRequest();
-        request.Artifact.Workbook.Worksheets[1].PivotTables[0].ValueFields.Add(new SpreadsheetPivotValueFieldArtifact
-        {
-            Field = "Sales",
-            Aggregation = SpreadsheetPivotAggregation.Count,
-        });
+        for (var index = 0; index < 32; index++)
+            request.Artifact.Workbook.Worksheets[1].PivotTables[0].ValueFields.Add(new SpreadsheetPivotValueFieldArtifact
+            {
+                Field = "Sales",
+                Name = $"Count {index + 1}",
+                Aggregation = SpreadsheetPivotAggregation.Count,
+            });
         var response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
         Assert.False(response.Ok);
         Assert.Equal("unsupported_spreadsheet_pivot_profile", Assert.Single(response.Diagnostics).Code);
@@ -4298,6 +4418,47 @@ public sealed class XlsxCodecTests
         Assert.False(duplicateResponse.Ok);
         Assert.Equal("invalid_spreadsheet_pivot", Assert.Single(duplicateResponse.Diagnostics).Code);
         Assert.Contains("unique across the workbook", duplicateResponse.Diagnostics[0].Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static CodecRequest MultiValuePivotExportRequest()
+    {
+        var request = PivotExportRequest();
+        var data = request.Artifact.Workbook.Worksheets[0];
+        data.Cells.Add(new CellArtifact { Row = 0, Column = 3, StringValue = "Units" });
+        data.Cells.Add(new CellArtifact { Row = 1, Column = 3, NumberValue = 2 });
+        data.Cells.Add(new CellArtifact { Row = 2, Column = 3, NumberValue = 4 });
+        data.Cells.Add(new CellArtifact { Row = 3, Column = 3, NumberValue = 6 });
+        data.Cells.Add(new CellArtifact { Row = 4, Column = 3, NumberValue = 8 });
+
+        var summary = request.Artifact.Workbook.Worksheets[1];
+        summary.Cells.Clear();
+        var output = new object?[][]
+        {
+            ["Region", "A — Revenue", "A — Average units", "B — Revenue", "B — Average units", "Grand Total — Revenue", "Grand Total — Average units"],
+            ["East", 10D, 2D, 20D, 4D, 30D, 3D],
+            ["West", 30D, 6D, 40D, 8D, 70D, 7D],
+            ["Grand Total", 40D, 4D, 60D, 6D, 100D, 5D],
+        };
+        for (var row = 0; row < output.Length; row++)
+            for (var column = 0; column < output[row].Length; column++)
+            {
+                var cell = new CellArtifact { Row = checked((uint)row), Column = checked((uint)column) };
+                if (output[row][column] is string text) cell.StringValue = text;
+                else cell.NumberValue = Convert.ToDouble(output[row][column], CultureInfo.InvariantCulture);
+                summary.Cells.Add(cell);
+            }
+
+        var pivot = summary.PivotTables[0];
+        pivot.SourceReference = "A1:D5";
+        pivot.TargetReference = "A1:G4";
+        pivot.ValueFields[0].Name = "Revenue";
+        pivot.ValueFields.Add(new SpreadsheetPivotValueFieldArtifact
+        {
+            Field = "Units",
+            Name = "Average units",
+            Aggregation = SpreadsheetPivotAggregation.Average,
+        });
+        return request;
     }
 
     private static CodecRequest PivotExportRequest()
@@ -6099,6 +6260,29 @@ public sealed class XlsxCodecTests
         using var output = new MemoryStream();
         entry.CopyTo(output);
         return output.ToArray();
+    }
+
+    private static string FindEntryPath(byte[] bytes, Func<string, bool> predicate)
+    {
+        using var stream = new MemoryStream(bytes);
+        using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
+        return archive.Entries.Select(entry => entry.FullName).Single(predicate);
+    }
+
+    private static byte[] RewriteEntry(byte[] bytes, string path, Func<string, string> rewrite)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Update, leaveOpen: true))
+        {
+            var entry = archive.GetEntry(path) ?? throw new InvalidOperationException($"Missing package entry {path}.");
+            string xml;
+            using (var reader = new StreamReader(entry.Open())) xml = reader.ReadToEnd();
+            entry.Delete();
+            using var writer = new StreamWriter(archive.CreateEntry(path).Open());
+            writer.Write(rewrite(xml));
+        }
+        return stream.ToArray();
     }
 
     private static byte[] AddOpaqueDefinedName(byte[] bytes)

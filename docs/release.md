@@ -72,6 +72,39 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### XLSX bounded multi-value PivotTables
+
+On 2026-07-19, the Spreadsheet model, protocol-2 wire, OpenChestnut C# codec,
+Help catalog, generated API reference, and native Spreadsheet Skill expanded the
+bounded source-free PivotTable profile from exactly one value field to 1 through
+32 ordered value fields. Each value independently retains its source field,
+display name, and `sum`/`count`/`average`/`min`/`max` aggregation. Multi-value
+tables author the canonical SpreadsheetML `x=-2` data-layout axis, both with and
+without an ordinary column field; the output collision check covers the full
+expanded rectangle. Recognized imports preserve all Pivot/cache parts byte for
+byte on an unchanged second export. Missing or inconsistent data-layout axes,
+more than 32 values, and unmodeled graphs remain opaque/source-bound or fail
+closed rather than being flattened.
+
+The shipped workflow independently verifies a two-measure revenue/units matrix,
+exports and imports twice, and renders both source and Pivot sheets. A real
+LibreOffice XLSX resave retained both measures and aggregations, then reimported
+through OpenChestnut with correct totals. LibreOffice and Poppler produced a
+clean two-page native review with no clipping. C# tests separately cover Office
+2021 validation for multi-value tables with and without a column field,
+roundtrip identity, malformed-axis preservation, and the 32-field budget.
+
+The complete local gate passed `npm test`, `npm run docs:api`, `npm run
+proto:check`, `npm run test:pack`, and serial `npm run
+verify:open-chestnut-build`; OpenChestnut passed `280/280` and OfficeBridge
+passed `5/5`. Two clean WASM builds produced the same 39 audited files and the
+same manifest-bound 38-file, 14,610,112-byte runtime. The clean-install tarball
+contains 452 files, is 9,524,005 bytes compressed and 24,057,948 bytes
+unpacked. The optional specialist Python PDF-provider gate remained
+contract-only because `OPEN_OFFICE_PDF_PROVIDER_PYTHON` was not explicitly
+configured; the required MuPDF.js path and all other npm gates ran locally. No
+publish or tag operation was attempted.
+
 ### PPTX Office 2021 modern comment threads
 
 On 2026-07-19, the Presentation model, protocol-2 wire, OpenChestnut C# codec,

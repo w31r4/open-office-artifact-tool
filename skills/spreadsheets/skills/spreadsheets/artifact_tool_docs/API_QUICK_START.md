@@ -368,22 +368,25 @@ a separate sheet when possible.
 
 ```js
 const pivot = summary.pivotTables.add({
-  name: "Revenue by region",
-  sourceRange: "Data!A1:C100",
+  name: "Revenue and units by region",
+  sourceRange: "Data!A1:D100",
   targetRange: "A1",
   rowFields: ["Region"],
   columnFields: ["Channel"],
-  valueFields: [{ field: "Revenue", summarizeBy: "sum" }],
+  valueFields: [
+    { field: "Revenue", summarizeBy: "sum", name: "Revenue" },
+    { field: "Units", summarizeBy: "sum", name: "Units" },
+  ],
   rowGrandTotals: true,
   columnGrandTotals: true,
   refreshPolicy: { refreshOnLoad: true, saveData: true },
 });
 ```
 
-- Native source-free authoring currently requires exactly one row field, zero or one column field, and exactly one `sum`, `count`, `average`, `min`, or `max` value field.
+- Native source-free authoring currently requires exactly one row field, zero or one column field, and 1 through 32 `sum`, `count`, `average`, `min`, or `max` value fields. Multiple values use the canonical SpreadsheetML `x=-2` data-layout axis.
 - `targetRange` may be the top-left anchor or the exact cached-output rectangle. Empty target cells may be styled before export; an existing value or formula in the output rectangle is rejected as a collision.
 - Verify `pivot.computedValues()` against source totals, inspect `kind: "pivotTable"`, render the summary, then export and import again.
-- Recognized imported native PivotTables are inspectable but their config, source values, cached output, and package topology are read-only in this first profile. Grouping, calculated fields, filters, multiple axes/values, and source-bound additions fail closed rather than becoming a lossy worksheet reconstruction.
+- Recognized imported native PivotTables are inspectable but their config, source values, cached output, and package topology are read-only in this profile. Grouping, calculated fields, filters, multiple row/column axes, more than 32 values, and source-bound additions fail closed rather than becoming a lossy worksheet reconstruction.
 - Read `features/pivot-tables.md` and run `examples/openchestnut-pivot-table-workflow.mjs` for the complete Agent workflow.
 
 ### Images

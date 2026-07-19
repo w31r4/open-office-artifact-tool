@@ -11,7 +11,8 @@ The current source-free native profile supports:
 
 - exactly one row field;
 - zero or one column field;
-- exactly one value field using `sum`, `count`, `average`, `min`, or `max`;
+- 1 through 32 value fields, each using `sum`, `count`, `average`, `min`, or
+  `max`; multiple values use the native SpreadsheetML data-layout axis;
 - optional row and column grand totals;
 - `refreshOnLoad`, `saveData`, `enableRefresh`, `invalid`,
   `missingItemsLimit`, `refreshedBy`, and `refreshedDateIso` cache policy;
@@ -21,12 +22,15 @@ The current source-free native profile supports:
 
 ```js
 const pivot = summary.pivotTables.add({
-  name: "Revenue by region",
-  sourceRange: "Data!A1:C100",
+  name: "Revenue and units by region",
+  sourceRange: "Data!A1:D100",
   targetRange: "A1",
   rowFields: ["Region"],
   columnFields: ["Channel"],
-  valueFields: [{ field: "Revenue", summarizeBy: "sum" }],
+  valueFields: [
+    { field: "Revenue", summarizeBy: "sum", name: "Revenue" },
+    { field: "Units", summarizeBy: "sum", name: "Units" },
+  ],
   rowGrandTotals: true,
   columnGrandTotals: true,
 });
@@ -40,8 +44,8 @@ formula in the projected output rectangle is a collision and export fails closed
 
 1. Inspect the source range and confirm unique headers and numeric value data.
 2. Add the PivotTable with an explicit provider-independent field config.
-3. Inspect `kind: "pivotTable"` and compare `computedValues()` with an independent
-   aggregation or source totals.
+3. Inspect `kind: "pivotTable"` and compare every metric in `computedValues()`
+   with an independent aggregation or source totals.
 4. Render the summary range and review labels, number formats, widths, clipping,
    and grand totals.
 5. Export, import again, and confirm the native object and computed matrix.
@@ -52,8 +56,9 @@ inspect, render, export, second-import, and verification path.
 
 ## Fail-closed boundaries
 
-Grouping, calculated fields, item/date filters, multiple row/column/value fields,
-and source-free edits inside an imported workbook are not silently flattened.
+Grouping, calculated fields, item/date filters, multiple row/column axes, more
+than 32 value fields, and source-free edits inside an imported workbook are not
+silently flattened.
 They remain useful in the JavaScript calculation/preview facade, but native XLSX
 export rejects them with `unsupported_spreadsheet_pivot_profile`.
 

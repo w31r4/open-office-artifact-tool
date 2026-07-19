@@ -455,6 +455,101 @@ assert.equal(await secondPivotZip.file(nativePivotPart).async("text"), await nat
 assert.equal(await secondPivotZip.file(nativePivotCache).async("text"), await nativePivotZip.file(nativePivotCache).async("text"));
 assert.equal(await secondPivotZip.file(nativePivotRecords).async("text"), await nativePivotZip.file(nativePivotRecords).async("text"));
 
+const multiValuePivotWorkbook = Workbook.create();
+const multiValuePivotData = multiValuePivotWorkbook.worksheets.add("Data");
+multiValuePivotData.getRange("A1:D5").values = [
+  ["Region", "Product", "Sales", "Units"],
+  ["East", "A", 10, 2],
+  ["East", "B", 20, 4],
+  ["West", "A", 30, 6],
+  ["West", "B", 40, 8],
+];
+const multiValuePivotSummary = multiValuePivotWorkbook.worksheets.add("Summary");
+multiValuePivotSummary.getRange("A1:G4").format = { fill: "#F0FDFA" };
+const multiValuePivot = multiValuePivotSummary.pivotTables.add({
+  name: "Revenue and units by region",
+  sourceRange: "Data!A1:D5",
+  targetRange: "A1",
+  rowFields: ["Region"],
+  columnFields: ["Product"],
+  valueFields: [
+    { field: "Sales", summarizeBy: "sum", name: "Revenue" },
+    { field: "Units", summarizeBy: "average", name: "Average units" },
+  ],
+  rowGrandTotals: true,
+  columnGrandTotals: true,
+});
+assert.deepEqual(multiValuePivot.computedValues(), [
+  ["Region", "A — Revenue", "A — Average units", "B — Revenue", "B — Average units", "Grand Total — Revenue", "Grand Total — Average units"],
+  ["East", 10, 2, 20, 4, 30, 3],
+  ["West", 30, 6, 40, 8, 70, 7],
+  ["Grand Total", 40, 4, 60, 6, 100, 5],
+]);
+const multiValuePivotXlsx = await SpreadsheetFile.exportXlsx(multiValuePivotWorkbook);
+const multiValuePivotZip = await JSZip.loadAsync(new Uint8Array(await multiValuePivotXlsx.arrayBuffer()));
+const multiValuePivotPart = Object.keys(multiValuePivotZip.files).find((name) => /xl\/pivotTables\/pivotTable.*\.xml$/i.test(name));
+const multiValuePivotCache = Object.keys(multiValuePivotZip.files).find((name) => /pivotCache\/pivotCacheDefinition.*\.xml$/i.test(name));
+const multiValuePivotRecords = Object.keys(multiValuePivotZip.files).find((name) => /pivotCache\/pivotCacheRecords.*\.xml$/i.test(name));
+const multiValuePivotXml = await multiValuePivotZip.file(multiValuePivotPart).async("text");
+assert.match(multiValuePivotXml, /location ref="A1:G4"/);
+assert.match(multiValuePivotXml, /colFields count="2">[\s\S]*field x="1"[\s\S]*field x="-2"/);
+assert.match(multiValuePivotXml, /dataFields count="2">[\s\S]*name="Revenue"[^>]*fld="2"[^>]*subtotal="sum"[\s\S]*name="Average units"[^>]*fld="3"[^>]*subtotal="average"/);
+assert.match(multiValuePivotXml, /colItems count="6">[\s\S]*<i i="1">/);
+
+const importedMultiValuePivotWorkbook = await SpreadsheetFile.importXlsx(multiValuePivotXlsx);
+const importedMultiValuePivot = importedMultiValuePivotWorkbook.worksheets.getItem("Summary").pivotTables.items[0];
+assert.deepEqual(importedMultiValuePivot.valueFields, [
+  { field: "Sales", summarizeBy: "sum", name: "Revenue" },
+  { field: "Units", summarizeBy: "average", name: "Average units" },
+]);
+assert.deepEqual(importedMultiValuePivot.computedValues(), multiValuePivot.computedValues());
+assert.equal(importedMultiValuePivotWorkbook.worksheets.getItem("Summary").getRange("G4").format.fill, "#F0FDFA");
+const secondMultiValuePivotXlsx = await SpreadsheetFile.exportXlsx(importedMultiValuePivotWorkbook);
+const secondMultiValuePivotZip = await JSZip.loadAsync(new Uint8Array(await secondMultiValuePivotXlsx.arrayBuffer()));
+assert.equal(await secondMultiValuePivotZip.file(multiValuePivotPart).async("text"), multiValuePivotXml);
+assert.equal(await secondMultiValuePivotZip.file(multiValuePivotCache).async("text"), await multiValuePivotZip.file(multiValuePivotCache).async("text"));
+assert.equal(await secondMultiValuePivotZip.file(multiValuePivotRecords).async("text"), await multiValuePivotZip.file(multiValuePivotRecords).async("text"));
+
+const noColumnMultiValueWorkbook = Workbook.create();
+const noColumnMultiValueData = noColumnMultiValueWorkbook.worksheets.add("Data");
+noColumnMultiValueData.getRange("A1:C5").values = [
+  ["Region", "Sales", "Units"],
+  ["East", 10, 2],
+  ["East", 20, 4],
+  ["West", 30, 6],
+  ["West", 40, 8],
+];
+const noColumnMultiValueSummary = noColumnMultiValueWorkbook.worksheets.add("Summary");
+const noColumnMultiValuePivot = noColumnMultiValueSummary.pivotTables.add({
+  name: "Regional metrics",
+  sourceRange: "Data!A1:C5",
+  targetRange: "A1",
+  rowFields: ["Region"],
+  valueFields: [
+    { field: "Sales", summarizeBy: "sum", name: "Revenue" },
+    { field: "Units", summarizeBy: "count", name: "Unit records" },
+  ],
+  columnGrandTotals: true,
+});
+assert.deepEqual(noColumnMultiValuePivot.computedValues(), [
+  ["Region", "Revenue", "Unit records"],
+  ["East", 30, 2],
+  ["West", 70, 2],
+  ["Grand Total", 100, 4],
+]);
+const noColumnMultiValueXlsx = await SpreadsheetFile.exportXlsx(noColumnMultiValueWorkbook);
+const noColumnMultiValueZip = await JSZip.loadAsync(new Uint8Array(await noColumnMultiValueXlsx.arrayBuffer()));
+const noColumnMultiValuePart = Object.keys(noColumnMultiValueZip.files).find((name) => /xl\/pivotTables\/pivotTable.*\.xml$/i.test(name));
+const noColumnMultiValueXml = await noColumnMultiValueZip.file(noColumnMultiValuePart).async("text");
+assert.match(noColumnMultiValueXml, /location ref="A1:C4"/);
+assert.match(noColumnMultiValueXml, /colFields count="1">[\s\S]*field x="-2"/);
+assert.match(noColumnMultiValueXml, /colItems count="2">[\s\S]*<i i="1">/);
+const importedNoColumnMultiValue = await SpreadsheetFile.importXlsx(noColumnMultiValueXlsx);
+assert.deepEqual(importedNoColumnMultiValue.worksheets.getItem("Summary").pivotTables.items[0].valueFields, [
+  { field: "Sales", summarizeBy: "sum", name: "Revenue" },
+  { field: "Units", summarizeBy: "count", name: "Unit records" },
+]);
+
 const editedImportedPivot = await SpreadsheetFile.importXlsx(nativePivotXlsx);
 editedImportedPivot.worksheets.getItem("Data").getRange("C2").values = [[11]];
 await assert.rejects(
@@ -475,6 +570,19 @@ await assert.rejects(
   () => SpreadsheetFile.exportXlsx(unsupportedPivotWorkbook),
   (error) => error?.code === "unsupported_spreadsheet_pivot_profile" && /exactly one row field/i.test(error.message),
 );
+const overBudgetPivotWorkbook = Workbook.create();
+const overBudgetPivotSheet = overBudgetPivotWorkbook.worksheets.add("Data");
+overBudgetPivotSheet.getRange("A1:B3").values = [["Region", "Sales"], ["East", 10], ["West", 20]];
+overBudgetPivotSheet.pivotTables.add({
+  sourceRange: "A1:B3",
+  targetRange: "D1",
+  rowFields: ["Region"],
+  valueFields: Array.from({ length: 33 }, (_, index) => ({ field: "Sales", summarizeBy: "sum", name: `Revenue ${index + 1}` })),
+});
+await assert.rejects(
+  () => SpreadsheetFile.exportXlsx(overBudgetPivotWorkbook),
+  (error) => error?.code === "unsupported_spreadsheet_pivot_profile" && /1 through 32 value fields/i.test(error.message),
+);
 const collidingPivotWorkbook = Workbook.create();
 const collidingPivotSheet = collidingPivotWorkbook.worksheets.add("Data");
 collidingPivotSheet.getRange("A1:C3").values = [["Region", "Product", "Sales"], ["East", "A", 10], ["West", "B", 20]];
@@ -483,6 +591,28 @@ collidingPivotSheet.pivotTables.add({ sourceRange: "A1:C3", targetRange: "E1", r
 await assert.rejects(
   () => SpreadsheetFile.exportXlsx(collidingPivotWorkbook),
   (error) => error?.code === "spreadsheet_pivot_output_collision" && /overlaps existing worksheet cell E1/i.test(error.message),
+);
+const collidingMultiValuePivotWorkbook = Workbook.create();
+const collidingMultiValuePivotData = collidingMultiValuePivotWorkbook.worksheets.add("Data");
+collidingMultiValuePivotData.getRange("A1:D3").values = [
+  ["Region", "Product", "Sales", "Units"],
+  ["East", "A", 10, 2],
+  ["West", "B", 20, 4],
+];
+const collidingMultiValuePivotSummary = collidingMultiValuePivotWorkbook.worksheets.add("Summary");
+collidingMultiValuePivotSummary.getRange("G4").values = [["occupied widened edge"]];
+collidingMultiValuePivotSummary.pivotTables.add({
+  sourceRange: "Data!A1:D3",
+  targetRange: "A1",
+  rowFields: ["Region"],
+  columnFields: ["Product"],
+  valueFields: [{ field: "Sales", name: "Revenue" }, { field: "Units", name: "Units" }],
+  rowGrandTotals: true,
+  columnGrandTotals: true,
+});
+await assert.rejects(
+  () => SpreadsheetFile.exportXlsx(collidingMultiValuePivotWorkbook),
+  (error) => error?.code === "spreadsheet_pivot_output_collision" && /overlaps existing worksheet cell G4/i.test(error.message),
 );
 const duplicatePivotWorkbook = Workbook.create();
 const duplicatePivotData = duplicatePivotWorkbook.worksheets.add("Data");

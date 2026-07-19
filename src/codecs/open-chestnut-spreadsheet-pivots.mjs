@@ -2,6 +2,7 @@ import { SpreadsheetPivotAggregation } from "../generated/open_office/artifact/v
 import { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
 
 const A1_RANGE = /^\$?([A-Z]{1,3})\$?([1-9]\d*)(?::\$?([A-Z]{1,3})\$?([1-9]\d*))?$/i;
+const MAX_NATIVE_VALUE_FIELDS = 32;
 const TO_WIRE_AGGREGATION = new Map([
   ["sum", SpreadsheetPivotAggregation.SUM],
   ["count", SpreadsheetPivotAggregation.COUNT],
@@ -121,13 +122,18 @@ function assertBoundedProfile(workbook, targetSheet, pivot) {
   }
   if (pivot.rowFields.length !== 1) throw invalid(`PivotTable ${pivot.name} requires exactly one row field in the first native profile.`, "unsupported_spreadsheet_pivot_profile");
   if (pivot.columnFields.length > 1) throw invalid(`PivotTable ${pivot.name} supports at most one column field in the first native profile.`, "unsupported_spreadsheet_pivot_profile");
-  if (pivot.valueFields.length !== 1) throw invalid(`PivotTable ${pivot.name} requires exactly one value field in the first native profile.`, "unsupported_spreadsheet_pivot_profile");
+  if (!pivot.valueFields.length || pivot.valueFields.length > MAX_NATIVE_VALUE_FIELDS) {
+    throw invalid(`PivotTable ${pivot.name} requires 1 through ${MAX_NATIVE_VALUE_FIELDS} value fields in the bounded native profile.`, "unsupported_spreadsheet_pivot_profile");
+  }
   if (pivot.groupFields.length || pivot.calculatedFields.length || pivot.filters.length) {
     throw invalid(`PivotTable ${pivot.name} grouping, calculated fields, and filters remain model/preview-only and cannot yet be authored as native SpreadsheetML.`, "unsupported_spreadsheet_pivot_profile");
   }
-  const value = pivot.valueFields[0];
-  if (!TO_WIRE_AGGREGATION.has(value.summarizeBy)) throw invalid(`PivotTable ${pivot.name} uses unsupported aggregation ${value.summarizeBy}.`, "unsupported_spreadsheet_pivot_profile");
-  for (const field of [...pivot.rowFields, ...pivot.columnFields, value.field]) if (!headers.includes(field)) throw invalid(`PivotTable ${pivot.name} field ${field} is not present in its source headers.`);
+  for (const value of pivot.valueFields) {
+    if (!TO_WIRE_AGGREGATION.has(value.summarizeBy)) throw invalid(`PivotTable ${pivot.name} uses unsupported aggregation ${value.summarizeBy}.`, "unsupported_spreadsheet_pivot_profile");
+  }
+  for (const field of [...pivot.rowFields, ...pivot.columnFields, ...pivot.valueFields.map((value) => value.field)]) {
+    if (!headers.includes(field)) throw invalid(`PivotTable ${pivot.name} field ${field} is not present in its source headers.`);
+  }
   return { sourceSheet, sourceBounds, matrix };
 }
 
@@ -190,7 +196,6 @@ function wireSourceFreePivot(workbook, sheet, pivot, cells) {
   const values = pivot.computedValues();
   const target = targetReference(pivot, values);
   appendCachedOutput(cells, pivot, target, values);
-  const valueField = pivot.valueFields[0];
   return {
     id: pivot.id,
     name: pivot.name,
@@ -199,7 +204,11 @@ function wireSourceFreePivot(workbook, sheet, pivot, cells) {
     targetReference: target,
     rowFields: [...pivot.rowFields],
     columnFields: [...pivot.columnFields],
-    valueFields: [{ field: valueField.field, name: valueField.name || "", aggregation: TO_WIRE_AGGREGATION.get(valueField.summarizeBy) }],
+    valueFields: pivot.valueFields.map((value) => ({
+      field: value.field,
+      name: value.name || "",
+      aggregation: TO_WIRE_AGGREGATION.get(value.summarizeBy),
+    })),
     rowGrandTotals: Boolean(pivot.rowGrandTotals),
     columnGrandTotals: Boolean(pivot.columnGrandTotals),
     refreshPolicy: wireRefreshPolicy(pivot.refreshPolicy),
@@ -236,13 +245,14 @@ export function hydrateWorkbookPivots(workbook, sourceWorksheets) {
     const slots = [];
     for (const wire of sourceSheet.pivotTables || []) {
       const sourceSheetModel = byId.get(wire.sourceWorksheetId);
-      if (!sourceSheetModel || !wire.name || !wire.sourceReference || !wire.targetReference || wire.rowFields?.length !== 1 || wire.valueFields?.length !== 1) {
-        slots.push({ wire });
-        continue;
-      }
-      const value = wire.valueFields[0];
-      const summarizeBy = FROM_WIRE_AGGREGATION.get(value.aggregation);
-      if (!summarizeBy) {
+      const valueFields = (wire.valueFields || []).map((value) => ({
+        field: value.field,
+        summarizeBy: FROM_WIRE_AGGREGATION.get(value.aggregation),
+        name: value.name || undefined,
+      }));
+      if (!sourceSheetModel || !wire.name || !wire.sourceReference || !wire.targetReference || wire.rowFields?.length !== 1 ||
+          wire.columnFields?.length > 1 || !valueFields.length || valueFields.length > MAX_NATIVE_VALUE_FIELDS ||
+          valueFields.some((value) => !value.field || !value.summarizeBy)) {
         slots.push({ wire });
         continue;
       }
@@ -253,7 +263,7 @@ export function hydrateWorkbookPivots(workbook, sourceWorksheets) {
         targetRange: wire.targetReference,
         rowFields: [...wire.rowFields],
         columnFields: [...wire.columnFields],
-        valueFields: [{ field: value.field, summarizeBy, name: value.name || undefined }],
+        valueFields,
         rowGrandTotals: wire.rowGrandTotals,
         columnGrandTotals: wire.columnGrandTotals,
         refreshPolicy: publicRefreshPolicy(wire.refreshPolicy),

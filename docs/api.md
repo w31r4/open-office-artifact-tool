@@ -5104,7 +5104,7 @@ Create a native bounded XLSX PivotTable with derived cached output and cache rec
 - `targetRange` (string|Range) required — Destination anchor/range.
 - `rowFields` (string[]) — Row field names. Native source-free OpenChestnut authoring currently requires exactly one.
 - `columnFields` (string[]) — Column field names. Native source-free OpenChestnut authoring currently accepts zero or one.
-- `valueFields` (object[]) — Value field and aggregation definitions. Native source-free authoring requires exactly one sum/count/average/min/max field.
+- `valueFields` (object[]) — One through 32 value-field definitions. Each names a source field and sum/count/average/min/max aggregation; repeated source fields with different aggregations are allowed.
 - `rowGrandTotals` (boolean) — Add a native grand-total column and derived cached values when a column field is present.
 - `columnGrandTotals` (boolean) — Add a native grand-total row and derived cached values.
 - `groupFields` (object[]) — Derived group fields with unique name/sourceField. Calendar/time groupBy values years/quarters/months/days/hours/minutes/seconds form OOXML base/par hierarchies and accept bounded groupInterval values; range uses numeric startNum/endNum/groupInterval buckets; discrete uses named groups of source items.
@@ -5114,7 +5114,7 @@ Create a native bounded XLSX PivotTable with derived cached output and cache rec
 
 **Schema returns:**
 
-- `pivot` (WorksheetPivotTable) — Native XLSX authoring is bounded to one row field, optional one column field, and one sum/count/average/min/max value field. Cached output is a derived projection; grouping/calculated/filter profiles remain model-only and fail closed on native export. Recognized imports expose semantics but keep config, source data, cached output, and topology read-only.
+- `pivot` (WorksheetPivotTable) — Native XLSX authoring is bounded to one row field, optional one column field, and 1 through 32 sum/count/average/min/max value fields. Multiple values use the canonical x=-2 data-layout axis. Cached output is a derived projection; grouping/calculated/filter profiles remain model-only and fail closed on native export. Recognized imports expose semantics but keep config, source data, cached output, and topology read-only.
 
 #### `sheet.sparklineGroups.add`
 

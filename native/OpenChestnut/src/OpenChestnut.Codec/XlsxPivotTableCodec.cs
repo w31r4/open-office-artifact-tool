@@ -15,6 +15,8 @@ namespace OpenChestnut.Codec;
 internal sealed class XlsxPivotTableCodec
 {
     private const int MaxPivots = 16_384;
+    private const int MaxValueFields = 32;
+    private const int DataLayoutFieldIndex = -2;
     private static readonly XNamespace Main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
     private static readonly XNamespace Relationships = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
     private static readonly Regex A1Range = new(
@@ -96,8 +98,9 @@ internal sealed class XlsxPivotTableCodec
             throw Invalid($"PivotTable {pivot.Name} source headers must be non-empty and unique.");
         var rowIndex = Array.IndexOf(headers, pivot.RowFields[0]);
         var columnIndex = pivot.ColumnFields.Count == 0 ? -1 : Array.IndexOf(headers, pivot.ColumnFields[0]);
-        var valueIndex = Array.IndexOf(headers, pivot.ValueFields[0].Field);
-        if (rowIndex < 0 || (pivot.ColumnFields.Count > 0 && columnIndex < 0) || valueIndex < 0) throw Invalid($"PivotTable {pivot.Name} contains a field outside its source headers.");
+        var valueIndexes = pivot.ValueFields.Select(value => Array.IndexOf(headers, value.Field)).ToArray();
+        if (rowIndex < 0 || (pivot.ColumnFields.Count > 0 && columnIndex < 0) || valueIndexes.Any(index => index < 0))
+            throw Invalid($"PivotTable {pivot.Name} contains a field outside its source headers.");
 
         var rows = new List<CacheValue[]>();
         for (var row = sourceRange.Top + 1; row <= sourceRange.Bottom; row++)
@@ -112,7 +115,9 @@ internal sealed class XlsxPivotTableCodec
             .ToArray();
 
         var expectedRows = 1 + shared[rowIndex].Count + (pivot.ColumnGrandTotals ? 1 : 0);
-        var expectedColumns = 1 + (columnIndex >= 0 ? shared[columnIndex].Count + (pivot.RowGrandTotals ? 1 : 0) : 1);
+        var expectedColumns = 1 + (columnIndex >= 0
+            ? (shared[columnIndex].Count + (pivot.RowGrandTotals ? 1 : 0)) * valueIndexes.Length
+            : valueIndexes.Length);
         if (targetRange.RowCount != expectedRows || targetRange.ColumnCount != expectedColumns)
             throw Invalid($"PivotTable {pivot.Name} target range must be {expectedRows}x{expectedColumns} for its cached axis members and grand-total policy.");
         var targetCells = target.Artifact.Cells.ToDictionary(cell => (cell.Row, cell.Column));
@@ -133,7 +138,7 @@ internal sealed class XlsxPivotTableCodec
 
         var pivotPart = target.Part.AddNewPart<PivotTablePart>();
         pivotPart.AddPart(cachePart);
-        pivotPart.PivotTableDefinition = new PivotTableDefinition(BuildPivotTableDefinition(pivot, headers, shared, rowIndex, columnIndex, valueIndex, cacheId, targetRange));
+        pivotPart.PivotTableDefinition = new PivotTableDefinition(BuildPivotTableDefinition(pivot, headers, shared, rowIndex, columnIndex, valueIndexes, cacheId, targetRange));
 
         var pivotCaches = _workbookPart.Workbook!.GetFirstChild<PivotCaches>();
         if (pivotCaches is null)
@@ -211,17 +216,41 @@ internal sealed class XlsxPivotTableCodec
             string.IsNullOrEmpty(recordsRelationshipId) || !ReferenceEquals(cachePart.GetPartById(recordsRelationshipId), recordsPart)) return false;
         var location = root.Elements(Main + "location").SingleOrDefault();
         var pivotFields = root.Elements(Main + "pivotFields").SingleOrDefault()?.Elements(Main + "pivotField").ToArray();
-        var rowField = root.Elements(Main + "rowFields").SingleOrDefault()?.Elements(Main + "field").SingleOrDefault();
+        var rowFieldElements = root.Elements(Main + "rowFields").SingleOrDefault()?.Elements(Main + "field").ToArray() ?? [];
         var columnFieldElements = root.Elements(Main + "colFields").SingleOrDefault()?.Elements(Main + "field").ToArray() ?? [];
-        var dataField = root.Elements(Main + "dataFields").SingleOrDefault()?.Elements(Main + "dataField").SingleOrDefault();
+        var columnItems = root.Elements(Main + "colItems").SingleOrDefault()?.Elements(Main + "i").ToArray();
+        var dataFields = root.Elements(Main + "dataFields").SingleOrDefault()?.Elements(Main + "dataField").ToArray() ?? [];
         var cacheFields = cacheRoot.Elements(Main + "cacheFields").SingleOrDefault()?.Elements(Main + "cacheField").ToArray();
         var worksheetSource = cacheRoot.Elements(Main + "cacheSource").SingleOrDefault()?.Elements(Main + "worksheetSource").SingleOrDefault();
-        if (location is null || pivotFields is null || rowField is null || columnFieldElements.Length > 1 || dataField is null || cacheFields is null || worksheetSource is null || pivotFields.Length != cacheFields.Length) return false;
-        if (!int.TryParse(rowField.Attribute("x")?.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var rowIndex) || rowIndex < 0 || rowIndex >= cacheFields.Length) return false;
+        if (location is null || pivotFields is null || ReadBoolean(root.Attribute("dataOnRows"), false) ||
+            rowFieldElements.Length != 1 || dataFields.Length is < 1 or > MaxValueFields ||
+            cacheFields is null || worksheetSource is null || pivotFields.Length != cacheFields.Length) return false;
+        if (dataFields.Length > 1 && (columnItems is null || columnItems.Length < dataFields.Length)) return false;
+        if (!int.TryParse(rowFieldElements[0].Attribute("x")?.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var rowIndex) || rowIndex < 0 || rowIndex >= cacheFields.Length) return false;
+
         var columnIndex = -1;
-        if (columnFieldElements.Length == 1 && (!int.TryParse(columnFieldElements[0].Attribute("x")?.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out columnIndex) || columnIndex < 0 || columnIndex >= cacheFields.Length)) return false;
-        if (!int.TryParse(dataField.Attribute("fld")?.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var valueIndex) || valueIndex < 0 || valueIndex >= cacheFields.Length) return false;
-        if (!TryAggregation(dataField.Attribute("subtotal")?.Value, out var aggregation)) return false;
+        var dataLayoutFields = 0;
+        foreach (var columnField in columnFieldElements)
+        {
+            if (!int.TryParse(columnField.Attribute("x")?.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedColumnIndex)) return false;
+            if (parsedColumnIndex == DataLayoutFieldIndex)
+            {
+                dataLayoutFields++;
+                continue;
+            }
+            if (parsedColumnIndex < 0 || parsedColumnIndex >= cacheFields.Length || columnIndex >= 0) return false;
+            columnIndex = parsedColumnIndex;
+        }
+        if (dataFields.Length == 1 ? dataLayoutFields != 0 : dataLayoutFields != 1) return false;
+
+        var parsedValueFields = new List<(int Index, string Name, SpreadsheetPivotAggregation Aggregation)>();
+        foreach (var dataField in dataFields)
+        {
+            if (!int.TryParse(dataField.Attribute("fld")?.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var valueIndex) || valueIndex < 0 || valueIndex >= cacheFields.Length) return false;
+            if (!TryAggregation(dataField.Attribute("subtotal")?.Value, out var aggregation)) return false;
+            if (!ReadBoolean(pivotFields[valueIndex].Attribute("dataField"), false)) return false;
+            parsedValueFields.Add((valueIndex, dataField.Attribute("name")?.Value ?? "", aggregation));
+        }
         var headers = cacheFields.Select(field => field.Attribute("name")?.Value ?? "").ToArray();
         if (headers.Any(string.IsNullOrWhiteSpace) || headers.Distinct(StringComparer.Ordinal).Count() != headers.Length) return false;
         var sourceSheetName = worksheetSource.Attribute("sheet")?.Value;
@@ -251,12 +280,12 @@ internal sealed class XlsxPivotTableCodec
         };
         artifact.RowFields.Add(headers[rowIndex]);
         if (columnIndex >= 0) artifact.ColumnFields.Add(headers[columnIndex]);
-        artifact.ValueFields.Add(new SpreadsheetPivotValueFieldArtifact
+        artifact.ValueFields.Add(parsedValueFields.Select(value => new SpreadsheetPivotValueFieldArtifact
         {
-            Field = headers[valueIndex],
-            Name = dataField.Attribute("name")?.Value ?? "",
-            Aggregation = aggregation,
-        });
+            Field = headers[value.Index],
+            Name = value.Name,
+            Aggregation = value.Aggregation,
+        }));
         try
         {
             ValidateSemantic(artifact);
@@ -330,10 +359,12 @@ internal sealed class XlsxPivotTableCodec
         IReadOnlyList<CacheValue>[] shared,
         int rowIndex,
         int columnIndex,
-        int valueIndex,
+        IReadOnlyList<int> valueIndexes,
         uint cacheId,
         RangeBounds targetRange)
     {
+        var valueIndexSet = valueIndexes.ToHashSet();
+        var multipleValues = valueIndexes.Count > 1;
         var root = new XElement(Main + "pivotTableDefinition",
             new XAttribute("name", pivot.Name),
             new XAttribute("cacheId", cacheId),
@@ -347,7 +378,7 @@ internal sealed class XlsxPivotTableCodec
         root.Add(new XElement(Main + "location", new XAttribute("ref", RangeAddress(targetRange)), new XAttribute("firstHeaderRow", 0), new XAttribute("firstDataRow", 1), new XAttribute("firstDataCol", 1)));
         root.Add(new XElement(Main + "pivotFields", new XAttribute("count", headers.Count), headers.Select((header, index) =>
         {
-            var field = new XElement(Main + "pivotField", new XAttribute("name", header), new XAttribute("dataField", index == valueIndex ? "1" : "0"), new XAttribute("subtotalTop", "1"), new XAttribute("showAll", "1"));
+            var field = new XElement(Main + "pivotField", new XAttribute("name", header), new XAttribute("dataField", valueIndexSet.Contains(index) ? "1" : "0"), new XAttribute("subtotalTop", "1"), new XAttribute("showAll", "1"));
             if (index == rowIndex) field.Add(new XAttribute("axis", "axisRow"));
             else if (index == columnIndex) field.Add(new XAttribute("axis", "axisCol"));
             if (index == rowIndex || index == columnIndex)
@@ -358,17 +389,45 @@ internal sealed class XlsxPivotTableCodec
         root.Add(new XElement(Main + "rowItems", new XAttribute("count", shared[rowIndex].Count + (pivot.ColumnGrandTotals ? 1 : 0)),
             shared[rowIndex].Select((_, index) => new XElement(Main + "i", new XElement(Main + "x", new XAttribute("v", index)))),
             pivot.ColumnGrandTotals ? new XElement(Main + "i") : null));
-        if (columnIndex >= 0)
+        if (columnIndex >= 0 || multipleValues)
         {
-            root.Add(new XElement(Main + "colFields", new XAttribute("count", 1), new XElement(Main + "field", new XAttribute("x", columnIndex))));
-            root.Add(new XElement(Main + "colItems", new XAttribute("count", shared[columnIndex].Count + (pivot.RowGrandTotals ? 1 : 0)),
-                shared[columnIndex].Select((_, index) => new XElement(Main + "i", new XElement(Main + "x", new XAttribute("v", index)))),
-                pivot.RowGrandTotals ? new XElement(Main + "i") : null));
+            var columnFields = new List<XElement>();
+            if (columnIndex >= 0) columnFields.Add(new XElement(Main + "field", new XAttribute("x", columnIndex)));
+            if (multipleValues) columnFields.Add(new XElement(Main + "field", new XAttribute("x", DataLayoutFieldIndex)));
+            root.Add(new XElement(Main + "colFields", new XAttribute("count", columnFields.Count), columnFields));
+
+            if (!multipleValues)
+            {
+                root.Add(new XElement(Main + "colItems", new XAttribute("count", shared[columnIndex].Count + (pivot.RowGrandTotals ? 1 : 0)),
+                    shared[columnIndex].Select((_, index) => new XElement(Main + "i", new XElement(Main + "x", new XAttribute("v", index)))),
+                    pivot.RowGrandTotals ? new XElement(Main + "i") : null));
+            }
+            else
+            {
+                var columnItems = new List<XElement>();
+                var categoryCount = columnIndex >= 0 ? shared[columnIndex].Count : 1;
+                for (var categoryIndex = 0; categoryIndex < categoryCount; categoryIndex++)
+                    for (var valueOrdinal = 0; valueOrdinal < valueIndexes.Count; valueOrdinal++)
+                    {
+                        var item = new XElement(Main + "i", new XAttribute("i", valueOrdinal));
+                        if (columnIndex >= 0) item.Add(new XElement(Main + "x", new XAttribute("v", categoryIndex)));
+                        item.Add(new XElement(Main + "x", new XAttribute("v", valueOrdinal)));
+                        columnItems.Add(item);
+                    }
+                if (columnIndex >= 0 && pivot.RowGrandTotals)
+                    for (var valueOrdinal = 0; valueOrdinal < valueIndexes.Count; valueOrdinal++)
+                    {
+                        var item = new XElement(Main + "i", new XAttribute("t", "grand"), new XAttribute("i", valueOrdinal), new XElement(Main + "x"));
+                        item.Add(new XElement(Main + "x", new XAttribute("v", valueOrdinal)));
+                        columnItems.Add(item);
+                    }
+                root.Add(new XElement(Main + "colItems", new XAttribute("count", columnItems.Count), columnItems));
+            }
         }
-        var value = pivot.ValueFields[0];
-        root.Add(new XElement(Main + "dataFields", new XAttribute("count", 1), new XElement(Main + "dataField",
-            new XAttribute("name", string.IsNullOrEmpty(value.Name) ? $"{AggregationLabel(value.Aggregation)} of {value.Field}" : value.Name),
-            new XAttribute("fld", valueIndex), new XAttribute("subtotal", AggregationName(value.Aggregation)))));
+        root.Add(new XElement(Main + "dataFields", new XAttribute("count", pivot.ValueFields.Count), pivot.ValueFields.Select((value, index) =>
+            new XElement(Main + "dataField",
+                new XAttribute("name", string.IsNullOrEmpty(value.Name) ? $"{AggregationLabel(value.Aggregation)} of {value.Field}" : value.Name),
+                new XAttribute("fld", valueIndexes[index]), new XAttribute("subtotal", AggregationName(value.Aggregation))))));
         root.Add(new XElement(Main + "pivotTableStyleInfo", new XAttribute("showRowHeaders", "1"), new XAttribute("showColHeaders", "1"), new XAttribute("showRowStripes", "0"), new XAttribute("showColStripes", "0"), new XAttribute("showLastColumn", "0")));
         return root.ToString(SaveOptions.DisableFormatting);
     }
@@ -376,9 +435,11 @@ internal sealed class XlsxPivotTableCodec
     private static void ValidateSemantic(SpreadsheetPivotTableArtifact pivot)
     {
         if (string.IsNullOrWhiteSpace(pivot.Id) || string.IsNullOrWhiteSpace(pivot.Name) || pivot.Name.Length > 255) throw Invalid("PivotTable id and a 1-255 character name are required.");
-        if (pivot.RowFields.Count != 1 || pivot.ColumnFields.Count > 1 || pivot.ValueFields.Count != 1) throw new CodecException("unsupported_spreadsheet_pivot_profile", $"PivotTable {pivot.Name} requires one row field, at most one column field, and one value field.");
+        if (pivot.RowFields.Count != 1 || pivot.ColumnFields.Count > 1 || pivot.ValueFields.Count is < 1 or > MaxValueFields)
+            throw new CodecException("unsupported_spreadsheet_pivot_profile", $"PivotTable {pivot.Name} requires one row field, at most one column field, and 1 through {MaxValueFields} value fields.");
         if (pivot.RowFields[0] == pivot.ColumnFields.FirstOrDefault()) throw Invalid($"PivotTable {pivot.Name} cannot place one field on both axes.");
-        if (!Enum.IsDefined(pivot.ValueFields[0].Aggregation) || pivot.ValueFields[0].Aggregation == SpreadsheetPivotAggregation.Unspecified) throw Invalid($"PivotTable {pivot.Name} has an unsupported aggregation.");
+        if (pivot.ValueFields.Any(value => !Enum.IsDefined(value.Aggregation) || value.Aggregation == SpreadsheetPivotAggregation.Unspecified))
+            throw Invalid($"PivotTable {pivot.Name} has an unsupported aggregation.");
         if (string.IsNullOrWhiteSpace(pivot.SourceWorksheetId) || string.IsNullOrWhiteSpace(pivot.SourceReference) || string.IsNullOrWhiteSpace(pivot.TargetReference)) throw Invalid($"PivotTable {pivot.Name} requires source and target references.");
     }
 
@@ -494,10 +555,10 @@ internal sealed class XlsxPivotTableCodec
 
     private static string SemanticHash(SpreadsheetPivotTableArtifact pivot)
     {
-        var value = pivot.ValueFields.Single();
         var policy = pivot.RefreshPolicy ?? new SpreadsheetPivotRefreshPolicyArtifact();
         return Hash(string.Join("\u001f", pivot.Id, pivot.Name, pivot.SourceWorksheetId, pivot.SourceReference, pivot.TargetReference,
-            string.Join("\u001e", pivot.RowFields), string.Join("\u001e", pivot.ColumnFields), value.Field, value.Name, (int)value.Aggregation,
+            string.Join("\u001e", pivot.RowFields), string.Join("\u001e", pivot.ColumnFields),
+            string.Join("\u001d", pivot.ValueFields.Select(value => string.Join("\u001c", value.Field, value.Name, (int)value.Aggregation))),
             pivot.RowGrandTotals, pivot.ColumnGrandTotals, policy.RefreshOnLoad, policy.SaveData, policy.EnableRefresh, policy.Invalid,
             policy.MissingItemsLimit, policy.RefreshedBy, policy.RefreshedDateIso));
     }

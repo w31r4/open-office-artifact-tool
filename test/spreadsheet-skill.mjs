@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -224,13 +225,14 @@ try {
   assert.match(pivotTableResult.inspection.ndjson, /"kind":"pivotTable"/);
   const pivotTableWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(pivotTablePath));
   assert.ok(Math.abs(pivotTableWorkbook.worksheets.getItem("Pivot Summary").getRange("A1:A5").format.columnWidthPx - 112) <= 1);
-  assert.ok(Math.abs(pivotTableWorkbook.worksheets.getItem("Pivot Summary").getRange("B1:C5").format.columnWidthPx - 88) <= 1);
+  assert.ok(Math.abs(pivotTableWorkbook.worksheets.getItem("Pivot Summary").getRange("B1:E5").format.columnWidthPx - 80) <= 1);
+  assert.ok(Math.abs(pivotTableWorkbook.worksheets.getItem("Pivot Summary").getRange("F1:G5").format.columnWidthPx - 96) <= 1);
   assert.deepEqual(pivotTableWorkbook.worksheets.getItem("Pivot Summary").pivotTables.items[0].computedValues(), [
-    ["Region", "Direct", "Partner", "Grand Total"],
-    ["East", 120, 80, 200],
-    ["West", 150, 90, 240],
-    ["North", 110, 70, 180],
-    ["Grand Total", 380, 240, 620],
+    ["Region", "Direct — Revenue", "Direct — Units", "Partner — Revenue", "Partner — Units", "Grand Total — Revenue", "Grand Total — Units"],
+    ["East", 120, 12, 80, 8, 200, 20],
+    ["West", 150, 15, 90, 9, 240, 24],
+    ["North", 110, 11, 70, 7, 180, 18],
+    ["Grand Total", 380, 38, 240, 24, 620, 62],
   ]);
   const pivotTableZip = await JSZip.loadAsync(await fs.readFile(pivotTablePath));
   assert.equal(Object.keys(pivotTableZip.files).filter((name) => /pivotTables\/pivotTable.*\.xml$/i.test(name)).length, 1);
@@ -246,6 +248,36 @@ try {
   if (pivotNativeStatus.available) {
     assert.equal(pivotQa.summary.nativeRender.status, "passed");
     assert.equal(pivotQa.summary.nativeRender.pageCount, 2, "the Data and Pivot Summary sheets must each fit on one native-rendered page");
+
+    const libreOfficeDir = path.join(outputDir, "pivot-libreoffice-resave");
+    const libreOfficeProfile = path.join(outputDir, "pivot-libreoffice-profile");
+    await fs.mkdir(libreOfficeDir, { recursive: true });
+    await fs.mkdir(libreOfficeProfile, { recursive: true });
+    const resaved = spawnSync("soffice", [
+      `-env:UserInstallation=file://${libreOfficeProfile}`,
+      "--headless",
+      "--convert-to", "xlsx",
+      "--outdir", libreOfficeDir,
+      pivotTablePath,
+    ], { encoding: "utf8", shell: false });
+    assert.equal(resaved.status, 0, resaved.stderr || resaved.stdout);
+    const libreOfficePath = path.join(libreOfficeDir, path.basename(pivotTablePath));
+    const libreOfficeBytes = await fs.readFile(libreOfficePath);
+    const libreOfficeWorkbook = await SpreadsheetFile.importXlsx(new FileBlob(libreOfficeBytes, {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      name: path.basename(libreOfficePath),
+    }));
+    const libreOfficePivot = libreOfficeWorkbook.worksheets.getItem("Pivot Summary").pivotTables.items[0];
+    assert.deepEqual(libreOfficePivot.valueFields, [
+      { field: "Revenue", summarizeBy: "sum", name: "Revenue" },
+      { field: "Units", summarizeBy: "sum", name: "Units" },
+    ]);
+    assert.deepEqual(libreOfficePivot.computedValues().at(-1), ["Grand Total", 380, 38, 240, 24, 620, 62]);
+    const libreOfficeZip = await JSZip.loadAsync(libreOfficeBytes);
+    const libreOfficePivotPart = Object.keys(libreOfficeZip.files).find((name) => /pivotTables\/pivotTable.*\.xml$/i.test(name));
+    const preservedLibreOffice = await SpreadsheetFile.exportXlsx(libreOfficeWorkbook, { recalculate: false });
+    const preservedLibreOfficeZip = await JSZip.loadAsync(new Uint8Array(await preservedLibreOffice.arrayBuffer()));
+    assert.equal(await preservedLibreOfficeZip.file(libreOfficePivotPart).async("text"), await libreOfficeZip.file(libreOfficePivotPart).async("text"));
   }
 
   const { createFinancialReturnsWorkbook } = await import(
