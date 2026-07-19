@@ -79,6 +79,7 @@ const requiredFiles = [
   "scripts/pdf_provider.py",
   "scripts/qpdf_provider.py",
   "scripts/pyhanko_provider.py",
+  "scripts/pyhanko_sign_provider.py",
   "scripts/verapdf_provider.py",
   "scripts/ocrmypdf_provider.py",
   "scripts/pikepdf_provider.py",
@@ -118,6 +119,10 @@ assert.match(skillText, /virtual environment executable.*pyvenv\.cfg/s);
 assert.match(skillText, /verapdf_provider\.py/);
 assert.match(skillText, /ocrmypdf_provider\.py/);
 assert.match(skillText, /pikepdf_provider\.py/);
+assert.match(skillText, /pyhanko_sign_provider\.py/);
+assert.match(skillText, /passphrase.*stdin/is);
+assert.match(skillText, /local PKCS#12/i);
+assert.match(skillText, /timestamp.*LTV.*external/is);
 assert.match(skillText, /active-content.*active-and-auxiliary/is);
 assert.match(skillText, /not.*redaction.*metadata.*XFA/is);
 assert.match(skillText, /complete imported PDF.*not a sanitizer/is);

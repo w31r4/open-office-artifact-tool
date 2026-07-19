@@ -24,7 +24,7 @@ Dynamic XFA, complex Acrobat JavaScript, 3D annotations, and RichMedia require a
 
 ## Signed documents
 
-An incremental update can retain byte-identical data covered by an earlier signature. It cannot make the earlier signer endorse arbitrary new edits. The MuPDF.js primitive does not validate cryptographic trust, DocMDP, FieldMDP, or field locks, so it rejects signed-PDF incremental editing. A deliberate rewrite requires explicit signature invalidation; specialist validation and re-signing happen outside this primitive.
+An incremental update can retain byte-identical data covered by an earlier signature. It cannot make the earlier signer endorse arbitrary new edits. The MuPDF.js primitive does not validate cryptographic trust, DocMDP, FieldMDP, or field locks, so it rejects signed-PDF incremental editing. The shipped pyHanko signer can add one source-bound local-PKCS#12 signature only after an exact inventory and policy choice; it preserves earlier bytes and revalidates all signatures, but does not create TSA/LTV evidence or assert that old signers endorse the appended revision. A deliberate rewrite requires explicit signature invalidation and a new version/signing decision.
 
 ## License boundary
 

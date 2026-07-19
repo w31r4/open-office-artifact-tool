@@ -48,8 +48,9 @@ Read the [provider matrix](references/PROVIDER_MATRIX.md), [save policies](refer
 | Native page/file evidence and final raster QA | Poppler |
 | Structural diagnosis, recovery rewrite, and linearization | separately installed qpdf through `scripts/qpdf_provider.py` |
 | Bounded active/auxiliary structure cleanup without page reconstruction | separately installed pikepdf 10.10.x through `scripts/pikepdf_provider.py` |
-| Read-only signature integrity/trust/difference/DocMDP validation | pyHanko core through `scripts/pyhanko_provider.py` |
-| Signature creation, timestamps, and LTV updates | explicit external pyHanko workflow |
+| Signature inventory plus integrity/trust/difference/DocMDP validation | pyHanko core through `scripts/pyhanko_sign_provider.py` and `scripts/pyhanko_provider.py` |
+| Source-bound local PKCS#12 approval/certification signature | `scripts/pyhanko_sign_provider.py`; incremental output, explicit field/DocMDP policy, passphrase on stdin |
+| Timestamp-authority, LTV, PKCS#11, or remote signing | explicit external pyHanko workflow |
 | PDF/A or PDF/UA machine rules | separately installed veraPDF 1.30.x through `scripts/verapdf_provider.py` |
 | Scanned-PDF searchable text layer | separately installed OCRmyPDF 17.8.x through source-bound `scripts/ocrmypdf_provider.py`; strict redaction residue OCR remains the PyMuPDF/Tesseract sanitize route |
 
@@ -293,13 +294,49 @@ Inspect signatures, DocMDP, FieldMDP, field types, appearance states, and field 
 
 ## Sign And Verify
 
-Use the shipped source-bound pyHanko adapter for read-only signature validation:
+Use the shipped source-bound pyHanko adapters for local PKCS#12 signing and
+read-only validation. Inspect the exact source first, then sign to a distinct
+path. The credential passphrase is accepted only on stdin (or the caller must
+explicitly declare an unencrypted PKCS#12); never put it in argv, environment
+variables, reports, logs, or repository files:
 
 ```bash
 PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
 SOURCE_SHA256="$(shasum -a 256 input.pdf | awk '{print $1}')"
+CREDENTIAL_SHA256="$(shasum -a 256 /secure/signer.p12 | awk '{print $1}')"
+"$PYTHON_BIN" scripts/pyhanko_sign_provider.py probe
+"$PYTHON_BIN" scripts/pyhanko_sign_provider.py inspect input.pdf \
+  --expected-sha256 "$SOURCE_SHA256" --trusted-input \
+  > tmp/pdfs/signature-inventory.json
+"$PYTHON_BIN" scripts/pyhanko_sign_provider.py sign \
+  input.pdf tmp/pdfs/signed.pdf \
+  --expected-sha256 "$SOURCE_SHA256" --trusted-input \
+  --credential /secure/signer.p12 \
+  --credential-sha256 "$CREDENTIAL_SHA256" --passphrase-stdin \
+  --field-name Approval --field-mode create-invisible \
+  --signature-kind approval --expected-signature-count 0 \
+  > tmp/pdfs/signing-report.json
+# A terminal gets a hidden prompt. Automation pipes stdin directly from its
+# secret manager; never stage the secret in argv, env, or a file.
+```
+
+For a visible field, add `--field-mode create-visible --page-index 0 --box
+x1,y1,x2,y2`. Certification requires `--signature-kind certification` plus an
+explicit `--docmdp-permission no-changes|fill-forms|annotate`,
+and is rejected unless it is the first signature. A later approval signature
+requires both the exact expected signature count and
+`--allow-existing-signatures`; that acknowledgement does not claim an earlier
+signer approved the new revision. The signing adapter preserves the exact old
+byte prefix, validates every resulting signature before atomic no-replace
+promotion, and emits source/output/credential identity without secret material.
+
+Then validate the exact output under an explicit trust policy:
+
+```bash
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+SOURCE_SHA256="$(shasum -a 256 tmp/pdfs/signed.pdf | awk '{print $1}')"
 "$PYTHON_BIN" scripts/pyhanko_provider.py probe
-"$PYTHON_BIN" scripts/pyhanko_provider.py verify input.pdf \
+"$PYTHON_BIN" scripts/pyhanko_provider.py verify tmp/pdfs/signed.pdf \
   --expected-sha256 "$SOURCE_SHA256" \
   --trust-policy explicit-roots \
   --trust-root /trusted/root-ca.pem \
@@ -309,12 +346,14 @@ SOURCE_SHA256="$(shasum -a 256 input.pdf | awk '{print $1}')"
   > tmp/pdfs/signature-validation.json
 ```
 
-The adapter accepts only explicit trust roots, never fetches network evidence,
+The validator accepts only explicit trust roots, never fetches network evidence,
 works on a private immutable snapshot, and reports ByteRange coverage,
 cryptographic integrity, certificate trust, timestamps, modification level,
 DocMDP/FieldMDP, and policy gates separately. The output explicitly does not
-claim complete PAdES profile conformance. Signature creation, key access,
-timestamping, and LTV updates remain explicit external pyHanko workflows;
+claim complete PAdES profile conformance. The shipped signer supports only a
+local PKCS#12 credential and SHA-256 detached/PAdES subfilters. Timestamping,
+LTV updates, PKCS#11, remote signing, and online revocation retrieval remain
+explicit external pyHanko workflows;
 PyMuPDF, pypdf, MuPDF.js, and qpdf are not complete signing backends.
 
 Validate before and after every later revision. Report separately: cryptographic integrity, signer trust, time/revocation evidence, and whether the exact modification class is permitted. An older signature cannot be claimed to approve arbitrary new edits. See [sign and verify](tasks/sign_verify.md).

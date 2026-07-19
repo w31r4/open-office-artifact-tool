@@ -1,10 +1,11 @@
 # Sign and verify PDFs
 
-Use pyHanko for PDF signatures. The shipped `scripts/pyhanko_provider.py` adapter
-is deliberately read-only: it validates the exact inspected bytes and emits
-typed evidence for an Agent. Signature creation, private-key access, timestamp
-authorities, and LTV updates remain explicit pyHanko workflows outside that
-adapter. PyMuPDF, MuPDF.js, pypdf, and qpdf are not signature-trust authorities.
+Use pyHanko for PDF signatures. The shipped `scripts/pyhanko_sign_provider.py`
+adapter inventories signature fields and adds exactly one local-PKCS#12
+approval or certification signature as a bounded incremental revision. The
+separate read-only `scripts/pyhanko_provider.py` validates exact bytes and emits
+typed integrity, trust, revision, and DocMDP evidence for an Agent. PyMuPDF,
+MuPDF.js, pypdf, and qpdf are not signature-trust authorities.
 
 ## Install and probe the validation runtime
 
@@ -17,14 +18,70 @@ uv venv .venv-pdf
 uv pip install --python .venv-pdf/bin/python \
   'pyHanko>=0.35.0,<0.36.0' 'pyhanko-certvalidator>=0.31.0,<0.32.0'
 export OPEN_OFFICE_PDF_PROVIDER_PYTHON="$PWD/.venv-pdf/bin/python"
+"$OPEN_OFFICE_PDF_PROVIDER_PYTHON" scripts/pyhanko_sign_provider.py probe
 "$OPEN_OFFICE_PDF_PROVIDER_PYTHON" scripts/pyhanko_provider.py probe
 "$OPEN_OFFICE_PDF_PROVIDER_PYTHON" scripts/pdf_provider.py check \
   --provider pyhanko --require
 ```
 
-No lifecycle hook installs this dependency. The adapter does not use a system
-trust store, fetch certificates, CRLs, or OCSP responses, invoke a CLI, mutate
-the PDF, or route to another provider.
+No lifecycle hook installs this dependency. Neither adapter uses a system trust
+store, fetches certificates, CRLs, or OCSP responses, invokes a CLI, or routes
+to another provider. The signer supports local PKCS#12 credentials only; TSA,
+LTV/DSS, PKCS#11, remote signing, and complete PAdES conformance remain external.
+
+## Inspect and sign one exact source
+
+Hash the source and credential immediately before use. Inspect current fields,
+signature count, certification state, revision count, and the selected page's
+unrotated CropBox before choosing a field mode:
+
+```bash
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+SOURCE_SHA256="$(shasum -a 256 input.pdf | awk '{print $1}')"
+CREDENTIAL_SHA256="$(shasum -a 256 /secure/signer.p12 | awk '{print $1}')"
+
+"$PYTHON_BIN" scripts/pyhanko_sign_provider.py inspect input.pdf \
+  --expected-sha256 "$SOURCE_SHA256" --page-index 0 --trusted-input \
+  > tmp/pdfs/signature-inventory.json
+
+# Invisible approval signature. A terminal gets a hidden prompt.
+"$PYTHON_BIN" scripts/pyhanko_sign_provider.py sign \
+  input.pdf tmp/pdfs/signed.pdf \
+  --expected-sha256 "$SOURCE_SHA256" --trusted-input \
+  --credential /secure/signer.p12 \
+  --credential-sha256 "$CREDENTIAL_SHA256" --passphrase-stdin \
+  --field-name Approval --field-mode create-invisible \
+  --signature-kind approval --subfilter pades \
+  --expected-signature-count 0 \
+  > tmp/pdfs/signing-report.json
+# Automation pipes stdin directly from its secret manager without staging the
+# value in argv, env, or a file.
+```
+
+Use `--no-passphrase` only for a deliberately unencrypted PKCS#12. Secrets are
+never accepted on argv or through an environment option and are omitted from
+the versioned report. The provider rejects symlink credentials, stale hashes,
+encryption, source overwrite, output collisions, oversized inputs/outputs,
+unsupported runtime versions, and missing trust/isolation declarations.
+
+Field modes are explicit:
+
+- `existing` fills exactly one named empty signature field;
+- `create-invisible` creates an invisible field on page 0;
+- `create-visible` also requires `--page-index` and an integer
+  `--box x1,y1,x2,y2` wholly inside an unrotated inspected CropBox.
+
+A certification signature must be first and requires
+`--docmdp-permission no-changes|fill-forms|annotate`. Finalize content and
+Poppler visual QA before applying restrictive certification. A later approval
+signature requires both the exact `--expected-signature-count` and
+`--allow-existing-signatures`. This acknowledges a new revision; it never means
+an earlier signer approved it.
+
+The output is a distinct transaction: it preserves the complete source byte
+prefix, appends one revision, adds one signature, passes internal integrity and
+DocMDP validation, and is promoted without replacement. Re-run qpdf structure
+inspection, explicit-root validation, and Poppler rendering before delivery.
 
 ## Validate one exact source
 
@@ -92,30 +149,14 @@ does not mean the signer approved arbitrary later revisions. Review
 `coverage`, `modificationLevel`, `docMDPCompliant`, timestamps, and every
 signature in revision order.
 
-## Create or add signatures
+## Capabilities outside the shipped signer
 
-Install the separate CLI package only when the task truly needs command-line
-signing:
-
-```bash
-uv pip install --python .venv-pdf/bin/python 'pyhanko-cli>=0.4.0,<0.5.0'
-
-pyhanko sign addfields \
-  --field '1/72,72,260,120/Sig1' \
-  input.pdf tmp/pdfs/with-signature-field.pdf
-
-pyhanko sign addsig --field Sig1 pemder \
-  --key /secure/key.pem \
-  --cert /secure/cert.pem \
-  input.pdf output.pdf
-```
-
-Keep private keys, tokens, PINs, and passphrases outside scripts, logs, shell
-history, and repository files. Inspect existing signatures, `/Perms`, DocMDP,
-FieldMDP, and field locks before signing. Finalize content and visual QA before
-applying a restrictive certification signature. Use PKCS#12, PKCS#11,
-timestamp, revocation, and PAdES/LTV options only after reviewing pyHanko's
-official [signing](https://docs.pyhanko.eu/en/latest/cli-guide/signing.html) and
+Use an explicit external pyHanko workflow for PKCS#11/HSM credentials, remote
+signing services, timestamp authorities, revocation-material embedding, LTV/DSS
+updates, or a claimed PAdES profile. Keep private keys, tokens, PINs, and
+passphrases outside scripts, logs, shell history, reports, and repository files.
+Review pyHanko's official
+[signing](https://docs.pyhanko.eu/en/latest/cli-guide/signing.html) and
 [validation](https://docs.pyhanko.eu/en/latest/lib-guide/validation.html)
 documentation.
 

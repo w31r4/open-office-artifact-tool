@@ -35,7 +35,7 @@ The PDF Skill also ships thin Python scripts that can call the following separat
 | pypdf | Basic PDF structure, AcroForm, annotation, rewrite, and incremental operations | BSD-3-Clause |
 | PyMuPDF | Optional specialist strict scrub, legacy high-level imported-PDF edits, and residue inspection not yet covered by the JavaScript path | GNU AGPL-3.0 or an Artifex commercial license |
 | pikepdf 10.10.x | Source-bound fixed-profile active/auxiliary PDF structure cleanup through a shipped thin adapter | MPL-2.0; retain Pillow, lxml, packaging, qpdf, and other selected runtime notices |
-| pyHanko core and pyhanko-certvalidator | Source-bound read-only PDF signature integrity, trust, difference, timestamp, DocMDP, and FieldMDP validation | MIT |
+| pyHanko core and pyhanko-certvalidator | Source-bound local-PKCS#12 PDF signing plus read-only signature integrity, trust, difference, timestamp, DocMDP, and FieldMDP validation | MIT |
 | veraPDF 1.30.x CLI | Source-bound read-only PDF/A and PDF/UA machine-rule validation | MPL-2.0-or-later and GPL-3.0-or-later options, plus distribution notices |
 | OCRmyPDF 17.8.x, Tesseract 5.x, and the selected OCRmyPDF runtime dependencies | Source-bound complete-document searchable-layer OCR through a shipped thin adapter | OCRmyPDF: MPL-2.0; Tesseract: Apache-2.0; pypdfium2: BSD-3-Clause/Apache-2.0; pikepdf: MPL-2.0; fpdf2: LGPL-3.0-only; retain every selected distribution's transitive notices |
 
@@ -52,11 +52,13 @@ The following external programs are invoked only when installed separately. They
 - Poppler command-line tools: GPL licensing applies to the separately installed binaries.
 - qpdf 11+: optional separately installed structural inspection/recovery/linearization CLI used through the shipped thin provider script; retain its Apache-2.0 and applicable embedded-component notices.
 - pikepdf `>=10.10,<10.11`: optional separately installed qpdf-based Python provider used by the shipped bounded `structure-clean` adapter. It remains outside the npm dependency graph and tarball. Retain its MPL-2.0 license plus the notices for qpdf, Pillow, lxml, packaging, and other components in the selected Python environment.
-- pyHanko: optional separately installed PDF provider. The shipped thin adapter
-  uses pyHanko core `>=0.35,<0.36` for read-only signature validation; signing,
-  timestamp, and LTV command workflows additionally use the separately packaged
-  `pyhanko-cli`. Neither distribution is bundled by npm. Retain their MIT
-  license and transitive cryptography notices.
+- pyHanko: optional separately installed PDF provider. The shipped thin adapters
+  use pyHanko core `>=0.35,<0.36` for bounded local-PKCS#12 signing and read-only
+  validation; pyhanko-certvalidator `>=0.31,<0.32` supplies validation support.
+  The bounded route does not require `pyhanko-cli`. TSA/LTV, PKCS#11/HSM, remote
+  signing, and other external workflows may require additional packages or
+  services. None is bundled by npm. Retain their MIT licenses and transitive
+  cryptography notices.
 - veraPDF 1.30.x: optional separately installed PDF/A and PDF/UA validation distribution used through the shipped bounded adapter; retain its MPL-2.0-or-later/GPL-3.0-or-later choice and the notices shipped by the selected components.
 - OCRmyPDF `>=17.8,<17.9` and Tesseract 5.x: optional separately installed OCR providers used by the shipped source-bound complete-document searchable-layer adapter. The adapter also requires qpdf 11+, Poppler `pdftotext`, and OCRmyPDF's separately installed fpdf2/pypdfium runtime; none is bundled by npm. OCRmyPDF is MPL-2.0, Tesseract is Apache-2.0, and the transitive runtime components retain their own notices. Strict image-residue checks remain the separate PyMuPDF/Tesseract sanitize gate.
 - .NET 8 SDK: used to build the WebAssembly codec and optional Office bridge; the SDK is not bundled. The source-built .NET WebAssembly runtime needed by consumers is bundled with its upstream license and notices.

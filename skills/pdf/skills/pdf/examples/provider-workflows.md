@@ -75,19 +75,34 @@ content, so neither is strict sanitize. Re-inspect with qpdf, apply the intended
 residue policy, and compare every source/output page with Poppler. See
 [`tasks/structure_clean.md`](../tasks/structure_clean.md).
 
-## pyHanko read-only signature validation
+## pyHanko local-PKCS#12 signing and validation
 
 Install `pyHanko>=0.35,<0.36` into the selected PDF provider environment. The
-core library is enough for validation; the separate `pyhanko-cli` package is
-only needed by an explicit signing workflow.
+core library powers both shipped adapters; the separate `pyhanko-cli` package
+is not required for this bounded workflow.
 
 ```bash
 PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
-SOURCE_SHA256="$(shasum -a 256 signed.pdf | awk '{print $1}')"
+SOURCE_SHA256="$(shasum -a 256 input.pdf | awk '{print $1}')"
+CREDENTIAL_SHA256="$(shasum -a 256 /secure/signer.p12 | awk '{print $1}')"
 "$PYTHON_BIN" scripts/pdf_provider.py check --provider pyhanko --require
+"$PYTHON_BIN" scripts/pyhanko_sign_provider.py inspect input.pdf \
+  --expected-sha256 "$SOURCE_SHA256" --trusted-input \
+  > tmp/pdfs/signature-inventory.json
+"$PYTHON_BIN" scripts/pyhanko_sign_provider.py sign \
+  input.pdf tmp/pdfs/signed.pdf \
+  --expected-sha256 "$SOURCE_SHA256" --trusted-input \
+  --credential /secure/signer.p12 \
+  --credential-sha256 "$CREDENTIAL_SHA256" --passphrase-stdin \
+  --field-name Approval --field-mode create-invisible \
+  --signature-kind approval --expected-signature-count 0 \
+  > tmp/pdfs/signing-report.json
+# Hidden terminal prompt; automation pipes stdin directly from its secret manager.
+
+SIGNED_SHA256="$(shasum -a 256 tmp/pdfs/signed.pdf | awk '{print $1}')"
 "$PYTHON_BIN" scripts/pyhanko_provider.py probe
-"$PYTHON_BIN" scripts/pyhanko_provider.py verify signed.pdf \
-  --expected-sha256 "$SOURCE_SHA256" \
+"$PYTHON_BIN" scripts/pyhanko_provider.py verify tmp/pdfs/signed.pdf \
+  --expected-sha256 "$SIGNED_SHA256" \
   --trust-policy explicit-roots \
   --trust-root /trusted/root-ca.pem \
   --revocation-policy none \
@@ -102,7 +117,8 @@ or `require` when the task and available evidence demand it. The adapter never
 fetches network evidence or guesses trust roots. Review every signature's
 signed revision, coverage, modification level, DocMDP result, timestamp, and
 trust status rather than treating an intact old ByteRange as approval of later
-edits. The report is not a complete PAdES conformance certificate.
+edits. The report is not a complete PAdES conformance certificate. TSA/LTV,
+PKCS#11/HSM, and remote signing remain explicit external workflows.
 
 ## veraPDF source-bound machine validation
 

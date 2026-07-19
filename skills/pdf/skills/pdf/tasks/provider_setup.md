@@ -33,10 +33,11 @@ Install a specialist provider yourself only when the task requires a capability 
 - qpdf 11+: separately installed structural diagnosis, recovery rewrite, and
   linearization through the shipped `scripts/qpdf_provider.py`; configure an
   exact executable with `OPEN_OFFICE_PDF_QPDF` when it is not on `PATH`.
-- pyHanko 0.35.x core: exact-source read-only signature integrity, trust,
-  difference, DocMDP, and FieldMDP validation through the shipped
-  `scripts/pyhanko_provider.py`; the separate `pyhanko-cli` package is needed
-  only for external signing/timestamp/LTV command workflows.
+- pyHanko 0.35.x core: source-bound local-PKCS#12 approval/certification signing
+  through `scripts/pyhanko_sign_provider.py`, plus exact-source integrity,
+  trust, difference, DocMDP, and FieldMDP validation through
+  `scripts/pyhanko_provider.py`. TSA/LTV, PKCS#11, and remote signing remain
+  external workflows.
 - veraPDF 1.30.x: exact-source PDF/A and PDF/UA machine validation through the shipped `scripts/verapdf_provider.py` adapter.
 - OCRmyPDF 17.8.x + Tesseract 5.x + qpdf 11+ + Poppler `pdftotext`:
   source-bound complete-document searchable-layer OCR through the shipped
@@ -77,8 +78,7 @@ does not erase metadata, form values, XFA, comments, hidden/OCR text, or visible
 page content and is not strict sanitize. See
 [active and auxiliary structure cleanup](structure_clean.md).
 
-Install and probe the pyHanko read-only validator in the same explicit provider
-environment:
+Install and probe both pyHanko adapters in the same explicit provider environment:
 
 ```bash
 uv venv .venv-pdf
@@ -87,13 +87,16 @@ uv pip install --python .venv-pdf/bin/python \
 export OPEN_OFFICE_PDF_PROVIDER_PYTHON="$PWD/.venv-pdf/bin/python"
 "$OPEN_OFFICE_PDF_PROVIDER_PYTHON" scripts/pdf_provider.py check \
   --provider pyhanko --require
+"$OPEN_OFFICE_PDF_PROVIDER_PYTHON" scripts/pyhanko_sign_provider.py probe
 "$OPEN_OFFICE_PDF_PROVIDER_PYTHON" scripts/pyhanko_provider.py probe
 ```
 
-This installs no command-line signer. The adapter accepts only caller-supplied
-trust roots, disables network fetching, never mutates the source, and does not
-claim complete PAdES profile conformance. Install `pyhanko-cli` separately only
-for a deliberately selected signing workflow. See [sign and verify](sign_verify.md).
+This installs no command-line signer; the bounded local-PKCS#12 adapter calls
+pyHanko core directly. It requires exact source/credential hashes, explicit
+trust or isolation, stdin/no-passphrase, one field/DocMDP choice, exact-prefix
+incremental output, and post-sign validation. The read-only adapter accepts only
+caller-supplied roots and disables network fetching. Neither claims complete
+PAdES conformance. See [sign and verify](sign_verify.md).
 
 Install veraPDF 1.30.x and a compatible Java runtime separately from its
 [official distribution](https://docs.verapdf.org/install/). Configure the exact

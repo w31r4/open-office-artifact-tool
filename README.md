@@ -63,7 +63,7 @@ console.log(reopened.inspect({ kind: "worksheet,table,chart" }).ndjson);
 | XLSX | OpenChestnut C# WASM | 单元格与公式、样式与布局、表格、图片、基础验证/条件格式、评论、图表、sparklines、有界 What-If Data Tables 和有界原生 PivotTables。 |
 | DOCX | OpenChestnut C# WASM | 结构化文本与样式、分节、页眉页脚、列表、表格、链接、字段、图片、经典评论、有界现代评论线程和行内纯文本内容控件。 |
 | PPTX | OpenChestnut C# WASM | 形状与富文本、图片及可逆裁剪、表格、连接线、图表、直接背景、纯文本演讲者备注、经典评论和有界 Office 2021 现代评论线程；Master/Layout 仅保真、不可编辑。 |
-| PDF | 独立模型 + MuPDF.js | Tagged PDF 创建；任意 PDF 原生读取/检查/渲染；有界批注、表单、页面、元数据、链接和 rewrite/incremental 编辑；真实 rewrite 脱敏。严格 sanitize、签名、PDF/UA 和 OCR 由专项工具复核。 |
+| PDF | 独立模型 + MuPDF.js | Tagged PDF 创建；任意 PDF 原生读取/检查/渲染；有界批注、表单、页面、元数据、链接和 rewrite/incremental 编辑；真实 rewrite 脱敏；有界本地 PKCS#12 签名与独立验签。严格 sanitize、PDF/UA、OCR 与高级签名由专项工具复核。 |
 
 完整且持续更新的边界见 [能力矩阵](https://github.com/w31r4/open-office-artifact-tool/blob/main/docs/coverage.md)。
 
@@ -96,7 +96,7 @@ OpenChestnut 是普通 Office 导入/导出的唯一 parser/writer。显式 OOXM
 
 - 要保留导入 Office 文件中的未建模对象，必须继续使用 import 返回的模型，并保持这些对象的结构不变；丢失源快照或修改不支持的拓扑时，导出失败。
 - 任意已有 PDF 不能像 Word 一样可靠地自动重排全文；原文件编辑必须落在明确、可验证的有界操作中。
-- PDF 签名、时间戳与 LTV 依赖外部 pyHanko 工作流；PDF/A/PDF/UA 验证和扫描件 OCR 分别使用项目内的 veraPDF、OCRmyPDF 有界适配器，但对应 CLI、语言包和运行时仍需单独安装。
+- 项目内 pyHanko 适配器支持源文件绑定的本地 PKCS#12 审批/认证签名和独立验签；pyHanko 运行时仍需单独安装。TSA/LTV、PKCS#11、远程签名和完整 PAdES 声明仍属外部工作流；PDF/A/PDF/UA 验证和扫描件 OCR 分别使用项目内 veraPDF、OCRmyPDF 有界适配器。
 - 主动/辅助内容清理由项目内的 pikepdf 10.10.x 有界适配器完成，但 pikepdf 仍需单独安装；该操作保留 metadata、表单值、XFA、批注和隐藏文字，不能当作完整 sanitize 或脱敏证明。
 - MuPDF.js 能做有界原文件操作，但不能把任意 PDF 变成可自由重排的 Word 文档；rewrite 脱敏也不等于完整 sanitize。签名权限、残留、OCR 与 PDF/UA 仍需独立证据。
 - LibreOffice、Poppler、Playwright 和原生 Office Bridge 是渲染/验证工具，不是隐藏的 Office codec fallback。

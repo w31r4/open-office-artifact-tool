@@ -30,21 +30,21 @@ assert.equal(result.status, 0, `npm pack manifest failed\nSTDOUT:\n${result.stdo
 const report = JSON.parse(result.stdout)[0];
 const files = report.files.map((item) => item.path);
 // npm's gzip output varies between the macOS and Linux npm builds used by local
-// and hosted gates. The OCRmyPDF slice measured 9,784,909 bytes on hosted Linux;
-// the pikepdf adapter adds 10,239 compressed bytes on the local audit host. Keep
-// the same ceiling, leaving less than 15 KiB against that observed platform
-// delta instead of setting the budget to one machine's exact gzip result.
-const maxPackedBytes = 9_810_000;
+// and hosted gates. The largest observed Linux-vs-macOS delta is about 203 KiB;
+// the local pyHanko signing candidate measures 9,605,861 bytes. Keep about
+// 31 KiB beyond that observed cross-platform projection rather than budgeting
+// to one machine's exact gzip result.
+const maxPackedBytes = 9_840_000;
 // The bundled OpenChestnut runtime is an audited product payload, not an
 // optional download. Keep its unpacked budget tight while allowing the
 // audited PDF provider/docs growth plus the bounded DOCX/PPTX modern-comment and
-// native XLSX PivotTable codecs and runnable workflows. The pikepdf
-// structure-clean slice measures 24,301,346 unpacked bytes on the audit host,
-// so this keeps less than 24 KiB of explicit headroom.
+// native XLSX PivotTable codecs and runnable workflows. The local pyHanko
+// signing candidate measures 24,354,884 unpacked bytes, so this keeps about
+// 24 KiB of explicit headroom.
 // The repository-only MIT Default Template Library is excluded from the npm
 // tarball. Its retained Office/PNG sources must never consume this consumer
 // package budget.
-const maxUnpackedBytes = 24_325_000;
+const maxUnpackedBytes = 24_380_000;
 
 for (const required of [
   "LICENSE",
@@ -206,6 +206,7 @@ for (const required of [
   "skills/pdf/skills/pdf/scripts/pdf_provider.py",
   "skills/pdf/skills/pdf/scripts/qpdf_provider.py",
   "skills/pdf/skills/pdf/scripts/pyhanko_provider.py",
+  "skills/pdf/skills/pdf/scripts/pyhanko_sign_provider.py",
   "skills/pdf/skills/pdf/scripts/verapdf_provider.py",
   "skills/pdf/skills/pdf/scripts/ocrmypdf_provider.py",
   "skills/pdf/skills/pdf/scripts/pikepdf_provider.py",

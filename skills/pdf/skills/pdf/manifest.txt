@@ -29,6 +29,7 @@ examples/merge-stamp-manifest.json
 scripts/pdf_provider.py
 scripts/qpdf_provider.py
 scripts/pyhanko_provider.py
+scripts/pyhanko_sign_provider.py
 scripts/verapdf_provider.py
 scripts/ocrmypdf_provider.py
 scripts/pikepdf_provider.py

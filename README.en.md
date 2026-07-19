@@ -63,7 +63,7 @@ The official `mupdf@1.28.0` package is a required npm dependency and is resolved
 | XLSX | OpenChestnut C# WASM | Cells and formulas, styles and layout, tables, images, basic validation and conditional formatting, comments, charts, sparklines, bounded What-If data tables, and bounded native PivotTables. |
 | DOCX | OpenChestnut C# WASM | Structured text and styles, sections, headers and footers, lists, tables, links, fields, images, classic comments, bounded modern comment threads, and inline plain-text content controls. |
 | PPTX | OpenChestnut C# WASM | Shapes and rich text, images with reversible cropping, tables, connectors, charts, direct backgrounds, plain-text speaker notes, legacy comments, and bounded Office 2021 modern threads; slide masters and layouts are preserved but cannot be edited. |
-| PDF | Independent model + MuPDF.js | Tagged PDF authoring; native read/inspect/render for arbitrary PDFs; bounded annotation, form, page, metadata, link, rewrite, and incremental edits; real rewrite redaction. Specialist tools verify strict sanitization, signatures, PDF/UA, and OCR. |
+| PDF | Independent model + MuPDF.js | Tagged PDF authoring; native read/inspect/render for arbitrary PDFs; bounded annotation, form, page, metadata, link, rewrite, and incremental edits; real rewrite redaction; bounded local-PKCS#12 signing with independent validation. Specialist tools verify strict sanitization, PDF/UA, OCR, and advanced signing. |
 
 See the [coverage matrix](https://github.com/w31r4/open-office-artifact-tool/blob/main/docs/coverage.md) for complete, continuously updated support boundaries.
 
@@ -96,7 +96,7 @@ The first five `skills/<name>` directories are shipped in the package; loading i
 
 - To preserve unmodeled objects from an imported Office file, keep using the model returned by import and leave those objects structurally unchanged. Discarding the source snapshot or changing unsupported topology causes export to fail.
 - An arbitrary existing PDF cannot be reflowed reliably like a Word document. Original-file editing must stay within explicit, verifiable bounded operations.
-- PDF signing, timestamps, and LTV rely on external pyHanko workflows. PDF/A/PDF/UA validation and scanned-PDF OCR use the shipped bounded veraPDF and OCRmyPDF adapters, while their CLIs, language packs, and runtimes remain separately installed.
+- Shipped pyHanko adapters provide source-bound local-PKCS#12 approval/certification signing and independent validation; the pyHanko runtime remains separately installed. TSA/LTV, PKCS#11, remote signing, and complete PAdES claims remain external workflows. PDF/A/PDF/UA validation and scanned-PDF OCR use the shipped bounded veraPDF and OCRmyPDF adapters.
 - Active/auxiliary structure cleanup uses the shipped bounded pikepdf 10.10.x adapter, while pikepdf remains separately installed. The operation retains metadata, form values, XFA, annotations, and hidden text, so it is not complete sanitize or redaction evidence.
 - MuPDF.js supports bounded original-file operations, not Word-style arbitrary reflow. Rewrite redaction is also not full sanitization; signatures, residue, OCR, and PDF/UA still require independent evidence.
 - LibreOffice, Poppler, Playwright, and the native Office Bridge are rendering and validation tools, not hidden Office codec fallbacks.

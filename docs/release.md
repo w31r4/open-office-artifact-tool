@@ -47,7 +47,7 @@ The release candidate is acceptable only when all of the following are true:
 - default facade create/import/edit/re-export roundtrips pass for all three Office formats;
 - legacy options, old subpath, missing runtime, and opaque-without-source cases fail explicitly;
 - all five npm-distributed native plugin manifests validate, the published six-Skill topology is complete, and every workflow promoted to compatible in `docs/reference-skills.md` passes from the public package surface; the repository-only Default Template Library separately passes its canonical inventory, integrity, source-bound codec, and package-exclusion gates;
-- PDF greenfield authoring plus default MuPDF.js import/inspect/render/bounded-edit, lazy-load, pre-WASM budget, exact-prefix incremental-save, source-bound annotation/link/form-field behavior, signature/redaction/deletion fail-closed, Skill CLI source-protection, and specialist-provider contract tests pass independently, including qpdf structure, pikepdf active/auxiliary structure cleanup, pyHanko signature validation, veraPDF conformance, and OCRmyPDF searchable-layer routing;
+- PDF greenfield authoring plus default MuPDF.js import/inspect/render/bounded-edit, lazy-load, pre-WASM budget, exact-prefix incremental-save, source-bound annotation/link/form-field behavior, signature/redaction/deletion fail-closed, Skill CLI source-protection, and specialist-provider contract tests pass independently, including qpdf structure, pikepdf active/auxiliary structure cleanup, pyHanko local-PKCS#12 signing and signature validation, veraPDF conformance, and OCRmyPDF searchable-layer routing;
 - when explicitly configured, the real optional-provider tests cover ReportLab creation, pdfplumber extraction, type-aware pypdf text/radio/checkbox forms and annotations, typed pypdf merge/reorder/selective watermarking, PyMuPDF rewrite/incremental/page/text/image/form/annotation edits, real redaction/scrub/residue scans, capped numerical text-fit behavior, canonical audit byte binding, typed Poppler source/output comparison, and OCRmyPDF/Tesseract recovery of a generated image-only scan with MuPDF second import and Poppler pixel invariance;
 - Open XML SDK validation passes for generated Office fixtures;
 - configured LibreOffice/Poppler/Playwright/native render gates pass where available;
@@ -1588,6 +1588,51 @@ local audit host. The unpacked ceiling moved narrowly to 24,325,000 bytes,
 retaining less than 24 KiB of measured headroom. Hosted results are recorded
 after the candidate commit; npm authentication remains unavailable, so no
 publish or tag operation was attempted.
+
+### Source-bound local-PKCS#12 pyHanko signing provider
+
+On 2026-07-19, the PDF Skill gained a second shipped pyHanko 0.35.x adapter for
+one bounded local-PKCS#12 signature. `probe` records the supported core surface;
+`inspect` inventories signature fields, signatures, certification state,
+revisions, and optional page geometry on an immutable SHA-bound source; `sign`
+adds one approval or first-document certification signature to an existing
+field or a newly created invisible/visible field. Visible creation is limited
+to an integer box wholly inside an unrotated inspected CropBox.
+
+The transaction requires explicit trusted/caller-isolated input, exact source
+and credential SHA-256 values, stdin-only or deliberate no-passphrase, an
+expected signature count, explicit acknowledgement before countersigning, and
+explicit DocMDP permission for certification. It rejects symlink credentials,
+encryption, stale identities, unsupported field policy, source overwrite,
+output collision, raised budgets, and secret-bearing argv/env options. Existing
+signatures pass cryptographic/DocMDP preflight before the worker runs. Output
+must preserve the complete source prefix, append one revision, add exactly one
+signature, pass all-signature integrity and DocMDP validation, and publish
+without replacement. Signing never establishes certificate trust; the separate
+read-only validator remains the explicit-root delivery gate. TSA/LTV/DSS,
+PKCS#11/HSM, remote signing, online revocation retrieval, and complete PAdES
+conformance remain external.
+
+The real-provider fixture used Python 3.13.14, pyHanko 0.35.2, and
+pyhanko-certvalidator 0.31.1. It generated an isolated CA, signer certificate,
+encrypted PKCS#12, source PDF, and existing empty signature field. Tests prove
+a visible PAdES certification signature, invisible Adobe-detached
+countersignature, existing-field fill, explicit-root trust, prior-revision
+`form-filling`, exact prefixes, qpdf and MuPDF re-open, bounded Poppler
+appearance pixels, invisible-signature pixel invariance, source/credential
+immutability, secret non-disclosure and size limits, stale hashes, missing
+DocMDP/field geometry, missing countersign acknowledgement, recertification
+refusal, collision, symlink, output-budget, and encryption failures.
+
+The complete local gate passed `npm test` with real qpdf, pikepdf 10.10.0,
+pyHanko, veraPDF 1.30.2, OCRmyPDF 17.8.1/Tesseract/Poppler, LibreOffice, and
+Playwright; `npm run docs:api` remained clean; `npm run proto:check` and `npm
+run test:pack` passed; two deterministic OpenChestnut builds matched across 39
+files; OfficeBridge passed `5/5`; and OpenChestnut passed `283/283`. The bundled
+runtime remains 38 files at 14,635,200 bytes. The production tarball contains
+461 files, is 9,605,861 bytes compressed and 24,354,884 bytes unpacked on the
+local audit host. The offline release metadata check passes; hosted results are
+recorded after the candidate commit. No publish or tag operation was attempted.
 
 `npm run release:check` passes the source, documentation, package, license, JavaScript, and .NET gates. Its only remaining blocker is unavailable npm authentication. No `npm publish` or tag/release operation has been performed.
 

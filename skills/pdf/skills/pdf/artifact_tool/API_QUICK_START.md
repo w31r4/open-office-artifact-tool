@@ -414,16 +414,28 @@ identity. It has no native xref because the MuPDF link API abstracts that
 object away; its fingerprint covers page, URL, rectangle, and externality. A
 new output must be re-inspected before a later link operation.
 
-## Validate signatures on exact bytes
+## Sign and validate exact bytes
 
-Signature trust is outside the JavaScript model. Use the shipped read-only
-pyHanko adapter with a fresh source hash and an explicit validation policy:
+Signature mutation and trust are outside the JavaScript model. Use the shipped
+pyHanko signer for one bounded local-PKCS#12 incremental revision, then use the
+separate validator with a fresh output hash and explicit trust policy:
 
 ```bash
 PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
-SOURCE_SHA256="$(shasum -a 256 signed.pdf | awk '{print $1}')"
-"$PYTHON_BIN" scripts/pyhanko_provider.py verify signed.pdf \
-  --expected-sha256 "$SOURCE_SHA256" \
+SOURCE_SHA256="$(shasum -a 256 input.pdf | awk '{print $1}')"
+CREDENTIAL_SHA256="$(shasum -a 256 /secure/signer.p12 | awk '{print $1}')"
+"$PYTHON_BIN" scripts/pyhanko_sign_provider.py sign \
+  input.pdf tmp/pdfs/signed.pdf \
+  --expected-sha256 "$SOURCE_SHA256" --trusted-input \
+  --credential /secure/signer.p12 \
+  --credential-sha256 "$CREDENTIAL_SHA256" --passphrase-stdin \
+  --field-name Approval --field-mode create-invisible \
+  --signature-kind approval --expected-signature-count 0 \
+  > tmp/pdfs/signing-report.json
+# Hidden terminal prompt; automation pipes stdin directly from its secret manager.
+SIGNED_SHA256="$(shasum -a 256 tmp/pdfs/signed.pdf | awk '{print $1}')"
+"$PYTHON_BIN" scripts/pyhanko_provider.py verify tmp/pdfs/signed.pdf \
+  --expected-sha256 "$SIGNED_SHA256" \
   --trust-policy explicit-roots \
   --trust-root /trusted/root-ca.pem \
   --require-signature --require-all-integrity-valid \
@@ -432,7 +444,9 @@ SOURCE_SHA256="$(shasum -a 256 signed.pdf | awk '{print $1}')"
   > tmp/pdfs/signature-validation.json
 ```
 
-The result keeps ByteRange integrity, certificate trust, timestamps,
+The signer keeps the source prefix intact, adds one signature, consumes the
+credential secret only on stdin, and validates integrity/DocMDP before
+collision-safe promotion. The validation result keeps ByteRange integrity, certificate trust, timestamps,
 post-signing changes, and DocMDP/FieldMDP evidence separate. It disables network
 fetching and implicit system trust, never mutates the PDF, and does not claim
 complete PAdES profile conformance. Re-run it after every incremental revision.
@@ -484,4 +498,4 @@ for (let pageIndex = 0; pageIndex < pdf.pages.length; pageIndex += 1) {
 
 `PdfFile.inspectPdf(...)` verifies byte-level evidence such as PDF version, page/object counts, EOF, tagged structure, reading-order IDs, headings, Figure alternative text, Table/TR/TH/TD roles, spans, and font evidence. It complements semantic `pdf.verify()` and visual page review; none of the three replaces the others.
 
-Use `pdftoppm`/`pdfinfo` as independent native render and file QA tools. The surrounding PDF Skill defines the MuPDF.js, ReportLab, pdfplumber, pypdf, PyMuPDF, pyHanko, veraPDF, and OCR routing contract; its shipped thin adapters provide bounded source-bound qpdf 11+ structure operations, pyHanko signature validation, and veraPDF 1.30.x conformance validation without exposing any provider as a generic flag passthrough.
+Use `pdftoppm`/`pdfinfo` as independent native render and file QA tools. The surrounding PDF Skill defines the MuPDF.js, ReportLab, pdfplumber, pypdf, PyMuPDF, pyHanko, veraPDF, and OCR routing contract; its shipped thin adapters provide bounded source-bound qpdf 11+ structure operations, pyHanko local-PKCS#12 signing and independent signature validation, and veraPDF 1.30.x conformance validation without exposing any provider as a generic flag passthrough.

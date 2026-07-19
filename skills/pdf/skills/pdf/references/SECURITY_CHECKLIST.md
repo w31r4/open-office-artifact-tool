@@ -24,6 +24,7 @@ Treat PDFs as untrusted structured programs.
 - Select one provider and one save policy explicitly.
 - Probe the requested capability; do not infer support from the package being installed.
 - Inspect signatures, signature fields, `/Perms`, and DocMDP before changing bytes.
+- Before signing, bind both PDF and PKCS#12 to fresh SHA-256 values; reject symlinks, encryption, unexpected signature counts, an existing certification signature, or a requested visible box outside the inspected unrotated CropBox. Supply the PKCS#12 passphrase only through stdin, never argv, environment, logs, reports, or repository files.
 - Inventory forms, annotations, attachments, metadata/XMP, JavaScript/actions, optional content, images, and OCR/hidden text.
 - Keep source and destination paths different.
 
@@ -51,6 +52,10 @@ Treat PDFs as untrusted structured programs.
 - Signature validation relies on an implicit system trust store, network fetch,
   stale source hash, unreviewed revocation mode, or a collapsed one-boolean
   interpretation of pyHanko's integrity/trust/difference evidence.
+- Signing relies on a stale source/credential hash, an unsupported pyHanko
+  runtime, a passphrase outside stdin, an implicit field/DocMDP choice, a
+  mismatched signature count, source overwrite, output replacement, a
+  non-prefix result, or absent post-sign integrity/DocMDP validation.
 - Conformance validation relies on veraPDF automatic profile selection, a
   custom/unbounded profile, stale source bytes, or treats PDF/UA machine rules
   as proof of author intent and real assistive-technology usability.
