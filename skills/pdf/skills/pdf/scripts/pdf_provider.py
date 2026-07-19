@@ -26,7 +26,7 @@ PROVIDERS = {
     "qpdf": {"kind": "command", "commands": ["qpdf"], "environment": "OPEN_OFFICE_PDF_QPDF", "minimum_major": 11, "require_version_output": True, "role": "bounded structure inspection, recovery rewrite, and linearization", "integration": "shipped-thin-script-external-cli"},
     "pikepdf": {"kind": "module", "module": "pikepdf", "role": "Python qpdf structure, attachment, and active-content operations", "integration": "planned-no-shipped-adapter"},
     "pyhanko": {"kind": "module", "module": "pyhanko", "distribution": "pyHanko", "minimum_version": (0, 35, 0), "maximum_version_exclusive": (0, 36, 0), "companion_module": "pyhanko_certvalidator", "companion_distribution": "pyhanko-certvalidator", "companion_minimum_version": (0, 31, 0), "companion_maximum_version_exclusive": (0, 32, 0), "role": "source-bound read-only signature validation; signing remains an explicit external workflow", "integration": "shipped-thin-script-external-python"},
-    "verapdf": {"kind": "command", "commands": ["verapdf"], "role": "PDF/A and PDF/UA validation", "integration": "external-documented"},
+    "verapdf": {"kind": "command", "commands": ["verapdf"], "environment": "OPEN_OFFICE_PDF_VERAPDF", "minimum_version": (1, 30, 0), "maximum_version_exclusive": (1, 31, 0), "require_version_output": True, "role": "source-bound PDF/A and PDF/UA machine-rule validation", "integration": "shipped-thin-script-external-cli"},
     "ocrmypdf": {"kind": "command_or_module", "commands": ["ocrmypdf"], "module": "ocrmypdf", "role": "scanned-PDF OCR and searchable layer generation", "integration": "planned-no-shipped-adapter"},
     "tesseract": {"kind": "command", "commands": ["tesseract"], "role": "OCR engine used by strict image residue checks", "integration": "external-required-for-image-ocr"},
 }
@@ -48,7 +48,7 @@ TASKS = {
     "ocr": {"providers": ["ocrmypdf"], "strategies": ["rewrite"], "input": "existing", "mutation": True},
     "sign": {"providers": ["pyhanko"], "strategies": ["incremental"], "input": "existing", "mutation": True, "integration": "external-documented"},
     "verify-signature": {"providers": ["pyhanko"], "strategies": ["read-only"], "input": "existing", "integration": "shipped-thin-script"},
-    "validate-conformance": {"providers": ["verapdf"], "strategies": ["read-only"], "input": "existing"},
+    "validate-conformance": {"providers": ["verapdf"], "strategies": ["read-only"], "input": "existing", "integration": "shipped-thin-script"},
     "redact": {"providers": ["pymupdf"], "strategies": ["sanitize"], "input": "existing", "mutation": True, "invalidate_signatures": True},
     "sanitize": {"providers": ["pymupdf"], "strategies": ["sanitize"], "input": "existing", "mutation": True, "invalidate_signatures": True},
     "render": {"providers": ["poppler"], "strategies": ["read-only"], "input": "existing"},
@@ -163,6 +163,31 @@ def probe_provider(name: str) -> dict:
             result["available"] = all(
                 major is not None and major >= config["minimum_major"]
                 for major in majors.values()
+            )
+        if config.get("minimum_version") is not None:
+            versions_parsed = {
+                command: (
+                    tuple(int(part) for part in match.groups())
+                    if version and (match := re.search(r"(?<!\d)(\d+)\.(\d+)\.(\d+)", version))
+                    else None
+                )
+                for command, version in versions.items()
+            }
+            result["evidence"].update({
+                "semanticVersions": {
+                    command: ".".join(str(part) for part in version) if version else None
+                    for command, version in versions_parsed.items()
+                },
+                "minimumVersion": ".".join(str(part) for part in config["minimum_version"]),
+                "maximumVersionExclusive": ".".join(str(part) for part in config["maximum_version_exclusive"]),
+            })
+            result["available"] = bool(
+                result["available"]
+                and all(
+                    version is not None
+                    and config["minimum_version"] <= version < config["maximum_version_exclusive"]
+                    for version in versions_parsed.values()
+                )
             )
     else:
         versions = {

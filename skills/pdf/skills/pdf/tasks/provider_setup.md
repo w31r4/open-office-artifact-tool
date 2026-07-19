@@ -37,7 +37,7 @@ Install a specialist provider yourself only when the task requires a capability 
   difference, DocMDP, and FieldMDP validation through the shipped
   `scripts/pyhanko_provider.py`; the separate `pyhanko-cli` package is needed
   only for external signing/timestamp/LTV command workflows.
-- veraPDF: PDF/A and PDF/UA machine validation.
+- veraPDF 1.30.x: exact-source PDF/A and PDF/UA machine validation through the shipped `scripts/verapdf_provider.py` adapter.
 - Tesseract: OCR evidence for image-bearing high-trust sanitization.
 - pikepdf and OCRmyPDF: planned routes without a shipped mutation adapter in this release.
 
@@ -72,6 +72,24 @@ This installs no command-line signer. The adapter accepts only caller-supplied
 trust roots, disables network fetching, never mutates the source, and does not
 claim complete PAdES profile conformance. Install `pyhanko-cli` separately only
 for a deliberately selected signing workflow. See [sign and verify](sign_verify.md).
+
+Install veraPDF 1.30.x and a compatible Java runtime separately from its
+[official distribution](https://docs.verapdf.org/install/). Configure the exact
+launcher when it is not on `PATH`, then probe both the registry contract and
+the stricter adapter contract:
+
+```bash
+export OPEN_OFFICE_PDF_VERAPDF="/absolute/path/to/verapdf"
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+"$PYTHON_BIN" scripts/pdf_provider.py check --provider verapdf --require
+"$PYTHON_BIN" scripts/verapdf_provider.py probe
+```
+
+The adapter accepts veraPDF `>=1.30.0,<1.31.0`, requires all supported built-in
+PDF/A/PDF/UA profiles, and exposes only one-file read-only validation. It does
+not install Java or veraPDF, pass arbitrary flags, infer a profile, accept a
+password/custom profile, repair a file, or fall back to another engine. See
+[accessibility and archival conformance](accessibility.md).
 
 When Python tools are installed, set one interpreter as provider identity:
 

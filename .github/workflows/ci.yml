@@ -22,12 +22,27 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          java-package: jre
       - run: npm ci
       - name: Install isolated pyHanko validation runtime
         run: |
           python -m venv "$RUNNER_TEMP/open-office-pyhanko"
           "$RUNNER_TEMP/open-office-pyhanko/bin/python" -m pip install --disable-pip-version-check 'pyHanko==0.35.2' 'pyhanko-certvalidator==0.31.1'
           echo "OPEN_OFFICE_PYHANKO_TEST_PYTHON=$RUNNER_TEMP/open-office-pyhanko/bin/python" >> "$GITHUB_ENV"
+      - name: Install pinned veraPDF validation runtime
+        run: |
+          curl --fail --location --silent --show-error \
+            --output "$RUNNER_TEMP/verapdf-greenfield-1.30.2-installer.zip" \
+            https://software.verapdf.org/releases/1.30/verapdf-greenfield-1.30.2-installer.zip
+          echo "6cc6341cb1af644044054b81f00a6590a7918abb18f762243de115258bcad838  $RUNNER_TEMP/verapdf-greenfield-1.30.2-installer.zip" | sha256sum --check --strict
+          unzip -q "$RUNNER_TEMP/verapdf-greenfield-1.30.2-installer.zip" -d "$RUNNER_TEMP/verapdf-installer"
+          java -jar "$RUNNER_TEMP/verapdf-installer/verapdf-greenfield-1.30.2/verapdf-izpack-installer-1.30.2.jar" .github/verapdf-auto-install.xml
+          echo "OPEN_OFFICE_PDF_VERAPDF=/tmp/open-office-verapdf/verapdf" >> "$GITHUB_ENV"
+          echo "OPEN_OFFICE_PDF_VERAPDF_TEST=/tmp/open-office-verapdf/verapdf" >> "$GITHUB_ENV"
       - name: Install .NET WebAssembly workloads
         run: dotnet workload install wasm-tools wasm-experimental --skip-manifest-update
       - name: Verify generated protocol and bundled OpenChestnut runtime
@@ -48,6 +63,8 @@ jobs:
           qpdf --version
           pdfinfo -v
           "$OPEN_OFFICE_PYHANKO_TEST_PYTHON" -c "from importlib.metadata import version; assert (version('pyHanko'), version('pyhanko-certvalidator')) == ('0.35.2', '0.31.1')"
+          "$OPEN_OFFICE_PDF_VERAPDF" --version
+          "$OPEN_OFFICE_PDF_VERAPDF" --list
           dotnet --version
       - name: Run tests
         env:

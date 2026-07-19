@@ -71,6 +71,30 @@ signed revision, coverage, modification level, DocMDP result, timestamp, and
 trust status rather than treating an intact old ByteRange as approval of later
 edits. The report is not a complete PAdES conformance certificate.
 
+## veraPDF source-bound machine validation
+
+Install veraPDF 1.30.x separately and select the built-in profile that matches
+the delivery requirement. The shipped adapter validates an immutable private
+snapshot rather than accepting arbitrary veraPDF flags:
+
+```bash
+export OPEN_OFFICE_PDF_VERAPDF="/absolute/path/to/verapdf"
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+SOURCE_SHA256="$(shasum -a 256 output.pdf | awk '{print $1}')"
+"$PYTHON_BIN" scripts/pdf_provider.py plan \
+  --task validate-conformance --provider verapdf --strategy read-only \
+  --input output.pdf --require-provider
+"$PYTHON_BIN" scripts/verapdf_provider.py validate output.pdf \
+  --expected-sha256 "$SOURCE_SHA256" --flavour 2u --require-compliant \
+  > tmp/pdfs/verapdf-pdfa2u.json
+```
+
+Omit `--require-compliant` only when collecting diagnostics rather than gating
+delivery: a noncompliant result then completes with `machineRuleCompliant:
+false`. PDF/UA profiles (`ua1` and `ua2`) always require a separate human
+review of reading order, semantics, alternatives, contrast, and actual
+assistive-technology usability.
+
 ## pypdf attachment quarantine
 
 ```bash

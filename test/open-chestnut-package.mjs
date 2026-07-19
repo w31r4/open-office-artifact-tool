@@ -157,6 +157,14 @@ try {
       !fs.existsSync(pyhankoProviderPath) ||
       !fs.readFileSync(pyhankoProviderPath, "utf8").includes("open-office-artifact-tool.pyhanko-verify.v1")
     ) process.exit(33);
+    const verapdfProviderPath = path.join(
+      installedPackage,
+      "skills", "pdf", "skills", "pdf", "scripts", "verapdf_provider.py",
+    );
+    if (
+      !fs.existsSync(verapdfProviderPath) ||
+      !fs.readFileSync(verapdfProviderPath, "utf8").includes("open-office-artifact-tool.verapdf-validation.v1")
+    ) process.exit(34);
 
     const creatorPath = path.join(
       installedPackage,

@@ -77,6 +77,7 @@ const requiredFiles = [
   "scripts/pdf_provider.py",
   "scripts/qpdf_provider.py",
   "scripts/pyhanko_provider.py",
+  "scripts/verapdf_provider.py",
   "scripts/reportlab_create.py",
   "scripts/pdfplumber_extract.py",
   "scripts/pypdf_edit.py",
@@ -110,6 +111,8 @@ assert.match(skillText, /update_form_field/);
 assert.match(skillText, /sourceSha256/);
 assert.match(skillText, /mupdf-link/);
 assert.match(skillText, /virtual environment executable.*pyvenv\.cfg/s);
+assert.match(skillText, /verapdf_provider\.py/);
+assert.match(skillText, /machine-rule gate.*human PDF\/UA review/i);
 assert.match(skillText, /not redaction/i);
 for (const pattern of [
   /ReportLab/,

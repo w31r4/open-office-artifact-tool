@@ -35,6 +35,7 @@ The PDF Skill also ships thin Python scripts that can call the following separat
 | pypdf | Basic PDF structure, AcroForm, annotation, rewrite, and incremental operations | BSD-3-Clause |
 | PyMuPDF | Optional specialist strict scrub, legacy high-level imported-PDF edits, and residue inspection not yet covered by the JavaScript path | GNU AGPL-3.0 or an Artifex commercial license |
 | pyHanko core and pyhanko-certvalidator | Source-bound read-only PDF signature integrity, trust, difference, timestamp, DocMDP, and FieldMDP validation | MIT |
+| veraPDF 1.30.x CLI | Source-bound read-only PDF/A and PDF/UA machine-rule validation | MPL-2.0-or-later and GPL-3.0-or-later options, plus distribution notices |
 
 The official `mupdf` npm package is a required direct dependency. A normal npm installation resolves it alongside this package, although its bytes remain in its own dependency tarball rather than being copied into this project's `.tgz`; the WASM runtime initializes lazily on the first PDF operation. There is no lifecycle hook or standalone downloader. Optional Python providers remain separately installed tools. Downstream installation, network deployment, modification, and redistribution must comply with the applicable GNU AGPL v3-or-later obligations. This notice is not a substitute for the upstream license text or legal advice.
 
@@ -54,9 +55,20 @@ The following external programs are invoked only when installed separately. They
   timestamp, and LTV command workflows additionally use the separately packaged
   `pyhanko-cli`. Neither distribution is bundled by npm. Retain their MIT
   license and transitive cryptography notices.
-- veraPDF: optional separately installed PDF/A and PDF/UA validation distribution; retain the notices shipped by the selected veraPDF components.
+- veraPDF 1.30.x: optional separately installed PDF/A and PDF/UA validation distribution used through the shipped bounded adapter; retain its MPL-2.0-or-later/GPL-3.0-or-later choice and the notices shipped by the selected components.
 - OCRmyPDF and Tesseract: optional OCR providers; no OCRmyPDF adapter is shipped in this release, while strict image residue checks can use a separately installed Tesseract through PyMuPDF.
 - .NET 8 SDK: used to build the WebAssembly codec and optional Office bridge; the SDK is not bundled. The source-built .NET WebAssembly runtime needed by consumers is bundled with its upstream license and notices.
 - Microsoft Office: reference software required only for optional Windows native automation; users must supply a valid installation and license.
 
 OOXML, Open Packaging Conventions, PDF, and related file-format specifications are used as public interoperability standards. OpenChestnut codec behavior is implemented from source with the public Open XML SDK and the repository's versioned wire schema; no private reference runtime binary is shipped.
+
+## Repository-only veraPDF test fixture
+
+`test/fixtures/pdf/verapdf-pdfa1b-pass.pdf` is copied byte-for-byte from the
+official [`veraPDF-corpus`](https://github.com/veraPDF/veraPDF-corpus) at commit
+`49de56cd987929932c9e4fbbbe67d052bf44ef83`, path
+`PDF_A-1b/6.1 File structure/6.1.2 File header/veraPDF test suite 6-1-2-t01-pass-a.pdf`.
+That corpus is licensed under Creative Commons Attribution 4.0. The retained
+fixture SHA-256 is
+`66077f449d472a048e3bbf7192aa6d2b0b0ebd6b6d8a6f878f776f69424b6deb`.
+It is used only by repository tests and is excluded from the npm package.

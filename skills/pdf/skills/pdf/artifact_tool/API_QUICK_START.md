@@ -439,6 +439,27 @@ complete PAdES profile conformance. Re-run it after every incremental revision.
 See the Skill's [sign and verify](../tasks/sign_verify.md) task for dependency,
 revocation, signing, and key-handling boundaries.
 
+## Validate PDF/A or PDF/UA machine rules on exact bytes
+
+Conformance validation is outside the JavaScript model. Use the shipped thin
+adapter with a separately installed veraPDF 1.30.x CLI, a fresh final-file
+hash, and one explicit built-in profile:
+
+```bash
+export OPEN_OFFICE_PDF_VERAPDF="/absolute/path/to/verapdf"
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+SOURCE_SHA256="$(shasum -a 256 output.pdf | awk '{print $1}')"
+"$PYTHON_BIN" scripts/verapdf_provider.py validate output.pdf \
+  --expected-sha256 "$SOURCE_SHA256" --flavour ua1 --require-compliant \
+  > tmp/pdfs/verapdf-ua1.json
+```
+
+The result distinguishes a completed validation operation from machine-rule
+compliance. `--require-compliant` turns a false result into a delivery failure;
+PDF/UA still requires human judgment even when the machine rules pass. See the
+Skill's [accessibility task](../tasks/accessibility.md) for supported profiles
+and review boundaries.
+
 ## Render and visual QA
 
 Use the model SVG preview while authoring, then render the exported PDF with Poppler and inspect every page before delivery:
@@ -463,4 +484,4 @@ for (let pageIndex = 0; pageIndex < pdf.pages.length; pageIndex += 1) {
 
 `PdfFile.inspectPdf(...)` verifies byte-level evidence such as PDF version, page/object counts, EOF, tagged structure, reading-order IDs, headings, Figure alternative text, Table/TR/TH/TD roles, spans, and font evidence. It complements semantic `pdf.verify()` and visual page review; none of the three replaces the others.
 
-Use `pdftoppm`/`pdfinfo` as independent native render and file QA tools. The surrounding PDF Skill defines the MuPDF.js, ReportLab, pdfplumber, pypdf, PyMuPDF, pyHanko, veraPDF, and OCR routing contract; its shipped `scripts/qpdf_provider.py` provides bounded source-hash-bound qpdf 11+ structure inspection, recovery rewrite, and linearization without exposing qpdf as a generic flag passthrough.
+Use `pdftoppm`/`pdfinfo` as independent native render and file QA tools. The surrounding PDF Skill defines the MuPDF.js, ReportLab, pdfplumber, pypdf, PyMuPDF, pyHanko, veraPDF, and OCR routing contract; its shipped thin adapters provide bounded source-bound qpdf 11+ structure operations, pyHanko signature validation, and veraPDF 1.30.x conformance validation without exposing any provider as a generic flag passthrough.

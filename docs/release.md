@@ -1433,9 +1433,9 @@ difference-analysis modification level, changed form fields, DocMDP/FieldMDP,
 seed values, and pyHanko's selected-policy bottom line. Callers choose
 `cryptographic-only` or explicit trust roots, validation time, one of four
 revocation policies, and independent required gates. The adapter explicitly
-does not claim complete PAdES profile conformance. Signature creation,
-private-key/TSA/LTV operations, and veraPDF PDF/A/UA validation remain external
-workflows.
+does not claim complete PAdES profile conformance. Signature creation and
+private-key/TSA/LTV operations remain external workflows; the later veraPDF
+milestone below supplies the separate source-bound conformance adapter.
 
 The real-provider test used pyHanko 0.35.2 and pyhanko-certvalidator 0.31.1 in
 an isolated virtual environment.
@@ -1455,6 +1455,41 @@ bundled runtime remains 38 files at 14,635,200 bytes. The production
 clean-install tarball contains 455 files, is 9,556,405 bytes compressed and
 24,165,413 bytes unpacked. `npm whoami` remains unavailable, so no publish or
 tag operation was attempted.
+
+### Bounded veraPDF conformance-validation provider
+
+On 2026-07-19, the PDF Skill gained a shipped read-only adapter for an
+explicitly installed veraPDF `>=1.30,<1.31` CLI. It binds validation to an exact
+final-file SHA-256, copies the PDF to a private read-only snapshot, requires one
+explicit built-in PDF/A-1/2/3/4 or PDF/UA-1/2 profile, and exposes no automatic
+profile selection, custom profiles, passwords, directories, arbitrary flags,
+repair, or provider fallback. Input size, execution time, stdout/stderr, failed
+rule evidence, and report cardinality are bounded; source and snapshot hashes
+are re-proved after the provider exits.
+
+The versioned report verifies the veraPDF component-version range, selected
+profile, item size, one-job completion, exit/result consistency, rule/check
+counts, and batch error counters. A noncompliant file is a completed validation
+with `machineRuleCompliant: false`; `--require-compliant` separately turns that
+fact into a delivery failure. PDF/UA results always retain a human-review gate
+because machine rules do not establish author intent, semantic quality,
+contrast, or actual assistive-technology usability.
+
+The hermetic test suite covers old versions, missing profiles, stale hashes,
+hard budgets, timeouts, malformed and contradictory JSON, wrong profiles,
+provider-reported exceptions, private-snapshot mutation, and source
+immutability. The real-provider gate uses veraPDF 1.30.2 plus the official
+CC BY 4.0 veraPDF corpus PDF/A-1b pass fixture; the same bytes pass the explicit
+PDF/A-1b gate and produce a bounded noncompliant PDF/UA-1 report. Hosted CI
+installs Java 21 and only the veraPDF CLI pack from the pinned 1.30.2 installer,
+whose SHA-256 is
+`6cc6341cb1af644044054b81f00a6590a7918abb18f762243de115258bcad838`.
+
+The production package now contains 456 files, is 9,565,610 bytes compressed
+and 24,200,954 bytes unpacked on the local audit host. The repository-only
+4,048-byte conformance fixture is excluded from the npm tarball. Full release
+and hosted results are recorded after the final candidate commit; npm publish
+remains blocked by unavailable authentication.
 
 `npm run release:check` passes the source, documentation, package, license, JavaScript, and .NET gates. Its only remaining blocker is unavailable npm authentication. No `npm publish` or tag/release operation has been performed.
 

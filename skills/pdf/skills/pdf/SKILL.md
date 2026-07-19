@@ -49,7 +49,7 @@ Read the [provider matrix](references/PROVIDER_MATRIX.md), [save policies](refer
 | Structural diagnosis, recovery rewrite, and linearization | separately installed qpdf through `scripts/qpdf_provider.py`; pikepdf active-content cleanup remains planned |
 | Read-only signature integrity/trust/difference/DocMDP validation | pyHanko core through `scripts/pyhanko_provider.py` |
 | Signature creation, timestamps, and LTV updates | explicit external pyHanko workflow |
-| PDF/A or PDF/UA machine rules | veraPDF |
+| PDF/A or PDF/UA machine rules | separately installed veraPDF 1.30.x through `scripts/verapdf_provider.py` |
 | Scanned-PDF OCR | OCRmyPDF is planned; strict image residue OCR currently uses separately installed Tesseract through PyMuPDF |
 
 Probe and validate the route before work. The default MuPDF.js path uses this mandatory preflight:
@@ -294,9 +294,20 @@ Image-bearing pages require Tesseract-backed OCR. If OCR is unavailable or any s
 
 ## Accessibility And Conformance
 
-Use `PdfArtifact` for greenfield tagged semantics and `pdf.verify()` plus `PdfFile.inspectPdf(...)` for its modeled contract. Use veraPDF for requested PDF/A/PDF/UA machine rules.
+Use `PdfArtifact` for greenfield tagged semantics and `pdf.verify()` plus `PdfFile.inspectPdf(...)` for its modeled contract. Use the shipped source-bound veraPDF adapter for requested PDF/A/PDF/UA machine rules:
 
-Automation cannot infer arbitrary author intent with certainty. Heading hierarchy, reading order, table meaning, alternative-text quality, link purpose, color/contrast, and other PDF/UA human checkpoints require review when confidence is low. See [accessibility](tasks/accessibility.md).
+```bash
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+SOURCE_SHA256="$(shasum -a 256 output.pdf | awk '{print $1}')"
+"$PYTHON_BIN" scripts/verapdf_provider.py probe
+"$PYTHON_BIN" scripts/verapdf_provider.py validate output.pdf \
+  --expected-sha256 "$SOURCE_SHA256" --flavour ua1 --require-compliant \
+  > tmp/pdfs/verapdf-ua1.json
+```
+
+Choose exactly one built-in profile; the adapter never accepts veraPDF's automatic profile choice, custom profiles, passwords, directories, or arbitrary provider flags. A noncompliant result is still a completed validation unless `--require-compliant` makes it a delivery gate. Preserve the typed report, selected profile, provider component versions, source hash, and failed-rule evidence.
+
+Automation cannot infer arbitrary author intent with certainty. Heading hierarchy, reading order, table meaning, alternative-text quality, link purpose, color/contrast, and other PDF/UA checkpoints require human review when confidence is low. See [accessibility](tasks/accessibility.md).
 
 ## Render Every Final Page
 
@@ -334,7 +345,7 @@ Optional Python and system providers are installed separately only for a selecte
 - Signature/DocMDP/FieldMDP policy was checked before mutation.
 - Output reopened and the intended semantic/structural delta was verified.
 - Sanitize jobs passed strict residue and single-revision gates, including image OCR.
-- The typed pyHanko report passes every requested integrity/trust/DocMDP gate when signatures were requested; veraPDF evidence exists when conformance was requested.
+- The typed pyHanko report passes every requested integrity/trust/DocMDP gate when signatures were requested; the typed source-bound veraPDF report passes the explicitly requested machine-rule gate when conformance was requested, with separate human PDF/UA review.
 - `pdfinfo` and Poppler rendering succeeded for every final page, followed by visual review.
 - Final file and audit evidence are in the requested locations; no temporary file is presented as the deliverable.
 - `pdf_audit.py validate` accepts the canonical audit and recomputed source/output hashes.

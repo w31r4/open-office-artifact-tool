@@ -16,7 +16,7 @@ This Skill is a capability router, not a single PDF backend. Select one provider
 | qpdf | Bounded structural checks plus source-hash-bound recovery rewrite and linearization through `scripts/qpdf_provider.py` | Inspect the original directly; rewrite a verified private snapshot | `read-only` or `rewrite` | Separately installed qpdf 11+ CLI. Not a renderer, text extractor, strict PDF-spec/conformance checker, sanitizer, password workflow, or signature validator. Review warnings and render the result. |
 | pikepdf | Python access to qpdf for encryption, attachments, and active-content cleanup | Open original PDF directly | `rewrite` | Planned provider only: the registry can probe it, but this release ships no pikepdf mutation adapter. `structure-clean` does not silently route to qpdf. |
 | pyHanko | Shipped read-only signature integrity, trust, difference, timestamp, DocMDP, and FieldMDP reporting; external signature creation/LTV workflows | Validate a private snapshot bound to the original SHA-256 through `scripts/pyhanko_provider.py` | shipped adapter is `read-only`; external signing is normally `incremental` | Requires separately installed pyHanko core `>=0.35,<0.36` and pyhanko-certvalidator `>=0.31,<0.32`. Trust roots, validation time, revocation policy, and required gates are explicit; network fetching and system-root inference are disabled. The report does not claim complete PAdES profile conformance. |
-| veraPDF | PDF/A and PDF/UA machine-verifiable validation | Read final PDF bytes | `read-only` | PDF/UA also has human checkpoints; a green report is not full accessibility certification. |
+| veraPDF | Shipped bounded adapter for PDF/A and PDF/UA machine-verifiable validation | Validate a private snapshot bound to the final PDF SHA-256 through `scripts/verapdf_provider.py` | `read-only` | Requires a separately installed veraPDF `>=1.30,<1.31` CLI and one explicit built-in profile. No automatic/custom profile, password, directory, arbitrary flags, repair, or fallback. PDF/UA also has human checkpoints; a green report is not full accessibility certification. |
 | OCRmyPDF / Tesseract | Scanned-page OCR and strict image residue evidence | Open original or final PDF according to the task | `rewrite` or `read-only` | Planned OCR adapter; Tesseract is currently consumed only through PyMuPDF's strict OCR gate when separately installed. |
 
 ## Mandatory routing rules
@@ -40,7 +40,7 @@ MuPDF.js is a required direct dependency resolved by a normal npm installation a
 - qpdf: official [manual](https://qpdf.readthedocs.io/en/stable/) and Apache-2.0 project repository; the shipped thin adapter requires JSON v2 from qpdf 11 or newer.
 - pikepdf: optional qpdf-based Python provider; this release probes availability but does not ship a mutation wrapper.
 - pyHanko: official [signing and validation documentation](https://docs.pyhanko.eu/en/stable/). The shipped read-only adapter uses the separately installed core library; the current command-line signer is a separate `pyhanko-cli` package.
-- veraPDF: official [PDF/A and PDF/UA validation documentation](https://docs.verapdf.org/validation/).
+- veraPDF: official [PDF/A and PDF/UA CLI validation documentation](https://docs.verapdf.org/cli/validation/). The shipped source-bound adapter requires the separately installed 1.30.x CLI.
 - OCRmyPDF and Tesseract: optional OCR tools; no OCRmyPDF adapter is shipped in this release.
 - Poppler: separately installed command-line renderer; retain its applicable license notices.
 
