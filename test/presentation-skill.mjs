@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
 
-import { FileBlob, Presentation, PresentationFile } from "../src/index.mjs";
+import { FileBlob, Presentation, PresentationFile, SpreadsheetFile, Workbook } from "../src/index.mjs";
 import {
   generateOfficeInput,
   PPTX_TITLE_NOTES_FIXTURE,
@@ -573,6 +573,133 @@ try {
   assert.equal(duplicateEditedRoundTrip.slides.getItem(1).charts.items[0].title, "Updated clone pipeline");
   assert.equal(duplicateEditedRoundTrip.slides.getItem(1).charts.items[0].series[0].values[1], 63);
 
+  const oleDuplicateInput = path.join(duplicateDir, "ole-workbook-source.pptx");
+  const oleDuplicateOutput = path.join(duplicateDir, "ole-workbook-output.pptx");
+  const oleDuplicateAudit = path.join(duplicateDir, "ole-workbook-audit.json");
+  const oleDuplicateFixture = Presentation.create({ slideSize: { width: 640, height: 360 } });
+  oleDuplicateFixture.slides.add({ name: "OLE clone source" }).shapes.add({
+    name: "ole-clone-copy",
+    position: { left: 48, top: 40, width: 300, height: 72 },
+    text: "OLE clone source",
+  });
+  const oleDuplicateBase = await PresentationFile.exportPptx(oleDuplicateFixture);
+  const oleDuplicateBaseZip = await JSZip.loadAsync(oleDuplicateBase.bytes);
+  const oleDuplicateSlideXml = await oleDuplicateBaseZip.file("ppt/slides/slide1.xml").async("text");
+  const oleDuplicateRelationships = await oleDuplicateBaseZip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
+  const oleDuplicateWorkbook = Workbook.create();
+  oleDuplicateWorkbook.worksheets.add("Embedded").getRange("A1:B2").values = [["Original clone workbook", 42], ["Status", "Ready"]];
+  const oleDuplicateWorkbookFile = await SpreadsheetFile.exportXlsx(oleDuplicateWorkbook);
+  const oleDuplicatePreview = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+  const oleDuplicateFrame = '<p:graphicFrame xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:nvGraphicFramePr><p:cNvPr id="100" name="Embedded clone workbook"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="914400" y="1143000"/><a:ext cx="3657600" cy="1828800"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/presentationml/2006/ole"><p:oleObj showAsIcon="1" r:id="rIdCloneWorkbook" imgW="965200" imgH="609600" progId="Excel.Sheet.12"><p:embed/><p:pic><p:nvPicPr><p:cNvPr id="0" name=""/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="rIdCloneWorkbookPreview"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="914400" y="1143000"/><a:ext cx="3657600" cy="1828800"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic></p:oleObj></a:graphicData></a:graphic></p:graphicFrame>';
+  const oleDuplicateSource = await PresentationFile.patchPptx(oleDuplicateBase, [
+    { path: "ppt/slides/slide1.xml", xml: oleDuplicateSlideXml.replace("</p:spTree>", `${oleDuplicateFrame}</p:spTree>`) },
+    { path: "ppt/slides/_rels/slide1.xml.rels", xml: oleDuplicateRelationships.replace("</Relationships>", '<Relationship Id="rIdCloneWorkbook" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="../embeddings/skill-clone-workbook.xlsx"/><Relationship Id="rIdCloneWorkbookPreview" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/skill-clone-workbook-preview.png"/></Relationships>') },
+    { path: "ppt/embeddings/skill-clone-workbook.xlsx", bytes: oleDuplicateWorkbookFile.bytes, contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+    { path: "ppt/media/skill-clone-workbook-preview.png", bytes: oleDuplicatePreview, contentType: "image/png" },
+  ]);
+  await oleDuplicateSource.save(oleDuplicateInput);
+  const oleDuplicateSourceBytes = await fs.readFile(oleDuplicateInput);
+  const oleDuplicateResult = await duplicatePptxSlide({
+    inputPath: oleDuplicateInput,
+    outputPath: oleDuplicateOutput,
+    auditPath: oleDuplicateAudit,
+    expectedName: "OLE clone source",
+  });
+  assert.equal(oleDuplicateResult.audit.operation.scope, "canonical-inline-leaves-with-closed-ole-workbook-leaves");
+  assert.deepEqual(oleDuplicateResult.audit.operation.oleWorkbookParts, {
+    count: 1,
+    sourceParts: ["ppt/embeddings/skill-clone-workbook.xlsx"],
+    relationshipIds: ["rIdCloneWorkbook"],
+    previewParts: ["ppt/media/skill-clone-workbook-preview.png"],
+  });
+  const olePackageAudit = oleDuplicateResult.audit.validation.package.oleWorkbookParts;
+  assert.equal(olePackageAudit.count, 1);
+  assert.equal(olePackageAudit.independentParts, true);
+  assert.equal(olePackageAudit.allPayloadsByteIdentical, true);
+  assert.equal(olePackageAudit.previewPartsShared, true);
+  const [olePartAudit] = olePackageAudit.parts;
+  assert.equal(olePartAudit.sourcePart, "ppt/embeddings/skill-clone-workbook.xlsx");
+  assert.match(olePartAudit.clonePart, /^ppt\/slides\/embeddings\/package\d+\.xlsx$/i);
+  assert.notEqual(olePartAudit.clonePart, olePartAudit.sourcePart);
+  assert.equal(olePartAudit.relationshipId, "rIdCloneWorkbook");
+  assert.equal(olePartAudit.previewRelationshipId, "rIdCloneWorkbookPreview");
+  assert.equal(olePartAudit.previewPart, "ppt/media/skill-clone-workbook-preview.png");
+  assert.equal(olePartAudit.workbookBytesByteIdentical, true);
+  assert.equal(olePartAudit.previewShared, true);
+  assert.deepEqual(oleDuplicateResult.audit.validation.package.newPartPaths, [
+    "ppt/slides/_rels/slide2.xml.rels",
+    olePartAudit.clonePart,
+    "ppt/slides/slide2.xml",
+  ].sort());
+  assert.equal(oleDuplicateResult.audit.validation.reimport.sourceAndCloneOleWorkbookBindingsIndependent, true);
+  assert.deepEqual(await fs.readFile(oleDuplicateInput), oleDuplicateSourceBytes);
+  const oleDuplicateRoundTrip = await PresentationFile.importPptx(new FileBlob(await fs.readFile(oleDuplicateOutput), {
+    type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    name: "ole-workbook-output.pptx",
+  }));
+  const oleSourceObject = itemByName(oleDuplicateRoundTrip.slides.getItem(0).nativeObjects.items, "Embedded clone workbook");
+  const oleCloneObject = itemByName(oleDuplicateRoundTrip.slides.getItem(1).nativeObjects.items, "Embedded clone workbook");
+  assert.notEqual(oleCloneObject.id, oleSourceObject.id);
+  assert.notEqual(oleCloneObject.oleWorkbook.partPath, oleSourceObject.oleWorkbook.partPath);
+  assert.equal(oleCloneObject.oleWorkbook.sourceSha256, oleSourceObject.oleWorkbook.sourceSha256);
+  const oleReplacementWorkbook = Workbook.create();
+  oleReplacementWorkbook.worksheets.add("Embedded").getRange("A1:B2").values = [["Independent clone workbook", 84], ["Status", "Edited"]];
+  const oleReplacementFile = await SpreadsheetFile.exportXlsx(oleReplacementWorkbook);
+  oleCloneObject.replaceEmbeddedWorkbook(oleReplacementFile);
+  const oleEditedFile = await PresentationFile.exportPptx(oleDuplicateRoundTrip);
+  const oleEditedZip = await JSZip.loadAsync(oleEditedFile.bytes);
+  assert.deepEqual(await oleEditedZip.file(oleSourceObject.oleWorkbook.partPath).async("uint8array"), oleDuplicateWorkbookFile.bytes);
+  assert.deepEqual(await oleEditedZip.file(oleCloneObject.oleWorkbook.partPath).async("uint8array"), oleReplacementFile.bytes);
+  const oleEditedRoundTrip = await PresentationFile.importPptx(oleEditedFile);
+  const oleEditedSourceWorkbook = await SpreadsheetFile.importXlsx(itemByName(oleEditedRoundTrip.slides.getItem(0).nativeObjects.items, "Embedded clone workbook").getEmbeddedWorkbook());
+  const oleEditedCloneWorkbook = await SpreadsheetFile.importXlsx(itemByName(oleEditedRoundTrip.slides.getItem(1).nativeObjects.items, "Embedded clone workbook").getEmbeddedWorkbook());
+  assert.equal(oleEditedSourceWorkbook.worksheets.getItem("Embedded").getRange("A1").values[0][0], "Original clone workbook");
+  assert.equal(oleEditedCloneWorkbook.worksheets.getItem("Embedded").getRange("A1").values[0][0], "Independent clone workbook");
+
+  const sharedOleInput = path.join(duplicateDir, "shared-ole-workbook-source.pptx");
+  const sharedOleOutput = path.join(duplicateDir, "shared-ole-workbook-output.pptx");
+  const sharedOleAudit = path.join(duplicateDir, "shared-ole-workbook-audit.json");
+  const sharedOleZip = await JSZip.loadAsync(oleDuplicateSourceBytes);
+  const sharedOleRelationships = await sharedOleZip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
+  sharedOleZip.file("ppt/slides/_rels/slide1.xml.rels", sharedOleRelationships.replace(
+    "</Relationships>",
+    '<Relationship Id="rIdSharedCloneWorkbook" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="../embeddings/skill-clone-workbook.xlsx"/></Relationships>',
+  ));
+  await fs.writeFile(sharedOleInput, await sharedOleZip.generateAsync({ type: "nodebuffer" }));
+  await assert.rejects(
+    () => duplicatePptxSlide({
+      inputPath: sharedOleInput,
+      outputPath: sharedOleOutput,
+      auditPath: sharedOleAudit,
+      expectedName: "OLE clone source",
+    }),
+    /orphan|exactly one inbound|uniquely bound embedded-XLSX/i,
+  );
+  assert.equal(await fs.access(sharedOleOutput).then(() => true, () => false), false);
+  assert.equal(await fs.access(sharedOleAudit).then(() => true, () => false), false);
+
+  const rootSharedOleInput = path.join(duplicateDir, "root-shared-ole-workbook-source.pptx");
+  const rootSharedOleOutput = path.join(duplicateDir, "root-shared-ole-workbook-output.pptx");
+  const rootSharedOleAudit = path.join(duplicateDir, "root-shared-ole-workbook-audit.json");
+  const rootSharedOleZip = await JSZip.loadAsync(oleDuplicateSourceBytes);
+  const rootRelationships = await rootSharedOleZip.file("_rels/.rels").async("text");
+  rootSharedOleZip.file("_rels/.rels", rootRelationships.replace(
+    "</Relationships>",
+    '<Relationship Id="rIdRootSharedCloneWorkbook" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="ppt/embeddings/skill-clone-workbook.xlsx"/></Relationships>',
+  ));
+  await fs.writeFile(rootSharedOleInput, await rootSharedOleZip.generateAsync({ type: "nodebuffer" }));
+  await assert.rejects(
+    () => duplicatePptxSlide({
+      inputPath: rootSharedOleInput,
+      outputPath: rootSharedOleOutput,
+      auditPath: rootSharedOleAudit,
+      expectedName: "OLE clone source",
+    }),
+    /exactly one inbound|uniquely bound embedded-XLSX|unsupported_presentation_slide_clone/i,
+  );
+  assert.equal(await fs.access(rootSharedOleOutput).then(() => true, () => false), false);
+  assert.equal(await fs.access(rootSharedOleAudit).then(() => true, () => false), false);
+
   const duplicateMissingOutput = path.join(duplicateDir, "missing-target.pptx");
   const duplicateMissingAudit = path.join(duplicateDir, "missing-target.json");
   await assert.rejects(
@@ -841,10 +968,12 @@ try {
   assert.match(skillText, /slide\.setBackground.*slide\.clearBackground/s);
   assert.match(skillText, /slide\.moveTo\(existingZeroBasedIndex\).*retained source.*p:sldIdLst.*slide\.delete\(\).*isolated.*layout relationship/is);
   assert.match(skillText, /starter-deck command below still needs a\s+broad imported-slide graph clone and broad graph delete semantics/is);
-  assert.match(skillText, /slide\.duplicate\(\).*canonical shapes.*canonical inline fixed-grid tables.*recognized closed\s+literal-data charts.*canonical embedded rectangular images.*bounded canonical\s+straight\/elbow connectors.*new `SlidePart`.*every present\s+connector endpoint.*same copied `SlidePart`.*export plus reimport/is);
+  assert.match(skillText, /slide\.duplicate\(\).*canonical shapes.*canonical inline fixed-grid tables.*recognized closed\s+literal-data charts.*eligible top-level embedded-XLSX OLE frames.*canonical\s+embedded rectangular images.*bounded canonical\s+straight\/elbow connectors.*new `SlidePart`.*every present\s+connector endpoint.*same copied `SlidePart`.*export plus reimport/is);
   assert.match(skillText, /recognized closed\s+literal-data charts.*unique internal relationship.*numbered `ChartPart`.*byte-copies.*distinct clone-local ChartPart.*ChartParts are independent.*advertises the ordinary fixed-topology\s+edit capability/is);
+  assert.match(skillText, /accepted OLE frame.*uniquely inbound XLSX.*no child relationship graph.*preview `ImagePart`.*distinct clone-local\s+package.*sharing the immutable\s+preview.*replaceEmbeddedWorkbook/is);
   assert.match(skillText, /relationship-free custom-show actions.*stable native show ID.*never inserts the clone into the show's membership/is);
   assert.match(quickStartText, /recognized literal-data charts.*no child\/external\/hyperlink\/data relationship.*distinct byte-copied ChartPart/is);
+  assert.match(quickStartText, /eligible top-level OLE frames.*uniquely inbound internal XLSX package.*distinct\s+byte-copied EmbeddedPackagePart.*shares only the immutable preview/is);
   assert.match(quickStartText, /relationship-free custom-show action.*exact native ID\/return policy.*clone.*not silently added to the route/is);
   assert.match(skillText, /NotesSlide.*NotesMaster.*byte-for-byte.*back-reference.*clone/is);
   assert.match(skillText, /SlideCommentsPart.*CommentAuthorsPart.*byte-for-byte/is);
@@ -862,6 +991,7 @@ try {
   assert.match(slideReferenceText, /NotesSlide.*NotesMaster.*exactly those two\s+relationships.*byte-for-byte/is);
   assert.match(slideReferenceText, /canonical inline fixed-grid tables[\s\S]*cannot introduce a fill, link/i);
   assert.match(slideReferenceText, /recognized closed literal-data charts.*numbered\s+`ChartPart`.*no child, external, hyperlink, or data relationship.*distinct clone-local ChartPart/is);
+  assert.match(slideReferenceText, /eligible top-level embedded-XLSX OLE frames.*uniquely binds one\s+closed, uniquely inbound internal XLSX.*distinct clone-local package.*replaceEmbeddedWorkbook/is);
   assert.match(slideReferenceText, /Gradient,\s+pattern, image.*opaque-preserved/is);
   assert.match(slideReferenceText, /p:cSld\/@name.*export\/reimport/is);
   const customShowReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/custom-shows.spec.md", "utf8");
@@ -883,6 +1013,7 @@ try {
   assert.match(oleWorkbookReferenceText, /preserving the OLE\s+shell, relationship topology, preview image/is);
   assert.match(oleWorkbookReferenceText, /Microsoft Open XML\s+SDK/);
   assert.match(oleWorkbookReferenceText, /shared, external, ambiguous, or non-XLSX/);
+  assert.match(oleWorkbookReferenceText, /slide\.duplicate\(\).*distinct clone-local XLSX `EmbeddedPackagePart`.*shares\s+the immutable preview ImagePart.*export has been imported again/is);
   assert.match(oleWorkbookReferenceText, /no lossy reconstruction or silent fallback/i);
   const templateFollowingText = await fs.readFile("skills/presentations/skills/presentations/references/template-following.md", "utf8");
   assert.match(templateFollowingText, /source-preserving reordering.*isolated[\s>]+layout-only.*slide\.delete/is);

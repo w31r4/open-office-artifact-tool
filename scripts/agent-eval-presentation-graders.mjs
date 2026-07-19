@@ -136,14 +136,28 @@ function relationshipPartPath(partPath) {
   return path.posix.join(path.posix.dirname(partPath), "_rels", path.posix.basename(partPath) + ".rels");
 }
 
-function resolvePptxRelationshipTarget(sourcePart, target) {
+function resolveOpcRelationshipTarget(sourcePart, target) {
+  if (typeof sourcePart !== "string" || sourcePart.startsWith("/") || sourcePart.includes("\\") || sourcePart.split("/").includes("..")) {
+    throw new Error("Invalid OPC relationship source part: " + JSON.stringify(sourcePart));
+  }
   if (typeof target !== "string" || !target || /[\\?#]/.test(target) || /%[0-9a-f]{2}/i.test(target)) {
-    throw new Error("PPTX relationship target is unsafe: " + JSON.stringify(target));
+    throw new Error("OPC relationship target is unsafe: " + JSON.stringify(target));
   }
   const resolved = target.startsWith("/")
     ? target.replace(/^\/+/, "")
-    : path.posix.normalize(path.posix.join(path.posix.dirname(sourcePart), target));
-  if (!resolved.startsWith("ppt/") || resolved.split("/").includes("..")) {
+    : path.posix.normalize(path.posix.join(sourcePart ? path.posix.dirname(sourcePart) : ".", target));
+  if (!resolved || resolved === "." || resolved.startsWith("../") || resolved.split("/").includes("..")) {
+    throw new Error("OPC relationship target escapes the package: " + JSON.stringify(target));
+  }
+  return resolved.replace(/^\.\//, "");
+}
+
+function resolvePptxRelationshipTarget(sourcePart, target) {
+  if (typeof sourcePart !== "string" || !sourcePart.startsWith("ppt/") || !sourcePart.endsWith(".xml")) {
+    throw new Error("Invalid PPTX relationship source part: " + JSON.stringify(sourcePart));
+  }
+  const resolved = resolveOpcRelationshipTarget(sourcePart, target);
+  if (!resolved.startsWith("ppt/")) {
     throw new Error("PPTX relationship target escapes the package: " + JSON.stringify(target));
   }
   return resolved;
@@ -178,6 +192,44 @@ async function relationshipEntries(zip, sourcePart, { required = true } = {}) {
 
 function relationshipWithSuffix(entries, suffix) {
   return entries.filter((entry) => String(entry.type).toLowerCase().endsWith("/" + suffix.toLowerCase()));
+}
+
+async function contentTypeForPart(zip, partPath) {
+  const xml = await zip.file("[Content_Types].xml")?.async("text");
+  if (!xml) throw new Error("PPTX has no [Content_Types].xml.");
+  for (const match of xml.matchAll(/<(?:[\w.-]+:)?Override\b[^>]*>/gi)) {
+    const attributes = xmlAttributes(match[0]);
+    if (String(attributes.PartName || "").replace(/^\/+/, "") === partPath) return attributes.ContentType || null;
+  }
+  const extension = path.posix.extname(partPath).slice(1).toLowerCase();
+  for (const match of xml.matchAll(/<(?:[\w.-]+:)?Default\b[^>]*>/gi)) {
+    const attributes = xmlAttributes(match[0]);
+    if (String(attributes.Extension || "").toLowerCase() === extension) return attributes.ContentType || null;
+  }
+  return null;
+}
+
+function relationshipSourcePart(relationshipPart) {
+  if (relationshipPart === "_rels/.rels") return "";
+  const match = /^(.*\/)?_rels\/([^/]+)\.rels$/i.exec(relationshipPart);
+  if (!match) throw new Error("Invalid PPTX relationship-part path: " + relationshipPart);
+  return `${match[1] || ""}${match[2]}`;
+}
+
+async function packageInboundRelationshipCount(zip, targetPart) {
+  let count = 0;
+  const relationshipParts = Object.keys(zip.files)
+    .filter((partPath) => !zip.files[partPath].dir && (partPath === "_rels/.rels" || /(?:^|\/)_rels\/[^/]+\.rels$/i.test(partPath)));
+  for (const relationshipPart of relationshipParts) {
+    const sourcePart = relationshipSourcePart(relationshipPart);
+    const xml = await zip.file(relationshipPart).async("text");
+    for (const match of xml.matchAll(/<Relationship\b[^>]*>/gi)) {
+      const attributes = xmlAttributes(match[0]);
+      if (!String(attributes.Type || "").toLowerCase().endsWith("/package") || String(attributes.TargetMode || "").toLowerCase() === "external") continue;
+      if (resolveOpcRelationshipTarget(sourcePart, attributes.Target) === targetPart) count++;
+    }
+  }
+  return count;
 }
 
 function exactlyOneRelationship(entries, suffix, label) {
@@ -280,6 +332,8 @@ async function inspectClosedLeafSlide(zip, partPath) {
   const notesRelationships = relationshipWithSuffix(entries, "notesSlide");
   const commentRelationships = relationshipWithSuffix(entries, "comments");
   const chartRelationships = relationshipWithSuffix(entries, "chart");
+  const packageRelationships = relationshipWithSuffix(entries, "package");
+  const imageRelationships = relationshipWithSuffix(entries, "image");
   const customShowActions = [...xml.matchAll(/<(?:[\w.-]+:)?hlinkClick\b[^>]*>/gi)]
     .map((match) => xmlAttributes(match[0]))
     .filter((attributes) => String(attributes.action || "").toLowerCase().startsWith("ppaction://customshow"))
@@ -357,6 +411,66 @@ async function inspectClosedLeafSlide(zip, partPath) {
       sha256: sha256(Buffer.from(chartXml)),
     });
   }
+  const oleFrames = [...xml.matchAll(/<(?:[\w.-]+:)?graphicFrame\b[^>]*>[\s\S]*?<\/(?:[\w.-]+:)?graphicFrame\s*>/gi)]
+    .filter((match) => /<(?:[\w.-]+:)?oleObj\b/i.test(match[0]));
+  const allOleObjects = [...xml.matchAll(/<(?:[\w.-]+:)?oleObj\b/gi)].length;
+  if (oleFrames.length !== allOleObjects || oleFrames.length !== packageRelationships.length) {
+    throw new Error("PPTX embedded-XLSX OLE fixture has an orphan, nested, or unmodeled package relationship.");
+  }
+  const packageRelationshipById = new Map(packageRelationships.map((relationship) => [relationship.id, relationship]));
+  const imageRelationshipById = new Map(imageRelationships.map((relationship) => [relationship.id, relationship]));
+  const usedPackageIds = new Set();
+  const oleWorkbooks = [];
+  for (const frameMatch of oleFrames) {
+    const frame = frameMatch[0];
+    const groupDepth = [...xml.slice(0, frameMatch.index).matchAll(/<(\/)?(?:[\w.-]+:)?grpSp\b[^>]*>/gi)]
+      .reduce((depth, match) => depth + (match[1] ? -1 : /\/\s*>$/.test(match[0]) ? 0 : 1), 0);
+    const oleTags = [...frame.matchAll(/<(?:[\w.-]+:)?oleObj\b[^>]*>/gi)];
+    const embeds = [...frame.matchAll(/<(?:[\w.-]+:)?embed\b[^>]*\/?>/gi)];
+    const links = [...frame.matchAll(/<(?:[\w.-]+:)?link\b/gi)];
+    const pictures = [...frame.matchAll(/<(?:[\w.-]+:)?pic\b/gi)];
+    const blips = [...frame.matchAll(/<(?:[\w.-]+:)?blip\b[^>]*>/gi)];
+    const relationshipAttributes = [...frame.matchAll(/\br:(?:id|embed|link)="[^"]*"/gi)];
+    if (groupDepth !== 0 || oleTags.length !== 1 || embeds.length !== 1 || links.length || pictures.length !== 1 || blips.length !== 1 || relationshipAttributes.length !== 2) {
+      throw new Error("PPTX embedded-XLSX OLE fixture is outside the canonical top-level embed-plus-preview frame profile.");
+    }
+    const packageId = xmlAttributes(oleTags[0][0]).id;
+    const previewId = xmlAttributes(blips[0][0]).embed;
+    const packageRelationship = packageRelationshipById.get(packageId);
+    const previewRelationship = imageRelationshipById.get(previewId);
+    if (!packageId || !previewId || !usedPackageIds.add(packageId)
+        || !packageRelationship || packageRelationship.external || !packageRelationship.targetPart
+        || !previewRelationship || previewRelationship.external || !previewRelationship.targetPart
+        || !packageRelationship.targetPart.toLowerCase().endsWith(".xlsx")
+        || await contentTypeForPart(zip, packageRelationship.targetPart) !== "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        || !/^ppt\/media\/[^/]+\.[a-z0-9]+$/i.test(previewRelationship.targetPart)
+        || !String(await contentTypeForPart(zip, previewRelationship.targetPart)).toLowerCase().startsWith("image/")) {
+      throw new Error("PPTX embedded-XLSX OLE fixture has an invalid package or preview binding.");
+    }
+    const [workbookBytes, previewBytes, childRelationships, inboundCount] = await Promise.all([
+      zip.file(packageRelationship.targetPart)?.async("uint8array"),
+      zip.file(previewRelationship.targetPart)?.async("uint8array"),
+      relationshipEntries(zip, packageRelationship.targetPart, { required: false }),
+      packageInboundRelationshipCount(zip, packageRelationship.targetPart),
+    ]);
+    if (!workbookBytes?.length || !previewBytes?.length || childRelationships.length || inboundCount !== 1) {
+      throw new Error("PPTX embedded-XLSX OLE package is missing, shared, or owns a child relationship graph.");
+    }
+    oleWorkbooks.push({
+      part: packageRelationship.targetPart,
+      relationship: { id: packageRelationship.id, type: packageRelationship.type },
+      bytes: workbookBytes.length,
+      sha256: sha256(workbookBytes),
+      childRelationshipCount: childRelationships.length,
+      inboundRelationshipCount: inboundCount,
+      previewPart: previewRelationship.targetPart,
+      previewRelationship: { id: previewRelationship.id, type: previewRelationship.type },
+      previewSha256: sha256(previewBytes),
+    });
+  }
+  if (usedPackageIds.size !== packageRelationshipById.size) {
+    throw new Error("PPTX embedded-XLSX OLE fixture has an unused package relationship.");
+  }
   return {
     part: partPath,
     name: slideName(xml),
@@ -366,6 +480,7 @@ async function inspectClosedLeafSlide(zip, partPath) {
     notes,
     comments,
     charts,
+    oleWorkbooks,
     customShowActions,
   };
 }
@@ -529,6 +644,23 @@ function closedChartSemanticsEqual(left = [], right = []) {
   });
 }
 
+function closedOleWorkbookSemanticsEqual(left = [], right = []) {
+  return left.length === right.length && left.every((workbook, index) => {
+    const candidate = right[index];
+    return workbook?.relationship?.id === candidate?.relationship?.id
+      && workbook?.relationship?.type === candidate?.relationship?.type
+      && workbook?.sha256 === candidate?.sha256
+      && workbook?.childRelationshipCount === 0
+      && candidate?.childRelationshipCount === 0
+      && workbook?.inboundRelationshipCount === 1
+      && candidate?.inboundRelationshipCount === 1
+      && workbook?.previewRelationship?.id === candidate?.previewRelationship?.id
+      && workbook?.previewRelationship?.type === candidate?.previewRelationship?.type
+      && workbook?.previewPart === candidate?.previewPart
+      && workbook?.previewSha256 === candidate?.previewSha256;
+  });
+}
+
 function closedLeafSemanticsEqual(left, right) {
   return left?.name === right?.name
     && sameArray(left?.texts || [], right?.texts || [])
@@ -536,6 +668,7 @@ function closedLeafSemanticsEqual(left, right) {
     && left?.notes?.text === right?.notes?.text
     && sameArray(left?.comments?.texts || [], right?.comments?.texts || [])
     && closedChartSemanticsEqual(left?.charts, right?.charts)
+    && closedOleWorkbookSemanticsEqual(left?.oleWorkbooks, right?.oleWorkbooks)
     && JSON.stringify(left?.customShowActions || []) === JSON.stringify(right?.customShowActions || []);
 }
 
@@ -560,6 +693,7 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
     clone?.part,
     clone ? relationshipPartPath(clone.part) : null,
     ...(clone?.charts || []).map((chart) => chart.part),
+    ...(clone?.oleWorkbooks || []).map((workbook) => workbook.part),
     clone?.notes?.part,
     clone?.notes?.relationshipPart,
     clone?.comments?.part,
@@ -571,6 +705,8 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
   const cloneLeaves = clone?.notes && clone?.comments;
   const sourceChart = sourceSlide?.charts?.[0] || null;
   const cloneChart = clone?.charts?.[0] || null;
+  const sourceOleWorkbook = sourceSlide?.oleWorkbooks?.[0] || null;
+  const cloneOleWorkbook = clone?.oleWorkbooks?.[0] || null;
   const sourceCustomShow = source.customShows?.[0] || null;
   const outputCustomShow = output.customShows?.[0] || null;
   const sourceCustomShowAction = sourceSlide?.customShowActions?.[0] || null;
@@ -593,6 +729,13 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
     && sourceChart?.texts?.includes(fixture.chartTitle)
     && sameArray(sourceChart?.values || [], expectedChartValues)
     && sourceChart?.childRelationshipCount === 0
+    && sourceSlide?.oleWorkbooks?.length === 1
+    && sourceOleWorkbook?.part === fixture.oleWorkbookPart
+    && sourceOleWorkbook?.relationship?.id === fixture.oleWorkbookRelationshipId
+    && sourceOleWorkbook?.childRelationshipCount === 0
+    && sourceOleWorkbook?.inboundRelationshipCount === 1
+    && sourceOleWorkbook?.previewPart === fixture.olePreviewPart
+    && sourceOleWorkbook?.previewRelationship?.id === fixture.olePreviewRelationshipId
     && sourceAppendix?.name === fixture.appendixSlideName
     && sourceAppendix?.texts.includes(fixture.appendixText)
     && sourceAppendix?.background === fixture.appendixBackground
@@ -625,6 +768,23 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
     && sourceChart.sha256 === cloneChart.sha256
     && sourceChart.childRelationshipCount === 0
     && cloneChart.childRelationshipCount === 0;
+  const closedOleWorkbookGraph = Boolean(sourceOleWorkbook && cloneOleWorkbook)
+    && sourceSlide.oleWorkbooks.length === 1
+    && clone.oleWorkbooks.length === 1
+    && sourceOleWorkbook.part !== cloneOleWorkbook.part
+    && source.paths.includes(sourceOleWorkbook.part)
+    && !source.paths.includes(cloneOleWorkbook.part)
+    && sourceOleWorkbook.relationship.id === cloneOleWorkbook.relationship.id
+    && sourceOleWorkbook.relationship.type === cloneOleWorkbook.relationship.type
+    && sourceOleWorkbook.sha256 === cloneOleWorkbook.sha256
+    && sourceOleWorkbook.childRelationshipCount === 0
+    && cloneOleWorkbook.childRelationshipCount === 0
+    && sourceOleWorkbook.inboundRelationshipCount === 1
+    && cloneOleWorkbook.inboundRelationshipCount === 1
+    && sourceOleWorkbook.previewRelationship.id === cloneOleWorkbook.previewRelationship.id
+    && sourceOleWorkbook.previewRelationship.type === cloneOleWorkbook.previewRelationship.type
+    && sourceOleWorkbook.previewPart === cloneOleWorkbook.previewPart
+    && sourceOleWorkbook.previewSha256 === cloneOleWorkbook.previewSha256;
   const closedLeafGraph = Boolean(sourceLeaves && cloneLeaves)
     && sourceSlide.notes.part !== clone.notes.part
     && sourceSlide.notes.relationship.id === clone.notes.relationship.id
@@ -687,6 +847,10 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
       sourceChart,
       cloneChart,
     }),
+    check("pptx-clone-machine:ole-workbook-copied-to-independent-package", "machine", closedOleWorkbookGraph, {
+      sourceOleWorkbook,
+      cloneOleWorkbook,
+    }),
     check("pptx-clone-machine:custom-show-action-retained-without-membership-drift", "machine", customShowGraph, {
       sourceCustomShow,
       outputCustomShow,
@@ -705,7 +869,7 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
     }),
     check("pptx-clone-visual:source-clone-and-appendix-pixels-stable", "visual", visual.retainedSourceStable
       && visual.cloneMatchesSource && visual.appendixStable, { visual }),
-    gate("pptx-clone-security:source-parts-byte-preserved-and-graph-bounded", "security", packageScope && closedLeafGraph && closedChartGraph && customShowGraph, {
+    gate("pptx-clone-security:source-parts-byte-preserved-and-graph-bounded", "security", packageScope && closedLeafGraph && closedChartGraph && closedOleWorkbookGraph && customShowGraph, {
       changedSourcePaths,
       newPaths,
       expectedNewPaths,
@@ -734,12 +898,16 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
       && closedLeaves.speakerNotes === true
       && closedLeaves.legacyComments === true
       && operation.chartParts?.count === 1
+      && operation.oleWorkbookParts?.count === 1
       && operation.runHyperlinks?.customShowCount === 1
       && operation.runHyperlinks?.customShowActions?.[0]?.nativeId === fixture.customShowNativeId
       && operation.customShows?.count === 1
       && operation.customShows?.shows?.[0]?.nativeId === fixture.customShowNativeId
       && sameArray(operation.chartParts?.sourceParts || [], [sourceChart?.part])
-      && sameArray(operation.chartParts?.relationshipIds || [], [sourceChart?.relationship?.id]), {
+      && sameArray(operation.chartParts?.relationshipIds || [], [sourceChart?.relationship?.id])
+      && sameArray(operation.oleWorkbookParts?.sourceParts || [], [sourceOleWorkbook?.part])
+      && sameArray(operation.oleWorkbookParts?.relationshipIds || [], [sourceOleWorkbook?.relationship?.id])
+      && sameArray(operation.oleWorkbookParts?.previewParts || [], [sourceOleWorkbook?.previewPart]), {
       operation: audit?.operation || null,
     }),
     check("pptx-clone-trace:package-validation-contract", "trace", packageValidation.ok === true
@@ -752,6 +920,16 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
       && packageValidation.chartParts?.parts?.[0]?.sourcePart === sourceChart?.part
       && packageValidation.chartParts?.parts?.[0]?.clonePart === cloneChart?.part
       && packageValidation.chartParts?.parts?.[0]?.sourceSha256 === sourceChart?.sha256
+      && packageValidation.oleWorkbookParts?.count === 1
+      && packageValidation.oleWorkbookParts?.independentParts === true
+      && packageValidation.oleWorkbookParts?.allPayloadsByteIdentical === true
+      && packageValidation.oleWorkbookParts?.previewPartsShared === true
+      && packageValidation.oleWorkbookParts?.parts?.[0]?.relationshipId === sourceOleWorkbook?.relationship?.id
+      && packageValidation.oleWorkbookParts?.parts?.[0]?.sourcePart === sourceOleWorkbook?.part
+      && packageValidation.oleWorkbookParts?.parts?.[0]?.clonePart === cloneOleWorkbook?.part
+      && packageValidation.oleWorkbookParts?.parts?.[0]?.sourceSha256 === sourceOleWorkbook?.sha256
+      && packageValidation.oleWorkbookParts?.parts?.[0]?.previewPart === sourceOleWorkbook?.previewPart
+      && packageValidation.oleWorkbookParts?.parts?.[0]?.previewShared === true
       && packageValidation.runHyperlinks?.customShowCount === 1
       && packageValidation.customShows?.count === 1
       && packageValidation.customShows?.exactSourceMembershipRetained === true
@@ -765,6 +943,7 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
     check("pptx-clone-trace:second-import", "trace", audit?.validation?.reimport?.ok === true
       && audit?.validation?.reimport?.sourceAndCloneSemanticsEqual === true
       && audit?.validation?.reimport?.sourceAndCloneClosedLeavesEqual === true
+      && audit?.validation?.reimport?.sourceAndCloneOleWorkbookBindingsIndependent === true
       && audit?.validation?.reimport?.customShowMembershipRetained === true, {
       validation: audit?.validation?.reimport || null,
     }),

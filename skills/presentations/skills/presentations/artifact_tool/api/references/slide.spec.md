@@ -95,9 +95,9 @@ evidence, see
 `p:sldId` reference to one source part. It is available only on an **original
 imported** source slide with an unchanged body of canonical simple shapes,
 canonical inline fixed-grid tables, recognized closed literal-data charts,
-canonical embedded rectangular images,
+eligible top-level embedded-XLSX OLE frames, canonical embedded rectangular images,
 bounded straight/elbow connectors, plus recursively canonical groups whose
-descendants contain only those same leaf kinds, exactly one internal
+descendants contain only the non-OLE leaf kinds, exactly one internal
 `SlidePart -> SlideLayoutPart` relationship, and image relationships bound only
 by those pictures. Canonical run-level clicks may use an external absolute URI,
 an internal jump to a retained SlidePart, or one of the five supported relative
@@ -114,7 +114,12 @@ chart frame uniquely consumes one internal relationship to a numbered
 `ChartPart` with no child, external, hyperlink, or data relationship; export
 byte-copies each into a distinct clone-local ChartPart. After reimport, any
 chart that advertises the ordinary fixed-topology edit capability can use it
-without affecting the origin. It intentionally
+without affecting the origin. Every accepted OLE frame uniquely binds one
+closed, uniquely inbound internal XLSX `EmbeddedPackagePart` plus one preview
+ImagePart. Export byte-copies the workbook to a distinct clone-local package
+under the same slide-local relationship ID and shares the immutable preview;
+after reimport, `replaceEmbeddedWorkbook(...)` on the clone cannot affect the
+origin. It intentionally
 reuses the verified layout and immutable ImageParts through fresh clone-local
 image relationships, shares the verified NotesMaster and CommentAuthorsPart,
 copies accepted NotesSlide and SlideComments XML byte-for-byte, and points only
@@ -128,7 +133,8 @@ fixed-topology paths, while imported legacy comments remain source-bound
 read-only.
 
 Source-free slides, already-cloned slides, rich or connected comments,
-formula/external-data/embedded-workbook/connected/orphan charts, OLE,
+formula/external-data/embedded-workbook/connected/orphan charts,
+shared/external/non-XLSX/nested/relationship-bearing/replacement-pending OLE graphs,
 shape-level/hover/unknown/orphan hyperlinks, external/data relationships,
 external/unbound/irregular images, unsupported connectors,
 non-shape/table/closed-chart/image/connector/recursive-group elements, pending-clone renames, layout/background changes, note

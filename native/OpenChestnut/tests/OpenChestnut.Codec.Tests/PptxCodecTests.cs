@@ -2523,6 +2523,80 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void EmbeddedXlsxOleWorkbookCloneCopiesIndependentPackageAndSharesPreview()
+    {
+        var source = AddCloneableOleWorkbookGraph(Invoke(ExportRequest()).File.ToByteArray());
+        var imported = Import(source);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var sourceOle = Assert.Single(imported.Artifact.Presentation.Slides[0].Elements, element =>
+            element.ContentCase == PresentationElement.ContentOneofCase.Opaque && element.Opaque.NativeKind == "oleObject");
+        Assert.NotNull(sourceOle.Opaque.OleWorkbook);
+
+        AddPendingClone(imported.Artifact.Presentation, 0, "presentation/clone/ole-workbook");
+        var cloned = Export(imported.Artifact);
+        Assert.True(cloned.Ok, Diagnostics(cloned));
+        var clonedBytes = cloned.File.ToByteArray();
+        Assert.Equal(ZipBytes(source, "ppt/slides/slide1.xml"), ZipBytes(clonedBytes, "ppt/slides/slide1.xml"));
+        Assert.Equal(ZipBytes(source, "ppt/slides/_rels/slide1.xml.rels"), ZipBytes(clonedBytes, "ppt/slides/_rels/slide1.xml.rels"));
+
+        using (var stream = new MemoryStream(clonedBytes))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var slides = OrderedSlides(package);
+            Assert.Equal(2, slides.Length);
+            var sourcePackage = Assert.Single(slides[0].Parts, pair => pair.OpenXmlPart is EmbeddedPackagePart);
+            var clonePackage = Assert.Single(slides[1].Parts, pair => pair.OpenXmlPart is EmbeddedPackagePart);
+            Assert.Equal("rIdCloneOleWorkbook", sourcePackage.RelationshipId);
+            Assert.Equal(sourcePackage.RelationshipId, clonePackage.RelationshipId);
+            Assert.NotEqual(sourcePackage.OpenXmlPart.Uri, clonePackage.OpenXmlPart.Uri);
+            Assert.Equal(
+                ZipBytes(clonedBytes, sourcePackage.OpenXmlPart.Uri.OriginalString.TrimStart('/')),
+                ZipBytes(clonedBytes, clonePackage.OpenXmlPart.Uri.OriginalString.TrimStart('/')));
+
+            var sourcePreview = Assert.Single(slides[0].Parts, pair => pair.OpenXmlPart is ImagePart);
+            var clonePreview = Assert.Single(slides[1].Parts, pair => pair.OpenXmlPart is ImagePart);
+            Assert.Equal("rIdCloneOlePreview", sourcePreview.RelationshipId);
+            Assert.Equal(sourcePreview.RelationshipId, clonePreview.RelationshipId);
+            Assert.Equal(sourcePreview.OpenXmlPart.Uri, clonePreview.OpenXmlPart.Uri);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var roundTrip = Import(clonedBytes);
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        var roundTripSource = Assert.Single(roundTrip.Artifact.Presentation.Slides[0].Elements, element => element.Opaque?.NativeKind == "oleObject");
+        var roundTripClone = Assert.Single(roundTrip.Artifact.Presentation.Slides[1].Elements, element => element.Opaque?.NativeKind == "oleObject");
+        Assert.NotEqual(roundTripSource.Opaque.OleWorkbook.PartPath, roundTripClone.Opaque.OleWorkbook.PartPath);
+        Assert.Equal(roundTripSource.Opaque.OleWorkbook.SourceSha256, roundTripClone.Opaque.OleWorkbook.SourceSha256);
+
+        var replacement = CreateEmbeddedWorkbook("Independent cloned workbook");
+        roundTripClone.Opaque.OleWorkbook.ReplacementAssetId = AddOleWorkbookAsset(roundTrip.Artifact, replacement);
+        var edited = Export(roundTrip.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        Assert.Equal(ZipBytes(source, "ppt/embeddings/clone-source-workbook.xlsx"), ZipBytes(edited.File.ToByteArray(), roundTripSource.Opaque.OleWorkbook.PartPath));
+        Assert.Equal(replacement, ZipBytes(edited.File.ToByteArray(), roundTripClone.Opaque.OleWorkbook.PartPath));
+
+        var pendingEdit = Import(source);
+        AddPendingClone(pendingEdit.Artifact.Presentation, 0, "presentation/clone/ole-workbook-edit");
+        var pendingOle = pendingEdit.Artifact.Presentation.Slides[1].Elements.Single(element => element.Opaque?.NativeKind == "oleObject");
+        pendingOle.Opaque.OleWorkbook.ReplacementAssetId = AddOleWorkbookAsset(pendingEdit.Artifact, replacement);
+        var pendingRejected = Export(pendingEdit.Artifact);
+        Assert.False(pendingRejected.Ok);
+        Assert.Equal("presentation_slide_clone_mismatch", Assert.Single(pendingRejected.Diagnostics).Code);
+
+        var shared = ReplaceZipText(source, "ppt/slides/_rels/slide1.xml.rels", xml => xml.Replace(
+            "</Relationships>",
+            "<Relationship Id=\"rIdSharedCloneOle\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/package\" Target=\"../embeddings/clone-source-workbook.xlsx\"/></Relationships>",
+            StringComparison.Ordinal));
+        var sharedImport = Import(shared);
+        Assert.True(sharedImport.Ok, Diagnostics(sharedImport));
+        Assert.Null(sharedImport.Artifact.Presentation.Slides[0].Elements.Single(element => element.Opaque?.NativeKind == "oleObject").Opaque.OleWorkbook);
+        AddPendingClone(sharedImport.Artifact.Presentation, 0, "presentation/clone/shared-ole-workbook");
+        var sharedRejected = Export(sharedImport.Artifact);
+        Assert.False(sharedRejected.Ok);
+        Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(sharedRejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void NativeObjectGraphRejectsMissingRelationshipsPartsAndExcessiveTraversal()
     {
         var source = AddNativeObjectGraph(Invoke(ExportRequest()).File.ToByteArray());
@@ -5415,6 +5489,25 @@ public sealed class PptxCodecTests
             layout.MCAttributes = new MarkupCompatibilityAttributes { Ignorable = "fixture" };
             var transform = layout.Descendants<P.Shape>().Single().ShapeProperties!.Transform2D!;
             transform.SetAttribute(new OpenXmlAttribute("fixture", "keep", fixtureNamespace, "1"));
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddCloneableOleWorkbookGraph(byte[] bytes)
+    {
+        const string ole = "<p:graphicFrame xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><p:nvGraphicFramePr><p:cNvPr id=\"20\" name=\"Clone-safe embedded workbook\"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp=\"1\"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x=\"914400\" y=\"1828800\"/><a:ext cx=\"3657600\" cy=\"2286000\"/></p:xfrm><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/presentationml/2006/ole\"><p:oleObj showAsIcon=\"1\" r:id=\"rIdCloneOleWorkbook\" imgW=\"965200\" imgH=\"609600\" progId=\"Excel.Sheet.12\"><p:embed/><p:pic><p:nvPicPr><p:cNvPr id=\"0\" name=\"\"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed=\"rIdCloneOlePreview\"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x=\"914400\" y=\"1828800\"/><a:ext cx=\"3657600\" cy=\"2286000\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></p:spPr></p:pic></p:oleObj></a:graphicData></a:graphic></p:graphicFrame>";
+        const string relationships = "<Relationship Id=\"rIdCloneOleWorkbook\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/package\" Target=\"../embeddings/clone-source-workbook.xlsx\"/><Relationship Id=\"rIdCloneOlePreview\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"../media/clone-ole-preview.png\"/>";
+        const string contentTypes = "<Override PartName=\"/ppt/embeddings/clone-source-workbook.xlsx\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\"/><Override PartName=\"/ppt/media/clone-ole-preview.png\" ContentType=\"image/png\"/>";
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Update, leaveOpen: true))
+        {
+            ReplaceZipText(archive, "ppt/slides/slide1.xml", xml => xml.Replace("</p:spTree>", $"{ole}</p:spTree>", StringComparison.Ordinal));
+            ReplaceZipText(archive, "ppt/slides/_rels/slide1.xml.rels", xml => xml.Replace("</Relationships>", $"{relationships}</Relationships>", StringComparison.Ordinal));
+            ReplaceZipText(archive, "[Content_Types].xml", xml => xml.Replace("</Types>", $"{contentTypes}</Types>", StringComparison.Ordinal));
+            AddZipBytes(archive, "ppt/embeddings/clone-source-workbook.xlsx", CreateEmbeddedWorkbook("Original clone-safe workbook"));
+            AddZipBytes(archive, "ppt/media/clone-ole-preview.png", Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="));
         }
         return stream.ToArray();
     }

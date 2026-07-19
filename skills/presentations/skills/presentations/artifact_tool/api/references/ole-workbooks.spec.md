@@ -65,6 +65,32 @@ Its source digest must describe the replacement bytes and
 QA path as well, while remembering that the preserved preview image is not
 regenerated from the new workbook.
 
+## Duplicate an eligible OLE slide leaf
+
+An unchanged eligible top-level OLE frame may travel with the bounded imported
+`slide.duplicate()` transaction. This is not OLE authoring or a general OPC
+graph copy. Clone preflight additionally requires exactly one embed node, one
+internal preview picture, exactly the package `r:id` plus preview `r:embed`
+relationship attributes, no child/external/hyperlink/data graph on the XLSX
+package, and no second inbound package relationship.
+
+On the first export, OpenChestnut preserves the source SlidePart and workbook
+bytes, creates a distinct clone-local XLSX `EmbeddedPackagePart`, byte-copies
+the workbook, retains the source slide-local package relationship ID, and shares
+the immutable preview ImagePart. The pending clone must remain unchanged until
+that export has been imported again. After reimport, the two native objects have
+different `oleWorkbook.partPath` values and the same source digest; calling
+`replaceEmbeddedWorkbook(...)` on the clone then changes only its independent
+package.
+
+Use `examples/openchestnut-slide-duplicate-workflow.mjs` for the auditable
+transaction. Its independent package checks prove content type, unique inbound
+ownership, empty child graph, exact source/clone bytes, distinct package paths,
+shared preview binding, retained source parts, second import, and model-render
+equivalence. `--allow-closed-leaves` controls NotesSlide/legacy-comments leaves,
+not OLE; an eligible OLE workbook is part of the default canonical clone
+profile.
+
 ## Fail-closed boundary
 
 Do not use this operation to:

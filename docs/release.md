@@ -1886,6 +1886,48 @@ configured, so their contract/adversarial gates passed while their
 environment-gated real repeats remained skipped. Hosted results are recorded
 after the candidate commit. No publish or tag operation was attempted.
 
+### PPTX embedded-XLSX OLE slide cloning
+
+On 2026-07-20, the strict imported `slide.duplicate()` profile gained one more
+closed PresentationML leaf: an unchanged top-level OLE graphic frame with one
+internal XLSX `EmbeddedPackagePart` and one internal preview `ImagePart`. The
+package must be uniquely referenced, relationship-free, source-hash-bound, and
+semantically recognized by the existing embedded-workbook model. External,
+linked, shared, non-XLSX, nested, ambiguous, relationship-bearing, or
+replacement-pending OLE graphs fail before package mutation.
+
+OpenChestnut retains the source SlidePart and relationship part byte-for-byte,
+preserves the slide-local package relationship ID, copies the XLSX bytes into a
+distinct clone-owned package part, and shares only the proven immutable preview
+image. Post-write validation rejects package aliasing, byte drift, child graph
+growth, or preview-target drift. The clone remains unchanged until an
+export/import boundary; afterward, replacing only its embedded workbook leaves
+the origin workbook untouched.
+
+The shipped Presentation workflow independently inventories every package
+relationship and content type, proves unique inbound ownership and exact XLSX
+hashes, records source/output/reimport OLE bindings in its audit, and refuses
+silent fallback. The ready `pptx-closed-leaf-slide-clone` PromptBench fixture and
+evaluator now carry the same real OLE frame, distinct-package/shared-preview
+oracle, second-import checks, and adversarial package-alias rejection. The
+historical `0e8824c` autonomous trial predates this OLE extension, so a new
+candidate repeat and reference-Skill comparison remain open evidence work.
+
+The complete local gate passed `npm test` including Playwright,
+LibreOffice/Poppler, qpdf, and the 20-template corpus; `npm run docs:api`, `npm
+run proto:check`, `npm run test:pack`, OfficeBridge `5/5`, and OpenChestnut
+`292/292` also passed. Two deterministic OpenChestnut builds reproduced 39
+audited files and the same manifest-bound 38-file, 14,688,960-byte runtime. The
+production tarball contains 463 files, is 8,989,422 bytes compressed and
+23,643,498 bytes unpacked, leaving 736,502 bytes below the unchanged
+24,380,000-byte ceiling. The qpdf real-provider lane passed; dedicated
+real-provider environments for pikepdf, pyHanko, veraPDF, and OCRmyPDF were not
+configured, so their contract/adversarial gates passed while their
+environment-gated real repeats remained skipped. The offline metadata check
+reported `publishReady: true` with network checks intentionally skipped. Hosted
+results are recorded after the candidate commit. No publish or tag operation
+was attempted.
+
 `npm run release:check` passes the source, documentation, package, license, JavaScript, and .NET gates. Its only remaining blocker is unavailable npm authentication. No `npm publish` or tag/release operation has been performed.
 
 ## Publishing

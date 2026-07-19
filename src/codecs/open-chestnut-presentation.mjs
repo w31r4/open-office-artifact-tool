@@ -275,6 +275,32 @@ function cloneImportedPresentationChart(container, source, context) {
   return registerPresentationCloneElement(context, source, clone);
 }
 
+// An eligible imported OLE frame is still opaque PresentationML, but its
+// package graph has already proved one owner-local internal XLSX payload and
+// one bounded preview image. Give the pending slide clone a fresh JavaScript
+// object while retaining the exact source graph snapshot; C# allocates the
+// independent EmbeddedPackagePart during the first export.
+function cloneImportedPresentationOleObject(container, source, context) {
+  if (source?.kind !== "nativeObject" || source.nativeKind !== "oleObject" || !source.oleWorkbook ||
+      source._embeddedWorkbookReplacementBytes?.()) {
+    throw new OpenChestnutCodecError("The bounded imported-slide clone profile accepts only an unchanged source-bound OLE object with one eligible embedded XLSX workbook.", [], { code: "unsupported_presentation_slide_clone" });
+  }
+  const clone = container.nativeObjects.add({
+    name: source.name,
+    nativeId: source.nativeId,
+    creationId: source.creationId,
+    nativeKind: source.nativeKind,
+    position: clonedPresentationValue(source.position),
+    rawXml: source.rawXml,
+    sourcePart: source.sourcePart,
+    relationshipReferences: clonedPresentationValue(source.relationshipReferences),
+    rootRelationships: clonedPresentationValue(source.rootRelationships),
+    parts: clonedPresentationValue(source.parts),
+    oleWorkbook: clonedPresentationValue(source.oleWorkbook),
+  });
+  return registerPresentationCloneElement(context, source, clone);
+}
+
 function cloneImportedPresentationConnector(container, source, context) {
   const clone = container.connectors.add({
     name: source.name,
@@ -313,18 +339,25 @@ function cloneImportedPresentationElement(container, source, context) {
   if (source instanceof ImageElement) return cloneImportedPresentationImage(container, source, context);
   if (isPresentationConnectorElement(source)) return cloneImportedPresentationConnector(container, source, context);
   if (source instanceof GroupShape) return cloneImportedPresentationGroup(container, source, context);
+  if (source?.kind === "nativeObject") return cloneImportedPresentationOleObject(container, source, context);
   throw new OpenChestnutCodecError("The bounded imported-slide clone profile encountered an unsupported group descendant.", [], { code: "unsupported_presentation_slide_clone" });
 }
 
-function cloneSupportedPresentationContent(content) {
+function cloneSupportedPresentationContent(content, allowOleWorkbook = true) {
   if (content?.case === "shape" || content?.case === "table" || content?.case === "chart" || content?.case === "image" || content?.case === "connector") return true;
+  if (content?.case === "opaque") {
+    const opaque = content.value;
+    return allowOleWorkbook && opaque?.nativeKind === "oleObject" && Boolean(opaque.oleWorkbook?.partPath) &&
+      Boolean(opaque.oleWorkbook?.sourceSha256) && !opaque.oleWorkbook?.replacementAssetId;
+  }
   if (content?.case !== "group") return false;
   const children = content.value?.children;
-  return Array.isArray(children) && children.length > 0 && children.every((child) => cloneSupportedPresentationContent(child?.content));
+  return Array.isArray(children) && children.length > 0 && children.every((child) => cloneSupportedPresentationContent(child?.content, false));
 }
 
-function collectPresentationCloneSourceIds(source, ids) {
-  if (!(source instanceof Shape) && !(source instanceof TableElement) && !(source instanceof ChartElement) && !(source instanceof ImageElement) && !isPresentationConnectorElement(source) && !(source instanceof GroupShape)) {
+function collectPresentationCloneSourceIds(source, ids, allowOleWorkbook = true) {
+  const cloneableOle = allowOleWorkbook && source?.kind === "nativeObject" && source.nativeKind === "oleObject" && Boolean(source.oleWorkbook) && !source._embeddedWorkbookReplacementBytes?.();
+  if (!(source instanceof Shape) && !(source instanceof TableElement) && !(source instanceof ChartElement) && !(source instanceof ImageElement) && !isPresentationConnectorElement(source) && !(source instanceof GroupShape) && !cloneableOle) {
     throw new OpenChestnutCodecError("The bounded imported-slide clone profile encountered an unsupported source element.", [], { code: "unsupported_presentation_slide_clone" });
   }
   const id = String(source.id || "");
@@ -333,7 +366,7 @@ function collectPresentationCloneSourceIds(source, ids) {
   }
   ids.add(id);
   if (source instanceof GroupShape) {
-    for (const child of source.children) collectPresentationCloneSourceIds(child, ids);
+    for (const child of source.children) collectPresentationCloneSourceIds(child, ids, false);
   }
 }
 
@@ -386,7 +419,7 @@ function duplicateImportedPresentationSlide(presentation, state, slide) {
     throw new OpenChestnutCodecError("The bounded imported-slide clone profile permits only one pending clone per origin; export and reimport it before cloning that source again.", [], { code: "unsupported_presentation_slide_clone" });
   }
   if (source.entries.some((entry) => !cloneSupportedPresentationContent(entry.wire.content))) {
-    throw new OpenChestnutCodecError("The bounded imported-slide clone profile supports only canonical shapes, inline tables, closed literal-data charts, embedded images, bounded connectors, and recursively canonical groups; native objects and other graph edges require a broader OPC graph clone.", [], { code: "unsupported_presentation_slide_clone" });
+    throw new OpenChestnutCodecError("The bounded imported-slide clone profile supports only canonical shapes, inline tables, closed literal-data charts, embedded images, eligible embedded-XLSX OLE frames, bounded connectors, and recursively canonical groups; other native objects and graph edges require a broader OPC graph clone.", [], { code: "unsupported_presentation_slide_clone" });
   }
   const sourceIds = new Set();
   for (const entry of source.entries) collectPresentationCloneSourceIds(entry.model, sourceIds);
@@ -412,7 +445,9 @@ function duplicateImportedPresentationSlide(presentation, state, slide) {
         ? presentationImageReadOnlySnapshot(model)
         : entry.wire.content.case === "table"
           ? presentationTableReadOnlySnapshot(model)
-      : undefined,
+          : entry.wire.content.case === "opaque"
+            ? opaquePresentationSnapshot(model)
+            : undefined,
     };
   });
   bindPresentationCloneConnectorTargets(cloneContext);

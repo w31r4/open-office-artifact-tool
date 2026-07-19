@@ -518,10 +518,14 @@ try {
 const closedLeafCloneItem = cases.find((item) => item.id === "pptx-closed-leaf-slide-clone");
 assert.ok(closedLeafCloneItem);
 assert.equal(closedLeafCloneItem.grade.machine.chartParts, 1);
+assert.equal(closedLeafCloneItem.grade.machine.oleWorkbookParts, 1);
 assert.equal(closedLeafCloneItem.grade.machine.customShowRunLink, true);
 assert.equal(closedLeafCloneItem.grade.security.independentChartPart, true);
+assert.equal(closedLeafCloneItem.grade.security.independentOleWorkbookPart, true);
+assert.equal(closedLeafCloneItem.grade.security.sharedOlePreviewPart, true);
 assert.equal(closedLeafCloneItem.grade.security.customShowMembershipStable, true);
 assert.match(closedLeafCloneItem.prompt, /独立 ChartPart/);
+assert.match(closedLeafCloneItem.prompt, /独立.*XLSX EmbeddedPackagePart/);
 assert.match(closedLeafCloneItem.prompt, /custom show/i);
 const closedLeafCloneRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-eval-pptx-closed-leaf-clone-"));
 try {
@@ -571,6 +575,12 @@ try {
       values: [...PPTX_CLOSED_LEAF_CLONE_FIXTURE.chartValues],
     },
   ]);
+  const sourceOleObject = closedLeafReimport.slides.getItem(0).nativeObjects.items.find((object) => object.name === PPTX_CLOSED_LEAF_CLONE_FIXTURE.oleObjectName);
+  const cloneOleObject = closedLeafReimport.slides.getItem(1).nativeObjects.items.find((object) => object.name === PPTX_CLOSED_LEAF_CLONE_FIXTURE.oleObjectName);
+  assert.ok(sourceOleObject?.oleWorkbook);
+  assert.ok(cloneOleObject?.oleWorkbook);
+  assert.notEqual(sourceOleObject.oleWorkbook.partPath, cloneOleObject.oleWorkbook.partPath);
+  assert.equal(sourceOleObject.oleWorkbook.sourceSha256, cloneOleObject.oleWorkbook.sourceSha256);
   assert.deepEqual(closedLeafReimport.customShows.getItem(PPTX_CLOSED_LEAF_CLONE_FIXTURE.customShowName).slideIds, [
     closedLeafReimport.slides.getItem(0).id,
     closedLeafReimport.slides.getItem(2).id,
@@ -581,10 +591,14 @@ try {
     { customShow: PPTX_CLOSED_LEAF_CLONE_FIXTURE.customShowName, returnToSlide: true, tooltip: "Open the board route" },
   );
   assert.equal(closedLeafResult.audit.operation.chartParts.count, 1);
+  assert.equal(closedLeafResult.audit.operation.oleWorkbookParts.count, 1);
   assert.equal(closedLeafResult.audit.operation.runHyperlinks.customShowCount, 1);
   assert.equal(closedLeafResult.audit.operation.customShows.count, 1);
   assert.equal(closedLeafResult.audit.validation.package.chartParts.independentParts, true);
   assert.equal(closedLeafResult.audit.validation.package.chartParts.allPayloadsByteIdentical, true);
+  assert.equal(closedLeafResult.audit.validation.package.oleWorkbookParts.independentParts, true);
+  assert.equal(closedLeafResult.audit.validation.package.oleWorkbookParts.allPayloadsByteIdentical, true);
+  assert.equal(closedLeafResult.audit.validation.package.oleWorkbookParts.previewPartsShared, true);
   assert.equal(closedLeafResult.audit.validation.package.customShows.exactSourceMembershipRetained, true);
   const closedLeafEvidence = {
     source: await inspectClosedLeafClonePptx(closedLeafInput),
@@ -619,6 +633,19 @@ try {
   );
   await fs.writeFile(irregularCustomShowPath, await irregularCustomShowZip.generateAsync({ type: "nodebuffer" }));
   await assert.rejects(() => inspectClosedLeafClonePptx(irregularCustomShowPath), /non-canonical custom show/);
+  const rootSharedOlePath = path.join(closedLeafCloneRoot, "outputs", "root-shared-ole-workbook.pptx");
+  const rootSharedOleZip = await JSZip.loadAsync(closedLeafOutputBytes);
+  const rootSharedRelationships = await rootSharedOleZip.file("_rels/.rels").async("text");
+  const rootSharedTarget = closedLeafEvidence.output.slides[0].oleWorkbooks[0].part;
+  rootSharedOleZip.file(
+    "_rels/.rels",
+    rootSharedRelationships.replace(
+      "</Relationships>",
+      `<Relationship Id="rIdRootSharedOleWorkbook" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="/${rootSharedTarget}"/></Relationships>`,
+    ),
+  );
+  await fs.writeFile(rootSharedOlePath, await rootSharedOleZip.generateAsync({ type: "nodebuffer" }));
+  await assert.rejects(() => inspectClosedLeafClonePptx(rootSharedOlePath), /missing, shared, or owns a child relationship graph/);
   const closedLeafDriftEvidence = structuredClone(closedLeafEvidence);
   closedLeafDriftEvidence.output.partHashes[closedLeafDriftEvidence.output.commentAuthors.part] = "unexpected-comment-authors-change";
   const closedLeafDriftChecks = gradePptxClosedLeafCloneEvidence({
@@ -638,6 +665,16 @@ try {
   });
   assert.equal(chartAliasingChecks.find((check) => check.id === "pptx-clone-machine:chart-part-copied-to-independent-leaf")?.passed, false);
   assert.equal(chartAliasingChecks.find((check) => check.id === "pptx-clone-security:source-parts-byte-preserved-and-graph-bounded")?.passed, false);
+  const oleAliasingEvidence = structuredClone(closedLeafEvidence);
+  oleAliasingEvidence.output.slides[1].oleWorkbooks[0].part = oleAliasingEvidence.output.slides[0].oleWorkbooks[0].part;
+  const oleAliasingChecks = gradePptxClosedLeafCloneEvidence({
+    evidence: oleAliasingEvidence,
+    audit: closedLeafResult.audit,
+    commands: extractCompletedCommands(closedLeafTrace),
+    item: closedLeafCloneItem,
+  });
+  assert.equal(oleAliasingChecks.find((check) => check.id === "pptx-clone-machine:ole-workbook-copied-to-independent-package")?.passed, false);
+  assert.equal(oleAliasingChecks.find((check) => check.id === "pptx-clone-security:source-parts-byte-preserved-and-graph-bounded")?.passed, false);
   const customShowMembershipDriftEvidence = structuredClone(closedLeafEvidence);
   customShowMembershipDriftEvidence.output.customShows[0].slideParts.splice(1, 0, customShowMembershipDriftEvidence.output.slides[1].part);
   const customShowMembershipDriftChecks = gradePptxClosedLeafCloneEvidence({

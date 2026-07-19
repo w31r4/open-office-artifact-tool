@@ -1744,6 +1744,124 @@ const sharedOleObject = itemByName(sharedOlePresentation.slides.getItem(0).nativ
 assert.equal(sharedOleObject.oleWorkbook, undefined);
 assert.deepEqual(sharedOleObject.inspectRecord().editableFields, []);
 assert.throws(() => sharedOleObject.getEmbeddedWorkbook(), /has no embedded XLSX workbook/);
+const sharedOleSlideCount = sharedOlePresentation.slides.items.length;
+assert.throws(
+  () => sharedOlePresentation.slides.getItem(0).duplicate(),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+  "an OLE package with more than one inbound relationship must fail clone preflight before mutating the model",
+);
+assert.equal(sharedOlePresentation.slides.items.length, sharedOleSlideCount);
+
+// The bounded imported-slide clone may carry the same uniquely bound,
+// top-level embedded-XLSX OLE frame. The mutable workbook package is copied
+// into a distinct part, while the immutable preview ImagePart is shared.
+const oleCloneBaseSlideXml = await cloneSourceZip.file("ppt/slides/slide1.xml").async("text");
+const oleCloneBaseRelationships = await cloneSourceZip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
+const oleCloneSource = await PresentationFile.patchPptx(cloneSourcePptx, [
+  { path: "ppt/slides/slide1.xml", xml: oleCloneBaseSlideXml.replace("</p:spTree>", `${oleFrame}</p:spTree>`) },
+  { path: "ppt/slides/_rels/slide1.xml.rels", xml: oleCloneBaseRelationships.replace("</Relationships>", '<Relationship Id="rIdEmbeddedWorkbook" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="../embeddings/clone-agent-workbook.xlsx"/><Relationship Id="rIdEmbeddedPreview" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/clone-agent-workbook-preview.png"/></Relationships>') },
+  { path: "ppt/embeddings/clone-agent-workbook.xlsx", bytes: embeddedSourceXlsx.bytes, contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
+  { path: "ppt/media/clone-agent-workbook-preview.png", bytes: embeddedPreviewBytes, contentType: "image/png" },
+]);
+const oleCloneSourceSnapshot = Uint8Array.from(oleCloneSource.bytes);
+const oleCloneImported = await PresentationFile.importPptx(oleCloneSource);
+const oleCloneOrigin = oleCloneImported.slides.getItem(0);
+const oleCloneOriginObject = itemByName(oleCloneOrigin.nativeObjects.items, "Embedded workbook");
+const oleClonePending = oleCloneOrigin.duplicate();
+const oleClonePendingObject = itemByName(oleClonePending.nativeObjects.items, "Embedded workbook");
+assert.notEqual(oleClonePendingObject, oleCloneOriginObject);
+assert.notEqual(oleClonePendingObject.id, oleCloneOriginObject.id);
+assert.equal(oleClonePendingObject.oleWorkbook.partPath, oleCloneOriginObject.oleWorkbook.partPath);
+assert.equal(oleClonePendingObject.oleWorkbook.sourceSha256, oleCloneOriginObject.oleWorkbook.sourceSha256);
+
+const oleCloneExport = await PresentationFile.exportPptx(oleCloneImported);
+assert.deepEqual(oleCloneSource.bytes, oleCloneSourceSnapshot);
+const oleCloneSourceZip = await JSZip.loadAsync(oleCloneSource.bytes);
+const oleCloneOutputZip = await JSZip.loadAsync(oleCloneExport.bytes);
+assert.deepEqual(
+  await oleCloneOutputZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  await oleCloneSourceZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  "OLE cloning must retain the origin SlidePart byte-for-byte",
+);
+assert.deepEqual(
+  await oleCloneOutputZip.file("ppt/slides/_rels/slide1.xml.rels").async("uint8array"),
+  await oleCloneSourceZip.file("ppt/slides/_rels/slide1.xml.rels").async("uint8array"),
+  "OLE cloning must retain the origin relationship part byte-for-byte",
+);
+const oleCloneWorkbookPaths = Object.keys(oleCloneOutputZip.files)
+  .filter((partPath) => /^ppt\/(?:slides\/)?embeddings\/[^/]+\.xlsx$/i.test(partPath))
+  .sort();
+assert.equal(oleCloneWorkbookPaths.length, 2, "the clone must allocate exactly one additional XLSX package part");
+const oleCloneWorkbookPart = oleCloneWorkbookPaths.find((partPath) => partPath !== "ppt/embeddings/clone-agent-workbook.xlsx");
+assert.ok(oleCloneWorkbookPart);
+assert.deepEqual(
+  await oleCloneOutputZip.file(oleCloneWorkbookPart).async("uint8array"),
+  await oleCloneSourceZip.file("ppt/embeddings/clone-agent-workbook.xlsx").async("uint8array"),
+  "the first clone export must copy the embedded XLSX bytes exactly",
+);
+const relationshipForType = (xml, typeSuffix) => {
+  const matches = [...xml.matchAll(/<Relationship\b[^>]*>/g)]
+    .map(([tag]) => ({
+      id: /\bId="([^"]+)"/.exec(tag)?.[1],
+      type: /\bType="([^"]+)"/.exec(tag)?.[1],
+      target: /\bTarget="([^"]+)"/.exec(tag)?.[1],
+      targetMode: /\bTargetMode="([^"]+)"/.exec(tag)?.[1],
+    }))
+    .filter((relationship) => relationship.type?.endsWith(`/${typeSuffix}`));
+  assert.equal(matches.length, 1, `expected one ${typeSuffix} relationship in ${xml}`);
+  return matches[0];
+};
+const resolveSlideRelationshipTarget = (target) => target.startsWith("/")
+  ? target.replace(/^\/+/, "")
+  : path.posix.normalize(path.posix.join("ppt/slides", target));
+const oleCloneSourceRelationships = await oleCloneOutputZip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
+const oleCloneCopyRelationships = await oleCloneOutputZip.file("ppt/slides/_rels/slide3.xml.rels").async("text");
+const oleCloneSourcePackageRelationship = relationshipForType(oleCloneSourceRelationships, "package");
+const oleCloneCopyPackageRelationship = relationshipForType(oleCloneCopyRelationships, "package");
+assert.equal(oleCloneCopyPackageRelationship.id, oleCloneSourcePackageRelationship.id);
+assert.equal(oleCloneCopyPackageRelationship.targetMode, undefined);
+assert.equal(resolveSlideRelationshipTarget(oleCloneSourcePackageRelationship.target), "ppt/embeddings/clone-agent-workbook.xlsx");
+assert.equal(resolveSlideRelationshipTarget(oleCloneCopyPackageRelationship.target), oleCloneWorkbookPart);
+const oleCloneSourcePreviewRelationship = relationshipForType(oleCloneSourceRelationships, "image");
+const oleCloneCopyPreviewRelationship = relationshipForType(oleCloneCopyRelationships, "image");
+assert.equal(oleCloneCopyPreviewRelationship.id, oleCloneSourcePreviewRelationship.id);
+assert.equal(
+  resolveSlideRelationshipTarget(oleCloneCopyPreviewRelationship.target),
+  resolveSlideRelationshipTarget(oleCloneSourcePreviewRelationship.target),
+  "both OLE frames must share the same immutable preview ImagePart",
+);
+
+const oleCloneRoundTrip = await PresentationFile.importPptx(oleCloneExport);
+const oleCloneRoundTripOrigin = itemByName(oleCloneRoundTrip.slides.getItem(0).nativeObjects.items, "Embedded workbook");
+const oleCloneRoundTripCopy = itemByName(oleCloneRoundTrip.slides.getItem(1).nativeObjects.items, "Embedded workbook");
+assert.notEqual(oleCloneRoundTripCopy.oleWorkbook.partPath, oleCloneRoundTripOrigin.oleWorkbook.partPath);
+assert.equal(oleCloneRoundTripCopy.oleWorkbook.sourceSha256, oleCloneRoundTripOrigin.oleWorkbook.sourceSha256);
+oleCloneRoundTripCopy.replaceEmbeddedWorkbook(embeddedReplacementXlsx);
+const oleCloneEditedExport = await PresentationFile.exportPptx(oleCloneRoundTrip);
+const oleCloneEditedZip = await JSZip.loadAsync(oleCloneEditedExport.bytes);
+assert.deepEqual(
+  await oleCloneEditedZip.file(oleCloneRoundTripOrigin.oleWorkbook.partPath).async("uint8array"),
+  embeddedSourceXlsx.bytes,
+  "editing the reimported clone workbook must leave the origin package byte-for-byte intact",
+);
+assert.deepEqual(
+  await oleCloneEditedZip.file(oleCloneRoundTripCopy.oleWorkbook.partPath).async("uint8array"),
+  embeddedReplacementXlsx.bytes,
+);
+const oleCloneEditedRoundTrip = await PresentationFile.importPptx(oleCloneEditedExport);
+const oleCloneEditedOriginWorkbook = await SpreadsheetFile.importXlsx(itemByName(oleCloneEditedRoundTrip.slides.getItem(0).nativeObjects.items, "Embedded workbook").getEmbeddedWorkbook());
+const oleCloneEditedCopyWorkbook = await SpreadsheetFile.importXlsx(itemByName(oleCloneEditedRoundTrip.slides.getItem(1).nativeObjects.items, "Embedded workbook").getEmbeddedWorkbook());
+assert.equal(oleCloneEditedOriginWorkbook.worksheets.getItem("Embedded").getRange("A1").values[0][0], "Original embedded workbook");
+assert.equal(oleCloneEditedCopyWorkbook.worksheets.getItem("Embedded").getRange("A1").values[0][0], "Replacement workbook");
+
+const immediateOleCloneEdit = await PresentationFile.importPptx(oleCloneSource);
+itemByName(immediateOleCloneEdit.slides.getItem(0).duplicate().nativeObjects.items, "Embedded workbook")
+  .replaceEmbeddedWorkbook(embeddedReplacementXlsx);
+await assert.rejects(
+  () => PresentationFile.exportPptx(immediateOleCloneEdit),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+  "a cloned OLE payload may be edited only after export and reimport establish independent source identity",
+);
 
 const masterPath = "ppt/slideMasters/slideMaster1.xml";
 const layoutPath = "ppt/slideLayouts/slideLayout1.xml";

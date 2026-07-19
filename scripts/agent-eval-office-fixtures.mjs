@@ -1,6 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import JSZip from "jszip";
+
 import {
   DocumentFile,
   DocumentModel,
@@ -116,6 +118,12 @@ export const PPTX_CLOSED_LEAF_CLONE_FIXTURE = Object.freeze({
   customShowName: "Board review route",
   customShowNativeId: 31,
   customShowText: "Open board review route",
+  oleObjectName: "Embedded control evidence",
+  oleWorkbookPart: "ppt/embeddings/release-control-evidence.xlsx",
+  oleWorkbookRelationshipId: "rIdReleaseControlWorkbook",
+  olePreviewPart: "ppt/media/release-control-evidence-preview.png",
+  olePreviewRelationshipId: "rIdReleaseControlPreview",
+  oleWorkbookMarker: "Release control evidence",
   sourceBackground: "#E0F2FE",
   appendixBackground: "#FEF3C7",
   appendixText: "Appendix: immutable evidence",
@@ -329,6 +337,28 @@ export async function generatePptxSlideNameReview(target) {
   return generatePptxTitleNotesReview(target);
 }
 
+async function addClosedCloneOleWorkbook(exported, fixture) {
+  const embeddedWorkbook = Workbook.create();
+  embeddedWorkbook.worksheets.add("Evidence").getRange("A1:B3").values = [
+    [fixture.oleWorkbookMarker, null],
+    ["Control", "Status"],
+    ["Release gate", "Approved"],
+  ];
+  const embeddedWorkbookFile = await SpreadsheetFile.exportXlsx(embeddedWorkbook);
+  const zip = await JSZip.loadAsync(exported.bytes);
+  const [slideXml, slideRelationships] = await Promise.all([
+    zip.file("ppt/slides/slide1.xml").async("text"),
+    zip.file("ppt/slides/_rels/slide1.xml.rels").async("text"),
+  ]);
+  const oleFrame = `<p:graphicFrame xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:nvGraphicFramePr><p:cNvPr id="100" name="${fixture.oleObjectName}"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="10191750" y="3238500"/><a:ext cx="1524000" cy="1143000"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/presentationml/2006/ole"><p:oleObj showAsIcon="1" r:id="${fixture.oleWorkbookRelationshipId}" imgW="965200" imgH="609600" progId="Excel.Sheet.12"><p:embed/><p:pic><p:nvPicPr><p:cNvPr id="0" name=""/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="${fixture.olePreviewRelationshipId}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="10191750" y="3238500"/><a:ext cx="1524000" cy="1143000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic></p:oleObj></a:graphicData></a:graphic></p:graphicFrame>`;
+  return PresentationFile.patchPptx(exported, [
+    { path: "ppt/slides/slide1.xml", xml: slideXml.replace("</p:spTree>", `${oleFrame}</p:spTree>`) },
+    { path: "ppt/slides/_rels/slide1.xml.rels", xml: slideRelationships.replace("</Relationships>", `<Relationship Id="${fixture.oleWorkbookRelationshipId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="../embeddings/release-control-evidence.xlsx"/><Relationship Id="${fixture.olePreviewRelationshipId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/release-control-evidence-preview.png"/></Relationships>`) },
+    { path: fixture.oleWorkbookPart, bytes: embeddedWorkbookFile.bytes, contentType: XLSX_MIME },
+    { path: fixture.olePreviewPart, bytes: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64"), contentType: "image/png" },
+  ]);
+}
+
 export async function generatePptxClosedLeafClone(target) {
   const fixture = PPTX_CLOSED_LEAF_CLONE_FIXTURE;
   const presentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });
@@ -404,8 +434,9 @@ export async function generatePptxClosedLeafClone(target) {
   const verification = presentation.verify({ visualQa: true });
   if (!verification.ok) throw new Error("Generated PPTX closed-leaf clone fixture failed model verification: " + verification.ndjson);
   const exported = await PresentationFile.exportPptx(presentation);
+  const patchedSource = await addClosedCloneOleWorkbook(exported, fixture);
   await fs.mkdir(path.dirname(target), { recursive: true });
-  await fs.writeFile(target, new Uint8Array(await exported.arrayBuffer()));
+  await fs.writeFile(target, new Uint8Array(await patchedSource.arrayBuffer()));
   return { path: target, type: PPTX_MIME };
 }
 

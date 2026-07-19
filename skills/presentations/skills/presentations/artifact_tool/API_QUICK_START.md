@@ -381,7 +381,9 @@ await duplicatePptxSlide({
 
 The transaction supports the same canonical leaves used by the bounded clone
 profile, including recognized literal-data charts whose unique ChartParts have
-no child/external/hyperlink/data relationship and straight/elbow connectors whose present endpoints
+no child/external/hyperlink/data relationship, eligible top-level OLE frames
+whose uniquely inbound internal XLSX package has no child graph and whose
+preview is one internal ImagePart, and straight/elbow connectors whose present endpoints
 resolve inside the source slide tree and canonical run-level clicks to an
 external absolute URI, a retained internal SlidePart, or a supported relative
 slide action, plus a relationship-free custom-show action whose native ID must
@@ -389,7 +391,10 @@ resolve in the canonical presentation-wide catalog. It maps source `presentation
 relationships, calls `slide.duplicate()`, requires the clone immediately after
 the original, and accepts only the necessary presentation/content-type
 topology changes plus one new SlidePart, its relationship part, and one
-distinct byte-copied ChartPart for every accepted chart. Every
+distinct byte-copied ChartPart for every accepted chart plus one distinct
+byte-copied EmbeddedPackagePart for every accepted OLE workbook. The clone
+retains the package relationship ID but shares only the immutable preview
+ImagePart. Every
 retained source part, including the source SlidePart, must remain
 byte-identical. It requires exact source/clone chart and hyperlink `r:id`, URI,
 target SlidePart, and action-only inventories with no orphan relationship. For
@@ -397,11 +402,13 @@ a custom-show action it additionally proves exact native ID/return policy,
 zero relationship edge, unchanged show identity/membership, and that the clone
 was not silently added to the route. It then
 reimports and verifies source/clone structural semantics, connector/link
-bindings, chart semantics, and model-render equivalence. The latter ignores
+bindings, chart semantics, independent OLE workbook bindings, and model-render
+equivalence. The latter ignores
 fresh `data-*-id` inspection locators, so it does not claim lexical equality
 for the new clone XML. Ambiguous names, notes/comments, unsupported graph
 leaves, formula/external-data/embedded-workbook/connected/orphan charts,
-shape-level/hover/unknown/orphan links, malformed/relationship-bearing/dangling
+shared/external/non-XLSX/nested/relationship-bearing/replacement-pending OLE
+graphs, shape-level/hover/unknown/orphan links, malformed/relationship-bearing/dangling
 custom-show actions, unresolved endpoints, and unexpected package changes reject without
 promoting an output or audit.
 

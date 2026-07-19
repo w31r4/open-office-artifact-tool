@@ -193,9 +193,10 @@ survivor. Media, notes, comments, charts, OLE, hyperlinks, data parts, or any
 other connected graph fail closed. `slide.duplicate()` is a separate, much
 narrower operation: only an original imported slide whose unchanged graph has
 canonical shapes, canonical inline fixed-grid tables, recognized closed
-literal-data charts, canonical embedded rectangular images, bounded canonical
+literal-data charts, eligible top-level embedded-XLSX OLE frames, canonical
+embedded rectangular images, bounded canonical
 straight/elbow connectors, plus recursively canonical groups whose descendants
-contain only those same leaf kinds, exactly one
+contain only the non-OLE leaf kinds, exactly one
 internal layout relationship, picture-bound image relationships, canonical
 run-level click hyperlinks, and optionally
 one closed `NotesSlide -> NotesMaster` / back-to-source-slide leaf plus one
@@ -221,6 +222,14 @@ ChartParts are independent; a chart that advertises the ordinary fixed-topology
 edit capability can use that path without affecting the origin. Formula or
 external-data charts, embedded workbooks, duplicate/orphan chart relations, and
 any connected chart graph fail closed.
+Each accepted OLE frame must bind exactly one internal, uniquely inbound XLSX
+`EmbeddedPackagePart` with no child relationship graph and exactly one internal
+preview `ImagePart`. Export byte-copies the workbook into a distinct clone-local
+package under the same slide-local relationship ID while sharing the immutable
+preview. After export/reimport, `nativeObject.replaceEmbeddedWorkbook(...)` on
+the clone changes only that independent package. Shared/external/non-XLSX,
+nested, relationship-bearing, ambiguous, or replacement-pending OLE graphs fail
+closed.
 Accepted run links are limited to modeled external absolute URIs, internal jumps
 to a retained SlidePart, `nextSlide`/`previousSlide`/`firstSlide`/`lastSlide`/
 `endShow` actions, and relationship-free custom-show actions whose native ID
@@ -251,9 +260,14 @@ the closed canonical profile with no NotesSlide or legacy-comments leaf.
 Recognized closed ChartParts are included without an opt-in: the workflow
 proves one unique frame relationship per chart, no ChartPart child graph, a
 distinct clone-local target, and byte-identical chart payload. It proves the
+same independent-copy contract for every eligible embedded-XLSX OLE workbook,
+including one unique inbound package edge, empty child graph, exact content
+type/hash, same slide-local `r:id`, distinct clone package, and shared preview
+ImagePart. It proves the
 source part order, inserts one adjacent clone, keeps every retained source part
 byte-identical except the required package topology records, allows only the
-new SlidePart, its relationship part, and the exact cloned ChartParts, checks
+new SlidePart, its relationship part, the exact cloned ChartParts, and the exact
+cloned XLSX package parts, checks
 exact source/clone external and internal run-link relationship IDs and targets
 with no orphan edge, then reimports and compares the source/clone semantics and
 model render. Model
