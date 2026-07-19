@@ -516,6 +516,9 @@ try {
 
 const closedLeafCloneItem = cases.find((item) => item.id === "pptx-closed-leaf-slide-clone");
 assert.ok(closedLeafCloneItem);
+assert.equal(closedLeafCloneItem.grade.machine.chartParts, 1);
+assert.equal(closedLeafCloneItem.grade.security.independentChartPart, true);
+assert.match(closedLeafCloneItem.prompt, /独立 ChartPart/);
 const closedLeafCloneRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-eval-pptx-closed-leaf-clone-"));
 try {
   const closedLeafInput = path.join(closedLeafCloneRoot, "inputs", PPTX_CLOSED_LEAF_CLONE_FIXTURE.presentationName);
@@ -548,6 +551,25 @@ try {
     PPTX_CLOSED_LEAF_CLONE_FIXTURE.sourceComment,
     PPTX_CLOSED_LEAF_CLONE_FIXTURE.sourceComment,
   ]);
+  assert.deepEqual(closedLeafReimport.slides.items.slice(0, 2).map((slide) => ({
+    title: slide.charts.items[0]?.title,
+    categories: slide.charts.items[0]?.categories,
+    values: slide.charts.items[0]?.series[0]?.values,
+  })), [
+    {
+      title: PPTX_CLOSED_LEAF_CLONE_FIXTURE.chartTitle,
+      categories: [...PPTX_CLOSED_LEAF_CLONE_FIXTURE.chartCategories],
+      values: [...PPTX_CLOSED_LEAF_CLONE_FIXTURE.chartValues],
+    },
+    {
+      title: PPTX_CLOSED_LEAF_CLONE_FIXTURE.chartTitle,
+      categories: [...PPTX_CLOSED_LEAF_CLONE_FIXTURE.chartCategories],
+      values: [...PPTX_CLOSED_LEAF_CLONE_FIXTURE.chartValues],
+    },
+  ]);
+  assert.equal(closedLeafResult.audit.operation.chartParts.count, 1);
+  assert.equal(closedLeafResult.audit.validation.package.chartParts.independentParts, true);
+  assert.equal(closedLeafResult.audit.validation.package.chartParts.allPayloadsByteIdentical, true);
   const closedLeafEvidence = {
     source: await inspectClosedLeafClonePptx(closedLeafInput),
     output: await inspectClosedLeafClonePptx(closedLeafOutput),
@@ -580,6 +602,16 @@ try {
     item: closedLeafCloneItem,
   });
   assert.equal(closedLeafDriftChecks.find((check) => check.id === "pptx-clone-security:source-parts-byte-preserved-and-graph-bounded")?.passed, false);
+  const chartAliasingEvidence = structuredClone(closedLeafEvidence);
+  chartAliasingEvidence.output.slides[1].charts[0].part = chartAliasingEvidence.output.slides[0].charts[0].part;
+  const chartAliasingChecks = gradePptxClosedLeafCloneEvidence({
+    evidence: chartAliasingEvidence,
+    audit: closedLeafResult.audit,
+    commands: extractCompletedCommands(closedLeafTrace),
+    item: closedLeafCloneItem,
+  });
+  assert.equal(chartAliasingChecks.find((check) => check.id === "pptx-clone-machine:chart-part-copied-to-independent-leaf")?.passed, false);
+  assert.equal(chartAliasingChecks.find((check) => check.id === "pptx-clone-security:source-parts-byte-preserved-and-graph-bounded")?.passed, false);
   const missingOptInChecks = gradePptxClosedLeafCloneEvidence({
     evidence: closedLeafEvidence,
     audit: closedLeafResult.audit,

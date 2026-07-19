@@ -217,6 +217,7 @@ async function inspectClosedLeafSlide(zip, partPath) {
   if (!xml) throw new Error("PPTX SlidePart is missing: " + partPath);
   const notesRelationships = relationshipWithSuffix(entries, "notesSlide");
   const commentRelationships = relationshipWithSuffix(entries, "comments");
+  const chartRelationships = relationshipWithSuffix(entries, "chart");
   if (notesRelationships.length > 1 || commentRelationships.length > 1) {
     throw new Error("PPTX closed-leaf fixture has ambiguous slide relationships.");
   }
@@ -254,6 +255,34 @@ async function inspectClosedLeafSlide(zip, partPath) {
       sha256: sha256(Buffer.from(commentsXml)),
     };
   }
+  const chartReferenceIds = [...xml.matchAll(/<(?:[\w.-]+:)?chart\b[^>]*>/gi)]
+    .map((match) => xmlAttributes(match[0]).id)
+    .filter(Boolean);
+  if (new Set(chartReferenceIds).size !== chartReferenceIds.length
+      || chartReferenceIds.length !== chartRelationships.length) {
+    throw new Error("PPTX closed-chart fixture has duplicate, orphan, or unmodeled chart relationships.");
+  }
+  const chartRelationshipById = new Map(chartRelationships.map((relationship) => [relationship.id, relationship]));
+  const charts = [];
+  for (const relationshipId of chartReferenceIds) {
+    const relationship = chartRelationshipById.get(relationshipId);
+    if (!relationship || relationship.external || !relationship.targetPart
+        || !/^ppt\/(?:slides\/)?charts\/chart\d+\.xml$/i.test(relationship.targetPart)) {
+      throw new Error("PPTX chart leaf must use one internal numbered ChartPart relationship.");
+    }
+    const chartXml = await zip.file(relationship.targetPart)?.async("text");
+    if (!chartXml) throw new Error("PPTX ChartPart is missing: " + relationship.targetPart);
+    const childEntries = await relationshipEntries(zip, relationship.targetPart, { required: false });
+    charts.push({
+      part: relationship.targetPart,
+      relationship: { id: relationship.id, type: relationship.type },
+      texts: drawingTexts(chartXml),
+      values: elementTexts(chartXml, "v"),
+      childRelationshipCount: childEntries.length,
+      bytes: Buffer.byteLength(chartXml),
+      sha256: sha256(Buffer.from(chartXml)),
+    });
+  }
   return {
     part: partPath,
     name: slideName(xml),
@@ -262,13 +291,14 @@ async function inspectClosedLeafSlide(zip, partPath) {
     sha256: sha256(Buffer.from(xml)),
     notes,
     comments,
+    charts,
   };
 }
 
 /**
- * Independent package-level evidence for the bounded notes/comments clone
- * profile. It deliberately reads OPC relationships and bytes rather than
- * trusting the workflow audit or the presentation model.
+ * Independent package-level evidence for the bounded notes/comments/chart
+ * clone profile. It deliberately reads OPC relationships and bytes rather
+ * than trusting the workflow audit or the presentation model.
  */
 export async function inspectClosedLeafClonePptx(filePath) {
   const bytes = await fs.readFile(filePath);
@@ -410,19 +440,33 @@ function cloneVisualEvidence(source, output) {
   };
 }
 
+function closedChartSemanticsEqual(left = [], right = []) {
+  return left.length === right.length && left.every((chart, index) => {
+    const candidate = right[index];
+    return chart?.relationship?.id === candidate?.relationship?.id
+      && chart?.relationship?.type === candidate?.relationship?.type
+      && chart?.sha256 === candidate?.sha256
+      && chart?.childRelationshipCount === candidate?.childRelationshipCount
+      && sameArray(chart?.texts || [], candidate?.texts || [])
+      && sameArray(chart?.values || [], candidate?.values || []);
+  });
+}
+
 function closedLeafSemanticsEqual(left, right) {
   return left?.name === right?.name
     && sameArray(left?.texts || [], right?.texts || [])
     && left?.background === right?.background
     && left?.notes?.text === right?.notes?.text
-    && sameArray(left?.comments?.texts || [], right?.comments?.texts || []);
+    && sameArray(left?.comments?.texts || [], right?.comments?.texts || [])
+    && closedChartSemanticsEqual(left?.charts, right?.charts);
 }
 
 /**
  * Grade the deliberately small closed-leaf clone profile. The only acceptable
- * graph change is an adjacent cloned SlidePart plus its cloned NotesSlide,
- * NotesSlide relationships, and SlideComments XML; both global catalog parts
- * must remain shared. This is not a general relationship-graph clone oracle.
+ * graph change is an adjacent cloned SlidePart plus a distinct byte-identical
+ * ChartPart, cloned NotesSlide/relationship part, and cloned SlideComments XML;
+ * both global catalog parts remain shared. This is not a general relationship-
+ * graph clone oracle.
  */
 export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) {
   const fixture = PPTX_CLOSED_LEAF_CLONE_FIXTURE;
@@ -437,6 +481,7 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
   const expectedNewPaths = [
     clone?.part,
     clone ? relationshipPartPath(clone.part) : null,
+    ...(clone?.charts || []).map((chart) => chart.part),
     clone?.notes?.part,
     clone?.notes?.relationshipPart,
     clone?.comments?.part,
@@ -446,6 +491,13 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
   const closedLeaves = operation.closedLeaves || {};
   const sourceLeaves = sourceSlide?.notes && sourceSlide?.comments;
   const cloneLeaves = clone?.notes && clone?.comments;
+  const sourceChart = sourceSlide?.charts?.[0] || null;
+  const cloneChart = clone?.charts?.[0] || null;
+  const expectedChartValues = [
+    fixture.chartSeriesName,
+    ...fixture.chartCategories,
+    ...fixture.chartValues.map(String),
+  ];
   const canonicalFixture = source.slides.length === 2
     && sourceSlide?.name === fixture.sourceSlideName
     && sourceSlide?.texts.includes(fixture.sourceTitle)
@@ -454,9 +506,14 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
     && sourceSlide?.notes?.text === fixture.sourceNotes
     && sameArray(sourceSlide?.comments?.texts || [], [fixture.sourceComment])
     && sourceSlide?.comments?.childRelationshipCount === 0
+    && sourceSlide?.charts?.length === 1
+    && sourceChart?.texts?.includes(fixture.chartTitle)
+    && sameArray(sourceChart?.values || [], expectedChartValues)
+    && sourceChart?.childRelationshipCount === 0
     && sourceAppendix?.name === fixture.appendixSlideName
     && sourceAppendix?.texts.includes(fixture.appendixText)
     && sourceAppendix?.background === fixture.appendixBackground
+    && sourceAppendix?.charts?.length === 0
     && Boolean(source.commentAuthors?.part);
   const cloneSemantics = output.slides.length === 3
     && retainedSource?.part === sourceSlide?.part
@@ -466,6 +523,17 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
     && closedLeafSemanticsEqual(sourceSlide, retainedSource)
     && closedLeafSemanticsEqual(sourceSlide, clone)
     && closedLeafSemanticsEqual(sourceAppendix, outputAppendix);
+  const closedChartGraph = Boolean(sourceChart && cloneChart)
+    && sourceSlide.charts.length === 1
+    && clone.charts.length === 1
+    && sourceChart.part !== cloneChart.part
+    && source.paths.includes(sourceChart.part)
+    && !source.paths.includes(cloneChart.part)
+    && sourceChart.relationship.id === cloneChart.relationship.id
+    && sourceChart.relationship.type === cloneChart.relationship.type
+    && sourceChart.sha256 === cloneChart.sha256
+    && sourceChart.childRelationshipCount === 0
+    && cloneChart.childRelationshipCount === 0;
   const closedLeafGraph = Boolean(sourceLeaves && cloneLeaves)
     && sourceSlide.notes.part !== clone.notes.part
     && sourceSlide.notes.relationship.id === clone.notes.relationship.id
@@ -511,6 +579,10 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
       sourceCommentAuthors: source.commentAuthors || null,
       outputCommentAuthors: output.commentAuthors || null,
     }),
+    check("pptx-clone-machine:chart-part-copied-to-independent-leaf", "machine", closedChartGraph, {
+      sourceChart,
+      cloneChart,
+    }),
     check("pptx-clone-machine:only-approved-clone-parts-added", "machine", sameArray(newPaths, expectedNewPaths), {
       newPaths,
       expectedNewPaths,
@@ -523,7 +595,7 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
     }),
     check("pptx-clone-visual:source-clone-and-appendix-pixels-stable", "visual", visual.retainedSourceStable
       && visual.cloneMatchesSource && visual.appendixStable, { visual }),
-    gate("pptx-clone-security:source-parts-byte-preserved-and-graph-bounded", "security", packageScope && closedLeafGraph, {
+    gate("pptx-clone-security:source-parts-byte-preserved-and-graph-bounded", "security", packageScope && closedLeafGraph && closedChartGraph, {
       changedSourcePaths,
       newPaths,
       expectedNewPaths,
@@ -550,12 +622,22 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
       && operation.clonePart === clone?.part
       && operation.allowClosedLeaves === true
       && closedLeaves.speakerNotes === true
-      && closedLeaves.legacyComments === true, {
+      && closedLeaves.legacyComments === true
+      && operation.chartParts?.count === 1
+      && sameArray(operation.chartParts?.sourceParts || [], [sourceChart?.part])
+      && sameArray(operation.chartParts?.relationshipIds || [], [sourceChart?.relationship?.id]), {
       operation: audit?.operation || null,
     }),
     check("pptx-clone-trace:package-validation-contract", "trace", packageValidation.ok === true
       && packageValidation.retainedSourcePartsByteIdentical === true
       && packageValidation.cloneInsertedAdjacent === true
+      && packageValidation.chartParts?.count === 1
+      && packageValidation.chartParts?.independentParts === true
+      && packageValidation.chartParts?.allPayloadsByteIdentical === true
+      && packageValidation.chartParts?.parts?.[0]?.relationshipId === sourceChart?.relationship?.id
+      && packageValidation.chartParts?.parts?.[0]?.sourcePart === sourceChart?.part
+      && packageValidation.chartParts?.parts?.[0]?.clonePart === cloneChart?.part
+      && packageValidation.chartParts?.parts?.[0]?.sourceSha256 === sourceChart?.sha256
       && packageValidation.closedLeaves?.speakerNotes?.notesXmlByteIdentical === true
       && packageValidation.closedLeaves?.legacyComments?.commentsXmlByteIdentical === true, {
       packageValidation,
@@ -564,6 +646,7 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
       expected: "public PresentationFile importPptx/exportPptx calls or the integrity-protected published duplicate workflow with --allow-closed-leaves",
     }),
     check("pptx-clone-trace:second-import", "trace", audit?.validation?.reimport?.ok === true
+      && audit?.validation?.reimport?.sourceAndCloneSemanticsEqual === true
       && audit?.validation?.reimport?.sourceAndCloneClosedLeavesEqual === true, {
       validation: audit?.validation?.reimport || null,
     }),

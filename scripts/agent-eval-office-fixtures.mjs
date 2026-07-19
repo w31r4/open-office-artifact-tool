@@ -95,9 +95,10 @@ export const PPTX_SLIDE_NAME_FIXTURE = Object.freeze({
 
 // This fixture exercises the narrow imported-slide clone profile rather than
 // treating a presentation relationship graph as generally editable. Its
-// source slide owns exactly two accepted closed leaves: one canonical notes
-// slide and one legacy comments XML leaf with a presentation-wide author
-// catalog. The appendix is a visible/package canary.
+// source slide owns three accepted closed leaves: one canonical notes slide,
+// one legacy comments XML leaf with a presentation-wide author catalog, and
+// one literal-data chart whose ChartPart has no relationship graph. The
+// appendix is a visible/package canary.
 export const PPTX_CLOSED_LEAF_CLONE_FIXTURE = Object.freeze({
   presentationName: "release-review.pptx",
   sourceSlideName: "Release decision",
@@ -108,6 +109,10 @@ export const PPTX_CLOSED_LEAF_CLONE_FIXTURE = Object.freeze({
   sourceComment: "Confirm the original evidence before delivery.",
   commentAuthor: "Presentation Reviewer",
   commentCreated: "2026-07-18T03:05:00Z",
+  chartTitle: "Control evidence by stage",
+  chartCategories: Object.freeze(["Ready", "Watch", "Blocked"]),
+  chartSeriesName: "Controls",
+  chartValues: Object.freeze([68, 24, 8]),
   sourceBackground: "#E0F2FE",
   appendixBackground: "#FEF3C7",
   appendixText: "Appendix: immutable evidence",
@@ -349,6 +354,19 @@ export async function generatePptxClosedLeafClone(target) {
     author: fixture.commentAuthor,
     created: fixture.commentCreated,
     position: { x: 360, y: 240 },
+  });
+  source.charts.add("bar", {
+    name: "release-evidence-chart",
+    position: { left: 72, top: 318, width: 980, height: 320 },
+    title: fixture.chartTitle,
+    categories: [...fixture.chartCategories],
+    series: [{ name: fixture.chartSeriesName, values: [...fixture.chartValues], fill: "#0284C7" }],
+    axes: {
+      category: { title: "Evidence stage" },
+      value: { title: "Share", min: 0, max: 80, majorUnit: 20 },
+    },
+    legend: false,
+    dataLabels: { showValue: true, position: "top" },
   });
 
   const appendix = presentation.slides.add({ name: fixture.appendixSlideName });
