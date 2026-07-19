@@ -1,8 +1,10 @@
-import { SpreadsheetPivotAggregation } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
+import { SpreadsheetPivotAggregation, SpreadsheetPivotItemFilterMode } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
 import { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
+import { pivotItemVisible } from "../spreadsheet/pivot-filters.mjs";
 
 const A1_RANGE = /^\$?([A-Z]{1,3})\$?([1-9]\d*)(?::\$?([A-Z]{1,3})\$?([1-9]\d*))?$/i;
 const MAX_NATIVE_VALUE_FIELDS = 32;
+const MAX_NATIVE_FILTER_ITEMS = 1_024;
 const TO_WIRE_AGGREGATION = new Map([
   ["sum", SpreadsheetPivotAggregation.SUM],
   ["count", SpreadsheetPivotAggregation.COUNT],
@@ -11,6 +13,52 @@ const TO_WIRE_AGGREGATION = new Map([
   ["max", SpreadsheetPivotAggregation.MAX],
 ]);
 const FROM_WIRE_AGGREGATION = new Map([...TO_WIRE_AGGREGATION].map(([name, value]) => [value, name]));
+
+function wireFilterItem(value, label) {
+  if (value === null) return { value: { case: "blankValue", value: true } };
+  if (typeof value === "string") return { value: { case: "stringValue", value } };
+  if (typeof value === "number" && Number.isFinite(value)) return { value: { case: "numberValue", value } };
+  if (typeof value === "boolean") return { value: { case: "boolValue", value } };
+  throw invalid(`${label} supports only exact string, finite number, boolean, or null items in the native profile.`, "unsupported_spreadsheet_pivot_filter");
+}
+
+function publicFilterItem(item, label) {
+  if (item?.value?.case === "stringValue" || item?.value?.case === "errorValue") return item.value.value;
+  if (item?.value?.case === "numberValue" && Number.isFinite(item.value.value)) return item.value.value;
+  if (item?.value?.case === "boolValue") return item.value.value;
+  if (item?.value?.case === "blankValue" && item.value.value === true) return null;
+  throw invalid(`${label} contains an unsupported cached item.`, "unsupported_spreadsheet_pivot_filter");
+}
+
+function wireItemFilters(pivot) {
+  return pivot.filters.map((filter) => {
+    const mode = filter.include ? "include" : "exclude";
+    const items = filter[mode];
+    if (!items?.length || items.length > MAX_NATIVE_FILTER_ITEMS) {
+      throw invalid(`PivotTable ${pivot.name} filter ${filter.field} requires 1 through ${MAX_NATIVE_FILTER_ITEMS} items.`, "unsupported_spreadsheet_pivot_filter");
+    }
+    return {
+      field: filter.field,
+      mode: mode === "include" ? SpreadsheetPivotItemFilterMode.INCLUDE : SpreadsheetPivotItemFilterMode.EXCLUDE,
+      items: items.map((item, index) => wireFilterItem(item, `PivotTable ${pivot.name} filter ${filter.field} item ${index}`)),
+    };
+  });
+}
+
+function publicItemFilters(filters = [], pivotName = "PivotTable") {
+  if (filters.length > 2) throw invalid(`${pivotName} exceeds the two-axis item-filter budget.`, "unsupported_spreadsheet_pivot_filter");
+  const seen = new Set();
+  return filters.map((filter, filterIndex) => {
+    const field = String(filter?.field || "").trim();
+    if (!field || seen.has(field) || ![SpreadsheetPivotItemFilterMode.INCLUDE, SpreadsheetPivotItemFilterMode.EXCLUDE].includes(filter.mode) ||
+        !filter.items?.length || filter.items.length > MAX_NATIVE_FILTER_ITEMS) {
+      throw invalid(`${pivotName} item filter ${filterIndex} is outside the bounded native profile.`, "unsupported_spreadsheet_pivot_filter");
+    }
+    seen.add(field);
+    const mode = filter.mode === SpreadsheetPivotItemFilterMode.INCLUDE ? "include" : "exclude";
+    return { field, [mode]: filter.items.map((item, index) => publicFilterItem(item, `${pivotName} filter ${field} item ${index}`)) };
+  });
+}
 
 function invalid(message, code = "invalid_spreadsheet_pivot") {
   return new OpenChestnutCodecError(message, [], { code });
@@ -125,14 +173,22 @@ function assertBoundedProfile(workbook, targetSheet, pivot) {
   if (!pivot.valueFields.length || pivot.valueFields.length > MAX_NATIVE_VALUE_FIELDS) {
     throw invalid(`PivotTable ${pivot.name} requires 1 through ${MAX_NATIVE_VALUE_FIELDS} value fields in the bounded native profile.`, "unsupported_spreadsheet_pivot_profile");
   }
-  if (pivot.groupFields.length || pivot.calculatedFields.length || pivot.filters.length) {
-    throw invalid(`PivotTable ${pivot.name} grouping, calculated fields, and filters remain model/preview-only and cannot yet be authored as native SpreadsheetML.`, "unsupported_spreadsheet_pivot_profile");
+  if (pivot.groupFields.length || pivot.calculatedFields.length) {
+    throw invalid(`PivotTable ${pivot.name} grouping and calculated fields remain model/preview-only and cannot yet be authored as native SpreadsheetML.`, "unsupported_spreadsheet_pivot_profile");
+  }
+  if (pivot.filters.length > pivot.rowFields.length + pivot.columnFields.length || pivot.filters.some((filter) => filter.type)) {
+    throw invalid(`PivotTable ${pivot.name} supports only exact include/exclude item filters on its native row or column axis.`, "unsupported_spreadsheet_pivot_filter");
   }
   for (const value of pivot.valueFields) {
     if (!TO_WIRE_AGGREGATION.has(value.summarizeBy)) throw invalid(`PivotTable ${pivot.name} uses unsupported aggregation ${value.summarizeBy}.`, "unsupported_spreadsheet_pivot_profile");
   }
   for (const field of [...pivot.rowFields, ...pivot.columnFields, ...pivot.valueFields.map((value) => value.field)]) {
     if (!headers.includes(field)) throw invalid(`PivotTable ${pivot.name} field ${field} is not present in its source headers.`);
+  }
+  wireItemFilters(pivot);
+  const headerIndexes = new Map(headers.map((header, index) => [header, index]));
+  if (pivot.filters.length && !matrix.slice(1).some((row) => pivot.filters.every((filter) => pivotItemVisible(pivot.filters, filter.field, row[headerIndexes.get(filter.field)])))) {
+    throw invalid(`PivotTable ${pivot.name} item filters hide every source row.`, "unsupported_spreadsheet_pivot_filter");
   }
   return { sourceSheet, sourceBounds, matrix };
 }
@@ -212,6 +268,7 @@ function wireSourceFreePivot(workbook, sheet, pivot, cells) {
     rowGrandTotals: Boolean(pivot.rowGrandTotals),
     columnGrandTotals: Boolean(pivot.columnGrandTotals),
     refreshPolicy: wireRefreshPolicy(pivot.refreshPolicy),
+    itemFilters: wireItemFilters(pivot),
   };
 }
 
@@ -250,9 +307,16 @@ export function hydrateWorkbookPivots(workbook, sourceWorksheets) {
         summarizeBy: FROM_WIRE_AGGREGATION.get(value.aggregation),
         name: value.name || undefined,
       }));
+      let filters;
+      try {
+        filters = publicItemFilters(wire.itemFilters, `PivotTable ${wire.name || wire.id || "unknown"}`);
+      } catch {
+        slots.push({ wire });
+        continue;
+      }
       if (!sourceSheetModel || !wire.name || !wire.sourceReference || !wire.targetReference || wire.rowFields?.length !== 1 ||
           wire.columnFields?.length > 1 || !valueFields.length || valueFields.length > MAX_NATIVE_VALUE_FIELDS ||
-          valueFields.some((value) => !value.field || !value.summarizeBy)) {
+          valueFields.some((value) => !value.field || !value.summarizeBy) || filters.some((filter) => ![...wire.rowFields, ...wire.columnFields].includes(filter.field))) {
         slots.push({ wire });
         continue;
       }
@@ -264,6 +328,7 @@ export function hydrateWorkbookPivots(workbook, sourceWorksheets) {
         rowFields: [...wire.rowFields],
         columnFields: [...wire.columnFields],
         valueFields,
+        filters,
         rowGrandTotals: wire.rowGrandTotals,
         columnGrandTotals: wire.columnGrandTotals,
         refreshPolicy: publicRefreshPolicy(wire.refreshPolicy),

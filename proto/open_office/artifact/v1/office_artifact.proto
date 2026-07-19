@@ -522,6 +522,7 @@ message SpreadsheetPivotTableArtifact {
   bool column_grand_totals = 10;
   SpreadsheetPivotRefreshPolicyArtifact refresh_policy = 11;
   SpreadsheetPivotTableSourceBinding source = 12;
+  repeated SpreadsheetPivotItemFilterArtifact item_filters = 13;
 }
 
 // Hash-bound locator for one recognized worksheet PivotTable and its cache
@@ -2568,4 +2569,32 @@ message SpreadsheetChartDataLabelsArtifact {
   bool show_category_name = 2;
   optional SpreadsheetChartDataLabelPosition position = 3;
   optional bool show_series_name = 4;
+}
+
+// Appended to preserve every pre-existing generated descriptor index while the
+// PivotTable message references this additive protocol-2 filter contract.
+enum SpreadsheetPivotItemFilterMode {
+  SPREADSHEET_PIVOT_ITEM_FILTER_MODE_UNSPECIFIED = 0;
+  SPREADSHEET_PIVOT_ITEM_FILTER_MODE_INCLUDE = 1;
+  SPREADSHEET_PIVOT_ITEM_FILTER_MODE_EXCLUDE = 2;
+}
+
+// One exact cached axis item used by a bounded manual PivotTable filter.
+// Presence-aware blank_value distinguishes an actual blank item from an
+// omitted oneof. Dates remain numeric cache values plus worksheet formatting;
+// formula/date-condition filters are intentionally outside this contract.
+message SpreadsheetPivotItemArtifact {
+  oneof value {
+    string string_value = 1;
+    double number_value = 2;
+    bool bool_value = 3;
+    bool blank_value = 4;
+    string error_value = 5;
+  }
+}
+
+message SpreadsheetPivotItemFilterArtifact {
+  string field = 1;
+  SpreadsheetPivotItemFilterMode mode = 2;
+  repeated SpreadsheetPivotItemArtifact items = 3;
 }

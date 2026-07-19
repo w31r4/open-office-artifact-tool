@@ -4367,6 +4367,108 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ProtocolAuthorsImportsAndSourcePreservesExactPivotItemFilters()
+    {
+        var request = PivotExportRequest();
+        var summary = request.Artifact.Workbook.Worksheets.Single(sheet => sheet.Name == "Summary");
+        var pivot = Assert.Single(summary.PivotTables);
+        pivot.TargetReference = "A1:C3";
+        pivot.ItemFilters.Add(new SpreadsheetPivotItemFilterArtifact
+        {
+            Field = "Region",
+            Mode = SpreadsheetPivotItemFilterMode.Include,
+            Items = { new SpreadsheetPivotItemArtifact { StringValue = "East" } },
+        });
+        pivot.ItemFilters.Add(new SpreadsheetPivotItemFilterArtifact
+        {
+            Field = "Product",
+            Mode = SpreadsheetPivotItemFilterMode.Exclude,
+            Items = { new SpreadsheetPivotItemArtifact { StringValue = "B" } },
+        });
+        summary.Cells.Clear();
+        var output = new object?[][]
+        {
+            ["Region", "A", "Grand Total"],
+            ["East", 10D, 10D],
+            ["Grand Total", 10D, 10D],
+        };
+        for (var row = 0; row < output.Length; row++)
+            for (var column = 0; column < output[row].Length; column++)
+            {
+                var cell = new CellArtifact { Row = checked((uint)row), Column = checked((uint)column) };
+                if (output[row][column] is string text) cell.StringValue = text;
+                else cell.NumberValue = Convert.ToDouble(output[row][column], CultureInfo.InvariantCulture);
+                summary.Cells.Add(cell);
+            }
+
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(authored.File.ToByteArray());
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+        {
+            var definition = Assert.Single(document.WorkbookPart!.WorksheetParts.SelectMany(part => part.PivotTableParts)).PivotTableDefinition!;
+            Assert.Equal("A1:C3", definition.Location!.Reference!.Value);
+            var xml = XDocument.Parse(definition.OuterXml);
+            var ns = xml.Root!.Name.Namespace;
+            var fields = xml.Root.Element(ns + "pivotFields")!.Elements(ns + "pivotField").ToArray();
+            Assert.Equal("0", fields[0].Attribute("includeNewItemsInFilter")!.Value);
+            Assert.Equal([null, "1"], fields[0].Element(ns + "items")!.Elements(ns + "item").Select(item => item.Attribute("h")?.Value));
+            Assert.Equal("1", fields[1].Attribute("includeNewItemsInFilter")!.Value);
+            Assert.Equal([null, "1"], fields[1].Element(ns + "items")!.Elements(ns + "item").Select(item => item.Attribute("h")?.Value));
+            Assert.Equal(2, xml.Root.Element(ns + "rowItems")!.Elements(ns + "i").Count());
+            Assert.Equal(2, xml.Root.Element(ns + "colItems")!.Elements(ns + "i").Count());
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var importedPivot = Assert.Single(imported.Artifact.Workbook.Worksheets.Single(sheet => sheet.Name == "Summary").PivotTables);
+        Assert.Collection(importedPivot.ItemFilters,
+            filter =>
+            {
+                Assert.Equal("Region", filter.Field);
+                Assert.Equal(SpreadsheetPivotItemFilterMode.Include, filter.Mode);
+                Assert.Equal("East", Assert.Single(filter.Items).StringValue);
+            },
+            filter =>
+            {
+                Assert.Equal("Product", filter.Field);
+                Assert.Equal(SpreadsheetPivotItemFilterMode.Exclude, filter.Mode);
+                Assert.Equal("B", Assert.Single(filter.Items).StringValue);
+            });
+        Assert.NotNull(importedPivot.Source);
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(
+            ReadEntry(authored.File.ToByteArray(), importedPivot.Source.PivotTablePartPath),
+            ReadEntry(preserved.File.ToByteArray(), importedPivot.Source.PivotTablePartPath));
+
+        var malformed = RewriteEntry(authored.File.ToByteArray(), importedPivot.Source.PivotTablePartPath, xml =>
+        {
+            var document = XDocument.Parse(xml, LoadOptions.PreserveWhitespace);
+            var ns = document.Root!.Name.Namespace;
+            document.Root.Element(ns + "pivotFields")!.Elements(ns + "pivotField")
+                .SelectMany(field => field.Element(ns + "items")?.Elements(ns + "item") ?? [])
+                .First(item => item.Attribute("h")?.Value == "1")
+                .SetAttributeValue("x", "999");
+            return document.ToString(SaveOptions.DisableFormatting);
+        });
+        var opaque = Import(malformed);
+        Assert.True(opaque.Ok, string.Join("\n", opaque.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Empty(opaque.Artifact.Workbook.Worksheets.Single(sheet => sheet.Name == "Summary").PivotTables);
+        var opaquePreserved = Export(opaque.Artifact);
+        Assert.True(opaquePreserved.Ok, string.Join("\n", opaquePreserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(
+            ReadEntry(malformed, importedPivot.Source.PivotTablePartPath),
+            ReadEntry(opaquePreserved.File.ToByteArray(), importedPivot.Source.PivotTablePartPath));
+
+        importedPivot.ItemFilters[0].Items[0].StringValue = "West";
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_pivot_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void ProtocolImportsHostNormalizedMultiplePivotValuesWithoutAxisItems()
     {
         var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(MultiValuePivotExportRequest().ToByteArray()));
@@ -4449,6 +4551,42 @@ public sealed class XlsxCodecTests
         Assert.False(duplicateResponse.Ok);
         Assert.Equal("invalid_spreadsheet_pivot", Assert.Single(duplicateResponse.Diagnostics).Code);
         Assert.Contains("unique across the workbook", duplicateResponse.Diagnostics[0].Message, StringComparison.OrdinalIgnoreCase);
+
+        var unknownFilterRequest = PivotExportRequest();
+        unknownFilterRequest.Artifact.Workbook.Worksheets[1].PivotTables[0].ItemFilters.Add(new SpreadsheetPivotItemFilterArtifact
+        {
+            Field = "Region",
+            Mode = SpreadsheetPivotItemFilterMode.Include,
+            Items = { new SpreadsheetPivotItemArtifact { StringValue = "North" } },
+        });
+        var unknownFilter = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(unknownFilterRequest.ToByteArray()));
+        Assert.False(unknownFilter.Ok);
+        Assert.Equal("invalid_spreadsheet_pivot", Assert.Single(unknownFilter.Diagnostics).Code);
+        Assert.Contains("outside its source cache", unknownFilter.Diagnostics[0].Message, StringComparison.OrdinalIgnoreCase);
+
+        var emptyFilterRequest = PivotExportRequest();
+        emptyFilterRequest.Artifact.Workbook.Worksheets[1].PivotTables[0].ItemFilters.Add(new SpreadsheetPivotItemFilterArtifact
+        {
+            Field = "Region",
+            Mode = SpreadsheetPivotItemFilterMode.Exclude,
+            Items =
+            {
+                new SpreadsheetPivotItemArtifact { StringValue = "East" },
+                new SpreadsheetPivotItemArtifact { StringValue = "West" },
+            },
+        });
+        var emptyFilter = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(emptyFilterRequest.ToByteArray()));
+        Assert.False(emptyFilter.Ok);
+        Assert.Equal("unsupported_spreadsheet_pivot_filter", Assert.Single(emptyFilter.Diagnostics).Code);
+        Assert.Contains("hides every field item", emptyFilter.Diagnostics[0].Message, StringComparison.OrdinalIgnoreCase);
+
+        var filterBudgetRequest = PivotExportRequest();
+        var overBudgetFilter = new SpreadsheetPivotItemFilterArtifact { Field = "Region", Mode = SpreadsheetPivotItemFilterMode.Include };
+        overBudgetFilter.Items.Add(Enumerable.Range(0, 1_025).Select(index => new SpreadsheetPivotItemArtifact { StringValue = $"Item {index}" }));
+        filterBudgetRequest.Artifact.Workbook.Worksheets[1].PivotTables[0].ItemFilters.Add(overBudgetFilter);
+        var filterBudget = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(filterBudgetRequest.ToByteArray()));
+        Assert.False(filterBudget.Ok);
+        Assert.Equal("unsupported_spreadsheet_pivot_filter", Assert.Single(filterBudget.Diagnostics).Code);
     }
 
     private static CodecRequest MultiValuePivotExportRequest()

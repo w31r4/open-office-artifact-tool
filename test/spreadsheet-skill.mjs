@@ -232,8 +232,10 @@ try {
     ["Region", "Direct — Revenue", "Direct — Units", "Partner — Revenue", "Partner — Units", "Grand Total — Revenue", "Grand Total — Units"],
     ["East", 120, 12, 80, 8, 200, 20],
     ["West", 150, 15, 90, 9, 240, 24],
-    ["North", 110, 11, 70, 7, 180, 18],
-    ["Grand Total", 380, 38, 240, 24, 620, 62],
+    ["Grand Total", 270, 27, 170, 17, 440, 44],
+  ]);
+  assert.deepEqual(pivotTableWorkbook.worksheets.getItem("Pivot Summary").pivotTables.items[0].filters, [
+    { field: "Region", exclude: ["North"] },
   ]);
   const pivotTableZip = await JSZip.loadAsync(await fs.readFile(pivotTablePath));
   assert.equal(Object.keys(pivotTableZip.files).filter((name) => /pivotTables\/pivotTable.*\.xml$/i.test(name)).length, 1);
@@ -274,7 +276,8 @@ try {
       { field: "Revenue", summarizeBy: "sum", name: "Revenue" },
       { field: "Units", summarizeBy: "sum", name: "Units" },
     ]);
-    assert.deepEqual(libreOfficePivot.computedValues().at(-1), ["Grand Total", 380, 38, 240, 24, 620, 62]);
+    assert.deepEqual(libreOfficePivot.filters, [{ field: "Region", exclude: ["North"] }]);
+    assert.deepEqual(libreOfficePivot.computedValues().at(-1), ["Grand Total", 270, 27, 170, 17, 440, 44]);
     const libreOfficeZip = await JSZip.loadAsync(libreOfficeBytes);
     const libreOfficePivotPart = Object.keys(libreOfficeZip.files).find((name) => /pivotTables\/pivotTable.*\.xml$/i.test(name));
     const preservedLibreOffice = await SpreadsheetFile.exportXlsx(libreOfficeWorkbook, { recalculate: false });

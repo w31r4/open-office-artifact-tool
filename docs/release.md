@@ -72,6 +72,43 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### XLSX exact native Pivot item filters
+
+On 2026-07-19, the Spreadsheet model, additive protocol-2 wire, generated
+binding, OpenChestnut C# codec, Help catalog, and runnable Spreadsheet Skill
+gained one bounded native manual-filter profile. A source-free PivotTable may
+place one exact `include` or `exclude` filter on each configured row/column
+field, with 1 through 1024 string, finite-number, boolean, or blank items.
+OpenChestnut validates every item against the typed cache, derives the output
+rectangle from rows that survive all filters, writes standard
+`pivotField/items/item@h` visibility, and preserves the full source cache for
+refresh. Unknown/duplicate/over-budget items, a filter that removes every
+record, date/condition filters, and fields outside the native axes fail closed.
+
+Import recovers the visible item set, binds it into the source semantic hash,
+and preserves the native Pivot/cache parts byte for byte on an unchanged second
+export. A corrupt or incomplete item-index graph remains opaque/source-bound;
+filter mutation after import is rejected. The shipped two-measure workflow now
+excludes one region, independently verifies its filtered revenue/unit totals,
+imports twice, renders both sheets, and resaves through LibreOffice. Bundled
+LibreOfficeDev 26.8 and an Ubuntu 24.04 amd64 container with LibreOffice 24.2.7
+both normalized the file to the same visible item set and remained semantically
+recognized; an `include` list may legitimately return as its equivalent
+complementary `exclude` list. Open XML SDK Office 2021 validation passes the
+authored graph.
+
+The complete local gate passed `npm test`, `npm run docs:api`,
+`npm run proto:check`, `npm run test:pack`, serial
+`npm run verify:open-chestnut-build`, OpenChestnut `282/282`, and OfficeBridge
+`5/5`. Two clean WASM builds reproduced all 39 audited package-layer files and
+the same manifest-bound 38-file, 14,629,056-byte runtime. The production
+clean-install tarball contains 452 files at 9,535,218 compressed bytes and
+24,086,436 unpacked bytes. The specialist Python PDF provider test remained
+contract-only because no explicit `OPEN_OFFICE_PDF_PROVIDER_PYTHON` was
+configured; core MuPDF.js, Playwright/Chromium, LibreOffice/Poppler, canonical
+template rendering, and all other npm gates ran locally. No publish or tag
+operation was attempted.
+
 ### XLSX bounded multi-value PivotTables
 
 On 2026-07-19, the Spreadsheet model, protocol-2 wire, OpenChestnut C# codec,

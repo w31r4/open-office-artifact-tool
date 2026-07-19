@@ -25,20 +25,20 @@ export function buildPivotTableWorkbook() {
   data.showGridLines = false;
 
   const summary = workbook.worksheets.add("Pivot Summary");
-  summary.getRange("A1:G5").format = { border: { bottom: { style: "thin", color: "#CBD5E1" } } };
+  summary.getRange("A1:G4").format = { border: { bottom: { style: "thin", color: "#CBD5E1" } } };
   summary.getRange("A1:G1").format = { fill: "#DBEAFE", font: { bold: true, color: "#1E3A8A" } };
   summary.getRange("A1:G1").format.wrapText = true;
   summary.getRange("A1:G1").format.rowHeightPx = 34;
-  summary.getRange("A5:G5").format = { fill: "#E2E8F0", font: { bold: true, color: "#0F172A" } };
-  for (const range of ["B2:B5", "D2:D5", "F2:F5"]) summary.getRange(range).setNumberFormat("$#,##0");
-  for (const range of ["C2:C5", "E2:E5", "G2:G5"]) summary.getRange(range).setNumberFormat("#,##0");
+  summary.getRange("A4:G4").format = { fill: "#E2E8F0", font: { bold: true, color: "#0F172A" } };
+  for (const range of ["B2:B4", "D2:D4", "F2:F4"]) summary.getRange(range).setNumberFormat("$#,##0");
+  for (const range of ["C2:C4", "E2:E4", "G2:G4"]) summary.getRange(range).setNumberFormat("#,##0");
   // Keep a deliberate Linux LibreOffice print margin: the seven native Pivot
   // columns must remain readable while fitting one A4/Letter page without host
   // font metrics pushing the two grand-total columns onto a third PDF page.
-  summary.getRange("A1:A5").format.columnWidthPx = 76;
-  summary.getRange("B1:E5").format.columnWidthPx = 50;
-  summary.getRange("F1:F5").format.columnWidthPx = 88;
-  summary.getRange("G1:G5").format.columnWidthPx = 76;
+  summary.getRange("A1:A4").format.columnWidthPx = 76;
+  summary.getRange("B1:E4").format.columnWidthPx = 50;
+  summary.getRange("F1:F4").format.columnWidthPx = 88;
+  summary.getRange("G1:G4").format.columnWidthPx = 76;
   summary.showGridLines = false;
   summary.pivotTables.add({
     name: "Revenue and units by region",
@@ -50,6 +50,7 @@ export function buildPivotTableWorkbook() {
       { field: "Revenue", summarizeBy: "sum", name: "Revenue" },
       { field: "Units", summarizeBy: "sum", name: "Units" },
     ],
+    filters: [{ field: "Region", exclude: ["North"] }],
     rowGrandTotals: true,
     columnGrandTotals: true,
     refreshPolicy: { refreshOnLoad: true, saveData: true, enableRefresh: true },
@@ -65,21 +66,21 @@ export async function createPivotTableWorkbook(outputPath) {
     ["Region", "Direct — Revenue", "Direct — Units", "Partner — Revenue", "Partner — Units", "Grand Total — Revenue", "Grand Total — Units"],
     ["East", 120, 12, 80, 8, 200, 20],
     ["West", 150, 15, 90, 9, 240, 24],
-    ["North", 110, 11, 70, 7, 180, 18],
-    ["Grand Total", 380, 38, 240, 24, 620, 62],
+    ["Grand Total", 270, 27, 170, 17, 440, 44],
   ]);
 
-  const inspection = workbook.inspect({ kind: "sheet,pivotTable,style", sheetName: summary.name, range: "A1:G5", maxChars: 16_000 });
+  const inspection = workbook.inspect({ kind: "sheet,pivotTable,style", sheetName: summary.name, range: "A1:G4", maxChars: 16_000 });
   assert.match(inspection.ndjson, /"kind":"pivotTable"/);
   const verification = workbook.verify({ visualQa: true });
   assert.equal(verification.ok, true, verification.ndjson);
-  const preview = await workbook.render({ sheetName: summary.name, range: "A1:G5", format: "svg" });
+  const preview = await workbook.render({ sheetName: summary.name, range: "A1:G4", format: "svg" });
   assert.match(await preview.text(), /Revenue and units by region/);
 
   const first = await SpreadsheetFile.exportXlsx(workbook, { recalculate: false });
   const imported = await SpreadsheetFile.importXlsx(first);
   const importedPivot = imported.worksheets.getItem(summary.name).pivotTables.items[0];
   assert.deepEqual(importedPivot.computedValues(), pivot.computedValues());
+  assert.deepEqual(importedPivot.filters, [{ field: "Region", exclude: ["North"] }]);
   assert.equal(importedPivot.refreshPolicy.saveData, true);
   const final = await SpreadsheetFile.exportXlsx(imported, { recalculate: false });
   const roundTrip = await SpreadsheetFile.importXlsx(final);

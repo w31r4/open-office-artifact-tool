@@ -14,6 +14,9 @@ The current source-free native profile supports:
 - 1 through 32 value fields, each using `sum`, `count`, `average`, `min`, or
   `max`; multiple values use the native SpreadsheetML data-layout axis;
 - optional row and column grand totals;
+- zero, one, or two exact item filters on the configured row/column fields.
+  Each uses one non-empty `include` or `exclude` list with at most 1024 string,
+  finite-number, boolean, or `null` items;
 - `refreshOnLoad`, `saveData`, `enableRefresh`, `invalid`,
   `missingItemsLimit`, `refreshedBy`, and `refreshedDateIso` cache policy;
 - cached worksheet values plus native cache records when `saveData` is true;
@@ -31,6 +34,7 @@ const pivot = summary.pivotTables.add({
     { field: "Revenue", summarizeBy: "sum", name: "Revenue" },
     { field: "Units", summarizeBy: "sum", name: "Units" },
   ],
+  filters: [{ field: "Region", exclude: ["North"] }],
   rowGrandTotals: true,
   columnGrandTotals: true,
 });
@@ -56,11 +60,13 @@ inspect, render, export, second-import, and verification path.
 
 ## Fail-closed boundaries
 
-Grouping, calculated fields, item/date filters, multiple row/column axes, more
-than 32 value fields, and source-free edits inside an imported workbook are not
-silently flattened.
+Grouping, calculated fields, date/condition filters, filters on fields outside
+the native axes, multiple row/column axes, more than 32 value fields, and
+source-free edits inside an imported workbook are not silently flattened.
 They remain useful in the JavaScript calculation/preview facade, but native XLSX
-export rejects them with `unsupported_spreadsheet_pivot_profile`.
+export rejects them with an explicit unsupported-profile/filter diagnostic.
+An exact filter that names an unknown source item, exceeds the item budget, or
+hides every source row also fails closed.
 
 Recognized imported PivotTables expose their semantic configuration for inspect
 and resolve, but the native graph, source range values, and cached output are
@@ -73,3 +79,10 @@ recognizes that host-normalized graph when the canonical `x=-2` data-layout
 field, ordered data fields, cache source, field indexes, and relationships all
 validate. A present but inconsistent item list, or a missing/duplicate data-
 layout field, remains opaque and unchanged.
+
+Exact native filters use standard `pivotField/items/item@h` visibility. A host
+may normalize an `include` list to the equivalent complementary `exclude` list;
+import reports the same visible item set rather than promising preservation of
+the caller's original syntactic mode. The shipped workflow is resaved through
+LibreOffice and must retain both the semantic filter and cached totals before a
+byte-preserving second export.

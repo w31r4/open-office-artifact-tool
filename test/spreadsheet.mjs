@@ -455,6 +455,114 @@ assert.equal(await secondPivotZip.file(nativePivotPart).async("text"), await nat
 assert.equal(await secondPivotZip.file(nativePivotCache).async("text"), await nativePivotZip.file(nativePivotCache).async("text"));
 assert.equal(await secondPivotZip.file(nativePivotRecords).async("text"), await nativePivotZip.file(nativePivotRecords).async("text"));
 
+const filteredPivotWorkbook = Workbook.create();
+const filteredPivotData = filteredPivotWorkbook.worksheets.add("Data");
+filteredPivotData.getRange("A1:C5").values = [
+  ["Region", "Product", "Sales"],
+  ["East", "A", 10],
+  ["East", "B", 20],
+  ["West", "A", 30],
+  ["West", "B", 40],
+];
+const filteredPivotSummary = filteredPivotWorkbook.worksheets.add("Summary");
+filteredPivotSummary.getRange("A1:C3").format = { fill: "#FFF7ED" };
+const filteredPivot = filteredPivotSummary.pivotTables.add({
+  name: "Filtered sales",
+  sourceRange: "Data!A1:C5",
+  targetRange: "A1",
+  rowFields: ["Region"],
+  columnFields: ["Product"],
+  valueFields: [{ field: "Sales", summarizeBy: "sum" }],
+  filters: [
+    { field: "Region", include: ["East"] },
+    { field: "Product", exclude: ["B"] },
+  ],
+  rowGrandTotals: true,
+  columnGrandTotals: true,
+});
+assert.deepEqual(filteredPivot.computedValues(), [
+  ["Region", "A", "Grand Total"],
+  ["East", 10, 10],
+  ["Grand Total", 10, 10],
+]);
+const filteredPivotXlsx = await SpreadsheetFile.exportXlsx(filteredPivotWorkbook);
+const filteredPivotZip = await JSZip.loadAsync(new Uint8Array(await filteredPivotXlsx.arrayBuffer()));
+const filteredPivotPart = Object.keys(filteredPivotZip.files).find((name) => /xl\/pivotTables\/pivotTable.*\.xml$/i.test(name));
+const filteredPivotXml = await filteredPivotZip.file(filteredPivotPart).async("text");
+assert.match(filteredPivotXml, /location ref="A1:C3"/);
+assert.match(filteredPivotXml, /includeNewItemsInFilter="0"[\s\S]*<item x="1" h="1"/);
+assert.match(filteredPivotXml, /includeNewItemsInFilter="1"[\s\S]*<item x="1" h="1"/);
+const importedFilteredPivotWorkbook = await SpreadsheetFile.importXlsx(filteredPivotXlsx);
+const importedFilteredPivot = importedFilteredPivotWorkbook.worksheets.getItem("Summary").pivotTables.items[0];
+assert.deepEqual(importedFilteredPivot.filters, [
+  { field: "Region", include: ["East"] },
+  { field: "Product", exclude: ["B"] },
+]);
+assert.deepEqual(importedFilteredPivot.computedValues(), filteredPivot.computedValues());
+assert.equal(importedFilteredPivotWorkbook.worksheets.getItem("Summary").getRange("C3").format.fill, "#FFF7ED");
+const secondFilteredPivotXlsx = await SpreadsheetFile.exportXlsx(importedFilteredPivotWorkbook);
+const secondFilteredPivotZip = await JSZip.loadAsync(new Uint8Array(await secondFilteredPivotXlsx.arrayBuffer()));
+assert.equal(await secondFilteredPivotZip.file(filteredPivotPart).async("text"), filteredPivotXml);
+importedFilteredPivot.filters[0].include[0] = "West";
+await assert.rejects(
+  () => SpreadsheetFile.exportXlsx(importedFilteredPivotWorkbook),
+  (error) => error?.code === "unsupported_spreadsheet_pivot_edit" && /read-only/i.test(error.message),
+);
+
+const typedFilteredPivotWorkbook = Workbook.create();
+const typedFilteredPivotData = typedFilteredPivotWorkbook.worksheets.add("Data");
+typedFilteredPivotData.getRange("A1:B5").values = [["Key", "Sales"], [1, 10], [true, 20], [null, 30], ["Other", 40]];
+const typedFilteredPivotSummary = typedFilteredPivotWorkbook.worksheets.add("Summary");
+const typedFilteredPivot = typedFilteredPivotSummary.pivotTables.add({
+  name: "Typed filter items",
+  sourceRange: "Data!A1:B5",
+  targetRange: "A1",
+  rowFields: ["Key"],
+  valueFields: [{ field: "Sales", name: "Sales" }],
+  filters: [{ field: "Key", include: [true, null] }],
+  columnGrandTotals: true,
+});
+assert.deepEqual(typedFilteredPivot.computedValues(), [
+  ["Key", "Sales"],
+  [true, 20],
+  [null, 30],
+  ["Grand Total", 50],
+]);
+const typedFilteredPivotXlsx = await SpreadsheetFile.exportXlsx(typedFilteredPivotWorkbook);
+const importedTypedFilteredPivot = (await SpreadsheetFile.importXlsx(typedFilteredPivotXlsx)).worksheets.getItem("Summary").pivotTables.items[0];
+assert.deepEqual(importedTypedFilteredPivot.filters, [{ field: "Key", include: [true, null] }]);
+assert.deepEqual(importedTypedFilteredPivot.computedValues(), typedFilteredPivot.computedValues());
+
+const emptyFilteredPivotWorkbook = Workbook.create();
+const emptyFilteredPivotSheet = emptyFilteredPivotWorkbook.worksheets.add("Data");
+emptyFilteredPivotSheet.getRange("A1:B3").values = [["Region", "Sales"], ["East", 10], ["West", 20]];
+emptyFilteredPivotSheet.pivotTables.add({
+  sourceRange: "A1:B3",
+  targetRange: "D1",
+  rowFields: ["Region"],
+  valueFields: [{ field: "Sales" }],
+  filters: [{ field: "Region", exclude: ["East", "West"] }],
+});
+await assert.rejects(
+  () => SpreadsheetFile.exportXlsx(emptyFilteredPivotWorkbook),
+  (error) => error?.code === "unsupported_spreadsheet_pivot_filter" && /hide every source row/i.test(error.message),
+);
+
+const dateFilteredPivotWorkbook = Workbook.create();
+const dateFilteredPivotSheet = dateFilteredPivotWorkbook.worksheets.add("Data");
+dateFilteredPivotSheet.getRange("A1:B3").values = [["Region", "Sales"], ["East", 10], ["West", 20]];
+dateFilteredPivotSheet.pivotTables.add({
+  sourceRange: "A1:B3",
+  targetRange: "D1",
+  rowFields: ["Region"],
+  valueFields: [{ field: "Sales" }],
+  filters: [{ field: "Region", type: "today", asOf: "2026-07-19" }],
+});
+await assert.rejects(
+  () => SpreadsheetFile.exportXlsx(dateFilteredPivotWorkbook),
+  (error) => error?.code === "unsupported_spreadsheet_pivot_filter" && /exact include\/exclude/i.test(error.message),
+);
+
 const multiValuePivotWorkbook = Workbook.create();
 const multiValuePivotData = multiValuePivotWorkbook.worksheets.add("Data");
 multiValuePivotData.getRange("A1:D5").values = [
