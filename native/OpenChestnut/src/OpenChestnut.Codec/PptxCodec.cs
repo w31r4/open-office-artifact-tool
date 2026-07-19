@@ -7,6 +7,7 @@ using DocumentFormat.OpenXml.Validation;
 using Google.Protobuf;
 using OpenOffice.Artifact.Wire.V1;
 using A = DocumentFormat.OpenXml.Drawing;
+using C = DocumentFormat.OpenXml.Drawing.Charts;
 using P = DocumentFormat.OpenXml.Presentation;
 
 namespace OpenChestnut.Codec;
@@ -20,6 +21,7 @@ internal sealed record PptxSourceSlideEntry(int Index, P.SlideId SlideId, string
 // consumes only this plan so adding a new supported leaf cannot create a
 // second, subtly different relationship inventory after validation.
 internal sealed record PptxCloneImageEdge(ImagePart Part, string RelationshipId);
+internal sealed record PptxCloneChartLeaf(ChartPart Part, string SlideRelationshipId);
 internal sealed record PptxCloneExternalHyperlinkEdge(Uri Uri, string RelationshipId);
 internal sealed record PptxCloneSlideHyperlinkEdge(SlidePart Part, string RelationshipId);
 internal sealed record PptxCloneNotesLeaf(
@@ -41,6 +43,7 @@ internal sealed record PptxCloneLeaf(
     SlideLayoutPart LayoutPart,
     string LayoutRelationshipId,
     IReadOnlyList<PptxCloneImageEdge> Images,
+    IReadOnlyList<PptxCloneChartLeaf> Charts,
     IReadOnlyList<PptxCloneExternalHyperlinkEdge> ExternalHyperlinks,
     IReadOnlyList<PptxCloneSlideHyperlinkEdge> SlideHyperlinks,
     PptxCloneNotesLeaf? Notes,
@@ -69,6 +72,7 @@ internal static class PptxCodec
 {
     private const long DefaultSlideWidthEmu = 12_192_000;
     private const long DefaultSlideHeightEmu = 6_858_000;
+    private const int MaxCloneChartParts = 256;
     private const int MaxCloneHyperlinkRelationships = 4_096;
 
     internal static PptxImportResult Import(byte[] bytes, EffectiveCodecLimits limits)
@@ -2039,6 +2043,9 @@ internal static class PptxCodec
             var isSlideJump = relationship.Type.EndsWith("/slide", StringComparison.Ordinal) &&
                               !relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase);
             var isImage = relationship.Type.EndsWith("/image", StringComparison.Ordinal);
+            var isChart = relationship.Type.EndsWith("/chart", StringComparison.Ordinal) &&
+                          !relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase) &&
+                          IsNumberedChartPath(PptxNativeObjectCatalog.ResolveTarget(relationship.SourcePath, relationship.Target));
             // A bounded source-preserving clone owns one new internal edge:
             // its new SlidePart points at the original shared SlideLayoutPart.
             // Keep that exception typed and target-checked; an arbitrary added
@@ -2058,7 +2065,7 @@ internal static class PptxCodec
             var isLegacyComments = relationship.Type.EndsWith("/comments", StringComparison.Ordinal) &&
                                    !relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase) &&
                                    IsNumberedCommentsPath(PptxNativeObjectCatalog.ResolveTarget(relationship.SourcePath, relationship.Target));
-            var allowedFromSlide = IsNumberedSlidePath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage || isSlideLayout || isNotesSlide || isLegacyComments);
+            var allowedFromSlide = IsNumberedSlidePath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage || isChart || isSlideLayout || isNotesSlide || isLegacyComments);
             var allowedFromMaster = IsNumberedMasterPath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage);
             var allowedFromLayout = IsNumberedLayoutPath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage);
             var allowedFromNotes = IsNumberedNotesSlidePath(relationship.SourcePath) && (isNotesMaster || isNotesBackReference);
@@ -2168,8 +2175,23 @@ internal static class PptxCodec
                path[prefix.Length..^suffix.Length].All(char.IsAsciiDigit);
     }
 
+    private static bool IsNumberedChartPath(string path)
+    {
+        const string suffix = ".xml";
+        foreach (var prefix in new[] { "ppt/charts/chart", "ppt/slides/charts/chart" })
+        {
+            if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+                path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) &&
+                path[prefix.Length..^suffix.Length].Length > 0 &&
+                path[prefix.Length..^suffix.Length].All(char.IsAsciiDigit))
+                return true;
+        }
+        return false;
+    }
+
     private static bool IsAllowedAddedClonePartPath(string path) =>
         path.StartsWith("ppt/media/", StringComparison.OrdinalIgnoreCase) ||
+        IsNumberedChartPath(path) ||
         IsNumberedNotesSlidePath(path) ||
         IsNumberedNotesSlideRelationshipPath(path) ||
         IsNumberedCommentsPath(path);
@@ -2929,6 +2951,18 @@ internal static class PptxCodec
                 clonePart.AddPart(image.Part, image.RelationshipId);
                 addedRelationshipIds.Add($"{PartPath(clonePart)}\0{image.RelationshipId}");
             }
+            foreach (var chart in leaf.Charts)
+            {
+                // Unlike immutable images, a chart must not be shared between
+                // the origin and clone. Copy the already-proved closed payload
+                // under the same slide-local relationship ID into a distinct
+                // ChartPart so post-reimport edits remain independent.
+                var cloneChart = clonePart.AddNewPart<ChartPart>(chart.SlideRelationshipId);
+                CopyPartBytes(chart.Part, cloneChart);
+                addedRelationshipIds.Add($"{PartPath(clonePart)}\0{chart.SlideRelationshipId}");
+                changedParts.Add(PartPath(cloneChart));
+                addedPartPaths.Add(PartPath(cloneChart));
+            }
             foreach (var hyperlink in leaf.ExternalHyperlinks)
             {
                 clonePart.AddHyperlinkRelationship(hyperlink.Uri, true, hyperlink.RelationshipId);
@@ -2983,11 +3017,11 @@ internal static class PptxCodec
                 Id = nextSlideId,
                 RelationshipId = presentationPart.GetIdOfPart(clonePart),
             };
-            // Clone-to-layout, clone-to-image, clone-to-run-hyperlink,
-            // clone-to-notes, and clone-to-comments edges are intentionally
-            // opaque in the generic profile. Record only these exact, verified
-            // relationships so the package guard can distinguish them from an
-            // unmodeled graph change.
+            // Clone-to-layout, clone-to-image, clone-to-chart,
+            // clone-to-run-hyperlink, clone-to-notes, and clone-to-comments
+            // edges are intentionally opaque in the generic profile. Record
+            // only these exact, verified relationships so the package guard
+            // can distinguish them from an unmodeled graph change.
             addedRelationshipIds.Add($"{PartPath(clonePart)}\0{leaf.LayoutRelationshipId}");
             changedParts.Add(PartPath(clonePart));
             changedParts.Add(RelationshipPartPath(clonePart));
@@ -3035,6 +3069,13 @@ internal static class PptxCodec
         var imageRelationshipIds = imageEdges
             .Select(edge => edge.RelationshipId)
             .ToHashSet(StringComparer.Ordinal);
+        var chartEdges = childParts
+            .Where(pair => pair.OpenXmlPart is ChartPart)
+            .Select(pair => new PptxCloneChartLeaf((ChartPart)pair.OpenXmlPart, pair.RelationshipId))
+            .ToArray();
+        var chartRelationshipIds = chartEdges
+            .Select(edge => edge.SlideRelationshipId)
+            .ToHashSet(StringComparer.Ordinal);
         var externalHyperlinkEdges = source.Part.HyperlinkRelationships
             .Select(relationship => new PptxCloneExternalHyperlinkEdge(relationship.Uri, relationship.Id))
             .ToArray();
@@ -3049,7 +3090,7 @@ internal static class PptxCodec
         var notesRelationshipCount = childParts.Count(pair => pair.OpenXmlPart is NotesSlidePart);
         var commentsRelationshipCount = childParts.Count(pair => pair.OpenXmlPart is SlideCommentsPart);
         var unsafeChildren = childParts
-            .Where(pair => pair.OpenXmlPart is not SlideLayoutPart && pair.OpenXmlPart is not ImagePart && pair.OpenXmlPart is not SlidePart && pair.OpenXmlPart is not NotesSlidePart && pair.OpenXmlPart is not SlideCommentsPart)
+            .Where(pair => pair.OpenXmlPart is not SlideLayoutPart && pair.OpenXmlPart is not ImagePart && pair.OpenXmlPart is not ChartPart && pair.OpenXmlPart is not SlidePart && pair.OpenXmlPart is not NotesSlidePart && pair.OpenXmlPart is not SlideCommentsPart)
             .Select(pair => pair.OpenXmlPart.RelationshipType)
             .Distinct(StringComparer.Ordinal)
             .Take(4)
@@ -3057,12 +3098,16 @@ internal static class PptxCodec
         if (layoutRelationshipCount != 1 ||
             notesRelationshipCount > 1 ||
             commentsRelationshipCount > 1 ||
+            chartEdges.Length > MaxCloneChartParts ||
             unsafeChildren.Length > 0 ||
             source.Part.ExternalRelationships.Any() ||
             source.Part.DataPartReferenceRelationships.Any() ||
             hyperlinkRelationshipIds.Count > MaxCloneHyperlinkRelationships ||
             slideHyperlinkEdges.Any(edge => !retainedSlideParts.Contains(edge.Part)))
-            throw UnsupportedSourceSlideClone(source, "it owns data parts, an unretained slide jump, too many hyperlinks, or another non-layout/image/run-hyperlink/notes/comments relationship");
+            throw UnsupportedSourceSlideClone(source, "it owns data parts, an unretained slide jump, too many charts or hyperlinks, or another non-layout/image/chart/run-hyperlink/notes/comments relationship");
+        if (chartEdges.Any(edge => edge.Part.Parts.Any() || edge.Part.ExternalRelationships.Any() ||
+                                         edge.Part.HyperlinkRelationships.Any() || edge.Part.DataPartReferenceRelationships.Any()))
+            throw UnsupportedSourceSlideClone(source, "one of its chart parts owns a child, external, hyperlink, or data relationship");
         var root = source.Part.Slide ??
             throw new CodecException("missing_slide_root", $"Presentation source slide {source.Index + 1} has no slide root.", PartPath(source.Part));
         var common = root.CommonSlideData ??
@@ -3075,6 +3120,7 @@ internal static class PptxCodec
         var context = new PptxPartContext(source.Part, slideIdByPartPath, assets: assetCatalog);
         var elementIdsByNativeId = NativeElementIds(sourceElements, $"presentation/slide/{source.Index + 1}");
         var embeddedImageRelationshipIds = new HashSet<string>(StringComparer.Ordinal);
+        var usedChartRelationshipIds = new HashSet<string>(StringComparer.Ordinal);
         var usedHyperlinkRelationshipIds = new HashSet<string>(StringComparer.Ordinal);
         for (var elementIndex = 0; elementIndex < sourceElements.Length; elementIndex++)
         {
@@ -3086,11 +3132,15 @@ internal static class PptxCodec
                     elementIdsByNativeId,
                     imageRelationshipIds,
                     embeddedImageRelationshipIds,
+                    chartRelationshipIds,
+                    usedChartRelationshipIds,
                     usedHyperlinkRelationshipIds))
-                throw UnsupportedSourceSlideClone(source, "its elements require a broader graph clone than the bounded shape-with-canonical-run-hyperlinks/inline-table/embedded-image/connector/recursive-group profile");
+                throw UnsupportedSourceSlideClone(source, "its elements require a broader graph clone than the bounded shape-with-canonical-run-hyperlinks/inline-table/closed-chart/embedded-image/connector/recursive-group profile");
         }
         if (!imageRelationshipIds.SetEquals(embeddedImageRelationshipIds))
             throw UnsupportedSourceSlideClone(source, "it has an image relationship that is not exactly bound by a canonical embedded picture");
+        if (!chartRelationshipIds.SetEquals(usedChartRelationshipIds))
+            throw UnsupportedSourceSlideClone(source, "it has a chart relationship that is not exactly and uniquely bound by a recognized literal-data chart frame");
         if (!hyperlinkRelationshipIds.SetEquals(usedHyperlinkRelationshipIds))
             throw UnsupportedSourceSlideClone(source, "its hyperlink relationships are not exactly bound by canonical inline run click actions");
         var notes = AssertSourceSpeakerNotesCanBeCloned(source, target.Target);
@@ -3130,6 +3180,7 @@ internal static class PptxCodec
             layoutPart,
             source.Part.GetIdOfPart(layoutPart),
             imageEdges,
+            chartEdges,
             externalHyperlinkEdges,
             slideHyperlinkEdges,
             notes,
@@ -3149,15 +3200,25 @@ internal static class PptxCodec
         IReadOnlyDictionary<uint, string> elementIdsByNativeId,
         ISet<string> imageRelationshipIds,
         ISet<string> embeddedImageRelationshipIds,
+        ISet<string> chartRelationshipIds,
+        ISet<string> usedChartRelationshipIds,
         ISet<string> usedHyperlinkRelationshipIds)
     {
         if (element is P.Shape shape)
             return IsSimpleShape(shape) && TryCollectCanonicalRunHyperlinks(shape, context, usedHyperlinkRelationshipIds);
-        // A table is the one GraphicFrame profile that is entirely inline in
-        // its containing XML. PptxTableCodec rejects charts and every other
-        // GraphicFrame payload.
-        if (element is P.GraphicFrame table)
-            return !HasHyperlinkMarkup(table) && PptxTableCodec.TryRead(table, out _);
+        if (element is P.GraphicFrame frame)
+        {
+            if (HasHyperlinkMarkup(frame)) return false;
+            // Tables stay entirely inline. A chart owns one relationship, but
+            // only a semantically recognized literal-data ChartPart whose own
+            // relationship graph was already proved empty is clone-safe.
+            if (PptxTableCodec.TryRead(frame, out _)) return true;
+            if (!PptxChartCodec.TryRead(frame, context, out _, out _)) return false;
+            var chartReferences = frame.Descendants<C.ChartReference>().ToArray();
+            if (chartReferences.Length != 1) return false;
+            var relationshipId = chartReferences[0].Id?.Value ?? string.Empty;
+            return relationshipId.Length > 0 && chartRelationshipIds.Contains(relationshipId) && usedChartRelationshipIds.Add(relationshipId);
+        }
         if (element is P.Picture picture)
         {
             if (HasHyperlinkMarkup(picture)) return false;
@@ -3193,6 +3254,8 @@ internal static class PptxCodec
                     elementIdsByNativeId,
                     imageRelationshipIds,
                     embeddedImageRelationshipIds,
+                    chartRelationshipIds,
+                    usedChartRelationshipIds,
                     usedHyperlinkRelationshipIds))
                 return false;
         }
@@ -3314,7 +3377,7 @@ internal static class PptxCodec
     private static CodecException UnsupportedSourceSlideClone(PptxSourceSlideEntry source, string reason) =>
         new(
             "unsupported_presentation_slide_clone",
-            $"Source-preserving PPTX cloning is limited to an unchanged shape-with-canonical-run-hyperlinks/inline-table/embedded-image/bounded-connector/recursive-group layout leaf with optional closed notes and legacy-comment leaves; slide {source.Index + 1} cannot be cloned because {reason}. Use an explicit broader OPC graph-clone operation for this package.",
+            $"Source-preserving PPTX cloning is limited to an unchanged shape-with-canonical-run-hyperlinks/inline-table/closed-literal-chart/embedded-image/bounded-connector/recursive-group layout leaf with optional closed notes and legacy-comment leaves; slide {source.Index + 1} cannot be cloned because {reason}. Use an explicit broader OPC graph-clone operation for this package.",
             PartPath(source.Part));
 
     private static bool ReorderSourceSlideIdList(PresentationPart presentationPart, IReadOnlyList<PptxTargetSlideEntry> targets)

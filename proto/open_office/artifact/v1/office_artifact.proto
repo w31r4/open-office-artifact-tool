@@ -1230,9 +1230,10 @@ message PresentationSlide {
   // that the target already owns the referenced SlidePart: the codec must
   // create a distinct slide part and relationship graph from this verified
   // origin. The bounded profile permits an untouched source slide with its
-  // verified layout, canonical picture-bound ImageParts, and an optional
-  // closed NotesSlide -> NotesMaster/back-to-slide leaf. Richer graph cloning
-  // remains an explicit later operation.
+  // verified layout, canonical picture-bound ImageParts, independently copied
+  // closed literal-data ChartParts, canonical run hyperlinks, and optional
+  // closed NotesSlide/comments leaves. Richer graph cloning remains an
+  // explicit later operation.
   PresentationSlideSourceBinding clone_source = 9;
   // A bounded Office 2021 p188 modern-comment graph. Source-free authoring
   // supports one root plus direct replies and element/text-range anchors.

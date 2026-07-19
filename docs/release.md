@@ -1713,6 +1713,48 @@ ran while their environment-gated real-provider repeats remained skipped.
 Hosted results are recorded after the candidate commit; no publish or tag
 operation was attempted.
 
+### Source-bound PPTX closed native-chart clone
+
+On 2026-07-19, the strict imported `slide.duplicate()` profile gained one
+relationship-owning leaf: a recognized literal-data chart whose frame uniquely
+consumes one internal relationship to a numbered `ChartPart`. Preflight requires
+every accepted ChartPart to have no child, external, hyperlink, or data
+relationship and rejects formula or external-data bindings, embedded workbooks,
+duplicate use, orphan relationships, connected parts, and unrecognized chart
+markup. The pending clone remains immutable until its first export/reimport.
+
+OpenChestnut now allocates a distinct ChartPart under the clone's same
+slide-local relationship ID and copies the complete chart payload byte-for-byte;
+it never shares mutable chart state with the origin. The retained source
+SlidePart and ChartPart remain byte-identical. After reimport, the two ChartParts
+have independent package identity, and a chart that advertises the ordinary
+fixed-topology edit capability can be edited without changing the origin. The
+public wire only received a contract-comment clarification; no schema field or
+field number changed.
+
+The shipped Presentation workflow independently inventories source and clone
+chart references, proves unique relationship consumption and empty child graphs,
+permits exactly the new SlidePart/relationship/ChartPart package delta, compares
+chart bytes, reimports semantics, edits the eligible clone fixture, and verifies
+that the source chart remains unchanged. Its native lane also requires
+LibreOffice/Poppler source/clone pixel equality. Codec regressions cover the
+successful independent-copy transaction plus pending model edits, connected
+ChartParts, and orphan ChartParts that must fail without output promotion. The
+clean-install package test invokes the same packaged workflow.
+
+The complete local gate passed `npm test` including Playwright and the native
+Presentation render lane, `npm run docs:api`, `npm run proto:check`, `npm run
+test:pack`, OfficeBridge `5/5`, and OpenChestnut `287/287`. Two deterministic
+OpenChestnut builds reproduced 39 audited files and the same manifest-bound
+38-file, 14,648,000-byte runtime. The production tarball contains 461 files, is
+8,963,831 bytes compressed and 23,541,378 bytes unpacked on the local audit
+host, leaving 838,622 bytes below the unchanged 24,380,000-byte unpacked
+ceiling. The qpdf real-provider lane passed; dedicated real-provider environments
+for pikepdf, pyHanko, veraPDF, and OCRmyPDF were not configured, so their
+contract/adversarial tests passed while their environment-gated real repeats
+were skipped. Hosted results are recorded after the candidate commit; no
+publish or tag operation was attempted.
+
 `npm run release:check` passes the source, documentation, package, license, JavaScript, and .NET gates. Its only remaining blocker is unavailable npm authentication. No `npm publish` or tag/release operation has been performed.
 
 ## Publishing

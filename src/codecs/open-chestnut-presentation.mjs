@@ -231,10 +231,9 @@ function cloneImportedPresentationImage(container, source, context) {
   return registerPresentationCloneElement(context, source, clone);
 }
 
-// Canonical tables are the one accepted GraphicFrame leaf: their bounded
-// DrawingML payload is inline in the SlidePart, so this creates a fresh model
-// without copying an OPC part or relationship. Do not generalize this helper
-// to charts or other GraphicFrames, which own broader relationship graphs.
+// Canonical tables are an accepted GraphicFrame leaf whose bounded DrawingML
+// payload is inline in the SlidePart, so this creates a fresh model without
+// copying an OPC part or relationship.
 function cloneImportedPresentationTable(container, source, context) {
   const clone = container.tables.add({
     name: source.name,
@@ -247,6 +246,31 @@ function cloneImportedPresentationTable(container, source, context) {
   });
   if (source.border !== undefined) clone.border = clonedPresentationValue(source.border);
   if (source.mergeRange !== undefined) clone.mergeRange = clonedPresentationValue(source.mergeRange);
+  return registerPresentationCloneElement(context, source, clone);
+}
+
+// A recognized literal-data chart is the one accepted relationship-owning
+// GraphicFrame leaf. The JavaScript model must be independent immediately;
+// OpenChestnut then copies the verified closed ChartPart into a distinct OPC
+// part so origin and clone can be edited independently after export/reimport.
+function cloneImportedPresentationChart(container, source, context) {
+  if (source.externalData) {
+    throw new OpenChestnutCodecError("The bounded imported-slide clone profile does not accept charts with embedded or external workbook data.", [], { code: "unsupported_presentation_slide_clone" });
+  }
+  const clone = container.charts.add(source.chartType, {
+    name: source.name,
+    position: clonedPresentationValue(source.position),
+    title: source.title,
+    categories: clonedPresentationValue(source.categories),
+    series: clonedPresentationValue(source.series),
+    axes: clonedPresentationValue(source.axes),
+    legend: clonedPresentationValue(source.legend),
+    dataLabels: clonedPresentationValue(source.dataLabels),
+    ...(source.styleId === undefined ? {} : { styleId: source.styleId }),
+    varyColors: source.varyColors,
+    barOptions: clonedPresentationValue(source.barOptions),
+    lineOptions: clonedPresentationValue(source.lineOptions),
+  });
   return registerPresentationCloneElement(context, source, clone);
 }
 
@@ -264,11 +288,12 @@ function cloneImportedPresentationConnector(container, source, context) {
 }
 
 // A group is not automatically a clone leaf: it can contain connectors,
-// charts, native objects, or external edges. This recursive helper is called
-// only after the source wire tree has proved every descendant is one of the
-// same bounded clone-safe element kinds. Each new model object has a fresh JS
-// identity; the source bindings still make the pending clone immutable until
-// its export/reimport boundary.
+// native objects, or external edges. This recursive helper is called only
+// after the source wire tree has proved every descendant is one of the same
+// bounded clone-safe element kinds. A chart descendant is accepted only when
+// the native preflight proves its ChartPart is closed. Each new model object
+// has a fresh JS identity; the source bindings still make the pending clone
+// immutable until its export/reimport boundary.
 function cloneImportedPresentationGroup(container, source, context) {
   const clone = container.groups.add({
     name: source.name,
@@ -283,6 +308,7 @@ function cloneImportedPresentationGroup(container, source, context) {
 function cloneImportedPresentationElement(container, source, context) {
   if (source instanceof Shape) return cloneImportedPresentationShape(container, source, context);
   if (source instanceof TableElement) return cloneImportedPresentationTable(container, source, context);
+  if (source instanceof ChartElement) return cloneImportedPresentationChart(container, source, context);
   if (source instanceof ImageElement) return cloneImportedPresentationImage(container, source, context);
   if (isPresentationConnectorElement(source)) return cloneImportedPresentationConnector(container, source, context);
   if (source instanceof GroupShape) return cloneImportedPresentationGroup(container, source, context);
@@ -290,14 +316,14 @@ function cloneImportedPresentationElement(container, source, context) {
 }
 
 function cloneSupportedPresentationContent(content) {
-  if (content?.case === "shape" || content?.case === "table" || content?.case === "image" || content?.case === "connector") return true;
+  if (content?.case === "shape" || content?.case === "table" || content?.case === "chart" || content?.case === "image" || content?.case === "connector") return true;
   if (content?.case !== "group") return false;
   const children = content.value?.children;
   return Array.isArray(children) && children.length > 0 && children.every((child) => cloneSupportedPresentationContent(child?.content));
 }
 
 function collectPresentationCloneSourceIds(source, ids) {
-  if (!(source instanceof Shape) && !(source instanceof TableElement) && !(source instanceof ImageElement) && !isPresentationConnectorElement(source) && !(source instanceof GroupShape)) {
+  if (!(source instanceof Shape) && !(source instanceof TableElement) && !(source instanceof ChartElement) && !(source instanceof ImageElement) && !isPresentationConnectorElement(source) && !(source instanceof GroupShape)) {
     throw new OpenChestnutCodecError("The bounded imported-slide clone profile encountered an unsupported source element.", [], { code: "unsupported_presentation_slide_clone" });
   }
   const id = String(source.id || "");
@@ -359,7 +385,7 @@ function duplicateImportedPresentationSlide(presentation, state, slide) {
     throw new OpenChestnutCodecError("The bounded imported-slide clone profile permits only one pending clone per origin; export and reimport it before cloning that source again.", [], { code: "unsupported_presentation_slide_clone" });
   }
   if (source.entries.some((entry) => !cloneSupportedPresentationContent(entry.wire.content))) {
-    throw new OpenChestnutCodecError("The bounded imported-slide clone profile supports only canonical shapes, inline tables, embedded images, bounded connectors, and recursively canonical groups; charts, native objects, and other graph edges require a broader OPC graph clone.", [], { code: "unsupported_presentation_slide_clone" });
+    throw new OpenChestnutCodecError("The bounded imported-slide clone profile supports only canonical shapes, inline tables, closed literal-data charts, embedded images, bounded connectors, and recursively canonical groups; native objects and other graph edges require a broader OPC graph clone.", [], { code: "unsupported_presentation_slide_clone" });
   }
   const sourceIds = new Set();
   for (const entry of source.entries) collectPresentationCloneSourceIds(entry.model, sourceIds);

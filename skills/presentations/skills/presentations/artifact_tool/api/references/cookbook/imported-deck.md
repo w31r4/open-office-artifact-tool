@@ -109,6 +109,12 @@ Use `slide.duplicate()` only for the explicit closed clone profile; it is not a
 generic “copy this slide” shortcut. A present straight/elbow connector endpoint
 must remain inside the copied source SlidePart tree. Pending clone IDs are new
 model IDs, and the clone must export and reimport before any edit.
+Recognized literal-data charts may travel only when every frame owns one unique
+internal relationship to a closed numbered ChartPart. Export creates a
+distinct byte-identical ChartPart for the clone. After reimport, a chart that
+advertises the ordinary fixed-topology edit capability can use it without
+altering the origin. Formula/external-data/embedded-workbook charts,
+connected ChartParts, and orphan or duplicate chart relationships fail closed.
 Canonical run-level click links may target one external absolute URI, one
 retained internal SlidePart, or a supported relative slide action. Their exact
 relationship IDs and targets are copied onto the new SlidePart; shape-level or
@@ -126,12 +132,14 @@ node "$SKILL_DIR/examples/openchestnut-slide-duplicate-workflow.mjs" \
 
 The audit binds input/output hashes, source and clone part paths, adjacent
 insertion, allowed new package parts, retained-source byte preservation,
-exact source/clone run-link relationship IDs and targets, reimported structural
+exact source/clone ChartPart bytes and relationship IDs, exact run-link
+relationship IDs and targets, reimported structural
 equivalence, and model-SVG visual equivalence. The SVG
 check removes only fresh `data-*-id` locator attributes; a new SlidePart XML
 may be canonically serialized and is not promised to be lexically identical.
-Missing/duplicate names, notes/comments, unsupported link markup or leaves, or an unexpected
-package delta fail closed without output promotion.
+Missing/duplicate names, notes/comments, unsupported link markup, nonliteral
+or connected charts, other unsupported leaves, or an unexpected package delta
+fail closed without output promotion.
 
 ## Master/Layout Blast Radius
 

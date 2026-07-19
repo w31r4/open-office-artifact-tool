@@ -2753,6 +2753,108 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void SourcePreservingExportClonesAnUnchangedClosedLiteralChartIntoAnIndependentPart()
+    {
+        var request = ExportRequest();
+        AddCanonicalCloneChart(request.Artifact.Presentation.Slides[0]);
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var sourceBytes = authored.File.ToByteArray();
+        var sourceSlideBytes = ZipBytes(sourceBytes, "ppt/slides/slide1.xml");
+        string sourceChartPath;
+        using (var stream = new MemoryStream(sourceBytes))
+        using (var package = PresentationDocument.Open(stream, false))
+            sourceChartPath = Assert.Single(package.PresentationPart!.SlideParts.Single().ChartParts).Uri.OriginalString.TrimStart('/');
+        var sourceChartBytes = ZipBytes(sourceBytes, sourceChartPath);
+
+        var imported = Import(sourceBytes);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var source = Assert.Single(imported.Artifact.Presentation.Slides);
+        var sourceChart = Assert.Single(source.Elements, element => element.ContentCase == PresentationElement.ContentOneofCase.Chart);
+        Assert.True(sourceChart.Source.Editable);
+        Assert.Equal("Quarterly pipeline", sourceChart.Chart.Title);
+        AddPendingClone(imported.Artifact.Presentation, 0, "presentation/clone/closed-chart");
+
+        var duplicated = Export(imported.Artifact);
+        Assert.True(duplicated.Ok, Diagnostics(duplicated));
+        var duplicatedBytes = duplicated.File.ToByteArray();
+        string cloneChartPath;
+        using (var stream = new MemoryStream(duplicatedBytes))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var slides = OrderedSlides(package);
+            Assert.Equal(2, slides.Length);
+            var originChartPart = Assert.Single(slides[0].ChartParts);
+            var cloneChartPart = Assert.Single(slides[1].ChartParts);
+            cloneChartPath = cloneChartPart.Uri.OriginalString.TrimStart('/');
+            Assert.NotEqual(originChartPart.Uri, cloneChartPart.Uri);
+            Assert.Equal(slides[0].GetIdOfPart(originChartPart), slides[1].GetIdOfPart(cloneChartPart));
+            Assert.Empty(cloneChartPart.Parts);
+            Assert.Empty(cloneChartPart.ExternalRelationships);
+            Assert.Empty(cloneChartPart.HyperlinkRelationships);
+            Assert.Empty(cloneChartPart.DataPartReferenceRelationships);
+        }
+        Assert.Equal(sourceSlideBytes, ZipBytes(duplicatedBytes, "ppt/slides/slide1.xml"));
+        Assert.Equal(sourceChartBytes, ZipBytes(duplicatedBytes, sourceChartPath));
+        Assert.Equal(sourceChartBytes, ZipBytes(duplicatedBytes, cloneChartPath));
+
+        var roundTrip = Import(duplicatedBytes);
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        Assert.Equal(2, roundTrip.Artifact.Presentation.Slides.Count);
+        Assert.All(roundTrip.Artifact.Presentation.Slides, slide =>
+        {
+            var chart = Assert.Single(slide.Elements, element => element.ContentCase == PresentationElement.ContentOneofCase.Chart).Chart;
+            Assert.Equal("Quarterly pipeline", chart.Title);
+            Assert.Equal([42D, 48D, 57D], chart.Series[0].Values);
+        });
+
+        var cloneChart = Assert.Single(roundTrip.Artifact.Presentation.Slides[1].Elements, element => element.ContentCase == PresentationElement.ContentOneofCase.Chart).Chart;
+        cloneChart.Title = "Updated clone pipeline";
+        cloneChart.Series[0].Values[1] = 63;
+        var edited = Export(roundTrip.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        Assert.Equal(sourceChartBytes, ZipBytes(edited.File.ToByteArray(), sourceChartPath));
+        Assert.NotEqual(sourceChartBytes, ZipBytes(edited.File.ToByteArray(), cloneChartPath));
+        var editedRoundTrip = Import(edited.File.ToByteArray());
+        Assert.True(editedRoundTrip.Ok, Diagnostics(editedRoundTrip));
+        var originAfterEdit = Assert.Single(editedRoundTrip.Artifact.Presentation.Slides[0].Elements, element => element.ContentCase == PresentationElement.ContentOneofCase.Chart).Chart;
+        var cloneAfterEdit = Assert.Single(editedRoundTrip.Artifact.Presentation.Slides[1].Elements, element => element.ContentCase == PresentationElement.ContentOneofCase.Chart).Chart;
+        Assert.Equal("Quarterly pipeline", originAfterEdit.Title);
+        Assert.Equal(48D, originAfterEdit.Series[0].Values[1]);
+        Assert.Equal("Updated clone pipeline", cloneAfterEdit.Title);
+        Assert.Equal(63D, cloneAfterEdit.Series[0].Values[1]);
+    }
+
+    [Fact]
+    public void SourcePreservingExportRejectsEditedConnectedOrOrphanChartCloneGraphs()
+    {
+        var request = ExportRequest();
+        AddCanonicalCloneChart(request.Artifact.Presentation.Slides[0]);
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var sourceBytes = authored.File.ToByteArray();
+
+        var edited = Import(sourceBytes);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        AddPendingClone(edited.Artifact.Presentation, 0, "presentation/clone/edited-chart");
+        Assert.Single(edited.Artifact.Presentation.Slides[1].Elements, element => element.ContentCase == PresentationElement.ContentOneofCase.Chart).Chart.Title = "Changed too early";
+        var editedRejected = Export(edited.Artifact);
+        Assert.False(editedRejected.Ok);
+        Assert.Equal("presentation_slide_clone_mismatch", Assert.Single(editedRejected.Diagnostics).Code);
+
+        foreach (var unsafeBytes in new[] { AddConnectedChartRelationship(sourceBytes), AddOrphanChartPart(sourceBytes) })
+        {
+            var unsafeImport = Import(unsafeBytes);
+            Assert.True(unsafeImport.Ok, Diagnostics(unsafeImport));
+            AddPendingClone(unsafeImport.Artifact.Presentation, 0, "presentation/clone/unsafe-chart");
+            var rejected = Export(unsafeImport.Artifact);
+            Assert.False(rejected.Ok);
+            Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(rejected.Diagnostics).Code);
+        }
+    }
+
+    [Fact]
     public void SourcePreservingExportClonesAnUnchangedRecursiveCanonicalGroupLeaf()
     {
         var request = ExportRequest();
@@ -5240,6 +5342,66 @@ public sealed class PptxCodecTests
             Name = "Clone-safe decision table",
             Table = table,
         });
+    }
+
+    private static void AddCanonicalCloneChart(PresentationSlide slide)
+    {
+        var chart = new PresentationChart
+        {
+            LeftEmu = 700_000,
+            TopEmu = 1_500_000,
+            WidthEmu = 6_800_000,
+            HeightEmu = 3_600_000,
+            Type = SpreadsheetChartType.Bar,
+            Title = "Quarterly pipeline",
+            HasLegend = true,
+            XAxis = new SpreadsheetChartAxisArtifact { Title = "Quarter" },
+            YAxis = new SpreadsheetChartAxisArtifact { Title = "Value", Minimum = 0, Maximum = 80, MajorUnit = 20 },
+            DataLabels = new SpreadsheetChartDataLabelsArtifact { ShowValue = true, Position = SpreadsheetChartDataLabelPosition.Top },
+        };
+        chart.Categories.Add(["Q1", "Q2", "Q3"]);
+        chart.Series.Add(new SpreadsheetChartSeriesArtifact
+        {
+            Name = "Pipeline",
+            Fill = new SpreadsheetColor { Rgb = "2563EB" },
+            Values = { 42, 48, 57 },
+        });
+        slide.Elements.Add(new PresentationElement
+        {
+            Id = "presentation/slide/1/chart/clone-leaf",
+            Name = "Clone-safe quarterly pipeline",
+            Chart = chart,
+        });
+    }
+
+    private static byte[] AddConnectedChartRelationship(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var package = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var chartPart = Assert.Single(package.PresentationPart!.SlideParts.Single().ChartParts);
+            chartPart.AddHyperlinkRelationship(new Uri("https://example.invalid/chart-child"), true, "rIdUnsafeChartChild");
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddOrphanChartPart(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var package = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var slidePart = package.PresentationPart!.SlideParts.Single();
+            var source = Assert.Single(slidePart.ChartParts);
+            var orphan = slidePart.AddNewPart<ChartPart>("rIdOrphanChart");
+            using var input = source.GetStream(FileMode.Open, FileAccess.Read);
+            using var output = orphan.GetStream(FileMode.Create, FileAccess.Write);
+            input.CopyTo(output);
+        }
+        return stream.ToArray();
     }
 
     private static void AddCanonicalCloneGroup(CodecRequest request, bool includeConnector = false)

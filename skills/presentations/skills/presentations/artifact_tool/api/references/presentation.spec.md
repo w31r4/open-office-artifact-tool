@@ -73,13 +73,20 @@ SlidePart with no outbound non-layout relationship, inbound relationship, or
 presentation identity reference; it then removes the actual part and relation.
 
 `slide.duplicate()` returns a new adjacent `Slide` only under the bounded
-imported shape/inline-table/embedded-image/connector/recursive-group layout-leaf profile. Its unchanged graph may
-contain canonical simple shapes, canonical inline fixed-grid tables, canonical embedded rectangular images, bounded straight/elbow connectors, plus recursively canonical groups whose descendants contain only those same leaf kinds,
+imported shape/inline-table/closed-literal-chart/embedded-image/connector/
+recursive-group layout-leaf profile. Its unchanged graph may contain canonical
+simple shapes, canonical inline fixed-grid tables, recognized literal-data
+charts, canonical embedded rectangular images, bounded straight/elbow
+connectors, plus recursively canonical groups whose descendants contain only
+those same leaf kinds,
 exactly one layout relationship, image relationships bound only by those
 pictures, canonical run-level external/internal/action click links whose exact
 relationship IDs and retained targets are copied, and optionally one closed `NotesSlide -> NotesMaster` /
 back-to-source-slide leaf plus one canonical legacy `SlideCommentsPart` leaf.
-It creates a distinct native SlidePart and presentation relationship, shares
+Each chart frame must uniquely bind one numbered ChartPart with no child,
+external, hyperlink, or data relationship. It creates a distinct native
+SlidePart and presentation relationship, byte-copies each accepted chart into
+a distinct clone-local ChartPart, shares
 the verified layout, immutable ImageParts, NotesMaster, and presentation-wide
 `CommentAuthorsPart`, copies accepted NotesSlide and SlideComments XML
 byte-for-byte, and repoints only the notes leaf at the clone while preserving
@@ -87,9 +94,11 @@ the origin part. The comments leaf and author catalog must have no child,
 external, hyperlink, or data relationship graph. Accepted tables are inline-only
 and cannot introduce a fill, link, or another package relationship. Accepted groups add no relationship themselves, and every nested picture must consume one exact verified ImagePart relationship. The clone is intentionally
 read-only until it has crossed one export/reimport boundary; it then imports as
-its own source-bound slide, with legacy comments still read-only. Imported add,
+its own source-bound slide with independent ChartParts. A chart that advertises
+the ordinary fixed-topology edit capability can use that path without affecting
+the origin, with legacy comments still read-only. Imported add,
 repeat/mutated clone, immediate clone edit, rich/connected comments, and every
-unsupported-connector/chart/OLE/shape-level-or-unmodeled-hyperlink/custom-show/section/extension, external-or-irregular-image,
+unsupported-connector/formula-or-external-data-or-embedded-workbook-or-connected-or-orphan-chart/OLE/shape-level-or-unmodeled-hyperlink/custom-show/section/extension, external-or-irregular-image,
 or otherwise connected clone/delete graph fails closed.
 
 ## Discover And Edit

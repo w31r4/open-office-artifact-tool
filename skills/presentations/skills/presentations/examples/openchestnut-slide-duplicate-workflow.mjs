@@ -22,6 +22,7 @@ const INLINE_ACTIONS = new Set([
   "ppaction://hlinkshowjump?jump=endshow",
 ]);
 const SLIDE_JUMP_ACTION = "ppaction://hlinksldjump";
+const MAX_CLOSED_CHART_PARTS = 256;
 
 function sha256(bytes) {
   return crypto.createHash("sha256").update(bytes).digest("hex");
@@ -315,6 +316,52 @@ async function inspectClosedLeaves(zip, sourcePart, { allowClosedLeaves }) {
   };
 }
 
+async function inspectClosedChartParts(zip, slidePart) {
+  const relationships = (await relationshipEntriesForPart(zip, slidePart))
+    .filter((entry) => relationshipTypeMatches(entry, "chart"));
+  if (relationships.length > MAX_CLOSED_CHART_PARTS) {
+    throw new Error("Closed-chart duplication exceeds the " + MAX_CLOSED_CHART_PARTS + "-part budget.");
+  }
+  const slideXml = Buffer.from(await requiredZipBytes(zip, slidePart)).toString("utf8");
+  const referenceIds = [];
+  for (const match of slideXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?chart\b[^>]*>/gi)) {
+    const relationshipId = xmlAttributes(match[0])["r:id"];
+    if (!relationshipId) throw new Error("A chart reference in " + slidePart + " has no r:id.");
+    referenceIds.push(relationshipId);
+  }
+  if (new Set(referenceIds).size !== referenceIds.length) {
+    throw new Error("Closed-chart duplication requires every chart frame to own one unique relationship.");
+  }
+  const relationshipById = new Map(relationships.map((entry) => [entry.id, entry]));
+  if (referenceIds.length !== relationships.length || referenceIds.some((id) => !relationshipById.has(id))) {
+    throw new Error("Closed-chart duplication found an orphan or unmodeled ChartPart relationship in " + slidePart + ".");
+  }
+  const charts = [];
+  for (const relationshipId of referenceIds) {
+    const relationship = requireInternalRelationship(relationshipById.get(relationshipId), "Chart leaf");
+    if (!/^ppt\/(?:slides\/)?charts\/chart\d+\.xml$/i.test(relationship.targetPart)) {
+      throw new Error("Chart leaf must target one numbered ChartPart under ppt/charts or ppt/slides/charts.");
+    }
+    const bytes = await requiredZipBytes(zip, relationship.targetPart);
+    await assertNoChildRelationshipGraph(zip, relationship.targetPart, "Chart leaf");
+    charts.push({
+      relationship,
+      part: relationship.targetPart,
+      sha256: sha256(bytes),
+      bytes: bytes.length,
+    });
+  }
+  return {
+    count: charts.length,
+    charts,
+    fingerprint: JSON.stringify(charts.map((chart) => ({
+      id: chart.relationship.id,
+      type: chart.relationship.type,
+      sha256: chart.sha256,
+    }))),
+  };
+}
+
 function closedLeafSemanticSnapshot(slide) {
   return JSON.stringify({
     speakerNotes: typeof slide.speakerNotes?.text === "string" ? slide.speakerNotes.text : null,
@@ -450,6 +497,43 @@ async function assertClosedLeafClonePackage(sourceZip, outputZip, sourceLeaves, 
   return validation;
 }
 
+async function assertClosedChartClonePackage(sourceZip, outputZip, sourceCharts, cloneCharts) {
+  if (sourceCharts.count !== cloneCharts.count) {
+    throw new Error("PPTX duplicate changed the number of closed ChartPart leaves.");
+  }
+  const cloneByRelationshipId = new Map(cloneCharts.charts.map((chart) => [chart.relationship.id, chart]));
+  const validation = [];
+  for (const sourceChart of sourceCharts.charts) {
+    const cloneChart = cloneByRelationshipId.get(sourceChart.relationship.id);
+    if (!cloneChart || cloneChart.relationship.type !== sourceChart.relationship.type) {
+      throw new Error("PPTX duplicate changed a source SlidePart chart relationship identity or type.");
+    }
+    if (sourceChart.part === cloneChart.part || sourceZip.file(cloneChart.part)) {
+      throw new Error("PPTX duplicate must allocate a distinct ChartPart for every cloned chart.");
+    }
+    const [sourceBytes, cloneBytes] = await Promise.all([
+      requiredZipBytes(sourceZip, sourceChart.part),
+      requiredZipBytes(outputZip, cloneChart.part),
+    ]);
+    if (!Buffer.from(sourceBytes).equals(Buffer.from(cloneBytes))) {
+      throw new Error("PPTX duplicate changed ChartPart XML instead of byte-copying the accepted closed leaf.");
+    }
+    validation.push({
+      relationshipId: sourceChart.relationship.id,
+      sourcePart: sourceChart.part,
+      clonePart: cloneChart.part,
+      chartXmlByteIdentical: true,
+      sourceSha256: sourceChart.sha256,
+    });
+  }
+  return {
+    count: validation.length,
+    independentParts: true,
+    allPayloadsByteIdentical: true,
+    parts: validation,
+  };
+}
+
 async function assertDuplicatePackageScope(sourceBytes, outputBytes, sourceIndex, { allowClosedLeaves }) {
   const [sourceZip, outputZip] = await Promise.all([JSZip.loadAsync(sourceBytes), JSZip.loadAsync(outputBytes)]);
   const sourceParts = packagePartPaths(sourceZip);
@@ -478,12 +562,18 @@ async function assertDuplicatePackageScope(sourceBytes, outputBytes, sourceIndex
     inspectCanonicalRunHyperlinks(sourceZip, sourcePart),
     inspectCanonicalRunHyperlinks(outputZip, clonePart),
   ]);
+  const [sourceCharts, cloneCharts] = await Promise.all([
+    inspectClosedChartParts(sourceZip, sourcePart),
+    inspectClosedChartParts(outputZip, clonePart),
+  ]);
   if (sourceRunHyperlinks.fingerprint !== cloneRunHyperlinks.fingerprint) {
     throw new Error("PPTX duplicate changed the canonical run-hyperlink XML/relationship graph.");
   }
   const closedLeaves = await assertClosedLeafClonePackage(sourceZip, outputZip, sourceLeaves, cloneLeaves, sourcePart, clonePart);
+  const chartParts = await assertClosedChartClonePackage(sourceZip, outputZip, sourceCharts, cloneCharts);
   const newParts = outputParts.filter((partPath) => !sourceZip.file(partPath));
   const expectedNewParts = [clonePart, relationshipPartPath(clonePart)];
+  expectedNewParts.push(...cloneCharts.charts.map((chart) => chart.part));
   if (cloneLeaves.notes) expectedNewParts.push(cloneLeaves.notes.part, cloneLeaves.notes.relationshipPart);
   if (cloneLeaves.comments) expectedNewParts.push(cloneLeaves.comments.part);
   expectedNewParts.sort();
@@ -517,13 +607,18 @@ async function assertDuplicatePackageScope(sourceBytes, outputBytes, sourceIndex
     outputPartCount: outputParts.length,
     newPartPaths: newParts,
     retainedSourcePartsByteIdentical: true,
-    profile: sourceLeaves.profile,
+    profile: sourceCharts.count
+      ? sourceLeaves.notes || sourceLeaves.comments
+        ? "canonical-inline-leaves-with-closed-relationship-and-chart-leaves"
+        : "canonical-inline-leaves-with-closed-chart-leaves"
+      : sourceLeaves.profile,
     outputSlideParts,
     runHyperlinks: {
       relationshipCount: sourceRunHyperlinks.relationshipCount,
       actionOnlyCount: sourceRunHyperlinks.actionOnlyCount,
       exactSourceGraphRetained: true,
     },
+    chartParts,
     closedLeaves,
   };
 }
@@ -548,6 +643,7 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
   if (sourceSlideParts.length !== presentation.slides.count) throw new Error("PPTX package slide order does not match the imported presentation model.");
   const sourcePart = sourceSlideParts[sourceIndex];
   const sourceLeaves = await inspectClosedLeaves(sourceZip, sourcePart, { allowClosedLeaves });
+  const sourceCharts = await inspectClosedChartParts(sourceZip, sourcePart);
   const sourceRunHyperlinks = await inspectCanonicalRunHyperlinks(sourceZip, sourcePart);
   if (slideNameFromXml(Buffer.from(await requiredZipBytes(sourceZip, sourcePart)).toString("utf8"), sourcePart) !== sourceName) {
     throw new Error("The selected model slide does not match its source SlidePart p:cSld/@name.");
@@ -620,6 +716,11 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
           relationshipCount: sourceRunHyperlinks.relationshipCount,
           actionOnlyCount: sourceRunHyperlinks.actionOnlyCount,
         },
+        chartParts: {
+          count: sourceCharts.count,
+          sourceParts: sourceCharts.charts.map((chart) => chart.part),
+          relationshipIds: sourceCharts.charts.map((chart) => chart.relationship.id),
+        },
       },
       warnings: [],
       validation: {
@@ -633,6 +734,7 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
           retainedSourcePartsByteIdentical: packageScope.retainedSourcePartsByteIdentical,
           cloneInsertedAdjacent: true,
           runHyperlinks: packageScope.runHyperlinks,
+          chartParts: packageScope.chartParts,
           closedLeaves: packageScope.closedLeaves,
         },
         reimport: {
@@ -694,6 +796,7 @@ if (entry === import.meta.url) {
     outputSha256: result.audit.output.sha256,
     sourcePart: result.audit.operation.sourcePart,
     clonePart: result.audit.operation.clonePart,
+    chartPartCount: result.audit.operation.chartParts.count,
     closedLeaves: result.audit.operation.closedLeaves,
   }));
 }

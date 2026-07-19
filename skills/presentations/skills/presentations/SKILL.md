@@ -192,7 +192,10 @@ removes the source slide part and its relationship part while preserving every
 survivor. Media, notes, comments, charts, OLE, hyperlinks, data parts, or any
 other connected graph fail closed. `slide.duplicate()` is a separate, much
 narrower operation: only an original imported slide whose unchanged graph has
-canonical shapes, canonical inline fixed-grid tables, canonical embedded rectangular images, bounded canonical straight/elbow connectors, plus recursively canonical groups whose descendants contain only those same leaf kinds, exactly one
+canonical shapes, canonical inline fixed-grid tables, recognized closed
+literal-data charts, canonical embedded rectangular images, bounded canonical
+straight/elbow connectors, plus recursively canonical groups whose descendants
+contain only those same leaf kinds, exactly one
 internal layout relationship, picture-bound image relationships, canonical
 run-level click hyperlinks, and optionally
 one closed `NotesSlide -> NotesMaster` / back-to-source-slide leaf plus one
@@ -210,6 +213,14 @@ resolve to fresh clone-local elements. Accepted groups add no relationship
 themselves, and every nested picture must consume one exact verified image
 relationship. It preserves the origin part and requires export plus reimport before the clone, its notes, or its comments may be edited;
 imported legacy comments remain source-bound read-only after that boundary.
+Each accepted chart frame must consume one unique internal relationship to a
+numbered `ChartPart`; the ChartPart may not own a child, external, hyperlink, or
+data relationship. Export byte-copies it into a distinct clone-local ChartPart
+rather than sharing mutable chart state. After export/reimport, the two
+ChartParts are independent; a chart that advertises the ordinary fixed-topology
+edit capability can use that path without affecting the origin. Formula or
+external-data charts, embedded workbooks, duplicate/orphan chart relations, and
+any connected chart graph fail closed.
 Accepted run links are limited to modeled external absolute URIs, internal jumps
 to a retained SlidePart, and `nextSlide`/`previousSlide`/`firstSlide`/`lastSlide`/
 `endShow` actions. The clone keeps each relationship-backed link's exact `r:id`
@@ -232,17 +243,21 @@ node "$SKILL_DIR/examples/openchestnut-slide-duplicate-workflow.mjs" \
 ```
 
 It requires exactly one explicitly named original imported slide and accepts
-only the closed canonical inline leaf profile with no NotesSlide or legacy
-comments leaf. It proves the source part order, inserts one adjacent clone,
-keeps every retained source part byte-identical except the required package
-topology records, allows only the new SlidePart plus its relationship part,
-checks exact source/clone external and internal run-link relationship IDs and
-targets with no orphan edge, then reimports and compares the source/clone
-semantics and model render. Model
+the closed canonical profile with no NotesSlide or legacy-comments leaf.
+Recognized closed ChartParts are included without an opt-in: the workflow
+proves one unique frame relationship per chart, no ChartPart child graph, a
+distinct clone-local target, and byte-identical chart payload. It proves the
+source part order, inserts one adjacent clone, keeps every retained source part
+byte-identical except the required package topology records, allows only the
+new SlidePart, its relationship part, and the exact cloned ChartParts, checks
+exact source/clone external and internal run-link relationship IDs and targets
+with no orphan edge, then reimports and compares the source/clone semantics and
+model render. Model
 SVG comparison ignores fresh `data-*-id` locator attributes only; it is not a
 claim that the clone XML is lexically byte-identical. Missing/duplicate names,
-notes/comments, unresolved connector endpoints, unsupported link markup or graph leaves, or
-any unexpected package part fail closed without promoting output or audit.
+notes/comments, unresolved connector endpoints, unsupported link markup,
+nonliteral or connected charts, other graph leaves, or any unexpected package
+part fail closed without promoting output or audit.
 
 The default is intentionally bare. To copy only the separately supported,
 already-closed relationship leaves, opt in explicitly rather than relying on a

@@ -363,6 +363,15 @@ try {
       { text: "Next", link: { action: "nextSlide" } },
     ] }],
   });
+  duplicateSourceSlide.charts.add("bar", {
+    name: "clone-pipeline-chart",
+    position: { left: 390, top: 36, width: 218, height: 132 },
+    title: "Pipeline",
+    categories: ["Now", "Next"],
+    series: [{ name: "Value", values: [42, 57], fill: "#2563EB" }],
+    axes: { category: { title: "Stage" }, value: { title: "Value", min: 0, max: 80, majorUnit: 20 } },
+    legend: false,
+  });
   const duplicateSourcePptx = await PresentationFile.exportPptx(duplicateFixture);
   await duplicateSourcePptx.save(duplicateInput);
   const duplicateSourceBytes = await fs.readFile(duplicateInput);
@@ -379,6 +388,7 @@ try {
   assert.equal(duplicateResult.audit.operation.type, "source-bound-slide-duplicate");
   assert.equal(duplicateResult.audit.operation.sourcePart, "ppt/slides/slide1.xml");
   assert.equal(duplicateResult.audit.operation.clonePart, "ppt/slides/slide3.xml");
+  assert.equal(duplicateResult.audit.operation.scope, "canonical-inline-leaves-with-closed-chart-leaves");
   assert.equal(duplicateResult.audit.validation.package.retainedSourcePartsByteIdentical, true);
   assert.deepEqual(duplicateResult.audit.operation.runHyperlinks, { relationshipCount: 2, actionOnlyCount: 1 });
   assert.deepEqual(duplicateResult.audit.validation.package.runHyperlinks, {
@@ -386,10 +396,19 @@ try {
     actionOnlyCount: 1,
     exactSourceGraphRetained: true,
   });
+  assert.equal(duplicateResult.audit.operation.chartParts.count, 1);
+  assert.equal(duplicateResult.audit.validation.package.chartParts.count, 1);
+  assert.equal(duplicateResult.audit.validation.package.chartParts.independentParts, true);
+  assert.equal(duplicateResult.audit.validation.package.chartParts.allPayloadsByteIdentical, true);
+  const duplicateChartAudit = duplicateResult.audit.validation.package.chartParts.parts[0];
+  assert.match(duplicateChartAudit.sourcePart, /^ppt\/(?:slides\/)?charts\/chart\d+\.xml$/i);
+  assert.match(duplicateChartAudit.clonePart, /^ppt\/(?:slides\/)?charts\/chart\d+\.xml$/i);
+  assert.notEqual(duplicateChartAudit.sourcePart, duplicateChartAudit.clonePart);
   assert.deepEqual(duplicateResult.audit.validation.package.newPartPaths, [
     "ppt/slides/_rels/slide3.xml.rels",
+    duplicateChartAudit.clonePart,
     "ppt/slides/slide3.xml",
-  ]);
+  ].sort());
   assert.equal(duplicateResult.audit.validation.reimport.sourceAndCloneSemanticsEqual, true);
   assert.equal(duplicateResult.audit.validation.modelRender.visualEquivalent, true);
   assert.equal(duplicateResult.audit.validation.modelRender.identityAttributesIgnored, true);
@@ -414,6 +433,12 @@ try {
   assert.equal(duplicateCloneLinks[0].link.uri, "https://example.com/clone-guide");
   assert.equal(duplicateCloneLinks[1].link.slideId, duplicateRoundTrip.slides.getItem(2).id);
   assert.equal(duplicateCloneLinks[2].link.action, "nextSlide");
+  const duplicateSourceChart = duplicateRoundTrip.slides.getItem(0).charts.items[0];
+  const duplicateCloneChart = duplicateRoundTrip.slides.getItem(1).charts.items[0];
+  assert.notEqual(duplicateCloneChart.id, duplicateSourceChart.id);
+  assert.equal(duplicateSourceChart.title, "Pipeline");
+  assert.equal(duplicateCloneChart.title, "Pipeline");
+  assert.deepEqual(duplicateCloneChart.series[0].values, [42, 57]);
   const duplicateQa = await verifyPresentationFile(duplicateOutput, {
     outputDir: path.join(duplicateDir, "render-qa"),
     nativeRender,
@@ -429,6 +454,15 @@ try {
       "LibreOffice/Poppler must render the source and canonical hyperlink clone identically",
     );
   }
+
+  duplicateCloneChart.title = "Updated clone pipeline";
+  duplicateCloneChart.series[0].values[1] = 63;
+  const duplicateEdited = await PresentationFile.exportPptx(duplicateRoundTrip);
+  const duplicateEditedRoundTrip = await PresentationFile.importPptx(duplicateEdited);
+  assert.equal(duplicateEditedRoundTrip.slides.getItem(0).charts.items[0].title, "Pipeline");
+  assert.equal(duplicateEditedRoundTrip.slides.getItem(0).charts.items[0].series[0].values[1], 57);
+  assert.equal(duplicateEditedRoundTrip.slides.getItem(1).charts.items[0].title, "Updated clone pipeline");
+  assert.equal(duplicateEditedRoundTrip.slides.getItem(1).charts.items[0].series[0].values[1], 63);
 
   const duplicateMissingOutput = path.join(duplicateDir, "missing-target.pptx");
   const duplicateMissingAudit = path.join(duplicateDir, "missing-target.json");
@@ -672,7 +706,9 @@ try {
   assert.match(skillText, /slide\.setBackground.*slide\.clearBackground/s);
   assert.match(skillText, /slide\.moveTo\(existingZeroBasedIndex\).*retained source.*p:sldIdLst.*slide\.delete\(\).*isolated.*layout relationship/is);
   assert.match(skillText, /starter-deck command below still needs a\s+broad imported-slide graph clone and broad graph delete semantics/is);
-  assert.match(skillText, /slide\.duplicate\(\).*canonical shapes.*canonical inline fixed-grid tables.*canonical embedded rectangular images.*bounded canonical straight\/elbow connectors.*new\s+`?SlidePart`?.*every present\s+connector endpoint.*same copied\s+`?SlidePart`?.*export plus reimport/is);
+  assert.match(skillText, /slide\.duplicate\(\).*canonical shapes.*canonical inline fixed-grid tables.*recognized closed\s+literal-data charts.*canonical embedded rectangular images.*bounded canonical\s+straight\/elbow connectors.*new `SlidePart`.*every present\s+connector endpoint.*same copied `SlidePart`.*export plus reimport/is);
+  assert.match(skillText, /recognized closed\s+literal-data charts.*unique internal relationship.*numbered `ChartPart`.*byte-copies.*distinct clone-local ChartPart.*ChartParts are independent.*advertises the ordinary fixed-topology\s+edit capability/is);
+  assert.match(quickStartText, /recognized literal-data charts.*no child\/external\/hyperlink\/data relationship.*distinct byte-copied ChartPart/is);
   assert.match(skillText, /NotesSlide.*NotesMaster.*byte-for-byte.*back-reference.*clone/is);
   assert.match(skillText, /SlideCommentsPart.*CommentAuthorsPart.*byte-for-byte/is);
   assert.match(skillText, /artifact_tool\/api\/references\/comments\.md/);
@@ -688,6 +724,7 @@ try {
   assert.match(slideReferenceText, /never flattens the\s+inherited color/i);
   assert.match(slideReferenceText, /NotesSlide.*NotesMaster.*exactly those two\s+relationships.*byte-for-byte/is);
   assert.match(slideReferenceText, /canonical inline fixed-grid tables[\s\S]*cannot introduce a fill, link/i);
+  assert.match(slideReferenceText, /recognized closed literal-data charts.*numbered\s+`ChartPart`.*no child, external, hyperlink, or data relationship.*distinct clone-local ChartPart/is);
   assert.match(slideReferenceText, /Gradient,\s+pattern, image.*opaque-preserved/is);
   assert.match(slideReferenceText, /p:cSld\/@name.*export\/reimport/is);
   const imageReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/images.spec.md", "utf8");

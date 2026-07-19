@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import path from "node:path";
 import JSZip from "jszip";
 
 import {
@@ -981,9 +982,10 @@ await assert.rejects(
   (error) => error?.code === "unsupported_presentation_slide_clone",
 );
 
-// Canonical tables are the one accepted GraphicFrame leaf. They are inline in
-// slide XML, so duplicating them must create fresh model identity and exactly
-// no table-specific OPC relationship. Charts remain outside this profile.
+// Canonical tables are an accepted GraphicFrame leaf. They are inline in slide
+// XML, so duplicating them must create fresh model identity and exactly no
+// table-specific OPC relationship. Closed literal-data charts are exercised
+// separately below because each clone must own a distinct ChartPart.
 const tableCloneFixture = Presentation.create({ slideSize: { width: 640, height: 360 } });
 const tableCloneOriginal = tableCloneFixture.slides.add({ name: "Table original" });
 tableCloneOriginal.tables.add({
@@ -1031,10 +1033,127 @@ await assert.rejects(
   (error) => error?.code === "unsupported_presentation_slide_clone",
 );
 
+// A recognized literal-data chart may travel with the bounded slide clone
+// only when its ChartPart has no child/external/data relationship graph. The
+// clone copies the exact chart XML into a distinct part: sharing would make a
+// later chart edit affect both slides.
+const chartCloneFixture = Presentation.create({ slideSize: { width: 640, height: 360 } });
+const chartCloneOriginal = chartCloneFixture.slides.add({ name: "Chart original" });
+chartCloneOriginal.charts.add("bar", {
+  name: "pipeline-chart",
+  position: { left: 48, top: 42, width: 500, height: 250 },
+  title: "Quarterly pipeline",
+  categories: ["Q1", "Q2", "Q3"],
+  series: [{ name: "Pipeline", values: [42, 48, 57], fill: "#2563EB" }],
+  axes: {
+    category: { title: "Quarter" },
+    value: { title: "Value", min: 0, max: 80, majorUnit: 20 },
+  },
+  legend: { visible: true, position: "r" },
+  dataLabels: { showValue: true, position: "top" },
+});
+const chartCloneSourcePptx = await PresentationFile.exportPptx(chartCloneFixture);
+const chartCloneSourceZip = await JSZip.loadAsync(chartCloneSourcePptx.bytes);
+const chartPartPaths = (zip) => Object.keys(zip.files)
+  .filter((partPath) => /^ppt\/(?:slides\/)?charts\/chart\d+\.xml$/i.test(partPath))
+  .sort();
+const chartCloneSourceParts = chartPartPaths(chartCloneSourceZip);
+assert.equal(chartCloneSourceParts.length, 1, "the source fixture must own exactly one ChartPart");
+const [chartCloneSourcePart] = chartCloneSourceParts;
+const chartCloneImportedDeck = await PresentationFile.importPptx(chartCloneSourcePptx);
+const chartCloneImportedSource = chartCloneImportedDeck.slides.getItem(0);
+const chartClonePending = chartCloneImportedSource.duplicate();
+assert.equal(chartClonePending.charts.items.length, 1);
+assert.notEqual(chartClonePending.charts.items[0], chartCloneImportedSource.charts.items[0]);
+assert.notEqual(chartClonePending.charts.items[0].id, chartCloneImportedSource.charts.items[0].id);
+assert.deepEqual(chartClonePending.charts.items[0].categories, ["Q1", "Q2", "Q3"]);
+assert.deepEqual(chartClonePending.charts.items[0].series[0].values, [42, 48, 57]);
+const chartClonePptx = await PresentationFile.exportPptx(chartCloneImportedDeck);
+const chartCloneZip = await JSZip.loadAsync(chartClonePptx.bytes);
+assert.deepEqual(
+  await chartCloneZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  await chartCloneSourceZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  "cloning a closed native chart must retain the origin SlidePart byte-for-byte",
+);
+const chartCloneOutputParts = chartPartPaths(chartCloneZip);
+assert.equal(chartCloneOutputParts.length, 2, "the chart clone must allocate exactly one additional ChartPart");
+const chartCloneNewParts = chartCloneOutputParts.filter((partPath) => !chartCloneSourceZip.file(partPath));
+assert.equal(chartCloneNewParts.length, 1, "the chart clone must own one distinct new ChartPart path");
+const [chartClonePart] = chartCloneNewParts;
+assert.deepEqual(
+  await chartCloneZip.file(chartClonePart).async("uint8array"),
+  await chartCloneSourceZip.file(chartCloneSourcePart).async("uint8array"),
+  "the first clone export must copy the accepted ChartPart byte-for-byte",
+);
+const modeledChartRelationship = (xml) => {
+  const relationships = [...xml.matchAll(/<Relationship\b[^>]*>/g)]
+    .map(([tag]) => ({
+      id: /\bId="([^"]+)"/.exec(tag)?.[1],
+      type: /\bType="([^"]+)"/.exec(tag)?.[1],
+      target: /\bTarget="([^"]+)"/.exec(tag)?.[1],
+      targetMode: /\bTargetMode="([^"]+)"/.exec(tag)?.[1],
+    }))
+    .filter((relationship) => /\/chart$/.test(relationship.type || ""));
+  assert.equal(relationships.length, 1, "a bounded chart clone slide must own exactly one chart relationship");
+  return relationships[0];
+};
+const sourceChartRelationship = modeledChartRelationship(await chartCloneZip.file("ppt/slides/_rels/slide1.xml.rels").async("text"));
+const cloneChartRelationship = modeledChartRelationship(await chartCloneZip.file("ppt/slides/_rels/slide2.xml.rels").async("text"));
+assert.equal(cloneChartRelationship.id, sourceChartRelationship.id, "the clone must retain the slide-local chart relationship ID");
+assert.equal(cloneChartRelationship.type, sourceChartRelationship.type);
+assert.equal(cloneChartRelationship.targetMode, undefined);
+const resolvedCloneChartTarget = cloneChartRelationship.target.startsWith("/")
+  ? cloneChartRelationship.target.replace(/^\/+/, "")
+  : path.posix.normalize(path.posix.join("ppt/slides", cloneChartRelationship.target));
+assert.equal(resolvedCloneChartTarget, chartClonePart, "the clone chart relationship must target its newly allocated ChartPart");
+
+const chartCloneRoundTrip = await PresentationFile.importPptx(chartClonePptx);
+assert.deepEqual(chartCloneRoundTrip.slides.items.map((slide) => slide.charts.items[0].title), ["Quarterly pipeline", "Quarterly pipeline"]);
+chartCloneRoundTrip.slides.getItem(1).charts.items[0].title = "Updated clone pipeline";
+chartCloneRoundTrip.slides.getItem(1).charts.items[0].series[0].values[1] = 63;
+const chartCloneEditedPptx = await PresentationFile.exportPptx(chartCloneRoundTrip);
+const chartCloneEditedZip = await JSZip.loadAsync(chartCloneEditedPptx.bytes);
+assert.deepEqual(
+  await chartCloneEditedZip.file(chartCloneSourcePart).async("uint8array"),
+  await chartCloneSourceZip.file(chartCloneSourcePart).async("uint8array"),
+  "editing the reimported clone chart must leave the origin ChartPart byte-for-byte intact",
+);
+const chartCloneEditedRoundTrip = await PresentationFile.importPptx(chartCloneEditedPptx);
+assert.equal(chartCloneEditedRoundTrip.slides.getItem(0).charts.items[0].title, "Quarterly pipeline");
+assert.equal(chartCloneEditedRoundTrip.slides.getItem(0).charts.items[0].series[0].values[1], 48);
+assert.equal(chartCloneEditedRoundTrip.slides.getItem(1).charts.items[0].title, "Updated clone pipeline");
+assert.equal(chartCloneEditedRoundTrip.slides.getItem(1).charts.items[0].series[0].values[1], 63);
+
+const immediateChartCloneEdit = await PresentationFile.importPptx(chartCloneSourcePptx);
+immediateChartCloneEdit.slides.getItem(0).duplicate().charts.items[0].title = "Too soon";
+await assert.rejects(
+  () => PresentationFile.exportPptx(immediateChartCloneEdit),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+);
+
+const connectedChartCloneZip = await JSZip.loadAsync(chartCloneSourcePptx.bytes);
+const chartRelationshipPart = path.posix.join(
+  path.posix.dirname(chartCloneSourcePart),
+  "_rels",
+  path.posix.basename(chartCloneSourcePart) + ".rels",
+);
+connectedChartCloneZip.file(
+  chartRelationshipPart,
+  '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdUnsafeChartChild" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.invalid/chart-child" TargetMode="External"/></Relationships>',
+);
+const connectedChartCloneSource = await connectedChartCloneZip.generateAsync({ type: "uint8array" });
+const connectedChartCloneDeck = await PresentationFile.importPptx(connectedChartCloneSource);
+connectedChartCloneDeck.slides.getItem(0).duplicate();
+await assert.rejects(
+  () => PresentationFile.exportPptx(connectedChartCloneDeck),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+  "a chart with any child relationship graph must fail closed",
+);
+
 // A group is clone-safe only when every descendant is already in the narrow
-// shape/table/image leaf. The group and every child receive fresh JS identity,
-// while nested images still consume the same verified SlidePart relationship
-// profile as their top-level counterparts.
+// shape/table/closed-chart/image leaf. The group and every child receive fresh
+// JS identity, while nested relationship-owning leaves still require the same
+// native preflight as their top-level counterparts.
 const groupCloneFixture = Presentation.create({ slideSize: { width: 640, height: 360 } });
 const groupCloneOriginal = groupCloneFixture.slides.add({ name: "Recursive group original" });
 const groupCloneRoot = groupCloneOriginal.addGroup({
