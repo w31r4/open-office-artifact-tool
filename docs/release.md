@@ -91,16 +91,20 @@ exports and imports twice, and renders both source and Pivot sheets. A real
 LibreOffice XLSX resave retained both measures and aggregations, then reimported
 through OpenChestnut with correct totals. LibreOffice and Poppler produced a
 clean two-page native review with no clipping on the macOS host and in a Debian
-12 amd64 container running LibreOffice 7.4.7. C# tests separately cover Office
-2021 validation for multi-value tables with and without a column field,
-roundtrip identity, malformed-axis preservation, and the 32-field budget.
+12 amd64 container running LibreOffice 7.4.7. An Ubuntu 24.04 amd64
+LibreOffice 24.2.7 resave omitted optional `rowItems`/`colItems` caches while
+retaining the canonical `x=-2` and ordered data fields; OpenChestnut recognized
+that host-normalized graph and preserved its native parts unchanged. C# tests
+separately cover Office 2021 validation for multi-value tables with and without
+a column field, omitted axis-item caches, roundtrip identity, malformed-axis
+preservation, and the 32-field budget.
 
 The complete local gate passed `npm test`, `npm run docs:api`, `npm run
 proto:check`, `npm run test:pack`, and serial `npm run
-verify:open-chestnut-build`; OpenChestnut passed `280/280` and OfficeBridge
+verify:open-chestnut-build`; OpenChestnut passed `281/281` and OfficeBridge
 passed `5/5`. Two clean WASM builds produced the same 39 audited files and the
 same manifest-bound 38-file, 14,610,112-byte runtime. The clean-install tarball
-contains 452 files, is 9,524,037 bytes compressed and 24,058,237 bytes
+contains 452 files, is 9,524,121 bytes compressed and 24,058,724 bytes
 unpacked. The optional specialist Python PDF-provider gate remained
 contract-only because `OPEN_OFFICE_PDF_PROVIDER_PYTHON` was not explicitly
 configured; the required MuPDF.js path and all other npm gates ran locally. No

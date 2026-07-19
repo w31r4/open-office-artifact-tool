@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import JSZip from "jszip";
 
-import { SpreadsheetFile, Workbook, verifyArtifact } from "../src/index.mjs";
+import { FileBlob, SpreadsheetFile, Workbook, verifyArtifact } from "../src/index.mjs";
 import { formatSpreadsheetDisplayValue } from "../src/spreadsheet/ooxml-styles.mjs";
 
 const PNG_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAQAAABFaP0WAAAADUlEQVR42mNk+M/wHwAF/gL+3c5GAAAAAElFTkSuQmCC";
@@ -509,6 +509,27 @@ const secondMultiValuePivotZip = await JSZip.loadAsync(new Uint8Array(await seco
 assert.equal(await secondMultiValuePivotZip.file(multiValuePivotPart).async("text"), multiValuePivotXml);
 assert.equal(await secondMultiValuePivotZip.file(multiValuePivotCache).async("text"), await multiValuePivotZip.file(multiValuePivotCache).async("text"));
 assert.equal(await secondMultiValuePivotZip.file(multiValuePivotRecords).async("text"), await multiValuePivotZip.file(multiValuePivotRecords).async("text"));
+
+const hostNormalizedMultiValueZip = await JSZip.loadAsync(new Uint8Array(await multiValuePivotXlsx.arrayBuffer()));
+const hostNormalizedMultiValueXml = multiValuePivotXml
+  .replace(/<rowItems\b[\s\S]*?<\/rowItems>/, "")
+  .replace(/<colItems\b[\s\S]*?<\/colItems>/, "");
+assert.notEqual(hostNormalizedMultiValueXml, multiValuePivotXml);
+hostNormalizedMultiValueZip.file(multiValuePivotPart, hostNormalizedMultiValueXml);
+const hostNormalizedMultiValueBytes = await hostNormalizedMultiValueZip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+const hostNormalizedMultiValueFile = new FileBlob(hostNormalizedMultiValueBytes, {
+  type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  name: "host-normalized-multi-value-pivot.xlsx",
+});
+const importedHostNormalizedMultiValue = await SpreadsheetFile.importXlsx(hostNormalizedMultiValueFile);
+const hostNormalizedPivot = importedHostNormalizedMultiValue.worksheets.getItem("Summary").pivotTables.items[0];
+assert.deepEqual(hostNormalizedPivot.valueFields, [
+  { field: "Sales", summarizeBy: "sum", name: "Revenue" },
+  { field: "Units", summarizeBy: "average", name: "Average units" },
+]);
+const preservedHostNormalizedMultiValue = await SpreadsheetFile.exportXlsx(importedHostNormalizedMultiValue);
+const preservedHostNormalizedMultiValueZip = await JSZip.loadAsync(new Uint8Array(await preservedHostNormalizedMultiValue.arrayBuffer()));
+assert.equal(await preservedHostNormalizedMultiValueZip.file(multiValuePivotPart).async("text"), hostNormalizedMultiValueXml);
 
 const noColumnMultiValueWorkbook = Workbook.create();
 const noColumnMultiValueData = noColumnMultiValueWorkbook.worksheets.add("Data");

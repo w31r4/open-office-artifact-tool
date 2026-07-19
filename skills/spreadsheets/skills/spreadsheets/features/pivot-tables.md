@@ -66,3 +66,10 @@ Recognized imported PivotTables expose their semantic configuration for inspect
 and resolve, but the native graph, source range values, and cached output are
 hash-bound and read-only in this first profile. Unsupported imported PivotTable
 graphs remain opaque and unchanged in the validated source package.
+
+Excel-compatible hosts may omit the optional materialized `rowItems` and
+`colItems` axis caches when resaving a multi-value PivotTable. OpenChestnut still
+recognizes that host-normalized graph when the canonical `x=-2` data-layout
+field, ordered data fields, cache source, field indexes, and relationships all
+validate. A present but inconsistent item list, or a missing/duplicate data-
+layout field, remains opaque and unchanged.

@@ -225,7 +225,11 @@ internal sealed class XlsxPivotTableCodec
         if (location is null || pivotFields is null || ReadBoolean(root.Attribute("dataOnRows"), false) ||
             rowFieldElements.Length != 1 || dataFields.Length is < 1 or > MaxValueFields ||
             cacheFields is null || worksheetSource is null || pivotFields.Length != cacheFields.Length) return false;
-        if (dataFields.Length > 1 && (columnItems is null || columnItems.Length < dataFields.Length)) return false;
+        // rowItems/colItems are optional materialized axis caches. LibreOffice
+        // 24.2 intentionally omits both while retaining the canonical x=-2
+        // data-layout field and ordered dataFields. Validate a list when the
+        // host writes one, but do not require it to recover the semantic axes.
+        if (dataFields.Length > 1 && columnItems is not null && columnItems.Length < dataFields.Length) return false;
         if (!int.TryParse(rowFieldElements[0].Attribute("x")?.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var rowIndex) || rowIndex < 0 || rowIndex >= cacheFields.Length) return false;
 
         var columnIndex = -1;

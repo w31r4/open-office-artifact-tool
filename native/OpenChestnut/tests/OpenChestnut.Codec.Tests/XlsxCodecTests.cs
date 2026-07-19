@@ -4367,6 +4367,37 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void ProtocolImportsHostNormalizedMultiplePivotValuesWithoutAxisItems()
+    {
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(MultiValuePivotExportRequest().ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var pivotPath = FindEntryPath(
+            authored.File.ToByteArray(),
+            path => path.StartsWith("xl/pivotTables/pivotTable", StringComparison.Ordinal)
+                && path.EndsWith(".xml", StringComparison.Ordinal));
+        var normalized = RewriteEntry(authored.File.ToByteArray(), pivotPath, xml =>
+        {
+            var document = XDocument.Parse(xml, LoadOptions.PreserveWhitespace);
+            var ns = document.Root!.Name.Namespace;
+            document.Root.Elements(ns + "rowItems").Remove();
+            document.Root.Elements(ns + "colItems").Remove();
+            return document.ToString(SaveOptions.DisableFormatting);
+        });
+
+        var imported = Import(normalized);
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var pivot = Assert.Single(imported.Artifact.Workbook.Worksheets.Single(sheet => sheet.Name == "Summary").PivotTables);
+        Assert.Equal(["Region"], pivot.RowFields);
+        Assert.Equal(["Product"], pivot.ColumnFields);
+        Assert.Equal(["Sales", "Units"], pivot.ValueFields.Select(value => value.Field));
+        Assert.Equal([SpreadsheetPivotAggregation.Sum, SpreadsheetPivotAggregation.Average], pivot.ValueFields.Select(value => value.Aggregation));
+
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, string.Join("\n", preserved.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(ReadEntry(normalized, pivotPath), ReadEntry(preserved.File.ToByteArray(), pivotPath));
+    }
+
+    [Fact]
     public void UnsupportedMultiplePivotValueTopologyRemainsOpaqueAndSourcePreserved()
     {
         var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(MultiValuePivotExportRequest().ToByteArray()));

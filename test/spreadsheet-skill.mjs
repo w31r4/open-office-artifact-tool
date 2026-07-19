@@ -269,6 +269,7 @@ try {
       name: path.basename(libreOfficePath),
     }));
     const libreOfficePivot = libreOfficeWorkbook.worksheets.getItem("Pivot Summary").pivotTables.items[0];
+    assert.ok(libreOfficePivot, "LibreOffice-resaved multi-value PivotTable must remain semantically recognized");
     assert.deepEqual(libreOfficePivot.valueFields, [
       { field: "Revenue", summarizeBy: "sum", name: "Revenue" },
       { field: "Units", summarizeBy: "sum", name: "Units" },
