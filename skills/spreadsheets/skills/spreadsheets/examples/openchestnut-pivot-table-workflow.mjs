@@ -8,44 +8,51 @@ import { SpreadsheetFile, Workbook } from "open-office-artifact-tool";
 export function buildPivotTableWorkbook() {
   const workbook = Workbook.create();
   const data = workbook.worksheets.add("Data");
-  data.getRange("A1:D7").write([
-    ["Region", "Channel", "Revenue", "Units"],
-    ["East", "Direct", 120, 12],
-    ["East", "Partner", 80, 8],
-    ["West", "Direct", 150, 15],
-    ["West", "Partner", 90, 9],
-    ["North", "Direct", 110, 11],
-    ["North", "Partner", 70, 7],
+  data.getRange("A1:E13").write([
+    ["Region", "Channel", "Product", "Revenue", "Units"],
+    ["East", "Direct", "Alpha", 70, 7],
+    ["East", "Direct", "Beta", 50, 5],
+    ["East", "Partner", "Alpha", 45, 4],
+    ["East", "Partner", "Beta", 35, 4],
+    ["West", "Direct", "Alpha", 90, 9],
+    ["West", "Direct", "Beta", 60, 6],
+    ["West", "Partner", "Alpha", 55, 5],
+    ["West", "Partner", "Beta", 35, 4],
+    ["North", "Direct", "Alpha", 60, 6],
+    ["North", "Direct", "Beta", 50, 5],
+    ["North", "Partner", "Alpha", 40, 4],
+    ["North", "Partner", "Beta", 30, 3],
   ]);
-  data.getRange("A1:D1").format = { fill: "#0F172A", font: { bold: true, color: "#FFFFFF" } };
-  data.getRange("C2:C7").setNumberFormat("$#,##0");
-  data.getRange("D2:D7").setNumberFormat("#,##0");
-  data.getRange("A1:D7").format.autofitColumns();
+  data.getRange("A1:E1").format = { fill: "#0F172A", font: { bold: true, color: "#FFFFFF" } };
+  data.getRange("D2:D13").setNumberFormat("$#,##0");
+  data.getRange("E2:E13").setNumberFormat("#,##0");
+  data.getRange("A1:E13").format.autofitColumns();
   data.freezePanes.freezeRows(1);
   data.showGridLines = false;
 
   const summary = workbook.worksheets.add("Pivot Summary");
-  summary.getRange("A1:G4").format = { border: { bottom: { style: "thin", color: "#CBD5E1" } } };
-  summary.getRange("A1:G1").format = { fill: "#DBEAFE", font: { bold: true, color: "#1E3A8A" } };
-  summary.getRange("A1:G1").format.wrapText = true;
-  summary.getRange("A1:G1").format.rowHeightPx = 34;
-  summary.getRange("A4:G4").format = { fill: "#E2E8F0", font: { bold: true, color: "#0F172A" } };
-  for (const range of ["B2:B4", "D2:D4", "F2:F4"]) summary.getRange(range).setNumberFormat("$#,##0");
-  for (const range of ["C2:C4", "E2:E4", "G2:G4"]) summary.getRange(range).setNumberFormat("#,##0");
+  summary.getRange("A1:H6").format = { border: { bottom: { style: "thin", color: "#CBD5E1" } } };
+  summary.getRange("A1:H1").format = { fill: "#DBEAFE", font: { bold: true, color: "#1E3A8A" } };
+  summary.getRange("A1:H1").format.wrapText = true;
+  summary.getRange("A1:H1").format.rowHeightPx = 34;
+  summary.getRange("A6:H6").format = { fill: "#E2E8F0", font: { bold: true, color: "#0F172A" } };
+  for (const range of ["C2:C6", "E2:E6", "G2:G6"]) summary.getRange(range).setNumberFormat("$#,##0");
+  for (const range of ["D2:D6", "F2:F6", "H2:H6"]) summary.getRange(range).setNumberFormat("#,##0");
   // Keep a deliberate Linux LibreOffice print margin: the seven native Pivot
   // columns must remain readable while fitting one A4/Letter page without host
   // font metrics pushing the two grand-total columns onto a third PDF page.
-  summary.getRange("A1:A4").format.columnWidthPx = 76;
-  summary.getRange("B1:E4").format.columnWidthPx = 50;
-  summary.getRange("F1:F4").format.columnWidthPx = 88;
-  summary.getRange("G1:G4").format.columnWidthPx = 76;
+  summary.getRange("A1:A6").format.columnWidthPx = 70;
+  summary.getRange("B1:B6").format.columnWidthPx = 66;
+  summary.getRange("C1:F6").format.columnWidthPx = 48;
+  summary.getRange("G1:G6").format.columnWidthPx = 88;
+  summary.getRange("H1:H6").format.columnWidthPx = 76;
   summary.showGridLines = false;
   summary.pivotTables.add({
     name: "Revenue and units by region",
-    sourceRange: "Data!A1:D7",
+    sourceRange: "Data!A1:E13",
     targetRange: "A1",
-    rowFields: ["Region"],
-    columnFields: ["Channel"],
+    rowFields: ["Region", "Channel"],
+    columnFields: ["Product"],
     valueFields: [
       { field: "Revenue", summarizeBy: "sum", name: "Revenue" },
       { field: "Units", summarizeBy: "sum", name: "Units" },
@@ -63,17 +70,19 @@ export async function createPivotTableWorkbook(outputPath) {
   const summary = workbook.worksheets.getItem("Pivot Summary");
   const pivot = summary.pivotTables.items[0];
   assert.deepEqual(pivot.computedValues(), [
-    ["Region", "Direct — Revenue", "Direct — Units", "Partner — Revenue", "Partner — Units", "Grand Total — Revenue", "Grand Total — Units"],
-    ["East", 120, 12, 80, 8, 200, 20],
-    ["West", 150, 15, 90, 9, 240, 24],
-    ["Grand Total", 270, 27, 170, 17, 440, 44],
+    ["Region", "Channel", "Alpha — Revenue", "Alpha — Units", "Beta — Revenue", "Beta — Units", "Grand Total — Revenue", "Grand Total — Units"],
+    ["East", "Direct", 70, 7, 50, 5, 120, 12],
+    ["East", "Partner", 45, 4, 35, 4, 80, 8],
+    ["West", "Direct", 90, 9, 60, 6, 150, 15],
+    ["West", "Partner", 55, 5, 35, 4, 90, 9],
+    ["Grand Total", "", 260, 25, 180, 19, 440, 44],
   ]);
 
-  const inspection = workbook.inspect({ kind: "sheet,pivotTable,style", sheetName: summary.name, range: "A1:G4", maxChars: 16_000 });
+  const inspection = workbook.inspect({ kind: "sheet,pivotTable,style", sheetName: summary.name, range: "A1:H6", maxChars: 16_000 });
   assert.match(inspection.ndjson, /"kind":"pivotTable"/);
   const verification = workbook.verify({ visualQa: true });
   assert.equal(verification.ok, true, verification.ndjson);
-  const preview = await workbook.render({ sheetName: summary.name, range: "A1:G4", format: "svg" });
+  const preview = await workbook.render({ sheetName: summary.name, range: "A1:H6", format: "svg" });
   assert.match(await preview.text(), /Revenue and units by region/);
 
   const first = await SpreadsheetFile.exportXlsx(workbook, { recalculate: false });

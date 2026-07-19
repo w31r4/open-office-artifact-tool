@@ -4,6 +4,8 @@ import { pivotItemVisible } from "../spreadsheet/pivot-filters.mjs";
 
 const A1_RANGE = /^\$?([A-Z]{1,3})\$?([1-9]\d*)(?::\$?([A-Z]{1,3})\$?([1-9]\d*))?$/i;
 const MAX_NATIVE_VALUE_FIELDS = 32;
+const MAX_NATIVE_ROW_FIELDS = 8;
+const MAX_NATIVE_AXIS_FIELDS = MAX_NATIVE_ROW_FIELDS + 1;
 const MAX_NATIVE_FILTER_ITEMS = 1_024;
 const TO_WIRE_AGGREGATION = new Map([
   ["sum", SpreadsheetPivotAggregation.SUM],
@@ -46,7 +48,7 @@ function wireItemFilters(pivot) {
 }
 
 function publicItemFilters(filters = [], pivotName = "PivotTable") {
-  if (filters.length > 2) throw invalid(`${pivotName} exceeds the two-axis item-filter budget.`, "unsupported_spreadsheet_pivot_filter");
+  if (filters.length > MAX_NATIVE_AXIS_FIELDS) throw invalid(`${pivotName} exceeds the ${MAX_NATIVE_AXIS_FIELDS}-axis item-filter budget.`, "unsupported_spreadsheet_pivot_filter");
   const seen = new Set();
   return filters.map((filter, filterIndex) => {
     const field = String(filter?.field || "").trim();
@@ -168,7 +170,7 @@ function assertBoundedProfile(workbook, targetSheet, pivot) {
   if (headers.length !== sourceBounds.colCount || headers.some((header) => !header) || new Set(headers).size !== headers.length) {
     throw invalid(`PivotTable ${pivot.name} source headers must be non-empty and unique.`);
   }
-  if (pivot.rowFields.length !== 1) throw invalid(`PivotTable ${pivot.name} requires exactly one row field in the first native profile.`, "unsupported_spreadsheet_pivot_profile");
+  if (!pivot.rowFields.length || pivot.rowFields.length > MAX_NATIVE_ROW_FIELDS) throw invalid(`PivotTable ${pivot.name} requires 1 through ${MAX_NATIVE_ROW_FIELDS} row fields in the bounded native profile.`, "unsupported_spreadsheet_pivot_profile");
   if (pivot.columnFields.length > 1) throw invalid(`PivotTable ${pivot.name} supports at most one column field in the first native profile.`, "unsupported_spreadsheet_pivot_profile");
   if (!pivot.valueFields.length || pivot.valueFields.length > MAX_NATIVE_VALUE_FIELDS) {
     throw invalid(`PivotTable ${pivot.name} requires 1 through ${MAX_NATIVE_VALUE_FIELDS} value fields in the bounded native profile.`, "unsupported_spreadsheet_pivot_profile");
@@ -314,7 +316,7 @@ export function hydrateWorkbookPivots(workbook, sourceWorksheets) {
         slots.push({ wire });
         continue;
       }
-      if (!sourceSheetModel || !wire.name || !wire.sourceReference || !wire.targetReference || wire.rowFields?.length !== 1 ||
+      if (!sourceSheetModel || !wire.name || !wire.sourceReference || !wire.targetReference || !wire.rowFields?.length || wire.rowFields.length > MAX_NATIVE_ROW_FIELDS ||
           wire.columnFields?.length > 1 || !valueFields.length || valueFields.length > MAX_NATIVE_VALUE_FIELDS ||
           valueFields.some((value) => !value.field || !value.summarizeBy) || filters.some((filter) => ![...wire.rowFields, ...wire.columnFields].includes(filter.field))) {
         slots.push({ wire });

@@ -5102,7 +5102,7 @@ Create a native bounded XLSX PivotTable with derived cached output, cache record
 - `name` (string) — Stable pivot name.
 - `sourceRange` (string|Range) required — Source data range.
 - `targetRange` (string|Range) required — Destination anchor/range.
-- `rowFields` (string[]) — Row field names. Native source-free OpenChestnut authoring currently requires exactly one.
+- `rowFields` (string[]) — Ordered row field names. Native source-free OpenChestnut authoring accepts 1 through 8 fields in a tabular, no-automatic-subtotal profile.
 - `columnFields` (string[]) — Column field names. Native source-free OpenChestnut authoring currently accepts zero or one.
 - `valueFields` (object[]) — One through 32 value-field definitions. Each names a source field and sum/count/average/min/max aggregation; repeated source fields with different aggregations are allowed.
 - `rowGrandTotals` (boolean) — Add a native grand-total column and derived cached values when a column field is present.
@@ -5114,7 +5114,7 @@ Create a native bounded XLSX PivotTable with derived cached output, cache record
 
 **Schema returns:**
 
-- `pivot` (WorksheetPivotTable) — Native XLSX authoring is bounded to one row field, optional one column field, 1 through 32 sum/count/average/min/max value fields, and exact include/exclude filters on those axes. Multiple values use the canonical x=-2 data-layout axis. Cached output is a derived projection; grouping, calculated fields, date/conditional filters, and other richer profiles remain model-only and fail closed on native export. Recognized imports expose semantics but keep config, source data, cached output, and topology read-only.
+- `pivot` (WorksheetPivotTable) — Native XLSX authoring is bounded to 1 through 8 tabular row fields without automatic subtotals, optional one column field, 1 through 32 sum/count/average/min/max value fields, and exact include/exclude filters on those axes. Multiple values use the canonical x=-2 data-layout axis. Cached output is a derived projection; grouping, calculated fields, date/conditional filters, compact/subtotal-bearing multi-row layouts, and other richer profiles remain model-only and fail closed on native export. Recognized imports expose semantics but keep config, source data, cached output, and topology read-only.
 
 #### `sheet.sparklineGroups.add`
 

@@ -224,15 +224,18 @@ try {
   assert.equal(pivotTableResult.verification.ok, true);
   assert.match(pivotTableResult.inspection.ndjson, /"kind":"pivotTable"/);
   const pivotTableWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(pivotTablePath));
-  assert.ok(Math.abs(pivotTableWorkbook.worksheets.getItem("Pivot Summary").getRange("A1:A5").format.columnWidthPx - 76) <= 1);
-  assert.ok(Math.abs(pivotTableWorkbook.worksheets.getItem("Pivot Summary").getRange("B1:E5").format.columnWidthPx - 50) <= 1);
-  assert.ok(Math.abs(pivotTableWorkbook.worksheets.getItem("Pivot Summary").getRange("F1:F5").format.columnWidthPx - 88) <= 1);
-  assert.ok(Math.abs(pivotTableWorkbook.worksheets.getItem("Pivot Summary").getRange("G1:G5").format.columnWidthPx - 76) <= 1);
+  assert.ok(Math.abs(pivotTableWorkbook.worksheets.getItem("Pivot Summary").getRange("A1:A6").format.columnWidthPx - 70) <= 1);
+  assert.ok(Math.abs(pivotTableWorkbook.worksheets.getItem("Pivot Summary").getRange("B1:B6").format.columnWidthPx - 66) <= 1);
+  assert.ok(Math.abs(pivotTableWorkbook.worksheets.getItem("Pivot Summary").getRange("C1:F6").format.columnWidthPx - 48) <= 1);
+  assert.ok(Math.abs(pivotTableWorkbook.worksheets.getItem("Pivot Summary").getRange("G1:G6").format.columnWidthPx - 88) <= 1);
+  assert.ok(Math.abs(pivotTableWorkbook.worksheets.getItem("Pivot Summary").getRange("H1:H6").format.columnWidthPx - 76) <= 1);
   assert.deepEqual(pivotTableWorkbook.worksheets.getItem("Pivot Summary").pivotTables.items[0].computedValues(), [
-    ["Region", "Direct — Revenue", "Direct — Units", "Partner — Revenue", "Partner — Units", "Grand Total — Revenue", "Grand Total — Units"],
-    ["East", 120, 12, 80, 8, 200, 20],
-    ["West", 150, 15, 90, 9, 240, 24],
-    ["Grand Total", 270, 27, 170, 17, 440, 44],
+    ["Region", "Channel", "Alpha — Revenue", "Alpha — Units", "Beta — Revenue", "Beta — Units", "Grand Total — Revenue", "Grand Total — Units"],
+    ["East", "Direct", 70, 7, 50, 5, 120, 12],
+    ["East", "Partner", 45, 4, 35, 4, 80, 8],
+    ["West", "Direct", 90, 9, 60, 6, 150, 15],
+    ["West", "Partner", 55, 5, 35, 4, 90, 9],
+    ["Grand Total", "", 260, 25, 180, 19, 440, 44],
   ]);
   assert.deepEqual(pivotTableWorkbook.worksheets.getItem("Pivot Summary").pivotTables.items[0].filters, [
     { field: "Region", exclude: ["North"] },
@@ -276,8 +279,9 @@ try {
       { field: "Revenue", summarizeBy: "sum", name: "Revenue" },
       { field: "Units", summarizeBy: "sum", name: "Units" },
     ]);
+    assert.deepEqual(libreOfficePivot.rowFields, ["Region", "Channel"]);
     assert.deepEqual(libreOfficePivot.filters, [{ field: "Region", exclude: ["North"] }]);
-    assert.deepEqual(libreOfficePivot.computedValues().at(-1), ["Grand Total", 270, 27, 170, 17, 440, 44]);
+    assert.deepEqual(libreOfficePivot.computedValues().at(-1), ["Grand Total", "", 260, 25, 180, 19, 440, 44]);
     const libreOfficeZip = await JSZip.loadAsync(libreOfficeBytes);
     const libreOfficePivotPart = Object.keys(libreOfficeZip.files).find((name) => /pivotTables\/pivotTable.*\.xml$/i.test(name));
     const preservedLibreOffice = await SpreadsheetFile.exportXlsx(libreOfficeWorkbook, { recalculate: false });

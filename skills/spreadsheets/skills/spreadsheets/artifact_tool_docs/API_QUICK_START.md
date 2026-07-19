@@ -369,10 +369,10 @@ a separate sheet when possible.
 ```js
 const pivot = summary.pivotTables.add({
   name: "Revenue and units by region",
-  sourceRange: "Data!A1:D100",
+  sourceRange: "Data!A1:E100",
   targetRange: "A1",
-  rowFields: ["Region"],
-  columnFields: ["Channel"],
+  rowFields: ["Region", "Channel"],
+  columnFields: ["Product"],
   valueFields: [
     { field: "Revenue", summarizeBy: "sum", name: "Revenue" },
     { field: "Units", summarizeBy: "sum", name: "Units" },
@@ -383,10 +383,10 @@ const pivot = summary.pivotTables.add({
 });
 ```
 
-- Native source-free authoring currently requires exactly one row field, zero or one column field, and 1 through 32 `sum`, `count`, `average`, `min`, or `max` value fields. Multiple values use the canonical SpreadsheetML `x=-2` data-layout axis.
+- Native source-free authoring currently accepts 1 through 8 tabular row fields without automatic subtotals, zero or one column field, and 1 through 32 `sum`, `count`, `average`, `min`, or `max` value fields. Multiple values use the canonical SpreadsheetML `x=-2` data-layout axis.
 - `targetRange` may be the top-left anchor or the exact cached-output rectangle. Empty target cells may be styled before export; an existing value or formula in the output rectangle is rejected as a collision.
 - Verify `pivot.computedValues()` against source totals, inspect `kind: "pivotTable"`, render the summary, then export and import again.
-- Recognized imported native PivotTables are inspectable but their config, source values, cached output, and package topology are read-only in this profile. Grouping, calculated fields, filters, multiple row/column axes, more than 32 values, and source-bound additions fail closed rather than becoming a lossy worksheet reconstruction.
+- Recognized imported native PivotTables are inspectable but their config, source values, cached output, and package topology are read-only in this profile. Exact item filters on native axes are supported; grouping, calculated/date/condition filters, more than 8 row fields, multiple column fields, compact/subtotal-bearing multi-row graphs, more than 32 values, and source-bound additions fail closed rather than becoming a lossy worksheet reconstruction.
 - Read `features/pivot-tables.md` and run `examples/openchestnut-pivot-table-workflow.mjs` for the complete Agent workflow.
 
 ### Images

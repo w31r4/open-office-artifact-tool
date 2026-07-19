@@ -72,6 +72,48 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### XLSX bounded multi-row PivotTables
+
+On 2026-07-19, the Spreadsheet facade, OpenChestnut codec, Help catalog, and
+runnable Spreadsheet Skill expanded native Pivot authoring from one row field
+to 1 through 8 ordered row fields. The bounded profile is deliberately tabular:
+every row field has a distinct cached-output column, automatic subtotals are
+disabled, `location@firstDataCol` records the row-axis width, and authored
+`rowItems` contain complete uncompressed cache-index tuples. Zero or one column
+field, 1 through 32 values, exact filters on any configured axis, grand totals,
+and saved-cache policy continue to compose with that hierarchy.
+
+Import accepts the same bounded tabular/no-subtotal graph when a compatible
+host omits the optional `rowItems`/`colItems` materialized caches. It preserves
+recognized Pivot/cache parts byte for byte and binds ordered axes, filters,
+source data, cached output, and topology as read-only. A duplicate/out-of-range
+axis, more than 8 row fields, a second ordinary column field, or a compact or
+subtotal-bearing multi-row graph remains opaque/source-bound or fails closed;
+none is flattened into the tabular model.
+
+The shipped workflow now exercises two row fields, one column field, two value
+fields, and an exact region filter with independently checked totals. Bundled
+LibreOfficeDev 26.8 rendered and resaved both sheets. An Ubuntu 24.04 amd64
+LibreOffice 24.2.7 resave normalized the native display range and omitted the
+optional axis caches, then OpenChestnut recovered `Region -> Channel`, Product,
+the filter, and the `440 / 44` grand totals and preserved that host graph. An
+independently generated LibreOffice 24.2 DataPilot oracle confirmed the same
+ordered `rowFields`, `firstDataCol`, and optional-cache structure. Open XML SDK
+Office 2021 validation passes the authored complete-tuple graph.
+
+The complete local gate passed `npm test`, `npm run docs:api`,
+`npm run proto:check`, `npm run test:pack`, serial
+`npm run verify:open-chestnut-build`, OpenChestnut `283/283`, and OfficeBridge
+`5/5`. Two clean WASM builds reproduced all 39 audited package-layer files and
+the same manifest-bound 38-file, 14,635,200-byte runtime. The production
+clean-install tarball contains 452 files at 9,536,999 compressed bytes and
+24,094,029 unpacked bytes; the repository-only canonical template library
+remains excluded. The specialist Python PDF provider test remained
+contract-only because no explicit `OPEN_OFFICE_PDF_PROVIDER_PYTHON` was
+configured; core MuPDF.js, Playwright/Chromium, LibreOffice/Poppler, canonical
+template rendering, and all other npm gates ran locally. No publish or tag
+operation was attempted.
+
 ### XLSX exact native Pivot item filters
 
 On 2026-07-19, the Spreadsheet model, additive protocol-2 wire, generated

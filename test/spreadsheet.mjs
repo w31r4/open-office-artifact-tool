@@ -691,13 +691,48 @@ await assert.rejects(
   () => SpreadsheetFile.exportXlsx(editedPivotOutput),
   (error) => error?.code === "unsupported_spreadsheet_pivot_edit" && /cached output.*read-only/i.test(error.message),
 );
-const unsupportedPivotWorkbook = Workbook.create();
-const unsupportedPivotSheet = unsupportedPivotWorkbook.worksheets.add("Data");
-unsupportedPivotSheet.getRange("A1:C3").values = [["Region", "Product", "Sales"], ["East", "A", 10], ["West", "B", 20]];
-unsupportedPivotSheet.pivotTables.add({ sourceRange: "A1:C3", targetRange: "E1", rowFields: ["Region", "Product"], valueFields: [{ field: "Sales" }] });
+const multiRowPivotWorkbook = Workbook.create();
+const multiRowPivotSheet = multiRowPivotWorkbook.worksheets.add("Data");
+multiRowPivotSheet.getRange("A1:C3").values = [["Region", "Product", "Sales"], ["East", "A", 10], ["West", "B", 20]];
+const multiRowPivot = multiRowPivotSheet.pivotTables.add({
+  name: "Sales by region and product",
+  sourceRange: "A1:C3",
+  targetRange: "E1",
+  rowFields: ["Region", "Product"],
+  valueFields: [{ field: "Sales", name: "Sales" }],
+  columnGrandTotals: true,
+});
+assert.deepEqual(multiRowPivot.computedValues(), [
+  ["Region", "Product", "Sales"],
+  ["East", "A", 10],
+  ["West", "B", 20],
+  ["Grand Total", "", 30],
+]);
+const multiRowPivotXlsx = await SpreadsheetFile.exportXlsx(multiRowPivotWorkbook);
+const multiRowPivotZip = await JSZip.loadAsync(new Uint8Array(await multiRowPivotXlsx.arrayBuffer()));
+const multiRowPivotPart = Object.keys(multiRowPivotZip.files).find((name) => /xl\/pivotTables\/pivotTable.*\.xml$/i.test(name));
+const multiRowPivotXml = await multiRowPivotZip.file(multiRowPivotPart).async("text");
+assert.match(multiRowPivotXml, /location ref="E1:G4"[^>]*firstDataCol="2"/);
+assert.match(multiRowPivotXml, /rowFields count="2">[\s\S]*field x="0"[\s\S]*field x="1"/);
+assert.match(multiRowPivotXml, /pivotField[^>]*axis="axisRow"[^>]*compact="0"[^>]*defaultSubtotal="0"/);
+const importedMultiRowPivotWorkbook = await SpreadsheetFile.importXlsx(multiRowPivotXlsx);
+const importedMultiRowPivot = importedMultiRowPivotWorkbook.worksheets.getItem("Data").pivotTables.items[0];
+assert.deepEqual(importedMultiRowPivot.rowFields, ["Region", "Product"]);
+assert.deepEqual(importedMultiRowPivot.computedValues(), multiRowPivot.computedValues());
+
+const overBudgetRowPivotWorkbook = Workbook.create();
+const overBudgetRowPivotSheet = overBudgetRowPivotWorkbook.worksheets.add("Data");
+const overBudgetRowHeaders = [...Array.from({ length: 9 }, (_, index) => `Axis ${index + 1}`), "Sales"];
+overBudgetRowPivotSheet.getRange("A1:J2").values = [overBudgetRowHeaders, [...Array.from({ length: 9 }, (_, index) => `Value ${index + 1}`), 10]];
+overBudgetRowPivotSheet.pivotTables.add({
+  sourceRange: "A1:J2",
+  targetRange: "L1",
+  rowFields: overBudgetRowHeaders.slice(0, 9),
+  valueFields: [{ field: "Sales" }],
+});
 await assert.rejects(
-  () => SpreadsheetFile.exportXlsx(unsupportedPivotWorkbook),
-  (error) => error?.code === "unsupported_spreadsheet_pivot_profile" && /exactly one row field/i.test(error.message),
+  () => SpreadsheetFile.exportXlsx(overBudgetRowPivotWorkbook),
+  (error) => error?.code === "unsupported_spreadsheet_pivot_profile" && /1 through 8 row fields/i.test(error.message),
 );
 const overBudgetPivotWorkbook = Workbook.create();
 const overBudgetPivotSheet = overBudgetPivotWorkbook.worksheets.add("Data");

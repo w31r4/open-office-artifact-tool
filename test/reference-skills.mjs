@@ -440,8 +440,9 @@ try {
   const pivotTableRoundTrip = await SpreadsheetFile.importXlsx(await FileBlob.load(pivotTablePath));
   const pivotTable = pivotTableRoundTrip.worksheets.getItem("Pivot Summary").pivotTables.items[0];
   assert.equal(pivotTable.name, "Revenue and units by region");
+  assert.deepEqual(pivotTable.rowFields, ["Region", "Channel"]);
   assert.deepEqual(pivotTable.filters, [{ field: "Region", exclude: ["North"] }]);
-  assert.deepEqual(pivotTable.computedValues().at(-1), ["Grand Total", 270, 27, 170, 17, 440, 44]);
+  assert.deepEqual(pivotTable.computedValues().at(-1), ["Grand Total", "", 260, 25, 180, 19, 440, 44]);
 
   const { createFinancialReturnsWorkbook } = await import(
     "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-financial-returns-workflow.mjs"
