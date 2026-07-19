@@ -383,7 +383,9 @@ The transaction supports the same canonical leaves used by the bounded clone
 profile, including recognized literal-data charts whose unique ChartParts have
 no child/external/hyperlink/data relationship, eligible top-level OLE frames
 whose uniquely inbound internal XLSX package has no child graph and whose
-preview is one internal ImagePart, and straight/elbow connectors whose present endpoints
+preview is one internal ImagePart, canonical top-level SmartArt frames whose
+single `dgm:relIds` root binds exactly four relationship-free data/layout/
+quick-style/colors parts, and straight/elbow connectors whose present endpoints
 resolve inside the source slide tree and canonical run-level clicks to an
 external absolute URI, a retained internal SlidePart, or a supported relative
 slide action, plus a relationship-free custom-show action whose native ID must
@@ -392,7 +394,8 @@ relationships, calls `slide.duplicate()`, requires the clone immediately after
 the original, and accepts only the necessary presentation/content-type
 topology changes plus one new SlidePart, its relationship part, and one
 distinct byte-copied ChartPart for every accepted chart plus one distinct
-byte-copied EmbeddedPackagePart for every accepted OLE workbook. The clone
+byte-copied EmbeddedPackagePart for every accepted OLE workbook plus four
+distinct typed diagram parts for every accepted SmartArt frame. The clone
 retains the package relationship ID but shares only the immutable preview
 ImagePart. Every
 retained source part, including the source SlidePart, must remain
@@ -403,14 +406,20 @@ zero relationship edge, unchanged show identity/membership, and that the clone
 was not silently added to the route. It then
 reimports and verifies source/clone structural semantics, connector/link
 bindings, chart semantics, independent OLE workbook bindings, and model-render
-equivalence. The latter ignores
+equivalence. SmartArt validation additionally requires the same slide-local
+relationship IDs/types, standard content types, byte-identical payload hashes,
+and disjoint source/clone part paths after reimport. The latter ignores
 fresh `data-*-id` inspection locators, so it does not claim lexical equality
 for the new clone XML. Ambiguous names, notes/comments, unsupported graph
 leaves, formula/external-data/embedded-workbook/connected/orphan charts,
 shared/external/non-XLSX/nested/relationship-bearing/replacement-pending OLE
-graphs, shape-level/hover/unknown/orphan links, malformed/relationship-bearing/dangling
+graphs, nested/incomplete/mistyped/external/relationship-bearing SmartArt,
+shape-level/hover/unknown/orphan links, malformed/relationship-bearing/dangling
 custom-show actions, unresolved endpoints, and unexpected package changes reject without
 promoting an output or audit.
+
+See `api/references/smartart-clone.spec.md` for the exact diagram-part roles,
+failure modes, and audit evidence.
 
 For the one opt-in closed-leaf profile, set `allowClosedLeaves: true` explicitly:
 

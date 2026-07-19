@@ -95,9 +95,10 @@ evidence, see
 `p:sldId` reference to one source part. It is available only on an **original
 imported** source slide with an unchanged body of canonical simple shapes,
 canonical inline fixed-grid tables, recognized closed literal-data charts,
-eligible top-level embedded-XLSX OLE frames, canonical embedded rectangular images,
+eligible top-level embedded-XLSX OLE frames, canonical top-level four-part
+SmartArt frames, canonical embedded rectangular images,
 bounded straight/elbow connectors, plus recursively canonical groups whose
-descendants contain only the non-OLE leaf kinds, exactly one internal
+descendants contain only the non-native-graph leaf kinds, exactly one internal
 `SlidePart -> SlideLayoutPart` relationship, and image relationships bound only
 by those pictures. Canonical run-level clicks may use an external absolute URI,
 an internal jump to a retained SlidePart, or one of the five supported relative
@@ -119,7 +120,12 @@ closed, uniquely inbound internal XLSX `EmbeddedPackagePart` plus one preview
 ImagePart. Export byte-copies the workbook to a distinct clone-local package
 under the same slide-local relationship ID and shares the immutable preview;
 after reimport, `replaceEmbeddedWorkbook(...)` on the clone cannot affect the
-origin. It intentionally
+origin. Every accepted SmartArt frame has exactly one `dgm:relIds` root whose
+`dm/lo/qs/cs` relationships bind closed diagram data, layout, quick-style, and
+colors parts. Export preserves those relationship IDs and byte-copies all four
+parts into distinct clone-local typed parts; after reimport the paths are
+disjoint and per-role hashes match. SmartArt remains source-bound/read-only.
+It intentionally
 reuses the verified layout and immutable ImageParts through fresh clone-local
 image relationships, shares the verified NotesMaster and CommentAuthorsPart,
 copies accepted NotesSlide and SlideComments XML byte-for-byte, and points only
@@ -135,13 +141,17 @@ read-only.
 Source-free slides, already-cloned slides, rich or connected comments,
 formula/external-data/embedded-workbook/connected/orphan charts,
 shared/external/non-XLSX/nested/relationship-bearing/replacement-pending OLE graphs,
+nested/incomplete/mistyped/external/relationship-bearing SmartArt graphs,
 shape-level/hover/unknown/orphan hyperlinks, external/data relationships,
 external/unbound/irregular images, unsupported connectors,
-non-shape/table/closed-chart/image/connector/recursive-group elements, pending-clone renames, layout/background changes, note
+non-shape/table/closed-chart/closed-SmartArt/image/connector/recursive-group elements, pending-clone renames, layout/background changes, note
 or comment mutation before the boundary, immediate clone edits, and all broader
 relationship graphs fail closed. Adding imported slides still fails closed. A
 template-derived deck still needs a broader explicit OPC graph-clone transaction
 rather than this bounded leaf operation.
+
+For the exact four-part diagram contract and Agent audit fields, see
+[`smartart-clone.spec.md`](./smartart-clone.spec.md).
 
 ## Layouts And Placeholders
 

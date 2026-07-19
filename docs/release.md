@@ -1928,6 +1928,54 @@ reported `publishReady: true` with network checks intentionally skipped. Hosted
 results are recorded after the candidate commit. No publish or tag operation
 was attempted.
 
+### PPTX closed SmartArt slide cloning
+
+On 2026-07-20, the strict imported `slide.duplicate()` profile gained a
+canonical SmartArt leaf. Each accepted unchanged top-level `p:graphicFrame`
+must contain exactly one `dgm:relIds` binding whose `dm`, `lo`, `qs`, and `cs`
+attributes uniquely consume the standard internal diagram-data, layout,
+quick-style, and colors relationships. All four typed parts must be non-empty,
+use the exact standard content types, and have no child, external, hyperlink,
+or data relationship. Nested, incomplete, mistyped, duplicated-binding,
+relationship-bearing, or otherwise connected diagram graphs fail closed before
+package mutation.
+
+OpenChestnut preflight accounts for every diagram relationship on the source
+slide, retains the source SlidePart and its relationship part byte-for-byte,
+then creates four clone-owned Open XML SDK typed parts under the same
+slide-local relationship IDs. The SDK currently allocates those parts under
+`ppt/graphics/{data,layout,quickStyle,colors}N.xml`. Post-write validation
+requires distinct clone paths, the expected relationship and content types,
+and bytes identical to the corresponding source parts. This is independent
+package identity for safe slide cloning, not SmartArt authoring or semantic
+editing: after reimport, each SmartArt object remains opaque,
+source-bound/read-only.
+
+The shipped Presentation workflow independently inventories the raw OPC
+relationships, content types, part hashes, and child graphs before invoking the
+public duplicate API. It records all four source/output/reimport bindings in a
+byte-bound audit, proves the clone paths are distinct while their bytes remain
+equal, and refuses to publish output or audit on a connected graph. Its real
+native fixture passes second import plus LibreOffice/Poppler rendering with
+pixel-identical source and clone slides. The focused C# and JavaScript suites
+also cover source immutability and fail-closed connected/non-graphic-frame
+inputs. SmartArt is not yet a separate autonomous PromptBench case.
+
+The complete local gate passed `npm test` including Playwright,
+LibreOffice/Poppler, qpdf, and the 20-template corpus; `npm run docs:api`, `npm
+run proto:check`, `npm run test:pack`, OfficeBridge `5/5`, and OpenChestnut
+`293/293` also passed. Deterministic OpenChestnut verification reproduced 39
+audited files and the same manifest-bound 38-file, 14,696,640-byte runtime. The
+production tarball contains 464 files, is 8,998,618 bytes compressed and
+23,671,680 bytes unpacked, leaving 708,320 bytes below the unchanged
+24,380,000-byte ceiling. The qpdf real-provider lane passed; dedicated
+real-provider environments for pikepdf, pyHanko, veraPDF, and OCRmyPDF were not
+configured, so their contract/adversarial gates passed while their
+environment-gated real repeats remained skipped. The offline metadata check
+reported `publishReady: true` with network checks intentionally skipped. Hosted
+results are recorded after the candidate commit. No publish or tag operation
+was attempted.
+
 `npm run release:check` passes the source, documentation, package, license, JavaScript, and .NET gates. Its only remaining blocker is unavailable npm authentication. No `npm publish` or tag/release operation has been performed.
 
 ## Publishing

@@ -30,6 +30,12 @@ internal sealed class PptxNativeObjectCatalog
         "http://purl.oclc.org/ooxml/drawingml/diagram",
     };
 
+    internal static bool IsRelationshipNamespace(string namespaceUri) =>
+        RelationshipNamespaces.Contains(namespaceUri);
+
+    internal static bool IsDiagramRelationshipIds(OpenXmlElement element) =>
+        element.LocalName == "relIds" && DiagramNamespaces.Contains(element.NamespaceUri);
+
     private readonly EffectiveCodecLimits _limits;
     private readonly Dictionary<string, OpaqueOpcPart> _parts;
     private readonly Dictionary<string, OpaqueOpcRelationship> _relationships;

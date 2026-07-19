@@ -194,9 +194,10 @@ other connected graph fail closed. `slide.duplicate()` is a separate, much
 narrower operation: only an original imported slide whose unchanged graph has
 canonical shapes, canonical inline fixed-grid tables, recognized closed
 literal-data charts, eligible top-level embedded-XLSX OLE frames, canonical
+top-level four-part SmartArt frames, canonical
 embedded rectangular images, bounded canonical
 straight/elbow connectors, plus recursively canonical groups whose descendants
-contain only the non-OLE leaf kinds, exactly one
+contain only the non-native-graph leaf kinds, exactly one
 internal layout relationship, picture-bound image relationships, canonical
 run-level click hyperlinks, and optionally
 one closed `NotesSlide -> NotesMaster` / back-to-source-slide leaf plus one
@@ -230,6 +231,18 @@ preview. After export/reimport, `nativeObject.replaceEmbeddedWorkbook(...)` on
 the clone changes only that independent package. Shared/external/non-XLSX,
 nested, relationship-bearing, ambiguous, or replacement-pending OLE graphs fail
 closed.
+Each accepted SmartArt frame must be a top-level `p:graphicFrame` with exactly
+one `dgm:relIds` root. Its `r:dm`, `r:lo`, `r:qs`, and `r:cs` bindings must
+resolve to internal diagram data, layout, quick-style, and colors parts with
+the exact standard content types and no child/external/hyperlink/data graph.
+Export byte-copies all four into distinct typed clone-local parts under the
+same slide-local relationship IDs. Reimport proves disjoint paths and equal
+hashes. This prevents source/clone coupling but does not make SmartArt
+semantically editable: both objects remain source-bound and read-only.
+Nested, incomplete, duplicated, mistyped, external, relationship-bearing, or
+otherwise noncanonical diagram graphs fail closed.
+Read `artifact_tool/api/references/smartart-clone.spec.md` before accepting a
+slide whose duplicate profile includes SmartArt.
 Accepted run links are limited to modeled external absolute URIs, internal jumps
 to a retained SlidePart, `nextSlide`/`previousSlide`/`firstSlide`/`lastSlide`/
 `endShow` actions, and relationship-free custom-show actions whose native ID
@@ -263,11 +276,13 @@ distinct clone-local target, and byte-identical chart payload. It proves the
 same independent-copy contract for every eligible embedded-XLSX OLE workbook,
 including one unique inbound package edge, empty child graph, exact content
 type/hash, same slide-local `r:id`, distinct clone package, and shared preview
-ImagePart. It proves the
+ImagePart. It also proves every accepted SmartArt frame's exact four
+`dm/lo/qs/cs` roles, relationship IDs/types, standard content types, empty
+child graphs, distinct clone-local targets, and byte-identical XML. It proves the
 source part order, inserts one adjacent clone, keeps every retained source part
 byte-identical except the required package topology records, allows only the
 new SlidePart, its relationship part, the exact cloned ChartParts, and the exact
-cloned XLSX package parts, checks
+cloned XLSX package and SmartArt parts, checks
 exact source/clone external and internal run-link relationship IDs and targets
 with no orphan edge, then reimports and compares the source/clone semantics and
 model render. Model
@@ -275,7 +290,9 @@ SVG comparison ignores fresh `data-*-id` locator attributes only; it is not a
 claim that the clone XML is lexically byte-identical. Missing/duplicate names,
 notes/comments, unresolved connector endpoints, unsupported link markup,
 nonliteral or connected charts, other graph leaves, or any unexpected package
-part fail closed without promoting output or audit.
+part fail closed without promoting output or audit. In particular, a nested,
+incomplete, duplicated-relationship binding, mistyped, external, or connected SmartArt
+graph is rejected before `slide.duplicate()` or publication.
 
 The default is intentionally bare. To copy only the separately supported,
 already-closed relationship leaves, opt in explicitly rather than relying on a

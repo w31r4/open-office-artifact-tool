@@ -656,6 +656,106 @@ try {
   assert.equal(oleEditedSourceWorkbook.worksheets.getItem("Embedded").getRange("A1").values[0][0], "Original clone workbook");
   assert.equal(oleEditedCloneWorkbook.worksheets.getItem("Embedded").getRange("A1").values[0][0], "Independent clone workbook");
 
+  const smartArtDuplicateInput = path.join(duplicateDir, "smartart-source.pptx");
+  const smartArtDuplicateOutput = path.join(duplicateDir, "smartart-output.pptx");
+  const smartArtDuplicateAudit = path.join(duplicateDir, "smartart-audit.json");
+  const smartArtFrame = '<p:graphicFrame xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:nvGraphicFramePr><p:cNvPr id="120" name="Closed SmartArt"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="914400" y="1143000"/><a:ext cx="4572000" cy="2286000"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/diagram"><dgm:relIds xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram" r:dm="rIdSkillDiagramData" r:lo="rIdSkillDiagramLayout" r:qs="rIdSkillDiagramStyle" r:cs="rIdSkillDiagramColors"/></a:graphicData></a:graphic></p:graphicFrame>';
+  const smartArtRelationships = '<Relationship Id="rIdSkillDiagramData" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData" Target="../diagrams/skill-data.xml"/><Relationship Id="rIdSkillDiagramLayout" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramLayout" Target="../diagrams/skill-layout.xml"/><Relationship Id="rIdSkillDiagramStyle" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramQuickStyle" Target="../diagrams/skill-style.xml"/><Relationship Id="rIdSkillDiagramColors" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramColors" Target="../diagrams/skill-colors.xml"/>';
+  const smartArtSource = await PresentationFile.patchPptx(oleDuplicateBase, [
+    { path: "ppt/slides/slide1.xml", xml: oleDuplicateSlideXml.replace('name="OLE clone source"', 'name="SmartArt clone source"').replace("</p:spTree>", `${smartArtFrame}</p:spTree>`) },
+    { path: "ppt/slides/_rels/slide1.xml.rels", xml: oleDuplicateRelationships.replace("</Relationships>", `${smartArtRelationships}</Relationships>`) },
+    { path: "ppt/diagrams/skill-data.xml", contentType: "application/vnd.openxmlformats-officedocument.drawingml.diagramData+xml", xml: '<dgm:dataModel xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram"><dgm:ptLst/><dgm:cxnLst/><dgm:bg/><dgm:whole/></dgm:dataModel>' },
+    { path: "ppt/diagrams/skill-layout.xml", contentType: "application/vnd.openxmlformats-officedocument.drawingml.diagramLayout+xml", xml: '<dgm:layoutDef xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram" uniqueId="urn:open-office:skill-layout"><dgm:title val="Skill"/><dgm:desc val="Skill layout"/><dgm:catLst/><dgm:layoutNode name="root"/></dgm:layoutDef>' },
+    { path: "ppt/diagrams/skill-style.xml", contentType: "application/vnd.openxmlformats-officedocument.drawingml.diagramStyle+xml", xml: '<dgm:styleDef xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram" uniqueId="urn:open-office:skill-style"><dgm:title val="Skill"/><dgm:desc val="Skill style"/><dgm:catLst/><dgm:styleLbl name="node0"/></dgm:styleDef>' },
+    { path: "ppt/diagrams/skill-colors.xml", contentType: "application/vnd.openxmlformats-officedocument.drawingml.diagramColors+xml", xml: '<dgm:colorsDef xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram" uniqueId="urn:open-office:skill-colors"><dgm:title val="Skill"/><dgm:desc val="Skill colors"/><dgm:catLst/></dgm:colorsDef>' },
+  ]);
+  await smartArtSource.save(smartArtDuplicateInput);
+  const smartArtSourceBytes = await fs.readFile(smartArtDuplicateInput);
+  const smartArtDuplicateResult = await duplicatePptxSlide({
+    inputPath: smartArtDuplicateInput,
+    outputPath: smartArtDuplicateOutput,
+    auditPath: smartArtDuplicateAudit,
+    expectedName: "SmartArt clone source",
+  });
+  assert.equal(smartArtDuplicateResult.audit.operation.scope, "canonical-inline-leaves-with-closed-smartart-leaves");
+  assert.deepEqual(smartArtDuplicateResult.audit.operation.diagramParts, {
+    count: 1,
+    partCount: 4,
+    sourceParts: [
+      "ppt/diagrams/skill-data.xml",
+      "ppt/diagrams/skill-layout.xml",
+      "ppt/diagrams/skill-style.xml",
+      "ppt/diagrams/skill-colors.xml",
+    ],
+    relationshipIds: [
+      "rIdSkillDiagramData",
+      "rIdSkillDiagramLayout",
+      "rIdSkillDiagramStyle",
+      "rIdSkillDiagramColors",
+    ],
+  });
+  const smartArtPackageAudit = smartArtDuplicateResult.audit.validation.package.diagramParts;
+  assert.equal(smartArtPackageAudit.count, 1);
+  assert.equal(smartArtPackageAudit.partCount, 4);
+  assert.equal(smartArtPackageAudit.independentParts, true);
+  assert.equal(smartArtPackageAudit.allPayloadsByteIdentical, true);
+  assert.equal(smartArtPackageAudit.parts.length, 4);
+  assert.ok(smartArtPackageAudit.parts.every((part) => part.independentPart && part.diagramXmlByteIdentical && part.sourcePart !== part.clonePart));
+  assert.ok(smartArtPackageAudit.parts.every((part) => /^ppt\/graphics\/(?:data|layout|quickStyle|colors)\d+\.xml$/i.test(part.clonePart)));
+  assert.deepEqual(smartArtDuplicateResult.audit.validation.package.newPartPaths, [
+    "ppt/slides/_rels/slide2.xml.rels",
+    ...smartArtPackageAudit.parts.map((part) => part.clonePart),
+    "ppt/slides/slide2.xml",
+  ].sort());
+  assert.equal(smartArtDuplicateResult.audit.validation.reimport.sourceAndCloneDiagramBindingsIndependent, true);
+  assert.deepEqual(await fs.readFile(smartArtDuplicateInput), smartArtSourceBytes);
+  const smartArtRoundTrip = await PresentationFile.importPptx(new FileBlob(await fs.readFile(smartArtDuplicateOutput), {
+    type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    name: "smartart-output.pptx",
+  }));
+  const smartArtSourceObject = itemByName(smartArtRoundTrip.slides.getItem(0).nativeObjects.items, "Closed SmartArt");
+  const smartArtCloneObject = itemByName(smartArtRoundTrip.slides.getItem(1).nativeObjects.items, "Closed SmartArt");
+  assert.equal(smartArtSourceObject.parts.length, 4);
+  assert.equal(smartArtCloneObject.parts.length, 4);
+  assert.equal(smartArtSourceObject.parts.some((part) => smartArtCloneObject.parts.some((clonePart) => clonePart.path === part.path)), false);
+  assert.deepEqual(smartArtSourceObject.parts.map((part) => part.sourceSha256).sort(), smartArtCloneObject.parts.map((part) => part.sourceSha256).sort());
+  const smartArtQa = await verifyPresentationFile(smartArtDuplicateOutput, {
+    outputDir: path.join(duplicateDir, "smartart-render-qa"),
+    nativeRender,
+  });
+  assert.equal(smartArtQa.verify.ok, true);
+  assert.equal(smartArtQa.packageInspect.ok, true);
+  assert.equal(smartArtQa.modelRender.ok, true);
+  if (nativeStatus.available) {
+    assert.equal(smartArtQa.nativeRender.status, "passed");
+    assert.deepEqual(
+      await fs.readFile(smartArtQa.nativeRender.pages[0].path),
+      await fs.readFile(smartArtQa.nativeRender.pages[1].path),
+      "LibreOffice/Poppler must render the source and closed SmartArt clone identically",
+    );
+  }
+
+  const connectedSmartArtInput = path.join(duplicateDir, "connected-smartart-source.pptx");
+  const connectedSmartArtOutput = path.join(duplicateDir, "connected-smartart-output.pptx");
+  const connectedSmartArtAudit = path.join(duplicateDir, "connected-smartart-audit.json");
+  const connectedSmartArtZip = await JSZip.loadAsync(smartArtSourceBytes);
+  connectedSmartArtZip.file(
+    "ppt/diagrams/_rels/skill-data.xml.rels",
+    '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdUnsafeSkillDiagram" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.invalid/smartart" TargetMode="External"/></Relationships>',
+  );
+  await fs.writeFile(connectedSmartArtInput, await connectedSmartArtZip.generateAsync({ type: "nodebuffer" }));
+  await assert.rejects(
+    () => duplicatePptxSlide({
+      inputPath: connectedSmartArtInput,
+      outputPath: connectedSmartArtOutput,
+      auditPath: connectedSmartArtAudit,
+      expectedName: "SmartArt clone source",
+    }),
+    /SmartArt diagramData leaf must not have a child relationship graph/,
+  );
+  assert.equal(await fs.access(connectedSmartArtOutput).then(() => true, () => false), false);
+  assert.equal(await fs.access(connectedSmartArtAudit).then(() => true, () => false), false);
+
   const sharedOleInput = path.join(duplicateDir, "shared-ole-workbook-source.pptx");
   const sharedOleOutput = path.join(duplicateDir, "shared-ole-workbook-output.pptx");
   const sharedOleAudit = path.join(duplicateDir, "shared-ole-workbook-audit.json");
@@ -974,6 +1074,7 @@ try {
   assert.match(skillText, /relationship-free custom-show actions.*stable native show ID.*never inserts the clone into the show's membership/is);
   assert.match(quickStartText, /recognized literal-data charts.*no child\/external\/hyperlink\/data relationship.*distinct byte-copied ChartPart/is);
   assert.match(quickStartText, /eligible top-level OLE frames.*uniquely inbound internal XLSX package.*distinct\s+byte-copied EmbeddedPackagePart.*shares only the immutable preview/is);
+  assert.match(quickStartText, /canonical top-level SmartArt frames.*data\/layout\/\s*quick-style\/colors parts.*four\s+distinct typed diagram parts/is);
   assert.match(quickStartText, /relationship-free custom-show action.*exact native ID\/return policy.*clone.*not silently added to the route/is);
   assert.match(skillText, /NotesSlide.*NotesMaster.*byte-for-byte.*back-reference.*clone/is);
   assert.match(skillText, /SlideCommentsPart.*CommentAuthorsPart.*byte-for-byte/is);
@@ -992,6 +1093,7 @@ try {
   assert.match(slideReferenceText, /canonical inline fixed-grid tables[\s\S]*cannot introduce a fill, link/i);
   assert.match(slideReferenceText, /recognized closed literal-data charts.*numbered\s+`ChartPart`.*no child, external, hyperlink, or data relationship.*distinct clone-local ChartPart/is);
   assert.match(slideReferenceText, /eligible top-level embedded-XLSX OLE frames.*uniquely binds one\s+closed, uniquely inbound internal XLSX.*distinct clone-local package.*replaceEmbeddedWorkbook/is);
+  assert.match(slideReferenceText, /SmartArt frame.*dgm:relIds.*dm\/lo\/qs\/cs.*distinct clone-local typed parts.*source-bound\/read-only/is);
   assert.match(slideReferenceText, /Gradient,\s+pattern, image.*opaque-preserved/is);
   assert.match(slideReferenceText, /p:cSld\/@name.*export\/reimport/is);
   const customShowReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/custom-shows.spec.md", "utf8");
@@ -1015,6 +1117,11 @@ try {
   assert.match(oleWorkbookReferenceText, /shared, external, ambiguous, or non-XLSX/);
   assert.match(oleWorkbookReferenceText, /slide\.duplicate\(\).*distinct clone-local XLSX `EmbeddedPackagePart`.*shares\s+the immutable preview ImagePart.*export has been imported again/is);
   assert.match(oleWorkbookReferenceText, /no lossy reconstruction or silent fallback/i);
+  const smartArtReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/smartart-clone.spec.md", "utf8");
+  assert.match(skillText, /artifact_tool\/api\/references\/smartart-clone\.spec\.md/);
+  assert.match(smartArtReferenceText, /top-level `p:graphicFrame`.*exactly one `dgm:relIds`/is);
+  assert.match(smartArtReferenceText, /four distinct typed diagram parts.*disjoint part paths.*per-role hashes/is);
+  assert.match(smartArtReferenceText, /not SmartArt\s+authoring.*fail closed/is);
   const templateFollowingText = await fs.readFile("skills/presentations/skills/presentations/references/template-following.md", "utf8");
   assert.match(templateFollowingText, /source-preserving reordering.*isolated[\s>]+layout-only.*slide\.delete/is);
   assert.match(templateFollowingText, /broader OPC graph-clone milestone is unavailable/i);

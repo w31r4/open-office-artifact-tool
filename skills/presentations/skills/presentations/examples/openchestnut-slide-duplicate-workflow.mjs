@@ -25,7 +25,18 @@ const SLIDE_JUMP_ACTION = "ppaction://hlinksldjump";
 const CUSTOM_SHOW_ACTION = /^ppaction:\/\/customshow\?id=([0-9]+)(?:&return=(true|false))?$/i;
 const MAX_CLOSED_CHART_PARTS = 256;
 const MAX_CLOSED_OLE_WORKBOOK_PARTS = 64;
+const MAX_CLOSED_DIAGRAM_PARTS = 256;
 const XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const CLOSED_DIAGRAM_PARTS = [
+  { attribute: "dm", suffix: "diagramData", contentType: "application/vnd.openxmlformats-officedocument.drawingml.diagramData+xml" },
+  { attribute: "lo", suffix: "diagramLayout", contentType: "application/vnd.openxmlformats-officedocument.drawingml.diagramLayout+xml" },
+  { attribute: "qs", suffix: "diagramQuickStyle", contentType: "application/vnd.openxmlformats-officedocument.drawingml.diagramStyle+xml" },
+  { attribute: "cs", suffix: "diagramColors", contentType: "application/vnd.openxmlformats-officedocument.drawingml.diagramColors+xml" },
+];
+const OOXML_RELATIONSHIP_NAMESPACES = new Set([
+  "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+  "http://purl.oclc.org/ooxml/officeDocument/relationships",
+]);
 
 function sha256(bytes) {
   return crypto.createHash("sha256").update(bytes).digest("hex");
@@ -596,6 +607,141 @@ async function inspectClosedOleWorkbookParts(zip, slidePart) {
   };
 }
 
+async function inspectClosedDiagramParts(zip, slidePart) {
+  const relationships = await relationshipEntriesForPart(zip, slidePart);
+  const diagramRelationships = relationships.filter((entry) =>
+    CLOSED_DIAGRAM_PARTS.some((definition) => relationshipTypeMatches(entry, definition.suffix)));
+  if (diagramRelationships.length > MAX_CLOSED_DIAGRAM_PARTS) {
+    throw new Error("SmartArt duplication exceeds the " + MAX_CLOSED_DIAGRAM_PARTS + "-part budget.");
+  }
+  const relationshipById = new Map(diagramRelationships.map((entry) => [entry.id, entry]));
+  const slideXml = Buffer.from(await requiredZipBytes(zip, slidePart)).toString("utf8");
+  const relationshipPrefixes = new Set([...slideXml.matchAll(/\bxmlns:([A-Za-z_][\w.-]*)\s*=\s*(["'])([^"']+)\2/gi)]
+    .filter((match) => OOXML_RELATIONSHIP_NAMESPACES.has(match[3]))
+    .map((match) => match[1]));
+  const frames = [...slideXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?graphicFrame\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?graphicFrame\s*>/gi)]
+    .filter((match) => /<(?:[A-Za-z_][\w.-]*:)?relIds\b/i.test(match[0]) && /drawingml\/2006\/diagram/i.test(match[0]));
+  const relationshipRootCount = [...slideXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?relIds\b/gi)].length;
+  if (frames.length !== relationshipRootCount || diagramRelationships.length !== frames.length * CLOSED_DIAGRAM_PARTS.length) {
+    throw new Error("SmartArt duplication found an orphan, nested, or non-canonical four-part diagram graph in " + slidePart + ".");
+  }
+
+  const usedRelationshipIds = new Set();
+  const diagrams = [];
+  for (const frameMatch of frames) {
+    const frame = frameMatch[0];
+    const groupPrefix = slideXml.slice(0, frameMatch.index);
+    const groupDepth = [...groupPrefix.matchAll(/<(\/)?(?:[A-Za-z_][\w.-]*:)?grpSp\b[^>]*>/gi)]
+      .reduce((depth, match) => depth + (match[1] ? -1 : /\/\s*>$/.test(match[0]) ? 0 : 1), 0);
+    if (groupDepth !== 0) throw new Error("SmartArt duplication accepts only a top-level graphicFrame.");
+    const relationshipRoots = [...frame.matchAll(/<(?:[A-Za-z_][\w.-]*:)?relIds\b[^>]*\/?\s*>/gi)];
+    const relationshipAttributes = [...frame.matchAll(/\b([A-Za-z_][\w.-]*):([A-Za-z_][\w.-]*)\s*=\s*(["'])[^"']*\3/gi)]
+      .filter((match) => relationshipPrefixes.has(match[1]));
+    if (relationshipRoots.length !== 1 || relationshipAttributes.length !== CLOSED_DIAGRAM_PARTS.length) {
+      throw new Error("SmartArt frame must contain exactly one dgm:relIds root and its four relationship bindings.");
+    }
+    const attributes = xmlAttributes(relationshipRoots[0][0]);
+    const roots = [];
+    for (const definition of CLOSED_DIAGRAM_PARTS) {
+      const matchingAttributes = Object.entries(attributes).filter(([name]) => {
+        const [prefix, localName] = name.split(":");
+        return localName === definition.attribute && relationshipPrefixes.has(prefix);
+      });
+      const relationshipId = matchingAttributes.length === 1 ? matchingAttributes[0][1] : null;
+      const relationship = relationshipById.get(relationshipId);
+      if (!relationshipId || !relationship || !relationshipTypeMatches(relationship, definition.suffix) ||
+          !usedRelationshipIds.add(relationshipId)) {
+        throw new Error("SmartArt frame has a missing, mistyped, duplicate, or shared r:" + definition.attribute + " relationship.");
+      }
+      requireInternalRelationship(relationship, "SmartArt " + definition.suffix + " leaf");
+      if (!/^ppt\/(?:graphics|diagrams|slides\/diagrams)\/[^/]+\.xml$/i.test(relationship.targetPart)) {
+        throw new Error("SmartArt " + definition.suffix + " must target one XML part under a canonical PPTX diagram directory.");
+      }
+      if (await contentTypeForPart(zip, relationship.targetPart) !== definition.contentType) {
+        throw new Error("SmartArt " + definition.suffix + " has an unexpected content type.");
+      }
+      await assertNoChildRelationshipGraph(zip, relationship.targetPart, "SmartArt " + definition.suffix + " leaf");
+      const bytes = await requiredZipBytes(zip, relationship.targetPart);
+      if (!bytes.length) throw new Error("SmartArt " + definition.suffix + " part is empty.");
+      roots.push({
+        attribute: definition.attribute,
+        relationship,
+        part: relationship.targetPart,
+        contentType: definition.contentType,
+        sha256: sha256(bytes),
+        bytes: bytes.length,
+      });
+    }
+    diagrams.push({ roots });
+  }
+  if (usedRelationshipIds.size !== relationshipById.size) {
+    throw new Error("SmartArt duplication found an orphan diagram relationship in " + slidePart + ".");
+  }
+  return {
+    count: diagrams.length,
+    partCount: usedRelationshipIds.size,
+    diagrams,
+    fingerprint: JSON.stringify(diagrams.map((diagram) => diagram.roots.map((root) => ({
+      attribute: root.attribute,
+      id: root.relationship.id,
+      type: root.relationship.type,
+      sha256: root.sha256,
+    })))),
+  };
+}
+
+function modelDiagramBindings(slide) {
+  return (slide.nativeObjects?.items || [])
+    .filter((object) => object.nativeKind === "diagram")
+    .map((object) => {
+      if (!/^<(?:[A-Za-z_][\w.-]*:)?graphicFrame(?:\s|>)/.test(String(object.rawXml || "").trimStart())) {
+        throw new Error("Selected slide contains a SmartArt object outside the top-level graphicFrame clone profile.");
+      }
+      const references = new Map((object.relationshipReferences || [])
+        .filter((reference) => OOXML_RELATIONSHIP_NAMESPACES.has(String(reference.namespaceUri || "")))
+        .map((reference) => [String(reference.attribute || "").split(":").at(-1), reference.id]));
+      const roots = new Map((object.rootRelationships || []).map((relationship) => [relationship.id, relationship]));
+      const parts = new Map((object.parts || []).map((part) => [part.path, part]));
+      if (references.size !== 4 || roots.size !== 4 || parts.size !== 4) {
+        throw new Error("Selected slide contains a SmartArt object outside the closed four-part model profile.");
+      }
+      return CLOSED_DIAGRAM_PARTS.map((definition) => {
+        const relationshipId = references.get(definition.attribute);
+        const relationship = roots.get(relationshipId);
+        const partPath = relationship && !String(relationship.targetMode || "").toLowerCase().includes("external")
+          ? resolveRelationshipTargetFromPart(object.sourcePart, relationship.target)
+          : null;
+        const part = partPath ? parts.get(partPath) : null;
+        if (!relationshipId || !relationship || !relationship.type.endsWith("/" + definition.suffix) ||
+            !part || part.contentType !== definition.contentType || part.relationships.length ||
+            !/^[0-9a-f]{64}$/i.test(part.sourceSha256 || "")) {
+          throw new Error("Selected slide SmartArt model does not match its closed " + definition.attribute + " binding.");
+        }
+        return { relationshipId, partPath, contentType: part.contentType, sourceSha256: part.sourceSha256 };
+      });
+    });
+}
+
+function assertModelDiagramBindings(bindings, inspected) {
+  if (bindings.length !== inspected.count) throw new Error("Imported model and independent OPC inspection disagree on SmartArt count.");
+  const inspectedByKey = new Map(inspected.diagrams.map((diagram) => [
+    diagram.roots.map((root) => root.relationship.id).sort().join("\0"),
+    diagram,
+  ]));
+  for (const binding of bindings) {
+    const key = binding.map((root) => root.relationshipId).sort().join("\0");
+    const diagram = inspectedByKey.get(key);
+    if (!diagram) throw new Error("Imported model and independent OPC inspection disagree on a SmartArt relationship set.");
+    const byRelationshipId = new Map(diagram.roots.map((root) => [root.relationship.id, root]));
+    for (const root of binding) {
+      const inspectedRoot = byRelationshipId.get(root.relationshipId);
+      if (!inspectedRoot || root.partPath !== inspectedRoot.part || root.contentType !== inspectedRoot.contentType || root.sourceSha256 !== inspectedRoot.sha256) {
+        throw new Error("Imported model and independent OPC inspection disagree on a SmartArt part binding.");
+      }
+    }
+  }
+}
+
 function closedLeafSemanticSnapshot(slide) {
   return JSON.stringify({
     speakerNotes: typeof slide.speakerNotes?.text === "string" ? slide.speakerNotes.text : null,
@@ -858,6 +1004,52 @@ async function assertClosedOleWorkbookClonePackage(sourceZip, outputZip, sourceO
   };
 }
 
+async function assertClosedDiagramClonePackage(sourceZip, outputZip, sourceDiagrams, cloneDiagrams) {
+  if (sourceDiagrams.count !== cloneDiagrams.count || sourceDiagrams.partCount !== cloneDiagrams.partCount) {
+    throw new Error("PPTX duplicate changed the number of closed SmartArt frames or diagram parts.");
+  }
+  const cloneRootsByRelationshipId = new Map(cloneDiagrams.diagrams.flatMap((diagram) =>
+    diagram.roots.map((root) => [root.relationship.id, root])));
+  const validation = [];
+  for (const sourceDiagram of sourceDiagrams.diagrams) {
+    for (const sourceRoot of sourceDiagram.roots) {
+      const cloneRoot = cloneRootsByRelationshipId.get(sourceRoot.relationship.id);
+      if (!cloneRoot || cloneRoot.attribute !== sourceRoot.attribute || cloneRoot.relationship.type !== sourceRoot.relationship.type ||
+          cloneRoot.contentType !== sourceRoot.contentType) {
+        throw new Error("PPTX duplicate changed a SmartArt relationship identity, role, type, or content type.");
+      }
+      if (sourceRoot.part === cloneRoot.part || sourceZip.file(cloneRoot.part)) {
+        throw new Error("PPTX duplicate must allocate a distinct part for every cloned SmartArt root.");
+      }
+      const [sourceBytes, cloneBytes] = await Promise.all([
+        requiredZipBytes(sourceZip, sourceRoot.part),
+        requiredZipBytes(outputZip, cloneRoot.part),
+      ]);
+      if (!Buffer.from(sourceBytes).equals(Buffer.from(cloneBytes)) || sourceRoot.sha256 !== cloneRoot.sha256) {
+        throw new Error("PPTX duplicate changed SmartArt XML instead of byte-copying the accepted closed part.");
+      }
+      validation.push({
+        attribute: sourceRoot.attribute,
+        relationshipId: sourceRoot.relationship.id,
+        relationshipType: sourceRoot.relationship.type,
+        sourcePart: sourceRoot.part,
+        clonePart: cloneRoot.part,
+        contentType: sourceRoot.contentType,
+        sourceSha256: sourceRoot.sha256,
+        diagramXmlByteIdentical: true,
+        independentPart: true,
+      });
+    }
+  }
+  return {
+    count: sourceDiagrams.count,
+    partCount: validation.length,
+    independentParts: true,
+    allPayloadsByteIdentical: true,
+    parts: validation,
+  };
+}
+
 async function assertDuplicatePackageScope(sourceBytes, outputBytes, sourceIndex, { allowClosedLeaves }) {
   const [sourceZip, outputZip] = await Promise.all([JSZip.loadAsync(sourceBytes), JSZip.loadAsync(outputBytes)]);
   const sourceParts = packagePartPaths(sourceZip);
@@ -901,16 +1093,22 @@ async function assertDuplicatePackageScope(sourceBytes, outputBytes, sourceIndex
     inspectClosedOleWorkbookParts(sourceZip, sourcePart),
     inspectClosedOleWorkbookParts(outputZip, clonePart),
   ]);
+  const [sourceDiagrams, cloneDiagrams] = await Promise.all([
+    inspectClosedDiagramParts(sourceZip, sourcePart),
+    inspectClosedDiagramParts(outputZip, clonePart),
+  ]);
   if (sourceRunHyperlinks.fingerprint !== cloneRunHyperlinks.fingerprint) {
     throw new Error("PPTX duplicate changed the canonical run-hyperlink XML/relationship graph.");
   }
   const closedLeaves = await assertClosedLeafClonePackage(sourceZip, outputZip, sourceLeaves, cloneLeaves, sourcePart, clonePart);
   const chartParts = await assertClosedChartClonePackage(sourceZip, outputZip, sourceCharts, cloneCharts);
   const oleWorkbookParts = await assertClosedOleWorkbookClonePackage(sourceZip, outputZip, sourceOleWorkbooks, cloneOleWorkbooks);
+  const diagramParts = await assertClosedDiagramClonePackage(sourceZip, outputZip, sourceDiagrams, cloneDiagrams);
   const newParts = outputParts.filter((partPath) => !sourceZip.file(partPath));
   const expectedNewParts = [clonePart, relationshipPartPath(clonePart)];
   expectedNewParts.push(...cloneCharts.charts.map((chart) => chart.part));
   expectedNewParts.push(...cloneOleWorkbooks.workbooks.map((workbook) => workbook.part));
+  expectedNewParts.push(...cloneDiagrams.diagrams.flatMap((diagram) => diagram.roots.map((root) => root.part)));
   if (cloneLeaves.notes) expectedNewParts.push(cloneLeaves.notes.part, cloneLeaves.notes.relationshipPart);
   if (cloneLeaves.comments) expectedNewParts.push(cloneLeaves.comments.part);
   expectedNewParts.sort();
@@ -944,7 +1142,11 @@ async function assertDuplicatePackageScope(sourceBytes, outputBytes, sourceIndex
     outputPartCount: outputParts.length,
     newPartPaths: newParts,
     retainedSourcePartsByteIdentical: true,
-    profile: sourceOleWorkbooks.count
+    profile: sourceDiagrams.count
+      ? sourceCharts.count || sourceOleWorkbooks.count || sourceLeaves.notes || sourceLeaves.comments
+        ? "canonical-inline-leaves-with-closed-smartart-and-other-relationship-leaves"
+        : "canonical-inline-leaves-with-closed-smartart-leaves"
+      : sourceOleWorkbooks.count
       ? sourceCharts.count || sourceLeaves.notes || sourceLeaves.comments
         ? "canonical-inline-leaves-with-closed-relationship-chart-or-ole-leaves"
         : "canonical-inline-leaves-with-closed-ole-workbook-leaves"
@@ -968,6 +1170,7 @@ async function assertDuplicatePackageScope(sourceBytes, outputBytes, sourceIndex
     },
     chartParts,
     oleWorkbookParts,
+    diagramParts,
     closedLeaves,
   };
 }
@@ -995,8 +1198,10 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
   const sourceLeaves = await inspectClosedLeaves(sourceZip, sourcePart, { allowClosedLeaves });
   const sourceCharts = await inspectClosedChartParts(sourceZip, sourcePart);
   const sourceOleWorkbooks = await inspectClosedOleWorkbookParts(sourceZip, sourcePart);
+  const sourceDiagrams = await inspectClosedDiagramParts(sourceZip, sourcePart);
   const sourceRunHyperlinks = await inspectCanonicalRunHyperlinks(sourceZip, sourcePart, sourceCustomShows);
   assertModelOleWorkbookBindings(modelOleWorkbookBindings(target), sourceOleWorkbooks);
+  assertModelDiagramBindings(modelDiagramBindings(target), sourceDiagrams);
   if (slideNameFromXml(Buffer.from(await requiredZipBytes(sourceZip, sourcePart)).toString("utf8"), sourcePart) !== sourceName) {
     throw new Error("The selected model slide does not match its source SlidePart p:cSld/@name.");
   }
@@ -1034,12 +1239,16 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
     const retained = reimported.slides.items[sourceIndex];
     const roundTripClone = reimported.slides.items[sourceIndex + 1];
     const outputZip = await JSZip.loadAsync(output);
-    const [retainedOleWorkbooks, roundTripCloneOleWorkbooks] = await Promise.all([
+    const [retainedOleWorkbooks, roundTripCloneOleWorkbooks, retainedDiagrams, roundTripCloneDiagrams] = await Promise.all([
       inspectClosedOleWorkbookParts(outputZip, packageScope.sourcePart),
       inspectClosedOleWorkbookParts(outputZip, packageScope.clonePart),
+      inspectClosedDiagramParts(outputZip, packageScope.sourcePart),
+      inspectClosedDiagramParts(outputZip, packageScope.clonePart),
     ]);
     assertModelOleWorkbookBindings(modelOleWorkbookBindings(retained), retainedOleWorkbooks);
     assertModelOleWorkbookBindings(modelOleWorkbookBindings(roundTripClone), roundTripCloneOleWorkbooks);
+    assertModelDiagramBindings(modelDiagramBindings(retained), retainedDiagrams);
+    assertModelDiagramBindings(modelDiagramBindings(roundTripClone), roundTripCloneDiagrams);
     const outputSlidePartById = new Map(reimported.slides.items.map((slide, index) => [slide.id, packageScope.outputSlideParts[index]]));
     if (canonicalCloneSnapshot(retained, outputSlidePartById) !== sourceSemantic || canonicalCloneSnapshot(roundTripClone, outputSlidePartById) !== sourceSemantic) {
       throw new Error("PPTX duplicate did not preserve source and clone semantic structure after reimport.");
@@ -1099,6 +1308,12 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
           relationshipIds: sourceOleWorkbooks.workbooks.map((workbook) => workbook.relationship.id),
           previewParts: sourceOleWorkbooks.workbooks.map((workbook) => workbook.previewPart),
         },
+        diagramParts: {
+          count: sourceDiagrams.count,
+          partCount: sourceDiagrams.partCount,
+          sourceParts: sourceDiagrams.diagrams.flatMap((diagram) => diagram.roots.map((root) => root.part)),
+          relationshipIds: sourceDiagrams.diagrams.flatMap((diagram) => diagram.roots.map((root) => root.relationship.id)),
+        },
       },
       warnings: [],
       validation: {
@@ -1115,6 +1330,7 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
           customShows: packageScope.customShows,
           chartParts: packageScope.chartParts,
           oleWorkbookParts: packageScope.oleWorkbookParts,
+          diagramParts: packageScope.diagramParts,
           closedLeaves: packageScope.closedLeaves,
         },
         reimport: {
@@ -1123,6 +1339,7 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
           sourceAndCloneSemanticsEqual: true,
           sourceAndCloneClosedLeavesEqual: true,
           sourceAndCloneOleWorkbookBindingsIndependent: packageScope.oleWorkbookParts.independentParts,
+          sourceAndCloneDiagramBindingsIndependent: packageScope.diagramParts.independentParts,
           customShowMembershipRetained: true,
           sourceAndCloneNames: [retained.name, roundTripClone.name],
         },
@@ -1182,6 +1399,7 @@ if (entry === import.meta.url) {
     customShowCount: result.audit.operation.customShows.count,
     chartPartCount: result.audit.operation.chartParts.count,
     oleWorkbookPartCount: result.audit.operation.oleWorkbookParts.count,
+    smartArtPartCount: result.audit.operation.diagramParts.partCount,
     closedLeaves: result.audit.operation.closedLeaves,
   }));
 }

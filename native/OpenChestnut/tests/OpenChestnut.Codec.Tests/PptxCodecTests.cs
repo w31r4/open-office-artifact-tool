@@ -2597,6 +2597,67 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void ClosedSmartArtCloneCopiesFourIndependentDiagramParts()
+    {
+        var source = AddCloneableDiagramGraph(Invoke(ExportRequest()).File.ToByteArray());
+        var imported = Import(source);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var sourceDiagram = Assert.Single(imported.Artifact.Presentation.Slides[0].Elements, element =>
+            element.ContentCase == PresentationElement.ContentOneofCase.Opaque && element.Opaque.NativeKind == "diagram");
+        Assert.Equal(4, sourceDiagram.Opaque.RelationshipReferences.Count);
+        Assert.Equal(4, sourceDiagram.Opaque.PreservedPartPaths.Count);
+
+        AddPendingClone(imported.Artifact.Presentation, 0, "presentation/clone/closed-smartart");
+        var cloned = Export(imported.Artifact);
+        Assert.True(cloned.Ok, Diagnostics(cloned));
+        var clonedBytes = cloned.File.ToByteArray();
+        Assert.Equal(ZipBytes(source, "ppt/slides/slide1.xml"), ZipBytes(clonedBytes, "ppt/slides/slide1.xml"));
+        Assert.Equal(ZipBytes(source, "ppt/slides/_rels/slide1.xml.rels"), ZipBytes(clonedBytes, "ppt/slides/_rels/slide1.xml.rels"));
+
+        using (var stream = new MemoryStream(clonedBytes))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var slides = OrderedSlides(package);
+            Assert.Equal(2, slides.Length);
+            var sourceParts = slides[0].Parts
+                .Where(pair => pair.OpenXmlPart is DiagramDataPart or DiagramLayoutDefinitionPart or DiagramStylePart or DiagramColorsPart)
+                .ToDictionary(pair => pair.RelationshipId, pair => pair.OpenXmlPart, StringComparer.Ordinal);
+            var cloneParts = slides[1].Parts
+                .Where(pair => pair.OpenXmlPart is DiagramDataPart or DiagramLayoutDefinitionPart or DiagramStylePart or DiagramColorsPart)
+                .ToDictionary(pair => pair.RelationshipId, pair => pair.OpenXmlPart, StringComparer.Ordinal);
+            Assert.Equal(4, sourceParts.Count);
+            Assert.Equal(sourceParts.Keys.Order(StringComparer.Ordinal), cloneParts.Keys.Order(StringComparer.Ordinal));
+            foreach (var (relationshipId, sourcePart) in sourceParts)
+            {
+                var clonePart = cloneParts[relationshipId];
+                Assert.Equal(sourcePart.GetType(), clonePart.GetType());
+                Assert.NotEqual(sourcePart.Uri, clonePart.Uri);
+                Assert.Equal(
+                    ZipBytes(clonedBytes, sourcePart.Uri.OriginalString.TrimStart('/')),
+                    ZipBytes(clonedBytes, clonePart.Uri.OriginalString.TrimStart('/')));
+            }
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var roundTrip = Import(clonedBytes);
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        var roundTripSource = Assert.Single(roundTrip.Artifact.Presentation.Slides[0].Elements, element => element.Opaque?.NativeKind == "diagram");
+        var roundTripClone = Assert.Single(roundTrip.Artifact.Presentation.Slides[1].Elements, element => element.Opaque?.NativeKind == "diagram");
+        Assert.Empty(roundTripSource.Opaque.PreservedPartPaths.Intersect(roundTripClone.Opaque.PreservedPartPaths, StringComparer.OrdinalIgnoreCase));
+
+        var connected = AddZipText(
+            source,
+            "ppt/diagrams/_rels/clone-data.xml.rels",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rIdUnsafeDiagramLink\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.invalid/smartart\" TargetMode=\"External\"/></Relationships>");
+        var connectedImport = Import(connected);
+        Assert.True(connectedImport.Ok, Diagnostics(connectedImport));
+        AddPendingClone(connectedImport.Artifact.Presentation, 0, "presentation/clone/connected-smartart");
+        var connectedRejected = Export(connectedImport.Artifact);
+        Assert.False(connectedRejected.Ok);
+        Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(connectedRejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void NativeObjectGraphRejectsMissingRelationshipsPartsAndExcessiveTraversal()
     {
         var source = AddNativeObjectGraph(Invoke(ExportRequest()).File.ToByteArray());
@@ -5508,6 +5569,27 @@ public sealed class PptxCodecTests
             ReplaceZipText(archive, "[Content_Types].xml", xml => xml.Replace("</Types>", $"{contentTypes}</Types>", StringComparison.Ordinal));
             AddZipBytes(archive, "ppt/embeddings/clone-source-workbook.xlsx", CreateEmbeddedWorkbook("Original clone-safe workbook"));
             AddZipBytes(archive, "ppt/media/clone-ole-preview.png", Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="));
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddCloneableDiagramGraph(byte[] bytes)
+    {
+        const string diagram = "<p:graphicFrame xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><p:nvGraphicFramePr><p:cNvPr id=\"30\" name=\"Clone-safe SmartArt\"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp=\"1\"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x=\"914400\" y=\"1828800\"/><a:ext cx=\"5486400\" cy=\"2743200\"/></p:xfrm><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/diagram\"><dgm:relIds xmlns:dgm=\"http://schemas.openxmlformats.org/drawingml/2006/diagram\" r:dm=\"rIdCloneDiagramData\" r:lo=\"rIdCloneDiagramLayout\" r:qs=\"rIdCloneDiagramStyle\" r:cs=\"rIdCloneDiagramColors\"/></a:graphicData></a:graphic></p:graphicFrame>";
+        const string relationships = "<Relationship Id=\"rIdCloneDiagramData\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData\" Target=\"../diagrams/clone-data.xml\"/><Relationship Id=\"rIdCloneDiagramLayout\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramLayout\" Target=\"../diagrams/clone-layout.xml\"/><Relationship Id=\"rIdCloneDiagramStyle\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramQuickStyle\" Target=\"../diagrams/clone-style.xml\"/><Relationship Id=\"rIdCloneDiagramColors\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramColors\" Target=\"../diagrams/clone-colors.xml\"/>";
+        const string contentTypes = "<Override PartName=\"/ppt/diagrams/clone-data.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.drawingml.diagramData+xml\"/><Override PartName=\"/ppt/diagrams/clone-layout.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.drawingml.diagramLayout+xml\"/><Override PartName=\"/ppt/diagrams/clone-style.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.drawingml.diagramStyle+xml\"/><Override PartName=\"/ppt/diagrams/clone-colors.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.drawingml.diagramColors+xml\"/>";
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Update, leaveOpen: true))
+        {
+            ReplaceZipText(archive, "ppt/slides/slide1.xml", xml => xml.Replace("</p:spTree>", $"{diagram}</p:spTree>", StringComparison.Ordinal));
+            ReplaceZipText(archive, "ppt/slides/_rels/slide1.xml.rels", xml => xml.Replace("</Relationships>", $"{relationships}</Relationships>", StringComparison.Ordinal));
+            ReplaceZipText(archive, "[Content_Types].xml", xml => xml.Replace("</Types>", $"{contentTypes}</Types>", StringComparison.Ordinal));
+            AddZipText(archive, "ppt/diagrams/clone-data.xml", "<dgm:dataModel xmlns:dgm=\"http://schemas.openxmlformats.org/drawingml/2006/diagram\"><dgm:ptLst/><dgm:cxnLst/><dgm:bg/><dgm:whole/></dgm:dataModel>");
+            AddZipText(archive, "ppt/diagrams/clone-layout.xml", "<dgm:layoutDef xmlns:dgm=\"http://schemas.openxmlformats.org/drawingml/2006/diagram\" uniqueId=\"urn:open-office:clone-layout\"><dgm:title val=\"Clone\"/><dgm:desc val=\"Clone layout\"/><dgm:catLst/><dgm:layoutNode name=\"root\"/></dgm:layoutDef>");
+            AddZipText(archive, "ppt/diagrams/clone-style.xml", "<dgm:styleDef xmlns:dgm=\"http://schemas.openxmlformats.org/drawingml/2006/diagram\" uniqueId=\"urn:open-office:clone-style\"><dgm:title val=\"Clone\"/><dgm:desc val=\"Clone style\"/><dgm:catLst/><dgm:styleLbl name=\"node0\"/></dgm:styleDef>");
+            AddZipText(archive, "ppt/diagrams/clone-colors.xml", "<dgm:colorsDef xmlns:dgm=\"http://schemas.openxmlformats.org/drawingml/2006/diagram\" uniqueId=\"urn:open-office:clone-colors\"><dgm:title val=\"Clone\"/><dgm:desc val=\"Clone colors\"/><dgm:catLst/></dgm:colorsDef>");
         }
         return stream.ToArray();
     }

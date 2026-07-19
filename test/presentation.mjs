@@ -1863,6 +1863,128 @@ await assert.rejects(
   "a cloned OLE payload may be edited only after export and reimport establish independent source identity",
 );
 
+// A canonical top-level SmartArt frame owns exactly the four standard
+// relationship-free DrawingML diagram roots. The bounded clone copies all
+// four into distinct parts so a later source-bound edit cannot couple the
+// origin and clone through shared diagram state.
+const smartArtFrame = '<p:graphicFrame xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:nvGraphicFramePr><p:cNvPr id="120" name="Clone-safe SmartArt"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="914400" y="1828800"/><a:ext cx="5486400" cy="2743200"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/diagram"><dgm:relIds xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram" r:dm="rIdAgentDiagramData" r:lo="rIdAgentDiagramLayout" r:qs="rIdAgentDiagramStyle" r:cs="rIdAgentDiagramColors"/></a:graphicData></a:graphic></p:graphicFrame>';
+const smartArtRelationships = '<Relationship Id="rIdAgentDiagramData" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData" Target="../diagrams/agent-data.xml"/><Relationship Id="rIdAgentDiagramLayout" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramLayout" Target="../diagrams/agent-layout.xml"/><Relationship Id="rIdAgentDiagramStyle" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramQuickStyle" Target="../diagrams/agent-style.xml"/><Relationship Id="rIdAgentDiagramColors" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramColors" Target="../diagrams/agent-colors.xml"/>';
+const smartArtParts = [
+  ["ppt/diagrams/agent-data.xml", "application/vnd.openxmlformats-officedocument.drawingml.diagramData+xml", '<dgm:dataModel xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram"><dgm:ptLst/><dgm:cxnLst/><dgm:bg/><dgm:whole/></dgm:dataModel>'],
+  ["ppt/diagrams/agent-layout.xml", "application/vnd.openxmlformats-officedocument.drawingml.diagramLayout+xml", '<dgm:layoutDef xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram" uniqueId="urn:open-office:agent-layout"><dgm:title val="Agent"/><dgm:desc val="Agent layout"/><dgm:catLst/><dgm:layoutNode name="root"/></dgm:layoutDef>'],
+  ["ppt/diagrams/agent-style.xml", "application/vnd.openxmlformats-officedocument.drawingml.diagramStyle+xml", '<dgm:styleDef xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram" uniqueId="urn:open-office:agent-style"><dgm:title val="Agent"/><dgm:desc val="Agent style"/><dgm:catLst/><dgm:styleLbl name="node0"/></dgm:styleDef>'],
+  ["ppt/diagrams/agent-colors.xml", "application/vnd.openxmlformats-officedocument.drawingml.diagramColors+xml", '<dgm:colorsDef xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram" uniqueId="urn:open-office:agent-colors"><dgm:title val="Agent"/><dgm:desc val="Agent colors"/><dgm:catLst/></dgm:colorsDef>'],
+];
+const smartArtSource = await PresentationFile.patchPptx(cloneSourcePptx, [
+  { path: "ppt/slides/slide1.xml", xml: oleCloneBaseSlideXml.replace("</p:spTree>", `${smartArtFrame}</p:spTree>`) },
+  { path: "ppt/slides/_rels/slide1.xml.rels", xml: oleCloneBaseRelationships.replace("</Relationships>", `${smartArtRelationships}</Relationships>`) },
+  ...smartArtParts.map(([partPath, contentType, xml]) => ({ path: partPath, contentType, xml })),
+]);
+const smartArtSourceSnapshot = Uint8Array.from(smartArtSource.bytes);
+const smartArtImported = await PresentationFile.importPptx(smartArtSource);
+const smartArtOriginSlide = smartArtImported.slides.getItem(0);
+const smartArtOrigin = itemByName(smartArtOriginSlide.nativeObjects.items, "Clone-safe SmartArt");
+assert.equal(smartArtOrigin.nativeKind, "diagram");
+assert.equal(smartArtOrigin.parts.length, 4);
+assert.ok(smartArtOrigin.parts.every((part) => part.relationships.length === 0));
+const smartArtPendingSlide = smartArtOriginSlide.duplicate();
+const smartArtPending = itemByName(smartArtPendingSlide.nativeObjects.items, "Clone-safe SmartArt");
+assert.notEqual(smartArtPending, smartArtOrigin);
+assert.notEqual(smartArtPending.id, smartArtOrigin.id);
+assert.deepEqual(smartArtPending.parts.map((part) => part.path), smartArtOrigin.parts.map((part) => part.path));
+
+const smartArtExport = await PresentationFile.exportPptx(smartArtImported);
+assert.deepEqual(smartArtSource.bytes, smartArtSourceSnapshot);
+const smartArtSourceZip = await JSZip.loadAsync(smartArtSource.bytes);
+const smartArtOutputZip = await JSZip.loadAsync(smartArtExport.bytes);
+assert.deepEqual(
+  await smartArtOutputZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  await smartArtSourceZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  "SmartArt cloning must retain the origin SlidePart byte-for-byte",
+);
+assert.deepEqual(
+  await smartArtOutputZip.file("ppt/slides/_rels/slide1.xml.rels").async("uint8array"),
+  await smartArtSourceZip.file("ppt/slides/_rels/slide1.xml.rels").async("uint8array"),
+  "SmartArt cloning must retain the origin relationship part byte-for-byte",
+);
+const smartArtSourceRels = await smartArtOutputZip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
+const smartArtCloneRels = await smartArtOutputZip.file("ppt/slides/_rels/slide3.xml.rels").async("text");
+const smartArtTypeSuffixes = ["diagramData", "diagramLayout", "diagramQuickStyle", "diagramColors"];
+const smartArtClonePartPaths = [];
+for (const typeSuffix of smartArtTypeSuffixes) {
+  const sourceRelationship = relationshipForType(smartArtSourceRels, typeSuffix);
+  const cloneRelationship = relationshipForType(smartArtCloneRels, typeSuffix);
+  const sourcePath = resolveSlideRelationshipTarget(sourceRelationship.target);
+  const clonePath = resolveSlideRelationshipTarget(cloneRelationship.target);
+  assert.equal(cloneRelationship.id, sourceRelationship.id);
+  assert.notEqual(clonePath, sourcePath);
+  assert.deepEqual(
+    await smartArtOutputZip.file(clonePath).async("uint8array"),
+    await smartArtSourceZip.file(sourcePath).async("uint8array"),
+    `SmartArt cloning must byte-copy the closed ${typeSuffix} part`,
+  );
+  smartArtClonePartPaths.push(clonePath);
+}
+assert.equal(new Set(smartArtClonePartPaths).size, 4);
+
+const smartArtRoundTrip = await PresentationFile.importPptx(smartArtExport);
+const smartArtRoundTripOrigin = itemByName(smartArtRoundTrip.slides.getItem(0).nativeObjects.items, "Clone-safe SmartArt");
+const smartArtRoundTripClone = itemByName(smartArtRoundTrip.slides.getItem(1).nativeObjects.items, "Clone-safe SmartArt");
+assert.equal(smartArtRoundTripOrigin.parts.length, 4);
+assert.equal(smartArtRoundTripClone.parts.length, 4);
+assert.equal(
+  smartArtRoundTripOrigin.parts.some((part) => smartArtRoundTripClone.parts.some((clonePart) => clonePart.path === part.path)),
+  false,
+  "reimported SmartArt origin and clone must not share any mutable diagram part",
+);
+assert.deepEqual(
+  smartArtRoundTripOrigin.parts.map((part) => part.sourceSha256).sort(),
+  smartArtRoundTripClone.parts.map((part) => part.sourceSha256).sort(),
+);
+
+const connectedSmartArtSource = await PresentationFile.patchPptx(smartArtSource, [{
+  path: "ppt/diagrams/_rels/agent-data.xml.rels",
+  xml: '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdUnsafeSmartArtLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.invalid/smartart" TargetMode="External"/></Relationships>',
+}]);
+const connectedSmartArt = await PresentationFile.importPptx(connectedSmartArtSource);
+const connectedSmartArtSlideCount = connectedSmartArt.slides.items.length;
+assert.throws(
+  () => connectedSmartArt.slides.getItem(0).duplicate(),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+  "a relationship-bearing SmartArt part must fail before mutating the model",
+);
+assert.equal(connectedSmartArt.slides.items.length, connectedSmartArtSlideCount);
+
+const nestedSmartArt = await PresentationFile.importPptx(smartArtSource);
+const nestedSmartArtObject = itemByName(nestedSmartArt.slides.getItem(0).nativeObjects.items, "Clone-safe SmartArt");
+nestedSmartArtObject.rawXml = nestedSmartArtObject.rawXml.replace(/^<p:graphicFrame/, "<p:grpSp");
+const nestedSmartArtSlideCount = nestedSmartArt.slides.items.length;
+assert.throws(
+  () => nestedSmartArt.slides.getItem(0).duplicate(),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+  "a SmartArt graph whose source binding is not a top-level graphicFrame must fail before mutating the model",
+);
+assert.equal(nestedSmartArt.slides.items.length, nestedSmartArtSlideCount);
+
+const foreignRelationshipNamespaceSource = await PresentationFile.patchPptx(smartArtSource, [{
+  path: "ppt/slides/slide1.xml",
+  xml: (await smartArtSourceZip.file("ppt/slides/slide1.xml").async("text")).replace(
+    smartArtFrame,
+    smartArtFrame.replace(
+      "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
+      "https://example.invalid/relationships",
+    ),
+  ),
+}]);
+const foreignRelationshipNamespaceSmartArt = await PresentationFile.importPptx(foreignRelationshipNamespaceSource);
+const foreignNamespaceSlideCount = foreignRelationshipNamespaceSmartArt.slides.items.length;
+assert.throws(
+  () => foreignRelationshipNamespaceSmartArt.slides.getItem(0).duplicate(),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+  "a relationship-like but non-OOXML SmartArt namespace must fail before mutating the model",
+);
+assert.equal(foreignRelationshipNamespaceSmartArt.slides.items.length, foreignNamespaceSlideCount);
+
 const masterPath = "ppt/slideMasters/slideMaster1.xml";
 const layoutPath = "ppt/slideLayouts/slideLayout1.xml";
 const masterXml = await firstZip.file(masterPath).async("text");
