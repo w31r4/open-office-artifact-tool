@@ -1177,6 +1177,15 @@ message PresentationArtifact {
   // Imported presentation-wide view metadata. Editor visibility is local JS
   // state and is never written back as visible by the canonical codec.
   PresentationViewProperties view_properties = 8;
+  // Ordered native p:custShowLst semantics. Source-free authoring owns the
+  // complete list. Imported canonical lists keep their show count/order and
+  // native IDs fixed while allowing names and ordered slide membership to
+  // change through a hash-bound source profile.
+  repeated PresentationCustomShowArtifact custom_shows = 9;
+  // True only when an imported p:custShowLst exists outside the bounded
+  // canonical profile. Its exact XML remains in the validated source package;
+  // no semantic custom_shows are exposed and any attempted replacement fails.
+  bool custom_shows_opaque = 10;
 }
 
 message PresentationViewProperties {
@@ -2598,4 +2607,21 @@ message SpreadsheetPivotItemFilterArtifact {
   string field = 1;
   SpreadsheetPivotItemFilterMode mode = 2;
   repeated SpreadsheetPivotItemArtifact items = 3;
+}
+
+// Appended to preserve every pre-existing generated descriptor index while
+// PresentationArtifact references this additive protocol-2 custom-show graph.
+message PresentationCustomShowArtifact {
+  string id = 1;
+  string name = 2;
+  uint32 native_id = 3;
+  repeated string slide_ids = 4;
+  PresentationCustomShowSourceBinding source = 5;
+}
+
+message PresentationCustomShowSourceBinding {
+  uint32 ordinal = 1;
+  string show_xml_sha256 = 2;
+  string semantic_sha256 = 3;
+  bool editable = 4;
 }

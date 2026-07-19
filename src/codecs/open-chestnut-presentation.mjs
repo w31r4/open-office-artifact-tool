@@ -12,6 +12,7 @@ import {
   SpreadsheetChartType,
 } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
 import { normalizePresentationRunLink } from "../presentation/ooxml-hyperlinks.mjs";
+import { planPresentationCustomShows } from "../presentation/ooxml-custom-shows.mjs";
 import { deterministicPresentationGuid } from "../presentation/ooxml-modern-comments.mjs";
 import { normalizePresentationThemeConfig } from "../presentation/ooxml-theme.mjs";
 import { normalizePresentationTextBodyProperties } from "../presentation/text-body-properties.mjs";
@@ -1892,7 +1893,39 @@ function presentationAdvancedSnapshot(presentation) {
   return JSON.stringify({
     theme: JSON.parse(presentationThemeSnapshot(presentation.theme)),
     commentFormat: presentation.commentFormat,
-    customShows: presentation.customShows.items.map((show) => show.toJSON()),
+  });
+}
+
+function presentationCustomShows(presentation, state) {
+  const entries = planPresentationCustomShows(presentation).entries;
+  if (!state) return entries.map((show) => ({
+    id: show.id,
+    name: show.name,
+    nativeId: show.nativeId,
+    slideIds: [...show.slideIds],
+  }));
+  if (state.customShowsOpaque) {
+    if (entries.length) {
+      throw new OpenChestnutCodecError("The imported PPTX contains an opaque custom-show graph; it can only be preserved unchanged.", [], { code: "unsupported_presentation_custom_show_edit" });
+    }
+    return [];
+  }
+  const sourceEntries = state.customShows || [];
+  if (entries.length !== sourceEntries.length || entries.some((show, index) => show !== sourceEntries[index].model)) {
+    throw new OpenChestnutCodecError("Imported PPTX custom shows keep their original count and order; adding, removing, or reordering shows is unsupported.", [], { code: "presentation_custom_show_topology_changed" });
+  }
+  return entries.map((show, index) => {
+    const sourceEntry = sourceEntries[index];
+    if (show.id !== sourceEntry.wire.id || show.nativeId !== sourceEntry.wire.nativeId) {
+      throw new OpenChestnutCodecError(`Imported PPTX custom show ${index + 1} cannot change its facade or native identity.`, [], { code: "presentation_custom_show_topology_changed" });
+    }
+    return {
+      id: sourceEntry.wire.id,
+      name: show.name,
+      nativeId: show.nativeId,
+      slideIds: [...show.slideIds],
+      source: sourceEntry.wire.source,
+    };
   });
 }
 
@@ -1909,7 +1942,6 @@ function unsupportedPresentationFeatures(presentation) {
   if (presentation.masters?.items?.length !== 1) unsupported.push("multiple slide masters");
   const master = presentation.master;
   if (master?.theme) unsupported.push("master theme override");
-  if (presentation.customShows?.items?.length) unsupported.push("custom shows");
   if (!["legacy", "modern"].includes(presentation.commentFormat)) unsupported.push(`unknown comment format ${presentation.commentFormat}`);
   for (const slide of presentation.slides?.items || []) {
     const prefix = `slide ${slide.index + 1}`;
@@ -1981,13 +2013,14 @@ export function presentationEnvelope(presentation, protocolVersion) {
     }
   } else {
     if (presentationAdvancedSnapshot(presentation) !== state.advancedSnapshot) {
-      throw new OpenChestnutCodecError("Imported presentation theme, comment wire family, and custom shows are source-bound and read-only in OpenChestnut 0.2.", [], { code: "unsupported_presentation_edit" });
+      throw new OpenChestnutCodecError("Imported presentation theme and comment wire family are source-bound and read-only in OpenChestnut 0.2.", [], { code: "unsupported_presentation_edit" });
     }
     if (Number(state.slideWidthEmu) !== Math.round(Number(presentation.slideSize.width) * EMU_PER_PIXEL) || Number(state.slideHeightEmu) !== Math.round(Number(presentation.slideSize.height) * EMU_PER_PIXEL)) {
       throw new OpenChestnutCodecError("Source-preserving PPTX export does not yet support changing slide dimensions.", [], { code: "unsupported_presentation_edit" });
     }
   }
 
+  const customShows = presentationCustomShows(presentation, state);
   const assetCatalog = createPresentationAssetCatalog();
   const masters = presentationMasters(presentation, state, assetCatalog);
   const layouts = presentationLayouts(presentation, state, assetCatalog);
@@ -2084,6 +2117,8 @@ export function presentationEnvelope(presentation, protocolVersion) {
         slides,
         masters,
         layouts,
+        customShows,
+        ...(state?.customShowsOpaque ? { customShowsOpaque: true } : {}),
         ...(state?.viewProperties ? { viewProperties: state.viewProperties } : {}),
       },
     },
@@ -2951,6 +2986,19 @@ export async function presentationFromEnvelope(envelope) {
       entries,
     });
   }
+  if (source.customShowsOpaque && source.customShows?.length) {
+    throw new OpenChestnutCodecError("OpenChestnut returned both opaque and semantic presentation custom shows.", [], { code: "invalid_presentation_artifact" });
+  }
+  const customShowStates = [];
+  for (const sourceShow of source.customShows || []) {
+    const model = presentation.customShows.add({
+      id: sourceShow.id,
+      name: sourceShow.name,
+      nativeId: Number(sourceShow.nativeId),
+      slideIds: [...sourceShow.slideIds],
+    });
+    customShowStates.push({ wire: sourceShow, model });
+  }
   const presentationState = {
     source: envelope.source,
     opaqueOpc: envelope.opaqueOpc,
@@ -2959,6 +3007,8 @@ export async function presentationFromEnvelope(envelope) {
     slideWidthEmu: source.slideWidthEmu,
     slideHeightEmu: source.slideHeightEmu,
     viewProperties: source.viewProperties,
+    customShowsOpaque: Boolean(source.customShowsOpaque),
+    customShows: customShowStates,
     advancedSnapshot: presentationAdvancedSnapshot(presentation),
     masters: masterStates,
     layouts: layoutStates,

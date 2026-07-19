@@ -101,6 +101,21 @@ repeat/mutated clone, immediate clone edit, rich/connected comments, and every
 unsupported-connector/formula-or-external-data-or-embedded-workbook-or-connected-or-orphan-chart/OLE/shape-level-or-unmodeled-hyperlink/custom-show/section/extension, external-or-irregular-image,
 or otherwise connected clone/delete graph fails closed.
 
+## Custom Shows
+
+```ts
+const show = presentation.customShows.add("Board route", [slide1, slide3]);
+const byName = presentation.customShows.getItem("Board route");
+show.name = "Executive route";
+show.setSlides([slide3, slide1]);
+```
+
+Source-free export writes a native `p:custShowLst`. A canonical imported list
+permits only existing-show name and ordered membership edits; count/order,
+facade IDs, and native IDs remain source-bound. See
+[`custom-shows.spec.md`](./custom-shows.spec.md) for budgets, opaque graphs, and
+the audited workflow.
+
 ## Discover And Edit
 
 ```ts
@@ -113,7 +128,12 @@ const snapshot = await presentation.inspect({
 const target = presentation.resolve(anchorId);
 ```
 
-`inspect` returns stable anchor ids for slides, shapes, images, tables, charts, text ranges, speaker notes, and comment threads. `resolve` maps a returned anchor id to the matching facade. Layout records expose `layoutId` for search and comparison; pass only `pr/`, `sl/`, `sh/`, `im/`, `tb/`, `ch/`, `nt/`, `th/`, and `tr/` anchors to `resolve`.
+`inspect` returns stable anchor ids for slides, shapes, images, tables, charts,
+custom shows, text ranges, speaker notes, and comment threads. `resolve` maps a
+returned anchor id to the matching facade. Layout records expose `layoutId` for
+search and comparison; pass only model-returned IDs such as `pr/`, `sl/`,
+`custom-show/`, `sh/`, `im/`, `tb/`, `ch/`, `nt/`, `th/`, and `tr/` anchors to
+`resolve`.
 
 ## Inspect Inline Type
 

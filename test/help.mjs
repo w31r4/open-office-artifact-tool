@@ -228,6 +228,8 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "PresentationFile.patchPptx"
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.slides.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.customShows.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.customShows.getItem"));
+assert.match(HELP_CATALOG.find((item) => item.name === "presentation.customShows.add")?.summary || "", /native p:custShowLst.*ordered retained-slide membership.*opaque/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "presentation.customShows.add")?.schema?.returns?.customShow?.description || "", /source-free PPTX authoring.*setSlides/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /fields.*picture bullets.*customShow links.*fail closed/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "PdfFile.inspectPdf"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createNativeOfficeRenderer"));

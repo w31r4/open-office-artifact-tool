@@ -63,6 +63,138 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void CustomShowsAuthorImportAndEditWithinFixedTopology()
+    {
+        var request = ExportRequest();
+        request.Artifact.Presentation.Slides.Add(new PresentationSlide { Id = "presentation/slide/2", Name = "Evidence" });
+        request.Artifact.Presentation.Slides.Add(new PresentationSlide { Id = "presentation/slide/3", Name = "Appendix" });
+        var executive = new PresentationCustomShowArtifact
+        {
+            Id = "custom-show/executive",
+            Name = "Executive route",
+            NativeId = 7,
+        };
+        executive.SlideIds.Add("presentation/slide/1");
+        executive.SlideIds.Add("presentation/slide/3");
+        var review = new PresentationCustomShowArtifact
+        {
+            Id = "custom-show/review",
+            Name = "Review route",
+            NativeId = 11,
+        };
+        review.SlideIds.Add("presentation/slide/2");
+        request.Artifact.Presentation.CustomShows.Add(executive);
+        request.Artifact.Presentation.CustomShows.Add(review);
+
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var shows = package.PresentationPart!.Presentation!.CustomShowList!.Elements<P.CustomShow>().ToArray();
+            Assert.Equal(2, shows.Length);
+            Assert.Equal(("Executive route", 7U), (shows[0].Name!.Value, shows[0].Id!.Value));
+            Assert.Equal(new[] { "rIdSlide1", "rIdSlide3" }, shows[0].SlideList!.Elements<P.SlideListEntry>().Select(entry => entry.Id!.Value));
+            Assert.Equal(("Review route", 11U), (shows[1].Name!.Value, shows[1].Id!.Value));
+            Assert.Equal(new[] { "rIdSlide2" }, shows[1].SlideList!.Elements<P.SlideListEntry>().Select(entry => entry.Id!.Value));
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.False(imported.Artifact.Presentation.CustomShowsOpaque);
+        Assert.Collection(imported.Artifact.Presentation.CustomShows,
+            show =>
+            {
+                Assert.Equal("Executive route", show.Name);
+                Assert.Equal(7U, show.NativeId);
+                Assert.Equal(new[] { "presentation/slide/1", "presentation/slide/3" }, show.SlideIds);
+                Assert.True(show.Source!.Editable);
+            },
+            show =>
+            {
+                Assert.Equal("Review route", show.Name);
+                Assert.Equal(11U, show.NativeId);
+                Assert.Equal(new[] { "presentation/slide/2" }, show.SlideIds);
+                Assert.True(show.Source!.Editable);
+            });
+
+        imported.Artifact.Presentation.CustomShows[0].Name = "Board route";
+        imported.Artifact.Presentation.CustomShows[0].SlideIds.Clear();
+        imported.Artifact.Presentation.CustomShows[0].SlideIds.Add("presentation/slide/3");
+        imported.Artifact.Presentation.CustomShows[0].SlideIds.Add("presentation/slide/1");
+        imported.Artifact.Presentation.CustomShows[0].SlideIds.Add("presentation/slide/3");
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var roundTrip = Import(edited.File.ToByteArray());
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        Assert.Collection(roundTrip.Artifact.Presentation.CustomShows,
+            show =>
+            {
+                Assert.Equal("Board route", show.Name);
+                Assert.Equal(7U, show.NativeId);
+                Assert.Equal(new[] { "presentation/slide/3", "presentation/slide/1", "presentation/slide/3" }, show.SlideIds);
+            },
+            show => Assert.Equal("Review route", show.Name));
+
+        var added = Import(authored.File.ToByteArray()).Artifact;
+        var extra = new PresentationCustomShowArtifact { Id = "custom-show/extra", Name = "Extra", NativeId = 12 };
+        extra.SlideIds.Add("presentation/slide/1");
+        added.Presentation.CustomShows.Add(extra);
+        Assert.Equal("presentation_custom_show_topology_changed", Assert.Single(Export(added).Diagnostics).Code);
+
+        var identityChanged = Import(authored.File.ToByteArray()).Artifact;
+        identityChanged.Presentation.CustomShows[0].NativeId = 99;
+        Assert.Equal("presentation_custom_show_topology_changed", Assert.Single(Export(identityChanged).Diagnostics).Code);
+
+        var bindingChanged = Import(authored.File.ToByteArray()).Artifact;
+        bindingChanged.Presentation.CustomShows[0].Source.SemanticSha256 = new string('0', 64);
+        Assert.Equal("presentation_custom_show_source_binding_mismatch", Assert.Single(Export(bindingChanged).Diagnostics).Code);
+    }
+
+    [Fact]
+    public void IrregularCustomShowGraphRemainsOpaqueAndFailClosed()
+    {
+        var request = ExportRequest();
+        var show = new PresentationCustomShowArtifact { Id = "custom-show/1", Name = "Canonical", NativeId = 3 };
+        show.SlideIds.Add("presentation/slide/1");
+        request.Artifact.Presentation.CustomShows.Add(show);
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+
+        using var stream = new MemoryStream();
+        stream.Write(authored.File.Span);
+        stream.Position = 0;
+        using (var package = PresentationDocument.Open(stream, true))
+        {
+            var native = Assert.Single(package.PresentationPart!.Presentation!.CustomShowList!.Elements<P.CustomShow>());
+            native.Append(new P.ExtensionList());
+            package.PresentationPart.Presentation.Save();
+        }
+        var irregularBytes = stream.ToArray();
+        var imported = Import(irregularBytes);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.True(imported.Artifact.Presentation.CustomShowsOpaque);
+        Assert.Empty(imported.Artifact.Presentation.CustomShows);
+        Assert.Contains(imported.Diagnostics, diagnostic => diagnostic.Code == "opaque_presentation_custom_shows_retained");
+
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, Diagnostics(preserved));
+        static string CustomShowXml(byte[] bytes)
+        {
+            using var source = new MemoryStream(bytes);
+            using var package = PresentationDocument.Open(source, false);
+            return package.PresentationPart!.Presentation!.CustomShowList!.OuterXml;
+        }
+        Assert.Equal(CustomShowXml(irregularBytes), CustomShowXml(preserved.File.ToByteArray()));
+
+        imported.Artifact.Presentation.CustomShowsOpaque = false;
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("presentation_custom_show_topology_changed", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void ImportedSlideNameCanChangeInPlace()
     {
         var authored = Invoke(ExportRequest());

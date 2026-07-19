@@ -4,6 +4,7 @@ import JSZip from "jszip";
 
 import {
   column,
+  FileBlob,
   paragraph,
   Presentation,
   PresentationFile,
@@ -91,6 +92,92 @@ unsupportedThemePresentation.slides.add().shapes.add({ text: "Theme model only" 
 await assert.rejects(
   () => PresentationFile.exportPptx(unsupportedThemePresentation),
   /presentation theme customization/i,
+);
+
+// Custom shows are a real inline PresentationML graph. Source-free decks own
+// the complete list; canonical imports may edit only names and ordered slide
+// membership while show topology/native identity remain source-bound.
+const customShowDeck = Presentation.create({ slideSize: { width: 1280, height: 720 } });
+const customShowOverview = customShowDeck.slides.add({ name: "Overview" });
+customShowOverview.shapes.add({ name: "overview-title", position: { left: 80, top: 80, width: 800, height: 80 }, text: "Overview" });
+const customShowEvidence = customShowDeck.slides.add({ name: "Evidence" });
+customShowEvidence.shapes.add({ name: "evidence-title", position: { left: 80, top: 80, width: 800, height: 80 }, text: "Evidence" });
+const customShowAppendix = customShowDeck.slides.add({ name: "Appendix" });
+customShowAppendix.shapes.add({ name: "appendix-title", position: { left: 80, top: 80, width: 800, height: 80 }, text: "Appendix" });
+const boardShow = customShowDeck.customShows.add({
+  id: "custom-show/board",
+  name: "Board route",
+  nativeId: 7,
+  slides: [customShowOverview, customShowAppendix],
+});
+customShowDeck.customShows.add({
+  id: "custom-show/review",
+  name: "Review route",
+  nativeId: 11,
+  slides: [customShowEvidence],
+});
+assert.equal(customShowDeck.resolve(boardShow.id), boardShow);
+assert.match(customShowDeck.inspect({ kind: "customShow", maxChars: 4000 }).ndjson, /Board route/);
+const customShowFirstExport = await PresentationFile.exportPptx(customShowDeck);
+const customShowFirstZip = await JSZip.loadAsync(customShowFirstExport.bytes);
+const customShowPresentationXml = await customShowFirstZip.file("ppt/presentation.xml").async("string");
+assert.match(customShowPresentationXml, /<p:custShowLst>/);
+assert.match(customShowPresentationXml, /<p:custShow name="Board route" id="7"><p:sldLst><p:sld r:id="rIdSlide1"[^>]*\/><p:sld r:id="rIdSlide3"[^>]*\/><\/p:sldLst><\/p:custShow>/);
+assert.ok(customShowPresentationXml.indexOf("<p:custShowLst>") < customShowPresentationXml.indexOf("<p:defaultTextStyle"));
+
+const customShowImported = await PresentationFile.importPptx(customShowFirstExport);
+assert.equal(customShowImported.customShows.count, 2);
+assert.deepEqual(customShowImported.customShows.getItem("Board route").slideIds, [customShowImported.slides.items[0].id, customShowImported.slides.items[2].id]);
+const editableBoardShow = customShowImported.customShows.getItem("Board route");
+editableBoardShow.name = "Executive route";
+editableBoardShow.setSlides([customShowImported.slides.items[2], customShowImported.slides.items[0], customShowImported.slides.items[2]]);
+const customShowEditedExport = await PresentationFile.exportPptx(customShowImported);
+const customShowEditedRoundTrip = await PresentationFile.importPptx(customShowEditedExport);
+assert.equal(customShowEditedRoundTrip.customShows.count, 2);
+assert.deepEqual(customShowEditedRoundTrip.customShows.getItem("Executive route").slideIds, [
+  customShowEditedRoundTrip.slides.items[2].id,
+  customShowEditedRoundTrip.slides.items[0].id,
+  customShowEditedRoundTrip.slides.items[2].id,
+]);
+const customShowEditedZip = await JSZip.loadAsync(customShowEditedExport.bytes);
+for (const partPath of Object.keys(customShowFirstZip.files).filter((entry) => !customShowFirstZip.files[entry].dir && entry !== "ppt/presentation.xml")) {
+  assert.deepEqual(
+    await customShowEditedZip.file(partPath).async("uint8array"),
+    await customShowFirstZip.file(partPath).async("uint8array"),
+    `custom-show edit changed non-presentation part ${partPath}`,
+  );
+}
+const customShowMovedImport = await PresentationFile.importPptx(customShowFirstExport);
+customShowMovedImport.slides.items[2].moveTo(0);
+const customShowMovedRoundTrip = await PresentationFile.importPptx(await PresentationFile.exportPptx(customShowMovedImport));
+assert.deepEqual(customShowMovedRoundTrip.slides.items.map((slide) => slide.name), ["Appendix", "Overview", "Evidence"]);
+assert.deepEqual(customShowMovedRoundTrip.customShows.getItem("Board route").slides.map((slide) => slide.name), ["Overview", "Appendix"]);
+
+const customShowAddedImport = await PresentationFile.importPptx(customShowFirstExport);
+customShowAddedImport.customShows.add("Added route", [customShowAddedImport.slides.items[0]]);
+await assert.rejects(
+  () => PresentationFile.exportPptx(customShowAddedImport),
+  (error) => error?.code === "presentation_custom_show_topology_changed",
+);
+const customShowIdentityImport = await PresentationFile.importPptx(customShowFirstExport);
+customShowIdentityImport.customShows.items[0].nativeId = 99;
+await assert.rejects(
+  () => PresentationFile.exportPptx(customShowIdentityImport),
+  (error) => error?.code === "presentation_custom_show_topology_changed",
+);
+
+const irregularCustomShowZip = await JSZip.loadAsync(customShowFirstExport.bytes);
+const irregularCustomShowXml = (await irregularCustomShowZip.file("ppt/presentation.xml").async("string"))
+  .replace("</p:custShow>", "<p:extLst/></p:custShow>");
+irregularCustomShowZip.file("ppt/presentation.xml", irregularCustomShowXml);
+const irregularCustomShowBytes = await irregularCustomShowZip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+const irregularCustomShowFile = new FileBlob(irregularCustomShowBytes, { type: "application/vnd.openxmlformats-officedocument.presentationml.presentation" });
+const irregularCustomShowImport = await PresentationFile.importPptx(irregularCustomShowFile);
+assert.equal(irregularCustomShowImport.customShows.count, 0);
+irregularCustomShowImport.customShows.add("Unsafe replacement", [irregularCustomShowImport.slides.items[0]]);
+await assert.rejects(
+  () => PresentationFile.exportPptx(irregularCustomShowImport),
+  (error) => error?.code === "unsupported_presentation_custom_show_edit",
 );
 // Negative DrawingML offsets are retained only for an imported opaque,
 // source-bound element. New authoring still rejects them instead of widening

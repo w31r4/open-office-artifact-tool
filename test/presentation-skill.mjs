@@ -323,6 +323,76 @@ try {
   assert.equal(slideNameCli.status, 0, `slide-name CLI failed\n${slideNameCli.stdout}\n${slideNameCli.stderr}`);
   assert.equal(JSON.parse(slideNameCli.stdout).sourcePart, "ppt/slides/slide1.xml");
 
+  const customShowDir = path.join(root, "custom-show-workflow");
+  const customShowInput = path.join(customShowDir, "custom-show-source.pptx");
+  const customShowOutput = path.join(customShowDir, "custom-show-updated.pptx");
+  const customShowAudit = path.join(customShowDir, "audit.json");
+  await fs.mkdir(customShowDir, { recursive: true });
+  const customShowFixture = Presentation.create({ slideSize: { width: 640, height: 360 } });
+  const customShowSlides = [
+    ["Overview", "#DBEAFE"],
+    ["Evidence", "#DCFCE7"],
+    ["Appendix", "#FEF3C7"],
+  ].map(([name, fill], index) => {
+    const slide = customShowFixture.slides.add({ name, background: { fill } });
+    slide.shapes.add({ name: `${name.toLowerCase()}-title`, position: { left: 44, top: 44, width: 552, height: 72 }, text: `${index + 1}. ${name}`, fill: "#FFFFFF", line: { fill: "#0F172A", width: 1 } });
+    return slide;
+  });
+  customShowFixture.customShows.add({ name: "Board route", nativeId: 7, slides: [customShowSlides[0], customShowSlides[2]] });
+  customShowFixture.customShows.add({ name: "Review route", nativeId: 11, slides: [customShowSlides[1]] });
+  await (await PresentationFile.exportPptx(customShowFixture)).save(customShowInput);
+  const customShowSource = await fs.readFile(customShowInput);
+  const { editPptxCustomShow } = await import(
+    "../skills/presentations/skills/presentations/examples/openchestnut-custom-show-workflow.mjs"
+  );
+  const customShowResult = await editPptxCustomShow({
+    inputPath: customShowInput,
+    outputPath: customShowOutput,
+    auditPath: customShowAudit,
+    expectedName: "Board route",
+    replacementName: "Executive route",
+    orderedSlideNames: ["Appendix", "Overview", "Appendix"],
+  });
+  assert.equal(customShowResult.audit.provider.actual, "open-chestnut");
+  assert.equal(customShowResult.audit.operation.nativeId, 7);
+  assert.equal(customShowResult.audit.validation.package.onlyPresentationPartChanged, true);
+  assert.equal(customShowResult.audit.validation.package.nativeIdPreserved, true);
+  assert.equal(customShowResult.audit.validation.modelRender.slidesByteIdentical, true);
+  assert.deepEqual(await fs.readFile(customShowInput), customShowSource);
+  const customShowRoundTrip = await PresentationFile.importPptx(new FileBlob(await fs.readFile(customShowOutput), {
+    type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    name: "custom-show-updated.pptx",
+  }));
+  assert.deepEqual(customShowRoundTrip.customShows.items.map((show) => [show.name, show.nativeId]), [["Executive route", 7], ["Review route", 11]]);
+  assert.deepEqual(customShowRoundTrip.customShows.getItem("Executive route").slides.map((slide) => slide.name), ["Appendix", "Overview", "Appendix"]);
+  const customShowBaselineDir = path.join(customShowDir, "baselines");
+  await verifyPresentationFile(customShowInput, {
+    outputDir: path.join(customShowDir, "source-qa"),
+    nativeRender,
+    baselineDir: customShowBaselineDir,
+    writeBaseline: true,
+  });
+  const customShowReview = await verifyPresentationFile(customShowOutput, {
+    outputDir: path.join(customShowDir, "output-qa"),
+    nativeRender,
+    baselineDir: customShowBaselineDir,
+  });
+  assert.ok(customShowReview.modelRender.slides.every((slide) => slide.pixelDiff?.changed === false));
+  if (nativeStatus.available) assert.ok(customShowReview.nativeRender.pages.every((page) => page.pixelDiff?.changed === false));
+  const customShowCliOutput = path.join(customShowDir, "custom-show-cli.pptx");
+  const customShowCliAudit = path.join(customShowDir, "cli-audit.json");
+  const customShowCli = spawnSync(process.execPath, [
+    "skills/presentations/skills/presentations/examples/openchestnut-custom-show-workflow.mjs",
+    customShowInput,
+    customShowCliOutput,
+    customShowCliAudit,
+    "Board route",
+    "CLI route",
+    "Evidence,Overview",
+  ], { encoding: "utf8" });
+  assert.equal(customShowCli.status, 0, `custom-show CLI failed\n${customShowCli.stdout}\n${customShowCli.stderr}`);
+  assert.equal(JSON.parse(customShowCli.stdout).outputPath, path.resolve(customShowCliOutput));
+
   const duplicateDir = path.join(root, "slide-duplicate-workflow");
   const duplicateInput = path.join(duplicateDir, "connector-source.pptx");
   const duplicateOutput = path.join(duplicateDir, "connector-duplicate.pptx");

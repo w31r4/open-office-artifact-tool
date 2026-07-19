@@ -336,6 +336,33 @@ writes a source/output-bound audit. Duplicate/missing names, fallback-only
 native names, unexpected package changes, pending clones, and any other
 ambiguous edit fail closed. This is not a generic template metadata editor.
 
+### Native Custom Shows
+
+For source-free decks, create all slides and then use
+`presentation.customShows.add(nameOrConfig, slides)` to author real
+`p:custShowLst` playback routes. For a canonical imported list, only an
+existing show's name and ordered retained-slide membership are editable; show
+count/order, facade identity, and native ID remain fixed. Read
+`artifact_tool/api/references/custom-shows.spec.md` before changing one.
+
+For one exact imported show, use the shipped transaction instead of patching
+`ppt/presentation.xml`:
+
+```bash
+node examples/openchestnut-custom-show-workflow.mjs \
+  input.pptx output.pptx audit.json \
+  "Board route" "Executive route" "Appendix,Overview,Appendix"
+```
+
+The workflow resolves every supplied slide name uniquely, preserves the source,
+proves that only `ppt/presentation.xml` changed, retains native show identity
+and all non-target shows, reimports, compares every model SVG, and writes a
+source/output-bound audit. Lists with extensions, unknown children, unresolved
+relationships, duplicate identities, or another noncanonical graph remain
+opaque and fail closed. Custom-show run hyperlinks are a separate unsupported
+action slice and must not be confused with the list itself. Run
+LibreOffice/Poppler review after delivery when available.
+
 ### Bounded Imported Title And Speaker-Notes Edit
 
 For one known slide with one known text shape and a canonical plain-text Notes

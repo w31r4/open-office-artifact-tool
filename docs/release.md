@@ -1755,6 +1755,52 @@ contract/adversarial tests passed while their environment-gated real repeats
 were skipped. Hosted results are recorded after the candidate commit; no
 publish or tag operation was attempted.
 
+### Native PPTX custom shows
+
+On 2026-07-19, the Presentation model, additive protocol-2 wire,
+OpenChestnut C# codec, Help catalog, and native Presentation Skill converged on
+one bounded `p:custShowLst` profile. Source-free decks may author an ordered
+list of named native shows, each containing an ordered non-empty route through
+retained slides; repeated slide references are intentional and survive the
+Office package round trip. The inline graph lives only in
+`ppt/presentation.xml` and does not create another SlidePart or package edge.
+
+Canonical imports expose custom shows through the public inspect/resolve
+facade. A source-bound transaction may change one existing name and replace its
+ordered membership with references to retained slides. Show count and order,
+facade ID, native `p:custShow/@id`, source-element hash, and imported package
+topology remain fixed. Slide reordering is compatible because show entries bind
+the retained presentation relationships rather than display indexes; slide
+clone/delete and custom-show topology mutation remain fail closed.
+
+Empty, extension-bearing, unknown-child, duplicate-name/native-ID, or
+unresolved-reference lists are treated as opaque. OpenChestnut preserves their
+exact validated source XML without exposing an incomplete semantic facade and
+rejects attempted replacement. Run hyperlinks that target custom shows remain
+a separate unsupported action-graph slice rather than being inferred from the
+list.
+
+The shipped workflow independently inventories the native list, requires one
+exact show and exact slide names, proves that only `ppt/presentation.xml`
+changed, keeps every non-target show and native ID fixed, reimports the result,
+compares every model SVG, and emits a byte-bound audit. Its native lane compares
+source/output LibreOffice/Poppler pages. Codec regressions cover two-show native
+authoring, ordered and repeated membership edits, slide movement, source/hash
+tampering, fixed-topology rejection, and extension-bearing opaque preservation.
+
+The complete local gate passed `npm test` including Playwright,
+LibreOffice/Poppler, qpdf, and the 20-template corpus; `npm run docs:api`, `npm
+run proto:check`, `npm run test:pack`, OfficeBridge `5/5`, and OpenChestnut
+`289/289` also passed. Two deterministic OpenChestnut builds reproduced 39
+audited files and the same manifest-bound 38-file, 14,671,040-byte runtime. The
+production tarball contains 463 files, is 8,971,857 bytes compressed and
+23,589,246 bytes unpacked, leaving 790,754 bytes below the unchanged
+24,380,000-byte ceiling. The qpdf real-provider lane passed; dedicated
+real-provider environments for pikepdf, pyHanko, veraPDF, and OCRmyPDF were not
+configured, so their contract/adversarial gates passed while their
+environment-gated real repeats remained skipped. No publish or tag operation
+was attempted.
+
 `npm run release:check` passes the source, documentation, package, license, JavaScript, and .NET gates. Its only remaining blocker is unavailable npm authentication. No `npm publish` or tag/release operation has been performed.
 
 ## Publishing

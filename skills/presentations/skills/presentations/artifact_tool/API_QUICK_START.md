@@ -323,6 +323,38 @@ byte identity for that one part. It rejects fallback-only names,
 duplicate/missing target names, pending clones, and any unexpected package or
 semantic change.
 
+## Native Custom Shows
+
+New presentations can author native playback subsets after their slides exist:
+
+```ts
+const overview = presentation.slides.add({ name: "Overview" });
+const appendix = presentation.slides.add({ name: "Appendix" });
+presentation.customShows.add("Board route", [overview, appendix]);
+```
+
+For one canonical imported show, use the audited fixed-topology transaction:
+
+```ts
+import { editPptxCustomShow } from "../examples/openchestnut-custom-show-workflow.mjs";
+
+await editPptxCustomShow({
+  inputPath: "input.pptx",
+  outputPath: "output/custom-show.pptx",
+  auditPath: "output/custom-show-audit.json",
+  expectedName: "Board route",
+  replacementName: "Executive route",
+  orderedSlideNames: ["Appendix", "Overview", "Appendix"],
+});
+```
+
+Only the existing name and ordered membership may change. Show count/order,
+facade/native identity, all SlideParts, and every other package part stay
+fixed. The workflow reimports, verifies native XML and non-target shows,
+compares slide model SVGs, and emits a byte-bound audit. Noncanonical lists are
+preserved opaque and fail closed; see
+`artifact_tool/api/references/custom-shows.spec.md`.
+
 ## Bounded Imported Slide Duplicate
 
 When an Agent needs an exact source-bound copy of one imported slide rather

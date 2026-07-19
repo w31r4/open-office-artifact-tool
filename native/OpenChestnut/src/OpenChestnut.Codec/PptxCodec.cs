@@ -97,6 +97,10 @@ internal static class PptxCodec
         if ((uint)slideIds.Length > limits.MaxSheets)
             throw new CodecException("slide_budget_exceeded", $"PPTX presentation has {slideIds.Length} slides and exceeds max_sheets ({limits.MaxSheets}).", "ppt/presentation.xml");
         var slideParts = ResolveSlideParts(presentationPart, slideIds);
+        var publicSlideIdByRelationshipId = BuildCustomShowSlideIdMap(slideIds
+            .Select((slideId, index) => (
+                RelationshipId: slideId.RelationshipId?.Value ?? string.Empty,
+                PublicId: $"presentation/slide/{index + 1}")));
         var slideIdByPartPath = slideParts
             .Select((part, index) => (Path: PartPath(part), Id: $"presentation/slide/{index + 1}"))
             .ToDictionary(item => item.Path, item => item.Id, StringComparer.OrdinalIgnoreCase);
@@ -240,6 +244,17 @@ internal static class PptxCodec
             }
             artifact.Slides.Add(target);
         }
+        var customShows = PptxCustomShowCodec.Read(presentationPart, publicSlideIdByRelationshipId, limits);
+        semanticItems = checked(semanticItems + customShows.SemanticItems);
+        if (semanticItems > limits.MaxCells)
+            throw new CodecException("presentation_item_budget_exceeded", $"PPTX presentation exceeds max_cells semantic-item budget ({limits.MaxCells}).", "ppt/presentation.xml");
+        artifact.CustomShows.Add(customShows.Shows);
+        artifact.CustomShowsOpaque = customShows.Opaque;
+        if (customShows.Opaque)
+            diagnostics.Add(CodecProtocol.Warning(
+                "opaque_presentation_custom_shows_retained",
+                $"Retained an unsupported custom-show graph without exposing incomplete editable semantics: {customShows.Reason}.",
+                "ppt/presentation.xml"));
 
         var envelope = new ArtifactEnvelope
         {
@@ -303,7 +318,9 @@ internal static class PptxCodec
                presentation.Slides.Any(slide =>
                    slide.Source is not null || slide.Elements.Any(element =>
                        element.Source is not null || element.ContentCase == PresentationElement.ContentOneofCase.Opaque)) ||
-               presentation.ViewProperties?.Source is not null;
+               presentation.ViewProperties?.Source is not null ||
+               presentation.CustomShowsOpaque ||
+               presentation.CustomShows.Any(show => show.Source is not null);
     }
 
     private static PptxExportResult ExportPreservingSource(ArtifactEnvelope envelope, EffectiveCodecLimits limits, int opaqueCount, PptxAssetCatalog assetCatalog)
@@ -366,6 +383,23 @@ internal static class PptxCodec
                 removedSourceSlidePartPaths);
             if (ReorderSourceSlideIdList(presentationPart, targetSlides))
                 changedParts.Add(PartPath(presentationPart));
+            if (presentationPart.Presentation?.CustomShowList is not null ||
+                envelope.Presentation.CustomShowsOpaque ||
+                envelope.Presentation.CustomShows.Count > 0)
+            {
+                var outputSlideIds = presentationPart.Presentation?.SlideIdList?.Elements<P.SlideId>().ToArray() ?? [];
+                if (outputSlideIds.Length != envelope.Presentation.Slides.Count)
+                    throw new CodecException(
+                        "presentation_slide_topology_changed",
+                        "Source-preserving PPTX export could not bind custom shows to the requested slide topology.",
+                        "ppt/presentation.xml");
+                var publicSlideIdByRelationshipId = BuildCustomShowSlideIdMap(outputSlideIds
+                    .Select((slideId, index) => (
+                        RelationshipId: slideId.RelationshipId?.Value ?? string.Empty,
+                        PublicId: envelope.Presentation.Slides[index].Id)));
+                if (PptxCustomShowCodec.ApplySourceBound(presentationPart, envelope.Presentation, publicSlideIdByRelationshipId, limits))
+                    changedParts.Add(PartPath(presentationPart));
+            }
             assetCatalog.IndexExistingParts(slideParts.SelectMany(part => part.ImageParts)
                 .Concat(masterGraph.SelectMany(master => master.Part.Parts.Select(pair => pair.OpenXmlPart).OfType<ImagePart>())));
 
@@ -1237,6 +1271,13 @@ internal static class PptxCodec
             },
             new P.NotesSize { Cx = 6_858_000L, Cy = 9_144_000L },
             new P.DefaultTextStyle());
+        if (artifact.CustomShows.Count > 0)
+        {
+            var relationshipIdBySlideId = artifact.Slides
+                .Select((slide, index) => (slide.Id, RelationshipId: $"rIdSlide{index + 1}"))
+                .ToDictionary(item => item.Id, item => item.RelationshipId, StringComparer.Ordinal);
+            PptxCustomShowCodec.BuildSourceFree(presentationRoot, artifact, relationshipIdBySlideId);
+        }
         presentationPart.Presentation = presentationRoot;
         PptxLegacyCommentsCodec.BuildSourceFree(presentationPart, slideParts, artifact.Slides);
         PptxModernCommentsCodec.BuildSourceFree(presentationPart, slideIdList.Elements<P.SlideId>().ToArray(), slideParts, artifact.Slides);
@@ -1799,6 +1840,7 @@ internal static class PptxCodec
         if ((uint)envelope.Presentation.Layouts.Count > limits.MaxSheets)
             throw new CodecException("presentation_layout_budget_exceeded", $"Presentation has {envelope.Presentation.Layouts.Count} layouts and exceeds max_sheets ({limits.MaxSheets}).");
         ulong items = 0;
+        PptxCustomShowCodec.Validate(envelope.Presentation, hasSourcePackage, limits, ref items);
         var masterIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var master in envelope.Presentation.Masters)
         {
@@ -2748,6 +2790,23 @@ internal static class PptxCodec
         slideIds.Select(slideId => presentationPart.GetPartById(slideId.RelationshipId?.Value ?? string.Empty) as SlidePart ??
             throw new CodecException("missing_slide_part", "PPTX presentation contains an unresolved slide relationship.", "ppt/presentation.xml"))
         .ToArray();
+
+    private static IReadOnlyDictionary<string, string> BuildCustomShowSlideIdMap(
+        IEnumerable<(string RelationshipId, string PublicId)> entries)
+    {
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        var ambiguous = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (relationshipId, publicId) in entries)
+        {
+            if (relationshipId.Length == 0 || ambiguous.Contains(relationshipId)) continue;
+            if (!result.TryAdd(relationshipId, publicId))
+            {
+                result.Remove(relationshipId);
+                ambiguous.Add(relationshipId);
+            }
+        }
+        return result;
+    }
 
     // Imported source topology keeps ordinary bindings and clone requests
     // separate. A clone is a new SlidePart with a verified origin, never a
