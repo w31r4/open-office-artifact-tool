@@ -37,13 +37,13 @@ const maxPackedBytes = 9_775_000;
 // The bundled OpenChestnut runtime is an audited product payload, not an
 // optional download. Keep its unpacked budget tight while allowing the
 // audited PDF provider/docs growth plus the bounded DOCX/PPTX modern-comment and
-// native XLSX PivotTable codecs and runnable workflows. The veraPDF read-only
-// conformance-validation slice measured 24,200,954 unpacked bytes on the audit
-// host, so this keeps less than 25 KB of explicit headroom.
+// native XLSX PivotTable codecs and runnable workflows. The OCRmyPDF
+// searchable-layer slice measured 24,250,484 unpacked bytes on the audit host,
+// so this keeps less than 24 KiB of explicit headroom.
 // The repository-only MIT Default Template Library is excluded from the npm
 // tarball. Its retained Office/PNG sources must never consume this consumer
 // package budget.
-const maxUnpackedBytes = 24_225_000;
+const maxUnpackedBytes = 24_275_000;
 
 for (const required of [
   "LICENSE",

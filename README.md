@@ -48,7 +48,7 @@ console.log(reopened.inspect({ kind: "worksheet,table,chart" }).ndjson);
 
 ### PDF 运行时
 
-官方 `mupdf@1.28.0` 是必需的 npm 依赖，会随正常的 `npm install` 一起解析安装；只有第一次读取、检查、渲染或编辑 PDF 时才初始化 WASM。项目没有 `postinstall`、额外下载器或全局环境写入。ReportLab、pdfplumber、pypdf、Poppler、pyHanko、veraPDF 等仍是按任务选择的外部专项工具。
+官方 `mupdf@1.28.0` 是必需的 npm 依赖，会随正常的 `npm install` 一起解析安装；只有第一次读取、检查、渲染或编辑 PDF 时才初始化 WASM。项目没有 `postinstall`、额外下载器或全局环境写入。ReportLab、pdfplumber、pypdf、Poppler、pyHanko、veraPDF、OCRmyPDF 等仍是按任务选择、单独安装的外部专项工具。
 
 ## 为什么需要它
 
@@ -96,7 +96,7 @@ OpenChestnut 是普通 Office 导入/导出的唯一 parser/writer。显式 OOXM
 
 - 要保留导入 Office 文件中的未建模对象，必须继续使用 import 返回的模型，并保持这些对象的结构不变；丢失源快照或修改不支持的拓扑时，导出失败。
 - 任意已有 PDF 不能像 Word 一样可靠地自动重排全文；原文件编辑必须落在明确、可验证的有界操作中。
-- PDF 签名、时间戳与 LTV 依赖外部 pyHanko 工作流，PDF/A 与 PDF/UA 机器验证依赖外部 veraPDF；它们不是随包提供的完整适配器。
+- PDF 签名、时间戳与 LTV 依赖外部 pyHanko 工作流；PDF/A/PDF/UA 验证和扫描件 OCR 分别使用项目内的 veraPDF、OCRmyPDF 有界适配器，但对应 CLI、语言包和运行时仍需单独安装。
 - MuPDF.js 能做有界原文件操作，但不能把任意 PDF 变成可自由重排的 Word 文档；rewrite 脱敏也不等于完整 sanitize。签名权限、残留、OCR 与 PDF/UA 仍需独立证据。
 - LibreOffice、Poppler、Playwright 和原生 Office Bridge 是渲染/验证工具，不是隐藏的 Office codec fallback。
 

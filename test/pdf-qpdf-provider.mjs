@@ -138,6 +138,9 @@ try {
   const fakeInspect = jsonResult(run(python, [qpdfProvider, "inspect", dummyInput], { env: fakeEnv, status: 0 }));
   assert.equal(fakeInspect.schema, "open-office-artifact-tool.qpdf-inspect.v1");
   assert.equal(fakeInspect.structure.pageCount, 1);
+  assert.equal(fakeInspect.structure.annotationCount, 0);
+  assert.equal(fakeInspect.structure.tagged, false);
+  assert.equal(fakeInspect.structure.hasStructTreeRoot, false);
   assert.equal(fakeInspect.source.sha256, sha256(dummyBytes));
   const fakeOutput = path.join(tempRoot, "fake-repaired.pdf");
   const fakeRewrite = jsonResult(run(python, [
@@ -210,6 +213,7 @@ try {
     const realInspect = jsonResult(run(python, [qpdfProvider, "inspect", source], { env: { OPEN_OFFICE_PDF_QPDF: "" }, status: 0 }));
     assert.equal(realInspect.check.status, "clean");
     assert.equal(realInspect.structure.pageCount, 1);
+    assert.equal(realInspect.structure.annotationCount, 1);
     assert.equal(realInspect.signaturePolicy.hasSignatureEvidence, false);
 
     const repaired = path.join(tempRoot, "repaired.pdf");

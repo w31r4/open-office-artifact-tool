@@ -48,7 +48,7 @@ More runnable examples:
 
 ### PDF runtime
 
-The official `mupdf@1.28.0` package is a required npm dependency and is resolved by a normal `npm install`. Its WASM runtime initializes only on the first PDF read, inspect, render, or edit operation. There is no `postinstall`, standalone downloader, or global environment mutation. ReportLab, pdfplumber, pypdf, Poppler, pyHanko, and veraPDF remain task-specific external tools.
+The official `mupdf@1.28.0` package is a required npm dependency and is resolved by a normal `npm install`. Its WASM runtime initializes only on the first PDF read, inspect, render, or edit operation. There is no `postinstall`, standalone downloader, or global environment mutation. ReportLab, pdfplumber, pypdf, Poppler, pyHanko, veraPDF, and OCRmyPDF remain separately installed, task-specific external tools.
 
 ## Why it exists
 
@@ -96,7 +96,7 @@ The first five `skills/<name>` directories are shipped in the package; loading i
 
 - To preserve unmodeled objects from an imported Office file, keep using the model returned by import and leave those objects structurally unchanged. Discarding the source snapshot or changing unsupported topology causes export to fail.
 - An arbitrary existing PDF cannot be reflowed reliably like a Word document. Original-file editing must stay within explicit, verifiable bounded operations.
-- PDF signing, timestamps, and LTV rely on external pyHanko workflows. PDF/A and PDF/UA machine validation relies on external veraPDF. The package does not bundle complete adapters for either.
+- PDF signing, timestamps, and LTV rely on external pyHanko workflows. PDF/A/PDF/UA validation and scanned-PDF OCR use the shipped bounded veraPDF and OCRmyPDF adapters, while their CLIs, language packs, and runtimes remain separately installed.
 - MuPDF.js supports bounded original-file operations, not Word-style arbitrary reflow. Rewrite redaction is also not full sanitization; signatures, residue, OCR, and PDF/UA still require independent evidence.
 - LibreOffice, Poppler, Playwright, and the native Office Bridge are rendering and validation tools, not hidden Office codec fallbacks.
 

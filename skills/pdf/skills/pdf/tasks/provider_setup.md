@@ -38,8 +38,11 @@ Install a specialist provider yourself only when the task requires a capability 
   `scripts/pyhanko_provider.py`; the separate `pyhanko-cli` package is needed
   only for external signing/timestamp/LTV command workflows.
 - veraPDF 1.30.x: exact-source PDF/A and PDF/UA machine validation through the shipped `scripts/verapdf_provider.py` adapter.
-- Tesseract: OCR evidence for image-bearing high-trust sanitization.
-- pikepdf and OCRmyPDF: planned routes without a shipped mutation adapter in this release.
+- OCRmyPDF 17.8.x + Tesseract 5.x + qpdf 11+ + Poppler `pdftotext`:
+  source-bound complete-document searchable-layer OCR through the shipped
+  `scripts/ocrmypdf_provider.py` adapter. Tesseract also supplies image OCR
+  evidence for high-trust sanitization.
+- pikepdf: planned active-content cleanup route without a shipped mutation adapter in this release.
 
 Probe qpdf through both the registry and its executable adapter:
 
@@ -90,6 +93,25 @@ PDF/A/PDF/UA profiles, and exposes only one-file read-only validation. It does
 not install Java or veraPDF, pass arbitrary flags, infer a profile, accept a
 password/custom profile, repair a file, or fall back to another engine. See
 [accessibility and archival conformance](accessibility.md).
+
+Install and probe the searchable-layer OCR route separately:
+
+```bash
+# macOS: brew install ocrmypdf poppler
+# Debian/Ubuntu: install tesseract-ocr, qpdf, and poppler-utils, then create an
+# exact OCRmyPDF 17.8.x CLI environment when the distribution version differs.
+export OPEN_OFFICE_PDF_OCRMYPDF="/absolute/path/to/ocrmypdf"
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+"$PYTHON_BIN" scripts/pdf_provider.py check --provider ocrmypdf --require
+"$PYTHON_BIN" scripts/ocrmypdf_provider.py probe
+```
+
+Configure non-PATH components with `OPEN_OFFICE_PDF_TESSERACT`,
+`OPEN_OFFICE_PDF_QPDF`, and `OPEN_OFFICE_PDF_PDFTOTEXT`. The adapter exposes
+only full-rewrite `skip`/`redo`/`force` modes, fixed standard-PDF/O0/one-job
+settings, explicit source/trust/loss preconditions, and no plugins or arbitrary
+provider flags. It is not a sanitizer or host-level malware sandbox. See
+[scanned-PDF OCR](ocr.md).
 
 When Python tools are installed, set one interpreter as provider identity:
 

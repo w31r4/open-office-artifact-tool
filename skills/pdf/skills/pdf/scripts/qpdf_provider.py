@@ -276,6 +276,38 @@ def structure_summary(document: dict[str, Any], check_text: str) -> dict[str, An
     attachments = document.get("attachments") or {}
     outlines = document.get("outlines") or []
     encryption = document.get("encrypt") or {}
+    has_struct_tree_root = False
+    mark_info_marked = False
+    annotation_references: set[str] = set()
+
+    def indirect_reference(value: Any) -> str | None:
+        if not isinstance(value, str):
+            return None
+        match = re.fullmatch(r"(?:obj:)?(\d+\s+\d+\s+R)", value)
+        return match.group(1) if match else None
+
+    for record in objects.values():
+        for dictionary in dictionaries(record):
+            annotations = dictionary.get("/Annots")
+            if isinstance(annotations, list):
+                annotation_references.update(
+                    reference for value in annotations if (reference := indirect_reference(value)) is not None
+                )
+
+    annotation_objects = set(annotation_references)
+    for object_id, record in objects.items():
+        record_is_annotation = False
+        for dictionary in dictionaries(record):
+            if "/StructTreeRoot" in dictionary:
+                has_struct_tree_root = True
+            if dictionary.get("/Marked") is True:
+                mark_info_marked = True
+            if dictionary.get("/Type") == "/Annot":
+                record_is_annotation = True
+        if record_is_annotation:
+            reference = indirect_reference(object_id)
+            if reference is not None:
+                annotation_objects.add(reference)
     version = re.search(r"PDF Version:\s*([^\s]+)", check_text)
     if "File is not linearized" in check_text:
         linearized = False
@@ -290,6 +322,10 @@ def structure_summary(document: dict[str, Any], check_text: str) -> dict[str, An
         "formFieldCount": len(fields),
         "attachmentCount": len(attachments),
         "outlineCount": len(outlines),
+        "annotationCount": len(annotation_objects),
+        "tagged": has_struct_tree_root or mark_info_marked,
+        "hasStructTreeRoot": has_struct_tree_root,
+        "markInfoMarked": mark_info_marked,
         "encrypted": bool(encryption.get("encrypted")),
         "encryption": {
             "method": encryption.get("parameters", {}).get("method"),
@@ -487,7 +523,7 @@ def rewrite_pdf(args: argparse.Namespace) -> dict[str, Any]:
         )
         if after["check"]["status"] != "clean":
             raise ProviderError("qpdf rewrite output still contains structural warnings")
-        for key in ("pageCount", "attachmentCount", "formFieldCount", "outlineCount"):
+        for key in ("pageCount", "attachmentCount", "formFieldCount", "annotationCount", "outlineCount", "tagged"):
             if before["structure"][key] != after["structure"][key]:
                 raise ProviderError(f"qpdf rewrite changed {key}: {before['structure'][key]} -> {after['structure'][key]}")
         if args.mode == "linearize" and after["structure"]["linearized"] is not True:

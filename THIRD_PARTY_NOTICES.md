@@ -36,6 +36,7 @@ The PDF Skill also ships thin Python scripts that can call the following separat
 | PyMuPDF | Optional specialist strict scrub, legacy high-level imported-PDF edits, and residue inspection not yet covered by the JavaScript path | GNU AGPL-3.0 or an Artifex commercial license |
 | pyHanko core and pyhanko-certvalidator | Source-bound read-only PDF signature integrity, trust, difference, timestamp, DocMDP, and FieldMDP validation | MIT |
 | veraPDF 1.30.x CLI | Source-bound read-only PDF/A and PDF/UA machine-rule validation | MPL-2.0-or-later and GPL-3.0-or-later options, plus distribution notices |
+| OCRmyPDF 17.8.x, Tesseract 5.x, and the selected OCRmyPDF runtime dependencies | Source-bound complete-document searchable-layer OCR through a shipped thin adapter | OCRmyPDF: MPL-2.0; Tesseract: Apache-2.0; pypdfium2: BSD-3-Clause/Apache-2.0; pikepdf: MPL-2.0; fpdf2: LGPL-3.0-only; retain every selected distribution's transitive notices |
 
 The official `mupdf` npm package is a required direct dependency. A normal npm installation resolves it alongside this package, although its bytes remain in its own dependency tarball rather than being copied into this project's `.tgz`; the WASM runtime initializes lazily on the first PDF operation. There is no lifecycle hook or standalone downloader. Optional Python providers remain separately installed tools. Downstream installation, network deployment, modification, and redistribution must comply with the applicable GNU AGPL v3-or-later obligations. This notice is not a substitute for the upstream license text or legal advice.
 
@@ -56,7 +57,7 @@ The following external programs are invoked only when installed separately. They
   `pyhanko-cli`. Neither distribution is bundled by npm. Retain their MIT
   license and transitive cryptography notices.
 - veraPDF 1.30.x: optional separately installed PDF/A and PDF/UA validation distribution used through the shipped bounded adapter; retain its MPL-2.0-or-later/GPL-3.0-or-later choice and the notices shipped by the selected components.
-- OCRmyPDF and Tesseract: optional OCR providers; no OCRmyPDF adapter is shipped in this release, while strict image residue checks can use a separately installed Tesseract through PyMuPDF.
+- OCRmyPDF `>=17.8,<17.9` and Tesseract 5.x: optional separately installed OCR providers used by the shipped source-bound complete-document searchable-layer adapter. The adapter also requires qpdf 11+, Poppler `pdftotext`, and OCRmyPDF's separately installed fpdf2/pypdfium runtime; none is bundled by npm. OCRmyPDF is MPL-2.0, Tesseract is Apache-2.0, and the transitive runtime components retain their own notices. Strict image-residue checks remain the separate PyMuPDF/Tesseract sanitize gate.
 - .NET 8 SDK: used to build the WebAssembly codec and optional Office bridge; the SDK is not bundled. The source-built .NET WebAssembly runtime needed by consumers is bundled with its upstream license and notices.
 - Microsoft Office: reference software required only for optional Windows native automation; users must supply a valid installation and license.
 

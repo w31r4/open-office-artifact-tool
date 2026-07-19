@@ -19,6 +19,12 @@ Consequences:
 - Existing signatures will normally become invalid or be removed. Require explicit acknowledgement before rewriting a signed file.
 - A rewrite is not automatically a security scrub: unreferenced objects, attachments, XMP, JavaScript, hidden text, and image pixels must be addressed explicitly when sensitive data is involved.
 - The shipped qpdf adapter permits only source-hash-bound `repair` or `linearize` full rewrites, requires a clean re-inspection and stable page/form/attachment/outline counts, rejects encrypted inputs, and requires explicit signature invalidation when signature-policy evidence exists.
+- The shipped OCRmyPDF adapter is rewrite-only: it requires the exact source
+  hash, proves the output does not retain the complete source prefix, fixes
+  standard-PDF/O0/one-job settings, and atomically publishes only after qpdf
+  topology and Poppler text gates. This is searchable-layer generation, not
+  sanitize; `redo`/`force`, Tagged PDFs, forms, and signatures have separate
+  explicit loss acknowledgements.
 
 ## `incremental`
 

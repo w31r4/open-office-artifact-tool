@@ -17,8 +17,9 @@ PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
 
 Inspection is read-only and bounded. The JSON report binds the absolute source
 path, byte count, and SHA-256; qpdf version and executable; clean/warning exit
-status; PDF version; page/object/form/attachment/outline counts; encryption and
-linearization state; and object-level signature, ByteRange, `/Perms`, DocMDP,
+status; PDF version; page/object/form/annotation/attachment/outline counts;
+tagging, encryption, and linearization state; and object-level signature,
+ByteRange, `/Perms`, DocMDP,
 and FieldMDP evidence. Exit code 3 is retained as recoverable warning evidence.
 Exit code 2, malformed/over-budget JSON, source drift, an unsupported qpdf
 version, or a missing provider fails closed.

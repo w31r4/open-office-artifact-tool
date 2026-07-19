@@ -27,7 +27,7 @@ PROVIDERS = {
     "pikepdf": {"kind": "module", "module": "pikepdf", "role": "Python qpdf structure, attachment, and active-content operations", "integration": "planned-no-shipped-adapter"},
     "pyhanko": {"kind": "module", "module": "pyhanko", "distribution": "pyHanko", "minimum_version": (0, 35, 0), "maximum_version_exclusive": (0, 36, 0), "companion_module": "pyhanko_certvalidator", "companion_distribution": "pyhanko-certvalidator", "companion_minimum_version": (0, 31, 0), "companion_maximum_version_exclusive": (0, 32, 0), "role": "source-bound read-only signature validation; signing remains an explicit external workflow", "integration": "shipped-thin-script-external-python"},
     "verapdf": {"kind": "command", "commands": ["verapdf"], "environment": "OPEN_OFFICE_PDF_VERAPDF", "minimum_version": (1, 30, 0), "maximum_version_exclusive": (1, 31, 0), "require_version_output": True, "role": "source-bound PDF/A and PDF/UA machine-rule validation", "integration": "shipped-thin-script-external-cli"},
-    "ocrmypdf": {"kind": "command_or_module", "commands": ["ocrmypdf"], "module": "ocrmypdf", "role": "scanned-PDF OCR and searchable layer generation", "integration": "planned-no-shipped-adapter"},
+    "ocrmypdf": {"kind": "command", "commands": ["ocrmypdf"], "environment": "OPEN_OFFICE_PDF_OCRMYPDF", "minimum_version": (17, 8, 0), "maximum_version_exclusive": (17, 9, 0), "require_version_output": True, "role": "source-bound scanned-PDF OCR and searchable layer generation", "integration": "shipped-thin-script-external-cli"},
     "tesseract": {"kind": "command", "commands": ["tesseract"], "role": "OCR engine used by strict image residue checks", "integration": "external-required-for-image-ocr"},
 }
 

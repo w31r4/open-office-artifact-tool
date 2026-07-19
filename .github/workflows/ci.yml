@@ -33,6 +33,11 @@ jobs:
           python -m venv "$RUNNER_TEMP/open-office-pyhanko"
           "$RUNNER_TEMP/open-office-pyhanko/bin/python" -m pip install --disable-pip-version-check 'pyHanko==0.35.2' 'pyhanko-certvalidator==0.31.1'
           echo "OPEN_OFFICE_PYHANKO_TEST_PYTHON=$RUNNER_TEMP/open-office-pyhanko/bin/python" >> "$GITHUB_ENV"
+      - name: Install isolated OCRmyPDF runtime
+        run: |
+          python -m venv "$RUNNER_TEMP/open-office-ocrmypdf"
+          "$RUNNER_TEMP/open-office-ocrmypdf/bin/python" -m pip install --disable-pip-version-check 'OCRmyPDF==17.8.1'
+          echo "OPEN_OFFICE_PDF_OCRMYPDF_TEST=$RUNNER_TEMP/open-office-ocrmypdf/bin/ocrmypdf" >> "$GITHUB_ENV"
       - name: Install pinned veraPDF validation runtime
         run: |
           curl --fail --location --silent --show-error \
@@ -54,7 +59,7 @@ jobs:
         run: |
           npx playwright install --with-deps chromium
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libreoffice-writer libreoffice-calc libreoffice-impress poppler-utils qpdf
+          sudo apt-get install -y --no-install-recommends libreoffice-writer libreoffice-calc libreoffice-impress poppler-utils qpdf tesseract-ocr
       - name: Verify render/runtime tools
         run: |
           node -e "const fs = require('fs'); const { chromium } = require('playwright'); if (!fs.existsSync(chromium.executablePath())) process.exit(1)"
@@ -62,7 +67,12 @@ jobs:
           pdftoppm -v
           qpdf --version
           pdfinfo -v
+          pdftotext -v
+          "$OPEN_OFFICE_PDF_OCRMYPDF_TEST" --version
+          tesseract --version
+          tesseract --list-langs | grep -Fx eng
           "$OPEN_OFFICE_PYHANKO_TEST_PYTHON" -c "from importlib.metadata import version; assert (version('pyHanko'), version('pyhanko-certvalidator')) == ('0.35.2', '0.31.1')"
+          "$RUNNER_TEMP/open-office-ocrmypdf/bin/python" -c "from importlib.metadata import version; assert version('ocrmypdf') == '17.8.1'; import pypdfium2, fpdf"
           "$OPEN_OFFICE_PDF_VERAPDF" --version
           "$OPEN_OFFICE_PDF_VERAPDF" --list
           dotnet --version

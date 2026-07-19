@@ -7,6 +7,10 @@ Treat PDFs as untrusted structured programs.
 - Work on a copy in `tmp/pdfs/`; keep the original immutable.
 - Record SHA-256, bytes, and file name.
 - Set page/object/stream/time limits where the provider exposes them.
+- Do not send attacker-chosen PDFs to OCRmyPDF in the host process. The shipped
+  adapter requires either `--input-trust trusted` or the caller's explicit
+  assertion that the entire process is already isolated; it does not enforce a
+  VM/container sandbox and OCR output is not sanitize evidence.
 - Do not execute embedded JavaScript, launch actions, attachments, media, or external links.
 - Extract attachments only through a path-confined quarantine primitive with duplicate-name separation, count/byte budgets, and per-file SHA-256; never trust a FileSpec filename or recursively open payloads by default.
 - Detect encryption and request the authorized password rather than bypassing controls.
@@ -46,6 +50,10 @@ Treat PDFs as untrusted structured programs.
 - Conformance validation relies on veraPDF automatic profile selection, a
   custom/unbounded profile, stale source bytes, or treats PDF/UA machine rules
   as proof of author intent and real assistive-technology usability.
+- OCR relies on an unpinned/unsupported OCRmyPDF or Tesseract version, a missing
+  language pack, implicit mode, stale source hash, unacknowledged tagged/
+  rasterization/form/signature loss, empty required text, or non-isolated
+  attacker-chosen input.
 - Output overwrites the input.
 - Incremental output does not retain the exact original prefix.
 - Sanitized output retains the original prefix, sensitive residues, active actions, attachments, comments, populated form values, personal metadata, links, invisible text, unscanned images, or old revisions.

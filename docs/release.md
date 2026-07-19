@@ -47,8 +47,8 @@ The release candidate is acceptable only when all of the following are true:
 - default facade create/import/edit/re-export roundtrips pass for all three Office formats;
 - legacy options, old subpath, missing runtime, and opaque-without-source cases fail explicitly;
 - all five npm-distributed native plugin manifests validate, the published six-Skill topology is complete, and every workflow promoted to compatible in `docs/reference-skills.md` passes from the public package surface; the repository-only Default Template Library separately passes its canonical inventory, integrity, source-bound codec, and package-exclusion gates;
-- PDF greenfield authoring plus default MuPDF.js import/inspect/render/bounded-edit, lazy-load, pre-WASM budget, exact-prefix incremental-save, source-bound annotation/link/form-field behavior, signature/redaction/deletion fail-closed, Skill CLI source-protection, and specialist-provider contract tests pass independently;
-- when explicitly configured, the real optional-provider test covers ReportLab creation, pdfplumber extraction, type-aware pypdf text/radio/checkbox forms and annotations, typed pypdf merge/reorder/selective watermarking, PyMuPDF rewrite/incremental/page/text/image/form/annotation edits, real redaction/scrub/residue scans, capped numerical text-fit behavior, canonical audit byte binding, and typed Poppler source/output comparison;
+- PDF greenfield authoring plus default MuPDF.js import/inspect/render/bounded-edit, lazy-load, pre-WASM budget, exact-prefix incremental-save, source-bound annotation/link/form-field behavior, signature/redaction/deletion fail-closed, Skill CLI source-protection, and specialist-provider contract tests pass independently, including qpdf structure, pyHanko signature validation, veraPDF conformance, and OCRmyPDF searchable-layer routing;
+- when explicitly configured, the real optional-provider tests cover ReportLab creation, pdfplumber extraction, type-aware pypdf text/radio/checkbox forms and annotations, typed pypdf merge/reorder/selective watermarking, PyMuPDF rewrite/incremental/page/text/image/form/annotation edits, real redaction/scrub/residue scans, capped numerical text-fit behavior, canonical audit byte binding, typed Poppler source/output comparison, and OCRmyPDF/Tesseract recovery of a generated image-only scan with MuPDF second import and Poppler pixel invariance;
 - Open XML SDK validation passes for generated Office fixtures;
 - configured LibreOffice/Poppler/Playwright/native render gates pass where available;
 - a production-only packed clean install completes all three Office roundtrips, PDF smoke, and a real packaged Template Creator invocation while `dotnet` is absent from `PATH`, and proves that the repository-only Default Template Library is absent;
@@ -1255,7 +1255,7 @@ On 2026-07-17, the native reference-plugin/OpenChestnut compatibility worktree p
 - The final combined dry-run npm tarball contains 417 files, is 9,190,240 bytes compressed and 22,803,636 bytes unpacked. It includes the rich PDF Skill tasks/references/examples, required lazy MuPDF.js route, six-page tagged-accessibility report workflow, explicit Python-runtime selector, path-safe attachment quarantine, type-aware AcroForm and merge/reorder/selective-watermark adapters, active-content inert scanner, canonical audit validator/schema, typed Poppler source/output comparator, the dependency-leaf cross-format raster registration/diff/visual-QA engine, the shipped Spreadsheet Range and sparkline workflows, the PPTX direct-background, speaker-notes, signed image-crop, recursive native-group, and embedded-XLSX/OLE workflow references, and the dependency-leaf OOXML package, Range, chart-source, sparkline, and Presentation group/image-fit/crop/native-object modules while excluding Python bytecode/cache files, development harnesses, private reference material, Agent PromptBench oracles, and removed Office codec paths.
 - `npm run verify:open-chestnut-build` compared 39 audited files; both clean builds produced the same manifest-bound 38-file, 14,153,404-byte runtime payload. The build entry point clears the Release incremental graph before restore/publish so a preceding `dotnet test` cannot make the first WASM publish differ from the second.
 - Render-backed gates ran with LibreOfficeDev 26.8.0.0.alpha0, Poppler 26.05.0, and the installed Playwright Chromium runtime.
-- The explicit real-provider gate ran with ReportLab 4.4.9, pdfplumber 0.11.9, pypdf 6.10.0, and separately installed PyMuPDF 1.27.2.3 under the approved AGPL route. It proved byte-identical incremental prefixes, non-prefix rewrites, pypdf text/radio/checkbox value and appearance handling, complete-source page selection/reorder/selective watermarking with preserved navigation, pypdf and PyMuPDF annotation operations, bounded text/image/page edits, full redaction/scrub, single-revision/no-residue output, and deliberate reflow rejection. The typed Poppler comparator maps each merged output page back to its immutable source, requires exact pixels on unstamped pages, requires bounded change on stamped pages, and reports blank-state and dark-ratio evidence. The scrub-only active-content fixture proves removal of root/additional JavaScript, Launch/SubmitForm actions, attachments, invisible text, comments, populated form values, personal metadata, and the null active-content dictionary names that PyMuPDF can leave after logical deletion; unfamiliar object serialization and invisible text overlapping visible text fail closed. An image-bearing strict residue scan failed closed because Tesseract is not installed; qpdf, pyHanko, veraPDF, pikepdf, and OCRmyPDF were not executed and remain external/planned as documented.
+- The explicit real-provider gate ran with ReportLab 4.4.9, pdfplumber 0.11.9, pypdf 6.10.0, and separately installed PyMuPDF 1.27.2.3 under the approved AGPL route. It proved byte-identical incremental prefixes, non-prefix rewrites, pypdf text/radio/checkbox value and appearance handling, complete-source page selection/reorder/selective watermarking with preserved navigation, pypdf and PyMuPDF annotation operations, bounded text/image/page edits, full redaction/scrub, single-revision/no-residue output, and deliberate reflow rejection. The typed Poppler comparator maps each merged output page back to its immutable source, requires exact pixels on unstamped pages, requires bounded change on stamped pages, and reports blank-state and dark-ratio evidence. The scrub-only active-content fixture proves removal of root/additional JavaScript, Launch/SubmitForm actions, attachments, invisible text, comments, populated form values, personal metadata, and the null active-content dictionary names that PyMuPDF can leave after logical deletion; unfamiliar object serialization and invisible text overlapping visible text fail closed. In that earlier milestone an image-bearing strict residue scan failed closed because Tesseract was not installed, and qpdf, pyHanko, veraPDF, pikepdf, and OCRmyPDF were not executed; later sections record the separately shipped and tested qpdf, pyHanko, veraPDF, and OCRmyPDF adapters while pikepdf remains planned.
 - The shipped Documents example and an independent Skill forward test each completed two OpenChestnut round trips, semantic assertions, and a one-page LibreOffice render with every page inspected. The audit narrowed custom source-free table styles to `TableGrid` plus direct formatting, documented non-persistent model locators across imports, aligned header/footer distance to the codec's 720-twip default, and routed ordinary classic comments through `DocumentModel.addComment`.
 - The shipped Spreadsheet Range example completed R1C1/block-write/formula-evidence/navigation/format/chart/verify/render and two OpenChestnut round trips. A separate forward test authored and visually reviewed a three-sheet operating forecast with formula-driven financials, zero spreadsheet errors, PASS model checks, and a formula-bound line chart. Its findings led to automatic native formulas for `containsText`, text-preserving direct references, and live internal-range cache resolution for formula-only chart inspect/render/export; imported chart persistence snapshots remain deliberately separate and fail closed.
 - The shipped Spreadsheet sparkline example and development fixture authored standard Office 2010 `x14:sparklineGroups` line, column, and stacked profiles, exercised vertical row and horizontal column mappings, imported and edited recognized groups with fixed topology, preserved unsupported non-contiguous native groups unchanged, and rejected lossy topology changes. LibreOfficeDev opened the fixture and Poppler rendered all three types across two pages; the JavaScript SVG preview rendered each target cell independently.
@@ -1490,6 +1490,51 @@ and 24,200,954 bytes unpacked on the local audit host. The repository-only
 4,048-byte conformance fixture is excluded from the npm tarball. Full release
 and hosted results are recorded after the final candidate commit; npm publish
 remains blocked by unavailable authentication.
+
+### Bounded OCRmyPDF searchable-layer provider
+
+On 2026-07-19, the PDF Skill gained a shipped thin adapter for an explicitly
+installed OCRmyPDF `>=17.8,<17.9` runtime, Tesseract 5.x, qpdf 11+, and Poppler
+`pdftotext`. It binds one complete input PDF to an exact SHA-256, copies it to a
+private read-only snapshot, and invokes OCRmyPDF with fixed standard-PDF,
+optimization-zero, one-job, Tesseract, fpdf2, and pypdfium settings. The caller
+must select `skip`, `redo`, or `force`, name installed OCR languages, and declare
+either trusted input or caller-provided isolation. `redo` and `force`, Tagged
+PDF input, force-mode forms or annotations, and signed input each require their
+own loss or invalidation acknowledgement. Encrypted input is rejected.
+
+The adapter accepts no arbitrary OCRmyPDF flags, page subsets, provider plugins,
+or output replacement. It enforces source, output, sidecar, process, diagnostic,
+text, language, and page-image budgets; terminates the provider process group on
+timeout; rejects source-prefix output; re-proves the source and snapshot; and
+publishes one distinct full-rewrite result without replacement. qpdf supplies
+pre/post encryption, signature, tagging, form, annotation, and bounded topology
+evidence. Poppler extracts the final searchable text for required-text and
+nonempty gates. This route is not sanitize, redaction, OCR-quality proof, or a
+malware sandbox; attacker-chosen files still require external process and host
+isolation plus final visual review.
+
+The hermetic suite covers missing and out-of-range providers, unavailable
+languages, stale source hashes, symlinks and output collisions, trust and
+structure acknowledgements, signed/encrypted policy, fixed provider arguments,
+timeouts and hard output budgets, source-snapshot mutation, source-prefix
+outputs, empty OCR text, and required-text failure. The real-provider gate used
+OCRmyPDF 17.8.1, Tesseract 5.5.2, qpdf 12.3.2, and Poppler 26.05.0. It generated
+an image-only PDF whose source exposed no text, recovered both required phrases,
+re-imported the output through MuPDF.js, preserved the source bytes, and rendered
+the source and OCR output to pixel-identical Poppler images at 96 DPI.
+
+The complete local gate passed `npm test` including Playwright and the real OCR
+fixture, `npm run docs:api` with no generated diff, `npm run proto:check`,
+`npm run test:pack`, serial `npm run verify:open-chestnut-build`, OfficeBridge
+`5/5`, and OpenChestnut `283/283`. Two clean WASM builds reproduced 39 audited
+files and the same manifest-bound 38-file, 14,635,200-byte runtime. The
+production clean-install tarball contains 458 files, is 9,581,955 bytes
+compressed and 24,250,484 bytes unpacked. The unpacked-size ceiling moved
+narrowly to 24,275,000 bytes, retaining less than 24 KiB of measured headroom.
+The standalone offline release metadata check passes; `npm whoami` still
+returns `ENEEDAUTH`, so no publish or tag operation was attempted. The hosted
+candidate result is recorded after the final commit.
 
 `npm run release:check` passes the source, documentation, package, license, JavaScript, and .NET gates. Its only remaining blocker is unavailable npm authentication. No `npm publish` or tag/release operation has been performed.
 

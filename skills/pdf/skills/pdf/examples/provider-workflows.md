@@ -95,6 +95,34 @@ false`. PDF/UA profiles (`ua1` and `ua2`) always require a separate human
 review of reading order, semantics, alternatives, contrast, and actual
 assistive-technology usability.
 
+## OCRmyPDF complete-document searchable layer
+
+Install OCRmyPDF 17.8.x, Tesseract 5.x with the selected languages, qpdf 11+,
+and Poppler. Bind the operation to a fresh source hash and select the mode
+instead of relying on provider defaults:
+
+```bash
+export OPEN_OFFICE_PDF_OCRMYPDF="/absolute/path/to/ocrmypdf"
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+SOURCE_SHA256="$(shasum -a 256 scanned.pdf | awk '{print $1}')"
+"$PYTHON_BIN" scripts/pdf_provider.py plan \
+  --task ocr --provider ocrmypdf --strategy rewrite \
+  --input scanned.pdf --output outputs/scanned-searchable.pdf --require-provider
+"$PYTHON_BIN" scripts/ocrmypdf_provider.py ocr \
+  scanned.pdf outputs/scanned-searchable.pdf \
+  --expected-sha256 "$SOURCE_SHA256" \
+  --mode skip --language eng --input-trust trusted \
+  --require-text 'expected phrase' \
+  > tmp/pdfs/ocr-report.json
+```
+
+The adapter fixes `--output-type pdf --optimize 0 --jobs 1` and validates the
+full rewrite with qpdf plus Poppler text extraction. It never emits a sidecar
+deliverable, invokes plugins, falls back, sanitizes the source, or asserts OCR
+quality/visual fidelity. Compare Poppler renders of every input/output page and
+manually review recognized text before delivery. See
+[`tasks/ocr.md`](../tasks/ocr.md).
+
 ## pypdf attachment quarantine
 
 ```bash

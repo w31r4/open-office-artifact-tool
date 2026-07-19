@@ -50,7 +50,7 @@ Read the [provider matrix](references/PROVIDER_MATRIX.md), [save policies](refer
 | Read-only signature integrity/trust/difference/DocMDP validation | pyHanko core through `scripts/pyhanko_provider.py` |
 | Signature creation, timestamps, and LTV updates | explicit external pyHanko workflow |
 | PDF/A or PDF/UA machine rules | separately installed veraPDF 1.30.x through `scripts/verapdf_provider.py` |
-| Scanned-PDF OCR | OCRmyPDF is planned; strict image residue OCR currently uses separately installed Tesseract through PyMuPDF |
+| Scanned-PDF searchable text layer | separately installed OCRmyPDF 17.8.x through source-bound `scripts/ocrmypdf_provider.py`; strict redaction residue OCR remains the PyMuPDF/Tesseract sanitize route |
 
 Probe and validate the route before work. The default MuPDF.js path uses this mandatory preflight:
 
@@ -151,7 +151,7 @@ Bind the canonical audit `output` to `attachments.json`, set `savePolicy.strateg
 
 The shipped qpdf wrapper is a thin external-provider boundary, not another PDF
 model. `inspect` binds the source SHA-256 and reports qpdf warnings, page/object/
-form/attachment counts, encryption/linearization state, and signature/ByteRange/
+form/annotation/attachment counts, tagging, encryption/linearization state, and signature/ByteRange/
 DocMDP evidence. `rewrite` accepts only that fresh source SHA-256, works on a
 private snapshot, and atomically publishes a distinct clean output:
 
@@ -169,6 +169,35 @@ after pyHanko/DocMDP review; encrypted rewrites fail closed. qpdf repair does
 not remove active content, metadata, attachments, hidden/OCR text, or sensitive
 content and must never be described as sanitize or redaction. See
 [inspect, repair, and linearize](tasks/repair_linearize.md).
+
+## Scanned-PDF OCR
+
+The shipped OCRmyPDF adapter owns the bounded searchable-layer route for one
+complete imported PDF. It requires the exact source SHA-256 and a distinct
+absent output, works only on a private source snapshot, fixes OCRmyPDF to
+`--output-type pdf --optimize 0 --jobs 1` with Tesseract/fpdf2/pypdfium, and
+uses qpdf plus Poppler `pdftotext` as independent delivery gates:
+
+```bash
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+"$PYTHON_BIN" scripts/ocrmypdf_provider.py probe
+"$PYTHON_BIN" scripts/ocrmypdf_provider.py ocr \
+  scanned.pdf outputs/scanned-searchable.pdf \
+  --expected-sha256 '<sha256-from-fresh-inspect>' \
+  --mode skip --language eng --input-trust trusted \
+  --require-text 'expected phrase'
+```
+
+The only modes are explicit `skip`, `redo`, and `force`. Tagged input and
+`redo`/`force` require a structure-loss acknowledgement; `force` additionally
+requires rasterize-all and, when forms or annotations exist, interactive-flattening
+acknowledgements. Signature evidence requires prior pyHanko/DocMDP review plus
+explicit invalidation. Encrypted files, stale hashes, missing language packs,
+unexpected topology changes, empty/unmatched text, incremental prefixes, and
+provider/budget failures stop without output. OCRmyPDF is not a sanitizer and
+is not designed as a malware boundary: the caller must declare trusted input or
+an already isolated execution environment. See [scanned-PDF OCR](tasks/ocr.md),
+then Poppler-render and manually review every final page.
 
 ## Edit An Existing PDF
 
