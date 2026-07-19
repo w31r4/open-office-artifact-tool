@@ -90,7 +90,8 @@ The shipped workflow independently verifies a two-measure revenue/units matrix,
 exports and imports twice, and renders both source and Pivot sheets. A real
 LibreOffice XLSX resave retained both measures and aggregations, then reimported
 through OpenChestnut with correct totals. LibreOffice and Poppler produced a
-clean two-page native review with no clipping. C# tests separately cover Office
+clean two-page native review with no clipping on the macOS host and in a Debian
+12 amd64 container running LibreOffice 7.4.7. C# tests separately cover Office
 2021 validation for multi-value tables with and without a column field,
 roundtrip identity, malformed-axis preservation, and the 32-field budget.
 
@@ -99,7 +100,7 @@ proto:check`, `npm run test:pack`, and serial `npm run
 verify:open-chestnut-build`; OpenChestnut passed `280/280` and OfficeBridge
 passed `5/5`. Two clean WASM builds produced the same 39 audited files and the
 same manifest-bound 38-file, 14,610,112-byte runtime. The clean-install tarball
-contains 452 files, is 9,523,989 bytes compressed and 24,058,003 bytes
+contains 452 files, is 9,524,037 bytes compressed and 24,058,237 bytes
 unpacked. The optional specialist Python PDF-provider gate remained
 contract-only because `OPEN_OFFICE_PDF_PROVIDER_PYTHON` was not explicitly
 configured; the required MuPDF.js path and all other npm gates ran locally. No
