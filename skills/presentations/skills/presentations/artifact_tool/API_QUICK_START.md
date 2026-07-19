@@ -344,16 +344,20 @@ await duplicatePptxSlide({
 
 The transaction supports the same canonical inline leaves used by the bounded
 clone profile, including straight/elbow connectors whose present endpoints
-resolve inside the source slide tree. It maps source `presentation.xml`
+resolve inside the source slide tree and canonical run-level clicks to an
+external absolute URI, a retained internal SlidePart, or a supported relative
+slide action. It maps source `presentation.xml`
 relationships, calls `slide.duplicate()`, requires the clone immediately after
 the original, and accepts only the necessary presentation/content-type
 topology changes plus one new SlidePart and its relationship part. Every
 retained source part, including the source SlidePart, must remain
-byte-identical. It then reimports and verifies source/clone structural
-semantics, connector bindings, and model-render equivalence. The latter ignores
+byte-identical. It requires exact source/clone hyperlink `r:id`, URI, target
+SlidePart, and action-only inventories with no orphan relationship. It then
+reimports and verifies source/clone structural semantics, connector/link
+bindings, and model-render equivalence. The latter ignores
 fresh `data-*-id` inspection locators, so it does not claim lexical equality
 for the new clone XML. Ambiguous names, notes/comments, unsupported graph
-leaves, unresolved endpoints, and unexpected package changes reject without
+leaves, shape-level/hover/unknown/orphan links, unresolved endpoints, and unexpected package changes reject without
 promoting an output or audit.
 
 For the one opt-in closed-leaf profile, set `allowClosedLeaves: true` explicitly:

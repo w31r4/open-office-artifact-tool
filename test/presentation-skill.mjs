@@ -345,10 +345,23 @@ try {
     end: { x: 210, y: 41 },
     line: { fill: "#64748B", width: 1 },
   });
-  duplicateFixture.slides.add({ name: "Untouched canary" }).shapes.add({
+  const duplicateCanary = duplicateFixture.slides.add({ name: "Untouched canary" });
+  duplicateCanary.shapes.add({
     name: "canary-copy",
     position: { left: 48, top: 40, width: 260, height: 72 },
     text: "Unchanged source slide",
+  });
+  duplicateSourceSlide.shapes.add({
+    name: "clone-links",
+    geometry: "textbox",
+    position: { left: 48, top: 190, width: 480, height: 72 },
+    fill: "transparent",
+    line: { fill: "transparent", width: 0 },
+    text: [{ runs: [
+      { text: "Guide ", link: { uri: "https://example.com/clone-guide", tooltip: "Open guide" } },
+      { text: "Canary ", link: { slideId: duplicateCanary.id } },
+      { text: "Next", link: { action: "nextSlide" } },
+    ] }],
   });
   const duplicateSourcePptx = await PresentationFile.exportPptx(duplicateFixture);
   await duplicateSourcePptx.save(duplicateInput);
@@ -367,6 +380,12 @@ try {
   assert.equal(duplicateResult.audit.operation.sourcePart, "ppt/slides/slide1.xml");
   assert.equal(duplicateResult.audit.operation.clonePart, "ppt/slides/slide3.xml");
   assert.equal(duplicateResult.audit.validation.package.retainedSourcePartsByteIdentical, true);
+  assert.deepEqual(duplicateResult.audit.operation.runHyperlinks, { relationshipCount: 2, actionOnlyCount: 1 });
+  assert.deepEqual(duplicateResult.audit.validation.package.runHyperlinks, {
+    relationshipCount: 2,
+    actionOnlyCount: 1,
+    exactSourceGraphRetained: true,
+  });
   assert.deepEqual(duplicateResult.audit.validation.package.newPartPaths, [
     "ppt/slides/_rels/slide3.xml.rels",
     "ppt/slides/slide3.xml",
@@ -391,6 +410,25 @@ try {
   assert.equal(duplicateCloneConnector.startTargetId, duplicateCloneGroup.shapes.items[0].id);
   assert.equal(duplicateCloneConnector.endTargetId, duplicateCloneGroup.shapes.items[1].id);
   assert.notEqual(duplicateCloneConnector.startTargetId, duplicateSourceGroup.shapes.items[0].id);
+  const duplicateCloneLinks = duplicateRoundTrip.slides.getItem(1).shapes.items.find((shape) => shape.name === "clone-links").text.paragraphs[0].runs;
+  assert.equal(duplicateCloneLinks[0].link.uri, "https://example.com/clone-guide");
+  assert.equal(duplicateCloneLinks[1].link.slideId, duplicateRoundTrip.slides.getItem(2).id);
+  assert.equal(duplicateCloneLinks[2].link.action, "nextSlide");
+  const duplicateQa = await verifyPresentationFile(duplicateOutput, {
+    outputDir: path.join(duplicateDir, "render-qa"),
+    nativeRender,
+  });
+  assert.equal(duplicateQa.verify.ok, true);
+  assert.equal(duplicateQa.packageInspect.ok, true);
+  assert.equal(duplicateQa.modelRender.ok, true);
+  if (nativeStatus.available) {
+    assert.equal(duplicateQa.nativeRender.status, "passed");
+    assert.deepEqual(
+      await fs.readFile(duplicateQa.nativeRender.pages[0].path),
+      await fs.readFile(duplicateQa.nativeRender.pages[1].path),
+      "LibreOffice/Poppler must render the source and canonical hyperlink clone identically",
+    );
+  }
 
   const duplicateMissingOutput = path.join(duplicateDir, "missing-target.pptx");
   const duplicateMissingAudit = path.join(duplicateDir, "missing-target.json");
@@ -405,6 +443,31 @@ try {
   );
   assert.equal(await fs.access(duplicateMissingOutput).then(() => true, () => false), false);
   assert.equal(await fs.access(duplicateMissingAudit).then(() => true, () => false), false);
+
+  const orphanLinkInput = path.join(duplicateDir, "orphan-link-source.pptx");
+  const orphanLinkOutput = path.join(duplicateDir, "orphan-link-output.pptx");
+  const orphanLinkAudit = path.join(duplicateDir, "orphan-link-audit.json");
+  const orphanLinkZip = await JSZip.loadAsync(duplicateSourceBytes);
+  const orphanRelationships = await orphanLinkZip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
+  orphanLinkZip.file(
+    "ppt/slides/_rels/slide1.xml.rels",
+    orphanRelationships.replace(
+      "</Relationships>",
+      '<Relationship Id="rIdOrphanLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.com/orphan" TargetMode="External"/></Relationships>',
+    ),
+  );
+  await fs.writeFile(orphanLinkInput, await orphanLinkZip.generateAsync({ type: "nodebuffer" }));
+  await assert.rejects(
+    () => duplicatePptxSlide({
+      inputPath: orphanLinkInput,
+      outputPath: orphanLinkOutput,
+      auditPath: orphanLinkAudit,
+      expectedName: "Clone connector source",
+    }),
+    /orphan or unmodeled hyperlink relationship/,
+  );
+  assert.equal(await fs.access(orphanLinkOutput).then(() => true, () => false), false);
+  assert.equal(await fs.access(orphanLinkAudit).then(() => true, () => false), false);
 
   const notesInput = path.join(duplicateDir, "notes-source.pptx");
   const notesOutput = path.join(duplicateDir, "notes-output.pptx");

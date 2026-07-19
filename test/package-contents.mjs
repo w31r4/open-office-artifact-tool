@@ -31,16 +31,16 @@ const report = JSON.parse(result.stdout)[0];
 const files = report.files.map((item) => item.path);
 // npm's gzip output varies between the macOS and Linux npm builds used by local
 // and hosted gates. The largest observed Linux-vs-macOS delta is about 203 KiB;
-// the local pyHanko signing candidate measures 9,605,861 bytes. Keep about
-// 31 KiB beyond that observed cross-platform projection rather than budgeting
-// to one machine's exact gzip result.
+// the local PPTX canonical-run-hyperlink clone candidate measures 9,613,431
+// bytes. Keep about 18 KiB beyond that observed cross-platform projection
+// rather than budgeting to one machine's exact gzip result.
 const maxPackedBytes = 9_840_000;
 // The bundled OpenChestnut runtime is an audited product payload, not an
 // optional download. Keep its unpacked budget tight while allowing the
 // audited PDF provider/docs growth plus the bounded DOCX/PPTX modern-comment and
-// native XLSX PivotTable codecs and runnable workflows. The local pyHanko
-// signing candidate measures 24,354,884 unpacked bytes, so this keeps about
-// 24 KiB of explicit headroom.
+// native XLSX PivotTable codecs and runnable workflows. The local PPTX
+// canonical-run-hyperlink clone candidate measures 24,372,583 unpacked bytes,
+// so this keeps about 7 KiB of explicit headroom.
 // The repository-only MIT Default Template Library is excluded from the npm
 // tarball. Its retained Office/PNG sources must never consume this consumer
 // package budget.

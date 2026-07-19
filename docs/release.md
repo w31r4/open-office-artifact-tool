@@ -1634,6 +1634,46 @@ runtime remains 38 files at 14,635,200 bytes. The production tarball contains
 local audit host. The offline release metadata check passes; hosted results are
 recorded after the candidate commit. No publish or tag operation was attempted.
 
+### Source-bound PPTX canonical run-hyperlink clone
+
+On 2026-07-19, the strict imported `slide.duplicate()` profile gained one
+additional closed relationship-graph slice for canonical run-level clicks. An
+eligible copied shape or recursively copied group may now retain absolute
+external URI clicks, internal slide jumps to retained source SlideParts, and
+the five modeled action-only navigation clicks. OpenChestnut copies the exact
+source relationship IDs, URI or SlidePart targets, externality, action markup,
+and semantic destinations into the independent clone; it does not retarget a
+source or self link to the new slide. The retained source slide XML and
+relationships remain byte-identical.
+
+Preflight parses every inline `a:hlinkClick`, proves that all owned hyperlink
+and slide relationships are used by the supported graph, bounds both
+relationships and markup, and repeats an exact relationship inventory after
+serialization. Shape-level clicks, hover links, unknown or malformed actions,
+orphan relationships, removed internal targets, links inside
+tables/pictures/connectors, and broader source graphs remain fail-closed. A
+fresh import is still required before editing the clone.
+
+The shipped Presentation workflow now records exact source/clone hyperlink
+graph fingerprints and normalized internal SlidePart targets in its audit. Its
+fixture covers external, internal, and action-only clicks, rejects an orphan
+relationship without publishing output, reimports the clone, and proves the
+retained source and clone with byte-identical LibreOffice/Poppler raster pages.
+The clean-install tarball test invokes the same packaged workflow.
+
+The complete local gate passed `npm test` including Playwright and the native
+Presentation render path, `npm run docs:api`, `npm run proto:check`, `npm run
+test:pack`, OfficeBridge `5/5`, and OpenChestnut `285/285`. Two deterministic
+OpenChestnut builds matched across 39 audited files and produced the same
+manifest-bound 38-file, 14,644,416-byte runtime. Environment-gated real pikepdf,
+pyHanko, veraPDF, and OCRmyPDF repeats were not enabled in this local pass;
+their contract and adversarial gates still ran. The production tarball contains
+461 files, is 9,613,431 bytes compressed and 24,372,583 bytes unpacked on the
+local audit host. The existing 24,380,000-byte unpacked ceiling remains in
+force, leaving about 7 KiB rather than hiding this growth behind a wider budget.
+Hosted results are recorded after the candidate commit; no publish or tag
+operation was attempted.
+
 `npm run release:check` passes the source, documentation, package, license, JavaScript, and .NET gates. Its only remaining blocker is unavailable npm authentication. No `npm publish` or tag/release operation has been performed.
 
 ## Publishing

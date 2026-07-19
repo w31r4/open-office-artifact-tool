@@ -73,10 +73,11 @@ SlidePart with no outbound non-layout relationship, inbound relationship, or
 presentation identity reference; it then removes the actual part and relation.
 
 `slide.duplicate()` returns a new adjacent `Slide` only under the bounded
-imported shape/inline-table/embedded-image/recursive-group layout-leaf profile. Its unchanged graph may
-contain canonical simple shapes, canonical inline fixed-grid tables, canonical embedded rectangular images, plus recursively canonical groups whose descendants contain only those same leaf kinds,
+imported shape/inline-table/embedded-image/connector/recursive-group layout-leaf profile. Its unchanged graph may
+contain canonical simple shapes, canonical inline fixed-grid tables, canonical embedded rectangular images, bounded straight/elbow connectors, plus recursively canonical groups whose descendants contain only those same leaf kinds,
 exactly one layout relationship, image relationships bound only by those
-pictures, and optionally one closed `NotesSlide -> NotesMaster` /
+pictures, canonical run-level external/internal/action click links whose exact
+relationship IDs and retained targets are copied, and optionally one closed `NotesSlide -> NotesMaster` /
 back-to-source-slide leaf plus one canonical legacy `SlideCommentsPart` leaf.
 It creates a distinct native SlidePart and presentation relationship, shares
 the verified layout, immutable ImageParts, NotesMaster, and presentation-wide
@@ -88,7 +89,7 @@ and cannot introduce a fill, link, or another package relationship. Accepted gro
 read-only until it has crossed one export/reimport boundary; it then imports as
 its own source-bound slide, with legacy comments still read-only. Imported add,
 repeat/mutated clone, immediate clone edit, rich/connected comments, and every
-connector/chart/OLE/hyperlink/custom-show/section/extension, external-or-irregular-image,
+unsupported-connector/chart/OLE/shape-level-or-unmodeled-hyperlink/custom-show/section/extension, external-or-irregular-image,
 or otherwise connected clone/delete graph fails closed.
 
 ## Discover And Edit

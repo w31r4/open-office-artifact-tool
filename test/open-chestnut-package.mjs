@@ -103,6 +103,17 @@ try {
       name: "join", from: cloneLeft, to: cloneRight,
       start: { x: 90, y: 41 }, end: { x: 210, y: 41 }, line: { fill: "#64748B", width: 1 },
     });
+    cloneSource.shapes.add({
+      name: "packed-clone-links",
+      geometry: "textbox",
+      position: { left: 48, top: 190, width: 420, height: 64 },
+      fill: "transparent",
+      line: { fill: "transparent", width: 0 },
+      text: [{ runs: [
+        { text: "Guide ", link: { uri: "https://example.com/packed-clone" } },
+        { text: "Next", link: { action: "nextSlide" } },
+      ] }],
+    });
     cloneSource.comments.addThread(undefined, "Packaged closed-leaf clone comment.", {
       author: "Package QA",
       created: "2026-07-18T03:05:00Z",
@@ -122,6 +133,9 @@ try {
     });
     if (
       cloneResult.audit.operation.clonePart !== "ppt/slides/slide2.xml" ||
+      cloneResult.audit.operation.runHyperlinks.relationshipCount !== 1 ||
+      cloneResult.audit.operation.runHyperlinks.actionOnlyCount !== 1 ||
+      !cloneResult.audit.validation.package.runHyperlinks.exactSourceGraphRetained ||
       !cloneResult.audit.operation.closedLeaves.speakerNotes ||
       !cloneResult.audit.operation.closedLeaves.legacyComments ||
       !cloneResult.audit.validation.package.retainedSourcePartsByteIdentical ||

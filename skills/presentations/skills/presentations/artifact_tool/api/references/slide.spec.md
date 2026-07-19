@@ -53,7 +53,7 @@ a simple solid and describe that as a faithful edit.
 
 ```ts
 slide.moveTo(0); // existing 0-based destination index
-const clone = slide.duplicate(); // narrow imported shape/inline-table/image/recursive-group/closed-notes profile only
+const clone = slide.duplicate(); // narrow imported canonical leaf/link/closed-notes profile only
 slide.delete(); // removes a non-final source-free slide, or a qualified imported source slide
 ```
 
@@ -94,9 +94,15 @@ evidence, see
 `duplicate()` is not a visual-only copy and never creates a second
 `p:sldId` reference to one source part. It is available only on an **original
 imported** source slide with an unchanged body of canonical simple shapes,
-canonical inline fixed-grid tables, canonical embedded rectangular images, plus recursively canonical groups whose descendants contain only those same leaf kinds, exactly one internal
+canonical inline fixed-grid tables, canonical embedded rectangular images,
+bounded straight/elbow connectors, plus recursively canonical groups whose
+descendants contain only those same leaf kinds, exactly one internal
 `SlidePart -> SlideLayoutPart` relationship, and image relationships bound only
-by those pictures. It may also own one closed
+by those pictures. Canonical run-level clicks may use an external absolute URI,
+an internal jump to a retained SlidePart, or one of the five supported relative
+slide actions. Every relationship-backed click keeps its exact `r:id` and target,
+and every hyperlink/slide relationship must be consumed by that inline markup.
+It may also own one closed
 `NotesSlide -> NotesMaster` / back-to-source-slide leaf and one canonical
 legacy `SlideCommentsPart` leaf. The notes part must have exactly those two
 relationships; the comments part must have no child, external,
@@ -115,8 +121,9 @@ the slide may use the supported fixed-topology edit path, while imported legacy
 comments remain source-bound read-only.
 
 Source-free slides, already-cloned slides, rich or connected comments, charts,
-OLE, hyperlinks, external/data relationships, external/unbound/irregular
-images, connectors, non-shape/table/image/recursive-group elements, pending-clone renames, layout/background changes, note
+OLE, shape-level/hover/unknown/orphan hyperlinks, external/data relationships,
+external/unbound/irregular images, unsupported connectors,
+non-shape/table/image/connector/recursive-group elements, pending-clone renames, layout/background changes, note
 or comment mutation before the boundary, immediate clone edits, and all broader
 relationship graphs fail closed. Adding imported slides still fails closed. A
 template-derived deck still needs a broader explicit OPC graph-clone transaction

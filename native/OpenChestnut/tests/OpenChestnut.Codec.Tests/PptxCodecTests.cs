@@ -2556,6 +2556,84 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void SourcePreservingExportClonesCanonicalRunHyperlinksWithExactRelationshipIds()
+    {
+        var authored = Invoke(HyperlinkExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var sourceBytes = authored.File.ToByteArray();
+        var sourceSlide = ZipBytes(sourceBytes, "ppt/slides/slide1.xml");
+        var sourceRelationships = ZipBytes(sourceBytes, "ppt/slides/_rels/slide1.xml.rels");
+
+        var imported = Import(sourceBytes);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var source = imported.Artifact.Presentation.Slides[0];
+        var clone = source.Clone();
+        clone.Id = "presentation/clone/canonical-run-hyperlinks";
+        clone.Source = null;
+        clone.CloneSource = source.Source.Clone();
+        imported.Artifact.Presentation.Slides.Add(clone);
+
+        var duplicated = Export(imported.Artifact);
+        Assert.True(duplicated.Ok, Diagnostics(duplicated));
+        var duplicatedBytes = duplicated.File.ToByteArray();
+        using (var stream = new MemoryStream(duplicatedBytes))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var slides = OrderedSlides(package);
+            Assert.Equal(4, slides.Length);
+            var origin = slides[0];
+            var outputClone = slides[3];
+            var originExternal = Assert.Single(origin.HyperlinkRelationships);
+            var cloneExternal = Assert.Single(outputClone.HyperlinkRelationships);
+            Assert.Equal(originExternal.Id, cloneExternal.Id);
+            Assert.Equal(originExternal.Uri, cloneExternal.Uri);
+            Assert.True(cloneExternal.IsExternal);
+
+            var originJump = Assert.Single(origin.Parts, pair => pair.OpenXmlPart is SlidePart);
+            var cloneJump = Assert.Single(outputClone.Parts, pair => pair.OpenXmlPart is SlidePart);
+            Assert.Equal(originJump.RelationshipId, cloneJump.RelationshipId);
+            Assert.Same(slides[1], cloneJump.OpenXmlPart);
+            Assert.Same(originJump.OpenXmlPart, cloneJump.OpenXmlPart);
+
+            var originClicks = origin.Slide!.Descendants<A.HyperlinkOnClick>().ToArray();
+            var cloneClicks = outputClone.Slide!.Descendants<A.HyperlinkOnClick>().ToArray();
+            Assert.Equal(originClicks.Select(click => click.OuterXml), cloneClicks.Select(click => click.OuterXml));
+        }
+        Assert.Equal(sourceSlide, ZipBytes(duplicatedBytes, "ppt/slides/slide1.xml"));
+        Assert.Equal(sourceRelationships, ZipBytes(duplicatedBytes, "ppt/slides/_rels/slide1.xml.rels"));
+
+        var roundTrip = Import(duplicatedBytes);
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        var runs = roundTrip.Artifact.Presentation.Slides[3].Elements[0].Shape.TextBody.Paragraphs[0].Runs;
+        Assert.Equal("https://example.com/guide?x=1&y=2", runs[0].RunHyperlink.Uri);
+        Assert.Equal("presentation/slide/2", runs[1].RunHyperlink.SlideId);
+        Assert.Equal("nextSlide", runs[2].RunHyperlink.Action);
+        Assert.Equal("endShow", runs[3].RunHyperlink.Action);
+    }
+
+    [Fact]
+    public void SourcePreservingExportRejectsUnmodeledOrOrphanHyperlinksOnAClone()
+    {
+        var authored = Invoke(HyperlinkExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+
+        var unknown = Import(AddUnknownRunClick(authored.File.ToByteArray()));
+        Assert.True(unknown.Ok, Diagnostics(unknown));
+        AddPendingClone(unknown.Artifact.Presentation, 0, "presentation/clone/unknown-click");
+        var unknownRejected = Export(unknown.Artifact);
+        Assert.False(unknownRejected.Ok);
+        Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(unknownRejected.Diagnostics).Code);
+
+        var shapeClick = Import(AddShapeLevelClick(authored.File.ToByteArray()));
+        Assert.True(shapeClick.Ok, Diagnostics(shapeClick));
+        AddPendingClone(shapeClick.Artifact.Presentation, 0, "presentation/clone/shape-click");
+        var shapeRejected = Export(shapeClick.Artifact);
+        Assert.False(shapeRejected.Ok);
+        Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(shapeRejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void SourcePreservingExportClonesAnUnchangedLayoutAndEmbeddedImageLeaf()
     {
         var authored = Invoke(ExportRequest());
@@ -4653,6 +4731,32 @@ public sealed class PptxCodecTests
             click.Action = "ppaction://customshow?id=99";
         }
         return stream.ToArray();
+    }
+
+    private static byte[] AddShapeLevelClick(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var package = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var slide = OrderedSlides(package)[0];
+            var relationship = Assert.Single(slide.HyperlinkRelationships);
+            var shape = slide.Slide!.Descendants<P.Shape>().First();
+            shape.NonVisualShapeProperties!.NonVisualDrawingProperties!
+                .Append(new A.HyperlinkOnClick { Id = relationship.Id });
+        }
+        return stream.ToArray();
+    }
+
+    private static void AddPendingClone(PresentationArtifact presentation, int sourceIndex, string cloneId)
+    {
+        var source = presentation.Slides[sourceIndex];
+        var clone = source.Clone();
+        clone.Id = cloneId;
+        clone.Source = null;
+        clone.CloneSource = source.Source.Clone();
+        presentation.Slides.Add(clone);
     }
 
     private static byte[] AddUnmodeledDefaultRunProperties(byte[] bytes)

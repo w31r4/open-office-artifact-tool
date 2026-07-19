@@ -20,6 +20,8 @@ internal sealed record PptxSourceSlideEntry(int Index, P.SlideId SlideId, string
 // consumes only this plan so adding a new supported leaf cannot create a
 // second, subtly different relationship inventory after validation.
 internal sealed record PptxCloneImageEdge(ImagePart Part, string RelationshipId);
+internal sealed record PptxCloneExternalHyperlinkEdge(Uri Uri, string RelationshipId);
+internal sealed record PptxCloneSlideHyperlinkEdge(SlidePart Part, string RelationshipId);
 internal sealed record PptxCloneNotesLeaf(
     NotesSlidePart Part,
     string SlideRelationshipId,
@@ -39,6 +41,8 @@ internal sealed record PptxCloneLeaf(
     SlideLayoutPart LayoutPart,
     string LayoutRelationshipId,
     IReadOnlyList<PptxCloneImageEdge> Images,
+    IReadOnlyList<PptxCloneExternalHyperlinkEdge> ExternalHyperlinks,
+    IReadOnlyList<PptxCloneSlideHyperlinkEdge> SlideHyperlinks,
     PptxCloneNotesLeaf? Notes,
     PptxCloneLegacyCommentsLeaf? LegacyComments);
 internal sealed class PptxTargetSlideEntry
@@ -65,6 +69,7 @@ internal static class PptxCodec
 {
     private const long DefaultSlideWidthEmu = 12_192_000;
     private const long DefaultSlideHeightEmu = 6_858_000;
+    private const int MaxCloneHyperlinkRelationships = 4_096;
 
     internal static PptxImportResult Import(byte[] bytes, EffectiveCodecLimits limits)
     {
@@ -2197,6 +2202,7 @@ internal static class PptxCodec
                 if (PartPath(outputSlide).Equals(PartPath(target.Source.Part), StringComparison.OrdinalIgnoreCase) ||
                     !HashElement(target.Source.Part.Slide!).Equals(HashElement(outputSlide.Slide!), StringComparison.OrdinalIgnoreCase))
                     throw new CodecException("presentation_postwrite_clone_mismatch", $"PPTX clone {targetIndex + 1} is not an independent exact source slide copy.", PartPath(outputSlide));
+                ValidateClonedRunHyperlinkGraph(target.Source.Part, outputSlide, targetIndex);
                 ValidateClonedSpeakerNotes(target.Source.Part, outputSlide, targetIndex);
                 ValidateClonedLegacyComments(sourcePresentationPart, outputPresentationPart, target.Source.Part, outputSlide, targetIndex);
             }
@@ -2344,6 +2350,42 @@ internal static class PptxCodec
                         PartPath(outputSlides[slideIndex]));
             }
         }
+    }
+
+    private static void ValidateClonedRunHyperlinkGraph(SlidePart source, SlidePart clone, int targetIndex)
+    {
+        var sourceExternal = source.HyperlinkRelationships
+            .ToDictionary(
+                relationship => relationship.Id,
+                relationship => (relationship.Uri.OriginalString, relationship.IsExternal),
+                StringComparer.Ordinal);
+        var cloneExternal = clone.HyperlinkRelationships
+            .ToDictionary(
+                relationship => relationship.Id,
+                relationship => (relationship.Uri.OriginalString, relationship.IsExternal),
+                StringComparer.Ordinal);
+        var sourceSlides = source.Parts
+            .Where(pair => pair.OpenXmlPart is SlidePart)
+            .ToDictionary(
+                pair => pair.RelationshipId,
+                pair => PartPath(pair.OpenXmlPart),
+                StringComparer.Ordinal);
+        var cloneSlides = clone.Parts
+            .Where(pair => pair.OpenXmlPart is SlidePart)
+            .ToDictionary(
+                pair => pair.RelationshipId,
+                pair => PartPath(pair.OpenXmlPart),
+                StringComparer.Ordinal);
+
+        if (sourceExternal.Count != cloneExternal.Count ||
+            sourceExternal.Any(pair => !cloneExternal.TryGetValue(pair.Key, out var actual) || actual != pair.Value) ||
+            sourceSlides.Count != cloneSlides.Count ||
+            sourceSlides.Any(pair => !cloneSlides.TryGetValue(pair.Key, out var actual) || !actual.Equals(pair.Value, StringComparison.OrdinalIgnoreCase)) ||
+            clone.ExternalRelationships.Any() || clone.DataPartReferenceRelationships.Any())
+            throw new CodecException(
+                "presentation_postwrite_clone_hyperlink_mismatch",
+                $"PPTX clone {targetIndex + 1} does not retain the exact bounded run-hyperlink relationship graph.",
+                PartPath(clone));
     }
 
     private static void ValidateClonedSpeakerNotes(SlidePart source, SlidePart clone, int targetIndex)
@@ -2857,6 +2899,10 @@ internal static class PptxCodec
     {
         var cloneTargets = targets.Where(target => target.IsClone).ToArray();
         if (cloneTargets.Length == 0) return;
+        var retainedSlideParts = targets
+            .Where(target => !target.IsClone)
+            .Select(target => target.Source.Part)
+            .ToHashSet();
         var root = presentationPart.Presentation ??
             throw new CodecException("missing_presentation_root", "PPTX package has no Presentation root.", "ppt/presentation.xml");
         var slideIdList = root.SlideIdList ??
@@ -2868,7 +2914,7 @@ internal static class PptxCodec
 
         foreach (var target in cloneTargets)
         {
-            var leaf = AssertSourceSlideCanBeCloned(presentationPart, target, layoutIdByPartPath, slideIdByPartPath, assetCatalog);
+            var leaf = AssertSourceSlideCanBeCloned(presentationPart, target, layoutIdByPartPath, slideIdByPartPath, retainedSlideParts, assetCatalog);
             var sourcePart = target.Source.Part;
             var sourceRoot = sourcePart.Slide ??
                 throw new CodecException("missing_slide_root", $"Presentation source slide {target.Source.Index + 1} has no slide root.", PartPath(sourcePart));
@@ -2882,6 +2928,16 @@ internal static class PptxCodec
             {
                 clonePart.AddPart(image.Part, image.RelationshipId);
                 addedRelationshipIds.Add($"{PartPath(clonePart)}\0{image.RelationshipId}");
+            }
+            foreach (var hyperlink in leaf.ExternalHyperlinks)
+            {
+                clonePart.AddHyperlinkRelationship(hyperlink.Uri, true, hyperlink.RelationshipId);
+                addedRelationshipIds.Add($"{PartPath(clonePart)}\0{hyperlink.RelationshipId}");
+            }
+            foreach (var hyperlink in leaf.SlideHyperlinks)
+            {
+                clonePart.AddPart(hyperlink.Part, hyperlink.RelationshipId);
+                addedRelationshipIds.Add($"{PartPath(clonePart)}\0{hyperlink.RelationshipId}");
             }
             if (leaf.Notes is { } notes)
             {
@@ -2927,10 +2983,11 @@ internal static class PptxCodec
                 Id = nextSlideId,
                 RelationshipId = presentationPart.GetIdOfPart(clonePart),
             };
-            // Clone-to-layout, clone-to-image, clone-to-notes, and
-            // clone-to-comments edges are intentionally opaque in the generic
-            // profile. Record only these exact, verified relationships so the
-            // package guard can distinguish them from an unmodeled graph change.
+            // Clone-to-layout, clone-to-image, clone-to-run-hyperlink,
+            // clone-to-notes, and clone-to-comments edges are intentionally
+            // opaque in the generic profile. Record only these exact, verified
+            // relationships so the package guard can distinguish them from an
+            // unmodeled graph change.
             addedRelationshipIds.Add($"{PartPath(clonePart)}\0{leaf.LayoutRelationshipId}");
             changedParts.Add(PartPath(clonePart));
             changedParts.Add(RelationshipPartPath(clonePart));
@@ -2965,6 +3022,7 @@ internal static class PptxCodec
         PptxTargetSlideEntry target,
         IReadOnlyDictionary<string, string> layoutIdByPartPath,
         IReadOnlyDictionary<string, string> slideIdByPartPath,
+        IReadOnlySet<SlidePart> retainedSlideParts,
         PptxAssetCatalog assetCatalog)
     {
         var source = target.Source;
@@ -2977,10 +3035,21 @@ internal static class PptxCodec
         var imageRelationshipIds = imageEdges
             .Select(edge => edge.RelationshipId)
             .ToHashSet(StringComparer.Ordinal);
+        var externalHyperlinkEdges = source.Part.HyperlinkRelationships
+            .Select(relationship => new PptxCloneExternalHyperlinkEdge(relationship.Uri, relationship.Id))
+            .ToArray();
+        var slideHyperlinkEdges = childParts
+            .Where(pair => pair.OpenXmlPart is SlidePart)
+            .Select(pair => new PptxCloneSlideHyperlinkEdge((SlidePart)pair.OpenXmlPart, pair.RelationshipId))
+            .ToArray();
+        var hyperlinkRelationshipIds = externalHyperlinkEdges
+            .Select(edge => edge.RelationshipId)
+            .Concat(slideHyperlinkEdges.Select(edge => edge.RelationshipId))
+            .ToHashSet(StringComparer.Ordinal);
         var notesRelationshipCount = childParts.Count(pair => pair.OpenXmlPart is NotesSlidePart);
         var commentsRelationshipCount = childParts.Count(pair => pair.OpenXmlPart is SlideCommentsPart);
         var unsafeChildren = childParts
-            .Where(pair => pair.OpenXmlPart is not SlideLayoutPart && pair.OpenXmlPart is not ImagePart && pair.OpenXmlPart is not NotesSlidePart && pair.OpenXmlPart is not SlideCommentsPart)
+            .Where(pair => pair.OpenXmlPart is not SlideLayoutPart && pair.OpenXmlPart is not ImagePart && pair.OpenXmlPart is not SlidePart && pair.OpenXmlPart is not NotesSlidePart && pair.OpenXmlPart is not SlideCommentsPart)
             .Select(pair => pair.OpenXmlPart.RelationshipType)
             .Distinct(StringComparer.Ordinal)
             .Take(4)
@@ -2990,19 +3059,23 @@ internal static class PptxCodec
             commentsRelationshipCount > 1 ||
             unsafeChildren.Length > 0 ||
             source.Part.ExternalRelationships.Any() ||
-            source.Part.HyperlinkRelationships.Any() ||
-            source.Part.DataPartReferenceRelationships.Any())
-            throw UnsupportedSourceSlideClone(source, "it owns hyperlinks, data parts, or another non-layout/image/notes/comments relationship");
+            source.Part.DataPartReferenceRelationships.Any() ||
+            hyperlinkRelationshipIds.Count > MaxCloneHyperlinkRelationships ||
+            slideHyperlinkEdges.Any(edge => !retainedSlideParts.Contains(edge.Part)))
+            throw UnsupportedSourceSlideClone(source, "it owns data parts, an unretained slide jump, too many hyperlinks, or another non-layout/image/run-hyperlink/notes/comments relationship");
         var root = source.Part.Slide ??
             throw new CodecException("missing_slide_root", $"Presentation source slide {source.Index + 1} has no slide root.", PartPath(source.Part));
         var common = root.CommonSlideData ??
             throw new CodecException("missing_common_slide_data", $"Presentation source slide {source.Index + 1} has no common slide data.", PartPath(source.Part));
         var tree = common.ShapeTree ??
             throw new CodecException("missing_shape_tree", $"Presentation source slide {source.Index + 1} has no shape tree.", PartPath(source.Part));
+        if (root.Descendants<A.HyperlinkOnClick>().Take(MaxCloneHyperlinkRelationships + 1).Count() > MaxCloneHyperlinkRelationships)
+            throw UnsupportedSourceSlideClone(source, $"it exceeds the {MaxCloneHyperlinkRelationships}-run-hyperlink markup budget");
         var sourceElements = ShapeElements(tree);
         var context = new PptxPartContext(source.Part, slideIdByPartPath, assets: assetCatalog);
         var elementIdsByNativeId = NativeElementIds(sourceElements, $"presentation/slide/{source.Index + 1}");
         var embeddedImageRelationshipIds = new HashSet<string>(StringComparer.Ordinal);
+        var usedHyperlinkRelationshipIds = new HashSet<string>(StringComparer.Ordinal);
         for (var elementIndex = 0; elementIndex < sourceElements.Length; elementIndex++)
         {
             if (!TryCollectCanonicalCloneElement(
@@ -3012,11 +3085,14 @@ internal static class PptxCodec
                     context,
                     elementIdsByNativeId,
                     imageRelationshipIds,
-                    embeddedImageRelationshipIds))
-                throw UnsupportedSourceSlideClone(source, "its elements require a broader graph clone than the bounded shape/inline-table/embedded-image/connector/recursive-group profile");
+                    embeddedImageRelationshipIds,
+                    usedHyperlinkRelationshipIds))
+                throw UnsupportedSourceSlideClone(source, "its elements require a broader graph clone than the bounded shape-with-canonical-run-hyperlinks/inline-table/embedded-image/connector/recursive-group profile");
         }
         if (!imageRelationshipIds.SetEquals(embeddedImageRelationshipIds))
             throw UnsupportedSourceSlideClone(source, "it has an image relationship that is not exactly bound by a canonical embedded picture");
+        if (!hyperlinkRelationshipIds.SetEquals(usedHyperlinkRelationshipIds))
+            throw UnsupportedSourceSlideClone(source, "its hyperlink relationships are not exactly bound by canonical inline run click actions");
         var notes = AssertSourceSpeakerNotesCanBeCloned(source, target.Target);
         var comments = AssertSourceLegacyCommentsCanBeCloned(presentationPart, source, target.Target);
         if (target.Target.Name != (common.Name?.Value ?? string.Empty))
@@ -3050,7 +3126,14 @@ internal static class PptxCodec
                 !SemanticHash(requested).Equals(binding.SemanticSha256, StringComparison.OrdinalIgnoreCase))
                 throw new CodecException("presentation_slide_clone_mismatch", $"Presentation clone {target.TargetIndex + 1} element {elementIndex + 1} is not an unchanged source element.", PartPath(source.Part));
         }
-        return new PptxCloneLeaf(layoutPart, source.Part.GetIdOfPart(layoutPart), imageEdges, notes, comments);
+        return new PptxCloneLeaf(
+            layoutPart,
+            source.Part.GetIdOfPart(layoutPart),
+            imageEdges,
+            externalHyperlinkEdges,
+            slideHyperlinkEdges,
+            notes,
+            comments);
     }
 
     // A p:grpSp is a container, not a clone permission by itself. Its
@@ -3065,15 +3148,19 @@ internal static class PptxCodec
         PptxPartContext context,
         IReadOnlyDictionary<uint, string> elementIdsByNativeId,
         ISet<string> imageRelationshipIds,
-        ISet<string> embeddedImageRelationshipIds)
+        ISet<string> embeddedImageRelationshipIds,
+        ISet<string> usedHyperlinkRelationshipIds)
     {
-        if (element is P.Shape shape) return IsSimpleShape(shape);
+        if (element is P.Shape shape)
+            return IsSimpleShape(shape) && TryCollectCanonicalRunHyperlinks(shape, context, usedHyperlinkRelationshipIds);
         // A table is the one GraphicFrame profile that is entirely inline in
         // its containing XML. PptxTableCodec rejects charts and every other
         // GraphicFrame payload.
-        if (element is P.GraphicFrame table) return PptxTableCodec.TryRead(table, out _);
+        if (element is P.GraphicFrame table)
+            return !HasHyperlinkMarkup(table) && PptxTableCodec.TryRead(table, out _);
         if (element is P.Picture picture)
         {
+            if (HasHyperlinkMarkup(picture)) return false;
             if (!PptxPictureCodec.TryRead(picture, context, out _)) return false;
             var relationshipId = picture.BlipFill?.GetFirstChild<A.Blip>()?.Embed?.Value ?? string.Empty;
             if (relationshipId.Length == 0 || !imageRelationshipIds.Contains(relationshipId)) return false;
@@ -3085,10 +3172,15 @@ internal static class PptxCodec
         // cloned SlidePart, so it adds no OPC edge beyond the already-proved
         // layout/image/notes/comments graph.
         if (element is P.ConnectionShape connector)
-            return TryReadConnector(connector, elementIdsByNativeId, out _);
+            return !HasHyperlinkMarkup(connector) && TryReadConnector(connector, elementIdsByNativeId, out _);
         if (element is not P.GroupShape group) return false;
 
         var groupId = $"{ownerId}/element/{elementIndex + 1}";
+        if (group.NonVisualGroupShapeProperties?.Descendants<A.HyperlinkOnClick>().Any() == true ||
+            group.NonVisualGroupShapeProperties?.Descendants<A.HyperlinkOnHover>().Any() == true ||
+            group.GroupShapeProperties?.Descendants<A.HyperlinkOnClick>().Any() == true ||
+            group.GroupShapeProperties?.Descendants<A.HyperlinkOnHover>().Any() == true)
+            return false;
         if (!TryReadGroup(group, groupId, context, elementIdsByNativeId, out _)) return false;
         var children = GroupElements(group);
         for (var childIndex = 0; childIndex < children.Length; childIndex++)
@@ -3100,11 +3192,36 @@ internal static class PptxCodec
                     context,
                     elementIdsByNativeId,
                     imageRelationshipIds,
-                    embeddedImageRelationshipIds))
+                    embeddedImageRelationshipIds,
+                    usedHyperlinkRelationshipIds))
                 return false;
         }
         return true;
     }
+
+    private static bool TryCollectCanonicalRunHyperlinks(
+        P.Shape shape,
+        PptxPartContext context,
+        ISet<string> usedRelationshipIds)
+    {
+        if (shape.Descendants<A.HyperlinkOnHover>().Any()) return false;
+        var clicks = shape.Descendants<A.HyperlinkOnClick>().ToArray();
+        if (clicks.Length > MaxCloneHyperlinkRelationships) return false;
+        foreach (var click in clicks)
+        {
+            if (click.Parent is not A.RunProperties properties ||
+                properties.Parent is not (A.Run or A.Break or A.Field) ||
+                properties.Elements<A.HyperlinkOnClick>().Count() != 1 ||
+                !PptxHyperlinkCodec.TryRead(click, context, out _))
+                return false;
+            var relationshipId = click.Id?.Value ?? string.Empty;
+            if (relationshipId.Length > 0) usedRelationshipIds.Add(relationshipId);
+        }
+        return true;
+    }
+
+    private static bool HasHyperlinkMarkup(OpenXmlElement element) =>
+        element.Descendants<A.HyperlinkOnClick>().Any() || element.Descendants<A.HyperlinkOnHover>().Any();
 
     private static PptxCloneNotesLeaf? AssertSourceSpeakerNotesCanBeCloned(PptxSourceSlideEntry source, PresentationSlide target)
     {
@@ -3197,7 +3314,7 @@ internal static class PptxCodec
     private static CodecException UnsupportedSourceSlideClone(PptxSourceSlideEntry source, string reason) =>
         new(
             "unsupported_presentation_slide_clone",
-            $"Source-preserving PPTX cloning is limited to an unchanged shape/inline-table/embedded-image/bounded-connector/recursive-group layout leaf with optional closed notes and legacy-comment leaves; slide {source.Index + 1} cannot be cloned because {reason}. Use an explicit broader OPC graph-clone operation for this package.",
+            $"Source-preserving PPTX cloning is limited to an unchanged shape-with-canonical-run-hyperlinks/inline-table/embedded-image/bounded-connector/recursive-group layout leaf with optional closed notes and legacy-comment leaves; slide {source.Index + 1} cannot be cloned because {reason}. Use an explicit broader OPC graph-clone operation for this package.",
             PartPath(source.Part));
 
     private static bool ReorderSourceSlideIdList(PresentationPart presentationPart, IReadOnlyList<PptxTargetSlideEntry> targets)

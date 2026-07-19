@@ -14,6 +14,14 @@ const TOPOLOGY_PARTS = new Set([
   "ppt/presentation.xml",
   "ppt/_rels/presentation.xml.rels",
 ]);
+const INLINE_ACTIONS = new Set([
+  "ppaction://hlinkshowjump?jump=nextslide",
+  "ppaction://hlinkshowjump?jump=previousslide",
+  "ppaction://hlinkshowjump?jump=firstslide",
+  "ppaction://hlinkshowjump?jump=lastslide",
+  "ppaction://hlinkshowjump?jump=endshow",
+]);
+const SLIDE_JUMP_ACTION = "ppaction://hlinksldjump";
 
 function sha256(bytes) {
   return crypto.createHash("sha256").update(bytes).digest("hex");
@@ -158,6 +166,63 @@ async function relationshipEntriesForPart(zip, sourcePart, { required = true } =
   return entries;
 }
 
+async function inspectCanonicalRunHyperlinks(zip, slidePart) {
+  const slideXml = Buffer.from(await requiredZipBytes(zip, slidePart)).toString("utf8");
+  if (/<(?:[A-Za-z_][\w.-]*:)?hlinkHover\b/i.test(slideXml)) {
+    throw new Error("Canonical duplicate workflow does not accept hover hyperlinks in " + slidePart + ".");
+  }
+  const relationships = (await relationshipEntriesForPart(zip, slidePart))
+    .filter((entry) => relationshipTypeMatches(entry, "hyperlink") || relationshipTypeMatches(entry, "slide"));
+  const relationshipById = new Map(relationships.map((entry) => [entry.id, entry]));
+  const usedRelationshipIds = new Set();
+  const clicks = [];
+  for (const match of slideXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?hlinkClick\b[^>]*>/gi)) {
+    const attributes = xmlAttributes(match[0]);
+    const relationshipId = attributes["r:id"] || "";
+    const action = unescapeXml(attributes.action || "");
+    if (!relationshipId) {
+      if (!INLINE_ACTIONS.has(action)) {
+        throw new Error("Canonical duplicate workflow found an unsupported relationship-free click action in " + slidePart + ".");
+      }
+    } else {
+      const relationship = relationshipById.get(relationshipId);
+      if (!relationship) {
+        throw new Error("Canonical duplicate workflow found an unresolved run hyperlink " + JSON.stringify(relationshipId) + " in " + slidePart + ".");
+      }
+      if (relationshipTypeMatches(relationship, "hyperlink")) {
+        if (!relationship.external || action) throw new Error("External run hyperlinks must be external and have no click action.");
+      } else if (relationshipTypeMatches(relationship, "slide")) {
+        if (relationship.external || action.toLowerCase() !== SLIDE_JUMP_ACTION) {
+          throw new Error("Internal run hyperlinks must target a SlidePart through ppaction://hlinksldjump.");
+        }
+        if (!/^ppt\/slides\/slide\d+\.xml$/i.test(relationship.targetPart || "") || !zip.file(relationship.targetPart)) {
+          throw new Error("Internal run hyperlink target is not a retained canonical SlidePart.");
+        }
+      }
+      usedRelationshipIds.add(relationshipId);
+    }
+    clicks.push(Object.fromEntries(Object.entries(attributes).sort(([left], [right]) => left.localeCompare(right))));
+  }
+  if (usedRelationshipIds.size !== relationshipById.size || [...relationshipById.keys()].some((id) => !usedRelationshipIds.has(id))) {
+    throw new Error("Canonical duplicate workflow found an orphan or unmodeled hyperlink relationship in " + slidePart + ".");
+  }
+  const relationshipFingerprint = relationships
+    .map((entry) => ({
+      id: entry.id,
+      type: entry.type,
+      external: entry.external,
+      target: entry.external ? unescapeXml(entry.target) : entry.targetPart,
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+  return {
+    clicks,
+    relationships: relationshipFingerprint,
+    relationshipCount: relationships.length,
+    actionOnlyCount: clicks.filter((click) => !(click["r:id"] || "")).length,
+    fingerprint: JSON.stringify({ clicks, relationships: relationshipFingerprint }),
+  };
+}
+
 function requireInternalRelationship(entry, label) {
   if (entry.external || !entry.targetPart) {
     throw new Error(label + " must be an internal PPTX relationship.");
@@ -266,7 +331,7 @@ function closedLeafSemanticSnapshot(slide) {
   });
 }
 
-function canonicalCloneSnapshot(slide) {
+function canonicalCloneSnapshot(slide, slidePartById = new Map()) {
   const proto = slide.toProto();
   const locationById = new Map();
   const collectIds = (value, location) => {
@@ -286,6 +351,8 @@ function canonicalCloneSnapshot(slide) {
       if (key === "id" || key === "layoutId") continue;
       if ((key === "startTargetId" || key === "endTargetId") && typeof item === "string") {
         result[key] = locationById.get(item) || "unresolved:" + item;
+      } else if (key === "slideId" && typeof item === "string") {
+        result[key] = slidePartById.get(item) || "unresolved:" + item;
       } else {
         result[key] = normalize(item);
       }
@@ -407,6 +474,13 @@ async function assertDuplicatePackageScope(sourceBytes, outputBytes, sourceIndex
     inspectClosedLeaves(sourceZip, sourcePart, { allowClosedLeaves }),
     inspectClosedLeaves(outputZip, clonePart, { allowClosedLeaves }),
   ]);
+  const [sourceRunHyperlinks, cloneRunHyperlinks] = await Promise.all([
+    inspectCanonicalRunHyperlinks(sourceZip, sourcePart),
+    inspectCanonicalRunHyperlinks(outputZip, clonePart),
+  ]);
+  if (sourceRunHyperlinks.fingerprint !== cloneRunHyperlinks.fingerprint) {
+    throw new Error("PPTX duplicate changed the canonical run-hyperlink XML/relationship graph.");
+  }
   const closedLeaves = await assertClosedLeafClonePackage(sourceZip, outputZip, sourceLeaves, cloneLeaves, sourcePart, clonePart);
   const newParts = outputParts.filter((partPath) => !sourceZip.file(partPath));
   const expectedNewParts = [clonePart, relationshipPartPath(clonePart)];
@@ -444,6 +518,12 @@ async function assertDuplicatePackageScope(sourceBytes, outputBytes, sourceIndex
     newPartPaths: newParts,
     retainedSourcePartsByteIdentical: true,
     profile: sourceLeaves.profile,
+    outputSlideParts,
+    runHyperlinks: {
+      relationshipCount: sourceRunHyperlinks.relationshipCount,
+      actionOnlyCount: sourceRunHyperlinks.actionOnlyCount,
+      exactSourceGraphRetained: true,
+    },
     closedLeaves,
   };
 }
@@ -468,18 +548,19 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
   if (sourceSlideParts.length !== presentation.slides.count) throw new Error("PPTX package slide order does not match the imported presentation model.");
   const sourcePart = sourceSlideParts[sourceIndex];
   const sourceLeaves = await inspectClosedLeaves(sourceZip, sourcePart, { allowClosedLeaves });
+  const sourceRunHyperlinks = await inspectCanonicalRunHyperlinks(sourceZip, sourcePart);
   if (slideNameFromXml(Buffer.from(await requiredZipBytes(sourceZip, sourcePart)).toString("utf8"), sourcePart) !== sourceName) {
     throw new Error("The selected model slide does not match its source SlidePart p:cSld/@name.");
   }
   const originalNames = presentation.slides.items.map((slide) => slide.name);
-  const sourceSemantic = canonicalCloneSnapshot(target);
+  const sourceSlidePartById = new Map(presentation.slides.items.map((slide, index) => [slide.id, sourceSlideParts[index]]));
+  const sourceSemantic = canonicalCloneSnapshot(target, sourceSlidePartById);
   const sourceClosedLeafSemantics = closedLeafSemanticSnapshot(target);
-  const sourceRender = await modelSvg(target);
   const clone = target.duplicate();
   if (presentation.slides.items.indexOf(clone) !== sourceIndex + 1 || clone.name !== target.name) {
     throw new Error("slide.duplicate did not create an adjacent same-name pending clone.");
   }
-  if (canonicalCloneSnapshot(clone) !== sourceSemantic) {
+  if (canonicalCloneSnapshot(clone, sourceSlidePartById) !== sourceSemantic) {
     throw new Error("Pending slide clone changed the canonical source semantics before export.");
   }
 
@@ -500,14 +581,19 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
     }
     const retained = reimported.slides.items[sourceIndex];
     const roundTripClone = reimported.slides.items[sourceIndex + 1];
-    if (canonicalCloneSnapshot(retained) !== sourceSemantic || canonicalCloneSnapshot(roundTripClone) !== sourceSemantic) {
+    const outputSlidePartById = new Map(reimported.slides.items.map((slide, index) => [slide.id, packageScope.outputSlideParts[index]]));
+    if (canonicalCloneSnapshot(retained, outputSlidePartById) !== sourceSemantic || canonicalCloneSnapshot(roundTripClone, outputSlidePartById) !== sourceSemantic) {
       throw new Error("PPTX duplicate did not preserve source and clone semantic structure after reimport.");
     }
     if (closedLeafSemanticSnapshot(retained) !== sourceClosedLeafSemantics || closedLeafSemanticSnapshot(roundTripClone) !== sourceClosedLeafSemantics) {
       throw new Error("PPTX duplicate did not preserve source and clone closed-leaf semantics after reimport.");
     }
-    const cloneRender = await modelSvg(roundTripClone);
-    if (cloneRender.visualSha256 !== sourceRender.visualSha256) throw new Error("PPTX duplicate changed the clone model SVG render.");
+    // Compare both slides inside the same reimport identity domain. Inserting
+    // the clone can renumber public model slide IDs even though the internal
+    // hyperlink still targets the same retained SlidePart; SVG anchor hrefs
+    // are non-visual but would otherwise make a pre/post raw comparison lie.
+    const [retainedRender, cloneRender] = await Promise.all([modelSvg(retained), modelSvg(roundTripClone)]);
+    if (cloneRender.visualSha256 !== retainedRender.visualSha256) throw new Error("PPTX duplicate changed the clone model SVG render.");
     const verification = reimported.verify({ visualQa: true });
     if (!verification.ok) throw new Error("Presentation verification failed: " + verification.ndjson);
     const audit = {
@@ -530,6 +616,10 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
           speakerNotes: Boolean(sourceLeaves.notes),
           legacyComments: Boolean(sourceLeaves.comments),
         },
+        runHyperlinks: {
+          relationshipCount: sourceRunHyperlinks.relationshipCount,
+          actionOnlyCount: sourceRunHyperlinks.actionOnlyCount,
+        },
       },
       warnings: [],
       validation: {
@@ -542,6 +632,7 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
           newPartPaths: packageScope.newPartPaths,
           retainedSourcePartsByteIdentical: packageScope.retainedSourcePartsByteIdentical,
           cloneInsertedAdjacent: true,
+          runHyperlinks: packageScope.runHyperlinks,
           closedLeaves: packageScope.closedLeaves,
         },
         reimport: {
@@ -554,9 +645,9 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
         modelRender: {
           ok: true,
           renderer: "model-svg",
-          sourceRawSha256: sourceRender.rawSha256,
+          sourceRawSha256: retainedRender.rawSha256,
           cloneRawSha256: cloneRender.rawSha256,
-          visualSha256: sourceRender.visualSha256,
+          visualSha256: retainedRender.visualSha256,
           identityAttributesIgnored: true,
           visualEquivalent: true,
         },

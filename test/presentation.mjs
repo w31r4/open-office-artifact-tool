@@ -812,6 +812,86 @@ const cloneEditedPptx = await PresentationFile.exportPptx(cloneRoundTrip);
 const cloneEditedRoundTrip = await PresentationFile.importPptx(cloneEditedPptx);
 assert.equal(itemByName(cloneEditedRoundTrip.slides.getItem(1).shapes.items, "clone-copy").text.value, "Edited after reimport");
 
+// Canonical run hyperlinks are a modeled part of the same bounded clone leaf.
+// The clone keeps the source XML r:ids, creates equivalent external/internal
+// relationships on its fresh SlidePart, and retains action-only links inline.
+const hyperlinkCloneFixture = Presentation.create({ slideSize: { width: 640, height: 360 } });
+const hyperlinkCloneOrigin = hyperlinkCloneFixture.slides.add({ name: "Linked origin" });
+const hyperlinkCloneTarget = hyperlinkCloneFixture.slides.add({ name: "Linked target" });
+hyperlinkCloneTarget.shapes.add({ name: "target-copy", position: { left: 48, top: 48, width: 300, height: 72 }, text: "Target" });
+hyperlinkCloneFixture.slides.add({ name: "Linked appendix" });
+hyperlinkCloneOrigin.shapes.add({
+  name: "linked-copy",
+  geometry: "textbox",
+  position: { left: 48, top: 48, width: 520, height: 96 },
+  fill: "transparent",
+  line: { fill: "transparent", width: 0 },
+  text: [{
+    runs: [
+      { text: "Guide ", link: { uri: "https://example.com/guide?x=1&y=2", tooltip: "Read the guide", targetFrame: "_blank" } },
+      { text: "Target ", link: { slideId: hyperlinkCloneTarget.id, tooltip: "Open target" } },
+      { text: "Next", link: { action: "nextSlide" } },
+    ],
+  }],
+});
+const hyperlinkCloneSourcePptx = await PresentationFile.exportPptx(hyperlinkCloneFixture);
+const hyperlinkCloneSourceZip = await JSZip.loadAsync(hyperlinkCloneSourcePptx.bytes);
+const hyperlinkCloneImported = await PresentationFile.importPptx(hyperlinkCloneSourcePptx);
+const hyperlinkCloneImportedOrigin = hyperlinkCloneImported.slides.getItem(0);
+const hyperlinkClonePending = hyperlinkCloneImportedOrigin.duplicate();
+const pendingRuns = itemByName(hyperlinkClonePending.shapes.items, "linked-copy").text.paragraphs[0].runs;
+assert.equal(pendingRuns[0].link.uri, "https://example.com/guide?x=1&y=2");
+assert.equal(pendingRuns[1].link.slideId, hyperlinkCloneImported.slides.getItem(2).id);
+assert.equal(pendingRuns[2].link.action, "nextSlide");
+const hyperlinkClonePptx = await PresentationFile.exportPptx(hyperlinkCloneImported);
+const hyperlinkCloneZip = await JSZip.loadAsync(hyperlinkClonePptx.bytes);
+assert.deepEqual(
+  await hyperlinkCloneZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  await hyperlinkCloneSourceZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  "cloning canonical run hyperlinks must retain the origin SlidePart byte-for-byte",
+);
+assert.deepEqual(
+  await hyperlinkCloneZip.file("ppt/slides/_rels/slide1.xml.rels").async("uint8array"),
+  await hyperlinkCloneSourceZip.file("ppt/slides/_rels/slide1.xml.rels").async("uint8array"),
+  "cloning canonical run hyperlinks must retain the origin relationship part byte-for-byte",
+);
+const modeledRunLinkRelationships = (relationships) => [...relationships.matchAll(/<Relationship\b[^>]*>/g)]
+  .map(([tag]) => ({
+    id: /\bId="([^"]+)"/.exec(tag)?.[1],
+    type: /\bType="([^"]+)"/.exec(tag)?.[1],
+    target: /\bTarget="([^"]+)"/.exec(tag)?.[1],
+    targetMode: /\bTargetMode="([^"]+)"/.exec(tag)?.[1],
+  }))
+  .filter((relationship) => /\/(?:hyperlink|slide)$/.test(relationship.type || ""))
+  .sort((left, right) => left.id.localeCompare(right.id));
+assert.deepEqual(
+  modeledRunLinkRelationships(await hyperlinkCloneZip.file("ppt/slides/_rels/slide4.xml.rels").async("text")),
+  modeledRunLinkRelationships(await hyperlinkCloneZip.file("ppt/slides/_rels/slide1.xml.rels").async("text")),
+  "the clone must own the same canonical external and internal run-link graph",
+);
+const hyperlinkCloneRoundTrip = await PresentationFile.importPptx(hyperlinkClonePptx);
+const hyperlinkCloneShape = itemByName(hyperlinkCloneRoundTrip.slides.getItem(1).shapes.items, "linked-copy");
+const roundTripRuns = hyperlinkCloneShape.text.paragraphs[0].runs;
+assert.equal(roundTripRuns[0].link.uri, "https://example.com/guide?x=1&y=2");
+assert.equal(roundTripRuns[1].link.slideId, hyperlinkCloneRoundTrip.slides.getItem(2).id);
+assert.equal(roundTripRuns[2].link.action, "nextSlide");
+roundTripRuns[0].link = { uri: "https://example.com/clone-updated" };
+hyperlinkCloneShape.text.paragraphs = [{ runs: roundTripRuns }];
+const hyperlinkCloneEdited = await PresentationFile.exportPptx(hyperlinkCloneRoundTrip);
+const hyperlinkCloneEditedRoundTrip = await PresentationFile.importPptx(hyperlinkCloneEdited);
+assert.equal(itemByName(hyperlinkCloneEditedRoundTrip.slides.getItem(0).shapes.items, "linked-copy").text.paragraphs[0].runs[0].link.uri, "https://example.com/guide?x=1&y=2");
+assert.equal(itemByName(hyperlinkCloneEditedRoundTrip.slides.getItem(1).shapes.items, "linked-copy").text.paragraphs[0].runs[0].link.uri, "https://example.com/clone-updated");
+
+const immediateHyperlinkCloneEdit = await PresentationFile.importPptx(hyperlinkCloneSourcePptx);
+const immediateHyperlinkCloneShape = itemByName(immediateHyperlinkCloneEdit.slides.getItem(0).duplicate().shapes.items, "linked-copy");
+const immediateHyperlinkRuns = immediateHyperlinkCloneShape.text.paragraphs[0].runs;
+immediateHyperlinkRuns[0].link = { uri: "https://example.com/too-soon" };
+immediateHyperlinkCloneShape.text.paragraphs = [{ runs: immediateHyperlinkRuns }];
+await assert.rejects(
+  () => PresentationFile.exportPptx(immediateHyperlinkCloneEdit),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+);
+
 const immediateCloneEdit = await PresentationFile.importPptx(cloneSourcePptx);
 immediateCloneEdit.slides.getItem(0).duplicate().shapes.items[0].text.set("Too soon");
 await assert.rejects(

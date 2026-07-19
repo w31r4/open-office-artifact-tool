@@ -82,7 +82,10 @@ internal static class PptxHyperlinkCodec
         if (TryRead(hyperlink, context, out _)) hyperlink.Remove();
     }
 
-    private static bool TryRead(A.HyperlinkOnClick? source, PptxPartContext context, out PresentationRunHyperlink hyperlink)
+    // Clone preflight deliberately reuses the public-model parser. Keeping one
+    // recognizer prevents the graph-copy boundary from accepting a click
+    // action that import/edit would still treat as opaque.
+    internal static bool TryRead(A.HyperlinkOnClick? source, PptxPartContext context, out PresentationRunHyperlink hyperlink)
     {
         hyperlink = new PresentationRunHyperlink();
         if (source is null || source.ChildElements.Count > 0 || source.InvalidUrl is not null || source.EndSound is not null) return false;
