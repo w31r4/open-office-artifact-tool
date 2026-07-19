@@ -149,6 +149,14 @@ try {
     if (inspection.summary.pages !== 1 || !inspection.summary.tagged) process.exit(31);
     const importedPdf = await PdfFile.importPdf(pdfFile);
     if (!importedPdf.extractText().includes("clean install PDF")) process.exit(32);
+    const pyhankoProviderPath = path.join(
+      installedPackage,
+      "skills", "pdf", "skills", "pdf", "scripts", "pyhanko_provider.py",
+    );
+    if (
+      !fs.existsSync(pyhankoProviderPath) ||
+      !fs.readFileSync(pyhankoProviderPath, "utf8").includes("open-office-artifact-tool.pyhanko-verify.v1")
+    ) process.exit(33);
 
     const creatorPath = path.join(
       installedPackage,

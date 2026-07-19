@@ -76,6 +76,7 @@ const requiredFiles = [
   "scripts/mupdf.mjs",
   "scripts/pdf_provider.py",
   "scripts/qpdf_provider.py",
+  "scripts/pyhanko_provider.py",
   "scripts/reportlab_create.py",
   "scripts/pdfplumber_extract.py",
   "scripts/pypdf_edit.py",

@@ -1417,6 +1417,45 @@ LibreOfficeDev 26.8.0.0.alpha0, Poppler 26.05.0, the installed Playwright
 Chromium runtime, and the real qpdf adapter. `npm whoami` still returns
 `ENEEDAUTH`; no publish or tag operation was attempted.
 
+### Bounded pyHanko signature-validation provider
+
+On 2026-07-19, the PDF Skill gained a shipped read-only adapter for an
+explicitly installed pyHanko `>=0.35,<0.36` core runtime. It binds validation to
+an exact source SHA-256, copies the PDF and caller-supplied certificate inputs
+into private immutable snapshots, limits source/certificate/signature counts,
+subprocess time, and output bytes, disables network fetching and implicit system
+trust, then re-proves every source input. There is no CLI invocation, PDF
+mutation, system-root guess, or provider fallback.
+
+The versioned report keeps ByteRange integrity and cryptographic validity
+separate from certificate-path trust, timestamps, revision coverage,
+difference-analysis modification level, changed form fields, DocMDP/FieldMDP,
+seed values, and pyHanko's selected-policy bottom line. Callers choose
+`cryptographic-only` or explicit trust roots, validation time, one of four
+revocation policies, and independent required gates. The adapter explicitly
+does not claim complete PAdES profile conformance. Signature creation,
+private-key/TSA/LTV operations, and veraPDF PDF/A/UA validation remain external
+workflows.
+
+The real-provider test used pyHanko 0.35.2 and pyhanko-certvalidator 0.31.1 in
+an isolated virtual environment.
+It generated its own CA/key and exercised unsigned inventory plus
+required-signature failure, one trusted certification signature,
+cryptographic-only untrusted
+evidence, two signatures in revision order, an allowed post-signing LTA metadata
+revision, stale hashes, implicit-root refusal, and a byte-tampered signature.
+Every validation preserved the source bytes; the tampered fixture failed the
+required integrity gate. Hosted CI now creates the same isolated runtime and
+pins both versions before the full npm suite.
+
+The complete local gate passed `npm test`, `npm run docs:api`, `npm run
+proto:check`, `npm run test:pack`, OfficeBridge `5/5`, OpenChestnut `283/283`,
+and two deterministic OpenChestnut WASM builds across 39 audited files. The
+bundled runtime remains 38 files at 14,635,200 bytes. The production
+clean-install tarball contains 455 files, is 9,556,405 bytes compressed and
+24,165,413 bytes unpacked. `npm whoami` remains unavailable, so no publish or
+tag operation was attempted.
+
 `npm run release:check` passes the source, documentation, package, license, JavaScript, and .NET gates. Its only remaining blocker is unavailable npm authentication. No `npm publish` or tag/release operation has been performed.
 
 ## Publishing

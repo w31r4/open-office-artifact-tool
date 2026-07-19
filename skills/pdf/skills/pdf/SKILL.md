@@ -47,7 +47,8 @@ Read the [provider matrix](references/PROVIDER_MATRIX.md), [save policies](refer
 | Strict scrub/residue/OCR and retained high-level edits not yet migrated | optional PyMuPDF specialist path |
 | Native page/file evidence and final raster QA | Poppler |
 | Structural diagnosis, recovery rewrite, and linearization | separately installed qpdf through `scripts/qpdf_provider.py`; pikepdf active-content cleanup remains planned |
-| Signing, timestamps/LTV, DocMDP/FieldMDP, signature validation | pyHanko |
+| Read-only signature integrity/trust/difference/DocMDP validation | pyHanko core through `scripts/pyhanko_provider.py` |
+| Signature creation, timestamps, and LTV updates | explicit external pyHanko workflow |
 | PDF/A or PDF/UA machine rules | veraPDF |
 | Scanned-PDF OCR | OCRmyPDF is planned; strict image residue OCR currently uses separately installed Tesseract through PyMuPDF |
 
@@ -229,7 +230,29 @@ Inspect signatures, DocMDP, FieldMDP, field types, appearance states, and field 
 
 ## Sign And Verify
 
-Use pyHanko for digital signatures, timestamps, trust validation, LTV/PAdES, DocMDP, and FieldMDP. PyMuPDF and pypdf are not complete signing backends.
+Use the shipped source-bound pyHanko adapter for read-only signature validation:
+
+```bash
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+SOURCE_SHA256="$(shasum -a 256 input.pdf | awk '{print $1}')"
+"$PYTHON_BIN" scripts/pyhanko_provider.py probe
+"$PYTHON_BIN" scripts/pyhanko_provider.py verify input.pdf \
+  --expected-sha256 "$SOURCE_SHA256" \
+  --trust-policy explicit-roots \
+  --trust-root /trusted/root-ca.pem \
+  --require-signature --require-all-integrity-valid \
+  --require-all-trusted --require-docmdp-compliant \
+  --require-all-bottom-line \
+  > tmp/pdfs/signature-validation.json
+```
+
+The adapter accepts only explicit trust roots, never fetches network evidence,
+works on a private immutable snapshot, and reports ByteRange coverage,
+cryptographic integrity, certificate trust, timestamps, modification level,
+DocMDP/FieldMDP, and policy gates separately. The output explicitly does not
+claim complete PAdES profile conformance. Signature creation, key access,
+timestamping, and LTV updates remain explicit external pyHanko workflows;
+PyMuPDF, pypdf, MuPDF.js, and qpdf are not complete signing backends.
 
 Validate before and after every later revision. Report separately: cryptographic integrity, signer trust, time/revocation evidence, and whether the exact modification class is permitted. An older signature cannot be claimed to approve arbitrary new edits. See [sign and verify](tasks/sign_verify.md).
 
@@ -311,7 +334,7 @@ Optional Python and system providers are installed separately only for a selecte
 - Signature/DocMDP/FieldMDP policy was checked before mutation.
 - Output reopened and the intended semantic/structural delta was verified.
 - Sanitize jobs passed strict residue and single-revision gates, including image OCR.
-- pyHanko and veraPDF evidence exists when signatures or conformance were requested.
+- The typed pyHanko report passes every requested integrity/trust/DocMDP gate when signatures were requested; veraPDF evidence exists when conformance was requested.
 - `pdfinfo` and Poppler rendering succeeded for every final page, followed by visual review.
 - Final file and audit evidence are in the requested locations; no temporary file is presented as the deliverable.
 - `pdf_audit.py validate` accepts the canonical audit and recomputed source/output hashes.

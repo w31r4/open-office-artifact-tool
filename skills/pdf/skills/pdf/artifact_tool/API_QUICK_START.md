@@ -414,6 +414,31 @@ identity. It has no native xref because the MuPDF link API abstracts that
 object away; its fingerprint covers page, URL, rectangle, and externality. A
 new output must be re-inspected before a later link operation.
 
+## Validate signatures on exact bytes
+
+Signature trust is outside the JavaScript model. Use the shipped read-only
+pyHanko adapter with a fresh source hash and an explicit validation policy:
+
+```bash
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+SOURCE_SHA256="$(shasum -a 256 signed.pdf | awk '{print $1}')"
+"$PYTHON_BIN" scripts/pyhanko_provider.py verify signed.pdf \
+  --expected-sha256 "$SOURCE_SHA256" \
+  --trust-policy explicit-roots \
+  --trust-root /trusted/root-ca.pem \
+  --require-signature --require-all-integrity-valid \
+  --require-all-trusted --require-docmdp-compliant \
+  --require-all-bottom-line \
+  > tmp/pdfs/signature-validation.json
+```
+
+The result keeps ByteRange integrity, certificate trust, timestamps,
+post-signing changes, and DocMDP/FieldMDP evidence separate. It disables network
+fetching and implicit system trust, never mutates the PDF, and does not claim
+complete PAdES profile conformance. Re-run it after every incremental revision.
+See the Skill's [sign and verify](../tasks/sign_verify.md) task for dependency,
+revocation, signing, and key-handling boundaries.
+
 ## Render and visual QA
 
 Use the model SVG preview while authoring, then render the exported PDF with Poppler and inspect every page before delivery:

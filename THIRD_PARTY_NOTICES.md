@@ -34,6 +34,7 @@ The PDF Skill also ships thin Python scripts that can call the following separat
 | pdfplumber | Read-only text/geometry/table extraction | MIT |
 | pypdf | Basic PDF structure, AcroForm, annotation, rewrite, and incremental operations | BSD-3-Clause |
 | PyMuPDF | Optional specialist strict scrub, legacy high-level imported-PDF edits, and residue inspection not yet covered by the JavaScript path | GNU AGPL-3.0 or an Artifex commercial license |
+| pyHanko core and pyhanko-certvalidator | Source-bound read-only PDF signature integrity, trust, difference, timestamp, DocMDP, and FieldMDP validation | MIT |
 
 The official `mupdf` npm package is a required direct dependency. A normal npm installation resolves it alongside this package, although its bytes remain in its own dependency tarball rather than being copied into this project's `.tgz`; the WASM runtime initializes lazily on the first PDF operation. There is no lifecycle hook or standalone downloader. Optional Python providers remain separately installed tools. Downstream installation, network deployment, modification, and redistribution must comply with the applicable GNU AGPL v3-or-later obligations. This notice is not a substitute for the upstream license text or legal advice.
 
@@ -48,7 +49,11 @@ The following external programs are invoked only when installed separately. They
 - Poppler command-line tools: GPL licensing applies to the separately installed binaries.
 - qpdf 11+: optional separately installed structural inspection/recovery/linearization CLI used through the shipped thin provider script; retain its Apache-2.0 and applicable embedded-component notices.
 - pikepdf: planned optional qpdf-based Python provider; no mutation adapter is shipped in this release.
-- pyHanko: optional separately installed PDF signing and signature-validation provider; retain its package and transitive cryptography notices.
+- pyHanko: optional separately installed PDF provider. The shipped thin adapter
+  uses pyHanko core `>=0.35,<0.36` for read-only signature validation; signing,
+  timestamp, and LTV command workflows additionally use the separately packaged
+  `pyhanko-cli`. Neither distribution is bundled by npm. Retain their MIT
+  license and transitive cryptography notices.
 - veraPDF: optional separately installed PDF/A and PDF/UA validation distribution; retain the notices shipped by the selected veraPDF components.
 - OCRmyPDF and Tesseract: optional OCR providers; no OCRmyPDF adapter is shipped in this release, while strict image residue checks can use a separately installed Tesseract through PyMuPDF.
 - .NET 8 SDK: used to build the WebAssembly codec and optional Office bridge; the SDK is not bundled. The source-built .NET WebAssembly runtime needed by consumers is bundled with its upstream license and notices.

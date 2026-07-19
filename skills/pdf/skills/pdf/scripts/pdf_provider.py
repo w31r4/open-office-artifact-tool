@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+from importlib import metadata
 import importlib.util
 import json
 import os
@@ -24,7 +25,7 @@ PROVIDERS = {
     "poppler": {"kind": "command", "commands": ["pdfinfo", "pdftoppm"], "role": "native file/render QA", "integration": "shipped-js-adapter-and-cli-workflow"},
     "qpdf": {"kind": "command", "commands": ["qpdf"], "environment": "OPEN_OFFICE_PDF_QPDF", "minimum_major": 11, "require_version_output": True, "role": "bounded structure inspection, recovery rewrite, and linearization", "integration": "shipped-thin-script-external-cli"},
     "pikepdf": {"kind": "module", "module": "pikepdf", "role": "Python qpdf structure, attachment, and active-content operations", "integration": "planned-no-shipped-adapter"},
-    "pyhanko": {"kind": "command_or_module", "commands": ["pyhanko"], "module": "pyhanko", "role": "signing and signature validation", "integration": "external-documented"},
+    "pyhanko": {"kind": "module", "module": "pyhanko", "distribution": "pyHanko", "minimum_version": (0, 35, 0), "maximum_version_exclusive": (0, 36, 0), "companion_module": "pyhanko_certvalidator", "companion_distribution": "pyhanko-certvalidator", "companion_minimum_version": (0, 31, 0), "companion_maximum_version_exclusive": (0, 32, 0), "role": "source-bound read-only signature validation; signing remains an explicit external workflow", "integration": "shipped-thin-script-external-python"},
     "verapdf": {"kind": "command", "commands": ["verapdf"], "role": "PDF/A and PDF/UA validation", "integration": "external-documented"},
     "ocrmypdf": {"kind": "command_or_module", "commands": ["ocrmypdf"], "module": "ocrmypdf", "role": "scanned-PDF OCR and searchable layer generation", "integration": "planned-no-shipped-adapter"},
     "tesseract": {"kind": "command", "commands": ["tesseract"], "role": "OCR engine used by strict image residue checks", "integration": "external-required-for-image-ocr"},
@@ -45,8 +46,8 @@ TASKS = {
     "linearize": {"providers": ["qpdf"], "strategies": ["rewrite"], "input": "existing", "mutation": True},
     "structure-clean": {"providers": ["pikepdf"], "strategies": ["rewrite"], "input": "existing", "mutation": True, "invalidate_signatures": True},
     "ocr": {"providers": ["ocrmypdf"], "strategies": ["rewrite"], "input": "existing", "mutation": True},
-    "sign": {"providers": ["pyhanko"], "strategies": ["incremental"], "input": "existing", "mutation": True},
-    "verify-signature": {"providers": ["pyhanko"], "strategies": ["read-only"], "input": "existing"},
+    "sign": {"providers": ["pyhanko"], "strategies": ["incremental"], "input": "existing", "mutation": True, "integration": "external-documented"},
+    "verify-signature": {"providers": ["pyhanko"], "strategies": ["read-only"], "input": "existing", "integration": "shipped-thin-script"},
     "validate-conformance": {"providers": ["verapdf"], "strategies": ["read-only"], "input": "existing"},
     "redact": {"providers": ["pymupdf"], "strategies": ["sanitize"], "input": "existing", "mutation": True, "invalidate_signatures": True},
     "sanitize": {"providers": ["pymupdf"], "strategies": ["sanitize"], "input": "existing", "mutation": True, "invalidate_signatures": True},
@@ -66,11 +67,13 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def module_version(name: str) -> str | None:
+def module_version(name: str, distribution: str | None = None) -> str | None:
     if importlib.util.find_spec(name) is None:
         return None
     try:
         module = __import__(name)
+        if distribution:
+            return metadata.version(distribution)
         return str(getattr(module, "__version__", getattr(module, "Version", "available")))
     except Exception as exc:  # pragma: no cover - provider-specific import failures
         return f"import-error: {exc}"
@@ -105,14 +108,48 @@ def command_major(version: str | None) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def semantic_version(value: str | None) -> tuple[int, int, int] | None:
+    if not value:
+        return None
+    match = re.match(r"^(\d+)\.(\d+)\.(\d+)", value)
+    return tuple(int(part) for part in match.groups()) if match else None
+
+
 def probe_provider(name: str) -> dict:
     config = PROVIDERS[name]
     result = {"provider": name, "role": config["role"], "kind": config["kind"], "integration": config["integration"], "available": False, "evidence": {}}
     if config["kind"] == "module":
-        version = module_version(config["module"])
+        version = module_version(config["module"], config.get("distribution"))
         result["available"] = version is not None and not version.startswith("import-error:")
         result["evidence"]["module"] = config["module"]
         result["evidence"]["version"] = version
+        if config.get("minimum_version") is not None:
+            parsed = semantic_version(version)
+            result["evidence"].update({
+                "minimumVersion": ".".join(str(part) for part in config["minimum_version"]),
+                "maximumVersionExclusive": ".".join(str(part) for part in config["maximum_version_exclusive"]),
+            })
+            result["available"] = bool(
+                result["available"]
+                and parsed is not None
+                and config["minimum_version"] <= parsed < config["maximum_version_exclusive"]
+            )
+        if config.get("companion_module"):
+            companion = module_version(config["companion_module"], config["companion_distribution"])
+            parsed_companion = semantic_version(companion)
+            result["evidence"].update({
+                "companionModule": config["companion_module"],
+                "companionVersion": companion,
+                "companionMinimumVersion": ".".join(str(part) for part in config["companion_minimum_version"]),
+                "companionMaximumVersionExclusive": ".".join(str(part) for part in config["companion_maximum_version_exclusive"]),
+            })
+            result["available"] = bool(
+                result["available"]
+                and parsed_companion is not None
+                and config["companion_minimum_version"]
+                <= parsed_companion
+                < config["companion_maximum_version_exclusive"]
+            )
     elif config["kind"] == "command":
         versions = {
             command: command_version(command, config.get("environment"), config.get("require_version_output", False))
@@ -191,6 +228,7 @@ def validate_plan(args: argparse.Namespace) -> dict:
         "inputMode": capability["input"],
         "mutation": bool(capability.get("mutation")),
         "silentFallback": False,
+        "integration": capability.get("integration", probe["integration"]),
         "providerProbe": probe,
     }
     if input_path:

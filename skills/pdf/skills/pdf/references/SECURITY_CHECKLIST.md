@@ -23,7 +23,12 @@ Treat PDFs as untrusted structured programs.
 
 - Reopen with an independent parser where practical.
 - Compare page count, page boxes, forms/annotations, attachment count, metadata, and signatures against the intended delta.
-- Run `pdfinfo`, the shipped `qpdf_provider.py inspect` when qpdf 11+ is installed, and applicable pyHanko/veraPDF validation; retain qpdf warning status rather than suppressing it.
+- Run `pdfinfo`, the shipped `qpdf_provider.py inspect` when qpdf 11+ is installed,
+  and `pyhanko_provider.py verify` against the exact source/output SHA-256 when
+  signatures are present; provide explicit trust roots and retain integrity,
+  trust, revision coverage, difference level, and DocMDP evidence separately.
+  Run applicable veraPDF validation and retain qpdf warning status rather than
+  suppressing it.
 - Render every page from final bytes with Poppler; model/SVG preview is not enough.
 - For sanitize/redaction, run the strict residue scan including image OCR and reject any incomplete evidence. For an inert public copy, also pass `--require-inert`; zero sensitive terms are valid only for a scrub-only operation.
 
@@ -33,6 +38,9 @@ Treat PDFs as untrusted structured programs.
 - Requested save strategy is incompatible with the operation.
 - Encrypted input cannot be opened with authorized credentials.
 - Signed-document policy is unknown or not explicitly accepted.
+- Signature validation relies on an implicit system trust store, network fetch,
+  stale source hash, unreviewed revocation mode, or a collapsed one-boolean
+  interpretation of pyHanko's integrity/trust/difference evidence.
 - Output overwrites the input.
 - Incremental output does not retain the exact original prefix.
 - Sanitized output retains the original prefix, sensitive residues, active actions, attachments, comments, populated form values, personal metadata, links, invisible text, unscanned images, or old revisions.

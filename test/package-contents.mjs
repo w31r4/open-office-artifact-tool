@@ -37,14 +37,13 @@ const maxPackedBytes = 9_775_000;
 // The bundled OpenChestnut runtime is an audited product payload, not an
 // optional download. Keep its unpacked budget tight while allowing the
 // audited PDF provider/docs growth plus the bounded DOCX/PPTX modern-comment and
-// native XLSX PivotTable codecs and runnable workflows. The prior 24.05 MB
-// ceiling was exceeded by 3,767 bytes after the PivotTable source-built runtime
-// and Skill slice (24,053,767 bytes on the audit host), so this keeps less than
-// 97 KB of explicit headroom.
+// native XLSX PivotTable codecs and runnable workflows. The pyHanko read-only
+// signature-validation slice measured 24,165,413 unpacked bytes on the audit
+// host, so this keeps less than 35 KB of explicit headroom.
 // The repository-only MIT Default Template Library is excluded from the npm
 // tarball. Its retained Office/PNG sources must never consume this consumer
 // package budget.
-const maxUnpackedBytes = 24_150_000;
+const maxUnpackedBytes = 24_200_000;
 
 for (const required of [
   "LICENSE",
@@ -205,6 +204,7 @@ for (const required of [
   "skills/pdf/skills/pdf/references/pdf-audit-v1.schema.json",
   "skills/pdf/skills/pdf/scripts/pdf_provider.py",
   "skills/pdf/skills/pdf/scripts/qpdf_provider.py",
+  "skills/pdf/skills/pdf/scripts/pyhanko_provider.py",
   "skills/pdf/skills/pdf/scripts/mupdf.mjs",
   "skills/pdf/skills/pdf/scripts/reportlab_create.py",
   "skills/pdf/skills/pdf/scripts/pdfplumber_extract.py",

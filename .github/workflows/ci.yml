@@ -19,7 +19,15 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: 8.0.128
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
       - run: npm ci
+      - name: Install isolated pyHanko validation runtime
+        run: |
+          python -m venv "$RUNNER_TEMP/open-office-pyhanko"
+          "$RUNNER_TEMP/open-office-pyhanko/bin/python" -m pip install --disable-pip-version-check 'pyHanko==0.35.2' 'pyhanko-certvalidator==0.31.1'
+          echo "OPEN_OFFICE_PYHANKO_TEST_PYTHON=$RUNNER_TEMP/open-office-pyhanko/bin/python" >> "$GITHUB_ENV"
       - name: Install .NET WebAssembly workloads
         run: dotnet workload install wasm-tools wasm-experimental --skip-manifest-update
       - name: Verify generated protocol and bundled OpenChestnut runtime
@@ -39,6 +47,7 @@ jobs:
           pdftoppm -v
           qpdf --version
           pdfinfo -v
+          "$OPEN_OFFICE_PYHANKO_TEST_PYTHON" -c "from importlib.metadata import version; assert (version('pyHanko'), version('pyhanko-certvalidator')) == ('0.35.2', '0.31.1')"
           dotnet --version
       - name: Run tests
         env:

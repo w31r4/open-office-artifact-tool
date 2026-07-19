@@ -42,6 +42,35 @@ page/form/attachment/outline counts. Use `--mode linearize` for an explicit line
 rewrite. Signature evidence requires `--invalidate-signatures` after pyHanko and
 DocMDP review. This route is never sanitize; run Poppler over every final page.
 
+## pyHanko read-only signature validation
+
+Install `pyHanko>=0.35,<0.36` into the selected PDF provider environment. The
+core library is enough for validation; the separate `pyhanko-cli` package is
+only needed by an explicit signing workflow.
+
+```bash
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+SOURCE_SHA256="$(shasum -a 256 signed.pdf | awk '{print $1}')"
+"$PYTHON_BIN" scripts/pdf_provider.py check --provider pyhanko --require
+"$PYTHON_BIN" scripts/pyhanko_provider.py probe
+"$PYTHON_BIN" scripts/pyhanko_provider.py verify signed.pdf \
+  --expected-sha256 "$SOURCE_SHA256" \
+  --trust-policy explicit-roots \
+  --trust-root /trusted/root-ca.pem \
+  --revocation-policy none \
+  --require-signature --require-all-integrity-valid \
+  --require-all-trusted --require-docmdp-compliant \
+  --require-all-bottom-line \
+  > tmp/pdfs/signature-validation.json
+```
+
+`none` deliberately makes no revocation check; choose `soft-fail`, `hard-fail`,
+or `require` when the task and available evidence demand it. The adapter never
+fetches network evidence or guesses trust roots. Review every signature's
+signed revision, coverage, modification level, DocMDP result, timestamp, and
+trust status rather than treating an intact old ByteRange as approval of later
+edits. The report is not a complete PAdES conformance certificate.
+
 ## pypdf attachment quarantine
 
 ```bash

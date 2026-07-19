@@ -33,7 +33,10 @@ Install a specialist provider yourself only when the task requires a capability 
 - qpdf 11+: separately installed structural diagnosis, recovery rewrite, and
   linearization through the shipped `scripts/qpdf_provider.py`; configure an
   exact executable with `OPEN_OFFICE_PDF_QPDF` when it is not on `PATH`.
-- pyHanko: signing, trust validation, timestamps, LTV/PAdES, DocMDP, and FieldMDP.
+- pyHanko 0.35.x core: exact-source read-only signature integrity, trust,
+  difference, DocMDP, and FieldMDP validation through the shipped
+  `scripts/pyhanko_provider.py`; the separate `pyhanko-cli` package is needed
+  only for external signing/timestamp/LTV command workflows.
 - veraPDF: PDF/A and PDF/UA machine validation.
 - Tesseract: OCR evidence for image-bearing high-trust sanitization.
 - pikepdf and OCRmyPDF: planned routes without a shipped mutation adapter in this release.
@@ -51,6 +54,24 @@ PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
 The wrapper requires qpdf JSON v2 (qpdf 11 or newer). It does not install qpdf,
 accept passwords, expose arbitrary qpdf flags, or fall back to pikepdf. See
 [inspect, repair, and linearize](repair_linearize.md).
+
+Install and probe the pyHanko read-only validator in the same explicit provider
+environment:
+
+```bash
+uv venv .venv-pdf
+uv pip install --python .venv-pdf/bin/python \
+  'pyHanko>=0.35.0,<0.36.0' 'pyhanko-certvalidator>=0.31.0,<0.32.0'
+export OPEN_OFFICE_PDF_PROVIDER_PYTHON="$PWD/.venv-pdf/bin/python"
+"$OPEN_OFFICE_PDF_PROVIDER_PYTHON" scripts/pdf_provider.py check \
+  --provider pyhanko --require
+"$OPEN_OFFICE_PDF_PROVIDER_PYTHON" scripts/pyhanko_provider.py probe
+```
+
+This installs no command-line signer. The adapter accepts only caller-supplied
+trust roots, disables network fetching, never mutates the source, and does not
+claim complete PAdES profile conformance. Install `pyhanko-cli` separately only
+for a deliberately selected signing workflow. See [sign and verify](sign_verify.md).
 
 When Python tools are installed, set one interpreter as provider identity:
 
