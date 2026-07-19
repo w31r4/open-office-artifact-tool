@@ -1530,8 +1530,10 @@ fixture, `npm run docs:api` with no generated diff, `npm run proto:check`,
 `5/5`, and OpenChestnut `283/283`. Two clean WASM builds reproduced 39 audited
 files and the same manifest-bound 38-file, 14,635,200-byte runtime. The
 production clean-install tarball contains 458 files, is 9,581,955 bytes
-compressed and 24,250,484 bytes unpacked. The unpacked-size ceiling moved
-narrowly to 24,275,000 bytes, retaining less than 24 KiB of measured headroom.
+compressed and 24,250,484 bytes unpacked on the local audit host. The same file
+set measured 9,784,909 compressed bytes on hosted Linux; the cross-platform
+packed ceiling moved narrowly to 9,810,000 bytes. The unpacked-size ceiling
+moved to 24,275,000 bytes, retaining less than 24 KiB of measured headroom.
 The standalone offline release metadata check passes; `npm whoami` still
 returns `ENEEDAUTH`, so no publish or tag operation was attempted. The hosted
 candidate result is recorded after the final commit.
