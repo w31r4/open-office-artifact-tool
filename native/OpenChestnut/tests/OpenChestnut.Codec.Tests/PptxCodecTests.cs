@@ -4027,6 +4027,106 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void CustomShowRunHyperlinksKeepStableIdentityAcrossShowRenameAndFailClosedOnClone()
+    {
+        var authored = Invoke(CustomShowHyperlinkExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var sourceBytes = authored.File.ToByteArray();
+        using (var stream = new MemoryStream(sourceBytes))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var custom = OrderedSlides(package)[0].Slide!.Descendants<A.HyperlinkOnClick>().Last();
+            Assert.Equal(string.Empty, custom.Id!.Value);
+            Assert.Equal("ppaction://customshow?id=7&return=true", custom.Action!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Import(sourceBytes);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var run = imported.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].Runs[4];
+        Assert.Equal("custom-show/1", run.RunHyperlink.CustomShowId);
+        Assert.True(run.RunHyperlink.HasReturnToSlide);
+        Assert.True(run.RunHyperlink.ReturnToSlide);
+        imported.Artifact.Presentation.CustomShows[0].Name = "Executive route";
+
+        var renamed = Export(imported.Artifact);
+        Assert.True(renamed.Ok, Diagnostics(renamed));
+        var renamedBytes = renamed.File.ToByteArray();
+        Assert.Equal(ZipBytes(sourceBytes, "ppt/slides/slide1.xml"), ZipBytes(renamedBytes, "ppt/slides/slide1.xml"));
+        Assert.Equal(ZipBytes(sourceBytes, "ppt/slides/_rels/slide1.xml.rels"), ZipBytes(renamedBytes, "ppt/slides/_rels/slide1.xml.rels"));
+        var renamedImport = Import(renamedBytes);
+        Assert.True(renamedImport.Ok, Diagnostics(renamedImport));
+        Assert.Equal("Executive route", renamedImport.Artifact.Presentation.CustomShows[0].Name);
+        Assert.Equal("custom-show/1", renamedImport.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].Runs[4].RunHyperlink.CustomShowId);
+
+        var retargetedRun = renamedImport.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].Runs[4];
+        retargetedRun.RunHyperlink = new PresentationRunHyperlink { CustomShowId = "custom-show/2", ReturnToSlide = false };
+        var retargeted = Export(renamedImport.Artifact);
+        Assert.True(retargeted.Ok, Diagnostics(retargeted));
+        using (var stream = new MemoryStream(retargeted.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var custom = OrderedSlides(package)[0].Slide!.Descendants<A.HyperlinkOnClick>().Last();
+            Assert.Equal("ppaction://customshow?id=11&return=false", custom.Action!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+        var retargetedImport = Import(retargeted.File.ToByteArray());
+        var roundTripLink = retargetedImport.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].Runs[4].RunHyperlink;
+        Assert.Equal("custom-show/2", roundTripLink.CustomShowId);
+        Assert.True(roundTripLink.HasReturnToSlide);
+        Assert.False(roundTripLink.ReturnToSlide);
+
+        var missing = Import(sourceBytes);
+        missing.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].Runs[4].RunHyperlink =
+            new PresentationRunHyperlink { CustomShowId = "custom-show/missing" };
+        var missingRejected = Export(missing.Artifact);
+        Assert.False(missingRejected.Ok);
+        Assert.Equal("invalid_presentation_hyperlink", Assert.Single(missingRejected.Diagnostics).Code);
+
+        var clone = Import(sourceBytes);
+        AddPendingClone(clone.Artifact.Presentation, 0, "presentation/clone/custom-show-link");
+        var cloneRejected = Export(clone.Artifact);
+        Assert.False(cloneRejected.Ok);
+        Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(cloneRejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void MalformedOrRelationshipBearingCustomShowRunLinksRemainOpaque()
+    {
+        var source = Invoke(CustomShowHyperlinkExportRequest()).File.ToByteArray();
+        var malformed = ReplaceZipText(source, "ppt/slides/slide1.xml", xml =>
+            xml.Replace("ppaction://customshow?id=7&amp;return=true", "ppaction://customshow?id=7&amp;return=maybe", StringComparison.Ordinal));
+        var malformedImport = Import(malformed);
+        Assert.True(malformedImport.Ok, Diagnostics(malformedImport));
+        var malformedRun = malformedImport.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].Runs[4];
+        Assert.Equal(PresentationTextRun.HyperlinkOneofCase.None, malformedRun.HyperlinkCase);
+        malformedRun.Text = "Edited board route";
+        malformedImport.Artifact.Presentation.Slides[0].Elements[0].Shape.Text =
+            PptxTextCodec.Flatten(malformedImport.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody);
+        var preserved = Export(malformedImport.Artifact);
+        Assert.True(preserved.Ok, Diagnostics(preserved));
+        Assert.Contains(
+            "ppaction://customshow?id=7&amp;return=maybe",
+            System.Text.Encoding.UTF8.GetString(ZipBytes(preserved.File.ToByteArray(), "ppt/slides/slide1.xml")),
+            StringComparison.Ordinal);
+
+        var replacementImport = Import(malformed);
+        replacementImport.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].Runs[4].RunHyperlink =
+            new PresentationRunHyperlink { Uri = "https://example.com/replacement" };
+        var replacementRejected = Export(replacementImport.Artifact);
+        Assert.False(replacementRejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(replacementRejected.Diagnostics).Code);
+
+        var relationshipBearing = ReplaceZipText(source, "ppt/slides/slide1.xml", xml =>
+            xml.Replace("r:id=\"\" action=\"ppaction://customshow?id=7&amp;return=true\"", "r:id=\"rIdLayout1\" action=\"ppaction://customshow?id=7&amp;return=true\"", StringComparison.Ordinal));
+        var relationshipImport = Import(relationshipBearing);
+        Assert.True(relationshipImport.Ok, Diagnostics(relationshipImport));
+        Assert.Equal(
+            PresentationTextRun.HyperlinkOneofCase.None,
+            relationshipImport.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].Runs[4].HyperlinkCase);
+    }
+
+    [Fact]
     public void UnknownRunClickActionsArePreservedAndCannotBeReplaced()
     {
         var authored = Invoke(HyperlinkExportRequest());
@@ -4071,6 +4171,13 @@ public sealed class PptxCodecTests
         var invalidAction = Invoke(request);
         Assert.False(invalidAction.Ok);
         Assert.Equal("invalid_presentation_hyperlink", Assert.Single(invalidAction.Diagnostics).Code);
+
+        request = HyperlinkExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].Runs[0].RunHyperlink =
+            new PresentationRunHyperlink { Uri = "https://example.com", ReturnToSlide = true };
+        var invalidReturn = Invoke(request);
+        Assert.False(invalidReturn.Ok);
+        Assert.Equal("invalid_presentation_hyperlink", Assert.Single(invalidReturn.Diagnostics).Code);
 
         request = HyperlinkExportRequest();
         request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].Runs[0].RunHyperlink = new PresentationRunHyperlink { SlideId = "presentation/slide/missing" };
@@ -4844,6 +4951,26 @@ public sealed class PptxCodecTests
                 Presentation = presentation,
             },
         };
+    }
+
+    private static CodecRequest CustomShowHyperlinkExportRequest()
+    {
+        var request = HyperlinkExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody.Paragraphs[0].Runs.Add(new PresentationTextRun
+        {
+            Text = "Board route",
+            RunHyperlink = new PresentationRunHyperlink { CustomShowId = "custom-show/board", ReturnToSlide = true },
+        });
+        request.Artifact.Presentation.Slides[0].Elements[0].Shape.Text =
+            PptxTextCodec.Flatten(request.Artifact.Presentation.Slides[0].Elements[0].Shape.TextBody);
+        var board = new PresentationCustomShowArtifact { Id = "custom-show/board", Name = "Board route", NativeId = 7 };
+        board.SlideIds.Add("presentation/slide/1");
+        board.SlideIds.Add("presentation/slide/3");
+        var review = new PresentationCustomShowArtifact { Id = "custom-show/review", Name = "Review route", NativeId = 11 };
+        review.SlideIds.Add("presentation/slide/2");
+        request.Artifact.Presentation.CustomShows.Add(board);
+        request.Artifact.Presentation.CustomShows.Add(review);
+        return request;
     }
 
     private static CodecRequest PictureBulletExportRequest()

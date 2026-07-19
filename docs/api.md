@@ -1290,8 +1290,8 @@ Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or 
 | `nativeObject.replaceEmbeddedWorkbook` | api | Replace only the XLSX payload of an eligible imported top-level OLE object. OpenChestnut validates the new workbook and immutable source binding, preserves the OLE shell, relationships, preview, and all other native parts, and fails closed for malformed or ambiguous graphs. |
 | `nativeObject.setName` | api | Native OLE, SmartArt/diagram, and contentPart objects imported through OpenChestnut are source-bound and read-only; setName rejects instead of mutating the preserved package graph. |
 | `nativeObject.setPosition` | api | Native OLE, SmartArt/diagram, and contentPart objects imported through OpenChestnut are source-bound and read-only; setPosition rejects instead of rewriting their geometry or payload graph. |
-| `Presentation.create` | api | Create a deck model whose canonical OpenChestnut export supports ordinary slides, direct solid/style-reference slide backgrounds, shapes, rich text, tables, images, connectors, recursive native p:grpSp groups, plain-text speaker notes, native custom shows, source-free bar/line/pie charts, and a bounded literal clustered bar+line combo profile. Combo bars stay on the primary pair; all lines share either that pair or the canonical secondary top/right pair. Custom themes, Master/Layout authoring, comments, custom-show hyperlinks, mixed line groups, secondary bars, irregular combo graphs, and other package-level features remain outside the source-free PPTX boundary. |
-| `presentation.customShows.add` | api | Define an ordered native p:custShowLst playback route for source-free OpenChestnut export. Canonical imported shows may change only their name and ordered retained-slide membership; show count/order and facade/native identity remain source-bound, while irregular graphs stay opaque. |
+| `Presentation.create` | api | Create a deck model whose canonical OpenChestnut export supports ordinary slides, direct solid/style-reference slide backgrounds, shapes, rich text, tables, images, connectors, recursive native p:grpSp groups, plain-text speaker notes, native custom shows with canonical run links, source-free bar/line/pie charts, and a bounded literal clustered bar+line combo profile. Combo bars stay on the primary pair; all lines share either that pair or the canonical secondary top/right pair. Custom themes, Master/Layout authoring, comments, custom-show topology mutation, mixed line groups, secondary bars, irregular combo graphs, and other package-level features remain outside the source-free PPTX boundary. |
+| `presentation.customShows.add` | api | Define an ordered native p:custShowLst playback route for source-free OpenChestnut export. Text runs may target a show by exact name with optional returnToSlide. Canonical imported shows may change only their name and ordered retained-slide membership; fixed native identity keeps existing run links bound across a rename, while irregular graphs stay opaque. |
 | `presentation.customShows.getItem` | api | Resolve a source-free or canonical imported custom show by zero-based index, stable facade ID, or exact name. |
 | `presentation.export` | api | Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON. |
 | `presentation.fontFamilies` | api | Return a fresh sorted, case-insensitively deduplicated list of explicitly used presentation text and bullet font families. |
@@ -1462,7 +1462,7 @@ Native OLE, SmartArt/diagram, and contentPart objects imported through OpenChest
 
 #### `Presentation.create`
 
-Create a deck model whose canonical OpenChestnut export supports ordinary slides, direct solid/style-reference slide backgrounds, shapes, rich text, tables, images, connectors, recursive native p:grpSp groups, plain-text speaker notes, native custom shows, source-free bar/line/pie charts, and a bounded literal clustered bar+line combo profile. Combo bars stay on the primary pair; all lines share either that pair or the canonical secondary top/right pair. Custom themes, Master/Layout authoring, comments, custom-show hyperlinks, mixed line groups, secondary bars, irregular combo graphs, and other package-level features remain outside the source-free PPTX boundary.
+Create a deck model whose canonical OpenChestnut export supports ordinary slides, direct solid/style-reference slide backgrounds, shapes, rich text, tables, images, connectors, recursive native p:grpSp groups, plain-text speaker notes, native custom shows with canonical run links, source-free bar/line/pie charts, and a bounded literal clustered bar+line combo profile. Combo bars stay on the primary pair; all lines share either that pair or the canonical secondary top/right pair. Custom themes, Master/Layout authoring, comments, custom-show topology mutation, mixed line groups, secondary bars, irregular combo graphs, and other package-level features remain outside the source-free PPTX boundary.
 
 **Schema parameters:**
 
@@ -1479,7 +1479,7 @@ Create a deck model whose canonical OpenChestnut export supports ordinary slides
 
 #### `presentation.customShows.add`
 
-Define an ordered native p:custShowLst playback route for source-free OpenChestnut export. Canonical imported shows may change only their name and ordered retained-slide membership; show count/order and facade/native identity remain source-bound, while irregular graphs stay opaque.
+Define an ordered native p:custShowLst playback route for source-free OpenChestnut export. Text runs may target a show by exact name with optional returnToSlide. Canonical imported shows may change only their name and ordered retained-slide membership; fixed native identity keeps existing run links bound across a rename, while irregular graphs stay opaque.
 
 **Schema parameters:**
 
@@ -1900,7 +1900,7 @@ Set plain or structured text with ordered text, field, and line-break inlines; b
 
 **Schema parameters:**
 
-- `text` (string|string[]|object|object[]) required — Plain text, paragraph strings, inline arrays, or paragraph objects. Canonical OpenChestnut export supports ordered text, fields, styled line breaks, bounded run/paragraph formatting, character and picture bullets, auto-numbering, levels, indents, spacing, tab stops, and one absolute uri, target slideId, or relative action (nextSlide, previousSlide, firstSlide, lastSlide, endShow) per link. customShow links and other unmodeled text graphs fail closed.
+- `text` (string|string[]|object|object[]) required — Plain text, paragraph strings, inline arrays, or paragraph objects. Canonical OpenChestnut export supports ordered text, fields, styled line breaks, bounded run/paragraph formatting, character and picture bullets, auto-numbering, levels, indents, spacing, tab stops, and one absolute uri, target slideId, relative action (nextSlide, previousSlide, firstSlide, lastSlide, endShow), or existing customShow name per link. customShow may include returnToSlide; missing, opaque, malformed, relationship-bearing, and clone-time custom-show targets fail closed.
 
 **Schema returns:**
 

@@ -21,6 +21,17 @@ presentation.customShows.add({
 });
 
 presentation.customShows.add("Review route", [evidence, overview]);
+
+overview.shapes.add({
+  name: "open-board-route",
+  position: { left: 80, top: 80, width: 320, height: 48 },
+  text: [{
+    runs: [{
+      text: "Open board route",
+      link: { customShow: "Board route", returnToSlide: true },
+    }],
+  }],
+});
 ```
 
 Names are trimmed, non-empty, at most 255 characters, and
@@ -31,6 +42,29 @@ the model assign a unique unsigned 32-bit identity during verification/export.
 Use `getItem(indexOrIdOrName)`, `inspect({ kind: "customShow" })`, or
 `resolve(customShow.id)` to find a show. Use `show.setSlides(slides)` to replace
 its ordered slide membership.
+
+## Run Hyperlinks
+
+A canonical text run may select exactly one existing custom show by exact
+name. `returnToSlide` is optional and presence-aware; `true` writes
+`&return=true`, `false` writes `&return=false`, and omission writes neither.
+OpenChestnut emits a relationship-free DrawingML click action:
+
+```xml
+<a:hlinkClick r:id="" action="ppaction://customshow?id=7&amp;return=true"/>
+```
+
+The protobuf wire carries the stable custom-show facade ID rather than the
+mutable display name. Consequently, renaming a canonical imported show keeps
+existing links bound to the same native `p:custShow/@id`; a second import
+projects the new show name into `run.link.customShow`. Explicitly changing the
+run's target name retargets it only to another existing canonical show.
+
+Missing names, opaque show lists, dangling native IDs, malformed action URIs,
+or custom-show actions that carry a relationship ID are not guessed. Imported
+unknown actions remain exact-source-preserved and replacing them fails closed.
+The bounded slide clone/delete profiles still reject custom-show identity
+references because those operations require a wider presentation graph plan.
 
 ## Imported Canonical Shows
 
@@ -54,10 +88,6 @@ outside this profile, OpenChestnut exposes no incomplete semantic facade. It
 marks the list opaque, preserves its exact source XML, and rejects attempts to
 replace it.
 
-Custom-show hyperlinks are a separate action graph. The model can describe
-them, but the current OpenChestnut run-hyperlink slice still fails closed
-instead of guessing the native `ppaction` encoding.
-
 ## Audited Imported Edit
 
 Use the shipped workflow when one exact imported show must be renamed and its
@@ -79,5 +109,6 @@ await editPptxCustomShow({
 The transaction requires one exact show and one exact slide for every supplied
 name, keeps the source immutable, proves that only `ppt/presentation.xml`
 changed, verifies native ID and non-target shows, reimports the result, compares
-all model SVGs, and emits a source/output-bound audit. Run LibreOffice/Poppler
+normalized model SVG visual content, inventories run links bound to the fixed
+show identity, and emits a source/output-bound audit. Run LibreOffice/Poppler
 review as the final native-host QA when those tools are available.

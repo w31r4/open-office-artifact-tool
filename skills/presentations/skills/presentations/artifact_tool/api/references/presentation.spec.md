@@ -108,13 +108,18 @@ const show = presentation.customShows.add("Board route", [slide1, slide3]);
 const byName = presentation.customShows.getItem("Board route");
 show.name = "Executive route";
 show.setSlides([slide3, slide1]);
+
+slide1.shapes.add({
+  position: { left: 80, top: 80, width: 320, height: 48 },
+  text: [{ runs: [{ text: "Open route", link: { customShow: "Executive route", returnToSlide: true } }] }],
+});
 ```
 
 Source-free export writes a native `p:custShowLst`. A canonical imported list
 permits only existing-show name and ordered membership edits; count/order,
 facade IDs, and native IDs remain source-bound. See
 [`custom-shows.spec.md`](./custom-shows.spec.md) for budgets, opaque graphs, and
-the audited workflow.
+the stable-identity run-link contract, and the audited workflow.
 
 ## Discover And Edit
 

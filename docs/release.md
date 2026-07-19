@@ -1801,6 +1801,51 @@ configured, so their contract/adversarial gates passed while their
 environment-gated real repeats remained skipped. No publish or tag operation
 was attempted.
 
+### Native PPTX custom-show run hyperlinks
+
+On 2026-07-20, the bounded native custom-show slice expanded from the show
+list itself to canonical run-level click actions. The additive protocol-2 wire
+binds a run to the stable custom-show facade ID and represents
+`returnToSlide` with presence-aware boolean semantics. OpenChestnut emits the
+relationship-free `ppaction://customshow?id=<native-id>` action, optionally
+followed by the canonical lowercase `&return=true|false`, on source-free slide,
+Master, and Layout text runs. A second import projects the current show name
+back into the public `{ customShow, returnToSlide }` link object.
+
+Imported links retain identity across a canonical show rename: only
+`ppt/presentation.xml` changes, while the referring SlidePart and its
+relationship part remain byte-identical and the public model resolves the new
+name on second import. An explicit retarget resolves another existing canonical
+show and preserves an explicitly false return policy. Missing or dangling
+targets fail closed. Malformed actions and actions carrying a relationship ID
+remain unmodeled and exact-source-preserved under unrelated edits; they cannot
+be silently replaced. Slide clone/delete with custom-show identity references
+remains outside the bounded graph and fails closed.
+
+The shipped workflow now inventories every run action bound to the fixed native
+show ID, checks exact package scope and second-import semantics, and compares a
+normalized model SVG whose only ignored difference is the intentionally updated
+nonvisual custom-show name annotation. The stronger package assertion keeps the
+referring SlidePart byte-identical, and the native lane continues to compare
+LibreOffice/Poppler pixels. JavaScript regressions cover source-free slide,
+Master, and Layout authoring, rename, explicit retarget, missing targets, clone
+rejection, and opaque preservation. OpenChestnut regressions additionally cover
+Office 2021 validation, relationship-bearing actions, malformed return values,
+and invalid non-custom-show return policies.
+
+The complete local gate passed `npm test` including Playwright,
+LibreOffice/Poppler, qpdf, and the 20-template corpus; `npm run docs:api`,
+protocol lint and idempotent generation, `npm run test:pack`, OfficeBridge
+`5/5`, and OpenChestnut `291/291` also passed. Two deterministic OpenChestnut
+builds reproduced 39 audited files and the same manifest-bound 38-file,
+14,674,624-byte runtime. The production tarball contains 463 files, is
+8,974,701 bytes compressed and 23,601,235 bytes unpacked, leaving 778,765 bytes
+below the unchanged 24,380,000-byte ceiling. The qpdf real-provider lane
+passed; dedicated real-provider environments for pikepdf, pyHanko, veraPDF,
+and OCRmyPDF were not configured, so their contract/adversarial gates passed
+while their environment-gated real repeats were skipped. Hosted results are
+recorded after the candidate commit. No publish or tag operation was attempted.
+
 `npm run release:check` passes the source, documentation, package, license, JavaScript, and .NET gates. Its only remaining blocker is unavailable npm authentication. No `npm publish` or tag/release operation has been performed.
 
 ## Publishing

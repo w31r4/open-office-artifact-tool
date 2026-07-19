@@ -344,6 +344,10 @@ For source-free decks, create all slides and then use
 existing show's name and ordered retained-slide membership are editable; show
 count/order, facade identity, and native ID remain fixed. Read
 `artifact_tool/api/references/custom-shows.spec.md` before changing one.
+Canonical text runs may target an existing show by exact name and may set
+`returnToSlide: true|false`. OpenChestnut binds that run to the show's stable
+facade/native identity, so renaming the show keeps the native action and
+SlidePart bytes unchanged while the next import exposes the new public name.
 
 For one exact imported show, use the shipped transaction instead of patching
 `ppt/presentation.xml`:
@@ -356,12 +360,13 @@ node examples/openchestnut-custom-show-workflow.mjs \
 
 The workflow resolves every supplied slide name uniquely, preserves the source,
 proves that only `ppt/presentation.xml` changed, retains native show identity
-and all non-target shows, reimports, compares every model SVG, and writes a
+and all non-target shows, counts any run links bound to that fixed identity,
+reimports, compares normalized visual SVG content, and writes a
 source/output-bound audit. Lists with extensions, unknown children, unresolved
 relationships, duplicate identities, or another noncanonical graph remain
-opaque and fail closed. Custom-show run hyperlinks are a separate unsupported
-action slice and must not be confused with the list itself. Run
-LibreOffice/Poppler review after delivery when available.
+opaque and fail closed. Missing targets, malformed or relationship-bearing
+custom-show actions, and custom-show identity links during clone/delete also
+fail closed. Run LibreOffice/Poppler review after delivery when available.
 
 ### Bounded Imported Title And Speaker-Notes Edit
 

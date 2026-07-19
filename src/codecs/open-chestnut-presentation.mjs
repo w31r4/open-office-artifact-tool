@@ -526,7 +526,7 @@ function wireDefaultRunStyle(paragraph, original, shapeId) {
   return undefined;
 }
 
-function wireHyperlink(value, original, shapeId) {
+function wireHyperlink(value, original, shapeId, customShowLinks) {
   if (value == null) {
     if (new Set(["runHyperlink", "noHyperlink"]).has(original?.hyperlink?.case)) return { case: "noHyperlink", value: true };
     return undefined;
@@ -537,13 +537,14 @@ function wireHyperlink(value, original, shapeId) {
   } catch (error) {
     throw new OpenChestnutCodecError(`Presentation shape ${shapeId} uses an invalid run hyperlink: ${error.message}`, [], { code: "invalid_presentation_hyperlink" });
   }
-  if (link.customShow) throw new OpenChestnutCodecError(`Presentation shape ${shapeId} uses a custom-show hyperlink outside the PPTX WebAssembly text slice.`, [], { code: "unsupported_presentation_features" });
   const target = link.uri
     ? { case: "uri", value: link.uri }
     : link.slideId
       ? { case: "slideId", value: link.slideId }
       : link.action
         ? { case: "action", value: link.action }
+        : link.customShow
+          ? { case: "customShowId", value: resolvePresentationCustomShowLinkId(link.customShow, original, shapeId, customShowLinks) }
         : undefined;
   if (!target) throw new OpenChestnutCodecError(`Presentation shape ${shapeId} uses an unsupported run hyperlink target.`, [], { code: "unsupported_presentation_features" });
   return {
@@ -554,11 +555,12 @@ function wireHyperlink(value, original, shapeId) {
       ...(link.targetFrame == null ? {} : { targetFrame: link.targetFrame }),
       ...(link.history == null ? {} : { history: link.history }),
       ...(link.highlightClick == null ? {} : { highlightClick: link.highlightClick }),
+      ...(link.returnToSlide == null ? {} : { returnToSlide: link.returnToSlide }),
     },
   };
 }
 
-function wireRun(run, inheritedStyle, shapeId, original) {
+function wireRun(run, inheritedStyle, shapeId, original, customShowLinks) {
   const unsupported = unsupportedStyleFields(run.style);
   if (unsupported.length) throw new OpenChestnutCodecError(`Presentation shape ${shapeId} uses unsupported run style fields: ${unsupported.join(", ")}.`, [], { code: "unsupported_presentation_features" });
   const style = { ...inheritedStyle, ...(run.style || {}) };
@@ -574,7 +576,7 @@ function wireRun(run, inheritedStyle, shapeId, original) {
   if (colorRgb === "") {
     throw new OpenChestnutCodecError(`Presentation shape ${shapeId} uses a transparent run color outside the PPTX WebAssembly text slice.`, [], { code: "unsupported_presentation_features" });
   }
-  const hyperlink = wireHyperlink(run.link, original, shapeId);
+  const hyperlink = wireHyperlink(run.link, original, shapeId, customShowLinks);
   return {
     content: run.break
       ? { case: "lineBreak", value: true }
@@ -758,7 +760,7 @@ function wireParagraphSpacing(paragraph, original, shapeId) {
   };
 }
 
-function wireParagraph(paragraph, textStyle, original, shapeId, assetCatalog, { forceLevel = false } = {}) {
+function wireParagraph(paragraph, textStyle, original, shapeId, assetCatalog, { forceLevel = false, customShowLinks } = {}) {
   const unsupported = Object.keys(paragraph).filter((key) => !PARAGRAPH_KEYS.has(key));
   if (unsupported.length) throw new OpenChestnutCodecError(`Presentation shape ${shapeId} uses unsupported paragraph fields: ${unsupported.join(", ")}.`, [], { code: "unsupported_presentation_features" });
   const paragraphStyleUnsupported = unsupportedStyleFields(paragraph.style);
@@ -784,7 +786,7 @@ function wireParagraph(paragraph, textStyle, original, shapeId, assetCatalog, { 
   return {
     ...(includeLevel ? { level } : {}),
     ...(paragraph.alignment ? { alignment: paragraph.alignment } : {}),
-    runs: (paragraph.runs || []).map((run, index) => wireRun(run, directInheritedStyle, shapeId, original?.runs?.[index])),
+    runs: (paragraph.runs || []).map((run, index) => wireRun(run, directInheritedStyle, shapeId, original?.runs?.[index], customShowLinks)),
     ...(bullet ? { bullet } : {}),
     ...(bulletFont ? { bulletFont } : {}),
     ...(bulletColor ? { bulletColor } : {}),
@@ -898,7 +900,7 @@ function wireTextBodyProperties(value, original, shapeId) {
   };
 }
 
-function presentationTextBody(shape, original, assetCatalog) {
+function presentationTextBody(shape, original, assetCatalog, customShowLinks) {
   const textStyle = shape.text?.style || {};
   const textStyleUnsupported = Object.keys(textStyle).filter((key) => !RUN_STYLE_KEYS.has(key) && !TEXT_FRAME_PARAGRAPH_KEYS.has(key));
   if (textStyleUnsupported.length) throw new OpenChestnutCodecError(`Presentation shape ${shape.id} uses unsupported text-frame style fields: ${textStyleUnsupported.join(", ")}.`, [], { code: "unsupported_presentation_features" });
@@ -916,12 +918,12 @@ function presentationTextBody(shape, original, assetCatalog) {
     originalListStyles.get(Number(level)),
     shape.id,
     assetCatalog,
-    { forceLevel: true },
+    { forceLevel: true, customShowLinks },
   ));
   const noListStyles = listStyles.length === 0 && (originalListStyles.size > 0 || original?.textBody?.noListStyles === true);
   const bodyProperties = wireTextBodyProperties(shape.text?.bodyProperties, original?.textBody, shape.id);
   return {
-    paragraphs: paragraphs.map((paragraph, index) => wireParagraph({ ...inheritedParagraph, ...paragraph }, inheritedRunStyle, original?.textBody?.paragraphs?.[index], shape.id, assetCatalog)),
+    paragraphs: paragraphs.map((paragraph, index) => wireParagraph({ ...inheritedParagraph, ...paragraph }, inheritedRunStyle, original?.textBody?.paragraphs?.[index], shape.id, assetCatalog, { customShowLinks })),
     ...(listStyles.length ? { listStyles } : {}),
     ...(noListStyles ? { noListStyles: true } : {}),
     ...(bodyProperties ? { bodyProperties } : {}),
@@ -1030,7 +1032,7 @@ function sourceFreeLayoutType(type, layoutId) {
   return normalized;
 }
 
-function sourceFreePlaceholder(placeholder, ownerId, assetCatalog) {
+function sourceFreePlaceholder(placeholder, ownerId, assetCatalog, customShowLinks) {
   const type = String(placeholder.type || "");
   if (!SOURCE_FREE_TEXT_PLACEHOLDER_TYPES.has(type)) {
     throw new OpenChestnutCodecError(
@@ -1065,7 +1067,7 @@ function sourceFreePlaceholder(placeholder, ownerId, assetCatalog) {
     name: String(placeholder.name || `${type} placeholder`),
     type,
     index,
-    textBody: presentationTextBody(shape, undefined, assetCatalog),
+    textBody: presentationTextBody(shape, undefined, assetCatalog, customShowLinks),
     directFrame: {
       leftEmu: emuFromPixels(position.left, `${shape.id}.position.left`),
       topEmu: emuFromPixels(position.top, `${shape.id}.position.top`),
@@ -1103,7 +1105,7 @@ function sourceFreeSlidePlaceholder(shape) {
   };
 }
 
-function presentationMasters(presentation, state, assetCatalog) {
+function presentationMasters(presentation, state, assetCatalog, customShowLinks) {
   if (state) {
     if (presentation.masters.items.length !== state.masters.length || state.masters.some((entry, index) => presentation.masters.items[index] !== entry.model)) {
       throw new OpenChestnutCodecError(`Source-preserving PPTX export requires the original ${state.masters.length}-master topology.`, [], { code: "presentation_master_topology_changed" });
@@ -1121,11 +1123,11 @@ function presentationMasters(presentation, state, assetCatalog) {
     name: master.name,
     textStyles: wireMasterTextStyles(master, undefined, assetCatalog),
     background: wireBackground(master.background, `master ${master.id}`),
-    placeholders: master.placeholders.map((placeholder) => sourceFreePlaceholder(placeholder, master.id, assetCatalog)),
+    placeholders: master.placeholders.map((placeholder) => sourceFreePlaceholder(placeholder, master.id, assetCatalog, customShowLinks)),
   }] : [];
 }
 
-function presentationLayouts(presentation, state, assetCatalog) {
+function presentationLayouts(presentation, state, assetCatalog, customShowLinks) {
   if (!state) {
     return presentation.layouts.items.map((layout) => ({
       id: layout.id,
@@ -1133,7 +1135,7 @@ function presentationLayouts(presentation, state, assetCatalog) {
       masterId: layout.masterId,
       type: sourceFreeLayoutType(layout.type, layout.id),
       ...(layout.background ? { background: wireBackground(layout.background, `layout ${layout.id}`) } : {}),
-      placeholders: layout.placeholders.map((placeholder) => sourceFreePlaceholder(placeholder, layout.id, assetCatalog)),
+      placeholders: layout.placeholders.map((placeholder) => sourceFreePlaceholder(placeholder, layout.id, assetCatalog, customShowLinks)),
     }));
   }
   if (presentation.layouts.items.length !== state.layouts.length || state.layouts.some((entry, index) => presentation.layouts.items[index] !== entry.model)) {
@@ -1410,7 +1412,7 @@ function presentationChart(chart, original) {
   };
 }
 
-function presentationShape(shape, original, assetCatalog) {
+function presentationShape(shape, original, assetCatalog, customShowLinks) {
   const originalShape = original?.content?.case === "shape" ? original.content.value : original;
   if (!new Set(["rect", "ellipse", "roundRect", "textbox", "custom"]).has(shape.geometry)) {
     throw new OpenChestnutCodecError(`Presentation shape ${shape.id} uses unsupported geometry ${shape.geometry}.`, [], { code: "unsupported_presentation_features" });
@@ -1449,7 +1451,7 @@ function presentationShape(shape, original, assetCatalog) {
   const lineWidth = Number(shape.line?.width ?? 1);
   if (!Number.isFinite(lineWidth) || lineWidth < 0) throw new OpenChestnutCodecError(`Presentation shape ${shape.id} has an invalid line width.`, [], { code: "invalid_presentation_frame" });
   const placeholder = !original && shape.placeholder ? sourceFreeSlidePlaceholder(shape) : undefined;
-  const textBody = presentationTextBody(shape, originalShape, assetCatalog);
+  const textBody = presentationTextBody(shape, originalShape, assetCatalog, customShowLinks);
   const shadow = presentationShadow(shape.shadow, shape.id);
   return {
     id: original?.id || shape.id,
@@ -1604,17 +1606,17 @@ function presentationTableReadOnlySnapshot(table) {
   });
 }
 
-function presentationElement(element, original, assetCatalog, sourceIdByCloneId) {
-  if (element instanceof GroupShape) return presentationGroup(element, original, assetCatalog, sourceIdByCloneId);
+function presentationElement(element, original, assetCatalog, sourceIdByCloneId, customShowLinks) {
+  if (element instanceof GroupShape) return presentationGroup(element, original, assetCatalog, sourceIdByCloneId, customShowLinks);
   if (element instanceof ImageElement) return presentationImage(element, original, assetCatalog);
   if (element instanceof TableElement) return presentationTable(element, original);
   if (element instanceof ChartElement) return presentationChart(element, original);
   if (element?.kind === "connector") return presentationConnector(element, original, sourceIdByCloneId);
-  if (element instanceof Shape) return presentationShape(element, original, assetCatalog);
+  if (element instanceof Shape) return presentationShape(element, original, assetCatalog, customShowLinks);
   throw new OpenChestnutCodecError(`Presentation element ${element?.id || "<unknown>"} has no supported OpenChestnut wire projection.`, [], { code: "unsupported_presentation_element" });
 }
 
-function presentationGroup(group, original, assetCatalog, sourceIdByCloneId) {
+function presentationGroup(group, original, assetCatalog, sourceIdByCloneId, customShowLinks) {
   const originalGroup = original?.content?.case === "group" ? original.content.value : undefined;
   if (!group.children.length) throw new OpenChestnutCodecError(`Presentation group ${group.id} requires at least one child.`, [], { code: "invalid_presentation_group" });
   if (originalGroup && originalGroup.children.length !== group.children.length) {
@@ -1644,7 +1646,7 @@ function presentationGroup(group, original, assetCatalog, sourceIdByCloneId) {
         childTopEmu: signedEmuFromPixels(childFrame.top, `${group.id}.childFrame.top`),
         childWidthEmu,
         childHeightEmu,
-        children: group.children.map((child, index) => presentationElement(child, originalGroup?.children[index], assetCatalog, sourceIdByCloneId)),
+        children: group.children.map((child, index) => presentationElement(child, originalGroup?.children[index], assetCatalog, sourceIdByCloneId, customShowLinks)),
       },
     },
   };
@@ -1896,6 +1898,41 @@ function presentationAdvancedSnapshot(presentation) {
   });
 }
 
+function presentationCustomShowLinkContext(currentShows, state) {
+  const byId = new Map();
+  const byName = new Map();
+  for (const show of currentShows) {
+    if (byId.has(show.id) || byName.has(show.name)) {
+      throw new OpenChestnutCodecError("Presentation custom-show hyperlink targets require unique show IDs and names.", [], { code: "invalid_presentation_custom_show" });
+    }
+    byId.set(show.id, show);
+    byName.set(show.name, show);
+  }
+  return {
+    byId,
+    byName,
+    originalNameById: new Map((state?.customShows || []).map((entry) => [entry.wire.id, entry.wire.name])),
+  };
+}
+
+function resolvePresentationCustomShowLinkId(name, originalRun, shapeId, context) {
+  const originalTarget = originalRun?.hyperlink?.case === "runHyperlink"
+    ? originalRun.hyperlink.value?.target
+    : undefined;
+  let show;
+  if (originalTarget?.case === "customShowId" && context?.originalNameById.get(originalTarget.value) === name) {
+    // A show rename does not implicitly retarget every referring run. The
+    // public model still carries the imported display name, while this stable
+    // wire identity follows the same native show across that rename.
+    show = context.byId.get(originalTarget.value);
+  }
+  show ||= context?.byName.get(name);
+  if (!show) {
+    throw new OpenChestnutCodecError(`Presentation shape ${shapeId} references missing custom show ${name}.`, [], { code: "invalid_presentation_hyperlink" });
+  }
+  return show.id;
+}
+
 function presentationCustomShows(presentation, state) {
   const entries = planPresentationCustomShows(presentation).entries;
   if (!state) return entries.map((show) => ({
@@ -2021,9 +2058,10 @@ export function presentationEnvelope(presentation, protocolVersion) {
   }
 
   const customShows = presentationCustomShows(presentation, state);
+  const customShowLinks = presentationCustomShowLinkContext(customShows, state);
   const assetCatalog = createPresentationAssetCatalog();
-  const masters = presentationMasters(presentation, state, assetCatalog);
-  const layouts = presentationLayouts(presentation, state, assetCatalog);
+  const masters = presentationMasters(presentation, state, assetCatalog, customShowLinks);
+  const layouts = presentationLayouts(presentation, state, assetCatalog, customShowLinks);
   const slides = presentation.slides.items.map((slide, slideIndex) => {
     const sourceState = sourceStates?.sourceBySlide.get(slide);
     const cloneState = sourceStates?.cloneBySlide.get(slide);
@@ -2050,9 +2088,9 @@ export function presentationEnvelope(presentation, protocolVersion) {
       ? (cloneState?.entries || bindingState.entries).map((entry) => {
         if (entry.wire.content.case === "shape") {
           if (entry.wire.content.value.placeholder) {
-            return presentationSlidePlaceholder(entry.model, entry.wire, entry.placeholderSnapshot, assetCatalog);
+            return presentationSlidePlaceholder(entry.model, entry.wire, entry.placeholderSnapshot, assetCatalog, customShowLinks);
           }
-          return presentationShape(entry.model, entry.wire, assetCatalog);
+          return presentationShape(entry.model, entry.wire, assetCatalog, customShowLinks);
         }
         if (entry.wire.content.case === "image") {
           if (presentationImageReadOnlySnapshot(entry.model) !== entry.snapshot) {
@@ -2068,12 +2106,12 @@ export function presentationEnvelope(presentation, protocolVersion) {
         }
         if (entry.wire.content.case === "connector") return presentationConnector(entry.model, entry.wire, cloneState?.sourceIdByCloneId);
         if (entry.wire.content.case === "chart") return presentationChart(entry.model, entry.wire);
-        if (entry.wire.content.case === "group") return presentationGroup(entry.model, entry.wire, assetCatalog, cloneState?.sourceIdByCloneId);
+        if (entry.wire.content.case === "group") return presentationGroup(entry.model, entry.wire, assetCatalog, cloneState?.sourceIdByCloneId, customShowLinks);
         return presentationOpaque(entry.model, entry.wire, entry.snapshot, assetCatalog);
       })
       : directSlideElements(slide)
         .filter((element) => element instanceof Shape || element instanceof ImageElement || element instanceof TableElement || element instanceof ChartElement || element instanceof GroupShape || slide.connectors.items.includes(element))
-        .map((element) => presentationElement(element, undefined, assetCatalog));
+        .map((element) => presentationElement(element, undefined, assetCatalog, undefined, customShowLinks));
     const modernComments = presentation.commentFormat === "modern"
       ? presentationModernComments(slide, slideIndex, elements, bindingState?.wire.modernComments || [])
       : [];
@@ -2129,8 +2167,8 @@ function presentationNativeKind(elementName) {
   return ({ pic: "picture", graphicFrame: "graphicFrame", grpSp: "group", cxnSp: "connector", contentPart: "contentPart" })[elementName] || elementName || "nativeObject";
 }
 
-function modelRun(run) {
-  const hyperlink = run.hyperlink?.case === "runHyperlink" ? modelHyperlink(run.hyperlink.value) : undefined;
+function modelRun(run, customShowLinks) {
+  const hyperlink = run.hyperlink?.case === "runHyperlink" ? modelHyperlink(run.hyperlink.value, customShowLinks) : undefined;
   const content = run.content?.case === "lineBreak"
     ? { break: true }
     : run.content?.case === "field"
@@ -2149,13 +2187,19 @@ function modelRun(run) {
   };
 }
 
-function modelHyperlink(link) {
+function modelHyperlink(link, customShowLinks) {
+  const customShowName = link.target?.case === "customShowId" ? customShowLinks?.get(link.target.value) : undefined;
+  if (link.target?.case === "customShowId" && !customShowName) {
+    throw new OpenChestnutCodecError(`Presentation run hyperlink references missing custom show ${link.target.value}.`, [], { code: "invalid_presentation_artifact" });
+  }
   const target = link.target?.case === "uri"
     ? { uri: link.target.value }
     : link.target?.case === "slideId"
       ? { slideId: link.target.value }
       : link.target?.case === "action"
         ? { action: link.target.value }
+        : link.target?.case === "customShowId"
+          ? { customShow: customShowName }
         : {};
   return {
     ...target,
@@ -2163,6 +2207,7 @@ function modelHyperlink(link) {
     ...(link.targetFrame === undefined ? {} : { targetFrame: link.targetFrame }),
     ...(link.history === undefined ? {} : { history: link.history }),
     ...(link.highlightClick === undefined ? {} : { highlightClick: link.highlightClick }),
+    ...(link.returnToSlide === undefined ? {} : { returnToSlide: link.returnToSlide }),
   };
 }
 
@@ -2222,9 +2267,9 @@ function modelDefaultRunStyle(paragraph) {
   };
 }
 
-function modelParagraph(paragraph, assetCatalog, { includeRuns = true } = {}) {
+function modelParagraph(paragraph, assetCatalog, { includeRuns = true, customShowLinks } = {}) {
   return {
-    ...(includeRuns ? { runs: paragraph.runs.map(modelRun) } : {}),
+    ...(includeRuns ? { runs: paragraph.runs.map((run) => modelRun(run, customShowLinks)) } : {}),
     level: paragraph.level ?? 0,
     ...(paragraph.alignment ? { alignment: paragraph.alignment } : {}),
     ...modelBullet(paragraph.bullet, assetCatalog),
@@ -2236,9 +2281,9 @@ function modelParagraph(paragraph, assetCatalog, { includeRuns = true } = {}) {
   };
 }
 
-function modelText(shape, assetCatalog) {
+function modelText(shape, assetCatalog, customShowLinks) {
   if (!shape.textBody) return shape.text;
-  return shape.textBody.paragraphs.map((paragraph) => modelParagraph(paragraph, assetCatalog));
+  return shape.textBody.paragraphs.map((paragraph) => modelParagraph(paragraph, assetCatalog, { customShowLinks }));
 }
 
 function modelListStyles(shape, assetCatalog) {
@@ -2278,7 +2323,7 @@ function modelMasterTextStyles(source, assetCatalog) {
   ]));
 }
 
-function modelPlaceholder(source, assetCatalog) {
+function modelPlaceholder(source, assetCatalog, customShowLinks) {
   const shape = { textBody: source.textBody };
   const transform = modelPlaceholderTransform(source.directFrame);
   return {
@@ -2288,7 +2333,7 @@ function modelPlaceholder(source, assetCatalog) {
     idx: source.index,
     ...(source.directFrame ? { position: modelPlaceholderFrame(source.directFrame) } : {}),
     ...(Object.keys(transform).length ? { transform } : {}),
-    text: modelText(shape, assetCatalog),
+    text: modelText(shape, assetCatalog, customShowLinks),
     paragraphStyles: modelListStyles(shape, assetCatalog),
     textBodyProperties: modelTextBodyProperties(shape),
   };
@@ -2372,9 +2417,9 @@ function isPlainPresentationTextRequest(shape) {
   return JSON.stringify(shape.text?.paragraphs || []) === JSON.stringify(normalizePresentationParagraphs(shape.text?.value || ""));
 }
 
-function sourceBoundSlidePlaceholderTextBody(shape, originalShape, originalState, assetCatalog) {
+function sourceBoundSlidePlaceholderTextBody(shape, originalShape, originalState, assetCatalog, customShowLinks) {
   if (slidePlaceholderTextStructureSnapshot(shape) === originalState.textStructure) {
-    return presentationTextBody(shape, originalShape, assetCatalog);
+    return presentationTextBody(shape, originalShape, assetCatalog, customShowLinks);
   }
 
   if (!isPlainPresentationTextRequest(shape)) {
@@ -2420,7 +2465,7 @@ function sourceBoundSlidePlaceholderTextBody(shape, originalShape, originalState
   return textBody;
 }
 
-function presentationSlidePlaceholder(shape, original, originalState, assetCatalog) {
+function presentationSlidePlaceholder(shape, original, originalState, assetCatalog, customShowLinks) {
   const currentState = slidePlaceholderState(shape);
   if (currentState.full === originalState.full) return original;
   if (original?.source?.textEditable !== true) {
@@ -2440,7 +2485,7 @@ function presentationSlidePlaceholder(shape, original, originalState, assetCatal
   const requested = clonedPresentationValue(original);
   const originalShape = original.content.value;
   requested.content.value.text = shape.text.value;
-  requested.content.value.textBody = sourceBoundSlidePlaceholderTextBody(shape, originalShape, originalState, assetCatalog);
+  requested.content.value.textBody = sourceBoundSlidePlaceholderTextBody(shape, originalShape, originalState, assetCatalog, customShowLinks);
   return requested;
 }
 
@@ -2562,7 +2607,7 @@ function modelPresentationChart(source) {
   };
 }
 
-function modelPresentationGroupChild(element, assetCatalog) {
+function modelPresentationGroupChild(element, assetCatalog, customShowLinks) {
   const common = { id: element.id, name: element.name };
   if (element.content.case === "shape") {
     const shape = element.content.value;
@@ -2583,7 +2628,7 @@ function modelPresentationGroupChild(element, assetCatalog) {
       line: { fill: shape.lineRgb ? `#${shape.lineRgb}` : "transparent", width: Number(shape.lineWidthEmu) / EMU_PER_POINT },
       ...(shape.shadow ? { shadow: modelPresentationShadow(shape.shadow) } : {}),
       ...(shape.useBackgroundFill === undefined ? {} : { _openChestnutUseBackgroundFill: shape.useBackgroundFill }),
-      text: modelText(shape, assetCatalog),
+      text: modelText(shape, assetCatalog, customShowLinks),
       textBodyProperties: modelTextBodyProperties(shape),
     };
   }
@@ -2642,11 +2687,11 @@ function modelPresentationGroupChild(element, assetCatalog) {
     };
   }
   if (element.content.case === "chart") return { kind: "chart", ...common, ...modelPresentationChart(element.content.value) };
-  if (element.content.case === "group") return { kind: "groupShape", ...modelPresentationGroup(element, assetCatalog) };
+  if (element.content.case === "group") return { kind: "groupShape", ...modelPresentationGroup(element, assetCatalog, customShowLinks) };
   throw new OpenChestnutCodecError(`Presentation group child ${element.id} has unsupported wire content ${element.content.case || "none"}.`, [], { code: "invalid_presentation_group" });
 }
 
-function modelPresentationGroup(element, assetCatalog) {
+function modelPresentationGroup(element, assetCatalog, customShowLinks) {
   const group = element.content.value;
   return {
     id: element.id,
@@ -2663,7 +2708,7 @@ function modelPresentationGroup(element, assetCatalog) {
       width: Number(group.childWidthEmu) / EMU_PER_PIXEL,
       height: Number(group.childHeightEmu) / EMU_PER_PIXEL,
     },
-    children: group.children.map((child) => modelPresentationGroupChild(child, assetCatalog)),
+    children: group.children.map((child) => modelPresentationGroupChild(child, assetCatalog, customShowLinks)),
   };
 }
 
@@ -2672,6 +2717,16 @@ export async function presentationFromEnvelope(envelope) {
     throw new OpenChestnutCodecError("OpenChestnut response does not contain a presentation artifact.", [], { code: "invalid_presentation_artifact" });
   }
   const source = envelope.payload.value;
+  if (source.customShowsOpaque && source.customShows?.length) {
+    throw new OpenChestnutCodecError("OpenChestnut returned both opaque and semantic presentation custom shows.", [], { code: "invalid_presentation_artifact" });
+  }
+  const customShowLinks = new Map();
+  for (const show of source.customShows || []) {
+    if (!show.id || customShowLinks.has(show.id)) {
+      throw new OpenChestnutCodecError("OpenChestnut returned an invalid or duplicate presentation custom-show ID.", [], { code: "invalid_presentation_artifact" });
+    }
+    customShowLinks.set(show.id, show.name);
+  }
   const nativeGraph = await materializePresentationNativeGraphs(envelope);
   const assetCatalog = createPresentationAssetCatalog(envelope.assets || []);
   const presentation = Presentation.create({
@@ -2688,7 +2743,7 @@ export async function presentationFromEnvelope(envelope) {
         id: sourceMaster.id,
         name: sourceMaster.name,
         ...(sourceMaster.background ? { background: modelBackground(sourceMaster.background) } : {}),
-        placeholders: (sourceMaster.placeholders || []).map((placeholder) => modelPlaceholder(placeholder, assetCatalog)),
+        placeholders: (sourceMaster.placeholders || []).map((placeholder) => modelPlaceholder(placeholder, assetCatalog, customShowLinks)),
         textParagraphStyles: modelMasterTextStyles(sourceMaster, assetCatalog),
         slideGuides,
       });
@@ -2711,7 +2766,7 @@ export async function presentationFromEnvelope(envelope) {
       type: sourceLayout.type,
       masterId: sourceLayout.masterId,
       ...(sourceLayout.background ? { background: modelBackground(sourceLayout.background) } : {}),
-      placeholders: (sourceLayout.placeholders || []).map((placeholder) => modelPlaceholder(placeholder, assetCatalog)),
+      placeholders: (sourceLayout.placeholders || []).map((placeholder) => modelPlaceholder(placeholder, assetCatalog, customShowLinks)),
       slideGuides,
     });
     layoutStates.push({
@@ -2780,7 +2835,7 @@ export async function presentationFromEnvelope(envelope) {
           line: { fill: shape.lineRgb ? `#${shape.lineRgb}` : "transparent", width: Number(shape.lineWidthEmu) / EMU_PER_POINT },
           ...(shape.shadow ? { shadow: modelPresentationShadow(shape.shadow) } : {}),
           ...(shape.useBackgroundFill === undefined ? {} : { _openChestnutUseBackgroundFill: shape.useBackgroundFill }),
-          text: modelText(shape, assetCatalog),
+          text: modelText(shape, assetCatalog, customShowLinks),
           textBodyProperties: modelTextBodyProperties(shape),
         });
         model.text.inheritedParagraphStyles = modelListStyles(shape, assetCatalog);
@@ -2846,7 +2901,7 @@ export async function presentationFromEnvelope(envelope) {
           ...chart,
         });
       } else if (element.content.case === "group") {
-        model = slide.groups.add(modelPresentationGroup(element, assetCatalog));
+        model = slide.groups.add(modelPresentationGroup(element, assetCatalog, customShowLinks));
       } else if (element.content.case === "opaque") {
         const opaque = element.content.value;
         const sourcePart = sourceSlide.source?.partPath;
@@ -2985,9 +3040,6 @@ export async function presentationFromEnvelope(envelope) {
       commentSnapshot: presentationSlideCommentSnapshot(slide),
       entries,
     });
-  }
-  if (source.customShowsOpaque && source.customShows?.length) {
-    throw new OpenChestnutCodecError("OpenChestnut returned both opaque and semantic presentation custom shows.", [], { code: "invalid_presentation_artifact" });
   }
   const customShowStates = [];
   for (const sourceShow of source.customShows || []) {

@@ -70,9 +70,28 @@ function orderedSlideRelationshipIds(xml) {
 async function slideRenderHashes(presentation) {
   return Promise.all(presentation.slides.items.map(async (slide) => {
     const rendered = await slide.export({ format: "svg" });
-    if (!/<svg\b/i.test(await rendered.text())) throw new Error("Presentation model render did not produce SVG.");
-    return sha256(rendered.bytes);
+    const svg = await rendered.text();
+    if (!/<svg\b/i.test(svg)) throw new Error("Presentation model render did not produce SVG.");
+    // A show rename intentionally changes the nonvisual Agent-facing target
+    // name stored in data-hyperlink while the pixels and native SlidePart stay
+    // unchanged. Normalize only that audited identity label before comparing
+    // model-render bytes; package and second-import checks still prove the
+    // actual native link target separately.
+    return sha256(Buffer.from(svg.replace(/data-hyperlink="custom-show:[^"]*"/g, 'data-hyperlink="custom-show:<stable-id>"')));
   }));
+}
+
+async function customShowLinkCount(zip, nativeId) {
+  let count = 0;
+  for (const partPath of Object.keys(zip.files).filter((entry) => /^ppt\/slides\/slide\d+\.xml$/i.test(entry))) {
+    const xml = await zip.file(partPath).async("text");
+    for (const match of xml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?hlinkClick\b[^>]*>/gi)) {
+      const action = unescapeXml(xmlAttributes(match[0]).action || "");
+      const target = /^ppaction:\/\/customshow\?id=(\d+)(?:&return=(true|false))?$/i.exec(action);
+      if (target && Number(target[1]) === nativeId) count += 1;
+    }
+  }
+  return count;
 }
 
 async function assertPackageScope(sourceBytes, outputBytes, targetIndex, expected) {
@@ -99,7 +118,10 @@ async function assertPackageScope(sourceBytes, outputBytes, targetIndex, expecte
   }
   if (sourceShows[targetIndex].name !== expected.sourceName || outputShows[targetIndex].name !== expected.outputName) throw new Error("Custom-show edit did not apply the requested exact name change.");
   if (JSON.stringify(outputShows[targetIndex].relationshipIds) !== JSON.stringify(expected.relationshipIds)) throw new Error("Custom-show edit did not apply the requested ordered slide membership.");
-  return { partCount: sourcePaths.length, nativeId: outputShows[targetIndex].nativeId };
+  const sourceLinkedRuns = await customShowLinkCount(sourceZip, sourceShows[targetIndex].nativeId);
+  const outputLinkedRuns = await customShowLinkCount(outputZip, outputShows[targetIndex].nativeId);
+  if (sourceLinkedRuns !== outputLinkedRuns) throw new Error("Custom-show edit changed the number of native run hyperlinks bound to the fixed show identity.");
+  return { partCount: sourcePaths.length, nativeId: outputShows[targetIndex].nativeId, linkedRunCount: outputLinkedRuns };
 }
 
 export async function editPptxCustomShow({ inputPath, outputPath, auditPath, expectedName, replacementName, orderedSlideNames }) {
@@ -176,9 +198,9 @@ export async function editPptxCustomShow({ inputPath, outputPath, auditPath, exp
       },
       warnings: [],
       validation: {
-        package: { ok: true, partCount: packageScope.partCount, onlyPresentationPartChanged: true, nativeIdPreserved: true },
+        package: { ok: true, partCount: packageScope.partCount, onlyPresentationPartChanged: true, nativeIdPreserved: true, linkedRunCount: packageScope.linkedRunCount },
         reimport: { ok: true, customShowCount: sourceShowCount, orderedSlideNames: requestedSlideNames },
-        modelRender: { ok: true, sourceSha256: sourceRenderHashes, outputSha256: outputRenderHashes, slidesByteIdentical: true },
+        modelRender: { ok: true, sourceSha256: sourceRenderHashes, outputSha256: outputRenderHashes, normalizedSvgByteIdentical: true },
         verify: { ok: verification.ok },
       },
     };

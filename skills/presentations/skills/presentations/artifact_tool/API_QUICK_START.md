@@ -331,6 +331,11 @@ New presentations can author native playback subsets after their slides exist:
 const overview = presentation.slides.add({ name: "Overview" });
 const appendix = presentation.slides.add({ name: "Appendix" });
 presentation.customShows.add("Board route", [overview, appendix]);
+
+overview.shapes.add({
+  position: { left: 44, top: 140, width: 300, height: 48 },
+  text: [{ runs: [{ text: "Open board route", link: { customShow: "Board route", returnToSlide: true } }] }],
+});
 ```
 
 For one canonical imported show, use the audited fixed-topology transaction:

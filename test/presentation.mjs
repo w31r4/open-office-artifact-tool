@@ -99,7 +99,11 @@ await assert.rejects(
 // membership while show topology/native identity remain source-bound.
 const customShowDeck = Presentation.create({ slideSize: { width: 1280, height: 720 } });
 const customShowOverview = customShowDeck.slides.add({ name: "Overview" });
-customShowOverview.shapes.add({ name: "overview-title", position: { left: 80, top: 80, width: 800, height: 80 }, text: "Overview" });
+customShowOverview.shapes.add({
+  name: "overview-title",
+  position: { left: 80, top: 80, width: 800, height: 80 },
+  text: [{ runs: [{ text: "Overview", link: { customShow: "Board route", returnToSlide: true, tooltip: "Open board route" } }] }],
+});
 const customShowEvidence = customShowDeck.slides.add({ name: "Evidence" });
 customShowEvidence.shapes.add({ name: "evidence-title", position: { left: 80, top: 80, width: 800, height: 80 }, text: "Evidence" });
 const customShowAppendix = customShowDeck.slides.add({ name: "Appendix" });
@@ -124,10 +128,17 @@ const customShowPresentationXml = await customShowFirstZip.file("ppt/presentatio
 assert.match(customShowPresentationXml, /<p:custShowLst>/);
 assert.match(customShowPresentationXml, /<p:custShow name="Board route" id="7"><p:sldLst><p:sld r:id="rIdSlide1"[^>]*\/><p:sld r:id="rIdSlide3"[^>]*\/><\/p:sldLst><\/p:custShow>/);
 assert.ok(customShowPresentationXml.indexOf("<p:custShowLst>") < customShowPresentationXml.indexOf("<p:defaultTextStyle"));
+const customShowSlideXml = await customShowFirstZip.file("ppt/slides/slide1.xml").async("string");
+assert.match(customShowSlideXml, /<a:hlinkClick r:id=""[^>]*action="ppaction:\/\/customshow\?id=7&amp;return=true"[^>]*tooltip="Open board route"/);
 
 const customShowImported = await PresentationFile.importPptx(customShowFirstExport);
 assert.equal(customShowImported.customShows.count, 2);
 assert.deepEqual(customShowImported.customShows.getItem("Board route").slideIds, [customShowImported.slides.items[0].id, customShowImported.slides.items[2].id]);
+assert.deepEqual(itemByName(customShowImported.slides.items[0].shapes.items, "overview-title").text.paragraphs[0].runs[0].link, {
+  customShow: "Board route",
+  returnToSlide: true,
+  tooltip: "Open board route",
+});
 const editableBoardShow = customShowImported.customShows.getItem("Board route");
 editableBoardShow.name = "Executive route";
 editableBoardShow.setSlides([customShowImported.slides.items[2], customShowImported.slides.items[0], customShowImported.slides.items[2]]);
@@ -139,6 +150,11 @@ assert.deepEqual(customShowEditedRoundTrip.customShows.getItem("Executive route"
   customShowEditedRoundTrip.slides.items[0].id,
   customShowEditedRoundTrip.slides.items[2].id,
 ]);
+assert.equal(
+  itemByName(customShowEditedRoundTrip.slides.items[0].shapes.items, "overview-title").text.paragraphs[0].runs[0].link.customShow,
+  "Executive route",
+  "renaming a custom show must retain the native link identity and refresh its public display name",
+);
 const customShowEditedZip = await JSZip.loadAsync(customShowEditedExport.bytes);
 for (const partPath of Object.keys(customShowFirstZip.files).filter((entry) => !customShowFirstZip.files[entry].dir && entry !== "ppt/presentation.xml")) {
   assert.deepEqual(
@@ -147,6 +163,37 @@ for (const partPath of Object.keys(customShowFirstZip.files).filter((entry) => !
     `custom-show edit changed non-presentation part ${partPath}`,
   );
 }
+const customShowRetargeted = await PresentationFile.importPptx(customShowFirstExport);
+const customShowRetargetedShape = itemByName(customShowRetargeted.slides.items[0].shapes.items, "overview-title");
+const customShowRetargetedParagraph = customShowRetargetedShape.text.paragraphs[0];
+customShowRetargetedParagraph.runs[0].link = {
+  customShow: "Review route",
+  returnToSlide: false,
+};
+customShowRetargetedShape.text.paragraphs = [customShowRetargetedParagraph];
+const customShowRetargetedExport = await PresentationFile.exportPptx(customShowRetargeted);
+const customShowRetargetedZip = await JSZip.loadAsync(customShowRetargetedExport.bytes);
+assert.match(await customShowRetargetedZip.file("ppt/slides/slide1.xml").async("string"), /action="ppaction:\/\/customshow\?id=11&amp;return=false"/);
+const customShowRetargetedRoundTrip = await PresentationFile.importPptx(customShowRetargetedExport);
+assert.deepEqual(itemByName(customShowRetargetedRoundTrip.slides.items[0].shapes.items, "overview-title").text.paragraphs[0].runs[0].link, {
+  customShow: "Review route",
+  returnToSlide: false,
+});
+const missingCustomShowLink = Presentation.create({ slideSize: { width: 640, height: 360 } });
+missingCustomShowLink.slides.add().shapes.add({
+  position: { left: 40, top: 40, width: 360, height: 80 },
+  text: [{ runs: [{ text: "Missing", link: { customShow: "Not present" } }] }],
+});
+await assert.rejects(
+  () => PresentationFile.exportPptx(missingCustomShowLink),
+  (error) => error?.code === "invalid_presentation_hyperlink",
+);
+const customShowCloneImport = await PresentationFile.importPptx(customShowFirstExport);
+customShowCloneImport.slides.items[0].duplicate();
+await assert.rejects(
+  () => PresentationFile.exportPptx(customShowCloneImport),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+);
 const customShowMovedImport = await PresentationFile.importPptx(customShowFirstExport);
 customShowMovedImport.slides.items[2].moveTo(0);
 const customShowMovedRoundTrip = await PresentationFile.importPptx(await PresentationFile.exportPptx(customShowMovedImport));
@@ -174,6 +221,16 @@ const irregularCustomShowBytes = await irregularCustomShowZip.generateAsync({ ty
 const irregularCustomShowFile = new FileBlob(irregularCustomShowBytes, { type: "application/vnd.openxmlformats-officedocument.presentationml.presentation" });
 const irregularCustomShowImport = await PresentationFile.importPptx(irregularCustomShowFile);
 assert.equal(irregularCustomShowImport.customShows.count, 0);
+assert.equal(itemByName(irregularCustomShowImport.slides.items[0].shapes.items, "overview-title").text.paragraphs[0].runs[0].link, undefined);
+const irregularLinkMutation = await PresentationFile.importPptx(irregularCustomShowFile);
+const irregularLinkShape = itemByName(irregularLinkMutation.slides.items[0].shapes.items, "overview-title");
+const irregularLinkParagraph = irregularLinkShape.text.paragraphs[0];
+irregularLinkParagraph.runs[0].link = { uri: "https://example.com/replacement" };
+irregularLinkShape.text.paragraphs = [irregularLinkParagraph];
+await assert.rejects(
+  () => PresentationFile.exportPptx(irregularLinkMutation),
+  (error) => error?.code === "unsupported_presentation_edit",
+);
 irregularCustomShowImport.customShows.add("Unsafe replacement", [irregularCustomShowImport.slides.items[0]]);
 await assert.rejects(
   () => PresentationFile.exportPptx(irregularCustomShowImport),
@@ -205,7 +262,7 @@ const authoredLayoutPresentation = Presentation.create({
       type: "title",
       index: 0,
       name: "Title",
-      text: "Master title prompt",
+      text: [{ runs: [{ text: "Master title prompt", link: { customShow: "Layout route", returnToSlide: true } }] }],
       position: { left: 60, top: 44, width: 1160, height: 82 },
       style: { fontSize: 30, bold: true, color: "#0F172A" },
     }],
@@ -216,7 +273,7 @@ authoredLayout.placeholders.add({
   type: "body",
   index: 1,
   name: "Body",
-  text: "Master body prompt",
+  text: [{ runs: [{ text: "Master body prompt", link: { customShow: "Layout route" } }] }],
   position: { left: 72, top: 154, width: 1136, height: 490 },
   style: { fontSize: 18, color: "#334155" },
 });
@@ -242,6 +299,7 @@ assert.deepEqual(authoredLayoutPlaceholderSummary, {
 authoredLayoutPlaceholderSummary.items[0].position.left = -1;
 assert.equal(authoredLayout.placeholders.getItem("body").position.left, 72);
 const authoredLayoutSlide = authoredLayoutPresentation.slides.add({ name: "Reusable layout", layout: "Title and body" });
+authoredLayoutPresentation.customShows.add("Layout route", [authoredLayoutSlide]);
 assert.equal(authoredLayoutSlide.layoutId, authoredLayout.id);
 assert.equal(authoredLayoutSlide.placeholders.count, 2);
 const materializedPlaceholderCount = authoredLayoutSlide.shapes.items.length;
@@ -261,14 +319,18 @@ const authoredMasterXml = await authoredLayoutZip.file("ppt/slideMasters/slideMa
 const authoredLayoutXml = await authoredLayoutZip.file("ppt/slideLayouts/slideLayout1.xml").async("text");
 const authoredSlideXml = await authoredLayoutZip.file("ppt/slides/slide1.xml").async("text");
 assert.match(authoredMasterXml, /<p:ph[^>]*type="title"[^>]*idx="0"/);
+assert.match(authoredMasterXml, /action="ppaction:\/\/customshow\?id=0&amp;return=true"/);
 assert.match(authoredLayoutXml, /<p:sldLayout[^>]*type="obj"/);
 assert.match(authoredLayoutXml, /<p:ph[^>]*type="body"[^>]*idx="1"/);
+assert.match(authoredLayoutXml, /action="ppaction:\/\/customshow\?id=0"/);
 assert.match(authoredSlideXml, /<p:ph[^>]*type="title"[^>]*idx="0"/);
 assert.match(authoredSlideXml, /<p:ph[^>]*type="body"[^>]*idx="1"/);
 const authoredLayoutImported = await PresentationFile.importPptx(authoredLayoutExport);
 assert.equal(authoredLayoutImported.master.placeholders.length, 1);
 assert.equal(authoredLayoutImported.layouts.items.length, 1);
 assert.equal(authoredLayoutImported.layouts.items[0].type, "obj");
+assert.equal(authoredLayoutImported.master.placeholders[0].text[0].runs[0].link.customShow, "Layout route");
+assert.equal(authoredLayoutImported.layouts.items[0].placeholders[0].text[0].runs[0].link.customShow, "Layout route");
 const importedLayoutSlide = authoredLayoutImported.slides.getItem(0);
 assert.equal(importedLayoutSlide.layoutId, authoredLayoutImported.layouts.items[0].id);
 assert.equal(importedLayoutSlide.placeholders.getItem("title").text.value, "OpenChestnut layout title");

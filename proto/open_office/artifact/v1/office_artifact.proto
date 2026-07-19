@@ -1951,11 +1951,18 @@ message PresentationRunHyperlink {
     string uri = 1;
     string slide_id = 2;
     string action = 3;
+    // Stable facade identity for one canonical presentation custom show. The
+    // native numeric ID remains an OpenChestnut package detail so a name edit
+    // does not retarget or semantically rewrite every referring run.
+    string custom_show_id = 8;
   }
   optional string tooltip = 4;
   optional string target_frame = 5;
   optional bool history = 6;
   optional bool highlight_click = 7;
+  // PowerPoint returns to the invoking slide after this custom show ends.
+  // Presence is valid only with custom_show_id.
+  optional bool return_to_slide = 9;
 }
 
 message PresentationOpaqueElement {

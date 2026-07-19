@@ -74,7 +74,7 @@ export function normalizePresentationRunLink(value, options = {}) {
   if (customShowValue != null) {
     const customShow = String(customShowValue?.name ?? customShowValue).trim();
     if (!customShow || customShow.length > 255) throw new RangeError("Presentation run hyperlink customShow must contain 1 through 255 characters.");
-    return { customShow, ...(returnToSlide ? { returnToSlide: true } : {}), ...common };
+    return { customShow, ...(returnToSlide == null ? {} : { returnToSlide }), ...common };
   }
   const targetPart = String(targetPartValue || "").trim();
   if (!targetPart || targetPart.length > 1024) throw new RangeError("Imported Presentation run hyperlink target part is invalid.");

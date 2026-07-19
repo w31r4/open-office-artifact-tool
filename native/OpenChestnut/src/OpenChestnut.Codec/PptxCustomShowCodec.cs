@@ -14,6 +14,50 @@ internal sealed record PptxCustomShowReadResult(
     ulong SemanticItems,
     string? Reason);
 
+// Custom-show hyperlinks bind to the public facade ID while PresentationML
+// stores the show's unsigned native ID in ppaction://customshow. Names are
+// deliberately absent from this index: renaming a show must not retarget or
+// semantically dirty every run that refers to the same fixed identity.
+internal sealed class PptxCustomShowCatalog
+{
+    private readonly IReadOnlyDictionary<uint, string> _facadeIdByNativeId;
+    private readonly IReadOnlyDictionary<string, uint> _nativeIdByFacadeId;
+
+    private PptxCustomShowCatalog(
+        IReadOnlyDictionary<uint, string> facadeIdByNativeId,
+        IReadOnlyDictionary<string, uint> nativeIdByFacadeId)
+    {
+        _facadeIdByNativeId = facadeIdByNativeId;
+        _nativeIdByFacadeId = nativeIdByFacadeId;
+    }
+
+    internal static PptxCustomShowCatalog Empty { get; } = new(
+        new Dictionary<uint, string>(),
+        new Dictionary<string, uint>(StringComparer.Ordinal));
+
+    internal static PptxCustomShowCatalog From(IEnumerable<PresentationCustomShowArtifact> shows)
+    {
+        var facadeIdByNativeId = new Dictionary<uint, string>();
+        var nativeIdByFacadeId = new Dictionary<string, uint>(StringComparer.Ordinal);
+        foreach (var show in shows)
+        {
+            if (string.IsNullOrWhiteSpace(show.Id) ||
+                !facadeIdByNativeId.TryAdd(show.NativeId, show.Id) ||
+                !nativeIdByFacadeId.TryAdd(show.Id, show.NativeId))
+                throw new CodecException(
+                    "invalid_presentation_custom_show",
+                    "Presentation custom-show hyperlink identity catalog requires unique non-empty facade and native IDs.");
+        }
+        return new PptxCustomShowCatalog(facadeIdByNativeId, nativeIdByFacadeId);
+    }
+
+    internal bool TryGetFacadeId(uint nativeId, out string facadeId) =>
+        _facadeIdByNativeId.TryGetValue(nativeId, out facadeId!);
+
+    internal bool TryGetNativeId(string facadeId, out uint nativeId) =>
+        _nativeIdByFacadeId.TryGetValue(facadeId, out nativeId);
+}
+
 // Owns the bounded inline p:custShowLst graph. Canonical lists are semantic;
 // every other list stays byte-preserved in the validated source package and
 // is never reconstructed from an incomplete model.

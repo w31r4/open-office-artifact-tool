@@ -1,6 +1,8 @@
 using DocumentFormat.OpenXml.Packaging;
 using Google.Protobuf;
 using OpenOffice.Artifact.Wire.V1;
+using System.Globalization;
+using System.Text.RegularExpressions;
 using A = DocumentFormat.OpenXml.Drawing;
 
 namespace OpenChestnut.Codec;
@@ -8,6 +10,9 @@ namespace OpenChestnut.Codec;
 internal static class PptxHyperlinkCodec
 {
     private const string SlideJumpAction = "ppaction://hlinksldjump";
+    private static readonly Regex CustomShowAction = new(
+        "^ppaction://customshow\\?id=(?<id>[0-9]+)(?:&return=(?<return>true|false))?$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
     private static readonly IReadOnlyDictionary<string, string> ActionUriByName = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["nextSlide"] = "ppaction://hlinkshowjump?jump=nextslide",
@@ -94,8 +99,20 @@ internal static class PptxHyperlinkCodec
 
         if (relationshipId.Length == 0)
         {
-            if (!ActionNameByUri.TryGetValue(action, out var actionName)) return false;
-            hyperlink.Action = actionName;
+            var customShow = CustomShowAction.Match(action);
+            if (customShow.Success)
+            {
+                if (!uint.TryParse(customShow.Groups["id"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var nativeId) ||
+                    !context.CustomShows.TryGetFacadeId(nativeId, out var facadeId)) return false;
+                hyperlink.CustomShowId = facadeId;
+                if (customShow.Groups["return"].Success)
+                    hyperlink.ReturnToSlide = customShow.Groups["return"].Value.Equals("true", StringComparison.OrdinalIgnoreCase);
+            }
+            else
+            {
+                if (!ActionNameByUri.TryGetValue(action, out var actionName)) return false;
+                hyperlink.Action = actionName;
+            }
         }
         else if (context.Owner.HyperlinkRelationships.FirstOrDefault(relationship => relationship.Id == relationshipId) is { } external)
         {
@@ -144,6 +161,13 @@ internal static class PptxHyperlinkCodec
                 hyperlink.Id = string.Empty;
                 hyperlink.Action = ActionUriByName[source.Action];
                 break;
+            case PresentationRunHyperlink.TargetOneofCase.CustomShowId:
+                if (!context.CustomShows.TryGetNativeId(source.CustomShowId, out var nativeId))
+                    throw Invalid($"Presentation run hyperlink references missing custom show {source.CustomShowId}.");
+                hyperlink.Id = string.Empty;
+                hyperlink.Action = $"ppaction://customshow?id={nativeId.ToString(CultureInfo.InvariantCulture)}" +
+                    (source.HasReturnToSlide ? $"&return={source.ReturnToSlide.ToString().ToLowerInvariant()}" : string.Empty);
+                break;
         }
         if (source.HasTooltip) hyperlink.Tooltip = source.Tooltip;
         if (source.HasTargetFrame) hyperlink.TargetFrame = source.TargetFrame;
@@ -168,9 +192,15 @@ internal static class PptxHyperlinkCodec
                 if (!ActionUriByName.ContainsKey(source.Action))
                     throw Invalid($"Unsupported Presentation run hyperlink action {source.Action}.");
                 break;
+            case PresentationRunHyperlink.TargetOneofCase.CustomShowId:
+                if (string.IsNullOrWhiteSpace(source.CustomShowId) || source.CustomShowId.Length > 1_024)
+                    throw Invalid("Presentation run hyperlink custom-show ID must contain 1 through 1024 characters.");
+                break;
             default:
                 throw Invalid("Presentation run hyperlink requires exactly one target.");
         }
+        if (source.HasReturnToSlide && source.TargetCase != PresentationRunHyperlink.TargetOneofCase.CustomShowId)
+            throw Invalid("Presentation run hyperlink return_to_slide requires a custom-show target.");
         if (source.HasTooltip && source.Tooltip.Length > 1024)
             throw Invalid("Presentation run hyperlink tooltip exceeds 1024 characters.");
         if (source.HasTargetFrame && (string.IsNullOrWhiteSpace(source.TargetFrame) || source.TargetFrame.Length > 255))

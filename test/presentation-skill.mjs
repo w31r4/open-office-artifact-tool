@@ -335,7 +335,15 @@ try {
     ["Appendix", "#FEF3C7"],
   ].map(([name, fill], index) => {
     const slide = customShowFixture.slides.add({ name, background: { fill } });
-    slide.shapes.add({ name: `${name.toLowerCase()}-title`, position: { left: 44, top: 44, width: 552, height: 72 }, text: `${index + 1}. ${name}`, fill: "#FFFFFF", line: { fill: "#0F172A", width: 1 } });
+    slide.shapes.add({
+      name: `${name.toLowerCase()}-title`,
+      position: { left: 44, top: 44, width: 552, height: 72 },
+      text: index === 0
+        ? [{ runs: [{ text: `${index + 1}. ${name}`, link: { customShow: "Board route", returnToSlide: true } }] }]
+        : `${index + 1}. ${name}`,
+      fill: "#FFFFFF",
+      line: { fill: "#0F172A", width: 1 },
+    });
     return slide;
   });
   customShowFixture.customShows.add({ name: "Board route", nativeId: 7, slides: [customShowSlides[0], customShowSlides[2]] });
@@ -357,7 +365,8 @@ try {
   assert.equal(customShowResult.audit.operation.nativeId, 7);
   assert.equal(customShowResult.audit.validation.package.onlyPresentationPartChanged, true);
   assert.equal(customShowResult.audit.validation.package.nativeIdPreserved, true);
-  assert.equal(customShowResult.audit.validation.modelRender.slidesByteIdentical, true);
+  assert.equal(customShowResult.audit.validation.package.linkedRunCount, 1);
+  assert.equal(customShowResult.audit.validation.modelRender.normalizedSvgByteIdentical, true);
   assert.deepEqual(await fs.readFile(customShowInput), customShowSource);
   const customShowRoundTrip = await PresentationFile.importPptx(new FileBlob(await fs.readFile(customShowOutput), {
     type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -365,6 +374,7 @@ try {
   }));
   assert.deepEqual(customShowRoundTrip.customShows.items.map((show) => [show.name, show.nativeId]), [["Executive route", 7], ["Review route", 11]]);
   assert.deepEqual(customShowRoundTrip.customShows.getItem("Executive route").slides.map((slide) => slide.name), ["Appendix", "Overview", "Appendix"]);
+  assert.equal(itemByName(customShowRoundTrip.slides.items[0].shapes.items, "overview-title").text.paragraphs[0].runs[0].link.customShow, "Executive route");
   const customShowBaselineDir = path.join(customShowDir, "baselines");
   await verifyPresentationFile(customShowInput, {
     outputDir: path.join(customShowDir, "source-qa"),
