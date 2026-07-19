@@ -328,6 +328,7 @@ Examples:
 - `examples/openchestnut-end-to-end.mjs` — runnable public-API create → export → import → edit → export → import vertical slice
 - `examples/openchestnut-classic-comment-edit-workflow.mjs` — imported classic-comment text-only edit with a unique text anchor, fixed comment topology, second import, model render, byte-bound audit, and atomic output
 - `examples/openchestnut-modern-comment-thread-workflow.mjs` — imported bounded root/direct-reply text and resolved-state edit with fixed identities/topology, second import, model/native render, byte-bound audit, and atomic output
+- `examples/end_to_end_smoke_test.md` — optional reference-compatible checklist for the explicit Python render/package-patch helpers; keep the public OpenChestnut workflow above as the default
 
 > Note: `manifest.txt` is **machine-readable** and is used by download tooling. It must contain only relative file paths (one per line).
 

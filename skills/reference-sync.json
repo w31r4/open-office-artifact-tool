@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "commit": "256cb31bfe0a07b3cef0051b6b159342be381378",
+    "root": "reference/office-artifact-tool/skills"
+  },
+  "totalFiles": 343,
+  "totalBytes": 33186487,
+  "bundles": {
+    "documents": {
+      "files": 82,
+      "bytes": 663064,
+      "sha256": "bfb35ac6a8be69c4c3ea887d015a777e540afb87bef52ba3d2c96d9c5faf703d"
+    },
+    "spreadsheets": {
+      "files": 27,
+      "bytes": 426708,
+      "sha256": "c8fb67266a5bcad412e88112f832a41d48b429a0f1d9f04df0dd50c437d4aa80"
+    },
+    "presentations": {
+      "files": 116,
+      "bytes": 4962052,
+      "sha256": "f74f8dd17cff43d6c6d6e3465801efaefa7acc39428089faabc67f18941b2975"
+    },
+    "pdf": {
+      "files": 8,
+      "bytes": 25374,
+      "sha256": "e36658b5f6406006f0b7ba76092f53717823194469dfbd1972b788a696954e5d"
+    },
+    "template-creator": {
+      "files": 7,
+      "bytes": 25801,
+      "sha256": "772374d7f210c96fd8160aaa87c4431f0bce1a7b001eda2a78d9d0025469306e"
+    },
+    "default-template-library": {
+      "files": 103,
+      "bytes": 27083488,
+      "sha256": "4f76667e63cf54478b1a56e9f240cd85201abd8bb646bbf9bbcbfee4362df7a4"
+    }
+  }
+}

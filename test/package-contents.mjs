@@ -139,6 +139,7 @@ for (const required of [
   "skills/documents/skills/documents/artifact_tool/API_QUICK_START.md",
   "skills/documents/skills/documents/examples/openchestnut-end-to-end.mjs",
   "skills/documents/skills/documents/examples/openchestnut-classic-comment-edit-workflow.mjs",
+  "skills/documents/skills/documents/examples/end_to_end_smoke_test.md",
   "skills/documents/skills/documents/render_docx.py",
   "skills/documents/skills/documents/scripts/docx_ooxml_patch.py",
   "skills/documents/skills/documents/tasks/create_edit.md",
@@ -234,7 +235,7 @@ for (const removed of [
   "src/presentation/opaque-objects.mjs",
   "src/presentation/ooxml-picture-bullets.mjs",
 ]) assert.ok(!files.includes(removed), `npm package must not contain removed legacy Office implementation ${removed}`);
-assert.ok(!files.includes("skills/documents/skills/documents/examples/end_to_end_smoke_test.md"), "npm package must not contain the superseded Python smoke guide");
+assert.ok(!files.includes("skills/reference-sync.json"), "npm package must exclude the repository-only reference source snapshot");
 assert.ok(files.every((file) => !file.includes("/tests/") && !file.startsWith("test/")), "npm package must exclude development-only test sources");
 assert.ok(files.every((file) => !file.includes(".DS_Store") && !file.includes("__pycache__") && !file.endsWith(".pyc")), "npm package must exclude local metadata and Python bytecode");
 assert.ok(files.every((file) => !file.startsWith("handoff/") && !file.startsWith("reference/")), "npm package must exclude handoff and reference material");

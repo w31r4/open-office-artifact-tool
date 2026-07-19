@@ -72,6 +72,43 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### Reference Skill source synchronization
+
+On 2026-07-19, the six retained reference plugin trees were audited against the
+public `office-artifact-tool` submodule at commit
+`256cb31bfe0a07b3cef0051b6b159342be381378`. The repository-only
+`skills/reference-sync.json` records a deterministic snapshot of all 343 source
+files and 33,186,487 bytes, with separate file counts, byte counts, and SHA-256
+tree digests for Documents, Spreadsheets, Presentations, PDF, Template Creator,
+and the Default Template Library. `scripts/reference-skill-sync.mjs check`
+rejects a changed reference commit or tree and any reference path missing from
+the corresponding project compatibility superset; it deliberately does not
+claim byte identity for richer project adapters.
+
+The audit exposed one real omission: the Documents
+`examples/end_to_end_smoke_test.md` checklist. Before synchronization the new
+gate failed with that exact missing path. The checklist is now retained
+byte-for-byte, declared by the native Skill manifest, shipped in the npm plugin,
+and documented as an optional route for the explicit Python render/package
+helpers. The public OpenChestnut create/import/edit/export workflow remains the
+default. The canonical 20-template Office/PNG assets continue to use their
+separate byte-identity and package-exclusion gate; no self-authored template
+generator or fallback was reintroduced.
+
+The complete local gate passed `npm test`, `npm run docs:api`,
+`npm run proto:check`, `npm run test:pack`, serial
+`npm run verify:open-chestnut-build`, OpenChestnut `283/283`, and OfficeBridge
+`5/5`. The official Skill and plugin validators also accepted the Documents
+bundle. Two clean WASM builds reproduced all 39 audited package-layer files and
+the same manifest-bound 38-file, 14,635,200-byte runtime. The production
+clean-install tarball contains 453 files at 9,538,062 compressed bytes and
+24,096,300 unpacked bytes; the repository-only sync snapshot/script and
+canonical template library remain excluded. The specialist Python PDF provider
+test remained contract-only because no explicit
+`OPEN_OFFICE_PDF_PROVIDER_PYTHON` was configured; core MuPDF.js,
+Playwright/Chromium, LibreOffice/Poppler, canonical template rendering, and all
+other npm gates ran locally. No publish or tag operation was attempted.
+
 ### XLSX bounded multi-row PivotTables
 
 On 2026-07-19, the Spreadsheet facade, OpenChestnut codec, Help catalog, and
