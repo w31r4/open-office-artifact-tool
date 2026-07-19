@@ -20,7 +20,7 @@ Automation can infer and write tags, propose reading order, and run machine-veri
 
 ## Dynamic and application-specific content
 
-Dynamic XFA, complex Acrobat JavaScript, 3D annotations, and RichMedia require application-specific runtimes. The default workflow detects these constructs and preserves them opaquely when a non-destructive operation permits it. Flattening, invoking a specialist provider, or failing closed requires explicit user selection. No current shipped adapter executes these programs.
+Dynamic XFA, complex Acrobat JavaScript, 3D annotations, and RichMedia require application-specific runtimes. The default workflow detects these constructs and preserves them opaquely when a non-destructive operation permits it. The pikepdf `structure-clean` route may explicitly defang JavaScript, external actions, multimedia, and selected auxiliary structures, but does not execute or flatten them and deliberately leaves XFA/forms/metadata outside its scope. Flattening, invoking another specialist provider, or failing closed requires explicit user selection. No shipped adapter executes these programs.
 
 ## Signed documents
 

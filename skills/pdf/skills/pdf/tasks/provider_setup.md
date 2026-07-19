@@ -42,7 +42,7 @@ Install a specialist provider yourself only when the task requires a capability 
   source-bound complete-document searchable-layer OCR through the shipped
   `scripts/ocrmypdf_provider.py` adapter. Tesseract also supplies image OCR
   evidence for high-trust sanitization.
-- pikepdf: planned active-content cleanup route without a shipped mutation adapter in this release.
+- pikepdf 10.10.x: source-bound, fixed-profile active/auxiliary structure cleanup through the shipped `scripts/pikepdf_provider.py` adapter.
 
 Probe qpdf through both the registry and its executable adapter:
 
@@ -57,6 +57,25 @@ PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
 The wrapper requires qpdf JSON v2 (qpdf 11 or newer). It does not install qpdf,
 accept passwords, expose arbitrary qpdf flags, or fall back to pikepdf. See
 [inspect, repair, and linearize](repair_linearize.md).
+
+Install and probe the bounded pikepdf structure-clean route separately:
+
+```bash
+uv venv .venv-pdf
+uv pip install --python .venv-pdf/bin/python 'pikepdf>=10.10.0,<10.11.0'
+export OPEN_OFFICE_PDF_PROVIDER_PYTHON="$PWD/.venv-pdf/bin/python"
+"$OPEN_OFFICE_PDF_PROVIDER_PYTHON" scripts/pdf_provider.py check \
+  --provider pikepdf --require
+"$OPEN_OFFICE_PDF_PROVIDER_PYTHON" scripts/pikepdf_provider.py probe
+```
+
+The adapter exposes only read-only bounded inspection and two full-rewrite
+profiles: `active-content` and `active-and-auxiliary`. It rejects encryption,
+parser warnings, stale source hashes, missing trust/isolation declarations,
+incremental output, and missing signature-invalidation acknowledgement. It
+does not erase metadata, form values, XFA, comments, hidden/OCR text, or visible
+page content and is not strict sanitize. See
+[active and auxiliary structure cleanup](structure_clean.md).
 
 Install and probe the pyHanko read-only validator in the same explicit provider
 environment:

@@ -42,6 +42,39 @@ page/form/attachment/outline counts. Use `--mode linearize` for an explicit line
 rewrite. Signature evidence requires `--invalidate-signatures` after pyHanko and
 DocMDP review. This route is never sanitize; run Poppler over every final page.
 
+## pikepdf active and auxiliary structure cleanup
+
+Install pikepdf 10.10.x into the explicitly selected provider environment. The
+adapter exposes no arbitrary object edits or provider flags:
+
+```bash
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+SOURCE_SHA256="$($PYTHON_BIN -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' input.pdf)"
+"$PYTHON_BIN" scripts/pdf_provider.py check --provider pikepdf --require
+"$PYTHON_BIN" scripts/pikepdf_provider.py inspect input.pdf \
+  --expected-sha256 "$SOURCE_SHA256" --trusted-input \
+  > tmp/pdfs/pikepdf-inspect.json
+"$PYTHON_BIN" scripts/pdf_provider.py plan \
+  --task structure-clean --provider pikepdf --strategy rewrite \
+  --input input.pdf --output outputs/structure-clean.pdf \
+  --invalidate-signatures --require-provider
+"$PYTHON_BIN" scripts/pikepdf_provider.py clean \
+  input.pdf outputs/structure-clean.pdf \
+  --profile active-and-auxiliary \
+  --expected-sha256 "$SOURCE_SHA256" --trusted-input \
+  --invalidate-signatures \
+  > tmp/pdfs/pikepdf-structure-clean.json
+```
+
+Use `active-content` when attachments and auxiliary structures must remain.
+Use `active-and-auxiliary` only when attachments, thumbnails, search indexes,
+Web Capture data, private page-piece data, and portfolio presentation should
+also be removed. Both are full rewrites and invalidate prior signatures. They
+retain metadata, form values, XFA, annotations, hidden/OCR text, and visible
+content, so neither is strict sanitize. Re-inspect with qpdf, apply the intended
+residue policy, and compare every source/output page with Poppler. See
+[`tasks/structure_clean.md`](../tasks/structure_clean.md).
+
 ## pyHanko read-only signature validation
 
 Install `pyHanko>=0.35,<0.36` into the selected PDF provider environment. The

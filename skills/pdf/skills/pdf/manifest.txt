@@ -10,6 +10,7 @@ tasks/render_review.md
 tasks/provider_setup.md
 tasks/repair_linearize.md
 tasks/ocr.md
+tasks/structure_clean.md
 manifest.txt
 references/PROVIDER_MATRIX.md
 references/SAVE_POLICIES.md
@@ -30,6 +31,7 @@ scripts/qpdf_provider.py
 scripts/pyhanko_provider.py
 scripts/verapdf_provider.py
 scripts/ocrmypdf_provider.py
+scripts/pikepdf_provider.py
 scripts/mupdf.mjs
 scripts/reportlab_create.py
 scripts/pdfplumber_extract.py

@@ -46,7 +46,8 @@ Read the [provider matrix](references/PROVIDER_MATRIX.md), [save policies](refer
 | Default arbitrary-PDF read/inspect/render and bounded native edit | `PdfFile` + MuPDF.js through `scripts/mupdf.mjs` |
 | Strict scrub/residue/OCR and retained high-level edits not yet migrated | optional PyMuPDF specialist path |
 | Native page/file evidence and final raster QA | Poppler |
-| Structural diagnosis, recovery rewrite, and linearization | separately installed qpdf through `scripts/qpdf_provider.py`; pikepdf active-content cleanup remains planned |
+| Structural diagnosis, recovery rewrite, and linearization | separately installed qpdf through `scripts/qpdf_provider.py` |
+| Bounded active/auxiliary structure cleanup without page reconstruction | separately installed pikepdf 10.10.x through `scripts/pikepdf_provider.py` |
 | Read-only signature integrity/trust/difference/DocMDP validation | pyHanko core through `scripts/pyhanko_provider.py` |
 | Signature creation, timestamps, and LTV updates | explicit external pyHanko workflow |
 | PDF/A or PDF/UA machine rules | separately installed veraPDF 1.30.x through `scripts/verapdf_provider.py` |
@@ -169,6 +170,39 @@ after pyHanko/DocMDP review; encrypted rewrites fail closed. qpdf repair does
 not remove active content, metadata, attachments, hidden/OCR text, or sensitive
 content and must never be described as sanitize or redaction. See
 [inspect, repair, and linearize](tasks/repair_linearize.md).
+
+## Active And Auxiliary Structure Cleanup
+
+Use the pikepdf adapter only for its bounded `structure-clean` role. It opens a
+private snapshot of the exact imported PDF and exposes two fixed profiles:
+`active-content` removes JavaScript, external actions, and multimedia;
+`active-and-auxiliary` additionally removes attachments, thumbnails, search
+indexes, Web Capture data, private page-piece data, and portfolio presentation.
+Neither profile reconstructs visible pages through `PdfArtifact`.
+
+```bash
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+SOURCE_SHA="$($PYTHON_BIN -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' input.pdf)"
+"$PYTHON_BIN" scripts/pikepdf_provider.py probe
+"$PYTHON_BIN" scripts/pikepdf_provider.py inspect input.pdf \
+  --expected-sha256 "$SOURCE_SHA" --trusted-input
+"$PYTHON_BIN" scripts/pdf_provider.py plan \
+  --task structure-clean --provider pikepdf --strategy rewrite \
+  --input input.pdf --output outputs/structure-clean.pdf \
+  --invalidate-signatures --require-provider
+"$PYTHON_BIN" scripts/pikepdf_provider.py clean \
+  input.pdf outputs/structure-clean.pdf \
+  --profile active-and-auxiliary --expected-sha256 "$SOURCE_SHA" \
+  --trusted-input --invalidate-signatures
+```
+
+This is always a source-bound full rewrite with no provider fallback. It is not
+redaction, metadata scrub, form/XFA flattening, strict sanitize, signature
+validation, or a malware sandbox. DocumentInfo/XMP metadata, form values, XFA,
+annotations, hidden/OCR text, and signature appearances remain outside the
+primitive. Use caller-managed isolation for attacker-chosen input, then run
+qpdf inspection, the intended residue policy, pyHanko when applicable, and a
+full Poppler render comparison. See [active and auxiliary structure cleanup](tasks/structure_clean.md).
 
 ## Scanned-PDF OCR
 
@@ -352,7 +386,7 @@ Inspect every page for clipping, overlap, blank pages, font substitution, missin
 
 ## Dynamic And Opaque Features
 
-Dynamic XFA, complex Acrobat JavaScript, 3D annotations, and RichMedia need application-specific runtimes. Default behavior is detect plus opaque preserve when the chosen non-destructive operation allows it. Flattening, specialist processing, or failure must be explicit. No shipped adapter executes these programs.
+Dynamic XFA, complex Acrobat JavaScript, 3D annotations, and RichMedia need application-specific runtimes. Default behavior is detect plus opaque preserve when the chosen non-destructive operation allows it. The explicit pikepdf `structure-clean` route can defang JavaScript, external actions, multimedia, and selected auxiliary structures without executing them; it neither flattens XFA/forms nor erases metadata or hidden text. Flattening, another specialist route, or failure must remain explicit. No shipped adapter executes these programs.
 
 ## Dependencies And License Boundary
 

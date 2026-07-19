@@ -28,6 +28,11 @@ jobs:
           java-version: "21"
           java-package: jre
       - run: npm ci
+      - name: Install isolated pikepdf structure-clean runtime
+        run: |
+          python -m venv "$RUNNER_TEMP/open-office-pikepdf"
+          "$RUNNER_TEMP/open-office-pikepdf/bin/python" -m pip install --disable-pip-version-check 'pikepdf==10.10.0'
+          echo "OPEN_OFFICE_PDF_PIKEPDF_TEST_PYTHON=$RUNNER_TEMP/open-office-pikepdf/bin/python" >> "$GITHUB_ENV"
       - name: Install isolated pyHanko validation runtime
         run: |
           python -m venv "$RUNNER_TEMP/open-office-pyhanko"
@@ -71,6 +76,7 @@ jobs:
           "$OPEN_OFFICE_PDF_OCRMYPDF_TEST" --version
           tesseract --version
           tesseract --list-langs | grep -Fx eng
+          "$OPEN_OFFICE_PDF_PIKEPDF_TEST_PYTHON" -c "from importlib.metadata import version; import pikepdf.sanitize as s; assert version('pikepdf') == '10.10.0'; assert all(callable(getattr(s.Sanitizer, name)) for name in ('remove_javascript','remove_external_access','remove_multimedia','remove_attachments','remove_thumbnails','remove_search_index','remove_web_capture','remove_private_app_data','remove_collection'))"
           "$OPEN_OFFICE_PYHANKO_TEST_PYTHON" -c "from importlib.metadata import version; assert (version('pyHanko'), version('pyhanko-certvalidator')) == ('0.35.2', '0.31.1')"
           "$RUNNER_TEMP/open-office-ocrmypdf/bin/python" -c "from importlib.metadata import version; assert version('ocrmypdf') == '17.8.1'; import pypdfium2, fpdf"
           "$OPEN_OFFICE_PDF_VERAPDF" --version

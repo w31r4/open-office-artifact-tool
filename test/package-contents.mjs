@@ -30,20 +30,21 @@ assert.equal(result.status, 0, `npm pack manifest failed\nSTDOUT:\n${result.stdo
 const report = JSON.parse(result.stdout)[0];
 const files = report.files.map((item) => item.path);
 // npm's gzip output varies between the macOS and Linux npm builds used by local
-// and hosted gates. The OCRmyPDF slice measured 9,784,909 bytes on hosted Linux,
-// so keep less than 25 KiB of explicit cross-platform headroom instead of
-// setting the budget to one machine's exact compressed byte count.
+// and hosted gates. The OCRmyPDF slice measured 9,784,909 bytes on hosted Linux;
+// the pikepdf adapter adds 10,239 compressed bytes on the local audit host. Keep
+// the same ceiling, leaving less than 15 KiB against that observed platform
+// delta instead of setting the budget to one machine's exact gzip result.
 const maxPackedBytes = 9_810_000;
 // The bundled OpenChestnut runtime is an audited product payload, not an
 // optional download. Keep its unpacked budget tight while allowing the
 // audited PDF provider/docs growth plus the bounded DOCX/PPTX modern-comment and
-// native XLSX PivotTable codecs and runnable workflows. The OCRmyPDF
-// searchable-layer slice measured 24,250,484 unpacked bytes on the audit host,
+// native XLSX PivotTable codecs and runnable workflows. The pikepdf
+// structure-clean slice measures 24,301,346 unpacked bytes on the audit host,
 // so this keeps less than 24 KiB of explicit headroom.
 // The repository-only MIT Default Template Library is excluded from the npm
 // tarball. Its retained Office/PNG sources must never consume this consumer
 // package budget.
-const maxUnpackedBytes = 24_275_000;
+const maxUnpackedBytes = 24_325_000;
 
 for (const required of [
   "LICENSE",
@@ -206,6 +207,8 @@ for (const required of [
   "skills/pdf/skills/pdf/scripts/qpdf_provider.py",
   "skills/pdf/skills/pdf/scripts/pyhanko_provider.py",
   "skills/pdf/skills/pdf/scripts/verapdf_provider.py",
+  "skills/pdf/skills/pdf/scripts/ocrmypdf_provider.py",
+  "skills/pdf/skills/pdf/scripts/pikepdf_provider.py",
   "skills/pdf/skills/pdf/scripts/mupdf.mjs",
   "skills/pdf/skills/pdf/scripts/reportlab_create.py",
   "skills/pdf/skills/pdf/scripts/pdfplumber_extract.py",
@@ -224,6 +227,8 @@ for (const required of [
   "skills/pdf/skills/pdf/tasks/render_review.md",
   "skills/pdf/skills/pdf/tasks/provider_setup.md",
   "skills/pdf/skills/pdf/tasks/repair_linearize.md",
+  "skills/pdf/skills/pdf/tasks/ocr.md",
+  "skills/pdf/skills/pdf/tasks/structure_clean.md",
 ]) {
   assert.ok(files.includes(required), `npm package is missing ${required}`);
 }

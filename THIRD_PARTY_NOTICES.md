@@ -34,6 +34,7 @@ The PDF Skill also ships thin Python scripts that can call the following separat
 | pdfplumber | Read-only text/geometry/table extraction | MIT |
 | pypdf | Basic PDF structure, AcroForm, annotation, rewrite, and incremental operations | BSD-3-Clause |
 | PyMuPDF | Optional specialist strict scrub, legacy high-level imported-PDF edits, and residue inspection not yet covered by the JavaScript path | GNU AGPL-3.0 or an Artifex commercial license |
+| pikepdf 10.10.x | Source-bound fixed-profile active/auxiliary PDF structure cleanup through a shipped thin adapter | MPL-2.0; retain Pillow, lxml, packaging, qpdf, and other selected runtime notices |
 | pyHanko core and pyhanko-certvalidator | Source-bound read-only PDF signature integrity, trust, difference, timestamp, DocMDP, and FieldMDP validation | MIT |
 | veraPDF 1.30.x CLI | Source-bound read-only PDF/A and PDF/UA machine-rule validation | MPL-2.0-or-later and GPL-3.0-or-later options, plus distribution notices |
 | OCRmyPDF 17.8.x, Tesseract 5.x, and the selected OCRmyPDF runtime dependencies | Source-bound complete-document searchable-layer OCR through a shipped thin adapter | OCRmyPDF: MPL-2.0; Tesseract: Apache-2.0; pypdfium2: BSD-3-Clause/Apache-2.0; pikepdf: MPL-2.0; fpdf2: LGPL-3.0-only; retain every selected distribution's transitive notices |
@@ -50,7 +51,7 @@ The following external programs are invoked only when installed separately. They
 - LibreOffice: MPL-2.0 and LGPL-3.0-or-later licensing applies to the separately installed application.
 - Poppler command-line tools: GPL licensing applies to the separately installed binaries.
 - qpdf 11+: optional separately installed structural inspection/recovery/linearization CLI used through the shipped thin provider script; retain its Apache-2.0 and applicable embedded-component notices.
-- pikepdf: planned optional qpdf-based Python provider; no mutation adapter is shipped in this release.
+- pikepdf `>=10.10,<10.11`: optional separately installed qpdf-based Python provider used by the shipped bounded `structure-clean` adapter. It remains outside the npm dependency graph and tarball. Retain its MPL-2.0 license plus the notices for qpdf, Pillow, lxml, packaging, and other components in the selected Python environment.
 - pyHanko: optional separately installed PDF provider. The shipped thin adapter
   uses pyHanko core `>=0.35,<0.36` for read-only signature validation; signing,
   timestamp, and LTV command workflows additionally use the separately packaged

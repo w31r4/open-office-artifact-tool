@@ -74,12 +74,14 @@ const requiredFiles = [
   "tasks/provider_setup.md",
   "tasks/repair_linearize.md",
   "tasks/ocr.md",
+  "tasks/structure_clean.md",
   "scripts/mupdf.mjs",
   "scripts/pdf_provider.py",
   "scripts/qpdf_provider.py",
   "scripts/pyhanko_provider.py",
   "scripts/verapdf_provider.py",
   "scripts/ocrmypdf_provider.py",
+  "scripts/pikepdf_provider.py",
   "scripts/reportlab_create.py",
   "scripts/pdfplumber_extract.py",
   "scripts/pypdf_edit.py",
@@ -115,6 +117,9 @@ assert.match(skillText, /mupdf-link/);
 assert.match(skillText, /virtual environment executable.*pyvenv\.cfg/s);
 assert.match(skillText, /verapdf_provider\.py/);
 assert.match(skillText, /ocrmypdf_provider\.py/);
+assert.match(skillText, /pikepdf_provider\.py/);
+assert.match(skillText, /active-content.*active-and-auxiliary/is);
+assert.match(skillText, /not.*redaction.*metadata.*XFA/is);
 assert.match(skillText, /complete imported PDF.*not a sanitizer/is);
 assert.match(skillText, /machine-rule gate.*human PDF\/UA review/i);
 assert.match(skillText, /not redaction/i);

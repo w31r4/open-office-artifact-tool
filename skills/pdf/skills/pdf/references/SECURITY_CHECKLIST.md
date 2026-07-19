@@ -11,6 +11,10 @@ Treat PDFs as untrusted structured programs.
   adapter requires either `--input-trust trusted` or the caller's explicit
   assertion that the entire process is already isolated; it does not enforce a
   VM/container sandbox and OCR output is not sanitize evidence.
+- The shipped pikepdf adapter likewise requires either `--trusted-input` or
+  `--caller-isolated`. Its budgeted child process limits time and output but is
+  not an OS/container sandbox; do not parse attacker-chosen files in the host
+  trust domain merely because the selected operation removes active content.
 - Do not execute embedded JavaScript, launch actions, attachments, media, or external links.
 - Extract attachments only through a path-confined quarantine primitive with duplicate-name separation, count/byte budgets, and per-file SHA-256; never trust a FileSpec filename or recursively open payloads by default.
 - Detect encryption and request the authorized password rather than bypassing controls.
@@ -54,6 +58,10 @@ Treat PDFs as untrusted structured programs.
   language pack, implicit mode, stale source hash, unacknowledged tagged/
   rasterization/form/signature loss, empty required text, or non-isolated
   attacker-chosen input.
+- Structure cleanup relies on pikepdf outside `>=10.10,<10.11`, a custom or
+  partial operation list, stale source hash, encrypted/parser-warning input,
+  missing trust/isolation declaration, missing signature invalidation, an
+  incremental prefix, or a selected feature category remaining after rewrite.
 - Output overwrites the input.
 - Incremental output does not retain the exact original prefix.
 - Sanitized output retains the original prefix, sensitive residues, active actions, attachments, comments, populated form values, personal metadata, links, invisible text, unscanned images, or old revisions.

@@ -19,6 +19,7 @@ Consequences:
 - Existing signatures will normally become invalid or be removed. Require explicit acknowledgement before rewriting a signed file.
 - A rewrite is not automatically a security scrub: unreferenced objects, attachments, XMP, JavaScript, hidden text, and image pixels must be addressed explicitly when sensitive data is involved.
 - The shipped qpdf adapter permits only source-hash-bound `repair` or `linearize` full rewrites, requires a clean re-inspection and stable page/form/attachment/outline counts, rejects encrypted inputs, and requires explicit signature invalidation when signature-policy evidence exists.
+- The shipped pikepdf adapter permits only source-hash-bound `active-content` or `active-and-auxiliary` structure cleanup. It works on a private read-only snapshot, requires caller trust/isolation plus explicit signature invalidation, preserves page/annotation/form/XFA/metadata/tag/outline topology, and proves one non-incremental output revision. This is a `rewrite`, not the stricter `sanitize` policy: metadata, form values, XFA, comments, hidden/OCR text, and visible content remain outside its scope.
 - The shipped OCRmyPDF adapter is rewrite-only: it requires the exact source
   hash, proves the output does not retain the complete source prefix, fixes
   standard-PDF/O0/one-job settings, and atomically publishes only after qpdf

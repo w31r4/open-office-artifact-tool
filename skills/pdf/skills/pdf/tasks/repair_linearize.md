@@ -84,9 +84,10 @@ is not optimization of visible content and does not authorize content edits.
 - qpdf repair/linearize does not remove JavaScript, attachments, metadata,
   hidden text, OCR layers, signatures, or sensitive content. Do not call it
   sanitize or redaction. Use the strict PyMuPDF sanitize/residue route.
-- `structure-clean` is not a qpdf capability in this Skill. The planned pikepdf
-  route remains unavailable until a separately tested active-content adapter is
-  shipped.
+- `structure-clean` is not a qpdf capability in this Skill. Use the separately
+  installed pikepdf 10.10.x runtime through the shipped fixed-profile
+  `pikepdf_provider.py` adapter after fresh source inspection; see
+  [active and auxiliary structure cleanup](structure_clean.md).
 
 ## Delivery gates
 
