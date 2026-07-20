@@ -53,16 +53,6 @@ internal sealed class XlsxTableCodec
         "none", "gregorian", "gregorianUs", "japan", "taiwan", "korea", "hijri", "thai", "hebrew",
         "gregorianMeFrench", "gregorianArabic", "gregorianXlitEnglish", "gregorianXlitFrench",
     };
-    // ISO 29500 SpreadsheetML ST_IconSetType values supported in the main
-    // namespace. The value is the number of addressable zero-based icons.
-    private static readonly IReadOnlyDictionary<string, uint> IconSets = new Dictionary<string, uint>(StringComparer.Ordinal)
-    {
-        ["3Arrows"] = 3, ["3ArrowsGray"] = 3, ["3Flags"] = 3, ["3TrafficLights1"] = 3,
-        ["3TrafficLights2"] = 3, ["3Signs"] = 3, ["3Symbols"] = 3, ["3Symbols2"] = 3,
-        ["4Arrows"] = 4, ["4ArrowsGray"] = 4, ["4RedToBlack"] = 4, ["4Rating"] = 4,
-        ["4TrafficLights"] = 4, ["5Arrows"] = 5, ["5ArrowsGray"] = 5, ["5Rating"] = 5,
-        ["5Quarters"] = 5,
-    };
     private static readonly string[] DateGroupings = ["year", "month", "day", "hour", "minute", "second"];
     private readonly WorksheetPart _worksheetPart;
     private readonly WorkbookPart _workbookPart;
@@ -377,7 +367,7 @@ internal sealed class XlsxTableCodec
     }
 
     private static bool ValidIcon(SpreadsheetTableIconArtifact icon) =>
-        IconSets.TryGetValue(icon.IconSet, out var count) && (!icon.HasIconId || icon.IconId < count);
+        XlsxIconSetCatalog.TryGetCount(icon.IconSet, out var count) && (!icon.HasIconId || icon.IconId < count);
 
     private static void ValidateColumn(SpreadsheetTableArtifact table, SpreadsheetTableColumnArtifact column, string location)
     {
@@ -598,7 +588,7 @@ internal sealed class XlsxTableCodec
         {
             if (child.Elements().Any() || child.Attributes().Any(attribute => !attribute.IsNamespaceDeclaration &&
                 (attribute.Name.Namespace != XNamespace.None || attribute.Name.LocalName is not ("iconSet" or "iconId"))) ||
-                child.Attribute("iconSet")?.Value is not string iconSet || !IconSets.ContainsKey(iconSet) ||
+                child.Attribute("iconSet")?.Value is not string iconSet || !XlsxIconSetCatalog.Contains(iconSet) ||
                 !TryOptionalUInt(child.Attribute("iconId")?.Value, out var iconId)) return false;
             var icon = new SpreadsheetTableIconArtifact { IconSet = iconSet };
             if (iconId is not null) icon.IconId = iconId.Value;

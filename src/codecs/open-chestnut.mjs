@@ -7,6 +7,7 @@ import { FileBlob } from "../shared/file-blob.mjs";
 import { isXmlSafeText } from "../shared/xml.mjs";
 import { XLSX_THEME_COLOR_NAMES, normalizeXlsxStyle, normalizeXlsxThemeConfig } from "../spreadsheet/ooxml-styles.mjs";
 import { deterministicSpreadsheetGuid } from "../spreadsheet/ooxml-threaded-comments.mjs";
+import { normalizeDataBarConfig, normalizeIconSetConfig } from "../spreadsheet/conditional-formats.mjs";
 import {
   ArtifactFamily,
   CellFormulaKind,
@@ -588,7 +589,7 @@ function unsupportedWorkbookFeatures(workbook, state) {
 }
 
 const XLSX_DATA_VALIDATION_TYPES = new Set(["list", "whole", "decimal", "date", "time", "textLength", "custom"]);
-const XLSX_CONDITIONAL_FORMAT_TYPES = new Set(["cellIs", "expression", "containsText", "colorScale"]);
+const XLSX_CONDITIONAL_FORMAT_TYPES = new Set(["cellIs", "expression", "containsText", "colorScale", "dataBar", "iconSet"]);
 const BRACED_GUID = /^\{[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\}$/i;
 
 function wireDataValidation(item, sheetName) {
@@ -629,8 +630,34 @@ function wireConditionalFormat(item, sheetName, index) {
   const rawFormulas = item?.formulas ?? rule.formulas ?? item?.formula ?? item?.expression ?? rule.formula ?? rule.expression;
   const formulas = (Array.isArray(rawFormulas) ? rawFormulas : rawFormulas == null ? [] : [rawFormulas]).map(String);
   const colors = (item?.colors || rule.colors || []).map((color, colorIndex) => wireSpreadsheetColor(color, `${sheetName}!${item?.range || "A1"}`, `conditional format color ${colorIndex + 1}`));
+  let dataBar;
+  let iconSet;
+  try {
+    if (ruleType === "dataBar") {
+      const profile = normalizeDataBarConfig(rule, `Worksheet ${sheetName} dataBar ${item?.id || "(unnamed)"}`);
+      dataBar = {
+        color: wireSpreadsheetColor(profile.color, `${sheetName}!${item?.range || "A1"}`, "data-bar"),
+        thresholds: profile.thresholds.map((threshold) => ({ ...threshold })),
+        ...(profile.showValue == null ? {} : { showValue: profile.showValue }),
+        ...(profile.gradient == null ? {} : { gradient: profile.gradient }),
+      };
+    }
+    if (ruleType === "iconSet") {
+      const profile = normalizeIconSetConfig(rule, `Worksheet ${sheetName} iconSet ${item?.id || "(unnamed)"}`);
+      iconSet = {
+        iconSet: profile.iconSet,
+        thresholds: profile.thresholds.map((threshold) => ({ ...threshold })),
+        ...(profile.showValue == null ? {} : { showValue: profile.showValue }),
+        ...(profile.reverse == null ? {} : { reverse: profile.reverse }),
+      };
+    }
+  } catch (cause) {
+    throw new OpenChestnutCodecError(cause.message, [], { code: "invalid_conditional_format", cause });
+  }
   if (ruleType === "colorScale" && ![2, 3].includes(colors.length)) throw new OpenChestnutCodecError(`Worksheet ${sheetName} colorScale ${item?.id || "(unnamed)"} requires two or three colors.`, [], { code: "invalid_conditional_format" });
-  if (ruleType !== "colorScale" && formulas.length === 0 && ruleType !== "containsText") throw new OpenChestnutCodecError(`Worksheet ${sheetName} conditional format ${item?.id || "(unnamed)"} requires a formula.`, [], { code: "invalid_conditional_format" });
+  if (!["colorScale", "dataBar", "iconSet", "containsText"].includes(ruleType) && formulas.length === 0) throw new OpenChestnutCodecError(`Worksheet ${sheetName} conditional format ${item?.id || "(unnamed)"} requires a formula.`, [], { code: "invalid_conditional_format" });
+  if (ruleType !== "colorScale" && colors.length) throw new OpenChestnutCodecError(`Worksheet ${sheetName} conditional format ${item?.id || "(unnamed)"} colors are valid only for colorScale.`, [], { code: "invalid_conditional_format" });
+  if ((dataBar || iconSet) && (formulas.length || item?.format || rule.format || item?.operator || rule.operator || item?.text || rule.text)) throw new OpenChestnutCodecError(`Worksheet ${sheetName} ${ruleType} ${item?.id || "(unnamed)"} cannot combine visual metadata with formulas, operators, text, or differential formatting.`, [], { code: "invalid_conditional_format" });
   return {
     id: String(item?.id || ""),
     range: String(item?.range || "A1"),
@@ -641,11 +668,14 @@ function wireConditionalFormat(item, sheetName, index) {
     format: wireCellStyle(item?.format || rule.format || {}, `${sheetName}!${item?.range || "A1"}`),
     colors,
     priority: Number.isInteger(item?.priority) && item.priority > 0 ? item.priority : index + 1,
+    dataBar,
+    iconSet,
   };
 }
 
 function publicConditionalFormat(item) {
   const formulas = [...(item.formulas || [])];
+  const thresholds = (source) => (source?.thresholds || []).map((threshold) => ({ type: threshold.type, ...(threshold.value == null ? {} : { value: threshold.value }) }));
   return {
     id: item.id || undefined,
     range: item.range || "A1",
@@ -655,6 +685,18 @@ function publicConditionalFormat(item) {
     ...(item.text ? { text: item.text } : {}),
     ...(item.format ? { format: cellStyleFromWire(item.format) || {} } : {}),
     ...(item.colors?.length ? { colors: item.colors.map(spreadsheetColorFromWire) } : {}),
+    ...(item.dataBar ? {
+      color: spreadsheetColorFromWire(item.dataBar.color),
+      thresholds: thresholds(item.dataBar),
+      ...(item.dataBar.showValue == null ? {} : { showValue: item.dataBar.showValue }),
+      ...(item.dataBar.gradient == null ? {} : { gradient: item.dataBar.gradient }),
+    } : {}),
+    ...(item.iconSet ? {
+      iconSet: item.iconSet.iconSet,
+      thresholds: thresholds(item.iconSet),
+      ...(item.iconSet.showValue == null ? {} : { showValue: item.iconSet.showValue }),
+      ...(item.iconSet.reverse == null ? {} : { reverse: item.iconSet.reverse }),
+    } : {}),
     ...(item.priority ? { priority: item.priority } : {}),
   };
 }

@@ -81,6 +81,45 @@ try {
   assert.match(await formulaZip.file(personPath).async("text"), /displayName="Reviewer"/);
   assert.match(await formulaZip.file(personPath).async("text"), /displayName="Lead reviewer"/);
 
+  const conditionalResult = await runFixture("conditional-format-visuals");
+  const conditionalWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(conditionalResult.workbookPath));
+  const conditionalSheet = conditionalWorkbook.worksheets.getItem("Conditional Visuals");
+  assert.ok(conditionalSheet);
+  assert.deepEqual(conditionalSheet.conditionalFormattings.items.map((item) => item.ruleType), ["dataBar", "iconSet", "iconSet"]);
+  const [progressBar, healthIcons, riskIcons] = conditionalSheet.conditionalFormattings.items;
+  assert.deepEqual(progressBar.thresholds, [{ type: "min" }, { type: "max" }]);
+  assert.equal(progressBar.color, "#2563EB");
+  assert.equal(progressBar.showValue, true);
+  assert.equal(healthIcons.iconSet, "3TrafficLights1");
+  assert.deepEqual(healthIcons.thresholds, [{ type: "num", value: 0 }, { type: "percent", value: 50 }, { type: "percent", value: 80 }]);
+  assert.equal(riskIcons.iconSet, "3Arrows");
+  assert.equal(riskIcons.reverse, true);
+  assert.equal(riskIcons.showValue, false);
+  assert.deepEqual(riskIcons.thresholds, [{ type: "percent", value: 0 }, { type: "percent", value: 33 }, { type: "percent", value: 67 }]);
+  const conditionalLayout = conditionalSheet.layoutJson({ range: "A1:D6" });
+  assert.equal(conditionalLayout.cells.find((cell) => cell.address === "B6").conditionalFormats[0].visual.kind, "dataBar");
+  assert.equal(conditionalLayout.cells.find((cell) => cell.address === "C6").conditionalFormats[0].visual.kind, "iconSet");
+  assert.equal(conditionalLayout.cells.find((cell) => cell.address === "D6").conditionalFormats[0].visual.showValue, false);
+  assert.match(conditionalSheet.toSvg(), /id="data-bar-5-1-0"/);
+  const conditionalZip = await JSZip.loadAsync(await fs.readFile(conditionalResult.workbookPath));
+  const conditionalXml = await conditionalZip.file("xl/worksheets/sheet1.xml").async("text");
+  assert.equal((conditionalXml.match(/<x:conditionalFormatting\b/g) || []).length, 3);
+  assert.match(conditionalXml, /<x:dataBar showValue="1">/);
+  assert.match(conditionalXml, /<x:iconSet iconSet="3Arrows" showValue="0" reverse="1">/);
+  const conditionalNativeStatus = nativeSpreadsheetRenderStatus();
+  const conditionalQa = await verifyWorkbookFile(conditionalResult.workbookPath, {
+    outputDir: path.join(outputDir, "conditional-format-native-qa"),
+    sheetName: "Conditional Visuals",
+    renderFormat: "svg",
+    allSheets: true,
+    nativeRender: conditionalNativeStatus.available ? "required" : "off",
+  });
+  if (conditionalNativeStatus.available) {
+    assert.equal(conditionalQa.summary.nativeRender.status, "passed");
+    assert.equal(conditionalQa.summary.nativeRender.ok, true);
+    assert.equal(conditionalQa.summary.nativeRender.pageCount, 1);
+  }
+
   const threadedEvalInput = path.join(outputDir, "threaded-review-input.xlsx");
   const threadedEvalOutput = path.join(outputDir, "threaded-review-output.xlsx");
   const threadedEvalAudit = path.join(outputDir, "threaded-review-audit.json");

@@ -12,7 +12,7 @@ using TC = DocumentFormat.OpenXml.Office2019.Excel.ThreadedComments;
 namespace OpenChestnut.Codec;
 
 // Owns the small worksheet-native slice used by the Spreadsheet skill:
-// ordinary validation rules, four conditional-format profiles, and bounded
+// ordinary validation rules, six conditional-format profiles, and bounded
 // Office 2019 threaded comments with one root plus direct replies. Nested,
 // branched, mention-bearing, or otherwise unsupported native collections stay
 // hidden behind the validated source package and reject replacement.
@@ -38,7 +38,7 @@ internal sealed class XlsxWorksheetFeatureCodec
     };
     private static readonly HashSet<string> ConditionalTypes = new(StringComparer.Ordinal)
     {
-        "cellIs", "expression", "containsText", "colorScale",
+        "cellIs", "expression", "containsText", "colorScale", "dataBar", "iconSet",
     };
 
     private readonly XlsxCellStyleCodec _styles;
@@ -166,6 +166,8 @@ internal sealed class XlsxWorksheetFeatureCodec
             if (item.Text.Length > 0) rule.Text = item.Text;
             if (item.Format is not null) rule.FormatId = _styles.FindOrCreateDifferentialStyle(item.Format, $"{source.Name}!{item.Range}");
             if (item.RuleType == "colorScale") rule.Append(BuildColorScale(item, source.Name));
+            else if (item.RuleType == "dataBar") rule.Append(BuildDataBar(item, source.Name));
+            else if (item.RuleType == "iconSet") rule.Append(BuildIconSet(item));
             else foreach (var formula in item.Formulas) rule.Append(new S.Formula(formula));
             var formatting = new S.ConditionalFormatting { SequenceOfReferences = References(item.Range) };
             formatting.Append(rule);
@@ -223,38 +225,50 @@ internal sealed class XlsxWorksheetFeatureCodec
         var result = new List<SpreadsheetConditionalFormatArtifact>();
         foreach (var formatting in worksheet.Elements<S.ConditionalFormatting>())
         {
-            if (!OnlyAttributes(formatting, "sqref") || formatting.ChildElements.Count != 1 ||
-                formatting.GetFirstChild<S.ConditionalFormattingRule>() is not { } rule) return false;
+            if (!OnlyAttributes(formatting, "sqref") || formatting.ChildElements.Count == 0 ||
+                formatting.ChildElements.Any(item => item is not S.ConditionalFormattingRule)) return false;
             var range = SingleReference(formatting.SequenceOfReferences);
-            if (range is null || !OnlyAttributes(rule, "type", "dxfId", "priority", "operator", "text")) return false;
-            var ruleType = ConditionalTypeText(rule.Type?.Value);
-            if (!ConditionalTypes.Contains(ruleType) || rule.Priority?.HasValue != true || rule.Priority.Value == 0) return false;
-            var target = new SpreadsheetConditionalFormatArtifact
+            if (range is null) return false;
+            foreach (var rule in formatting.Elements<S.ConditionalFormattingRule>())
             {
-                Id = $"conditional-format/{result.Count + 1}",
-                Range = range,
-                RuleType = ruleType,
-                Operator = ConditionalOperatorText(rule.Operator?.Value),
-                Text = rule.Text?.Value ?? string.Empty,
-                Priority = checked((uint)rule.Priority.Value),
-            };
-            if (rule.FormatId?.HasValue == true)
-            {
-                if (!_styles.TryReadDifferentialStyle(rule.FormatId.Value, out var format)) return false;
-                target.Format = format;
+                if (!OnlyAttributes(rule, "type", "dxfId", "priority", "operator", "text")) return false;
+                var ruleType = ConditionalTypeText(rule.Type?.Value);
+                if (!ConditionalTypes.Contains(ruleType) || rule.Priority?.HasValue != true || rule.Priority.Value == 0) return false;
+                var target = new SpreadsheetConditionalFormatArtifact
+                {
+                    Id = $"conditional-format/{result.Count + 1}",
+                    Range = range,
+                    RuleType = ruleType,
+                    Operator = ConditionalOperatorText(rule.Operator?.Value),
+                    Text = rule.Text?.Value ?? string.Empty,
+                    Priority = checked((uint)rule.Priority.Value),
+                };
+                if (rule.FormatId?.HasValue == true)
+                {
+                    if (!_styles.TryReadDifferentialStyle(rule.FormatId.Value, out var format)) return false;
+                    target.Format = format;
+                }
+                if (ruleType == "colorScale")
+                {
+                    if (rule.ChildElements.Count != 1 || rule.GetFirstChild<S.ColorScale>() is not { } colorScale || !TryReadColorScale(colorScale, target)) return false;
+                }
+                else if (ruleType == "dataBar")
+                {
+                    if (rule.ChildElements.Count != 1 || rule.GetFirstChild<S.DataBar>() is not { } dataBar || !TryReadDataBar(dataBar, target)) return false;
+                }
+                else if (ruleType == "iconSet")
+                {
+                    if (rule.ChildElements.Count != 1 || rule.GetFirstChild<S.IconSet>() is not { } iconSet || !TryReadIconSet(iconSet, target)) return false;
+                }
+                else
+                {
+                    if (rule.ChildElements.Any(item => item is not S.Formula)) return false;
+                    target.Formulas.Add(rule.Elements<S.Formula>().Select(item => item.Text ?? string.Empty));
+                }
+                try { ValidateConditionalFormat(target, "worksheet", result.Count); }
+                catch (CodecException) { return false; }
+                result.Add(target);
             }
-            if (ruleType == "colorScale")
-            {
-                if (rule.ChildElements.Count != 1 || rule.GetFirstChild<S.ColorScale>() is not { } colorScale || !TryReadColorScale(colorScale, target)) return false;
-            }
-            else
-            {
-                if (rule.ChildElements.Any(item => item is not S.Formula)) return false;
-                target.Formulas.Add(rule.Elements<S.Formula>().Select(item => item.Text ?? string.Empty));
-            }
-            try { ValidateConditionalFormat(target, "worksheet", result.Count); }
-            catch (CodecException) { return false; }
-            result.Add(target);
         }
         artifacts = result;
         return true;
@@ -293,6 +307,88 @@ internal sealed class XlsxWorksheetFeatureCodec
         for (var index = 0; index < source.Colors.Count; index++)
             scale.Append(XlsxCellStyleCodec.WriteConditionalColor(source.Colors[index], $"{sheetName}!{source.Range} color {index + 1}"));
         return scale;
+    }
+
+    private static bool TryReadDataBar(S.DataBar bar, SpreadsheetConditionalFormatArtifact target)
+    {
+        if (!OnlyAttributes(bar, "minLength", "maxLength", "showValue") ||
+            (bar.MinLength?.HasValue == true && bar.MinLength.Value != 10) ||
+            (bar.MaxLength?.HasValue == true && bar.MaxLength.Value != 90)) return false;
+        var children = bar.ChildElements.ToArray();
+        if (children.Length != 3 || children[0] is not S.ConditionalFormatValueObject lower ||
+            children[1] is not S.ConditionalFormatValueObject upper || children[2] is not S.Color color ||
+            !TryReadThreshold(lower, out var lowerArtifact) || !TryReadThreshold(upper, out var upperArtifact) ||
+            !OnlyAttributes(color, "rgb", "theme", "indexed", "auto", "tint") || color.HasChildren) return false;
+        SpreadsheetColor? colorArtifact;
+        try { colorArtifact = XlsxCellStyleCodec.ReadConditionalColor(color); }
+        catch (CodecException) { return false; }
+        if (colorArtifact is null) return false;
+        var dataBar = new SpreadsheetDataBarArtifact { Color = colorArtifact };
+        dataBar.Thresholds.Add(lowerArtifact);
+        dataBar.Thresholds.Add(upperArtifact);
+        if (bar.ShowValue?.HasValue == true) dataBar.ShowValue = bar.ShowValue.Value;
+        target.DataBar = dataBar;
+        return true;
+    }
+
+    private static S.DataBar BuildDataBar(SpreadsheetConditionalFormatArtifact source, string sheetName)
+    {
+        var dataBar = new S.DataBar();
+        if (source.DataBar.HasShowValue) dataBar.ShowValue = source.DataBar.ShowValue;
+        foreach (var threshold in source.DataBar.Thresholds) dataBar.Append(BuildThreshold(threshold));
+        dataBar.Append(XlsxCellStyleCodec.WriteConditionalColor(source.DataBar.Color, $"{sheetName}!{source.Range} data-bar color"));
+        return dataBar;
+    }
+
+    private static bool TryReadIconSet(S.IconSet source, SpreadsheetConditionalFormatArtifact target)
+    {
+        if (!OnlyAttributes(source, "iconSet", "showValue", "percent", "reverse")) return false;
+        var name = source.IconSetValue?.InnerText ?? "3TrafficLights1";
+        if (!XlsxIconSetCatalog.TryGetCount(name, out var count) || source.ChildElements.Count != count ||
+            source.ChildElements.Any(item => item is not S.ConditionalFormatValueObject)) return false;
+        var iconSet = new SpreadsheetIconSetArtifact { IconSet = name };
+        foreach (var threshold in source.Elements<S.ConditionalFormatValueObject>())
+        {
+            if (!TryReadThreshold(threshold, out var artifact)) return false;
+            iconSet.Thresholds.Add(artifact);
+        }
+        if ((source.Percent?.Value == false && iconSet.Thresholds.Any(item => item.Type is "percent" or "percentile")) ||
+            (source.Percent?.Value == true && iconSet.Thresholds.Any(item => item.Type == "num"))) return false;
+        if (source.ShowValue?.HasValue == true) iconSet.ShowValue = source.ShowValue.Value;
+        if (source.Reverse?.HasValue == true) iconSet.Reverse = source.Reverse.Value;
+        target.IconSet = iconSet;
+        return true;
+    }
+
+    private static S.IconSet BuildIconSet(SpreadsheetConditionalFormatArtifact source)
+    {
+        var iconSet = new S.IconSet { IconSetValue = new S.IconSetValues(source.IconSet.IconSet) };
+        if (source.IconSet.HasShowValue) iconSet.ShowValue = source.IconSet.ShowValue;
+        if (source.IconSet.HasReverse) iconSet.Reverse = source.IconSet.Reverse;
+        if (source.IconSet.Thresholds.Any(item => item.Type == "num") &&
+            source.IconSet.Thresholds.All(item => item.Type is "min" or "max" or "num")) iconSet.Percent = false;
+        foreach (var threshold in source.IconSet.Thresholds) iconSet.Append(BuildThreshold(threshold));
+        return iconSet;
+    }
+
+    private static bool TryReadThreshold(S.ConditionalFormatValueObject source, out SpreadsheetConditionalFormatThresholdArtifact artifact)
+    {
+        artifact = new SpreadsheetConditionalFormatThresholdArtifact();
+        if (!OnlyAttributes(source, "type", "val", "gte") || source.HasChildren || source.GreaterThanOrEqual?.Value == false) return false;
+        artifact.Type = ConditionalThresholdTypeText(source.Type?.Value);
+        if (artifact.Type.Length == 0) return false;
+        var value = source.Val?.Value;
+        if (artifact.Type is "min" or "max") return value is null or "" or "0";
+        if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var number) || !double.IsFinite(number)) return false;
+        artifact.Value = number;
+        return true;
+    }
+
+    private static S.ConditionalFormatValueObject BuildThreshold(SpreadsheetConditionalFormatThresholdArtifact source)
+    {
+        var target = new S.ConditionalFormatValueObject { Type = ConditionalThresholdType(source.Type) };
+        if (source.HasValue) target.Val = source.Value.ToString("G17", CultureInfo.InvariantCulture);
+        return target;
     }
 
     private static ThreadedProfile ReadThreadedProfile(
@@ -543,11 +639,29 @@ internal sealed class XlsxWorksheetFeatureCodec
         if (item.Formulas.Any(formula => !ValidFormula(formula))) throw InvalidConditional(sheetName, $"{item.Id} has an invalid formula.");
         if (item.RuleType == "colorScale")
         {
-            if (item.Colors.Count is < 2 or > 3 || item.Formulas.Count > 0 || item.Format is not null || item.Operator.Length > 0 || item.Text.Length > 0)
+            if (item.Colors.Count is < 2 or > 3 || item.Formulas.Count > 0 || item.Format is not null || item.Operator.Length > 0 || item.Text.Length > 0 || item.DataBar is not null || item.IconSet is not null)
                 throw InvalidConditional(sheetName, $"{item.Id} must contain only two or three color-scale colors.");
             foreach (var color in item.Colors) XlsxCellStyleCodec.WriteConditionalColor(color, $"{sheetName}!{item.Range}");
             return;
         }
+        if (item.RuleType == "dataBar")
+        {
+            if (item.DataBar is null || item.IconSet is not null || item.Colors.Count > 0 || item.Formulas.Count > 0 || item.Format is not null || item.Operator.Length > 0 || item.Text.Length > 0 ||
+                item.DataBar.Color is null || item.DataBar.Thresholds.Count != 2 || (item.DataBar.HasGradient && !item.DataBar.Gradient))
+                throw InvalidConditional(sheetName, $"{item.Id} must contain one standard gradient data bar with two thresholds and one color.");
+            ValidateThresholds(item.DataBar.Thresholds, sheetName, item.Id);
+            XlsxCellStyleCodec.WriteConditionalColor(item.DataBar.Color, $"{sheetName}!{item.Range} data-bar color");
+            return;
+        }
+        if (item.RuleType == "iconSet")
+        {
+            if (item.IconSet is null || item.DataBar is not null || item.Colors.Count > 0 || item.Formulas.Count > 0 || item.Format is not null || item.Operator.Length > 0 || item.Text.Length > 0 ||
+                !XlsxIconSetCatalog.TryGetCount(item.IconSet.IconSet, out var count) || item.IconSet.Thresholds.Count != count)
+                throw InvalidConditional(sheetName, $"{item.Id} must contain one supported base-namespace icon set with one threshold per icon.");
+            ValidateThresholds(item.IconSet.Thresholds, sheetName, item.Id);
+            return;
+        }
+        if (item.DataBar is not null || item.IconSet is not null) throw InvalidConditional(sheetName, $"{item.Id} visual metadata requires dataBar or iconSet type.");
         if (item.Colors.Count > 0) throw InvalidConditional(sheetName, $"{item.Id} colors require colorScale type.");
         if (item.RuleType == "expression" && (item.Formulas.Count != 1 || item.Operator.Length > 0 || item.Text.Length > 0))
             throw InvalidConditional(sheetName, $"{item.Id} expression requires exactly one formula.");
@@ -562,6 +676,28 @@ internal sealed class XlsxWorksheetFeatureCodec
             if (item.Formulas.Count != expected) throw InvalidConditional(sheetName, $"{item.Id} requires {expected} formula value(s).");
         }
         if (item.Format is not null) XlsxCellStyleCodec.Validate(item.Format, $"{sheetName}!{item.Range}");
+    }
+
+    private static void ValidateThresholds(RepeatedField<SpreadsheetConditionalFormatThresholdArtifact> thresholds, string sheetName, string id)
+    {
+        double? prior = null;
+        string? comparableType = null;
+        foreach (var threshold in thresholds)
+        {
+            if (threshold.Type is "min" or "max")
+            {
+                if (threshold.HasValue) throw InvalidConditional(sheetName, $"{id} {threshold.Type} threshold cannot carry a value.");
+                comparableType = null;
+                prior = null;
+                continue;
+            }
+            if (threshold.Type is not ("num" or "percent" or "percentile") || !threshold.HasValue || !double.IsFinite(threshold.Value) ||
+                ((threshold.Type is "percent" or "percentile") && threshold.Value is < 0 or > 100))
+                throw InvalidConditional(sheetName, $"{id} has an invalid {threshold.Type} threshold.");
+            if (comparableType == threshold.Type && prior > threshold.Value) throw InvalidConditional(sheetName, $"{id} threshold values must be nondecreasing.");
+            comparableType = threshold.Type;
+            prior = threshold.Value;
+        }
     }
 
     private static void ValidateThreadedComments(WorksheetArtifact sheet)
@@ -607,7 +743,8 @@ internal sealed class XlsxWorksheetFeatureCodec
     private static bool ConditionalFormatEqual(SpreadsheetConditionalFormatArtifact left, SpreadsheetConditionalFormatArtifact right) =>
         left.Range.Equals(right.Range, StringComparison.OrdinalIgnoreCase) && left.RuleType == right.RuleType && left.Operator == right.Operator &&
         left.Formulas.SequenceEqual(right.Formulas, StringComparer.Ordinal) && left.Text == right.Text && Equals(left.Format, right.Format) &&
-        left.Colors.SequenceEqual(right.Colors) && left.Priority == (right.Priority > 0 ? right.Priority : left.Priority);
+        left.Colors.SequenceEqual(right.Colors) && Equals(left.DataBar, right.DataBar) && Equals(left.IconSet, right.IconSet) &&
+        left.Priority == (right.Priority > 0 ? right.Priority : left.Priority);
 
     private static bool ThreadedProfilesEqual(
         IReadOnlyDictionary<WorksheetPart, IReadOnlyList<SpreadsheetThreadedCommentArtifact>> left,
@@ -770,6 +907,8 @@ internal sealed class XlsxWorksheetFeatureCodec
         "expression" => S.ConditionalFormatValues.Expression,
         "containsText" => S.ConditionalFormatValues.ContainsText,
         "colorScale" => S.ConditionalFormatValues.ColorScale,
+        "dataBar" => S.ConditionalFormatValues.DataBar,
+        "iconSet" => S.ConditionalFormatValues.IconSet,
         _ => throw new InvalidOperationException(),
     };
 
@@ -779,6 +918,28 @@ internal sealed class XlsxWorksheetFeatureCodec
         if (value == S.ConditionalFormatValues.Expression) return "expression";
         if (value == S.ConditionalFormatValues.ContainsText) return "containsText";
         if (value == S.ConditionalFormatValues.ColorScale) return "colorScale";
+        if (value == S.ConditionalFormatValues.DataBar) return "dataBar";
+        if (value == S.ConditionalFormatValues.IconSet) return "iconSet";
+        return string.Empty;
+    }
+
+    private static S.ConditionalFormatValueObjectValues ConditionalThresholdType(string value) => value switch
+    {
+        "min" => S.ConditionalFormatValueObjectValues.Min,
+        "max" => S.ConditionalFormatValueObjectValues.Max,
+        "num" => S.ConditionalFormatValueObjectValues.Number,
+        "percent" => S.ConditionalFormatValueObjectValues.Percent,
+        "percentile" => S.ConditionalFormatValueObjectValues.Percentile,
+        _ => throw new InvalidOperationException(),
+    };
+
+    private static string ConditionalThresholdTypeText(S.ConditionalFormatValueObjectValues? value)
+    {
+        if (value == S.ConditionalFormatValueObjectValues.Min) return "min";
+        if (value == S.ConditionalFormatValueObjectValues.Max) return "max";
+        if (value == S.ConditionalFormatValueObjectValues.Number) return "num";
+        if (value == S.ConditionalFormatValueObjectValues.Percent) return "percent";
+        if (value == S.ConditionalFormatValueObjectValues.Percentile) return "percentile";
         return string.Empty;
     }
 

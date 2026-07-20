@@ -346,8 +346,9 @@ message WorksheetArtifact {
   // Bounded worksheet validation rules. Advanced UI prompts, extensions, and
   // unsupported rule types remain source-preserved and fail closed on edit.
   repeated SpreadsheetDataValidationArtifact data_validations = 15;
-  // Bounded cellIs/expression/containsText/colorScale rules. Differential
-  // formatting reuses the static style projection instead of a second model.
+  // Bounded cellIs/expression/containsText/colorScale/dataBar/iconSet rules.
+  // Differential formatting reuses the static style projection instead of a
+  // second model. Visual rules use typed thresholds rather than magic formulas.
   repeated SpreadsheetConditionalFormatArtifact conditional_formats = 16;
   // One flattened root/direct-reply record per entry. Parent identity is
   // explicit on direct replies; nested/branched graphs and mentions remain
@@ -384,6 +385,33 @@ message SpreadsheetConditionalFormatArtifact {
   CellStyleArtifact format = 7;
   repeated SpreadsheetColor colors = 8;
   uint32 priority = 9;
+  SpreadsheetDataBarArtifact data_bar = 10;
+  SpreadsheetIconSetArtifact icon_set = 11;
+}
+
+// A numeric boundary in a SpreadsheetML cfvo element. Formula thresholds and
+// exclusive (gte=false) extension semantics stay source-bound and read-only.
+message SpreadsheetConditionalFormatThresholdArtifact {
+  // min, max, num, percent, or percentile.
+  string type = 1;
+  optional double value = 2;
+}
+
+// The standard SpreadsheetML data-bar profile. The base namespace is gradient
+// only; gradient=false and negative-axis customization require x14 extensions.
+message SpreadsheetDataBarArtifact {
+  SpreadsheetColor color = 1;
+  repeated SpreadsheetConditionalFormatThresholdArtifact thresholds = 2;
+  optional bool show_value = 3;
+  optional bool gradient = 4;
+}
+
+// One built-in SpreadsheetML icon set. Custom/x14 icon collections stay opaque.
+message SpreadsheetIconSetArtifact {
+  string icon_set = 1;
+  repeated SpreadsheetConditionalFormatThresholdArtifact thresholds = 2;
+  optional bool show_value = 3;
+  optional bool reverse = 4;
 }
 
 message SpreadsheetThreadedCommentArtifact {

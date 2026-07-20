@@ -1,0 +1,101 @@
+{
+  "name": "conditional-format-visuals",
+  "outputName": "conditional-format-visuals.xlsx",
+  "theme": {
+    "name": "Conditional Visual Theme",
+    "colors": { "accent1": "#2563EB", "accent2": "#0F766E", "accent3": "#F59E0B" }
+  },
+  "sheets": [
+    {
+      "name": "Conditional Visuals",
+      "showGridLines": false,
+      "freezePanes": { "rows": 1 },
+      "ranges": [
+        {
+          "range": "A1:D6",
+          "values": [
+            ["Workstream", "Progress", "Health score", "Inverse risk"],
+            ["Discovery", 0.15, 0.15, 0.15],
+            ["Design", 0.35, 0.35, 0.35],
+            ["Build", 0.55, 0.55, 0.55],
+            ["Validate", 0.75, 0.75, 0.75],
+            ["Launch", 0.95, 0.95, 0.95]
+          ]
+        },
+        {
+          "range": "A1:D1",
+          "format": {
+            "fill": "#1E3A8A",
+            "font": { "bold": true, "color": "#FFFFFF" },
+            "alignment": { "horizontal": "center" },
+            "rowHeightPx": 30
+          }
+        },
+        { "range": "A2:A6", "format": { "columnWidthPx": 120 } },
+        {
+          "range": "B2:B6",
+          "format": { "numberFormat": "0%", "columnWidthPx": 112 },
+          "conditionalFormats": [
+            {
+              "ruleType": "dataBar",
+              "config": {
+                "color": "#2563EB",
+                "thresholds": ["min", "max"],
+                "showValue": true
+              }
+            }
+          ]
+        },
+        {
+          "range": "C2:C6",
+          "format": { "numberFormat": "0%", "columnWidthPx": 112 },
+          "conditionalFormats": [
+            {
+              "ruleType": "iconSet",
+              "config": {
+                "iconSet": "3TrafficLights1",
+                "thresholds": [0, "50%", { "type": "percent", "value": 80 }],
+                "showValue": true
+              }
+            }
+          ]
+        },
+        {
+          "range": "D2:D6",
+          "format": { "numberFormat": "0%", "columnWidthPx": 112 },
+          "conditionalFormats": [
+            {
+              "ruleType": "iconSet",
+              "config": {
+                "iconSet": "3Arrows",
+                "reverse": true,
+                "showValue": false
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "activeWorksheet": "Conditional Visuals",
+  "expectations": [
+    {
+      "sheet": "Conditional Visuals",
+      "range": "B2:D6",
+      "values": [
+        [0.15, 0.15, 0.15],
+        [0.35, 0.35, 0.35],
+        [0.55, 0.55, 0.55],
+        [0.75, 0.75, 0.75],
+        [0.95, 0.95, 0.95]
+      ]
+    }
+  ],
+  "qa": {
+    "sheetName": "Conditional Visuals",
+    "range": "A1:D6",
+    "renderFormat": "png",
+    "inspectKind": "workbook,sheet,style,computedStyle,conditionalFormat",
+    "maxChars": 16000
+  }
+}

@@ -464,6 +464,9 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "worksheet.getUsedRange")
 assert.equal(HELP_CATALOG.find((item) => item.name === "range.setNumberFormat")?.schema?.parameters?.format?.type, "string|string[][]");
 assert.equal(HELP_CATALOG.find((item) => item.name === "range.conditionalFormats.add")?.schema?.parameters?.text?.type, "string");
 assert.match(HELP_CATALOG.find((item) => item.name === "range.conditionalFormats.add")?.schema?.parameters?.formula?.description || "", /derives.*SEARCH formula/i);
+assert.equal(HELP_CATALOG.find((item) => item.name === "range.conditionalFormats.add")?.schema?.parameters?.thresholds?.type, "Array<string|number|object>");
+assert.match(HELP_CATALOG.find((item) => item.name === "range.conditionalFormats.add")?.schema?.parameters?.iconSet?.description || "", /17 base SpreadsheetML.*x14.*fail closed/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "range.conditionalFormats.add")?.schema?.parameters?.gradient?.description || "", /false requires x14.*fail/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.description || "", /lazy IF\/IFERROR/);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.description || "", /LEN\/LEFT\/RIGHT\/MID/);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.description || "", /DATE\/YEAR\/MONTH\/DAY/);
@@ -578,6 +581,7 @@ assert.match(helpArtifact("shared", "renderFileWithNativeOffice").ndjson, /nativ
 assert.match(helpArtifact("shared", "pixelDiff").ndjson, /visualQaArtifact/);
 assert.match(helpArtifact("workbook", "include\/fields").ndjson, /workbook.inspect/);
 assert.match(helpArtifact("workbook", "colorScale").ndjson, /range\.conditionalFormats\.add/);
+assert.match(helpArtifact("workbook", "dataBar").ndjson, /standard dataBar\/iconSet/);
 assert.match(helpArtifact("document", "maxPatchBytes").ndjson, /DocumentFile\.patchDocx/);
 assert.match(helpArtifact(workbook, "fx.PMT").ndjson, /financial/);
 assert.equal(helpArtifact("presentation", "sheet.charts.add").ndjson, "");

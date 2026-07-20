@@ -2681,7 +2681,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `invokeOpenChestnut` | api | Advanced experimental byte-boundary API for invoking the public OpenChestnut codec protocol with generated wire-message objects. |
 | `openChestnutStatus` | api | Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its protocol, assembly, and integrity manifest. |
 | `range.clear` | api | Clear range contents, formats, or both without silently changing validations, dimensions, or other package graphs. |
-| `range.conditionalFormats.add` | api | Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills. |
+| `range.conditionalFormats.add` | api | Add a conditional formatting rule; cellIs/expression/containsText/colorScale plus standard dataBar/iconSet rules cross the public model and OpenChestnut, with computedStyle inspect records, layout JSON visuals, SVG preview, and native XLSX rendering. |
 | `range.copyFrom` | api | Copy values, formulas, or complete cells from an equally sized or evenly tiling source range with relative A1 translation. |
 | `range.copyTo` | api | Copy this range to an equally sized or evenly tiled destination range. |
 | `range.dataValidation` | api | Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule }). |
@@ -4741,22 +4741,29 @@ Clear range contents, formats, or both without silently changing validations, di
 
 #### `range.conditionalFormats.add`
 
-Add a conditional formatting rule; cellIs/expression/containsText/colorScale rules are evaluated into computedStyle inspect records, layout JSON hints, and SVG preview fills.
+Add a conditional formatting rule; cellIs/expression/containsText/colorScale plus standard dataBar/iconSet rules cross the public model and OpenChestnut, with computedStyle inspect records, layout JSON visuals, SVG preview, and native XLSX rendering.
 
 **Examples:**
 
 - range.conditionalFormats.add('cellIs', { operator: 'greaterThan', formula: 10, format: { fill: 'green' } })
-- range.conditionalFormats.add('containsText', { text: 'Review', format: { fill: '#fef3c7' } })
+- range.conditionalFormats.add('dataBar', { color: '#2563eb', thresholds: ['min', 'max'], showValue: true })
+- range.conditionalFormats.add('iconSet', { iconSet: '3TrafficLights1', thresholds: [0, '50%', '80%'], reverse: false })
 - range.conditionalFormats.addColorScale({ colors: ['#fee2e2', '#fef3c7', '#22c55e'] })
 
 **Schema parameters:**
 
-- `ruleType` (string) required — cellIs, expression, containsText, or colorScale.
+- `ruleType` (string) required — cellIs, expression, containsText, colorScale, dataBar, or iconSet.
 - `formula` (string|number) — Rule formula or scalar threshold. Omit for containsText; the range facade derives the required relative SEARCH formula.
 - `text` (string) — Required search text for containsText rules.
 - `operator` (string) — Comparison operator for cellIs rules.
 - `format` (object) — Style patch applied when the rule matches.
 - `colors` (string[]) — Two or three colors for colorScale rules.
+- `color` (string|object) — RGB or symbolic Spreadsheet color for a standard gradient dataBar.
+- `thresholds` (Array<string|number|object>) — Typed min/max/num/percent/percentile cfvo thresholds: exactly two for dataBar and one per icon for iconSet.
+- `iconSet` (string) — One of the 17 base SpreadsheetML icon-set names. Office 2010 x14-only 3Triangles, 3Stars, and 5Boxes fail closed.
+- `showValue` (boolean) — Show the formatted cell value beside the data bar or icon; false renders only the visual.
+- `reverse` (boolean) — Reverse a built-in icon set's visual order.
+- `gradient` (boolean) — Standard data bars are gradient-filled. false requires x14 and fails closed in this profile.
 
 **Schema returns:**
 

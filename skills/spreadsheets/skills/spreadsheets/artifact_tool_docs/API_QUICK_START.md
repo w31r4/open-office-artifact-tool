@@ -260,11 +260,8 @@ range.format.borders = {
 - For `containsText`, provide `text` and `format`; the Range API derives the relative SEARCH formula required by SpreadsheetML/OpenChestnut. Supplying an explicit formula remains supported.
 ```
 type ConditionalFormatRuleType =
-  | "cellIs" | "CellValue" | "Custom" | "expression"
-  | "colorScale" | "dataBar" | "iconSet"
-  | "containsText" | "notContainsText" | "beginsWith" | "endsWith"
-  | "containsBlanks" | "notContainsBlanks" | "containsErrors" | "notContainsErrors"
-  | "duplicateValues" | "uniqueValues" | "timePeriod" | "top10" | "aboveAverage";
+  | "cellIs" | "expression" | "containsText"
+  | "colorScale" | "dataBar" | "iconSet";
 
 type CellIsOperator =
   | "greaterThan"
@@ -279,13 +276,10 @@ type CellIsOperator =
 type ConditionalFormatConfig =
   | { operator: CellIsOperator; formula: string | number | Array<string | number>; format?: DifferentialFormatConfig }
   | { formula: string | number; format?: DifferentialFormatConfig }
-  | { colors?: ColorConfig[]; thresholds?: CfvoInput[] }
+  | { colors: ColorConfig[] }
   | { color?: ColorConfig; thresholds?: CfvoInput[]; gradient?: boolean }
   | { iconSet: string; showValue?: boolean; reverse?: boolean; thresholds?: CfvoInput[] }
-  | { text: string; format?: DifferentialFormatConfig }
-  | { timePeriod: "yesterday" | "today" | "tomorrow" | "last7Days" | "lastWeek" | "thisWeek" | "nextWeek" | "lastMonth" | "thisMonth" | "nextMonth"; format?: DifferentialFormatConfig }
-  | { rank?: number; percent?: boolean; bottom?: boolean; format?: DifferentialFormatConfig }
-  | { aboveAverage?: boolean; equalAverage?: boolean; stdDev?: number; format?: DifferentialFormatConfig };
+  | { text: string; format?: DifferentialFormatConfig };
 
 type DifferentialFormatConfig = {
   fill?: FillConfig;
@@ -301,23 +295,26 @@ type CfvoInput =
   | `${number}%`
   | { type: "min" | "max" | "num" | "percent" | "percentile"; value?: string | number };
 ```
-- Rule types (`ConditionalFormatRuleType`): "cellIs" | "CellValue" | "Custom" | "expression"
-  | "colorScale" | "dataBar" | "iconSet"
-  | "containsText" | "notContainsText" | "beginsWith" | "endsWith"
-  | "containsBlanks" | "notContainsBlanks" | "containsErrors" | "notContainsErrors"
-  | "duplicateValues" | "uniqueValues" | "timePeriod" | "top10" | "aboveAverage";
-- Built-in `iconSet` names: `3Arrows`, `3Triangles`, `4Arrows`, `5Arrows`, `3ArrowsGray`, `4ArrowsGray`, `5ArrowsGray`, `3TrafficLights1`, `3Signs`, `4RedToBlack`, `3TrafficLights2`, `4TrafficLights`, `3Symbols`, `3Flags`, `3Symbols2`, `3Stars`, `5Quarters`, `5Boxes`, `4Rating`, `5Rating`.
+- Editable rule types are `cellIs`, `expression`, `containsText`, `colorScale`, `dataBar`, and `iconSet`.
+- Built-in base-namespace `iconSet` names: `3Arrows`, `4Arrows`, `5Arrows`, `3ArrowsGray`, `4ArrowsGray`, `5ArrowsGray`, `3TrafficLights1`, `3Signs`, `4RedToBlack`, `3TrafficLights2`, `4TrafficLights`, `3Symbols`, `3Flags`, `3Symbols2`, `5Quarters`, `4Rating`, `5Rating`.
+- `dataBar` uses the standard gradient profile. `gradient: false`, x14-only `3Triangles` / `3Stars` / `5Boxes`, custom icons, formula thresholds, and other advanced graphs fail closed; unchanged imported rules remain source-preserved.
 - Custom conditional formatting: `range.conditionalFormats.addCustom(expression, {fill, font, border});`
 - `range.conditionalFormats.deleteAll()` / `range.conditionalFormats.clear()`
 
 ```js
 const grid = sheet.getRange("B2:J10");
 grid.conditionalFormats.add("colorScale", {
-  criteria: [
-    { type: "lowestValue", color: "#2563EB" },
-    { type: "percentile", value: 50, color: "#FDE047" },
-    { type: "highestValue", color: "#DC2626" },
-  ],
+  colors: ["#2563EB", "#FDE047", "#DC2626"],
+});
+grid.conditionalFormats.add("dataBar", {
+  color: "#2563EB",
+  thresholds: ["min", "max"],
+  showValue: true,
+});
+grid.conditionalFormats.add("iconSet", {
+  iconSet: "3TrafficLights1",
+  thresholds: [0, "50%", { type: "percent", value: 80 }],
+  reverse: false,
 });
 ```
 

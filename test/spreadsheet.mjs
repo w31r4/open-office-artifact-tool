@@ -72,6 +72,28 @@ sheet.getRange("D2:D4").conditionalFormats.add("containsText", {
 sheet.getRange("C2:C4").conditionalFormats.addColorScale({
   colors: ["#FEE2E2", "#FEF3C7", "#22C55E"],
 });
+sheet.getRange("B2:B4").conditionalFormats.add("dataBar", {
+  color: "#2563EB",
+  thresholds: ["min", "max"],
+  showValue: false,
+});
+sheet.getRange("C2:C4").conditionalFormats.add("iconSet", {
+  iconSet: "3Arrows",
+  thresholds: [0, "50%", { type: "percent", value: 80 }],
+  reverse: true,
+});
+assert.throws(
+  () => sheet.getRange("B2:B4").conditionalFormats.add("dataBar", { gradient: false }),
+  /gradient=false requires the x14 solid-data-bar extension/i,
+);
+assert.throws(
+  () => sheet.getRange("C2:C4").conditionalFormats.add("iconSet", { iconSet: "3Triangles" }),
+  /requires the x14 extension namespace/i,
+);
+assert.throws(
+  () => sheet.getRange("C2:C4").conditionalFormats.add("iconSet", { iconSet: "3Arrows", showValue: "false" }),
+  /showValue must be a boolean/i,
+);
 
 const bar = sheet.charts.add("bar", sheet.getRange("A1:C4"));
 bar.name = "Bar chart";
@@ -147,7 +169,7 @@ workbook.recalculate();
 assert.deepEqual(sheet.getRange("F2:F4").values, [[0.4], [0.4166666666666667], [0.4]]);
 assert.equal(sheet.getRange("E2").values[0][0] instanceof Date, true);
 const modelInspect = workbook.inspect({
-  kind: "workbook,sheet,table,formula,style,drawing,dataValidation,conditionalFormat,thread",
+  kind: "workbook,sheet,table,formula,style,computedStyle,drawing,dataValidation,conditionalFormat,thread",
   sheetName: "Summary",
   range: "A1:Q34",
   maxChars: 32_000,
@@ -157,7 +179,15 @@ assert.match(modelInspect.ndjson, /"formula":"=\(B2-C2\)\/B2"/);
 assert.match(modelInspect.ndjson, /"drawingType":"chart"/);
 assert.match(modelInspect.ndjson, /"kind":"dataValidation"/);
 assert.match(modelInspect.ndjson, /"kind":"conditionalFormat"/);
+assert.match(modelInspect.ndjson, /"kind":"dataBar"/);
+assert.match(modelInspect.ndjson, /"kind":"iconSet"/);
 assert.match(modelInspect.ndjson, /Check the calculated margin/);
+const modelLayout = sheet.layoutJson({ range: "B2:C4" });
+assert.equal(modelLayout.cells.find((cell) => cell.address === "B2").conditionalFormats.find((rule) => rule.ruleType === "dataBar").visual.showValue, false);
+assert.equal(modelLayout.cells.find((cell) => cell.address === "C4").conditionalFormats.find((rule) => rule.ruleType === "iconSet").visual.reverse, true);
+const modelSvg = sheet.toSvg();
+assert.match(modelSvg, /id="data-bar-1-1-0"/);
+assert.match(modelSvg, /[▼➜▲]/);
 const modelVerification = verifyArtifact(workbook);
 assert.equal(modelVerification.ok, true, modelVerification.ndjson);
 
@@ -184,7 +214,9 @@ assert.equal(firstZip.file("customXml/open-office-artifact.json"), null);
 const firstWorksheetXml = await firstZip.file("xl/worksheets/sheet1.xml").async("text");
 assert.match(firstWorksheetXml, /<x:mergeCell ref="A6:F6"/);
 assert.match(firstWorksheetXml, /<x:dataValidations count="2">/);
-assert.equal((firstWorksheetXml.match(/<x:conditionalFormatting\b/g) || []).length, 4);
+assert.equal((firstWorksheetXml.match(/<x:conditionalFormatting\b/g) || []).length, 6);
+assert.match(firstWorksheetXml, /<x:dataBar showValue="0">[\s\S]*?<x:cfvo type="min"\s*\/>[\s\S]*?<x:cfvo type="max"\s*\/>[\s\S]*?<x:color rgb="FF2563EB"\s*\/>/);
+assert.match(firstWorksheetXml, /<x:iconSet iconSet="3Arrows" reverse="1">[\s\S]*?<x:cfvo type="num" val="0"\s*\/>[\s\S]*?<x:cfvo type="percent" val="50"\s*\/>[\s\S]*?<x:cfvo type="percent" val="80"\s*\/>/);
 const firstThreadedPart = Object.keys(firstZip.files).find((name) => /^xl\/threadedcomments\/[^/]+\.xml$/i.test(name));
 const firstThreadedXml = await firstZip.file(firstThreadedPart).async("text");
 assert.match(firstThreadedXml, /parentId="\{11111111-1111-4111-8111-111111111111\}"/);
@@ -223,7 +255,15 @@ assert.equal(importedScatter.series.items[0].xFormula, "'Summary'!S2:S4");
 assert.equal(importedScatter.xAxis.axisType, "valueAxis");
 assert.match(importedScatter.toSvg(), /<polygon[^>]+38BDF8/i);
 assert.deepEqual(importedSheet.dataValidations.items.map((item) => item.rule.type), ["list", "whole"]);
-assert.deepEqual(importedSheet.conditionalFormattings.items.map((item) => item.ruleType), ["cellIs", "expression", "containsText", "colorScale"]);
+assert.deepEqual(importedSheet.conditionalFormattings.items.map((item) => item.ruleType), ["cellIs", "expression", "containsText", "colorScale", "dataBar", "iconSet"]);
+const importedDataBar = importedSheet.conditionalFormattings.items.find((item) => item.ruleType === "dataBar");
+assert.equal(importedDataBar.color, "#2563EB");
+assert.equal(importedDataBar.showValue, false);
+assert.deepEqual(importedDataBar.thresholds, [{ type: "min" }, { type: "max" }]);
+const importedIconSet = importedSheet.conditionalFormattings.items.find((item) => item.ruleType === "iconSet");
+assert.equal(importedIconSet.iconSet, "3Arrows");
+assert.equal(importedIconSet.reverse, true);
+assert.deepEqual(importedIconSet.thresholds, [{ type: "num", value: 0 }, { type: "percent", value: 50 }, { type: "percent", value: 80 }]);
 assert.equal(imported.comments.threads.length, 1);
 assert.equal(imported.comments.threads[0].comments.length, 2);
 assert.equal(imported.comments.threads[0].comments[0].text, "Check the calculated margin.");
@@ -250,6 +290,10 @@ listValidation.rule.values.push("Blocked");
 const marginConditional = importedSheet.conditionalFormattings.items.find((item) => item.ruleType === "cellIs");
 marginConditional.formula = "0.45";
 marginConditional.format.fill = "#BBF7D0";
+importedDataBar.color = "#0EA5E9";
+importedDataBar.showValue = true;
+importedIconSet.thresholds[1].value = 60;
+importedIconSet.reverse = false;
 const importedThread = imported.comments.threads[0];
 importedThread.comments[0].text = "Margin reviewed after edit.";
 importedThread.comments[1].text = "Reply reviewed after edit.";
@@ -274,6 +318,10 @@ assert.deepEqual(secondSheet.charts.items[5].series.items[0].xValues, [10, 22, 3
 assert.deepEqual(secondSheet.charts.items[5].series.items[0].values, [30, 60, 88]);
 assert.deepEqual(secondSheet.dataValidations.items.find((item) => item.rule.type === "list").rule.values, ["Planned", "Review", "Done", "Blocked"]);
 assert.equal(secondSheet.conditionalFormattings.items.find((item) => item.ruleType === "cellIs").formula, "0.45");
+assert.equal(secondSheet.conditionalFormattings.items.find((item) => item.ruleType === "dataBar").color, "#0EA5E9");
+assert.equal(secondSheet.conditionalFormattings.items.find((item) => item.ruleType === "dataBar").showValue, true);
+assert.equal(secondSheet.conditionalFormattings.items.find((item) => item.ruleType === "iconSet").thresholds[1].value, 60);
+assert.equal(secondSheet.conditionalFormattings.items.find((item) => item.ruleType === "iconSet").reverse, false);
 assert.equal(second.comments.threads[0].comments.length, 2);
 assert.equal(second.comments.threads[0].comments[0].text, "Margin reviewed after edit.");
 assert.equal(second.comments.threads[0].comments[1].text, "Reply reviewed after edit.");

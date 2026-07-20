@@ -97,12 +97,24 @@ public sealed class XlsxCodecTests
         {
             var worksheetPart = Assert.Single(document.WorkbookPart!.WorksheetParts);
             Assert.Equal(2U, worksheetPart.Worksheet!.GetFirstChild<DataValidations>()!.Count!.Value);
-            Assert.Equal(2, worksheetPart.Worksheet.Elements<ConditionalFormatting>().Count());
+            Assert.Equal(4, worksheetPart.Worksheet.Elements<ConditionalFormatting>().Count());
             var revenueRule = worksheetPart.Worksheet.Elements<ConditionalFormatting>().First().GetFirstChild<ConditionalFormattingRule>()!;
             var revenueFormat = document.WorkbookPart.WorkbookStylesPart!.Stylesheet!.DifferentialFormats!.Elements<DifferentialFormat>()
                 .ElementAt(checked((int)revenueRule.FormatId!.Value!));
             Assert.Equal("FFDCFCE7", revenueFormat.Fill!.PatternFill!.ForegroundColor!.Rgb!.Value);
             Assert.Equal("FFDCFCE7", revenueFormat.Fill.PatternFill.BackgroundColor!.Rgb!.Value);
+            var visualRules = worksheetPart.Worksheet.Elements<ConditionalFormatting>().Skip(2)
+                .Select(item => item.GetFirstChild<ConditionalFormattingRule>()!).ToArray();
+            var dataBar = Assert.IsType<DataBar>(Assert.Single(visualRules[0].ChildElements));
+            Assert.False(dataBar.ShowValue!.Value);
+            Assert.Equal([ConditionalFormatValueObjectValues.Min, ConditionalFormatValueObjectValues.Max], dataBar.Elements<ConditionalFormatValueObject>().Select(item => item.Type!.Value).ToArray());
+            Assert.Equal("FF638EC6", dataBar.GetFirstChild<Color>()!.Rgb!.Value);
+            var iconSet = Assert.IsType<IconSet>(Assert.Single(visualRules[1].ChildElements));
+            Assert.Equal("3Arrows", iconSet.IconSetValue!.InnerText);
+            Assert.False(iconSet.Percent!.Value);
+            Assert.True(iconSet.Reverse!.Value);
+            Assert.False(iconSet.ShowValue!.Value);
+            Assert.Equal([0D, 40D, 80D], iconSet.Elements<ConditionalFormatValueObject>().Select(item => double.Parse(item.Val!.Value!, CultureInfo.InvariantCulture)).ToArray());
             var people = Assert.Single(document.WorkbookPart.WorkbookPersonParts).PersonList!;
             Assert.Equal(["Analyst", "Lead analyst"], people.Elements<TC.Person>().Select(item => item.DisplayName?.Value ?? string.Empty).Order().ToArray());
             var comments = Assert.Single(worksheetPart.WorksheetThreadedCommentsParts).ThreadedComments!;
@@ -152,6 +164,22 @@ public sealed class XlsxCodecTests
             {
                 Assert.Equal("colorScale", item.RuleType);
                 Assert.Equal(["FEE2E2", "FEF3C7", "22C55E"], item.Colors.Select(color => color.Rgb));
+            },
+            item =>
+            {
+                Assert.Equal("dataBar", item.RuleType);
+                Assert.Equal("638EC6", item.DataBar.Color.Rgb);
+                Assert.False(item.DataBar.ShowValue);
+                Assert.Equal(["min", "max"], item.DataBar.Thresholds.Select(threshold => threshold.Type));
+            },
+            item =>
+            {
+                Assert.Equal("iconSet", item.RuleType);
+                Assert.Equal("3Arrows", item.IconSet.IconSet);
+                Assert.True(item.IconSet.Reverse);
+                Assert.False(item.IconSet.ShowValue);
+                Assert.All(item.IconSet.Thresholds, threshold => Assert.Equal("num", threshold.Type));
+                Assert.Equal([0D, 40D, 80D], item.IconSet.Thresholds.Select(threshold => threshold.Value));
             });
         Assert.Collection(sheet.ThreadedComments,
             threaded =>
@@ -176,6 +204,10 @@ public sealed class XlsxCodecTests
         sheet.DataValidations[1].Formula2 = "12";
         sheet.ConditionalFormats[0].Formulas[0] = "60";
         sheet.ConditionalFormats[0].Format.Fill.Foreground.Rgb = "BBF7D0";
+        sheet.ConditionalFormats[2].DataBar.Color.Rgb = "2563EB";
+        sheet.ConditionalFormats[2].DataBar.ShowValue = true;
+        sheet.ConditionalFormats[3].IconSet.Thresholds[1].Value = 50;
+        sheet.ConditionalFormats[3].IconSet.Reverse = false;
         threaded.Text = "Revenue total reviewed.";
         threaded.Author = "Lead analyst";
         threaded.UserId = "lead@example.com";
@@ -193,6 +225,10 @@ public sealed class XlsxCodecTests
         Assert.Equal("12", edited.DataValidations[1].Formula2);
         Assert.Equal("60", edited.ConditionalFormats[0].Formulas[0]);
         Assert.Equal("BBF7D0", edited.ConditionalFormats[0].Format.Fill.Foreground.Rgb);
+        Assert.Equal("2563EB", edited.ConditionalFormats[2].DataBar.Color.Rgb);
+        Assert.True(edited.ConditionalFormats[2].DataBar.ShowValue);
+        Assert.Equal(50, edited.ConditionalFormats[3].IconSet.Thresholds[1].Value);
+        Assert.False(edited.ConditionalFormats[3].IconSet.Reverse);
         Assert.Equal(2, edited.ThreadedComments.Count);
         var editedComment = edited.ThreadedComments[0];
         Assert.Equal("Revenue total reviewed.", editedComment.Text);
@@ -217,7 +253,7 @@ public sealed class XlsxCodecTests
         var sheet = Assert.Single(imported.Artifact.Workbook.Worksheets);
         Assert.Empty(sheet.DataValidations);
         Assert.Empty(sheet.ThreadedComments);
-        Assert.Equal(2, sheet.ConditionalFormats.Count);
+        Assert.Equal(4, sheet.ConditionalFormats.Count);
 
         var exact = Export(imported.Artifact);
         Assert.True(exact.Ok, string.Join("\n", exact.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
@@ -273,6 +309,56 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void NonstandardDataBarLengthStaysOpaqueAndRejectsReplacement()
+    {
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(WorksheetFeatureExportRequest().ToByteArray()));
+        var source = SetDataBarMinimumLength(authored.File.ToByteArray(), 5);
+        var conditionalXml = ReadWorksheetConditionalFormattingXml(source);
+        var imported = Import(source);
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var sheet = Assert.Single(imported.Artifact.Workbook.Worksheets);
+        Assert.Empty(sheet.ConditionalFormats);
+
+        var exact = Export(imported.Artifact);
+        Assert.True(exact.Ok, string.Join("\n", exact.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(conditionalXml, ReadWorksheetConditionalFormattingXml(exact.File.ToByteArray()));
+
+        sheet.ConditionalFormats.Add(new SpreadsheetConditionalFormatArtifact
+        {
+            Id = "replacement-conditional",
+            Range = "A1",
+            RuleType = "expression",
+            Formulas = { "A1>0" },
+        });
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_conditional_format_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void GroupedConditionalFormatRulesImportPreserveAndEditSemantically()
+    {
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(WorksheetFeatureExportRequest().ToByteArray()));
+        var source = GroupVisualConditionalFormatRules(authored.File.ToByteArray());
+        var conditionalXml = ReadWorksheetConditionalFormattingXml(source);
+        var imported = Import(source);
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var sheet = Assert.Single(imported.Artifact.Workbook.Worksheets);
+        Assert.Equal(["cellIs", "colorScale", "dataBar", "iconSet"], sheet.ConditionalFormats.Select(item => item.RuleType));
+
+        var exact = Export(imported.Artifact);
+        Assert.True(exact.Ok, string.Join("\n", exact.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(conditionalXml, ReadWorksheetConditionalFormattingXml(exact.File.ToByteArray()));
+
+        sheet.ConditionalFormats[2].DataBar.ShowValue = true;
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, string.Join("\n", edited.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var reimported = Import(edited.File.ToByteArray());
+        Assert.True(reimported.Ok, string.Join("\n", reimported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.True(reimported.Artifact.Workbook.Worksheets[0].ConditionalFormats[2].DataBar.ShowValue);
+    }
+
+    [Fact]
     public void WorksheetSkillFeaturesRejectInvalidWireProfiles()
     {
         var request = ExportRequest();
@@ -283,6 +369,48 @@ public sealed class XlsxCodecTests
 
         request = ExportRequest();
         request.Artifact.Workbook.Worksheets[0].ConditionalFormats.Add(new SpreadsheetConditionalFormatArtifact { Id = "invalid", Range = "A1", RuleType = "cellIs", Operator = "greaterThan" });
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_spreadsheet_conditional_format", Assert.Single(response.Diagnostics).Code);
+
+        request = ExportRequest();
+        request.Artifact.Workbook.Worksheets[0].ConditionalFormats.Add(new SpreadsheetConditionalFormatArtifact
+        {
+            Id = "invalid-solid-bar",
+            Range = "A1:A3",
+            RuleType = "dataBar",
+            DataBar = new SpreadsheetDataBarArtifact
+            {
+                Color = new SpreadsheetColor { Rgb = "638EC6" },
+                Gradient = false,
+                Thresholds =
+                {
+                    new SpreadsheetConditionalFormatThresholdArtifact { Type = "min" },
+                    new SpreadsheetConditionalFormatThresholdArtifact { Type = "max" },
+                },
+            },
+        });
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_spreadsheet_conditional_format", Assert.Single(response.Diagnostics).Code);
+
+        request = ExportRequest();
+        request.Artifact.Workbook.Worksheets[0].ConditionalFormats.Add(new SpreadsheetConditionalFormatArtifact
+        {
+            Id = "invalid-x14-icons",
+            Range = "A1:A3",
+            RuleType = "iconSet",
+            IconSet = new SpreadsheetIconSetArtifact
+            {
+                IconSet = "3Triangles",
+                Thresholds =
+                {
+                    new SpreadsheetConditionalFormatThresholdArtifact { Type = "percent", Value = 0 },
+                    new SpreadsheetConditionalFormatThresholdArtifact { Type = "percent", Value = 33 },
+                    new SpreadsheetConditionalFormatThresholdArtifact { Type = "percent", Value = 67 },
+                },
+            },
+        });
         response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
         Assert.False(response.Ok);
         Assert.Equal("invalid_spreadsheet_conditional_format", Assert.Single(response.Diagnostics).Code);
@@ -4877,6 +5005,42 @@ public sealed class XlsxCodecTests
                 new SpreadsheetColor { Rgb = "22C55E" },
             },
         });
+        sheet.ConditionalFormats.Add(new SpreadsheetConditionalFormatArtifact
+        {
+            Id = "conditional/revenue-bar",
+            Range = "B1:B8",
+            RuleType = "dataBar",
+            Priority = 3,
+            DataBar = new SpreadsheetDataBarArtifact
+            {
+                Color = new SpreadsheetColor { Rgb = "638EC6" },
+                ShowValue = false,
+                Thresholds =
+                {
+                    new SpreadsheetConditionalFormatThresholdArtifact { Type = "min" },
+                    new SpreadsheetConditionalFormatThresholdArtifact { Type = "max" },
+                },
+            },
+        });
+        sheet.ConditionalFormats.Add(new SpreadsheetConditionalFormatArtifact
+        {
+            Id = "conditional/score-icons",
+            Range = "B1:B8",
+            RuleType = "iconSet",
+            Priority = 4,
+            IconSet = new SpreadsheetIconSetArtifact
+            {
+                IconSet = "3Arrows",
+                ShowValue = false,
+                Reverse = true,
+                Thresholds =
+                {
+                    new SpreadsheetConditionalFormatThresholdArtifact { Type = "num", Value = 0 },
+                    new SpreadsheetConditionalFormatThresholdArtifact { Type = "num", Value = 40 },
+                    new SpreadsheetConditionalFormatThresholdArtifact { Type = "num", Value = 80 },
+                },
+            },
+        });
         sheet.ThreadedComments.Add(new SpreadsheetThreadedCommentArtifact
         {
             Id = "thread/revenue",
@@ -6813,6 +6977,40 @@ public sealed class XlsxCodecTests
         {
             var worksheet = Assert.Single(document.WorkbookPart!.WorksheetParts).Worksheet!;
             worksheet.Elements<ConditionalFormatting>().First().GetFirstChild<ConditionalFormattingRule>()!.StopIfTrue = true;
+            worksheet.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] SetDataBarMinimumLength(byte[] bytes, uint value)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var worksheet = Assert.Single(document.WorkbookPart!.WorksheetParts).Worksheet!;
+            var dataBar = Assert.Single(worksheet.Descendants<DataBar>());
+            dataBar.MinLength = value;
+            worksheet.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] GroupVisualConditionalFormatRules(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var worksheet = Assert.Single(document.WorkbookPart!.WorksheetParts).Worksheet!;
+            var formats = worksheet.Elements<ConditionalFormatting>().ToArray();
+            Assert.Equal(formats[^2].SequenceOfReferences!.InnerText, formats[^1].SequenceOfReferences!.InnerText);
+            var iconRule = Assert.Single(formats[^1].Elements<ConditionalFormattingRule>());
+            iconRule.Remove();
+            formats[^2].Append(iconRule);
+            formats[^1].Remove();
             worksheet.Save();
         }
         return stream.ToArray();

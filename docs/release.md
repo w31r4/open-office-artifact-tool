@@ -72,6 +72,28 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### XLSX visual conditional formatting
+
+On 2026-07-20, the Spreadsheet/OpenChestnut path added standard gradient data
+bars and the 17 base SpreadsheetML icon sets as typed semantics rather than raw
+XML shortcuts. The public model, versioned protobuf wire, C# Open XML SDK
+codec, second import, computed-style inspection, layout JSON, and SVG preview
+share the same `min`/`max`/`num`/`percent`/`percentile` threshold contract plus
+presence-aware `showValue` and icon `reverse` flags. The shared C# icon catalog
+also removes three previously duplicated vocabularies across conditional
+formatting, table filters, and sort state. Reference-shaped packages that group
+multiple rules under one same-range `<conditionalFormatting>` element now
+import each rule independently, preserve the original XML when unchanged, and
+remain semantically editable within the supported profiles.
+
+The runnable `conditional-format-visuals` fixture proves data bars, normal
+traffic-light icons, reversed arrow icons, and icon-only value suppression in a
+single workbook. Open XML SDK validation, C# source-preservation/edit tests,
+JavaScript roundtrips, model PNG review, and LibreOffice/Poppler one-page native
+rendering pass locally. Nondefault bar lengths, x14 solid/negative-axis bars,
+x14-only or custom icons, formula/exclusive thresholds, and richer rule graphs
+remain source-preserved and fail closed on replacement.
+
 ### Repository structure convergence
 
 On 2026-07-19, a whole-repository reachability, package, generated-artifact,

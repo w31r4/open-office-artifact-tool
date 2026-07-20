@@ -34,6 +34,7 @@ import {
   writtenRangeBounds,
 } from "./range-operations.mjs";
 import { createSpreadsheetSparklineClasses } from "./sparklines.mjs";
+import { dataBarVisual, iconSetVisual, normalizeDataBarConfig, normalizeIconSetConfig } from "./conditional-formats.mjs";
 import { formulaTimeParts, formulaTimeSerial, parseFormulaDateText, parseFormulaNumberText, parseFormulaTimeText } from "./formula-coercion.mjs";
 import { calculateCumipmt, calculateCumprinc, calculateDb, calculateDdb, calculateFv, calculateIpmt, calculateIrr, calculateMirr, calculateNper, calculateNpv, calculatePmt, calculatePpmt, calculatePv, calculateRate, calculateSln, calculateXirr, calculateXnpv } from "./financial-formulas.mjs";
 import { createWorkbookWindowCollection, worksheetWindowMemberships } from "./workbook-windows.mjs";
@@ -821,12 +822,15 @@ class RangeConditionalFormatFacade {
   constructor(range) { this.range = range; }
   add(ruleType, config = {}) {
     const normalized = { ...config };
-    if (String(ruleType).toLowerCase() === "containstext" && normalized.formula == null && normalized.formulas == null) {
+    const normalizedType = String(ruleType).toLowerCase();
+    if (normalizedType === "containstext" && normalized.formula == null && normalized.formulas == null) {
       const text = String(normalized.text ?? "");
       if (!text) throw new Error("Range containsText conditional formatting requires text.");
       const address = makeCellAddress(this.range.rowIndex, this.range.columnIndex);
       normalized.formula = `NOT(ISERROR(SEARCH("${text.replaceAll('"', '""')}",${address})))`;
     }
+    if (normalizedType === "databar") Object.assign(normalized, normalizeDataBarConfig(normalized));
+    if (normalizedType === "iconset") Object.assign(normalized, normalizeIconSetConfig(normalized));
     return this.range.worksheet.conditionalFormattings.add({ range: rangeToAddress(this.range.bounds), ruleType, ...normalized });
   }
   addCustom(expression, format = {}) { return this.add("expression", { formula: expression, format }); }
@@ -938,6 +942,17 @@ function colorScaleFormatForCell(sheet, rule, address) {
   return { fill };
 }
 
+function conditionalFormatVisualForCell(sheet, rule, address) {
+  const bounds = safeRangeBounds(rule.range || "");
+  if (!cellAddressWithinBounds(address, bounds)) return undefined;
+  const value = sheet.store.get(String(address).toUpperCase()).value;
+  const values = sheet.getRange(rule.range || address).values.flat();
+  const normalizedType = String(rule.ruleType || rule.type || "").toLowerCase();
+  if (normalizedType === "databar") return dataBarVisual(rule, value, values);
+  if (normalizedType === "iconset") return iconSetVisual(rule, value, values);
+  return undefined;
+}
+
 function evaluateConditionalFormatRule(sheet, rule, address) {
   const bounds = safeRangeBounds(rule.range || "");
   if (!cellAddressWithinBounds(address, bounds)) return false;
@@ -945,6 +960,7 @@ function evaluateConditionalFormatRule(sheet, rule, address) {
   const ruleType = String(rule.ruleType || rule.type || "expression");
   const normalizedType = ruleType.toLowerCase();
   if (normalizedType === "colorscale") return Boolean(colorScaleFormatForCell(sheet, rule, address));
+  if (normalizedType === "databar" || normalizedType === "iconset") return Boolean(conditionalFormatVisualForCell(sheet, rule, address));
   if (normalizedType === "cellis" || normalizedType === "cellvalue") {
     const first = conditionalScalar(sheet, rule.formula ?? rule.formula1 ?? rule.rule?.formula ?? rule.rule?.formula1, address, bounds);
     const second = conditionalScalar(sheet, rule.formula2 ?? rule.rule?.formula2, address, bounds);
@@ -970,11 +986,18 @@ function worksheetConditionalFormatMatches(sheet, address) {
     if (String(ruleType).toLowerCase() === "colorscale") {
       const format = colorScaleFormatForCell(sheet, rule, address);
       if (format) matches.push({ id: rule.id, range: rule.range, ruleType, operator: rule.operator || rule.rule?.operator, formula: rule.formula || rule.expression || rule.rule?.formula, format, colors: colorScaleColors(rule) });
+    } else if (["databar", "iconset"].includes(String(ruleType).toLowerCase())) {
+      const visual = conditionalFormatVisualForCell(sheet, rule, address);
+      if (visual) matches.push({ id: rule.id, range: rule.range, ruleType, format: {}, visual });
     } else if (evaluateConditionalFormatRule(sheet, rule, address)) {
       matches.push({ id: rule.id, range: rule.range, ruleType, operator: rule.operator || rule.rule?.operator, formula: rule.formula || rule.expression || rule.rule?.formula, format: rule.format || rule.rule?.format || {} });
     }
   }
   return matches;
+}
+
+function conditionalFormatMatchRecord(match) {
+  return { id: match.id, ruleType: match.ruleType, operator: match.operator, formula: match.formula, format: match.format, visual: match.visual };
 }
 
 function worksheetComputedCellStyle(sheet, address, baseStyle = {}) {
@@ -1993,7 +2016,7 @@ export class Worksheet {
       if (includeBaseStyle && cell.style && Object.keys(cell.style).length > 0) records.push({ kind: "style", sheet: this.name, address, style: { ...cell.style } });
       if (includeComputedStyle) {
         const computed = worksheetComputedCellStyle(this, address, cell.style);
-        if (computed.matches.length || Object.keys(computed.style || {}).length) records.push({ kind: "computedStyle", sheet: this.name, address, style: computed.style, conditionalFormats: computed.matches.map((match) => ({ id: match.id, ruleType: match.ruleType, operator: match.operator, formula: match.formula, format: match.format })) });
+        if (computed.matches.length || Object.keys(computed.style || {}).length) records.push({ kind: "computedStyle", sheet: this.name, address, style: computed.style, conditionalFormats: computed.matches.map(conditionalFormatMatchRecord) });
       }
     }
     return records;
@@ -2066,7 +2089,7 @@ export class Worksheet {
           spillRange: cell.spillRange,
           style: cell.style && Object.keys(cell.style).length ? { ...cell.style } : undefined,
           computedStyle: computed.matches.length || Object.keys(computed.style || {}).length ? computed.style : undefined,
-          conditionalFormats: computed.matches.length ? computed.matches.map((match) => ({ id: match.id, ruleType: match.ruleType, operator: match.operator, formula: match.formula, format: match.format })) : undefined,
+          conditionalFormats: computed.matches.length ? computed.matches.map(conditionalFormatMatchRecord) : undefined,
         });
       }
     }
@@ -2143,8 +2166,26 @@ export class Worksheet {
         const textY = y + frame.height / 2;
         const textDecoration = [font.underline ? "underline" : "", font.strike ? "line-through" : ""].filter(Boolean).join(" ");
         const rotation = Number(alignment.textRotation || 0);
+        const visuals = computed.matches.map((match) => match.visual).filter(Boolean);
+        const icon = visuals.find((visual) => visual.kind === "iconSet");
+        const bars = visuals.filter((visual) => visual.kind === "dataBar");
+        const showCellValue = visuals.every((visual) => visual.showValue !== false);
         rows.push(`<rect x="${x}" y="${y}" width="${frame.width}" height="${frame.height}" fill="${xmlEscape(fill.paint)}" stroke="#d0d7de"/>`);
-        rows.push(`<text x="${textX}" y="${textY}" text-anchor="${textAnchor}" dominant-baseline="middle"${textDecoration ? ` text-decoration="${textDecoration}"` : ""}${rotation ? ` transform="rotate(${-rotation} ${textX} ${textY})"` : ""} font-family="${xmlEscape(font.name || "Arial")}" font-size="13" font-weight="${fontWeight}" fill="${xmlEscape(fontFill)}">${xmlEscape(value)}</text>`);
+        for (const [barIndex, bar] of bars.entries()) {
+          const color = xlsxColorCss(bar.color, { ...colorResources, fallback: "#638EC6" });
+          const gradientId = `data-bar-${r}-${c}-${barIndex}`;
+          const barWidth = Math.max(1, (frame.width - 6) * (0.1 + 0.8 * bar.ratio));
+          fillDefinitions.push(`<linearGradient id="${gradientId}" x1="0" x2="1"><stop offset="0" stop-color="${xmlEscape(color)}" stop-opacity="0.35"/><stop offset="1" stop-color="${xmlEscape(color)}" stop-opacity="0.85"/></linearGradient>`);
+          rows.push(`<rect x="${x + 3}" y="${y + 3}" width="${barWidth}" height="${Math.max(1, frame.height - 6)}" rx="2" fill="url(#${gradientId})"/>`);
+        }
+        if (icon) {
+          const iconX = icon.showValue ? x + 12 : x + frame.width / 2;
+          rows.push(`<text x="${iconX}" y="${textY}" text-anchor="middle" dominant-baseline="middle" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="${xmlEscape(icon.color)}">${xmlEscape(icon.glyph)}</text>`);
+        }
+        if (showCellValue) {
+          const adjustedTextX = icon && textAnchor === "start" ? x + 24 : textX;
+          rows.push(`<text x="${adjustedTextX}" y="${textY}" text-anchor="${textAnchor}" dominant-baseline="middle"${textDecoration ? ` text-decoration="${textDecoration}"` : ""}${rotation ? ` transform="rotate(${-rotation} ${adjustedTextX} ${textY})"` : ""} font-family="${xmlEscape(font.name || "Arial")}" font-size="13" font-weight="${fontWeight}" fill="${xmlEscape(fontFill)}">${xmlEscape(value)}</text>`);
+        }
       }
     }
     const tableOverlays = this.tables.items.map((table) => table.toSvg(bounds)).join("");

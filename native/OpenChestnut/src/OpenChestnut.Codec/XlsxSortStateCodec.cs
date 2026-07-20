@@ -12,15 +12,6 @@ internal static class XlsxSortStateCodec
 {
     private static readonly XNamespace Spreadsheet = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
     private static readonly HashSet<string> SortMethods = new(StringComparer.Ordinal) { "none", "pinYin", "stroke" };
-    private static readonly IReadOnlyDictionary<string, uint> IconSets = new Dictionary<string, uint>(StringComparer.Ordinal)
-    {
-        ["3Arrows"] = 3, ["3ArrowsGray"] = 3, ["3Flags"] = 3, ["3TrafficLights1"] = 3,
-        ["3TrafficLights2"] = 3, ["3Signs"] = 3, ["3Symbols"] = 3, ["3Symbols2"] = 3,
-        ["4Arrows"] = 4, ["4ArrowsGray"] = 4, ["4RedToBlack"] = 4, ["4Rating"] = 4,
-        ["4TrafficLights"] = 4, ["5Arrows"] = 5, ["5ArrowsGray"] = 5, ["5Rating"] = 5,
-        ["5Quarters"] = 5,
-    };
-
     internal static bool TryRead(
         XElement element,
         XlsxCellStyleCodec styles,
@@ -59,7 +50,7 @@ internal static class XlsxSortStateCodec
             var customList = condition.Attribute("customList")?.Value;
             if (sortBy == "icon")
             {
-                if (iconSet is null || differentialFormatId is not null || customList is not null || !IconSets.ContainsKey(iconSet)) return false;
+                if (iconSet is null || differentialFormatId is not null || customList is not null || !XlsxIconSetCatalog.Contains(iconSet)) return false;
                 var icon = new SpreadsheetTableIconArtifact { IconSet = iconSet };
                 if (iconId is not null) icon.IconId = iconId.Value;
                 if (!ValidIcon(icon)) return false;
@@ -215,7 +206,7 @@ internal static class XlsxSortStateCodec
     }
 
     private static bool ValidIcon(SpreadsheetTableIconArtifact icon) =>
-        IconSets.TryGetValue(icon.IconSet, out var count) && (!icon.HasIconId || icon.IconId < count);
+        XlsxIconSetCatalog.TryGetCount(icon.IconSet, out var count) && (!icon.HasIconId || icon.IconId < count);
 
     private static bool TryCell(string text, out (uint Row, uint Column) cell)
     {
