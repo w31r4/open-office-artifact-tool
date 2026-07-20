@@ -82,13 +82,18 @@ const annotated = await PdfFile.editPdf(input, {
 });
 ```
 
-`point` is in the inspected unrotated visible `mupdfPage.bbox` coordinate
-space. It is not a request for a specific note rectangle: the provider
-normalizes the native icon geometry, verifies exactly one new Text annotation,
-and records the actual rectangle in the operation audit. A `text` alias,
-`bbox`/`rect`, icon selection, rotated page, stale hash/page snapshot, or
-incremental save fails closed. Re-inspect the rewrite before a later
-annotation update/deletion; the returned xref is current-source-only.
+`point` is in the inspected page's explicit `mupdf-page-space`: upper-left
+origin, y downward, with the current 0/90/180/270-degree rotation already
+applied to `mupdfPage.bbox`. Raw `mediaBox`/`cropBox` facts remain unrotated PDF
+coordinates and must not be substituted. This is not a request for a specific
+note rectangle: the provider normalizes the native icon geometry, verifies
+exactly one new Text annotation, and records both the actual rectangle and a
+conservative `appearanceBbox`. The latter covers renderer differences caused
+by native Text-note `NoZoom`/`NoRotate` flags. A `text` alias, `bbox`/`rect`,
+icon selection, stale hash/page snapshot, clipped native appearance, or
+incremental save fails closed. Re-inspect the rewrite and compare the fresh
+appearance before a later annotation update/deletion; the returned xref is
+current-source-only.
 
 ## Highlight one unique text selection
 
@@ -119,10 +124,12 @@ const highlighted = await PdfFile.editPdf(input, {
 The text is limited to 4,096 characters. The color is optional RGB in `[0,1]`
 (yellow by default); `contents`, `author`, and `subject` are optional non-empty
 review metadata. A zero/multiple hit, caller quad/rectangle, stale source or
-page snapshot, rotated page, off-CropBox native selection, or incremental save
-fails closed. The audit and fresh `mupdfAnnotation` record expose the verified
-native Highlight quadrilaterals and color. Render the delivered output as part
-of review; the resulting xref is valid only for those exact output bytes.
+page snapshot, off-page native `appearanceBbox`, or incremental save fails
+closed. Right-angle rotation itself is supported when it matches the inspected
+page snapshot. The audit and fresh `mupdfAnnotation` record expose the verified
+native Highlight quadrilaterals, color, and appearance. Render the delivered
+output as part of review; the resulting xref is valid only for those exact
+output bytes.
 
 Before a pypdf mutation, probe and bind the exact route. Change `--task` to `annotate` for notes:
 

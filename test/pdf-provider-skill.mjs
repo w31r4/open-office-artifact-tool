@@ -87,6 +87,84 @@ async function assertOcrRedactionPixelScope(source, output, operation, tempRoot,
   assert.ok(darkInsideRedaction > 500, `${label} expected opaque redaction fill, found ${darkInsideRedaction} dark pixels`);
 }
 
+async function assertNativePlacementPixelScope(source, output, page, operations, tempRoot, label) {
+  const sourceRender = path.join(tempRoot, `${label}-source-render`);
+  const outputRender = path.join(tempRoot, `${label}-output-render`);
+  run("pdftoppm", ["-singlefile", "-png", "-r", "144", source, sourceRender], { status: 0 });
+  run("pdftoppm", ["-singlefile", "-png", "-r", "144", output, outputRender], { status: 0 });
+  const sourcePixels = await sharp(`${sourceRender}.png`).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const outputPixels = await sharp(`${outputRender}.png`).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  assert.deepEqual(outputPixels.info, sourcePixels.info);
+
+  const annotation = operations.find((operation) => operation.type === "add_text_annotation");
+  const highlight = operations.find((operation) => operation.type === "add_text_highlight");
+  const link = operations.find((operation) => operation.type === "add_link");
+  assert.ok(
+    annotation?.added?.rect
+      && annotation.added.appearanceBbox
+      && highlight?.added?.quadPoints?.length
+      && highlight.added.appearanceBbox
+      && link?.added?.bbox,
+    `${label} must report provider placement geometry`,
+  );
+  const pageRect = [page.bbox[0], page.bbox[1], page.bbox[0] + page.bbox[2], page.bbox[1] + page.bbox[3]];
+  const noteRect = [
+    annotation.added.appearanceBbox[0],
+    annotation.added.appearanceBbox[1],
+    annotation.added.appearanceBbox[0] + annotation.added.appearanceBbox[2],
+    annotation.added.appearanceBbox[1] + annotation.added.appearanceBbox[3],
+  ];
+  const highlightRect = [
+    highlight.added.appearanceBbox[0],
+    highlight.added.appearanceBbox[1],
+    highlight.added.appearanceBbox[0] + highlight.added.appearanceBbox[2],
+    highlight.added.appearanceBbox[1] + highlight.added.appearanceBbox[3],
+  ];
+  const linkRect = [
+    link.added.bbox[0],
+    link.added.bbox[1],
+    link.added.bbox[0] + link.added.bbox[2],
+    link.added.bbox[1] + link.added.bbox[3],
+  ];
+  const xScale = sourcePixels.info.width / page.bbox[2];
+  const yScale = sourcePixels.info.height / page.bbox[3];
+  const scaleRect = (bounds) => [
+    (bounds[0] - pageRect[0]) * xScale,
+    (bounds[1] - pageRect[1]) * yScale,
+    (bounds[2] - pageRect[0]) * xScale,
+    (bounds[3] - pageRect[1]) * yScale,
+  ];
+  const allowed = [scaleRect(noteRect), scaleRect(highlightRect), scaleRect(linkRect)];
+  let changedPixels = 0;
+  let changedOutsidePlacement = 0;
+  const changedBounds = [Infinity, Infinity, -Infinity, -Infinity];
+  const outsideBounds = [Infinity, Infinity, -Infinity, -Infinity];
+  for (let y = 0; y < sourcePixels.info.height; y += 1) {
+    for (let x = 0; x < sourcePixels.info.width; x += 1) {
+      const offset = (y * sourcePixels.info.width + x) * sourcePixels.info.channels;
+      const changed = Array.from(
+        { length: sourcePixels.info.channels },
+        (_, channel) => Math.abs(sourcePixels.data[offset + channel] - outputPixels.data[offset + channel]),
+      ).some((delta) => delta > 5);
+      if (!changed) continue;
+      changedPixels += 1;
+      changedBounds[0] = Math.min(changedBounds[0], x);
+      changedBounds[1] = Math.min(changedBounds[1], y);
+      changedBounds[2] = Math.max(changedBounds[2], x);
+      changedBounds[3] = Math.max(changedBounds[3], y);
+      if (!allowed.some((bounds) => x >= bounds[0] - 4 && x <= bounds[2] + 4 && y >= bounds[1] - 4 && y <= bounds[3] + 4)) {
+        changedOutsidePlacement += 1;
+        outsideBounds[0] = Math.min(outsideBounds[0], x);
+        outsideBounds[1] = Math.min(outsideBounds[1], y);
+        outsideBounds[2] = Math.max(outsideBounds[2], x);
+        outsideBounds[3] = Math.max(outsideBounds[3], y);
+      }
+    }
+  }
+  assert.ok(changedPixels > 500, `${label} expected visible note/highlight changes, found ${changedPixels}`);
+  assert.equal(changedOutsidePlacement, 0, `${label} changed pixels outside provider geometry: ${JSON.stringify({ changedBounds, outsideBounds, allowed })}`);
+}
+
 async function walk(root) {
   const files = [];
   for (const entry of await fs.readdir(root, { withFileTypes: true })) {
@@ -164,8 +242,10 @@ assert.match(skillText, /set_page_crop/);
 assert.match(skillText, /rotate_page/);
 assert.match(skillText, /delete_annotation/);
 assert.match(skillText, /update_annotation/);
-assert.match(skillText, /add_text_annotation.*source SHA-256.*mupdfPage.*pin.*rewrite/s);
-assert.match(skillText, /add_text_highlight.*source SHA-256.*unique.*text.*rewrite/s);
+assert.match(skillText, /add_text_annotation.*source SHA-256.*pin.*rewrite/s);
+assert.match(skillText, /add_text_highlight.*source SHA-256.*unique native text selection.*rewrite/s);
+assert.match(skillText, /mupdf-page-space.*0\/90\/180\/270.*appearanceBbox/s);
+assert.match(skillText, /raw `mediaBox`\/`cropBox`.*unrotated PDF-space/s);
 assert.match(skillText, /add_link/);
 assert.match(skillText, /delete_link/);
 assert.match(skillText, /update_link/);
@@ -204,6 +284,18 @@ for (const pattern of [
   /Dynamic XFA/,
   /accessible board report example/i,
 ]) assert.match(skillText, pattern);
+const nativePlacementDocs = [
+  await fs.readFile(path.join(skillRoot, "artifact_tool", "API_QUICK_START.md"), "utf8"),
+  await fs.readFile(path.join(skillRoot, "tasks", "forms_annotations.md"), "utf8"),
+  await fs.readFile(path.join(skillRoot, "tasks", "edit_existing.md"), "utf8"),
+  await fs.readFile(path.join(skillRoot, "references", "PROVIDER_MATRIX.md"), "utf8"),
+].join("\n");
+assert.match(nativePlacementDocs, /mupdf-page-space/);
+assert.match(nativePlacementDocs, /0\/90\/180\/270/);
+assert.match(nativePlacementDocs, /appearanceBbox/);
+assert.match(nativePlacementDocs, /raw (?:unrotated )?`?mediaBox`?\/`?cropBox`?.*not.*placement/is);
+assert.doesNotMatch(nativePlacementDocs, /`add_link` accepts only an unrotated/);
+assert.doesNotMatch(nativePlacementDocs, /rotated page, stale hash\/page snapshot/);
 const redactTaskText = await fs.readFile(path.join(skillRoot, "tasks", "redact.md"), "utf8");
 assert.match(redactTaskText, /expected_rotation/);
 assert.match(redactTaskText, /temporarily clears `\/Rotate`.*restores `\/Rotate`/s);
@@ -466,6 +558,89 @@ try {
   assert.equal(rotationPage.rotation, 90);
   const rotationRender = await PdfFile.renderPdf(await fs.readFile(mupdfRotationOutput), { page: 1, dpi: 72 });
   assert.deepEqual([rotationRender.metadata.width, rotationRender.metadata.height], [792, 612]);
+  const hasQpdf = run("qpdf", ["--version"]).status === 0;
+  const hasPoppler = run("pdftoppm", ["-v"]).status === 0;
+  const hasPdfInfo = run("pdfinfo", ["-v"]).status === 0;
+  for (const rotation of [90, 180, 270]) {
+    const rotatedSource = rotation === 90
+      ? mupdfRotationOutput
+      : path.join(tempRoot, `mupdf-native-placement-${rotation}-source.pdf`);
+    if (rotation !== 90) {
+      const rotateOperations = path.join(tempRoot, `mupdf-native-placement-${rotation}-rotate.json`);
+      await fs.writeFile(rotateOperations, JSON.stringify({
+        savePolicy: "rewrite",
+        operations: [{ type: "rotate_page", page: 1, rotation }],
+      }), "utf8");
+      run(process.execPath, [mupdfCli, "edit", mupdfInput, rotateOperations, rotatedSource], { status: 0 });
+    }
+    const sourceBytes = await fs.readFile(rotatedSource);
+    const sourceHash = crypto.createHash("sha256").update(sourceBytes).digest("hex");
+    const sourceInspection = parseResult(run(process.execPath, [mupdfCli, "inspect", rotatedSource], { status: 0 }));
+    const sourcePage = sourceInspection.records.find((record) => record.kind === "mupdfPage" && record.page === 1);
+    assert.equal(sourcePage.rotation, rotation);
+    assert.equal(sourcePage.coordinateSpace, "mupdf-page-space");
+    assert.deepEqual(sourcePage.bbox, rotation === 180 ? [0, 0, 612, 792] : [0, 0, 792, 612]);
+
+    const placementOperations = path.join(tempRoot, `mupdf-native-placement-${rotation}-operations.json`);
+    const placementOutput = path.join(tempRoot, `mupdf-native-placement-${rotation}-output.pdf`);
+    await fs.writeFile(placementOperations, JSON.stringify({
+      savePolicy: "rewrite",
+      operations: [
+        {
+          type: "add_text_annotation",
+          page: 1,
+          sourceSha256: sourceInspection.summary.sourceSha256,
+          expectedPage: { bbox: sourcePage.bbox, rotation: sourcePage.rotation },
+          point: [40, 40],
+          contents: `Rotated CLI review ${rotation}`,
+        },
+        {
+          type: "add_text_highlight",
+          page: 1,
+          sourceSha256: sourceInspection.summary.sourceSha256,
+          expectedPage: { bbox: sourcePage.bbox, rotation: sourcePage.rotation },
+          text: "MuPDF Skill CLI fixture",
+          color: [0.9, 0.7, 0.1],
+        },
+        {
+          type: "add_link",
+          page: 1,
+          sourceSha256: sourceInspection.summary.sourceSha256,
+          expectedPage: { bbox: sourcePage.bbox, rotation: sourcePage.rotation },
+          bbox: [300, 400, 100, 18],
+          url: `https://example.com/native-placement-${rotation}`,
+        },
+      ],
+    }), "utf8");
+    const placed = parseResult(run(process.execPath, [mupdfCli, "edit", rotatedSource, placementOperations, placementOutput], { status: 0 }));
+    assert.deepEqual(
+      placed.operations.map((operation) => ({ type: operation.type, coordinateSpace: operation.coordinateSpace, pageRotation: operation.pageRotation })),
+      ["add_text_annotation", "add_text_highlight", "add_link"].map((type) => ({ type, coordinateSpace: "mupdf-page-space", pageRotation: rotation })),
+    );
+    const expectedNoteAppearance = {
+      90: [60, 40, 20, 20],
+      180: [60, 60, 20, 20],
+      270: [40, 60, 20, 20],
+    }[rotation];
+    assert.deepEqual(placed.operations[0].added.appearanceBbox, expectedNoteAppearance);
+    assert.equal(crypto.createHash("sha256").update(await fs.readFile(rotatedSource)).digest("hex"), sourceHash);
+    const outputInspection = parseResult(run(process.execPath, [mupdfCli, "inspect", placementOutput], { status: 0 }));
+    const outputPage = outputInspection.records.find((record) => record.kind === "mupdfPage" && record.page === 1);
+    const outputNote = outputInspection.records.find((record) => record.kind === "mupdfAnnotation" && record.contents === `Rotated CLI review ${rotation}`);
+    const outputHighlight = outputInspection.records.find((record) => record.kind === "mupdfAnnotation" && record.type === "Highlight");
+    const outputLink = outputInspection.records.find((record) => record.kind === "mupdfLink" && record.url === `https://example.com/native-placement-${rotation}`);
+    assert.equal(outputPage.rotation, rotation);
+    assert.deepEqual(outputPage.bbox, sourcePage.bbox);
+    assert.deepEqual(outputNote.rect, [40, 40, 20, 20]);
+    assert.deepEqual(outputNote.appearanceBbox, expectedNoteAppearance);
+    assert.deepEqual(outputNote.appearanceBbox, placed.operations[0].added.appearanceBbox);
+    assert.equal(outputHighlight.quadPoints.length, 1);
+    assert.deepEqual(outputHighlight.appearanceBbox, placed.operations[1].added.appearanceBbox);
+    assert.deepEqual(outputLink.bbox, [300, 400, 100, 18]);
+    if (hasQpdf) run("qpdf", ["--check", placementOutput], { status: 0 });
+    if (hasPdfInfo) assert.match(run("pdfinfo", [placementOutput], { status: 0 }).stdout, new RegExp(`Page rot:\\s+${rotation}`));
+    if (hasPoppler) await assertNativePlacementPixelScope(rotatedSource, placementOutput, sourcePage, placed.operations, tempRoot, `mupdf-native-placement-${rotation}`);
+  }
   const mupdfInputAlias = path.join(tempRoot, "mupdf-input-alias.pdf");
   await fs.symlink(mupdfInput, mupdfInputAlias);
   const sourceOverwrite = run(process.execPath, [mupdfCli, "edit", mupdfInputAlias, mupdfOperations, mupdfInput], { status: 2 });

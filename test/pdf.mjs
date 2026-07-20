@@ -276,6 +276,7 @@ assert.deepEqual([...mupdfPng.bytes.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 2
 assert.equal(mupdfPng.metadata.provider, "mupdf");
 await assert.rejects(renderPdfWithMuPdf(arbitraryPdf.bytes, { dpi: 72, limits: { maxRenderPixels: 1 } }), /exceeds maxRenderPixels/);
 const mupdfAnnotationSourcePage = mupdfInspect.records.find((record) => record.kind === "mupdfPage" && record.page === 1);
+assert.equal(mupdfAnnotationSourcePage.coordinateSpace, "mupdf-page-space");
 const sourceBoundTextHighlight = {
   type: "add_text_highlight",
   page: 1,
@@ -331,6 +332,8 @@ assert.equal(mupdfHighlighted.metadata.operations[0].beforeCount, 0);
 assert.equal(mupdfHighlighted.metadata.operations[0].afterCount, 1);
 assert.equal(mupdfHighlighted.metadata.operations[0].text, "PDF research artifact");
 assert.deepEqual(mupdfHighlighted.metadata.operations[0].color, [0.2, 0.8, 0.3]);
+assert.equal(mupdfHighlighted.metadata.operations[0].coordinateSpace, "mupdf-page-space");
+assert.equal(mupdfHighlighted.metadata.operations[0].pageRotation, 0);
 const mupdfHighlightInspection = await PdfFile.inspectPdf(mupdfHighlighted);
 const mupdfHighlight = mupdfHighlightInspection.records.find((record) => record.kind === "mupdfAnnotation" && record.type === "Highlight");
 assert.match(mupdfHighlight.id, /^mupdf-annotation-1-\d+$/);
@@ -395,6 +398,8 @@ assert.equal(mupdfAnnotated.metadata.operations[0].beforeCount, 0);
 assert.equal(mupdfAnnotated.metadata.operations[0].afterCount, 1);
 assert.deepEqual(mupdfAnnotated.metadata.operations[0].point, [40, 40]);
 assert.deepEqual(mupdfAnnotated.metadata.operations[0].added.rect, [40, 40, 20, 20]);
+assert.equal(mupdfAnnotated.metadata.operations[0].coordinateSpace, "mupdf-page-space");
+assert.equal(mupdfAnnotated.metadata.operations[0].pageRotation, 0);
 const mupdfAnnotationInspection = await PdfFile.inspectPdf(mupdfAnnotated);
 assert.match(mupdfAnnotationInspection.summary.sourceSha256, /^[a-f0-9]{64}$/);
 assert.equal(mupdfAnnotationInspection.records.find((record) => record.kind === "mupdfPage" && record.page === 1).annotations, 2);
@@ -665,6 +670,44 @@ const offsetMediaCropped = await PdfFile.editPdf(offsetMediaPdf, {
   operations: [{ type: "set_page_crop", page: 1, bbox: offsetMediaCrop }],
 });
 assert.deepEqual((await PdfFile.inspectPdf(offsetMediaCropped)).records.find((record) => record.kind === "mupdfPage" && record.page === 1).cropBox, offsetMediaCrop);
+const offsetCropRotated = await PdfFile.editPdf(offsetMediaCropped, {
+  savePolicy: "rewrite",
+  operations: [{ type: "rotate_page", page: 1, rotation: 90 }],
+});
+const offsetCropRotatedInspection = await PdfFile.inspectPdf(offsetCropRotated);
+const offsetCropRotatedPage = offsetCropRotatedInspection.records.find((record) => record.kind === "mupdfPage" && record.page === 1);
+assert.deepEqual(offsetCropRotatedPage.cropBox, offsetMediaCrop);
+assert.deepEqual(offsetCropRotatedPage.bbox, [0, 0, offsetMediaCrop[3], offsetMediaCrop[2]]);
+const offsetCropPlaced = await PdfFile.editPdf(offsetCropRotated, {
+  savePolicy: "rewrite",
+  operations: [
+    {
+      type: "add_text_annotation",
+      page: 1,
+      sourceSha256: offsetCropRotatedInspection.summary.sourceSha256,
+      expectedPage: { bbox: offsetCropRotatedPage.bbox, rotation: offsetCropRotatedPage.rotation },
+      point: [40, 40],
+      contents: "Offset CropBox review",
+    },
+    {
+      type: "add_link",
+      page: 1,
+      sourceSha256: offsetCropRotatedInspection.summary.sourceSha256,
+      expectedPage: { bbox: offsetCropRotatedPage.bbox, rotation: offsetCropRotatedPage.rotation },
+      bbox: [100, 200, 120, 18],
+      url: "https://example.com/offset-rotated",
+    },
+  ],
+});
+const offsetCropPlacedInspection = await PdfFile.inspectPdf(offsetCropPlaced);
+assert.deepEqual(
+  offsetCropPlacedInspection.records.find((record) => record.kind === "mupdfAnnotation" && record.contents === "Offset CropBox review").rect,
+  [40, 40, 20, 20],
+);
+assert.deepEqual(
+  offsetCropPlacedInspection.records.find((record) => record.kind === "mupdfLink" && record.url === "https://example.com/offset-rotated").bbox,
+  [100, 200, 120, 18],
+);
 const rotatedNativeDocument = new mupdf.PDFDocument(arbitraryPdf.bytes);
 const rotatedNativePage = rotatedNativeDocument.loadPage(0);
 const rotatedNativeObject = rotatedNativePage.getObject();
@@ -681,17 +724,116 @@ await assert.rejects(PdfFile.editPdf(rotatedPdf, {
 }), /set_page_crop supports only unrotated pages/);
 const rotatedAnnotationInspection = await PdfFile.inspectPdf(rotatedPdf);
 const rotatedAnnotationPage = rotatedAnnotationInspection.records.find((record) => record.kind === "mupdfPage" && record.page === 1);
-await assert.rejects(PdfFile.editPdf(rotatedPdf, {
-  savePolicy: "rewrite",
-  operations: [{
-    type: "add_text_annotation",
-    page: 1,
-    sourceSha256: rotatedAnnotationInspection.summary.sourceSha256,
-    expectedPage: { bbox: rotatedAnnotationPage.bbox, rotation: rotatedAnnotationPage.rotation },
-    point: [40, 40],
-    contents: "Rotated review",
-  }],
-}), /add_text_annotation supports only unrotated pages/);
+assert.deepEqual(rotatedAnnotationPage.bbox, [0, 0, 792, 612]);
+assert.equal(rotatedAnnotationPage.coordinateSpace, "mupdf-page-space");
+for (const rotation of [90, 180, 270]) {
+  const source = rotation === 90
+    ? rotatedPdf
+    : await PdfFile.editPdf(arbitraryPdf, {
+      savePolicy: "rewrite",
+      operations: [{ type: "rotate_page", page: 1, rotation }],
+    });
+  const sourceInspection = await PdfFile.inspectPdf(source, { maxChars: 100_000 });
+  const sourcePage = sourceInspection.records.find((record) => record.kind === "mupdfPage" && record.page === 1);
+  const expectedBounds = rotation === 180 ? [0, 0, 612, 792] : [0, 0, 792, 612];
+  assert.equal(sourcePage.rotation, rotation);
+  assert.deepEqual(sourcePage.bbox, expectedBounds);
+  assert.equal(sourcePage.coordinateSpace, "mupdf-page-space");
+  const rotatedPlacements = await PdfFile.editPdf(source, {
+    savePolicy: "rewrite",
+    operations: [
+      {
+        type: "add_text_annotation",
+        page: 1,
+        sourceSha256: sourceInspection.summary.sourceSha256,
+        expectedPage: { bbox: sourcePage.bbox, rotation: sourcePage.rotation },
+        point: [40, 40],
+        contents: `Rotated review ${rotation}`,
+      },
+      {
+        type: "add_text_highlight",
+        page: 1,
+        sourceSha256: sourceInspection.summary.sourceSha256,
+        expectedPage: { bbox: sourcePage.bbox, rotation: sourcePage.rotation },
+        text: "PDF research artifact",
+        color: [0.9, 0.7, 0.1],
+      },
+      {
+        type: "add_link",
+        page: 1,
+        sourceSha256: sourceInspection.summary.sourceSha256,
+        expectedPage: { bbox: sourcePage.bbox, rotation: sourcePage.rotation },
+        bbox: [300, 400, 100, 18],
+        url: `https://example.com/rotation-${rotation}`,
+      },
+    ],
+  });
+  assert.deepEqual(
+    rotatedPlacements.metadata.operations.map((operation) => ({
+      type: operation.type,
+      coordinateSpace: operation.coordinateSpace,
+      pageRotation: operation.pageRotation,
+    })),
+    ["add_text_annotation", "add_text_highlight", "add_link"].map((type) => ({
+      type,
+      coordinateSpace: "mupdf-page-space",
+      pageRotation: rotation,
+    })),
+  );
+  const expectedNoteAppearance = {
+    90: [60, 40, 20, 20],
+    180: [60, 60, 20, 20],
+    270: [40, 60, 20, 20],
+  }[rotation];
+  assert.deepEqual(rotatedPlacements.metadata.operations[0].added.appearanceBbox, expectedNoteAppearance);
+  const outputInspection = await PdfFile.inspectPdf(rotatedPlacements, { maxChars: 100_000 });
+  const outputPage = outputInspection.records.find((record) => record.kind === "mupdfPage" && record.page === 1);
+  const note = outputInspection.records.find((record) => record.kind === "mupdfAnnotation" && record.contents === `Rotated review ${rotation}`);
+  const highlight = outputInspection.records.find((record) => record.kind === "mupdfAnnotation" && record.type === "Highlight");
+  const link = outputInspection.records.find((record) => record.kind === "mupdfLink" && record.url === `https://example.com/rotation-${rotation}`);
+  assert.equal(outputPage.rotation, rotation);
+  assert.deepEqual(outputPage.bbox, sourcePage.bbox);
+  assert.deepEqual(note.rect, [40, 40, 20, 20]);
+  assert.deepEqual(note.appearanceBbox, expectedNoteAppearance);
+  assert.deepEqual(note.appearanceBbox, rotatedPlacements.metadata.operations[0].added.appearanceBbox);
+  assert.equal(highlight.quadPoints.length, 1);
+  assert.deepEqual(highlight.appearanceBbox, rotatedPlacements.metadata.operations[1].added.appearanceBbox);
+  assert.ok(highlight.quadPoints[0].every((coordinate, index) => coordinate >= 0 && coordinate <= sourcePage.bbox[index % 2 === 0 ? 2 : 3]));
+  assert.deepEqual(link.bbox, [300, 400, 100, 18]);
+  const [beforeRender, afterRender] = await Promise.all([
+    PdfFile.renderPdf(source, { page: 1, dpi: 72 }),
+    PdfFile.renderPdf(rotatedPlacements, { page: 1, dpi: 72 }),
+  ]);
+  assert.deepEqual([afterRender.metadata.width, afterRender.metadata.height], [beforeRender.metadata.width, beforeRender.metadata.height]);
+  assert.notEqual(Buffer.compare(Buffer.from(beforeRender.bytes), Buffer.from(afterRender.bytes)), 0, `rotation ${rotation} note/highlight must change rendered pixels`);
+  await assert.rejects(PdfFile.editPdf(source, {
+    savePolicy: "rewrite",
+    operations: [{
+      type: "add_link",
+      page: 1,
+      sourceSha256: sourceInspection.summary.sourceSha256,
+      expectedPage: { bbox: sourcePage.bbox, rotation: (rotation + 90) % 360 },
+      bbox: [300, 400, 100, 18],
+      url: "https://example.com/stale-rotation",
+    }],
+  }), /precondition page rotation did not match/);
+  const edgePoint = rotation === 90
+    ? [sourcePage.bbox[2] - 20, 40]
+    : rotation === 180
+      ? [sourcePage.bbox[2] - 20, sourcePage.bbox[3] - 20]
+      : [40, sourcePage.bbox[3] - 20];
+  await assert.rejects(PdfFile.editPdf(source, {
+    savePolicy: "rewrite",
+    operations: [{
+      type: "add_text_annotation",
+      page: 1,
+      sourceSha256: sourceInspection.summary.sourceSha256,
+      expectedPage: { bbox: sourcePage.bbox, rotation: sourcePage.rotation },
+      point: edgePoint,
+      contents: "Must not clip",
+    }],
+  }), /annotation appearance outside the inspected visible CropBox/);
+}
 const mupdfRedacted = await PdfFile.editPdf(arbitraryPdf, {
   savePolicy: "rewrite",
   operations: [{ type: "redact_text", page: 2, term: "Second page notes" }],
@@ -1018,7 +1160,7 @@ const rotatedLinkSource = await PdfFile.editPdf(arbitraryLinkPdf, {
 });
 const rotatedLinkInspection = await PdfFile.inspectPdf(rotatedLinkSource);
 const rotatedLinkPage = rotatedLinkInspection.records.find((record) => record.kind === "mupdfPage" && record.page === removableLinkPage.page);
-await assert.rejects(PdfFile.editPdf(rotatedLinkSource, {
+const rotatedLinkAdded = await PdfFile.editPdf(rotatedLinkSource, {
   savePolicy: "rewrite",
   operations: [{
     type: "add_link",
@@ -1028,7 +1170,14 @@ await assert.rejects(PdfFile.editPdf(rotatedLinkSource, {
     bbox: [320, 180, 120, 18],
     url: "https://example.com/new-link",
   }],
-}), /supports only unrotated pages/);
+});
+assert.equal(rotatedLinkAdded.metadata.operations[0].coordinateSpace, "mupdf-page-space");
+assert.equal(rotatedLinkAdded.metadata.operations[0].pageRotation, 90);
+const rotatedLinkAddedInspection = await PdfFile.inspectPdf(rotatedLinkAdded);
+assert.deepEqual(
+  rotatedLinkAddedInspection.records.find((record) => record.kind === "mupdfLink" && record.url === "https://example.com/new-link").bbox,
+  [320, 180, 120, 18],
+);
 const mupdfLinkAdded = await PdfFile.editPdf(arbitraryLinkPdf, {
   savePolicy: "rewrite",
   operations: [{
@@ -1043,6 +1192,8 @@ const mupdfLinkAdded = await PdfFile.editPdf(arbitraryLinkPdf, {
 assert.equal(mupdfLinkAdded.metadata.operations[0].type, "add_link");
 assert.equal(mupdfLinkAdded.metadata.operations[0].beforeCount, 1);
 assert.equal(mupdfLinkAdded.metadata.operations[0].afterCount, 2);
+assert.equal(mupdfLinkAdded.metadata.operations[0].coordinateSpace, "mupdf-page-space");
+assert.equal(mupdfLinkAdded.metadata.operations[0].pageRotation, 0);
 assert.deepEqual(mupdfLinkAdded.metadata.operations[0].added.bbox, [320, 180, 120, 18]);
 const mupdfLinkAddedInspection = await PdfFile.inspectPdf(mupdfLinkAdded);
 const addedLink = mupdfLinkAddedInspection.records.find((record) => record.kind === "mupdfLink" && record.url === "https://example.com/new-link");

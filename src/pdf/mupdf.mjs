@@ -58,6 +58,7 @@ const LINK_ID_PREFIX = "mupdf-link";
 const LINK_EXPECTATION_FIELDS = new Set(["url", "bbox", "external"]);
 const LINK_PATCH_FIELDS = new Set(["url"]);
 const PAGE_EXPECTATION_FIELDS = new Set(["bbox", "rotation"]);
+const MUPDF_PAGE_COORDINATE_SPACE = "mupdf-page-space";
 const SAFE_NATIVE_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 const TEXT_ANNOTATION_ANCHOR_SIZE = 20;
 const TEXT_ANNOTATION_OPERATION_FIELDS = new Set(["type", "page", "pageIndex", "sourceSha256", "expectedPage", "point", "contents", "author", "subject"]);
@@ -251,6 +252,23 @@ function parseAnnotationId(value, operationName = "delete_annotation") {
   return { page, xref };
 }
 
+function annotationAppearanceBbox(annotation) {
+  try {
+    const bounds = annotation.getBounds();
+    if (!Array.isArray(bounds) || bounds.length !== 4 || !bounds.every((value) => Number.isFinite(Number(value)))) return undefined;
+    const bbox = pdfRectToBbox(bounds);
+    if (annotation.getType() !== "Text" || !annotation.hasRect()) return bbox;
+    const rect = pdfRectToBbox(annotation.getRect());
+    // Native Text notes carry NoZoom/NoRotate flags. MuPDF reports the stock
+    // icon artwork as 16x16 points, while other native renderers can paint the
+    // full annotation rectangle at the transformed icon anchor. Retain the
+    // MuPDF-transformed origin but conservatively cover both dimensions.
+    return [bbox[0], bbox[1], Math.max(bbox[2], rect[2]), Math.max(bbox[3], rect[3])];
+  } catch {
+    return undefined;
+  }
+}
+
 function nativeAnnotation(annotation, pageNumber) {
   const xref = annotationXref(annotation);
   const quadPoints = annotation.hasQuadPoints()
@@ -262,6 +280,7 @@ function nativeAnnotation(annotation, pageNumber) {
     xref,
     type: annotation.getType(),
     rect: annotation.hasRect() ? pdfRectToBbox(annotation.getRect()) : undefined,
+    appearanceBbox: annotationAppearanceBbox(annotation),
     quadPoints,
     color: Array.isArray(color) && color.length ? color.map(Number) : undefined,
     contents: annotation.getContents() || undefined,
@@ -457,7 +476,7 @@ function pageExpectationMismatch(actual, expected) {
 
 function textAnnotationPoint(value) {
   if (!Array.isArray(value) || value.length !== 2 || !value.every((coordinate) => Number.isFinite(Number(coordinate)))) {
-    throw new Error("add_text_annotation point must be [x, y] in the inspected unrotated mupdfPage.bbox coordinate space.");
+    throw new Error("add_text_annotation point must be [x, y] in the inspected mupdfPage.bbox coordinate space.");
   }
   return value.map(Number);
 }
@@ -1084,6 +1103,7 @@ export async function inspectPdfWithMuPdf(input, options = {}) {
             kind: "mupdfPage",
             page: index + 1,
             bbox: pdfRectToBbox(page.getBounds("CropBox")),
+            coordinateSpace: MUPDF_PAGE_COORDINATE_SPACE,
             mediaBox: mediaBox && pdfRectToBbox(mediaBox),
             cropBox: cropBox && pdfRectToBbox(cropBox),
             rotation: rawPageRotation(page),
@@ -1353,9 +1373,6 @@ function applyTextAnnotationAddition(document, operation, context = {}) {
     if (pageMismatch) {
       throw new Error(`add_text_annotation precondition page ${pageMismatch} did not match page ${index + 1}; refusing stale coordinate evidence.`);
     }
-    if (actualPage.rotation !== 0) {
-      throw new Error(`add_text_annotation supports only unrotated pages; page ${index + 1} has /Rotate ${actualPage.rotation}. Use a specialist provider for rotated annotation placement.`);
-    }
     const visibleRect = bboxToPdfRect(actualPage.bbox, "add_text_annotation inspected CropBox");
     const anchorRect = [
       request.point[0],
@@ -1388,6 +1405,9 @@ function applyTextAnnotationAddition(document, operation, context = {}) {
     if (!immediate.rect || !pdfRectContains(visibleRect, bboxToPdfRect(immediate.rect))) {
       throw new Error("MuPDF placed the Text annotation outside the inspected visible CropBox; refusing an ambiguous addition.");
     }
+    if (!immediate.appearanceBbox || !pdfRectContains(visibleRect, bboxToPdfRect(immediate.appearanceBbox))) {
+      throw new Error("MuPDF placed the Text annotation appearance outside the inspected visible CropBox; choose a safer page-space point.");
+    }
     retained = page.getAnnotations();
     const added = retained.filter((annotation) => annotationXref(annotation) === immediate.xref);
     if (retained.length !== beforeCount + 1 || added.length !== 1) {
@@ -1401,10 +1421,15 @@ function applyTextAnnotationAddition(document, operation, context = {}) {
     if (!addedRecord.rect || !pdfRectContains(visibleRect, bboxToPdfRect(addedRecord.rect))) {
       throw new Error("MuPDF retained the Text annotation outside the inspected visible CropBox; refusing an ambiguous addition.");
     }
+    if (!addedRecord.appearanceBbox || !pdfRectContains(visibleRect, bboxToPdfRect(addedRecord.appearanceBbox))) {
+      throw new Error("MuPDF retained the Text annotation appearance outside the inspected visible CropBox; refusing an ambiguous addition.");
+    }
     return {
       type: "add_text_annotation",
       page: index + 1,
       expectedPage,
+      coordinateSpace: MUPDF_PAGE_COORDINATE_SPACE,
+      pageRotation: actualPage.rotation,
       point: request.point,
       added: addedRecord,
       beforeCount,
@@ -1431,9 +1456,6 @@ function applyTextHighlightAddition(document, operation, context = {}) {
     const pageMismatch = pageExpectationMismatch(actualPage, expectedPage);
     if (pageMismatch) {
       throw new Error(`add_text_highlight precondition page ${pageMismatch} did not match page ${index + 1}; refusing stale text-selection evidence.`);
-    }
-    if (actualPage.rotation !== 0) {
-      throw new Error(`add_text_highlight supports only unrotated pages; page ${index + 1} has /Rotate ${actualPage.rotation}. Use a specialist provider for rotated text selection.`);
     }
     const visibleRect = bboxToPdfRect(actualPage.bbox, "add_text_highlight inspected CropBox");
     const hits = page.search(request.text, 2);
@@ -1467,6 +1489,9 @@ function applyTextHighlightAddition(document, operation, context = {}) {
     if (mismatch) {
       throw new Error(`MuPDF did not preserve add_text_highlight ${mismatch} before save; refusing an ambiguous addition.`);
     }
+    if (!immediate.appearanceBbox || !pdfRectContains(visibleRect, bboxToPdfRect(immediate.appearanceBbox))) {
+      throw new Error("MuPDF placed the Highlight annotation appearance outside the inspected visible CropBox; refusing an ambiguous addition.");
+    }
     retained = page.getAnnotations();
     const added = retained.filter((annotation) => annotationXref(annotation) === immediate.xref);
     if (retained.length !== beforeCount + 1 || added.length !== 1) {
@@ -1477,10 +1502,15 @@ function applyTextHighlightAddition(document, operation, context = {}) {
     if (mismatch) {
       throw new Error(`MuPDF did not retain add_text_highlight ${mismatch} on page ${index + 1}; refusing an ambiguous addition.`);
     }
+    if (!addedRecord.appearanceBbox || !pdfRectContains(visibleRect, bboxToPdfRect(addedRecord.appearanceBbox))) {
+      throw new Error("MuPDF retained the Highlight annotation appearance outside the inspected visible CropBox; refusing an ambiguous addition.");
+    }
     return {
       type: "add_text_highlight",
       page: index + 1,
       expectedPage,
+      coordinateSpace: MUPDF_PAGE_COORDINATE_SPACE,
+      pageRotation: actualPage.rotation,
       text: request.text,
       color: request.color,
       added: addedRecord,
@@ -1712,9 +1742,6 @@ function applyLinkAddition(document, operation, context = {}) {
     if (pageMismatch) {
       throw new Error(`add_link precondition page ${pageMismatch} did not match page ${index + 1}; refusing stale coordinate evidence.`);
     }
-    if (actualPage.rotation !== 0) {
-      throw new Error(`add_link supports only unrotated pages; page ${index + 1} has /Rotate ${actualPage.rotation}. Use a specialist provider for rotated link placement.`);
-    }
     if (!pdfRectContains(bboxToPdfRect(actualPage.bbox), requestedRect)) {
       throw new Error(`add_link bbox must be fully inside the inspected visible CropBox on page ${index + 1}.`);
     }
@@ -1741,6 +1768,8 @@ function applyLinkAddition(document, operation, context = {}) {
       type: "add_link",
       page: index + 1,
       expectedPage,
+      coordinateSpace: MUPDF_PAGE_COORDINATE_SPACE,
+      pageRotation: actualPage.rotation,
       added: {
         url: addedMatches[0].url,
         bbox: addedMatches[0].bbox,

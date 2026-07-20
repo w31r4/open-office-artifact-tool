@@ -95,8 +95,11 @@ or image editing; route those tasks explicitly to the specialist provider.
 Copy the exact inspection hash and target `mupdfPage` evidence. This is a
 source-bound **pin** operation, not a rectangle/layout API: MuPDF normalizes
 the native Text-note icon size. `point` is `[x, y]` in the inspected visible
-`mupdfPage.bbox` coordinate space, and its native footprint must fit fully
-inside the unrotated page:
+`mupdfPage.bbox` coordinate space. Inspection labels it
+`mupdf-page-space`: upper-left origin, y downward, with the current
+0/90/180/270-degree page rotation already applied. Raw `mediaBox`/`cropBox`
+remain unrotated PDF-space facts. The native footprint must fit fully inside
+the visible page:
 
 ```json
 [
@@ -116,17 +119,21 @@ inside the unrotated page:
 ]
 ```
 
-This operation is rewrite-only. It rejects stale hashes/page geometry, rotated
-pages, out-of-window pins, `text`/`bbox`/`rect` aliases, icon choices, empty
-content, and incremental output. The operation audit contains the actual
-provider-normalized annotation rectangle; re-inspect the delivered bytes before
-using its fresh `mupdf-annotation-<page>-<xref>` locator for a later update or
-deletion. Do not treat that xref as a persistent document identity.
+This operation is rewrite-only and supports page rotations 0/90/180/270 when
+the snapshot matches. It rejects stale hashes/page geometry, out-of-window
+pins, `text`/`bbox`/`rect` aliases, icon choices, empty content, clipped native
+appearance, and incremental output. The operation audit contains the actual
+provider-normalized annotation rectangle and a conservative `appearanceBbox`
+that covers native Text-note `NoZoom`/`NoRotate` renderer differences.
+Re-inspect the delivered bytes and compare that appearance before using its
+fresh `mupdf-annotation-<page>-<xref>` locator for a later update or deletion.
+Do not treat that xref as a persistent document identity.
 
 ## Highlight one unique imported text selection
 
 Use a native Highlight only when the requested input text selects exactly one
-native location on the inspected unrotated visible page. This is deliberately
+native location on the inspected visible page. Selection uses the same
+rotation-aware `mupdf-page-space` reported by inspection. This is deliberately
 not a rectangle, quad, or generic search-and-replace API:
 
 ```json
@@ -152,9 +159,10 @@ the exact page and requires exactly one hit; zero or multiple hits fail rather
 than allowing an agent to guess an occurrence. The optional color is RGB in
 the closed `[0,1]` interval (the default is yellow), and optional `contents`,
 `author`, and `subject` must be non-empty strings. Caller-supplied quads,
-rectangles, rotated pages, stale source/page evidence, native selections that
-leave the inspected CropBox, and incremental output fail closed. The rewrite
-audit carries the provider's actual quadrilateral/color evidence; re-inspect
+rectangles, stale source/page evidence, native appearances that leave the
+inspected visible bbox, and incremental output fail closed. Page rotations
+0/90/180/270 are supported when the snapshot matches. The rewrite audit carries
+the provider's actual quadrilateral/color/`appearanceBbox` evidence; re-inspect
 and render the delivered bytes before handoff. The resulting annotation xref
 is current-source-only, not a persistent document identity.
 
@@ -246,12 +254,15 @@ coordinates, not a PDF object-array index or a viewer-relative guess:
 ```
 
 `add_link` requires the exact input hash and both the inspected page bbox and
-rotation. It accepts only an unrotated page, a rectangle fully inside the
-visible CropBox, and an internal `#...` destination or absolute `http`,
-`https`, or `mailto` URL. It rejects `javascript:`, `file:`, `data:`, a stale
-page snapshot, and an exact duplicate URL/rectangle pair rather than creating
-an output that cannot later be selected uniquely. It is rewrite-only. Reopen
-the output before using its newly generated `mupdf-link` locator.
+rotation. It accepts page rotations 0/90/180/270 and a rectangle fully inside
+the rotation-aware `mupdf-page-space` bbox, plus an internal `#...` destination
+or absolute `http`, `https`, or `mailto` URL. Raw unrotated
+`mediaBox`/`cropBox` values are not link-placement coordinates. It rejects
+`javascript:`, `file:`, `data:`, a stale page snapshot, and an exact duplicate
+URL/rectangle pair rather than creating an output that cannot later be selected
+uniquely. It is rewrite-only and reports `coordinateSpace`/`pageRotation`.
+Reopen the output and confirm the same link bounds before using its newly
+generated `mupdf-link` locator.
 
 To move a source-bound imported link, put its `delete_link` operation followed
 by `add_link` in the **same** rewrite operation list. Reuse the original source

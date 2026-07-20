@@ -214,14 +214,20 @@ const withReviewNote = await PdfFile.editPdf(input, {
 await withReviewNote.save("third-party-with-review-note.pdf");
 ```
 
-The pin must fit within an unrotated inspected `mupdfPage.bbox`; `text`,
-`bbox`, `rect`, icon selection, stale evidence, and incremental save are
-rejected. Re-inspect the rewrite before relying on the fresh annotation locator.
+The pin is measured in the inspected page's explicit `mupdf-page-space`: an
+upper-left origin with y increasing downward and the current 0/90/180/270-degree
+rotation already applied. Raw `mediaBox`/`cropBox` records are separate
+unrotated PDF-space facts and are not placement coordinates. The operation
+must fit both its requested 20-point anchor rectangle and the provider-reported
+conservative `appearanceBbox` inside `mupdfPage.bbox`; `text`, `bbox`, `rect`,
+icon selection, stale evidence, clipped appearance, and incremental save are
+rejected. Re-inspect the rewrite and compare the fresh annotation
+`appearanceBbox` before relying on its current-source-only locator.
 
 For a review highlight, give the provider one requested text string instead of
 trying to calculate a rectangle or character quadrilaterals. It is accepted
-only if native search finds exactly one selection on the same inspected,
-unrotated visible page:
+only if native search finds exactly one selection on the same inspected visible
+page. The provider uses that page's rotation-aware `mupdf-page-space`:
 
 ```js
 const highlightPage = inspection.records.find((record) => record.kind === "mupdfPage"
@@ -247,10 +253,12 @@ await withHighlight.save("third-party-with-review-highlight.pdf");
 `text` is non-empty and at most 4,096 characters. The optional RGB color uses
 three `[0,1]` components (yellow by default), while optional `contents`,
 `author`, and `subject` carry non-empty review metadata. Caller quads or
-rectangles, zero/multiple native hits, a rotated/stale page, a selection beyond
-the visible CropBox, and incremental save are rejected. Re-inspect and render
-the rewrite before handoff; its `mupdfAnnotation` record returns the native
-Highlight quadrilaterals/color and a current-source-only locator.
+rectangles, zero/multiple native hits, stale page evidence, a native
+`appearanceBbox` beyond the visible page, and incremental save are rejected.
+Right-angle page rotation itself is supported and must match `expectedPage`.
+Re-inspect and render the rewrite before handoff; its `mupdfAnnotation` record
+returns the native Highlight quadrilaterals/color/appearance and a
+current-source-only locator.
 
 For an imported annotation, do not use its array index as identity. Inspect the
 exact input bytes, retain the returned `summary.sourceSha256`, and delete only
@@ -361,8 +369,9 @@ await withoutObsoleteLink.save("third-party-without-obsolete-link.pdf");
 ```
 
 To add a new link, bind its rectangle to the same inspected page geometry.
-`add_link` accepts only an unrotated visible CropBox and internal `#...` or
-absolute `http`, `https`, and `mailto` destinations:
+`add_link` uses the inspected rotation-aware `mupdf-page-space`, supports page
+rotations 0/90/180/270, and accepts only internal `#...` or absolute `http`,
+`https`, and `mailto` destinations:
 
 ```js
 const withCurrentPolicyLink = await PdfFile.editPdf(input, {
@@ -378,6 +387,11 @@ const withCurrentPolicyLink = await PdfFile.editPdf(input, {
 });
 await withCurrentPolicyLink.save("third-party-current-policy-link.pdf");
 ```
+
+The rectangle must fit fully within the inspected `mupdfPage.bbox`; do not use
+raw unrotated `mediaBox`/`cropBox` coordinates on a rotated page. The operation
+audit reports `coordinateSpace` and `pageRotation`, and a fresh inspection must
+reproduce the added bounds before delivery.
 
 To replace that same link's target without moving its native rectangle, use the
 same locator and snapshot with a URL-only patch:

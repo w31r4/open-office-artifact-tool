@@ -2155,6 +2155,69 @@ cleanliness, release metadata, clean-install tarball, OfficeBridge, and
 OpenChestnut gates. `npm whoami` remains the external publish gate, and no
 publish or tag/release operation has been attempted.
 
+### PDF right-angle native review placements
+
+On 2026-07-20, the required MuPDF.js direct-original route extended its three
+source-bound placement primitives—`add_text_annotation`,
+`add_text_highlight`, and `add_link`—from zero-degree pages to pages whose
+current `/Rotate` value is 0, 90, 180, or 270 degrees. This is a coordinate-
+contract change, not a lossy page normalization: the original page boxes,
+content, rotation, and source bytes remain the operation's bound input.
+
+Native inspection now labels the effective visible `mupdfPage.bbox` as
+`coordinateSpace: "mupdf-page-space"`. This space has an upper-left origin,
+y increases downward, and the current page rotation is already applied. The
+raw `mediaBox` and `cropBox` records remain unrotated PDF-space facts; they are
+not interchangeable with placement coordinates. This follows MuPDF's public
+[page-space contract](https://mupdf.readthedocs.io/en/1.26.2/reference/javascript/types/Page.html)
+and its documented
+[`PDFPage.getTransform()` mapping](https://mupdf.readthedocs.io/en/latest/reference/javascript/types/PDFPage.html)
+between MuPDF page space and PDF user space.
+
+Each placement still requires the exact inspected source SHA-256 and
+`expectedPage={bbox,rotation}`, reports `coordinateSpace` plus `pageRotation`,
+requires a rewrite, and must be re-inspected after save. A stale rotation or
+bbox, unsafe/duplicate link, ambiguous Highlight search, caller-supplied
+Highlight geometry, or out-of-page placement fails before publication. Offset
+CropBoxes are covered as normalized visible page space; `set_page_crop` itself
+remains a separate unrotated raw-PDF-coordinate operation.
+
+Native annotation records now also expose `appearanceBbox`. Highlight
+appearances use MuPDF's native annotation bounds. Text notes conservatively
+combine the transformed native bounds with the requested rectangle dimensions:
+their native `NoZoom`/`NoRotate` flags can cause Poppler and MuPDF to report or
+paint different footprint sizes at a rotated anchor. Both the requested note
+rectangle and conservative appearance must fit the visible page, preventing an
+apparently valid edge pin from clipping in another renderer. The public
+[PDFAnnotation contract](https://mupdf.readthedocs.io/en/latest/reference/javascript/types/PDFAnnotation.html)
+remains the provider source for bounds, rectangle, and quadrilateral facts.
+
+Core and packed-Skill CLI fixtures cover 90/180/270-degree pages plus a
+nonzero-offset CropBox. They prove source hash immutability, exact page
+rotation/bbox retention, operation audit metadata, deterministic Text-note
+appearance anchors, Highlight quadrilateral/appearance retention, exact link
+bounds after second inspection, stale-snapshot refusal, and edge-appearance
+fail-closed behavior. qpdf reopens every output, `pdfinfo` proves the retained
+rotation, and Poppler pixel comparison permits changes only inside the reported
+note/highlight/link appearance regions. A separate 90-degree manual Poppler
+review confirmed that the page orientation and source text remain stable, the
+Highlight follows the rotated text, and the Text-note icon appears fully inside
+the expected page-space corner without clipping.
+
+The local candidate passed the complete `npm test` suite with the real
+PyMuPDF/Tesseract, qpdf, pyHanko, Playwright, LibreOffice, Poppler, packaged
+Skill, PromptBench, and release/package paths. OpenChestnut passed `295/295`;
+OfficeBridge passed `5/5`; `npm run proto:check`, deterministic API-document
+generation, two-source-build OpenChestnut reproducibility, `npm run test:pack`,
+and the complete offline release check passed. The manifest-bound OpenChestnut
+runtime remains 38 files and 14,721,216 bytes. The npm dry-run contains 467
+files, 9,023,833 compressed bytes, and 23,783,245 unpacked bytes. Real pikepdf,
+veraPDF, and OCRmyPDF repeats were not configured locally, so their
+contract/adversarial tests passed while those environment-gated executions
+were skipped; hosted CI supplies the isolated providers. `npm whoami` still
+returns `ENEEDAUTH`, so no publish or tag/release operation was attempted.
+Hosted evidence is recorded after the candidate commit.
+
 ## Publishing
 
 Before publishing:
