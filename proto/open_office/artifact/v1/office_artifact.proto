@@ -2628,6 +2628,10 @@ message SpreadsheetChartDataLabelsArtifact {
   bool show_category_name = 2;
   optional SpreadsheetChartDataLabelPosition position = 3;
   optional bool show_series_name = 4;
+  // Circular charts commonly label the share rather than the raw value.
+  // Presence distinguishes an explicit native false from omission so an
+  // imported c:showPercent node can round-trip without inventing a default.
+  optional bool show_percent = 5;
 }
 
 // Appended to preserve every pre-existing generated descriptor index while the

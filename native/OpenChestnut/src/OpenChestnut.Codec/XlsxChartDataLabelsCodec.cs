@@ -5,7 +5,8 @@ namespace OpenChestnut.Codec;
 
 // Owns one plot-level c:dLbls container with optional c:dLblPos plus direct
 // c:showVal/c:showCatName booleans plus presence-aware c:showSerName.
-// Standard unsupported show flags are accepted only when false and retained
+// Percentage visibility is presence-aware for circular-chart labels. Other
+// unsupported standard show flags are accepted only when false and retained
 // during another bounded edit.
 internal static class XlsxChartDataLabelsCodec
 {
@@ -17,6 +18,8 @@ internal static class XlsxChartDataLabelsCodec
 
     internal static void Validate(SpreadsheetChartArtifact chart, string worksheetId)
     {
+        if (chart.DataLabels?.HasShowPercent == true && chart.DataLabels.ShowPercent && chart.Type is not (SpreadsheetChartType.Pie or SpreadsheetChartType.Doughnut))
+            throw new CodecException("invalid_spreadsheet_chart", $"Worksheet {worksheetId} chart {chart.Id} percentage data labels require a pie or doughnut chart.");
         if (chart.DataLabels?.HasPosition == true && chart.DataLabels.Position is not (
             SpreadsheetChartDataLabelPosition.BestFit or SpreadsheetChartDataLabelPosition.Bottom or
             SpreadsheetChartDataLabelPosition.Center or SpreadsheetChartDataLabelPosition.InsideBase or
@@ -39,7 +42,7 @@ internal static class XlsxChartDataLabelsCodec
         var showValue = children.SingleOrDefault(child => child.Name == ChartNs + "showVal");
         var showCategoryName = children.SingleOrDefault(child => child.Name == ChartNs + "showCatName");
         if (!TryBoolean(showValue, out var value) || !TryBoolean(showCategoryName, out var categoryName)) return false;
-        foreach (var name in OrderedFlags.Where(name => name is not "showVal" and not "showCatName" and not "showSerName"))
+        foreach (var name in OrderedFlags.Where(name => name is not "showVal" and not "showCatName" and not "showSerName" and not "showPercent"))
         {
             var element = children.SingleOrDefault(child => child.Name == ChartNs + name);
             if (element is not null && (!TryBoolean(element, out var enabled) || enabled)) return false;
@@ -50,6 +53,13 @@ internal static class XlsxChartDataLabelsCodec
         {
             if (!TryBoolean(showSeriesName, out var seriesName)) return false;
             dataLabels.ShowSeriesName = seriesName;
+        }
+        var showPercent = children.SingleOrDefault(child => child.Name == ChartNs + "showPercent");
+        if (showPercent is not null)
+        {
+            if (!TryBoolean(showPercent, out var percent)) return false;
+            if (percent && chart.Type is not (SpreadsheetChartType.Pie or SpreadsheetChartType.Doughnut)) return false;
+            dataLabels.ShowPercent = percent;
         }
         var nativePosition = children.SingleOrDefault(child => child.Name == ChartNs + "dLblPos");
         if (nativePosition is not null)
@@ -66,7 +76,8 @@ internal static class XlsxChartDataLabelsCodec
             PositionElement(labels),
             BooleanElement("showVal", labels.ShowValue),
             BooleanElement("showCatName", labels.ShowCategoryName),
-            labels.HasShowSeriesName ? BooleanElement("showSerName", labels.ShowSeriesName) : null);
+            labels.HasShowSeriesName ? BooleanElement("showSerName", labels.ShowSeriesName) : null,
+            labels.HasShowPercent ? BooleanElement("showPercent", labels.ShowPercent) : null);
 
     internal static void Patch(XElement plot, SpreadsheetChartDataLabelsArtifact? labels)
     {
@@ -98,11 +109,12 @@ internal static class XlsxChartDataLabelsCodec
         existing.Element(ChartNs + "showVal")!.SetAttributeValue("val", labels.ShowValue ? "1" : "0");
         existing.Element(ChartNs + "showCatName")!.SetAttributeValue("val", labels.ShowCategoryName ? "1" : "0");
         PatchOptionalBoolean(existing, "showSerName", labels.HasShowSeriesName ? labels.ShowSeriesName : null);
+        PatchOptionalBoolean(existing, "showPercent", labels.HasShowPercent ? labels.ShowPercent : null);
     }
 
     internal static string Semantics(SpreadsheetChartDataLabelsArtifact? labels) => labels is null
         ? "-"
-        : $"value:{(labels.ShowValue ? 1 : 0)};category:{(labels.ShowCategoryName ? 1 : 0)};series:{(labels.HasShowSeriesName ? labels.ShowSeriesName ? "1" : "0" : "-")};position:{(labels.HasPosition ? PositionValue(labels.Position) : "-")}";
+        : $"value:{(labels.ShowValue ? 1 : 0)};category:{(labels.ShowCategoryName ? 1 : 0)};series:{(labels.HasShowSeriesName ? labels.ShowSeriesName ? "1" : "0" : "-")};percent:{(labels.HasShowPercent ? labels.ShowPercent ? "1" : "0" : "-")};position:{(labels.HasPosition ? PositionValue(labels.Position) : "-")}";
 
     private static XElement BooleanElement(string name, bool value) =>
         new(ChartNs + name, new XAttribute("val", value ? "1" : "0"));

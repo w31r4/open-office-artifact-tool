@@ -845,6 +845,97 @@ assert.deepEqual(roundTripSecondaryAxisChart.series[1].values, [47, 53]);
 assert.equal(roundTripSecondaryAxisChart.series[1].axisGroup, "secondary");
 assert.equal(roundTripSecondaryAxisChart.axes.secondary.value.max, 80);
 
+const chartFamilyDeck = Presentation.create({ slideSize: { width: 1280, height: 720 } });
+const chartFamilySlide = chartFamilyDeck.slides.add({ name: "Native chart families" });
+chartFamilySlide.charts.add("area", {
+  name: "area-family",
+  title: "Regional trajectory",
+  position: { left: 40, top: 35, width: 570, height: 300 },
+  categories: ["Q1", "Q2", "Q3"],
+  series: [{ name: "Revenue", values: [42, 53, 68], fill: "#0EA5E9", line: { fill: "#0369A1", width: 1.5 } }],
+  xAxis: { title: "Quarter" },
+  yAxis: { title: "Revenue", min: 0, max: 80, majorUnit: 20 },
+  legend: false,
+});
+chartFamilySlide.charts.add("doughnut", {
+  name: "doughnut-family",
+  title: "Regional mix",
+  position: { left: 660, top: 35, width: 570, height: 300 },
+  categories: ["North", "Central", "South"],
+  series: [{ name: "Share", values: [52, 31, 17] }],
+  dataLabels: { showCategoryName: true, showPercent: true, position: "outsideEnd" },
+  legend: true,
+});
+chartFamilySlide.charts.add("scatter", {
+  name: "scatter-family",
+  title: "Reach relationship",
+  position: { left: 40, top: 370, width: 570, height: 300 },
+  series: [{ name: "Portfolio", xValues: [10, 20, 34], values: [35, 68, 84], marker: { symbol: "diamond", size: 8, fill: "#8B5CF6", line: { fill: "#6D28D9", width: 1 } } }],
+  xAxis: { title: "Reach", min: 0, max: 40, majorUnit: 10 },
+  yAxis: { title: "Return", min: 0, max: 100, majorUnit: 20 },
+  legend: false,
+});
+chartFamilySlide.charts.add("bubble", {
+  name: "bubble-family",
+  title: "Opportunity map",
+  position: { left: 660, top: 370, width: 570, height: 300 },
+  series: [{ name: "Opportunity", xValues: [10, 20, 34], values: [35, 68, 84], bubbleSizes: [4, 9, 16], fill: "#F97316", line: { fill: "#C2410C", width: 1 } }],
+  xAxis: { title: "Reach", min: 0, max: 40, majorUnit: 10 },
+  yAxis: { title: "Return", min: 0, max: 100, majorUnit: 20 },
+  legend: false,
+});
+assert.equal(chartFamilyDeck.verify().ok, true);
+const chartFamilySvg = chartFamilySlide.toSvg();
+assert.match(chartFamilySvg, /Regional trajectory/);
+assert.match(chartFamilySvg, /52%/);
+assert.match(chartFamilySvg, /<circle[^>]+fill-opacity="0\.72"/);
+assert.match(chartFamilySvg, /<path[^>]+fill-opacity="0\.45"/);
+const chartFamilyExport = await PresentationFile.exportPptx(chartFamilyDeck);
+const chartFamilyZip = await JSZip.loadAsync(new Uint8Array(await chartFamilyExport.arrayBuffer()));
+const chartFamilyXml = await Promise.all(Object.keys(chartFamilyZip.files)
+  .filter((name) => /\/charts\/chart\d+\.xml$/.test(name))
+  .map((name) => chartFamilyZip.file(name).async("text")));
+assert.equal(chartFamilyXml.filter((xml) => /<c:areaChart>/.test(xml)).length, 1);
+assert.equal(chartFamilyXml.filter((xml) => /<c:doughnutChart>/.test(xml)).length, 1);
+assert.equal(chartFamilyXml.filter((xml) => /<c:scatterChart>/.test(xml)).length, 1);
+assert.equal(chartFamilyXml.filter((xml) => /<c:bubbleChart>/.test(xml)).length, 1);
+assert.match(chartFamilyXml.find((xml) => /<c:doughnutChart>/.test(xml)), /<c:showPercent val="1"\s*\/>/);
+assert.match(chartFamilyXml.find((xml) => /<c:scatterChart>/.test(xml)), /<c:xVal>[\s\S]*<c:yVal>/);
+assert.match(chartFamilyXml.find((xml) => /<c:bubbleChart>/.test(xml)), /<c:xVal>[\s\S]*<c:yVal>[\s\S]*<c:bubbleSize>/);
+const importedChartFamilyDeck = await PresentationFile.importPptx(chartFamilyExport);
+const importedFamilies = importedChartFamilyDeck.slides.getItem(0).charts.items;
+assert.deepEqual(importedFamilies.map((chart) => chart.chartType), ["area", "doughnut", "scatter", "bubble"]);
+assert.equal(importedFamilies[1].dataLabels.showPercent, true);
+assert.deepEqual(importedFamilies[2].series[0].xValues, [10, 20, 34]);
+assert.deepEqual(importedFamilies[3].series[0].bubbleSizes, [4, 9, 16]);
+importedFamilies[0].series[0].values[1] = 57;
+importedFamilies[1].dataLabels.showPercent = false;
+importedFamilies[2].series[0].xValues[1] = 22;
+importedFamilies[3].series[0].bubbleSizes[1] = 12;
+const editedChartFamilyExport = await PresentationFile.exportPptx(importedChartFamilyDeck);
+const roundTripChartFamilies = (await PresentationFile.importPptx(editedChartFamilyExport)).slides.getItem(0).charts.items;
+assert.equal(roundTripChartFamilies[0].series[0].values[1], 57);
+assert.equal(roundTripChartFamilies[1].dataLabels.showPercent, false);
+assert.equal(roundTripChartFamilies[2].series[0].xValues[1], 22);
+assert.equal(roundTripChartFamilies[3].series[0].bubbleSizes[1], 12);
+assert.throws(() => chartFamilySlide.charts.add("scatter", { categories: ["A"], series: [{ name: "Invalid", xValues: [1], values: [2] }] }), /per-series xValues/i);
+assert.throws(() => chartFamilySlide.charts.add("bubble", { series: [{ name: "Invalid", xValues: [1], values: [2], bubbleSizes: [0] }] }), /positive bubbleSize/i);
+assert.throws(() => chartFamilySlide.charts.add("doughnut", { categories: ["A"], series: [{ name: "Invalid", values: [1] }], xAxis: { title: "Invalid" } }), /cannot carry axes/i);
+assert.throws(() => chartFamilySlide.charts.add("area", { categories: ["A"], series: [{ name: "Invalid marker", values: [1], marker: { symbol: "circle" } }] }), /area series 1 cannot carry a marker/i);
+const scatterLineDeck = Presentation.create({ slideSize: { width: 640, height: 360 } });
+scatterLineDeck.slides.add().charts.add("scatter", { series: [{ name: "Invalid line", xValues: [1, 2], values: [2, 3], line: { fill: "#000000", width: 1 } }] });
+await assert.rejects(PresentationFile.exportPptx(scatterLineDeck), /marker-scatter.*cannot carry a series line/i);
+
+const singleAxisChartDeck = Presentation.create({ slideSize: { width: 640, height: 360 } });
+singleAxisChartDeck.slides.add().charts.add("bar", {
+  categories: ["A", "B"],
+  series: [{ name: "Values", values: [1, 2] }],
+  yAxis: { title: "Configured value axis" },
+});
+const singleAxisChartRoundTrip = await PresentationFile.importPptx(await PresentationFile.exportPptx(singleAxisChartDeck));
+assert.equal(singleAxisChartRoundTrip.slides.getItem(0).charts.items[0].axes.category.title, "");
+assert.equal(singleAxisChartRoundTrip.slides.getItem(0).charts.items[0].axes.value.title, "Configured value axis");
+
 const mixedAxisCombo = Presentation.create({ slideSize: { width: 640, height: 360 } });
 mixedAxisCombo.slides.add({ name: "Rejected mixed combo" }).charts.add("combo", {
   name: "mixed-axis-combo",

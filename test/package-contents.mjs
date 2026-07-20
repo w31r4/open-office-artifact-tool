@@ -15,7 +15,10 @@ assert.match(pdfFacadeSource, /await import\("\.\/mupdf\.mjs"\)/, "MuPDF must lo
 assert.doesNotMatch(pdfFacadeSource, /from\s+["']mupdf["']/, "the root PDF facade must not initialize MuPDF eagerly");
 const presentationCodecSource = await fs.readFile(path.join(repoRoot, "src", "codecs", "open-chestnut-presentation.mjs"), "utf8");
 assert.match(presentationCodecSource, /from "\.\.\/presentation\/index\.mjs";/, "the Presentation codec must depend on the Presentation leaf module");
+assert.match(presentationCodecSource, /from "\.\/open-chestnut-presentation-charts\.mjs";/, "the Presentation codec must delegate chart wire semantics to the chart leaf module");
 assert.doesNotMatch(presentationCodecSource, /from "\.\.\/index\.mjs";/, "the Presentation codec must not create a back-edge to the root entry");
+const presentationChartCodecSource = await fs.readFile(path.join(repoRoot, "src", "codecs", "open-chestnut-presentation-charts.mjs"), "utf8");
+assert.doesNotMatch(presentationChartCodecSource, /from "\.\.\/index\.mjs";/, "the Presentation chart codec must not create a back-edge to the root entry");
 const spreadsheetCodecSource = await fs.readFile(path.join(repoRoot, "src", "codecs", "open-chestnut.mjs"), "utf8");
 assert.match(spreadsheetCodecSource, /from "\.\.\/spreadsheet\/index\.mjs";/, "the Spreadsheet codec must depend on the Spreadsheet leaf module");
 assert.doesNotMatch(spreadsheetCodecSource, /from "\.\.\/index\.mjs";/, "the Spreadsheet codec must not create a back-edge to the root entry");
@@ -64,6 +67,7 @@ for (const required of [
   "src/codecs/open-chestnut-error.mjs",
   "src/codecs/open-chestnut-assets.mjs",
   "src/codecs/open-chestnut-presentation.mjs",
+  "src/codecs/open-chestnut-presentation-charts.mjs",
   "src/codecs/open-chestnut-spreadsheet-pivots.mjs",
   "runtime/open-chestnut/main.mjs",
   "runtime/open-chestnut/manifest.json",
@@ -172,6 +176,7 @@ for (const required of [
   "skills/presentations/skills/presentations/SKILL.md",
   "skills/presentations/skills/presentations/agents/openai.yaml",
   "skills/presentations/skills/presentations/artifact_tool/API_QUICK_START.md",
+  "skills/presentations/skills/presentations/examples/openchestnut-chart-families-workflow.mjs",
   "skills/presentations/skills/presentations/examples/openchestnut-title-notes-edit-workflow.mjs",
   "skills/presentations/skills/presentations/examples/openchestnut-slide-name-edit-workflow.mjs",
   "skills/presentations/skills/presentations/examples/openchestnut-custom-show-workflow.mjs",

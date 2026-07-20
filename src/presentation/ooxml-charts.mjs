@@ -42,9 +42,12 @@ export function normalizePresentationChartMarker(marker) {
   if (marker == null || marker === false) return undefined;
   const raw = typeof marker === "string" ? { symbol: marker } : marker;
   if (!raw || typeof raw !== "object") throw new TypeError("chart marker must be a symbol string or object.");
+  const fill = normalizePresentationChartPaint(raw.fill ?? raw.color);
   return {
     symbol: enumValue(raw.symbol || raw.style, MARKER_SYMBOLS, "auto", "chart marker symbol"),
     size: boundedInteger(raw.size, { name: "chart marker size", min: 2, max: 72, fallback: 5 }),
+    ...(fill ? { fill } : {}),
+    ...(raw.line == null && raw.stroke == null ? {} : { line: normalizePresentationChartLine(raw.line ?? raw.stroke) }),
   };
 }
 
@@ -92,7 +95,7 @@ export function normalizePresentationChartStyle(chartType, config = {}) {
   const direction = directionValue === "horizontal" ? "bar" : directionValue === "vertical" ? "column" : directionValue;
   return {
     styleId: boundedInteger(config.styleId ?? config.styleIndex ?? style.id, { name: "chart styleId", min: 1, max: 48, optional: true }),
-    varyColors: Boolean(config.varyColors ?? style.varyColors ?? type === "pie"),
+    varyColors: Boolean(config.varyColors ?? style.varyColors ?? ["pie", "doughnut"].includes(type)),
     barOptions: {
       direction: enumValue(direction, new Set(["column", "bar"]), "column", "chart bar direction"),
       grouping: enumValue(rawBar.grouping, BAR_GROUPINGS, "clustered", "chart bar grouping"),
@@ -120,7 +123,7 @@ export function normalizePresentationChartSeriesStyle(series = {}, valueCount) {
 export function normalizePresentationChartAxisGroup(value, chartType) {
   const axisGroup = value == null || value === "" ? "primary" : String(value);
   if (!AXIS_GROUPS.has(axisGroup)) throw new TypeError("chart series axisGroup must be primary or secondary.");
-  if (axisGroup === "secondary" && chartType === "pie") throw new TypeError("secondary chart axes are supported only for bar and line series.");
+  if (axisGroup === "secondary" && !["bar", "line"].includes(chartType)) throw new TypeError("secondary chart axes are supported only for bar and line series.");
   return axisGroup;
 }
 
@@ -134,6 +137,7 @@ export function normalizePresentationChartDataLabels(value) {
   return {
     showValue: Boolean(value.showValue),
     showCategoryName: Boolean(value.showCategoryName ?? value.showCategory),
+    ...(value.showPercent == null ? {} : { showPercent: Boolean(value.showPercent) }),
     position,
   };
 }

@@ -16,29 +16,35 @@ export function normalizeSpreadsheetChartDataLabels(value) {
   if (value == null) return undefined;
   if (typeof value === "boolean") return { showValue: value, showCategoryName: false };
   if (typeof value !== "object" || Array.isArray(value)) dataLabelsError("must be a boolean or object.");
-  const supported = new Set(["showValue", "showCategoryName", "showSeriesName", "position"]);
+  const supported = new Set(["showValue", "showCategoryName", "showSeriesName", "showPercent", "position"]);
   const unsupported = Object.keys(value).filter((key) => !supported.has(key) && value[key] != null);
-  if (unsupported.length) dataLabelsError(`supports only showValue, showCategoryName, showSeriesName, and position; received ${unsupported.join(", ")}.`);
+  if (unsupported.length) dataLabelsError(`supports only showValue, showCategoryName, showSeriesName, showPercent, and position; received ${unsupported.join(", ")}.`);
   const present = [...supported].filter((key) => value[key] != null);
-  if (present.length === 0) dataLabelsError("must define showValue, showCategoryName, showSeriesName, or position.");
-  for (const key of ["showValue", "showCategoryName", "showSeriesName"]) if (value[key] != null && typeof value[key] !== "boolean") dataLabelsError(`${key} must be a boolean.`);
+  if (present.length === 0) dataLabelsError("must define showValue, showCategoryName, showSeriesName, showPercent, or position.");
+  for (const key of ["showValue", "showCategoryName", "showSeriesName", "showPercent"]) if (value[key] != null && typeof value[key] !== "boolean") dataLabelsError(`${key} must be a boolean.`);
   const position = value.position == null ? undefined : POSITION_ALIASES.get(value.position);
   if (value.position != null && position == null) dataLabelsError(`position must be one of: ${SPREADSHEET_CHART_DATA_LABEL_POSITIONS.join(", ")}.`);
   return {
     showValue: value.showValue === true,
     showCategoryName: value.showCategoryName === true,
     ...(value.showSeriesName == null ? {} : { showSeriesName: value.showSeriesName }),
+    ...(value.showPercent == null ? {} : { showPercent: value.showPercent }),
     ...(position == null ? {} : { position }),
   };
 }
 
 export function spreadsheetChartDataLabelText(dataLabels, category, value, context = {}) {
   const normalized = normalizeSpreadsheetChartDataLabels(dataLabels);
-  if (!normalized?.showValue && !normalized?.showCategoryName && !normalized?.showSeriesName) return "";
+  if (!normalized?.showValue && !normalized?.showCategoryName && !normalized?.showSeriesName && !normalized?.showPercent) return "";
+  const total = Number(context.total);
+  const percent = normalized.showPercent && Number.isFinite(total) && total !== 0
+    ? `${Math.round((Number(value) / total) * 1000) / 10}%`
+    : undefined;
   return [
     normalized.showSeriesName ? context.seriesName : undefined,
     normalized.showCategoryName ? category : undefined,
     normalized.showValue ? value : undefined,
+    percent,
   ].filter((item) => item != null).map(String).join(": ");
 }
 

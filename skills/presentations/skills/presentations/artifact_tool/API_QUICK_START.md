@@ -137,6 +137,75 @@ main().catch((error) => {
 });
 ```
 
+## Canonical Native Chart Families
+
+OpenChestnut writes literal-data native ChartParts for `bar`, `line`, `pie`,
+standard `area`, fixed 50%-hole `doughnut`, marker-only `scatter`, bounded 2D
+`bubble`, and the combo profile below. Category families use shared
+`categories`; scatter and bubble instead require aligned finite per-series
+`xValues` and Y `values`. Bubble additionally requires one positive
+`bubbleSize` per point.
+
+```ts
+slide.charts.add("area", {
+  categories: ["Q1", "Q2", "Q3"],
+  series: [{ name: "Revenue", values: [42, 53, 68], fill: "#0EA5E9" }],
+  xAxis: { title: "Quarter" },
+  yAxis: { title: "Revenue", min: 0, max: 80 },
+});
+
+slide.charts.add("doughnut", {
+  categories: ["North", "Central", "South"],
+  series: [{ name: "Share", values: [52, 31, 17] }],
+  dataLabels: { showCategoryName: true, showPercent: true, position: "outsideEnd" },
+});
+
+slide.charts.add("scatter", {
+  series: [{
+    name: "Portfolio",
+    xValues: [10, 20, 34],
+    values: [35, 68, 84],
+    marker: { symbol: "diamond", size: 8, fill: "#8B5CF6" },
+  }],
+  xAxis: { title: "Reach" },
+  yAxis: { title: "Return" },
+});
+
+slide.charts.add("bubble", {
+  series: [{
+    name: "Opportunity",
+    xValues: [10, 20, 34],
+    values: [35, 68, 84],
+    bubbleSizes: [4, 9, 16],
+    fill: "#F97316",
+  }],
+  xAxis: { title: "Reach" },
+  yAxis: { title: "Return" },
+});
+```
+
+Pie and doughnut do not accept axes, and percentage labels are limited to those
+circular families. Markers are limited to line and scatter series; marker-only
+scatter rejects a series line, so use `marker.line` for its border. Formula or
+external-workbook data, stacked area, connected/smooth scatter, non-50%
+doughnut geometry, bubble 3D/negative/custom-scale semantics, point overrides,
+and topology changes fail closed.
+
+Run the complete Agent workflow from this Skill root:
+
+```sh
+node examples/openchestnut-chart-families-workflow.mjs \
+  output/chart-families.pptx \
+  output/chart-families.png \
+  output/chart-families.audit.json
+```
+
+It creates all four newly supported families, inventories their native XML,
+imports and edits each one, exports and imports a second time, runs
+inspect/verify, and produces a real PNG through `renderArtifact` with the
+explicit Playwright renderer. See `api/references/charts.spec.md` for the full
+bounded contract.
+
 ## Bounded Native Combo Chart
 
 `combo` is native PPTX output only for one intentionally narrow profile: literal

@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Xml;
@@ -116,7 +115,7 @@ internal static partial class PptxChartCodec
             return;
         }
         if (chart.ComboSeries.Count != 0) throw Invalid(elementId, "must not carry combo_series unless type is combo");
-        if (chart.Series.Any(series => !string.IsNullOrWhiteSpace(series.CategoryFormula) || !string.IsNullOrWhiteSpace(series.ValueFormula)))
+        if (chart.Series.Any(series => !string.IsNullOrWhiteSpace(series.CategoryFormula) || !string.IsNullOrWhiteSpace(series.XValueFormula) || !string.IsNullOrWhiteSpace(series.ValueFormula) || !string.IsNullOrWhiteSpace(series.BubbleSizeFormula)))
             throw Invalid(elementId, "must use literal categories and values without workbook formulas");
         var spreadsheet = ToSpreadsheet(chart, elementId, name);
         try
@@ -188,198 +187,23 @@ internal static partial class PptxChartCodec
 
     private static bool TryReadChart(string xml, out SpreadsheetChartArtifact chart, out XDocument document, out bool editable)
     {
-        chart = new SpreadsheetChartArtifact();
-        editable = true;
-        try { document = XDocument.Parse(xml, LoadOptions.PreserveWhitespace); }
-        catch (XmlException) { document = new XDocument(); return false; }
-        var root = document.Root;
-        var nativeChart = root?.Element(ChartNs + "chart");
-        var plotArea = nativeChart?.Element(ChartNs + "plotArea");
-        if (root?.Name != ChartNs + "chartSpace" || nativeChart is null || plotArea is null || root.Element(ChartNs + "externalData") is not null) return false;
-        var plots = plotArea.Elements().Where(item => item.Name == ChartNs + "barChart" || item.Name == ChartNs + "lineChart" || item.Name == ChartNs + "pieChart").ToArray();
-        if (plots.Length != 1 || plotArea.Elements().Any(item => item.Name.LocalName.EndsWith("Chart", StringComparison.Ordinal) && !plots.Contains(item))) return false;
-        var plot = plots[0];
-        chart.Type = plot.Name.LocalName switch { "barChart" => SpreadsheetChartType.Bar, "lineChart" => SpreadsheetChartType.Line, "pieChart" => SpreadsheetChartType.Pie, _ => SpreadsheetChartType.Unspecified };
-        if (chart.Type == SpreadsheetChartType.Unspecified) return false;
-        var title = nativeChart.Element(ChartNs + "title");
-        if (title is not null)
-        {
-            var richText = title.Descendants(DrawingNs + "t").ToArray();
-            var directValue = title.Descendants(ChartNs + "v").FirstOrDefault();
-            chart.Title = richText.Length > 0 ? string.Concat(richText.Select(item => item.Value)) : directValue?.Value ?? string.Empty;
-            if (richText.Length == 0) editable = false;
-            editable &= XlsxChartTextStyleCodec.TryReadTitle(title, chart);
-        }
-        chart.HasLegend = nativeChart.Element(ChartNs + "legend") is not null;
-        var nativeSeries = plot.Elements(ChartNs + "ser").ToArray();
-        if (nativeSeries.Length is < 1 or > MaxSeries) return false;
-        string[]? commonCategories = null;
-        foreach (var native in nativeSeries)
-        {
-            if (!TrySeries(native, chart.Type, out var series, out var categories, out var seriesEditable)) return false;
-            if (series.CategoryFormula.Length > 0 || series.ValueFormula.Length > 0) return false;
-            editable &= seriesEditable;
-            if (commonCategories is null) commonCategories = categories;
-            else if (!commonCategories.SequenceEqual(categories, StringComparer.Ordinal)) return false;
-            chart.Series.Add(series);
-        }
-        chart.Categories.Add(commonCategories ?? []);
-        editable &= XlsxChartDataLabelsCodec.TryRead(plot, chart);
-        if (!XlsxChartAxisCodec.TryRead(plotArea, plot, chart, out var axesEditable)) editable = false;
-        else if (chart.Type != SpreadsheetChartType.Pie) editable &= axesEditable;
-        return chart.Title.Length <= 32_767 && !HasControls(chart.Title) && chart.Categories.Count <= MaxPoints;
-    }
-
-    private static bool TrySeries(XElement source, SpreadsheetChartType type, out SpreadsheetChartSeriesArtifact series, out string[] categories, out bool editable)
-    {
-        series = new SpreadsheetChartSeriesArtifact(); categories = []; editable = true;
-        var tx = source.Element(ChartNs + "tx");
-        if (tx?.Element(ChartNs + "v") is { } directName) series.Name = directName.Value;
-        else return false;
-        if (series.Name.Length > 255 || HasControls(series.Name)) return false;
-        var category = source.Element(ChartNs + "cat") ?? source.Element(ChartNs + "xVal");
-        var value = source.Element(ChartNs + "val") ?? source.Element(ChartNs + "yVal");
-        if (category is null || value is null || !TryStringData(category, out categories) || !TryNumericData(value, out var values) || categories.Length != values.Length || categories.Length > MaxPoints) return false;
-        series.Values.Add(values);
-        editable &= XlsxChartSeriesStyleCodec.TryRead(source, series);
-        editable &= XlsxChartSeriesLineStyleCodec.TryRead(source, series);
-        editable &= XlsxChartSeriesMarkerCodec.TryRead(source, series, type);
-        return true;
-    }
-
-    private static bool TryStringData(XElement holder, out string[] values)
-    {
-        values = [];
-        if (holder.Element(ChartNs + "strLit") is not { } literal || holder.Element(ChartNs + "strRef") is not null) return false;
-        if (!TryOrderedPoints(literal, out var points)) return false;
-        values = points.Select(item => item.Element(ChartNs + "v")?.Value ?? string.Empty).ToArray();
-        return values.All(value => value.Length <= 32_767 && !HasControls(value));
-    }
-
-    private static bool TryNumericData(XElement holder, out double[] values)
-    {
-        values = [];
-        if (holder.Element(ChartNs + "numLit") is not { } literal || holder.Element(ChartNs + "numRef") is not null || !TryOrderedPoints(literal, out var points)) return false;
-        var output = new List<double>();
-        foreach (var point in points)
-        {
-            if (!double.TryParse(point.Element(ChartNs + "v")?.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) || !double.IsFinite(value)) return false;
-            output.Add(value);
-        }
-        values = output.ToArray();
-        return true;
-    }
-
-    private static bool TryOrderedPoints(XElement source, out XElement[] points)
-    {
-        points = source.Elements(ChartNs + "pt").ToArray();
-        if (points.Length > MaxPoints) return false;
-        for (var index = 0; index < points.Length; index++) if ((uint?)points[index].Attribute("idx") != (uint)index) return false;
-        var count = (uint?)source.Element(ChartNs + "ptCount")?.Attribute("val");
-        return count is null || count.Value == points.Length;
+        if (!OpenXmlChartSpaceCodec.TryRead(xml, out chart, out document, out editable)) return false;
+        return chart.Series.All(series =>
+            string.IsNullOrWhiteSpace(series.CategoryFormula) &&
+            string.IsNullOrWhiteSpace(series.XValueFormula) &&
+            string.IsNullOrWhiteSpace(series.ValueFormula) &&
+            string.IsNullOrWhiteSpace(series.BubbleSizeFormula));
     }
 
     private static XDocument BuildChartDocument(SpreadsheetChartArtifact chart)
     {
-        var series = chart.Series.Select((item, index) => SeriesElement(item, chart.Categories, index)).ToArray();
-        XElement plot = chart.Type switch
-        {
-            SpreadsheetChartType.Bar => new XElement(ChartNs + "barChart", new XElement(ChartNs + "barDir", new XAttribute("val", "col")), new XElement(ChartNs + "grouping", new XAttribute("val", "clustered")), series, XlsxChartDataLabelsCodec.Element(chart.DataLabels), new XElement(ChartNs + "axId", new XAttribute("val", "1")), new XElement(ChartNs + "axId", new XAttribute("val", "2"))),
-            SpreadsheetChartType.Line => new XElement(ChartNs + "lineChart", new XElement(ChartNs + "grouping", new XAttribute("val", "standard")), series, XlsxChartDataLabelsCodec.Element(chart.DataLabels), new XElement(ChartNs + "axId", new XAttribute("val", "1")), new XElement(ChartNs + "axId", new XAttribute("val", "2"))),
-            _ => new XElement(ChartNs + "pieChart", new XElement(ChartNs + "varyColors", new XAttribute("val", "1")), series, XlsxChartDataLabelsCodec.Element(chart.DataLabels)),
-        };
-        var plotArea = new XElement(ChartNs + "plotArea", new XElement(ChartNs + "layout"), plot);
-        XlsxChartAxisCodec.AppendAuthored(plotArea, chart);
-        var nativeChart = new XElement(ChartNs + "chart");
-        if (chart.Title.Length > 0) nativeChart.Add(XlsxChartTextStyleCodec.TitleElement(chart.Title, null));
-        nativeChart.Add(plotArea);
-        if (chart.HasLegend) nativeChart.Add(LegendElement());
-        nativeChart.Add(new XElement(ChartNs + "plotVisOnly", new XAttribute("val", "1")));
-        return new XDocument(new XDeclaration("1.0", "UTF-8", "yes"), new XElement(ChartNs + "chartSpace", new XAttribute(XNamespace.Xmlns + "c", ChartNs), new XAttribute(XNamespace.Xmlns + "a", DrawingNs), nativeChart));
-    }
-
-    private static XElement SeriesElement(SpreadsheetChartSeriesArtifact series, IEnumerable<string> categories, int index) =>
-        new(ChartNs + "ser",
-            new XElement(ChartNs + "idx", new XAttribute("val", index)),
-            new XElement(ChartNs + "order", new XAttribute("val", index)),
-            new XElement(ChartNs + "tx", new XElement(ChartNs + "v", series.Name)),
-            XlsxChartSeriesStyleCodec.PropertiesElement(series),
-            XlsxChartSeriesMarkerCodec.Element(series.Marker),
-            new XElement(ChartNs + "cat", StringData(categories)),
-            new XElement(ChartNs + "val", NumericData(series.Values)));
-
-    private static XElement StringData(IEnumerable<string> values)
-    {
-        var literal = new XElement(ChartNs + "strLit");
-        AppendPoints(literal, values, value => value);
-        return literal;
-    }
-
-    private static XElement NumericData(IEnumerable<double> values)
-    {
-        var literal = new XElement(ChartNs + "numLit", new XElement(ChartNs + "formatCode", "General"));
-        AppendPoints(literal, values, value => value.ToString("R", CultureInfo.InvariantCulture));
-        return literal;
-    }
-
-    private static void AppendPoints<T>(XElement cache, IEnumerable<T> values, Func<T, string> format)
-    {
-        var array = values.ToArray();
-        cache.Add(new XElement(ChartNs + "ptCount", new XAttribute("val", array.Length)));
-        for (var index = 0; index < array.Length; index++) cache.Add(new XElement(ChartNs + "pt", new XAttribute("idx", index), new XElement(ChartNs + "v", format(array[index]))));
+        return OpenXmlChartSpaceCodec.Build(chart);
     }
 
     private static void PatchChart(XDocument document, SpreadsheetChartArtifact target)
     {
-        var nativeChart = document.Root!.Element(ChartNs + "chart")!;
-        PatchTitle(nativeChart, target.Title);
-        PatchLegend(nativeChart, target.HasLegend);
-        var plotArea = nativeChart.Element(ChartNs + "plotArea")!;
-        var plot = plotArea.Element(ChartNs + (target.Type == SpreadsheetChartType.Bar ? "barChart" : target.Type == SpreadsheetChartType.Line ? "lineChart" : "pieChart"))!;
-        var nativeSeries = plot.Elements(ChartNs + "ser").ToArray();
-        for (var index = 0; index < nativeSeries.Length; index++) PatchSeries(nativeSeries[index], target.Series[index], target.Categories);
-        XlsxChartDataLabelsCodec.Patch(plot, target.DataLabels);
-        XlsxChartAxisCodec.Patch(plotArea, plot, target);
+        OpenXmlChartSpaceCodec.Patch(document, target, "presentation_chart_topology_changed", "Presentation chart");
     }
-
-    private static void PatchTitle(XElement chart, string title)
-    {
-        var existing = chart.Element(ChartNs + "title");
-        if (title.Length == 0) { existing?.Remove(); return; }
-        if (existing is null) { chart.Element(ChartNs + "plotArea")!.AddBeforeSelf(XlsxChartTextStyleCodec.TitleElement(title, null)); return; }
-        var runs = existing.Descendants(DrawingNs + "t").ToArray();
-        if (runs.Length == 0) throw new CodecException("unsupported_presentation_edit", "Referenced presentation chart titles are read-only.");
-        runs[0].Value = title;
-        foreach (var run in runs.Skip(1)) run.Value = string.Empty;
-    }
-
-    private static void PatchLegend(XElement chart, bool hasLegend)
-    {
-        var legend = chart.Element(ChartNs + "legend");
-        if (!hasLegend) { legend?.Remove(); return; }
-        if (legend is null) chart.Element(ChartNs + "plotArea")!.AddAfterSelf(LegendElement());
-    }
-
-    private static void PatchSeries(XElement native, SpreadsheetChartSeriesArtifact target, IEnumerable<string> categories)
-    {
-        native.Element(ChartNs + "tx")!.Element(ChartNs + "v")!.Value = target.Name;
-        XlsxChartSeriesStyleCodec.Patch(native, target);
-        XlsxChartSeriesLineStyleCodec.Patch(native, target);
-        XlsxChartSeriesMarkerCodec.Patch(native, target);
-        PatchPoints(native.Element(ChartNs + "cat")!.Element(ChartNs + "strLit")!, categories, value => value);
-        PatchPoints(native.Element(ChartNs + "val")!.Element(ChartNs + "numLit")!, target.Values, value => value.ToString("R", CultureInfo.InvariantCulture));
-    }
-
-    private static void PatchPoints<T>(XElement cache, IEnumerable<T> values, Func<T, string> format)
-    {
-        var requested = values.ToArray();
-        var points = cache.Elements(ChartNs + "pt").ToArray();
-        if (points.Length != requested.Length) throw new CodecException("presentation_chart_topology_changed", "Presentation chart point topology changed unexpectedly.");
-        cache.Element(ChartNs + "ptCount")?.SetAttributeValue("val", requested.Length);
-        for (var index = 0; index < points.Length; index++) points[index].Element(ChartNs + "v")!.Value = format(requested[index]);
-    }
-
-    private static XElement LegendElement() => new(ChartNs + "legend", new XElement(ChartNs + "legendPos", new XAttribute("val", "r")), new XElement(ChartNs + "layout"));
 
     private static bool TryReadFrame(P.Transform transform, out long left, out long top, out long width, out long height)
     {

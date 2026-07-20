@@ -168,6 +168,16 @@ Read the local docs before coding:
 - `artifact_tool/API_QUICK_START.md`
 - `artifact_tool/api/API_DOCS.md`
 
+For native charts, read `artifact_tool/api/references/charts.spec.md` before
+authoring or editing. Canonical OpenChestnut output covers literal bar, line,
+pie, standard area, fixed 50%-hole doughnut, marker-only scatter, bounded 2D
+bubble, and the documented clustered bar+line combo. Use
+`examples/openchestnut-chart-families-workflow.mjs` as the Agent-facing
+create/import/edit/reimport/render/audit pattern. Inspect an imported ChartPart
+before mutation, keep its supported topology fixed, render the final slide, and
+let formula-backed, external-workbook, connected, or advanced chart graphs fail
+closed instead of rebuilding them from visible caches.
+
 For slide backgrounds, use the typed `slide.setBackground(...)` and
 `slide.clearBackground()` primitives documented in
 `artifact_tool/api/references/slide.spec.md`. Direct solid/style-reference

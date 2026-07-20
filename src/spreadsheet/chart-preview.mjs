@@ -174,7 +174,7 @@ function circularMarks(chart, categories, seriesItems, dataLabels, plot) {
         ? `<circle cx="${cx}" cy="${cy}" r="${(outerRadius + innerRadius) / 2}" fill="none" stroke="${fill}" stroke-width="${outerRadius - innerRadius}" data-point-index="${index}"/>`
         : `<circle cx="${cx}" cy="${cy}" r="${outerRadius}" fill="${fill}" data-point-index="${index}"/>`
       : `<path d="${ringSegmentPath(cx, cy, outerRadius, innerRadius, angle, end)}" fill="${fill}" stroke="#ffffff" stroke-width="1" data-point-index="${index}"/>`;
-    const label = spreadsheetChartDataLabelText(dataLabels, categories[index], series?.values?.[index], { seriesName: series?.name });
+    const label = spreadsheetChartDataLabelText(dataLabels, categories[index], series?.values?.[index], { seriesName: series?.name, total });
     const labelRadius = innerRadius > 0 ? (innerRadius + outerRadius) / 2 : outerRadius * 0.62;
     const labelPoint = polarPoint(cx, cy, labelRadius, angle + sweep / 2);
     angle = end;

@@ -596,11 +596,13 @@ export class Presentation {
         }
       }
       for (const chart of slideElements.filter((element) => element instanceof ChartElement)) {
-        if (!/^(bar|line|pie|combo)$/i.test(chart.chartType)) issues.push(verificationIssue("presentation", "unsupportedChartType", `Chart ${chart.name || chart.id} uses unsupported chart type ${chart.chartType}.`, { severity: "warning", slide: slide.index + 1, id: chart.id, chartType: chart.chartType }));
+        if (!PRESENTATION_CHART_TYPES.has(String(chart.chartType).toLowerCase())) issues.push(verificationIssue("presentation", "unsupportedChartType", `Chart ${chart.name || chart.id} uses unsupported chart type ${chart.chartType}.`, { severity: "warning", slide: slide.index + 1, id: chart.id, chartType: chart.chartType }));
         if (!chart.series.length) issues.push(verificationIssue("presentation", "emptyChart", `Chart ${chart.name || chart.id} on slide ${slide.index + 1} has no data series.`, { slide: slide.index + 1, id: chart.id }));
         for (const series of chart.series) {
           const values = Array.isArray(series.values) ? series.values : [];
-          if (chart.categories.length && values.length && chart.categories.length !== values.length) issues.push(verificationIssue("presentation", "chartDataMismatch", `Chart ${chart.name || chart.id} series ${series.name || "Series"} has ${values.length} values for ${chart.categories.length} categories.`, { slide: slide.index + 1, id: chart.id, series: series.name, values: values.length, categories: chart.categories.length }));
+          if (!PRESENTATION_NUMERIC_X_CHART_TYPES.has(chart.chartType) && chart.categories.length && values.length && chart.categories.length !== values.length) issues.push(verificationIssue("presentation", "chartDataMismatch", `Chart ${chart.name || chart.id} series ${series.name || "Series"} has ${values.length} values for ${chart.categories.length} categories.`, { slide: slide.index + 1, id: chart.id, series: series.name, values: values.length, categories: chart.categories.length }));
+          if (PRESENTATION_NUMERIC_X_CHART_TYPES.has(chart.chartType) && series.xValues?.length !== values.length) issues.push(verificationIssue("presentation", "chartNumericXMismatch", `Chart ${chart.name || chart.id} series ${series.name || "Series"} must contain one numeric xValue per value.`, { slide: slide.index + 1, id: chart.id, series: series.name, values: values.length, xValues: series.xValues?.length || 0 }));
+          if (chart.chartType === "bubble" && (series.bubbleSizes?.length !== values.length || series.bubbleSizes.some((value) => !Number.isFinite(Number(value)) || Number(value) <= 0))) issues.push(verificationIssue("presentation", "chartBubbleSizeMismatch", `Chart ${chart.name || chart.id} series ${series.name || "Series"} must contain one positive bubbleSize per value.`, { slide: slide.index + 1, id: chart.id, series: series.name, values: values.length, bubbleSizes: series.bubbleSizes?.length || 0 }));
           if (values.some((value) => value !== "" && value != null && !Number.isFinite(Number(value)))) issues.push(verificationIssue("presentation", "chartDataNonNumeric", `Chart ${chart.name || chart.id} series ${series.name || "Series"} contains non-numeric values.`, { slide: slide.index + 1, id: chart.id, series: series.name }));
         }
       }
@@ -1412,9 +1414,15 @@ export class TableElement {
 
 }
 
+const PRESENTATION_CHART_TYPES = new Set(["bar", "line", "pie", "area", "doughnut", "scatter", "bubble", "combo"]);
+const PRESENTATION_NUMERIC_X_CHART_TYPES = new Set(["scatter", "bubble"]);
+const PRESENTATION_CIRCULAR_CHART_TYPES = new Set(["pie", "doughnut"]);
+
 function normalizeChartSeries(seriesItems = [], chartType = "bar") {
   return (seriesItems || []).map((series, index) => {
     const values = (series.values || series.data || []).map((value) => value);
+    const xValues = (series.xValues || []).map((value) => value);
+    const bubbleSizes = (series.bubbleSizes || []).map((value) => value);
     const style = normalizePresentationChartSeriesStyle(series, values.length);
     const seriesChartType = chartType === "combo" ? String(series.chartType || series.type || "").toLowerCase() : undefined;
     if (chartType === "combo" && !new Set(["bar", "line"]).has(seriesChartType)) throw new TypeError("Presentation combo chart series chartType must be bar or line.");
@@ -1423,6 +1431,8 @@ function normalizeChartSeries(seriesItems = [], chartType = "bar") {
     return {
       name: series.name || `Series ${index + 1}`,
       values,
+      ...(xValues.length ? { xValues } : {}),
+      ...(bubbleSizes.length ? { bubbleSizes } : {}),
       categories: series.categories,
       color: style.color || ["#0ea5e9", "#f97316", "#22c55e", "#a855f7"][index % 4],
       ...(style.line ? { line: style.line } : {}),
@@ -1444,8 +1454,8 @@ function normalizeChartAxes(config = {}, hasSecondary = false) {
   const secondary = axes.secondary || {};
   const secondaryAxisTitles = axisTitles.secondary || config.secondaryAxisTitles || {};
   return {
-    category: { ...(axes.category || axes.x || {}), title: axes.category?.title || axes.x?.title || axisTitles.category || axisTitles.x || config.categoryAxisTitle || config.xAxisTitle || "" },
-    value: { ...(axes.value || axes.y || {}), title: axes.value?.title || axes.y?.title || axisTitles.value || axisTitles.y || config.valueAxisTitle || config.yAxisTitle || "" },
+    category: { ...(axes.category || axes.x || config.xAxis || {}), title: axes.category?.title || axes.x?.title || config.xAxis?.title || axisTitles.category || axisTitles.x || config.categoryAxisTitle || config.xAxisTitle || "" },
+    value: { ...(axes.value || axes.y || config.yAxis || {}), title: axes.value?.title || axes.y?.title || config.yAxis?.title || axisTitles.value || axisTitles.y || config.valueAxisTitle || config.yAxisTitle || "" },
     ...(hasSecondary ? {
       secondary: {
         category: { ...(secondary.category || secondary.x || axes.secondaryCategory || {}), title: secondary.category?.title || secondary.x?.title || axes.secondaryCategory?.title || secondaryAxisTitles.category || secondaryAxisTitles.x || config.secondaryCategoryAxisTitle || config.secondaryXAxisTitle || "" },
@@ -1481,6 +1491,19 @@ function pieSlicePath(cx, cy, radius, startAngle, endAngle) {
   return `M ${cx} ${cy} L ${startX} ${startY} A ${radius} ${radius} 0 ${largeArc} 1 ${endX} ${endY} Z`;
 }
 
+function doughnutSlicePath(cx, cy, outerRadius, innerRadius, startAngle, endAngle) {
+  const outerStartX = cx + outerRadius * Math.cos(startAngle);
+  const outerStartY = cy + outerRadius * Math.sin(startAngle);
+  const outerEndX = cx + outerRadius * Math.cos(endAngle);
+  const outerEndY = cy + outerRadius * Math.sin(endAngle);
+  const innerStartX = cx + innerRadius * Math.cos(startAngle);
+  const innerStartY = cy + innerRadius * Math.sin(startAngle);
+  const innerEndX = cx + innerRadius * Math.cos(endAngle);
+  const innerEndY = cy + innerRadius * Math.sin(endAngle);
+  const largeArc = endAngle - startAngle > Math.PI ? 1 : 0;
+  return `M ${outerStartX} ${outerStartY} A ${outerRadius} ${outerRadius} 0 ${largeArc} 1 ${outerEndX} ${outerEndY} L ${innerEndX} ${innerEndY} A ${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${innerStartX} ${innerStartY} Z`;
+}
+
 function presentationChartMarkerSvg(marker, x, y, color) {
   if (!marker || marker.symbol === "none") return "";
   const size = Math.max(2, Number(marker.size) || 5);
@@ -1495,10 +1518,18 @@ function presentationChartMarkerSvg(marker, x, y, color) {
   return `<circle cx="${x}" cy="${y}" r="${marker.symbol === "dot" ? Math.max(1, radius / 2) : radius}" fill="${stroke}"/>`;
 }
 
-function presentationChartDataLabelText(dataLabels, category, value) {
-  if (!dataLabels?.showValue && !dataLabels?.showCategoryName) return "";
-  if (dataLabels.showValue && dataLabels.showCategoryName) return `${category}: ${value}`;
-  return dataLabels.showCategoryName ? String(category ?? "") : String(value ?? "");
+function presentationChartDataLabelText(dataLabels, category, value, context = {}) {
+  if (!dataLabels?.showValue && !dataLabels?.showCategoryName && !dataLabels?.showSeriesName && !dataLabels?.showPercent) return "";
+  const total = Number(context.total);
+  const percent = dataLabels.showPercent && Number.isFinite(total) && total !== 0
+    ? `${Math.round((Number(value) / total) * 1000) / 10}%`
+    : undefined;
+  return [
+    dataLabels.showSeriesName ? context.seriesName : undefined,
+    dataLabels.showCategoryName ? category : undefined,
+    dataLabels.showValue ? value : undefined,
+    percent,
+  ].filter((item) => item != null && item !== "").map(String).join(": ");
 }
 
 function presentationChartErrorBarsSvg(series, points, plot, max) {
@@ -1537,10 +1568,20 @@ export class ChartElement {
     this.creationId = config.creationId;
     this.name = config.name || "";
     this.chartType = String(chartType || config.chartType || "bar").toLowerCase();
+    if (!PRESENTATION_CHART_TYPES.has(this.chartType)) throw new TypeError(`Presentation chart type must be one of: ${[...PRESENTATION_CHART_TYPES].join(", ")}.`);
     this.position = normalizeFrame(config, { left: 0, top: 0, width: 360, height: 220 });
     this.title = config.title || "";
     this.categories = config.categories || [];
     this.series = normalizeChartSeries(config.series || [], this.chartType);
+    if (PRESENTATION_NUMERIC_X_CHART_TYPES.has(this.chartType) && this.categories.length) throw new TypeError(`Presentation ${this.chartType} charts use per-series xValues rather than shared categories.`);
+    if (!PRESENTATION_NUMERIC_X_CHART_TYPES.has(this.chartType) && this.series.some((series) => series.xValues?.length || series.bubbleSizes?.length)) throw new TypeError(`Presentation ${this.chartType} charts cannot carry xValues or bubbleSizes.`);
+    for (const [index, series] of this.series.entries()) {
+      const seriesType = this.chartType === "combo" ? series.chartType : this.chartType;
+      if (PRESENTATION_NUMERIC_X_CHART_TYPES.has(this.chartType) && series.xValues?.length !== series.values.length) throw new TypeError(`Presentation ${this.chartType} series ${index + 1} requires one xValue per value.`);
+      if (this.chartType === "bubble" && (series.bubbleSizes?.length !== series.values.length || series.bubbleSizes.some((value) => !Number.isFinite(Number(value)) || Number(value) <= 0))) throw new TypeError(`Presentation bubble series ${index + 1} requires one positive bubbleSize per value.`);
+      if (this.chartType !== "bubble" && series.bubbleSizes?.length) throw new TypeError(`Presentation ${this.chartType} charts cannot carry bubbleSizes.`);
+      if (series.marker && !["line", "scatter"].includes(seriesType)) throw new TypeError(`Presentation ${seriesType} series ${index + 1} cannot carry a marker.`);
+    }
     this.externalData = normalizePresentationChartExternalData(config.externalData ?? config.sourceWorkbook);
     if (presentationChartUsesFormulaReferences(this) && !this.externalData) throw new TypeError("Presentation chart formula references require externalData with an embedded workbook or external workbook URI.");
     if (this.chartType === "combo" && (!this.series.some((series) => series.chartType === "bar") || !this.series.some((series) => series.chartType === "line"))) throw new TypeError("Presentation combo chart requires at least one bar series and one line series.");
@@ -1552,15 +1593,17 @@ export class ChartElement {
     this.legend = normalizeChartLegend(config, this.series.length);
     this.hasLegend = this.legend.visible;
     this.dataLabels = normalizeChartDataLabels(config);
+    if (this.dataLabels.showPercent && !PRESENTATION_CIRCULAR_CHART_TYPES.has(this.chartType)) throw new TypeError("Presentation percentage data labels require a pie or doughnut chart.");
+    if (PRESENTATION_CIRCULAR_CHART_TYPES.has(this.chartType) && (config.axes || config.xAxis || config.yAxis || config.axisTitles || config.categoryAxisTitle || config.valueAxisTitle || config.xAxisTitle || config.yAxisTitle)) throw new TypeError(`Presentation ${this.chartType} charts cannot carry axes.`);
     Object.assign(this, normalizePresentationChartStyle(this.chartType, config));
   }
 
   inspectRecord() {
     const p = this.position;
-    return { kind: "chart", id: this.id, slide: this.slide.index + 1, name: this.name || undefined, nativeId: this.nativeId, creationId: this.creationId, chartType: this.chartType, title: this.title, categories: this.categories, series: this.series.length, seriesDetails: this.series, axes: this.axes, legend: this.legend, dataLabels: this.dataLabels, externalData: this.externalData ? { embedded: Boolean(this.externalData.bytes), uri: this.externalData.uri, autoUpdate: this.externalData.autoUpdate, bytes: this.externalData.bytes?.byteLength } : undefined, styleId: this.styleId, varyColors: this.varyColors, barOptions: ["bar", "combo"].includes(this.chartType) ? this.barOptions : undefined, lineOptions: ["line", "combo"].includes(this.chartType) ? this.lineOptions : undefined, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px" };
+    return { kind: "chart", id: this.id, slide: this.slide.index + 1, name: this.name || undefined, nativeId: this.nativeId, creationId: this.creationId, chartType: this.chartType, title: this.title, categories: this.categories, series: this.series.length, seriesDetails: this.series, axes: PRESENTATION_CIRCULAR_CHART_TYPES.has(this.chartType) ? undefined : this.axes, legend: this.legend, dataLabels: this.dataLabels, externalData: this.externalData ? { embedded: Boolean(this.externalData.bytes), uri: this.externalData.uri, autoUpdate: this.externalData.autoUpdate, bytes: this.externalData.bytes?.byteLength } : undefined, styleId: this.styleId, varyColors: this.varyColors, barOptions: ["bar", "combo"].includes(this.chartType) ? this.barOptions : undefined, lineOptions: ["line", "combo"].includes(this.chartType) ? this.lineOptions : undefined, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px" };
   }
 
-  layoutJson() { return { kind: "chart", id: this.id, name: this.name, chartType: this.chartType, title: this.title, frame: this.position, categories: this.categories, series: this.series, axes: this.axes, legend: this.legend, dataLabels: this.dataLabels, externalData: this.externalData ? { embedded: Boolean(this.externalData.bytes), uri: this.externalData.uri, autoUpdate: this.externalData.autoUpdate, bytes: this.externalData.bytes?.byteLength } : undefined, styleId: this.styleId, varyColors: this.varyColors, barOptions: ["bar", "combo"].includes(this.chartType) ? this.barOptions : undefined, lineOptions: ["line", "combo"].includes(this.chartType) ? this.lineOptions : undefined }; }
+  layoutJson() { return { kind: "chart", id: this.id, name: this.name, chartType: this.chartType, title: this.title, frame: this.position, categories: this.categories, series: this.series, axes: PRESENTATION_CIRCULAR_CHART_TYPES.has(this.chartType) ? undefined : this.axes, legend: this.legend, dataLabels: this.dataLabels, externalData: this.externalData ? { embedded: Boolean(this.externalData.bytes), uri: this.externalData.uri, autoUpdate: this.externalData.autoUpdate, bytes: this.externalData.bytes?.byteLength } : undefined, styleId: this.styleId, varyColors: this.varyColors, barOptions: ["bar", "combo"].includes(this.chartType) ? this.barOptions : undefined, lineOptions: ["line", "combo"].includes(this.chartType) ? this.lineOptions : undefined }; }
 
   toSvg() {
     const p = this.position;
@@ -1598,11 +1641,12 @@ export class ChartElement {
     const title = `<text x="${p.left + 12}" y="${p.top + 24}" font-family="Arial" font-size="16" font-weight="700" fill="#0f172a">${xmlEscape(this.title || this.chartType)}</text>`;
     const axes = `<line x1="${plot.left}" y1="${plot.top + plot.height}" x2="${plot.left + plot.width}" y2="${plot.top + plot.height}" stroke="#94a3b8"/><line x1="${plot.left}" y1="${plot.top}" x2="${plot.left}" y2="${plot.top + plot.height}" stroke="#94a3b8"/>${hasSecondary ? `<line x1="${plot.left}" y1="${plot.top}" x2="${plot.left + plot.width}" y2="${plot.top}" stroke="#64748b"/><line x1="${plot.left + plot.width}" y1="${plot.top}" x2="${plot.left + plot.width}" y2="${plot.top + plot.height}" stroke="#64748b"/>` : ""}${this.axes.category.title ? `<text x="${plot.left + plot.width / 2 - 24}" y="${p.top + p.height - 4}" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(this.axes.category.title)}</text>` : ""}${this.axes.value.title ? `<text x="${p.left + 8}" y="${plot.top + 10}" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(this.axes.value.title)}</text>` : ""}${this.axes.secondary?.category?.title ? `<text x="${plot.left + plot.width / 2 - 24}" y="${plot.top - 4}" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(this.axes.secondary.category.title)}</text>` : ""}${this.axes.secondary?.value?.title ? `<text x="${plot.left + plot.width - 2}" y="${plot.top + 10}" text-anchor="end" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(this.axes.secondary.value.title)}</text>` : ""}`;
     const legend = this.legend.visible ? this.series.map((series, index) => `<rect x="${p.left + p.width - 82}" y="${p.top + 18 + index * 16}" width="10" height="10" fill="${xmlEscape(resolveColorToken(series.color, series.color))}"/><text x="${p.left + p.width - 68}" y="${p.top + 27 + index * 16}" font-family="Arial" font-size="10" fill="#334155">${xmlEscape(series.name)}</text>`).join("") : "";
-    if (/^pie$/i.test(this.chartType)) {
+    if (PRESENTATION_CIRCULAR_CHART_TYPES.has(this.chartType)) {
       const series = this.series[0] || { values: [] };
       const values = (series.values || []).map((value) => Math.max(0, Number(value) || 0));
       const total = values.reduce((sum, value) => sum + value, 0) || 1;
       const radius = Math.max(8, Math.min(plot.width, plot.height) / 2);
+      const innerRadius = this.chartType === "doughnut" ? radius * 0.5 : 0;
       const cx = plot.left + plot.width / 2;
       const cy = plot.top + plot.height / 2;
       let angle = -Math.PI / 2;
@@ -1611,14 +1655,61 @@ export class ChartElement {
         const point = series.points?.find((item) => item.idx === index);
         const color = resolveColorToken(point?.fill || ["#0ea5e9", "#f97316", "#22c55e", "#a855f7"][index % 4], "#0ea5e9");
         const effectiveLabels = series.dataLabels || this.dataLabels;
-        const labelText = presentationChartDataLabelText(effectiveLabels, categories[index], value);
+        const labelText = presentationChartDataLabelText(effectiveLabels, categories[index], value, { total, seriesName: series.name });
         const label = labelText ? `<text x="${cx + (radius + 8) * Math.cos((angle + next) / 2)}" y="${cy + (radius + 8) * Math.sin((angle + next) / 2)}" font-family="Arial" font-size="9" fill="#334155">${xmlEscape(labelText)}</text>` : "";
-        const path = `<path d="${pieSlicePath(cx, cy, radius, angle, next)}" fill="${xmlEscape(color)}"${presentationChartLineSvgAttributes(point?.line || series.line) || ' stroke="#ffffff"'}/>${label}`;
+        const geometry = innerRadius > 0 ? doughnutSlicePath(cx, cy, radius, innerRadius, angle, next) : pieSlicePath(cx, cy, radius, angle, next);
+        const path = `<path d="${geometry}" fill="${xmlEscape(color)}"${presentationChartLineSvgAttributes(point?.line || series.line) || ' stroke="#ffffff"'}/>${label}`;
         angle = next;
         return path;
       }).join("");
       const categoryLegend = categories.map((category, index) => `<rect x="${p.left + p.width - 82}" y="${p.top + 18 + index * 16}" width="10" height="10" fill="${xmlEscape(resolveColorToken(series.points?.find((item) => item.idx === index)?.fill || ["#0ea5e9", "#f97316", "#22c55e", "#a855f7"][index % 4], "#0ea5e9"))}"/><text x="${p.left + p.width - 68}" y="${p.top + 27 + index * 16}" font-family="Arial" font-size="10" fill="#334155">${xmlEscape(category)}</text>`).join("");
       return `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="#ffffff" stroke="#cbd5e1"/>${title}${slices}${this.legend.visible ? categoryLegend : ""}`;
+    }
+    if (PRESENTATION_NUMERIC_X_CHART_TYPES.has(this.chartType)) {
+      const xValues = this.series.flatMap((series) => series.xValues || []).map(Number).filter(Number.isFinite);
+      const yValues = this.series.flatMap((series) => series.values || []).map(Number).filter(Number.isFinite);
+      const configuredXMin = Number(this.axes.category?.min);
+      const configuredXMax = Number(this.axes.category?.max);
+      const configuredYMin = Number(this.axes.value?.min);
+      const configuredYMax = Number(this.axes.value?.max);
+      const xMin = Number.isFinite(configuredXMin) ? configuredXMin : Math.min(0, ...xValues);
+      const xMax = Number.isFinite(configuredXMax) ? configuredXMax : Math.max(1, ...xValues);
+      const yMin = Number.isFinite(configuredYMin) ? configuredYMin : Math.min(0, ...yValues);
+      const yMax = Number.isFinite(configuredYMax) ? configuredYMax : Math.max(1, ...yValues);
+      const mapX = (value) => plot.left + ((Number(value) - xMin) / Math.max(Number.EPSILON, xMax - xMin)) * plot.width;
+      const mapY = (value) => plot.top + plot.height - ((Number(value) - yMin) / Math.max(Number.EPSILON, yMax - yMin)) * plot.height;
+      const maxBubble = Math.max(1, ...this.series.flatMap((series) => series.bubbleSizes || []).map(Number).filter(Number.isFinite));
+      const body = this.series.map((series) => {
+        const color = resolveColorToken(series.color || series.fill, "#0ea5e9");
+        return (series.values || []).map((value, index) => {
+          const x = mapX(series.xValues?.[index]);
+          const y = mapY(value);
+          if (this.chartType === "bubble") {
+            const radius = Math.max(3, Math.sqrt(Number(series.bubbleSizes?.[index]) / maxBubble) * Math.min(28, Math.max(8, Math.min(plot.width, plot.height) / 5)));
+            const label = presentationChartDataLabelText(series.dataLabels || this.dataLabels, series.xValues?.[index], value, { seriesName: series.name });
+            return `<circle cx="${x}" cy="${y}" r="${radius}" fill="${xmlEscape(color)}" fill-opacity="0.72"${presentationChartLineSvgAttributes(series.line)}/>${label ? `<text x="${x + radius + 3}" y="${y - 3}" font-family="Arial" font-size="9" fill="#334155">${xmlEscape(label)}</text>` : ""}`;
+          }
+          const marker = series.marker || { symbol: "circle", size: 7 };
+          const label = presentationChartDataLabelText(series.dataLabels || this.dataLabels, series.xValues?.[index], value, { seriesName: series.name });
+          return `${presentationChartMarkerSvg(marker, x, y, color)}${label ? `<text x="${x + 5}" y="${y - 5}" font-family="Arial" font-size="9" fill="#334155">${xmlEscape(label)}</text>` : ""}`;
+        }).join("");
+      }).join("");
+      return `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="#ffffff" stroke="#cbd5e1"/>${title}${axes}${body}${legend}`;
+    }
+    if (this.chartType === "area") {
+      const max = Math.max(1, ...this.series.flatMap((series) => series.values || []).map((value) => Math.max(0, Number(value) || 0)));
+      const body = this.series.map((series) => {
+        const points = (series.values || []).map((value, index) => ({
+          x: plot.left + (categories.length <= 1 ? plot.width / 2 : (index / Math.max(1, categories.length - 1)) * plot.width),
+          y: plot.top + plot.height - (Math.max(0, Number(value) || 0) / max) * plot.height,
+        }));
+        if (!points.length) return "";
+        const color = resolveColorToken(series.color, "#0ea5e9");
+        const path = `M ${plot.left} ${plot.top + plot.height} L ${points.map((point) => `${point.x} ${point.y}`).join(" L ")} L ${plot.left + plot.width} ${plot.top + plot.height} Z`;
+        return `<path d="${path}" fill="${xmlEscape(color)}" fill-opacity="0.45"${presentationChartLineSvgAttributes(series.line) || ` stroke="${xmlEscape(color)}" stroke-width="1.5"`}/>`;
+      }).join("");
+      const labels = categories.map((category, index) => `<text x="${plot.left + index * (plot.width / Math.max(1, categories.length))}" y="${p.top + p.height - 18}" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(category)}</text>`).join("");
+      return `<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="#ffffff" stroke="#cbd5e1"/>${title}${axes}${body}${labels}${legend}`;
     }
     const lineBody = lineSeries.map((series, seriesIndex) => {
         const axisGroup = series.axisGroup || "primary";

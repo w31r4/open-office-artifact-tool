@@ -176,7 +176,7 @@ internal static partial class PptxChartCodec
         string[]? commonCategories = null;
         foreach (var native in orderedSeries)
         {
-            if (!TrySeries(native.Element, native.Type, out var series, out var categories, out var seriesEditable) ||
+            if (!OpenXmlChartSpaceCodec.TrySeries(native.Element, native.Type, out var series, out var categories, out var seriesEditable) ||
                 series.CategoryFormula.Length > 0 || series.ValueFormula.Length > 0 || series.XValueFormula.Length > 0 || series.BubbleSizeFormula.Length > 0) return false;
             editable &= seriesEditable;
             if (commonCategories is null) commonCategories = categories;
@@ -265,7 +265,7 @@ internal static partial class PptxChartCodec
 
     private static XDocument BuildComboChartDocument(PresentationChart chart, string id, string name)
     {
-        var indexed = chart.ComboSeries.Select((item, index) => new ComboNativeSeries(item.Type, ComboAxisGroup(item), SeriesElement(item.Series, chart.Categories, index), checked((uint)index))).ToArray();
+        var indexed = chart.ComboSeries.Select((item, index) => new ComboNativeSeries(item.Type, ComboAxisGroup(item), OpenXmlChartSpaceCodec.SeriesElement(item.Series, chart.Categories, index, item.Type), checked((uint)index))).ToArray();
         var barSeries = indexed.Where(item => item.Type == SpreadsheetChartType.Bar).Select(item => item.Element).ToArray();
         var lineSeries = indexed.Where(item => item.Type == SpreadsheetChartType.Line).Select(item => item.Element).ToArray();
         var lineUsesSecondaryAxes = indexed.Any(item => item.Type == SpreadsheetChartType.Line && item.AxisGroup == PresentationChartAxisGroup.Secondary);
@@ -288,7 +288,7 @@ internal static partial class PptxChartCodec
         var nativeChart = new XElement(ChartNs + "chart");
         if (chart.Title.Length > 0) nativeChart.Add(XlsxChartTextStyleCodec.TitleElement(chart.Title, null));
         nativeChart.Add(plotArea);
-        if (chart.HasLegend) nativeChart.Add(LegendElement());
+        if (chart.HasLegend) nativeChart.Add(OpenXmlChartSpaceCodec.LegendElement());
         nativeChart.Add(new XElement(ChartNs + "plotVisOnly", new XAttribute("val", "1")));
         return new XDocument(new XDeclaration("1.0", "UTF-8", "yes"), new XElement(ChartNs + "chartSpace", new XAttribute(XNamespace.Xmlns + "c", ChartNs), new XAttribute(XNamespace.Xmlns + "a", DrawingNs), nativeChart));
     }
@@ -296,8 +296,8 @@ internal static partial class PptxChartCodec
     private static void PatchComboChart(XDocument document, PresentationChart target, string id, string name)
     {
         var nativeChart = document.Root!.Element(ChartNs + "chart")!;
-        PatchTitle(nativeChart, target.Title);
-        PatchLegend(nativeChart, target.HasLegend);
+        OpenXmlChartSpaceCodec.PatchTitle(nativeChart, target.Title, null, "unsupported_presentation_edit", "Presentation combo chart");
+        OpenXmlChartSpaceCodec.PatchLegend(nativeChart, target.HasLegend);
         var plotArea = nativeChart.Element(ChartNs + "plotArea")!;
         var barPlot = plotArea.Element(ChartNs + "barChart")!;
         var linePlot = plotArea.Element(ChartNs + "lineChart")!;
@@ -314,7 +314,7 @@ internal static partial class PptxChartCodec
         {
             var requested = target.ComboSeries[index];
             if (requested.Type != nativeSeries[index].Type || ComboAxisGroup(requested) != nativeSeries[index].AxisGroup || requested.Series is null) throw new CodecException("presentation_chart_topology_changed", "Presentation combo chart series type or axis group changed unexpectedly.");
-            PatchSeries(nativeSeries[index].Element, requested.Series, target.Categories);
+            OpenXmlChartSpaceCodec.PatchSeries(nativeSeries[index].Element, requested.Series, target.Categories, requested.Type, "presentation_chart_topology_changed", "Presentation combo chart");
         }
         XlsxChartDataLabelsCodec.Patch(barPlot, target.DataLabels);
         XlsxChartDataLabelsCodec.Patch(linePlot, target.DataLabels);

@@ -72,6 +72,48 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### PPTX canonical area, doughnut, scatter, and bubble charts
+
+On 2026-07-20, the Presentation/OpenChestnut path added four literal native
+ChartPart profiles alongside the existing bar, line, pie, and combo support:
+standard area, fixed 50%-hole doughnut, marker-only scatter, and bounded 2D
+bubble. Area and doughnut use literal category caches; pie/doughnut alone permit
+percentage labels and reject axes. Scatter and bubble use aligned numeric X/Y
+caches with two value axes, while bubble adds positive area-based sizes. The
+public model, versioned protobuf wire, C# Open XML SDK codec, import/edit/second
+import, inspect/layout/verify, and SVG/PNG rendering share those semantics.
+
+The C# work also extracted `OpenXmlChartSpaceCodec` as the package-independent
+DrawingML ChartSpace reader/writer/patcher used by both XLSX and PPTX. The
+format adapters retain only their own OPC/source-binding and mutation policy.
+The Presentation JavaScript adapter similarly delegates chart validation and
+wire mapping to `open-chestnut-presentation-charts.mjs`, reducing the largest
+adapter without creating a root-entry back-edge.
+
+Formula references, external or embedded workbooks, stacked area, non-50%
+doughnut geometry, connected/smooth scatter, bubble 3D/negative/custom-scale
+semantics, unsupported markers, and plot/series/point topology changes fail
+closed. The shipped `openchestnut-chart-families-workflow.mjs` independently
+inventories all four native chart XML parts, edits one semantic field in each,
+imports twice, runs inspect/verify, and writes a byte-bound audit plus a real
+Playwright PNG. A separate LibreOffice/Poppler render of the same one-slide
+deck was visually reviewed: the area fill/axes, doughnut category-percentage
+labels, diamond scatter markers, and size-scaled bubbles all rendered as
+intended.
+
+The complete local `npm test` suite passed, including the packed Skill paths,
+Playwright, LibreOffice/Poppler, qpdf, package/release checks, the 20-template
+corpus, and every Office/PDF regression. OpenChestnut passed `299/299` and
+OfficeBridge passed `5/5`. Protocol lint/generation and generated API docs are
+current. Two source-built WASM runs produced the same 39-file audited build;
+the bundled runtime contains 38 files and 14,747,328 bytes. The production
+clean-install/dry-run tarball contains 470 files, 9,052,544 compressed bytes,
+and 23,882,702 unpacked bytes. The real pikepdf, pyHanko, veraPDF, and OCRmyPDF
+provider repeats were not configured in this shell, so their contract and
+adversarial suites passed while those explicitly environment-gated executions
+were skipped. MuPDF.js, qpdf, LibreOffice, Poppler, and Playwright ran locally.
+No npm publish or tag operation was attempted.
+
 ### PPTX canonical merged table cells
 
 On 2026-07-20, the Presentation/OpenChestnut path closed the reference

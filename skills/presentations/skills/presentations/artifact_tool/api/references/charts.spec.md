@@ -7,20 +7,34 @@
 The model and reference-shaped API describe many chart families, but native
 OpenChestnut PPTX creation/import/edit is deliberately narrower:
 
-- `bar`, `line`, and `pie` accept literal categories and finite values.
+- `bar`, `line`, `pie`, standard `area`, and fixed 50%-hole `doughnut`
+  accept literal categories and one finite value per category. Pie and doughnut
+  have no axes; `dataLabels.showPercent` is available only for those circular
+  families.
+- Marker-only `scatter` accepts no shared categories. Every series owns aligned
+  finite `xValues` and Y `values`, and the chart uses two numeric value axes.
+  Markers may carry fill and border styling; a series line is rejected rather
+  than silently changing the chart into a connected scatter plot.
+- Bounded 2D `bubble` uses the same numeric X/Y contract plus one aligned,
+  finite, positive `bubbleSize` per point. Native size semantics are area-based;
+  3D, negative, and custom-scale variants are outside this profile.
 - `combo` is native only for clustered bar plus standard line plots. Every
   series declares `chartType: "bar"` or `chartType: "line"`, with at least
   one primary bar and one line. Bars always use the primary category/value
   pair. Lines are either all primary, or every line declares
   `axisGroup: "secondary"` and uses the canonical secondary category/value
   pair at the top and right of the chart.
-- The combo profile permits title, legend, basic fill/line/marker styling, and
-  chart-level data labels. Its plot/series/point topology is fixed after
+- These profiles permit title, legend, basic fill/line styling, markers only on
+  line and scatter series, chart-level data labels, and bounded primary axes
+  where the family has axes. Their plot/series/point topology is fixed after
   import.
-- External data, mixed primary/secondary line groups, secondary bars, point
-  overrides, per-series data labels, smooth lines, trendlines, error bars, and
-  other chart families fail closed or remain source-bound. Do not re-create an
-  irregular imported chart from its visible values and claim it was preserved.
+- PPTX charts are literal-data ChartParts. Formula references, external or
+  embedded workbooks, stacked area, non-50% doughnut geometry, connected or
+  smooth scatter, bubble 3D/negative/custom-scale semantics, mixed
+  primary/secondary combo line groups, secondary bars, point overrides,
+  per-series data labels, trendlines, error bars, and other chart families fail
+  closed or remain source-bound. Do not re-create an irregular imported chart
+  from its visible values and claim it was preserved.
 
 Use `inspect` before editing an imported chart, make the smallest supported
 change, export to a distinct output, import once more, and render the final
@@ -28,6 +42,12 @@ slide for visual QA. The bundled LibreOfficeDev 26.8 alpha currently overlaps
 the dual value-axis tick labels for cache-only PPTX secondary-axis combos even
 though its series and right-axis title render; retain the OOXML/round-trip gate
 and use a Microsoft PowerPoint/native-host lane for release-grade placement QA.
+
+The runnable
+`examples/openchestnut-chart-families-workflow.mjs` authors area, doughnut,
+scatter, and bubble charts, inventories their native ChartParts, imports and
+edits one semantic field in each family, exports and imports a second time, and
+writes a real Playwright PNG plus a source/output-bound audit.
 
 ### Canonical secondary-line combo
 
@@ -193,7 +213,7 @@ type ChartSeriesConfig = {
   fill?: FillConfig;
   line?: LineConfig;
   stroke?: LineConfig;
-  marker?: { symbol?: "circle" | "diamond" | "dot" | "none" | "plus" | "square" | "star" | "triangle" | "x"; size?: number };
+  marker?: { symbol?: "circle" | "diamond" | "dot" | "none" | "plus" | "square" | "star" | "triangle" | "x"; size?: number; fill?: FillConfig; line?: LineConfig };
   points?: Array<{ idx: number; fill?: FillConfig; line?: LineConfig; stroke?: LineConfig }>;
   dataLabelOverrides?: Array<{ idx: number; text?: string; position?: string; fill?: FillConfig; line?: LineConfig; stroke?: LineConfig; showValue?: boolean; showSeriesName?: boolean; showCategoryName?: boolean; showPercent?: boolean; textStyle?: ChartTextStyleConfig }>;
   trendlines?: Array<{ type: string; name?: string }>;

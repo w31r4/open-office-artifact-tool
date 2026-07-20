@@ -99,6 +99,46 @@ try {
     assert.ok(compared.nativeRender.pages.every((slide) => slide.baselineCompared && slide.pixelDiff?.changed === false && slide.ok));
   }
 
+  const chartFamiliesDir = path.join(root, "chart-families-workflow");
+  const chartFamiliesOutput = path.join(chartFamiliesDir, "chart-families.pptx");
+  const chartFamiliesPreview = path.join(chartFamiliesDir, "chart-families.png");
+  const chartFamiliesAudit = path.join(chartFamiliesDir, "audit.json");
+  const { createAndEditChartFamilyDeck } = await import(
+    "../skills/presentations/skills/presentations/examples/openchestnut-chart-families-workflow.mjs"
+  );
+  const chartFamiliesResult = await createAndEditChartFamilyDeck({
+    outputPath: chartFamiliesOutput,
+    previewPath: chartFamiliesPreview,
+    auditPath: chartFamiliesAudit,
+  });
+  assert.equal(chartFamiliesResult.audit.provider.actual, "open-chestnut");
+  assert.equal(chartFamiliesResult.audit.provider.silentFallback, false);
+  assert.equal(chartFamiliesResult.audit.operation.type, "greenfield-native-chart-family-author-edit");
+  assert.deepEqual(chartFamiliesResult.audit.operation.chartTypes, ["area", "doughnut", "scatter", "bubble"]);
+  assert.equal(chartFamiliesResult.audit.validation.verify.ok, true);
+  assert.equal(chartFamiliesResult.audit.validation.package.charts.length, 4);
+  assert.equal(chartFamiliesResult.audit.validation.package.charts[1].showPercent, true);
+  assert.equal(chartFamiliesResult.audit.validation.package.charts[2].numericX, true);
+  assert.equal(chartFamiliesResult.audit.validation.package.charts[3].bubbleSizes, true);
+  assert.equal((await fs.readFile(chartFamiliesPreview)).subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+  const chartFamiliesRoundTrip = await PresentationFile.importPptx(new FileBlob(await fs.readFile(chartFamiliesOutput), {
+    type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    name: "chart-families.pptx",
+  }));
+  assert.deepEqual(chartFamiliesRoundTrip.slides.getItem(0).charts.items.map((chart) => chart.chartType), ["area", "doughnut", "scatter", "bubble"]);
+  assert.equal(itemByName(chartFamiliesRoundTrip.slides.getItem(0).charts.items, "area-family").series[0].values[1], 57);
+  assert.equal(itemByName(chartFamiliesRoundTrip.slides.getItem(0).charts.items, "doughnut-family").series[0].values[1], 33);
+  assert.equal(itemByName(chartFamiliesRoundTrip.slides.getItem(0).charts.items, "scatter-family").series[0].xValues[1], 22);
+  assert.equal(itemByName(chartFamiliesRoundTrip.slides.getItem(0).charts.items, "bubble-family").series[0].bubbleSizes[1], 12);
+  const chartFamiliesQa = await verifyPresentationFile(chartFamiliesOutput, {
+    outputDir: path.join(chartFamiliesDir, "qa"),
+    nativeRender,
+  });
+  assert.equal(chartFamiliesQa.verify.ok, true);
+  assert.equal(chartFamiliesQa.modelRender.slides.length, 1);
+  assert.equal(chartFamiliesQa.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+  if (nativeStatus.available) assert.equal(chartFamiliesQa.nativeRender.pageCount, 1);
+
   const roundtrip = await runPresentationFixture(path.join(fixtureDir, "open-chestnut-preservation.json"), {
     outputDir: path.join(root, "roundtrip"),
     nativeRender,

@@ -440,9 +440,11 @@ assert.match(HELP_CATALOG.find((item) => item.name === "sheet.sparklineGroups.ad
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.charts.add")?.schema?.parameters?.chartType?.description || "", /bar, line, pie, area, doughnut, scatter, or bubble.*fail closed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.charts.add")?.schema?.parameters?.series?.description || "", /xValues\/xFormula/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.charts.add")?.schema?.parameters?.series?.description || "", /bubbleSizes\/bubbleSizeFormula.*aligned/i);
-assert.match(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.chartType?.description || "", /bar, line, pie, or combo.*clustered bar\+line/i);
-assert.match(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.description || "", /combo.*at least one primary bar.*axisGroup: secondary.*mixed primary\/secondary line plots fail closed/i);
-assert.match(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.axes?.description || "", /axes\.secondary\.category.*top\/right.*secondary bars/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.chartType?.description || "", /bar, line, pie, standard area, fixed 50%-hole doughnut, marker-only scatter, bounded 2D bubble, or combo.*fail closed/i);
+assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.categories?.required, undefined);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.description || "", /xValues.*bubbleSizes.*Markers.*combo.*axisGroup: secondary.*mixed primary\/secondary line plots fail closed/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.axes?.description || "", /scatter and bubble.*two numeric value axes.*pie and doughnut reject axes.*axes\.secondary\.category.*top\/right.*secondary bars/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.dataLabels?.description || "", /showPercent.*pie\/doughnut/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "table.merge")?.schema?.parameters?.range?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "table.merge")?.schema?.returns?.table?.description || "", /upper-left value.*covered cells read-only.*topology remains source-bound/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "openChestnutStatus")?.schema?.returns?.status?.type, "object");

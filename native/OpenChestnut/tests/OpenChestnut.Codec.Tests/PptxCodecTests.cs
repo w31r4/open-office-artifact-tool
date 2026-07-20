@@ -874,6 +874,156 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void LiteralAreaDoughnutScatterAndBubbleChartsAuthorImportAndEdit()
+    {
+        var request = ExportRequest();
+        request.Artifact.Presentation.Slides[0].Elements.Clear();
+
+        PresentationChart CategoryChart(SpreadsheetChartType type, string title, long left)
+        {
+            var chart = new PresentationChart
+            {
+                LeftEmu = left,
+                TopEmu = 700_000,
+                WidthEmu = 3_400_000,
+                HeightEmu = 2_600_000,
+                Type = type,
+                Title = title,
+                HasLegend = true,
+            };
+            chart.Categories.Add(["North", "Central", "South"]);
+            chart.Series.Add(new SpreadsheetChartSeriesArtifact
+            {
+                Name = "Share",
+                Fill = new SpreadsheetColor { Rgb = "0EA5E9" },
+                Line = new SpreadsheetChartLineStyleArtifact { Color = new SpreadsheetColor { Rgb = "0369A1" }, DashStyle = SpreadsheetChartLineDashStyle.Solid, WidthPoints = 1.5 },
+            });
+            chart.Series[0].Values.Add([42, 31, 27]);
+            if (type == SpreadsheetChartType.Doughnut)
+                chart.DataLabels = new SpreadsheetChartDataLabelsArtifact { ShowCategoryName = true, ShowPercent = true, Position = SpreadsheetChartDataLabelPosition.OutsideEnd };
+            else
+            {
+                chart.XAxis = new SpreadsheetChartAxisArtifact { Title = "Region" };
+                chart.YAxis = new SpreadsheetChartAxisArtifact { Title = "Index", Minimum = 0, Maximum = 50, MajorUnit = 10 };
+            }
+            return chart;
+        }
+
+        PresentationChart NumericChart(SpreadsheetChartType type, string title, long left)
+        {
+            var chart = new PresentationChart
+            {
+                LeftEmu = left,
+                TopEmu = 3_600_000,
+                WidthEmu = 3_400_000,
+                HeightEmu = 2_600_000,
+                Type = type,
+                Title = title,
+                HasLegend = true,
+                XAxis = new SpreadsheetChartAxisArtifact { Title = "Reach", Minimum = 0, Maximum = 40, MajorUnit = 10 },
+                YAxis = new SpreadsheetChartAxisArtifact { Title = "Return", Minimum = 0, Maximum = 100, MajorUnit = 20 },
+            };
+            chart.Series.Add(new SpreadsheetChartSeriesArtifact
+            {
+                Name = "Portfolio",
+                Fill = new SpreadsheetColor { Rgb = "8B5CF6" },
+                Marker = type == SpreadsheetChartType.Scatter ? new SpreadsheetChartMarkerArtifact { Symbol = SpreadsheetChartMarkerSymbol.Diamond, Size = 7, Fill = new SpreadsheetColor { Rgb = "8B5CF6" } } : null,
+                Line = type == SpreadsheetChartType.Bubble ? new SpreadsheetChartLineStyleArtifact { Color = new SpreadsheetColor { Rgb = "6D28D9" }, DashStyle = SpreadsheetChartLineDashStyle.Solid, WidthPoints = 1 } : null,
+            });
+            chart.Series[0].XValues.Add([10, 20, 34]);
+            chart.Series[0].Values.Add([35, 68, 84]);
+            if (type == SpreadsheetChartType.Bubble) chart.Series[0].BubbleSizes.Add([4, 9, 16]);
+            return chart;
+        }
+
+        var charts = new[]
+        {
+            CategoryChart(SpreadsheetChartType.Area, "Regional trajectory", 500_000),
+            CategoryChart(SpreadsheetChartType.Doughnut, "Regional mix", 4_100_000),
+            NumericChart(SpreadsheetChartType.Scatter, "Reach relationship", 500_000),
+            NumericChart(SpreadsheetChartType.Bubble, "Opportunity map", 4_100_000),
+        };
+        for (var index = 0; index < charts.Length; index++)
+        {
+            request.Artifact.Presentation.Slides[0].Elements.Add(new PresentationElement
+            {
+                Id = $"presentation/slide/1/chart/family-{index + 1}",
+                Name = $"{charts[index].Type} chart",
+                Chart = charts[index],
+            });
+        }
+
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var documents = package.PresentationPart!.SlideParts.Single().ChartParts
+                .Select(part => XDocument.Load(part.GetStream(FileMode.Open, FileAccess.Read)))
+                .ToArray();
+            XNamespace c = "http://schemas.openxmlformats.org/drawingml/2006/chart";
+            Assert.Single(documents, document => document.Descendants(c + "areaChart").Any());
+            var doughnut = Assert.Single(documents, document => document.Descendants(c + "doughnutChart").Any());
+            Assert.Equal("50", doughnut.Descendants(c + "holeSize").Single().Attribute("val")!.Value);
+            Assert.Equal("1", doughnut.Descendants(c + "showPercent").Single().Attribute("val")!.Value);
+            var scatter = Assert.Single(documents, document => document.Descendants(c + "scatterChart").Any());
+            Assert.Equal("marker", scatter.Descendants(c + "scatterStyle").Single().Attribute("val")!.Value);
+            Assert.Equal(2, scatter.Descendants(c + "valAx").Count());
+            var bubble = Assert.Single(documents, document => document.Descendants(c + "bubbleChart").Any());
+            Assert.Single(bubble.Descendants(c + "bubbleSize"));
+            Assert.Equal("area", bubble.Descendants(c + "sizeRepresents").Single().Attribute("val")!.Value);
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedElements = Assert.Single(imported.Artifact.Presentation.Slides).Elements;
+        Assert.Equal([SpreadsheetChartType.Area, SpreadsheetChartType.Doughnut, SpreadsheetChartType.Scatter, SpreadsheetChartType.Bubble], importedElements.Select(item => item.Chart.Type));
+        Assert.All(importedElements, element => Assert.True(element.Source.Editable));
+        Assert.True(importedElements[1].Chart.DataLabels.ShowPercent);
+        Assert.Equal([10D, 20D, 34D], importedElements[2].Chart.Series[0].XValues);
+        Assert.Equal([4D, 9D, 16D], importedElements[3].Chart.Series[0].BubbleSizes);
+
+        importedElements[0].Chart.Series[0].Values[1] = 35;
+        importedElements[1].Chart.DataLabels.ShowPercent = false;
+        importedElements[2].Chart.Series[0].XValues[1] = 22;
+        importedElements[3].Chart.Series[0].BubbleSizes[1] = 12;
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var roundTrip = Import(edited.File.ToByteArray());
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        var roundTripElements = Assert.Single(roundTrip.Artifact.Presentation.Slides).Elements;
+        Assert.Equal(35, roundTripElements[0].Chart.Series[0].Values[1]);
+        Assert.False(roundTripElements[1].Chart.DataLabels.ShowPercent);
+        Assert.Equal(22, roundTripElements[2].Chart.Series[0].XValues[1]);
+        Assert.Equal(12, roundTripElements[3].Chart.Series[0].BubbleSizes[1]);
+
+        var invalid = ExportRequest();
+        var invalidBubble = NumericChart(SpreadsheetChartType.Bubble, "Invalid bubble", 500_000);
+        invalidBubble.Series[0].BubbleSizes[1] = 0;
+        invalid.Artifact.Presentation.Slides[0].Elements.Add(new PresentationElement { Id = "presentation/slide/1/chart/invalid-bubble", Name = "Invalid bubble", Chart = invalidBubble });
+        var rejected = Invoke(invalid);
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_presentation_chart", Assert.Single(rejected.Diagnostics).Code);
+
+        invalid = ExportRequest();
+        var invalidArea = CategoryChart(SpreadsheetChartType.Area, "Invalid percentage labels", 500_000);
+        invalidArea.DataLabels = new SpreadsheetChartDataLabelsArtifact { ShowPercent = true };
+        invalid.Artifact.Presentation.Slides[0].Elements.Add(new PresentationElement { Id = "presentation/slide/1/chart/invalid-percent", Name = "Invalid percent", Chart = invalidArea });
+        rejected = Invoke(invalid);
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_presentation_chart", Assert.Single(rejected.Diagnostics).Code);
+
+        invalid = ExportRequest();
+        var invalidFormula = NumericChart(SpreadsheetChartType.Scatter, "Invalid formula source", 500_000);
+        invalidFormula.Series[0].XValueFormula = "Sheet1!$A$1:$A$3";
+        invalid.Artifact.Presentation.Slides[0].Elements.Add(new PresentationElement { Id = "presentation/slide/1/chart/invalid-formula", Name = "Invalid formula", Chart = invalidFormula });
+        rejected = Invoke(invalid);
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_presentation_chart", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void LiteralPrimaryAxisBarLineComboAuthorsImportsAndEdits()
     {
         var request = ExportRequest();

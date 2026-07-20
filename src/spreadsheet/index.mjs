@@ -647,6 +647,7 @@ class WorksheetChart {
     this.titleTextStyle = { ...(sourceOrConfig.titleTextStyle || {}) };
     this.lineOptions = normalizeSpreadsheetChartLineOptions(sourceOrConfig.lineOptions) || undefined;
     this.dataLabels = normalizeSpreadsheetChartDataLabels(sourceOrConfig.dataLabels);
+    if (this.dataLabels?.showPercent && !["pie", "doughnut"].includes(this.type)) throw new TypeError("Worksheet chart percentage data labels require a pie or doughnut chart.");
     this.hasLegend = sourceOrConfig.hasLegend ?? true;
     this.categories = sourceOrConfig.categories || [];
     this.position = sourceOrConfig.position || { left: 420, top: 40, width: 360, height: 220 };
