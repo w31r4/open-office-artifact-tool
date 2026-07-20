@@ -96,6 +96,21 @@ def validate_ocr_page_budget(page, dpi: int) -> int:
     return pixels
 
 
+def ocr_page_text(page, language: str, dpi: int) -> tuple[str, int]:
+    """OCR a page upright while retaining its original PDF /Rotate value."""
+    source_rotation = int(page.rotation)
+    if source_rotation not in {0, 90, 180, 270}:
+        raise ScanError(f"unsupported normalized page rotation {source_rotation}")
+    try:
+        if source_rotation:
+            page.set_rotation(0)
+        textpage = page.get_textpage_ocr(language=language, dpi=dpi, full=True)
+        return page.get_text("text", textpage=textpage) or "", source_rotation
+    finally:
+        if int(page.rotation) != source_rotation:
+            page.set_rotation(source_rotation)
+
+
 def structural_name_counts(doc) -> dict[str, int]:
     counts = {name: 0 for name in RISKY_STRUCTURAL_NAMES}
     action_subtypes = {"/ImportData", "/JavaScript", "/Launch", "/SubmitForm"}
@@ -264,7 +279,7 @@ def scan_pdf(
         for page_index in range(doc.page_count):
             page = doc.load_page(page_index)
             page_number = page_index + 1
-            page_record: dict[str, Any] = {"page": page_number}
+            page_record: dict[str, Any] = {"page": page_number, "rotation": int(page.rotation)}
             try:
                 text = page.get_text("text") or ""
                 findings.text("extracted-text", f"page:{page_number}", text)
@@ -319,12 +334,7 @@ def scan_pdf(
             if images and require_ocr:
                 try:
                     ocr_pixels = validate_ocr_page_budget(page, ocr_dpi)
-                    textpage = page.get_textpage_ocr(
-                        language=ocr_language,
-                        dpi=ocr_dpi,
-                        full=True,
-                    )
-                    ocr_text = page.get_text("text", textpage=textpage) or ""
+                    ocr_text, source_rotation = ocr_page_text(page, ocr_language, ocr_dpi)
                     findings.text("image-ocr", f"page:{page_number}", ocr_text)
                     page_record["ocr"] = {
                         "complete": True,
@@ -332,6 +342,8 @@ def scan_pdf(
                         "language": ocr_language,
                         "dpi": ocr_dpi,
                         "rasterPixels": ocr_pixels,
+                        "pageRotation": source_rotation,
+                        "coordinateSpace": "unrotated-pymupdf-page-space",
                     }
                 except Exception as exc:
                     page_record["ocr"] = {"complete": False, "error": str(exc)}

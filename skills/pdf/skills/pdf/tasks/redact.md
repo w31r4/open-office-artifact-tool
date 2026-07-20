@@ -14,8 +14,9 @@ MuPDF.js can apply `redact_text` or `redact_rect` during a full rewrite and refu
 - Scan raw bytes, decoded objects/streams, extracted text, metadata/XMP, attachments, annotations/widgets, and OCR of image-bearing pages.
 - Render every page from final bytes with Poppler and inspect it.
 - For text that exists only in raster pixels, use the typed `redact_ocr_text`
-  operation. It requires an explicit unrotated page and expected image-backed
-  match count; it is not a general OCR guess-and-delete mode.
+  operation. It requires one explicit page, its expected 0/90/180/270-degree
+  rotation, and an expected image-backed match count; it is not a general OCR
+  guess-and-delete mode.
 
 ## Operations
 
@@ -34,7 +35,7 @@ PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
 ```json
 [
   { "type": "redact_text", "term": "Customer Secret", "fill": [0, 0, 0] },
-  { "type": "redact_ocr_text", "page": 2, "term": "IMAGE SECRET 8842", "expected_matches": 1, "fill": [0, 0, 0] },
+  { "type": "redact_ocr_text", "page": 2, "expected_rotation": 90, "term": "IMAGE SECRET 8842", "expected_matches": 1, "fill": [0, 0, 0] },
   { "type": "redact_rect", "page": 2, "rect": [72, 120, 340, 180], "fill": [0, 0, 0] }
 ]
 ```
@@ -54,9 +55,12 @@ PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
 that do not overlap a native raster placement by at least 90%, and applies a
 real image redaction only when the remaining count equals `expected_matches`.
 The adapter caps OCR at 72–300 dpi, 100 million raster pixels per page, 1,000
-matches, and 4,096 term characters. Rotated pages must first become a separately
-reviewed normalized version. OCR uncertainty is never converted into a broad
-rectangle or provider fallback.
+matches, and 4,096 term characters. It requires an exact `expected_rotation`.
+For rotated pages it temporarily clears `/Rotate` only while Tesseract sees the
+page upright, keeps all returned/redaction rectangles in canonical unrotated
+PyMuPDF page space, restores `/Rotate`, and reports both unrotated and
+display-space rectangles for independent QA. OCR uncertainty is never converted
+into a broad rectangle or provider fallback.
 
 If an image-bearing page requires OCR and Tesseract/PyMuPDF OCR cannot run, the strict residue gate fails. Install/configure OCR, repeat the scan, and do not deliver an incompletely scanned file. After redaction, the same OCR term must be absent from the fully rewritten output; source bytes remain immutable.
 

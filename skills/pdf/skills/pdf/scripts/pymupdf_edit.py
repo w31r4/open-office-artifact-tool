@@ -486,6 +486,11 @@ def validate_ocr_dpi(value: Any) -> int:
 
 def ocr_capability(pymupdf, language: Any) -> dict[str, Any]:
     normalized = normalize_ocr_language(language)
+    rotation_contract = {
+        "supportedPageRotations": [0, 90, 180, 270],
+        "rotationPrecondition": "expected_rotation",
+        "coordinateSpace": "unrotated-pymupdf-page-space",
+    }
     try:
         tessdata = Path(str(pymupdf.get_tessdata() or "")).expanduser().resolve()
     except Exception as exc:
@@ -494,6 +499,7 @@ def ocr_capability(pymupdf, language: Any) -> dict[str, Any]:
             "language": normalized,
             "missingLanguages": normalized.split("+"),
             "error": str(exc),
+            **rotation_contract,
         }
     missing = [
         token
@@ -505,6 +511,7 @@ def ocr_capability(pymupdf, language: Any) -> dict[str, Any]:
         "language": normalized,
         "missingLanguages": missing,
         "tessdataDirectory": str(tessdata),
+        **rotation_contract,
     }
 
 
@@ -525,6 +532,31 @@ def validate_ocr_page_budget(page, dpi: int) -> int:
             f"OCR raster would contain {pixels} pixels; maximum is {OCR_MAX_PAGE_PIXELS}"
         )
     return pixels
+
+
+def ocr_search_rects(pymupdf, page, term: str, language: str, dpi: int) -> tuple[int, list[Any]]:
+    """OCR in canonical unrotated page space and restore the source /Rotate.
+
+    PyMuPDF accepts and returns content coordinates in unrotated page space,
+    but Tesseract sees the rendered page orientation. Temporarily clearing the
+    page rotation makes raster text upright without transforming content. The
+    original /Rotate value is restored before any redaction annotation is
+    added, including when OCR fails.
+    """
+    source_rotation = int(page.rotation)
+    if source_rotation not in {0, 90, 180, 270}:
+        raise ProviderError(f"unsupported normalized page rotation {source_rotation}")
+    try:
+        if source_rotation:
+            page.set_rotation(0)
+        textpage = page.get_textpage_ocr(language=language, dpi=dpi, full=True)
+        return source_rotation, [
+            pymupdf.Rect(quad.rect)
+            for quad in page.search_for(term, quads=True, textpage=textpage)
+        ]
+    finally:
+        if int(page.rotation) != source_rotation:
+            page.set_rotation(source_rotation)
 
 
 def image_placements(pymupdf, page) -> list[dict[str, Any]]:
@@ -751,8 +783,15 @@ def apply_operations(
 
         elif operation_type == "redact_ocr_text":
             page_number, page = page_for(doc, operation)
-            if page.rotation != 0:
-                raise ProviderError("redact_ocr_text currently supports only unrotated pages; normalize rotation in a separately reviewed version first")
+            source_rotation = int(page.rotation)
+            expected_rotation = operation.get("expected_rotation", 0)
+            if isinstance(expected_rotation, bool) or expected_rotation not in {0, 90, 180, 270}:
+                raise ProviderError("redact_ocr_text expected_rotation must be 0, 90, 180, or 270")
+            if expected_rotation != source_rotation:
+                raise ProviderError(
+                    f"redact_ocr_text expected_rotation {expected_rotation} does not match "
+                    f"page {page_number} rotation {source_rotation}; re-inspect the current source"
+                )
             term = operation.get("term")
             if not isinstance(term, str) or not term or len(term) > OCR_MAX_TERM_CHARS:
                 raise ProviderError(f"redact_ocr_text requires a non-empty term under {OCR_MAX_TERM_CHARS + 1} characters")
@@ -769,20 +808,22 @@ def apply_operations(
             if not placements:
                 raise ProviderError(f"redact_ocr_text page {page_number} has no raster image placement")
             try:
-                textpage = page.get_textpage_ocr(
-                    language=normalized_ocr_language,
-                    dpi=normalized_ocr_dpi,
-                    full=True,
+                detected_rotation, ocr_rects = ocr_search_rects(
+                    pymupdf,
+                    page,
+                    term,
+                    normalized_ocr_language,
+                    normalized_ocr_dpi,
                 )
-                quads = page.search_for(term, quads=True, textpage=textpage)
             except Exception as exc:
                 raise ProviderError(f"redact_ocr_text OCR failed on page {page_number}: {exc}") from exc
-            if len(quads) > OCR_MAX_MATCHES:
-                raise ProviderError(f"redact_ocr_text found {len(quads)} OCR matches; maximum is {OCR_MAX_MATCHES}")
+            if detected_rotation != source_rotation:
+                raise ProviderError("redact_ocr_text rotation changed unexpectedly during OCR")
+            if len(ocr_rects) > OCR_MAX_MATCHES:
+                raise ProviderError(f"redact_ocr_text found {len(ocr_rects)} OCR matches; maximum is {OCR_MAX_MATCHES}")
             matches = []
             off_image_matches = 0
-            for quad in quads:
-                bounds = pymupdf.Rect(quad.rect)
+            for bounds in ocr_rects:
                 coverage, placement = best_image_coverage(pymupdf, bounds, placements)
                 if coverage < OCR_MIN_IMAGE_COVERAGE or placement is None:
                     off_image_matches += 1
@@ -791,6 +832,7 @@ def apply_operations(
                     "rect": bounds,
                     "imageXref": placement["xref"],
                     "imageCoverage": coverage,
+                    "imageRect": pymupdf.Rect(placement["rect"]),
                 })
             if len(matches) != expected_matches:
                 raise ProviderError(
@@ -800,14 +842,22 @@ def apply_operations(
             fill = color(operation.get("fill", [0, 0, 0]), "fill")
             for match in matches:
                 page.add_redact_annot(match["rect"], fill=fill, cross_out=False)
+            rotation_matrix = page.rotation_matrix
             redaction_pages.add(page_number - 1)
             applied.append({
                 "type": operation_type,
                 "page": page_number,
+                "pageRotation": source_rotation,
+                "expectedRotation": expected_rotation,
+                "coordinateSpace": "unrotated-pymupdf-page-space",
+                "displayPageRect": list(page.rect),
                 "termSha256": hashlib.sha256(term.encode("utf-8")).hexdigest(),
                 "matches": len(matches),
                 "expectedMatches": expected_matches,
                 "rects": [list(match["rect"]) for match in matches],
+                "displayRects": [list(match["rect"] * rotation_matrix) for match in matches],
+                "imageRects": [list(match["imageRect"]) for match in matches],
+                "displayImageRects": [list(match["imageRect"] * rotation_matrix) for match in matches],
                 "imageXrefs": sorted({match["imageXref"] for match in matches}),
                 "minimumImageCoverage": min(match["imageCoverage"] for match in matches),
                 "offImageOcrMatches": off_image_matches,
@@ -1063,6 +1113,25 @@ def edit(args: argparse.Namespace, pymupdf, license_choice: str) -> dict[str, An
         try:
             after_policy = signature_policy(result_doc)
             page_count = result_doc.page_count
+            rotation_expectations = {
+                int(operation["page"]): int(operation["pageRotation"])
+                for operation in applied
+                if operation.get("type") == "redact_ocr_text"
+            }
+            ocr_rotation_checks = []
+            for page_number, expected_rotation in sorted(rotation_expectations.items()):
+                actual_rotation = int(result_doc.load_page(page_number - 1).rotation)
+                if actual_rotation != expected_rotation:
+                    raise ProviderError(
+                        f"redact_ocr_text output page {page_number} rotation {actual_rotation} "
+                        f"does not preserve source rotation {expected_rotation}"
+                    )
+                ocr_rotation_checks.append({
+                    "page": page_number,
+                    "expectedRotation": expected_rotation,
+                    "actualRotation": actual_rotation,
+                    "preserved": True,
+                })
         finally:
             result_doc.close()
         temporary.replace(output)
@@ -1079,6 +1148,7 @@ def edit(args: argparse.Namespace, pymupdf, license_choice: str) -> dict[str, An
             "signaturePolicyBefore": before_policy,
             "signaturePolicyAfter": after_policy,
             "operations": applied,
+            "ocrRotationChecks": ocr_rotation_checks,
             "pages": page_count,
             "residueScan": residue_report,
             "requiredNextGates": ["qpdf --check when installed", "pdfinfo", "Poppler render every page", "manual visual review"],

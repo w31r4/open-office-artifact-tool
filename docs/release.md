@@ -2109,6 +2109,45 @@ offline release gate is publish-ready; `npm whoami` still returns `ENEEDAUTH`,
 so no publish or tag/release operation was attempted. Hosted results are
 recorded after the candidate commit.
 
+### PDF right-angle OCR redaction
+
+On 2026-07-20, `redact_ocr_text` extended its high-trust raster-only profile to
+pages carrying PDF `/Rotate` values of 90, 180, or 270 degrees. The operation
+now binds `expected_rotation`; omission retains the backward-compatible zero-
+degree precondition, while a stale or unsupported rotation fails before OCR or
+output publication.
+
+The provider temporarily clears `/Rotate` only for the Tesseract pass, obtains
+exact matches in PyMuPDF's canonical unrotated page coordinate system, and
+restores the original value in a `finally` path before adding real redaction
+annotations. Its report retains the source rotation and emits both canonical
+and display-space match/image rectangles. The independent residue scanner uses
+the same temporary orientation normalization, closing the previous possibility
+that raster text on a rotated source could escape required OCR evidence.
+
+Real 0/90/180/270-degree fixtures prove source SHA-256 immutability, exact
+image-backed match counts, preserved final page rotation, zero sensitive OCR
+residue, single-revision inert output, and qpdf re-open. Poppler renders every
+source/output pair; the pixel oracle maps the reported display-space geometry
+to each rotated raster, requires a visible opaque redaction, and rejects any
+changed pixel outside the original image placement. A stale rotation
+precondition fails closed without a partial artifact. Manual review of the
+90-degree Poppler pair confirmed the public heading and page orientation stay
+unchanged while the raster secret becomes an opaque redaction.
+
+The local candidate passed the complete `npm test` suite with the real
+PyMuPDF/Tesseract, qpdf, pyHanko, Playwright, LibreOffice, Poppler, and packaged
+Skill paths. OpenChestnut passed `295/295`; OfficeBridge passed `5/5`;
+`npm run proto:check`, generated API-document cleanliness, two-source-build
+OpenChestnut reproducibility, `npm run test:pack`, and the complete offline
+release check passed. The manifest-bound OpenChestnut runtime remains 38 files
+and 14,721,216 bytes; the npm dry-run contains 467 files, 9,021,747 compressed
+bytes, and 23,776,728 unpacked bytes. Real pikepdf, veraPDF, and OCRmyPDF repeats
+were not configured, so their contract/adversarial tests passed while those
+environment-gated provider executions were skipped. Hosted results are
+recorded after the candidate commit; `npm whoami` remains the external publish
+gate, and no publish or tag/release operation has been attempted.
+
 ## Publishing
 
 Before publishing:

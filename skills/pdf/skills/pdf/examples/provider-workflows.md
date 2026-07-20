@@ -274,11 +274,13 @@ PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
 pdftoppm -png -r 144 tmp/pdfs/ocr-sanitized.pdf tmp/pdfs/ocr-page
 ```
 
-The shipped example requests one image-backed match on one unrotated page.
-Zero/multiple matches, OCR outside native raster placements, missing language
-data, rotation, excessive raster work, or residual OCR text deletes the
-transactional output. Review the final Poppler page; OCR confidence never
-authorizes an unbounded rectangle.
+The shipped example requests one image-backed match on a page whose expected
+rotation is explicitly bound. Zero/multiple matches, OCR outside native raster
+placements, missing language data, rotation drift, excessive raster work, or
+residual OCR text deletes the transactional output. Right-angle rotated pages
+are OCR-normalized temporarily and retain their original `/Rotate`; review the
+reported display-space rectangles against the final Poppler page. OCR
+confidence never authorizes an unbounded rectangle.
 
 For an active-content public copy without term redaction, use `[ { "type": "scrub" } ]`, plan `--task sanitize --strategy sanitize`, omit placeholder sensitive terms, and run the structural gate after the transactional edit:
 

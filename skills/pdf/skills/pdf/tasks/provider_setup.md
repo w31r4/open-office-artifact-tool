@@ -64,10 +64,11 @@ export OPEN_OFFICE_PDF_PROVIDER_PYTHON="$PWD/.venv-pymupdf/bin/python"
 
 Choose `--accept-license commercial` instead only when the deployment has the
 corresponding Artifex license. The OCR probe verifies the requested traineddata
-before destructive work. `redact_ocr_text` additionally binds one unrotated
-page, an exact term, and an expected image-backed match count; missing OCR,
-unsafe language names, match drift, off-image-only results, and excessive
-raster work fail before output publication. See [redact and sanitize](redact.md).
+before destructive work. `redact_ocr_text` additionally binds one page, its
+expected 0/90/180/270-degree rotation, an exact term, and an expected
+image-backed match count. Missing OCR, unsafe language names, rotation or match
+drift, off-image-only results, and excessive raster work fail before output
+publication. See [redact and sanitize](redact.md).
 
 Probe qpdf through both the registry and its executable adapter:
 

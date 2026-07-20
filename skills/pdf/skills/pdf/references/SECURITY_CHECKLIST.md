@@ -26,9 +26,11 @@ Treat PDFs as untrusted structured programs.
 - Inspect signatures, signature fields, `/Perms`, and DocMDP before changing bytes.
 - Before signing, bind both PDF and PKCS#12 to fresh SHA-256 values; reject symlinks, encryption, unexpected signature counts, an existing certification signature, or a requested visible box outside the inspected unrotated CropBox. Supply the PKCS#12 passphrase only through stdin, never argv, environment, logs, reports, or repository files.
 - Inventory forms, annotations, attachments, metadata/XMP, JavaScript/actions, optional content, images, and OCR/hidden text.
-- For raster-only term redaction, bind one unrotated page, an exact term, the
-  requested Tesseract language/DPI, and an expected image-backed match count.
-  Do not convert OCR uncertainty into a broad deletion rectangle.
+- For raster-only term redaction, bind one page, its exact expected
+  0/90/180/270-degree rotation, an exact term, the requested Tesseract
+  language/DPI, and an expected image-backed match count. Record both canonical
+  unrotated and display-space rectangles. Do not convert OCR uncertainty into a
+  broad deletion rectangle.
 - Keep source and destination paths different.
 
 ## After mutation
@@ -67,9 +69,9 @@ Treat PDFs as untrusted structured programs.
   rasterization/form/signature loss, empty required text, or non-isolated
   attacker-chosen input.
 - OCR redaction relies on PyMuPDF outside `>=1.27.2,<1.28`, unsafe/missing
-  Tesseract language data, a rotated page, more than 300 dpi or 100 million
-  raster pixels, absent/mismatched expected matches, or a hit with less than
-  90% native image-placement coverage.
+  Tesseract language data, a missing/mismatched/unsupported page rotation,
+  more than 300 dpi or 100 million raster pixels, absent/mismatched expected
+  matches, or a hit with less than 90% native image-placement coverage.
 - Structure cleanup relies on pikepdf outside `>=10.10,<10.11`, a custom or
   partial operation list, stale source hash, encrypted/parser-warning input,
   missing trust/isolation declaration, missing signature invalidation, an

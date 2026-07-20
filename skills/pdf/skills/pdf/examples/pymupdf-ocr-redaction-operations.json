@@ -2,6 +2,7 @@
   {
     "type": "redact_ocr_text",
     "page": 2,
+    "expected_rotation": 0,
     "term": "IMAGE SECRET 8842",
     "expected_matches": 1,
     "fill": [0, 0, 0]

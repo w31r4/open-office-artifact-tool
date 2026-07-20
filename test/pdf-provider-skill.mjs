@@ -32,6 +32,61 @@ function parseResult(result, stream = "stdout") {
   return JSON.parse(source);
 }
 
+async function assertOcrRedactionPixelScope(source, output, operation, tempRoot, label) {
+  const sourceRender = path.join(tempRoot, `${label}-source-render`);
+  const outputRender = path.join(tempRoot, `${label}-output-render`);
+  run("pdftoppm", ["-singlefile", "-png", "-r", "144", source, sourceRender], { status: 0 });
+  run("pdftoppm", ["-singlefile", "-png", "-r", "144", output, outputRender], { status: 0 });
+  const sourcePixels = await sharp(`${sourceRender}.png`).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  const outputPixels = await sharp(`${outputRender}.png`).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+  assert.deepEqual(outputPixels.info, sourcePixels.info);
+
+  const [imageRect] = operation.displayImageRects;
+  const [redactionRect] = operation.displayRects;
+  const pageRect = operation.displayPageRect;
+  assert.ok(imageRect && redactionRect && pageRect, `${label} must report display-space QA geometry`);
+  const xScale = sourcePixels.info.width / (pageRect[2] - pageRect[0]);
+  const yScale = sourcePixels.info.height / (pageRect[3] - pageRect[1]);
+  const scaleRect = (bounds) => [
+    (bounds[0] - pageRect[0]) * xScale,
+    (bounds[1] - pageRect[1]) * yScale,
+    (bounds[2] - pageRect[0]) * xScale,
+    (bounds[3] - pageRect[1]) * yScale,
+  ];
+  const imageBounds = scaleRect(imageRect);
+  const redactBounds = scaleRect(redactionRect);
+  let changedPixels = 0;
+  let changedOutsideImage = 0;
+  let changedInsideRedaction = 0;
+  let darkInsideRedaction = 0;
+  for (let y = 0; y < sourcePixels.info.height; y += 1) {
+    for (let x = 0; x < sourcePixels.info.width; x += 1) {
+      const offset = (y * sourcePixels.info.width + x) * sourcePixels.info.channels;
+      const changed = Array.from(
+        { length: sourcePixels.info.channels },
+        (_, channel) => Math.abs(sourcePixels.data[offset + channel] - outputPixels.data[offset + channel]),
+      ).some((delta) => delta > 5);
+      const insideImage = x >= imageBounds[0] - 2 && x <= imageBounds[2] + 2 && y >= imageBounds[1] - 2 && y <= imageBounds[3] + 2;
+      const insideRedaction = x >= redactBounds[0] && x <= redactBounds[2] && y >= redactBounds[1] && y <= redactBounds[3];
+      if (changed) {
+        changedPixels += 1;
+        if (!insideImage) changedOutsideImage += 1;
+        if (insideRedaction) changedInsideRedaction += 1;
+      }
+      if (
+        insideRedaction
+        && outputPixels.data[offset] < 32
+        && outputPixels.data[offset + 1] < 32
+        && outputPixels.data[offset + 2] < 32
+      ) darkInsideRedaction += 1;
+    }
+  }
+  assert.ok(changedPixels > 500, `${label} expected visible OCR redaction, changed ${changedPixels} pixels`);
+  assert.equal(changedOutsideImage, 0, `${label} OCR redaction must not alter content outside the source image placement`);
+  assert.ok(changedInsideRedaction > 500, `${label} expected changed pixels inside OCR match, found ${changedInsideRedaction}`);
+  assert.ok(darkInsideRedaction > 500, `${label} expected opaque redaction fill, found ${darkInsideRedaction} dark pixels`);
+}
+
 async function walk(root) {
   const files = [];
   for (const entry of await fs.readdir(root, { withFileTypes: true })) {
@@ -121,6 +176,7 @@ assert.match(skillText, /virtual environment executable.*pyvenv\.cfg/s);
 assert.match(skillText, /verapdf_provider\.py/);
 assert.match(skillText, /ocrmypdf_provider\.py/);
 assert.match(skillText, /redact_ocr_text/);
+assert.match(skillText, /redact_ocr_text.*expected_rotation.*0.*90.*180.*270.*unrotated PyMuPDF page space/s);
 assert.match(skillText, /pikepdf_provider\.py/);
 assert.match(skillText, /pyhanko_sign_provider\.py/);
 assert.match(skillText, /passphrase.*stdin/is);
@@ -148,6 +204,10 @@ for (const pattern of [
   /Dynamic XFA/,
   /accessible board report example/i,
 ]) assert.match(skillText, pattern);
+const redactTaskText = await fs.readFile(path.join(skillRoot, "tasks", "redact.md"), "utf8");
+assert.match(redactTaskText, /expected_rotation/);
+assert.match(redactTaskText, /temporarily clears `\/Rotate`.*restores `\/Rotate`/s);
+assert.doesNotMatch(redactTaskText, /Rotated pages must first become a separately reviewed normalized version/);
 
 const pythonScripts = (await fs.readdir(scriptsRoot))
   .filter((file) => file.endsWith(".py"))
@@ -587,6 +647,9 @@ try {
     assert.ok(routedProbe.operations.includes("redact_ocr_text"));
     assert.equal(routedProbe.ocr.available, true);
     assert.equal(routedProbe.ocr.language, "eng");
+    assert.deepEqual(routedProbe.ocr.supportedPageRotations, [0, 90, 180, 270]);
+    assert.equal(routedProbe.ocr.rotationPrecondition, "expected_rotation");
+    assert.equal(routedProbe.ocr.coordinateSpace, "unrotated-pymupdf-page-space");
     const routedPlan = parseResult(run(python, [
       path.join(scriptsRoot, "pdf_provider.py"), "plan",
       "--task", "sanitize", "--provider", "pymupdf", "--strategy", "sanitize",
@@ -1072,10 +1135,17 @@ try {
     assert.equal(rasterOperation.expectedMatches, 1);
     assert.equal(rasterOperation.ocr.language, "eng");
     assert.equal(rasterOperation.ocr.dpi, 200);
+    assert.equal(rasterOperation.pageRotation, 0);
+    assert.equal(rasterOperation.expectedRotation, 0);
+    assert.equal(rasterOperation.coordinateSpace, "unrotated-pymupdf-page-space");
     assert.ok(rasterOperation.minimumImageCoverage >= 0.9);
     assert.equal(rasterOperation.rects.length, 1);
+    assert.equal(rasterOperation.displayRects.length, 1);
+    assert.equal(rasterOperation.imageRects.length, 1);
+    assert.equal(rasterOperation.displayImageRects.length, 1);
     assert.equal(rasterResult.originalPrefixPreserved, false);
     assert.equal(rasterResult.residueScan.ok, true);
+    assert.deepEqual(rasterResult.ocrRotationChecks, [{ page: 1, expectedRotation: 0, actualRotation: 0, preserved: true }]);
     assert.equal(crypto.createHash("sha256").update(await fs.readFile(rasterSource)).digest("hex"), rasterSourceHash);
     const rasterOutputScan = parseResult(run(integrationPython, [
       path.join(scriptsRoot, "residue_scan.py"), rasterOutput,
@@ -1131,60 +1201,82 @@ try {
     assert.match(rasterExcessiveDpi.stderr, /OCR dpi must be an integer between 72 and 300/);
     await assert.rejects(fs.access(rasterExcessiveDpiOutput));
 
-    const rasterRotatedSource = path.join(tempRoot, "ocr-redaction-rotated-source.pdf");
-    run(integrationPython, ["-c", [
-      "import pymupdf,sys",
-      "doc=pymupdf.open(sys.argv[1])",
-      "doc[0].set_rotation(90)",
-      "doc.save(sys.argv[2])",
-      "doc.close()",
-    ].join(";"), rasterSource, rasterRotatedSource], { status: 0 });
-    const rasterRotatedOutput = path.join(tempRoot, "ocr-redaction-rotated-output.pdf");
-    const rasterRotated = run(integrationPython, [
-      path.join(scriptsRoot, "pymupdf_edit.py"), "edit", rasterRotatedSource, rasterRotatedOutput,
+    const rotatedRasterCases = [];
+    for (const rotation of [90, 180, 270]) {
+      const rotatedSource = path.join(tempRoot, `ocr-redaction-rotated-${rotation}-source.pdf`);
+      run(integrationPython, ["-c", [
+        "import pymupdf,sys",
+        "doc=pymupdf.open(sys.argv[1])",
+        "doc[0].set_rotation(int(sys.argv[3]))",
+        "doc.save(sys.argv[2])",
+        "doc.close()",
+      ].join(";"), rasterSource, rotatedSource, String(rotation)], { status: 0 });
+      const rotatedSourceBytes = await fs.readFile(rotatedSource);
+      const rotatedSourceHash = crypto.createHash("sha256").update(rotatedSourceBytes).digest("hex");
+      const rotatedSourceScan = parseResult(run(integrationPython, [
+        path.join(scriptsRoot, "residue_scan.py"), rotatedSource,
+        "--term", rasterSecret, "--require-ocr", "--require-single-revision", "--ocr-dpi", "200",
+      ], { status: 2 }));
+      assert.equal(rotatedSourceScan.pages[0].rotation, rotation);
+      assert.equal(rotatedSourceScan.pages[0].ocr.pageRotation, rotation);
+      assert.ok(rotatedSourceScan.terms[rasterSecret].evidence.some((entry) => entry.category === "image-ocr"));
+
+      const rotatedOperations = path.join(tempRoot, `ocr-redaction-rotated-${rotation}-operations.json`);
+      await fs.writeFile(rotatedOperations, JSON.stringify([{
+        type: "redact_ocr_text",
+        page: 1,
+        expected_rotation: rotation,
+        term: rasterSecret,
+        expected_matches: 1,
+        fill: [0, 0, 0],
+      }]), "utf8");
+      const rotatedOutput = path.join(tempRoot, `ocr-redaction-rotated-${rotation}-output.pdf`);
+      const rotatedResult = parseResult(run(integrationPython, [
+        path.join(scriptsRoot, "pymupdf_edit.py"), "edit", rotatedSource, rotatedOutput,
+        "--strategy", "sanitize", "--operations", rotatedOperations,
+        "--sensitive-term", rasterSecret, "--ocr-language", "eng", "--ocr-dpi", "200",
+        "--accept-license", "agpl", "--invalidate-signatures",
+      ], { status: 0 }));
+      const rotatedOperation = rotatedResult.operations.find((operation) => operation.type === "redact_ocr_text");
+      assert.equal(rotatedOperation.pageRotation, rotation);
+      assert.equal(rotatedOperation.expectedRotation, rotation);
+      assert.equal(rotatedOperation.matches, 1);
+      assert.equal(rotatedOperation.coordinateSpace, "unrotated-pymupdf-page-space");
+      assert.notDeepEqual(rotatedOperation.displayRects, rotatedOperation.rects);
+      assert.equal(rotatedResult.residueScan.ok, true);
+      assert.deepEqual(rotatedResult.ocrRotationChecks, [{
+        page: 1,
+        expectedRotation: rotation,
+        actualRotation: rotation,
+        preserved: true,
+      }]);
+      assert.equal(crypto.createHash("sha256").update(await fs.readFile(rotatedSource)).digest("hex"), rotatedSourceHash);
+      const rotatedOutputScan = parseResult(run(integrationPython, [
+        path.join(scriptsRoot, "residue_scan.py"), rotatedOutput,
+        "--term", rasterSecret, "--require-ocr", "--require-inert", "--require-single-revision", "--ocr-dpi", "200",
+      ], { status: 0 }));
+      assert.equal(rotatedOutputScan.pages[0].rotation, rotation);
+      assert.equal(rotatedOutputScan.terms[rasterSecret].matches, 0);
+      rotatedRasterCases.push({ rotation, source: rotatedSource, output: rotatedOutput, operation: rotatedOperation });
+    }
+
+    const rasterStaleRotationOutput = path.join(tempRoot, "ocr-redaction-stale-rotation.pdf");
+    const rasterStaleRotation = run(integrationPython, [
+      path.join(scriptsRoot, "pymupdf_edit.py"), "edit", rotatedRasterCases[0].source, rasterStaleRotationOutput,
       "--strategy", "sanitize", "--operations", rasterOperations,
       "--sensitive-term", rasterSecret, "--ocr-dpi", "200",
       "--accept-license", "agpl", "--invalidate-signatures",
     ], { status: 2 });
-    assert.match(rasterRotated.stderr, /supports only unrotated pages/);
-    await assert.rejects(fs.access(rasterRotatedOutput));
+    assert.match(rasterStaleRotation.stderr, /expected_rotation 0 does not match page 1 rotation 90/);
+    await assert.rejects(fs.access(rasterStaleRotationOutput));
 
     if (run("qpdf", ["--version"]).status === 0) run("qpdf", ["--check", rasterOutput], { status: 0 });
     if (run("pdftoppm", ["-v"]).status === 0) {
-      const rasterSourceRender = path.join(tempRoot, "ocr-source-render");
-      const rasterOutputRender = path.join(tempRoot, "ocr-output-render");
-      run("pdftoppm", ["-singlefile", "-png", "-r", "144", rasterSource, rasterSourceRender], { status: 0 });
-      run("pdftoppm", ["-singlefile", "-png", "-r", "144", rasterOutput, rasterOutputRender], { status: 0 });
-      const sourcePixels = await sharp(`${rasterSourceRender}.png`).removeAlpha().raw().toBuffer({ resolveWithObject: true });
-      const outputPixels = await sharp(`${rasterOutputRender}.png`).removeAlpha().raw().toBuffer({ resolveWithObject: true });
-      assert.deepEqual(outputPixels.info, sourcePixels.info);
-      const [redactionRect] = rasterOperation.rects;
-      const xScale = sourcePixels.info.width / 612;
-      const yScale = sourcePixels.info.height / 792;
-      const imageBounds = [72 * xScale, 175 * yScale, 540 * xScale, 292 * yScale];
-      const redactBounds = [redactionRect[0] * xScale, redactionRect[1] * yScale, redactionRect[2] * xScale, redactionRect[3] * yScale];
-      let changedPixels = 0;
-      let changedOutsideImage = 0;
-      let changedInsideRedaction = 0;
-      let darkInsideRedaction = 0;
-      for (let y = 0; y < sourcePixels.info.height; y += 1) {
-        for (let x = 0; x < sourcePixels.info.width; x += 1) {
-          const offset = (y * sourcePixels.info.width + x) * sourcePixels.info.channels;
-          const changed = Array.from({ length: sourcePixels.info.channels }, (_, channel) => Math.abs(sourcePixels.data[offset + channel] - outputPixels.data[offset + channel])).some((delta) => delta > 5);
-          const insideImage = x >= imageBounds[0] - 2 && x <= imageBounds[2] + 2 && y >= imageBounds[1] - 2 && y <= imageBounds[3] + 2;
-          const insideRedaction = x >= redactBounds[0] && x <= redactBounds[2] && y >= redactBounds[1] && y <= redactBounds[3];
-          if (changed) {
-            changedPixels += 1;
-            if (!insideImage) changedOutsideImage += 1;
-            if (insideRedaction) changedInsideRedaction += 1;
-          }
-          if (insideRedaction && outputPixels.data[offset] < 32 && outputPixels.data[offset + 1] < 32 && outputPixels.data[offset + 2] < 32) darkInsideRedaction += 1;
-        }
+      await assertOcrRedactionPixelScope(rasterSource, rasterOutput, rasterOperation, tempRoot, "ocr-rotation-0");
+      for (const rotated of rotatedRasterCases) {
+        await assertOcrRedactionPixelScope(rotated.source, rotated.output, rotated.operation, tempRoot, `ocr-rotation-${rotated.rotation}`);
+        if (run("qpdf", ["--version"]).status === 0) run("qpdf", ["--check", rotated.output], { status: 0 });
       }
-      assert.ok(changedPixels > 500, `expected visible OCR redaction, changed ${changedPixels} pixels`);
-      assert.equal(changedOutsideImage, 0, "OCR redaction must not alter content outside the source image placement");
-      assert.ok(changedInsideRedaction > 500, `expected changed pixels inside OCR match, found ${changedInsideRedaction}`);
-      assert.ok(darkInsideRedaction > 500, `expected opaque redaction fill, found ${darkInsideRedaction} dark pixels`);
     }
 
     const imageOps = path.join(tempRoot, "image-ops.json");
