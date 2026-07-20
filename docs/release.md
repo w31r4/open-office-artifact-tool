@@ -2216,7 +2216,15 @@ veraPDF, and OCRmyPDF repeats were not configured locally, so their
 contract/adversarial tests passed while those environment-gated executions
 were skipped; hosted CI supplies the isolated providers. `npm whoami` still
 returns `ENEEDAUTH`, so no publish or tag/release operation was attempted.
-Hosted evidence is recorded after the candidate commit.
+The implementation candidate at commit
+`c5bc645e995e349d79b575ce6d1a55502c936843` passed the hosted Linux `ci`
+workflow in [GitHub Actions run
+29717832003](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29717832003)
+on 2026-07-20. Its single job completed with conclusion `success` in 17m35s
+after exercising all isolated PDF providers, deterministic protocol/runtime
+verification, Chromium/LibreOffice/Poppler, the full npm suite, generated-doc
+cleanliness, release metadata, clean-install tarball, OfficeBridge, and
+OpenChestnut gates.
 
 ## Publishing
 
