@@ -2144,9 +2144,16 @@ release check passed. The manifest-bound OpenChestnut runtime remains 38 files
 and 14,721,216 bytes; the npm dry-run contains 467 files, 9,021,747 compressed
 bytes, and 23,776,728 unpacked bytes. Real pikepdf, veraPDF, and OCRmyPDF repeats
 were not configured, so their contract/adversarial tests passed while those
-environment-gated provider executions were skipped. Hosted results are
-recorded after the candidate commit; `npm whoami` remains the external publish
-gate, and no publish or tag/release operation has been attempted.
+environment-gated provider executions were skipped. The implementation
+candidate at commit `276309a30fbdf6293d0aba6479b59c420a55d9ae` passed the
+hosted Linux `ci` workflow in [GitHub Actions run
+29714645455](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29714645455)
+on 2026-07-20. Its single job completed with conclusion `success` in 17m10s
+after exercising all isolated PDF providers, deterministic protocol/runtime
+verification, Chromium/LibreOffice/Poppler, the full npm suite, generated-doc
+cleanliness, release metadata, clean-install tarball, OfficeBridge, and
+OpenChestnut gates. `npm whoami` remains the external publish gate, and no
+publish or tag/release operation has been attempted.
 
 ## Publishing
 
