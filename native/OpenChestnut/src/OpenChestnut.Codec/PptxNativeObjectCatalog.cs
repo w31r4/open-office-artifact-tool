@@ -12,6 +12,7 @@ namespace OpenChestnut.Codec;
 internal sealed class PptxNativeObjectCatalog
 {
     private const string SpreadsheetContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    private const string PowerPoint2010Namespace = "http://schemas.microsoft.com/office/powerpoint/2010/main";
     private static readonly HashSet<string> RelationshipNamespaces = new(StringComparer.Ordinal)
     {
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
@@ -30,11 +31,29 @@ internal sealed class PptxNativeObjectCatalog
         "http://purl.oclc.org/ooxml/drawingml/diagram",
     };
 
+    private static readonly HashSet<string> DrawingNamespaces = new(StringComparer.Ordinal)
+    {
+        "http://schemas.openxmlformats.org/drawingml/2006/main",
+        "http://purl.oclc.org/ooxml/drawingml/main",
+    };
+
     internal static bool IsRelationshipNamespace(string namespaceUri) =>
         RelationshipNamespaces.Contains(namespaceUri);
 
     internal static bool IsDiagramRelationshipIds(OpenXmlElement element) =>
         element.LocalName == "relIds" && DiagramNamespaces.Contains(element.NamespaceUri);
+
+    // A video picture can otherwise satisfy the bounded poster-image reader
+    // and be exposed as an ordinary editable image. Detect any native media
+    // marker before semantic picture projection; the stricter clone preflight
+    // later accepts only the exact closed MP4 graph.
+    internal static bool IsMediaPicture(OpenXmlElement source)
+    {
+        if (source is not P.Picture) return false;
+        return Elements(source).Any(element =>
+            (element.LocalName is "videoFile" or "audioFile" && DrawingNamespaces.Contains(element.NamespaceUri)) ||
+            (element.LocalName == "media" && element.NamespaceUri == PowerPoint2010Namespace));
+    }
 
     private readonly EffectiveCodecLimits _limits;
     private readonly Dictionary<string, OpaqueOpcPart> _parts;
@@ -89,6 +108,7 @@ internal sealed class PptxNativeObjectCatalog
             foreach (var attribute in element.GetAttributes())
             {
                 if (!RelationshipNamespaces.Contains(attribute.NamespaceUri)) continue;
+                if (string.IsNullOrWhiteSpace(attribute.Value) && IsMediaActionSentinel(element, attribute)) continue;
                 _referenceCount++;
                 if (_referenceCount > _limits.MaxCells)
                     throw new CodecException(
@@ -254,6 +274,8 @@ internal sealed class PptxNativeObjectCatalog
     internal static string Classify(OpenXmlElement source)
     {
         var descendants = Elements(source).ToArray();
+        if (source is P.Picture && IsMediaPicture(source))
+            return "media";
         if (descendants.Any(element =>
                 element.LocalName == "oleObj" && PresentationNamespaces.Contains(element.NamespaceUri)))
             return "oleObject";
@@ -274,6 +296,16 @@ internal sealed class PptxNativeObjectCatalog
             _ => string.IsNullOrWhiteSpace(source.LocalName) ? "nativeObject" : source.LocalName,
         };
     }
+
+    private static bool IsMediaActionSentinel(OpenXmlElement element, OpenXmlAttribute attribute) =>
+        element.LocalName == "hlinkClick" &&
+        DrawingNamespaces.Contains(element.NamespaceUri) &&
+        attribute.LocalName == "id" &&
+        RelationshipNamespaces.Contains(attribute.NamespaceUri) &&
+        element.GetAttributes().Any(candidate =>
+            candidate.LocalName == "action" &&
+            candidate.NamespaceUri.Length == 0 &&
+            candidate.Value == "ppaction://media");
 
     // Keep the OPC target resolver shared with the narrow source-preserving
     // presentation topology operations. The source package has already passed

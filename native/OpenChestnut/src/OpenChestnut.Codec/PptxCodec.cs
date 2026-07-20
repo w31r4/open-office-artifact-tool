@@ -27,6 +27,7 @@ internal sealed record PptxCloneChartLeaf(ChartPart Part, string SlideRelationsh
 internal sealed record PptxCloneOlePackageLeaf(EmbeddedPackagePart Part, string SlideRelationshipId);
 internal sealed record PptxCloneDiagramPartLeaf(OpenXmlPart Part, string SlideRelationshipId);
 internal sealed record PptxCloneInkContentLeaf(CustomXmlPart Part, string SlideRelationshipId);
+internal sealed record PptxCloneMediaLeaf(MediaDataPart Part, string VideoRelationshipId, string MediaRelationshipId);
 internal sealed record PptxCloneExternalHyperlinkEdge(Uri Uri, string RelationshipId);
 internal sealed record PptxCloneSlideHyperlinkEdge(SlidePart Part, string RelationshipId);
 internal sealed record PptxCloneNotesLeaf(
@@ -52,6 +53,7 @@ internal sealed record PptxCloneLeaf(
     IReadOnlyList<PptxCloneOlePackageLeaf> OlePackages,
     IReadOnlyList<PptxCloneDiagramPartLeaf> DiagramParts,
     IReadOnlyList<PptxCloneInkContentLeaf> InkContentParts,
+    IReadOnlyList<PptxCloneMediaLeaf> MediaParts,
     IReadOnlyList<PptxCloneExternalHyperlinkEdge> ExternalHyperlinks,
     IReadOnlyList<PptxCloneSlideHyperlinkEdge> SlideHyperlinks,
     PptxCloneNotesLeaf? Notes,
@@ -84,6 +86,7 @@ internal static class PptxCodec
     private const int MaxCloneOlePackageParts = 64;
     private const int MaxCloneDiagramParts = 256;
     private const int MaxCloneInkContentParts = 256;
+    private const int MaxCloneMediaParts = 64;
     private const int MaxCloneHyperlinkRelationships = 4_096;
     private const string SpreadsheetContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     private const string DiagramDataContentType = "application/vnd.openxmlformats-officedocument.drawingml.diagramData+xml";
@@ -91,6 +94,9 @@ internal static class PptxCodec
     private const string DiagramStyleContentType = "application/vnd.openxmlformats-officedocument.drawingml.diagramStyle+xml";
     private const string DiagramColorsContentType = "application/vnd.openxmlformats-officedocument.drawingml.diagramColors+xml";
     private const string InkContentType = "application/inkml+xml";
+    private const string Mp4ContentType = "video/mp4";
+    private const string VideoRelationshipType = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/video";
+    private const string MediaRelationshipType = "http://schemas.microsoft.com/office/2007/relationships/media";
     private const string TransitionalCustomXmlRelationship = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml";
     private const string StrictCustomXmlRelationship = "http://purl.oclc.org/ooxml/officeDocument/relationships/customXml";
     private static readonly (string RelationshipSuffix, string PathStem, string ContentType)[] CloneDiagramParts =
@@ -827,10 +833,11 @@ internal static class PptxCodec
             Id = $"{ownerId}/element/{elementIndex + 1}",
             Name = ElementName(source, elementIndex),
         };
+        var nativeMediaPicture = PptxNativeObjectCatalog.IsMediaPicture(source);
         var editable = source switch
         {
             P.Shape shape => IsSimpleShape(shape),
-            P.Picture picture => PptxPictureCodec.TryRead(picture, slideContext, out _),
+            P.Picture picture when !nativeMediaPicture => PptxPictureCodec.TryRead(picture, slideContext, out _),
             P.GraphicFrame graphicFrame => PptxTableCodec.TryRead(graphicFrame, out _),
             P.ConnectionShape connector => TryReadConnector(connector, elementIdsByNativeId, out _),
             P.GroupShape group => TryReadGroup(group, element.Id, slideContext, elementIdsByNativeId, out _),
@@ -839,7 +846,7 @@ internal static class PptxCodec
         if (source is P.GraphicFrame chartFrame && PptxChartCodec.TryRead(chartFrame, slideContext, out _, out var chartEditable)) editable = chartEditable;
         if (source is P.Shape sourceShape)
             element.Shape = ReadShape(sourceShape, slideContext);
-        else if (source is P.Picture sourcePicture && PptxPictureCodec.TryRead(sourcePicture, slideContext, out var image))
+        else if (source is P.Picture sourcePicture && !nativeMediaPicture && PptxPictureCodec.TryRead(sourcePicture, slideContext, out var image))
             element.Image = image;
         else if (source is P.GraphicFrame sourceTable && PptxTableCodec.TryRead(sourceTable, out var table))
             element.Table = table;
@@ -1841,6 +1848,7 @@ internal static class PptxCodec
     }
 
     private static string PartPath(OpenXmlPart part) => part.Uri.OriginalString.TrimStart('/');
+    private static string DataPartPath(DataPart part) => part.Uri.OriginalString.TrimStart('/');
     private static string RelationshipPartPath(OpenXmlPart part)
     {
         var path = PartPath(part);
@@ -1856,11 +1864,23 @@ internal static class PptxCodec
         stream.CopyTo(copy);
         return copy.ToArray();
     }
+    private static byte[] DataPartBytes(DataPart part)
+    {
+        using var stream = part.GetStream(FileMode.Open, FileAccess.Read);
+        using var copy = new MemoryStream();
+        stream.CopyTo(copy);
+        return copy.ToArray();
+    }
     private static void CopyPartBytes(OpenXmlPart source, OpenXmlPart target)
     {
         using var input = source.GetStream(FileMode.Open, FileAccess.Read);
         using var output = target.GetStream(FileMode.Create, FileAccess.Write);
         input.CopyTo(output);
+    }
+    private static void CopyDataPartBytes(DataPart source, DataPart target)
+    {
+        using var input = source.GetStream(FileMode.Open, FileAccess.Read);
+        target.FeedData(input);
     }
     private static string HashElement(OpenXmlElement element) => Hash(Encoding.UTF8.GetBytes(element.OuterXml));
     private static string Hash(ReadOnlySpan<byte> bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
@@ -2145,6 +2165,9 @@ internal static class PptxCodec
             var isInkContent = !relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase) &&
                                IsCustomXmlRelationship(relationship.Type) &&
                                IsNumberedCloneInkContentPath(resolvedTarget);
+            var isMp4Media = !relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase) &&
+                             relationship.Type is VideoRelationshipType or MediaRelationshipType &&
+                             IsMp4MediaPath(resolvedTarget);
             // A bounded source-preserving clone owns one new internal edge:
             // its new SlidePart points at the original shared SlideLayoutPart.
             // Keep that exception typed and target-checked; an arbitrary added
@@ -2164,7 +2187,7 @@ internal static class PptxCodec
             var isLegacyComments = relationship.Type.EndsWith("/comments", StringComparison.Ordinal) &&
                                    !relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase) &&
                                    IsNumberedCommentsPath(resolvedTarget);
-            var allowedFromSlide = IsNumberedSlidePath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage || isChart || isEmbeddedXlsx || isDiagram || isInkContent || isSlideLayout || isNotesSlide || isLegacyComments);
+            var allowedFromSlide = IsNumberedSlidePath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage || isChart || isEmbeddedXlsx || isDiagram || isInkContent || isMp4Media || isSlideLayout || isNotesSlide || isLegacyComments);
             var allowedFromMaster = IsNumberedMasterPath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage);
             var allowedFromLayout = IsNumberedLayoutPath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage);
             var allowedFromNotes = IsNumberedNotesSlidePath(relationship.SourcePath) && (isNotesMaster || isNotesBackReference);
@@ -2289,7 +2312,9 @@ internal static class PptxCodec
     }
 
     private static bool IsAllowedAddedClonePart(OpaqueOpcPart part) =>
-        part.Path.StartsWith("ppt/media/", StringComparison.OrdinalIgnoreCase) ||
+        (part.Path.StartsWith("ppt/media/", StringComparison.OrdinalIgnoreCase) &&
+         part.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)) ||
+        (part.ContentType.Equals(Mp4ContentType, StringComparison.OrdinalIgnoreCase) && IsMp4MediaPath(part.Path)) ||
         IsNumberedChartPath(part.Path) ||
         (IsCloneXlsxEmbeddingPath(part.Path) && part.ContentType.Equals(SpreadsheetContentType, StringComparison.OrdinalIgnoreCase)) ||
         IsCloneDiagramPart(part.Path, part.ContentType) ||
@@ -2340,6 +2365,20 @@ internal static class PptxCodec
                path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) &&
                path[prefix.Length..^suffix.Length].Length > 0 &&
                path[prefix.Length..^suffix.Length].All(char.IsAsciiDigit);
+    }
+
+    private static bool IsMp4MediaPath(string path)
+    {
+        const string suffix = ".mp4";
+        foreach (var prefix in new[] { "ppt/media/", "media/" })
+        {
+            if (!path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) ||
+                !path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) continue;
+            var fileName = path[prefix.Length..];
+            return fileName.Length > suffix.Length && !fileName.Contains('/') && !fileName.Contains('\\') &&
+                   fileName.All(character => char.IsAsciiLetterOrDigit(character) || character is '.' or '_' or '-');
+        }
+        return false;
     }
 
     private static bool IsCloneXlsxEmbeddingPath(string path)
@@ -2396,6 +2435,7 @@ internal static class PptxCodec
                     throw new CodecException("presentation_postwrite_clone_mismatch", $"PPTX clone {targetIndex + 1} is not an independent exact source slide copy.", PartPath(outputSlide));
                 ValidateClonedRunHyperlinkGraph(target.Source.Part, outputSlide, targetIndex);
                 ValidateClonedOleWorkbookGraph(target.Source.Part, outputSlide, targetIndex);
+                ValidateClonedMediaGraph(target.Source.Part, outputSlide, targetIndex);
                 ValidateClonedSpeakerNotes(target.Source.Part, outputSlide, targetIndex);
                 ValidateClonedLegacyComments(sourcePresentationPart, outputPresentationPart, target.Source.Part, outputSlide, targetIndex);
             }
@@ -2575,7 +2615,7 @@ internal static class PptxCodec
             sourceExternal.Any(pair => !cloneExternal.TryGetValue(pair.Key, out var actual) || actual != pair.Value) ||
             sourceSlides.Count != cloneSlides.Count ||
             sourceSlides.Any(pair => !cloneSlides.TryGetValue(pair.Key, out var actual) || !actual.Equals(pair.Value, StringComparison.OrdinalIgnoreCase)) ||
-            clone.ExternalRelationships.Any() || clone.DataPartReferenceRelationships.Any())
+            clone.ExternalRelationships.Any())
             throw new CodecException(
                 "presentation_postwrite_clone_hyperlink_mismatch",
                 $"PPTX clone {targetIndex + 1} does not retain the exact bounded run-hyperlink relationship graph.",
@@ -2622,6 +2662,56 @@ internal static class PptxCodec
         if (sourceImages.Count != cloneImages.Count ||
             sourceImages.Any(pair => !cloneImages.TryGetValue(pair.Key, out var path) || !path.Equals(pair.Value, StringComparison.OrdinalIgnoreCase)))
             throw new CodecException("presentation_postwrite_clone_ole_mismatch", $"PPTX clone {targetIndex + 1} does not retain the exact shared OLE preview-image graph.", PartPath(clone));
+    }
+
+    private static void ValidateClonedMediaGraph(SlidePart source, SlidePart clone, int targetIndex)
+    {
+        var sourceRelationships = source.DataPartReferenceRelationships
+            .ToDictionary(relationship => relationship.Id, StringComparer.Ordinal);
+        var cloneRelationships = clone.DataPartReferenceRelationships
+            .ToDictionary(relationship => relationship.Id, StringComparer.Ordinal);
+        if (sourceRelationships.Count != cloneRelationships.Count || sourceRelationships.Count % 2 != 0)
+            throw new CodecException("presentation_postwrite_clone_media_mismatch", $"PPTX clone {targetIndex + 1} does not retain the exact bounded media relationship graph.", PartPath(clone));
+        if (sourceRelationships.Count == 0) return;
+
+        var sourceParts = new HashSet<MediaDataPart>();
+        var cloneParts = new HashSet<MediaDataPart>();
+        foreach (var (relationshipId, sourceRelationship) in sourceRelationships)
+        {
+            if (!cloneRelationships.TryGetValue(relationshipId, out var cloneRelationship) ||
+                sourceRelationship.GetType() != cloneRelationship.GetType() ||
+                sourceRelationship is not (VideoReferenceRelationship or MediaReferenceRelationship) ||
+                cloneRelationship is not (VideoReferenceRelationship or MediaReferenceRelationship) ||
+                sourceRelationship.DataPart is not MediaDataPart sourcePart ||
+                cloneRelationship.DataPart is not MediaDataPart clonePart)
+                throw new CodecException("presentation_postwrite_clone_media_mismatch", $"PPTX clone {targetIndex + 1} changed a media relationship identity or type.", PartPath(clone));
+            if (ReferenceEquals(sourcePart, clonePart) ||
+                !sourcePart.ContentType.Equals(Mp4ContentType, StringComparison.OrdinalIgnoreCase) ||
+                !clonePart.ContentType.Equals(sourcePart.ContentType, StringComparison.OrdinalIgnoreCase) ||
+                DataPartPath(sourcePart).Equals(DataPartPath(clonePart), StringComparison.OrdinalIgnoreCase) ||
+                !IsMp4MediaPath(DataPartPath(clonePart)) ||
+                !DataPartBytes(sourcePart).SequenceEqual(DataPartBytes(clonePart)))
+                throw new CodecException("presentation_postwrite_clone_media_mismatch", $"PPTX clone {targetIndex + 1} is not an independent exact source MP4 copy ({DataPartPath(sourcePart)} -> {DataPartPath(clonePart)}, {sourcePart.ContentType} -> {clonePart.ContentType}, {DataPartBytes(sourcePart).Length} -> {DataPartBytes(clonePart).Length} bytes).", PartPath(clone));
+            sourceParts.Add(sourcePart);
+            cloneParts.Add(clonePart);
+        }
+
+        if (sourceParts.Count * 2 != sourceRelationships.Count || cloneParts.Count != sourceParts.Count)
+            throw new CodecException("presentation_postwrite_clone_media_mismatch", $"PPTX clone {targetIndex + 1} changed the one-video/one-media relationship pairing.", PartPath(clone));
+        foreach (var sourcePart in sourceParts)
+        {
+            var sourceIds = sourceRelationships.Values
+                .Where(relationship => ReferenceEquals(relationship.DataPart, sourcePart))
+                .Select(relationship => relationship.Id)
+                .ToArray();
+            if (sourceIds.Length != 2 ||
+                !sourceIds.Any(id => sourceRelationships[id] is VideoReferenceRelationship) ||
+                !sourceIds.Any(id => sourceRelationships[id] is MediaReferenceRelationship))
+                throw new CodecException("presentation_postwrite_clone_media_mismatch", $"PPTX source {targetIndex + 1} does not have one canonical MP4 relationship pair.", PartPath(source));
+            var cloneTargets = sourceIds.Select(id => cloneRelationships[id].DataPart).Distinct().ToArray();
+            if (cloneTargets.Length != 1 || cloneTargets[0].GetDataPartReferenceRelationships().Count() != 2)
+                throw new CodecException("presentation_postwrite_clone_media_mismatch", $"PPTX clone {targetIndex + 1} media relationships do not share one clone-local MP4 data part.", PartPath(clone));
+        }
     }
 
     private static void ValidateClonedSpeakerNotes(SlidePart source, SlidePart clone, int targetIndex)
@@ -3240,6 +3330,21 @@ internal static class PptxCodec
                 changedParts.Add(PartPath(cloneInk));
                 addedPartPaths.Add(PartPath(cloneInk));
             }
+            foreach (var media in leaf.MediaParts)
+            {
+                // The poster image remains a shared immutable ImagePart, but
+                // the MP4 payload is mutable package content. Allocate a new
+                // package-level MediaDataPart and reproduce both local data
+                // relationships so origin and clone cannot become coupled.
+                var cloneMedia = media.Part.OpenXmlPackage.CreateMediaDataPart(Mp4ContentType, ".mp4");
+                CopyDataPartBytes(media.Part, cloneMedia);
+                clonePart.AddVideoReferenceRelationship(cloneMedia, media.VideoRelationshipId);
+                clonePart.AddMediaReferenceRelationship(cloneMedia, media.MediaRelationshipId);
+                addedRelationshipIds.Add($"{PartPath(clonePart)}\0{media.VideoRelationshipId}");
+                addedRelationshipIds.Add($"{PartPath(clonePart)}\0{media.MediaRelationshipId}");
+                changedParts.Add(DataPartPath(cloneMedia));
+                addedPartPaths.Add(DataPartPath(cloneMedia));
+            }
             foreach (var hyperlink in leaf.ExternalHyperlinks)
             {
                 clonePart.AddHyperlinkRelationship(hyperlink.Uri, true, hyperlink.RelationshipId);
@@ -3294,7 +3399,7 @@ internal static class PptxCodec
                 Id = nextSlideId,
                 RelationshipId = presentationPart.GetIdOfPart(clonePart),
             };
-            // Clone-to-layout, clone-to-image, clone-to-chart/embedded-XLSX/SmartArt/InkML,
+            // Clone-to-layout, clone-to-image, clone-to-chart/embedded-XLSX/SmartArt/InkML/MP4,
             // clone-to-run-hyperlink, clone-to-notes, and clone-to-comments
             // edges are intentionally opaque in the generic profile. Record
             // only these exact, verified relationships so the package guard
@@ -3376,6 +3481,34 @@ internal static class PptxCodec
         var inkContentRelationshipIds = inkContentEdges
             .Select(edge => edge.SlideRelationshipId)
             .ToHashSet(StringComparer.Ordinal);
+        var dataRelationships = source.Part.DataPartReferenceRelationships.ToArray();
+        var videoRelationships = dataRelationships
+            .OfType<VideoReferenceRelationship>()
+            .ToDictionary(relationship => relationship.Id, StringComparer.Ordinal);
+        var mediaRelationships = dataRelationships
+            .OfType<MediaReferenceRelationship>()
+            .ToDictionary(relationship => relationship.Id, StringComparer.Ordinal);
+        var mediaEdges = new List<PptxCloneMediaLeaf>();
+        var seenMediaParts = new HashSet<MediaDataPart>();
+        var validMediaRelationshipPairs = dataRelationships.Length == videoRelationships.Count + mediaRelationships.Count &&
+                                          videoRelationships.Count == mediaRelationships.Count;
+        if (validMediaRelationshipPairs)
+        {
+            foreach (var video in videoRelationships.Values)
+            {
+                var matches = mediaRelationships.Values
+                    .Where(media => ReferenceEquals(media.DataPart, video.DataPart))
+                    .ToArray();
+                if (matches.Length != 1 || video.DataPart is not MediaDataPart mediaPart || !seenMediaParts.Add(mediaPart))
+                {
+                    validMediaRelationshipPairs = false;
+                    break;
+                }
+                mediaEdges.Add(new PptxCloneMediaLeaf(mediaPart, video.Id, matches[0].Id));
+            }
+        }
+        var videoRelationshipIds = videoRelationships.Keys.ToHashSet(StringComparer.Ordinal);
+        var mediaRelationshipIds = mediaRelationships.Keys.ToHashSet(StringComparer.Ordinal);
         var externalHyperlinkEdges = source.Part.HyperlinkRelationships
             .Select(relationship => new PptxCloneExternalHyperlinkEdge(relationship.Uri, relationship.Id))
             .ToArray();
@@ -3405,12 +3538,13 @@ internal static class PptxCodec
             olePackageEdges.Length > MaxCloneOlePackageParts ||
             diagramEdges.Length > MaxCloneDiagramParts ||
             inkContentEdges.Length > MaxCloneInkContentParts ||
+            mediaEdges.Count > MaxCloneMediaParts ||
+            !validMediaRelationshipPairs ||
             unsafeChildren.Length > 0 ||
             source.Part.ExternalRelationships.Any() ||
-            source.Part.DataPartReferenceRelationships.Any() ||
             hyperlinkRelationshipIds.Count > MaxCloneHyperlinkRelationships ||
             slideHyperlinkEdges.Any(edge => !retainedSlideParts.Contains(edge.Part)))
-            throw UnsupportedSourceSlideClone(source, "it owns data parts, an unretained slide jump, too many charts, OLE packages, diagram/InkML parts, or hyperlinks, or another non-layout/image/chart/embedded-XLSX/closed-diagram/closed-InkML/run-hyperlink/notes/comments relationship");
+            throw UnsupportedSourceSlideClone(source, "it owns an unrecognized data part, an unretained slide jump, too many charts, OLE packages, diagram/InkML/media parts, or hyperlinks, or another non-layout/image/chart/embedded-XLSX/closed-diagram/closed-InkML/closed-MP4/run-hyperlink/notes/comments relationship");
         if (chartEdges.Any(edge => edge.Part.Parts.Any() || edge.Part.ExternalRelationships.Any() ||
                                          edge.Part.HyperlinkRelationships.Any() || edge.Part.DataPartReferenceRelationships.Any()))
             throw UnsupportedSourceSlideClone(source, "one of its chart parts owns a child, external, hyperlink, or data relationship");
@@ -3422,6 +3556,8 @@ internal static class PptxCodec
             throw UnsupportedSourceSlideClone(source, "one of its SmartArt diagram parts has an unexpected content type or owns a child, external, hyperlink, or data relationship");
         if (inkContentEdges.Any(edge => !IsClosedCloneInkContentPart(edge.Part)))
             throw UnsupportedSourceSlideClone(source, "one of its content parts is not a closed standard InkML CustomXmlPart");
+        if (mediaEdges.Any(edge => !IsClosedCloneMediaPart(edge)))
+            throw UnsupportedSourceSlideClone(source, "one of its media data parts is not one uniquely owned non-empty MP4 with exactly one video and one media relationship");
         var root = source.Part.Slide ??
             throw new CodecException("missing_slide_root", $"Presentation source slide {source.Index + 1} has no slide root.", PartPath(source.Part));
         var common = root.CommonSlideData ??
@@ -3438,6 +3574,8 @@ internal static class PptxCodec
         var usedOlePackageRelationshipIds = new HashSet<string>(StringComparer.Ordinal);
         var usedDiagramRelationshipIds = new HashSet<string>(StringComparer.Ordinal);
         var usedInkContentRelationshipIds = new HashSet<string>(StringComparer.Ordinal);
+        var usedVideoRelationshipIds = new HashSet<string>(StringComparer.Ordinal);
+        var usedMediaRelationshipIds = new HashSet<string>(StringComparer.Ordinal);
         var usedHyperlinkRelationshipIds = new HashSet<string>(StringComparer.Ordinal);
         for (var elementIndex = 0; elementIndex < sourceElements.Length; elementIndex++)
         {
@@ -3457,10 +3595,14 @@ internal static class PptxCodec
                     usedDiagramRelationshipIds,
                     inkContentRelationshipIds,
                     usedInkContentRelationshipIds,
+                    videoRelationships,
+                    mediaRelationships,
+                    usedVideoRelationshipIds,
+                    usedMediaRelationshipIds,
                     nativeObjects,
                     true,
                     usedHyperlinkRelationshipIds))
-                throw UnsupportedSourceSlideClone(source, "its elements require a broader graph clone than the bounded shape-with-canonical-run-hyperlinks/inline-table/closed-chart/embedded-image/embedded-XLSX-OLE/closed-SmartArt/top-level-InkML/connector/recursive-group profile");
+                throw UnsupportedSourceSlideClone(source, "its elements require a broader graph clone than the bounded shape-with-canonical-run-hyperlinks/inline-table/closed-chart/embedded-image/embedded-XLSX-OLE/closed-SmartArt/top-level-InkML/top-level-MP4/connector/recursive-group profile");
         }
         if (!imageRelationshipIds.SetEquals(embeddedImageRelationshipIds))
             throw UnsupportedSourceSlideClone(source, "it has an image relationship that is not exactly bound by a canonical embedded picture");
@@ -3472,6 +3614,8 @@ internal static class PptxCodec
             throw UnsupportedSourceSlideClone(source, "its SmartArt relationships are not exactly and uniquely bound by canonical four-part diagram frames");
         if (!inkContentRelationshipIds.SetEquals(usedInkContentRelationshipIds))
             throw UnsupportedSourceSlideClone(source, "its custom XML relationships are not exactly and uniquely bound by canonical top-level InkML content parts");
+        if (!videoRelationshipIds.SetEquals(usedVideoRelationshipIds) || !mediaRelationshipIds.SetEquals(usedMediaRelationshipIds))
+            throw UnsupportedSourceSlideClone(source, "its MP4 data relationships are not exactly and uniquely bound by canonical top-level media pictures");
         if (!hyperlinkRelationshipIds.SetEquals(usedHyperlinkRelationshipIds))
             throw UnsupportedSourceSlideClone(source, "its hyperlink relationships are not exactly bound by canonical inline run click actions");
         var notes = AssertSourceSpeakerNotesCanBeCloned(source, target.Target);
@@ -3515,6 +3659,7 @@ internal static class PptxCodec
             olePackageEdges,
             diagramEdges,
             inkContentEdges,
+            mediaEdges,
             externalHyperlinkEdges,
             slideHyperlinkEdges,
             notes,
@@ -3542,6 +3687,10 @@ internal static class PptxCodec
         ISet<string> usedDiagramRelationshipIds,
         ISet<string> inkContentRelationshipIds,
         ISet<string> usedInkContentRelationshipIds,
+        IReadOnlyDictionary<string, VideoReferenceRelationship> videoRelationships,
+        IReadOnlyDictionary<string, MediaReferenceRelationship> mediaRelationships,
+        ISet<string> usedVideoRelationshipIds,
+        ISet<string> usedMediaRelationshipIds,
         PptxNativeObjectCatalog nativeObjects,
         bool allowNativeGraphLeaf,
         ISet<string> usedHyperlinkRelationshipIds)
@@ -3591,6 +3740,23 @@ internal static class PptxCodec
         }
         if (element is P.Picture picture)
         {
+            if (PptxNativeObjectCatalog.IsMediaPicture(picture))
+            {
+                if (!allowNativeGraphLeaf) return false;
+                return TryCollectCanonicalCloneMedia(
+                    picture,
+                    ownerId,
+                    elementIndex,
+                    context,
+                    elementIdsByNativeId,
+                    imageRelationshipIds,
+                    embeddedImageRelationshipIds,
+                    videoRelationships,
+                    mediaRelationships,
+                    usedVideoRelationshipIds,
+                    usedMediaRelationshipIds,
+                    nativeObjects);
+            }
             if (HasHyperlinkMarkup(picture)) return false;
             if (!PptxPictureCodec.TryRead(picture, context, out _)) return false;
             var relationshipId = picture.BlipFill?.GetFirstChild<A.Blip>()?.Embed?.Value ?? string.Empty;
@@ -3645,6 +3811,10 @@ internal static class PptxCodec
                     usedDiagramRelationshipIds,
                     inkContentRelationshipIds,
                     usedInkContentRelationshipIds,
+                    videoRelationships,
+                    mediaRelationships,
+                    usedVideoRelationshipIds,
+                    usedMediaRelationshipIds,
                     nativeObjects,
                     false,
                     usedHyperlinkRelationshipIds))
@@ -3862,6 +4032,107 @@ internal static class PptxCodec
         {
             return false;
         }
+    }
+
+    // Microsoft PowerPoint stores one embedded video as a top-level p:pic:
+    // the ordinary blip is a shared immutable poster, while a:videoFile and
+    // p14:media point through two distinct SlidePart data relationships to one
+    // MP4 MediaDataPart. Accept only that exact official SDK shape so timing,
+    // external media, audio, and extension-rich playback graphs remain
+    // source-bound instead of being silently approximated.
+    private static bool TryCollectCanonicalCloneMedia(
+        P.Picture picture,
+        string ownerId,
+        int elementIndex,
+        PptxPartContext context,
+        IReadOnlyDictionary<uint, string> elementIdsByNativeId,
+        ISet<string> imageRelationshipIds,
+        ISet<string> embeddedImageRelationshipIds,
+        IReadOnlyDictionary<string, VideoReferenceRelationship> videoRelationships,
+        IReadOnlyDictionary<string, MediaReferenceRelationship> mediaRelationships,
+        ISet<string> usedVideoRelationshipIds,
+        ISet<string> usedMediaRelationshipIds,
+        PptxNativeObjectCatalog nativeObjects)
+    {
+        if (!PptxPictureCodec.TryRead(picture, context, out _)) return false;
+        var nonVisual = picture.NonVisualPictureProperties;
+        var drawing = nonVisual?.NonVisualDrawingProperties;
+        var application = nonVisual?.ApplicationNonVisualDrawingProperties;
+        var clicks = drawing?.Elements<A.HyperlinkOnClick>().ToArray() ?? [];
+        var videos = application?.Elements<A.VideoFromFile>().ToArray() ?? [];
+        var extensionLists = application?.Elements<P.ApplicationNonVisualDrawingPropertiesExtensionList>().ToArray() ?? [];
+        if (drawing is null || application is null || clicks.Length != 1 || videos.Length != 1 || extensionLists.Length != 1 ||
+            drawing.ChildElements.Count != 1 || application.ChildElements.Count != 2 ||
+            !string.IsNullOrEmpty(clicks[0].Id?.Value) || clicks[0].Action?.Value != "ppaction://media" ||
+            clicks[0].GetAttributes().Any(attribute => attribute.LocalName is not ("id" or "action")) ||
+            application.Elements<A.AudioFromFile>().Any())
+            return false;
+
+        var extensions = extensionLists[0].Elements<P.ApplicationNonVisualDrawingPropertiesExtension>().ToArray();
+        if (extensionLists[0].ChildElements.Count != 1 || extensions.Length != 1 ||
+            extensions[0].Uri?.Value != "{DAA4B4D4-6D71-4841-9C94-3DE7FCFB9230}" ||
+            extensions[0].ChildElements.Count != 1)
+            return false;
+        var mediaElements = extensions[0].Elements<P14.Media>().ToArray();
+        if (mediaElements.Length != 1) return false;
+
+        var videoRelationshipId = videos[0].Link?.Value ?? string.Empty;
+        var mediaRelationshipId = mediaElements[0].Embed?.Value ?? string.Empty;
+        var posterRelationshipId = picture.BlipFill?.GetFirstChild<A.Blip>()?.Embed?.Value ?? string.Empty;
+        if (videoRelationshipId.Length == 0 || mediaRelationshipId.Length == 0 || posterRelationshipId.Length == 0 ||
+            videoRelationshipId == mediaRelationshipId || videoRelationshipId == posterRelationshipId || mediaRelationshipId == posterRelationshipId ||
+            !videoRelationships.TryGetValue(videoRelationshipId, out var videoRelationship) ||
+            !mediaRelationships.TryGetValue(mediaRelationshipId, out var mediaRelationship) ||
+            !ReferenceEquals(videoRelationship.DataPart, mediaRelationship.DataPart) ||
+            videoRelationship.DataPart is not MediaDataPart mediaPart ||
+            !imageRelationshipIds.Contains(posterRelationshipId))
+            return false;
+
+        var relationshipAttributes = new[] { (OpenXmlElement)picture }
+            .Concat(picture.Descendants())
+            .SelectMany(element => element.GetAttributes())
+            .Where(attribute => PptxNativeObjectCatalog.IsRelationshipNamespace(attribute.NamespaceUri))
+            .ToArray();
+        if (relationshipAttributes.Length != 4 ||
+            relationshipAttributes.Count(attribute => attribute.LocalName == "id" && string.IsNullOrEmpty(attribute.Value)) != 1 ||
+            relationshipAttributes.Count(attribute => attribute.LocalName == "link" && attribute.Value == videoRelationshipId) != 1 ||
+            relationshipAttributes.Count(attribute => attribute.LocalName == "embed" && attribute.Value == mediaRelationshipId) != 1 ||
+            relationshipAttributes.Count(attribute => attribute.LocalName == "embed" && attribute.Value == posterRelationshipId) != 1)
+            return false;
+
+        var edge = new PptxCloneMediaLeaf(mediaPart, videoRelationshipId, mediaRelationshipId);
+        if (!IsClosedCloneMediaPart(edge) || !usedVideoRelationshipIds.Add(videoRelationshipId) ||
+            !usedMediaRelationshipIds.Add(mediaRelationshipId))
+            return false;
+
+        var posterPart = context.Owner.GetPartById(posterRelationshipId);
+        var semantic = ReadElement(picture, ownerId, elementIndex, context, nativeObjects, elementIdsByNativeId);
+        var expectedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            PartPath(posterPart),
+            DataPartPath(mediaPart),
+        };
+        if (semantic.ContentCase != PresentationElement.ContentOneofCase.Opaque || semantic.Opaque.NativeKind != "media" ||
+            semantic.Opaque.RelationshipReferences.Count != 3 || semantic.Opaque.PreservedPartPaths.Count != 2 ||
+            !semantic.Opaque.RelationshipReferences.Select(reference => reference.RelationshipId).ToHashSet(StringComparer.Ordinal)
+                .SetEquals(new[] { videoRelationshipId, mediaRelationshipId, posterRelationshipId }) ||
+            !semantic.Opaque.PreservedPartPaths.ToHashSet(StringComparer.OrdinalIgnoreCase).SetEquals(expectedPaths))
+            return false;
+
+        embeddedImageRelationshipIds.Add(posterRelationshipId);
+        return true;
+    }
+
+    private static bool IsClosedCloneMediaPart(PptxCloneMediaLeaf edge)
+    {
+        var part = edge.Part;
+        if (!part.ContentType.Equals(Mp4ContentType, StringComparison.OrdinalIgnoreCase) ||
+            !IsMp4MediaPath(DataPartPath(part)) || DataPartBytes(part).Length == 0)
+            return false;
+        var references = part.GetDataPartReferenceRelationships().ToArray();
+        return references.Length == 2 &&
+               references.Count(relationship => relationship is VideoReferenceRelationship && relationship.Id == edge.VideoRelationshipId) == 1 &&
+               references.Count(relationship => relationship is MediaReferenceRelationship && relationship.Id == edge.MediaRelationshipId) == 1;
     }
 
     private static bool TryCollectCanonicalRunHyperlinks(

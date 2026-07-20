@@ -27,8 +27,13 @@ const MAX_CLOSED_CHART_PARTS = 256;
 const MAX_CLOSED_OLE_WORKBOOK_PARTS = 64;
 const MAX_CLOSED_DIAGRAM_PARTS = 256;
 const MAX_CLOSED_INK_CONTENT_PARTS = 256;
+const MAX_CLOSED_MEDIA_PARTS = 64;
 const XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const INK_CONTENT_TYPE = "application/inkml+xml";
+const MP4_CONTENT_TYPE = "video/mp4";
+const VIDEO_RELATIONSHIP_TYPE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/video";
+const MEDIA_RELATIONSHIP_TYPE = "http://schemas.microsoft.com/office/2007/relationships/media";
+const MEDIA_EXTENSION_URI = "{DAA4B4D4-6D71-4841-9C94-3DE7FCFB9230}";
 const CUSTOM_XML_RELATIONSHIP_TYPES = new Set([
   "http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml",
   "http://purl.oclc.org/ooxml/officeDocument/relationships/customXml",
@@ -122,10 +127,14 @@ function resolveRelationshipTargetFromPart(sourcePart, target) {
     throw new Error("Invalid PPTX relationship source part: " + JSON.stringify(sourcePart));
   }
   const partPath = resolvePackageRelationshipTargetFromPart(sourcePart, target);
-  if (!partPath.startsWith("ppt/")) {
+  if (!partPath.startsWith("ppt/") && !isClosedMp4MediaPath(partPath)) {
     throw new Error("Unsafe PPTX relationship target: " + JSON.stringify(target));
   }
   return partPath;
+}
+
+function isClosedMp4MediaPath(partPath) {
+  return /^(?:ppt\/)?media\/[A-Za-z0-9_.-]+\.mp4$/i.test(String(partPath || ""));
 }
 
 async function requiredZipBytes(zip, partPath) {
@@ -294,11 +303,20 @@ async function inspectCanonicalRunHyperlinks(zip, slidePart, customShows) {
   const usedRelationshipIds = new Set();
   const clicks = [];
   const customShowActions = [];
+  const mediaPictureRanges = [...slideXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?pic\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?pic\s*>/gi)]
+    .filter((picture) => /<(?:[A-Za-z_][\w.-]*:)?videoFile\b/i.test(picture[0]) && /<(?:[A-Za-z_][\w.-]*:)?media\b/i.test(picture[0]))
+    .map((picture) => ({ start: picture.index, end: picture.index + picture[0].length }));
   for (const match of slideXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?hlinkClick\b[^>]*>/gi)) {
     const attributes = xmlAttributes(match[0]);
     const relationshipId = attributes["r:id"] || "";
     const action = unescapeXml(attributes.action || "");
     if (!relationshipId) {
+      if (action === "ppaction://media") {
+        if (attributes["r:id"] !== "" || !mediaPictureRanges.some((range) => match.index >= range.start && match.index < range.end)) {
+          throw new Error("Canonical duplicate workflow found a media action outside a canonical embedded-video picture in " + slidePart + ".");
+        }
+        continue;
+      }
       const customShow = CUSTOM_SHOW_ACTION.exec(action);
       if (customShow) {
         const nativeId = Number(customShow[1]);
@@ -528,6 +546,21 @@ async function packageRelationshipInboundCount(zip, targetPart) {
     }
   }
   return count;
+}
+
+async function packageRelationshipInboundEntries(zip, targetPart) {
+  const inbound = [];
+  for (const relationshipPart of packagePartPaths(zip).filter((partPath) => partPath === "_rels/.rels" || /(?:^|\/)\_rels\/[^/]+\.rels$/i.test(partPath))) {
+    const sourcePart = relationshipSourcePartFromPath(relationshipPart);
+    const xml = Buffer.from(await requiredZipBytes(zip, relationshipPart)).toString("utf8");
+    for (const match of xml.matchAll(/<Relationship\b[^>]*>/gi)) {
+      const attributes = xmlAttributes(match[0]);
+      if (String(attributes.TargetMode || "").toLowerCase() === "external" || !attributes.Target) continue;
+      const resolved = resolvePackageRelationshipTargetFromPart(sourcePart, attributes.Target);
+      if (resolved === targetPart) inbound.push({ sourcePart, id: attributes.Id, type: attributes.Type });
+    }
+  }
+  return inbound;
 }
 
 async function inspectClosedOleWorkbookParts(zip, slidePart) {
@@ -778,6 +811,119 @@ async function inspectClosedInkContentParts(zip, slidePart) {
   };
 }
 
+async function inspectClosedMediaParts(zip, slidePart) {
+  const relationships = await relationshipEntriesForPart(zip, slidePart);
+  const videoRelationships = relationships.filter((entry) => entry.type === VIDEO_RELATIONSHIP_TYPE);
+  const mediaRelationships = relationships.filter((entry) => entry.type === MEDIA_RELATIONSHIP_TYPE);
+  if (videoRelationships.length > MAX_CLOSED_MEDIA_PARTS || mediaRelationships.length > MAX_CLOSED_MEDIA_PARTS) {
+    throw new Error("Embedded-MP4 duplication exceeds the " + MAX_CLOSED_MEDIA_PARTS + "-part budget.");
+  }
+  const videoById = new Map(videoRelationships.map((entry) => [entry.id, entry]));
+  const mediaById = new Map(mediaRelationships.map((entry) => [entry.id, entry]));
+  const imageById = new Map(relationships.filter((entry) => relationshipTypeMatches(entry, "image")).map((entry) => [entry.id, entry]));
+  const slideXml = Buffer.from(await requiredZipBytes(zip, slidePart)).toString("utf8");
+  const relationshipPrefixes = new Set([...slideXml.matchAll(/\bxmlns:([A-Za-z_][\w.-]*)\s*=\s*(["'])([^"']+)\2/gi)]
+    .filter((match) => OOXML_RELATIONSHIP_NAMESPACES.has(match[3]))
+    .map((match) => match[1]));
+  const pictures = [...slideXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?pic\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?pic\s*>/gi)]
+    .filter((match) => /<(?:[A-Za-z_][\w.-]*:)?videoFile\b/i.test(match[0]) || /<(?:[A-Za-z_][\w.-]*:)?media\b/i.test(match[0]));
+  const mediaMarkerCount = [...slideXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?videoFile\b/gi)].length;
+  if (pictures.length !== mediaMarkerCount || pictures.length !== videoRelationships.length || pictures.length !== mediaRelationships.length) {
+    throw new Error("Embedded-MP4 duplication found an orphan, nested, or unpaired media relationship graph in " + slidePart + ".");
+  }
+
+  const usedVideoIds = new Set();
+  const usedMediaIds = new Set();
+  const usedMediaParts = new Set();
+  const mediaParts = [];
+  for (const pictureMatch of pictures) {
+    const picture = pictureMatch[0];
+    const groupPrefix = slideXml.slice(0, pictureMatch.index);
+    const groupDepth = [...groupPrefix.matchAll(/<(\/)?(?:[A-Za-z_][\w.-]*:)?grpSp\b[^>]*>/gi)]
+      .reduce((depth, match) => depth + (match[1] ? -1 : /\/\s*>$/.test(match[0]) ? 0 : 1), 0);
+    if (groupDepth !== 0) throw new Error("Embedded-MP4 duplication accepts only a top-level p:pic.");
+    const clicks = [...picture.matchAll(/<(?:[A-Za-z_][\w.-]*:)?hlinkClick\b[^>]*>/gi)];
+    const videos = [...picture.matchAll(/<(?:[A-Za-z_][\w.-]*:)?videoFile\b[^>]*>/gi)];
+    const medias = [...picture.matchAll(/<(?:[A-Za-z_][\w.-]*:)?media\b[^>]*>/gi)];
+    const blips = [...picture.matchAll(/<(?:[A-Za-z_][\w.-]*:)?blip\b[^>]*>/gi)];
+    const uriExtensions = [...picture.matchAll(/<(?:[A-Za-z_][\w.-]*:)?ext\b[^>]*>/gi)]
+      .filter((match) => Object.hasOwn(xmlAttributes(match[0]), "uri"));
+    if (clicks.length !== 1 || videos.length !== 1 || medias.length !== 1 || blips.length !== 1 ||
+        uriExtensions.length !== 1 || xmlAttributes(uriExtensions[0][0]).uri !== MEDIA_EXTENSION_URI ||
+        /<(?:[A-Za-z_][\w.-]*:)?audioFile\b/i.test(picture)) {
+      throw new Error("Embedded-MP4 picture must contain exactly one media action, videoFile, p14:media, poster blip, and canonical media extension.");
+    }
+    const clickAttributes = xmlAttributes(clicks[0][0]);
+    if (clickAttributes["r:id"] !== "" || clickAttributes.action !== "ppaction://media") {
+      throw new Error("Embedded-MP4 picture must retain the empty media-action relationship sentinel.");
+    }
+    const videoId = xmlAttributes(videos[0][0])["r:link"];
+    const mediaId = xmlAttributes(medias[0][0])["r:embed"];
+    const posterId = xmlAttributes(blips[0][0])["r:embed"];
+    const relationshipAttributes = [...picture.matchAll(/\b([A-Za-z_][\w.-]*):(id|embed|link)\s*=\s*(["'])([^"']*)\3/gi)]
+      .filter((match) => relationshipPrefixes.has(match[1]));
+    if (!videoId || !mediaId || !posterId || new Set([videoId, mediaId, posterId]).size !== 3 || relationshipAttributes.length !== 4) {
+      throw new Error("Embedded-MP4 picture must contain exactly its video, media, poster, and empty action relationship attributes.");
+    }
+    const video = videoById.get(videoId);
+    const media = mediaById.get(mediaId);
+    const poster = imageById.get(posterId);
+    if (!video || !media || !poster || !usedVideoIds.add(videoId) || !usedMediaIds.add(mediaId)) {
+      throw new Error("Embedded-MP4 picture has a missing, mistyped, duplicate, or shared relationship.");
+    }
+    requireInternalRelationship(video, "Embedded-MP4 video");
+    requireInternalRelationship(media, "Embedded-MP4 media");
+    requireInternalRelationship(poster, "Embedded-MP4 poster");
+    if (video.targetPart !== media.targetPart || !isClosedMp4MediaPath(video.targetPart) || !usedMediaParts.add(video.targetPart) ||
+        await contentTypeForPart(zip, video.targetPart) !== MP4_CONTENT_TYPE) {
+      throw new Error("Embedded-MP4 video and media relationships must share one unique internal video/mp4 part.");
+    }
+    if (!/^ppt\/media\/[^/]+$/i.test(poster.targetPart) || !String(await contentTypeForPart(zip, poster.targetPart)).toLowerCase().startsWith("image/")) {
+      throw new Error("Embedded-MP4 poster must be one internal PPTX ImagePart.");
+    }
+    await assertNoChildRelationshipGraph(zip, video.targetPart, "Embedded-MP4 payload");
+    const inbound = await packageRelationshipInboundEntries(zip, video.targetPart);
+    if (inbound.length !== 2 || inbound.some((entry) => entry.sourcePart !== slidePart) ||
+        !inbound.some((entry) => entry.id === videoId && entry.type === VIDEO_RELATIONSHIP_TYPE) ||
+        !inbound.some((entry) => entry.id === mediaId && entry.type === MEDIA_RELATIONSHIP_TYPE)) {
+      throw new Error("Embedded-MP4 payload must have exactly one video and one media relationship from the owning slide.");
+    }
+    const [videoBytes, posterBytes] = await Promise.all([
+      requiredZipBytes(zip, video.targetPart),
+      requiredZipBytes(zip, poster.targetPart),
+    ]);
+    if (!videoBytes.length || !posterBytes.length) throw new Error("Embedded-MP4 payload and poster must be non-empty.");
+    mediaParts.push({
+      videoRelationship: video,
+      mediaRelationship: media,
+      part: video.targetPart,
+      contentType: MP4_CONTENT_TYPE,
+      sha256: sha256(videoBytes),
+      bytes: videoBytes.length,
+      posterRelationship: poster,
+      posterPart: poster.targetPart,
+      posterSha256: sha256(posterBytes),
+    });
+  }
+  if (usedVideoIds.size !== videoById.size || usedMediaIds.size !== mediaById.size) {
+    throw new Error("Embedded-MP4 duplication found an orphan video or media relationship in " + slidePart + ".");
+  }
+  return {
+    count: mediaParts.length,
+    mediaParts,
+    fingerprint: JSON.stringify(mediaParts.map((part) => ({
+      videoId: part.videoRelationship.id,
+      videoType: part.videoRelationship.type,
+      mediaId: part.mediaRelationship.id,
+      mediaType: part.mediaRelationship.type,
+      sha256: part.sha256,
+      posterId: part.posterRelationship.id,
+      posterPart: part.posterPart,
+      posterSha256: part.posterSha256,
+    }))),
+  };
+}
+
 function modelDiagramBindings(slide) {
   return (slide.nativeObjects?.items || [])
     .filter((object) => object.nativeKind === "diagram")
@@ -872,6 +1018,69 @@ function assertModelInkContentBindings(bindings, inspected, expectedParts = new 
     if (!binding || binding.relationshipType !== content.relationship.type || binding.partPath !== expectedPart ||
         binding.contentType !== INK_CONTENT_TYPE || binding.sourceSha256 !== content.sha256) {
       throw new Error("Imported model and independent OPC inspection disagree on an InkML content-part binding.");
+    }
+  }
+}
+
+function modelMediaBindings(slide) {
+  return (slide.nativeObjects?.items || [])
+    .filter((object) => object.nativeKind === "media")
+    .map((object) => {
+      if (!/^<(?:[A-Za-z_][\w.-]*:)?pic(?:\s|>)/.test(String(object.rawXml || "").trimStart())) {
+        throw new Error("Selected slide contains a media object outside the top-level p:pic clone profile.");
+      }
+      const references = (object.relationshipReferences || []).filter((reference) =>
+        OOXML_RELATIONSHIP_NAMESPACES.has(String(reference.namespaceUri || "")));
+      const links = references.filter((reference) => String(reference.attribute || "").split(":").at(-1) === "link");
+      const embeds = references.filter((reference) => String(reference.attribute || "").split(":").at(-1) === "embed");
+      if (references.length !== 3 || links.length !== 1 || embeds.length !== 2 ||
+          new Set(references.map((reference) => reference.id)).size !== 3) {
+        throw new Error("Selected slide media model must expose one video link and two distinct embed bindings.");
+      }
+      const roots = new Map((object.rootRelationships || []).map((relationship) => [relationship.id, relationship]));
+      const video = roots.get(links[0].id);
+      const mediaReference = embeds.map((reference) => roots.get(reference.id)).find((relationship) => relationship?.type === MEDIA_RELATIONSHIP_TYPE);
+      const poster = embeds.map((reference) => roots.get(reference.id)).find((relationship) => relationship?.type?.endsWith("/image"));
+      if (roots.size !== 3 || !video || video.type !== VIDEO_RELATIONSHIP_TYPE || !mediaReference || !poster ||
+          String(video.targetMode || "").toLowerCase() === "external" || String(mediaReference.targetMode || "").toLowerCase() === "external" ||
+          String(poster.targetMode || "").toLowerCase() === "external") {
+        throw new Error("Selected slide media model does not match the closed video/media/poster relationship profile.");
+      }
+      const videoPartPath = resolveRelationshipTargetFromPart(object.sourcePart, video.target);
+      const mediaPartPath = resolveRelationshipTargetFromPart(object.sourcePart, mediaReference.target);
+      const posterPartPath = resolveRelationshipTargetFromPart(object.sourcePart, poster.target);
+      const parts = new Map((object.parts || []).map((part) => [part.path, part]));
+      const videoPart = parts.get(videoPartPath);
+      const posterPart = parts.get(posterPartPath);
+      if (videoPartPath !== mediaPartPath || parts.size !== 2 || !videoPart || !posterPart ||
+          videoPart.contentType !== MP4_CONTENT_TYPE || !isClosedMp4MediaPath(videoPart.path) ||
+          !String(posterPart.contentType || "").toLowerCase().startsWith("image/") ||
+          !Array.isArray(videoPart.relationships) || videoPart.relationships.length ||
+          !Array.isArray(posterPart.relationships) || posterPart.relationships.length ||
+          !/^[0-9a-f]{64}$/i.test(videoPart.sourceSha256 || "") || !/^[0-9a-f]{64}$/i.test(posterPart.sourceSha256 || "")) {
+        throw new Error("Selected slide media model does not resolve to one closed MP4 and one immutable poster part.");
+      }
+      return {
+        videoRelationshipId: video.id,
+        mediaRelationshipId: mediaReference.id,
+        posterRelationshipId: poster.id,
+        partPath: videoPart.path,
+        sourceSha256: videoPart.sourceSha256,
+        posterPart: posterPart.path,
+        posterSha256: posterPart.sourceSha256,
+      };
+    });
+}
+
+function assertModelMediaBindings(bindings, inspected) {
+  if (bindings.length !== inspected.count) throw new Error("Imported model and independent OPC inspection disagree on embedded-MP4 count.");
+  const byVideoRelationshipId = new Map(bindings.map((binding) => [binding.videoRelationshipId, binding]));
+  for (const media of inspected.mediaParts) {
+    const binding = byVideoRelationshipId.get(media.videoRelationship.id);
+    if (!binding || binding.mediaRelationshipId !== media.mediaRelationship.id ||
+        binding.posterRelationshipId !== media.posterRelationship.id || binding.partPath !== media.part ||
+        binding.sourceSha256 !== media.sha256 || binding.posterPart !== media.posterPart || binding.posterSha256 !== media.posterSha256) {
+      throw new Error("Imported model and independent OPC inspection disagree on an embedded-MP4 binding.");
     }
   }
 }
@@ -1226,6 +1435,58 @@ async function assertClosedInkContentClonePackage(sourceZip, outputZip, sourceCo
   };
 }
 
+async function assertClosedMediaClonePackage(sourceZip, outputZip, sourceMedia, cloneMedia) {
+  if (sourceMedia.count !== cloneMedia.count) {
+    throw new Error("PPTX duplicate changed the number of closed embedded-MP4 pictures.");
+  }
+  const cloneByVideoRelationshipId = new Map(cloneMedia.mediaParts.map((part) => [part.videoRelationship.id, part]));
+  const validation = [];
+  for (const sourcePart of sourceMedia.mediaParts) {
+    const clonePart = cloneByVideoRelationshipId.get(sourcePart.videoRelationship.id);
+    if (!clonePart || clonePart.videoRelationship.type !== VIDEO_RELATIONSHIP_TYPE ||
+        clonePart.mediaRelationship.id !== sourcePart.mediaRelationship.id || clonePart.mediaRelationship.type !== MEDIA_RELATIONSHIP_TYPE ||
+        clonePart.posterRelationship.id !== sourcePart.posterRelationship.id || clonePart.posterRelationship.type !== sourcePart.posterRelationship.type) {
+      throw new Error("PPTX duplicate changed an embedded-MP4 relationship identity, role, or type.");
+    }
+    if (sourcePart.part === clonePart.part || sourceZip.file(clonePart.part) || !isClosedMp4MediaPath(clonePart.part)) {
+      throw new Error("PPTX duplicate must allocate a distinct safe MediaDataPart for every cloned MP4.");
+    }
+    if (sourcePart.sha256 !== clonePart.sha256 || sourcePart.bytes !== clonePart.bytes) {
+      throw new Error("PPTX duplicate changed MP4 bytes instead of copying the accepted closed payload.");
+    }
+    if (sourcePart.posterPart !== clonePart.posterPart || sourcePart.posterSha256 !== clonePart.posterSha256) {
+      throw new Error("PPTX duplicate did not retain the exact immutable poster ImagePart binding.");
+    }
+    const [sourceBytes, cloneBytes] = await Promise.all([
+      requiredZipBytes(sourceZip, sourcePart.part),
+      requiredZipBytes(outputZip, clonePart.part),
+    ]);
+    if (!Buffer.from(sourceBytes).equals(Buffer.from(cloneBytes))) {
+      throw new Error("PPTX duplicate did not byte-copy the accepted embedded MP4.");
+    }
+    validation.push({
+      videoRelationshipId: sourcePart.videoRelationship.id,
+      mediaRelationshipId: sourcePart.mediaRelationship.id,
+      sourcePart: sourcePart.part,
+      clonePart: clonePart.part,
+      contentType: MP4_CONTENT_TYPE,
+      sourceSha256: sourcePart.sha256,
+      mediaBytesByteIdentical: true,
+      independentPart: true,
+      posterRelationshipId: sourcePart.posterRelationship.id,
+      posterPart: sourcePart.posterPart,
+      posterShared: true,
+    });
+  }
+  return {
+    count: validation.length,
+    independentParts: true,
+    allPayloadsByteIdentical: true,
+    posterPartsShared: true,
+    parts: validation,
+  };
+}
+
 async function assertDuplicatePackageScope(sourceBytes, outputBytes, sourceIndex, { allowClosedLeaves }) {
   const [sourceZip, outputZip] = await Promise.all([JSZip.loadAsync(sourceBytes), JSZip.loadAsync(outputBytes)]);
   const sourceParts = packagePartPaths(sourceZip);
@@ -1277,6 +1538,10 @@ async function assertDuplicatePackageScope(sourceBytes, outputBytes, sourceIndex
     inspectClosedInkContentParts(sourceZip, sourcePart),
     inspectClosedInkContentParts(outputZip, clonePart),
   ]);
+  const [sourceMedia, cloneMedia] = await Promise.all([
+    inspectClosedMediaParts(sourceZip, sourcePart),
+    inspectClosedMediaParts(outputZip, clonePart),
+  ]);
   if (sourceRunHyperlinks.fingerprint !== cloneRunHyperlinks.fingerprint) {
     throw new Error("PPTX duplicate changed the canonical run-hyperlink XML/relationship graph.");
   }
@@ -1285,12 +1550,14 @@ async function assertDuplicatePackageScope(sourceBytes, outputBytes, sourceIndex
   const oleWorkbookParts = await assertClosedOleWorkbookClonePackage(sourceZip, outputZip, sourceOleWorkbooks, cloneOleWorkbooks);
   const diagramParts = await assertClosedDiagramClonePackage(sourceZip, outputZip, sourceDiagrams, cloneDiagrams);
   const inkContentParts = await assertClosedInkContentClonePackage(sourceZip, outputZip, sourceInkContents, cloneInkContents);
+  const mediaParts = await assertClosedMediaClonePackage(sourceZip, outputZip, sourceMedia, cloneMedia);
   const newParts = outputParts.filter((partPath) => !sourceZip.file(partPath));
   const expectedNewParts = [clonePart, relationshipPartPath(clonePart)];
   expectedNewParts.push(...cloneCharts.charts.map((chart) => chart.part));
   expectedNewParts.push(...cloneOleWorkbooks.workbooks.map((workbook) => workbook.part));
   expectedNewParts.push(...cloneDiagrams.diagrams.flatMap((diagram) => diagram.roots.map((root) => root.part)));
   expectedNewParts.push(...cloneInkContents.contents.map((content) => content.part));
+  expectedNewParts.push(...cloneMedia.mediaParts.map((part) => part.part));
   if (cloneLeaves.notes) expectedNewParts.push(cloneLeaves.notes.part, cloneLeaves.notes.relationshipPart);
   if (cloneLeaves.comments) expectedNewParts.push(cloneLeaves.comments.part);
   expectedNewParts.sort();
@@ -1324,7 +1591,11 @@ async function assertDuplicatePackageScope(sourceBytes, outputBytes, sourceIndex
     outputPartCount: outputParts.length,
     newPartPaths: newParts,
     retainedSourcePartsByteIdentical: true,
-    profile: sourceInkContents.count
+    profile: sourceMedia.count
+      ? sourceInkContents.count || sourceDiagrams.count || sourceCharts.count || sourceOleWorkbooks.count || sourceLeaves.notes || sourceLeaves.comments
+        ? "canonical-inline-leaves-with-closed-mp4-and-other-relationship-leaves"
+        : "canonical-inline-leaves-with-closed-mp4-leaves"
+      : sourceInkContents.count
       ? sourceDiagrams.count || sourceCharts.count || sourceOleWorkbooks.count || sourceLeaves.notes || sourceLeaves.comments
         ? "canonical-inline-leaves-with-closed-inkml-and-other-relationship-leaves"
         : "canonical-inline-leaves-with-closed-inkml-leaves"
@@ -1358,6 +1629,7 @@ async function assertDuplicatePackageScope(sourceBytes, outputBytes, sourceIndex
     oleWorkbookParts,
     diagramParts,
     inkContentParts,
+    mediaParts,
     closedLeaves,
   };
 }
@@ -1372,14 +1644,13 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
   if (typeof allowClosedLeaves !== "boolean") throw new TypeError("allowClosedLeaves must be a boolean when supplied.");
 
   const source = await fs.readFile(sourcePath);
-  const presentation = await PresentationFile.importPptx(new FileBlob(source, { type: PPTX_MIME, name: path.basename(sourcePath) }));
-  const candidates = presentation.slides.items.filter((slide) => slide.name === sourceName);
-  if (candidates.length !== 1) throw new Error("Expected exactly one imported source slide named " + JSON.stringify(sourceName) + "; found " + candidates.length + ".");
-  const target = candidates[0];
-  const sourceIndex = presentation.slides.items.indexOf(target);
   const sourceZip = await JSZip.loadAsync(source);
   const sourceSlideParts = await orderedSlidePartPaths(sourceZip);
-  if (sourceSlideParts.length !== presentation.slides.count) throw new Error("PPTX package slide order does not match the imported presentation model.");
+  const sourceSlideNames = await Promise.all(sourceSlideParts.map(async (partPath) =>
+    slideNameFromXml(Buffer.from(await requiredZipBytes(sourceZip, partPath)).toString("utf8"), partPath)));
+  const sourceIndexes = sourceSlideNames.flatMap((name, index) => name === sourceName ? [index] : []);
+  if (sourceIndexes.length !== 1) throw new Error("Expected exactly one imported source slide named " + JSON.stringify(sourceName) + "; found " + sourceIndexes.length + ".");
+  const sourceIndex = sourceIndexes[0];
   const sourcePart = sourceSlideParts[sourceIndex];
   const sourceCustomShows = await inspectCanonicalCustomShows(sourceZip);
   const sourceLeaves = await inspectClosedLeaves(sourceZip, sourcePart, { allowClosedLeaves });
@@ -1387,10 +1658,22 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
   const sourceOleWorkbooks = await inspectClosedOleWorkbookParts(sourceZip, sourcePart);
   const sourceDiagrams = await inspectClosedDiagramParts(sourceZip, sourcePart);
   const sourceInkContents = await inspectClosedInkContentParts(sourceZip, sourcePart);
+  const sourceMedia = await inspectClosedMediaParts(sourceZip, sourcePart);
   const sourceRunHyperlinks = await inspectCanonicalRunHyperlinks(sourceZip, sourcePart, sourceCustomShows);
+  // Independent package inspection deliberately precedes semantic import, so
+  // malformed or connected native graphs fail before any Agent-facing model
+  // object is created or a temporary output path is touched.
+  const presentation = await PresentationFile.importPptx(new FileBlob(source, { type: PPTX_MIME, name: path.basename(sourcePath) }));
+  const candidates = presentation.slides.items.filter((slide) => slide.name === sourceName);
+  if (candidates.length !== 1) throw new Error("Expected exactly one imported source slide named " + JSON.stringify(sourceName) + "; found " + candidates.length + ".");
+  const target = candidates[0];
+  if (sourceSlideParts.length !== presentation.slides.count || presentation.slides.items.indexOf(target) !== sourceIndex) {
+    throw new Error("PPTX package slide order does not match the imported presentation model.");
+  }
   assertModelOleWorkbookBindings(modelOleWorkbookBindings(target), sourceOleWorkbooks);
   assertModelDiagramBindings(modelDiagramBindings(target), sourceDiagrams);
   assertModelInkContentBindings(modelInkContentBindings(target), sourceInkContents);
+  assertModelMediaBindings(modelMediaBindings(target), sourceMedia);
   if (slideNameFromXml(Buffer.from(await requiredZipBytes(sourceZip, sourcePart)).toString("utf8"), sourcePart) !== sourceName) {
     throw new Error("The selected model slide does not match its source SlidePart p:cSld/@name.");
   }
@@ -1428,13 +1711,15 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
     const retained = reimported.slides.items[sourceIndex];
     const roundTripClone = reimported.slides.items[sourceIndex + 1];
     const outputZip = await JSZip.loadAsync(output);
-    const [retainedOleWorkbooks, roundTripCloneOleWorkbooks, retainedDiagrams, roundTripCloneDiagrams, retainedInkContents, roundTripCloneInkContents] = await Promise.all([
+    const [retainedOleWorkbooks, roundTripCloneOleWorkbooks, retainedDiagrams, roundTripCloneDiagrams, retainedInkContents, roundTripCloneInkContents, retainedMedia, roundTripCloneMedia] = await Promise.all([
       inspectClosedOleWorkbookParts(outputZip, packageScope.sourcePart),
       inspectClosedOleWorkbookParts(outputZip, packageScope.clonePart),
       inspectClosedDiagramParts(outputZip, packageScope.sourcePart),
       inspectClosedDiagramParts(outputZip, packageScope.clonePart),
       inspectClosedInkContentParts(outputZip, packageScope.sourcePart),
       inspectClosedInkContentParts(outputZip, packageScope.clonePart),
+      inspectClosedMediaParts(outputZip, packageScope.sourcePart),
+      inspectClosedMediaParts(outputZip, packageScope.clonePart),
     ]);
     assertModelOleWorkbookBindings(modelOleWorkbookBindings(retained), retainedOleWorkbooks);
     assertModelOleWorkbookBindings(modelOleWorkbookBindings(roundTripClone), roundTripCloneOleWorkbooks);
@@ -1442,6 +1727,8 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
     assertModelDiagramBindings(modelDiagramBindings(roundTripClone), roundTripCloneDiagrams);
     assertModelInkContentBindings(modelInkContentBindings(retained), retainedInkContents);
     assertModelInkContentBindings(modelInkContentBindings(roundTripClone), roundTripCloneInkContents);
+    assertModelMediaBindings(modelMediaBindings(retained), retainedMedia);
+    assertModelMediaBindings(modelMediaBindings(roundTripClone), roundTripCloneMedia);
     const outputSlidePartById = new Map(reimported.slides.items.map((slide, index) => [slide.id, packageScope.outputSlideParts[index]]));
     if (canonicalCloneSnapshot(retained, outputSlidePartById) !== sourceSemantic || canonicalCloneSnapshot(roundTripClone, outputSlidePartById) !== sourceSemantic) {
       throw new Error("PPTX duplicate did not preserve source and clone semantic structure after reimport.");
@@ -1512,6 +1799,13 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
           sourceParts: sourceInkContents.contents.map((content) => content.part),
           relationshipIds: sourceInkContents.contents.map((content) => content.relationship.id),
         },
+        mediaParts: {
+          count: sourceMedia.count,
+          sourceParts: sourceMedia.mediaParts.map((part) => part.part),
+          videoRelationshipIds: sourceMedia.mediaParts.map((part) => part.videoRelationship.id),
+          mediaRelationshipIds: sourceMedia.mediaParts.map((part) => part.mediaRelationship.id),
+          posterParts: sourceMedia.mediaParts.map((part) => part.posterPart),
+        },
       },
       warnings: [],
       validation: {
@@ -1530,6 +1824,7 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
           oleWorkbookParts: packageScope.oleWorkbookParts,
           diagramParts: packageScope.diagramParts,
           inkContentParts: packageScope.inkContentParts,
+          mediaParts: packageScope.mediaParts,
           closedLeaves: packageScope.closedLeaves,
         },
         reimport: {
@@ -1540,6 +1835,7 @@ export async function duplicatePptxSlide({ inputPath, outputPath, auditPath, exp
           sourceAndCloneOleWorkbookBindingsIndependent: packageScope.oleWorkbookParts.independentParts,
           sourceAndCloneDiagramBindingsIndependent: packageScope.diagramParts.independentParts,
           sourceAndCloneInkContentBindingsIndependent: packageScope.inkContentParts.independentParts,
+          sourceAndCloneMediaBindingsIndependent: packageScope.mediaParts.independentParts,
           customShowMembershipRetained: true,
           sourceAndCloneNames: [retained.name, roundTripClone.name],
         },
@@ -1601,6 +1897,7 @@ if (entry === import.meta.url) {
     oleWorkbookPartCount: result.audit.operation.oleWorkbookParts.count,
     smartArtPartCount: result.audit.operation.diagramParts.partCount,
     inkContentPartCount: result.audit.operation.inkContentParts.count,
+    mediaPartCount: result.audit.operation.mediaParts.count,
     closedLeaves: result.audit.operation.closedLeaves,
   }));
 }

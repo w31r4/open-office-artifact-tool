@@ -2738,6 +2738,98 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void ClosedEmbeddedMp4MediaCloneCopiesIndependentPayloadAndSharesPoster()
+    {
+        var source = AddCloneableEmbeddedMp4(Invoke(ExportRequest()).File.ToByteArray());
+        var imported = Import(source);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var sourceMedia = Assert.Single(imported.Artifact.Presentation.Slides[0].Elements, element =>
+            element.ContentCase == PresentationElement.ContentOneofCase.Opaque && element.Opaque.NativeKind == "media");
+        Assert.Equal("Clone-safe video", sourceMedia.Name);
+        Assert.Equal(3, sourceMedia.Opaque.RelationshipReferences.Count);
+        Assert.Equal(2, sourceMedia.Opaque.PreservedPartPaths.Count);
+
+        AddPendingClone(imported.Artifact.Presentation, 0, "presentation/clone/closed-mp4-media");
+        var cloned = Export(imported.Artifact);
+        Assert.True(cloned.Ok, Diagnostics(cloned));
+        var clonedBytes = cloned.File.ToByteArray();
+        Assert.Equal(ZipBytes(source, "ppt/slides/slide1.xml"), ZipBytes(clonedBytes, "ppt/slides/slide1.xml"));
+        Assert.Equal(ZipBytes(source, "ppt/slides/_rels/slide1.xml.rels"), ZipBytes(clonedBytes, "ppt/slides/_rels/slide1.xml.rels"));
+
+        using (var stream = new MemoryStream(clonedBytes))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var slides = OrderedSlides(package);
+            Assert.Equal(2, slides.Length);
+            var sourceVideo = Assert.Single(slides[0].DataPartReferenceRelationships.OfType<VideoReferenceRelationship>());
+            var sourceMediaReference = Assert.Single(slides[0].DataPartReferenceRelationships.OfType<MediaReferenceRelationship>());
+            var cloneVideo = Assert.Single(slides[1].DataPartReferenceRelationships.OfType<VideoReferenceRelationship>());
+            var cloneMediaReference = Assert.Single(slides[1].DataPartReferenceRelationships.OfType<MediaReferenceRelationship>());
+            Assert.Equal("rIdCloneVideo", sourceVideo.Id);
+            Assert.Equal("rIdCloneMedia", sourceMediaReference.Id);
+            Assert.Equal(sourceVideo.Id, cloneVideo.Id);
+            Assert.Equal(sourceMediaReference.Id, cloneMediaReference.Id);
+            Assert.Same(sourceVideo.DataPart, sourceMediaReference.DataPart);
+            Assert.Same(cloneVideo.DataPart, cloneMediaReference.DataPart);
+            Assert.NotEqual(sourceVideo.DataPart.Uri, cloneVideo.DataPart.Uri);
+            Assert.Equal("video/mp4", sourceVideo.DataPart.ContentType);
+            Assert.Equal(sourceVideo.DataPart.ContentType, cloneVideo.DataPart.ContentType);
+            Assert.Equal(ReadDataPart(sourceVideo.DataPart), ReadDataPart(cloneVideo.DataPart));
+
+            var sourcePoster = Assert.Single(slides[0].Parts, pair => pair.OpenXmlPart is ImagePart);
+            var clonePoster = Assert.Single(slides[1].Parts, pair => pair.OpenXmlPart is ImagePart);
+            Assert.Equal("rIdCloneVideoPoster", sourcePoster.RelationshipId);
+            Assert.Equal(sourcePoster.RelationshipId, clonePoster.RelationshipId);
+            Assert.Equal(sourcePoster.OpenXmlPart.Uri, clonePoster.OpenXmlPart.Uri);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var roundTrip = Import(clonedBytes);
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        var roundTripSource = Assert.Single(roundTrip.Artifact.Presentation.Slides[0].Elements, element => element.Opaque?.NativeKind == "media");
+        var roundTripClone = Assert.Single(roundTrip.Artifact.Presentation.Slides[1].Elements, element => element.Opaque?.NativeKind == "media");
+        var roundTripParts = roundTrip.Artifact.OpaqueOpc.Parts.ToDictionary(part => part.Path, StringComparer.OrdinalIgnoreCase);
+        var roundTripSourceVideo = Assert.Single(roundTripSource.Opaque.PreservedPartPaths.Select(path => roundTripParts[path]), part => part.ContentType == "video/mp4");
+        var roundTripCloneVideo = Assert.Single(roundTripClone.Opaque.PreservedPartPaths.Select(path => roundTripParts[path]), part => part.ContentType == "video/mp4");
+        var roundTripSourcePoster = Assert.Single(roundTripSource.Opaque.PreservedPartPaths.Select(path => roundTripParts[path]), part => part.ContentType.StartsWith("image/", StringComparison.Ordinal));
+        var roundTripClonePoster = Assert.Single(roundTripClone.Opaque.PreservedPartPaths.Select(path => roundTripParts[path]), part => part.ContentType.StartsWith("image/", StringComparison.Ordinal));
+        Assert.NotEqual(roundTripSourceVideo.Path, roundTripCloneVideo.Path);
+        Assert.Equal(roundTripSourceVideo.Sha256, roundTripCloneVideo.Sha256);
+        Assert.Equal(roundTripSourcePoster.Path, roundTripClonePoster.Path);
+
+        var orphanAudio = ReplaceZipText(source, "ppt/slides/_rels/slide1.xml.rels", xml => xml.Replace(
+            "</Relationships>",
+            "<Relationship Id=\"rIdUnsafeAudio\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/audio\" Target=\"../media/clone-video.mp4\"/></Relationships>",
+            StringComparison.Ordinal));
+        var orphanAudioImport = Import(orphanAudio);
+        Assert.True(orphanAudioImport.Ok, Diagnostics(orphanAudioImport));
+        AddPendingClone(orphanAudioImport.Artifact.Presentation, 0, "presentation/clone/orphan-audio");
+        var orphanAudioRejected = Export(orphanAudioImport.Artifact);
+        Assert.False(orphanAudioRejected.Ok);
+        Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(orphanAudioRejected.Diagnostics).Code);
+
+        var wrongContentType = ReplaceZipText(source, "[Content_Types].xml", xml =>
+            xml.Replace("ContentType=\"video/mp4\"", "ContentType=\"video/quicktime\"", StringComparison.Ordinal));
+        var wrongContentTypeImport = Import(wrongContentType);
+        Assert.True(wrongContentTypeImport.Ok, Diagnostics(wrongContentTypeImport));
+        AddPendingClone(wrongContentTypeImport.Artifact.Presentation, 0, "presentation/clone/wrong-media-type");
+        var wrongContentTypeRejected = Export(wrongContentTypeImport.Artifact);
+        Assert.False(wrongContentTypeRejected.Ok);
+        Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(wrongContentTypeRejected.Diagnostics).Code);
+
+        var malformed = ReplaceZipText(source, "ppt/slides/slide1.xml", xml => xml.Replace(
+            "{DAA4B4D4-6D71-4841-9C94-3DE7FCFB9230}",
+            "{00000000-0000-0000-0000-000000000000}",
+            StringComparison.Ordinal));
+        var malformedImport = Import(malformed);
+        Assert.True(malformedImport.Ok, Diagnostics(malformedImport));
+        AddPendingClone(malformedImport.Artifact.Presentation, 0, "presentation/clone/malformed-media");
+        var malformedRejected = Export(malformedImport.Artifact);
+        Assert.False(malformedRejected.Ok);
+        Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(malformedRejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void NativeObjectGraphRejectsMissingRelationshipsPartsAndExcessiveTraversal()
     {
         var source = AddNativeObjectGraph(Invoke(ExportRequest()).File.ToByteArray());
@@ -5690,6 +5782,33 @@ public sealed class PptxCodecTests
             AddZipText(archive, "ppt/customXml/clone-ink.xml", "<ink xmlns=\"http://www.w3.org/2003/InkML\"><trace>0 0, 100 100, 200 0</trace></ink>");
         }
         return stream.ToArray();
+    }
+
+    private static byte[] AddCloneableEmbeddedMp4(byte[] bytes)
+    {
+        const string mediaPicture = "<p:pic xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:p14=\"http://schemas.microsoft.com/office/powerpoint/2010/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><p:nvPicPr><p:cNvPr id=\"32\" name=\"Clone-safe video\"><a:hlinkClick r:id=\"\" action=\"ppaction://media\"/></p:cNvPr><p:cNvPicPr><a:picLocks noChangeAspect=\"1\"/></p:cNvPicPr><p:nvPr><a:videoFile r:link=\"rIdCloneVideo\"/><p:extLst><p:ext uri=\"{DAA4B4D4-6D71-4841-9C94-3DE7FCFB9230}\"><p14:media r:embed=\"rIdCloneMedia\"/></p:ext></p:extLst></p:nvPr></p:nvPicPr><p:blipFill><a:blip r:embed=\"rIdCloneVideoPoster\"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x=\"914400\" y=\"1828800\"/><a:ext cx=\"3657600\" cy=\"2286000\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></p:spPr></p:pic>";
+        const string relationships = "<Relationship Id=\"rIdCloneVideo\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/video\" Target=\"../media/clone-video.mp4\"/><Relationship Id=\"rIdCloneMedia\" Type=\"http://schemas.microsoft.com/office/2007/relationships/media\" Target=\"../media/clone-video.mp4\"/><Relationship Id=\"rIdCloneVideoPoster\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"../media/clone-video-poster.png\"/>";
+        const string contentTypes = "<Override PartName=\"/ppt/media/clone-video.mp4\" ContentType=\"video/mp4\"/><Override PartName=\"/ppt/media/clone-video-poster.png\" ContentType=\"image/png\"/>";
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Update, leaveOpen: true))
+        {
+            ReplaceZipText(archive, "ppt/slides/slide1.xml", xml => xml.Replace("</p:spTree>", $"{mediaPicture}</p:spTree>", StringComparison.Ordinal));
+            ReplaceZipText(archive, "ppt/slides/_rels/slide1.xml.rels", xml => xml.Replace("</Relationships>", $"{relationships}</Relationships>", StringComparison.Ordinal));
+            ReplaceZipText(archive, "[Content_Types].xml", xml => xml.Replace("</Types>", $"{contentTypes}</Types>", StringComparison.Ordinal));
+            AddZipBytes(archive, "ppt/media/clone-video.mp4", Convert.FromBase64String("AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAMVbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAACgAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAj90cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAACgAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAAoAAAAAAABAAAAAAG3bWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAAAyAAAAAgBVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABYm1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAASJzdGJsAAAAvnN0c2QAAAAAAAAAAQAAAK5hdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAABAAEABIAAAASAAAAAAAAAABFUxhdmM2Mi4yOC4xMDIgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAANGF2Y0MBZAAK/+EAF2dkAAqs2V7ARAAAAwAEAAADAMg8SJZYAQAGaOvjyyLA/fj4AAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAAinoAAAAAAAAABhzdHRzAAAAAAAAAAEAAAABAAACAAAAABxzdHNjAAAAAAAAAAEAAAABAAAAAQAAAAEAAAAUc3RzegAAAAAAAALFAAAAAQAAABRzdGNvAAAAAAAAAAEAAANFAAAAYnVkdGEAAABabWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAtaWxzdAAAACWpdG9vAAAAHWRhdGEAAAABAAAAAExhdmY2Mi4xMi4xMDIAAAAIZnJlZQAAAs1tZGF0AAACrgYF//+q3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE2NSByMzIyMiBiMzU2MDVhIC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAyNSAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTEgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTI1IHNjZW5lY3V0PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9NDAgcmM9Y3JmIG1idHJlZT0xIGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTE6MS4wMACAAAAAD2WIhAAr//72c3wKa22xgQ=="));
+            AddZipBytes(archive, "ppt/media/clone-video-poster.png", Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="));
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] ReadDataPart(DataPart part)
+    {
+        using var stream = part.GetStream(FileMode.Open, FileAccess.Read);
+        using var copy = new MemoryStream();
+        stream.CopyTo(copy);
+        return copy.ToArray();
     }
 
     private static byte[] AddNativeObjectGraph(byte[] bytes)

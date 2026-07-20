@@ -386,7 +386,9 @@ whose uniquely inbound internal XLSX package has no child graph and whose
 preview is one internal ImagePart, canonical top-level SmartArt frames whose
 single `dgm:relIds` root binds exactly four relationship-free data/layout/
 quick-style/colors parts, canonical top-level `p:contentPart` objects whose one
-internal `customXml` relationship binds a closed standard InkML part, and
+internal `customXml` relationship binds a closed standard InkML part, canonical
+top-level embedded-MP4 pictures whose paired video/media relationships uniquely
+bind one closed `video/mp4` payload plus one poster ImagePart, and
 straight/elbow connectors whose present endpoints
 resolve inside the source slide tree and canonical run-level clicks to an
 external absolute URI, a retained internal SlidePart, or a supported relative
@@ -399,7 +401,8 @@ distinct byte-copied ChartPart for every accepted chart plus one distinct
 byte-copied EmbeddedPackagePart for every accepted OLE workbook plus four
 distinct typed diagram parts for every accepted SmartArt frame. The clone
 also receives one distinct byte-identical SDK `CustomXmlPart` for every
-accepted InkML object. For each OLE frame it shares only the immutable preview
+accepted InkML object and one distinct byte-identical SDK `MediaDataPart` for
+every accepted embedded video. For OLE and media frames it shares only the immutable preview
 ImagePart. It retains every slide-local relationship ID; ordinary embedded
 ImageParts are also deliberately shared. Every
 retained source part, including the source SlidePart, must remain
@@ -414,13 +417,18 @@ equivalence. SmartArt validation additionally requires the same slide-local
 relationship IDs/types, standard content types, byte-identical payload hashes,
 and disjoint source/clone part paths after reimport. InkML validation requires
 the same evidence for one `application/inkml+xml` part with an `ink` document
-element in the standard namespace and no child graph. The model comparison ignores
+element in the standard namespace and no child graph. Embedded-MP4 validation
+requires the same slide-local video/media IDs to point at one distinct clone
+payload with equal bytes/hash, the same shared poster path, exactly two inbound
+media edges, and no child graph. Native pixels validate the poster, not video
+playback. The model comparison ignores
 fresh `data-*-id` inspection locators, so it does not claim lexical equality
 for the new clone XML. Ambiguous names, notes/comments, unsupported graph
 leaves, formula/external-data/embedded-workbook/connected/orphan charts,
 shared/external/non-XLSX/nested/relationship-bearing/replacement-pending OLE
 graphs, nested/incomplete/mistyped/external/relationship-bearing SmartArt,
 non-top-level/extension-bearing/mistyped/non-InkML-root/connected content parts,
+linked/shared/non-MP4/nested/multi-binding/connected media graphs,
 shape-level/hover/unknown/orphan links, malformed/relationship-bearing/dangling
 custom-show actions, unresolved endpoints, and unexpected package changes reject without
 promoting an output or audit.
@@ -429,6 +437,8 @@ See `api/references/smartart-clone.spec.md` for the exact diagram-part roles,
 failure modes, and audit evidence.
 See `api/references/inkml-content-part-clone.spec.md` for the exact InkML
 CustomXmlPart contract and its read-only boundary.
+See `api/references/embedded-video-clone.spec.md` for the exact embedded-MP4
+relationship, copy, poster-sharing, and playback-validation boundary.
 
 For the one opt-in closed-leaf profile, set `allowClosedLeaves: true` explicitly:
 

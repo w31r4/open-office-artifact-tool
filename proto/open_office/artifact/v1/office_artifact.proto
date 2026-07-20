@@ -1976,7 +1976,7 @@ message PresentationOpaqueElement {
   // Agent-facing classification of the preserved native object. This is an
   // open, forward-compatible token rather than an exhaustive enum: known
   // values currently include picture, group, connector, graphicFrame,
-  // contentPart, oleObject, and diagram.
+  // contentPart, oleObject, diagram, and media.
   string native_kind = 8;
   // Relationship-valued XML attributes found on this element or its
   // descendants. IDs are owner-local to the source slide; relationship

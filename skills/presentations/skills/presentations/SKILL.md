@@ -195,8 +195,8 @@ narrower operation: only an original imported slide whose unchanged graph has
 canonical shapes, canonical inline fixed-grid tables, recognized closed
 literal-data charts, eligible top-level embedded-XLSX OLE frames, canonical
 top-level four-part SmartArt frames, canonical top-level closed InkML
-`p:contentPart` objects, canonical
-embedded rectangular images, bounded canonical
+`p:contentPart` objects, canonical top-level closed embedded-MP4 media pictures,
+canonical embedded rectangular images, bounded canonical
 straight/elbow connectors, plus recursively canonical groups whose descendants
 contain only the non-native-graph leaf kinds, exactly one
 internal layout relationship, picture-bound image relationships, canonical
@@ -254,6 +254,19 @@ ink authoring or Custom XML editing. Nested, extension-bearing, ambiguous,
 mistyped, non-InkML-root, or connected content parts fail closed. Read
 `artifact_tool/api/references/inkml-content-part-clone.spec.md` before accepting
 a slide whose duplicate profile includes InkML.
+Each accepted embedded video must be one top-level canonical `p:pic` whose
+empty media-action sentinel, `a:videoFile`, `p14:media`, and poster blip bind
+exactly three slide-local relationships. The video and media relationships must
+share one uniquely owned, non-empty, relationship-free `video/mp4` data part;
+the third relationship must bind one internal poster ImagePart. Export keeps
+both media relationship IDs, byte-copies the MP4 into a distinct Open XML SDK
+`MediaDataPart`, and shares only the immutable poster. Reimport proves different
+MP4 paths with equal hashes and the same poster path. This is opaque
+source-bound clone preservation, not video authoring, playback validation,
+transcoding, timing/trim editing, or audio support. Nested, linked, shared,
+non-MP4, extension-bearing, multi-binding, or connected media graphs fail
+closed. Read `artifact_tool/api/references/embedded-video-clone.spec.md` before
+accepting a slide whose duplicate profile includes media.
 Accepted run links are limited to modeled external absolute URIs, internal jumps
 to a retained SlidePart, `nextSlide`/`previousSlide`/`firstSlide`/`lastSlide`/
 `endShow` actions, and relationship-free custom-show actions whose native ID
@@ -293,11 +306,14 @@ child graphs, distinct clone-local targets, and byte-identical XML. For every
 accepted InkML content part it independently proves one exact `customXml`
 relationship, the standard content type and root namespace, an empty child
 graph, a distinct clone-local `CustomXmlPart`, and byte-identical XML. It proves the
+same video/media relationship pairing, unique inbound ownership, exact
+`video/mp4` bytes, distinct clone-local `MediaDataPart`, and shared immutable
+poster for every accepted embedded video. It proves the
 source part order, inserts one adjacent clone, keeps every retained source part
 byte-identical except the required package topology records, allows only the
-new SlidePart, its relationship part, the exact cloned ChartParts, and the exact
-cloned XLSX package, SmartArt, and InkML parts, checks
-exact source/clone external and internal run-link relationship IDs and targets
+new SlidePart, its relationship part, and the exact cloned ChartParts, XLSX
+packages, SmartArt, InkML, and MP4 parts, then checks exact source/clone
+external and internal run-link relationship IDs and targets
 with no orphan edge, then reimports and compares the source/clone semantics and
 model render. Model
 SVG comparison ignores fresh `data-*-id` locator attributes only; it is not a
@@ -307,7 +323,9 @@ nonliteral or connected charts, other graph leaves, or any unexpected package
 part fail closed without promoting output or audit. In particular, a nested,
 incomplete, duplicated-relationship binding, mistyped, external, or connected SmartArt
 graph, or a nested, extension-bearing, mistyped, non-InkML-root, ambiguous, or
-connected content part, is rejected before `slide.duplicate()` or publication.
+connected content part, or a nested, linked, shared, non-MP4, multi-binding, or
+connected media graph, is rejected before semantic import, `slide.duplicate()`,
+or publication.
 
 The default is intentionally bare. To copy only the separately supported,
 already-closed relationship leaves, opt in explicitly rather than relying on a

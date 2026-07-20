@@ -96,7 +96,9 @@ evidence, see
 imported** source slide with an unchanged body of canonical simple shapes,
 canonical inline fixed-grid tables, recognized closed literal-data charts,
 eligible top-level embedded-XLSX OLE frames, canonical top-level four-part
-SmartArt frames, canonical top-level closed InkML content parts, canonical embedded rectangular images,
+SmartArt frames, canonical top-level closed InkML content parts, canonical
+top-level closed embedded-MP4 media pictures, canonical embedded rectangular
+images,
 bounded straight/elbow connectors, plus recursively canonical groups whose
 descendants contain only the non-native-graph leaf kinds, exactly one internal
 `SlidePart -> SlideLayoutPart` relationship, and image relationships bound only
@@ -132,8 +134,15 @@ internal `customXml` relationship to a relationship-free
 InkML namespace. Export keeps its slide-local relationship ID and byte-copies
 the payload into a distinct SDK `CustomXmlPart`; after reimport, the two paths
 are disjoint and hashes match. InkML remains source-bound/read-only.
-It intentionally
-reuses the verified layout and immutable ImageParts through fresh clone-local
+Every accepted embedded video is one top-level `p:pic` with the exact empty
+media-action sentinel, one `a:videoFile` link, one extension-bound `p14:media`
+embed, and one poster-image embed. Its video/media relationships must uniquely
+share one non-empty, relationship-free `video/mp4` part. Export keeps both
+slide-local IDs, byte-copies the MP4 into a distinct SDK `MediaDataPart`, and
+shares the immutable poster. Reimport proves distinct MP4 paths/equal hashes
+and one shared poster path. Media remains opaque/source-bound and read-only;
+native render equality validates the poster only, not playback.
+It intentionally reuses the verified layout and immutable ImageParts through fresh clone-local
 image relationships, shares the verified NotesMaster and CommentAuthorsPart,
 copies accepted NotesSlide and SlideComments XML byte-for-byte, and points only
 the copied notes part back to the new slide. It preserves the required original
@@ -150,9 +159,10 @@ formula/external-data/embedded-workbook/connected/orphan charts,
 shared/external/non-XLSX/nested/relationship-bearing/replacement-pending OLE graphs,
 nested/incomplete/mistyped/external/relationship-bearing SmartArt graphs,
 non-top-level/extension-bearing/mistyped/non-InkML-root/relationship-bearing content parts,
+linked/shared/non-MP4/nested/multi-binding/relationship-bearing media graphs,
 shape-level/hover/unknown/orphan hyperlinks, external/data relationships,
 external/unbound/irregular images, unsupported connectors,
-non-shape/table/closed-chart/closed-SmartArt/closed-InkML/image/connector/recursive-group elements, pending-clone renames, layout/background changes, note
+non-shape/table/closed-chart/closed-SmartArt/closed-InkML/closed-MP4/image/connector/recursive-group elements, pending-clone renames, layout/background changes, note
 or comment mutation before the boundary, immediate clone edits, and all broader
 relationship graphs fail closed. Adding imported slides still fails closed. A
 template-derived deck still needs a broader explicit OPC graph-clone transaction
@@ -163,6 +173,9 @@ For the exact four-part diagram contract and Agent audit fields, see
 
 For the exact InkML CustomXmlPart contract and Agent audit fields, see
 [`inkml-content-part-clone.spec.md`](./inkml-content-part-clone.spec.md).
+
+For the exact embedded-MP4 relationship/copy/poster and Agent audit contract,
+see [`embedded-video-clone.spec.md`](./embedded-video-clone.spec.md).
 
 ## Layouts And Placeholders
 

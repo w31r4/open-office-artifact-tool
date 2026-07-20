@@ -2023,7 +2023,53 @@ configured, so their contract/adversarial gates passed while their
 environment-gated real repeats were skipped. Hosted results are recorded after
 the candidate commit. No publish or tag operation was attempted.
 
-`npm run release:check` passes the source, documentation, package, license, JavaScript, and .NET gates. Its only remaining blocker is unavailable npm authentication. No `npm publish` or tag/release operation has been performed.
+### PPTX closed embedded-MP4 slide cloning
+
+On 2026-07-20, the strict imported `slide.duplicate()` profile gained the
+canonical PresentationML video-picture leaf. An accepted unchanged object must
+be one direct top-level `p:pic` with the exact empty `ppaction://media`
+relationship sentinel, one `a:videoFile/@r:link`, one
+`p14:media/@r:embed` under the standard media extension, and one distinct
+poster `a:blip/@r:embed`. The video and Office-media relationships must point
+to the same uniquely owned, non-empty, relationship-free `video/mp4` data part;
+the poster must be an internal ImagePart. Linked, shared, nested, non-MP4,
+audio, multi-binding, extension-rich, or connected media graphs fail closed.
+
+OpenChestnut retains the origin SlidePart and relationship part byte-for-byte,
+preserves both slide-local media relationship IDs, and uses the Microsoft Open
+XML SDK to allocate a distinct package-level `MediaDataPart`. It copies the MP4
+bytes exactly while sharing the immutable poster. The SDK may allocate the new
+part under `media/*.mp4`; source Office files may use `ppt/media/*.mp4`. Both
+forms pass the same single-level safe-path and exact-content-type guard. The
+postwrite validator and second import prove distinct MP4 paths with equal
+hashes, the same poster path, and exactly one video/one media inbound pair.
+
+The runnable Presentation workflow now performs its independent OPC preflight
+before semantic import, records `operation.mediaParts` and
+`validation.package.mediaParts`, and publishes neither PPTX nor audit when the
+media graph is connected or noncanonical. Its real fixture checks source
+immutability, second-import model agreement, independent source/clone media
+bindings, model-render equality, and LibreOffice/Poppler poster-pixel equality
+when available. That render evidence validates the poster only; this milestone
+does not claim video authoring, payload edits, transcoding, timing/trim control,
+audio support, or playback equivalence. Media remains opaque/source-bound and
+read-only after reimport.
+
+The local candidate passed the complete `npm test` suite, including Playwright,
+LibreOffice/Poppler, the real qpdf provider, all four packaged Office/PDF Skill
+smokes, and the 343-file reference-Skill sync gate. OpenChestnut passed
+`295/295`; OfficeBridge passed `5/5`; `npm run proto:check`, deterministic API
+documentation generation, and the clean-install/package gate passed. Two clean
+source builds produced the same 39 audited build files and the same manifest-
+bound 38-file, 14,721,216-byte runtime. The npm dry-run contains 466 files,
+9,014,382 compressed bytes, and 23,753,465 unpacked bytes. Real-provider repeats
+for pikepdf, pyHanko, veraPDF, and OCRmyPDF were not configured, so their
+contract/adversarial tests passed while those environment-gated repeats were
+skipped.
+
+`npm run release:check` passes the source, documentation, package, license,
+JavaScript, and .NET gates. Its only remaining blocker is unavailable npm
+authentication. No `npm publish` or tag/release operation has been performed.
 
 ## Publishing
 

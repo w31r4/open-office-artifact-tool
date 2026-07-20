@@ -2069,6 +2069,132 @@ assert.throws(
 );
 assert.equal(nestedInk.slides.items.length, nestedInkSlideCount);
 
+// PowerPoint represents an embedded video as one top-level picture with a
+// poster ImagePart plus paired video/media data relationships to one MP4.
+// The bounded clone shares the immutable poster but copies the MP4 into a new
+// SDK-allocated MediaDataPart, preserving both slide-local relationship IDs.
+const embeddedVideoBytes = Buffer.from("AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAMVbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAACgAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAj90cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAACgAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAAoAAAAAAABAAAAAAG3bWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAAAyAAAAAgBVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABYm1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAASJzdGJsAAAAvnN0c2QAAAAAAAAAAQAAAK5hdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAABAAEABIAAAASAAAAAAAAAABFUxhdmM2Mi4yOC4xMDIgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAANGF2Y0MBZAAK/+EAF2dkAAqs2V7ARAAAAwAEAAADAMg8SJZYAQAGaOvjyyLA/fj4AAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAAinoAAAAAAAAABhzdHRzAAAAAAAAAAEAAAABAAACAAAAABxzdHNjAAAAAAAAAAEAAAABAAAAAQAAAAEAAAAUc3RzegAAAAAAAALFAAAAAQAAABRzdGNvAAAAAAAAAAEAAANFAAAAYnVkdGEAAABabWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAtaWxzdAAAACWpdG9vAAAAHWRhdGEAAAABAAAAAExhdmY2Mi4xMi4xMDIAAAAIZnJlZQAAAs1tZGF0AAACrgYF//+q3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE2NSByMzIyMiBiMzU2MDVhIC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAyNSAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNpPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTEgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTI1IHNjZW5lY3V0PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9NDAgcmM9Y3JmIG1idHJlZT0xIGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTE6MS4wMACAAAAAD2WIhAAr//72c3wKa22xgQ==", "base64");
+const mediaPicture = '<p:pic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:nvPicPr><p:cNvPr id="122" name="Clone-safe video"><a:hlinkClick r:id="" action="ppaction://media"/></p:cNvPr><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr><a:videoFile r:link="rIdAgentVideo"/><p:extLst><p:ext uri="{DAA4B4D4-6D71-4841-9C94-3DE7FCFB9230}"><p14:media r:embed="rIdAgentMedia"/></p:ext></p:extLst></p:nvPr></p:nvPicPr><p:blipFill><a:blip r:embed="rIdAgentVideoPoster"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="914400" y="1828800"/><a:ext cx="3657600" cy="2286000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>';
+const mediaRelationships = '<Relationship Id="rIdAgentVideo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/video" Target="../media/agent-video.mp4"/><Relationship Id="rIdAgentMedia" Type="http://schemas.microsoft.com/office/2007/relationships/media" Target="../media/agent-video.mp4"/><Relationship Id="rIdAgentVideoPoster" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/agent-video-poster.png"/>';
+const mediaSource = await PresentationFile.patchPptx(cloneSourcePptx, [
+  { path: "ppt/slides/slide1.xml", xml: oleCloneBaseSlideXml.replace("</p:spTree>", `${mediaPicture}</p:spTree>`) },
+  { path: "ppt/slides/_rels/slide1.xml.rels", xml: oleCloneBaseRelationships.replace("</Relationships>", `${mediaRelationships}</Relationships>`) },
+  { path: "ppt/media/agent-video.mp4", bytes: embeddedVideoBytes, contentType: "video/mp4" },
+  { path: "ppt/media/agent-video-poster.png", bytes: embeddedPreviewBytes, contentType: "image/png" },
+]);
+const mediaSourceSnapshot = Uint8Array.from(mediaSource.bytes);
+const mediaImported = await PresentationFile.importPptx(mediaSource);
+const mediaOriginSlide = mediaImported.slides.getItem(0);
+const mediaOrigin = itemByName(mediaOriginSlide.nativeObjects.items, "Clone-safe video");
+assert.equal(mediaOrigin.nativeKind, "media");
+assert.equal(mediaOrigin.relationshipReferences.length, 3);
+assert.equal(mediaOrigin.parts.length, 2);
+assert.equal(mediaOrigin.parts.filter((part) => part.contentType === "video/mp4").length, 1);
+assert.equal(mediaOrigin.parts.filter((part) => part.contentType === "image/png").length, 1);
+const mediaPendingSlide = mediaOriginSlide.duplicate();
+const mediaPending = itemByName(mediaPendingSlide.nativeObjects.items, "Clone-safe video");
+assert.notEqual(mediaPending, mediaOrigin);
+assert.notEqual(mediaPending.id, mediaOrigin.id);
+assert.deepEqual(mediaPending.parts.map((part) => part.path), mediaOrigin.parts.map((part) => part.path));
+
+const mediaExport = await PresentationFile.exportPptx(mediaImported);
+assert.deepEqual(mediaSource.bytes, mediaSourceSnapshot);
+const mediaSourceZip = await JSZip.loadAsync(mediaSource.bytes);
+const mediaOutputZip = await JSZip.loadAsync(mediaExport.bytes);
+assert.deepEqual(
+  await mediaOutputZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  await mediaSourceZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  "embedded-video cloning must retain the origin SlidePart byte-for-byte",
+);
+assert.deepEqual(
+  await mediaOutputZip.file("ppt/slides/_rels/slide1.xml.rels").async("uint8array"),
+  await mediaSourceZip.file("ppt/slides/_rels/slide1.xml.rels").async("uint8array"),
+  "embedded-video cloning must retain the origin relationship part byte-for-byte",
+);
+const mediaSourceRels = await mediaOutputZip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
+const mediaCloneRels = await mediaOutputZip.file("ppt/slides/_rels/slide3.xml.rels").async("text");
+const sourceVideoRelationship = relationshipForType(mediaSourceRels, "video");
+const sourceMediaRelationship = relationshipForType(mediaSourceRels, "media");
+const sourcePosterRelationship = relationshipForType(mediaSourceRels, "image");
+const cloneVideoRelationship = relationshipForType(mediaCloneRels, "video");
+const cloneMediaRelationship = relationshipForType(mediaCloneRels, "media");
+const clonePosterRelationship = relationshipForType(mediaCloneRels, "image");
+assert.equal(cloneVideoRelationship.id, sourceVideoRelationship.id);
+assert.equal(cloneMediaRelationship.id, sourceMediaRelationship.id);
+assert.equal(clonePosterRelationship.id, sourcePosterRelationship.id);
+const sourceVideoPartPath = resolveSlideRelationshipTarget(sourceVideoRelationship.target);
+const sourceMediaPartPath = resolveSlideRelationshipTarget(sourceMediaRelationship.target);
+const cloneVideoPartPath = resolveSlideRelationshipTarget(cloneVideoRelationship.target);
+const cloneMediaPartPath = resolveSlideRelationshipTarget(cloneMediaRelationship.target);
+assert.equal(sourceVideoPartPath, sourceMediaPartPath);
+assert.equal(cloneVideoPartPath, cloneMediaPartPath);
+assert.match(cloneVideoPartPath, /^(?:ppt\/)?media\/[^/]+\.mp4$/i);
+assert.notEqual(cloneVideoPartPath, sourceVideoPartPath);
+assert.deepEqual(
+  await mediaOutputZip.file(cloneVideoPartPath).async("uint8array"),
+  await mediaSourceZip.file(sourceVideoPartPath).async("uint8array"),
+  "embedded-video cloning must byte-copy the accepted MP4 into an independent MediaDataPart",
+);
+assert.equal(
+  resolveSlideRelationshipTarget(clonePosterRelationship.target),
+  resolveSlideRelationshipTarget(sourcePosterRelationship.target),
+  "embedded-video cloning must share the immutable poster ImagePart",
+);
+
+const mediaRoundTrip = await PresentationFile.importPptx(mediaExport);
+const mediaRoundTripOrigin = itemByName(mediaRoundTrip.slides.getItem(0).nativeObjects.items, "Clone-safe video");
+const mediaRoundTripClone = itemByName(mediaRoundTrip.slides.getItem(1).nativeObjects.items, "Clone-safe video");
+const mediaRoundTripOriginVideo = mediaRoundTripOrigin.parts.find((part) => part.contentType === "video/mp4");
+const mediaRoundTripCloneVideo = mediaRoundTripClone.parts.find((part) => part.contentType === "video/mp4");
+const mediaRoundTripOriginPoster = mediaRoundTripOrigin.parts.find((part) => part.contentType.startsWith("image/"));
+const mediaRoundTripClonePoster = mediaRoundTripClone.parts.find((part) => part.contentType.startsWith("image/"));
+assert.notEqual(mediaRoundTripOriginVideo.path, mediaRoundTripCloneVideo.path);
+assert.equal(mediaRoundTripOriginVideo.sourceSha256, mediaRoundTripCloneVideo.sourceSha256);
+assert.equal(mediaRoundTripOriginPoster.path, mediaRoundTripClonePoster.path);
+
+const malformedMedia = await PresentationFile.importPptx(mediaSource);
+const malformedMediaObject = itemByName(malformedMedia.slides.getItem(0).nativeObjects.items, "Clone-safe video");
+malformedMediaObject.rawXml = malformedMediaObject.rawXml.replace(
+  "{DAA4B4D4-6D71-4841-9C94-3DE7FCFB9230}",
+  "{00000000-0000-0000-0000-000000000000}",
+);
+const malformedMediaSlideCount = malformedMedia.slides.items.length;
+assert.throws(
+  () => malformedMedia.slides.getItem(0).duplicate(),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+  "a media picture with a non-canonical extension must fail before mutating the model",
+);
+assert.equal(malformedMedia.slides.items.length, malformedMediaSlideCount);
+
+const extensionRichMedia = await PresentationFile.importPptx(mediaSource);
+const extensionRichMediaObject = itemByName(extensionRichMedia.slides.getItem(0).nativeObjects.items, "Clone-safe video");
+extensionRichMediaObject.rawXml = extensionRichMediaObject.rawXml.replace(
+  "</p:extLst>",
+  '<p:ext uri="{00000000-0000-0000-0000-000000000000}"><p14:placeholder/></p:ext></p:extLst>',
+);
+const extensionRichMediaSlideCount = extensionRichMedia.slides.items.length;
+assert.throws(
+  () => extensionRichMedia.slides.getItem(0).duplicate(),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+  "a media picture with an extra extension must fail before mutating the model",
+);
+assert.equal(extensionRichMedia.slides.items.length, extensionRichMediaSlideCount);
+
+const wrongTypeMediaSource = await PresentationFile.patchPptx(cloneSourcePptx, [
+  { path: "ppt/slides/slide1.xml", xml: oleCloneBaseSlideXml.replace("</p:spTree>", `${mediaPicture}</p:spTree>`) },
+  { path: "ppt/slides/_rels/slide1.xml.rels", xml: oleCloneBaseRelationships.replace("</Relationships>", `${mediaRelationships}</Relationships>`) },
+  { path: "ppt/media/agent-video.mp4", bytes: embeddedVideoBytes, contentType: "video/quicktime" },
+  { path: "ppt/media/agent-video-poster.png", bytes: embeddedPreviewBytes, contentType: "image/png" },
+]);
+const wrongTypeMedia = await PresentationFile.importPptx(wrongTypeMediaSource);
+const wrongTypeMediaSlideCount = wrongTypeMedia.slides.items.length;
+assert.throws(
+  () => wrongTypeMedia.slides.getItem(0).duplicate(),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+  "a non-MP4 media payload must fail before mutating the model",
+);
+assert.equal(wrongTypeMedia.slides.items.length, wrongTypeMediaSlideCount);
+
 const masterPath = "ppt/slideMasters/slideMaster1.xml";
 const layoutPath = "ppt/slideLayouts/slideLayout1.xml";
 const masterXml = await firstZip.file(masterPath).async("text");

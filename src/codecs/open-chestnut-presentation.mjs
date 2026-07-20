@@ -288,6 +288,13 @@ const CLONE_DIAGRAM_CONTENT_TYPES = new Set([
   "application/vnd.openxmlformats-officedocument.drawingml.diagramColors+xml",
 ]);
 const CLONE_INK_CONTENT_TYPE = "application/inkml+xml";
+const CLONE_MP4_CONTENT_TYPE = "video/mp4";
+const CLONE_VIDEO_RELATIONSHIP = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/video";
+const CLONE_MEDIA_RELATIONSHIP = "http://schemas.microsoft.com/office/2007/relationships/media";
+const CLONE_IMAGE_RELATIONSHIPS = new Set([
+  "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+  "http://purl.oclc.org/ooxml/officeDocument/relationships/image",
+]);
 const CLONE_CUSTOM_XML_RELATIONSHIPS = new Set([
   "http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml",
   "http://purl.oclc.org/ooxml/officeDocument/relationships/customXml",
@@ -382,15 +389,100 @@ function cloneablePresentationInkContentModel(source) {
     Array.isArray(part.relationships) && part.relationships.length === 0;
 }
 
-// Eligible OLE, SmartArt, and InkML content parts remain opaque PresentationML, but their
+function isCloneMediaPicture(source) {
+  return /^<(?:[A-Za-z_][\w.-]*:)?pic(?:\s|>)/.test(String(source?.rawXml || "").trimStart());
+}
+
+function cloneMediaXmlTags(rawXml, localName) {
+  return [...String(rawXml || "").matchAll(new RegExp(`<(?:[A-Za-z_][\\w.-]*:)?${localName}\\b[^>]*>`, "gi"))]
+    .map((match) => match[0]);
+}
+
+function cloneMediaXmlTag(rawXml, localName) {
+  const matches = cloneMediaXmlTags(rawXml, localName);
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+function cloneMediaXmlAttribute(tag, localName) {
+  return new RegExp(`\\s(?:[A-Za-z_][\\w.-]*:)?${localName}="([^"]*)"`, "i").exec(String(tag || ""))?.[1];
+}
+
+function cloneablePresentationMediaMarkup(source, ids) {
+  const rawXml = String(source?.rawXml || "");
+  const click = cloneMediaXmlTag(rawXml, "hlinkClick");
+  const video = cloneMediaXmlTag(rawXml, "videoFile");
+  const media = cloneMediaXmlTag(rawXml, "media");
+  const extensions = cloneMediaXmlTags(rawXml, "ext")
+    .filter((tag) => cloneMediaXmlAttribute(tag, "uri") !== undefined);
+  const extension = extensions.length === 1 &&
+    cloneMediaXmlAttribute(extensions[0], "uri") === "{DAA4B4D4-6D71-4841-9C94-3DE7FCFB9230}"
+    ? extensions[0]
+    : undefined;
+  const blip = cloneMediaXmlTag(rawXml, "blip");
+  if (!click || !video || !media || !extension || !blip || /<(?:[A-Za-z_][\w.-]*:)?audioFile\b/i.test(rawXml) ||
+      cloneMediaXmlAttribute(click, "id") !== "" || cloneMediaXmlAttribute(click, "action") !== "ppaction://media" ||
+      cloneMediaXmlAttribute(extension, "uri") !== "{DAA4B4D4-6D71-4841-9C94-3DE7FCFB9230}" ||
+      cloneMediaXmlAttribute(video, "link") !== ids.link) return false;
+  const mediaId = cloneMediaXmlAttribute(media, "embed");
+  const posterId = cloneMediaXmlAttribute(blip, "embed");
+  return Boolean(mediaId && posterId && mediaId !== posterId && ids.embeds.includes(mediaId) && ids.embeds.includes(posterId));
+}
+
+function cloneMediaReferenceIds(source) {
+  const references = source?.relationshipReferences;
+  if (!Array.isArray(references) || references.length !== 3) return undefined;
+  const byAttribute = new Map();
+  const seenIds = new Set();
+  for (const reference of references) {
+    const attribute = String(reference.attribute || "").split(":").at(-1);
+    const id = String(reference.id ?? reference.relationshipId ?? "");
+    if (!CLONE_RELATIONSHIP_NAMESPACES.has(String(reference.namespaceUri || "")) || !id || seenIds.has(id) || !new Set(["link", "embed"]).has(attribute)) return undefined;
+    seenIds.add(id);
+    const values = byAttribute.get(attribute) || [];
+    values.push(id);
+    byAttribute.set(attribute, values);
+  }
+  const links = byAttribute.get("link") || [];
+  const embeds = byAttribute.get("embed") || [];
+  return links.length === 1 && embeds.length === 2 ? { link: links[0], embeds } : undefined;
+}
+
+function cloneablePresentationMediaWire(source) {
+  const ids = source?.nativeKind === "media" ? cloneMediaReferenceIds(source) : undefined;
+  return Boolean(ids && isCloneMediaPicture(source) && cloneablePresentationMediaMarkup(source, ids) && Array.isArray(source.preservedPartPaths) &&
+    source.preservedPartPaths.length === 2 && new Set(source.preservedPartPaths.map(String)).size === 2);
+}
+
+function cloneablePresentationMediaModel(source) {
+  const ids = source?.kind === "nativeObject" && source.nativeKind === "media" ? cloneMediaReferenceIds(source) : undefined;
+  if (!ids || !isCloneMediaPicture(source) || !cloneablePresentationMediaMarkup(source, ids) || source.oleWorkbook || !Array.isArray(source.rootRelationships) ||
+      source.rootRelationships.length !== 3 || !Array.isArray(source.parts) || source.parts.length !== 2) return false;
+  const relationships = new Map(source.rootRelationships.map((relationship) => [relationship.id, relationship]));
+  if (relationships.size !== 3) return false;
+  const video = relationships.get(ids.link);
+  const mediaId = ids.embeds.find((id) => relationships.get(id)?.type === CLONE_MEDIA_RELATIONSHIP);
+  const imageId = ids.embeds.find((id) => CLONE_IMAGE_RELATIONSHIPS.has(relationships.get(id)?.type));
+  const media = relationships.get(mediaId);
+  const image = relationships.get(imageId);
+  if (!video || video.type !== CLONE_VIDEO_RELATIONSHIP || !media || !image || mediaId === imageId ||
+      String(video.targetMode || "").toLowerCase() === "external" || String(media.targetMode || "").toLowerCase() === "external" ||
+      String(image.targetMode || "").toLowerCase() === "external" || !video.target || video.target !== media.target || video.target === image.target) return false;
+  const mp4Parts = source.parts.filter((part) => part.contentType === CLONE_MP4_CONTENT_TYPE && /^(?:ppt\/)?media\/[^/]+\.mp4$/i.test(String(part.path || "")));
+  const posterParts = source.parts.filter((part) => /^image\/(?:png|jpeg)$/i.test(String(part.contentType || "")) && /^ppt\/media\/[^/]+$/i.test(String(part.path || "")));
+  return mp4Parts.length === 1 && posterParts.length === 1 && source.parts.every((part) =>
+    Boolean(part.bytes?.length) && /^[0-9a-f]{64}$/i.test(String(part.sourceSha256 || "")) &&
+    Array.isArray(part.relationships) && part.relationships.length === 0);
+}
+
+// Eligible OLE, SmartArt, InkML, and embedded MP4 objects remain opaque PresentationML, but their
 // package graphs have already been proved closed. Give the pending slide clone
 // a fresh JavaScript object while retaining the exact source graph snapshot;
 // C# allocates independent mutable parts during the first export.
 function cloneImportedPresentationNativeObject(container, source, context) {
   const cloneableOle = source?.kind === "nativeObject" && source.nativeKind === "oleObject" && source.oleWorkbook &&
     !source._embeddedWorkbookReplacementBytes?.();
-  if (!cloneableOle && !cloneablePresentationDiagramModel(source) && !cloneablePresentationInkContentModel(source)) {
-    throw new OpenChestnutCodecError("The bounded imported-slide clone profile accepts only an unchanged eligible embedded-XLSX OLE object, canonical closed four-part SmartArt frame, or canonical top-level closed InkML content part.", [], { code: "unsupported_presentation_slide_clone" });
+  if (!cloneableOle && !cloneablePresentationDiagramModel(source) && !cloneablePresentationInkContentModel(source) && !cloneablePresentationMediaModel(source)) {
+    throw new OpenChestnutCodecError("The bounded imported-slide clone profile accepts only an unchanged eligible embedded-XLSX OLE object, canonical closed four-part SmartArt frame, canonical top-level closed InkML content part, or canonical top-level closed MP4 media picture.", [], { code: "unsupported_presentation_slide_clone" });
   }
   const clone = container.nativeObjects.add({
     name: source.name,
@@ -456,7 +548,7 @@ function cloneSupportedPresentationContent(content, allowNativeGraphLeaf = true)
     const opaque = content.value;
     const cloneableOle = opaque?.nativeKind === "oleObject" && Boolean(opaque.oleWorkbook?.partPath) &&
       Boolean(opaque.oleWorkbook?.sourceSha256) && !opaque.oleWorkbook?.replacementAssetId;
-    return allowNativeGraphLeaf && (cloneableOle || cloneablePresentationDiagramWire(opaque) || cloneablePresentationInkContentWire(opaque));
+    return allowNativeGraphLeaf && (cloneableOle || cloneablePresentationDiagramWire(opaque) || cloneablePresentationInkContentWire(opaque) || cloneablePresentationMediaWire(opaque));
   }
   if (content?.case !== "group") return false;
   const children = content.value?.children;
@@ -467,7 +559,8 @@ function collectPresentationCloneSourceIds(source, ids, allowNativeGraphLeaf = t
   const cloneableOle = allowNativeGraphLeaf && source?.kind === "nativeObject" && source.nativeKind === "oleObject" && Boolean(source.oleWorkbook) && !source._embeddedWorkbookReplacementBytes?.();
   const cloneableDiagram = allowNativeGraphLeaf && cloneablePresentationDiagramModel(source);
   const cloneableInkContent = allowNativeGraphLeaf && cloneablePresentationInkContentModel(source);
-  if (!(source instanceof Shape) && !(source instanceof TableElement) && !(source instanceof ChartElement) && !(source instanceof ImageElement) && !isPresentationConnectorElement(source) && !(source instanceof GroupShape) && !cloneableOle && !cloneableDiagram && !cloneableInkContent) {
+  const cloneableMedia = allowNativeGraphLeaf && cloneablePresentationMediaModel(source);
+  if (!(source instanceof Shape) && !(source instanceof TableElement) && !(source instanceof ChartElement) && !(source instanceof ImageElement) && !isPresentationConnectorElement(source) && !(source instanceof GroupShape) && !cloneableOle && !cloneableDiagram && !cloneableInkContent && !cloneableMedia) {
     throw new OpenChestnutCodecError("The bounded imported-slide clone profile encountered an unsupported source element.", [], { code: "unsupported_presentation_slide_clone" });
   }
   const id = String(source.id || "");
@@ -529,7 +622,7 @@ function duplicateImportedPresentationSlide(presentation, state, slide) {
     throw new OpenChestnutCodecError("The bounded imported-slide clone profile permits only one pending clone per origin; export and reimport it before cloning that source again.", [], { code: "unsupported_presentation_slide_clone" });
   }
   if (source.entries.some((entry) => !cloneSupportedPresentationContent(entry.wire.content))) {
-    throw new OpenChestnutCodecError("The bounded imported-slide clone profile supports only canonical shapes, inline tables, closed literal-data charts, embedded images, eligible embedded-XLSX OLE frames, closed four-part SmartArt frames, top-level closed InkML content parts, bounded connectors, and recursively canonical groups; other native objects and graph edges require a broader OPC graph clone.", [], { code: "unsupported_presentation_slide_clone" });
+    throw new OpenChestnutCodecError("The bounded imported-slide clone profile supports only canonical shapes, inline tables, closed literal-data charts, embedded images, eligible embedded-XLSX OLE frames, closed four-part SmartArt frames, top-level closed InkML content parts, top-level closed embedded-MP4 media pictures, bounded connectors, and recursively canonical groups; other native objects and graph edges require a broader OPC graph clone.", [], { code: "unsupported_presentation_slide_clone" });
   }
   const sourceIds = new Set();
   for (const entry of source.entries) collectPresentationCloneSourceIds(entry.model, sourceIds);

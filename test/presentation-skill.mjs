@@ -823,6 +823,131 @@ try {
     );
   }
 
+  const mediaDuplicateInput = path.join(duplicateDir, "embedded-video-source.pptx");
+  const mediaDuplicateOutput = path.join(duplicateDir, "embedded-video-output.pptx");
+  const mediaDuplicateAudit = path.join(duplicateDir, "embedded-video-audit.json");
+  const mediaPayload = Buffer.from("AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAMVbW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAACgAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAj90cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAACgAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAAAoAAAAAAABAAAAAAG3bWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAAAyAAAAAgBVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABYm1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAASJzdGJsAAAAvnN0c2QAAAAAAAAAAQAAAK5hdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAABAAEABIAAAASAAAAAAAAAABFUxhdmM2Mi4yOC4xMDIgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAANGF2Y0MBZAAK/+EAF2dkAAqs2V7ARAAAAwAEAAADAMg8SJZYAQAGaOvjyyLA/fj4AAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAAinoAAAAAAAAABhzdHRzAAAAAAAAAAEAAAABAAACAAAAABxzdHNjAAAAAAAAAAEAAAABAAAAAQAAAAEAAAAUc3RzegAAAAAAAALFAAAAAQAAABRzdGNvAAAAAAAAAAEAAANFAAAAYnVkdGEAAABabWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAtaWxzdAAAACWpdG9vAAAAHWRhdGEAAAABAAAAAExhdmY2Mi4xMi4xMDIAAAAIZnJlZQAAAs1tZGF0AAACrgYF//+q3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE2NSByMzIyMiBiMzU2MDVhIC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAyNSAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNpPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTEgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTI1IHNjZW5lY3V0PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9NDAgcmM9Y3JmIG1idHJlZT0xIGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTE6MS4wMACAAAAAD2WIhAAr//72c3wKa22xgQ==", "base64");
+  const mediaPicture = '<p:pic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:nvPicPr><p:cNvPr id="122" name="Closed embedded video"><a:hlinkClick r:id="" action="ppaction://media"/></p:cNvPr><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr><a:videoFile r:link="rIdSkillVideo"/><p:extLst><p:ext uri="{DAA4B4D4-6D71-4841-9C94-3DE7FCFB9230}"><p14:media r:embed="rIdSkillMedia"/></p:ext></p:extLst></p:nvPr></p:nvPicPr><p:blipFill><a:blip r:embed="rIdSkillVideoPoster"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="914400" y="1143000"/><a:ext cx="3657600" cy="1828800"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>';
+  const mediaRelationships = '<Relationship Id="rIdSkillVideo" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/video" Target="../media/skill-video.mp4"/><Relationship Id="rIdSkillMedia" Type="http://schemas.microsoft.com/office/2007/relationships/media" Target="../media/skill-video.mp4"/><Relationship Id="rIdSkillVideoPoster" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/skill-video-poster.png"/>';
+  const mediaSource = await PresentationFile.patchPptx(oleDuplicateBase, [
+    { path: "ppt/slides/slide1.xml", xml: oleDuplicateSlideXml.replace('name="OLE clone source"', 'name="Embedded video clone source"').replace("</p:spTree>", `${mediaPicture}</p:spTree>`) },
+    { path: "ppt/slides/_rels/slide1.xml.rels", xml: oleDuplicateRelationships.replace("</Relationships>", `${mediaRelationships}</Relationships>`) },
+    { path: "ppt/media/skill-video.mp4", bytes: mediaPayload, contentType: "video/mp4" },
+    { path: "ppt/media/skill-video-poster.png", bytes: oleDuplicatePreview, contentType: "image/png" },
+  ]);
+  await mediaSource.save(mediaDuplicateInput);
+  const mediaSourceBytes = await fs.readFile(mediaDuplicateInput);
+  const mediaDuplicateResult = await duplicatePptxSlide({
+    inputPath: mediaDuplicateInput,
+    outputPath: mediaDuplicateOutput,
+    auditPath: mediaDuplicateAudit,
+    expectedName: "Embedded video clone source",
+  });
+  assert.equal(mediaDuplicateResult.audit.operation.scope, "canonical-inline-leaves-with-closed-mp4-leaves");
+  assert.deepEqual(mediaDuplicateResult.audit.operation.mediaParts, {
+    count: 1,
+    sourceParts: ["ppt/media/skill-video.mp4"],
+    videoRelationshipIds: ["rIdSkillVideo"],
+    mediaRelationshipIds: ["rIdSkillMedia"],
+    posterParts: ["ppt/media/skill-video-poster.png"],
+  });
+  const mediaPackageAudit = mediaDuplicateResult.audit.validation.package.mediaParts;
+  assert.equal(mediaPackageAudit.count, 1);
+  assert.equal(mediaPackageAudit.independentParts, true);
+  assert.equal(mediaPackageAudit.allPayloadsByteIdentical, true);
+  assert.equal(mediaPackageAudit.posterPartsShared, true);
+  const [mediaPartAudit] = mediaPackageAudit.parts;
+  assert.equal(mediaPartAudit.sourcePart, "ppt/media/skill-video.mp4");
+  assert.match(mediaPartAudit.clonePart, /^(?:ppt\/)?media\/[^/]+\.mp4$/i);
+  assert.notEqual(mediaPartAudit.clonePart, mediaPartAudit.sourcePart);
+  assert.equal(mediaPartAudit.videoRelationshipId, "rIdSkillVideo");
+  assert.equal(mediaPartAudit.mediaRelationshipId, "rIdSkillMedia");
+  assert.equal(mediaPartAudit.posterRelationshipId, "rIdSkillVideoPoster");
+  assert.equal(mediaPartAudit.posterPart, "ppt/media/skill-video-poster.png");
+  assert.equal(mediaPartAudit.mediaBytesByteIdentical, true);
+  assert.equal(mediaPartAudit.posterShared, true);
+  assert.deepEqual(mediaDuplicateResult.audit.validation.package.newPartPaths, [
+    mediaPartAudit.clonePart,
+    "ppt/slides/_rels/slide2.xml.rels",
+    "ppt/slides/slide2.xml",
+  ].sort());
+  assert.equal(mediaDuplicateResult.audit.validation.reimport.sourceAndCloneMediaBindingsIndependent, true);
+  assert.deepEqual(await fs.readFile(mediaDuplicateInput), mediaSourceBytes);
+  const mediaRoundTrip = await PresentationFile.importPptx(new FileBlob(await fs.readFile(mediaDuplicateOutput), {
+    type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    name: "embedded-video-output.pptx",
+  }));
+  const mediaSourceObject = itemByName(mediaRoundTrip.slides.getItem(0).nativeObjects.items, "Closed embedded video");
+  const mediaCloneObject = itemByName(mediaRoundTrip.slides.getItem(1).nativeObjects.items, "Closed embedded video");
+  const mediaSourceVideoPart = mediaSourceObject.parts.find((part) => part.contentType === "video/mp4");
+  const mediaCloneVideoPart = mediaCloneObject.parts.find((part) => part.contentType === "video/mp4");
+  const mediaSourcePosterPart = mediaSourceObject.parts.find((part) => part.contentType.startsWith("image/"));
+  const mediaClonePosterPart = mediaCloneObject.parts.find((part) => part.contentType.startsWith("image/"));
+  assert.notEqual(mediaSourceVideoPart.path, mediaCloneVideoPart.path);
+  assert.equal(mediaSourceVideoPart.sourceSha256, mediaCloneVideoPart.sourceSha256);
+  assert.equal(mediaSourcePosterPart.path, mediaClonePosterPart.path);
+  const mediaQa = await verifyPresentationFile(mediaDuplicateOutput, {
+    outputDir: path.join(duplicateDir, "embedded-video-render-qa"),
+    nativeRender,
+  });
+  assert.equal(mediaQa.verify.ok, true);
+  assert.equal(mediaQa.packageInspect.ok, true);
+  assert.equal(mediaQa.modelRender.ok, true);
+  if (nativeStatus.available) {
+    assert.equal(mediaQa.nativeRender.status, "passed");
+    assert.deepEqual(
+      await fs.readFile(mediaQa.nativeRender.pages[0].path),
+      await fs.readFile(mediaQa.nativeRender.pages[1].path),
+      "LibreOffice/Poppler must render the shared poster on the source and closed embedded-video clone identically",
+    );
+  }
+
+  const connectedMediaInput = path.join(duplicateDir, "connected-media-source.pptx");
+  const connectedMediaOutput = path.join(duplicateDir, "connected-media-output.pptx");
+  const connectedMediaAudit = path.join(duplicateDir, "connected-media-audit.json");
+  const connectedMediaZip = await JSZip.loadAsync(mediaSourceBytes);
+  connectedMediaZip.file(
+    "ppt/media/_rels/skill-video.mp4.rels",
+    '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdUnsafeSkillMedia" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.invalid/media" TargetMode="External"/></Relationships>',
+  );
+  await fs.writeFile(connectedMediaInput, await connectedMediaZip.generateAsync({ type: "nodebuffer" }));
+  await assert.rejects(
+    () => duplicatePptxSlide({
+      inputPath: connectedMediaInput,
+      outputPath: connectedMediaOutput,
+      auditPath: connectedMediaAudit,
+      expectedName: "Embedded video clone source",
+    }),
+    /Embedded-MP4 payload must not have a child relationship graph/,
+  );
+  assert.equal(await fs.access(connectedMediaOutput).then(() => true, () => false), false);
+  assert.equal(await fs.access(connectedMediaAudit).then(() => true, () => false), false);
+
+  const extensionRichMediaInput = path.join(duplicateDir, "extension-rich-media-source.pptx");
+  const extensionRichMediaOutput = path.join(duplicateDir, "extension-rich-media-output.pptx");
+  const extensionRichMediaAudit = path.join(duplicateDir, "extension-rich-media-audit.json");
+  const extensionRichMediaZip = await JSZip.loadAsync(mediaSourceBytes);
+  const extensionRichMediaSlide = await extensionRichMediaZip.file("ppt/slides/slide1.xml").async("text");
+  extensionRichMediaZip.file(
+    "ppt/slides/slide1.xml",
+    extensionRichMediaSlide.replace(
+      "</p:extLst>",
+      '<p:ext uri="{00000000-0000-0000-0000-000000000000}"><p14:placeholder/></p:ext></p:extLst>',
+    ),
+  );
+  await fs.writeFile(extensionRichMediaInput, await extensionRichMediaZip.generateAsync({ type: "nodebuffer" }));
+  await assert.rejects(
+    () => duplicatePptxSlide({
+      inputPath: extensionRichMediaInput,
+      outputPath: extensionRichMediaOutput,
+      auditPath: extensionRichMediaAudit,
+      expectedName: "Embedded video clone source",
+    }),
+    /exactly one media action, videoFile, p14:media, poster blip, and canonical media extension/,
+  );
+  assert.equal(await fs.access(extensionRichMediaOutput).then(() => true, () => false), false);
+  assert.equal(await fs.access(extensionRichMediaAudit).then(() => true, () => false), false);
+
   const connectedInkInput = path.join(duplicateDir, "connected-inkml-source.pptx");
   const connectedInkOutput = path.join(duplicateDir, "connected-inkml-output.pptx");
   const connectedInkAudit = path.join(duplicateDir, "connected-inkml-audit.json");
@@ -1160,11 +1285,13 @@ try {
   assert.match(skillText, /recognized closed\s+literal-data charts.*unique internal relationship.*numbered `ChartPart`.*byte-copies.*distinct clone-local ChartPart.*ChartParts are independent.*advertises the ordinary fixed-topology\s+edit capability/is);
   assert.match(skillText, /accepted OLE frame.*uniquely inbound XLSX.*no child relationship graph.*preview `ImagePart`.*distinct clone-local\s+package.*sharing the immutable\s+preview.*replaceEmbeddedWorkbook/is);
   assert.match(skillText, /accepted InkML object.*top-level `p:contentPart`.*internal `customXml` relationship.*`application\/inkml\+xml`.*distinct SDK-typed clone part.*source-bound preservation.*fail closed/is);
+  assert.match(skillText, /accepted embedded video.*top-level canonical `p:pic`.*video and media relationships.*`video\/mp4`.*distinct Open XML SDK.*shares only the immutable poster.*playback validation.*fail closed/is);
   assert.match(skillText, /relationship-free custom-show actions.*stable native show ID.*never inserts the clone into the show's membership/is);
   assert.match(quickStartText, /recognized literal-data charts.*no child\/external\/hyperlink\/data relationship.*distinct byte-copied ChartPart/is);
   assert.match(quickStartText, /eligible top-level OLE frames.*uniquely inbound internal XLSX package.*distinct\s+byte-copied EmbeddedPackagePart.*shares only the immutable preview/is);
   assert.match(quickStartText, /canonical top-level SmartArt frames.*data\/layout\/\s*quick-style\/colors parts.*four\s+distinct typed diagram parts/is);
   assert.match(quickStartText, /canonical top-level `p:contentPart`.*closed standard InkML part.*distinct byte-identical SDK `CustomXmlPart`/is);
+  assert.match(quickStartText, /embedded-MP4.*video\/media relationships.*distinct byte-identical SDK `MediaDataPart`.*shares only the immutable preview/is);
   assert.match(quickStartText, /relationship-free custom-show action.*exact native ID\/return policy.*clone.*not silently added to the route/is);
   assert.match(skillText, /NotesSlide.*NotesMaster.*byte-for-byte.*back-reference.*clone/is);
   assert.match(skillText, /SlideCommentsPart.*CommentAuthorsPart.*byte-for-byte/is);
@@ -1185,6 +1312,7 @@ try {
   assert.match(slideReferenceText, /eligible top-level embedded-XLSX OLE frames.*uniquely binds one\s+closed, uniquely inbound internal XLSX.*distinct clone-local package.*replaceEmbeddedWorkbook/is);
   assert.match(slideReferenceText, /SmartArt frame.*dgm:relIds.*dm\/lo\/qs\/cs.*distinct clone-local typed parts.*source-bound\/read-only/is);
   assert.match(slideReferenceText, /InkML object.*top-level `p:contentPart`.*`application\/inkml\+xml`.*distinct SDK `CustomXmlPart`.*source-bound\/read-only/is);
+  assert.match(slideReferenceText, /accepted embedded video.*top-level `p:pic`.*`p14:media`.*distinct SDK `MediaDataPart`.*shares the immutable poster.*playback/is);
   assert.match(slideReferenceText, /Gradient,\s+pattern, image.*opaque-preserved/is);
   assert.match(slideReferenceText, /p:cSld\/@name.*export\/reimport/is);
   const customShowReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/custom-shows.spec.md", "utf8");
@@ -1219,6 +1347,12 @@ try {
   assert.match(inkMlReferenceText, /`application\/inkml\+xml`.*`http:\/\/www\.w3\.org\/2003\/InkML`/is);
   assert.match(inkMlReferenceText, /distinct Open\s+XML SDK `CustomXmlPart`.*disjoint part paths.*equal payload hashes/is);
   assert.match(inkMlReferenceText, /opaque and read-only.*fail closed/is);
+  const embeddedVideoReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/embedded-video-clone.spec.md", "utf8");
+  assert.match(skillText, /artifact_tool\/api\/references\/embedded-video-clone\.spec\.md/);
+  assert.match(embeddedVideoReferenceText, /top-level `p:pic`.*empty `r:id` media-action sentinel.*`a:videoFile\/@r:link`.*`p14:media\/@r:embed`/is);
+  assert.match(embeddedVideoReferenceText, /distinct `MediaDataPart`.*exact MP4 bytes.*same poster path/is);
+  assert.match(embeddedVideoReferenceText, /poster remains equal.*do not claim media playback equivalence/is);
+  assert.match(embeddedVideoReferenceText, /audio.*linked or\s+external media.*timing.*fail closed/is);
   const templateFollowingText = await fs.readFile("skills/presentations/skills/presentations/references/template-following.md", "utf8");
   assert.match(templateFollowingText, /source-preserving reordering.*isolated[\s>]+layout-only.*slide\.delete/is);
   assert.match(templateFollowingText, /broader OPC graph-clone milestone is unavailable/i);
