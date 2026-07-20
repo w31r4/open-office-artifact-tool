@@ -66,6 +66,18 @@ if (!python) {
   process.exit(0);
 }
 
+const providerEnv = {
+  OPEN_OFFICE_PDF_PROVIDER_PYTHON: python,
+  PYTHONNOUSERSITE: "1",
+};
+
+function runProvider(args, options = {}) {
+  return run(python, args, {
+    ...options,
+    env: { ...providerEnv, ...options.env },
+  });
+}
+
 const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-pyhanko-provider-"));
 try {
   const artifact = PdfArtifact.create({ text: "pyHanko source-bound signature fixture" });
@@ -75,7 +87,7 @@ try {
   await fs.writeFile(source, sourceBytes);
   const sourceHash = sha256(sourceBytes);
 
-  const probe = jsonResult(run(python, [provider, "probe"], { status: 0 }));
+  const probe = jsonResult(runProvider([provider, "probe"], { status: 0 }));
   assert.equal(probe.provider, "pyhanko");
   assert.match(probe.providerVersion, /^0\.35\./);
   assert.match(probe.certvalidatorVersion, /^0\.31\./);
@@ -84,52 +96,52 @@ try {
   assert.equal(probe.silentFallback, false);
   assert.equal(probe.padesProfileConformanceClaimed, false);
 
-  const registryProbe = jsonResult(run(python, [registry, "check", "--provider", "pyhanko", "--require"], { status: 0 }));
+  const registryProbe = jsonResult(runProvider([registry, "check", "--provider", "pyhanko", "--require"], { status: 0 }));
   assert.equal(registryProbe.providers[0].available, true);
   assert.equal(registryProbe.providers[0].evidence.minimumVersion, "0.35.0");
   assert.equal(registryProbe.providers[0].evidence.maximumVersionExclusive, "0.36.0");
   assert.match(registryProbe.providers[0].evidence.companionVersion, /^0\.31\./);
   assert.equal(registryProbe.providers[0].evidence.companionMaximumVersionExclusive, "0.32.0");
-  const plan = jsonResult(run(python, [
+  const plan = jsonResult(runProvider([
     registry, "plan", "--task", "verify-signature", "--provider", "pyhanko", "--strategy", "read-only",
     "--input", source, "--require-provider",
   ], { status: 0 }));
   assert.equal(plan.integration, "shipped-thin-script");
   assert.equal(plan.silentFallback, false);
 
-  const unsigned = jsonResult(run(python, [provider, "verify", source, "--expected-sha256", sourceHash], { status: 0 }));
+  const unsigned = jsonResult(runProvider([provider, "verify", source, "--expected-sha256", sourceHash], { status: 0 }));
   assert.equal(unsigned.schema, "open-office-artifact-tool.pyhanko-verify.v1");
   assert.equal(unsigned.conclusion, "unsigned");
   assert.equal(unsigned.summary.signatureCount, 0);
   assert.equal(unsigned.sourceProtected, true);
   assert.deepEqual(await fs.readFile(source), sourceBytes);
-  const unsignedRequired = run(python, [
+  const unsignedRequired = runProvider([
     provider, "verify", source, "--expected-sha256", sourceHash, "--require-signature",
   ], { status: 2 });
   assert.match(jsonResult(unsignedRequired, "stderr").policyGates.failures[0], /no embedded signatures/);
 
-  const stale = run(python, [
+  const stale = runProvider([
     provider, "verify", source, "--expected-sha256", "0".repeat(64),
   ], { status: 2 });
   assert.match(jsonResult(stale, "stderr").error, /source SHA-256 mismatch/);
-  const tooSmall = run(python, [
+  const tooSmall = runProvider([
     provider, "verify", source, "--expected-sha256", sourceHash, "--max-input-bytes", "64",
   ], { status: 2 });
   assert.match(jsonResult(tooSmall, "stderr").error, /outside the 5\.\.64 byte budget/);
-  const raisedHardLimit = run(python, [
+  const raisedHardLimit = runProvider([
     provider, "verify", source, "--expected-sha256", sourceHash,
     "--max-input-bytes", String(512 * 1024 * 1024 + 1),
   ], { status: 2 });
   assert.match(jsonResult(raisedHardLimit, "stderr").error, /cannot exceed the hard maximum/);
-  const naiveMoment = run(python, [
+  const naiveMoment = runProvider([
     provider, "verify", source, "--expected-sha256", sourceHash, "--moment", "2026-07-19T12:00:00",
   ], { status: 2 });
   assert.match(jsonResult(naiveMoment, "stderr").error, /explicit UTC offset/);
-  const missingRoot = run(python, [
+  const missingRoot = runProvider([
     provider, "verify", source, "--expected-sha256", sourceHash, "--trust-policy", "explicit-roots",
   ], { status: 2 });
   assert.match(jsonResult(missingRoot, "stderr").error, /requires at least one --trust-root/);
-  const implicitTrustGate = run(python, [
+  const implicitTrustGate = runProvider([
     provider, "verify", source, "--expected-sha256", sourceHash, "--require-all-trusted",
   ], { status: 2 });
   assert.match(jsonResult(implicitTrustGate, "stderr").error, /requires --trust-policy explicit-roots/);
@@ -210,13 +222,13 @@ with (root / "signed.pdf").open("rb") as source, (root / "modified.pdf").open("w
     }))
     writer.write(output)
 `, "utf8");
-  run(python, [fixtureBuilder, tempRoot], { status: 0 });
+  runProvider([fixtureBuilder, tempRoot], { status: 0 });
 
   const cert = path.join(tempRoot, "cert.pem");
   const signed = path.join(tempRoot, "signed.pdf");
   const signedBytes = await fs.readFile(signed);
   const signedHash = sha256(signedBytes);
-  const cryptographicOnly = jsonResult(run(python, [
+  const cryptographicOnly = jsonResult(runProvider([
     provider, "verify", signed, "--expected-sha256", signedHash,
     "--require-signature", "--require-all-integrity-valid",
   ], { status: 0 }));
@@ -234,7 +246,7 @@ with (root / "signed.pdf").open("rb") as source, (root / "modified.pdf").open("w
     "--require-all-integrity-valid", "--require-all-trusted",
     "--require-docmdp-compliant", "--require-all-bottom-line",
   ];
-  const trusted = jsonResult(run(python, trustedArgs, { status: 0 }));
+  const trusted = jsonResult(runProvider(trustedArgs, { status: 0 }));
   assert.equal(trusted.ok, true);
   assert.equal(trusted.conclusion, "valid-under-selected-policy");
   assert.equal(trusted.summary.allBottomLine, true);
@@ -250,7 +262,7 @@ with (root / "signed.pdf").open("rb") as source, (root / "modified.pdf").open("w
 
   const doubleSigned = path.join(tempRoot, "double-signed.pdf");
   const doubleBytes = await fs.readFile(doubleSigned);
-  const doubleReport = jsonResult(run(python, [
+  const doubleReport = jsonResult(runProvider([
     provider, "verify", doubleSigned, "--expected-sha256", sha256(doubleBytes),
     "--trust-policy", "explicit-roots", "--trust-root", cert,
     "--require-signature", "--require-all-integrity-valid", "--require-all-trusted",
@@ -264,7 +276,7 @@ with (root / "signed.pdf").open("rb") as source, (root / "modified.pdf").open("w
 
   const modified = path.join(tempRoot, "modified.pdf");
   const modifiedBytes = await fs.readFile(modified);
-  const modifiedReport = jsonResult(run(python, [
+  const modifiedReport = jsonResult(runProvider([
     provider, "verify", modified, "--expected-sha256", sha256(modifiedBytes),
     "--trust-policy", "explicit-roots", "--trust-root", cert,
     "--require-signature", "--require-all-integrity-valid", "--require-all-trusted",
@@ -280,7 +292,7 @@ with (root / "signed.pdf").open("rb") as source, (root / "modified.pdf").open("w
   assert.equal(tamperedBytes[9], 0x25, "expected the second-line PDF comment marker");
   tamperedBytes[10] ^= 1;
   await fs.writeFile(tampered, tamperedBytes);
-  const tamperedResult = run(python, [
+  const tamperedResult = runProvider([
     provider, "verify", tampered, "--expected-sha256", sha256(tamperedBytes),
     "--trust-policy", "explicit-roots", "--trust-root", cert,
     "--require-signature", "--require-all-integrity-valid",
@@ -291,13 +303,13 @@ with (root / "signed.pdf").open("rb") as source, (root / "modified.pdf").open("w
   assert.match(tamperedReport.policyGates.failures.join("\n"), /not intact and cryptographically valid/);
   assert.deepEqual(await fs.readFile(tampered), tamperedBytes);
 
-  const tamperedWithoutRequestedGate = run(python, [
+  const tamperedWithoutRequestedGate = runProvider([
     provider, "verify", tampered, "--expected-sha256", sha256(tamperedBytes),
     "--trust-policy", "explicit-roots", "--trust-root", cert,
   ], { status: 2 });
   assert.equal(jsonResult(tamperedWithoutRequestedGate, "stderr").conclusion, "integrity-failure");
 
-  const implicitRoot = run(python, [
+  const implicitRoot = runProvider([
     provider, "verify", signed, "--expected-sha256", signedHash, "--trust-root", cert,
   ], { status: 2 });
   assert.match(jsonResult(implicitRoot, "stderr").error, /trust is never inferred silently/);
