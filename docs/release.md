@@ -2276,9 +2276,13 @@ bytes, and 23,798,166 unpacked bytes. Real optional PyMuPDF, pikepdf, pyHanko,
 veraPDF, and OCRmyPDF Python-provider repeats were not configured in this local
 shell, so their contract/adversarial tests passed while those environment-gated
 executions were skipped; real MuPDF.js, qpdf, Poppler, LibreOffice, and
-Playwright paths ran. Hosted CI remains to be recorded for the committed
-candidate. `npm whoami` returns `ENEEDAUTH`, so no publish or tag/release
-operation was attempted.
+Playwright paths ran. Commit `de16bf13fd4ed82be1548d95a10a83a963116fb5`
+passed the hosted Linux `ci` workflow in [GitHub Actions run
+29721704703](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29721704703)
+on 2026-07-20. Its single job completed with conclusion `success` in 15m40s
+after running every isolated PDF provider, the complete npm suite, generated
+docs and release/package gates, OfficeBridge, and OpenChestnut. `npm whoami`
+returns `ENEEDAUTH`, so no publish or tag/release operation was attempted.
 
 ## Publishing
 
