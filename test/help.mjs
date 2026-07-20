@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 338);
+assert.equal(HELP_CATALOG.length, 339);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -364,7 +364,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "document.fillContentCont
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.materializeFields")?.schema?.parameters?.dryRun?.type, "boolean");
 assert.match(HELP_CATALOG.find((item) => item.name === "document.materializeFields")?.summary || "", /SEQ counters.*REF cached results.*PAGEREF.*pagination host/i);
 const presentationCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "presentation");
-assert.equal(presentationCatalog.length, 62);
+assert.equal(presentationCatalog.length, 63);
 assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "presentation.slides.insert")?.schema?.parameters?.after?.type, "Slide|number|null");
@@ -443,6 +443,8 @@ assert.match(HELP_CATALOG.find((item) => item.name === "sheet.charts.add")?.sche
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.chartType?.description || "", /bar, line, pie, or combo.*clustered bar\+line/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.description || "", /combo.*at least one primary bar.*axisGroup: secondary.*mixed primary\/secondary line plots fail closed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.axes?.description || "", /axes\.secondary\.category.*top\/right.*secondary bars/i);
+assert.equal(HELP_CATALOG.find((item) => item.name === "table.merge")?.schema?.parameters?.range?.required, true);
+assert.match(HELP_CATALOG.find((item) => item.name === "table.merge")?.schema?.returns?.table?.description || "", /upper-left value.*covered cells read-only.*topology remains source-bound/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "openChestnutStatus")?.schema?.returns?.status?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "invokeOpenChestnut")?.schema?.parameters?.request?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.inspectXlsx")?.schema?.parameters?.maxTotalBytes?.type, "number");

@@ -1176,23 +1176,50 @@ await assert.rejects(
 // separately below because each clone must own a distinct ChartPart.
 const tableCloneFixture = Presentation.create({ slideSize: { width: 640, height: 360 } });
 const tableCloneOriginal = tableCloneFixture.slides.add({ name: "Table original" });
-tableCloneOriginal.tables.add({
+const tableCloneSourceTable = tableCloneOriginal.tables.add({
   name: "decision-grid",
-  position: { left: 48, top: 48, width: 360, height: 150 },
-  values: [["Metric", "Value"], ["Decision", "Ship"]],
-  rows: 2,
-  columns: 2,
+  position: { left: 48, top: 48, width: 450, height: 210 },
+  values: [["Release evidence", "discarded", "discarded"], ["Native QA", "discarded", "Pass"], ["discarded", "discarded", "Release"]],
+  rows: 3,
+  columns: 3,
   styleOptions: { headerRow: true, bandedRows: true },
 });
+assert.equal(tableCloneSourceTable.merge({ startRow: 0, endRow: 0, startColumn: 0, endColumn: 2 }), tableCloneSourceTable);
+tableCloneSourceTable.merge({ startRow: 1, endRow: 2, startColumn: 0, endColumn: 1 });
+assert.deepEqual(tableCloneSourceTable.mergeRanges, [
+  { startRow: 0, endRow: 0, startColumn: 0, endColumn: 2 },
+  { startRow: 1, endRow: 2, startColumn: 0, endColumn: 1 },
+]);
+assert.deepEqual(tableCloneSourceTable.values, [["Release evidence", "", ""], ["Native QA", "", "Pass"], ["", "", "Release"]]);
+assert.equal(tableCloneSourceTable.getCell(0, 0).columnSpan, 3);
+assert.equal(tableCloneSourceTable.getCell(1, 0).rowSpan, 2);
+assert.deepEqual(tableCloneSourceTable.getCell(2, 1).mergeOrigin, { row: 1, column: 0 });
+assert.equal(tableCloneSourceTable.getCell(2, 1).editable, false);
+assert.throws(() => tableCloneSourceTable.cells.set(2, 1, "hidden"), /covered by merge origin 1,0.*read-only/i);
+assert.throws(() => tableCloneSourceTable.merge({ startRow: 0, endRow: 1, startColumn: 2, endColumn: 2 }), /overlap at cell 0,2/i);
+assert.throws(() => tableCloneSourceTable.merge({ startRow: 3, endRow: 3, startColumn: 0, endColumn: 1 }), /outside the 3x3 grid/i);
+assert.throws(() => tableCloneSourceTable.merge({ startRow: 2, endRow: 2, startColumn: 2, endColumn: 2 }), /at least two cells/i);
+assert.match(tableCloneSourceTable.toSvg(), /width="450" height="70"/);
+assert.match(tableCloneSourceTable.toSvg(), /width="300" height="140"/);
+assert.match(tableCloneFixture.inspect({ kind: "table" }).ndjson, /"mergeRanges"/);
+assert.deepEqual(tableCloneSourceTable.layoutJson().mergeRanges, tableCloneSourceTable.mergeRanges);
+assert.equal(tableCloneFixture.verify().ok, true);
 const tableCloneSourcePptx = await PresentationFile.exportPptx(tableCloneFixture);
 const tableCloneSourceZip = await JSZip.loadAsync(tableCloneSourcePptx.bytes);
+const tableCloneSourceXml = await tableCloneSourceZip.file("ppt/slides/slide1.xml").async("text");
+assert.match(tableCloneSourceXml, /<a:tc gridSpan="3">/);
+assert.match(tableCloneSourceXml, /<a:tc hMerge="1">/);
+assert.match(tableCloneSourceXml, /<a:tc rowSpan="2" gridSpan="2">/);
+assert.match(tableCloneSourceXml, /<a:tc hMerge="1" vMerge="1">/);
 const tableCloneImportedDeck = await PresentationFile.importPptx(tableCloneSourcePptx);
 const tableCloneImportedSource = tableCloneImportedDeck.slides.getItem(0);
+assert.deepEqual(tableCloneImportedSource.tables.items[0].mergeRanges, tableCloneSourceTable.mergeRanges);
 const tableClone = tableCloneImportedSource.duplicate();
 assert.equal(tableClone.tables.items.length, 1);
 assert.notEqual(tableClone.tables.items[0], tableCloneImportedSource.tables.items[0]);
 assert.notEqual(tableClone.tables.items[0].id, tableCloneImportedSource.tables.items[0].id);
-assert.deepEqual(tableClone.tables.items[0].values, [["Metric", "Value"], ["Decision", "Ship"]]);
+assert.deepEqual(tableClone.tables.items[0].values, tableCloneSourceTable.values);
+assert.deepEqual(tableClone.tables.items[0].mergeRanges, tableCloneSourceTable.mergeRanges);
 const tableClonePptx = await PresentationFile.exportPptx(tableCloneImportedDeck);
 const tableCloneZip = await JSZip.loadAsync(tableClonePptx.bytes);
 assert.deepEqual(
@@ -1206,19 +1233,28 @@ assert.match(tableCloneRelationships, /\/slideLayout/);
 assert.doesNotMatch(tableCloneRelationships, /\/(?:image|chart|hyperlink|oleObject|package)"/i, "canonical table clones must not add a table-specific OPC edge");
 const tableCloneRoundTrip = await PresentationFile.importPptx(tableClonePptx);
 assert.deepEqual(tableCloneRoundTrip.slides.items.map((slide) => slide.tables.items[0].values), [
-  [["Metric", "Value"], ["Decision", "Ship"]],
-  [["Metric", "Value"], ["Decision", "Ship"]],
+  tableCloneSourceTable.values,
+  tableCloneSourceTable.values,
 ]);
-tableCloneRoundTrip.slides.getItem(1).tables.items[0].values[1][1] = "Edited after table clone reimport";
+assert.deepEqual(tableCloneRoundTrip.slides.items.map((slide) => slide.tables.items[0].mergeRanges), [tableCloneSourceTable.mergeRanges, tableCloneSourceTable.mergeRanges]);
+tableCloneRoundTrip.slides.getItem(1).tables.items[0].cells.set(2, 2, "Edited after table clone reimport");
 const tableCloneEditedPptx = await PresentationFile.exportPptx(tableCloneRoundTrip);
 const tableCloneEditedRoundTrip = await PresentationFile.importPptx(tableCloneEditedPptx);
-assert.equal(tableCloneEditedRoundTrip.slides.getItem(1).tables.items[0].values[1][1], "Edited after table clone reimport");
+assert.equal(tableCloneEditedRoundTrip.slides.getItem(1).tables.items[0].values[2][2], "Edited after table clone reimport");
+assert.equal(tableCloneEditedRoundTrip.slides.getItem(0).tables.items[0].values[2][2], "Release");
 
 const immediateTableCloneEdit = await PresentationFile.importPptx(tableCloneSourcePptx);
-immediateTableCloneEdit.slides.getItem(0).duplicate().tables.items[0].values[1][1] = "Too soon";
+immediateTableCloneEdit.slides.getItem(0).duplicate().tables.items[0].values[2][2] = "Too soon";
 await assert.rejects(
   () => PresentationFile.exportPptx(immediateTableCloneEdit),
   (error) => error?.code === "unsupported_presentation_slide_clone",
+);
+
+const importedTableMergeChange = await PresentationFile.importPptx(tableCloneSourcePptx);
+importedTableMergeChange.slides.getItem(0).tables.items[0].merge({ startRow: 1, endRow: 2, startColumn: 2, endColumn: 2 });
+await assert.rejects(
+  () => PresentationFile.exportPptx(importedTableMergeChange),
+  (error) => error?.code === "unsupported_presentation_edit",
 );
 
 // A recognized literal-data chart may travel with the bounded slide clone

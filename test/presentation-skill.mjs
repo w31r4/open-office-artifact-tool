@@ -110,7 +110,11 @@ try {
   assert.equal(editedCard.text.value, "After edit");
   assert.equal(editedCard.shadow.opacity, 0.35);
   assert.equal(itemByName(roundtripSlide.connectors.items, "editable-connector").line.endArrow, undefined);
-  assert.equal(itemByName(roundtripSlide.tables.items, "roundtrip-table").values[1][1], "After");
+  const roundtripTable = itemByName(roundtripSlide.tables.items, "roundtrip-table");
+  assert.equal(roundtripTable.values[1][1], "After");
+  assert.deepEqual(roundtripTable.mergeRanges, [{ startRow: 0, endRow: 0, startColumn: 0, endColumn: 1 }]);
+  assert.equal(roundtripTable.getCell(0, 0).columnSpan, 2);
+  assert.equal(roundtripTable.getCell(0, 1).editable, false);
   const editedImage = itemByName(roundtripSlide.images.items, "edited-roundtrip-image");
   assert.equal(editedImage.alt, "Roundtrip status after edit");
   assert.deepEqual(editedImage.position, { left: 430, top: 320, width: 170, height: 170 });
@@ -120,6 +124,8 @@ try {
   const roundtripSlideXml = await roundtripZip.file("ppt/slides/slide1.xml").async("text");
   assert.match(roundtripSlideXml, /<a:srcRect[^>]*t="-50000"/);
   assert.match(roundtripSlideXml, /<a:srcRect[^>]*b="-50000"/);
+  assert.match(roundtripSlideXml, /<a:tc gridSpan="2">/);
+  assert.match(roundtripSlideXml, /<a:tc hMerge="1">/);
   const editedChart = itemByName(roundtripSlide.charts.items, "roundtrip-chart");
   assert.equal(editedChart.title, "After roundtrip");
   assert.deepEqual(editedChart.series[0].values, [8, 14, 6]);

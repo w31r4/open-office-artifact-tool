@@ -2382,6 +2382,132 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void TopLevelTablesAuthorImportAndEditCanonicalRectangularMerges()
+    {
+        var request = ExportRequest();
+        var table = new PresentationTable
+        {
+            LeftEmu = 500_000,
+            TopEmu = 1_300_000,
+            WidthEmu = 4_000_000,
+            HeightEmu = 2_000_000,
+            FirstRow = true,
+            BandedRows = true,
+        };
+        table.ColumnWidthsEmu.Add([1_000_000, 1_000_000, 1_000_000, 1_000_000]);
+        table.Rows.Add(new PresentationTableRow
+        {
+            HeightEmu = 500_000,
+            Cells =
+            {
+                new PresentationTableCell { Text = "Readiness evidence" },
+                new PresentationTableCell(),
+                new PresentationTableCell(),
+                new PresentationTableCell { Text = "Owner" },
+            },
+        });
+        table.Rows.Add(new PresentationTableRow
+        {
+            HeightEmu = 500_000,
+            Cells =
+            {
+                new PresentationTableCell { Text = "Native QA" },
+                new PresentationTableCell(),
+                new PresentationTableCell { Text = "Pass" },
+                new PresentationTableCell { Text = "Release" },
+            },
+        });
+        table.Rows.Add(new PresentationTableRow
+        {
+            HeightEmu = 500_000,
+            Cells =
+            {
+                new PresentationTableCell(),
+                new PresentationTableCell(),
+                new PresentationTableCell { Text = "Verified" },
+                new PresentationTableCell(),
+            },
+        });
+        table.Rows.Add(new PresentationTableRow
+        {
+            HeightEmu = 500_000,
+            Cells =
+            {
+                new PresentationTableCell { Text = "Audit" },
+                new PresentationTableCell { Text = "Bound" },
+                new PresentationTableCell { Text = "Ready" },
+                new PresentationTableCell(),
+            },
+        });
+        table.MergeRanges.Add(new PresentationTableMergeRange { StartRow = 0, EndRow = 0, StartColumn = 0, EndColumn = 2 });
+        table.MergeRanges.Add(new PresentationTableMergeRange { StartRow = 1, EndRow = 2, StartColumn = 0, EndColumn = 1 });
+        table.MergeRanges.Add(new PresentationTableMergeRange { StartRow = 1, EndRow = 3, StartColumn = 3, EndColumn = 3 });
+        request.Artifact.Presentation.Slides[0].Elements.Add(new PresentationElement
+        {
+            Id = "presentation/slide/1/table/merged",
+            Name = "Merged evidence",
+            Table = table,
+        });
+
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var rows = Assert.Single(package.PresentationPart!.SlideParts.Single().Slide!.Descendants<A.Table>()).Elements<A.TableRow>().ToArray();
+            var first = rows[0].Elements<A.TableCell>().ToArray();
+            Assert.Equal(3, first[0].GridSpan!.Value);
+            Assert.True(first[1].HorizontalMerge!.Value);
+            Assert.True(first[2].HorizontalMerge!.Value);
+            var second = rows[1].Elements<A.TableCell>().ToArray();
+            Assert.Equal(2, second[0].RowSpan!.Value);
+            Assert.Equal(2, second[0].GridSpan!.Value);
+            Assert.True(second[1].HorizontalMerge!.Value);
+            Assert.Equal(3, second[3].RowSpan!.Value);
+            var third = rows[2].Elements<A.TableCell>().ToArray();
+            Assert.True(third[0].VerticalMerge!.Value);
+            Assert.True(third[1].HorizontalMerge!.Value);
+            Assert.True(third[1].VerticalMerge!.Value);
+            Assert.True(third[3].VerticalMerge!.Value);
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedTable = Assert.Single(Assert.Single(imported.Artifact.Presentation.Slides).Elements, element => element.ContentCase == PresentationElement.ContentOneofCase.Table);
+        Assert.True(importedTable.Source.Editable);
+        Assert.Equal(
+            [(0u, 0u, 0u, 2u), (1u, 2u, 0u, 1u), (1u, 3u, 3u, 3u)],
+            importedTable.Table.MergeRanges.Select(range => (range.StartRow, range.EndRow, range.StartColumn, range.EndColumn)));
+        Assert.Equal(string.Empty, importedTable.Table.Rows[2].Cells[1].Text);
+
+        importedTable.Name = "Edited merged evidence";
+        importedTable.Table.Rows[0].Cells[0].Text = "Release evidence";
+        importedTable.Table.Rows[1].Cells[0].Text = "Native + visual QA";
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var roundTrip = Import(edited.File.ToByteArray());
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        var roundTripTable = Assert.Single(Assert.Single(roundTrip.Artifact.Presentation.Slides).Elements, element => element.ContentCase == PresentationElement.ContentOneofCase.Table);
+        Assert.Equal("Edited merged evidence", roundTripTable.Name);
+        Assert.Equal("Release evidence", roundTripTable.Table.Rows[0].Cells[0].Text);
+        Assert.Equal("Native + visual QA", roundTripTable.Table.Rows[1].Cells[0].Text);
+        Assert.Equal(3, roundTripTable.Table.MergeRanges.Count);
+
+        var coveredText = Import(edited.File.ToByteArray());
+        coveredText.Artifact.Presentation.Slides[0].Elements[1].Table.Rows[0].Cells[1].Text = "hidden";
+        var coveredRejected = Export(coveredText.Artifact);
+        Assert.False(coveredRejected.Ok);
+        Assert.Equal("invalid_presentation_table", Assert.Single(coveredRejected.Diagnostics).Code);
+
+        var topologyChanged = Import(edited.File.ToByteArray());
+        topologyChanged.Artifact.Presentation.Slides[0].Elements[1].Table.MergeRanges[0].EndColumn = 1;
+        var topologyRejected = Export(topologyChanged.Artifact);
+        Assert.False(topologyRejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(topologyRejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void NativeObjectGraphClassifiesAndPreservesOleDiagramAndContentPart()
     {
         var source = AddNativeObjectGraph(Invoke(ExportRequest()).File.ToByteArray());

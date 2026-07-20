@@ -1718,9 +1718,12 @@ message PresentationImageCrop {
 
 // Bounded top-level DrawingML table projection. Column widths and row heights
 // make the fixed grid explicit instead of deriving native geometry from cell
-// text. The first codec slice owns one rectangular p:graphicFrame, a complete
-// non-merged grid, and exactly one plain-text run per cell. Rich cell text,
-// merges, table styles, transformed frames, and topology changes remain
+// text. The bounded codec owns one rectangular p:graphicFrame, a complete
+// physical grid, non-overlapping rectangular merge ranges, and exactly one
+// plain-text run per visible origin cell. Covered cells remain present with an
+// empty run so the canonical a:tc gridSpan/rowSpan/hMerge/vMerge topology can
+// round-trip without inventing a second sparse table model. Rich cell text,
+// table styles, transformed frames, and topology changes after import remain
 // source-bound opaque content.
 message PresentationTable {
   int64 left_emu = 1;
@@ -1731,6 +1734,7 @@ message PresentationTable {
   repeated PresentationTableRow rows = 6;
   optional bool first_row = 7;
   optional bool banded_rows = 8;
+  repeated PresentationTableMergeRange merge_ranges = 9;
 }
 
 message PresentationTableRow {
@@ -1740,6 +1744,16 @@ message PresentationTableRow {
 
 message PresentationTableCell {
   string text = 1;
+}
+
+// Inclusive zero-based rectangle. A range must cover at least two physical
+// cells, remain within the table grid, and never overlap another range. The
+// upper-left cell owns the visible text; every covered cell is empty/read-only.
+message PresentationTableMergeRange {
+  uint32 start_row = 1;
+  uint32 end_row = 2;
+  uint32 start_column = 3;
+  uint32 end_column = 4;
 }
 
 message PresentationPlaceholderIdentity {

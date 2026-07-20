@@ -244,9 +244,9 @@ function cloneImportedPresentationTable(container, source, context) {
     values: clonedPresentationValue(source.values),
     ...(source.style === undefined ? {} : { style: clonedPresentationValue(source.style) }),
     ...(source.styleOptions === undefined ? {} : { styleOptions: clonedPresentationValue(source.styleOptions) }),
+    mergeRanges: clonedPresentationValue(source.mergeRanges),
   });
   if (source.border !== undefined) clone.border = clonedPresentationValue(source.border);
-  if (source.mergeRange !== undefined) clone.mergeRange = clonedPresentationValue(source.mergeRange);
   return registerPresentationCloneElement(context, source, clone);
 }
 
@@ -1823,6 +1823,12 @@ function presentationTable(table, original) {
           heightEmu: rowHeightsEmu[rowIndex],
           cells: row.map((value) => ({ text: String(value ?? "") })),
         })),
+        mergeRanges: table.mergeRanges.map((range) => ({
+          startRow: range.startRow,
+          endRow: range.endRow,
+          startColumn: range.startColumn,
+          endColumn: range.endColumn,
+        })),
         ...(originalTable?.firstRow === undefined ? { firstRow: Boolean(table.styleOptions?.headerRow) } : { firstRow: originalTable.firstRow }),
         ...(originalTable?.bandedRows === undefined ? { bandedRows: Boolean(table.styleOptions?.bandedRows) } : { bandedRows: originalTable.bandedRows }),
       },
@@ -1840,7 +1846,7 @@ function presentationTableReadOnlySnapshot(table) {
     style: table.style,
     styleOptions: table.styleOptions,
     border: table.border,
-    mergeRange: table.mergeRange,
+    mergeRanges: table.mergeRanges,
   });
 }
 
@@ -3113,6 +3119,12 @@ export async function presentationFromEnvelope(envelope) {
             headerRow: table.firstRow === true,
             bandedRows: table.bandedRows === true,
           },
+          mergeRanges: table.mergeRanges.map((range) => ({
+            startRow: Number(range.startRow),
+            endRow: Number(range.endRow),
+            startColumn: Number(range.startColumn),
+            endColumn: Number(range.endColumn),
+          })),
         });
       } else if (element.content.case === "connector") {
         const connector = element.content.value;

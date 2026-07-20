@@ -50,7 +50,8 @@
         {
           "name": "roundtrip-table",
           "position": { "left": 64, "top": 310, "width": 300, "height": 180 },
-          "values": [["Layer", "State"], ["Office", "Before"], ["QA", "Ready"]],
+          "values": [["Layer state", ""], ["Office", "Before"], ["QA", "Ready"]],
+          "mergeRanges": [{ "startRow": 0, "endRow": 0, "startColumn": 0, "endColumn": 1 }],
           "styleOptions": { "headerRow": true, "bandedRows": true }
         }
       ],

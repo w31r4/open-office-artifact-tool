@@ -584,6 +584,16 @@ export class Presentation {
         if (!table.rows || !table.columns || table.values.length === 0 || table.values.every((row) => row.every((cell) => String(cell ?? "").trim() === ""))) issues.push(verificationIssue("presentation", "emptyTable", `Table ${table.name || table.id} on slide ${slide.index + 1} has no visible cell data.`, { slide: slide.index + 1, id: table.id }));
         if (table.values.length !== table.rows) issues.push(verificationIssue("presentation", "tableDataMismatch", `Table ${table.name || table.id} declares ${table.rows} rows but has ${table.values.length} value rows.`, { slide: slide.index + 1, id: table.id, rows: table.rows, valueRows: table.values.length }));
         if (table.values.some((row) => row.length !== table.columns)) issues.push(verificationIssue("presentation", "raggedTableRows", `Table ${table.name || table.id} has rows that do not match its declared column count.`, { slide: slide.index + 1, id: table.id, columns: table.columns, rowLengths: table.values.map((row) => row.length) }));
+        try {
+          const mergePlan = presentationTableMergePlan(table.rows, table.columns, table._mergeRanges);
+          for (const [key, state] of mergePlan.cells) {
+            if (state.kind !== "covered") continue;
+            const [row, column] = key.split(":").map(Number);
+            if (String(table.values[row]?.[column] ?? "") !== "") issues.push(verificationIssue("presentation", "mergedTableCoveredCellContent", `Table ${table.name || table.id} covered cell ${row},${column} must remain empty.`, { slide: slide.index + 1, id: table.id, row, column, mergeOrigin: state.origin }));
+          }
+        } catch (error) {
+          issues.push(verificationIssue("presentation", "invalidTableMerge", `Table ${table.name || table.id} has invalid merge topology: ${error.message}`, { slide: slide.index + 1, id: table.id }));
+        }
       }
       for (const chart of slideElements.filter((element) => element instanceof ChartElement)) {
         if (!/^(bar|line|pie|combo)$/i.test(chart.chartType)) issues.push(verificationIssue("presentation", "unsupportedChartType", `Chart ${chart.name || chart.id} uses unsupported chart type ${chart.chartType}.`, { severity: "warning", slide: slide.index + 1, id: chart.id, chartType: chart.chartType }));
@@ -1268,10 +1278,57 @@ export class Shape {
 
 }
 
+function presentationTableCellKey(row, column) { return `${row}:${column}`; }
+
+function normalizePresentationTableMergeRange(range, rows, columns) {
+  if (!range || typeof range !== "object" || Array.isArray(range)) throw new TypeError("Presentation table merge requires a range object.");
+  const normalized = {
+    startRow: Number(range.startRow),
+    endRow: Number(range.endRow),
+    startColumn: Number(range.startColumn),
+    endColumn: Number(range.endColumn),
+  };
+  if (Object.values(normalized).some((value) => !Number.isInteger(value))) throw new TypeError("Presentation table merge coordinates must be integers.");
+  if (normalized.startRow < 0 || normalized.startColumn < 0 || normalized.endRow < normalized.startRow || normalized.endColumn < normalized.startColumn ||
+      normalized.endRow >= rows || normalized.endColumn >= columns) {
+    throw new RangeError(`Presentation table merge ${normalized.startRow}:${normalized.startColumn}-${normalized.endRow}:${normalized.endColumn} is outside the ${rows}x${columns} grid.`);
+  }
+  if (normalized.startRow === normalized.endRow && normalized.startColumn === normalized.endColumn) throw new RangeError("Presentation table merge must span at least two cells.");
+  return normalized;
+}
+
+function presentationTableMergePlan(rows, columns, ranges = []) {
+  if (!Number.isInteger(rows) || rows < 1 || !Number.isInteger(columns) || columns < 1) throw new RangeError("Presentation table merges require a non-empty rectangular grid.");
+  if (!Array.isArray(ranges)) throw new TypeError("Presentation table mergeRanges must be an array.");
+  const cells = new Map();
+  const normalizedRanges = ranges.map((range) => normalizePresentationTableMergeRange(range, rows, columns));
+  for (const range of normalizedRanges) {
+    for (let row = range.startRow; row <= range.endRow; row += 1) {
+      for (let column = range.startColumn; column <= range.endColumn; column += 1) {
+        const key = presentationTableCellKey(row, column);
+        if (cells.has(key)) throw new RangeError(`Presentation table merge ranges overlap at cell ${row},${column}.`);
+        const origin = { row: range.startRow, column: range.startColumn };
+        cells.set(key, row === range.startRow && column === range.startColumn
+          ? { kind: "origin", origin, rowSpan: range.endRow - range.startRow + 1, columnSpan: range.endColumn - range.startColumn + 1, range }
+          : { kind: "covered", origin, rowSpan: 0, columnSpan: 0, range });
+      }
+    }
+  }
+  return { cells, ranges: normalizedRanges };
+}
+
 class TableCellFacade {
   constructor(table, row, column) { this.table = table; this.row = row; this.column = column; this.text = new TextFrame(); }
   get value() { return this.table.values[this.row]?.[this.column] ?? ""; }
-  set value(value) { this.table.ensureCell(this.row, this.column); this.table.values[this.row][this.column] = value; }
+  set value(value) {
+    const state = this.table.mergeState(this.row, this.column);
+    if (state.kind === "covered") throw new RangeError(`Presentation table cell ${this.row},${this.column} is covered by merge origin ${state.origin.row},${state.origin.column} and is read-only.`);
+    this.table.values[this.row][this.column] = value;
+  }
+  get editable() { return this.table.mergeState(this.row, this.column).kind !== "covered"; }
+  get mergeOrigin() { return { ...this.table.mergeState(this.row, this.column).origin }; }
+  get rowSpan() { return this.table.mergeState(this.row, this.column).rowSpan; }
+  get columnSpan() { return this.table.mergeState(this.row, this.column).columnSpan; }
 }
 
 export class TableElement {
@@ -1287,38 +1344,67 @@ export class TableElement {
     this.values = Array.from({ length: this.rows }, (_, r) => Array.from({ length: this.columns }, (_, c) => config.values?.[r]?.[c] ?? ""));
     this.style = config.style;
     this.styleOptions = config.styleOptions || {};
+    this._mergeRanges = [];
+    for (const range of config.mergeRanges || (config.mergeRange ? [config.mergeRange] : [])) this._appendMergeRange(range);
     this.cells = { set: (row, column, value) => { this.getCell(row, column).value = value; }, block: (range) => ({ table: this, range }) };
     this.borders = { assign: (configValue) => { this.border = configValue; } };
   }
 
-  ensureCell(row, column) {
-    while (this.values.length <= row) this.values.push([]);
-    while (this.values[row].length <= column) this.values[row].push("");
+  _assertCell(row, column) {
+    if (!Number.isInteger(row) || !Number.isInteger(column) || row < 0 || column < 0 || row >= this.rows || column >= this.columns) {
+      throw new RangeError(`Presentation table cell ${row},${column} is outside the ${this.rows}x${this.columns} grid.`);
+    }
   }
 
-  getCell(row, column) { return new TableCellFacade(this, row, column); }
-  merge(range) { this.mergeRange = range; }
+  _appendMergeRange(range) {
+    const next = presentationTableMergePlan(this.rows, this.columns, [...this._mergeRanges, range]);
+    const normalized = next.ranges.at(-1);
+    for (let row = normalized.startRow; row <= normalized.endRow; row += 1) {
+      for (let column = normalized.startColumn; column <= normalized.endColumn; column += 1) {
+        if (row !== normalized.startRow || column !== normalized.startColumn) this.values[row][column] = "";
+      }
+    }
+    this._mergeRanges.push(normalized);
+  }
+
+  get mergeRanges() { return this._mergeRanges.map((range) => ({ ...range })); }
+  mergeState(row, column) {
+    this._assertCell(row, column);
+    return presentationTableMergePlan(this.rows, this.columns, this._mergeRanges).cells.get(presentationTableCellKey(row, column)) || {
+      kind: "cell",
+      origin: { row, column },
+      rowSpan: 1,
+      columnSpan: 1,
+    };
+  }
+  getCell(row, column) { this._assertCell(row, column); return new TableCellFacade(this, row, column); }
+  merge(range) { this._appendMergeRange(range); return this; }
 
   inspectRecord() {
     const p = this.position;
-    return { kind: "table", id: this.id, slide: this.slide.index + 1, name: this.name || undefined, nativeId: this.nativeId, creationId: this.creationId, rows: this.rows, cols: this.columns, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px", values: this.values };
+    return { kind: "table", id: this.id, slide: this.slide.index + 1, name: this.name || undefined, nativeId: this.nativeId, creationId: this.creationId, rows: this.rows, cols: this.columns, mergeRanges: this.mergeRanges.length ? this.mergeRanges : undefined, bbox: [p.left, p.top, p.width, p.height], bboxUnit: "px", values: this.values };
   }
 
-  layoutJson() { return { kind: "table", id: this.id, name: this.name, frame: this.position, rows: this.rows, columns: this.columns, values: this.values, style: this.style, styleOptions: this.styleOptions }; }
+  layoutJson() { return { kind: "table", id: this.id, name: this.name, frame: this.position, rows: this.rows, columns: this.columns, values: this.values, mergeRanges: this.mergeRanges.length ? this.mergeRanges : undefined, style: this.style, styleOptions: this.styleOptions }; }
 
   toSvg() {
     const p = this.position;
     const cellW = p.width / Math.max(1, this.columns);
     const cellH = p.height / Math.max(1, this.rows);
+    const plan = presentationTableMergePlan(this.rows, this.columns, this._mergeRanges);
     const parts = [`<rect x="${p.left}" y="${p.top}" width="${p.width}" height="${p.height}" fill="#ffffff" stroke="#cbd5e1"/>`];
     for (let r = 0; r < this.rows; r++) {
       for (let c = 0; c < this.columns; c++) {
+        const state = plan.cells.get(presentationTableCellKey(r, c));
+        if (state?.kind === "covered") continue;
         const x = p.left + c * cellW;
         const y = p.top + r * cellH;
+        const width = cellW * (state?.columnSpan || 1);
+        const height = cellH * (state?.rowSpan || 1);
         const fill = this.styleOptions.headerRow && r === 0 ? "#0f172a" : r % 2 ? "#f8fafc" : "#ffffff";
         const color = this.styleOptions.headerRow && r === 0 ? "#ffffff" : "#0f172a";
-        parts.push(`<rect x="${x}" y="${y}" width="${cellW}" height="${cellH}" fill="${fill}" stroke="#cbd5e1"/>`);
-        parts.push(`<text x="${x + 6}" y="${y + Math.min(22, cellH - 6)}" font-family="Arial" font-size="13" fill="${color}">${xmlEscape(this.values[r]?.[c] ?? "")}</text>`);
+        parts.push(`<rect x="${x}" y="${y}" width="${width}" height="${height}" fill="${fill}" stroke="#cbd5e1"/>`);
+        parts.push(`<text x="${x + 6}" y="${y + Math.min(22, height - 6)}" font-family="Arial" font-size="13" fill="${color}">${xmlEscape(this.values[r]?.[c] ?? "")}</text>`);
       }
     }
     return parts.join("");

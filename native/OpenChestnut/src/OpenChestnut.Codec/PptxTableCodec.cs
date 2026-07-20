@@ -5,15 +5,33 @@ using P = DocumentFormat.OpenXml.Presentation;
 
 namespace OpenChestnut.Codec;
 
-// Owns one deliberately narrow DrawingML table profile. Table topology and
-// cell formatting remain fixed after import; name, complete outer frame, and
-// the single plain-text run in each cell are the only source-bound edits.
+// Owns one deliberately narrow DrawingML table profile. Table topology,
+// rectangular merge ranges, and cell formatting remain fixed after import;
+// name, complete outer frame, and the single plain-text run in each visible
+// origin cell are the only source-bound edits.
 internal static class PptxTableCodec
 {
     private const string TableGraphicDataUri = "http://schemas.openxmlformats.org/drawingml/2006/table";
     private const int MaxColumns = 256;
     private const int MaxRows = 2_048;
     private const int MaxCellTextLength = 32_767;
+
+    private readonly record struct MergeCellPlan(
+        bool IsOrigin,
+        int RowSpan,
+        int ColumnSpan,
+        bool HorizontalMerge,
+        bool VerticalMerge);
+
+    private readonly record struct NativeMergeCell(
+        int RowSpan,
+        int ColumnSpan,
+        bool HorizontalMerge,
+        bool VerticalMerge,
+        bool HasRowSpan,
+        bool HasColumnSpan,
+        bool HasHorizontalMerge,
+        bool HasVerticalMerge);
 
     internal static bool TryRead(P.GraphicFrame source, out PresentationTable table)
     {
@@ -61,11 +79,13 @@ internal static class PptxTableCodec
             if (properties.FirstRow is not null) result.FirstRow = properties.FirstRow.Value;
             if (properties.BandRow is not null) result.BandedRows = properties.BandRow.Value;
 
+            var nativeCells = new List<A.TableCell[]>(rows.Length);
             foreach (var nativeRow in rows)
             {
                 if (nativeRow.Height?.Value is null or <= 0 || !HasOnlyAttributes(nativeRow, "h")) return false;
                 var cells = nativeRow.Elements<A.TableCell>().ToArray();
                 if (nativeRow.ChildElements.Count != cells.Length || cells.Length != columns.Length) return false;
+                nativeCells.Add(cells);
                 var row = new PresentationTableRow { HeightEmu = nativeRow.Height.Value };
                 foreach (var cell in cells)
                 {
@@ -75,6 +95,7 @@ internal static class PptxTableCodec
                 result.Rows.Add(row);
             }
 
+            if (!TryReadMergeRanges(nativeCells, result)) return false;
             if (result.ColumnWidthsEmu.Sum() != width || result.Rows.Sum(row => row.HeightEmu) != height) return false;
             table = result;
             return true;
@@ -90,6 +111,7 @@ internal static class PptxTableCodec
     {
         var table = element.Table;
         Validate(table, element.Id);
+        var mergePlan = CreateMergePlan(table, element.Id);
         var properties = new A.TableProperties();
         if (table.HasFirstRow) properties.FirstRow = table.FirstRow;
         if (table.HasBandedRows) properties.BandRow = table.BandedRows;
@@ -100,8 +122,25 @@ internal static class PptxTableCodec
         {
             var sourceRow = table.Rows[rowIndex];
             var row = new A.TableRow { Height = sourceRow.HeightEmu };
-            foreach (var sourceCell in sourceRow.Cells)
-                row.Append(BuildCell(sourceCell.Text, table.HasFirstRow && table.FirstRow && rowIndex == 0));
+            for (var columnIndex = 0; columnIndex < sourceRow.Cells.Count; columnIndex++)
+            {
+                var sourceCell = sourceRow.Cells[columnIndex];
+                var cell = BuildCell(sourceCell.Text, table.HasFirstRow && table.FirstRow && rowIndex == 0);
+                if (mergePlan.TryGetValue((rowIndex, columnIndex), out var merge))
+                {
+                    if (merge.IsOrigin)
+                    {
+                        if (merge.RowSpan > 1) cell.RowSpan = merge.RowSpan;
+                        if (merge.ColumnSpan > 1) cell.GridSpan = merge.ColumnSpan;
+                    }
+                    else
+                    {
+                        if (merge.HorizontalMerge) cell.HorizontalMerge = true;
+                        if (merge.VerticalMerge) cell.VerticalMerge = true;
+                    }
+                }
+                row.Append(cell);
+            }
             nativeTable.Append(row);
         }
         return new P.GraphicFrame(
@@ -151,6 +190,7 @@ internal static class PptxTableCodec
         foreach (var cell in table.Rows.SelectMany(row => row.Cells))
             if (cell.Text.Length > MaxCellTextLength || cell.Text.Any(character => char.IsControl(character) && character is not '\t' and not '\n' and not '\r'))
                 throw Invalid(elementId, $"cell text must contain at most {MaxCellTextLength} characters and no unsupported controls");
+        _ = CreateMergePlan(table, elementId);
     }
 
     internal static void ScrubModeledContent(P.GraphicFrame source)
@@ -212,7 +252,7 @@ internal static class PptxTableCodec
     private static bool TryReadCell(A.TableCell cell, out A.Text text)
     {
         text = new A.Text();
-        if (cell.GetAttributes().Count != 0 || cell.ChildElements.Count != 2 ||
+        if (!HasOnlyAttributes(cell, "rowSpan", "gridSpan", "hMerge", "vMerge") || cell.ChildElements.Count != 2 ||
             cell.ChildElements[0] is not A.TextBody body || cell.ChildElements[1] is not A.TableCellProperties ||
             body.ChildElements.Count != 3 || body.ChildElements[0] is not A.BodyProperties || body.ChildElements[1] is not A.ListStyle ||
             body.ChildElements[2] is not A.Paragraph paragraph)
@@ -226,6 +266,124 @@ internal static class PptxTableCodec
             return false;
         text = run.GetFirstChild<A.Text>()!;
         return text.Text.Length <= MaxCellTextLength;
+    }
+
+    private static bool TryReadMergeRanges(IReadOnlyList<A.TableCell[]> nativeRows, PresentationTable table)
+    {
+        var rowCount = nativeRows.Count;
+        var columnCount = nativeRows[0].Length;
+        var cells = new NativeMergeCell[rowCount, columnCount];
+        for (var row = 0; row < rowCount; row++)
+        {
+            for (var column = 0; column < columnCount; column++)
+            {
+                var cell = nativeRows[row][column];
+                var hasRowSpan = cell.RowSpan is not null;
+                var hasColumnSpan = cell.GridSpan is not null;
+                var hasHorizontal = cell.HorizontalMerge is not null;
+                var hasVertical = cell.VerticalMerge is not null;
+                var rowSpan = cell.RowSpan?.Value ?? 1;
+                var columnSpan = cell.GridSpan?.Value ?? 1;
+                var horizontal = cell.HorizontalMerge?.Value ?? false;
+                var vertical = cell.VerticalMerge?.Value ?? false;
+                if ((hasRowSpan && rowSpan <= 1) || (hasColumnSpan && columnSpan <= 1) ||
+                    (hasHorizontal && !horizontal) || (hasVertical && !vertical) ||
+                    ((horizontal || vertical) && (hasRowSpan || hasColumnSpan)))
+                    return false;
+                cells[row, column] = new NativeMergeCell(rowSpan, columnSpan, horizontal, vertical, hasRowSpan, hasColumnSpan, hasHorizontal, hasVertical);
+            }
+        }
+
+        var expected = new Dictionary<(int Row, int Column), MergeCellPlan>();
+        for (var row = 0; row < rowCount; row++)
+        {
+            for (var column = 0; column < columnCount; column++)
+            {
+                var cell = cells[row, column];
+                if (cell.HorizontalMerge || cell.VerticalMerge || cell.RowSpan == 1 && cell.ColumnSpan == 1) continue;
+                if ((long)row + cell.RowSpan > rowCount || (long)column + cell.ColumnSpan > columnCount) return false;
+                var range = new PresentationTableMergeRange
+                {
+                    StartRow = (uint)row,
+                    EndRow = (uint)(row + cell.RowSpan - 1),
+                    StartColumn = (uint)column,
+                    EndColumn = (uint)(column + cell.ColumnSpan - 1),
+                };
+                for (var coveredRow = row; coveredRow <= range.EndRow; coveredRow++)
+                {
+                    for (var coveredColumn = column; coveredColumn <= range.EndColumn; coveredColumn++)
+                    {
+                        var isOrigin = coveredRow == row && coveredColumn == column;
+                        if (!expected.TryAdd((coveredRow, coveredColumn), new MergeCellPlan(
+                            isOrigin,
+                            isOrigin ? cell.RowSpan : 0,
+                            isOrigin ? cell.ColumnSpan : 0,
+                            !isOrigin && coveredColumn > column,
+                            !isOrigin && coveredRow > row)))
+                            return false;
+                    }
+                }
+                table.MergeRanges.Add(range);
+            }
+        }
+
+        for (var row = 0; row < rowCount; row++)
+        {
+            for (var column = 0; column < columnCount; column++)
+            {
+                var cell = cells[row, column];
+                if (expected.TryGetValue((row, column), out var planned))
+                {
+                    if (planned.IsOrigin)
+                    {
+                        if (cell.HorizontalMerge || cell.VerticalMerge || cell.RowSpan != planned.RowSpan || cell.ColumnSpan != planned.ColumnSpan) return false;
+                    }
+                    else
+                    {
+                        if (cell.HasRowSpan || cell.HasColumnSpan || cell.HorizontalMerge != planned.HorizontalMerge || cell.VerticalMerge != planned.VerticalMerge ||
+                            !string.IsNullOrEmpty(table.Rows[row].Cells[column].Text))
+                            return false;
+                    }
+                }
+                else if (cell.HasRowSpan || cell.HasColumnSpan || cell.HasHorizontalMerge || cell.HasVerticalMerge)
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private static Dictionary<(int Row, int Column), MergeCellPlan> CreateMergePlan(PresentationTable table, string elementId)
+    {
+        var plan = new Dictionary<(int Row, int Column), MergeCellPlan>();
+        for (var rangeIndex = 0; rangeIndex < table.MergeRanges.Count; rangeIndex++)
+        {
+            var range = table.MergeRanges[rangeIndex];
+            if (range.EndRow < range.StartRow || range.EndColumn < range.StartColumn ||
+                range.EndRow >= table.Rows.Count || range.EndColumn >= table.ColumnWidthsEmu.Count ||
+                range.StartRow == range.EndRow && range.StartColumn == range.EndColumn)
+                throw Invalid(elementId, $"merge range {rangeIndex} must cover at least two in-bounds cells");
+            var rowSpan = checked((int)(range.EndRow - range.StartRow + 1));
+            var columnSpan = checked((int)(range.EndColumn - range.StartColumn + 1));
+            for (var row = checked((int)range.StartRow); row <= range.EndRow; row++)
+            {
+                for (var column = checked((int)range.StartColumn); column <= range.EndColumn; column++)
+                {
+                    var isOrigin = row == range.StartRow && column == range.StartColumn;
+                    if (!plan.TryAdd((row, column), new MergeCellPlan(
+                        isOrigin,
+                        isOrigin ? rowSpan : 0,
+                        isOrigin ? columnSpan : 0,
+                        !isOrigin && column > range.StartColumn,
+                        !isOrigin && row > range.StartRow)))
+                        throw Invalid(elementId, $"merge ranges overlap at cell {row},{column}");
+                    if (!isOrigin && !string.IsNullOrEmpty(table.Rows[row].Cells[column].Text))
+                        throw Invalid(elementId, $"covered merge cell {row},{column} must be empty");
+                }
+            }
+        }
+        return plan;
     }
 
     private static A.TableCell BuildCell(string text, bool header)

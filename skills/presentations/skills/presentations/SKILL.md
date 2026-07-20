@@ -192,7 +192,7 @@ removes the source slide part and its relationship part while preserving every
 survivor. Media, notes, comments, charts, OLE, hyperlinks, data parts, or any
 other connected graph fail closed. `slide.duplicate()` is a separate, much
 narrower operation: only an original imported slide whose unchanged graph has
-canonical shapes, canonical inline fixed-grid tables, recognized closed
+canonical shapes, canonical inline fixed-grid tables with bounded rectangular merges, recognized closed
 literal-data charts, eligible top-level embedded-XLSX OLE frames, canonical
 top-level four-part SmartArt frames, canonical top-level closed InkML
 `p:contentPart` objects, canonical top-level closed embedded-MP4 media pictures,

@@ -72,6 +72,44 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### PPTX canonical merged table cells
+
+On 2026-07-20, the Presentation/OpenChestnut path closed the reference
+`table.merge(...)` primitive for bounded native PowerPoint tables. The public
+model now accepts multiple inclusive, non-overlapping rectangles, retains the
+upper-left value, clears and locks covered cells, exposes origin/span evidence
+through inspect/layout/cell facades, and draws the same geometry in SVG. The
+versioned wire carries logical merge ranges rather than private XML fragments;
+OpenChestnut maps them to canonical DrawingML `a:tc` `gridSpan`, `rowSpan`,
+`hMerge`, and `vMerge` attributes and reconstructs the logical ranges on import.
+
+The source-bound contract keeps imported row, column, and merge topology fixed
+while permitting complete frame resizing plus visible origin/unmerged cell text
+edits. Covered-cell content, overlapping/out-of-range/single-cell merges,
+malformed native continuation markers, and topology mutation fail closed.
+Canonical merged tables also remain eligible inline leaves in the bounded slide
+duplicate workflow; the source SlidePart stays byte-identical, the clone gets a
+fresh facade identity, and editing the clone still requires export/reimport.
+The runnable Presentation Skill preservation fixture now carries a merged
+header through create, export, import/edit, second import, model rendering, and
+LibreOffice/Poppler rendering. A separate manual four-by-four fixture exercised
+horizontal, vertical, and two-dimensional spans; both the model and native
+one-page renders were reviewed without clipping, overlap, blank content, or
+split merge borders.
+
+The complete local `npm test` suite passed, including Playwright, the packed
+Skill paths, LibreOffice/Poppler, qpdf, package/release smoke, and every Office
+and PDF regression. OpenChestnut passed `298/298`; OfficeBridge passed `5/5`;
+generated API docs and two deterministic source-built WASM runs passed across
+39 audited build files. The manifest-bound runtime contains 38 files and
+14,750,400 bytes. The production clean-install/dry-run tarball contains 468
+files, 9,044,055 compressed bytes, and 23,854,331 unpacked bytes. Real pikepdf,
+pyHanko, veraPDF, and OCRmyPDF provider repeats were not configured in this
+local shell, so their contract/adversarial tests passed while those explicitly
+environment-gated executions were skipped; MuPDF.js, qpdf, LibreOffice,
+Poppler, and Playwright ran locally. No npm publish or tag operation was
+attempted.
+
 ### XLSX visual conditional formatting
 
 On 2026-07-20, the Spreadsheet/OpenChestnut path added standard gradient data
