@@ -11,14 +11,14 @@ node scripts/mupdf.mjs probe
 node scripts/mupdf.mjs inspect input.pdf
 ```
 
-Its typed operations are source-bound `add_text_annotation` and `add_text_highlight`, legacy text/choice/checkbox `fill_form`, source-bound `update_form_field`, `delete_page`, source-bound `delete_annotation` and `update_annotation`, complete `rearrange_pages`, visible-only `set_page_crop`, absolute-quarter-turn `rotate_page`, `set_metadata`, `delete_embedded_file`, source-bound `add_link`, `delete_link`, and `update_link`, `redact_text`, and `redact_rect`. Run with one explicit save policy:
+Its typed operations are source-bound `add_text_annotation` and `add_text_highlight`, legacy text/choice/checkbox `fill_form`, source-bound `update_form_field`, `delete_page`, source-bound `duplicate_page`, source-bound `delete_annotation` and `update_annotation`, complete `rearrange_pages`, visible-only `set_page_crop`, absolute-quarter-turn `rotate_page`, `set_metadata`, `delete_embedded_file`, source-bound `add_link`, `delete_link`, and `update_link`, `redact_text`, and `redact_rect`. Run with one explicit save policy:
 
 ```bash
 node scripts/mupdf.mjs edit input.pdf tmp/pdfs/edit-operations.json tmp/pdfs/edited.pdf \
   --save-policy rewrite
 ```
 
-The CLI refuses source overwrite, writes atomically, and rejects incremental redaction, source-bound annotation/link creation or mutation (including text highlights), deletion, and signed-PDF incremental edits. A bounded source-bound single-widget form-field update may use unsigned incremental save; unsupported operations do not route elsewhere.
+The CLI refuses source overwrite, writes atomically, and rejects incremental redaction, page duplication, source-bound annotation/link creation or mutation (including text highlights), deletion, and signed-PDF incremental edits. A bounded source-bound single-widget form-field update may use unsigned incremental save; unsupported operations do not route elsewhere.
 
 ## Update one imported form field
 
@@ -89,6 +89,48 @@ to retain the prior value and prove the requested orientation. This bounded
 unsigned operation may use `incremental` save, subject to the same source-prefix
 and signature refusal rules. It is not a substitute for rotated-coordinate text
 or image editing; route those tasks explicitly to the specialist provider.
+
+## Duplicate one ordinary imported page
+
+Use `duplicate_page` only for one page in the same exact source PDF. Copy the
+source hash and target `mupdfPage` bbox/rotation from a fresh inspection.
+`insertAt` is a 1-based position in the resulting document; omit it to place
+the duplicate immediately after the source page:
+
+```json
+{
+  "savePolicy": "rewrite",
+  "operations": [{
+    "type": "duplicate_page",
+    "page": 2,
+    "sourceSha256": "<inspect summary sourceSha256>",
+    "expectedPage": {
+      "bbox": [0, 0, 792, 612],
+      "rotation": 90
+    },
+    "insertAt": 4
+  }]
+}
+```
+
+This is deliberately a single-operation full rewrite. It accepts 0/90/180/270
+degree pages only when the page has no annotations, links, widgets/form fields,
+Tagged-PDF structure ownership, page actions, associated files, article beads,
+transitions, or template/presentation steps. It copies the page content and
+resources through MuPDF's page grafting API, but does not create a new outline,
+named destination, or navigation promise. A stale hash/snapshot, interactive
+page, tagged document, unsupported page-bound graph, invalid output position,
+additional operation, incremental policy, or signed-document policy failure
+or projected page/object budget overflow stops before publication. Re-inspect
+the output and render this mapping:
+
+- every retained original page to its shifted output page;
+- the source page to its retained output page;
+- the same source page to the inserted duplicate.
+
+Require identical page geometry and Poppler pixels for each mapping. Re-inspect
+again before using page numbers in a later operation because insertion changes
+current-document locators.
 
 ## Add one imported Text annotation
 

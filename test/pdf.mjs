@@ -10,6 +10,7 @@ import { createPdfjsParser } from "open-office-artifact-tool/pdf/pdfjs";
 import { MUPDF_VERSION, createMuPdfParser, parsePdfWithMuPdf, renderPdfWithMuPdf } from "open-office-artifact-tool/pdf/mupdf";
 import { FileBlob, PdfArtifact, PdfFile, renderArtifact } from "../src/index.mjs";
 import { PdfArtifact as PdfArtifactModule, PdfFile as PdfFileModule } from "../src/pdf/index.mjs";
+import { plainPdfBytes } from "./fixtures/plain-pdf.mjs";
 
 assert.equal(PdfArtifact, PdfArtifactModule, "the root package must re-export the PDF domain class without wrapping it");
 assert.equal(PdfFile, PdfFileModule, "the root package must re-export the PDF file facade without wrapping it");
@@ -834,6 +835,147 @@ for (const rotation of [90, 180, 270]) {
     }],
   }), /annotation appearance outside the inspected visible CropBox/);
 }
+const duplicatePageSource = new FileBlob(plainPdfBytes([
+  { text: "ORIGINAL PAGE ONE", width: 612, height: 792 },
+  { text: "ROTATED PAGE TWO", width: 540, height: 720, rotation: 90 },
+  { text: "ORIGINAL PAGE THREE", width: 420, height: 600 },
+]), { type: "application/pdf" });
+const duplicatePageSourceBytes = Buffer.from(duplicatePageSource.bytes);
+const duplicatePageInspection = await PdfFile.inspectPdf(duplicatePageSource, { maxChars: 100_000 });
+const duplicatePageRecord = duplicatePageInspection.records.find((record) => record.kind === "mupdfPage" && record.page === 2);
+const duplicatePageOperation = {
+  type: "duplicate_page",
+  page: 2,
+  sourceSha256: duplicatePageInspection.summary.sourceSha256,
+  expectedPage: { bbox: duplicatePageRecord.bbox, rotation: duplicatePageRecord.rotation },
+};
+assert.deepEqual(duplicatePageRecord.bbox, [0, 0, 720, 540]);
+assert.equal(duplicatePageRecord.rotation, 90);
+await assert.rejects(PdfFile.editPdf(duplicatePageSource, {
+  savePolicy: "incremental",
+  operations: [duplicatePageOperation],
+}), /page-tree operation duplicate_page cannot save incrementally.*fully rewritten object graph/);
+await assert.rejects(PdfFile.editPdf(duplicatePageSource, {
+  savePolicy: "rewrite",
+  operations: [duplicatePageOperation, { type: "rotate_page", page: 1, rotation: 0 }],
+}), /duplicate_page must be the only operation/);
+await assert.rejects(PdfFile.editPdf(duplicatePageSource, {
+  savePolicy: "rewrite",
+  operations: [{ ...duplicatePageOperation, sourceSha256: "0".repeat(64) }],
+}), /duplicate_page sourceSha256 must exactly match/);
+await assert.rejects(PdfFile.editPdf(duplicatePageSource, {
+  savePolicy: "rewrite",
+  operations: [{ ...duplicatePageOperation, expectedPage: { bbox: duplicatePageRecord.bbox, rotation: 0 } }],
+}), /precondition page rotation did not match/);
+await assert.rejects(PdfFile.editPdf(duplicatePageSource, {
+  savePolicy: "rewrite",
+  operations: [{ ...duplicatePageOperation, insertAt: 5 }],
+}), /insertAt must be a 1-based output position between 1 and 4/);
+await assert.rejects(PdfFile.editPdf(duplicatePageSource, {
+  savePolicy: "rewrite",
+  operations: [{ ...duplicatePageOperation, copyAnnotations: false }],
+}), /duplicate_page contains unsupported field: copyAnnotations/);
+await assert.rejects(PdfFile.editPdf(duplicatePageSource, {
+  savePolicy: "rewrite",
+  operations: [{ ...duplicatePageOperation, pageIndex: 1 }],
+}), /accepts either a 1-based page or a 0-based pageIndex, not both/);
+await assert.rejects(PdfFile.editPdf(duplicatePageSource, {
+  savePolicy: "rewrite",
+  limits: { maxPages: 3 },
+  operations: [duplicatePageOperation],
+}), /duplicate_page would exceed maxPages \(4 > 3\)/);
+await assert.rejects(PdfFile.editPdf(duplicatePageSource, {
+  savePolicy: "rewrite",
+  limits: { maxPages: 4, maxObjects: duplicatePageInspection.summary.nativeObjects },
+  operations: [duplicatePageOperation],
+}), /duplicate_page output exceeds maxObjects/);
+await assert.rejects(PdfFile.editPdf(arbitraryPdf, {
+  savePolicy: "rewrite",
+  operations: [{
+    ...duplicatePageOperation,
+    page: 1,
+    sourceSha256: mupdfInspect.summary.sourceSha256,
+    expectedPage: { bbox: mupdfAnnotationSourcePage.bbox, rotation: mupdfAnnotationSourcePage.rotation },
+  }],
+}), /does not support Tagged PDFs.*structure tree/);
+const pageTransitionDocument = new mupdf.PDFDocument(duplicatePageSource.bytes);
+const pageTransitionPage = pageTransitionDocument.loadPage(1);
+const pageTransitionObject = pageTransitionPage.getObject();
+const pageTransitionDictionary = pageTransitionDocument.newDictionary();
+pageTransitionObject.put("Trans", pageTransitionDictionary);
+pageTransitionPage.update();
+const pageTransitionOutput = pageTransitionDocument.saveToBuffer("garbage=2,compress=yes");
+const pageTransitionPdf = new FileBlob(new Uint8Array(pageTransitionOutput.asUint8Array()), { type: "application/pdf" });
+pageTransitionOutput.destroy();
+pageTransitionDictionary.destroy();
+pageTransitionObject.destroy();
+pageTransitionPage.destroy();
+pageTransitionDocument.destroy();
+const pageTransitionInspection = await PdfFile.inspectPdf(pageTransitionPdf, { maxChars: 100_000 });
+const pageTransitionRecord = pageTransitionInspection.records.find((record) => record.kind === "mupdfPage" && record.page === 2);
+await assert.rejects(PdfFile.editPdf(pageTransitionPdf, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "duplicate_page",
+    page: 2,
+    sourceSha256: pageTransitionInspection.summary.sourceSha256,
+    expectedPage: { bbox: pageTransitionRecord.bbox, rotation: pageTransitionRecord.rotation },
+  }],
+}), /does not support source pages with page-bound \/Trans entries/);
+const duplicatedPage = await PdfFile.editPdf(duplicatePageSource, {
+  savePolicy: "rewrite",
+  operations: [duplicatePageOperation],
+});
+assert.equal(Buffer.from(duplicatePageSource.bytes).equals(duplicatePageSourceBytes), true);
+const { objectCountBefore: duplicateObjectCountBefore, objectCountAfter: duplicateObjectCountAfter, ...duplicatePageAudit } = duplicatedPage.metadata.operations[0];
+assert.deepEqual(duplicatePageAudit, {
+  type: "duplicate_page",
+  sourcePage: 2,
+  sourcePageAfterInsertion: 2,
+  insertedPage: 3,
+  insertAt: 3,
+  expectedPage: duplicatePageOperation.expectedPage,
+  pageCountBefore: 3,
+  pageCountAfter: 4,
+  interactiveObjectsCopied: 0,
+  taggedInput: false,
+  navigationSynthesized: false,
+});
+assert.equal(duplicateObjectCountBefore, duplicatePageInspection.summary.nativeObjects);
+assert.ok(duplicateObjectCountAfter > duplicateObjectCountBefore);
+const duplicatedPageInspection = await PdfFile.inspectPdf(duplicatedPage, { maxChars: 100_000 });
+assert.equal(duplicatedPageInspection.summary.pages, 4);
+const duplicatedPageRecords = duplicatedPageInspection.records.filter((record) => record.kind === "mupdfPage");
+assert.deepEqual(duplicatedPageRecords.map((record) => ({ bbox: record.bbox, rotation: record.rotation })), [
+  { bbox: [0, 0, 612, 792], rotation: 0 },
+  { bbox: [0, 0, 720, 540], rotation: 90 },
+  { bbox: [0, 0, 720, 540], rotation: 90 },
+  { bbox: [0, 0, 420, 600], rotation: 0 },
+]);
+assert.ok(duplicatedPageRecords.every((record) => record.annotations === 0 && record.widgets === 0 && record.links === 0));
+const duplicateParsed = await parsePdfWithMuPdf(duplicatedPage.bytes, { includeImages: false });
+assert.equal(duplicateParsed.pages[1].text, duplicateParsed.pages[2].text);
+assert.match(duplicateParsed.pages[2].text, /ROTATED PAGE TWO/);
+const [duplicateSourceFirst, duplicateSourceSecond, duplicateSourceThird, duplicateOutputFirst, duplicateOutputSecond, duplicateOutputCopy, duplicateOutputThird] = await Promise.all([
+  PdfFile.renderPdf(duplicatePageSource, { page: 1, dpi: 72 }),
+  PdfFile.renderPdf(duplicatePageSource, { page: 2, dpi: 72 }),
+  PdfFile.renderPdf(duplicatePageSource, { page: 3, dpi: 72 }),
+  PdfFile.renderPdf(duplicatedPage, { page: 1, dpi: 72 }),
+  PdfFile.renderPdf(duplicatedPage, { page: 2, dpi: 72 }),
+  PdfFile.renderPdf(duplicatedPage, { page: 3, dpi: 72 }),
+  PdfFile.renderPdf(duplicatedPage, { page: 4, dpi: 72 }),
+]);
+assert.equal(Buffer.compare(Buffer.from(duplicateSourceFirst.bytes), Buffer.from(duplicateOutputFirst.bytes)), 0);
+assert.equal(Buffer.compare(Buffer.from(duplicateSourceSecond.bytes), Buffer.from(duplicateOutputSecond.bytes)), 0);
+assert.equal(Buffer.compare(Buffer.from(duplicateSourceSecond.bytes), Buffer.from(duplicateOutputCopy.bytes)), 0);
+assert.equal(Buffer.compare(Buffer.from(duplicateSourceThird.bytes), Buffer.from(duplicateOutputThird.bytes)), 0);
+const prependedDuplicate = await PdfFile.editPdf(duplicatePageSource, {
+  savePolicy: "rewrite",
+  operations: [{ ...duplicatePageOperation, insertAt: 1 }],
+});
+assert.equal(prependedDuplicate.metadata.operations[0].insertedPage, 1);
+assert.equal(prependedDuplicate.metadata.operations[0].sourcePageAfterInsertion, 3);
+assert.match((await parsePdfWithMuPdf(prependedDuplicate.bytes, { includeImages: false })).pages[0].text, /ROTATED PAGE TWO/);
 const mupdfRedacted = await PdfFile.editPdf(arbitraryPdf, {
   savePolicy: "rewrite",
   operations: [{ type: "redact_text", page: 2, term: "Second page notes" }],
@@ -851,6 +993,16 @@ const sourceBoundFields = sourceBoundFormInspection.records.filter((record) => r
 assert.equal(sourceBoundWidgets.length, 5);
 assert.equal(sourceBoundFields.length, 4);
 assert.equal(sourceBoundFormInspection.records.find((record) => record.kind === "mupdfPage" && record.page === 1).widgets, 5);
+const sourceBoundFormPage = sourceBoundFormInspection.records.find((record) => record.kind === "mupdfPage" && record.page === 1);
+await assert.rejects(PdfFile.editPdf(sourceBoundFormPdf, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "duplicate_page",
+    page: 1,
+    sourceSha256: sourceBoundFormInspection.summary.sourceSha256,
+    expectedPage: { bbox: sourceBoundFormPage.bbox, rotation: sourceBoundFormPage.rotation },
+  }],
+}), /only pages without annotations, widgets, form fields, or links/);
 assert.match(sourceBoundWidgets[0].id, /^mupdf-widget-1-\d+$/);
 assert.match(sourceBoundWidgets[0].formFieldId, /^mupdf-form-field-\d+$/);
 const sourceBoundTextField = sourceBoundFields.find((field) => field.name === "sender.city");

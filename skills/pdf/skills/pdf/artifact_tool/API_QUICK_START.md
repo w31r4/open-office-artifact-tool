@@ -190,6 +190,36 @@ await rotated.save("third-party-page-1-rotated.pdf");
 Inspect and render the result before delivery. Rotated-coordinate text/image
 editing remains an explicit specialist-provider task.
 
+For a bounded same-document page copy, use `duplicate_page` with the exact
+inspection hash and page snapshot. The optional `insertAt` is a 1-based output
+position; without it the copy is inserted directly after the source page:
+
+```js
+const sourcePage = inspection.records.find((record) => record.kind === "mupdfPage"
+  && record.page === 2);
+if (!sourcePage) throw new Error("Expected one inspectable source page.");
+
+const duplicated = await PdfFile.editPdf(input, {
+  savePolicy: "rewrite",
+  operations: [{
+    type: "duplicate_page",
+    page: sourcePage.page,
+    sourceSha256: inspection.summary.sourceSha256,
+    expectedPage: { bbox: sourcePage.bbox, rotation: sourcePage.rotation },
+    insertAt: 4,
+  }],
+});
+await duplicated.save("third-party-with-page-copy.pdf");
+```
+
+This must be the only operation in the rewrite. It accepts a right-angle page
+only when the source document is untagged and that page has no annotations,
+links, widgets/forms, page actions, associated files, article beads,
+transitions, or template steps. It copies visible page content/resources but
+does not synthesize outlines or named destinations. Re-inspect the output and
+use Poppler to compare every retained page plus the inserted page against its
+declared source-page mapping. Do not reuse old page numbers afterward.
+
 For a new Text review note on an imported PDF, bind the exact source hash and
 target page snapshot first. This is a pin, not a rectangle API: MuPDF owns the
 native icon's normalized size and returns its actual rectangle in the audit:

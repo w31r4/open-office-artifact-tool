@@ -39,6 +39,7 @@ const INCREMENTAL_DESTRUCTIVE_OPERATIONS = new Set([
   "delete_annotation",
   "update_annotation",
   "delete_page",
+  "duplicate_page",
   "delete_embedded_file",
   "add_link",
   "delete_link",
@@ -65,6 +66,17 @@ const TEXT_ANNOTATION_OPERATION_FIELDS = new Set(["type", "page", "pageIndex", "
 const TEXT_HIGHLIGHT_MAX_TEXT_LENGTH = 4_096;
 const TEXT_HIGHLIGHT_DEFAULT_COLOR = Object.freeze([1, 1, 0]);
 const TEXT_HIGHLIGHT_OPERATION_FIELDS = new Set(["type", "page", "pageIndex", "sourceSha256", "expectedPage", "text", "color", "contents", "author", "subject"]);
+const PAGE_DUPLICATION_OPERATION_FIELDS = new Set(["type", "page", "pageIndex", "insertAt", "sourceSha256", "expectedPage"]);
+const PAGE_DUPLICATION_UNSUPPORTED_KEYS = Object.freeze([
+  "AA",
+  "AF",
+  "B",
+  "PresSteps",
+  "StructParent",
+  "StructParents",
+  "TemplateInstantiated",
+  "Trans",
+]);
 
 function limitsFor(options = {}) {
   const topLevel = Object.fromEntries(Object.keys(DEFAULT_LIMITS)
@@ -1357,6 +1369,143 @@ function applyPageRotation(document, operation) {
   }
 }
 
+function documentHasStructureTree(document) {
+  let trailer;
+  let root;
+  let structureTree;
+  try {
+    trailer = document.getTrailer();
+    root = trailer.get("Root");
+    if (root.isNull()) return false;
+    structureTree = root.get("StructTreeRoot");
+    return !structureTree.isNull();
+  } finally {
+    if (structureTree && structureTree !== mupdf.PDFObject.Null) structureTree.destroy();
+    if (root && root !== mupdf.PDFObject.Null) root.destroy();
+    trailer?.destroy();
+  }
+}
+
+function pageDuplicationProfile(page) {
+  let annotations = [];
+  let widgets = [];
+  let links = [];
+  let pageObject;
+  let rawAnnotations;
+  const unsupportedKeys = [];
+  try {
+    annotations = page.getAnnotations();
+    widgets = page.getWidgets();
+    links = page.getLinks();
+    pageObject = page.getObject();
+    rawAnnotations = pageObject.get("Annots");
+    const hasRawAnnotations = !rawAnnotations.isNull()
+      && (!rawAnnotations.isArray() || rawAnnotations.length > 0);
+    for (const key of PAGE_DUPLICATION_UNSUPPORTED_KEYS) {
+      let value;
+      try {
+        value = pageObject.get(key);
+        if (!value.isNull()) unsupportedKeys.push(key);
+      } finally {
+        if (value && value !== mupdf.PDFObject.Null) value.destroy();
+      }
+    }
+    return {
+      annotations: annotations.length,
+      widgets: widgets.length,
+      links: links.length,
+      hasRawAnnotations,
+      unsupportedKeys,
+    };
+  } finally {
+    annotations.forEach((annotation) => annotation.destroy());
+    widgets.forEach((widget) => widget.destroy());
+    links.forEach((link) => link.destroy());
+    if (rawAnnotations && rawAnnotations !== mupdf.PDFObject.Null) rawAnnotations.destroy();
+    pageObject?.destroy();
+  }
+}
+
+function applyPageDuplication(document, operation, context = {}) {
+  for (const name of Object.keys(operation)) {
+    if (!PAGE_DUPLICATION_OPERATION_FIELDS.has(name)) {
+      throw new Error(`duplicate_page contains unsupported field: ${name}.`);
+    }
+  }
+  if (!/^[a-f0-9]{64}$/u.test(String(operation.sourceSha256 || "")) || operation.sourceSha256 !== context.sourceSha256) {
+    throw new Error("duplicate_page sourceSha256 must exactly match PdfFile.inspectPdf(...).summary.sourceSha256 for the current input bytes.");
+  }
+  if (operation.page !== undefined && operation.pageIndex !== undefined) {
+    throw new Error("duplicate_page accepts either a 1-based page or a 0-based pageIndex, not both.");
+  }
+  if (documentHasStructureTree(document)) {
+    throw new Error("duplicate_page does not support Tagged PDFs because grafting one page cannot safely update the document structure tree and ParentTree; use a reviewed specialist workflow.");
+  }
+  const pageCountBefore = document.countPages();
+  if (pageCountBefore >= context.limits.maxPages) {
+    throw new Error(`duplicate_page would exceed maxPages (${pageCountBefore + 1} > ${context.limits.maxPages}).`);
+  }
+  const objectCountBefore = document.countObjects();
+  const sourceIndex = pageIndexFor(document, operation);
+  const expectedPage = pageExpectation(operation.expectedPage, "duplicate_page");
+  const insertAt = operation.insertAt === undefined ? sourceIndex + 2 : Number(operation.insertAt);
+  if (!Number.isSafeInteger(insertAt) || insertAt < 1 || insertAt > pageCountBefore + 1) {
+    throw new Error(`duplicate_page insertAt must be a 1-based output position between 1 and ${pageCountBefore + 1}.`);
+  }
+  const sourcePage = document.loadPage(sourceIndex);
+  try {
+    const actualPage = nativePageSnapshot(sourcePage, "duplicate_page");
+    const mismatch = pageExpectationMismatch(actualPage, expectedPage);
+    if (mismatch) throw new Error(`duplicate_page precondition page ${mismatch} did not match the current source page; re-inspect the exact input bytes.`);
+    const profile = pageDuplicationProfile(sourcePage);
+    if (profile.hasRawAnnotations || profile.annotations || profile.widgets || profile.links) {
+      throw new Error("duplicate_page supports only pages without annotations, widgets, form fields, or links; use a reviewed specialist workflow for interactive page graphs.");
+    }
+    if (profile.unsupportedKeys.length) {
+      throw new Error(`duplicate_page does not support source pages with page-bound ${profile.unsupportedKeys.map((key) => `/${key}`).join(", ")} entries.`);
+    }
+  } finally {
+    sourcePage.destroy();
+  }
+
+  const insertionIndex = insertAt - 1;
+  document.graftPage(insertionIndex, document, sourceIndex);
+  if (document.countPages() !== pageCountBefore + 1) {
+    throw new Error("MuPDF did not add exactly one page during duplicate_page; refusing to save an ambiguous page-tree mutation.");
+  }
+  const objectCountAfter = document.countObjects();
+  if (objectCountAfter > context.limits.maxObjects) {
+    throw new Error(`duplicate_page output exceeds maxObjects (${objectCountAfter} > ${context.limits.maxObjects}).`);
+  }
+  const insertedPage = document.loadPage(insertionIndex);
+  try {
+    const insertedSnapshot = nativePageSnapshot(insertedPage, "duplicate_page");
+    const mismatch = pageExpectationMismatch(insertedSnapshot, expectedPage);
+    if (mismatch) throw new Error(`MuPDF did not preserve the source page ${mismatch} in the duplicate; refusing to save an ambiguous page-tree mutation.`);
+    const insertedProfile = pageDuplicationProfile(insertedPage);
+    if (insertedProfile.hasRawAnnotations || insertedProfile.annotations || insertedProfile.widgets || insertedProfile.links || insertedProfile.unsupportedKeys.length) {
+      throw new Error("MuPDF introduced an unsupported interactive or page-bound graph while duplicating the page; refusing to save.");
+    }
+    return {
+      type: "duplicate_page",
+      sourcePage: sourceIndex + 1,
+      sourcePageAfterInsertion: sourceIndex + 1 + (insertionIndex <= sourceIndex ? 1 : 0),
+      insertedPage: insertAt,
+      insertAt,
+      expectedPage,
+      pageCountBefore,
+      pageCountAfter: document.countPages(),
+      objectCountBefore,
+      objectCountAfter,
+      interactiveObjectsCopied: 0,
+      taggedInput: false,
+      navigationSynthesized: false,
+    };
+  } finally {
+    insertedPage.destroy();
+  }
+}
+
 function applyTextAnnotationAddition(document, operation, context = {}) {
   const { index, page } = pageFor(document, operation);
   let annotations = [];
@@ -1839,6 +1988,7 @@ function applyOperation(document, operation, context) {
       document.deletePage(index);
       return { type: operation.type, page: index + 1 };
     }
+    case "duplicate_page": return applyPageDuplication(document, operation, context);
     case "delete_annotation": return applyAnnotationDeletion(document, operation, context);
     case "update_annotation": return applyAnnotationUpdate(document, operation, context);
     case "set_page_crop": return applyPageCrop(document, operation);
@@ -1886,6 +2036,9 @@ function applyOperation(document, operation, context) {
 export async function editPdfWithMuPdf(input, options = {}) {
   const operations = options.operations;
   if (!Array.isArray(operations) || !operations.length) throw new Error("MuPDF editing requires a non-empty operations array.");
+  if (operations.some((operation) => operation?.type === "duplicate_page") && operations.length !== 1) {
+    throw new Error("duplicate_page must be the only operation in its rewrite transaction because page insertion invalidates current-page locators; re-inspect the output before another edit.");
+  }
   const savePolicy = String(options.savePolicy || options.strategy || "rewrite").toLowerCase();
   if (!new Set(["rewrite", "incremental"]).has(savePolicy)) {
     throw new Error(`MuPDF savePolicy ${savePolicy} is unsupported; strict sanitize remains a separate audited workflow.`);
@@ -1894,12 +2047,18 @@ export async function editPdfWithMuPdf(input, options = {}) {
     ? operations.find((operation) => INCREMENTAL_DESTRUCTIVE_OPERATIONS.has(operation?.type))
     : undefined;
   if (destructiveIncremental) {
+    const pageDuplication = destructiveIncremental.type === "duplicate_page";
     const label = destructiveIncremental.type.startsWith("redact_")
       ? "redaction"
-      : ["add_link", "add_text_annotation", "add_text_highlight"].includes(destructiveIncremental.type)
-        ? `source-bound operation ${destructiveIncremental.type}`
-        : `destructive operation ${destructiveIncremental.type}`;
-    throw new Error(`MuPDF ${label} cannot save incrementally because prior revisions retain the original content; use rewrite. Rewrite is still not a complete sanitize workflow.`);
+      : pageDuplication
+        ? "page-tree operation duplicate_page"
+        : ["add_link", "add_text_annotation", "add_text_highlight"].includes(destructiveIncremental.type)
+          ? `source-bound operation ${destructiveIncremental.type}`
+          : `destructive operation ${destructiveIncremental.type}`;
+    const reason = pageDuplication
+      ? "page-tree grafting must publish one fully rewritten object graph"
+      : "prior revisions retain the original content";
+    throw new Error(`MuPDF ${label} cannot save incrementally because ${reason}; use rewrite. Rewrite is still not a complete sanitize workflow.`);
   }
   const { document, bytes, limits } = await openPdfWithMuPdf(input, options);
   let saved;

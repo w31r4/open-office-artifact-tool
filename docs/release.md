@@ -2226,6 +2226,60 @@ verification, Chromium/LibreOffice/Poppler, the full npm suite, generated-doc
 cleanliness, release metadata, clean-install tarball, OfficeBridge, and
 OpenChestnut gates.
 
+### PDF source-bound ordinary-page duplication
+
+On 2026-07-20, the required MuPDF.js direct-original route added
+`duplicate_page` for one bounded same-document page copy. The operation binds
+the exact inspected source SHA-256 plus `mupdfPage` bbox/rotation, accepts an
+optional 1-based output `insertAt` position (defaulting to immediately after
+the source), and publishes only as the sole operation in a full rewrite. It
+supports 0/90/180/270-degree pages without normalizing their content or page
+boxes and records both original and shifted page positions in the operation
+audit.
+
+This is intentionally not a broad page-graph clone. The source PDF must be
+untagged, and the copied page must have no annotations, links, widgets/form
+fields, page actions, associated files, article beads, transitions, structure
+ownership, or template/presentation steps. It does not synthesize outlines,
+named destinations, or other navigation. A stale source hash or page snapshot,
+conflicting page/pageIndex locators, invalid insertion position, combined
+operation, incremental save, signature-policy failure, or projected page/object
+budget overflow fails before publication. The existing pypdf complete-source
+merge/reorder/stamp contract remains separate and still selects every source
+page exactly once.
+
+Core tests copy a 90-degree page with non-default geometry both adjacent to its
+source and before the first page. They prove source immutability, exact
+page-count/geometry/rotation/text mapping, second MuPDF import, and pixel-exact
+MuPDF rendering for every retained and copied page. Adversarial fixtures cover
+Tagged PDF structure, AcroForm widgets, a page-level `/Trans` dictionary, stale
+hash/rotation, unsupported fields, ambiguous locators, invalid positions,
+multi-operation plans, incremental policy, and both `maxPages` and post-graft
+`maxObjects` budgets.
+
+The packed PDF Skill CLI independently inspects, duplicates, atomically writes,
+and re-inspects the same rotated three-page corpus. qpdf reports no syntax or
+stream errors, `pdfinfo` reports four output pages, and Poppler maps source
+pages 1/2/2/3 to output pages 1/2/3/4 with identical geometry and raw pixels.
+Manual review of all four Poppler pages confirmed that output pages 2 and 3
+retain the same rotated text/background, while pages 1 and 4 remain the
+unchanged first and third source pages; there was no blank page, clipping, or
+orientation drift.
+
+The local candidate passed the complete `npm test` suite including Playwright,
+deterministic API-document generation, `npm run proto:check`, `npm run
+test:pack`, and the offline metadata/license release check. OpenChestnut passed
+`295/295`; OfficeBridge passed `5/5`; two source-built WASM runs matched across
+39 audited build files. The manifest-bound runtime remains 38 files and
+14,721,216 bytes. The npm dry-run contains 467 files, 9,030,226 compressed
+bytes, and 23,798,166 unpacked bytes. Real optional PyMuPDF, pikepdf, pyHanko,
+veraPDF, and OCRmyPDF Python-provider repeats were not configured in this local
+shell, so their contract/adversarial tests passed while those environment-gated
+executions were skipped; real MuPDF.js, qpdf, Poppler, LibreOffice, and
+Playwright paths ran. Hosted CI remains to be recorded for the committed
+candidate. `npm whoami` returns `ENEEDAUTH`, so no publish or tag/release
+operation was attempted.
+
 ## Publishing
 
 Before publishing:

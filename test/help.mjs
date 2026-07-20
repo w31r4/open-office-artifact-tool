@@ -328,6 +328,8 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.renderPdf")?.sch
 assert.equal(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schema?.parameters?.operations?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schema?.parameters?.operations?.description || "", /set_page_crop.*CropBox.*never redaction/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schema?.parameters?.operations?.description || "", /rotate_page.*0, 90, 180, or 270/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schema?.parameters?.operations?.description || "", /duplicate_page.*source\/page snapshot.*1-based insertAt.*untagged.*no annotations.*only operation.*rewrite.*fresh inspect\/render/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schema?.parameters?.savePolicy?.description || "", /Incremental is forbidden for page duplication/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schema?.parameters?.operations?.description || "", /sourceSha256.*expectedPage.*mupdf-page-space.*add_text_annotation.*pin.*contents.*normalized rect.*appearanceBbox.*incremental/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schema?.parameters?.operations?.description || "", /add_text_highlight.*exactly once.*appearanceBbox.*right-angle rotated pages/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.editPdf")?.schema?.parameters?.operations?.description || "", /delete_annotation.*sourceSha256.*mupdf-annotation/i);

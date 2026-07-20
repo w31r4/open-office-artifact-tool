@@ -7,6 +7,7 @@ import path from "node:path";
 import sharp from "sharp";
 
 import { PdfArtifact, PdfFile } from "../src/index.mjs";
+import { plainPdfBytes } from "./fixtures/plain-pdf.mjs";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const skillRoot = path.join(repoRoot, "skills", "pdf", "skills", "pdf");
@@ -165,6 +166,19 @@ async function assertNativePlacementPixelScope(source, output, page, operations,
   assert.equal(changedOutsidePlacement, 0, `${label} changed pixels outside provider geometry: ${JSON.stringify({ changedBounds, outsideBounds, allowed })}`);
 }
 
+async function assertDuplicatePagePixelIdentity(source, output, mappings, tempRoot, label) {
+  for (const [index, mapping] of mappings.entries()) {
+    const sourceRender = path.join(tempRoot, `${label}-${index + 1}-source`);
+    const outputRender = path.join(tempRoot, `${label}-${index + 1}-output`);
+    run("pdftoppm", ["-f", String(mapping.sourcePage), "-l", String(mapping.sourcePage), "-singlefile", "-png", "-r", "144", source, sourceRender], { status: 0 });
+    run("pdftoppm", ["-f", String(mapping.outputPage), "-l", String(mapping.outputPage), "-singlefile", "-png", "-r", "144", output, outputRender], { status: 0 });
+    const sourcePixels = await sharp(`${sourceRender}.png`).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    const outputPixels = await sharp(`${outputRender}.png`).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+    assert.deepEqual(outputPixels.info, sourcePixels.info, `${label} page geometry changed for ${JSON.stringify(mapping)}`);
+    assert.equal(Buffer.compare(outputPixels.data, sourcePixels.data), 0, `${label} rendered pixels changed for ${JSON.stringify(mapping)}`);
+  }
+}
+
 async function walk(root) {
   const files = [];
   for (const entry of await fs.readdir(root, { withFileTypes: true })) {
@@ -240,6 +254,7 @@ assert.match(skillText, /scripts\/mupdf\.mjs/);
 assert.match(skillText, /MuPDF\.js/);
 assert.match(skillText, /set_page_crop/);
 assert.match(skillText, /rotate_page/);
+assert.match(skillText, /duplicate_page.*source SHA-256.*only\s+operation.*full rewrite.*Poppler.*pixel identity/s);
 assert.match(skillText, /delete_annotation/);
 assert.match(skillText, /update_annotation/);
 assert.match(skillText, /add_text_annotation.*source SHA-256.*pin.*rewrite/s);
@@ -370,6 +385,9 @@ try {
   const mupdfCropOutput = path.join(tempRoot, "mupdf-crop-output.pdf");
   const mupdfRotationOperations = path.join(tempRoot, "mupdf-rotation-operations.json");
   const mupdfRotationOutput = path.join(tempRoot, "mupdf-rotation-output.pdf");
+  const mupdfDuplicateInput = path.join(tempRoot, "mupdf-duplicate-input.pdf");
+  const mupdfDuplicateOperations = path.join(tempRoot, "mupdf-duplicate-operations.json");
+  const mupdfDuplicateOutput = path.join(tempRoot, "mupdf-duplicate-output.pdf");
   const mupdfAnnotationUpdateOperations = path.join(tempRoot, "mupdf-annotation-update-operations.json");
   const mupdfAnnotationUpdateOutput = path.join(tempRoot, "mupdf-annotation-update-output.pdf");
   const mupdfAnnotationDeleteOperations = path.join(tempRoot, "mupdf-annotation-delete-operations.json");
@@ -561,6 +579,54 @@ try {
   const hasQpdf = run("qpdf", ["--version"]).status === 0;
   const hasPoppler = run("pdftoppm", ["-v"]).status === 0;
   const hasPdfInfo = run("pdfinfo", ["-v"]).status === 0;
+  await fs.writeFile(mupdfDuplicateInput, plainPdfBytes([
+    { text: "CLI PAGE ONE", width: 612, height: 792 },
+    { text: "CLI ROTATED PAGE TWO", width: 540, height: 720, rotation: 90 },
+    { text: "CLI PAGE THREE", width: 420, height: 600 },
+  ]));
+  const mupdfDuplicateSourceHash = crypto.createHash("sha256").update(await fs.readFile(mupdfDuplicateInput)).digest("hex");
+  const mupdfDuplicateInspection = parseResult(run(process.execPath, [mupdfCli, "inspect", mupdfDuplicateInput], { status: 0 }));
+  const mupdfDuplicatePage = mupdfDuplicateInspection.records.find((record) => record.kind === "mupdfPage" && record.page === 2);
+  await fs.writeFile(mupdfDuplicateOperations, JSON.stringify({
+    savePolicy: "rewrite",
+    operations: [{
+      type: "duplicate_page",
+      page: 2,
+      sourceSha256: mupdfDuplicateInspection.summary.sourceSha256,
+      expectedPage: { bbox: mupdfDuplicatePage.bbox, rotation: mupdfDuplicatePage.rotation },
+    }],
+  }), "utf8");
+  const mupdfDuplicated = parseResult(run(process.execPath, [mupdfCli, "edit", mupdfDuplicateInput, mupdfDuplicateOperations, mupdfDuplicateOutput], { status: 0 }));
+  const { objectCountBefore: cliObjectCountBefore, objectCountAfter: cliObjectCountAfter, ...cliDuplicateAudit } = mupdfDuplicated.operations[0];
+  assert.deepEqual(cliDuplicateAudit, {
+    type: "duplicate_page",
+    sourcePage: 2,
+    sourcePageAfterInsertion: 2,
+    insertedPage: 3,
+    insertAt: 3,
+    expectedPage: { bbox: [0, 0, 720, 540], rotation: 90 },
+    pageCountBefore: 3,
+    pageCountAfter: 4,
+    interactiveObjectsCopied: 0,
+    taggedInput: false,
+    navigationSynthesized: false,
+  });
+  assert.equal(cliObjectCountBefore, mupdfDuplicateInspection.summary.nativeObjects);
+  assert.ok(cliObjectCountAfter > cliObjectCountBefore);
+  assert.equal(crypto.createHash("sha256").update(await fs.readFile(mupdfDuplicateInput)).digest("hex"), mupdfDuplicateSourceHash);
+  const mupdfDuplicateOutputInspection = parseResult(run(process.execPath, [mupdfCli, "inspect", mupdfDuplicateOutput], { status: 0 }));
+  assert.equal(mupdfDuplicateOutputInspection.summary.pages, 4);
+  const mupdfDuplicateOutputPages = mupdfDuplicateOutputInspection.records.filter((record) => record.kind === "mupdfPage");
+  assert.deepEqual(mupdfDuplicateOutputPages.map((record) => record.rotation), [0, 90, 90, 0]);
+  assert.ok(mupdfDuplicateOutputPages.every((record) => record.annotations === 0 && record.widgets === 0 && record.links === 0));
+  if (hasQpdf) run("qpdf", ["--check", mupdfDuplicateOutput], { status: 0 });
+  if (hasPdfInfo) assert.match(run("pdfinfo", [mupdfDuplicateOutput], { status: 0 }).stdout, /Pages:\s+4/);
+  if (hasPoppler) await assertDuplicatePagePixelIdentity(mupdfDuplicateInput, mupdfDuplicateOutput, [
+    { sourcePage: 1, outputPage: 1 },
+    { sourcePage: 2, outputPage: 2 },
+    { sourcePage: 2, outputPage: 3 },
+    { sourcePage: 3, outputPage: 4 },
+  ], tempRoot, "mupdf-duplicate-page");
   for (const rotation of [90, 180, 270]) {
     const rotatedSource = rotation === 90
       ? mupdfRotationOutput
