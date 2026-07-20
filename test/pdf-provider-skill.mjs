@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import sharp from "sharp";
 
 import { PdfArtifact, PdfFile } from "../src/index.mjs";
 
@@ -95,6 +96,7 @@ const requiredFiles = [
   "examples/reportlab-report-spec.json",
   "examples/pymupdf-edit-operations.json",
   "examples/pymupdf-redaction-operations.json",
+  "examples/pymupdf-ocr-redaction-operations.json",
   "examples/merge-stamp-manifest.json",
   "scripts/poppler_compare.py",
 ];
@@ -118,6 +120,7 @@ assert.match(skillText, /mupdf-link/);
 assert.match(skillText, /virtual environment executable.*pyvenv\.cfg/s);
 assert.match(skillText, /verapdf_provider\.py/);
 assert.match(skillText, /ocrmypdf_provider\.py/);
+assert.match(skillText, /redact_ocr_text/);
 assert.match(skillText, /pikepdf_provider\.py/);
 assert.match(skillText, /pyhanko_sign_provider\.py/);
 assert.match(skillText, /passphrase.*stdin/is);
@@ -175,6 +178,8 @@ const fitUnit = run(python, ["-c", [
   "assert wide['fits'] and wide['tolerance'] <= 0.0005",
   "wide_overflow=module.text_width_fit(20000.0006,20000)",
   "assert not wide_overflow['fits']",
+  "assert module.normalize_ocr_language('eng+snum') == 'eng+snum'",
+  "assert module.validate_ocr_dpi(150) == 150",
 ].join(";"), path.join(scriptsRoot, "pymupdf_edit.py")], { status: 0 });
 assert.equal(fitUnit.stderr, "");
 
@@ -579,6 +584,9 @@ try {
     }));
     assert.equal(routedProbe.available, true);
     assert.notEqual(routedProbe.providerVersion, "unavailable");
+    assert.ok(routedProbe.operations.includes("redact_ocr_text"));
+    assert.equal(routedProbe.ocr.available, true);
+    assert.equal(routedProbe.ocr.language, "eng");
     const routedPlan = parseResult(run(python, [
       path.join(scriptsRoot, "pdf_provider.py"), "plan",
       "--task", "sanitize", "--provider", "pymupdf", "--strategy", "sanitize",
@@ -1015,6 +1023,169 @@ try {
     const rotated = run(integrationPython, [path.join(scriptsRoot, "pymupdf_edit.py"), "edit", rotatedSource, rotatedOutput, "--strategy", "sanitize", "--operations", rotatedOps, "--sensitive-term", "ROTATED-ID", "--accept-license", "agpl", "--invalidate-signatures"], { status: 2 });
     assert.match(rotated.stderr, /only horizontal source text|rotated or skewed text/);
     await assert.rejects(fs.access(rotatedOutput));
+
+    const rasterSecret = "IMAGE SECRET 8842";
+    const rasterImage = path.join(tempRoot, "ocr-secret.png");
+    await sharp(Buffer.from([
+      '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300">',
+      '<rect width="1200" height="300" fill="white"/>',
+      '<text x="60" y="190" font-family="sans-serif" font-size="72" font-weight="700" fill="black">IMAGE SECRET 8842</text>',
+      '</svg>',
+    ].join(""))).png().toFile(rasterImage);
+    const rasterSource = path.join(tempRoot, "ocr-redaction-source.pdf");
+    run(integrationPython, ["-c", [
+      "from reportlab.lib.pagesizes import letter",
+      "from reportlab.pdfgen import canvas",
+      "import sys",
+      "c=canvas.Canvas(sys.argv[1],pagesize=letter,invariant=1)",
+      "c.setFont('Helvetica',12)",
+      "c.drawString(72,720,'Public heading remains unchanged')",
+      "c.drawImage(sys.argv[2],72,500,width=468,height=117,mask='auto')",
+      "c.save()",
+    ].join(";"), rasterSource, rasterImage], { status: 0 });
+    const rasterSourceBytes = await fs.readFile(rasterSource);
+    const rasterSourceHash = crypto.createHash("sha256").update(rasterSourceBytes).digest("hex");
+    const rasterSourceScan = parseResult(run(integrationPython, [
+      path.join(scriptsRoot, "residue_scan.py"), rasterSource,
+      "--term", rasterSecret, "--require-ocr", "--require-single-revision", "--ocr-dpi", "200",
+    ], { status: 2 }));
+    assert.equal(rasterSourceScan.ok, false);
+    assert.ok(rasterSourceScan.terms[rasterSecret].evidence.some((entry) => entry.category === "image-ocr"));
+
+    const rasterOperations = path.join(tempRoot, "ocr-redaction-operations.json");
+    await fs.writeFile(rasterOperations, JSON.stringify([{
+      type: "redact_ocr_text",
+      page: 1,
+      term: rasterSecret,
+      expected_matches: 1,
+      fill: [0, 0, 0],
+    }]), "utf8");
+    const rasterOutput = path.join(tempRoot, "ocr-redaction-output.pdf");
+    const rasterResult = parseResult(run(integrationPython, [
+      path.join(scriptsRoot, "pymupdf_edit.py"), "edit", rasterSource, rasterOutput,
+      "--strategy", "sanitize", "--operations", rasterOperations,
+      "--sensitive-term", rasterSecret, "--ocr-language", "eng", "--ocr-dpi", "200",
+      "--accept-license", "agpl", "--invalidate-signatures",
+    ], { status: 0 }));
+    const rasterOperation = rasterResult.operations.find((operation) => operation.type === "redact_ocr_text");
+    assert.equal(rasterOperation.matches, 1);
+    assert.equal(rasterOperation.expectedMatches, 1);
+    assert.equal(rasterOperation.ocr.language, "eng");
+    assert.equal(rasterOperation.ocr.dpi, 200);
+    assert.ok(rasterOperation.minimumImageCoverage >= 0.9);
+    assert.equal(rasterOperation.rects.length, 1);
+    assert.equal(rasterResult.originalPrefixPreserved, false);
+    assert.equal(rasterResult.residueScan.ok, true);
+    assert.equal(crypto.createHash("sha256").update(await fs.readFile(rasterSource)).digest("hex"), rasterSourceHash);
+    const rasterOutputScan = parseResult(run(integrationPython, [
+      path.join(scriptsRoot, "residue_scan.py"), rasterOutput,
+      "--term", rasterSecret, "--require-ocr", "--require-inert", "--require-single-revision", "--ocr-dpi", "200",
+    ], { status: 0 }));
+    assert.equal(rasterOutputScan.ok, true);
+    assert.equal(rasterOutputScan.terms[rasterSecret].matches, 0);
+
+    const rasterMismatchOperations = path.join(tempRoot, "ocr-redaction-mismatch.json");
+    await fs.writeFile(rasterMismatchOperations, JSON.stringify([{
+      type: "redact_ocr_text",
+      page: 1,
+      term: rasterSecret,
+      expected_matches: 2,
+    }]), "utf8");
+    const rasterMismatchOutput = path.join(tempRoot, "ocr-redaction-mismatch.pdf");
+    const rasterMismatch = run(integrationPython, [
+      path.join(scriptsRoot, "pymupdf_edit.py"), "edit", rasterSource, rasterMismatchOutput,
+      "--strategy", "sanitize", "--operations", rasterMismatchOperations,
+      "--sensitive-term", rasterSecret, "--ocr-dpi", "200",
+      "--accept-license", "agpl", "--invalidate-signatures",
+    ], { status: 2 });
+    assert.match(rasterMismatch.stderr, /expected 2 image-backed match\(es\).*found 1/);
+    await assert.rejects(fs.access(rasterMismatchOutput));
+
+    const rasterMissingLanguageOutput = path.join(tempRoot, "ocr-redaction-missing-language.pdf");
+    const rasterMissingLanguage = run(integrationPython, [
+      path.join(scriptsRoot, "pymupdf_edit.py"), "edit", rasterSource, rasterMissingLanguageOutput,
+      "--strategy", "sanitize", "--operations", rasterOperations,
+      "--sensitive-term", rasterSecret, "--ocr-language", "definitely_missing",
+      "--accept-license", "agpl", "--invalidate-signatures",
+    ], { status: 2 });
+    assert.match(rasterMissingLanguage.stderr, /language data is unavailable/);
+    await assert.rejects(fs.access(rasterMissingLanguageOutput));
+
+    const rasterUnsafeLanguageOutput = path.join(tempRoot, "ocr-redaction-unsafe-language.pdf");
+    const rasterUnsafeLanguage = run(integrationPython, [
+      path.join(scriptsRoot, "pymupdf_edit.py"), "edit", rasterSource, rasterUnsafeLanguageOutput,
+      "--strategy", "sanitize", "--operations", rasterOperations,
+      "--sensitive-term", rasterSecret, "--ocr-language", "../eng",
+      "--accept-license", "agpl", "--invalidate-signatures",
+    ], { status: 2 });
+    assert.match(rasterUnsafeLanguage.stderr, /safe Tesseract language codes/);
+    await assert.rejects(fs.access(rasterUnsafeLanguageOutput));
+
+    const rasterExcessiveDpiOutput = path.join(tempRoot, "ocr-redaction-excessive-dpi.pdf");
+    const rasterExcessiveDpi = run(integrationPython, [
+      path.join(scriptsRoot, "pymupdf_edit.py"), "edit", rasterSource, rasterExcessiveDpiOutput,
+      "--strategy", "sanitize", "--operations", rasterOperations,
+      "--sensitive-term", rasterSecret, "--ocr-dpi", "301",
+      "--accept-license", "agpl", "--invalidate-signatures",
+    ], { status: 2 });
+    assert.match(rasterExcessiveDpi.stderr, /OCR dpi must be an integer between 72 and 300/);
+    await assert.rejects(fs.access(rasterExcessiveDpiOutput));
+
+    const rasterRotatedSource = path.join(tempRoot, "ocr-redaction-rotated-source.pdf");
+    run(integrationPython, ["-c", [
+      "import pymupdf,sys",
+      "doc=pymupdf.open(sys.argv[1])",
+      "doc[0].set_rotation(90)",
+      "doc.save(sys.argv[2])",
+      "doc.close()",
+    ].join(";"), rasterSource, rasterRotatedSource], { status: 0 });
+    const rasterRotatedOutput = path.join(tempRoot, "ocr-redaction-rotated-output.pdf");
+    const rasterRotated = run(integrationPython, [
+      path.join(scriptsRoot, "pymupdf_edit.py"), "edit", rasterRotatedSource, rasterRotatedOutput,
+      "--strategy", "sanitize", "--operations", rasterOperations,
+      "--sensitive-term", rasterSecret, "--ocr-dpi", "200",
+      "--accept-license", "agpl", "--invalidate-signatures",
+    ], { status: 2 });
+    assert.match(rasterRotated.stderr, /supports only unrotated pages/);
+    await assert.rejects(fs.access(rasterRotatedOutput));
+
+    if (run("qpdf", ["--version"]).status === 0) run("qpdf", ["--check", rasterOutput], { status: 0 });
+    if (run("pdftoppm", ["-v"]).status === 0) {
+      const rasterSourceRender = path.join(tempRoot, "ocr-source-render");
+      const rasterOutputRender = path.join(tempRoot, "ocr-output-render");
+      run("pdftoppm", ["-singlefile", "-png", "-r", "144", rasterSource, rasterSourceRender], { status: 0 });
+      run("pdftoppm", ["-singlefile", "-png", "-r", "144", rasterOutput, rasterOutputRender], { status: 0 });
+      const sourcePixels = await sharp(`${rasterSourceRender}.png`).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+      const outputPixels = await sharp(`${rasterOutputRender}.png`).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+      assert.deepEqual(outputPixels.info, sourcePixels.info);
+      const [redactionRect] = rasterOperation.rects;
+      const xScale = sourcePixels.info.width / 612;
+      const yScale = sourcePixels.info.height / 792;
+      const imageBounds = [72 * xScale, 175 * yScale, 540 * xScale, 292 * yScale];
+      const redactBounds = [redactionRect[0] * xScale, redactionRect[1] * yScale, redactionRect[2] * xScale, redactionRect[3] * yScale];
+      let changedPixels = 0;
+      let changedOutsideImage = 0;
+      let changedInsideRedaction = 0;
+      let darkInsideRedaction = 0;
+      for (let y = 0; y < sourcePixels.info.height; y += 1) {
+        for (let x = 0; x < sourcePixels.info.width; x += 1) {
+          const offset = (y * sourcePixels.info.width + x) * sourcePixels.info.channels;
+          const changed = Array.from({ length: sourcePixels.info.channels }, (_, channel) => Math.abs(sourcePixels.data[offset + channel] - outputPixels.data[offset + channel])).some((delta) => delta > 5);
+          const insideImage = x >= imageBounds[0] - 2 && x <= imageBounds[2] + 2 && y >= imageBounds[1] - 2 && y <= imageBounds[3] + 2;
+          const insideRedaction = x >= redactBounds[0] && x <= redactBounds[2] && y >= redactBounds[1] && y <= redactBounds[3];
+          if (changed) {
+            changedPixels += 1;
+            if (!insideImage) changedOutsideImage += 1;
+            if (insideRedaction) changedInsideRedaction += 1;
+          }
+          if (insideRedaction && outputPixels.data[offset] < 32 && outputPixels.data[offset + 1] < 32 && outputPixels.data[offset + 2] < 32) darkInsideRedaction += 1;
+        }
+      }
+      assert.ok(changedPixels > 500, `expected visible OCR redaction, changed ${changedPixels} pixels`);
+      assert.equal(changedOutsideImage, 0, "OCR redaction must not alter content outside the source image placement");
+      assert.ok(changedInsideRedaction > 500, `expected changed pixels inside OCR match, found ${changedInsideRedaction}`);
+      assert.ok(darkInsideRedaction > 500, `expected opaque redaction fill, found ${darkInsideRedaction} dark pixels`);
+    }
 
     const imageOps = path.join(tempRoot, "image-ops.json");
     await fs.writeFile(imageOps, JSON.stringify([{ type: "insert_image", page: 1, rect: [470, 630, 540, 700], path: path.join(repoRoot, "skills", "pdf", "assets", "icon.png") }]), "utf8");

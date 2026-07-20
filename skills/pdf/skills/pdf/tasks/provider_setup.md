@@ -28,7 +28,7 @@ Install a specialist provider yourself only when the task requires a capability 
 - ReportLab: greenfield layout-oriented creation.
 - pdfplumber: table-oriented text and geometry extraction.
 - pypdf: typed attachment quarantine, complex AcroForm appearance handling, and complete-source merge/reorder/stamp workflows.
-- PyMuPDF: retained specialist adapter for strict scrub, residue/OCR gates, and legacy high-level operations not yet migrated to JavaScript.
+- PyMuPDF 1.27.2.x: retained specialist adapter for strict scrub, residue/OCR gates, image-backed OCR redaction, and legacy high-level operations not yet migrated to JavaScript.
 - Poppler: independent `pdfinfo` and `pdftoppm` file/render QA.
 - qpdf 11+: separately installed structural diagnosis, recovery rewrite, and
   linearization through the shipped `scripts/qpdf_provider.py`; configure an
@@ -44,6 +44,30 @@ Install a specialist provider yourself only when the task requires a capability 
   `scripts/ocrmypdf_provider.py` adapter. Tesseract also supplies image OCR
   evidence for high-trust sanitization.
 - pikepdf 10.10.x: source-bound, fixed-profile active/auxiliary structure cleanup through the shipped `scripts/pikepdf_provider.py` adapter.
+
+Install PyMuPDF and Tesseract only for the explicit specialist route. The
+adapter accepts PyMuPDF `>=1.27.2,<1.28`; hosted CI pins `1.27.2.3`. Install the
+requested Tesseract 5.x language data separately, then bind the virtual
+environment executable as provider identity:
+
+```bash
+# macOS: brew install tesseract
+# Debian/Ubuntu: sudo apt-get install tesseract-ocr tesseract-ocr-eng
+uv venv .venv-pymupdf
+uv pip install --python .venv-pymupdf/bin/python 'PyMuPDF>=1.27.2,<1.28'
+export OPEN_OFFICE_PDF_PROVIDER_PYTHON="$PWD/.venv-pymupdf/bin/python"
+"$OPEN_OFFICE_PDF_PROVIDER_PYTHON" scripts/pdf_provider.py check \
+  --provider pymupdf --require
+"$OPEN_OFFICE_PDF_PROVIDER_PYTHON" scripts/pymupdf_edit.py probe \
+  --accept-license agpl --ocr-language eng --require-ocr
+```
+
+Choose `--accept-license commercial` instead only when the deployment has the
+corresponding Artifex license. The OCR probe verifies the requested traineddata
+before destructive work. `redact_ocr_text` additionally binds one unrotated
+page, an exact term, and an expected image-backed match count; missing OCR,
+unsafe language names, match drift, off-image-only results, and excessive
+raster work fail before output publication. See [redact and sanitize](redact.md).
 
 Probe qpdf through both the registry and its executable adapter:
 

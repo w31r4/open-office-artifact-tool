@@ -44,7 +44,7 @@ Read the [provider matrix](references/PROVIDER_MATRIX.md), [save policies](refer
 | Text, words, geometry, table candidates | pdfplumber |
 | Basic structure, path-safe attachment quarantine, forms, annotations, merge/split/stamp | pypdf |
 | Default arbitrary-PDF read/inspect/render and bounded native edit | `PdfFile` + MuPDF.js through `scripts/mupdf.mjs` |
-| Strict scrub/residue/OCR and retained high-level edits not yet migrated | optional PyMuPDF specialist path |
+| Strict scrub/residue/OCR, image-backed OCR redaction, and retained high-level edits not yet migrated | optional PyMuPDF 1.27.2.x specialist path |
 | Native page/file evidence and final raster QA | Poppler |
 | Structural diagnosis, recovery rewrite, and linearization | separately installed qpdf through `scripts/qpdf_provider.py` |
 | Bounded active/auxiliary structure cleanup without page reconstruction | separately installed pikepdf 10.10.x through `scripts/pikepdf_provider.py` |
@@ -256,7 +256,7 @@ The optional PyMuPDF specialist script remains available for operations not yet 
   --accept-license agpl
 ```
 
-The specialist Python operation contract includes `insert_textbox`, `insert_image`, `replace_image`, `add_text_annotation`, `fill_form`, `delete_page`, `redact_text`, `redact_rect`, `replace_text`, and `scrub`. It is not a fallback from MuPDF.js; select it only when the task requires that explicit capability.
+The specialist Python operation contract includes `insert_textbox`, `insert_image`, `replace_image`, `add_text_annotation`, `fill_form`, `delete_page`, `redact_text`, `redact_ocr_text`, `redact_rect`, `replace_text`, and `scrub`. It is not a fallback from MuPDF.js; select it only when the task requires that explicit capability.
 
 General Word-style reflow is not available for an ordinary imported PDF. `replace_text` is a bounded redaction plus same-box overlay for one horizontal source span: it preserves the source baseline and default style, reports its measured fit evidence, and allows only a fixed sub-millipoint numerical tolerance. Cross-span, rotated, or genuinely overflowing replacements fail closed. Use a trusted source model or explicitly create a reconstructed new document when broad reflow is required. See [edit existing](tasks/edit_existing.md).
 
@@ -371,7 +371,7 @@ MuPDF.js can apply a real text/rectangle redaction during a full rewrite, but th
   --invalidate-signatures
 ```
 
-The script adds/applies real redactions, runs strict PyMuPDF scrub, performs a full garbage-collected rewrite, proves the old byte prefix is absent, and scans raw bytes, decoded objects/streams, extracted text, metadata/XMP, attachments, annotations/widgets, image OCR, and revision pointers. Every `redact_text`/`replace_text` token must also be an explicit residue term.
+The script adds/applies real redactions, runs strict PyMuPDF scrub, performs a full garbage-collected rewrite, proves the old byte prefix is absent, and scans raw bytes, decoded objects/streams, extracted text, metadata/XMP, attachments, annotations/widgets, image OCR, and revision pointers. Every `redact_text`/`redact_ocr_text`/`replace_text` token must also be an explicit residue term. For raster-only text, `redact_ocr_text` requires an unrotated page, exact term, expected match count, Tesseract language data, bounded 72–300 dpi work, and at least 90% overlap with a native image placement; it fails before publication on uncertainty.
 
 For an inert public-release copy with no term redaction, use a scrub-only operation and the structural gate:
 
@@ -392,7 +392,7 @@ PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
 
 This bounded primitive removes root/additional JavaScript, launch/submit actions, attachments, comments, populated widget defaults, personal metadata, and isolated invisible text before the provider scrub. After scrub it also physically removes active-content dictionary names that PyMuPDF represents as `null`; an unfamiliar object serialization fails closed instead of inviting a caller-side object rewrite. Invisible text that overlaps visible text fails closed because rectangle removal would damage the visible page. A scrub-only job does not invent a fake sensitive term; any redaction/replacement operation still requires explicit `--sensitive-term` values.
 
-Image-bearing pages require Tesseract-backed OCR. If OCR is unavailable or any scan is incomplete, the operation deletes the transactional output and fails closed. Incremental redaction, opaque overlays, and text-extraction-only checks are forbidden. See [redact and sanitize](tasks/redact.md).
+Image-bearing pages require Tesseract-backed OCR. Probe it explicitly with `pymupdf_edit.py probe --accept-license agpl --ocr-language eng --require-ocr`. If OCR is unavailable or any scan is incomplete, the operation deletes the transactional output and fails closed. Incremental redaction, opaque overlays, OCR match-count drift, and text-extraction-only checks are forbidden. See [redact and sanitize](tasks/redact.md).
 
 ## Accessibility And Conformance
 

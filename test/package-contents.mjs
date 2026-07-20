@@ -206,6 +206,7 @@ for (const required of [
   "skills/pdf/skills/pdf/examples/reportlab-report-spec.json",
   "skills/pdf/skills/pdf/examples/pymupdf-edit-operations.json",
   "skills/pdf/skills/pdf/examples/pymupdf-redaction-operations.json",
+  "skills/pdf/skills/pdf/examples/pymupdf-ocr-redaction-operations.json",
   "skills/pdf/skills/pdf/references/PROVIDER_MATRIX.md",
   "skills/pdf/skills/pdf/references/SAVE_POLICIES.md",
   "skills/pdf/skills/pdf/references/SECURITY_CHECKLIST.md",

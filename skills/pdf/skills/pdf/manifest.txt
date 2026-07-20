@@ -25,6 +25,7 @@ examples/provider-workflows.md
 examples/reportlab-report-spec.json
 examples/pymupdf-edit-operations.json
 examples/pymupdf-redaction-operations.json
+examples/pymupdf-ocr-redaction-operations.json
 examples/merge-stamp-manifest.json
 scripts/pdf_provider.py
 scripts/qpdf_provider.py

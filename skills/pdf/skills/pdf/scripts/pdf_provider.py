@@ -21,7 +21,7 @@ PROVIDERS = {
     "reportlab": {"kind": "module", "module": "reportlab", "role": "greenfield layout generation", "integration": "shipped-thin-script"},
     "pdfplumber": {"kind": "module", "module": "pdfplumber", "role": "read-only extraction", "integration": "shipped-thin-script"},
     "pypdf": {"kind": "module", "module": "pypdf", "role": "basic structure, attachment quarantine, complete-source merge/reorder/selective stamp, forms, annotations, rewrite/incremental", "integration": "shipped-thin-script"},
-    "pymupdf": {"kind": "module", "module": "pymupdf", "role": "advanced imported-PDF editing and sanitize", "license": "agpl-or-commercial", "integration": "shipped-thin-script"},
+    "pymupdf": {"kind": "module", "module": "pymupdf", "minimum_version": (1, 27, 2), "maximum_version_exclusive": (1, 28, 0), "role": "advanced imported-PDF editing, image-backed OCR redaction, and sanitize", "license": "agpl-or-commercial", "integration": "shipped-thin-script"},
     "poppler": {"kind": "command", "commands": ["pdfinfo", "pdftoppm"], "role": "native file/render QA", "integration": "shipped-js-adapter-and-cli-workflow"},
     "qpdf": {"kind": "command", "commands": ["qpdf"], "environment": "OPEN_OFFICE_PDF_QPDF", "minimum_major": 11, "require_version_output": True, "role": "bounded structure inspection, recovery rewrite, and linearization", "integration": "shipped-thin-script-external-cli"},
     "pikepdf": {"kind": "module", "module": "pikepdf", "minimum_version": (10, 10, 0), "maximum_version_exclusive": (10, 11, 0), "role": "source-bound active and auxiliary PDF structure cleanup", "integration": "shipped-thin-script-external-python"},

@@ -55,7 +55,7 @@ Required for:
 Mandatory sequence:
 
 1. Record source SHA-256 and inspect encryption, signatures, DocMDP, forms, annotations, attachments, metadata/XMP, images, and page count.
-2. Add and apply real redaction annotations; drawing opaque rectangles is not redaction.
+2. Add and apply real redaction annotations; drawing opaque rectangles is not redaction. Raster-only term selection must use the typed `redact_ocr_text` preflight with an exact page/term/expected-match contract and native image-placement evidence.
 3. Run PyMuPDF scrub with the requested removal policy.
 4. Save a full non-incremental rewrite with garbage collection and stream cleanup.
 5. Prove the output does not retain the original byte prefix.

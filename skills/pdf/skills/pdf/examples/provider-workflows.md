@@ -255,6 +255,31 @@ pdftoppm -png -r 144 tmp/pdfs/sanitized.pdf tmp/pdfs/sanitized-page
 
 The command itself performs the strict residue scan before promoting its transactional output. The second invocation preserves a standalone JSON-able audit step. Image-bearing files require a working Tesseract installation.
 
+For an exact term that exists only inside raster pixels, bind the OCR capability
+and expected match count before the same sanitize gate:
+
+```bash
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+"$PYTHON_BIN" scripts/pymupdf_edit.py probe \
+  --accept-license agpl --ocr-language eng --require-ocr
+"$PYTHON_BIN" scripts/pymupdf_edit.py edit input.pdf tmp/pdfs/ocr-sanitized.pdf \
+  --strategy sanitize \
+  --operations examples/pymupdf-ocr-redaction-operations.json \
+  --sensitive-term 'IMAGE SECRET 8842' \
+  --ocr-language eng --ocr-dpi 200 \
+  --accept-license agpl --invalidate-signatures
+"$PYTHON_BIN" scripts/residue_scan.py tmp/pdfs/ocr-sanitized.pdf \
+  --term 'IMAGE SECRET 8842' --require-ocr --require-inert \
+  --require-single-revision --ocr-dpi 200
+pdftoppm -png -r 144 tmp/pdfs/ocr-sanitized.pdf tmp/pdfs/ocr-page
+```
+
+The shipped example requests one image-backed match on one unrotated page.
+Zero/multiple matches, OCR outside native raster placements, missing language
+data, rotation, excessive raster work, or residual OCR text deletes the
+transactional output. Review the final Poppler page; OCR confidence never
+authorizes an unbounded rectangle.
+
 For an active-content public copy without term redaction, use `[ { "type": "scrub" } ]`, plan `--task sanitize --strategy sanitize`, omit placeholder sensitive terms, and run the structural gate after the transactional edit:
 
 ```bash

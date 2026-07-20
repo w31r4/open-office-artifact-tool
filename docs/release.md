@@ -2071,6 +2071,44 @@ skipped.
 JavaScript, and .NET gates. Its only remaining blocker is unavailable npm
 authentication. No `npm publish` or tag/release operation has been performed.
 
+### PDF image-backed OCR redaction
+
+On 2026-07-20, the optional PyMuPDF sanitize provider gained the typed
+`redact_ocr_text` primitive for an exact sensitive term that exists only in
+raster pixels. The operation requires one explicit unrotated page, a non-empty
+term, an expected match count, PyMuPDF `>=1.27.2,<1.28`, and requested
+Tesseract language data. OCR is bounded to 72–300 dpi, 100 million page pixels,
+1,000 matches, and a 4,096-character term. Every accepted hit must overlap one
+native raster placement by at least 90%; absent/mismatched hits, off-image-only
+evidence, unsafe language names, missing traineddata, excessive work, and page
+rotation fail before output publication without fallback.
+
+Accepted matches become real redaction annotations and are applied with image
+pixel removal. The existing high-trust path then removes active content, runs
+PyMuPDF scrub, performs a garbage-collected single-revision full rewrite,
+rejects the original byte prefix, and scans raw bytes, decoded objects/streams,
+metadata/XMP, attachments, annotations, forms, actions, hidden text, extracted
+text, and Tesseract OCR for every sensitive term. The real fixture proves
+source SHA-256 immutability, one expected image-backed match, zero final OCR
+residue, inert structure, qpdf structural checks, and Poppler-rendered change confined to
+the original image placement. Separate adversarial cases prove expected-count,
+missing-language, unsafe-language, excessive-DPI, and rotated-page refusals
+leave no artifact.
+
+The hosted workflow now creates an isolated Python 3.13 environment pinned to
+PyMuPDF 1.27.2.3, ReportLab 4.4.9, pdfplumber 0.11.9, pypdf 6.10.0, and Pillow
+12.2.0, verifies Tesseract `eng` data, and exports that interpreter so the full
+PDF provider smoke executes the real sanitize/OCR route instead of its
+contract-only branch. Local validation used those same Python package versions,
+Tesseract 5.5.2, and Poppler 26.05.0. Full `npm test`, generated API docs,
+`proto:check`, the clean-install/package gate, OfficeBridge `5/5`, OpenChestnut
+`295/295`, and two deterministic source builds passed. The OpenChestnut runtime
+remains 38 files and 14,721,216 bytes; the production tarball contains 467
+files, 9,020,751 compressed bytes, and 23,770,901 unpacked bytes. The complete
+offline release gate is publish-ready; `npm whoami` still returns `ENEEDAUTH`,
+so no publish or tag/release operation was attempted. Hosted results are
+recorded after the candidate commit.
+
 ## Publishing
 
 Before publishing:

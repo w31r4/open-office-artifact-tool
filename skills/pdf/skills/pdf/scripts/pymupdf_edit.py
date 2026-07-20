@@ -22,6 +22,15 @@ class ProviderError(RuntimeError):
 TEXT_FIT_ABSOLUTE_TOLERANCE_PT = 0.0001
 TEXT_FIT_RELATIVE_TOLERANCE = 0.000001
 TEXT_FIT_MAX_TOLERANCE_PT = 0.0005
+OCR_MIN_DPI = 72
+OCR_MAX_DPI = 300
+OCR_MAX_PAGE_PIXELS = 100_000_000
+OCR_MAX_TERM_CHARS = 4_096
+OCR_MAX_MATCHES = 1_000
+OCR_MIN_IMAGE_COVERAGE = 0.9
+OCR_LANGUAGE_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
+PYMUPDF_MIN_VERSION = (1, 27, 2)
+PYMUPDF_MAX_VERSION_EXCLUSIVE = (1, 28, 0)
 ACTIVE_CONTENT_NULL_KEYS = frozenset({
     "AA",
     "EmbeddedFiles",
@@ -117,6 +126,16 @@ def require_pymupdf():
         import pymupdf
     except ImportError as exc:
         raise ProviderError("PyMuPDF is required; install the documented tested version in the selected Python environment") from exc
+    try:
+        version = tuple(int(part) for part in str(pymupdf.__version__).split(".")[:3])
+    except (TypeError, ValueError) as exc:
+        raise ProviderError(f"cannot parse PyMuPDF version {pymupdf.__version__!r}") from exc
+    if not PYMUPDF_MIN_VERSION <= version < PYMUPDF_MAX_VERSION_EXCLUSIVE:
+        raise ProviderError(
+            "PyMuPDF version is outside the tested provider range "
+            f">={'.'.join(map(str, PYMUPDF_MIN_VERSION))},<{'.'.join(map(str, PYMUPDF_MAX_VERSION_EXCLUSIVE))}: "
+            f"{pymupdf.__version__}"
+        )
     return pymupdf
 
 
@@ -442,6 +461,106 @@ def color(value: Any, label: str = "color") -> tuple[float, ...] | None:
     return values
 
 
+def normalize_ocr_language(value: Any) -> str:
+    language = str(value or "").strip()
+    tokens = language.split("+")
+    if (
+        not language
+        or len(language) > 128
+        or any(
+            not token
+            or len(token) > 64
+            or any(character not in OCR_LANGUAGE_CHARS for character in token)
+            for token in tokens
+        )
+    ):
+        raise ProviderError("OCR language must be one or more safe Tesseract language codes joined with '+'")
+    return "+".join(tokens)
+
+
+def validate_ocr_dpi(value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not OCR_MIN_DPI <= value <= OCR_MAX_DPI:
+        raise ProviderError(f"OCR dpi must be an integer between {OCR_MIN_DPI} and {OCR_MAX_DPI}")
+    return value
+
+
+def ocr_capability(pymupdf, language: Any) -> dict[str, Any]:
+    normalized = normalize_ocr_language(language)
+    try:
+        tessdata = Path(str(pymupdf.get_tessdata() or "")).expanduser().resolve()
+    except Exception as exc:
+        return {
+            "available": False,
+            "language": normalized,
+            "missingLanguages": normalized.split("+"),
+            "error": str(exc),
+        }
+    missing = [
+        token
+        for token in normalized.split("+")
+        if not (tessdata / f"{token}.traineddata").is_file()
+    ]
+    return {
+        "available": tessdata.is_dir() and not missing,
+        "language": normalized,
+        "missingLanguages": missing,
+        "tessdataDirectory": str(tessdata),
+    }
+
+
+def require_ocr_capability(pymupdf, language: Any) -> dict[str, Any]:
+    capability = ocr_capability(pymupdf, language)
+    if not capability["available"]:
+        raise ProviderError(
+            "Tesseract OCR language data is unavailable for the requested redact_ocr_text operation: "
+            f"{capability}"
+        )
+    return capability
+
+
+def validate_ocr_page_budget(page, dpi: int) -> int:
+    pixels = math.ceil(page.rect.width * dpi / 72) * math.ceil(page.rect.height * dpi / 72)
+    if pixels > OCR_MAX_PAGE_PIXELS:
+        raise ProviderError(
+            f"OCR raster would contain {pixels} pixels; maximum is {OCR_MAX_PAGE_PIXELS}"
+        )
+    return pixels
+
+
+def image_placements(pymupdf, page) -> list[dict[str, Any]]:
+    placements = []
+    seen = set()
+    for image in page.get_image_info(hashes=False, xrefs=True) or []:
+        bounds = pymupdf.Rect(image.get("bbox"))
+        if bounds.width <= 0 or bounds.height <= 0:
+            continue
+        key = (int(image.get("xref") or 0), *(round(float(value), 6) for value in bounds))
+        if key in seen:
+            continue
+        seen.add(key)
+        placements.append({
+            "xref": int(image.get("xref") or 0),
+            "rect": bounds,
+        })
+    return placements
+
+
+def best_image_coverage(pymupdf, bounds, placements: list[dict[str, Any]]) -> tuple[float, dict[str, Any] | None]:
+    hit = pymupdf.Rect(bounds)
+    area = hit.get_area()
+    if area <= 0:
+        return 0.0, None
+    best_ratio = 0.0
+    best = None
+    for placement in placements:
+        intersection = hit & placement["rect"]
+        ratio = max(0.0, intersection.get_area()) / area
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best = placement
+    return best_ratio, best
+
+
 def page_for(doc, operation: dict[str, Any]):
     page_number = operation.get("page")
     if not isinstance(page_number, int) or isinstance(page_number, bool) or page_number < 1 or page_number > doc.page_count:
@@ -455,7 +574,15 @@ def ensure_inside(page, bounds: tuple[float, float, float, float], label: str) -
         raise ProviderError(f"{label} lies outside page bounds {list(page_rect)}")
 
 
-def apply_operations(pymupdf, doc, operations: list[dict[str, Any]], strategy: str) -> list[dict[str, Any]]:
+def apply_operations(
+    pymupdf,
+    doc,
+    operations: list[dict[str, Any]],
+    strategy: str,
+    *,
+    ocr_language: str = "eng",
+    ocr_dpi: int = 150,
+) -> list[dict[str, Any]]:
     allowed = {
         "insert_textbox",
         "insert_image",
@@ -465,16 +592,20 @@ def apply_operations(pymupdf, doc, operations: list[dict[str, Any]], strategy: s
         "rotate_page",
         "delete_page",
         "redact_text",
+        "redact_ocr_text",
         "redact_rect",
         "replace_text",
         "scrub",
     }
     if strategy == "sanitize":
-        forbidden = [operation.get("type") for operation in operations if operation.get("type") not in {"redact_text", "redact_rect", "replace_text", "scrub"}]
+        forbidden = [operation.get("type") for operation in operations if operation.get("type") not in {"redact_text", "redact_ocr_text", "redact_rect", "replace_text", "scrub"}]
         if forbidden:
-            raise ProviderError(f"sanitize accepts only redact_text, redact_rect, replace_text, and scrub operations; found {forbidden}")
-    if strategy != "sanitize" and any(operation.get("type") in {"redact_text", "redact_rect", "replace_text", "scrub"} for operation in operations):
+            raise ProviderError(f"sanitize accepts only redact_text, redact_ocr_text, redact_rect, replace_text, and scrub operations; found {forbidden}")
+    if strategy != "sanitize" and any(operation.get("type") in {"redact_text", "redact_ocr_text", "redact_rect", "replace_text", "scrub"} for operation in operations):
         raise ProviderError("redaction and scrub operations require --strategy sanitize")
+
+    normalized_ocr_language = normalize_ocr_language(ocr_language)
+    normalized_ocr_dpi = validate_ocr_dpi(ocr_dpi)
 
     applied: list[dict[str, Any]] = []
     redaction_pages: set[int] = set()
@@ -617,6 +748,75 @@ def apply_operations(pymupdf, doc, operations: list[dict[str, Any]], strategy: s
             if not matches:
                 raise ProviderError(f"redact_text term was not found in selectable page text: {term!r}")
             applied.append({"type": operation_type, "termSha256": hashlib.sha256(term.encode("utf-8")).hexdigest(), "matches": matches, "pages": page_counts})
+
+        elif operation_type == "redact_ocr_text":
+            page_number, page = page_for(doc, operation)
+            if page.rotation != 0:
+                raise ProviderError("redact_ocr_text currently supports only unrotated pages; normalize rotation in a separately reviewed version first")
+            term = operation.get("term")
+            if not isinstance(term, str) or not term or len(term) > OCR_MAX_TERM_CHARS:
+                raise ProviderError(f"redact_ocr_text requires a non-empty term under {OCR_MAX_TERM_CHARS + 1} characters")
+            expected_matches = operation.get("expected_matches")
+            if (
+                isinstance(expected_matches, bool)
+                or not isinstance(expected_matches, int)
+                or not 1 <= expected_matches <= OCR_MAX_MATCHES
+            ):
+                raise ProviderError(f"redact_ocr_text expected_matches must be an integer between 1 and {OCR_MAX_MATCHES}")
+            capability = require_ocr_capability(pymupdf, normalized_ocr_language)
+            raster_pixels = validate_ocr_page_budget(page, normalized_ocr_dpi)
+            placements = image_placements(pymupdf, page)
+            if not placements:
+                raise ProviderError(f"redact_ocr_text page {page_number} has no raster image placement")
+            try:
+                textpage = page.get_textpage_ocr(
+                    language=normalized_ocr_language,
+                    dpi=normalized_ocr_dpi,
+                    full=True,
+                )
+                quads = page.search_for(term, quads=True, textpage=textpage)
+            except Exception as exc:
+                raise ProviderError(f"redact_ocr_text OCR failed on page {page_number}: {exc}") from exc
+            if len(quads) > OCR_MAX_MATCHES:
+                raise ProviderError(f"redact_ocr_text found {len(quads)} OCR matches; maximum is {OCR_MAX_MATCHES}")
+            matches = []
+            off_image_matches = 0
+            for quad in quads:
+                bounds = pymupdf.Rect(quad.rect)
+                coverage, placement = best_image_coverage(pymupdf, bounds, placements)
+                if coverage < OCR_MIN_IMAGE_COVERAGE or placement is None:
+                    off_image_matches += 1
+                    continue
+                matches.append({
+                    "rect": bounds,
+                    "imageXref": placement["xref"],
+                    "imageCoverage": coverage,
+                })
+            if len(matches) != expected_matches:
+                raise ProviderError(
+                    f"redact_ocr_text expected {expected_matches} image-backed match(es) on page {page_number}, "
+                    f"found {len(matches)}; off-image OCR matches={off_image_matches}"
+                )
+            fill = color(operation.get("fill", [0, 0, 0]), "fill")
+            for match in matches:
+                page.add_redact_annot(match["rect"], fill=fill, cross_out=False)
+            redaction_pages.add(page_number - 1)
+            applied.append({
+                "type": operation_type,
+                "page": page_number,
+                "termSha256": hashlib.sha256(term.encode("utf-8")).hexdigest(),
+                "matches": len(matches),
+                "expectedMatches": expected_matches,
+                "rects": [list(match["rect"]) for match in matches],
+                "imageXrefs": sorted({match["imageXref"] for match in matches}),
+                "minimumImageCoverage": min(match["imageCoverage"] for match in matches),
+                "offImageOcrMatches": off_image_matches,
+                "ocr": {
+                    "language": capability["language"],
+                    "dpi": normalized_ocr_dpi,
+                    "rasterPixels": raster_pixels,
+                },
+            })
 
         elif operation_type == "redact_rect":
             page_number, page = page_for(doc, operation)
@@ -781,6 +981,7 @@ def edit(args: argparse.Namespace, pymupdf, license_choice: str) -> dict[str, An
         raise ProviderError("sanitize requires explicit --invalidate-signatures acknowledgement")
     residue_sensitive_operations = {
         "redact_text",
+        "redact_ocr_text",
         "redact_rect",
         "replace_text",
     }
@@ -790,11 +991,11 @@ def edit(args: argparse.Namespace, pymupdf, license_choice: str) -> dict[str, An
         operation_terms = {
             str(operation["term"])
             for operation in operations
-            if operation.get("type") in {"redact_text", "replace_text"} and operation.get("term")
+            if operation.get("type") in {"redact_text", "redact_ocr_text", "replace_text"} and operation.get("term")
         }
         missing_terms = sorted(operation_terms - set(args.sensitive_term))
         if missing_terms:
-            raise ProviderError("every redact_text/replace_text term must also be supplied as --sensitive-term")
+            raise ProviderError("every redact_text/redact_ocr_text/replace_text term must also be supplied as --sensitive-term")
     output.parent.mkdir(parents=True, exist_ok=True)
     source_bytes = source.read_bytes()
 
@@ -812,7 +1013,14 @@ def edit(args: argparse.Namespace, pymupdf, license_choice: str) -> dict[str, An
         validate_limits(source, doc, args)
         before_policy = signature_policy(doc)
         validate_signed_mutation(before_policy, args.strategy, args)
-        applied = apply_operations(pymupdf, doc, operations, args.strategy)
+        applied = apply_operations(
+            pymupdf,
+            doc,
+            operations,
+            args.strategy,
+            ocr_language=args.ocr_language,
+            ocr_dpi=args.ocr_dpi,
+        )
         active_cleanup = None
         if args.strategy == "sanitize":
             active_cleanup = sanitize_active_content(pymupdf, doc)
@@ -888,6 +1096,8 @@ def parser() -> argparse.ArgumentParser:
 
     probe = subparsers.add_parser("probe", help="report the explicit provider capability surface")
     probe.add_argument("--accept-license", choices=["agpl", "commercial"])
+    probe.add_argument("--ocr-language", default="eng")
+    probe.add_argument("--require-ocr", action="store_true")
 
     inspect = subparsers.add_parser("inspect", help="inspect native pages, objects, fonts, images, forms, and signature constraints")
     inspect.add_argument("input", type=Path)
@@ -925,6 +1135,9 @@ def main() -> int:
         license_choice = accepted_license(args.accept_license)
         pymupdf = require_pymupdf()
         if args.command == "probe":
+            ocr = ocr_capability(pymupdf, args.ocr_language)
+            if args.require_ocr and not ocr["available"]:
+                raise ProviderError(f"required Tesseract OCR capability is unavailable: {ocr}")
             print(json.dumps({
                 "provider": "pymupdf",
                 "providerVersion": pymupdf.__version__,
@@ -932,7 +1145,8 @@ def main() -> int:
                 "available": True,
                 "silentFallback": False,
                 "strategies": ["read-only", "rewrite", "incremental", "sanitize"],
-                "operations": ["insert_textbox", "insert_image", "replace_image", "add_text_annotation", "fill_form", "rotate_page", "delete_page", "redact_text", "redact_rect", "replace_text", "scrub"],
+                "operations": ["insert_textbox", "insert_image", "replace_image", "add_text_annotation", "fill_form", "rotate_page", "delete_page", "redact_text", "redact_ocr_text", "redact_rect", "replace_text", "scrub"],
+                "ocr": ocr,
             }, indent=2, sort_keys=True))
             return 0
         if args.command == "inspect":

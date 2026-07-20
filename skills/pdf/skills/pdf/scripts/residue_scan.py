@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 from pathlib import Path
 import re
 import sys
@@ -16,6 +17,12 @@ class ScanError(RuntimeError):
     pass
 
 
+OCR_MIN_DPI = 72
+OCR_MAX_DPI = 300
+OCR_MAX_PAGE_PIXELS = 100_000_000
+OCR_LANGUAGE_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
+PYMUPDF_MIN_VERSION = (1, 27, 2)
+PYMUPDF_MAX_VERSION_EXCLUSIVE = (1, 28, 0)
 RISKY_STRUCTURAL_NAMES = (
     "/AA",
     "/EmbeddedFiles",
@@ -35,6 +42,16 @@ def require_pymupdf():
         import pymupdf
     except ImportError as exc:
         raise ScanError("PyMuPDF is required for decoded object, page, attachment, and OCR residue scanning") from exc
+    try:
+        version = tuple(int(part) for part in str(pymupdf.__version__).split(".")[:3])
+    except (TypeError, ValueError) as exc:
+        raise ScanError(f"cannot parse PyMuPDF version {pymupdf.__version__!r}") from exc
+    if not PYMUPDF_MIN_VERSION <= version < PYMUPDF_MAX_VERSION_EXCLUSIVE:
+        raise ScanError(
+            "PyMuPDF version is outside the tested residue-scan range "
+            f">={'.'.join(map(str, PYMUPDF_MIN_VERSION))},<{'.'.join(map(str, PYMUPDF_MAX_VERSION_EXCLUSIVE))}: "
+            f"{pymupdf.__version__}"
+        )
     return pymupdf
 
 
@@ -47,6 +64,36 @@ def serialize(value: Any) -> str:
         return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
     except Exception:
         return str(value)
+
+
+def normalize_ocr_language(value: Any) -> str:
+    language = str(value or "").strip()
+    tokens = language.split("+")
+    if (
+        not language
+        or len(language) > 128
+        or any(
+            not token
+            or len(token) > 64
+            or any(character not in OCR_LANGUAGE_CHARS for character in token)
+            for token in tokens
+        )
+    ):
+        raise ScanError("OCR language must be one or more safe Tesseract language codes joined with '+'")
+    return "+".join(tokens)
+
+
+def validate_ocr_dpi(value: Any) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not OCR_MIN_DPI <= value <= OCR_MAX_DPI:
+        raise ScanError(f"OCR dpi must be an integer between {OCR_MIN_DPI} and {OCR_MAX_DPI}")
+    return value
+
+
+def validate_ocr_page_budget(page, dpi: int) -> int:
+    pixels = math.ceil(page.rect.width * dpi / 72) * math.ceil(page.rect.height * dpi / 72)
+    if pixels > OCR_MAX_PAGE_PIXELS:
+        raise ScanError(f"OCR raster would contain {pixels} pixels; maximum is {OCR_MAX_PAGE_PIXELS}")
+    return pixels
 
 
 def structural_name_counts(doc) -> dict[str, int]:
@@ -130,6 +177,8 @@ def scan_pdf(
     max_decoded_bytes: int = 1024 * 1024 * 1024,
 ) -> dict[str, Any]:
     pymupdf = require_pymupdf()
+    ocr_language = normalize_ocr_language(ocr_language)
+    ocr_dpi = validate_ocr_dpi(ocr_dpi)
     source = input_path.expanduser().resolve()
     if not source.is_file():
         raise ScanError("input must be an existing PDF")
@@ -269,6 +318,7 @@ def scan_pdf(
 
             if images and require_ocr:
                 try:
+                    ocr_pixels = validate_ocr_page_budget(page, ocr_dpi)
                     textpage = page.get_textpage_ocr(
                         language=ocr_language,
                         dpi=ocr_dpi,
@@ -276,7 +326,13 @@ def scan_pdf(
                     )
                     ocr_text = page.get_text("text", textpage=textpage) or ""
                     findings.text("image-ocr", f"page:{page_number}", ocr_text)
-                    page_record["ocr"] = {"complete": True, "chars": len(ocr_text), "language": ocr_language, "dpi": ocr_dpi}
+                    page_record["ocr"] = {
+                        "complete": True,
+                        "chars": len(ocr_text),
+                        "language": ocr_language,
+                        "dpi": ocr_dpi,
+                        "rasterPixels": ocr_pixels,
+                    }
                 except Exception as exc:
                     page_record["ocr"] = {"complete": False, "error": str(exc)}
                     incomplete.append({"category": "image-ocr", "location": f"page:{page_number}", "error": str(exc)})
