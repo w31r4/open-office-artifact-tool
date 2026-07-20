@@ -30,6 +30,7 @@ const MAX_PARAGRAPH_SPACING_POINTS = 1584;
 const MAX_PARAGRAPH_SPACING_MULTIPLIER = 132;
 const PRESENTATION_STATE = Symbol.for("open-office-artifact-tool.open-chestnut-presentation-state");
 const PRESENTATION_SLIDE_DUPLICATOR = Symbol.for("open-office-artifact-tool.open-chestnut-presentation-duplicate");
+const PRESENTATION_SPEAKER_NOTES_CAPABILITY = Symbol.for("open-office-artifact-tool.open-chestnut-speaker-notes-capability");
 const PRESENTATION_SCHEME_COLORS = new Set([
   "dk1", "lt1", "dk2", "lt2", "tx1", "bg1", "tx2", "bg2",
   "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink", "folHlink",
@@ -2124,8 +2125,8 @@ export function presentationEnvelope(presentation, protocolVersion) {
       if (current.length !== entries.length || entries.some((entry) => !current.includes(entry.model))) {
         throw new OpenChestnutCodecError(`Source-preserving PPTX export requires slide ${slideIndex + 1}'s original ${entries.length}-element topology.`, [], { code: cloneState ? "unsupported_presentation_slide_clone" : "presentation_element_topology_changed" });
       }
-      if (!bindingState.wire.speakerNotes && slide.speakerNotes?.text) {
-        throw new OpenChestnutCodecError(`Source-preserving PPTX export cannot add speaker notes to slide ${slideIndex + 1} because the source slide has no notes part.`, [], { code: "unsupported_presentation_edit" });
+      if (!bindingState.wire.speakerNotes && slide.speakerNotes?.text && !bindingState.wire.source?.speakerNotesAddable) {
+        throw new OpenChestnutCodecError(`Source-preserving PPTX export cannot add speaker notes to slide ${slideIndex + 1} because its presentation notes graph is not safely extensible.`, [], { code: "unsupported_presentation_edit" });
       }
     }
     const legacyComments = presentation.commentFormat === "legacy"
@@ -2713,6 +2714,14 @@ export async function presentationFromEnvelope(envelope) {
     slide.id = sourceSlide.id || slide.id;
     slide.layoutId = sourceSlide.layoutId || undefined;
     slide.addNotes(sourceSlide.speakerNotes?.text || "");
+    Object.defineProperty(slide.speakerNotes, PRESENTATION_SPEAKER_NOTES_CAPABILITY, {
+      value: Object.freeze({
+        sourceBound: true,
+        partPresent: Boolean(sourceSlide.speakerNotes),
+        editable: Boolean(sourceSlide.speakerNotes?.source?.editable),
+        addable: Boolean(!sourceSlide.speakerNotes && sourceSlide.source?.speakerNotesAddable),
+      }),
+    });
     const entries = [];
     for (const element of sourceSlide.elements) {
       let model;

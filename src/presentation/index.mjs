@@ -28,6 +28,7 @@ import { planPresentationModernComments } from "./ooxml-modern-comments.mjs";
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
 const importedShapeBackgroundFill = new WeakMap();
 const PRESENTATION_SLIDE_DUPLICATOR = Symbol.for("open-office-artifact-tool.open-chestnut-presentation-duplicate");
+const PRESENTATION_SPEAKER_NOTES_CAPABILITY = Symbol.for("open-office-artifact-tool.open-chestnut-speaker-notes-capability");
 
 const PPTX_PACKAGE_CONFIG = {
   family: "PPTX",
@@ -949,6 +950,12 @@ class SpeakerNotes {
   get id() { return `${this.slide.id}/notes`; }
   get text() { return this.textFrame.value; }
   set text(value) { this.textFrame.set(value); }
+  get capability() {
+    const imported = this[PRESENTATION_SPEAKER_NOTES_CAPABILITY];
+    return imported
+      ? { ...imported }
+      : { sourceBound: false, partPresent: Boolean(this.text), editable: true, addable: true };
+  }
   setText(value) { this.textFrame.set(value); return this; }
   append(value) { this.textFrame.set(`${this.text}${String(value ?? "")}`); return this; }
   clear() { this.textFrame.set(""); return this; }
@@ -1036,7 +1043,7 @@ export class Slide {
   inspectRecords(kinds) {
     const records = [];
     if (kinds.has("layout")) { const layout = this.presentation.layouts.getItem(this.layoutId); records.push({ kind: "layout", layoutId: this.layoutId || `${this.id}/layout`, name: layout?.name || "Blank", type: layout?.type || "blank", masterId: layout?.masterId, themeId: this.effectiveTheme().id, placeholders: layout?.placeholders.length || 0 }); }
-    if (kinds.has("slide")) records.push({ kind: "slide", id: this.id, slide: this.index + 1, title: this.title(), background: this.background.fill ? this.background : undefined, effectiveBackground: this.effectiveBackground(), textShapes: this.shapes.items.filter((s) => s.text.value).length, tables: this.tables.items.length, charts: this.charts.items.length, images: this.images.items.length, connectors: this.connectors.items.length, groups: this.groups.items.length, nativeObjects: this.nativeObjects.items.length, comments: this.comments.items.length, hasNotes: Boolean(this.speakerNotes.text) });
+    if (kinds.has("slide")) records.push({ kind: "slide", id: this.id, slide: this.index + 1, title: this.title(), background: this.background.fill ? this.background : undefined, effectiveBackground: this.effectiveBackground(), textShapes: this.shapes.items.filter((s) => s.text.value).length, tables: this.tables.items.length, charts: this.charts.items.length, images: this.images.items.length, connectors: this.connectors.items.length, groups: this.groups.items.length, nativeObjects: this.nativeObjects.items.length, comments: this.comments.items.length, hasNotes: Boolean(this.speakerNotes.text), notesCapability: this.speakerNotes.capability });
     for (const shape of this.shapes) {
       if (kinds.has("textbox") && shape.text.value) records.push(shape.inspectRecord("textbox"));
       else if (kinds.has("shape")) records.push(shape.inspectRecord("shape"));
@@ -1050,7 +1057,7 @@ export class Slide {
     for (const nativeKind of ["contentPart", "oleObject", "diagram", "graphicFrame"]) if (kinds.has(nativeKind)) records.push(...this.nativeObjects.items.filter((object) => object.nativeKind === nativeKind).map((object) => object.inspectRecord()));
     for (const group of this.groups) records.push(...group.inspectRecords(kinds));
     if (kinds.has("comment") || kinds.has("thread")) records.push(...this.comments.items.map((comment) => comment.inspectRecord()));
-    if (kinds.has("notes")) records.push({ kind: "notes", id: `${this.id}/notes`, slide: this.index + 1, text: this.speakerNotes.text, textPreview: this.speakerNotes.text.slice(0, 300), textChars: this.speakerNotes.text.length });
+    if (kinds.has("notes")) records.push({ kind: "notes", id: `${this.id}/notes`, slide: this.index + 1, text: this.speakerNotes.text, textPreview: this.speakerNotes.text.slice(0, 300), textChars: this.speakerNotes.text.length, capability: this.speakerNotes.capability });
     return records;
   }
 

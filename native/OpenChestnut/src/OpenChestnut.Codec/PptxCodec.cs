@@ -257,6 +257,7 @@ internal static class PptxCodec
                     LayoutRelationshipId = slidePart.SlideLayoutPart is { } boundLayout ? slidePart.GetIdOfPart(boundLayout) : string.Empty,
                     BackgroundSemanticSha256 = BackgroundSemanticHash(slideBackground),
                     BackgroundEditable = PptxBackgroundCodec.Supports(slideCommon),
+                    SpeakerNotesAddable = PptxSpeakerNotesCodec.CanAddSourceBound(presentationPart, slidePart),
                 },
             };
             if (slideBackground is not null) target.Background = slideBackground;
@@ -580,7 +581,8 @@ internal static class PptxCodec
                 if (binding.SlideIndex != targetSlide.Source.Index ||
                     !binding.PartPath.Equals(PartPath(slidePart), StringComparison.OrdinalIgnoreCase) ||
                     !binding.RelationshipId.Equals(relationshipId, StringComparison.Ordinal) ||
-                    !binding.SlideXmlSha256.Equals(HashElement(slideRoot), StringComparison.OrdinalIgnoreCase))
+                    !binding.SlideXmlSha256.Equals(HashElement(slideRoot), StringComparison.OrdinalIgnoreCase) ||
+                    binding.SpeakerNotesAddable != PptxSpeakerNotesCodec.CanAddSourceBound(presentationPart, slidePart))
                     throw new CodecException(
                         "presentation_slide_binding_mismatch",
                         $"Presentation slide {slideIndex + 1} does not match its hash-bound source slide.",
@@ -764,10 +766,13 @@ internal static class PptxCodec
                     slideRoot.Save();
                     changedParts.Add(PartPath(slidePart));
                 }
-                if (PptxSpeakerNotesCodec.ApplySourceBound(slidePart, target.SpeakerNotes, slideIndex) is { } notesChange)
+                if (PptxSpeakerNotesCodec.ApplySourceBound(presentationPart, slidePart, target.SpeakerNotes, slideIndex) is { } notesChange)
                 {
-                    changedParts.Add(notesChange.PartPath);
-                    replacedOpaquePartHashes.Add(notesChange.PartPath, notesChange.Sha256);
+                    changedParts.UnionWith(notesChange.ChangedPartPaths);
+                    addedPartPaths.UnionWith(notesChange.AddedPartPaths);
+                    addedRelationshipIds.UnionWith(notesChange.AddedRelationshipKeys);
+                    foreach (var (partPath, sha256) in notesChange.ReplacedPartHashes)
+                        replacedOpaquePartHashes.Add(partPath, sha256);
                 }
                 if (PptxModernCommentsCodec.ApplySourceBound(
                         presentationPart,
@@ -2184,6 +2189,9 @@ internal static class PptxCodec
             var isNotesBackReference = relationship.Type.EndsWith("/slide", StringComparison.Ordinal) &&
                                        !relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase) &&
                                        IsNumberedSlidePath(resolvedTarget);
+            var isTheme = relationship.Type.EndsWith("/theme", StringComparison.Ordinal) &&
+                          !relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase) &&
+                          IsNumberedThemePath(resolvedTarget);
             var isLegacyComments = relationship.Type.EndsWith("/comments", StringComparison.Ordinal) &&
                                    !relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase) &&
                                    IsNumberedCommentsPath(resolvedTarget);
@@ -2191,7 +2199,9 @@ internal static class PptxCodec
             var allowedFromMaster = IsNumberedMasterPath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage);
             var allowedFromLayout = IsNumberedLayoutPath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage);
             var allowedFromNotes = IsNumberedNotesSlidePath(relationship.SourcePath) && (isNotesMaster || isNotesBackReference);
-            if (!allowedFromSlide && !allowedFromMaster && !allowedFromLayout && !allowedFromNotes)
+            var allowedFromPresentation = relationship.SourcePath.Equals("ppt/presentation.xml", StringComparison.OrdinalIgnoreCase) && isNotesMaster;
+            var allowedFromNotesMaster = IsNumberedNotesMasterPath(relationship.SourcePath) && isTheme;
+            if (!allowedFromSlide && !allowedFromMaster && !allowedFromLayout && !allowedFromNotes && !allowedFromPresentation && !allowedFromNotesMaster)
                 throw new CodecException("opaque_content_not_preserved", $"Modeled PPTX edit added unsupported relationship {relationship.Id} from {relationship.SourcePath} to {resolvedTarget}.");
             guarded.PackageRelationships.Remove(relationship);
             removed.Add(key);
@@ -2202,13 +2212,13 @@ internal static class PptxCodec
         foreach (var part in guarded.Parts.ToArray())
         {
             if (!allowedAddedPartPaths.Contains(part.Path)) continue;
-            if (!IsAllowedAddedClonePart(part))
+            if (!IsAllowedAddedModeledPart(part))
                 throw new CodecException("opaque_content_not_preserved", $"Modeled PPTX edit added unsupported part {part.Path}.");
             guarded.Parts.Remove(part);
             removedParts.Add(part.Path);
         }
         if (!removedParts.SetEquals(allowedAddedPartPaths))
-            throw new CodecException("opaque_content_not_preserved", "Modeled PPTX clone additions do not match the parts written to the package.");
+            throw new CodecException("opaque_content_not_preserved", "Modeled PPTX additions do not match the parts written to the package.");
         foreach (var (path, requestedHash) in allowedChangedPartHashes)
         {
             var before = expected.Parts.SingleOrDefault(part => part.Path.Equals(path, StringComparison.OrdinalIgnoreCase));
@@ -2287,6 +2297,28 @@ internal static class PptxCodec
                path[prefix.Length..^suffix.Length].All(char.IsAsciiDigit);
     }
 
+    private static bool IsNumberedNotesMasterRelationshipPath(string path)
+    {
+        const string prefix = "ppt/notesMasters/_rels/notesMaster";
+        const string suffix = ".xml.rels";
+        return path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+               path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) &&
+               path[prefix.Length..^suffix.Length].Length > 0 &&
+               path[prefix.Length..^suffix.Length].All(char.IsAsciiDigit);
+    }
+
+    private static bool IsNumberedThemePath(string path)
+    {
+        const string suffix = ".xml";
+        foreach (var prefix in new[] { "ppt/theme/theme", "ppt/slideMasters/theme/theme" })
+            if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+                path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) &&
+                path[prefix.Length..^suffix.Length].Length > 0 &&
+                path[prefix.Length..^suffix.Length].All(char.IsAsciiDigit))
+                return true;
+        return false;
+    }
+
     private static bool IsNumberedCommentsPath(string path)
     {
         const string prefix = "ppt/comments/comment";
@@ -2311,7 +2343,7 @@ internal static class PptxCodec
         return false;
     }
 
-    private static bool IsAllowedAddedClonePart(OpaqueOpcPart part) =>
+    private static bool IsAllowedAddedModeledPart(OpaqueOpcPart part) =>
         (part.Path.StartsWith("ppt/media/", StringComparison.OrdinalIgnoreCase) &&
          part.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)) ||
         (part.ContentType.Equals(Mp4ContentType, StringComparison.OrdinalIgnoreCase) && IsMp4MediaPath(part.Path)) ||
@@ -2321,6 +2353,8 @@ internal static class PptxCodec
         (IsNumberedCloneInkContentPath(part.Path) && part.ContentType.Equals(InkContentType, StringComparison.OrdinalIgnoreCase)) ||
         IsNumberedNotesSlidePath(part.Path) ||
         IsNumberedNotesSlideRelationshipPath(part.Path) ||
+        IsNumberedNotesMasterPath(part.Path) ||
+        IsNumberedNotesMasterRelationshipPath(part.Path) ||
         IsNumberedCommentsPath(part.Path);
 
     private static bool IsCloneDiagramRelationship(string relationshipType, string targetPath)
@@ -2438,6 +2472,16 @@ internal static class PptxCodec
                 ValidateClonedMediaGraph(target.Source.Part, outputSlide, targetIndex);
                 ValidateClonedSpeakerNotes(target.Source.Part, outputSlide, targetIndex);
                 ValidateClonedLegacyComments(sourcePresentationPart, outputPresentationPart, target.Source.Part, outputSlide, targetIndex);
+            }
+            else
+            {
+                PptxSpeakerNotesCodec.ValidateSourceBoundOutput(
+                    sourcePresentationPart,
+                    outputPresentationPart,
+                    target.Source.Part,
+                    outputSlide,
+                    target.Target,
+                    targetIndex);
             }
         }
         var retainedTargets = sourceTargets.Where(target => !target.IsClone).ToArray();

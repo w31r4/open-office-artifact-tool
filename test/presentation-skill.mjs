@@ -308,6 +308,103 @@ try {
   assert.equal(titleNotesSlide.speakerNotes.text, PPTX_TITLE_NOTES_FIXTURE.replacementNotes);
   assert.deepEqual(titleNotesSlide.background, { fill: "#f1f5f9", mode: "solid" });
 
+  const notesAddDir = path.join(root, "speaker-notes-add-workflow");
+  const notesAddInput = path.join(notesAddDir, "speaker-notes-source.pptx");
+  const notesAddOutput = path.join(notesAddDir, "speaker-notes-added.pptx");
+  const notesAddAudit = path.join(notesAddDir, "audit.json");
+  const notesText = "Lead with the verified evidence.\nClose with the requested decision.";
+  const notesSourceDeck = Presentation.create();
+  const notesTarget = notesSourceDeck.slides.add({ name: "Speaker notes target", background: { fill: "#F8FAFC" } });
+  notesTarget.shapes.add({
+    name: "notes-title",
+    geometry: "textbox",
+    text: "Visible slide content stays unchanged",
+    position: { left: 96, top: 112, width: 1088, height: 96 },
+  });
+  const notesControl = notesSourceDeck.slides.add({ name: "Visual control", background: { fill: "#E0F2FE" } });
+  notesControl.shapes.add({
+    name: "control-title",
+    geometry: "textbox",
+    text: "Control slide",
+    position: { left: 96, top: 112, width: 1088, height: 96 },
+  });
+  await fs.mkdir(notesAddDir, { recursive: true });
+  await (await PresentationFile.exportPptx(notesSourceDeck)).save(notesAddInput);
+  const notesSourceBytes = await fs.readFile(notesAddInput);
+  const notesSourceImported = await PresentationFile.importPptx(new FileBlob(notesSourceBytes, {
+    type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    name: "speaker-notes-source.pptx",
+  }));
+  assert.deepEqual(notesSourceImported.slides.getItem(0).speakerNotes.capability, {
+    sourceBound: true,
+    partPresent: false,
+    editable: false,
+    addable: true,
+  });
+  assert.match(notesSourceImported.inspect({ kind: "slide,notes" }).ndjson, /"notesCapability":\{"sourceBound":true,"partPresent":false,"editable":false,"addable":true\}/);
+  const { addPptxSpeakerNotes } = await import(
+    "../skills/presentations/skills/presentations/examples/openchestnut-speaker-notes-add-workflow.mjs"
+  );
+  const notesAddResult = await addPptxSpeakerNotes({
+    inputPath: notesAddInput,
+    outputPath: notesAddOutput,
+    auditPath: notesAddAudit,
+    slideName: "Speaker notes target",
+    notes: notesText,
+  });
+  assert.equal(notesAddResult.audit.provider.actual, "open-chestnut");
+  assert.equal(notesAddResult.audit.operation.type, "source-bound-speaker-notes-add");
+  assert.equal(notesAddResult.audit.precondition.capability.addable, true);
+  assert.equal(notesAddResult.audit.validation.package.notesMasterPolicy, "created-canonical-shared-theme");
+  assert.equal(notesAddResult.audit.validation.package.sourceHadNotesMaster, false);
+  assert.equal(notesAddResult.audit.validation.package.notesSlideRelationshipCount, 2);
+  assert.equal(notesAddResult.audit.validation.package.slideBackReferenceVerified, true);
+  assert.equal(notesAddResult.audit.validation.modelRender.byteIdentical, true);
+  assert.deepEqual(await fs.readFile(notesAddInput), notesSourceBytes);
+  const notesRoundTrip = await PresentationFile.importPptx(new FileBlob(await fs.readFile(notesAddOutput), {
+    type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    name: "speaker-notes-added.pptx",
+  }));
+  assert.equal(notesRoundTrip.slides.getItem(0).speakerNotes.text, notesText);
+  assert.deepEqual(notesRoundTrip.slides.getItem(0).speakerNotes.capability, {
+    sourceBound: true,
+    partPresent: true,
+    editable: true,
+    addable: false,
+  });
+  assert.equal(notesRoundTrip.slides.getItem(1).speakerNotes.text, "");
+  const notesZip = await JSZip.loadAsync(await fs.readFile(notesAddOutput));
+  assert.equal(Object.keys(notesZip.files).filter((name) => /^ppt\/notesMasters\/notesMaster\d+\.xml$/.test(name)).length, 1);
+  assert.equal(Object.keys(notesZip.files).filter((name) => /^ppt\/notesSlides\/notesSlide\d+\.xml$/.test(name)).length, 1);
+  const notesBaselineDir = path.join(notesAddDir, "baselines");
+  await verifyPresentationFile(notesAddInput, {
+    outputDir: path.join(notesAddDir, "source-qa"),
+    nativeRender,
+    baselineDir: notesBaselineDir,
+    writeBaseline: true,
+  });
+  const notesAddReview = await verifyPresentationFile(notesAddOutput, {
+    outputDir: path.join(notesAddDir, "output-qa"),
+    nativeRender,
+    baselineDir: notesBaselineDir,
+  });
+  assert.ok(notesAddReview.modelRender.slides.every((slide) => slide.pixelDiff?.changed === false));
+  if (nativeStatus.available) assert.ok(notesAddReview.nativeRender.pages.every((page) => page.pixelDiff?.changed === false));
+  const notesRejectedOutput = path.join(notesAddDir, "speaker-notes-should-not-exist.pptx");
+  const notesRejectedAudit = path.join(notesAddDir, "rejected-audit.json");
+  await assert.rejects(
+    () => addPptxSpeakerNotes({
+      inputPath: notesAddOutput,
+      outputPath: notesRejectedOutput,
+      auditPath: notesRejectedAudit,
+      slideName: "Speaker notes target",
+      notes: "A second add must not masquerade as an edit.",
+    }),
+    /not an imported, notes-absent slide/i,
+  );
+  await assert.rejects(() => fs.access(notesRejectedOutput));
+  await assert.rejects(() => fs.access(notesRejectedAudit));
+
   const slideNameDir = path.join(root, "slide-name-workflow");
   const slideNameInput = path.join(slideNameDir, PPTX_TITLE_NOTES_FIXTURE.presentationName);
   const slideNameOutput = path.join(slideNameDir, "launch-review-renamed.pptx");
@@ -1312,12 +1409,16 @@ try {
   assert.match(starterResult.stderr, /broad graph deletion[\s\S]*No output was written/);
   assert.deepEqual((await fs.readdir(starterRoot)).sort(), ["template-frame-map.json"]);
   assert.match(skillText, /open-office-artifact-tool/);
+  assert.match(skillText, /openchestnut-speaker-notes-add-workflow\.mjs/);
+  assert.match(skillText, /speakerNotes\.capability\.addable.*existing.*NotesMaster.*byte-for-byte.*canonical NotesMaster.*ThemePart.*back-reference/is);
   assert.match(skillText, /openchestnut-title-notes-edit-workflow\.mjs/);
   assert.match(skillText, /openchestnut-modern-comment-workflow\.mjs/);
   assert.match(skillText, /openchestnut-slide-name-edit-workflow\.mjs/);
   assert.match(skillText, /openchestnut-slide-duplicate-workflow\.mjs/);
   assert.match(skillText, /--allow-closed-leaves/);
   assert.match(quickStartText, /PresentationFile\.exportPptx/);
+  assert.match(quickStartText, /addPptxSpeakerNotes/);
+  assert.match(quickStartText, /notes\.capability\.sourceBound.*notes\.capability\.partPresent.*notes\.capability\.addable/is);
   assert.match(quickStartText, /editPptxSlideName/);
   assert.match(quickStartText, /duplicatePptxSlide/);
   assert.match(quickStartText, /allowClosedLeaves:\s*true/);
@@ -1342,6 +1443,10 @@ try {
   assert.match(skillText, /NotesSlide.*NotesMaster.*byte-for-byte.*back-reference.*clone/is);
   assert.match(skillText, /SlideCommentsPart.*CommentAuthorsPart.*byte-for-byte/is);
   assert.match(skillText, /artifact_tool\/api\/references\/comments\.md/);
+  const speakerNotesReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/speaker-notes.spec.md", "utf8");
+  assert.match(speakerNotesReferenceText, /sourceBound.*partPresent.*editable.*addable/is);
+  assert.match(speakerNotesReferenceText, /capability is preflight evidence.*not authority.*independently re-proves/is);
+  assert.match(speakerNotesReferenceText, /existing.*NotesMaster.*reused byte-for-byte.*canonical NotesMaster.*ThemePart.*back-reference/is);
   const commentsReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/comments.md", "utf8");
   assert.match(commentsReferenceText, /Pass `undefined` as the target/);
   assert.match(commentsReferenceText, /one author, one text item, and one explicit\s+slide coordinate/is);

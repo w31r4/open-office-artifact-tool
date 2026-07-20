@@ -1368,6 +1368,11 @@ message PresentationSlideSourceBinding {
   string layout_relationship_id = 5;
   string background_semantic_sha256 = 6;
   bool background_editable = 7;
+  // True only when the imported slide has no NotesSlide and OpenChestnut can
+  // prove that the surrounding presentation graph can accept one canonical
+  // plain-text notes leaf. Export re-proves this capability from source bytes;
+  // callers cannot grant it by changing the wire value.
+  bool speaker_notes_addable = 8;
 }
 
 message PresentationSpeakerNotes {

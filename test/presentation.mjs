@@ -2351,13 +2351,20 @@ await assert.rejects(
 );
 imported.layouts.items[0].name = "Source Layout Marker";
 assert.equal(imported.slides.getItem(0).speakerNotes.text, "Lead with the customer outcome.\nThen explain the operating model.");
+assert.deepEqual(imported.slides.getItem(0).speakerNotes.capability, {
+  sourceBound: true,
+  partPresent: true,
+  editable: true,
+  addable: false,
+});
+assert.deepEqual(imported.slides.getItem(1).speakerNotes.capability, {
+  sourceBound: true,
+  partPresent: false,
+  editable: false,
+  addable: true,
+});
 imported.slides.getItem(0).addNotes("Lead with evidence.\nClose with the decision.");
-imported.slides.getItem(1).addNotes("Cannot add a new notes part source-bound");
-await assert.rejects(
-  () => PresentationFile.exportPptx(imported),
-  /cannot add speaker notes to slide 2.*no notes part/i,
-);
-imported.slides.getItem(1).addNotes("");
+imported.slides.getItem(1).addNotes("Explain the chart assumptions.\nInvite questions on the forecast.");
 const importedCore = imported.slides.getItem(0);
 assert.deepEqual(importedCore.background, { fill: "#f1f5f9", mode: "solid" });
 assert.equal(itemByName(importedCore.shapes.items, "rounded-card").geometry, "roundRect");
@@ -2442,12 +2449,25 @@ assert.ok(Object.keys(secondZip.files).some((name) => /\/media\/.+\.png$/.test(n
 assert.ok(Object.keys(secondZip.files).some((name) => /\/media\/.+\.jpe?g$/.test(name)));
 assert.equal(Object.keys(secondZip.files).filter((name) => /\/charts\/chart\d+\.xml$/.test(name)).length, 4);
 assert.match(await secondZip.file("ppt/notesSlides/notesSlide1.xml").async("text"), /Lead with evidence/);
+assert.equal(Object.keys(secondZip.files).filter((name) => /^ppt\/notesSlides\/notesSlide\d+\.xml$/.test(name)).length, 2);
+assert.ok((await Promise.all(
+  Object.keys(secondZip.files)
+    .filter((name) => /^ppt\/notesSlides\/notesSlide\d+\.xml$/.test(name))
+    .map(async (name) => (await secondZip.file(name).async("text")).includes("Explain the chart assumptions")),
+)).includes(true));
 
 const roundTrip = await PresentationFile.importPptx(secondExport);
 assert.equal(roundTrip.master.name, "Source Master Marker");
 assert.equal(roundTrip.layouts.items[0].name, "Source Layout Marker");
 const roundTripCore = roundTrip.slides.getItem(0);
 assert.equal(roundTripCore.speakerNotes.text, "Lead with evidence.\nClose with the decision.");
+assert.equal(roundTrip.slides.getItem(1).speakerNotes.text, "Explain the chart assumptions.\nInvite questions on the forecast.");
+assert.deepEqual(roundTrip.slides.getItem(1).speakerNotes.capability, {
+  sourceBound: true,
+  partPresent: true,
+  editable: true,
+  addable: false,
+});
 assert.deepEqual(roundTripCore.background, { fill: "accent2", mode: "reference", index: 1002 });
 assert.deepEqual(roundTrip.slides.getItem(1).background, { fill: "#fff7ed", mode: "solid" });
 assert.equal(itemByName(roundTripCore.shapes.items, "rounded-card").text.value, "After edit");

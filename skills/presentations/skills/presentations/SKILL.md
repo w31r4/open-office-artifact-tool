@@ -449,6 +449,34 @@ did not change; slide deletion and custom-show topology mutation remain separate
 fail-closed operations. Run LibreOffice/Poppler review after delivery when
 available.
 
+### Bounded Imported Speaker-Notes Add
+
+An imported slide whose source SlidePart has no NotesSlide may add plain-text
+speaker notes only when `slide.speakerNotes.capability.addable` is true. Inspect
+`slide,notes` first, resolve `${slide.id}/notes`, and prefer the shipped
+transaction over direct OOXML relationship edits:
+
+```bash
+node examples/openchestnut-speaker-notes-add-workflow.mjs \
+  input.pptx output/with-notes.pptx output/with-notes.audit.json \
+  "Unique target slide name" "Lead with the evidence.\nClose with the decision."
+```
+
+The workflow requires exactly one named imported slide with a notes-absent,
+explicitly addable capability. It protects the source bytes, writes to a
+temporary path, reimports, checks exact notes plus stable visible slide
+semantics/order/name, compares model SVG, and audits the OPC graph. An existing
+single NotesMaster is reused byte-for-byte; otherwise OpenChestnut creates one
+canonical NotesMaster sharing the first ordered SlideMaster's existing
+ThemePart. The new NotesSlide must have exactly one NotesMaster relationship and
+one back-reference to its owning SlidePart. Export independently re-proves the
+source graph, so changing capability data cannot grant write authority.
+Inconsistent/multiple NotesMaster graphs, unusable themes, existing/rich notes,
+ambiguous slide names, and any unexpected relationship fail closed with no
+output promotion. Run native LibreOffice/Poppler source-vs-output comparison
+after delivery; speaker notes must not change the visible slides. See
+`artifact_tool/api/references/speaker-notes.spec.md`.
+
 ### Bounded Imported Title And Speaker-Notes Edit
 
 For one known slide with one known text shape and a canonical plain-text Notes

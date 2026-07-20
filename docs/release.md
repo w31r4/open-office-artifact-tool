@@ -2386,6 +2386,49 @@ after running every isolated PDF provider, the complete npm suite, generated
 docs and release/package gates, OfficeBridge, and OpenChestnut. `npm whoami`
 returns `ENEEDAUTH`, so no publish or tag/release operation was attempted.
 
+### PPTX imported notes-absent speaker-notes creation
+
+On 2026-07-20, OpenChestnut added a bounded source-preserving transaction for
+plain-text speaker notes on an imported slide that originally has no
+`NotesSlide`. Import exposes defensive `{ sourceBound, partPresent, editable,
+addable }` evidence through `slide.speakerNotes.capability` and `inspect()`.
+The public wire claim is source-bound: export opens the original package and
+re-proves slide ownership, `NotesSize`, the NotesMaster list, and the first
+ordered SlideMaster theme before it writes anything. Changing the wire or model
+claim in either direction fails the source-binding check.
+
+When one reusable NotesMaster already exists, the new NotesSlide points to that
+same byte-identical part. When no NotesMaster exists, OpenChestnut creates one
+canonical master and shares the existing SlideMaster `ThemePart`. It allocates
+relationship IDs across internal, external, hyperlink, and data relationships;
+the new NotesSlide owns exactly one NotesMaster edge and one back-reference to
+its SlidePart. The opaque graph guard admits only the declared parts and edges,
+the Open XML SDK validates the written package, and postwrite validation plus a
+second import re-prove exact text and graph identity. Multiple/inconsistent
+master graphs, missing themes, rich/irregular notes, arbitrary notes styling,
+and capability tampering remain fail-closed.
+
+The Presentation Skill ships
+`openchestnut-speaker-notes-add-workflow.mjs`. It requires one uniquely named
+eligible slide, protects the source hash, writes transactionally, audits the
+OPC graph, reimports, verifies exact notes and unchanged visible semantics, and
+compares the source/output model render. The runnable fixture also compares all
+slides through LibreOffice and Poppler and requires zero changed pixels. A
+second add invocation against the now-present NotesSlide fails before creating
+an output or audit.
+
+The local candidate passed the complete `npm test` suite, including the 20
+repository-only Office templates, Playwright, LibreOffice, Poppler, MuPDF.js,
+qpdf, all four published Skills, reference-Skill sync, and Agent eval gates.
+OpenChestnut passed `301/301`; OfficeBridge passed `5/5`; generated API docs,
+protocol lint/generation, clean-install, and `npm run test:pack` passed. The
+manifest-bound runtime is 38 files and 14,756,544 bytes. The npm dry-run is 471
+files, 9,058,449 compressed bytes, and 23,917,958 unpacked bytes. Independent
+Python environments for pikepdf, pyHanko, veraPDF, and OCRmyPDF were not
+configured in this local shell, so their contract/adversarial tests passed while
+those real-provider repeats were skipped; hosted CI supplies them. `npm whoami`
+remains unavailable, so no publish, tag, or release operation was attempted.
+
 ## Publishing
 
 Before publishing:

@@ -606,6 +606,122 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void ImportedSlideWithoutNotesAddsCanonicalNotesMasterAndSlideGraph()
+    {
+        var authored = Invoke(ExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Null(package.PresentationPart!.NotesMasterPart);
+            Assert.Null(Assert.Single(package.PresentationPart.SlideParts).NotesSlidePart);
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var slide = Assert.Single(imported.Artifact.Presentation.Slides);
+        Assert.Null(slide.SpeakerNotes);
+        Assert.True(slide.Source.SpeakerNotesAddable);
+        slide.SpeakerNotes = new PresentationSpeakerNotes
+        {
+            Text = "Lead with the decision.\nClose with the accountable owner.",
+        };
+
+        var exported = Export(imported.Artifact);
+        Assert.True(exported.Ok, Diagnostics(exported));
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var presentationPart = package.PresentationPart!;
+            var notesMaster = Assert.IsType<NotesMasterPart>(presentationPart.NotesMasterPart);
+            var notesMasterId = Assert.Single(presentationPart.Presentation!.NotesMasterIdList!.Elements<P.NotesMasterId>());
+            Assert.Equal(presentationPart.GetIdOfPart(notesMaster), notesMasterId.Id!.Value);
+            Assert.Single(notesMaster.Parts, pair => pair.OpenXmlPart is ThemePart);
+            var outputSlide = Assert.Single(presentationPart.SlideParts);
+            var notesPart = Assert.IsType<NotesSlidePart>(outputSlide.NotesSlidePart);
+            Assert.Equal(2, notesPart.Parts.Count());
+            Assert.Single(notesPart.Parts, pair => pair.OpenXmlPart is NotesMasterPart);
+            Assert.Single(notesPart.Parts, pair => pair.OpenXmlPart is SlidePart);
+            Assert.Equal(
+                "Lead with the decision.Close with the accountable owner.",
+                string.Concat(notesPart.NotesSlide!.Descendants<A.Text>().Select(text => text.Text)));
+        }
+
+        var roundTrip = Import(exported.File.ToByteArray());
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        var roundTripSlide = Assert.Single(roundTrip.Artifact.Presentation.Slides);
+        Assert.Equal("Lead with the decision.\nClose with the accountable owner.", roundTripSlide.SpeakerNotes.Text);
+        Assert.True(roundTripSlide.SpeakerNotes.Source.Editable);
+        Assert.False(roundTripSlide.Source.SpeakerNotesAddable);
+
+        roundTripSlide.Source.SpeakerNotesAddable = true;
+        var grantRejected = Export(roundTrip.Artifact);
+        Assert.False(grantRejected.Ok);
+        Assert.Equal("presentation_slide_binding_mismatch", Assert.Single(grantRejected.Diagnostics).Code);
+
+        var tampered = Import(authored.File.ToByteArray());
+        var tamperedSlide = Assert.Single(tampered.Artifact.Presentation.Slides);
+        tamperedSlide.Source.SpeakerNotesAddable = false;
+        tamperedSlide.SpeakerNotes = new PresentationSpeakerNotes { Text = "Capability flags do not grant authority." };
+        var rejected = Export(tampered.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("presentation_slide_binding_mismatch", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void ImportedSlideWithoutNotesReusesExistingNotesMasterAndAvoidsRelationshipCollisions()
+    {
+        var request = ExportRequest();
+        request.Artifact.Presentation.Slides[0].SpeakerNotes = new PresentationSpeakerNotes { Text = "Existing notes stay unchanged." };
+        request.Artifact.Presentation.Slides.Add(new PresentationSlide
+        {
+            Id = "presentation/slide/2",
+            Name = "Add notes here",
+        });
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var sourceBytes = AddNotesRelationshipIdCollision(authored.File.ToByteArray(), 1);
+        string notesMasterPath;
+        byte[] notesMasterBytes;
+        byte[] firstNotesBytes;
+        using (var stream = new MemoryStream(sourceBytes))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            notesMasterPath = package.PresentationPart!.NotesMasterPart!.Uri.OriginalString.TrimStart('/');
+            notesMasterBytes = ZipBytes(sourceBytes, notesMasterPath);
+            firstNotesBytes = ZipBytes(sourceBytes, "ppt/notesSlides/notesSlide1.xml");
+        }
+
+        var imported = Import(sourceBytes);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.False(imported.Artifact.Presentation.Slides[0].Source.SpeakerNotesAddable);
+        var target = imported.Artifact.Presentation.Slides[1];
+        Assert.True(target.Source.SpeakerNotesAddable);
+        target.SpeakerNotes = new PresentationSpeakerNotes { Text = "New notes reuse the presentation-wide master." };
+        var exported = Export(imported.Artifact);
+        Assert.True(exported.Ok, Diagnostics(exported));
+        var outputBytes = exported.File.ToByteArray();
+        Assert.Equal(notesMasterBytes, ZipBytes(outputBytes, notesMasterPath));
+        Assert.Equal(firstNotesBytes, ZipBytes(outputBytes, "ppt/notesSlides/notesSlide1.xml"));
+        using (var stream = new MemoryStream(outputBytes))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var presentationPart = package.PresentationPart!;
+            Assert.Single(presentationPart.Parts, pair => pair.OpenXmlPart is NotesMasterPart);
+            var slides = OrderedSlides(package);
+            Assert.NotNull(slides[0].NotesSlidePart);
+            var added = Assert.IsType<NotesSlidePart>(slides[1].NotesSlidePart);
+            Assert.NotEqual("rIdNotes1", slides[1].GetIdOfPart(added));
+            Assert.Contains(slides[1].HyperlinkRelationships, relationship => relationship.Id == "rIdNotes1");
+            Assert.Equal(presentationPart.NotesMasterPart!.Uri, added.NotesMasterPart!.Uri);
+        }
+        var roundTrip = Import(outputBytes);
+        Assert.Equal("New notes reuse the presentation-wide master.", roundTrip.Artifact.Presentation.Slides[1].SpeakerNotes.Text);
+    }
+
+    [Fact]
     public void SlideBackgroundAuthorsImportsEditsClearsAndPreservesUnsupportedSource()
     {
         var request = ExportRequest();
@@ -5699,6 +5815,21 @@ public sealed class PptxCodecTests
             Assert.Equal(2, runs.Length);
             runs[0].RunProperties = new A.RunProperties { Bold = true };
             runs[1].RunProperties = new A.RunProperties { Italic = true };
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddNotesRelationshipIdCollision(byte[] bytes, int slideIndex)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var package = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            OrderedSlides(package)[slideIndex].AddHyperlinkRelationship(
+                new Uri("https://example.invalid/notes-relationship-collision"),
+                true,
+                "rIdNotes1");
         }
         return stream.ToArray();
     }

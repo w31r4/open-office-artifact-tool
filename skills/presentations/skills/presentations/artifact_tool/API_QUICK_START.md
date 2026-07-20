@@ -531,6 +531,47 @@ back-reference now points to the clone, and verifies source/clone closed-leaf
 semantics after reimport. Rich/modern comments or any extra relationship fail
 closed without a fallback.
 
+## Add Speaker Notes To A Notes-Absent Imported Slide
+
+Inspect the target before mutation. A source-bound slide may add a NotesSlide
+only when the codec reports a safely extensible package graph:
+
+```ts
+const evidence = presentation.inspect({ kind: "slide,notes", maxChars: 8000 });
+console.log(evidence.ndjson);
+
+const notes = presentation.resolve(`${slide.id}/notes`);
+if (!notes.capability.sourceBound || notes.capability.partPresent || !notes.capability.addable) {
+  throw new Error("The imported slide is not eligible for bounded notes creation.");
+}
+```
+
+Use the shipped source-bound transaction for the actual edit:
+
+```ts
+import { addPptxSpeakerNotes } from "../examples/openchestnut-speaker-notes-add-workflow.mjs";
+
+await addPptxSpeakerNotes({
+  inputPath: "input.pptx",
+  outputPath: "output/with-notes.pptx",
+  auditPath: "output/with-notes.audit.json",
+  slideName: "Speaker notes target",
+  notes: "Lead with the evidence.\nClose with the requested decision.",
+});
+```
+
+The workflow keeps the source immutable and promotes output only after exact
+reimport, visible-semantics/model-SVG equality, semantic verification, and OPC
+relationship audit. It reuses an existing single NotesMaster byte-for-byte or
+creates one canonical NotesMaster that shares an existing SlideMaster
+ThemePart. The new NotesSlide owns only its NotesMaster relationship and a
+back-reference to the selected SlidePart. Export re-proves capability from the
+source package; there is no mutable-flag authority or silent fallback.
+Inconsistent/multiple master graphs, an unusable theme, existing/rich notes, or
+ambiguous targets fail closed. Compare source and output through
+LibreOffice/Poppler before delivery because notes are nonvisual and every slide
+must remain pixel-identical.
+
 ## Bounded Imported Title And Speaker-Notes Edit
 
 When the source deck has one uniquely named slide, one uniquely named title
