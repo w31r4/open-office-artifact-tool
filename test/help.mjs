@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 349);
+assert.equal(HELP_CATALOG.length, 351);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -357,7 +357,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.sc
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.schema?.returns?.inspection?.description || "", /mupdfWidget.*mupdfFormField/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.summary || "", /MuPDF/);
 const documentCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "document");
-assert.equal(documentCatalog.length, 55);
+assert.equal(documentCatalog.length, 57);
 assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.schema?.parameters?.pictureBullet?.type, "string|object");
@@ -373,6 +373,8 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addDropdownCon
 assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addComboBoxContentControl")?.schema?.parameters?.choices?.type, "Array<string|object>");
 assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addComboBoxContentControl")?.schema?.parameters?.value?.type, "string");
 assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addComboBoxContentControl")?.schema?.parameters?.tag?.required, true);
+assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addDateContentControl")?.schema?.parameters?.dateValue?.required, true);
+assert.match(HELP_CATALOG.find((item) => item.name === "paragraph.addDateContentControl")?.schema?.parameters?.dateValue?.description || "", /Gregorian.*YYYY-MM-DD.*Date objects.*rejected/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addField")?.schema?.parameters?.instruction?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "paragraph.addField")?.summary || "", /bookmark around only its cached result.*source-bound.*cached display text is editable/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addField")?.schema?.parameters?.bookmarkName?.type, "string");
@@ -386,6 +388,8 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "document.setDropdownCont
 assert.match(HELP_CATALOG.find((item) => item.name === "document.setDropdownContentControls")?.summary || "", /tag-to-choice-value.*fail before mutation/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.setComboBoxContentControls")?.schema?.parameters?.values?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.setComboBoxContentControls")?.summary || "", /declared choice.*custom text.*fail before mutation/i);
+assert.equal(HELP_CATALOG.find((item) => item.name === "document.setDateContentControls")?.schema?.parameters?.values?.required, true);
+assert.match(HELP_CATALOG.find((item) => item.name === "document.setDateContentControls")?.summary || "", /tag-to-YYYY-MM-DD.*invalid Gregorian dates.*fail before mutation/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.materializeFields")?.schema?.parameters?.dryRun?.type, "boolean");
 assert.match(HELP_CATALOG.find((item) => item.name === "document.materializeFields")?.summary || "", /SEQ counters.*REF cached results.*PAGEREF.*pagination host/i);
 const presentationCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "presentation");
@@ -594,6 +598,7 @@ assert.match(document.help("document.fillContentControls").ndjson, /Unknown tags
 assert.match(document.help("document.setCheckboxContentControls").ndjson, /tag-to-boolean checked-state mapping/i);
 assert.match(document.help("document.setDropdownContentControls").ndjson, /tag-to-string selected-value mapping/i);
 assert.match(document.help("document.setComboBoxContentControls").ndjson, /tag-to-string value mapping/i);
+assert.match(document.help("document.setDateContentControls").ndjson, /tag-to-string date mapping/i);
 assert.match(document.help("document.addBibliographySource").ndjson, /bibliography source/);
 assert.match(document.help("document.applyDesignPreset").ndjson, /design preset/);
 assert.match(document.help("document.layoutJson").ndjson, /layout JSON/);

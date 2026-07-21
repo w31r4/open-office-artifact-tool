@@ -178,6 +178,7 @@ class DocumentTableBlock {
 const DOCUMENT_CHECKBOX_GLYPHS = Object.freeze({ checked: "☒", unchecked: "☐" });
 const DOCUMENT_DROPDOWN_MAX_CHOICES = 256;
 const DOCUMENT_DROPDOWN_MAX_TEXT_LENGTH = 255;
+const DOCUMENT_DATE_VALUE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 function documentCheckboxGlyph(checked) {
   return checked ? DOCUMENT_CHECKBOX_GLYPHS.checked : DOCUMENT_CHECKBOX_GLYPHS.unchecked;
@@ -225,6 +226,21 @@ function documentComboBoxVisibleText(control, value = control?.value) {
   return documentContentControlChoice(control, value)?.displayText ?? value;
 }
 
+function normalizeDocumentDateValue(value) {
+  if (typeof value !== "string") throw new TypeError("Document date content-control dateValue must be a string in YYYY-MM-DD form.");
+  const match = DOCUMENT_DATE_VALUE_PATTERN.exec(value);
+  if (!match) throw new TypeError("Document date content-control dateValue must use canonical YYYY-MM-DD form.");
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > daysInMonth[month - 1]) {
+    throw new TypeError("Document date content-control dateValue must be a real Gregorian date from 0001-01-01 through 9999-12-31.");
+  }
+  return value;
+}
+
 function normalizeDocumentContentControl(value) {
   if (value == null || value === false) return undefined;
   const source = typeof value === "string" ? { tag: value } : value;
@@ -237,14 +253,16 @@ function normalizeDocumentContentControl(value) {
   }
   const inferredType = source.checked !== undefined
     ? "checkbox"
+    : source.dateValue !== undefined ? "date"
     : source.choices !== undefined || source.items !== undefined || source.options !== undefined || source.selectedValue !== undefined ? "dropdown" : "text";
   const rawType = String(source.controlType ?? source.type ?? inferredType).trim().toLowerCase();
   const controlType = rawType === "text" || rawType === "plain-text" || rawType === "plaintext"
     ? "text"
     : rawType === "checkbox" || rawType === "check-box" ? "checkbox"
       : rawType === "dropdown" || rawType === "drop-down" || rawType === "drop_down" ? "dropdown"
-        : rawType === "combobox" || rawType === "combo-box" || rawType === "combo_box" ? "comboBox" : undefined;
-  if (!controlType) throw new TypeError("Document content control type must be text, checkbox, dropdown, or comboBox.");
+        : rawType === "combobox" || rawType === "combo-box" || rawType === "combo_box" ? "comboBox"
+          : rawType === "date" || rawType === "datepicker" || rawType === "date-picker" || rawType === "date_picker" ? "date" : undefined;
+  if (!controlType) throw new TypeError("Document content control type must be text, checkbox, dropdown, comboBox, or date.");
   if (controlType === "checkbox" && source.checked !== undefined && typeof source.checked !== "boolean") {
     throw new TypeError("Document checkbox content control checked state must be boolean.");
   }
@@ -262,6 +280,7 @@ function normalizeDocumentContentControl(value) {
   const comboBoxValue = controlType === "comboBox"
     ? normalizeDocumentComboBoxValue(source.value ?? source.selectedValue ?? choices[0].value)
     : undefined;
+  const dateValue = controlType === "date" ? normalizeDocumentDateValue(source.dateValue ?? source.value) : undefined;
   return {
     id: String(source.id || aid("dcc")),
     tag,
@@ -271,6 +290,7 @@ function normalizeDocumentContentControl(value) {
     ...(controlType === "checkbox" ? { checked: source.checked === true } : {}),
     ...(controlType === "dropdown" ? { choices, selectedValue } : {}),
     ...(controlType === "comboBox" ? { choices, value: comboBoxValue } : {}),
+    ...(controlType === "date" ? { dateValue } : {}),
   };
 }
 
@@ -300,7 +320,8 @@ function normalizeDocumentRun(run = {}, theme = {}) {
   const text = contentControl?.controlType === "checkbox"
     ? documentCheckboxGlyph(contentControl.checked)
     : contentControl?.controlType === "dropdown" ? documentContentControlChoice(contentControl, contentControl.selectedValue).displayText
-      : contentControl?.controlType === "comboBox" ? documentComboBoxVisibleText(contentControl) : requestedText;
+      : contentControl?.controlType === "comboBox" ? documentComboBoxVisibleText(contentControl)
+        : contentControl?.controlType === "date" ? contentControl.dateValue : requestedText;
   if (contentControl?.controlType !== "text" && contentControl && requestedText && requestedText !== text) {
     throw new TypeError(`Document ${contentControl.controlType} content-control text is codec-owned; set its typed value instead of supplying visible text.`);
   }
@@ -373,6 +394,16 @@ class DocumentParagraphBlock {
       },
     });
   }
+  addDateContentControl(dateValue, config = {}) {
+    return this.addRun("", {
+      ...config,
+      contentControl: {
+        ...(config.contentControl || config),
+        controlType: "date",
+        dateValue,
+      },
+    });
+  }
   addField(instruction, display = "0", config = {}) {
     return this.addRun(display, {
       ...config,
@@ -428,6 +459,7 @@ class DocumentContentControlHandle {
     if (this.controlType === "checkbox") throw new TypeError("Checkbox content-control text is codec-owned; set checked instead.");
     if (this.controlType === "dropdown") throw new TypeError("Drop-down content-control text is codec-owned; set selectedValue instead.");
     if (this.controlType === "comboBox") throw new TypeError("Combo-box content-control text is codec-owned; set value instead.");
+    if (this.controlType === "date") throw new TypeError("Date content-control text is codec-owned; set dateValue instead.");
     if (this.controlType !== "text") throw new TypeError(`Unsupported ${this.controlType} content-control text mutation.`);
     this.run.text = String(value ?? "");
     this.block._syncText();
@@ -460,6 +492,14 @@ class DocumentContentControlHandle {
     this.run.text = documentComboBoxVisibleText(this.control, next);
     this.block._syncText();
   }
+  get dateValue() { return this.controlType === "date" ? this.control?.dateValue : undefined; }
+  set dateValue(value) {
+    if (this.controlType !== "date") throw new TypeError("Only date content controls have dateValue state.");
+    const next = normalizeDocumentDateValue(value);
+    this.control.dateValue = next;
+    this.run.text = next;
+    this.block._syncText();
+  }
   inspectRecord() {
     return {
       kind: this.kind,
@@ -476,6 +516,8 @@ class DocumentContentControlHandle {
           ? { choices: this.choices, selectedValue: this.selectedValue, visibleText: this.text }
           : this.controlType === "comboBox"
             ? { choices: this.choices, value: this.value, visibleText: this.text }
+            : this.controlType === "date"
+              ? { dateValue: this.dateValue, visibleText: this.text }
           : { text: this.text, textChars: this.text.length }),
     };
   }
@@ -1209,6 +1251,21 @@ export class DocumentModel {
     }
     return { updated, matchedTags: [...matched], missingTags };
   }
+  setDateContentControls(values = {}, options = {}) {
+    const entries = values instanceof Map ? [...values.entries()] : Object.entries(values || {});
+    const requested = new Map(entries.map(([tag, value]) => [String(tag), normalizeDocumentDateValue(value)]));
+    const controls = this.contentControls.filter((control) => control.controlType === "date");
+    const matched = new Set(controls.filter((control) => requested.has(control.tag)).map((control) => control.tag));
+    const missingTags = [...requested.keys()].filter((tag) => !matched.has(tag));
+    if (options.strict !== false && missingTags.length) throw new Error(`Unknown document date content-control tag(s): ${missingTags.join(", ")}`);
+    let updated = 0;
+    for (const control of controls) {
+      if (!requested.has(control.tag)) continue;
+      control.dateValue = requested.get(control.tag);
+      updated += 1;
+    }
+    return { updated, matchedTags: [...matched], missingTags };
+  }
   materializeFields(options = {}) { return materializeDocumentFields(this, options); }
   addListItem(text, config = {}) { const block = new DocumentListItemBlock(this, text, config); this.blocks.push(block); return block; }
   addList(items = [], config = {}) { return items.map((item) => this.addListItem(typeof item === "string" ? item : item.text, { ...config, ...(typeof item === "string" ? {} : item) })); }
@@ -1342,7 +1399,7 @@ export class DocumentModel {
       else contentControlIds.add(control.id);
       if (!control.tag || control.tag.length > 64 || /[\u0000-\u001f\u007f]/.test(control.tag)) issues.push(verificationIssue("document", "invalidContentControlTag", `Content control ${control.id} tag must contain 1 to 64 characters without controls.`, { id: control.id, tag: control.tag }));
       if (control.alias.length > 255 || /[\u0000-\u001f\u007f]/.test(control.alias)) issues.push(verificationIssue("document", "invalidContentControlAlias", `Content control ${control.id} alias must contain at most 255 characters without controls.`, { id: control.id, alias: control.alias }));
-      if (control.controlType !== "text" && control.controlType !== "checkbox" && control.controlType !== "dropdown" && control.controlType !== "comboBox") issues.push(verificationIssue("document", "invalidContentControlType", `Content control ${control.id} type must be text, checkbox, dropdown, or comboBox.`, { id: control.id, controlType: control.controlType }));
+      if (control.controlType !== "text" && control.controlType !== "checkbox" && control.controlType !== "dropdown" && control.controlType !== "comboBox" && control.controlType !== "date") issues.push(verificationIssue("document", "invalidContentControlType", `Content control ${control.id} type must be text, checkbox, dropdown, comboBox, or date.`, { id: control.id, controlType: control.controlType }));
       if (control.controlType === "checkbox" && (typeof control.checked !== "boolean" || control.text !== documentCheckboxGlyph(control.checked))) issues.push(verificationIssue("document", "invalidCheckboxContentControl", `Checkbox content control ${control.id} must have boolean checked state and its canonical visible glyph.`, { id: control.id, checked: control.checked, visibleText: control.text }));
       if (control.controlType === "dropdown") {
         try {
@@ -1362,6 +1419,14 @@ export class DocumentModel {
           if (control.text !== visibleText) throw new TypeError("value and visible text do not match the canonical combo-box projection");
         } catch (error) {
           issues.push(verificationIssue("document", "invalidComboBoxContentControl", `Combo-box content control ${control.id} has invalid choices or value: ${error.message}.`, { id: control.id, value: control.value, visibleText: control.text }));
+        }
+      }
+      if (control.controlType === "date") {
+        try {
+          const dateValue = normalizeDocumentDateValue(control.dateValue);
+          if (control.text !== dateValue) throw new TypeError("dateValue and visible text do not match the canonical date projection");
+        } catch (error) {
+          issues.push(verificationIssue("document", "invalidDateContentControl", `Date content control ${control.id} has an invalid dateValue or visible text: ${error.message}.`, { id: control.id, dateValue: control.dateValue, visibleText: control.text }));
         }
       }
       if (control.nativeId !== undefined && (!Number.isInteger(control.nativeId) || control.nativeId < 1 || control.nativeId > 0x7fffffff || nativeContentControlIds.has(control.nativeId))) issues.push(verificationIssue("document", "invalidContentControlNativeId", `Content control ${control.id} has an invalid or duplicate nativeId.`, { id: control.id, nativeId: control.nativeId }));

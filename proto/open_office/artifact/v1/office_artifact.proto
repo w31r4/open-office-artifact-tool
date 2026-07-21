@@ -2488,6 +2488,11 @@ message DocumentTextContentControl {
   // choice value (whose display text becomes visible) or carry bounded custom
   // text (which becomes visible verbatim).
   string value = 9;
+  // Meaningful only when control_type is DATE. It is a real proleptic
+  // Gregorian calendar date in canonical YYYY-MM-DD form. OpenChestnut owns
+  // the visible text plus the fixed UTC-midnight/date-format/language/calendar
+  // projection used by the bounded native w:date profile.
+  string date_value = 10;
 }
 
 message DocumentContentControlChoice {
@@ -2501,6 +2506,7 @@ enum DocumentContentControlType {
   DOCUMENT_CONTENT_CONTROL_TYPE_CHECKBOX = 2;
   DOCUMENT_CONTENT_CONTROL_TYPE_DROP_DOWN = 3;
   DOCUMENT_CONTENT_CONTROL_TYPE_COMBO_BOX = 4;
+  DOCUMENT_CONTENT_CONTROL_TYPE_DATE = 5;
 }
 
 message DocumentImage {

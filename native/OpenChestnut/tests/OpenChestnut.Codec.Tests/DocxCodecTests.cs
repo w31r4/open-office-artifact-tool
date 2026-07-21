@@ -780,6 +780,148 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void InlineDateContentControlAuthorsImportsEditsAndRejectsNoncanonicalProfiles()
+    {
+        var document = new DocumentArtifact { Id = "document/date", Name = "Date template" };
+        var paragraph = new DocumentBlock
+        {
+            Id = "document/date/review",
+            StyleId = "Normal",
+            Paragraph = new DocumentParagraph { Text = "Review date: 2026-07-21." },
+        };
+        paragraph.Paragraph.Runs.Add(new DocumentRun { Text = "Review date: " });
+        paragraph.Paragraph.Runs.Add(new DocumentRun
+        {
+            Text = "2026-07-21",
+            TextContentControl = new DocumentTextContentControl
+            {
+                Id = "review-date",
+                Tag = "REVIEW_DATE",
+                Alias = "Review date",
+                ControlType = DocumentContentControlType.Date,
+                DateValue = "2026-07-21",
+            },
+        });
+        paragraph.Paragraph.Runs.Add(new DocumentRun { Text = "." });
+        document.Blocks.Add(paragraph);
+
+        var authored = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = new ArtifactEnvelope
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Family = ArtifactFamily.Document,
+                Document = document,
+            },
+        });
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var sdt = Assert.Single(package.MainDocumentPart!.Document!.Descendants<W.SdtRun>());
+            var date = Assert.IsType<W.SdtContentDate>(sdt.SdtProperties!.LastChild);
+            Assert.Equal("2026-07-21T00:00:00Z", date.FullDate!.InnerText);
+            Assert.Equal("yyyy-MM-dd", date.DateFormat!.Val!.Value);
+            Assert.Equal("en-US", date.LanguageId!.Val!.Value);
+            Assert.Equal(W.DateFormatValues.Date, date.SdtDateMappingType!.Val!.Value);
+            Assert.Equal(W.CalendarValues.Gregorian, date.Calendar!.Val!.Value);
+            Assert.Equal("2026-07-21", sdt.InnerText);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedParagraph = Assert.Single(imported.Artifact.Document.Blocks).Paragraph;
+        var importedRun = Assert.Single(importedParagraph.Runs, run => run.TextContentControl is not null);
+        Assert.Equal(DocumentContentControlType.Date, importedRun.TextContentControl.ControlType);
+        Assert.Equal("2026-07-21", importedRun.TextContentControl.DateValue);
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact.Clone(),
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(authored.File, unchanged.File);
+
+        importedRun.TextContentControl.DateValue = "2028-02-29";
+        importedRun.Text = "2028-02-29";
+        importedParagraph.Text = "Review date: 2028-02-29.";
+        var edited = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var roundTrip = DocxCodec.Import(edited.File.ToByteArray(), EffectiveCodecLimits.From(null)).Artifact;
+        var editedRun = Assert.Single(Assert.Single(roundTrip.Document.Blocks).Paragraph.Runs, run => run.TextContentControl is not null);
+        Assert.Equal("2028-02-29", editedRun.TextContentControl.DateValue);
+        Assert.Equal("2028-02-29", editedRun.Text);
+
+        var changedType = roundTrip.Clone();
+        Assert.Single(Assert.Single(changedType.Document.Blocks).Paragraph.Runs, run => run.TextContentControl is not null).TextContentControl.ControlType = DocumentContentControlType.PlainText;
+        var rejectedType = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = changedType,
+        });
+        Assert.False(rejectedType.Ok);
+        Assert.Equal("document_content_control_topology_changed", Assert.Single(rejectedType.Diagnostics).Code);
+
+        var invalidDate = roundTrip.Clone();
+        var invalidDateRun = Assert.Single(Assert.Single(invalidDate.Document.Blocks).Paragraph.Runs, run => run.TextContentControl is not null);
+        invalidDateRun.TextContentControl.DateValue = "2026-02-29";
+        invalidDateRun.Text = "2026-02-29";
+        Assert.Single(invalidDate.Document.Blocks).Paragraph.Text = "Review date: 2026-02-29.";
+        var rejectedDate = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = invalidDate,
+        });
+        Assert.False(rejectedDate.Ok);
+        Assert.Equal("invalid_document_content_control", Assert.Single(rejectedDate.Diagnostics).Code);
+
+        var noncanonicalBytes = ChangeDatePickerFormat(authored.File.ToByteArray(), "M/d/yyyy");
+        var noncanonical = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(noncanonicalBytes),
+        });
+        Assert.True(noncanonical.Ok, Diagnostics(noncanonical));
+        var preserved = Assert.Single(noncanonical.Artifact.Document.Blocks);
+        Assert.False(preserved.Source.Editable);
+        Assert.Empty(preserved.Paragraph.Runs);
+        var preservedExport = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = noncanonical.Artifact,
+        });
+        Assert.True(preservedExport.Ok, Diagnostics(preservedExport));
+        Assert.Equal(ByteString.CopyFrom(noncanonicalBytes), preservedExport.File);
+    }
+
+    [Fact]
     public void OfficeSkillProfileRoundTripsFormattingImagesSectionsAndHeaders()
     {
         var authored = Invoke(OfficeSkillProfileExportRequest());
@@ -5124,6 +5266,19 @@ public sealed class DocxCodecTests
         {
             var checkbox = document.MainDocumentPart!.Document!.Descendants<W14.SdtContentCheckBox>().Single();
             checkbox.GetFirstChild<W14.CheckedState>()!.Val = "F0FE";
+            document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] ChangeDatePickerFormat(byte[] bytes, string format)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            document.MainDocumentPart!.Document!.Descendants<W.SdtContentDate>().Single().DateFormat!.Val = format;
             document.MainDocumentPart.Document.Save();
         }
         return stream.ToArray();

@@ -6,11 +6,11 @@ using W = DocumentFormat.OpenXml.Wordprocessing;
 
 namespace OpenChestnut.Codec;
 
-// Owns four deliberately bounded WordprocessingML SDT profiles: inline
+// Owns five deliberately bounded WordprocessingML SDT profiles: inline
 // plain-text, canonical drop-down, canonical combo-box, and Word 2010+
-// checkbox controls. Every profile contains exactly one modeled run with alias,
-// tag, and native ID.
-// Checkbox symbols plus list-control visible text are codec-owned. Every
+// checkbox controls, plus one ISO/Gregorian date picker. Every profile contains
+// exactly one modeled run with alias, tag, and native ID.
+// Checkbox symbols plus list/date-control visible text are codec-owned. Every
 // richer SDT remains opaque/source-bound.
 internal static class DocxContentControlCodec
 {
@@ -24,6 +24,8 @@ internal static class DocxContentControlCodec
     private const string UncheckedSymbolCode = "2610";
     private const string CheckedGlyph = "☒";
     private const string UncheckedGlyph = "☐";
+    private const string DateDisplayFormat = "yyyy-MM-dd";
+    private const string DateLanguageId = "en-US";
 
     internal static void AssignNativeIds(DocumentArtifact document)
     {
@@ -88,6 +90,14 @@ internal static class DocxContentControlCodec
                         "invalid_document_content_control",
                         $"Document combo-box content control {control.Id} visible text does not match its value.");
             }
+            if (controlType == DocumentContentControlType.Date)
+            {
+                var dateValue = ValidateDateValue(control.DateValue, control.Id);
+                if (!run.Text.Equals(dateValue, StringComparison.Ordinal))
+                    throw new CodecException(
+                        "invalid_document_content_control",
+                        $"Document date content control {control.Id} visible text does not match its date value.");
+            }
         }
     }
 
@@ -103,8 +113,9 @@ internal static class DocxContentControlCodec
         var checkboxCount = properties.Elements<W14.SdtContentCheckBox>().Count();
         var dropdownCount = properties.Elements<W.SdtContentDropDownList>().Count();
         var comboBoxCount = properties.Elements<W.SdtContentComboBox>().Count();
-        if (textCount + checkboxCount + dropdownCount + comboBoxCount != 1) return false;
-        if (properties.ChildElements.Any(child => child is not W.SdtAlias and not W.Tag and not W.SdtId and not W.SdtContentText and not W14.SdtContentCheckBox and not W.SdtContentDropDownList and not W.SdtContentComboBox)) return false;
+        var dateCount = properties.Elements<W.SdtContentDate>().Count();
+        if (textCount + checkboxCount + dropdownCount + comboBoxCount + dateCount != 1) return false;
+        if (properties.ChildElements.Any(child => child is not W.SdtAlias and not W.Tag and not W.SdtId and not W.SdtContentText and not W14.SdtContentCheckBox and not W.SdtContentDropDownList and not W.SdtContentComboBox and not W.SdtContentDate)) return false;
         var tag = properties.GetFirstChild<W.Tag>()?.Val?.Value;
         var alias = properties.GetFirstChild<W.SdtAlias>()?.Val?.Value ?? tag;
         var nativeId = properties.GetFirstChild<W.SdtId>()?.Val?.Value;
@@ -115,6 +126,11 @@ internal static class DocxContentControlCodec
             !DocxFormattingCodec.IsSupportedRunProperties(run.RunProperties)) return false;
         var visibleText = string.Concat(run.Elements<W.Text>().Select(text => text.Text));
         if (run.Elements<W.Text>().Count() != 1) return false;
+        if (dateCount == 1)
+        {
+            var date = properties.GetFirstChild<W.SdtContentDate>()!;
+            return IsCanonicalDate(date, visibleText);
+        }
         if (checkboxCount == 1)
         {
             var checkbox = properties.GetFirstChild<W14.SdtContentCheckBox>()!;
@@ -171,13 +187,14 @@ internal static class DocxContentControlCodec
         if (!IsSupported(source))
             throw new CodecException(
                 "unsupported_document_content_control",
-                "DOCX inline content control is outside the bounded plain-text, canonical checkbox, canonical drop-down, or canonical combo-box SDT profiles.",
+                "DOCX inline content control is outside the bounded plain-text, canonical checkbox, canonical drop-down, canonical combo-box, or canonical date SDT profiles.",
                 "word/document.xml");
         var properties = source.SdtProperties!;
         var result = DocxCodec.ReadRun((W.Run)source.SdtContentRun!.FirstChild!);
         var checkbox = properties.GetFirstChild<W14.SdtContentCheckBox>();
         var dropdown = properties.GetFirstChild<W.SdtContentDropDownList>();
         var comboBox = properties.GetFirstChild<W.SdtContentComboBox>();
+        var date = properties.GetFirstChild<W.SdtContentDate>();
         result.TextContentControl = new DocumentTextContentControl
         {
             Id = modelId,
@@ -188,10 +205,12 @@ internal static class DocxContentControlCodec
                 ? DocumentContentControlType.Checkbox
                 : dropdown is not null
                     ? DocumentContentControlType.DropDown
-                    : comboBox is not null ? DocumentContentControlType.ComboBox : DocumentContentControlType.PlainText,
+                    : comboBox is not null ? DocumentContentControlType.ComboBox
+                        : date is not null ? DocumentContentControlType.Date : DocumentContentControlType.PlainText,
             Checked = checkbox is not null && IsChecked(checkbox.GetFirstChild<W14.Checked>()?.Val?.Value),
             SelectedValue = dropdown?.LastValue?.Value ?? string.Empty,
             Value = comboBox?.LastValue?.Value ?? string.Empty,
+            DateValue = date is null ? string.Empty : DateValue(date),
         };
         var listControl = (OpenXmlCompositeElement?)dropdown ?? comboBox;
         if (listControl is not null)
@@ -239,6 +258,18 @@ internal static class DocxContentControlCodec
             }));
             properties.Append(comboBox);
         }
+        else if (controlType == DocumentContentControlType.Date)
+        {
+            var dateValue = ValidateDateValue(control.DateValue, control.Id);
+            properties.Append(new W.SdtContentDate(
+                new W.DateFormat { Val = DateDisplayFormat },
+                new W.LanguageId { Val = DateLanguageId },
+                new W.SdtDateMappingType { Val = W.DateFormatValues.Date },
+                new W.Calendar { Val = W.CalendarValues.Gregorian })
+            {
+                FullDate = new DateTimeValue { InnerText = $"{dateValue}T00:00:00Z" },
+            });
+        }
         else
             properties.Append(new W.SdtContentText());
         return new W.SdtRun(properties, new W.SdtContentRun(DocxCodec.BuildRun(source)));
@@ -278,6 +309,7 @@ internal static class DocxContentControlCodec
             DocumentContentControlType.Checkbox => DocumentContentControlType.Checkbox,
             DocumentContentControlType.DropDown => DocumentContentControlType.DropDown,
             DocumentContentControlType.ComboBox => DocumentContentControlType.ComboBox,
+            DocumentContentControlType.Date => DocumentContentControlType.Date,
             _ => throw new CodecException(
                 "invalid_document_content_control",
                 $"Document content control {control.Id} has an unsupported control type."),
@@ -325,6 +357,38 @@ internal static class DocxContentControlCodec
             ? string.Join(".", control.Choices.Select(choice =>
                 $"{Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(choice.DisplayText))}:{Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(choice.Value))}"))
             : string.Empty;
+
+    private static bool IsCanonicalDate(W.SdtContentDate date, string visibleText)
+    {
+        if (date.ExtendedAttributes.Any() || date.ChildElements.Count != 4 ||
+            date.ChildElements[0] is not W.DateFormat format ||
+            date.ChildElements[1] is not W.LanguageId language ||
+            date.ChildElements[2] is not W.SdtDateMappingType mapping ||
+            date.ChildElements[3] is not W.Calendar calendar ||
+            date.ChildElements.Any(child => child.HasChildren || child.ExtendedAttributes.Any()) ||
+            !DateDisplayFormat.Equals(format.Val?.Value, StringComparison.Ordinal) ||
+            !DateLanguageId.Equals(language.Val?.Value, StringComparison.Ordinal) ||
+            mapping.Val?.Value != W.DateFormatValues.Date ||
+            calendar.Val?.Value != W.CalendarValues.Gregorian) return false;
+        var dateValue = DateValue(date);
+        return string.Equals(date.FullDate?.InnerText, $"{dateValue}T00:00:00Z", StringComparison.Ordinal) &&
+               ValidDateValue(dateValue) && visibleText.Equals(dateValue, StringComparison.Ordinal);
+    }
+
+    private static string DateValue(W.SdtContentDate date) =>
+        date.FullDate?.InnerText is { Length: >= 10 } fullDate ? fullDate[..10] : string.Empty;
+
+    private static bool ValidDateValue(string? value) =>
+        value is not null && DateOnly.TryParseExact(value, DateDisplayFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out _);
+
+    private static string ValidateDateValue(string? value, string controlId)
+    {
+        if (!ValidDateValue(value))
+            throw new CodecException(
+                "invalid_document_content_control",
+                $"Document date content control {controlId} date value must be a real Gregorian date in YYYY-MM-DD form.");
+        return value!;
+    }
 
     private static bool IsChecked(W14.OnOffValues? value) =>
         value == W14.OnOffValues.One || value == W14.OnOffValues.True;

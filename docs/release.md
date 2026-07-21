@@ -72,6 +72,49 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### DOCX canonical date content controls
+
+On 2026-07-21, the Documents model, public Help/API catalog, versioned
+protobuf wire, OpenChestnut C# codec, bundled WASM runtime, and runnable
+Documents Skill added one bounded Word 2007+ date-picker SDT profile.
+`paragraph.addDateContentControl(...)` and
+`document.setDateContentControls(...)` accept only real proleptic Gregorian
+dates in exact `YYYY-MM-DD` form. JavaScript `Date` objects, timestamps,
+localized strings, year zero, impossible month/day combinations, and invalid
+leap days fail before mutation. The handle exposes typed `dateValue`; visible
+run text is codec-owned and cannot be edited directly.
+
+OpenChestnut authors `w:date` with an exact UTC-midnight `w:fullDate`,
+`yyyy-MM-dd` display mask, `en-US` language, `date` mapped-data storage, and
+Gregorian calendar, then requires exactly one modeled run and one text node.
+Canonical imports permit dateValue/tag/alias edits while native ID, control
+type, the fixed native date profile, and run topology remain source-bound.
+Noncanonical/localized date controls, extra properties, and richer SDT graphs
+remain opaque; unchanged bytes round-trip exactly and semantic replacement
+fails closed.
+
+The C# codec test covers Office 2021 validation, exact native metadata,
+byte-identical no-op export, leap-day edit plus second import, invalid-date and
+type-tamper refusal, and byte-preserving fallback for a noncanonical display
+mask. JS model/wire tests cover strict transactional rollback, cross-type
+refusal, inspect/resolve handles, native markup, source-bound topology, and two
+OpenChestnut round trips. The native content-control fixture and shipped
+end-to-end example now author and edit text, checkbox, drop-down, combo-box,
+and date controls together before semantic/package/native-render QA.
+
+The complete local release gate passed on 2026-07-21: `npm test`, generated
+API docs, the production clean-install/package test, OpenChestnut `319/319`,
+OfficeBridge `5/5`, and two deterministic source builds over 39 audited files.
+The bundled OpenChestnut runtime contains 38 files at 14,875,840 bytes. The
+production dry-run tarball contains 475 files, is 9,134,038 bytes compressed,
+and 24,205,758 bytes unpacked. LibreOffice/Poppler rendered and reviewed both
+pages of the final date-control example; Playwright/Chromium and the real qpdf
+adapter also ran in the complete npm suite. Optional pikepdf, pyHanko,
+veraPDF, and OCRmyPDF real-provider tests remained environment-gated while
+their contract and adversarial tests passed. The offline release audit remains
+the final post-commit gate; npm authentication is the external publication
+blocker.
+
 ### DOCX canonical combo-box content controls
 
 On 2026-07-21, the Documents model, public Help/API catalog, versioned
@@ -173,14 +216,14 @@ change state.
 The supported profile is one inline SDT with one modeled run, a unique native
 ID, and fixed `2610`/`2612` MS Gothic symbol declarations. Imported control
 type, native identity, symbol declarations, location, and topology remain
-source-bound. Rich, block/cell, nested, data-bound, irregular-list/date,
+source-bound. Rich, block/cell, nested, data-bound, irregular-list/localized-date,
 legacy, custom-symbol, locked, and otherwise irregular controls stay opaque and
 byte-preserved when unchanged; conversion, topology mutation, direct glyph
 editing, cross-type fill calls, and malformed state fail closed. An unchanged
 canonical import re-exports its original bytes exactly.
 
-The shipped Documents fixture now authors text, checkbox, drop-down, and combo-box controls together,
-imports them, updates each through its typed primitive, exports and imports a
+The shipped Documents fixture now authors text, checkbox, drop-down, combo-box,
+and canonical date controls together, imports them, updates each through its typed primitive, exports and imports a
 second time, inspects/verifies the final semantics, and asserts native
 `w14:checked`, `w14:checkedState`, and `w14:uncheckedState` markup. Its real
 LibreOffice/Poppler render passed in the complete suite. A separate two-page

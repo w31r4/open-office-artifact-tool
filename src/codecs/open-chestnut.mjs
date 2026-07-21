@@ -1759,6 +1759,7 @@ function documentContentControlTypeName(control) {
   if (value === DocumentContentControlType.CHECKBOX || value === "checkbox") return "checkbox";
   if (value === DocumentContentControlType.DROP_DOWN || value === "dropdown" || value === "drop-down" || value === "drop_down") return "dropdown";
   if (value === DocumentContentControlType.COMBO_BOX || value === "comboBox" || value === "combobox" || value === "combo-box" || value === "combo_box") return "comboBox";
+  if (value === DocumentContentControlType.DATE || value === "date" || value === "datepicker" || value === "date-picker" || value === "date_picker") return "date";
   if (value === DocumentContentControlType.PLAIN_TEXT || value === DocumentContentControlType.UNSPECIFIED || value === undefined || value === "text") return "text";
   return undefined;
 }
@@ -1803,6 +1804,21 @@ function wireDocumentComboBoxState(control, blockId) {
   return { choices, value };
 }
 
+function wireDocumentDateValue(control, blockId) {
+  const value = control?.dateValue;
+  const match = typeof value === "string" ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) : null;
+  if (!match) throw new OpenChestnutCodecError(`Document block ${blockId} date content-control dateValue must use canonical YYYY-MM-DD form.`, [], { code: "invalid_document_content_control" });
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (year < 1 || month < 1 || month > 12 || day < 1 || day > daysInMonth[month - 1]) {
+    throw new OpenChestnutCodecError(`Document block ${blockId} date content-control dateValue must be a real Gregorian date from 0001-01-01 through 9999-12-31.`, [], { code: "invalid_document_content_control" });
+  }
+  return value;
+}
+
 function wireDocumentContentControl(control, nativeId, blockId) {
   const id = String(control?.id || "").trim();
   const tag = String(control?.tag || "").trim();
@@ -1812,6 +1828,7 @@ function wireDocumentContentControl(control, nativeId, blockId) {
     ? DocumentContentControlType.CHECKBOX
     : typeName === "dropdown" ? DocumentContentControlType.DROP_DOWN
       : typeName === "comboBox" ? DocumentContentControlType.COMBO_BOX
+        : typeName === "date" ? DocumentContentControlType.DATE
       : typeName === "text" ? DocumentContentControlType.PLAIN_TEXT : undefined;
   if (!id || !tag || tag.length > 64 || alias.length > 255 || /[\u0000-\u001f\u007f]/.test(tag + alias) || controlType === undefined) throw new OpenChestnutCodecError(`Document block ${blockId} has an invalid content control.`, [], { code: "invalid_document_content_control" });
   if (controlType === DocumentContentControlType.CHECKBOX && typeof control.checked !== "boolean") {
@@ -1819,6 +1836,7 @@ function wireDocumentContentControl(control, nativeId, blockId) {
   }
   const dropdown = controlType === DocumentContentControlType.DROP_DOWN ? wireDocumentDropdownState(control, blockId) : undefined;
   const comboBox = controlType === DocumentContentControlType.COMBO_BOX ? wireDocumentComboBoxState(control, blockId) : undefined;
+  const dateValue = controlType === DocumentContentControlType.DATE ? wireDocumentDateValue(control, blockId) : undefined;
   return {
     id,
     tag,
@@ -1828,6 +1846,7 @@ function wireDocumentContentControl(control, nativeId, blockId) {
     checked: controlType === DocumentContentControlType.CHECKBOX && control.checked === true,
     ...(dropdown || {}),
     ...(comboBox || {}),
+    ...(dateValue ? { dateValue } : {}),
   };
 }
 
@@ -1854,6 +1873,12 @@ function documentRun(run, blockId, contentControlNativeId) {
     const visibleText = comboBox.choices.find((choice) => choice.value === comboBox.value)?.displayText ?? comboBox.value;
     if (String(run.text ?? "") !== visibleText) {
       throw new OpenChestnutCodecError(`Document block ${blockId} combo-box content-control visible text does not match value.`, [], { code: "invalid_document_content_control" });
+    }
+  }
+  if (documentContentControlTypeName(run.contentControl) === "date") {
+    const dateValue = wireDocumentDateValue(run.contentControl, blockId);
+    if (String(run.text ?? "") !== dateValue) {
+      throw new OpenChestnutCodecError(`Document block ${blockId} date content-control visible text does not match dateValue.`, [], { code: "invalid_document_content_control" });
     }
   }
   const bookmarkName = inlineInstruction === undefined ? "" : String(run.inlineField?.bookmarkName || "").trim();
@@ -3438,7 +3463,8 @@ function documentFromEnvelope(envelope) {
                 ? "checkbox"
                 : run.textContentControl.controlType === DocumentContentControlType.DROP_DOWN
                   ? "dropdown"
-                  : run.textContentControl.controlType === DocumentContentControlType.COMBO_BOX ? "comboBox" : "text",
+                  : run.textContentControl.controlType === DocumentContentControlType.COMBO_BOX ? "comboBox"
+                    : run.textContentControl.controlType === DocumentContentControlType.DATE ? "date" : "text",
               ...(run.textContentControl.controlType === DocumentContentControlType.CHECKBOX ? { checked: run.textContentControl.checked === true } : {}),
               ...(run.textContentControl.controlType === DocumentContentControlType.DROP_DOWN ? {
                 choices: run.textContentControl.choices.map((choice) => ({ displayText: choice.displayText, value: choice.value })),
@@ -3447,6 +3473,9 @@ function documentFromEnvelope(envelope) {
               ...(run.textContentControl.controlType === DocumentContentControlType.COMBO_BOX ? {
                 choices: run.textContentControl.choices.map((choice) => ({ displayText: choice.displayText, value: choice.value })),
                 value: run.textContentControl.value,
+              } : {}),
+              ...(run.textContentControl.controlType === DocumentContentControlType.DATE ? {
+                dateValue: run.textContentControl.dateValue,
               } : {}),
             } } : {}),
             ...(run.inlineField ? { inlineField: {

@@ -118,6 +118,8 @@ contactParagraph.addComboBoxContentControl([
   { displayText: "Email", value: "email" },
   { displayText: "Phone call", value: "phone" },
 ], { id: "contact-method-control", tag: "CONTACT_METHOD", alias: "Contact method", value: "email" });
+const reviewDateParagraph = document.addParagraph("Review date: ");
+reviewDateParagraph.addDateContentControl("2026-07-21", { id: "review-date-control", tag: "REVIEW_DATE", alias: "Review date" });
 document.addHeader("Confidential", { referenceType: "default", sectionIndex: 0 });
 document.addFooter("Page ", { referenceType: "default", sectionIndex: 0, fieldInstruction: "PAGE" });
 document.addField("PAGE", "1");
@@ -141,6 +143,7 @@ assert.match(docxXml, /<w14:checkedState(?=[^>]*w14:val="2612")(?=[^>]*w14:font=
 assert.match(docxXml, /<w14:uncheckedState(?=[^>]*w14:val="2610")(?=[^>]*w14:font="MS Gothic")[^>]*\/>/);
 assert.match(docxXml, /<w:tag w:val="PRIORITY"\s*\/>[\s\S]*<w:dropDownList w:lastValue="medium">[\s\S]*<w:listItem(?=[^>]*w:displayText="Low")(?=[^>]*w:value="low")[^>]*\/>[\s\S]*Medium/);
 assert.match(docxXml, /<w:tag w:val="CONTACT_METHOD"\s*\/>[\s\S]*<w:comboBox w:lastValue="email">[\s\S]*<w:listItem(?=[^>]*w:displayText="Phone call")(?=[^>]*w:value="phone")[^>]*\/>[\s\S]*Email/);
+assert.match(docxXml, /<w:tag w:val="REVIEW_DATE"\s*\/>[\s\S]*<w:date w:fullDate="2026-07-21T00:00:00Z">[\s\S]*<w:dateFormat w:val="yyyy-MM-dd"\s*\/>[\s\S]*<w:lid w:val="en-US"\s*\/>[\s\S]*<w:storeMappedDataAs w:val="date"\s*\/>[\s\S]*<w:calendar w:val="gregorian"\s*\/>[\s\S]*2026-07-21/);
 assert.ok(Object.keys(docxZip.files).some((part) => /(?:^|\/)media\/[^/]+\.png$/.test(part)));
 const importedDocument = await importDocxWithOpenChestnut(docx);
 assert.equal(importedDocument.defaultRunStyle.fontFamily, "Aptos");
@@ -159,10 +162,13 @@ assert.deepEqual(importedDocument.contentControls[2].choices.map((choice) => cho
 assert.equal(importedDocument.contentControls[3].controlType, "comboBox");
 assert.equal(importedDocument.contentControls[3].value, "email");
 assert.deepEqual(importedDocument.contentControls[3].choices.map((choice) => choice.value), ["email", "phone"]);
+assert.equal(importedDocument.contentControls[4].controlType, "date");
+assert.equal(importedDocument.contentControls[4].dateValue, "2026-07-21");
 assert.deepEqual(importedDocument.fillContentControls({ OWNER: "Grace" }), { updated: 1, matchedTags: ["OWNER"], missingTags: [] });
 assert.deepEqual(importedDocument.setCheckboxContentControls({ APPROVED: true }), { updated: 1, matchedTags: ["APPROVED"], missingTags: [] });
 assert.deepEqual(importedDocument.setDropdownContentControls({ PRIORITY: "high" }), { updated: 1, matchedTags: ["PRIORITY"], missingTags: [] });
 assert.deepEqual(importedDocument.setComboBoxContentControls({ CONTACT_METHOD: "Pager duty" }), { updated: 1, matchedTags: ["CONTACT_METHOD"], missingTags: [] });
+assert.deepEqual(importedDocument.setDateContentControls({ REVIEW_DATE: "2028-02-29" }), { updated: 1, matchedTags: ["REVIEW_DATE"], missingTags: [] });
 importedDocument.blocks[2].text = "Edited through OpenChestnut.";
 importedDocument.blocks[2].runs = [{ text: importedDocument.blocks[2].text, style: {} }];
 const docx2 = await exportDocxWithOpenChestnut(importedDocument);
@@ -174,6 +180,8 @@ assert.equal(importedDocument2.contentControls[2].selectedValue, "high");
 assert.equal(importedDocument2.contentControls[2].text, "High");
 assert.equal(importedDocument2.contentControls[3].value, "Pager duty");
 assert.equal(importedDocument2.contentControls[3].text, "Pager duty");
+assert.equal(importedDocument2.contentControls[4].dateValue, "2028-02-29");
+assert.equal(importedDocument2.contentControls[4].text, "2028-02-29");
 await assert.rejects(exportDocxWithOpenChestnut(document, { allowLossy: true }), /does not accept option/i);
 
 // PPTX: source-free roundRect/textbox, basic effect styling, connector arrows,

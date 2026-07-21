@@ -13,6 +13,7 @@ export const DEFAULT_BRIEF = Object.freeze({
   subtitle: "A concise, evidence-led recommendation for the next release gate",
   owner: "Artifact Platform",
   date: "16 July 2026",
+  reviewDate: "2026-07-16",
   recommendation: "Approve the controlled rollout after the final compatibility review.",
   summary: "The core authoring, OpenChestnut codec, package, and render gates are stable. Remaining work is concentrated in environment-specific compatibility and release operations.",
   evidence: [
@@ -177,6 +178,12 @@ export function buildDocument(spec = DEFAULT_BRIEF) {
     alias: "Review route",
     value: "email",
   });
+  priority.addRun("    |    REVIEW DATE  ");
+  priority.addDateContentControl(spec.reviewDate, {
+    id: "review-date-control",
+    tag: "REVIEW_DATE",
+    alias: "Review date",
+  });
   document.addParagraph(spec.summary, {
     name: "executive-summary",
     styleId: "Normal",
@@ -309,6 +316,11 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
     matchedTags: ["REVIEW_ROUTE"],
     missingTags: [],
   });
+  assert.deepEqual(imported.setDateContentControls({ REVIEW_DATE: "2026-07-21" }), {
+    updated: 1,
+    matchedTags: ["REVIEW_DATE"],
+    missingTags: [],
+  });
   assert.equal(imported.bookmarks.length, 2);
   const importedDecisionBookmark = imported.bookmarks.find((bookmark) => bookmark.name === "DecisionSection");
   assert.ok(importedDecisionBookmark);
@@ -369,6 +381,7 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
     ["FINAL_APPROVAL", "Final approval", "checkbox", true],
     ["REVIEW_PRIORITY", "Review priority", "dropdown", "High"],
     ["REVIEW_ROUTE", "Review route", "comboBox", "Security hotline"],
+    ["REVIEW_DATE", "Review date", "date", "2026-07-21"],
   ]);
   assert.equal(
     finalDocument.blocks.some((block) => block.kind === "hyperlink" && block.anchor === "DecisionSection"),
@@ -392,7 +405,7 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
     kind: "document,paragraph,listItem,table,comment,bookmark,note,contentControl,header,footer,hyperlink,citation,bibliographySource,change,layout",
     maxChars: 64_000,
   });
-  for (const expected of [spec.title, "Verified", "Recommendation wording verified", "application-compatibility", "semantic re-import", "Evidence snapshot", "DecisionSection", "ProjectEvidence", "2026, verified", "OWNER", "FINAL_APPROVAL", "checkbox", "REVIEW_PRIORITY", "dropdown", "REVIEW_ROUTE", "comboBox", "Security hotline", "LAUNCH READINESS"]) {
+  for (const expected of [spec.title, "Verified", "Recommendation wording verified", "application-compatibility", "semantic re-import", "Evidence snapshot", "DecisionSection", "ProjectEvidence", "2026, verified", "OWNER", "FINAL_APPROVAL", "checkbox", "REVIEW_PRIORITY", "dropdown", "REVIEW_ROUTE", "comboBox", "Security hotline", "REVIEW_DATE", "dateValue", "2026-07-21", "LAUNCH READINESS"]) {
     assert.match(inspection.ndjson, new RegExp(expected));
   }
 

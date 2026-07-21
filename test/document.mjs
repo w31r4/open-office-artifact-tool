@@ -825,6 +825,60 @@ assert.throws(
   /must be unique/i,
 );
 
+const dateDocument = DocumentModel.create({ name: "Date content-control profile", blocks: [] });
+const dateParagraph = dateDocument.addParagraph("Review date: ");
+dateParagraph.addDateContentControl("2026-07-21", {
+  id: "review-date-control",
+  tag: "REVIEW_DATE",
+  alias: "Review date",
+  style: { fontFamily: "Aptos", fontSize: 12 },
+});
+dateParagraph.addRun(".");
+const dateControl = dateDocument.contentControls[0];
+assert.equal(dateControl.controlType, "date");
+assert.equal(dateControl.dateValue, "2026-07-21");
+assert.equal(dateControl.text, "2026-07-21");
+assert.equal(dateParagraph.text, "Review date: 2026-07-21.");
+assert.throws(() => { dateControl.text = "July 21, 2026"; }, /set dateValue instead/i);
+assert.throws(() => dateDocument.fillContentControls({ REVIEW_DATE: "2026-08-01" }), /Unknown document content-control tag/i);
+assert.throws(() => dateDocument.setComboBoxContentControls({ REVIEW_DATE: "2026-08-01" }), /Unknown document combo-box content-control tag/i);
+assert.throws(() => dateDocument.setDateContentControls({ REVIEW_DATE: "2026-08-01", MISSING: "2026-08-02" }), /Unknown document date content-control tag/i);
+assert.equal(dateControl.dateValue, "2026-07-21", "strict date updates must fail before mutation");
+for (const invalid of ["2026-7-21", "2026-02-29", "2026-04-31", "0000-01-01", new Date("2026-07-21T00:00:00Z")]) {
+  assert.throws(() => dateDocument.setDateContentControls({ REVIEW_DATE: invalid }), /dateValue must/i);
+  assert.equal(dateControl.dateValue, "2026-07-21", "invalid date updates must fail before mutation");
+}
+assert.deepEqual(dateDocument.setDateContentControls({ REVIEW_DATE: "2028-02-29" }), { updated: 1, matchedTags: ["REVIEW_DATE"], missingTags: [] });
+assert.equal(dateControl.dateValue, "2028-02-29");
+assert.equal(dateControl.text, "2028-02-29");
+assert.equal(dateParagraph.text, "Review date: 2028-02-29.");
+assert.match(dateDocument.inspect({ kind: "contentControl" }).ndjson, /"controlType":"date"/);
+assert.match(dateDocument.inspect({ kind: "contentControl" }).ndjson, /"dateValue":"2028-02-29"/);
+assert.equal(dateDocument.verify().ok, true);
+const dateDocx = await DocumentFile.exportDocx(dateDocument);
+const importedDateDocument = await DocumentFile.importDocx(dateDocx);
+const importedDate = importedDateDocument.contentControls[0];
+assert.equal(importedDate.controlType, "date");
+assert.equal(importedDate.dateValue, "2028-02-29");
+assert.equal(importedDate.text, "2028-02-29");
+assert.ok(Number.isInteger(importedDate.nativeId));
+assert.deepEqual(importedDateDocument.setDateContentControls({ REVIEW_DATE: "2027-12-31" }), { updated: 1, matchedTags: ["REVIEW_DATE"], missingTags: [] });
+const editedDateDocx = await DocumentFile.exportDocx(importedDateDocument);
+const roundTripDateDocument = await DocumentFile.importDocx(editedDateDocx);
+assert.equal(roundTripDateDocument.contentControls[0].dateValue, "2027-12-31");
+assert.equal(roundTripDateDocument.contentControls[0].text, "2027-12-31");
+assert.equal(roundTripDateDocument.resolve(roundTripDateDocument.contentControls[0].targetId).text, "Review date: 2027-12-31.");
+const dateTypeTamper = await DocumentFile.importDocx(dateDocx);
+dateTypeTamper.resolve(dateTypeTamper.contentControls[0].targetId).runs[dateTypeTamper.contentControls[0].runIndex].contentControl.controlType = "text";
+await assert.rejects(
+  () => DocumentFile.exportDocx(dateTypeTamper),
+  (error) => error?.code === "document_content_control_topology_changed" && /source-bound/i.test(error.message),
+);
+assert.throws(
+  () => dateDocument.addParagraph("", { runs: [{ text: "July 21, 2026", contentControl: { tag: "INVALID_DATE_TEXT", controlType: "date", dateValue: "2026-07-21" } }] }),
+  /text is codec-owned/i,
+);
+
 const modernCommentDocument = DocumentModel.create({ name: "Modern comment thread", blocks: [] });
 const modernCommentTarget = modernCommentDocument.addParagraph("Review the bounded modern comment thread.");
 const modernRoot = modernCommentDocument.addComment(modernCommentTarget, "Please confirm the evidence.", {

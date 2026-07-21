@@ -20,6 +20,8 @@
         { "text": "", "contentControl": { "id": "priority", "tag": "PRIORITY", "alias": "Priority", "controlType": "dropdown", "selectedValue": "medium", "choices": [{ "displayText": "Low", "value": "low" }, { "displayText": "Medium", "value": "medium" }, { "displayText": "High", "value": "high" }] } },
         { "text": " / Contact: " },
         { "text": "", "contentControl": { "id": "contact-method", "tag": "CONTACT_METHOD", "alias": "Contact method", "controlType": "comboBox", "value": "email", "choices": [{ "displayText": "Email", "value": "email" }, { "displayText": "Phone call", "value": "phone" }] } },
+        { "text": " / Review date: " },
+        { "text": "", "contentControl": { "id": "review-date", "tag": "REVIEW_DATE", "alias": "Review date", "controlType": "date", "dateValue": "2026-07-21" } },
         { "text": " / Approved: " },
         { "text": "", "contentControl": { "id": "approved", "tag": "APPROVED", "alias": "Approved", "controlType": "checkbox", "checked": false } }
       ]
@@ -54,6 +56,13 @@
         "CONTACT_METHOD": "Pager duty"
       },
       "expectUpdated": 1
+    },
+    {
+      "kind": "dateContentControls",
+      "values": {
+        "REVIEW_DATE": "2028-02-29"
+      },
+      "expectUpdated": 1
     }
   ],
   "expectInspect": [
@@ -64,7 +73,9 @@
     { "kind": "contentControl", "pattern": "PRIORITY" },
     { "kind": "contentControl", "pattern": "dropdown" },
     { "kind": "contentControl", "pattern": "CONTACT_METHOD" },
-    { "kind": "contentControl", "pattern": "comboBox" }
+    { "kind": "contentControl", "pattern": "comboBox" },
+    { "kind": "contentControl", "pattern": "REVIEW_DATE" },
+    { "kind": "contentControl", "pattern": "dateValue" }
   ],
   "qa": {
     "previewFormat": "svg",
