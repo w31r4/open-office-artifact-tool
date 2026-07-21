@@ -93,6 +93,7 @@ internal static class PptxCodec
     private const string DiagramLayoutContentType = "application/vnd.openxmlformats-officedocument.drawingml.diagramLayout+xml";
     private const string DiagramStyleContentType = "application/vnd.openxmlformats-officedocument.drawingml.diagramStyle+xml";
     private const string DiagramColorsContentType = "application/vnd.openxmlformats-officedocument.drawingml.diagramColors+xml";
+    private const string LegacyCommentAuthorsContentType = "application/vnd.openxmlformats-officedocument.presentationml.commentAuthors+xml";
     private const string InkContentType = "application/inkml+xml";
     private const string Mp4ContentType = "video/mp4";
     private const string VideoRelationshipType = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/video";
@@ -258,6 +259,9 @@ internal static class PptxCodec
                     BackgroundSemanticSha256 = BackgroundSemanticHash(slideBackground),
                     BackgroundEditable = PptxBackgroundCodec.Supports(slideCommon),
                     SpeakerNotesAddable = PptxSpeakerNotesCodec.CanAddSourceBound(presentationPart, slidePart),
+                    LegacyCommentsAddable = PptxLegacyCommentsCodec.CanAddSourceBound(presentationPart, slidePart),
+                    CommentPartPresent = PptxLegacyCommentsCodec.CommentPartPresent(slidePart),
+                    CommentFamily = PptxLegacyCommentsCodec.CommentFamily(presentationPart),
                 },
             };
             if (slideBackground is not null) target.Background = slideBackground;
@@ -582,7 +586,10 @@ internal static class PptxCodec
                     !binding.PartPath.Equals(PartPath(slidePart), StringComparison.OrdinalIgnoreCase) ||
                     !binding.RelationshipId.Equals(relationshipId, StringComparison.Ordinal) ||
                     !binding.SlideXmlSha256.Equals(HashElement(slideRoot), StringComparison.OrdinalIgnoreCase) ||
-                    binding.SpeakerNotesAddable != PptxSpeakerNotesCodec.CanAddSourceBound(presentationPart, slidePart))
+                    binding.SpeakerNotesAddable != PptxSpeakerNotesCodec.CanAddSourceBound(presentationPart, slidePart) ||
+                    binding.LegacyCommentsAddable != PptxLegacyCommentsCodec.CanAddSourceBound(presentationPart, slidePart) ||
+                    binding.CommentPartPresent != PptxLegacyCommentsCodec.CommentPartPresent(slidePart) ||
+                    !binding.CommentFamily.Equals(PptxLegacyCommentsCodec.CommentFamily(presentationPart), StringComparison.Ordinal))
                     throw new CodecException(
                         "presentation_slide_binding_mismatch",
                         $"Presentation slide {slideIndex + 1} does not match its hash-bound source slide.",
@@ -787,6 +794,17 @@ internal static class PptxCodec
                     replacedOpaquePartHashes.Add(modernCommentsChange.PartPath, modernCommentsChange.Sha256);
                 }
                 TrackContextChanges(slidePart, slideContext, changedParts, addedRelationshipIds, addedPartPaths);
+            }
+            if (PptxLegacyCommentsCodec.ApplySourceBoundAdditions(
+                    presentationPart,
+                    slideParts,
+                    retainedTargets.Select(target => target.Target).ToArray()) is { } legacyCommentsChange)
+            {
+                changedParts.UnionWith(legacyCommentsChange.ChangedPartPaths);
+                addedPartPaths.UnionWith(legacyCommentsChange.AddedPartPaths);
+                addedRelationshipIds.UnionWith(legacyCommentsChange.AddedRelationshipKeys);
+                foreach (var (partPath, sha256) in legacyCommentsChange.ReplacedPartHashes)
+                    replacedOpaquePartHashes.Add(partPath, sha256);
             }
         }
 
@@ -2195,11 +2213,14 @@ internal static class PptxCodec
             var isLegacyComments = relationship.Type.EndsWith("/comments", StringComparison.Ordinal) &&
                                    !relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase) &&
                                    IsNumberedCommentsPath(resolvedTarget);
+            var isLegacyCommentAuthors = relationship.Type.EndsWith("/commentAuthors", StringComparison.Ordinal) &&
+                                         !relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase) &&
+                                         IsLegacyCommentAuthorsPath(resolvedTarget);
             var allowedFromSlide = IsNumberedSlidePath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage || isChart || isEmbeddedXlsx || isDiagram || isInkContent || isMp4Media || isSlideLayout || isNotesSlide || isLegacyComments);
             var allowedFromMaster = IsNumberedMasterPath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage);
             var allowedFromLayout = IsNumberedLayoutPath(relationship.SourcePath) && (isExternalLink || isSlideJump || isImage);
             var allowedFromNotes = IsNumberedNotesSlidePath(relationship.SourcePath) && (isNotesMaster || isNotesBackReference);
-            var allowedFromPresentation = relationship.SourcePath.Equals("ppt/presentation.xml", StringComparison.OrdinalIgnoreCase) && isNotesMaster;
+            var allowedFromPresentation = relationship.SourcePath.Equals("ppt/presentation.xml", StringComparison.OrdinalIgnoreCase) && (isNotesMaster || isLegacyCommentAuthors);
             var allowedFromNotesMaster = IsNumberedNotesMasterPath(relationship.SourcePath) && isTheme;
             if (!allowedFromSlide && !allowedFromMaster && !allowedFromLayout && !allowedFromNotes && !allowedFromPresentation && !allowedFromNotesMaster)
                 throw new CodecException("opaque_content_not_preserved", $"Modeled PPTX edit added unsupported relationship {relationship.Id} from {relationship.SourcePath} to {resolvedTarget}.");
@@ -2329,6 +2350,9 @@ internal static class PptxCodec
                path[prefix.Length..^suffix.Length].All(char.IsAsciiDigit);
     }
 
+    private static bool IsLegacyCommentAuthorsPath(string path) =>
+        path.Equals("ppt/commentAuthors.xml", StringComparison.OrdinalIgnoreCase);
+
     private static bool IsNumberedChartPath(string path)
     {
         const string suffix = ".xml";
@@ -2355,7 +2379,8 @@ internal static class PptxCodec
         IsNumberedNotesSlideRelationshipPath(part.Path) ||
         IsNumberedNotesMasterPath(part.Path) ||
         IsNumberedNotesMasterRelationshipPath(part.Path) ||
-        IsNumberedCommentsPath(part.Path);
+        IsNumberedCommentsPath(part.Path) ||
+        (IsLegacyCommentAuthorsPath(part.Path) && part.ContentType.Equals(LegacyCommentAuthorsContentType, StringComparison.OrdinalIgnoreCase));
 
     private static bool IsCloneDiagramRelationship(string relationshipType, string targetPath)
     {
@@ -2476,6 +2501,13 @@ internal static class PptxCodec
             else
             {
                 PptxSpeakerNotesCodec.ValidateSourceBoundOutput(
+                    sourcePresentationPart,
+                    outputPresentationPart,
+                    target.Source.Part,
+                    outputSlide,
+                    target.Target,
+                    targetIndex);
+                PptxLegacyCommentsCodec.ValidateSourceBoundOutput(
                     sourcePresentationPart,
                     outputPresentationPart,
                     target.Source.Part,

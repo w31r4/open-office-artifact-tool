@@ -1373,6 +1373,18 @@ message PresentationSlideSourceBinding {
   // plain-text notes leaf. Export re-proves this capability from source bytes;
   // callers cannot grant it by changing the wire value.
   bool speaker_notes_addable = 8;
+  // True only when the imported presentation has no legacy or modern comment
+  // graph and this SlidePart can receive one canonical legacy comments leaf.
+  // Export re-proves the whole presentation graph before creating the shared
+  // author catalog and any slide-local comments parts.
+  bool legacy_comments_addable = 9;
+  // True when this concrete SlidePart owns any legacy or Office 2021 comment
+  // part, including an unsupported/opaque graph.
+  bool comment_part_present = 10;
+  // Presentation-wide family evidence: legacy, modern, or mixed.
+  // A comment-free presentation reports legacy because that is the bounded
+  // family OpenChestnut may author when legacy_comments_addable is true.
+  string comment_family = 11;
 }
 
 message PresentationSpeakerNotes {

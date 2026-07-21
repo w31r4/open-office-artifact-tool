@@ -1328,7 +1328,8 @@ Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or 
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
 | `slide.charts.add` | api | Add a source-free literal bar, line, pie, standard area, fixed 50%-hole doughnut, marker-only scatter, bounded 2D bubble, or clustered bar+line combo chart. Category families use shared literal categories; scatter and bubble use aligned per-series numeric X/Y values, with positive area-based bubble sizes. Supported variants retain title, legend, bounded axes, basic series styling, chart-level data labels, layout JSON, SVG preview, and native ChartPart output across import/edit/re-export. Formula/external data, advanced family geometry, topology changes, and unsupported styling fail closed rather than being flattened. |
 | `slide.clearBackground` | api | Remove the direct slide background so preview and PPTX output inherit from the preserved Layout/Master chain. Unsupported imported background graphs fail closed rather than being flattened or discarded. |
-| `slide.comments.addThread` | api | Create either a bounded legacy PPTX annotation or an Office 2021 modern thread. Imported legacy records remain source-bound and read-only. Modern mode supports a top-level element/text-range/textMatch anchor, one root, direct replies, independent people/timestamps, and active/resolved/closed state; imported modern graphs permit only fixed-topology text/status edits. |
+| `slide.comments.addThread` | api | Create either a bounded legacy PPTX annotation or an Office 2021 modern thread. A comment-free imported presentation may add canonical legacy review comments only when comments.capability.addable is true; existing legacy records remain source-bound and read-only. Modern mode supports a top-level element/text-range/textMatch anchor, one root, direct replies, independent people/timestamps, and active/resolved/closed state; imported modern graphs permit only fixed-topology text/status edits. |
+| `slide.comments.capability` | api | Inspect defensive source-bound comment-family evidence before authoring. A comment-free imported presentation may advertise legacy addability; existing legacy records remain read-only and modern graphs retain their separate fixed-topology edit contract. |
 | `slide.compose` | api | Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph/text, shape, table, chart, image, and rule nodes into editable slide objects. |
 | `slide.connectors.add` | api | Add an inspectable connector line between points or element IDs with SVG preview, layout JSON, PPTX p:cxnSp export, and off-canvas QA. |
 | `slide.delete` | api | Remove this slide. Source-free decks may remove any non-final slide. An imported PPTX performs a real OPC deletion only for an isolated slide with exactly its layout relationship and no inbound/package-identity references; media, notes, comments, charts, OLE, hyperlinks, custom shows, sections, extensions, and all clone requests fail closed. |
@@ -1995,7 +1996,7 @@ Remove the direct slide background so preview and PPTX output inherit from the p
 
 #### `slide.comments.addThread`
 
-Create either a bounded legacy PPTX annotation or an Office 2021 modern thread. Imported legacy records remain source-bound and read-only. Modern mode supports a top-level element/text-range/textMatch anchor, one root, direct replies, independent people/timestamps, and active/resolved/closed state; imported modern graphs permit only fixed-topology text/status edits.
+Create either a bounded legacy PPTX annotation or an Office 2021 modern thread. A comment-free imported presentation may add canonical legacy review comments only when comments.capability.addable is true; existing legacy records remain source-bound and read-only. Modern mode supports a top-level element/text-range/textMatch anchor, one root, direct replies, independent people/timestamps, and active/resolved/closed state; imported modern graphs permit only fixed-topology text/status edits.
 
 **Schema parameters:**
 
@@ -2010,7 +2011,15 @@ Create either a bounded legacy PPTX annotation or an Office 2021 modern thread. 
 
 **Schema returns:**
 
-- `thread` (SlideCommentThread) — Create a bounded legacy annotation or Office 2021 modern root. Recognized legacy imports remain unchanged-only. Recognized modern imports expose root/direct replies and allow only text/status edits; author/person/date identity, position, target moniker, reply topology, part paths, relationships, and source hashes remain fixed.
+- `thread` (SlideCommentThread) — Create a bounded legacy annotation or Office 2021 modern root. A comment-free imported presentation may create canonical legacy parts only after comments.capability.addable preflight; OpenChestnut re-proves the whole source graph, allocates collision-free relationships, and never mixes comment families. Recognized legacy imports remain unchanged-only. Recognized modern imports expose root/direct replies and allow only text/status edits; author/person/date identity, position, target moniker, reply topology, part paths, relationships, and source hashes remain fixed.
+
+#### `slide.comments.capability`
+
+Inspect defensive source-bound comment-family evidence before authoring. A comment-free imported presentation may advertise legacy addability; existing legacy records remain read-only and modern graphs retain their separate fixed-topology edit contract.
+
+**Schema returns:**
+
+- `capability` (object) — Defensive { sourceBound, format, partPresent, addable } evidence. For imported files, addable is true only when the complete presentation has no legacy or Office 2021 comment graph and OpenChestnut can create one canonical legacy CommentAuthorsPart plus slide-local SlideCommentsPart leaves. This is preflight evidence, not mutable write authority; export re-proves the source bytes and fails closed on existing, mixed, connected, or tampered graphs.
 
 #### `slide.compose`
 

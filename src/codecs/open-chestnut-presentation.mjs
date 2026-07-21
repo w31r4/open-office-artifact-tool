@@ -31,6 +31,7 @@ const MAX_PARAGRAPH_SPACING_MULTIPLIER = 132;
 const PRESENTATION_STATE = Symbol.for("open-office-artifact-tool.open-chestnut-presentation-state");
 const PRESENTATION_SLIDE_DUPLICATOR = Symbol.for("open-office-artifact-tool.open-chestnut-presentation-duplicate");
 const PRESENTATION_SPEAKER_NOTES_CAPABILITY = Symbol.for("open-office-artifact-tool.open-chestnut-speaker-notes-capability");
+const PRESENTATION_LEGACY_COMMENTS_CAPABILITY = Symbol.for("open-office-artifact-tool.open-chestnut-legacy-comments-capability");
 const PRESENTATION_SCHEME_COLORS = new Set([
   "dk1", "lt1", "dk2", "lt2", "tx1", "bg1", "tx2", "bg2",
   "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink", "folHlink",
@@ -2117,8 +2118,18 @@ export function presentationEnvelope(presentation, protocolVersion) {
     if (bindingState) {
       if (cloneState && slide.name !== bindingState.name) throw new OpenChestnutCodecError(`Source-preserving PPTX export cannot rename pending clone slide ${slideIndex + 1}.`, [], { code: "unsupported_presentation_slide_clone" });
       if ((slide.layoutId || "") !== (bindingState.wire.layoutId || "")) throw new OpenChestnutCodecError(`Source-preserving PPTX export cannot change slide ${slideIndex + 1}'s layout binding.`, [], { code: cloneState ? "unsupported_presentation_slide_clone" : "presentation_slide_layout_binding_changed" });
-      if ((!bindingState.wire.modernComments?.length || cloneState) && presentationSlideCommentSnapshot(slide) !== bindingState.commentSnapshot) {
+      const commentsChanged = presentationSlideCommentSnapshot(slide) !== bindingState.commentSnapshot;
+      const addingLegacyComments = !cloneState &&
+        presentation.commentFormat === "legacy" &&
+        !bindingState.wire.legacyComments?.length &&
+        !bindingState.wire.modernComments?.length &&
+        slide.comments.items.length > 0 &&
+        bindingState.wire.source?.legacyCommentsAddable === true;
+      if (commentsChanged && !addingLegacyComments && (!bindingState.wire.modernComments?.length || cloneState)) {
         throw new OpenChestnutCodecError(`Imported presentation slide ${slideIndex + 1} comments are source-bound outside the bounded modern text/status edit profile.`, [], { code: "unsupported_presentation_edit" });
+      }
+      if (commentsChanged && presentation.commentFormat === "legacy" && !addingLegacyComments) {
+        throw new OpenChestnutCodecError(`Source-preserving PPTX export cannot add legacy comments to slide ${slideIndex + 1} because its presentation comment graph is not safely extensible.`, [], { code: "unsupported_presentation_edit" });
       }
       const current = directSlideElements(slide);
       const entries = cloneState?.entries || bindingState.entries;
@@ -2977,6 +2988,18 @@ export async function presentationFromEnvelope(envelope) {
         }],
       });
     }
+    Object.defineProperty(slide.comments, PRESENTATION_LEGACY_COMMENTS_CAPABILITY, {
+      value: Object.freeze({
+        sourceBound: true,
+        format: sourceSlide.source?.commentFamily || "legacy",
+        partPresent: Boolean(sourceSlide.source?.commentPartPresent),
+        addable: Boolean(
+          !sourceSlide.legacyComments?.length &&
+          !sourceSlide.modernComments?.length &&
+          sourceSlide.source?.legacyCommentsAddable
+        ),
+      }),
+    });
     slideStates.push({
       wire: sourceSlide,
       slide,

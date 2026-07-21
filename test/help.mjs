@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 340);
+assert.equal(HELP_CATALOG.length, 341);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -124,7 +124,8 @@ assert.match(HELP_CATALOG.find((item) => item.name === "presentation.slides.add"
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.setBackground"));
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.clearBackground")?.schema?.returns?.slide?.description || "", /no direct background.*Layout\/Master/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.comments.addThread"));
-assert.match(HELP_CATALOG.find((item) => item.name === "slide.comments.addThread")?.summary || "", /bounded legacy PPTX annotation.*source-bound and read-only/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.comments.capability")?.schema?.returns?.capability?.description || "", /sourceBound.*format.*partPresent.*addable.*no legacy or Office 2021 comment graph.*preflight evidence.*not mutable write authority.*re-proves/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.comments.addThread")?.summary || "", /bounded legacy PPTX annotation.*comment-free imported presentation.*comments\.capability\.addable.*source-bound and read-only/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.comments.addThread")?.schema?.parameters?.target?.description || "", /Legacy mode requires undefined.*Modern mode accepts.*textMatch.*Nested group-child.*unsupported/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.comments.addThread")?.schema?.parameters?.position?.description || "", /Explicit slide coordinate/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "slideCommentThread.addReply")?.summary || "", /source-free Office 2021 modern.*Imported reply topology is fixed.*fails closed/i);
@@ -365,7 +366,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "document.fillContentCont
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.materializeFields")?.schema?.parameters?.dryRun?.type, "boolean");
 assert.match(HELP_CATALOG.find((item) => item.name === "document.materializeFields")?.summary || "", /SEQ counters.*REF cached results.*PAGEREF.*pagination host/i);
 const presentationCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "presentation");
-assert.equal(presentationCatalog.length, 64);
+assert.equal(presentationCatalog.length, 65);
 assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "presentation.slides.insert")?.schema?.parameters?.after?.type, "Slide|number|null");

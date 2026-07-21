@@ -253,7 +253,11 @@ public sealed class PptxCodecTests
 
         var imported = Import(authored.File.ToByteArray());
         Assert.True(imported.Ok, Diagnostics(imported));
-        var importedComment = Assert.Single(Assert.Single(imported.Artifact.Presentation.Slides).LegacyComments);
+        var importedSlide = Assert.Single(imported.Artifact.Presentation.Slides);
+        Assert.False(importedSlide.Source.LegacyCommentsAddable);
+        Assert.True(importedSlide.Source.CommentPartPresent);
+        Assert.Equal("legacy", importedSlide.Source.CommentFamily);
+        var importedComment = Assert.Single(importedSlide.LegacyComments);
         Assert.Equal("presentation/slide/1/legacy-comment/1", importedComment.Id);
         Assert.Equal("Review Owner", importedComment.Author);
         Assert.Equal("Confirm the customer evidence before delivery.", importedComment.Text);
@@ -287,6 +291,111 @@ public sealed class PptxCodecTests
         rejected = Invoke(invalid);
         Assert.False(rejected.Ok);
         Assert.Equal("invalid_presentation_legacy_comment", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void ImportedCommentFreePresentationAddsCanonicalLegacyReviewGraphAndRejectsCapabilityTampering()
+    {
+        var request = ExportRequest();
+        request.Artifact.Presentation.Slides.Add(new PresentationSlide
+        {
+            Id = "presentation/slide/2",
+            Name = "Second review target",
+        });
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var sourceBytes = AddLegacyCommentRelationshipIdCollisions(authored.File.ToByteArray());
+
+        var imported = Import(sourceBytes);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.All(imported.Artifact.Presentation.Slides, slide => Assert.True(slide.Source.LegacyCommentsAddable));
+        imported.Artifact.Presentation.Slides[0].LegacyComments.Add(new PresentationLegacyComment
+        {
+            Id = "review-a",
+            Author = "Review Owner",
+            Text = "Confirm the customer evidence.",
+            CreatedAt = "2026-07-20T03:04:05Z",
+            PositionXEmu = 1_234_500,
+            PositionYEmu = 2_345_600,
+        });
+        imported.Artifact.Presentation.Slides[0].LegacyComments.Add(new PresentationLegacyComment
+        {
+            Id = "review-b",
+            Author = "Legal Owner",
+            Text = "Confirm the release language.",
+            CreatedAt = "2026-07-20T03:05:06Z",
+            PositionXEmu = 2_000_000,
+            PositionYEmu = 1_000_000,
+        });
+        imported.Artifact.Presentation.Slides[1].LegacyComments.Add(new PresentationLegacyComment
+        {
+            Id = "review-c",
+            Author = "Review Owner",
+            Text = "Carry the evidence into the appendix.",
+            CreatedAt = "2026-07-20T03:06:07Z",
+            PositionXEmu = 3_000_000,
+            PositionYEmu = 1_500_000,
+        });
+
+        var exported = Export(imported.Artifact);
+        Assert.True(exported.Ok, Diagnostics(exported));
+        var outputBytes = exported.File.ToByteArray();
+        using (var stream = new MemoryStream(outputBytes))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var presentationPart = package.PresentationPart!;
+            var authorsPart = Assert.IsType<CommentAuthorsPart>(presentationPart.CommentAuthorsPart);
+            Assert.NotEqual("rIdCommentAuthors1", presentationPart.GetIdOfPart(authorsPart));
+            Assert.Contains(presentationPart.HyperlinkRelationships, relationship => relationship.Id == "rIdCommentAuthors1");
+            var authors = authorsPart.CommentAuthorList!.Elements<P.CommentAuthor>().ToArray();
+            Assert.Equal(2, authors.Length);
+            Assert.Equal((0U, "Review Owner", 2U), (authors[0].Id!.Value, authors[0].Name!.Value, authors[0].LastIndex!.Value));
+            Assert.Equal((1U, "Legal Owner", 1U), (authors[1].Id!.Value, authors[1].Name!.Value, authors[1].LastIndex!.Value));
+
+            var slides = OrderedSlides(package);
+            Assert.All(slides, slide =>
+            {
+                var commentsPart = Assert.IsType<SlideCommentsPart>(slide.SlideCommentsPart);
+                Assert.NotEqual("rIdComments1", slide.GetIdOfPart(commentsPart));
+                Assert.Contains(slide.HyperlinkRelationships, relationship => relationship.Id == "rIdComments1");
+                Assert.Empty(commentsPart.Parts);
+                Assert.Empty(commentsPart.ExternalRelationships);
+            });
+            var first = slides[0].SlideCommentsPart!.CommentList!.Elements<P.Comment>().ToArray();
+            Assert.Equal((0U, 1U), (first[0].AuthorId!.Value, first[0].Index!.Value));
+            Assert.Equal((1U, 1U), (first[1].AuthorId!.Value, first[1].Index!.Value));
+            var second = Assert.Single(slides[1].SlideCommentsPart!.CommentList!.Elements<P.Comment>());
+            Assert.Equal((0U, 2U), (second.AuthorId!.Value, second.Index!.Value));
+        }
+
+        var roundTrip = Import(outputBytes);
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        Assert.All(roundTrip.Artifact.Presentation.Slides, slide => Assert.False(slide.Source.LegacyCommentsAddable));
+        Assert.Equal(
+            ["Confirm the customer evidence.", "Confirm the release language.", "Carry the evidence into the appendix."],
+            roundTrip.Artifact.Presentation.Slides.SelectMany(slide => slide.LegacyComments).Select(comment => comment.Text));
+
+        var falselyGranted = Import(outputBytes);
+        falselyGranted.Artifact.Presentation.Slides[0].Source.LegacyCommentsAddable = true;
+        var rejected = Export(falselyGranted.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("presentation_slide_binding_mismatch", Assert.Single(rejected.Diagnostics).Code);
+
+        var falselyRevoked = Import(sourceBytes);
+        falselyRevoked.Artifact.Presentation.Slides[0].Source.LegacyCommentsAddable = false;
+        falselyRevoked.Artifact.Presentation.Slides[0].LegacyComments.Add(new PresentationLegacyComment
+        {
+            Id = "cannot-self-authorize",
+            Author = "Review Owner",
+            Text = "The source binding is immutable evidence.",
+            CreatedAt = "2026-07-20T03:07:08Z",
+            PositionXEmu = 1_000_000,
+            PositionYEmu = 1_000_000,
+        });
+        rejected = Export(falselyRevoked.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("presentation_slide_binding_mismatch", Assert.Single(rejected.Diagnostics).Code);
     }
 
     [Fact]
@@ -349,7 +458,11 @@ public sealed class PptxCodecTests
 
         var imported = Import(authoredBytes);
         Assert.True(imported.Ok, Diagnostics(imported));
-        var importedThread = Assert.Single(Assert.Single(imported.Artifact.Presentation.Slides).ModernComments);
+        var importedSlide = Assert.Single(imported.Artifact.Presentation.Slides);
+        Assert.False(importedSlide.Source.LegacyCommentsAddable);
+        Assert.True(importedSlide.Source.CommentPartPresent);
+        Assert.Equal("modern", importedSlide.Source.CommentFamily);
+        var importedThread = Assert.Single(importedSlide.ModernComments);
         Assert.Equal("presentation/slide/1/element/1/text", importedThread.TargetId);
         Assert.Equal(PresentationModernCommentAnchor.Types.Kind.TextRange, importedThread.Anchor.Kind);
         Assert.Equal(0U, importedThread.Anchor.TextStart);
@@ -5830,6 +5943,27 @@ public sealed class PptxCodecTests
                 new Uri("https://example.invalid/notes-relationship-collision"),
                 true,
                 "rIdNotes1");
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddLegacyCommentRelationshipIdCollisions(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var package = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var presentationPart = package.PresentationPart!;
+            presentationPart.AddHyperlinkRelationship(
+                new Uri("https://example.invalid/comment-authors-relationship-collision"),
+                true,
+                "rIdCommentAuthors1");
+            foreach (var slide in OrderedSlides(package))
+                slide.AddHyperlinkRelationship(
+                    new Uri("https://example.invalid/comments-relationship-collision"),
+                    true,
+                    "rIdComments1");
         }
         return stream.ToArray();
     }

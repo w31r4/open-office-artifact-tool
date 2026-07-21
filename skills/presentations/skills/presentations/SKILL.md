@@ -373,10 +373,13 @@ fail closed.
 
 For review annotations, read `artifact_tool/api/references/comments.md` before
 calling `slide.comments.addThread(...)`. Canonical PPTX export supports only
-one legacy slide-level comment with `undefined` target, one author, one text
-item, and an explicit coordinate. Modern threads, replies, reactions, resolved
-state, and element/text anchors must stay opaque/source-bound or fail closed;
-never flatten them into a legacy comment.
+bounded legacy slide-level comments with `undefined` targets, one author and
+text item per annotation, and explicit coordinates. A completely comment-free
+imported presentation may advertise `slide.comments.capability.addable`; that
+permits creation of a canonical shared author catalog and closed slide-local
+comment leaves. Existing legacy graphs remain unchanged-only. Modern threads,
+replies, reactions, resolved state, and element/text anchors must stay in their
+native family or fail closed; never flatten them into a legacy comment.
 
 Before running any generated presentation module, initialize its workspace so
 Node.js can resolve the bundled `open-office-artifact-tool` package:
@@ -476,6 +479,39 @@ ambiguous slide names, and any unexpected relationship fail closed with no
 output promotion. Run native LibreOffice/Poppler source-vs-output comparison
 after delivery; speaker notes must not change the visible slides. See
 `artifact_tool/api/references/speaker-notes.spec.md`.
+
+### Bounded Imported Legacy Review-Comment Add
+
+For an ordinary imported deck with no legacy or Office 2021 comments anywhere,
+inspect `slide.comments.capability` before adding a review annotation. Prefer
+the shipped transaction over editing `.rels`, `commentAuthors.xml`, or
+`comments/comment*.xml` yourself:
+
+```bash
+node examples/openchestnut-legacy-comment-add-workflow.mjs \
+  input.pptx output/with-review.pptx output/with-review.audit.json \
+  "Unique target slide name" "Confirm the imported evidence." \
+  "Review Owner" "2026-07-20T03:04:05Z" 360 240
+```
+
+The workflow requires exactly one named source-bound target whose capability is
+`{ format: "legacy", partPresent: false, addable: true }`. It protects the
+source, adds one slide-level annotation, exports through OpenChestnut, and then
+independently proves that only a canonical `CommentAuthorsPart`, one numbered
+closed `SlideCommentsPart`, their two collision-free relationships, content
+types, and corresponding relationship Parts changed. Slide XML, slide order,
+names, and visible semantics remain unchanged. It reimports the exact author
+and text, compares model SVG, emits a byte-bound audit, and uses exclusive
+output publication. Native LibreOffice/Poppler source-vs-output pages must be
+pixel-identical because legacy review comments are nonvisual in slideshow
+rendering.
+
+The capability is defensive preflight evidence only. OpenChestnut re-proves the
+complete source package and rejects a forged flag, an existing author catalog,
+any legacy or modern comments part on any slide, mixed/connected comment graphs,
+or a second add after reimport. Existing imported legacy comments remain
+read-only; this vertical slice is canonical creation from a comment-free source,
+not topology editing. See `artifact_tool/api/references/comments.md`.
 
 ### Bounded Imported Title And Speaker-Notes Edit
 

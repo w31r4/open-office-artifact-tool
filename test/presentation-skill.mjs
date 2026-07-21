@@ -405,6 +405,113 @@ try {
   await assert.rejects(() => fs.access(notesRejectedOutput));
   await assert.rejects(() => fs.access(notesRejectedAudit));
 
+  const legacyCommentAddDir = path.join(root, "legacy-comment-add-workflow");
+  const legacyCommentAddInput = path.join(legacyCommentAddDir, "legacy-comment-source.pptx");
+  const legacyCommentAddOutput = path.join(legacyCommentAddDir, "legacy-comment-added.pptx");
+  const legacyCommentAddAudit = path.join(legacyCommentAddDir, "audit.json");
+  const legacyCommentAddDeck = Presentation.create();
+  const legacyCommentAddTarget = legacyCommentAddDeck.slides.add({ name: "Imported review target", background: { fill: "#F8FAFC" } });
+  legacyCommentAddTarget.shapes.add({
+    name: "review-title",
+    geometry: "textbox",
+    text: "Visible review content stays unchanged",
+    position: { left: 96, top: 112, width: 1088, height: 96 },
+  });
+  const legacyCommentAddControl = legacyCommentAddDeck.slides.add({ name: "Imported review control", background: { fill: "#E0F2FE" } });
+  legacyCommentAddControl.shapes.add({
+    name: "control-title",
+    geometry: "textbox",
+    text: "Control slide",
+    position: { left: 96, top: 112, width: 1088, height: 96 },
+  });
+  await fs.mkdir(legacyCommentAddDir, { recursive: true });
+  await (await PresentationFile.exportPptx(legacyCommentAddDeck)).save(legacyCommentAddInput);
+  const legacyCommentAddSourceBytes = await fs.readFile(legacyCommentAddInput);
+  const legacyCommentAddImported = await PresentationFile.importPptx(new FileBlob(legacyCommentAddSourceBytes, {
+    type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    name: "legacy-comment-source.pptx",
+  }));
+  assert.deepEqual(legacyCommentAddImported.slides.getItem(0).comments.capability, {
+    sourceBound: true,
+    format: "legacy",
+    partPresent: false,
+    addable: true,
+  });
+  assert.match(legacyCommentAddImported.inspect({ kind: "slide" }).ndjson, /"commentsCapability":\{"sourceBound":true,"format":"legacy","partPresent":false,"addable":true\}/);
+  const { addPptxLegacyReviewComment } = await import(
+    "../skills/presentations/skills/presentations/examples/openchestnut-legacy-comment-add-workflow.mjs"
+  );
+  const legacyCommentAddResult = await addPptxLegacyReviewComment({
+    inputPath: legacyCommentAddInput,
+    outputPath: legacyCommentAddOutput,
+    auditPath: legacyCommentAddAudit,
+    slideName: "Imported review target",
+    text: "Confirm the imported evidence before delivery.",
+    author: "Review Owner",
+    created: "2026-07-20T03:04:05Z",
+    position: { x: 360, y: 240, unit: "px" },
+  });
+  assert.equal(legacyCommentAddResult.audit.provider.actual, "open-chestnut");
+  assert.equal(legacyCommentAddResult.audit.operation.type, "source-bound-legacy-comment-add");
+  assert.equal(legacyCommentAddResult.audit.precondition.capability.addable, true);
+  assert.deepEqual(legacyCommentAddResult.audit.validation.package.addedParts, [
+    "ppt/commentAuthors.xml",
+    "ppt/comments/comment1.xml",
+  ]);
+  assert.equal(legacyCommentAddResult.audit.validation.modelRender.byteIdentical, true);
+  assert.deepEqual(await fs.readFile(legacyCommentAddInput), legacyCommentAddSourceBytes);
+  const legacyCommentAddRoundTrip = await PresentationFile.importPptx(new FileBlob(await fs.readFile(legacyCommentAddOutput), {
+    type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    name: "legacy-comment-added.pptx",
+  }));
+  assert.equal(legacyCommentAddRoundTrip.slides.getItem(0).comments.items[0].comments[0].text, "Confirm the imported evidence before delivery.");
+  assert.deepEqual(legacyCommentAddRoundTrip.slides.getItem(0).comments.capability, {
+    sourceBound: true,
+    format: "legacy",
+    partPresent: true,
+    addable: false,
+  });
+  assert.deepEqual(legacyCommentAddRoundTrip.slides.getItem(1).comments.capability, {
+    sourceBound: true,
+    format: "legacy",
+    partPresent: false,
+    addable: false,
+  });
+  const legacyCommentAddZip = await JSZip.loadAsync(await fs.readFile(legacyCommentAddOutput));
+  assert.equal(Object.keys(legacyCommentAddZip.files).filter((name) => /^ppt\/comments\/comment\d+\.xml$/.test(name)).length, 1);
+  assert.ok(legacyCommentAddZip.file("ppt/commentAuthors.xml"));
+  const legacyCommentAddBaselineDir = path.join(legacyCommentAddDir, "baselines");
+  await verifyPresentationFile(legacyCommentAddInput, {
+    outputDir: path.join(legacyCommentAddDir, "source-qa"),
+    nativeRender,
+    baselineDir: legacyCommentAddBaselineDir,
+    writeBaseline: true,
+  });
+  const legacyCommentAddReview = await verifyPresentationFile(legacyCommentAddOutput, {
+    outputDir: path.join(legacyCommentAddDir, "output-qa"),
+    nativeRender,
+    baselineDir: legacyCommentAddBaselineDir,
+  });
+  assert.ok(legacyCommentAddReview.modelRender.slides.every((slide) => slide.pixelDiff?.changed === false));
+  if (nativeStatus.available) assert.ok(legacyCommentAddReview.nativeRender.pages.every((page) => page.pixelDiff?.changed === false));
+  const legacyCommentRejectedOutput = path.join(legacyCommentAddDir, "legacy-comment-should-not-exist.pptx");
+  const legacyCommentRejectedAudit = path.join(legacyCommentAddDir, "rejected-audit.json");
+  await assert.rejects(
+    () => addPptxLegacyReviewComment({
+      inputPath: legacyCommentAddOutput,
+      outputPath: legacyCommentRejectedOutput,
+      auditPath: legacyCommentRejectedAudit,
+      slideName: "Imported review target",
+      text: "A second add must not masquerade as an edit.",
+      author: "Review Owner",
+      created: "2026-07-20T03:05:06Z",
+      position: { x: 400, y: 260, unit: "px" },
+    }),
+    /not in an imported, comment-free presentation/i,
+  );
+  await assert.rejects(() => fs.access(legacyCommentRejectedOutput));
+  await assert.rejects(() => fs.access(legacyCommentRejectedAudit));
+
   const slideNameDir = path.join(root, "slide-name-workflow");
   const slideNameInput = path.join(slideNameDir, PPTX_TITLE_NOTES_FIXTURE.presentationName);
   const slideNameOutput = path.join(slideNameDir, "launch-review-renamed.pptx");
@@ -1411,6 +1518,8 @@ try {
   assert.match(skillText, /open-office-artifact-tool/);
   assert.match(skillText, /openchestnut-speaker-notes-add-workflow\.mjs/);
   assert.match(skillText, /speakerNotes\.capability\.addable.*existing.*NotesMaster.*byte-for-byte.*canonical NotesMaster.*ThemePart.*back-reference/is);
+  assert.match(skillText, /openchestnut-legacy-comment-add-workflow\.mjs/);
+  assert.match(skillText, /comments\.capability.*format: "legacy".*partPresent: false.*addable: true.*CommentAuthorsPart.*SlideCommentsPart.*collision-free.*pixel-identical/is);
   assert.match(skillText, /openchestnut-title-notes-edit-workflow\.mjs/);
   assert.match(skillText, /openchestnut-modern-comment-workflow\.mjs/);
   assert.match(skillText, /openchestnut-slide-name-edit-workflow\.mjs/);
@@ -1419,6 +1528,8 @@ try {
   assert.match(quickStartText, /PresentationFile\.exportPptx/);
   assert.match(quickStartText, /addPptxSpeakerNotes/);
   assert.match(quickStartText, /notes\.capability\.sourceBound.*notes\.capability\.partPresent.*notes\.capability\.addable/is);
+  assert.match(quickStartText, /addPptxLegacyReviewComment/);
+  assert.match(quickStartText, /comments\.capability.*sourceBound.*format.*partPresent.*addable.*no legacy or Office 2021 comment graph.*re-proves/is);
   assert.match(quickStartText, /editPptxSlideName/);
   assert.match(quickStartText, /duplicatePptxSlide/);
   assert.match(quickStartText, /allowClosedLeaves:\s*true/);

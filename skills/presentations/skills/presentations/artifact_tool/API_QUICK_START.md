@@ -632,8 +632,47 @@ console.log(evidence.ndjson);
 
 Use `undefined` for the target. Replies, resolution state, reactions, and
 element/text-range anchors cannot be represented by legacy PresentationML and
-therefore fail closed on canonical export. Recognized imported legacy comments
-are visible for inspection but must remain unchanged. An unchanged canonical
+therefore fail closed on canonical export.
+
+For an imported deck, inspect the defensive creation capability before adding
+a review annotation:
+
+```ts
+const capability = slide.comments.capability;
+// { sourceBound, format, partPresent, addable }
+```
+
+Only a presentation with no legacy or Office 2021 comment graph anywhere can
+advertise `{ sourceBound: true, format: "legacy", partPresent: false,
+addable: true }`. Export re-proves the source package; changing JS data cannot
+grant authority. Use the shipped source-protecting transaction for the common
+single-comment review workflow:
+
+```ts
+import { addPptxLegacyReviewComment } from "../examples/openchestnut-legacy-comment-add-workflow.mjs";
+
+await addPptxLegacyReviewComment({
+  inputPath: "input.pptx",
+  outputPath: "output/with-review.pptx",
+  auditPath: "output/with-review.audit.json",
+  slideName: "Imported review target",
+  text: "Confirm the imported evidence before delivery.",
+  author: "Review Owner",
+  created: "2026-07-20T03:04:05Z",
+  position: { x: 360, y: 240, unit: "px" },
+});
+```
+
+OpenChestnut creates one canonical shared `CommentAuthorsPart` plus the target
+slide's closed numbered `SlideCommentsPart`, allocates relationship IDs without
+colliding with internal/external/hyperlink/data edges, reimports exact comment
+semantics, and leaves slide XML and visible rendering unchanged. The workflow
+audits the exact OPC additions, writes an immutable-source/no-overwrite report,
+and fails before publication for an existing/mixed/connected comment graph or a
+second add after reimport.
+
+Recognized imported legacy comments are visible for inspection but must remain
+unchanged. An unchanged canonical
 legacy comments leaf may travel with `slide.duplicate()` through one
 export/reimport boundary: its
 clone-local `SlideCommentsPart` is byte-copied while the verified immutable

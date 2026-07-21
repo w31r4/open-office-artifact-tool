@@ -29,6 +29,7 @@ const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.
 const importedShapeBackgroundFill = new WeakMap();
 const PRESENTATION_SLIDE_DUPLICATOR = Symbol.for("open-office-artifact-tool.open-chestnut-presentation-duplicate");
 const PRESENTATION_SPEAKER_NOTES_CAPABILITY = Symbol.for("open-office-artifact-tool.open-chestnut-speaker-notes-capability");
+const PRESENTATION_LEGACY_COMMENTS_CAPABILITY = Symbol.for("open-office-artifact-tool.open-chestnut-legacy-comments-capability");
 
 const PPTX_PACKAGE_CONFIG = {
   family: "PPTX",
@@ -850,6 +851,17 @@ class SlideCommentThread {
 
 class SlideCommentCollection {
   constructor(slide) { this.slide = slide; this.items = []; }
+  get capability() {
+    const imported = this[PRESENTATION_LEGACY_COMMENTS_CAPABILITY];
+    return imported
+      ? { ...imported }
+      : {
+          sourceBound: false,
+          format: this.slide.presentation.commentFormat,
+          partPresent: this.items.length > 0,
+          addable: this.slide.presentation.commentFormat === "legacy",
+        };
+  }
   addThread(target, text, config = {}) { const thread = new SlideCommentThread(this.slide, target, text, config); this.items.push(thread); return thread; }
   add(target, text, config = {}) { return this.addThread(target, text, config); }
   getItem(id) { return this.items.find((thread) => thread.id === id); }
@@ -1043,7 +1055,7 @@ export class Slide {
   inspectRecords(kinds) {
     const records = [];
     if (kinds.has("layout")) { const layout = this.presentation.layouts.getItem(this.layoutId); records.push({ kind: "layout", layoutId: this.layoutId || `${this.id}/layout`, name: layout?.name || "Blank", type: layout?.type || "blank", masterId: layout?.masterId, themeId: this.effectiveTheme().id, placeholders: layout?.placeholders.length || 0 }); }
-    if (kinds.has("slide")) records.push({ kind: "slide", id: this.id, slide: this.index + 1, title: this.title(), background: this.background.fill ? this.background : undefined, effectiveBackground: this.effectiveBackground(), textShapes: this.shapes.items.filter((s) => s.text.value).length, tables: this.tables.items.length, charts: this.charts.items.length, images: this.images.items.length, connectors: this.connectors.items.length, groups: this.groups.items.length, nativeObjects: this.nativeObjects.items.length, comments: this.comments.items.length, hasNotes: Boolean(this.speakerNotes.text), notesCapability: this.speakerNotes.capability });
+    if (kinds.has("slide")) records.push({ kind: "slide", id: this.id, slide: this.index + 1, title: this.title(), background: this.background.fill ? this.background : undefined, effectiveBackground: this.effectiveBackground(), textShapes: this.shapes.items.filter((s) => s.text.value).length, tables: this.tables.items.length, charts: this.charts.items.length, images: this.images.items.length, connectors: this.connectors.items.length, groups: this.groups.items.length, nativeObjects: this.nativeObjects.items.length, comments: this.comments.items.length, commentsCapability: this.comments.capability, hasNotes: Boolean(this.speakerNotes.text), notesCapability: this.speakerNotes.capability });
     for (const shape of this.shapes) {
       if (kinds.has("textbox") && shape.text.value) records.push(shape.inspectRecord("textbox"));
       else if (kinds.has("shape")) records.push(shape.inspectRecord("shape"));

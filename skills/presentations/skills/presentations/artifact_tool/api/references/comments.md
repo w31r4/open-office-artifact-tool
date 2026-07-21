@@ -20,8 +20,54 @@ slide.comments.addThread(undefined, "Confirm the source before delivery.", {
 ```
 
 Pass `undefined` as the target. Legacy `p:cm` has no element/text-range anchor,
-reply graph, reaction, or resolved state. Recognized imported legacy comments
-are inspectable but unchanged-only. The bounded `slide.duplicate()` workflow
+reply graph, reaction, or resolved state.
+
+For an imported presentation, inspect the collection before mutation:
+
+```js
+const capability = slide.comments.capability;
+// { sourceBound, format, partPresent, addable }
+```
+
+`addable` is true only when the complete source presentation has no legacy
+`CommentAuthorsPart`/`SlideCommentsPart` and no Office 2021 author/comment Part.
+It is a defensive preflight snapshot, not authorization stored in mutable JS.
+OpenChestnut re-proves the source bytes on export. The first bounded
+source-bound authoring transaction may create one canonical shared legacy
+author catalog and one closed slide-local comments Part for each requested
+original slide. Relationship IDs are allocated against internal, external,
+hyperlink, and data relationships, so an unrelated `rIdComments1` or
+`rIdCommentAuthors1` cannot collide.
+
+Use the audited single-comment workflow for the common Agent review task:
+
+```js
+import { addPptxLegacyReviewComment } from "../../../examples/openchestnut-legacy-comment-add-workflow.mjs";
+
+await addPptxLegacyReviewComment({
+  inputPath: "input.pptx",
+  outputPath: "output/with-review.pptx",
+  auditPath: "output/with-review.audit.json",
+  slideName: "Imported review target",
+  text: "Confirm the imported evidence before delivery.",
+  author: "Review Owner",
+  created: "2026-07-20T03:04:05Z",
+  position: { x: 360, y: 240, unit: "px" },
+});
+```
+
+The workflow protects the source bytes, requires a unique target, checks the
+capability, writes through a temporary file, and publishes without overwrite.
+Its independent OPC audit permits exactly the new `ppt/commentAuthors.xml`, one
+numbered `ppt/comments/commentN.xml`, `[Content_Types].xml`, and the two owner
+relationship Parts. It then reimports exact semantics, compares model SVG, and
+emits a source/output-bound audit. Final LibreOffice/Poppler pages must remain
+pixel-identical because review annotations are not slideshow content.
+
+After export and reimport, `partPresent` becomes true and `addable` becomes
+false for every slide. Recognized imported legacy comments are inspectable but
+unchanged-only; adding a second comment, editing text/author/time/coordinate, or
+forging the capability fails closed. The bounded `slide.duplicate()` workflow
 may byte-copy one closed legacy comments leaf and share its verified immutable
 author catalog; that is preservation, not in-place editing.
 
@@ -128,7 +174,9 @@ Reactions/likes, task fields, extensions, rich text, nested replies, unknown
 anchors, multiple comment parts for one slide, mixed legacy/modern parts, or
 comment/author parts with child, external, hyperlink, or data relationships are
 not flattened. They remain opaque/source-bound; a modeled replacement or edit
-is rejected.
+is rejected. Existing legacy catalogs are intentionally not extended in this
+slice, even when they look simple: author/index state remains package-local and
+unchanged-only until a separately modeled edit contract exists.
 
 Run the shipped end-to-end example for a source-free root/reply thread followed
 by an imported fixed-topology text/status edit, second import, package inspect,

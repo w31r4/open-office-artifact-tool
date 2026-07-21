@@ -2510,6 +2510,65 @@ await assert.rejects(
 // OpenChestnut owns a deliberately narrow legacy PPTX comment profile: one
 // slide-level text item at an explicit coordinate. It never turns the richer
 // JS thread facade into a fake element anchor, reply graph, or resolved state.
+const legacyAdditionSourceDeck = Presentation.create({ slideSize: { width: 1280, height: 720 } });
+const legacyAdditionTarget = legacyAdditionSourceDeck.slides.add({ name: "Imported review target" });
+legacyAdditionTarget.shapes.add({
+  name: "visible-review-title",
+  geometry: "textbox",
+  text: "Visible content must not change",
+  position: { left: 96, top: 96, width: 900, height: 88 },
+});
+const legacyAdditionControl = legacyAdditionSourceDeck.slides.add({ name: "Imported review control" });
+legacyAdditionControl.shapes.add({
+  name: "visible-control-title",
+  geometry: "textbox",
+  text: "Control slide",
+  position: { left: 96, top: 96, width: 900, height: 88 },
+});
+const legacyAdditionSource = await PresentationFile.exportPptx(legacyAdditionSourceDeck);
+const legacyAdditionSourceBytes = new Uint8Array(await legacyAdditionSource.arrayBuffer());
+const legacyAdditionImported = await PresentationFile.importPptx(legacyAdditionSource);
+assert.deepEqual(legacyAdditionImported.slides.getItem(0).comments.capability, {
+  sourceBound: true,
+  format: "legacy",
+  partPresent: false,
+  addable: true,
+});
+assert.match(legacyAdditionImported.inspect({ kind: "slide" }).ndjson, /"commentsCapability":\{"sourceBound":true,"format":"legacy","partPresent":false,"addable":true\}/);
+legacyAdditionImported.slides.getItem(0).comments.addThread(undefined, "Confirm the imported evidence.", {
+  author: "Review Owner",
+  created: "2026-07-20T03:04:05Z",
+  position: { x: 360, y: 240 },
+});
+const legacyAdditionExport = await PresentationFile.exportPptx(legacyAdditionImported);
+const legacyAdditionOutputBytes = new Uint8Array(await legacyAdditionExport.arrayBuffer());
+const legacyAdditionSourceZip = await JSZip.loadAsync(legacyAdditionSourceBytes);
+const legacyAdditionOutputZip = await JSZip.loadAsync(legacyAdditionOutputBytes);
+assert.deepEqual(
+  await legacyAdditionOutputZip.file("ppt/slides/slide1.xml").async("uint8array"),
+  await legacyAdditionSourceZip.file("ppt/slides/slide1.xml").async("uint8array"),
+);
+assert.deepEqual(
+  await legacyAdditionOutputZip.file("ppt/slides/slide2.xml").async("uint8array"),
+  await legacyAdditionSourceZip.file("ppt/slides/slide2.xml").async("uint8array"),
+);
+assert.ok(legacyAdditionOutputZip.file("ppt/commentAuthors.xml"));
+assert.ok(legacyAdditionOutputZip.file("ppt/comments/comment1.xml"));
+const legacyAdditionRoundTrip = await PresentationFile.importPptx(legacyAdditionExport);
+assert.equal(legacyAdditionRoundTrip.slides.getItem(0).comments.items[0].comments[0].text, "Confirm the imported evidence.");
+assert.deepEqual(legacyAdditionRoundTrip.slides.getItem(0).comments.capability, {
+  sourceBound: true,
+  format: "legacy",
+  partPresent: true,
+  addable: false,
+});
+assert.deepEqual(legacyAdditionRoundTrip.slides.getItem(1).comments.capability, {
+  sourceBound: true,
+  format: "legacy",
+  partPresent: false,
+  addable: false,
+});
+
 const legacyCommentDeck = Presentation.create({ slideSize: { width: 1280, height: 720 } });
 const legacyCommentSlide = legacyCommentDeck.slides.add({ name: "Legacy comments" });
 const legacyCommentThread = legacyCommentSlide.comments.addThread(undefined, "Confirm the source before delivery.", {
@@ -2525,6 +2584,12 @@ assert.ok(legacyCommentZip.file("ppt/commentAuthors.xml"));
 assert.match(await legacyCommentZip.file("ppt/comments/comment1.xml").async("text"), /Confirm the source before delivery/);
 const legacyCommentImported = await PresentationFile.importPptx(legacyCommentExport);
 assert.equal(legacyCommentImported.slides.getItem(0).comments.items.length, 1);
+assert.deepEqual(legacyCommentImported.slides.getItem(0).comments.capability, {
+  sourceBound: true,
+  format: "legacy",
+  partPresent: true,
+  addable: false,
+});
 const importedLegacyThread = legacyCommentImported.slides.getItem(0).comments.items[0];
 assert.equal(importedLegacyThread.nativeFormat, "legacy");
 assert.equal(importedLegacyThread.targetId, undefined);

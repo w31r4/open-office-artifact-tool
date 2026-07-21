@@ -2429,6 +2429,57 @@ configured in this local shell, so their contract/adversarial tests passed while
 those real-provider repeats were skipped; hosted CI supplies them. `npm whoami`
 remains unavailable, so no publish, tag, or release operation was attempted.
 
+Commit `72adb11522365a4199497d41c9bfe4ca2ff507a7` passed the hosted Linux `ci`
+workflow in [GitHub Actions run
+29739450691](https://github.com/w31r4/open-office-artifact-tool/actions/runs/29739450691)
+on 2026-07-20. The run completed every isolated PDF provider, the full npm
+suite, generated-doc and release/package checks, OfficeBridge, and
+OpenChestnut with conclusion `success`.
+
+### PPTX imported comment-free legacy review-comment creation
+
+On 2026-07-21, OpenChestnut added a bounded source-preserving legacy review
+transaction for an imported presentation that has no legacy or Office 2021
+comment graph anywhere. Import exposes defensive `{ sourceBound, format,
+partPresent, addable }` evidence through `slide.comments.capability` and slide
+inspection. Export independently re-proves the original PresentationPart and
+every SlidePart before any package mutation; changing the protobuf claim in
+either direction fails the slide binding.
+
+One transaction creates a canonical shared `CommentAuthorsPart` and one closed
+numbered `SlideCommentsPart` for each requested original slide. It validates
+author/text/time/coordinate budgets, forbids callers from claiming package-local
+author/comment indexes, allocates owner relationship IDs across internal,
+external, hyperlink, and data relationships, and records every allowed OPC
+addition for the opaque graph guard. Open XML SDK validation, postwrite
+author/index-catalog validation, and a second semantic import are mandatory.
+An existing catalog, any legacy or modern comments part, connected/mixed
+comment graph, capability tampering, or a second add after reimport remains
+fail-closed; existing imported legacy comments are still unchanged-only.
+
+The Presentation Skill ships
+`openchestnut-legacy-comment-add-workflow.mjs`. It requires one uniquely named
+eligible slide, protects the source hash, publishes without overwrite, permits
+exactly `ppt/commentAuthors.xml` plus one numbered comments XML part and their
+owner relationship changes, reimports exact author/text semantics, compares
+model SVG, and writes a source/output-bound audit. The runnable fixture also
+requires LibreOffice/Poppler source/output pages to have zero changed pixels,
+because legacy annotations are nonvisual slideshow review metadata.
+
+The local candidate passed the complete `npm test` suite, including the 20
+repository-only Office templates, Playwright, LibreOffice, Poppler, MuPDF.js,
+qpdf, all published Skills, reference-Skill sync, and Agent eval gates.
+OpenChestnut passed `302/302`; OfficeBridge passed `5/5`; deterministic
+source-built WASM verification passed over 39 audited build files. The bundled
+runtime remains 38 files and 14,772,928 bytes. The clean-install/package gate
+passed, and the npm dry-run contains 472 files, 9,069,108 compressed bytes, and
+23,962,580 unpacked bytes (`SHA-1
+9ec5af82979d07f83220ba5dd9940efb2368fdbe`). Independent Python environments
+for pikepdf, pyHanko, veraPDF, and OCRmyPDF were not configured in this local
+shell, so their contract/adversarial tests passed while those real-provider
+repeats were skipped; hosted CI supplies them. `npm whoami` remains unavailable,
+so no publish, tag, or release operation was attempted.
+
 ## Publishing
 
 Before publishing:
