@@ -6,14 +6,24 @@ using W = DocumentFormat.OpenXml.Wordprocessing;
 
 namespace OpenChestnut.Codec;
 
-// Owns five deliberately bounded WordprocessingML SDT profiles: inline
+// Owns six deliberately bounded WordprocessingML SDT profiles: inline
 // plain-text, canonical drop-down, canonical combo-box, and Word 2010+
-// checkbox controls, plus one ISO/Gregorian date picker. Every profile contains
-// exactly one modeled run with alias, tag, and native ID.
+// checkbox controls, one ISO/Gregorian date picker, plus a block plain-text
+// control around exactly one paragraph containing one ordinary run. Every
+// profile contains alias, tag, and native ID.
 // Checkbox symbols plus list/date-control visible text are codec-owned. Every
 // richer SDT remains opaque/source-bound.
 internal static class DocxContentControlCodec
 {
+    private sealed record ControlReference(
+        DocumentBlock Block,
+        DocumentRun? Run,
+        DocumentTextContentControl Control,
+        bool IsBlock)
+    {
+        internal string VisibleText => IsBlock ? Block.Paragraph.Text : Run!.Text;
+    }
+
     private const int MaxTagLength = 64;
     private const int MaxAliasLength = 255;
     private const int MaxChoiceCount = 256;
@@ -35,8 +45,9 @@ internal static class DocxContentControlCodec
             .Select(item => item.Control.NativeId)
             .ToHashSet();
         uint next = 1;
-        foreach (var (_, _, control) in controls)
+        foreach (var item in controls)
         {
+            var control = item.Control;
             if (control.HasNativeId) continue;
             while (used.Contains(next)) next++;
             if (next > int.MaxValue)
@@ -55,8 +66,10 @@ internal static class DocxContentControlCodec
     {
         var modelIds = new HashSet<string>(StringComparer.Ordinal);
         var nativeIds = new HashSet<uint>();
-        foreach (var (block, run, control) in Controls(document))
+        foreach (var item in Controls(document))
         {
+            var block = item.Block;
+            var control = item.Control;
             ValidateText(control.Id, $"Document block {block.Id} content-control model ID", 1, 255);
             if (!modelIds.Add(control.Id))
                 throw new CodecException(
@@ -69,15 +82,28 @@ internal static class DocxContentControlCodec
                     "invalid_document_content_control",
                     $"Document content control {control.Id} requires a unique native ID from 1 through {int.MaxValue.ToString(CultureInfo.InvariantCulture)}.");
             var controlType = NormalizedType(control);
+            if (item.IsBlock)
+            {
+                if (controlType != DocumentContentControlType.PlainText ||
+                    control.Alias.Length == 0 ||
+                    block.Paragraph.Numbering is not null ||
+                    block.Paragraph.Runs.Count != 1 ||
+                    block.Paragraph.Runs[0].TextContentControl is not null ||
+                    block.Paragraph.Runs[0].InlineField is not null ||
+                    !block.Paragraph.Text.Equals(block.Paragraph.Runs[0].Text, StringComparison.Ordinal))
+                    throw new CodecException(
+                        "invalid_document_content_control",
+                        $"Document block content control {control.Id} must be plain text around exactly one ordinary paragraph run.");
+            }
             if (controlType == DocumentContentControlType.Checkbox &&
-                !run.Text.Equals(control.Checked ? CheckedGlyph : UncheckedGlyph, StringComparison.Ordinal))
+                !item.VisibleText.Equals(control.Checked ? CheckedGlyph : UncheckedGlyph, StringComparison.Ordinal))
                 throw new CodecException(
                     "invalid_document_content_control",
                     $"Document checkbox content control {control.Id} visible glyph does not match its checked state.");
             if (controlType == DocumentContentControlType.DropDown)
             {
                 var selected = ValidateDropdown(control);
-                if (!run.Text.Equals(selected.DisplayText, StringComparison.Ordinal))
+                if (!item.VisibleText.Equals(selected.DisplayText, StringComparison.Ordinal))
                     throw new CodecException(
                         "invalid_document_content_control",
                         $"Document drop-down content control {control.Id} visible text does not match its selected value.");
@@ -85,7 +111,7 @@ internal static class DocxContentControlCodec
             if (controlType == DocumentContentControlType.ComboBox)
             {
                 var visibleText = ValidateComboBox(control);
-                if (!run.Text.Equals(visibleText, StringComparison.Ordinal))
+                if (!item.VisibleText.Equals(visibleText, StringComparison.Ordinal))
                     throw new CodecException(
                         "invalid_document_content_control",
                         $"Document combo-box content control {control.Id} visible text does not match its value.");
@@ -93,12 +119,94 @@ internal static class DocxContentControlCodec
             if (controlType == DocumentContentControlType.Date)
             {
                 var dateValue = ValidateDateValue(control.DateValue, control.Id);
-                if (!run.Text.Equals(dateValue, StringComparison.Ordinal))
+                if (!item.VisibleText.Equals(dateValue, StringComparison.Ordinal))
                     throw new CodecException(
                         "invalid_document_content_control",
                         $"Document date content control {control.Id} visible text does not match its date value.");
             }
         }
+    }
+
+    internal static bool IsSupported(W.SdtBlock source)
+    {
+        var properties = source.SdtProperties;
+        var content = source.SdtContentBlock;
+        if (properties is null || content is null || source.ChildElements.Count != 2 ||
+            source.ChildElements[0] is not W.SdtProperties || source.ChildElements[1] is not W.SdtContentBlock ||
+            source.GetAttributes().Count != 0 || properties.GetAttributes().Count != 0 || content.GetAttributes().Count != 0) return false;
+        if (properties.Elements<W.SdtAlias>().Count() != 1 ||
+            properties.Elements<W.Tag>().Count() != 1 ||
+            properties.Elements<W.SdtId>().Count() != 1 ||
+            properties.Elements<W.SdtContentText>().Count() != 1 ||
+            properties.ChildElements.Count != 4 ||
+            properties.ChildElements[0] is not W.SdtAlias ||
+            properties.ChildElements[1] is not W.Tag ||
+            properties.ChildElements[2] is not W.SdtId ||
+            properties.ChildElements[3] is not W.SdtContentText) return false;
+        var aliasElement = properties.GetFirstChild<W.SdtAlias>();
+        var tagElement = properties.GetFirstChild<W.Tag>();
+        var idElement = properties.GetFirstChild<W.SdtId>();
+        if (new OpenXmlElement?[] { aliasElement, tagElement, idElement }
+            .Any(child => child is null || child.HasChildren || child.ExtendedAttributes.Any())) return false;
+        var tag = tagElement?.Val?.Value;
+        var alias = aliasElement?.Val?.Value;
+        var nativeId = idElement?.Val?.Value;
+        var textProperty = properties.GetFirstChild<W.SdtContentText>();
+        if (!ValidText(tag, 1, MaxTagLength) || !ValidText(alias, 1, MaxAliasLength) ||
+            nativeId is null or <= 0 || textProperty?.GetAttributes().Count != 0 || textProperty?.HasChildren == true ||
+            content.ChildElements.Count != 1 || content.FirstChild is not W.Paragraph paragraph ||
+            !DocxFormattingCodec.IsSupportedParagraphProperties(paragraph.ParagraphProperties)) return false;
+        var paragraphChildren = paragraph.ChildElements.Where(child => child is not W.ParagraphProperties).ToArray();
+        if (paragraphChildren.Length != 1 || paragraphChildren[0] is not W.Run run ||
+            run.Elements<W.RunProperties>().Count() > 1 || run.Elements<W.Text>().Count() != 1 ||
+            run.ChildElements.Any(child => child is not W.RunProperties and not W.Text) ||
+            !DocxFormattingCodec.IsSupportedRunProperties(run.RunProperties)) return false;
+        try
+        {
+            var modeledRun = DocxCodec.ReadRun(run);
+            var modeled = new DocumentBlock
+            {
+                StyleId = paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value ?? string.Empty,
+                Paragraph = new DocumentParagraph
+                {
+                    Text = modeledRun.Text,
+                    Formatting = DocxFormattingCodec.ReadParagraphFormatting(paragraph.ParagraphProperties),
+                },
+            };
+            modeled.Paragraph.Runs.Add(modeledRun);
+            return paragraph.OuterXml.Equals(DocxCodec.BuildParagraph(modeled).OuterXml, StringComparison.Ordinal);
+        }
+        catch (CodecException)
+        {
+            return false;
+        }
+    }
+
+    internal static DocumentParagraph Read(W.SdtBlock source, string modelId)
+    {
+        if (!IsSupported(source))
+            throw new CodecException(
+                "unsupported_document_content_control",
+                "DOCX block content control is outside the bounded one-paragraph plain-text SDT profile.",
+                "word/document.xml");
+        var properties = source.SdtProperties!;
+        var paragraph = (W.Paragraph)source.SdtContentBlock!.FirstChild!;
+        var run = (W.Run)paragraph.ChildElements.First(child => child is W.Run);
+        var result = new DocumentParagraph
+        {
+            Text = string.Concat(run.Elements<W.Text>().Select(value => value.Text)),
+            Formatting = DocxFormattingCodec.ReadParagraphFormatting(paragraph.ParagraphProperties),
+            BlockContentControl = new DocumentTextContentControl
+            {
+                Id = modelId,
+                Tag = properties.GetFirstChild<W.Tag>()!.Val!.Value!,
+                Alias = properties.GetFirstChild<W.SdtAlias>()?.Val?.Value ?? properties.GetFirstChild<W.Tag>()!.Val!.Value!,
+                NativeId = checked((uint)properties.GetFirstChild<W.SdtId>()!.Val!.Value),
+                ControlType = DocumentContentControlType.PlainText,
+            },
+        };
+        result.Runs.Add(DocxCodec.ReadRun(run));
+        return result;
     }
 
     internal static bool IsSupported(W.SdtRun source)
@@ -275,8 +383,31 @@ internal static class DocxContentControlCodec
         return new W.SdtRun(properties, new W.SdtContentRun(DocxCodec.BuildRun(source)));
     }
 
+    internal static W.SdtBlock Build(DocumentBlock source)
+    {
+        var control = source.Paragraph.BlockContentControl ?? throw new CodecException(
+            "invalid_document_content_control",
+            $"Document paragraph {source.Id} has no block content-control metadata.");
+        var properties = new W.SdtProperties();
+        properties.Append(
+            new W.SdtAlias { Val = control.Alias },
+            new W.Tag { Val = control.Tag },
+            new W.SdtId { Val = checked((int)control.NativeId) },
+            new W.SdtContentText());
+        return new W.SdtBlock(properties, new W.SdtContentBlock(DocxCodec.BuildParagraph(source)));
+    }
+
     internal static void AssertTopology(DocumentParagraph requested, DocumentParagraph original, string blockId)
     {
+        var requestedBlock = requested.BlockContentControl;
+        var originalBlock = original.BlockContentControl;
+        if ((requestedBlock is null) != (originalBlock is null) ||
+            requestedBlock is not null && originalBlock is not null &&
+            (requestedBlock.NativeId != originalBlock.NativeId || NormalizedType(requestedBlock) != NormalizedType(originalBlock)))
+            throw new CodecException(
+                "document_content_control_topology_changed",
+                $"Imported document paragraph {blockId} block content-control topology is source-bound.",
+                "word/document.xml");
         var requestedControls = Topology(requested);
         var sourceControls = Topology(original);
         if (requestedControls.Count != sourceControls.Count ||
@@ -294,12 +425,16 @@ internal static class DocxContentControlCodec
             .Select(item => (item.Index, item.Run.TextContentControl.NativeId, NormalizedType(item.Run.TextContentControl), ChoiceSignature(item.Run.TextContentControl)))
             .ToList();
 
-    private static IEnumerable<(DocumentBlock Block, DocumentRun Run, DocumentTextContentControl Control)> Controls(DocumentArtifact document) =>
-        document.Blocks
-            .Where(block => block.ContentCase == DocumentBlock.ContentOneofCase.Paragraph)
-            .SelectMany(block => block.Paragraph.Runs
-                .Where(run => run.TextContentControl is not null)
-                .Select(run => (block, run, run.TextContentControl)));
+    private static IEnumerable<ControlReference> Controls(DocumentArtifact document)
+    {
+        foreach (var block in document.Blocks.Where(block => block.ContentCase == DocumentBlock.ContentOneofCase.Paragraph))
+        {
+            if (block.Paragraph.BlockContentControl is not null)
+                yield return new ControlReference(block, null, block.Paragraph.BlockContentControl, true);
+            foreach (var run in block.Paragraph.Runs.Where(run => run.TextContentControl is not null))
+                yield return new ControlReference(block, run, run.TextContentControl, false);
+        }
+    }
 
     private static DocumentContentControlType NormalizedType(DocumentTextContentControl control) =>
         control.ControlType switch

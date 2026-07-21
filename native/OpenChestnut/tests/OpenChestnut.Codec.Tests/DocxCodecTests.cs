@@ -372,6 +372,163 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void BlockPlainTextContentControlAuthorsImportsEditsAndRejectsComplexTopology()
+    {
+        var document = new DocumentArtifact { Id = "document/block-content-control", Name = "Block content-control template" };
+        var paragraph = new DocumentBlock
+        {
+            Id = "document/block-content-control/summary",
+            StyleId = "Normal",
+            Paragraph = new DocumentParagraph
+            {
+                Text = "Executive summary",
+                Formatting = new DocumentParagraphFormatting { KeepNext = true },
+                BlockContentControl = new DocumentTextContentControl
+                {
+                    Id = "executive-summary",
+                    Tag = "EXECUTIVE_SUMMARY",
+                    Alias = "Executive summary",
+                    ControlType = DocumentContentControlType.PlainText,
+                },
+            },
+        };
+        paragraph.Paragraph.Runs.Add(new DocumentRun
+        {
+            Text = "Executive summary",
+            Formatting = new DocumentRunFormatting { Bold = true, ColorRgb = "1D4ED8" },
+        });
+        document.Blocks.Add(paragraph);
+
+        var authored = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = new ArtifactEnvelope
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Family = ArtifactFamily.Document,
+                Document = document,
+            },
+        });
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var body = package.MainDocumentPart!.Document!.Body!;
+            var control = Assert.IsType<W.SdtBlock>(body.ChildElements[0]);
+            Assert.Equal("EXECUTIVE_SUMMARY", control.SdtProperties!.GetFirstChild<W.Tag>()!.Val!.Value);
+            Assert.Equal("Executive summary", control.SdtProperties.GetFirstChild<W.SdtAlias>()!.Val!.Value);
+            Assert.True(control.SdtProperties.GetFirstChild<W.SdtId>()!.Val!.Value > 0);
+            Assert.NotNull(control.SdtProperties.GetFirstChild<W.SdtContentText>());
+            var contentParagraph = Assert.Single(control.SdtContentBlock!.Elements<W.Paragraph>());
+            Assert.Single(contentParagraph.Elements<W.Run>());
+            Assert.Equal("Executive summary", contentParagraph.InnerText);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedBlock = Assert.Single(imported.Artifact.Document.Blocks);
+        Assert.True(importedBlock.Source.Editable);
+        var importedParagraph = importedBlock.Paragraph;
+        Assert.Equal("EXECUTIVE_SUMMARY", importedParagraph.BlockContentControl.Tag);
+        Assert.Equal(DocumentContentControlType.PlainText, importedParagraph.BlockContentControl.ControlType);
+        Assert.True(importedParagraph.BlockContentControl.HasNativeId);
+        Assert.True(Assert.Single(importedParagraph.Runs).Formatting.Bold);
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact.Clone(),
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(authored.File, unchanged.File);
+
+        importedParagraph.Text = "Updated executive summary";
+        importedParagraph.Runs[0].Text = importedParagraph.Text;
+        importedParagraph.BlockContentControl.Tag = "SUMMARY";
+        importedParagraph.BlockContentControl.Alias = "Summary";
+        var edited = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var roundTrip = DocxCodec.Import(edited.File.ToByteArray(), EffectiveCodecLimits.From(null)).Artifact;
+        var editedParagraph = Assert.Single(roundTrip.Document.Blocks).Paragraph;
+        Assert.Equal("Updated executive summary", editedParagraph.Text);
+        Assert.Equal("SUMMARY", editedParagraph.BlockContentControl.Tag);
+        Assert.Equal("Summary", editedParagraph.BlockContentControl.Alias);
+
+        var emptyAlias = roundTrip.Clone();
+        Assert.Single(emptyAlias.Document.Blocks).Paragraph.BlockContentControl.Alias = string.Empty;
+        var rejectedAlias = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = emptyAlias,
+        });
+        Assert.False(rejectedAlias.Ok);
+        Assert.Equal("invalid_document_content_control", Assert.Single(rejectedAlias.Diagnostics).Code);
+
+        var changedTopology = roundTrip.Clone();
+        Assert.Single(changedTopology.Document.Blocks).Paragraph.BlockContentControl = null;
+        var rejectedTopology = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = changedTopology,
+        });
+        Assert.False(rejectedTopology.Ok);
+        Assert.Equal("document_content_control_topology_changed", Assert.Single(rejectedTopology.Diagnostics).Code);
+
+        var complexBytes = AddSecondParagraphToBlockContentControl(authored.File.ToByteArray());
+        var complex = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(complexBytes),
+        });
+        Assert.True(complex.Ok, Diagnostics(complex));
+        var preserved = Assert.Single(complex.Artifact.Document.Blocks);
+        Assert.Equal(DocumentBlock.ContentOneofCase.Opaque, preserved.ContentCase);
+        Assert.False(preserved.Source.Editable);
+        var preservedExport = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = complex.Artifact,
+        });
+        Assert.True(preservedExport.Ok, Diagnostics(preservedExport));
+        Assert.Equal(ByteString.CopyFrom(complexBytes), preservedExport.File);
+        preserved.Opaque.Text = "Unsafe multi-paragraph edit";
+        var rejectedComplex = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = complex.Artifact,
+        });
+        Assert.False(rejectedComplex.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(rejectedComplex.Diagnostics).Code);
+    }
+
+    [Fact]
     public void InlineCheckboxContentControlAuthorsImportsEditsAndRejectsIrregularGraphs()
     {
         var document = new DocumentArtifact { Id = "document/checkbox", Name = "Checkbox template" };
@@ -5239,6 +5396,20 @@ public sealed class DocxCodecTests
             var replacement = archive.CreateEntry("word/document.xml");
             using var writer = new StreamWriter(replacement.Open());
             writer.Write(xml.Insert(closing, "<w:notARealParagraphChild/>"));
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddSecondParagraphToBlockContentControl(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var package = WordprocessingDocument.Open(stream, true))
+        {
+            var control = Assert.Single(package.MainDocumentPart!.Document!.Descendants<W.SdtBlock>());
+            control.SdtContentBlock!.Append(new W.Paragraph(new W.Run(new W.Text("Unsupported second paragraph"))));
+            package.MainDocumentPart.Document.Save();
         }
         return stream.ToArray();
     }

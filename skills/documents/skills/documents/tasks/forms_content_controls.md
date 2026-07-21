@@ -8,6 +8,7 @@ existing template that contains Word structured document tags (SDTs).
 Choose the route before editing:
 
 - Use public `paragraph.addTextContentControl(...)`,
+  `document.addBlockTextContentControl(...)`,
   `paragraph.addCheckboxContentControl(...)`,
   `paragraph.addDropdownContentControl(...)`,
   `paragraph.addComboBoxContentControl(...)`,
@@ -16,13 +17,13 @@ Choose the route before editing:
   `document.setDropdownContentControls(...)`, and
   `document.setComboBoxContentControls(...)`, and
   `document.setDateContentControls(...)` for source-free body
-  paragraphs and recognized imported inline plain-text, canonical Word 2010+
+  paragraphs and recognized imported inline or one-paragraph block plain-text, canonical Word 2010+
   checkbox, canonical Word drop-down, canonical Word combo-box, or canonical
   ISO/Gregorian date controls.
 - Use `scripts/content_controls.py` only for explicit package work such as
   wrapping placeholders in an existing template, controls in headers/footers,
   or inspection of controls outside the bounded public model.
-- Detect rich, block, cell, nested, data-bound, irregular list-control,
+- Detect rich, multi-paragraph/table/cell/nested/data-bound block, irregular list-control,
   localized/noncanonical date, legacy or custom-symbol checkbox,
   placeholder-document, and locked
   controls. Preserve them unchanged or fail closed; do not flatten them into
@@ -74,6 +75,34 @@ document.addParagraph("", {
   ],
 });
 ```
+
+### Author one block plain-text control
+
+Use the block primitive when the entire paragraph is the fillable field. This
+authors a body-level `w:sdt` containing exactly one `w:p` and one ordinary
+`w:r/w:t`; it does not fake a block wrapper with an inline run control:
+
+```js
+const summary = document.addBlockTextContentControl("{{EXECUTIVE_SUMMARY}}", {
+  blockId: "executive-summary-paragraph",
+  id: "executive-summary",
+  tag: "EXECUTIVE_SUMMARY",
+  alias: "Executive summary",
+  styleId: "Normal",
+  paragraphFormat: { keepNext: true },
+  runStyle: { bold: true },
+});
+
+document.fillContentControls({
+  EXECUTIVE_SUMMARY: "Ready for approval",
+});
+```
+
+`blockId` locates the paragraph; `id` locates the control. Inspection reports
+`placement: "block"` and omits `runIndex`. Imported native ID and wrapper
+topology are source-bound, while text, tag, alias, supported paragraph
+formatting, and supported run formatting remain editable within the fixed
+one-paragraph/one-run profile.
 
 ### Author and set one checkbox control
 
@@ -194,6 +223,7 @@ for (const control of imported.contentControls) {
   console.log({
     id: control.id,
     targetId: control.targetId,
+    placement: control.placement,
     runIndex: control.runIndex,
     tag: control.tag,
     alias: control.alias,
@@ -259,7 +289,7 @@ Inspect every `page-<N>.png` at 100% zoom.
 
 Use this route when the user provides a template whose placeholder text must be
 wrapped into SDTs, or when controls live in headers/footers or other parts that
-the public body-inline model does not edit.
+the public body content-control model does not edit.
 
 Keep placeholders such as `{{NAME}}`, `{{DATE}}`, and `{{EMAIL}}` contiguous in
 one text run, then wrap them:
@@ -295,16 +325,19 @@ through OpenChestnut where possible, and render again.
 - The public model recognizes one run-level plain-text `w:sdt`, one canonical
   Word 2010+ `w14:checkbox`, one canonical `w:dropDownList`, or one canonical
   `w:comboBox`, or one canonical ISO/Gregorian `w:date`, each containing exactly
-  one supported run and canonical `w:sdtPr` metadata. Both list controls are bounded to 1–256 unique
+  one supported run and canonical `w:sdtPr` metadata. It also recognizes one
+  body-level plain-text `w:sdt` containing exactly one supported paragraph and
+  one ordinary run. Both list controls are bounded to 1–256 unique
   display/value pairs of at most 255 characters; combo-box custom values are
   bounded to 1–255 characters. Dates must be real `0001-01-01` through
   `9999-12-31` Gregorian dates in exact `YYYY-MM-DD` form.
-- Rich, block, cell, nested, data-bound, irregular drop-down/combo-box, localized-date,
+- Rich, multi-paragraph/table/cell/nested/data-bound/locked/placeholder/repeating-section block,
+  irregular drop-down/combo-box, localized-date,
   legacy checkbox, custom-symbol checkbox, placeholder-document, locked, or
   unrelated extension-bearing controls remain opaque and source-bound. Do not
   reconstruct them as ordinary text or a canonical control.
 - Controls in footnotes, comments, headers, footers, and text boxes are outside
-  the public body-inline profile. Route them explicitly or report the boundary.
+  the public body profile. Route them explicitly or report the boundary.
 - Never claim a template is fully populated until requested tags, native
   structure, second-import semantics, and all rendered pages pass review.
 

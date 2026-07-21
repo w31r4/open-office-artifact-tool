@@ -355,7 +355,26 @@ class DocumentParagraphBlock {
     this.document = document;
     this.kind = "paragraph";
     this.id = config.id || aid("dp");
+    this.blockContentControl = normalizeDocumentContentControl(config.blockContentControl ?? config.block_content_control);
+    if (this.blockContentControl?.controlType !== undefined && this.blockContentControl.controlType !== "text") {
+      throw new TypeError("Document block content controls currently support only plain text.");
+    }
+    if (this.blockContentControl && !this.blockContentControl.alias.length) {
+      throw new TypeError("Document block text content controls require a non-empty alias.");
+    }
     this.runs = normalizeDocumentRuns(text, config, document.theme);
+    if (this.blockContentControl) {
+      if (!config.runs && !config.textRuns && (config.runStyle || config.textStyle)) {
+        this.runs = [normalizeDocumentRun({ text: String(text ?? ""), style: config.runStyle || config.textStyle }, document.theme)];
+      }
+      if (this.runs.length > 1 || this.runs.some((run) => run.contentControl || run.inlineField)) {
+        throw new TypeError("Document block text content controls require exactly one ordinary paragraph run.");
+      }
+      if (this.runs.length === 0) {
+        const requested = config.runs?.[0] || config.textRuns?.[0] || {};
+        this.runs = [normalizeDocumentRun({ text: String(text ?? ""), style: requested.style || requested.textStyle || config.runStyle || config.textStyle || {} }, document.theme)];
+      }
+    }
     this.text = this.runs.map((run) => run.text).join("") || String(text ?? "");
     this.styleId = config.styleId || config.style || "Normal";
     this.name = config.name || "";
@@ -438,23 +457,27 @@ class DocumentParagraphBlock {
     if (this.runs.length === 1) this.runs[0].text = this.text;
     return this;
   }
-  inspectRecord(index) { return { kind: "paragraph", id: this.id, index, name: this.name || undefined, styleId: this.styleId, textEditable: this.textEditable, textPatchable: this.textPatchable, pendingTextPatches: this.textPatches.length, textRangeId: this.textEditable || this.textPatchable ? `${this.id}/text` : undefined, paragraphFormat: Object.keys(this.paragraphFormat).length ? this.paragraphFormat : undefined, text: this.text, textChars: this.text.length, runs: documentRunsNeedSerialization(this.runs) ? this.runs : undefined }; }
-  toProto() { return { kind: "paragraph", id: this.id, name: this.name, styleId: this.styleId, textEditable: this.textEditable, textPatchable: this.textPatchable, textPatches: this.textPatches, paragraphFormat: Object.keys(this.paragraphFormat).length ? this.paragraphFormat : undefined, text: this.text, runs: documentRunsNeedSerialization(this.runs) ? this.runs : undefined }; }
+  inspectRecord(index) { return { kind: "paragraph", id: this.id, index, name: this.name || undefined, styleId: this.styleId, textEditable: this.textEditable, textPatchable: this.textPatchable, pendingTextPatches: this.textPatches.length, textRangeId: this.textEditable || this.textPatchable ? `${this.id}/text` : undefined, paragraphFormat: Object.keys(this.paragraphFormat).length ? this.paragraphFormat : undefined, blockContentControl: this.blockContentControl, text: this.text, textChars: this.text.length, runs: documentRunsNeedSerialization(this.runs) ? this.runs : undefined }; }
+  toProto() { return { kind: "paragraph", id: this.id, name: this.name, styleId: this.styleId, textEditable: this.textEditable, textPatchable: this.textPatchable, textPatches: this.textPatches, paragraphFormat: Object.keys(this.paragraphFormat).length ? this.paragraphFormat : undefined, blockContentControl: this.blockContentControl, text: this.text, runs: documentRunsNeedSerialization(this.runs) ? this.runs : undefined }; }
 }
 
 class DocumentContentControlHandle {
-  constructor(block, runIndex) { this.document = block.document; this.block = block; this.runIndex = runIndex; this.kind = "contentControl"; }
-  get run() { return this.block.runs[this.runIndex]; }
-  get control() { return this.run?.contentControl; }
+  constructor(block, runIndex) { this.document = block.document; this.block = block; this.runIndex = runIndex; this.placement = runIndex === undefined ? "block" : "inline"; this.kind = "contentControl"; }
+  get run() { return this.placement === "block" ? this.block.runs[0] : this.block.runs[this.runIndex]; }
+  get control() { return this.placement === "block" ? this.block.blockContentControl : this.run?.contentControl; }
   get id() { return this.control?.id; }
   get targetId() { return this.block.id; }
   get tag() { return this.control?.tag || ""; }
   set tag(value) { this.control.tag = String(value ?? "").trim(); }
   get alias() { return this.control?.alias || ""; }
-  set alias(value) { this.control.alias = String(value ?? ""); }
+  set alias(value) {
+    const next = String(value ?? "");
+    if (this.placement === "block" && !next.length) throw new TypeError("Document block text content controls require a non-empty alias.");
+    this.control.alias = next;
+  }
   get nativeId() { return this.control?.nativeId; }
   get controlType() { return this.control?.controlType || "text"; }
-  get text() { return String(this.run?.text ?? ""); }
+  get text() { return this.placement === "block" ? String(this.block.text ?? "") : String(this.run?.text ?? ""); }
   set text(value) {
     if (this.controlType === "checkbox") throw new TypeError("Checkbox content-control text is codec-owned; set checked instead.");
     if (this.controlType === "dropdown") throw new TypeError("Drop-down content-control text is codec-owned; set selectedValue instead.");
@@ -505,6 +528,7 @@ class DocumentContentControlHandle {
       kind: this.kind,
       id: this.id,
       targetId: this.targetId,
+      placement: this.placement,
       runIndex: this.runIndex,
       tag: this.tag,
       alias: this.alias,
@@ -525,7 +549,10 @@ class DocumentContentControlHandle {
 
 function documentContentControls(document) {
   return document.blocks.flatMap((block) => block.kind === "paragraph"
-    ? block.runs.flatMap((run, runIndex) => run.contentControl ? [new DocumentContentControlHandle(block, runIndex)] : [])
+    ? [
+        ...(block.blockContentControl ? [new DocumentContentControlHandle(block)] : []),
+        ...block.runs.flatMap((run, runIndex) => run.contentControl ? [new DocumentContentControlHandle(block, runIndex)] : []),
+      ]
     : []);
 }
 
@@ -1178,6 +1205,25 @@ export class DocumentModel {
   }
 
   addParagraph(text, config = {}) { const block = new DocumentParagraphBlock(this, text, config); this.blocks.push(block); return block; }
+  addBlockTextContentControl(text, config = {}) {
+    const {
+      blockId,
+      id,
+      tag,
+      alias,
+      nativeId,
+      controlType,
+      type,
+      contentControl,
+      blockContentControl,
+      ...paragraphConfig
+    } = config;
+    return this.addParagraph(text, {
+      ...paragraphConfig,
+      ...(blockId ? { id: blockId } : {}),
+      blockContentControl: blockContentControl || contentControl || { id, tag, alias, nativeId, controlType: controlType ?? type ?? "text" },
+    });
+  }
   fillContentControls(values = {}, options = {}) {
     const entries = values instanceof Map ? [...values.entries()] : Object.entries(values || {});
     const requested = new Map(entries.map(([tag, value]) => [String(tag), String(value ?? "")]));
@@ -1400,6 +1446,7 @@ export class DocumentModel {
       if (!control.tag || control.tag.length > 64 || /[\u0000-\u001f\u007f]/.test(control.tag)) issues.push(verificationIssue("document", "invalidContentControlTag", `Content control ${control.id} tag must contain 1 to 64 characters without controls.`, { id: control.id, tag: control.tag }));
       if (control.alias.length > 255 || /[\u0000-\u001f\u007f]/.test(control.alias)) issues.push(verificationIssue("document", "invalidContentControlAlias", `Content control ${control.id} alias must contain at most 255 characters without controls.`, { id: control.id, alias: control.alias }));
       if (control.controlType !== "text" && control.controlType !== "checkbox" && control.controlType !== "dropdown" && control.controlType !== "comboBox" && control.controlType !== "date") issues.push(verificationIssue("document", "invalidContentControlType", `Content control ${control.id} type must be text, checkbox, dropdown, comboBox, or date.`, { id: control.id, controlType: control.controlType }));
+      if (control.placement === "block" && (control.controlType !== "text" || control.block.runs.length !== 1 || control.block.runs.some((run) => run.contentControl || run.inlineField) || control.block.runs[0]?.text !== control.block.text)) issues.push(verificationIssue("document", "invalidBlockContentControl", `Block content control ${control.id} must be plain text around exactly one ordinary paragraph run whose text matches the paragraph.`, { id: control.id, targetId: control.targetId }));
       if (control.controlType === "checkbox" && (typeof control.checked !== "boolean" || control.text !== documentCheckboxGlyph(control.checked))) issues.push(verificationIssue("document", "invalidCheckboxContentControl", `Checkbox content control ${control.id} must have boolean checked state and its canonical visible glyph.`, { id: control.id, checked: control.checked, visibleText: control.text }));
       if (control.controlType === "dropdown") {
         try {

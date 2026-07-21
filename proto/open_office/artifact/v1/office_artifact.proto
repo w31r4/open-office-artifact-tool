@@ -2425,6 +2425,12 @@ message DocumentParagraph {
   // group through an instance-local level override.
   DocumentNumbering numbering = 3;
   DocumentParagraphFormatting formatting = 4;
+  // One bounded block-level Word plain-text content control. OpenChestnut
+  // owns the canonical w:sdt/w:sdtContent wrapper around exactly one modeled
+  // paragraph containing one ordinary run. Multi-paragraph, table/cell,
+  // nested, rich-text, locked, placeholder, repeating-section, and
+  // data-bound block controls stay opaque and source-bound.
+  DocumentTextContentControl block_content_control = 5;
 }
 
 message DocumentNumbering {
@@ -2450,9 +2456,10 @@ message DocumentRun {
   // content control. The model ID is
   // agent-facing identity for one object lifetime; native_id is package-local
   // w:sdtPr/w:id identity and is assigned deterministically when omitted.
-  // Rich text, block/cell controls, data binding, date controls, custom
-  // checkbox symbols, placeholder documents, locking, and nested SDTs stay
-  // opaque.
+  // Rich text, cell controls, data binding, custom checkbox symbols,
+  // placeholder documents, locking, and nested SDTs stay opaque. A separate
+  // bounded block-level plain-text profile is represented on
+  // DocumentParagraph.block_content_control.
   DocumentTextContentControl text_content_control = 7;
   // One logical inline Word field represented by the public run's text as its
   // cached display result. OpenChestnut authors/imports a canonical five-run

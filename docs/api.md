@@ -7,6 +7,7 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | Name | Kind | Summary |
 | --- | --- | --- |
 | `document.addBibliographySource` | api | Add a canonical Word bibliography source for inspect, resolve, and native b:Sources authoring. Recognized imports allow bounded source content edits while source order, IDs, and tags remain source-bound. |
+| `document.addBlockTextContentControl` | api | Append one canonical block-level Word plain-text content control around exactly one modeled paragraph and one ordinary run. The handle reports placement=block; OpenChestnut preserves the w:sdt wrapper and binds native identity/topology after import. |
 | `document.addBookmark` | api | Wrap exactly one paragraph-like block in a native Word bookmark for inspect, resolve, and internal hyperlinks. Recognized imported whole-block bookmarks are exposed with source identity but remain fixed-topology/read-only; cross-block, nested, crossing, table-cell, and otherwise complex ranges stay opaque-preserved and fail closed on mutation. |
 | `document.addChange` | api | Append one bounded whole-paragraph tracked insertion or deletion. OpenChestnut authors native w:ins/w:del markup and permits fixed-topology imported text/author/date edits; mixed or nested revision graphs remain source-bound. |
 | `document.addCitation` | api | Add a whole-paragraph bibliography-backed citation exported as a native w:fldSimple CITATION field plus a bounded bookmark. Recognized imports allow display-text edits while source tags and topology remain fixed. |
@@ -26,10 +27,10 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.addTable` | api | Append a Word-style table with physical cell values, optional logical merge geometry, and fixed-layout width/margin/border/header formatting. |
 | `document.addTableOfContents` | api | Append one canonical one-paragraph complex TOC field with bounded heading levels/switches and enable the native updateFields-on-open hint by default. Refreshed cross-paragraph result graphs remain opaque/source-bound and read-only. |
 | `document.applyDesignPreset` | api | Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews. |
-| `document.contentControls` | api | List typed mutable handles for recognized inline plain-text, canonical checkbox, drop-down, combo-box, and date controls with model and native identity. |
-| `document.fillContentControls` | api | Transactionally fill every recognized inline plain-text control matching an object or Map of tag-to-string entries. Checkbox, drop-down, combo-box, and date tags do not silently accept text. |
+| `document.contentControls` | api | List typed mutable handles for recognized block/inline plain-text, canonical checkbox, drop-down, combo-box, and date controls with explicit placement plus model and native identity. |
+| `document.fillContentControls` | api | Transactionally fill every recognized block or inline plain-text control matching an object or Map of tag-to-string entries. Checkbox, drop-down, combo-box, and date tags do not silently accept text. |
 | `document.fontFamilies` | api | Return a fresh sorted, case-insensitively deduplicated list of document theme and explicit run/style font families. |
-| `document.inspect` | api | Emit bounded NDJSON for document blocks including typed inline plain-text/checkbox content controls and fields, tracked changes, bookmark ranges, footnotes/endnotes, bibliography sources, comments, styles, headers/footers, and layout; narrow with search/target anchors and fields with include/exclude. |
+| `document.inspect` | api | Emit bounded NDJSON for document blocks including typed block/inline plain-text and inline checkbox/list/date content controls with explicit placement, fields, tracked changes, bookmark ranges, footnotes/endnotes, bibliography sources, comments, styles, headers/footers, and layout; narrow with search/target anchors and fields with include/exclude. |
 | `document.layoutJson` | api | Return page-aware layout JSON with block bounding boxes, section/page ordinals, effective inherited header/footer selections, styles, and target/search slicing. |
 | `document.materializeFields` | api | Transactionally compute canonical inline SEQ counters and REF cached results from native bookmark targets, with dry-run evidence and strict missing-target failure. PAGEREF remains skipped because trustworthy page numbers require a real pagination host. |
 | `document.render` | api | Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs. |
@@ -43,7 +44,7 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.setSettings` | api | Set model settings. evenAndOddHeaders, trackRevisions, and the updateFields refresh hint are inside the OpenChestnut 0.2 DOCX boundary; mirrorMargins and documentProtection remain unsupported through the facade. |
 | `document.styles.effective` | api | Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata. |
 | `document.textRange` | api | Inspect or resolve stable textRange anchors such as blockId/text and tableId/cell/row/column/text. Assignment is limited to fully editable text; replace() also supports explicitly advertised source-bound literal patches. |
-| `document.verify` | api | Return QA issues for invalid/duplicate content-control IDs and native IDs, malformed tags/aliases, fake lists, invalid links/citations/bibliography sources, malformed tracked changes, duplicate/dangling/reversed bookmark ranges, invalid footnotes/endnotes, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells. |
+| `document.verify` | api | Return QA issues for invalid/duplicate content-control IDs and native IDs, malformed tags/aliases, invalid block-control profiles, fake lists, invalid links/citations/bibliography sources, malformed tracked changes, duplicate/dangling/reversed bookmark ranges, invalid footnotes/endnotes, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells. |
 | `documentComment.reopen` | api | Clear the resolved state of a bounded modern comment without changing its root/reply topology or durable identity. |
 | `documentComment.resolve` | api | Set resolved=true for a bounded modern comment. Imported edits re-prove source hashes and commentsExtended topology while keeping thread identity fixed. |
 | `DocumentFile.addTrackedReplacement` | api | Add one exact replacement inside a direct body paragraph or bounded table-cell paragraph to hash-bound DOCX source bytes as adjacent native w:del/w:ins runs. A structured paragraph/tableCell selector, full expected text, and one unique literal contained in either one ordinary run or adjacent run fragments with identical w:rPr preserve source formatting; mixed formatting and broader topologies fail closed with exact changed-part audit. |
@@ -52,7 +53,7 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `DocumentFile.importDocx` | api | Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Recognized inline controls, fields, revisions, notes, citations, simple tables, and other exact profiles are fixed-topology editable; otherwise read-only paragraphs and complex table cells separately advertise textPatchable when at least one direct ordinary native text node can participate in a bounded literal patch. A unique literal may span adjacent same-format runs without rebuilding the surrounding graph. |
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
-| `DocumentModel.create` | api | Create a document with paragraph/character styles, formatted paragraphs/runs, inline plain-text, canonical checkbox, drop-down, combo-box, and ISO/Gregorian date content controls, canonical inline SEQ/REF/PAGEREF fields, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, bounded whole-block bookmarks, plain-text footnotes/endnotes, canonical bibliography-backed citations, simple fields, a canonical complex TOC placeholder, bounded whole-paragraph tracked insertions/deletions, classic comments, bounded modern root/direct-reply threads, and PNG/JPEG images. Nested/irregular modern threads, rich comment bodies, rich/block/data-bound/irregular-list/localized-date/custom-symbol checkbox SDTs, other complex field graphs, arbitrary table-style graphs, complex bookmark/note/revision graphs, and advanced settings remain unsupported or source-bound. |
+| `DocumentModel.create` | api | Create a document with paragraph/character styles, formatted paragraphs/runs, inline plain-text, canonical checkbox, drop-down, combo-box, and ISO/Gregorian date content controls, one-paragraph block plain-text controls, canonical inline SEQ/REF/PAGEREF fields, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, bounded whole-block bookmarks, plain-text footnotes/endnotes, canonical bibliography-backed citations, simple fields, a canonical complex TOC placeholder, bounded whole-paragraph tracked insertions/deletions, classic comments, bounded modern root/direct-reply threads, and PNG/JPEG images. Nested/irregular modern threads, rich comment bodies, multi-paragraph/table/cell/nested/data-bound/locked/placeholder SDTs, irregular lists, localized dates, custom checkbox symbols, other complex field graphs, arbitrary table-style graphs, complex bookmark/note/revision graphs, and advanced settings remain unsupported or source-bound. |
 | `documentTableCell.replaceText` | api | Apply a literal source-bound text patch to one table cell that advertises textPatchable. The search must resolve exactly once inside one ordinary native w:t node or adjacent non-empty direct runs with byte-identical w:rPr. Whole-cell replacement, mixed formatting, empty-run gaps, paragraph boundaries, fields, controls, revisions, and ambiguous matches fail closed. |
 | `exportDocxWithOpenChestnut` | api | Export bounded DocumentModel paragraphs/runs, fields, tables, bookmarks, notes, citations, tracked changes, comments, images, sections, numbering, and settings; recognized imports permit exact-profile semantic edits plus hash-bound literal patches to one unique ordinary paragraph or table-cell span inside one direct w:r/w:t or adjacent same-format runs while preserving all surrounding native markup. |
 | `importDocxWithOpenChestnut` | api | Import DOCX bytes through OpenChestnut with source-bound blocks, exact-profile editable semantics, and separate textEditable/textPatchable capability evidence. Literal patch capability never implies whole-paragraph/cell editability; only adjacent non-empty direct runs with byte-identical w:rPr may form one patch span, while mixed-format, gapped, cross-paragraph, ambiguous, field/control/revision text remains fail-closed. |
@@ -85,6 +86,25 @@ Add a canonical Word bibliography source for inspect, resolve, and native b:Sour
 **Schema returns:**
 
 - `source` (DocumentBibliographySource) — Canonical b:Source entry. Recognized imports permit bounded field/author edits with fixed source order, ID, and tag.
+
+#### `document.addBlockTextContentControl`
+
+Append one canonical block-level Word plain-text content control around exactly one modeled paragraph and one ordinary run. The handle reports placement=block; OpenChestnut preserves the w:sdt wrapper and binds native identity/topology after import.
+
+**Schema parameters:**
+
+- `text` (string) required — Initial visible paragraph text, including the empty string when the template is intentionally blank.
+- `blockId` (string) — Optional agent-facing paragraph block ID; generated when omitted.
+- `id` (string) — Agent-facing content-control ID; generated when omitted.
+- `tag` (string) required — Block plain-text SDT tag, 1 to 64 characters without controls.
+- `alias` (string) — Human title/alias, 1 to 255 characters; defaults to tag.
+- `styleId` (string) — Optional modeled paragraph style ID.
+- `paragraphFormat` (object) — Optional modeled paragraph formatting for the wrapped paragraph.
+- `runStyle` (object) — Optional modeled formatting for the single ordinary run.
+
+**Schema returns:**
+
+- `paragraph` (DocumentParagraphBlock) — Appended canonical block w:sdt around one paragraph/run. Multi-run, inline-field/control, non-text, nested, table/cell, locked, placeholder, repeating-section, and data-bound profiles fail closed.
 
 #### `document.addBookmark`
 
@@ -407,15 +427,15 @@ Apply a clean-room report or memo design preset that updates named styles for co
 
 #### `document.contentControls`
 
-List typed mutable handles for recognized inline plain-text, canonical checkbox, drop-down, combo-box, and date controls with model and native identity.
+List typed mutable handles for recognized block/inline plain-text, canonical checkbox, drop-down, combo-box, and date controls with explicit placement plus model and native identity.
 
 **Schema returns:**
 
-- `controls` (DocumentContentControlHandle[]) — Fresh typed handles for recognized inline text, checkbox, drop-down, combo-box, and date controls. Tag/alias plus type-specific text, checked, selectedValue, value, or dateValue are mutable; list choices, controlType, nativeId, native date profile, symbol declarations, and topology are source identity.
+- `controls` (DocumentContentControlHandle[]) — Fresh typed handles for recognized block/inline text, checkbox, drop-down, combo-box, and date controls. placement is block or inline; runIndex is present only for inline controls. Tag/alias plus type-specific text, checked, selectedValue, value, or dateValue are mutable; list choices, controlType, nativeId, native date profile, symbol declarations, and topology are source identity.
 
 #### `document.fillContentControls`
 
-Transactionally fill every recognized inline plain-text control matching an object or Map of tag-to-string entries. Checkbox, drop-down, combo-box, and date tags do not silently accept text.
+Transactionally fill every recognized block or inline plain-text control matching an object or Map of tag-to-string entries. Checkbox, drop-down, combo-box, and date tags do not silently accept text.
 
 **Schema parameters:**
 
@@ -436,7 +456,7 @@ Return a fresh sorted, case-insensitively deduplicated list of document theme an
 
 #### `document.inspect`
 
-Emit bounded NDJSON for document blocks including typed inline plain-text/checkbox content controls and fields, tracked changes, bookmark ranges, footnotes/endnotes, bibliography sources, comments, styles, headers/footers, and layout; narrow with search/target anchors and fields with include/exclude.
+Emit bounded NDJSON for document blocks including typed block/inline plain-text and inline checkbox/list/date content controls with explicit placement, fields, tracked changes, bookmark ranges, footnotes/endnotes, bibliography sources, comments, styles, headers/footers, and layout; narrow with search/target anchors and fields with include/exclude.
 
 **Examples:**
 
@@ -654,7 +674,7 @@ Inspect or resolve stable textRange anchors such as blockId/text and tableId/cel
 
 #### `document.verify`
 
-Return QA issues for invalid/duplicate content-control IDs and native IDs, malformed tags/aliases, fake lists, invalid links/citations/bibliography sources, malformed tracked changes, duplicate/dangling/reversed bookmark ranges, invalid footnotes/endnotes, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells.
+Return QA issues for invalid/duplicate content-control IDs and native IDs, malformed tags/aliases, invalid block-control profiles, fake lists, invalid links/citations/bibliography sources, malformed tracked changes, duplicate/dangling/reversed bookmark ranges, invalid footnotes/endnotes, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells.
 
 **Schema parameters:**
 
@@ -790,7 +810,7 @@ Apply DOCX part patches with path traversal validation for settings, classic-com
 
 #### `DocumentModel.create`
 
-Create a document with paragraph/character styles, formatted paragraphs/runs, inline plain-text, canonical checkbox, drop-down, combo-box, and ISO/Gregorian date content controls, canonical inline SEQ/REF/PAGEREF fields, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, bounded whole-block bookmarks, plain-text footnotes/endnotes, canonical bibliography-backed citations, simple fields, a canonical complex TOC placeholder, bounded whole-paragraph tracked insertions/deletions, classic comments, bounded modern root/direct-reply threads, and PNG/JPEG images. Nested/irregular modern threads, rich comment bodies, rich/block/data-bound/irregular-list/localized-date/custom-symbol checkbox SDTs, other complex field graphs, arbitrary table-style graphs, complex bookmark/note/revision graphs, and advanced settings remain unsupported or source-bound.
+Create a document with paragraph/character styles, formatted paragraphs/runs, inline plain-text, canonical checkbox, drop-down, combo-box, and ISO/Gregorian date content controls, one-paragraph block plain-text controls, canonical inline SEQ/REF/PAGEREF fields, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, bounded whole-block bookmarks, plain-text footnotes/endnotes, canonical bibliography-backed citations, simple fields, a canonical complex TOC placeholder, bounded whole-paragraph tracked insertions/deletions, classic comments, bounded modern root/direct-reply threads, and PNG/JPEG images. Nested/irregular modern threads, rich comment bodies, multi-paragraph/table/cell/nested/data-bound/locked/placeholder SDTs, irregular lists, localized dates, custom checkbox symbols, other complex field graphs, arbitrary table-style graphs, complex bookmark/note/revision graphs, and advanced settings remain unsupported or source-bound.
 
 **Schema parameters:**
 

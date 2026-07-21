@@ -72,6 +72,48 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### DOCX block plain-text content controls
+
+On 2026-07-21, the Documents model, versioned protobuf wire, OpenChestnut C#
+codec, bundled WASM runtime, public Help/API surface, and runnable Documents
+Skill added one bounded body-level plain-text content-control profile.
+`document.addBlockTextContentControl(text, config)` authors a real `w:SdtBlock`
+with `w:text`, tag, alias, deterministic native ID, exactly one modeled
+paragraph, and exactly one ordinary run. `blockId` and control `id` remain
+separate Agent locators. `document.contentControls` reports explicit
+`placement: "block"`; only inline controls report `runIndex`.
+
+Canonical imports permit text/tag/alias and supported paragraph/run formatting
+edits while native ID, block placement, and the one-paragraph/one-run topology
+remain source-bound. Removing or converting the wrapper fails with
+`document_content_control_topology_changed`. Multi-paragraph, table/cell,
+nested, rich-text, locked, placeholder, repeating-section, data-bound, or
+extension-bearing block SDTs remain opaque: unchanged bytes export exactly,
+while semantic replacement fails closed.
+
+The C# codec test proves Office 2021 validation, native body topology,
+source-free authoring, semantic import, byte-identical no-op export, a second
+edited import, topology-tamper refusal, and opaque preservation for a
+two-paragraph negative fixture. JS model/wire tests prove separate block/control
+IDs, placement-aware inspect/resolve, transactional fill-by-tag, formatting,
+native markup, exact no-op bytes, a second edit/import, and invalid-profile
+rejection. The shipped content-control fixture now authors six profiles—block
+and inline text, checkbox, drop-down, combo-box, and date—and passes semantic,
+package, model-render, and native LibreOffice/Poppler QA.
+
+The complete local release gate passed on 2026-07-21: `npm test`, generated API
+docs, the production clean-install/package test, OpenChestnut `320/320`, and
+OfficeBridge `5/5`. Two deterministic source builds produced the same 39-file
+audit set; the bundled runtime contains 38 files at 14,882,496 bytes. The
+production dry-run tarball contains 475 files, is 9,139,748 bytes compressed,
+and 24,222,925 bytes unpacked. The one-page native block-control fixture was
+also rendered through LibreOffice/Poppler and reviewed at original resolution
+without overlap, clipping, or pagination defects. Optional real pikepdf,
+pyHanko, veraPDF, and OCRmyPDF provider branches remained explicitly skipped
+because their configured external test environments were not present; their
+contract and fail-closed smoke gates passed. npm authentication remains the
+external publication blocker.
+
 ### DOCX canonical date content controls
 
 On 2026-07-21, the Documents model, public Help/API catalog, versioned

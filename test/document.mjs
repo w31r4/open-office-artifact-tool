@@ -620,6 +620,66 @@ assert.equal(roundTrip.contentControls[0].text, "Grace Hopper");
 assert.equal(roundTrip.resolve(roundTrip.contentControls[0].targetId)?.text, "Customer: Grace Hopper.");
 assert.equal(roundTrip.verify({ visualQa: true }).ok, true);
 
+const blockControlDocument = DocumentModel.create({ name: "Block content-control profile", blocks: [] });
+const blockControlParagraph = blockControlDocument.addBlockTextContentControl("Executive summary", {
+  blockId: "executive-summary-paragraph",
+  id: "executive-summary-control",
+  tag: "EXECUTIVE_SUMMARY",
+  alias: "Executive summary",
+  styleId: "Normal",
+  paragraphFormat: { keepNext: true },
+  runStyle: { bold: true, color: "#1D4ED8" },
+});
+const blockControl = blockControlDocument.contentControls[0];
+assert.equal(blockControl.placement, "block");
+assert.equal(blockControl.runIndex, undefined);
+assert.equal(blockControl.targetId, blockControlParagraph.id);
+assert.equal(blockControlDocument.resolve(blockControl.id).targetId, blockControlParagraph.id);
+assert.equal(blockControlDocument.resolve(blockControl.targetId), blockControlParagraph);
+assert.match(blockControlDocument.inspect({ kind: "contentControl" }).ndjson, /"placement":"block"/);
+assert.deepEqual(blockControlDocument.fillContentControls({ EXECUTIVE_SUMMARY: "Updated executive summary" }), { updated: 1, matchedTags: ["EXECUTIVE_SUMMARY"], missingTags: [] });
+assert.equal(blockControlParagraph.text, "Updated executive summary");
+assert.equal(blockControlParagraph.runs[0].text, "Updated executive summary");
+assert.equal(blockControlDocument.verify().ok, true);
+const blockControlDocx = await DocumentFile.exportDocx(blockControlDocument);
+const blockControlZip = await JSZip.loadAsync(await blockControlDocx.arrayBuffer());
+const blockControlXml = await blockControlZip.file("word/document.xml").async("text");
+assert.match(blockControlXml, /<w:body>\s*<w:sdt>[\s\S]*?<w:tag w:val="EXECUTIVE_SUMMARY"\s*\/>[\s\S]*?<w:text\s*\/>[\s\S]*?<w:sdtContent>\s*<w:p>[\s\S]*Updated executive summary[\s\S]*?<\/w:p>\s*<\/w:sdtContent>\s*<\/w:sdt>/);
+const importedBlockControlDocument = await DocumentFile.importDocx(blockControlDocx);
+const importedBlockControl = importedBlockControlDocument.contentControls[0];
+assert.equal(importedBlockControl.placement, "block");
+assert.equal(importedBlockControl.tag, "EXECUTIVE_SUMMARY");
+assert.equal(importedBlockControl.text, "Updated executive summary");
+assert.equal(importedBlockControlDocument.blocks[0].runs[0].style.bold, true);
+assert.equal(importedBlockControlDocument.blocks[0].runs[0].style.color, "#1d4ed8");
+const unchangedBlockControlDocx = await DocumentFile.exportDocx(importedBlockControlDocument);
+assert.deepEqual(Buffer.from(await unchangedBlockControlDocx.arrayBuffer()), Buffer.from(await blockControlDocx.arrayBuffer()), "unchanged imported block content control must preserve source bytes");
+importedBlockControlDocument.fillContentControls({ EXECUTIVE_SUMMARY: "Final executive summary" });
+importedBlockControl.tag = "SUMMARY";
+importedBlockControl.alias = "Summary";
+const roundTripBlockControlDocument = await DocumentFile.importDocx(await DocumentFile.exportDocx(importedBlockControlDocument));
+assert.equal(roundTripBlockControlDocument.blocks[0].text, "Final executive summary");
+assert.equal(roundTripBlockControlDocument.contentControls[0].tag, "SUMMARY");
+assert.equal(roundTripBlockControlDocument.contentControls[0].alias, "Summary");
+const blockControlTopologyTamper = await DocumentFile.importDocx(blockControlDocx);
+delete blockControlTopologyTamper.blocks[0].blockContentControl;
+await assert.rejects(
+  () => DocumentFile.exportDocx(blockControlTopologyTamper),
+  (error) => error?.code === "document_content_control_topology_changed" && /source-bound/i.test(error.message),
+);
+assert.throws(
+  () => blockControlDocument.addBlockTextContentControl("Invalid", { tag: "INVALID_BLOCK_CHECKBOX", controlType: "checkbox", checked: false }),
+  /only plain text/i,
+);
+assert.throws(
+  () => blockControlDocument.addBlockTextContentControl("Invalid", { tag: "INVALID_BLOCK_ALIAS", alias: "" }),
+  /non-empty alias/i,
+);
+assert.throws(
+  () => blockControlDocument.addParagraph("Invalid", { blockContentControl: { tag: "INVALID_BLOCK_RUNS" }, runs: [{ text: "One" }, { text: "Two" }] }),
+  /exactly one ordinary paragraph run/i,
+);
+
 const checkboxDocument = DocumentModel.create({ name: "Checkbox content-control profile", blocks: [] });
 const checkboxParagraph = checkboxDocument.addParagraph("Terms: ");
 checkboxParagraph.addCheckboxContentControl(false, {

@@ -592,6 +592,25 @@ internal static class DocxCodec
         }
         else switch (element)
         {
+            case W.SdtBlock contentControl:
+                if (DocxContentControlCodec.IsSupported(contentControl))
+                {
+                    var paragraph = (W.Paragraph)contentControl.SdtContentBlock!.FirstChild!;
+                    block.StyleId = paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value ?? string.Empty;
+                    block.Paragraph = DocxContentControlCodec.Read(contentControl, $"{block.Id}/content-control");
+                    editable = true;
+                    semanticItems++;
+                }
+                else
+                {
+                    block.Opaque = new DocumentOpaqueBlock
+                    {
+                        ElementName = element.LocalName,
+                        Text = element.InnerText ?? string.Empty,
+                    };
+                    semanticItems++;
+                }
+                break;
             case W.Paragraph paragraph:
                 block.StyleId = paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value ?? string.Empty;
                 if (DocxSectionCodec.TryReadBoundary(paragraph, out var section, out editable))
@@ -790,7 +809,9 @@ internal static class DocxCodec
 
     private static OpenXmlElement BuildBlock(DocumentBlock block, DocxPartContext context, string? revisionId = null) => block.ContentCase switch
     {
-        DocumentBlock.ContentOneofCase.Paragraph => BuildParagraph(block),
+        DocumentBlock.ContentOneofCase.Paragraph => block.Paragraph.BlockContentControl is null
+            ? BuildParagraph(block)
+            : DocxContentControlCodec.Build(block),
         DocumentBlock.ContentOneofCase.Table => DocxTableCodec.Build(block),
         DocumentBlock.ContentOneofCase.Hyperlink => DocxHyperlinkCodec.Build(block, context),
         DocumentBlock.ContentOneofCase.Field => DocxFieldCodec.Build(block),
@@ -808,7 +829,7 @@ internal static class DocxCodec
         _ => throw new CodecException("missing_document_block_content", $"Document block {block.Id} has no content."),
     };
 
-    private static W.Paragraph BuildParagraph(DocumentBlock block)
+    internal static W.Paragraph BuildParagraph(DocumentBlock block)
     {
         var paragraph = new W.Paragraph();
         var paragraphProperties = DocxFormattingCodec.BuildParagraphProperties(
@@ -865,8 +886,12 @@ internal static class DocxCodec
         if (semantic.ContentCase == DocumentBlock.ContentOneofCase.Change && semantic.Change.HasDate)
             semantic.Change.Date = DateTimeOffset.Parse(semantic.Change.Date).UtcDateTime.ToString("O");
         if (semantic.ContentCase == DocumentBlock.ContentOneofCase.Paragraph)
+        {
+            if (semantic.Paragraph.BlockContentControl is not null)
+                semantic.Paragraph.BlockContentControl.Id = string.Empty;
             foreach (var run in semantic.Paragraph.Runs)
                 if (run.TextContentControl is not null) run.TextContentControl.Id = string.Empty;
+        }
         return Hash(semantic.ToByteArray());
     }
 

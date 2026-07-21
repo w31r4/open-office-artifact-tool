@@ -1727,7 +1727,10 @@ function publicDocumentParagraphFormatting(value) {
 
 function planDocumentContentControls(document) {
   const controls = document.blocks.flatMap((block) => block.kind === "paragraph"
-    ? block.runs.filter((run) => run.contentControl).map((run) => ({ block, run, control: run.contentControl }))
+    ? [
+        ...(block.blockContentControl ? [{ block, target: block, control: block.blockContentControl }] : []),
+        ...block.runs.filter((run) => run.contentControl).map((run) => ({ block, target: run, control: run.contentControl })),
+      ]
     : []);
   const used = new Set();
   for (const { block, control } of controls) {
@@ -1739,14 +1742,14 @@ function planDocumentContentControls(document) {
   }
   const result = new Map();
   let next = 1;
-  for (const { run, control } of controls) {
+  for (const { target, control } of controls) {
     if (control.nativeId != null) {
-      result.set(run, Number(control.nativeId));
+      result.set(target, Number(control.nativeId));
       continue;
     }
     while (used.has(next)) next += 1;
     if (next > 0x7fffffff) throw new OpenChestnutCodecError("Document content controls exhausted the positive native ID range.", [], { code: "invalid_document_content_control" });
-    result.set(run, next);
+    result.set(target, next);
     used.add(next);
     next += 1;
   }
@@ -1904,25 +1907,30 @@ function documentRun(run, blockId, contentControlNativeId) {
   };
 }
 
-function documentContentControlTopology(runs = []) {
-  return runs.flatMap((run, index) => {
-    const control = run.textContentControl || run.contentControl;
-    const controlType = documentContentControlTypeName(control);
-    return control
-    ? [{
-        index,
-        nativeId: Number(control.nativeId),
-        controlType,
-        ...(controlType === "dropdown" || controlType === "comboBox" ? { choices: (control.choices || []).map((choice) => [String(choice.displayText), String(choice.value)]) } : {}),
-      }]
-    : [];
-  });
+function documentContentControlTopology(paragraph = {}) {
+  const blockControl = paragraph.blockContentControl || paragraph.block_content_control;
+  const blockControlType = documentContentControlTypeName(blockControl);
+  return {
+    block: blockControl ? { nativeId: Number(blockControl.nativeId), controlType: blockControlType } : undefined,
+    inline: (paragraph.runs || []).flatMap((run, index) => {
+      const control = run.textContentControl || run.contentControl;
+      const controlType = documentContentControlTypeName(control);
+      return control
+        ? [{
+            index,
+            nativeId: Number(control.nativeId),
+            controlType,
+            ...(controlType === "dropdown" || controlType === "comboBox" ? { choices: (control.choices || []).map((choice) => [String(choice.displayText), String(choice.value)]) } : {}),
+          }]
+        : [];
+    }),
+  };
 }
 
 function assertDocumentContentControlTopology(block, original) {
   if (!original || original.content.case !== "paragraph") return;
-  const requested = documentContentControlTopology(block.runs || []);
-  const source = documentContentControlTopology(original.content.value.runs || []);
+  const requested = documentContentControlTopology(block);
+  const source = documentContentControlTopology(original.content.value);
   if (JSON.stringify(requested) !== JSON.stringify(source)) {
     throw new OpenChestnutCodecError(`Imported document paragraph ${block.id} content-control topology is source-bound.`, [], { code: "document_content_control_topology_changed" });
   }
@@ -2950,7 +2958,14 @@ function documentBlock(block, original, directNumbering, assets, contentControlN
       ...common,
       content: {
         case: "paragraph",
-        value: { text: block.text, runs: block.runs.map((run) => documentRun(run, block.id, contentControlNativeIds.get(run))), formatting: documentParagraphFormatting(block) },
+        value: {
+          text: block.text,
+          runs: block.runs.map((run) => documentRun(run, block.id, contentControlNativeIds.get(run))),
+          formatting: documentParagraphFormatting(block),
+          blockContentControl: block.blockContentControl
+            ? wireDocumentContentControl(block.blockContentControl, contentControlNativeIds.get(block), block.id)
+            : undefined,
+        },
       },
     };
   }
@@ -3401,6 +3416,32 @@ function sameDocumentTrackedReplacementTarget(left, right) {
     (right.kind !== "tableCell" || left.row === right.row && left.column === right.column);
 }
 
+function publicDocumentContentControl(control) {
+  if (!control) return undefined;
+  return {
+    id: control.id,
+    tag: control.tag,
+    alias: control.alias,
+    nativeId: control.nativeId,
+    controlType: control.controlType === DocumentContentControlType.CHECKBOX
+      ? "checkbox"
+      : control.controlType === DocumentContentControlType.DROP_DOWN
+        ? "dropdown"
+        : control.controlType === DocumentContentControlType.COMBO_BOX ? "comboBox"
+          : control.controlType === DocumentContentControlType.DATE ? "date" : "text",
+    ...(control.controlType === DocumentContentControlType.CHECKBOX ? { checked: control.checked === true } : {}),
+    ...(control.controlType === DocumentContentControlType.DROP_DOWN ? {
+      choices: control.choices.map((choice) => ({ displayText: choice.displayText, value: choice.value })),
+      selectedValue: control.selectedValue,
+    } : {}),
+    ...(control.controlType === DocumentContentControlType.COMBO_BOX ? {
+      choices: control.choices.map((choice) => ({ displayText: choice.displayText, value: choice.value })),
+      value: control.value,
+    } : {}),
+    ...(control.controlType === DocumentContentControlType.DATE ? { dateValue: control.dateValue } : {}),
+  };
+}
+
 function documentFromEnvelope(envelope) {
   if (envelope.family !== ArtifactFamily.DOCUMENT || envelope.payload.case !== "document") {
     throw new OpenChestnutCodecError("OpenChestnut response does not contain a document artifact.", [], { code: "invalid_document_artifact" });
@@ -3445,6 +3486,7 @@ function documentFromEnvelope(envelope) {
           textPatches: [],
           text: block.content.value.text,
           paragraphFormat: publicDocumentParagraphFormatting(block.content.value.formatting),
+          blockContentControl: publicDocumentContentControl(block.content.value.blockContentControl),
           runs: block.content.value.runs.length ? block.content.value.runs.map((run) => ({
             text: run.text,
             style: {
@@ -3454,30 +3496,7 @@ function documentFromEnvelope(envelope) {
               ...(!run.formatting && run.italic ? { italic: true } : {}),
               ...(!run.formatting && run.underline ? { underline: true } : {}),
             },
-            ...(run.textContentControl ? { contentControl: {
-              id: run.textContentControl.id,
-              tag: run.textContentControl.tag,
-              alias: run.textContentControl.alias,
-              nativeId: run.textContentControl.nativeId,
-              controlType: run.textContentControl.controlType === DocumentContentControlType.CHECKBOX
-                ? "checkbox"
-                : run.textContentControl.controlType === DocumentContentControlType.DROP_DOWN
-                  ? "dropdown"
-                  : run.textContentControl.controlType === DocumentContentControlType.COMBO_BOX ? "comboBox"
-                    : run.textContentControl.controlType === DocumentContentControlType.DATE ? "date" : "text",
-              ...(run.textContentControl.controlType === DocumentContentControlType.CHECKBOX ? { checked: run.textContentControl.checked === true } : {}),
-              ...(run.textContentControl.controlType === DocumentContentControlType.DROP_DOWN ? {
-                choices: run.textContentControl.choices.map((choice) => ({ displayText: choice.displayText, value: choice.value })),
-                selectedValue: run.textContentControl.selectedValue,
-              } : {}),
-              ...(run.textContentControl.controlType === DocumentContentControlType.COMBO_BOX ? {
-                choices: run.textContentControl.choices.map((choice) => ({ displayText: choice.displayText, value: choice.value })),
-                value: run.textContentControl.value,
-              } : {}),
-              ...(run.textContentControl.controlType === DocumentContentControlType.DATE ? {
-                dateValue: run.textContentControl.dateValue,
-              } : {}),
-            } } : {}),
+            ...(run.textContentControl ? { contentControl: publicDocumentContentControl(run.textContentControl) } : {}),
             ...(run.inlineField ? { inlineField: {
               instruction: run.inlineField.instruction,
               ...(run.inlineField.bookmarkName ? { bookmarkName: run.inlineField.bookmarkName } : {}),

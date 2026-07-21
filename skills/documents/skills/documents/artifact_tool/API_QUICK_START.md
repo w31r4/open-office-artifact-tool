@@ -203,7 +203,7 @@ render, and audit. Imported parentage, paragraph/durable IDs, UTC/person data,
 anchors, and comment count cannot change. Nested replies and irregular support
 parts fail closed.
 
-## Inline text, checkbox, drop-down, combo-box, and date content controls
+## Block/inline text, checkbox, drop-down, combo-box, and date content controls
 
 Use a paragraph run-level content control when an Agent must fill a bounded
 plain-text template field by tag:
@@ -230,8 +230,27 @@ const filled = await DocumentFile.exportDocx(importedTemplate);
 await filled.save("filled.docx");
 ```
 
+When the entire paragraph is the template field, author a real body-level
+`w:sdt` instead of an inline wrapper:
+
+```js
+document.addBlockTextContentControl("{{EXECUTIVE_SUMMARY}}", {
+  blockId: "executive-summary-paragraph",
+  id: "executive-summary",
+  tag: "EXECUTIVE_SUMMARY",
+  alias: "Executive summary",
+  paragraphFormat: { keepNext: true },
+  runStyle: { bold: true },
+});
+```
+
+This bounded profile contains exactly one paragraph and one ordinary run.
+Multi-run, nested, table/cell, locked, placeholder, repeating-section, and
+data-bound block SDTs remain opaque/source-bound.
+
 `document.contentControls` returns fresh handles with `id`, `targetId`,
-`runIndex`, `tag`, `alias`, read-only `nativeId`, and `controlType`. Plain-text
+`placement`, optional inline-only `runIndex`, `tag`, `alias`, read-only
+`nativeId`, and `controlType`. Plain-text
 handles have mutable `text`; checkbox handles have mutable boolean `checked`;
 drop-down handles expose defensive `choices` and mutable `selectedValue`;
 combo-box handles expose defensive `choices` and mutable `value`; date handles
@@ -308,11 +327,13 @@ or machine-locale behavior.
 Re-resolve controls after each independent import because model IDs are
 object-lifetime locators.
 
-OpenChestnut authors and imports the bounded run-level plain-text profile and
+OpenChestnut authors and imports the bounded run-level plain-text profile, the
+one-paragraph/one-run block plain-text profile, and
 canonical Word 2010+ checkbox, `w:dropDownList`, `w:comboBox`, and ISO/Gregorian
 `w:date` profiles.
-Rich, block, cell, nested, data-bound, irregular drop-down/combo-box, localized-date, legacy/custom-symbol checkbox,
-placeholder-document, locked, or unrelated extension-bearing SDTs remain
+Rich, multi-paragraph/table/cell/nested/data-bound/locked/placeholder/repeating-section block,
+irregular drop-down/combo-box, localized-date, legacy/custom-symbol checkbox,
+or unrelated extension-bearing SDTs remain
 opaque and source-bound. Do not flatten them; follow
 `tasks/forms_content_controls.md` for explicit advanced routing and
 render-backed QA.
@@ -562,10 +583,10 @@ For final visual QA, export the DOCX and use the packaged `render_docx.py` workf
 - PNG/JPEG inline images
 - Classic whole-paragraph comments and bounded modern root/direct-reply threads
 - Standalone whole-paragraph tracked insertions/deletions plus one exact source-bound in-paragraph replacement as adjacent native deletion/insertion runs; native `trackRevisions` intent; and source-hash-bound accept/reject finalization for both bounded profiles
-- Inline plain-text, canonical Word 2010+ checkbox, canonical Word drop-down, canonical Word combo-box, and canonical ISO/Gregorian date content-control runs with typed values, tag/alias identity, transactional tag updates, and fixed-topology imported edits
+- Block/inline plain-text, canonical Word 2010+ checkbox, canonical Word drop-down, canonical Word combo-box, and canonical ISO/Gregorian date content controls with explicit placement, typed values, tag/alias identity, transactional tag updates, and fixed-topology imported edits
 - Canonical bibliography source catalogs and whole-paragraph `CITATION` fields with fixed imported source/tag topology
 
-In-paragraph revision graphs beyond the exact single-format deletion/insertion pair, other mixed accepted/revision runs, mixed-format or nested revisions, moves, property changes, multi-paragraph/nested/continuation/irregular table targets, and non-body revision stories are advanced package workflows, not ordinary public-model authoring or bounded finalization. Bookmarks spanning multiple blocks or table cells, nested/crossing ranges, multi-paragraph or reused note graphs, complex bibliography contributor roles/field switches/output fields, nested/irregular modern comment graphs, rich/block/cell/data-bound/irregular-list/localized-date/custom-symbol checkbox content controls, complex fields other than the canonical one-paragraph TOC placeholder, floating drawings, and other advanced graphs are likewise outside source-free authoring. Recognized imported whole-block bookmarks are inspectable/resolvable but fixed-topology and read-only. Canonical imported footnote/endnote text, bounded citation/source content, bounded inline plain-text control text/tag/alias, canonical checkbox checked/tag/alias state, canonical drop-down selectedValue/tag/alias state, canonical combo-box value/tag/alias state, canonical ISO-date dateValue/tag/alias state, canonical modern-comment text/resolved state, and canonical unrefreshed TOC instruction/display may change, but their anchors, native IDs, control types, list choices/order, symbols, native date profile, and topology remain source-bound; refreshed cross-paragraph TOC graphs and other imported advanced graphs are preserved only while their source evidence remains valid.
+In-paragraph revision graphs beyond the exact single-format deletion/insertion pair, other mixed accepted/revision runs, mixed-format or nested revisions, moves, property changes, multi-paragraph/nested/continuation/irregular table targets, and non-body revision stories are advanced package workflows, not ordinary public-model authoring or bounded finalization. Bookmarks spanning multiple blocks or table cells, nested/crossing ranges, multi-paragraph or reused note graphs, complex bibliography contributor roles/field switches/output fields, nested/irregular modern comment graphs, rich/multi-paragraph/table/cell/nested/data-bound/locked/placeholder/repeating-section content controls, irregular lists, localized dates, custom checkbox symbols, complex fields other than the canonical one-paragraph TOC placeholder, floating drawings, and other advanced graphs are likewise outside source-free authoring. Recognized imported whole-block bookmarks are inspectable/resolvable but fixed-topology and read-only. Canonical imported footnote/endnote text, bounded citation/source content, bounded block/inline plain-text control text/tag/alias, canonical checkbox checked/tag/alias state, canonical drop-down selectedValue/tag/alias state, canonical combo-box value/tag/alias state, canonical ISO-date dateValue/tag/alias state, canonical modern-comment text/resolved state, and canonical unrefreshed TOC instruction/display may change, but their anchors, native IDs, control types, list choices/order, symbols, native date profile, and topology remain source-bound; refreshed cross-paragraph TOC graphs and other imported advanced graphs are preserved only while their source evidence remains valid.
 
 Use `DocumentFile.inspectDocx` or `DocumentFile.patchDocx` only when the user explicitly requests package-level inspection or patching. These are deliberate low-level operations, never an automatic fallback for ordinary authoring.
 

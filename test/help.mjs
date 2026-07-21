@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 351);
+assert.equal(HELP_CATALOG.length, 352);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -357,7 +357,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.sc
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.schema?.returns?.inspection?.description || "", /mupdfWidget.*mupdfFormField/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.summary || "", /MuPDF/);
 const documentCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "document");
-assert.equal(documentCatalog.length, 57);
+assert.equal(documentCatalog.length, 58);
 assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.schema?.parameters?.pictureBullet?.type, "string|object");
@@ -366,6 +366,9 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.
 assert.match(HELP_CATALOG.find((item) => item.name === "DocumentModel.create")?.schema?.parameters?.styles?.description || "", /numberingId\/numberingLevel/);
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.schema?.returns?.document?.type, "DocumentModel");
 assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addTextContentControl")?.schema?.parameters?.tag?.required, true);
+assert.equal(HELP_CATALOG.find((item) => item.name === "document.addBlockTextContentControl")?.schema?.parameters?.tag?.required, true);
+assert.equal(HELP_CATALOG.find((item) => item.name === "document.addBlockTextContentControl")?.schema?.parameters?.blockId?.type, "string");
+assert.match(HELP_CATALOG.find((item) => item.name === "document.addBlockTextContentControl")?.schema?.returns?.paragraph?.description || "", /block w:sdt.*one paragraph\/run.*fail closed/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addCheckboxContentControl")?.schema?.parameters?.checked?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addCheckboxContentControl")?.schema?.parameters?.tag?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addDropdownContentControl")?.schema?.parameters?.choices?.type, "Array<string|object>");
@@ -380,6 +383,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "paragraph.addField")?.su
 assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addField")?.schema?.parameters?.bookmarkName?.type, "string");
 assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addField")?.schema?.parameters?.bookmarkNativeId?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.contentControls")?.schema?.returns?.controls?.type, "DocumentContentControlHandle[]");
+assert.match(HELP_CATALOG.find((item) => item.name === "document.contentControls")?.schema?.returns?.controls?.description || "", /placement.*block or inline.*runIndex/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.fillContentControls")?.schema?.parameters?.values?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.fillContentControls")?.schema?.returns?.result?.description || "", /updated.*matchedTags.*missingTags/);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.setCheckboxContentControls")?.schema?.parameters?.values?.required, true);

@@ -127,12 +127,13 @@ try {
     ["CONTACT_METHOD", "comboBox", "Pager duty"],
     ["REVIEW_DATE", "date", "2028-02-29"],
     ["APPROVED", "checkbox", true],
+    ["EXECUTIVE_SUMMARY", "text", "Ready for approval"],
   ]);
   assert.equal(controls.qa.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
   assert.equal(controlsDocument.inspect({ kind: "contentControl" }).ndjson.includes("Customer name"), true);
   const controlsZip = await JSZip.loadAsync(await fs.readFile(controls.docxPath));
   const controlsXml = await controlsZip.file("word/document.xml").async("text");
-  assert.equal((controlsXml.match(/<w:sdt>/g) || []).length, 6);
+  assert.equal((controlsXml.match(/<w:sdt>/g) || []).length, 7);
   assert.match(controlsXml, /<w:tag w:val="CUSTOMER_NAME"\s*\/>/);
   assert.match(controlsXml, /<w:tag w:val="ACCOUNT_ID"\s*\/>/);
   assert.match(controlsXml, /<w:tag w:val="APPROVED"\s*\/>/);
@@ -140,6 +141,8 @@ try {
   assert.match(controlsXml, /<w:tag w:val="PRIORITY"\s*\/>[\s\S]*<w:dropDownList w:lastValue="high">[\s\S]*<w:listItem(?=[^>]*w:displayText="High")(?=[^>]*w:value="high")[^>]*\/>/);
   assert.match(controlsXml, /<w:tag w:val="CONTACT_METHOD"\s*\/>[\s\S]*<w:comboBox w:lastValue="Pager duty">[\s\S]*<w:listItem(?=[^>]*w:displayText="Phone call")(?=[^>]*w:value="phone")[^>]*\/>/);
   assert.match(controlsXml, /<w:tag w:val="REVIEW_DATE"\s*\/>[\s\S]*<w:date w:fullDate="2028-02-29T00:00:00Z">[\s\S]*<w:dateFormat w:val="yyyy-MM-dd"\s*\/>/);
+  assert.match(controlsXml, /<w:body>[\s\S]*<w:sdt>[\s\S]*?<w:tag w:val="EXECUTIVE_SUMMARY"\s*\/>[\s\S]*?<w:text\s*\/>[\s\S]*?<w:sdtContent>\s*<w:p>[\s\S]*Ready for approval[\s\S]*?<\/w:p>\s*<\/w:sdtContent>\s*<\/w:sdt>/);
+  assert.equal(controlsDocument.contentControls.at(-1).placement, "block");
 
   const bibliography = await runFixture("open-chestnut-bibliography");
   const bibliographyDocument = await DocumentFile.importDocx(await FileBlob.load(bibliography.docxPath));
@@ -677,6 +680,7 @@ try {
   assert.match(skillText, /document\.addInsertion/);
   assert.match(skillText, /document\.addDeletion/);
   assert.match(skillText, /paragraph\.addTextContentControl/);
+  assert.match(skillText, /document\.addBlockTextContentControl/);
   assert.match(skillText, /paragraph\.addCheckboxContentControl/);
   assert.match(skillText, /paragraph\.addDropdownContentControl/);
   assert.match(skillText, /paragraph\.addComboBoxContentControl/);
@@ -709,6 +713,7 @@ try {
   assert.match(manifestText, /^examples\/end_to_end_smoke_test\.md$/m);
   const controlsGuide = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "tasks", "forms_content_controls.md"), "utf8");
   assert.match(controlsGuide, /paragraph\.addTextContentControl/);
+  assert.match(controlsGuide, /document\.addBlockTextContentControl/);
   assert.match(controlsGuide, /paragraph\.addCheckboxContentControl/);
   assert.match(controlsGuide, /paragraph\.addDropdownContentControl/);
   assert.match(controlsGuide, /paragraph\.addComboBoxContentControl/);
@@ -718,7 +723,7 @@ try {
   assert.match(controlsGuide, /document\.setDropdownContentControls/);
   assert.match(controlsGuide, /document\.setComboBoxContentControls/);
   assert.match(controlsGuide, /document\.setDateContentControls/);
-  assert.match(controlsGuide, /Rich.*block.*cell.*irregular.*localized-date.*custom-symbol checkbox/is);
+  assert.match(controlsGuide, /Rich.*multi-paragraph.*table\/cell.*nested.*data-bound.*irregular.*localized-date.*custom-symbol checkbox/is);
 } finally {
   await fs.rm(outputDir, { recursive: true, force: true });
 }

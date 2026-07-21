@@ -25,6 +25,15 @@
         { "text": " / Approved: " },
         { "text": "", "contentControl": { "id": "approved", "tag": "APPROVED", "alias": "Approved", "controlType": "checkbox", "checked": false } }
       ]
+    },
+    {
+      "kind": "paragraph",
+      "name": "executive-summary-field",
+      "styleId": "Normal",
+      "blockContentControl": { "id": "executive-summary", "tag": "EXECUTIVE_SUMMARY", "alias": "Executive summary", "controlType": "text" },
+      "runs": [
+        { "text": "{{EXECUTIVE_SUMMARY}}", "style": { "bold": true, "color": "#1D4ED8" } }
+      ]
     }
   ],
   "edits": [
@@ -32,9 +41,10 @@
       "kind": "contentControls",
       "values": {
         "CUSTOMER_NAME": "Grace Hopper",
-        "ACCOUNT_ID": "AC-2048"
+        "ACCOUNT_ID": "AC-2048",
+        "EXECUTIVE_SUMMARY": "Ready for approval"
       },
-      "expectUpdated": 2
+      "expectUpdated": 3
     },
     {
       "kind": "checkboxContentControls",
@@ -75,7 +85,9 @@
     { "kind": "contentControl", "pattern": "CONTACT_METHOD" },
     { "kind": "contentControl", "pattern": "comboBox" },
     { "kind": "contentControl", "pattern": "REVIEW_DATE" },
-    { "kind": "contentControl", "pattern": "dateValue" }
+    { "kind": "contentControl", "pattern": "dateValue" },
+    { "kind": "contentControl", "pattern": "EXECUTIVE_SUMMARY" },
+    { "kind": "contentControl", "pattern": "block" }
   ],
   "qa": {
     "previewFormat": "svg",
