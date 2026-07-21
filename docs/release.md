@@ -2480,6 +2480,52 @@ shell, so their contract/adversarial tests passed while those real-provider
 repeats were skipped; hosted CI supplies them. `npm whoami` remains unavailable,
 so no publish, tag, or release operation was attempted.
 
+### DOCX source-bound revision finalization
+
+On 2026-07-21, OpenChestnut added native `trackRevisions` settings support and
+a deliberately bounded file-level revision-finalization operation. The public
+`DocumentFile.finalizeRevisions` API receives the original DOCX bytes, requires
+their exact SHA-256, and asks the C# Open XML SDK codec to accept or reject only
+direct whole-paragraph `w:ins` / `w:del` wrappers containing one recognized
+run. It never reconstructs the source package through the JavaScript document
+model.
+
+The operation enforces the normal compressed/uncompressed/part budgets, scans
+all WordprocessingML story parts before mutation, validates against the source
+with Office 2021 rules, and re-scans for residual revision markup afterward.
+Only `word/document.xml` and, when an existing tracking flag is removed,
+`word/settings.xml` may change. Its returned audit binds the source and output
+hashes, accepted mode, insertion/deletion counts, tracking state before/after,
+and exact changed-part list. Mixed or multi-run revisions, nested changes,
+moves, property changes, table revision graphs, non-body stories, malformed
+wrappers, absent revisions, and source-hash mismatches fail before an output is
+returned. `keepTracking` only preserves an existing flag; it cannot silently
+enable one.
+
+The Documents Skill now ships
+`openchestnut-revision-finalization-workflow.mjs`: inspect revisions, bind the
+source hash, invoke the typed primitive, re-import and require zero changes,
+verify the accepted/rejected semantic projection, protect the source, refuse
+output/audit overwrite, and write a byte-bound audit. The accompanying native
+LibreOffice/Poppler render was manually reviewed: accepted insertion text
+remained, rejected deletion text disappeared, and surrounding layout stayed
+intact. Complex revision graphs continue to route explicitly to the documented
+OOXML helper or a real Word review host; there is no silent fallback.
+
+The local candidate passed the complete `npm test` suite, including the 20
+repository-only Office templates, all four published Skills, LibreOffice,
+Poppler, MuPDF.js, qpdf, Playwright, reference-Skill sync, and Agent eval gates.
+OpenChestnut passed `306/306`; OfficeBridge passed `5/5`; deterministic
+source-built WASM verification passed over 39 audited build files. The bundled
+runtime is 38 files and 14,798,528 bytes. Generated API docs and protocol
+generation passed, and the clean-install/package gate produced 473 files,
+9,088,842 compressed bytes, and 24,011,885 unpacked bytes (`SHA-1
+dd7561572f3313af39f45fae65de734b4ed49a9b`). Independent Python environments
+for pikepdf, pyHanko, veraPDF, and OCRmyPDF were not configured in this local
+shell, so their contract/adversarial tests passed while those real-provider
+repeats were skipped; hosted CI supplies them. `npm whoami` still returns
+`ENEEDAUTH`, so no npm publish, tag, or release operation was attempted.
+
 ## Publishing
 
 Before publishing:

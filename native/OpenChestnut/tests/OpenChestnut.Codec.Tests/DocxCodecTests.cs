@@ -2959,15 +2959,160 @@ public sealed class DocxCodecTests
         Assert.Equal("unsupported_document_edit", Assert.Single(rejected.Diagnostics).Code);
     }
 
+    [Fact]
+    public void TrackRevisionsSettingAuthorsImportsAndSourceBoundTogglesWithoutChangingRevisionMarkup()
+    {
+        var request = TrackedChangeExportRequest(trackRevisions: true);
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+            Assert.NotNull(package.MainDocumentPart!.DocumentSettingsPart!.Settings!.GetFirstChild<W.TrackRevisions>());
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.True(imported.Artifact.Document.TrackRevisions);
+        imported.Artifact.Document.TrackRevisions = false;
+
+        var exported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(exported.Ok, Diagnostics(exported));
+        using var outputStream = new MemoryStream(exported.File.ToByteArray());
+        using var output = WordprocessingDocument.Open(outputStream, false);
+        Assert.Null(output.MainDocumentPart!.DocumentSettingsPart!.Settings!.GetFirstChild<W.TrackRevisions>());
+        Assert.Single(output.MainDocumentPart.Document!.Descendants<W.InsertedRun>());
+        Assert.Single(output.MainDocumentPart.Document.Descendants<W.DeletedRun>());
+    }
+
+    [Fact]
+    public void RevisionFinalizationAcceptsAndRejectsBoundedChangesWithExactPartAudit()
+    {
+        var authored = Invoke(TrackedChangeExportRequest(trackRevisions: true));
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var source = AddAllTrackedChangeFormatting(authored.File.ToByteArray());
+        var sourceHash = Convert.ToHexString(SHA256.HashData(source)).ToLowerInvariant();
+
+        var accepted = Invoke(FinalizeRevisionRequest(source, sourceHash, DocumentRevisionFinalizationMode.Accept));
+        Assert.True(accepted.Ok, Diagnostics(accepted));
+        Assert.Equal(DocumentRevisionFinalizationMode.Accept, accepted.RevisionFinalization.Mode);
+        Assert.Equal(sourceHash, accepted.RevisionFinalization.SourceSha256);
+        Assert.Equal(1U, accepted.RevisionFinalization.InsertionCount);
+        Assert.Equal(1U, accepted.RevisionFinalization.DeletionCount);
+        Assert.True(accepted.RevisionFinalization.TrackingBefore);
+        Assert.False(accepted.RevisionFinalization.TrackingAfter);
+        Assert.Equal(new[] { "word/document.xml", "word/settings.xml" }, accepted.RevisionFinalization.ChangedParts);
+        Assert.Equal(
+            Convert.ToHexString(SHA256.HashData(accepted.File.Span)).ToLowerInvariant(),
+            accepted.RevisionFinalization.OutputSha256);
+        using (var stream = new MemoryStream(accepted.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var paragraphs = package.MainDocumentPart!.Document!.Body!.Elements<W.Paragraph>().ToArray();
+            Assert.Equal("Added wording", paragraphs[0].InnerText);
+            Assert.NotNull(paragraphs[0].Descendants<W.Bold>().SingleOrDefault());
+            Assert.Equal(string.Empty, paragraphs[1].InnerText);
+            Assert.Empty(package.MainDocumentPart.Document.Descendants<W.InsertedRun>());
+            Assert.Empty(package.MainDocumentPart.Document.Descendants<W.DeletedRun>());
+            Assert.Null(package.MainDocumentPart.DocumentSettingsPart!.Settings!.GetFirstChild<W.TrackRevisions>());
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var rejected = Invoke(FinalizeRevisionRequest(
+            source,
+            sourceHash,
+            DocumentRevisionFinalizationMode.Reject,
+            keepTracking: true));
+        Assert.True(rejected.Ok, Diagnostics(rejected));
+        Assert.Equal(new[] { "word/document.xml" }, rejected.RevisionFinalization.ChangedParts);
+        Assert.True(rejected.RevisionFinalization.TrackingBefore);
+        Assert.True(rejected.RevisionFinalization.TrackingAfter);
+        using (var stream = new MemoryStream(rejected.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var paragraphs = package.MainDocumentPart!.Document!.Body!.Elements<W.Paragraph>().ToArray();
+            Assert.Equal(string.Empty, paragraphs[0].InnerText);
+            Assert.Equal("Removed wording", paragraphs[1].InnerText);
+            Assert.IsType<W.Text>(paragraphs[1].Descendants<W.Run>().Single().ChildElements.Last());
+            Assert.NotNull(paragraphs[1].Descendants<W.Bold>().SingleOrDefault());
+            Assert.NotNull(package.MainDocumentPart.DocumentSettingsPart!.Settings!.GetFirstChild<W.TrackRevisions>());
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var importedAccepted = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = accepted.File,
+        });
+        Assert.True(importedAccepted.Ok, Diagnostics(importedAccepted));
+        Assert.False(importedAccepted.Artifact.Document.TrackRevisions);
+        Assert.DoesNotContain(importedAccepted.Artifact.Document.Blocks, block => block.ContentCase == DocumentBlock.ContentOneofCase.Change);
+        Assert.Equal(new[] { "Added wording", string.Empty }, importedAccepted.Artifact.Document.Blocks.Select(block => block.Paragraph.Text));
+    }
+
+    [Fact]
+    public void RevisionFinalizationRejectsWrongHashNoChangesAndIrregularTopology()
+    {
+        var authored = Invoke(TrackedChangeExportRequest(includeDeletion: false));
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var source = authored.File.ToByteArray();
+        var sourceHash = Convert.ToHexString(SHA256.HashData(source)).ToLowerInvariant();
+
+        var wrongHash = Invoke(FinalizeRevisionRequest(source, new string('0', 64), DocumentRevisionFinalizationMode.Accept));
+        Assert.False(wrongHash.Ok);
+        Assert.Equal("document_source_hash_mismatch", Assert.Single(wrongHash.Diagnostics).Code);
+
+        var noChanges = Invoke(ExportRequest(includeSecondParagraph: true));
+        Assert.True(noChanges.Ok, Diagnostics(noChanges));
+        var noChangeBytes = noChanges.File.ToByteArray();
+        var noChangeHash = Convert.ToHexString(SHA256.HashData(noChangeBytes)).ToLowerInvariant();
+        var noChangeResult = Invoke(FinalizeRevisionRequest(noChangeBytes, noChangeHash, DocumentRevisionFinalizationMode.Accept));
+        Assert.False(noChangeResult.Ok);
+        Assert.Equal("document_revisions_not_found", Assert.Single(noChangeResult.Diagnostics).Code);
+
+        var irregular = AddSecondTrackedChangeRun(source);
+        var irregularHash = Convert.ToHexString(SHA256.HashData(irregular)).ToLowerInvariant();
+        var irregularResult = Invoke(FinalizeRevisionRequest(irregular, irregularHash, DocumentRevisionFinalizationMode.Accept));
+        Assert.False(irregularResult.Ok);
+        Assert.Equal("unsupported_document_revision_topology", Assert.Single(irregularResult.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void RevisionFinalizationFailsClosedWhenAnotherDocumentStoryContainsRevisions()
+    {
+        var authored = Invoke(TrackedChangeExportRequest(includeDeletion: false));
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var source = AddHeaderTrackedChange(authored.File.ToByteArray());
+        var sourceHash = Convert.ToHexString(SHA256.HashData(source)).ToLowerInvariant();
+
+        var response = Invoke(FinalizeRevisionRequest(source, sourceHash, DocumentRevisionFinalizationMode.Accept));
+        Assert.False(response.Ok);
+        var diagnostic = Assert.Single(response.Diagnostics);
+        Assert.Equal("unsupported_document_revision_scope", diagnostic.Code);
+        Assert.StartsWith("word/header", diagnostic.SourcePath, StringComparison.Ordinal);
+    }
+
     private static CodecResponse Invoke(CodecRequest request) =>
         CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
 
     private static string Diagnostics(CodecResponse response) =>
         string.Join("\n", response.Diagnostics.Select(item => $"{item.Code}: {item.Message}"));
 
-    private static CodecRequest TrackedChangeExportRequest(bool includeDeletion = true)
+    private static CodecRequest TrackedChangeExportRequest(bool includeDeletion = true, bool trackRevisions = false)
     {
-        var document = new DocumentArtifact { Id = "document/tracked", Name = "Tracked changes" };
+        var document = new DocumentArtifact { Id = "document/tracked", Name = "Tracked changes", TrackRevisions = trackRevisions };
         document.Blocks.Add(new DocumentBlock
         {
             Id = "document/change/insert",
@@ -3009,6 +3154,24 @@ public sealed class DocxCodecTests
         };
     }
 
+    private static CodecRequest FinalizeRevisionRequest(
+        byte[] source,
+        string sourceHash,
+        DocumentRevisionFinalizationMode mode,
+        bool keepTracking = false) => new()
+    {
+        ProtocolVersion = CodecProtocol.ProtocolVersion,
+        Operation = CodecOperation.FinalizeDocxRevisions,
+        Family = ArtifactFamily.Document,
+        File = ByteString.CopyFrom(source),
+        RevisionFinalization = new DocumentRevisionFinalizationRequest
+        {
+            Mode = mode,
+            KeepTracking = keepTracking,
+            ExpectedSourceSha256 = sourceHash,
+        },
+    };
+
     private static byte[] AddTrackedChangeFormatting(byte[] bytes)
     {
         using var stream = new MemoryStream();
@@ -3018,6 +3181,23 @@ public sealed class DocxCodecTests
         {
             var run = document.MainDocumentPart!.Document!.Descendants<W.InsertedRun>().Single().Elements<W.Run>().Single();
             run.RunProperties = new W.RunProperties(new W.Bold());
+            document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddAllTrackedChangeFormatting(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true))
+        {
+            foreach (var run in document.MainDocumentPart!.Document!.Descendants<W.InsertedRun>()
+                         .SelectMany(change => change.Elements<W.Run>())
+                         .Concat(document.MainDocumentPart.Document.Descendants<W.DeletedRun>()
+                             .SelectMany(change => change.Elements<W.Run>())))
+                run.RunProperties = new W.RunProperties(new W.Bold());
             document.MainDocumentPart.Document.Save();
         }
         return stream.ToArray();
@@ -3033,6 +3213,31 @@ public sealed class DocxCodecTests
             var insertion = document.MainDocumentPart!.Document!.Descendants<W.InsertedRun>().Single();
             insertion.Append(new W.Run(new W.Text(" continuation") { Space = SpaceProcessingModeValues.Preserve }));
             document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddHeaderTrackedChange(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true))
+        {
+            var mainPart = document.MainDocumentPart!;
+            var header = mainPart.AddNewPart<HeaderPart>();
+            header.Header = new W.Header(new W.Paragraph(new W.InsertedRun(new W.Run(new W.Text("Header change")))
+            {
+                Id = "91",
+                Author = "Reviewer",
+            }));
+            header.Header.Save();
+            mainPart.Document!.Body!.Elements<W.SectionProperties>().Single().Append(new W.HeaderReference
+            {
+                Id = mainPart.GetIdOfPart(header),
+                Type = W.HeaderFooterValues.Default,
+            });
+            mainPart.Document.Save();
         }
         return stream.ToArray();
     }

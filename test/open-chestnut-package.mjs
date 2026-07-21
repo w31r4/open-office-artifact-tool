@@ -23,6 +23,7 @@ try {
 
   const probe = String.raw`
     import { spawnSync } from "node:child_process";
+    import { createHash } from "node:crypto";
     import fs from "node:fs";
     import path from "node:path";
     import { pathToFileURL } from "node:url";
@@ -64,11 +65,27 @@ try {
     if ((await SpreadsheetFile.importXlsx(xlsx2)).worksheets.getItem("Packaged").getRange("A2").values[0][0] !== "clean install") process.exit(3);
 
     const document = DocumentModel.create({ paragraphs: ["clean install DOCX"] });
+    document.addInsertion("packaged accepted insertion", { author: "Package QA" });
+    document.addDeletion("packaged removed deletion", { author: "Package QA" });
+    document.setSettings({ trackRevisions: true });
     const docx = await DocumentFile.exportDocx(document);
     if (docx.metadata.codec !== "open-chestnut" || docx.bytes[0] !== 0x50 || docx.bytes[1] !== 0x4b) process.exit(10);
     const importedDocument = await DocumentFile.importDocx(docx);
     if (importedDocument.blocks[0].text !== "clean install DOCX") process.exit(11);
     if ((await DocumentFile.importDocx(await DocumentFile.exportDocx(importedDocument))).blocks[0].text !== "clean install DOCX") process.exit(12);
+    const docxSourceHash = createHash("sha256").update(docx.bytes).digest("hex");
+    const finalizedDocx = await DocumentFile.finalizeRevisions(docx, {
+      mode: "accept",
+      expectedSourceSha256: docxSourceHash,
+    });
+    const finalization = finalizedDocx.metadata.revisionFinalization;
+    if (finalization.sourceSha256 !== docxSourceHash || finalization.insertionCount !== 1 || finalization.deletionCount !== 1) process.exit(13);
+    if (finalization.trackingBefore !== true || finalization.trackingAfter !== false) process.exit(14);
+    if (JSON.stringify(finalization.changedParts) !== JSON.stringify(["word/document.xml", "word/settings.xml"])) process.exit(15);
+    const finalizedDocument = await DocumentFile.importDocx(finalizedDocx);
+    if (finalizedDocument.blocks.some((block) => block.kind === "change") || finalizedDocument.settings.trackRevisions) process.exit(16);
+    if (!finalizedDocument.blocks.some((block) => block.text === "packaged accepted insertion") || finalizedDocument.blocks.some((block) => block.text === "packaged removed deletion")) process.exit(17);
+    if (createHash("sha256").update(docx.bytes).digest("hex") !== docxSourceHash) process.exit(18);
 
     const presentation = Presentation.create();
     presentation.slides.add({ name: "Packaged" }).shapes.add({

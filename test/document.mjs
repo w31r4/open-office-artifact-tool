@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 
 import { DocumentFile, DocumentModel } from "../src/index.mjs";
 import { DocumentFile as DocumentFileModule, DocumentModel as DocumentModelModule } from "../src/document/index.mjs";
@@ -247,9 +248,60 @@ assert.equal(document.resolve(firstFooter.id).referenceType, "first");
 assert.equal(document.resolve(evenFooter.id).referenceType, "even");
 const modelVerification = document.verify({ visualQa: true });
 assert.equal(modelVerification.ok, true, JSON.stringify(modelVerification.issues));
+document.setSettings({ trackRevisions: true });
 
 const firstDocx = await DocumentFile.exportDocx(document);
 assert.equal(firstDocx.type, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+const firstDocxBytes = Buffer.from(await firstDocx.arrayBuffer());
+const firstDocxSha256 = createHash("sha256").update(firstDocxBytes).digest("hex");
+const acceptedRevisions = await DocumentFile.finalizeRevisions(firstDocx, {
+  mode: "accept",
+  expectedSourceSha256: firstDocxSha256,
+});
+assert.deepEqual(acceptedRevisions.metadata.revisionFinalization, {
+  mode: "accept",
+  sourceSha256: firstDocxSha256,
+  outputSha256: createHash("sha256").update(Buffer.from(await acceptedRevisions.arrayBuffer())).digest("hex"),
+  insertionCount: 1,
+  deletionCount: 1,
+  trackingBefore: true,
+  trackingAfter: false,
+  changedParts: ["word/document.xml", "word/settings.xml"],
+});
+const acceptedDocument = await DocumentFile.importDocx(acceptedRevisions);
+assert.equal(acceptedDocument.settings.trackRevisions, false);
+assert.equal(acceptedDocument.blocks.some((block) => block.kind === "change"), false);
+assert.equal(acceptedDocument.blocks.some((block) => block.text === "Added wording"), true);
+assert.equal(acceptedDocument.blocks.some((block) => block.text === "Removed wording"), false);
+
+const rejectedRevisions = await DocumentFile.finalizeRevisions(firstDocx, {
+  mode: "reject",
+  keepTracking: true,
+  expectedSourceSha256: firstDocxSha256,
+});
+assert.deepEqual(rejectedRevisions.metadata.revisionFinalization.changedParts, ["word/document.xml"]);
+assert.equal(rejectedRevisions.metadata.revisionFinalization.trackingAfter, true);
+const rejectedDocument = await DocumentFile.importDocx(rejectedRevisions);
+assert.equal(rejectedDocument.settings.trackRevisions, true);
+assert.equal(rejectedDocument.blocks.some((block) => block.kind === "change"), false);
+assert.equal(rejectedDocument.blocks.some((block) => block.text === "Added wording"), false);
+assert.equal(rejectedDocument.blocks.some((block) => block.text === "Removed wording"), true);
+assert.deepEqual(Buffer.from(await firstDocx.arrayBuffer()), firstDocxBytes, "revision finalization must not mutate its source blob");
+await assert.rejects(
+  () => DocumentFile.finalizeRevisions(firstDocx, { mode: "accept", expectedSourceSha256: "0".repeat(64) }),
+  (error) => error?.code === "document_source_hash_mismatch",
+);
+await assert.rejects(
+  () => DocumentFile.finalizeRevisions(firstDocx, { mode: "all", expectedSourceSha256: firstDocxSha256 }),
+  /mode must be accept or reject/i,
+);
+await assert.rejects(
+  () => DocumentFile.finalizeRevisions(acceptedRevisions, {
+    mode: "accept",
+    expectedSourceSha256: acceptedRevisions.metadata.revisionFinalization.outputSha256,
+  }),
+  (error) => error?.code === "document_revisions_not_found",
+);
 const imported = await DocumentFile.importDocx(firstDocx);
 assert.equal(imported.defaultRunStyle.fontFamily, "Aptos");
 assert.equal(imported.defaultRunStyle.fontSize, 11);
@@ -281,6 +333,7 @@ assert.equal(imported.blocks.some((block) => block.kind === "image" && block.dat
 assert.equal(imported.blocks.some((block) => block.kind === "image" && block.dataUrl.startsWith("data:image/jpeg;base64,")), true);
 assert.equal(imported.blocks.find((block) => block.kind === "section")?.orientation, "landscape");
 assert.equal(imported.settings.evenAndOddHeaders, true);
+assert.equal(imported.settings.trackRevisions, true);
 assert.equal(imported.sectionSettings[0]?.differentFirstPage, true);
 assert.deepEqual(imported.headers.map((item) => item.referenceType), ["default", "first", "even"]);
 assert.deepEqual(imported.footers.map((item) => item.referenceType), ["default", "first", "even"]);
@@ -659,15 +712,17 @@ await assert.rejects(
   (error) => error?.code === "invalid_document_field" && /canonical bounded profile/i.test(error.message),
 );
 
-const unsupportedSettings = DocumentModel.create({
-  name: "Unsupported document settings",
+const trackedSettings = DocumentModel.create({
+  name: "Tracked document settings",
   settings: { trackRevisions: true },
-  blocks: [{ kind: "paragraph", text: "Tracked authoring must fail." }],
+  blocks: [{ kind: "paragraph", text: "Tracking is independent from existing revisions." }],
 });
-await assert.rejects(
-  () => DocumentFile.exportDocx(unsupportedSettings),
-  (error) => error?.code === "unsupported_document_features" && /revision tracking/i.test(error.message),
-);
+const trackedSettingsDocx = await DocumentFile.exportDocx(trackedSettings);
+const importedTrackedSettings = await DocumentFile.importDocx(trackedSettingsDocx);
+assert.equal(importedTrackedSettings.settings.trackRevisions, true);
+importedTrackedSettings.setSettings({ trackRevisions: false });
+const untrackedSettingsDocx = await DocumentFile.exportDocx(importedTrackedSettings);
+assert.equal((await DocumentFile.importDocx(untrackedSettingsDocx)).settings.trackRevisions, false);
 
 const unsupportedTableStyle = DocumentModel.create({ name: "Unsupported table style", blocks: [] });
 unsupportedTableStyle.styles.add("ComparisonTable", { name: "Comparison Table", type: "table" });

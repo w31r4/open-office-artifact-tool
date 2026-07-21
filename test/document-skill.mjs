@@ -33,10 +33,7 @@ async function runFixture(name, options = {}) {
 }
 
 try {
-  assert.throws(
-    () => createDocumentFromFixture({ settings: { trackRevisions: true }, blocks: [] }),
-    /limited to evenAndOddHeaders and updateFields.*trackRevisions.*read-only/i,
-  );
+  assert.equal(createDocumentFromFixture({ settings: { trackRevisions: true }, blocks: [] }).settings.trackRevisions, true);
   const business = await runFixture("business-brief", {
     nativeRender: nativeStatus.available ? "required" : "auto",
   });
@@ -297,6 +294,81 @@ try {
   assert.equal(modernRender.summary.verifyOk, true);
   assert.equal(modernRender.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
 
+  const revisionSourceDocument = DocumentModel.create({
+    name: "Bounded revision finalization",
+    settings: { trackRevisions: true },
+    blocks: [],
+  });
+  revisionSourceDocument.addParagraph("Revision review baseline.");
+  revisionSourceDocument.addInsertion("Accepted insertion.", {
+    author: "Release reviewer",
+    date: "2026-07-21T08:00:00Z",
+  });
+  revisionSourceDocument.addDeletion("Rejected legacy wording.", {
+    author: "Release reviewer",
+    date: "2026-07-21T08:05:00Z",
+  });
+  revisionSourceDocument.addParagraph("Revision review complete.");
+  const revisionSourcePath = path.join(outputDir, "revision-source.docx");
+  await (await DocumentFile.exportDocx(revisionSourceDocument)).save(revisionSourcePath);
+  const revisionSourceBytes = await fs.readFile(revisionSourcePath);
+  const { finalizeDocumentRevisions } = await import(
+    "../skills/documents/skills/documents/examples/openchestnut-revision-finalization-workflow.mjs"
+  );
+  const acceptedRevisionPath = path.join(outputDir, "revision-accepted.docx");
+  const acceptedRevisionAuditPath = path.join(outputDir, "revision-accepted-audit.json");
+  const acceptedRevisionWorkflow = await finalizeDocumentRevisions({
+    inputPath: revisionSourcePath,
+    outputPath: acceptedRevisionPath,
+    auditPath: acceptedRevisionAuditPath,
+    mode: "accept",
+  });
+  assert.equal(acceptedRevisionWorkflow.audit.provider.actual, "open-chestnut");
+  assert.equal(acceptedRevisionWorkflow.audit.provider.silentFallback, false);
+  assert.equal(acceptedRevisionWorkflow.audit.savePolicy.overwrite, false);
+  assert.deepEqual(acceptedRevisionWorkflow.audit.operation.changedParts, ["word/document.xml", "word/settings.xml"]);
+  assert.equal(acceptedRevisionWorkflow.audit.validation.reimport.remainingRevisions, 0);
+  assert.deepEqual(await fs.readFile(revisionSourcePath), revisionSourceBytes);
+  const acceptedRevisionDocument = await DocumentFile.importDocx(await FileBlob.load(acceptedRevisionPath));
+  assert.equal(acceptedRevisionDocument.settings.trackRevisions, false);
+  assert.equal(acceptedRevisionDocument.blocks.some((block) => block.kind === "change"), false);
+  assert.equal(acceptedRevisionDocument.blocks.some((block) => block.text === "Accepted insertion."), true);
+  assert.equal(acceptedRevisionDocument.blocks.some((block) => block.text === "Rejected legacy wording."), false);
+  const acceptedRevisionRender = await verifyDocumentFile(acceptedRevisionPath, {
+    outputDir: path.join(outputDir, "revision-accepted-render"),
+    previewFormat: "png",
+    nativeRender: nativeStatus.available ? "required" : "auto",
+  });
+  assert.equal(acceptedRevisionRender.summary.verifyOk, true);
+  assert.equal(acceptedRevisionRender.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+
+  const rejectedRevisionPath = path.join(outputDir, "revision-rejected.docx");
+  const rejectedRevisionAuditPath = path.join(outputDir, "revision-rejected-audit.json");
+  const rejectedRevisionWorkflow = await finalizeDocumentRevisions({
+    inputPath: revisionSourcePath,
+    outputPath: rejectedRevisionPath,
+    auditPath: rejectedRevisionAuditPath,
+    mode: "reject",
+    keepTracking: true,
+  });
+  assert.deepEqual(rejectedRevisionWorkflow.audit.operation.changedParts, ["word/document.xml"]);
+  assert.equal(rejectedRevisionWorkflow.audit.operation.trackingAfter, true);
+  const rejectedRevisionDocument = await DocumentFile.importDocx(await FileBlob.load(rejectedRevisionPath));
+  assert.equal(rejectedRevisionDocument.settings.trackRevisions, true);
+  assert.equal(rejectedRevisionDocument.blocks.some((block) => block.text === "Accepted insertion."), false);
+  assert.equal(rejectedRevisionDocument.blocks.some((block) => block.text === "Rejected legacy wording."), true);
+  const acceptedRevisionBytes = await fs.readFile(acceptedRevisionPath);
+  await assert.rejects(
+    () => finalizeDocumentRevisions({
+      inputPath: revisionSourcePath,
+      outputPath: acceptedRevisionPath,
+      auditPath: path.join(outputDir, "must-not-publish-audit.json"),
+      mode: "accept",
+    }),
+    (error) => error?.code === "EEXIST",
+  );
+  assert.deepEqual(await fs.readFile(acceptedRevisionPath), acceptedRevisionBytes);
+
   const directNumbering = await runFixture("package-numbering");
   const directNumberingDocument = await DocumentFile.importDocx(await FileBlob.load(directNumbering.docxPath));
   assert.equal(directNumberingDocument.blocks.filter((block) => block.kind === "listItem").length, 2);
@@ -360,6 +432,7 @@ try {
   assert.match(skillText, /paragraph\.addField/);
   assert.match(skillText, /openchestnut-classic-comment-edit-workflow\.mjs/);
   assert.match(skillText, /openchestnut-modern-comment-thread-workflow\.mjs/);
+  assert.match(skillText, /openchestnut-revision-finalization-workflow\.mjs/);
   assert.doesNotMatch(skillText, /Author\/edit with `python-docx`|Default tool: python-docx/);
   const commentsGuide = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "tasks", "comments_manage.md"), "utf8");
   assert.match(commentsGuide, /document\.addComment/);
@@ -368,6 +441,7 @@ try {
   assert.doesNotMatch(commentsGuide, /If the task is to \*insert\* new comments.+use the OOXML-level guide/);
   const manifestText = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "manifest.txt"), "utf8");
   assert.match(manifestText, /^examples\/openchestnut-modern-comment-thread-workflow\.mjs$/m);
+  assert.match(manifestText, /^examples\/openchestnut-revision-finalization-workflow\.mjs$/m);
   assert.match(manifestText, /^examples\/end_to_end_smoke_test\.md$/m);
   const controlsGuide = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "tasks", "forms_content_controls.md"), "utf8");
   assert.match(controlsGuide, /paragraph\.addTextContentControl/);

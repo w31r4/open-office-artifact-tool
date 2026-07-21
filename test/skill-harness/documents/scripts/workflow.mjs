@@ -53,15 +53,17 @@ function addFixtureBlock(document, block = {}) {
     case "citation": return document.addCitation(block.text || "", block.metadata || {}, config);
     case "image": return document.addImage(config);
     case "section": return document.addSection(config);
+    case "insertion": return document.addInsertion(block.text || "", config);
+    case "deletion": return document.addDeletion(block.text || "", config);
     default: throw new Error(`Unsupported document fixture block kind: ${block.kind}`);
   }
 }
 
 export function createDocumentFromFixture(fixture = {}) {
   const settings = fixture.settings || {};
-  const unsupportedSettings = Object.keys(settings).filter((key) => !new Set(["evenAndOddHeaders", "updateFields"]).has(key));
+  const unsupportedSettings = Object.keys(settings).filter((key) => !new Set(["evenAndOddHeaders", "updateFields", "trackRevisions"]).has(key));
   if (unsupportedSettings.length) {
-    throw new Error(`Document fixture settings are limited to evenAndOddHeaders and updateFields; imported ${unsupportedSettings.join(", ")} semantics are read-only.`);
+    throw new Error(`Document fixture settings are limited to evenAndOddHeaders, updateFields, and trackRevisions; imported ${unsupportedSettings.join(", ")} semantics are read-only.`);
   }
   const document = DocumentModel.create({
     name: fixture.name || "Fixture document",

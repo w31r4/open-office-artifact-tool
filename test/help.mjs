@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 341);
+assert.equal(HELP_CATALOG.length, 342);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -76,6 +76,9 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.worksheets.getSele
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.recalculate"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.resolve"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "SpreadsheetFile.inspectXlsx"));
+assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.finalizeRevisions")?.schema?.parameters?.expectedSourceSha256?.required, true);
+assert.match(HELP_CATALOG.find((item) => item.name === "DocumentFile.finalizeRevisions")?.summary || "", /source bytes.*SHA-256.*changed-part.*fail-closed/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "document.setSettings")?.summary || "", /trackRevisions.*inside the OpenChestnut 0\.2 DOCX boundary/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.speakerNotes.capability")?.schema?.returns?.capability?.description || "", /sourceBound.*partPresent.*editable.*addable.*preflight.*not mutable write authority/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.importXlsx")?.schema?.returns?.workbook?.description || "", /images.*charts/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.images.add")?.schema?.parameters?.transform?.description || "", /rotationDegrees.*flipHorizontal.*flipVertical/);
@@ -170,7 +173,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "document.addCitation")?.
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addChange")?.summary || "", /native w:ins\/w:del.*fixed-topology/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.replyToComment")?.summary || "", /source-free direct reply.*commentsExtended.*nested replies.*imported topology.*fail closed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "documentComment.resolve")?.summary || "", /resolved=true.*source hashes.*commentsExtended topology/i);
-assert.match(HELP_CATALOG.find((item) => item.name === "document.setSettings")?.summary || "", /evenAndOddHeaders.*updateFields.*trackRevisions.*unsupported/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "document.setSettings")?.summary || "", /evenAndOddHeaders.*trackRevisions.*updateFields.*inside the OpenChestnut 0\.2 DOCX boundary.*mirrorMargins.*documentProtection.*unsupported/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.extractTables"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.addPage"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.page.setReadingOrder"));
@@ -347,7 +350,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.sc
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.schema?.returns?.inspection?.description || "", /mupdfWidget.*mupdfFormField/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.summary || "", /MuPDF/);
 const documentCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "document");
-assert.equal(documentCatalog.length, 47);
+assert.equal(documentCatalog.length, 48);
 assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.schema?.parameters?.pictureBullet?.type, "string|object");

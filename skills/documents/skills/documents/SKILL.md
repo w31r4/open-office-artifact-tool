@@ -225,8 +225,10 @@ python render_docx.py input.docx --output_dir out
 # 5) Remove reviewer comments (explicit package-level finalization)
 python scripts/comments_strip.py input.docx --out no_comments.docx
 
-# 6) Accept tracked changes (explicit package-level finalization)
-python scripts/accept_tracked_changes.py input.docx --mode accept --out accepted.docx
+# 6) Finalize the bounded whole-paragraph revision profile through OpenChestnut
+node examples/openchestnut-revision-finalization-workflow.mjs input.docx accepted.docx audit.json accept
+# Reject instead, while preserving an existing trackRevisions setting:
+node examples/openchestnut-revision-finalization-workflow.mjs input.docx rejected.docx audit.json reject --keep-tracking
 
 # 7) Accessibility audit (+ optional explicit package fixes)
 python scripts/a11y_audit.py input.docx
@@ -358,7 +360,7 @@ This is a quick index so you can jump from a helper script to the right task gui
 - `insert_toc.py` → `tasks/toc_workflow.md`
 
 ### Review lifecycle (comments / tracked changes)
-- Public `document.addInsertion(...)` / `document.addDeletion(...)` handles standalone whole-paragraph revisions; `add_tracked_replacements.py` and `accept_tracked_changes.py` handle in-paragraph replacement and explicit finalization → `ooxml/tracked_changes.md`, `tasks/clean_tracked_changes.md`
+- Public `document.addInsertion(...)` / `document.addDeletion(...)` authors standalone whole-paragraph revisions, `document.setSettings({ trackRevisions: true })` enables native future-change tracking, and `examples/openchestnut-revision-finalization-workflow.mjs` performs source-hash-bound accept/reject for the same bounded revision profile. `add_tracked_replacements.py` and `accept_tracked_changes.py` remain explicit package helpers for in-paragraph or broader graphs → `ooxml/tracked_changes.md`, `tasks/clean_tracked_changes.md`
 - `examples/openchestnut-classic-comment-edit-workflow.mjs` is the preferred public route for one uniquely located imported classic comment when only its text may change
 - `examples/openchestnut-modern-comment-thread-workflow.mjs` handles one recognized root plus one direct reply: text and root resolved state may change, while imported identity, people/durable metadata, anchors, and topology stay source-bound; nested or irregular graphs fail closed
 - `comments_add.py`, `comments_extract.py`, `comments_apply_patch.py`, `comments_strip.py` → `tasks/comments_manage.md`
@@ -457,11 +459,11 @@ Then inspect the generated `page-<N>.png` files.
 - If you have mixed portrait/landscape or margin weirdness: `tasks/sections_layout.md`
 - If images shift or overlap across renderers: `tasks/images_figures.md`
 - If you need spreadsheet ↔ table round-tripping: `tasks/tables_spreadsheets.md`
-- If you need **tracked changes (redlines)**: use public `document.addInsertion(...)` / `document.addDeletion(...)` for the bounded whole-paragraph profile, then route complex/in-paragraph work through `ooxml/tracked_changes.md`
+- If you need **tracked changes (redlines)**: use public `document.addInsertion(...)` / `document.addDeletion(...)` and `document.setSettings({ trackRevisions: true })` for the bounded profile, then route complex/in-paragraph work through `ooxml/tracked_changes.md`
 - If you need **comments**: `ooxml/comments.md`
 - If you need **hyperlinks/fields/page numbers/headers**: `ooxml/hyperlinks_and_fields.md`
 - If LibreOffice headless is failing: `troubleshooting/libreoffice_headless.md`
-- If you need a **clean copy** with tracked changes accepted: `tasks/clean_tracked_changes.md`
+- If you need a **clean copy** with tracked changes accepted or rejected: start with `examples/openchestnut-revision-finalization-workflow.mjs`, then follow `tasks/clean_tracked_changes.md` for capability boundaries and native render QA
 - If you need to **diff two DOCXs** (render + per-page diff): `tasks/compare_diff.md`
 - If you need **templates / style packs (DOTX)**: `tasks/templates_style_packs.md`
 - If you need a **first-page header / cover / title block**: `references/header_templates.md`

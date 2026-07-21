@@ -40,6 +40,7 @@ internal static class DocxCodec
         var imageAssets = new DocxImageAssetCatalog(null, limits);
 
         var document = new DocumentArtifact { Id = "document/1", Name = "Imported document" };
+        DocxSettingsCodec.Read(mainPart, document);
         DocxDirectStyles.Read(mainPart, document);
         ulong semanticItems = 0;
         var bibliographyTags = DocxBibliographyCodec.Read(mainPart, document, ref semanticItems, limits, diagnostics);
@@ -122,6 +123,7 @@ internal static class DocxCodec
                 DocxBookmarkCodec.Names(envelope.Document),
                 envelope.Document.Bibliography?.Sources.Select(source => source.Tag));
             var headerFooterPlan = DocxHeaderFooterCodec.Author(mainPart, envelope.Document);
+            DocxSettingsCodec.Author(mainPart, envelope.Document);
             var body = new W.Body();
             mainPart.Document = new W.Document(body);
             uint sectionIndex = 0;
@@ -197,8 +199,9 @@ internal static class DocxCodec
                 imageAssets,
                 bibliographyTags: DocxBibliographyCodec.SourceTags(mainPart, envelope.Document.Bibliography));
             DocxDirectStyles.AssertSourceUnchanged(mainPart, envelope.Document);
+            DocxSettingsCodec.AssertSourceBoundSettings(mainPart, envelope.Document);
             DocxHeaderFooterCodec.AssertSourceUnchanged(mainPart, body, envelope.Document);
-            DocxHeaderFooterCodec.ApplySourceSettings(mainPart, envelope.Document, context);
+            DocxSettingsCodec.ApplySource(mainPart, envelope.Document, context);
             var irregularComplexFields = IrregularComplexFieldBodyIndexes(body);
             var sourceElements = body.ChildElements.Where(element => element is not W.SectionProperties).ToArray();
             if (sourceElements.Length != envelope.Document.Blocks.Count)
@@ -945,7 +948,7 @@ internal static class DocxCodec
         }
     }
 
-    private static void ValidateOutputBudget(byte[] bytes, EffectiveCodecLimits limits)
+    internal static void ValidateOutputBudget(byte[] bytes, EffectiveCodecLimits limits)
     {
         if ((ulong)bytes.LongLength > limits.MaxInputBytes)
             throw new CodecException("output_budget_exceeded", $"Generated DOCX has {bytes.LongLength} bytes and exceeds max_input_bytes ({limits.MaxInputBytes}).");
@@ -968,7 +971,7 @@ internal static class DocxCodec
     // Source-bound export can retain extension or producer-specific lexical
     // forms which the SDK validator reports on the original document. It must
     // never make that set worse; source-free authoring remains strictly valid.
-    private static int ValidateOffice2021AgainstSource(byte[] sourceBytes, byte[] outputBytes)
+    internal static int ValidateOffice2021AgainstSource(byte[] sourceBytes, byte[] outputBytes)
     {
         var sourceErrors = Office2021ValidationErrors(sourceBytes);
         var sourceSignatures = sourceErrors

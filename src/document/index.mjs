@@ -1429,4 +1429,9 @@ export class DocumentFile {
     const { importDocxWithOpenChestnut } = await import("../codecs/open-chestnut.mjs");
     return importDocxWithOpenChestnut(blobOrBuffer, options);
   }
+
+  static async finalizeRevisions(blobOrBuffer, options = {}) {
+    const { finalizeDocxRevisionsWithOpenChestnut } = await import("../codecs/open-chestnut.mjs");
+    return finalizeDocxRevisionsWithOpenChestnut(blobOrBuffer, options);
+  }
 }

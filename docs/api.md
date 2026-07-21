@@ -36,13 +36,14 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.replyToComment` | api | Add one source-free direct reply to a root comment. OpenChestnut authors the bounded commentsExtended graph; nested replies and imported topology changes fail closed. |
 | `document.resolve` | api | Resolve stable document, block, table-cell, content-control, bookmark, footnote/endnote, bibliography source ID/tag, header/footer, comment, style, and advertised text-range IDs. |
 | `document.setSectionSettings` | api | Set per-section Word behavior such as different-first-page header/footer activation without changing preserved header/footer references. |
-| `document.setSettings` | api | Set model settings. evenAndOddHeaders and the updateFields refresh hint are inside the OpenChestnut 0.2 DOCX boundary; trackRevisions, mirrorMargins, and documentProtection remain unsupported through the facade. |
+| `document.setSettings` | api | Set model settings. evenAndOddHeaders, trackRevisions, and the updateFields refresh hint are inside the OpenChestnut 0.2 DOCX boundary; mirrorMargins and documentProtection remain unsupported through the facade. |
 | `document.styles.effective` | api | Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata. |
 | `document.textRange` | api | Inspect or resolve stable textRange anchors such as blockId/text and tableId/cell/row/column/text. Assignment is limited to fully editable text; replace() also supports explicitly advertised source-bound literal patches. |
 | `document.verify` | api | Return QA issues for invalid/duplicate content-control IDs and native IDs, malformed tags/aliases, fake lists, invalid links/citations/bibliography sources, malformed tracked changes, duplicate/dangling/reversed bookmark ranges, invalid footnotes/endnotes, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells. |
 | `documentComment.reopen` | api | Clear the resolved state of a bounded modern comment without changing its root/reply topology or durable identity. |
 | `documentComment.resolve` | api | Set resolved=true for a bounded modern comment. Imported edits re-prove source hashes and commentsExtended topology while keeping thread identity fixed. |
 | `DocumentFile.exportDocx` | api | Export DocumentModel to DOCX through the single bundled OpenChestnut codec. Only limits is accepted; legacy codec and lossy-fallback options fail explicitly. |
+| `DocumentFile.finalizeRevisions` | api | Accept or reject the bounded direct whole-paragraph one-run DOCX revision profile from exact source bytes. The mandatory SHA-256 binding, decompression budgets, exact changed-part audit, and fail-closed graph checks prevent silent model reconstruction or broad package mutation. |
 | `DocumentFile.importDocx` | api | Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Recognized inline controls, fields, revisions, notes, citations, simple tables, and other exact profiles are fixed-topology editable; otherwise read-only paragraphs and complex table cells separately advertise textPatchable when one ordinary native text node can be patched without rebuilding the surrounding graph. |
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
@@ -556,11 +557,11 @@ Set per-section Word behavior such as different-first-page header/footer activat
 
 #### `document.setSettings`
 
-Set model settings. evenAndOddHeaders and the updateFields refresh hint are inside the OpenChestnut 0.2 DOCX boundary; trackRevisions, mirrorMargins, and documentProtection remain unsupported through the facade.
+Set model settings. evenAndOddHeaders, trackRevisions, and the updateFields refresh hint are inside the OpenChestnut 0.2 DOCX boundary; mirrorMargins and documentProtection remain unsupported through the facade.
 
 **Schema parameters:**
 
-- `settings` (object) required — Partial settings object. evenAndOddHeaders and updateFields are inside the OpenChestnut 0.2 DOCX boundary; trackRevisions, mirrorMargins, and documentProtection make export fail closed.
+- `settings` (object) required — Partial settings object. evenAndOddHeaders, updateFields, and trackRevisions are inside the OpenChestnut 0.2 DOCX boundary; mirrorMargins and documentProtection make export fail closed.
 
 **Schema returns:**
 
@@ -631,6 +632,22 @@ Export DocumentModel to DOCX through the single bundled OpenChestnut codec. Only
 **Schema returns:**
 
 - `blob` (FileBlob) — DOCX package bytes.
+
+#### `DocumentFile.finalizeRevisions`
+
+Accept or reject the bounded direct whole-paragraph one-run DOCX revision profile from exact source bytes. The mandatory SHA-256 binding, decompression budgets, exact changed-part audit, and fail-closed graph checks prevent silent model reconstruction or broad package mutation.
+
+**Schema parameters:**
+
+- `docx` (FileBlob|Uint8Array|ArrayBuffer) required — Original DOCX bytes. The native codec operates directly on this package rather than rebuilding it from a JavaScript model.
+- `mode` (string) required — accept or reject.
+- `expectedSourceSha256` (string) required — Lowercase 64-hex SHA-256 of the exact input bytes; JavaScript and OpenChestnut both verify it.
+- `keepTracking` (boolean) — Preserve an existing trackRevisions setting after finalization. Defaults to false and never enables a setting that was absent.
+- `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxCells, and maxCompressionRatio codec budgets.
+
+**Schema returns:**
+
+- `blob` (FileBlob) — Rewritten DOCX with metadata.revisionFinalization containing source/output hashes, insertion/deletion counts, tracking before/after, and exact changed parts. Mixed, nested, multi-run, moved, property-level, non-body, malformed, or absent revisions fail closed.
 
 #### `DocumentFile.importDocx`
 

@@ -37,8 +37,6 @@ internal static class DocxHeaderFooterCodec
         DocumentArtifact document,
         ICollection<Diagnostic> diagnostics)
     {
-        document.EvenAndOddHeaders = mainPart.DocumentSettingsPart?.Settings?.GetFirstChild<W.EvenAndOddHeaders>() is not null;
-        document.UpdateFields = mainPart.DocumentSettingsPart?.Settings?.GetFirstChild<W.UpdateFieldsOnOpen>() is not null;
         var sections = BoundarySections(body).ToArray();
         for (var sectionIndex = 0; sectionIndex < sections.Length; sectionIndex++)
         {
@@ -95,37 +93,7 @@ internal static class DocxHeaderFooterCodec
             }
         }
 
-        if (document.EvenAndOddHeaders || document.UpdateFields)
-        {
-            var settingsPart = mainPart.AddNewPart<DocumentSettingsPart>();
-            settingsPart.Settings = new W.Settings();
-            if (document.EvenAndOddHeaders) settingsPart.Settings.AddChild(new W.EvenAndOddHeaders(), true);
-            if (document.UpdateFields) settingsPart.Settings.AddChild(new W.UpdateFieldsOnOpen { Val = true }, true);
-            settingsPart.Settings.Save();
-        }
         return plan;
-    }
-
-    internal static void ApplySourceSettings(
-        MainDocumentPart mainPart,
-        DocumentArtifact requested,
-        DocxPartContext context)
-    {
-        var settingsPart = mainPart.DocumentSettingsPart;
-        var source = settingsPart?.Settings?.GetFirstChild<W.UpdateFieldsOnOpen>() is not null;
-        if (source == requested.UpdateFields) return;
-
-        settingsPart ??= mainPart.AddNewPart<DocumentSettingsPart>();
-        settingsPart.Settings ??= new W.Settings();
-        settingsPart.Settings.RemoveAllChildren<W.UpdateFieldsOnOpen>();
-        if (requested.UpdateFields)
-            // Settings has a schema-defined child order. AddChild(..., true)
-            // inserts updateFields alongside an existing Office-authored
-            // settings graph without turning a valid source edit into an
-            // order-only validation failure.
-            settingsPart.Settings.AddChild(new W.UpdateFieldsOnOpen { Val = true }, true);
-        settingsPart.Settings.Save();
-        context.MarkSettingsMutated(settingsPart);
     }
 
     internal static void AssertSourceUnchanged(
@@ -135,9 +103,9 @@ internal static class DocxHeaderFooterCodec
     {
         var source = new DocumentArtifact();
         var ignored = new List<Diagnostic>();
+        DocxSettingsCodec.Read(mainPart, source);
         Read(mainPart, body, source, ignored);
-        if (source.EvenAndOddHeaders != requested.EvenAndOddHeaders ||
-            !SequenceEqual(source.SectionSettings, requested.SectionSettings) ||
+        if (!SequenceEqual(source.SectionSettings, requested.SectionSettings) ||
             !SequenceEqual(source.Headers, requested.Headers) ||
             !SequenceEqual(source.Footers, requested.Footers))
             throw new CodecException(

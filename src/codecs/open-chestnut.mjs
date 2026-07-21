@@ -17,6 +17,7 @@ import {
   DocumentChangeType,
   DocumentHeaderFooterReference,
   DocumentNoteKind,
+  DocumentRevisionFinalizationMode,
   DocumentSectionBreak,
   DocumentStyleType,
   DocumentTableVerticalMerge,
@@ -2950,7 +2951,6 @@ function documentBlock(block, original, directNumbering, assets, contentControlN
 
 function unsupportedDocumentCollections(document) {
   const unsupported = [];
-  if (document.settings?.trackRevisions) unsupported.push("revision tracking");
   if (document.settings?.mirrorMargins) unsupported.push("mirrored margins");
   if (document.settings?.documentProtection != null) unsupported.push("document protection");
   return unsupported;
@@ -3015,6 +3015,7 @@ function documentEnvelope(document) {
         footers: document.footers.map(wireHeaderFooter),
         evenAndOddHeaders: Boolean(document.settings?.evenAndOddHeaders),
         updateFields: Boolean(document.settings?.updateFields),
+        trackRevisions: Boolean(document.settings?.trackRevisions),
         sectionSettings: (document.sectionSettings || []).map((settings) => ({
           sectionIndex: uint32(settings.sectionIndex, "Document section settings index"),
           differentFirstPage: settings.differentFirstPage == null ? undefined : Boolean(settings.differentFirstPage),
@@ -3037,6 +3038,75 @@ export async function exportDocxWithOpenChestnut(document, options = {}) {
   return new FileBlob(response.file, {
     type: DOCX_MIME,
     metadata: { artifactKind: "document", codec: "open-chestnut", diagnostics: response.diagnostics },
+  });
+}
+
+export async function finalizeDocxRevisionsWithOpenChestnut(input, options = {}) {
+  assertCodecOptions(options, new Set(["mode", "keepTracking", "expectedSourceSha256", "limits"]), "finalizeDocxRevisionsWithOpenChestnut");
+  const mode = String(options.mode || "").trim().toLowerCase();
+  const wireMode = mode === "accept"
+    ? DocumentRevisionFinalizationMode.ACCEPT
+    : mode === "reject"
+      ? DocumentRevisionFinalizationMode.REJECT
+      : undefined;
+  if (wireMode == null) throw new TypeError("finalizeDocxRevisionsWithOpenChestnut mode must be accept or reject.");
+  if (options.keepTracking != null && typeof options.keepTracking !== "boolean") {
+    throw new TypeError("finalizeDocxRevisionsWithOpenChestnut keepTracking must be a boolean.");
+  }
+  const expectedSourceSha256 = String(options.expectedSourceSha256 || "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(expectedSourceSha256)) {
+    throw new TypeError("finalizeDocxRevisionsWithOpenChestnut expectedSourceSha256 must be a 64-character SHA-256 hex digest.");
+  }
+  const file = await inputBytes(input);
+  const actualSourceSha256 = createHash("sha256").update(file).digest("hex");
+  if (actualSourceSha256 !== expectedSourceSha256) {
+    throw new OpenChestnutCodecError("DOCX revision finalization source bytes do not match expectedSourceSha256.", [], { code: "document_source_hash_mismatch" });
+  }
+  const response = await invokeOpenChestnut({
+    protocolVersion: OPEN_CHESTNUT_PROTOCOL_VERSION,
+    operation: CodecOperation.FINALIZE_DOCX_REVISIONS,
+    family: ArtifactFamily.DOCUMENT,
+    file,
+    limits: codecLimits(options.limits),
+    revisionFinalization: {
+      mode: wireMode,
+      keepTracking: options.keepTracking === true,
+      expectedSourceSha256,
+    },
+  });
+  const result = response.revisionFinalization;
+  const outputSha256 = createHash("sha256").update(response.file).digest("hex");
+  const changedParts = result ? [...result.changedParts] : [];
+  const allowedChangedParts = new Set(["word/document.xml", "word/settings.xml"]);
+  if (!result ||
+      result.mode !== wireMode ||
+      result.sourceSha256 !== expectedSourceSha256 ||
+      result.outputSha256 !== outputSha256 ||
+      result.insertionCount + result.deletionCount === 0 ||
+      result.trackingAfter !== (options.keepTracking === true && result.trackingBefore) ||
+      changedParts.length !== new Set(changedParts).size ||
+      !changedParts.includes("word/document.xml") ||
+      changedParts.some((part) => !allowedChangedParts.has(part))) {
+    throw new OpenChestnutCodecError("OpenChestnut returned an invalid DOCX revision-finalization audit result.", [], { code: "invalid_open_chestnut_response" });
+  }
+  return new FileBlob(response.file, {
+    type: DOCX_MIME,
+    metadata: {
+      artifactKind: "document",
+      codec: "open-chestnut",
+      operation: "finalize-revisions",
+      diagnostics: response.diagnostics,
+      revisionFinalization: {
+        mode,
+        sourceSha256: result.sourceSha256,
+        outputSha256,
+        insertionCount: result.insertionCount,
+        deletionCount: result.deletionCount,
+        trackingBefore: result.trackingBefore,
+        trackingAfter: result.trackingAfter,
+        changedParts,
+      },
+    },
   });
 }
 
@@ -3256,7 +3326,11 @@ function documentFromEnvelope(envelope) {
     bibliographySources: (source.bibliography?.sources || []).map(publicDocumentBibliographySource),
     headers: (source.headers || []).map(publicHeaderFooter),
     footers: (source.footers || []).map(publicHeaderFooter),
-    settings: { evenAndOddHeaders: Boolean(source.evenAndOddHeaders), updateFields: Boolean(source.updateFields) },
+    settings: {
+      evenAndOddHeaders: Boolean(source.evenAndOddHeaders),
+      updateFields: Boolean(source.updateFields),
+      trackRevisions: Boolean(source.trackRevisions),
+    },
     sectionSettings: (source.sectionSettings || []).map((settings) => ({ sectionIndex: settings.sectionIndex, differentFirstPage: settings.differentFirstPage })),
   });
   document.id = source.id || document.id;

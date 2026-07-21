@@ -51,6 +51,17 @@ public static class CodecProtocol
                     response.Diagnostics.Add(result.Diagnostics);
                     break;
                 }
+                case CodecOperation.FinalizeDocxRevisions:
+                {
+                    var result = DocxRevisionFinalizationCodec.Finalize(
+                        request.File.ToByteArray(),
+                        request.RevisionFinalization,
+                        limits);
+                    response.File = ByteString.CopyFrom(result.File);
+                    response.RevisionFinalization = result.Result;
+                    response.Diagnostics.Add(result.Diagnostics);
+                    break;
+                }
                 case CodecOperation.ImportPptx:
                 {
                     var result = PptxCodec.Import(request.File.ToByteArray(), limits);
@@ -92,16 +103,23 @@ public static class CodecProtocol
         var expectedFamily = request.Operation switch
         {
             CodecOperation.ImportXlsx or CodecOperation.ExportXlsx => ArtifactFamily.Workbook,
-            CodecOperation.ImportDocx or CodecOperation.ExportDocx => ArtifactFamily.Document,
+            CodecOperation.ImportDocx or CodecOperation.ExportDocx or CodecOperation.FinalizeDocxRevisions => ArtifactFamily.Document,
             CodecOperation.ImportPptx or CodecOperation.ExportPptx => ArtifactFamily.Presentation,
             _ => throw new CodecException("unsupported_operation", $"Codec operation {request.Operation} is not implemented."),
         };
         if (request.Family != expectedFamily)
             throw new CodecException("artifact_family_mismatch", $"Codec operation {request.Operation} requires artifact family {expectedFamily}, not {request.Family}.");
-        if (request.Operation is CodecOperation.ImportXlsx or CodecOperation.ImportDocx or CodecOperation.ImportPptx && request.File.IsEmpty)
-            throw new CodecException("empty_input", $"{expectedFamily} import requires non-empty file bytes.");
+        if (request.Operation is CodecOperation.ImportXlsx or CodecOperation.ImportDocx or CodecOperation.ImportPptx or CodecOperation.FinalizeDocxRevisions && request.File.IsEmpty)
+        {
+            var message = request.Operation == CodecOperation.FinalizeDocxRevisions
+                ? "DOCX revision finalization requires non-empty file bytes."
+                : $"{expectedFamily} import requires non-empty file bytes.";
+            throw new CodecException("empty_input", message);
+        }
         if (request.Operation is CodecOperation.ExportXlsx or CodecOperation.ExportDocx or CodecOperation.ExportPptx && request.Artifact is null)
             throw new CodecException("missing_artifact", $"{expectedFamily} export requires an artifact envelope.");
+        if (request.Operation == CodecOperation.FinalizeDocxRevisions && request.RevisionFinalization is null)
+            throw new CodecException("missing_revision_finalization", "DOCX revision finalization requires revision_finalization options.");
     }
 
     internal static Diagnostic Error(string code, string message, string? sourcePath = null) => new()

@@ -21,6 +21,13 @@ enum CodecOperation {
   CODEC_OPERATION_EXPORT_DOCX = 4;
   CODEC_OPERATION_IMPORT_PPTX = 5;
   CODEC_OPERATION_EXPORT_PPTX = 6;
+  CODEC_OPERATION_FINALIZE_DOCX_REVISIONS = 7;
+}
+
+enum DocumentRevisionFinalizationMode {
+  DOCUMENT_REVISION_FINALIZATION_MODE_UNSPECIFIED = 0;
+  DOCUMENT_REVISION_FINALIZATION_MODE_ACCEPT = 1;
+  DOCUMENT_REVISION_FINALIZATION_MODE_REJECT = 2;
 }
 
 enum DiagnosticSeverity {
@@ -69,6 +76,7 @@ message CodecRequest {
   ArtifactEnvelope artifact = 4;
   bytes file = 5;
   CodecLimits limits = 6;
+  DocumentRevisionFinalizationRequest revision_finalization = 8;
 }
 
 message CodecResponse {
@@ -77,6 +85,24 @@ message CodecResponse {
   bytes file = 3;
   ArtifactEnvelope artifact = 4;
   repeated Diagnostic diagnostics = 5;
+  DocumentRevisionFinalizationResult revision_finalization = 6;
+}
+
+message DocumentRevisionFinalizationRequest {
+  DocumentRevisionFinalizationMode mode = 1;
+  bool keep_tracking = 2;
+  string expected_source_sha256 = 3;
+}
+
+message DocumentRevisionFinalizationResult {
+  DocumentRevisionFinalizationMode mode = 1;
+  string source_sha256 = 2;
+  string output_sha256 = 3;
+  uint32 insertion_count = 4;
+  uint32 deletion_count = 5;
+  bool tracking_before = 6;
+  bool tracking_after = 7;
+  repeated string changed_parts = 8;
 }
 
 message ArtifactEnvelope {
@@ -2098,6 +2124,9 @@ message DocumentArtifact {
   // WordprocessingML host. This is a refresh hint, not evidence that cached
   // PAGE/TOC/REF results are current.
   bool update_fields = 14;
+  // Whether compatible WordprocessingML hosts should track subsequent edits.
+  // This setting is independent from the presence of existing revision marks.
+  bool track_revisions = 15;
 }
 
 message DocumentBibliography {
