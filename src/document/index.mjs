@@ -176,12 +176,44 @@ class DocumentTableBlock {
 }
 
 const DOCUMENT_CHECKBOX_GLYPHS = Object.freeze({ checked: "☒", unchecked: "☐" });
+const DOCUMENT_DROPDOWN_MAX_CHOICES = 256;
+const DOCUMENT_DROPDOWN_MAX_TEXT_LENGTH = 255;
 
 function documentCheckboxGlyph(checked) {
   return checked ? DOCUMENT_CHECKBOX_GLYPHS.checked : DOCUMENT_CHECKBOX_GLYPHS.unchecked;
 }
 
-function normalizeDocumentTextContentControl(value) {
+function normalizeDocumentDropdownChoices(value) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > DOCUMENT_DROPDOWN_MAX_CHOICES) {
+    throw new TypeError(`Document drop-down content control requires 1 through ${DOCUMENT_DROPDOWN_MAX_CHOICES} choices.`);
+  }
+  const values = new Set();
+  const displayTexts = new Set();
+  return value.map((choice, index) => {
+    const source = typeof choice === "string" ? { displayText: choice, value: choice } : choice;
+    if (!source || typeof source !== "object") throw new TypeError(`Document drop-down choice ${index + 1} must be a string or object.`);
+    const displayText = source.displayText ?? source.text ?? source.label ?? "";
+    const itemValue = source.value ?? source.id ?? "";
+    if (typeof displayText !== "string" || typeof itemValue !== "string") {
+      throw new TypeError(`Document drop-down choice ${index + 1} displayText and value must be strings.`);
+    }
+    if (!displayText || !itemValue || displayText.length > DOCUMENT_DROPDOWN_MAX_TEXT_LENGTH || itemValue.length > DOCUMENT_DROPDOWN_MAX_TEXT_LENGTH || !isXmlSafeText(displayText) || !isXmlSafeText(itemValue) || /[\u0000-\u001f\u007f]/.test(displayText + itemValue)) {
+      throw new TypeError(`Document drop-down choice ${index + 1} requires XML-safe displayText and value strings of 1 through ${DOCUMENT_DROPDOWN_MAX_TEXT_LENGTH} characters.`);
+    }
+    if (values.has(itemValue) || displayTexts.has(displayText)) {
+      throw new TypeError("Document drop-down content-control choice values and displayText strings must be unique.");
+    }
+    values.add(itemValue);
+    displayTexts.add(displayText);
+    return { displayText, value: itemValue };
+  });
+}
+
+function documentDropdownChoice(control, selectedValue = control?.selectedValue) {
+  return control?.choices?.find((choice) => choice.value === selectedValue);
+}
+
+function normalizeDocumentContentControl(value) {
   if (value == null || value === false) return undefined;
   const source = typeof value === "string" ? { tag: value } : value;
   if (!source || typeof source !== "object") throw new TypeError("Document content control must be an object or tag string.");
@@ -191,13 +223,28 @@ function normalizeDocumentTextContentControl(value) {
   if (nativeId !== undefined && (!Number.isInteger(nativeId) || nativeId < 1 || nativeId > 0x7fffffff)) {
     throw new TypeError("Document content control nativeId must be an integer from 1 through 2147483647.");
   }
-  const rawType = String(source.controlType ?? source.type ?? (source.checked !== undefined ? "checkbox" : "text")).trim().toLowerCase();
+  const inferredType = source.checked !== undefined
+    ? "checkbox"
+    : source.choices !== undefined || source.items !== undefined || source.options !== undefined || source.selectedValue !== undefined ? "dropdown" : "text";
+  const rawType = String(source.controlType ?? source.type ?? inferredType).trim().toLowerCase();
   const controlType = rawType === "text" || rawType === "plain-text" || rawType === "plaintext"
     ? "text"
-    : rawType === "checkbox" || rawType === "check-box" ? "checkbox" : undefined;
-  if (!controlType) throw new TypeError("Document content control type must be text or checkbox.");
+    : rawType === "checkbox" || rawType === "check-box" ? "checkbox"
+      : rawType === "dropdown" || rawType === "drop-down" || rawType === "drop_down" ? "dropdown" : undefined;
+  if (!controlType) throw new TypeError("Document content control type must be text, checkbox, or dropdown.");
   if (controlType === "checkbox" && source.checked !== undefined && typeof source.checked !== "boolean") {
     throw new TypeError("Document checkbox content control checked state must be boolean.");
+  }
+  const choices = controlType === "dropdown"
+    ? normalizeDocumentDropdownChoices(source.choices ?? source.items ?? source.options)
+    : undefined;
+  const requestedSelectedValue = source.selectedValue ?? source.value;
+  if (controlType === "dropdown" && requestedSelectedValue !== undefined && typeof requestedSelectedValue !== "string") {
+    throw new TypeError("Document drop-down content-control selectedValue must be a string.");
+  }
+  const selectedValue = controlType === "dropdown" ? requestedSelectedValue ?? choices[0].value : undefined;
+  if (controlType === "dropdown" && !choices.some((choice) => choice.value === selectedValue)) {
+    throw new TypeError(`Document drop-down content-control selectedValue ${selectedValue} does not match a choice value.`);
   }
   return {
     id: String(source.id || aid("dcc")),
@@ -206,6 +253,7 @@ function normalizeDocumentTextContentControl(value) {
     nativeId,
     controlType,
     ...(controlType === "checkbox" ? { checked: source.checked === true } : {}),
+    ...(controlType === "dropdown" ? { choices, selectedValue } : {}),
   };
 }
 
@@ -228,15 +276,15 @@ function normalizeDocumentInlineField(value) {
 }
 
 function normalizeDocumentRun(run = {}, theme = {}) {
-  const contentControl = normalizeDocumentTextContentControl(run.contentControl ?? run.textContentControl ?? run.control);
+  const contentControl = normalizeDocumentContentControl(run.contentControl ?? run.textContentControl ?? run.control);
   const inlineField = normalizeDocumentInlineField(run.inlineField ?? run.field);
   if (contentControl && inlineField) throw new TypeError("Document run cannot be both a content control and an inline field.");
   const requestedText = String(run.text ?? run.value ?? "");
   const text = contentControl?.controlType === "checkbox"
     ? documentCheckboxGlyph(contentControl.checked)
-    : requestedText;
-  if (contentControl?.controlType === "checkbox" && requestedText && requestedText !== text) {
-    throw new TypeError("Document checkbox content-control text is codec-owned; set checked instead of supplying a visible glyph.");
+    : contentControl?.controlType === "dropdown" ? documentDropdownChoice(contentControl).displayText : requestedText;
+  if (contentControl?.controlType !== "text" && contentControl && requestedText && requestedText !== text) {
+    throw new TypeError(`Document ${contentControl.controlType} content-control text is codec-owned; set its typed value instead of supplying visible text.`);
   }
   return {
     text,
@@ -284,6 +332,17 @@ class DocumentParagraphBlock {
   addCheckboxContentControl(checked = false, config = {}) {
     if (typeof checked !== "boolean") throw new TypeError("Document checkbox content control checked state must be boolean.");
     return this.addRun("", { ...config, contentControl: { ...(config.contentControl || config), controlType: "checkbox", checked } });
+  }
+  addDropdownContentControl(choices, config = {}) {
+    return this.addRun("", {
+      ...config,
+      contentControl: {
+        ...(config.contentControl || config),
+        controlType: "dropdown",
+        choices,
+        selectedValue: config.selectedValue ?? config.value,
+      },
+    });
   }
   addField(instruction, display = "0", config = {}) {
     return this.addRun(display, {
@@ -338,6 +397,8 @@ class DocumentContentControlHandle {
   get text() { return String(this.run?.text ?? ""); }
   set text(value) {
     if (this.controlType === "checkbox") throw new TypeError("Checkbox content-control text is codec-owned; set checked instead.");
+    if (this.controlType === "dropdown") throw new TypeError("Drop-down content-control text is codec-owned; set selectedValue instead.");
+    if (this.controlType !== "text") throw new TypeError(`Unsupported ${this.controlType} content-control text mutation.`);
     this.run.text = String(value ?? "");
     this.block._syncText();
   }
@@ -347,6 +408,18 @@ class DocumentContentControlHandle {
     if (typeof value !== "boolean") throw new TypeError("Document checkbox content control checked state must be boolean.");
     this.control.checked = value;
     this.run.text = documentCheckboxGlyph(value);
+    this.block._syncText();
+  }
+  get choices() { return this.controlType === "dropdown" ? this.control.choices.map((choice) => ({ ...choice })) : undefined; }
+  get selectedValue() { return this.controlType === "dropdown" ? this.control?.selectedValue : undefined; }
+  set selectedValue(value) {
+    if (this.controlType !== "dropdown") throw new TypeError("Only drop-down content controls have selectedValue state.");
+    if (typeof value !== "string") throw new TypeError("Document drop-down content-control selectedValue must be a string.");
+    const selectedValue = value;
+    const choice = documentDropdownChoice(this.control, selectedValue);
+    if (!choice) throw new TypeError(`Document drop-down content-control selectedValue ${selectedValue} does not match a choice value.`);
+    this.control.selectedValue = selectedValue;
+    this.run.text = choice.displayText;
     this.block._syncText();
   }
   inspectRecord() {
@@ -359,12 +432,16 @@ class DocumentContentControlHandle {
       alias: this.alias,
       nativeId: this.nativeId,
       controlType: this.controlType,
-      ...(this.controlType === "checkbox" ? { checked: this.checked, visibleText: this.text } : { text: this.text, textChars: this.text.length }),
+      ...(this.controlType === "checkbox"
+        ? { checked: this.checked, visibleText: this.text }
+        : this.controlType === "dropdown"
+          ? { choices: this.choices, selectedValue: this.selectedValue, visibleText: this.text }
+          : { text: this.text, textChars: this.text.length }),
     };
   }
 }
 
-function documentTextContentControls(document) {
+function documentContentControls(document) {
   return document.blocks.flatMap((block) => block.kind === "paragraph"
     ? block.runs.flatMap((run, runIndex) => run.contentControl ? [new DocumentContentControlHandle(block, runIndex)] : [])
     : []);
@@ -980,7 +1057,7 @@ export class DocumentModel {
 
   static create(options = {}) { return new DocumentModel(options); }
   get paragraphs() { return this.blocks.filter((block) => block.kind === "paragraph").map((block) => block.text); }
-  get contentControls() { return documentTextContentControls(this); }
+  get contentControls() { return documentContentControls(this); }
   get fontFamilies() {
     return officeFontFamilies(
       [this.toProto()],
@@ -1048,6 +1125,31 @@ export class DocumentModel {
     for (const control of controls) {
       if (!requested.has(control.tag)) continue;
       control.checked = requested.get(control.tag);
+      updated += 1;
+    }
+    return { updated, matchedTags: [...matched], missingTags };
+  }
+  setDropdownContentControls(values = {}, options = {}) {
+    const entries = values instanceof Map ? [...values.entries()] : Object.entries(values || {});
+    const requested = new Map(entries.map(([tag, value]) => {
+      if (typeof value !== "string") throw new TypeError(`Document drop-down content-control ${String(tag)} selectedValue must be a string.`);
+      return [String(tag), value];
+    }));
+    const controls = this.contentControls.filter((control) => control.controlType === "dropdown");
+    const matched = new Set(controls.filter((control) => requested.has(control.tag)).map((control) => control.tag));
+    const missingTags = [...requested.keys()].filter((tag) => !matched.has(tag));
+    if (options.strict !== false && missingTags.length) throw new Error(`Unknown document drop-down content-control tag(s): ${missingTags.join(", ")}`);
+    for (const control of controls) {
+      if (!requested.has(control.tag)) continue;
+      const selectedValue = requested.get(control.tag);
+      if (!control.choices.some((choice) => choice.value === selectedValue)) {
+        throw new TypeError(`Document drop-down content-control ${control.tag} selectedValue ${selectedValue} does not match a choice value.`);
+      }
+    }
+    let updated = 0;
+    for (const control of controls) {
+      if (!requested.has(control.tag)) continue;
+      control.selectedValue = requested.get(control.tag);
       updated += 1;
     }
     return { updated, matchedTags: [...matched], missingTags };
@@ -1185,8 +1287,17 @@ export class DocumentModel {
       else contentControlIds.add(control.id);
       if (!control.tag || control.tag.length > 64 || /[\u0000-\u001f\u007f]/.test(control.tag)) issues.push(verificationIssue("document", "invalidContentControlTag", `Content control ${control.id} tag must contain 1 to 64 characters without controls.`, { id: control.id, tag: control.tag }));
       if (control.alias.length > 255 || /[\u0000-\u001f\u007f]/.test(control.alias)) issues.push(verificationIssue("document", "invalidContentControlAlias", `Content control ${control.id} alias must contain at most 255 characters without controls.`, { id: control.id, alias: control.alias }));
-      if (control.controlType !== "text" && control.controlType !== "checkbox") issues.push(verificationIssue("document", "invalidContentControlType", `Content control ${control.id} type must be text or checkbox.`, { id: control.id, controlType: control.controlType }));
+      if (control.controlType !== "text" && control.controlType !== "checkbox" && control.controlType !== "dropdown") issues.push(verificationIssue("document", "invalidContentControlType", `Content control ${control.id} type must be text, checkbox, or dropdown.`, { id: control.id, controlType: control.controlType }));
       if (control.controlType === "checkbox" && (typeof control.checked !== "boolean" || control.text !== documentCheckboxGlyph(control.checked))) issues.push(verificationIssue("document", "invalidCheckboxContentControl", `Checkbox content control ${control.id} must have boolean checked state and its canonical visible glyph.`, { id: control.id, checked: control.checked, visibleText: control.text }));
+      if (control.controlType === "dropdown") {
+        try {
+          const choices = normalizeDocumentDropdownChoices(control.choices);
+          const selected = choices.find((choice) => choice.value === control.selectedValue);
+          if (!selected || control.text !== selected.displayText) throw new TypeError("selected value and visible text do not match one declared choice");
+        } catch (error) {
+          issues.push(verificationIssue("document", "invalidDropdownContentControl", `Drop-down content control ${control.id} has invalid choices or selected state: ${error.message}.`, { id: control.id, selectedValue: control.selectedValue, visibleText: control.text }));
+        }
+      }
       if (control.nativeId !== undefined && (!Number.isInteger(control.nativeId) || control.nativeId < 1 || control.nativeId > 0x7fffffff || nativeContentControlIds.has(control.nativeId))) issues.push(verificationIssue("document", "invalidContentControlNativeId", `Content control ${control.id} has an invalid or duplicate nativeId.`, { id: control.id, nativeId: control.nativeId }));
       if (control.nativeId !== undefined) nativeContentControlIds.add(control.nativeId);
     }

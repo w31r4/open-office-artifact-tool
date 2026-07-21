@@ -72,6 +72,50 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### DOCX canonical drop-down content controls
+
+On 2026-07-21, the Documents model, versioned protobuf wire, OpenChestnut C#
+codec, bundled WASM runtime, Help/API catalog, and runnable Documents Skill
+added a bounded standard Word drop-down SDT profile. Source-free documents can
+author `paragraph.addDropdownContentControl(...)` with an ordered
+`displayText`/`value` table; imported canonical controls expose defensive
+`choices` and mutable `selectedValue`; and
+`document.setDropdownContentControls(...)` applies strict tag-to-value
+transactions. Visible run text is always derived from the selected choice, so
+direct text edits and unknown values fail before mutation.
+
+The bounded profile is one body-inline `w:sdt` containing one modeled run and
+one `w:dropDownList` with 1–256 ordered, unique display/value pairs of at most
+255 characters. Imported native ID, control type, run location/topology, and
+choice display/value/order stay source-bound; only selection, tag, and alias
+may change. Choice or type mutation fails with
+`document_content_control_topology_changed`. Duplicate/irregular native lists,
+combo boxes, richer SDTs, and controls outside body runs remain opaque and
+byte-preserved while unchanged. A canonical unchanged import returns the
+original package bytes exactly.
+
+The Documents fixture and shipped end-to-end example now author text,
+checkbox, and drop-down controls together, import them, update each through
+its typed primitive, export/import a second time, and assert native
+`w:dropDownList`, `w:lastValue`, and `w:listItem` markup plus semantic
+inspect/resolve/verify results. The final two-page DOCX was rendered through
+LibreOffice/Poppler and reviewed page by page: `REVIEW PRIORITY  High`, the
+checked approval control, tables, revisions, notes, and page break had no
+clipping, overlap, or stray text.
+
+The complete local `npm test` suite passed, including Playwright,
+LibreOffice/Poppler, MuPDF.js, qpdf, all five plugin bundles, the 20-template
+corpus, and every Office/PDF regression. OpenChestnut passed `317/317` and
+OfficeBridge passed `5/5`. Protocol generation and API documentation are
+regenerated; two source-built WASM runs produced the same 39 audited files.
+The bundled runtime contains 38 files and 14,866,624 bytes. The production
+clean-install tarball contains 475 files, 9,124,054 compressed bytes, and
+24,170,479 unpacked bytes. Real pikepdf, pyHanko, veraPDF, and OCRmyPDF repeats
+were not configured in this shell, so their contract/adversarial suites passed
+while those explicitly environment-gated executions were skipped. npm
+authentication, the actual publish/tag, and hosted CI for the eventual commit
+remain external/follow-up release steps.
+
 ### DOCX canonical checkbox content controls
 
 On 2026-07-21, the Documents model, versioned protobuf wire, OpenChestnut C#
@@ -87,13 +131,13 @@ change state.
 The supported profile is one inline SDT with one modeled run, a unique native
 ID, and fixed `2610`/`2612` MS Gothic symbol declarations. Imported control
 type, native identity, symbol declarations, location, and topology remain
-source-bound. Rich, block/cell, nested, data-bound, dropdown/date, legacy,
-custom-symbol, locked, and otherwise irregular controls stay opaque and
+source-bound. Rich, block/cell, nested, data-bound, combo-box/irregular-drop-down/date,
+legacy, custom-symbol, locked, and otherwise irregular controls stay opaque and
 byte-preserved when unchanged; conversion, topology mutation, direct glyph
 editing, cross-type fill calls, and malformed state fail closed. An unchanged
 canonical import re-exports its original bytes exactly.
 
-The shipped Documents fixture now authors text and checkbox controls together,
+The shipped Documents fixture now authors text, checkbox, and drop-down controls together,
 imports them, updates each through its typed primitive, exports and imports a
 second time, inspects/verifies the final semantics, and asserts native
 `w14:checked`, `w14:checkedState`, and `w14:uncheckedState` markup. Its real

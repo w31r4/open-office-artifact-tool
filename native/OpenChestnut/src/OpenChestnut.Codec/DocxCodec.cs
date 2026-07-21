@@ -88,7 +88,7 @@ internal static class DocxCodec
     {
         if (envelope.PayloadCase == ArtifactEnvelope.PayloadOneofCase.Document)
         {
-            DocxTextContentControlCodec.AssignNativeIds(envelope.Document);
+            DocxContentControlCodec.AssignNativeIds(envelope.Document);
             DocxBookmarkCodec.AssignNativeIds(envelope.Document);
         }
         var requiresSourcePreservation =
@@ -126,8 +126,8 @@ internal static class DocxCodec
             DocxSettingsCodec.Author(mainPart, envelope.Document);
             var body = new W.Body();
             mainPart.Document = new W.Document(body);
-            if (DocxTextContentControlCodec.UsesCheckboxes(envelope.Document))
-                mainPart.Document.AddNamespaceDeclaration("w14", DocxTextContentControlCodec.CheckboxNamespace);
+            if (DocxContentControlCodec.UsesCheckboxes(envelope.Document))
+                mainPart.Document.AddNamespaceDeclaration("w14", DocxContentControlCodec.CheckboxNamespace);
             uint sectionIndex = 0;
             for (var blockIndex = 0; blockIndex < envelope.Document.Blocks.Count; blockIndex++)
             {
@@ -274,7 +274,7 @@ internal static class DocxCodec
                 if (block.ContentCase == DocumentBlock.ContentOneofCase.Paragraph &&
                     original.ContentCase == DocumentBlock.ContentOneofCase.Paragraph)
                 {
-                    DocxTextContentControlCodec.AssertTopology(block.Paragraph, original.Paragraph, block.Id);
+                    DocxContentControlCodec.AssertTopology(block.Paragraph, original.Paragraph, block.Id);
                     DocxInlineFieldCodec.AssertTopology(block.Paragraph, original.Paragraph, block.Id);
                 }
 
@@ -743,9 +743,9 @@ internal static class DocxCodec
                 index++;
                 continue;
             }
-            if (children[index] is W.SdtRun control && DocxTextContentControlCodec.IsSupported(control))
+            if (children[index] is W.SdtRun control && DocxContentControlCodec.IsSupported(control))
             {
-                runs.Add(DocxTextContentControlCodec.Read(control, $"{blockId}/content-control/{logicalIndex + 1}"));
+                runs.Add(DocxContentControlCodec.Read(control, $"{blockId}/content-control/{logicalIndex + 1}"));
                 logicalIndex++;
                 index++;
                 continue;
@@ -824,7 +824,7 @@ internal static class DocxCodec
         foreach (var source in block.Paragraph.Runs)
         {
             if (source.InlineField is not null) paragraph.Append(DocxInlineFieldCodec.Build(source));
-            else paragraph.Append(source.TextContentControl is null ? BuildRun(source) : DocxTextContentControlCodec.Build(source));
+            else paragraph.Append(source.TextContentControl is null ? BuildRun(source) : DocxContentControlCodec.Build(source));
         }
         return paragraph;
     }
@@ -888,7 +888,7 @@ internal static class DocxCodec
             envelope.Document,
             allowSourceBoundCatalog: envelope.OpaqueOpc?.SourcePackage is { Data.IsEmpty: false });
         DocxHeaderFooterCodec.Validate(envelope.Document);
-        DocxTextContentControlCodec.Validate(envelope.Document);
+        DocxContentControlCodec.Validate(envelope.Document);
         DocxBibliographyCodec.Validate(envelope.Document);
 
         ulong semanticItems = checked((ulong)envelope.Document.Comments.Count + (ulong)envelope.Document.Bookmarks.Count + (ulong)envelope.Document.Notes.Count);

@@ -2477,12 +2477,23 @@ message DocumentTextContentControl {
   // Meaningful only when control_type is CHECKBOX. The canonical visible
   // glyph and w14 checked/unchecked symbol declarations are codec-owned.
   bool checked = 6;
+  // Meaningful only when control_type is DROP_DOWN. Choice order, values, and
+  // display text are source-bound after import; selected_value remains
+  // editable and the visible run text is derived from its matching choice.
+  repeated DocumentContentControlChoice choices = 7;
+  string selected_value = 8;
+}
+
+message DocumentContentControlChoice {
+  string display_text = 1;
+  string value = 2;
 }
 
 enum DocumentContentControlType {
   DOCUMENT_CONTENT_CONTROL_TYPE_UNSPECIFIED = 0;
   DOCUMENT_CONTENT_CONTROL_TYPE_PLAIN_TEXT = 1;
   DOCUMENT_CONTENT_CONTROL_TYPE_CHECKBOX = 2;
+  DOCUMENT_CONTENT_CONTROL_TYPE_DROP_DOWN = 3;
 }
 
 message DocumentImage {

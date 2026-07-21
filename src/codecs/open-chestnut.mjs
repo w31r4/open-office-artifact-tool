@@ -1725,7 +1725,7 @@ function publicDocumentParagraphFormatting(value) {
   return Object.keys(result).length ? result : undefined;
 }
 
-function planDocumentTextContentControls(document) {
+function planDocumentContentControls(document) {
   const controls = document.blocks.flatMap((block) => block.kind === "paragraph"
     ? block.runs.filter((run) => run.contentControl).map((run) => ({ block, run, control: run.contentControl }))
     : []);
@@ -1753,18 +1753,64 @@ function planDocumentTextContentControls(document) {
   return result;
 }
 
-function wireDocumentTextContentControl(control, nativeId, blockId) {
+function documentContentControlTypeName(control) {
+  if (!control) return undefined;
+  const value = control?.controlType;
+  if (value === DocumentContentControlType.CHECKBOX || value === "checkbox") return "checkbox";
+  if (value === DocumentContentControlType.DROP_DOWN || value === "dropdown" || value === "drop-down" || value === "drop_down") return "dropdown";
+  if (value === DocumentContentControlType.PLAIN_TEXT || value === DocumentContentControlType.UNSPECIFIED || value === undefined || value === "text") return "text";
+  return undefined;
+}
+
+function wireDocumentDropdownState(control, blockId) {
+  if (!Array.isArray(control?.choices) || control.choices.length < 1 || control.choices.length > 256) {
+    throw new OpenChestnutCodecError(`Document block ${blockId} drop-down content control requires 1 through 256 choices.`, [], { code: "invalid_document_content_control" });
+  }
+  const values = new Set();
+  const displayTexts = new Set();
+  const choices = control.choices.map((choice, index) => {
+    const displayText = choice?.displayText;
+    const value = choice?.value;
+    if (typeof displayText !== "string" || typeof value !== "string" || !displayText || !value || displayText.length > 255 || value.length > 255 || !isXmlSafeText(displayText) || !isXmlSafeText(value) || /[\u0000-\u001f\u007f]/.test(displayText + value)) {
+      throw new OpenChestnutCodecError(`Document block ${blockId} drop-down choice ${index + 1} requires XML-safe displayText and value strings of 1 through 255 characters.`, [], { code: "invalid_document_content_control" });
+    }
+    if (values.has(value) || displayTexts.has(displayText)) {
+      throw new OpenChestnutCodecError(`Document block ${blockId} drop-down choice values and displayText strings must be unique.`, [], { code: "invalid_document_content_control" });
+    }
+    values.add(value);
+    displayTexts.add(displayText);
+    return { displayText, value };
+  });
+  const selectedValue = control?.selectedValue;
+  if (typeof selectedValue !== "string" || !values.has(selectedValue)) {
+    throw new OpenChestnutCodecError(`Document block ${blockId} drop-down selectedValue must match one declared choice value.`, [], { code: "invalid_document_content_control" });
+  }
+  return { choices, selectedValue };
+}
+
+function wireDocumentContentControl(control, nativeId, blockId) {
   const id = String(control?.id || "").trim();
   const tag = String(control?.tag || "").trim();
   const alias = String(control?.alias ?? tag);
-  const controlType = String(control?.controlType || "text") === "checkbox"
+  const typeName = documentContentControlTypeName(control);
+  const controlType = typeName === "checkbox"
     ? DocumentContentControlType.CHECKBOX
-    : String(control?.controlType || "text") === "text" ? DocumentContentControlType.PLAIN_TEXT : undefined;
+    : typeName === "dropdown" ? DocumentContentControlType.DROP_DOWN
+      : typeName === "text" ? DocumentContentControlType.PLAIN_TEXT : undefined;
   if (!id || !tag || tag.length > 64 || alias.length > 255 || /[\u0000-\u001f\u007f]/.test(tag + alias) || controlType === undefined) throw new OpenChestnutCodecError(`Document block ${blockId} has an invalid content control.`, [], { code: "invalid_document_content_control" });
   if (controlType === DocumentContentControlType.CHECKBOX && typeof control.checked !== "boolean") {
     throw new OpenChestnutCodecError(`Document block ${blockId} has an invalid checkbox content-control state.`, [], { code: "invalid_document_content_control" });
   }
-  return { id, tag, alias, nativeId, controlType, checked: controlType === DocumentContentControlType.CHECKBOX && control.checked === true };
+  const dropdown = controlType === DocumentContentControlType.DROP_DOWN ? wireDocumentDropdownState(control, blockId) : undefined;
+  return {
+    id,
+    tag,
+    alias,
+    nativeId,
+    controlType,
+    checked: controlType === DocumentContentControlType.CHECKBOX && control.checked === true,
+    ...(dropdown || {}),
+  };
 }
 
 function documentRun(run, blockId, contentControlNativeId) {
@@ -1777,6 +1823,13 @@ function documentRun(run, blockId, contentControlNativeId) {
   if (run.contentControl && inlineInstruction !== undefined) throw new OpenChestnutCodecError(`Document block ${blockId} run cannot combine a content control and an inline field.`, [], { code: "invalid_document_inline_field" });
   if (run.contentControl?.controlType === "checkbox" && String(run.text ?? "") !== (run.contentControl.checked ? "☒" : "☐")) {
     throw new OpenChestnutCodecError(`Document block ${blockId} checkbox content-control visible glyph does not match checked state.`, [], { code: "invalid_document_content_control" });
+  }
+  if (documentContentControlTypeName(run.contentControl) === "dropdown") {
+    const dropdown = wireDocumentDropdownState(run.contentControl, blockId);
+    const visibleText = dropdown.choices.find((choice) => choice.value === dropdown.selectedValue).displayText;
+    if (String(run.text ?? "") !== visibleText) {
+      throw new OpenChestnutCodecError(`Document block ${blockId} drop-down content-control visible text does not match selectedValue.`, [], { code: "invalid_document_content_control" });
+    }
   }
   const bookmarkName = inlineInstruction === undefined ? "" : String(run.inlineField?.bookmarkName || "").trim();
   let bookmarkNativeId = "";
@@ -1796,19 +1849,24 @@ function documentRun(run, blockId, contentControlNativeId) {
     italic: style.italic === true,
     underline: style.underline === true || style.underline === "single",
     formatting,
-    textContentControl: run.contentControl ? wireDocumentTextContentControl(run.contentControl, contentControlNativeId, blockId) : undefined,
+    textContentControl: run.contentControl ? wireDocumentContentControl(run.contentControl, contentControlNativeId, blockId) : undefined,
     inlineField: inlineInstruction === undefined ? undefined : { instruction: inlineInstruction, bookmarkName, bookmarkNativeId },
   };
 }
 
 function documentContentControlTopology(runs = []) {
-  return runs.flatMap((run, index) => run.textContentControl || run.contentControl
+  return runs.flatMap((run, index) => {
+    const control = run.textContentControl || run.contentControl;
+    const controlType = documentContentControlTypeName(control);
+    return control
     ? [{
         index,
-        nativeId: Number((run.textContentControl || run.contentControl).nativeId),
-        controlType: (run.textContentControl || run.contentControl).controlType === DocumentContentControlType.CHECKBOX || (run.textContentControl || run.contentControl).controlType === "checkbox" ? "checkbox" : "text",
+        nativeId: Number(control.nativeId),
+        controlType,
+        ...(controlType === "dropdown" ? { choices: (control.choices || []).map((choice) => [String(choice.displayText), String(choice.value)]) } : {}),
       }]
-    : []);
+    : [];
+  });
 }
 
 function assertDocumentContentControlTopology(block, original) {
@@ -3003,7 +3061,7 @@ function documentEnvelope(document) {
     }
   }
   const directNumbering = state ? undefined : directDocumentNumberingPlan(document);
-  const contentControlNativeIds = planDocumentTextContentControls(document);
+  const contentControlNativeIds = planDocumentContentControls(document);
   const assets = new Map((state?.assets || []).map((asset) => [asset.id, asset]));
   const defaultRunSource = Object.fromEntries([...DOCUMENT_RUN_STYLE_KEYS].filter((key) => key !== "runStyleId" && Object.hasOwn(document.defaultRunStyle || {}, key)).map((key) => [key, document.defaultRunStyle[key]]));
   const blocks = document.blocks.map((block, index) => documentBlock(block, state?.blocks[index], directNumbering?.get(block), assets, contentControlNativeIds));
@@ -3351,8 +3409,14 @@ function documentFromEnvelope(envelope) {
               tag: run.textContentControl.tag,
               alias: run.textContentControl.alias,
               nativeId: run.textContentControl.nativeId,
-              controlType: run.textContentControl.controlType === DocumentContentControlType.CHECKBOX ? "checkbox" : "text",
+              controlType: run.textContentControl.controlType === DocumentContentControlType.CHECKBOX
+                ? "checkbox"
+                : run.textContentControl.controlType === DocumentContentControlType.DROP_DOWN ? "dropdown" : "text",
               ...(run.textContentControl.controlType === DocumentContentControlType.CHECKBOX ? { checked: run.textContentControl.checked === true } : {}),
+              ...(run.textContentControl.controlType === DocumentContentControlType.DROP_DOWN ? {
+                choices: run.textContentControl.choices.map((choice) => ({ displayText: choice.displayText, value: choice.value })),
+                selectedValue: run.textContentControl.selectedValue,
+              } : {}),
             } } : {}),
             ...(run.inlineField ? { inlineField: {
               instruction: run.inlineField.instruction,

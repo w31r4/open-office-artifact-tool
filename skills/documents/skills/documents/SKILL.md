@@ -314,7 +314,7 @@ Scripts:
 - `render_docx.py` — canonical DOCX → PNG renderer (optional PDF via `--emit_pdf`; do not deliver intermediates unless asked).
 - `scripts/render_and_diff.py` — render + per-page image diff between two DOCXs.
 - `scripts/google_docs_title_sanitize.py` — deterministic OOXML sanitizer/audit for Google Docs-targeted DOCX title blocks; removes Word Title-style bottom borders/rules before render/import.
-- `scripts/content_controls.py` — explicit package route to list / wrap / fill controls in existing templates or parts outside the public body-inline model. Use `paragraph.addTextContentControl(...)`, `paragraph.addCheckboxContentControl(...)`, `document.contentControls`, `document.fillContentControls(...)`, and `document.setCheckboxContentControls(...)` for the bounded inline text/checkbox profiles.
+- `scripts/content_controls.py` — explicit package route to list / wrap / fill controls in existing templates or parts outside the public body-inline model. Use `paragraph.addTextContentControl(...)`, `paragraph.addCheckboxContentControl(...)`, `paragraph.addDropdownContentControl(...)`, `document.contentControls`, `document.fillContentControls(...)`, `document.setCheckboxContentControls(...)`, and `document.setDropdownContentControls(...)` for the bounded inline text/checkbox/drop-down profiles.
 - `scripts/captions_and_crossrefs.py` — insert Caption paragraphs for tables/figures + optional bookmarks around caption numbers.
 - `scripts/insert_ref_fields.py` — replace `[[REF:bookmark]]` markers with real `REF` fields (cross-references).
 - `scripts/internal_nav.py` — add internal navigation links (static TOC + Top/Bottom + figN/tblN jump links).
@@ -391,7 +391,7 @@ This is a quick index so you can jump from a helper script to the right task gui
 - `merge_docx_append.py` → `tasks/multi_doc_merge.md`
 
 ### Forms & protection
-- Public `paragraph.addTextContentControl(...)`, `paragraph.addCheckboxContentControl(...)`, `document.contentControls`, `document.fillContentControls(...)`, and `document.setCheckboxContentControls(...)` handle source-free and recognized imported inline plain-text/canonical checkbox controls; `content_controls.py` handles explicit existing-template/package routes → `tasks/forms_content_controls.md`
+- Public `paragraph.addTextContentControl(...)`, `paragraph.addCheckboxContentControl(...)`, `paragraph.addDropdownContentControl(...)`, `document.contentControls`, `document.fillContentControls(...)`, `document.setCheckboxContentControls(...)`, and `document.setDropdownContentControls(...)` handle source-free and recognized imported inline plain-text/canonical checkbox/canonical drop-down controls; `content_controls.py` handles explicit existing-template/package routes → `tasks/forms_content_controls.md`
 - `set_protection.py` → `tasks/protection_restrict_editing.md`
 
 ### QA / regression

@@ -123,17 +123,19 @@ try {
   assert.deepEqual(controlsDocument.contentControls.map((control) => [control.tag, control.controlType, control.controlType === "checkbox" ? control.checked : control.text]), [
     ["CUSTOMER_NAME", "text", "Grace Hopper"],
     ["ACCOUNT_ID", "text", "AC-2048"],
+    ["PRIORITY", "dropdown", "High"],
     ["APPROVED", "checkbox", true],
   ]);
   assert.equal(controls.qa.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
   assert.equal(controlsDocument.inspect({ kind: "contentControl" }).ndjson.includes("Customer name"), true);
   const controlsZip = await JSZip.loadAsync(await fs.readFile(controls.docxPath));
   const controlsXml = await controlsZip.file("word/document.xml").async("text");
-  assert.equal((controlsXml.match(/<w:sdt>/g) || []).length, 3);
+  assert.equal((controlsXml.match(/<w:sdt>/g) || []).length, 4);
   assert.match(controlsXml, /<w:tag w:val="CUSTOMER_NAME"\s*\/>/);
   assert.match(controlsXml, /<w:tag w:val="ACCOUNT_ID"\s*\/>/);
   assert.match(controlsXml, /<w:tag w:val="APPROVED"\s*\/>/);
   assert.match(controlsXml, /<w14:checkbox>[\s\S]*<w14:checked w14:val="1"\s*\/>/);
+  assert.match(controlsXml, /<w:tag w:val="PRIORITY"\s*\/>[\s\S]*<w:dropDownList w:lastValue="high">[\s\S]*<w:listItem(?=[^>]*w:displayText="High")(?=[^>]*w:value="high")[^>]*\/>/);
 
   const bibliography = await runFixture("open-chestnut-bibliography");
   const bibliographyDocument = await DocumentFile.importDocx(await FileBlob.load(bibliography.docxPath));
@@ -698,9 +700,11 @@ try {
   const controlsGuide = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "tasks", "forms_content_controls.md"), "utf8");
   assert.match(controlsGuide, /paragraph\.addTextContentControl/);
   assert.match(controlsGuide, /paragraph\.addCheckboxContentControl/);
+  assert.match(controlsGuide, /paragraph\.addDropdownContentControl/);
   assert.match(controlsGuide, /document\.fillContentControls/);
   assert.match(controlsGuide, /document\.setCheckboxContentControls/);
-  assert.match(controlsGuide, /Rich.*block.*cell.*dropdown.*date.*custom-symbol checkbox/is);
+  assert.match(controlsGuide, /document\.setDropdownContentControls/);
+  assert.match(controlsGuide, /Rich.*block.*cell.*combo-box.*date.*custom-symbol checkbox/is);
 } finally {
   await fs.rm(outputDir, { recursive: true, force: true });
 }

@@ -288,6 +288,7 @@ try {
   assert.deepEqual(documentRoundTrip.contentControls.map((control) => [control.tag, control.alias, control.controlType, control.controlType === "checkbox" ? control.checked : control.text]), [
     ["OWNER", "Brief owner", "text", DEFAULT_BRIEF.owner],
     ["FINAL_APPROVAL", "Final approval", "checkbox", true],
+    ["REVIEW_PRIORITY", "Review priority", "dropdown", "High"],
   ]);
   assert.deepEqual(documentRoundTrip.notes.map((note) => [note.kind, note.text]), [
     ["footnote", "The final gate includes native rendering, package validation, and semantic re-import."],

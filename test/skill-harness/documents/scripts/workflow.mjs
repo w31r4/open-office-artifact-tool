@@ -277,6 +277,11 @@ export async function runDocumentFixture(fixturePath, options = {}) {
         if (Object.prototype.hasOwnProperty.call(edit, "expectUpdated")) assert.equal(result.updated, edit.expectUpdated);
         continue;
       }
+      if (edit.kind === "dropdownContentControls") {
+        const result = imported.setDropdownContentControls(edit.values || {}, { strict: edit.strict !== false });
+        if (Object.prototype.hasOwnProperty.call(edit, "expectUpdated")) assert.equal(result.updated, edit.expectUpdated);
+        continue;
+      }
       if (edit.kind === "image") {
         const image = imported.blocks.find((block) => block.kind === "image" && (!edit.matchAlt || block.alt === edit.matchAlt));
         assert.ok(image, `Missing source-bound image fixture target ${edit.matchAlt || "(unspecified)"}.`);

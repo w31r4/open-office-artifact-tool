@@ -8,17 +8,19 @@ existing template that contains Word structured document tags (SDTs).
 Choose the route before editing:
 
 - Use public `paragraph.addTextContentControl(...)`,
-  `paragraph.addCheckboxContentControl(...)`, `document.contentControls`,
-  `document.fillContentControls(...)`, and
-  `document.setCheckboxContentControls(...)` for source-free body paragraphs
-  and recognized imported inline plain-text or canonical Word 2010+ checkbox
-  controls.
+  `paragraph.addCheckboxContentControl(...)`,
+  `paragraph.addDropdownContentControl(...)`, `document.contentControls`,
+  `document.fillContentControls(...)`, `document.setCheckboxContentControls(...)`,
+  and `document.setDropdownContentControls(...)` for source-free body
+  paragraphs and recognized imported inline plain-text, canonical Word 2010+
+  checkbox, or canonical Word drop-down controls.
 - Use `scripts/content_controls.py` only for explicit package work such as
   wrapping placeholders in an existing template, controls in headers/footers,
   or inspection of controls outside the bounded public model.
-- Detect rich, block, cell, nested, data-bound, dropdown, date, legacy or
-  custom-symbol checkbox, placeholder-document, and locked controls. Preserve
-  them unchanged or fail closed; do not flatten them into plain text.
+- Detect rich, block, cell, nested, data-bound, combo-box, irregular drop-down,
+  date, legacy or custom-symbol checkbox, placeholder-document, and locked
+  controls. Preserve them unchanged or fail closed; do not flatten them into
+  plain text.
 
 ## Public API golden path
 
@@ -90,6 +92,34 @@ OpenChestnut owns the visible `☐`/`☒` glyph and the exact
 `w14:uncheckedState` declarations. The public value is boolean. Supplying or
 editing the visible glyph directly fails closed.
 
+### Author and select one drop-down control
+
+Use one ordered choice table. `displayText` is what Word shows; `value` is the
+stable value the Agent sends:
+
+```js
+const priority = document.addParagraph("Priority: ");
+priority.addDropdownContentControl([
+  { displayText: "Low", value: "low" },
+  { displayText: "Medium", value: "medium" },
+  { displayText: "High", value: "high" },
+], {
+  id: "priority",
+  tag: "PRIORITY",
+  alias: "Priority",
+  selectedValue: "medium",
+});
+
+const selection = document.setDropdownContentControls({ PRIORITY: "high" });
+if (selection.missingTags.length) throw new Error("Required drop-down is missing");
+```
+
+OpenChestnut authors canonical `w:dropDownList` / `w:listItem` markup. The
+public mutable state is only `selectedValue`; visible run text is derived from
+the matching `displayText`. Unknown tags and values outside the declared table
+fail before mutation. A string choice is shorthand for identical display text
+and value.
+
 ### Inspect and fill by tag
 
 ```js
@@ -108,6 +138,8 @@ for (const control of imported.contentControls) {
     controlType: control.controlType,
     text: control.text,
     checked: control.checked,
+    choices: control.choices,
+    selectedValue: control.selectedValue,
   });
 }
 
@@ -128,10 +160,11 @@ template population is intentional; inspect `missingTags` in the returned
 result.
 
 For a single recognized text control, mutate `control.text`; for a checkbox,
-mutate `control.checked`. Both types allow `control.tag` and `control.alias`.
-Imported control type, symbol declaration, topology, and native identity are
-source-bound: adding, removing, reordering, or converting a recognized
-imported control fails closed.
+mutate `control.checked`; for a drop-down, mutate `control.selectedValue`.
+All types allow `control.tag` and `control.alias`. Imported control type,
+drop-down choices/order, symbol declaration, topology, and native identity are
+source-bound: adding, removing, reordering, redefining, or converting a
+recognized imported control fails closed.
 
 ### Verify and render
 
@@ -193,13 +226,14 @@ through OpenChestnut where possible, and render again.
 
 - Placeholder text split across Word runs may not be wrapped by the helper.
   Retype the token contiguously or perform a reviewed narrow package patch.
-- The public model recognizes one run-level plain-text `w:sdt` or one canonical
-  Word 2010+ `w14:checkbox`, each containing exactly one supported run and
-  canonical `w:sdtPr` metadata.
-- Rich, block, cell, nested, data-bound, dropdown, date, legacy checkbox,
-  custom-symbol checkbox, placeholder-document, locked, or unrelated
-  extension-bearing controls remain opaque and source-bound. Do not
-  reconstruct them as ordinary text or a canonical checkbox.
+- The public model recognizes one run-level plain-text `w:sdt`, one canonical
+  Word 2010+ `w14:checkbox`, or one canonical `w:dropDownList`, each containing
+  exactly one supported run and canonical `w:sdtPr` metadata. Drop-downs are
+  bounded to 1–256 unique display/value pairs of at most 255 characters.
+- Rich, block, cell, nested, data-bound, combo-box, irregular drop-down, date,
+  legacy checkbox, custom-symbol checkbox, placeholder-document, locked, or
+  unrelated extension-bearing controls remain opaque and source-bound. Do not
+  reconstruct them as ordinary text or a canonical control.
 - Controls in footnotes, comments, headers, footers, and text boxes are outside
   the public body-inline profile. Route them explicitly or report the boundary.
 - Never claim a template is fully populated until requested tags, native

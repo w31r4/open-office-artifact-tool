@@ -16,6 +16,8 @@
         { "text": "{{CUSTOMER_NAME}}", "contentControl": { "id": "customer-name", "tag": "CUSTOMER_NAME", "alias": "Customer name" } },
         { "text": " / Account: " },
         { "text": "{{ACCOUNT_ID}}", "contentControl": { "id": "account-id", "tag": "ACCOUNT_ID", "alias": "Account ID" } },
+        { "text": " / Priority: " },
+        { "text": "", "contentControl": { "id": "priority", "tag": "PRIORITY", "alias": "Priority", "controlType": "dropdown", "selectedValue": "medium", "choices": [{ "displayText": "Low", "value": "low" }, { "displayText": "Medium", "value": "medium" }, { "displayText": "High", "value": "high" }] } },
         { "text": " / Approved: " },
         { "text": "", "contentControl": { "id": "approved", "tag": "APPROVED", "alias": "Approved", "controlType": "checkbox", "checked": false } }
       ]
@@ -36,13 +38,22 @@
         "APPROVED": true
       },
       "expectUpdated": 1
+    },
+    {
+      "kind": "dropdownContentControls",
+      "values": {
+        "PRIORITY": "high"
+      },
+      "expectUpdated": 1
     }
   ],
   "expectInspect": [
     { "kind": "contentControl", "pattern": "CUSTOMER_NAME" },
     { "kind": "contentControl", "pattern": "ACCOUNT_ID" },
     { "kind": "contentControl", "pattern": "APPROVED" },
-    { "kind": "contentControl", "pattern": "checkbox" }
+    { "kind": "contentControl", "pattern": "checkbox" },
+    { "kind": "contentControl", "pattern": "PRIORITY" },
+    { "kind": "contentControl", "pattern": "dropdown" }
   ],
   "qa": {
     "previewFormat": "svg",

@@ -667,6 +667,88 @@ assert.throws(
   /text is codec-owned/i,
 );
 
+const dropdownDocument = DocumentModel.create({ name: "Drop-down content-control profile", blocks: [] });
+const dropdownParagraph = dropdownDocument.addParagraph("Priority: ");
+dropdownParagraph.addDropdownContentControl([
+  { displayText: "Low", value: "low" },
+  { displayText: "Medium", value: "medium" },
+  { displayText: "High", value: "high" },
+], {
+  id: "priority-control",
+  tag: "PRIORITY",
+  alias: "Priority",
+  selectedValue: "medium",
+  style: { fontFamily: "Aptos", fontSize: 12 },
+});
+dropdownParagraph.addRun(".");
+const dropdownControl = dropdownDocument.contentControls[0];
+assert.equal(dropdownControl.controlType, "dropdown");
+assert.equal(dropdownControl.selectedValue, "medium");
+assert.equal(dropdownControl.text, "Medium");
+assert.equal(dropdownParagraph.text, "Priority: Medium.");
+assert.deepEqual(dropdownControl.choices, [
+  { displayText: "Low", value: "low" },
+  { displayText: "Medium", value: "medium" },
+  { displayText: "High", value: "high" },
+]);
+const defensiveChoices = dropdownControl.choices;
+defensiveChoices[0].displayText = "Changed copy";
+assert.equal(dropdownControl.choices[0].displayText, "Low");
+assert.throws(() => { dropdownControl.text = "High"; }, /set selectedValue instead/i);
+assert.throws(() => dropdownDocument.fillContentControls({ PRIORITY: "high" }), /Unknown document content-control tag/i);
+assert.throws(() => dropdownDocument.setCheckboxContentControls({ PRIORITY: true }), /Unknown document checkbox content-control tag/i);
+assert.throws(() => dropdownDocument.setDropdownContentControls({ PRIORITY: "high", MISSING: "low" }), /Unknown document drop-down content-control tag/i);
+assert.equal(dropdownControl.selectedValue, "medium", "strict drop-down updates must fail before mutation");
+assert.throws(() => dropdownDocument.setDropdownContentControls({ PRIORITY: "urgent" }), /does not match a choice value/i);
+assert.equal(dropdownControl.selectedValue, "medium", "invalid drop-down selections must fail before mutation");
+assert.throws(() => dropdownDocument.setDropdownContentControls({ PRIORITY: 1 }), /selectedValue must be a string/i);
+assert.equal(dropdownControl.selectedValue, "medium", "non-string drop-down selections must fail before mutation");
+assert.deepEqual(dropdownDocument.setDropdownContentControls({ PRIORITY: "high" }), { updated: 1, matchedTags: ["PRIORITY"], missingTags: [] });
+assert.equal(dropdownControl.selectedValue, "high");
+assert.equal(dropdownControl.text, "High");
+assert.equal(dropdownParagraph.text, "Priority: High.");
+assert.match(dropdownDocument.inspect({ kind: "contentControl" }).ndjson, /"controlType":"dropdown"/);
+assert.match(dropdownDocument.inspect({ kind: "contentControl" }).ndjson, /"selectedValue":"high"/);
+assert.equal(dropdownDocument.verify().ok, true);
+const dropdownDocx = await DocumentFile.exportDocx(dropdownDocument);
+const importedDropdownDocument = await DocumentFile.importDocx(dropdownDocx);
+const importedDropdown = importedDropdownDocument.contentControls[0];
+assert.equal(importedDropdown.controlType, "dropdown");
+assert.equal(importedDropdown.selectedValue, "high");
+assert.equal(importedDropdown.text, "High");
+assert.deepEqual(importedDropdown.choices.map((choice) => choice.value), ["low", "medium", "high"]);
+assert.ok(Number.isInteger(importedDropdown.nativeId));
+assert.deepEqual(importedDropdownDocument.setDropdownContentControls({ PRIORITY: "low" }), { updated: 1, matchedTags: ["PRIORITY"], missingTags: [] });
+const editedDropdownDocx = await DocumentFile.exportDocx(importedDropdownDocument);
+const roundTripDropdownDocument = await DocumentFile.importDocx(editedDropdownDocx);
+assert.equal(roundTripDropdownDocument.contentControls[0].selectedValue, "low");
+assert.equal(roundTripDropdownDocument.contentControls[0].text, "Low");
+assert.equal(roundTripDropdownDocument.resolve(roundTripDropdownDocument.contentControls[0].targetId).text, "Priority: Low.");
+const dropdownChoiceTamper = await DocumentFile.importDocx(dropdownDocx);
+dropdownChoiceTamper.resolve(dropdownChoiceTamper.contentControls[0].targetId).runs[dropdownChoiceTamper.contentControls[0].runIndex].contentControl.choices[0].displayText = "Routine";
+await assert.rejects(
+  () => DocumentFile.exportDocx(dropdownChoiceTamper),
+  (error) => error?.code === "document_content_control_topology_changed" && /source-bound/i.test(error.message),
+);
+const dropdownTypeTamper = await DocumentFile.importDocx(dropdownDocx);
+dropdownTypeTamper.resolve(dropdownTypeTamper.contentControls[0].targetId).runs[dropdownTypeTamper.contentControls[0].runIndex].contentControl.controlType = "text";
+await assert.rejects(
+  () => DocumentFile.exportDocx(dropdownTypeTamper),
+  (error) => error?.code === "document_content_control_topology_changed" && /source-bound/i.test(error.message),
+);
+assert.throws(
+  () => dropdownDocument.addParagraph("", { runs: [{ contentControl: { tag: "INVALID_DROPDOWN", controlType: "dropdown", choices: [{ displayText: "Same", value: "a" }, { displayText: "Same", value: "b" }] } }] }),
+  /must be unique/i,
+);
+assert.throws(
+  () => dropdownDocument.addParagraph("", { runs: [{ text: "Visible override", contentControl: { tag: "INVALID_DROPDOWN_TEXT", controlType: "dropdown", choices: ["Canonical"] } }] }),
+  /text is codec-owned/i,
+);
+assert.throws(
+  () => dropdownDocument.addParagraph("", { runs: [{ contentControl: { tag: "INVALID_DROPDOWN_VALUE", controlType: "dropdown", choices: [{ displayText: "One", value: 1 }] } }] }),
+  /displayText and value must be strings/i,
+);
+
 const modernCommentDocument = DocumentModel.create({ name: "Modern comment thread", blocks: [] });
 const modernCommentTarget = modernCommentDocument.addParagraph("Review the bounded modern comment thread.");
 const modernRoot = modernCommentDocument.addComment(modernCommentTarget, "Please confirm the evidence.", {

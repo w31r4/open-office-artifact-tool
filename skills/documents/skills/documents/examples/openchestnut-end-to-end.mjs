@@ -154,6 +154,19 @@ export function buildDocument(spec = DEFAULT_BRIEF) {
     tag: "FINAL_APPROVAL",
     alias: "Final approval",
   });
+  const priority = document.addParagraph("REVIEW PRIORITY  ", {
+    name: "review-priority",
+    styleId: "BriefMeta",
+  });
+  priority.addDropdownContentControl([
+    { displayText: "Routine", value: "routine" },
+    { displayText: "High", value: "high" },
+  ], {
+    id: "review-priority-control",
+    tag: "REVIEW_PRIORITY",
+    alias: "Review priority",
+    selectedValue: "routine",
+  });
   document.addParagraph(spec.summary, {
     name: "executive-summary",
     styleId: "Normal",
@@ -273,6 +286,11 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
     matchedTags: ["FINAL_APPROVAL"],
     missingTags: [],
   });
+  assert.deepEqual(imported.setDropdownContentControls({ REVIEW_PRIORITY: "high" }), {
+    updated: 1,
+    matchedTags: ["REVIEW_PRIORITY"],
+    missingTags: [],
+  });
   assert.equal(imported.bookmarks.length, 2);
   const importedDecisionBookmark = imported.bookmarks.find((bookmark) => bookmark.name === "DecisionSection");
   assert.ok(importedDecisionBookmark);
@@ -331,6 +349,7 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
   assert.deepEqual(finalDocument.contentControls.map((control) => [control.tag, control.alias, control.controlType, control.controlType === "checkbox" ? control.checked : control.text]), [
     ["OWNER", "Brief owner", "text", spec.owner],
     ["FINAL_APPROVAL", "Final approval", "checkbox", true],
+    ["REVIEW_PRIORITY", "Review priority", "dropdown", "High"],
   ]);
   assert.equal(
     finalDocument.blocks.some((block) => block.kind === "hyperlink" && block.anchor === "DecisionSection"),
@@ -354,7 +373,7 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
     kind: "document,paragraph,listItem,table,comment,bookmark,note,contentControl,header,footer,hyperlink,citation,bibliographySource,change,layout",
     maxChars: 32_000,
   });
-  for (const expected of [spec.title, "Verified", "Recommendation wording verified", "application-compatibility", "semantic re-import", "Evidence snapshot", "DecisionSection", "ProjectEvidence", "2026, verified", "OWNER", "FINAL_APPROVAL", "checkbox", "LAUNCH READINESS"]) {
+  for (const expected of [spec.title, "Verified", "Recommendation wording verified", "application-compatibility", "semantic re-import", "Evidence snapshot", "DecisionSection", "ProjectEvidence", "2026, verified", "OWNER", "FINAL_APPROVAL", "checkbox", "REVIEW_PRIORITY", "dropdown", "LAUNCH READINESS"]) {
     assert.match(inspection.ndjson, new RegExp(expected));
   }
 

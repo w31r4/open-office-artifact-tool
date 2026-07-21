@@ -26,8 +26,8 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.addTable` | api | Append a Word-style table with physical cell values, optional logical merge geometry, and fixed-layout width/margin/border/header formatting. |
 | `document.addTableOfContents` | api | Append one canonical one-paragraph complex TOC field with bounded heading levels/switches and enable the native updateFields-on-open hint by default. Refreshed cross-paragraph result graphs remain opaque/source-bound and read-only. |
 | `document.applyDesignPreset` | api | Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews. |
-| `document.contentControls` | api | List typed mutable handles for recognized inline plain-text and canonical checkbox controls with model and native identity. |
-| `document.fillContentControls` | api | Transactionally fill every recognized inline plain-text control matching an object or Map of tag-to-string entries. Checkbox tags do not silently accept text. |
+| `document.contentControls` | api | List typed mutable handles for recognized inline plain-text, canonical checkbox, and canonical drop-down controls with model and native identity. |
+| `document.fillContentControls` | api | Transactionally fill every recognized inline plain-text control matching an object or Map of tag-to-string entries. Checkbox and drop-down tags do not silently accept text. |
 | `document.fontFamilies` | api | Return a fresh sorted, case-insensitively deduplicated list of document theme and explicit run/style font families. |
 | `document.inspect` | api | Emit bounded NDJSON for document blocks including typed inline plain-text/checkbox content controls and fields, tracked changes, bookmark ranges, footnotes/endnotes, bibliography sources, comments, styles, headers/footers, and layout; narrow with search/target anchors and fields with include/exclude. |
 | `document.layoutJson` | api | Return page-aware layout JSON with block bounding boxes, section/page ordinals, effective inherited header/footer selections, styles, and target/search slicing. |
@@ -35,7 +35,8 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.render` | api | Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs. |
 | `document.replyToComment` | api | Add one source-free direct reply to a root comment. OpenChestnut authors the bounded commentsExtended graph; nested replies and imported topology changes fail closed. |
 | `document.resolve` | api | Resolve stable document, block, table-cell, content-control, bookmark, footnote/endnote, bibliography source ID/tag, header/footer, comment, style, and advertised text-range IDs. |
-| `document.setCheckboxContentControls` | api | Transactionally set every recognized canonical checkbox control matching an object or Map of tag-to-boolean entries. Text-control tags do not silently coerce. |
+| `document.setCheckboxContentControls` | api | Transactionally set every recognized canonical checkbox control matching an object or Map of tag-to-boolean entries. Text and drop-down tags do not silently coerce. |
+| `document.setDropdownContentControls` | api | Transactionally set every recognized canonical drop-down control from a tag-to-choice-value string mapping. Unknown tags or values outside the declared choice table fail before mutation. |
 | `document.setSectionSettings` | api | Set per-section Word behavior such as different-first-page header/footer activation without changing preserved header/footer references. |
 | `document.setSettings` | api | Set model settings. evenAndOddHeaders, trackRevisions, and the updateFields refresh hint are inside the OpenChestnut 0.2 DOCX boundary; mirrorMargins and documentProtection remain unsupported through the facade. |
 | `document.styles.effective` | api | Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata. |
@@ -49,11 +50,12 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `DocumentFile.importDocx` | api | Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Recognized inline controls, fields, revisions, notes, citations, simple tables, and other exact profiles are fixed-topology editable; otherwise read-only paragraphs and complex table cells separately advertise textPatchable when at least one direct ordinary native text node can participate in a bounded literal patch. A unique literal may span adjacent same-format runs without rebuilding the surrounding graph. |
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
-| `DocumentModel.create` | api | Create a document with paragraph/character styles, formatted paragraphs/runs, inline plain-text and canonical checkbox content controls, canonical inline SEQ/REF/PAGEREF fields, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, bounded whole-block bookmarks, plain-text footnotes/endnotes, canonical bibliography-backed citations, simple fields, a canonical complex TOC placeholder, bounded whole-paragraph tracked insertions/deletions, classic comments, bounded modern root/direct-reply threads, and PNG/JPEG images. Nested/irregular modern threads, rich comment bodies, rich/block/data-bound/dropdown/date/custom-symbol checkbox SDTs, other complex field graphs, arbitrary table-style graphs, complex bookmark/note/revision graphs, and advanced settings remain unsupported or source-bound. |
+| `DocumentModel.create` | api | Create a document with paragraph/character styles, formatted paragraphs/runs, inline plain-text, canonical checkbox, and canonical drop-down content controls, canonical inline SEQ/REF/PAGEREF fields, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, bounded whole-block bookmarks, plain-text footnotes/endnotes, canonical bibliography-backed citations, simple fields, a canonical complex TOC placeholder, bounded whole-paragraph tracked insertions/deletions, classic comments, bounded modern root/direct-reply threads, and PNG/JPEG images. Nested/irregular modern threads, rich comment bodies, rich/block/data-bound/combo-box/date/custom-symbol checkbox SDTs, other complex field graphs, arbitrary table-style graphs, complex bookmark/note/revision graphs, and advanced settings remain unsupported or source-bound. |
 | `documentTableCell.replaceText` | api | Apply a literal source-bound text patch to one table cell that advertises textPatchable. The search must resolve exactly once inside one ordinary native w:t node or adjacent non-empty direct runs with byte-identical w:rPr. Whole-cell replacement, mixed formatting, empty-run gaps, paragraph boundaries, fields, controls, revisions, and ambiguous matches fail closed. |
 | `exportDocxWithOpenChestnut` | api | Export bounded DocumentModel paragraphs/runs, fields, tables, bookmarks, notes, citations, tracked changes, comments, images, sections, numbering, and settings; recognized imports permit exact-profile semantic edits plus hash-bound literal patches to one unique ordinary paragraph or table-cell span inside one direct w:r/w:t or adjacent same-format runs while preserving all surrounding native markup. |
 | `importDocxWithOpenChestnut` | api | Import DOCX bytes through OpenChestnut with source-bound blocks, exact-profile editable semantics, and separate textEditable/textPatchable capability evidence. Literal patch capability never implies whole-paragraph/cell editability; only adjacent non-empty direct runs with byte-identical w:rPr may form one patch span, while mixed-format, gapped, cross-paragraph, ambiguous, field/control/revision text remains fail-closed. |
 | `paragraph.addCheckboxContentControl` | api | Append one canonical Word 2010+ checkbox content control with typed checked state; OpenChestnut owns its visible glyph and w14 symbol declarations. |
+| `paragraph.addDropdownContentControl` | api | Append one canonical inline Word drop-down content control with an ordered displayText/value choice table and typed selectedValue. OpenChestnut derives visible text from the selected choice. |
 | `paragraph.addField` | api | Append a logical inline SEQ, REF, or PAGEREF field run. A SEQ run may add a bookmark around only its cached result for real caption-number targets. OpenChestnut authors/imports the canonical native graph; imported field position, instruction, and bookmark identity remain source-bound while cached display text is editable. |
 | `paragraph.addTextContentControl` | api | Append one inline plain-text Word content-control run with agent ID, tag, alias, text, and optional run formatting. OpenChestnut assigns native w:id identity and authors canonical w:sdt markup. |
 | `paragraph.replaceText` | api | Replace literal paragraph text without flattening formatting boundaries. Fully editable one-run paragraphs update their existing run; imported source-bound paragraphs advertise textPatchable when OpenChestnut can replace one unique ordinary w:r/w:t node or adjacent non-empty direct runs with byte-identical w:rPr while preserving all native topology and surrounding markup. Mixed formatting, empty-run gaps, paragraph boundaries, fields, controls, revisions, and duplicate matches fail closed. |
@@ -401,15 +403,15 @@ Apply a clean-room report or memo design preset that updates named styles for co
 
 #### `document.contentControls`
 
-List typed mutable handles for recognized inline plain-text and canonical checkbox controls with model and native identity.
+List typed mutable handles for recognized inline plain-text, canonical checkbox, and canonical drop-down controls with model and native identity.
 
 **Schema returns:**
 
-- `controls` (DocumentContentControlHandle[]) — Fresh typed handles for recognized inline text and checkbox controls. Tag/alias and the type-specific text or checked value are mutable; controlType, nativeId, symbol declarations, and topology are source identity.
+- `controls` (DocumentContentControlHandle[]) — Fresh typed handles for recognized inline text, checkbox, and drop-down controls. Tag/alias plus type-specific text, checked, or selectedValue are mutable; drop-down choices, controlType, nativeId, symbol declarations, and topology are source identity.
 
 #### `document.fillContentControls`
 
-Transactionally fill every recognized inline plain-text control matching an object or Map of tag-to-string entries. Checkbox tags do not silently accept text.
+Transactionally fill every recognized inline plain-text control matching an object or Map of tag-to-string entries. Checkbox and drop-down tags do not silently accept text.
 
 **Schema parameters:**
 
@@ -547,12 +549,25 @@ Resolve stable document, block, table-cell, content-control, bookmark, footnote/
 
 #### `document.setCheckboxContentControls`
 
-Transactionally set every recognized canonical checkbox control matching an object or Map of tag-to-boolean entries. Text-control tags do not silently coerce.
+Transactionally set every recognized canonical checkbox control matching an object or Map of tag-to-boolean entries. Text and drop-down tags do not silently coerce.
 
 **Schema parameters:**
 
 - `values` (object|Map) required — Tag-to-boolean checked-state mapping. Duplicate tags update every matching checkbox.
 - `strict` (boolean) — Unknown checkbox tags fail before mutation; defaults to true.
+
+**Schema returns:**
+
+- `result` (object) — Structured { updated, matchedTags, missingTags } result.
+
+#### `document.setDropdownContentControls`
+
+Transactionally set every recognized canonical drop-down control from a tag-to-choice-value string mapping. Unknown tags or values outside the declared choice table fail before mutation.
+
+**Schema parameters:**
+
+- `values` (object|Map) required — Tag-to-string selected-value mapping. Each value must exactly match one declared choice; duplicate tags update every matching drop-down.
+- `strict` (boolean) — Unknown drop-down tags fail before mutation; defaults to true. All selected values are validated before any control changes.
 
 **Schema returns:**
 
@@ -745,7 +760,7 @@ Apply DOCX part patches with path traversal validation for settings, classic-com
 
 #### `DocumentModel.create`
 
-Create a document with paragraph/character styles, formatted paragraphs/runs, inline plain-text and canonical checkbox content controls, canonical inline SEQ/REF/PAGEREF fields, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, bounded whole-block bookmarks, plain-text footnotes/endnotes, canonical bibliography-backed citations, simple fields, a canonical complex TOC placeholder, bounded whole-paragraph tracked insertions/deletions, classic comments, bounded modern root/direct-reply threads, and PNG/JPEG images. Nested/irregular modern threads, rich comment bodies, rich/block/data-bound/dropdown/date/custom-symbol checkbox SDTs, other complex field graphs, arbitrary table-style graphs, complex bookmark/note/revision graphs, and advanced settings remain unsupported or source-bound.
+Create a document with paragraph/character styles, formatted paragraphs/runs, inline plain-text, canonical checkbox, and canonical drop-down content controls, canonical inline SEQ/REF/PAGEREF fields, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, bounded whole-block bookmarks, plain-text footnotes/endnotes, canonical bibliography-backed citations, simple fields, a canonical complex TOC placeholder, bounded whole-paragraph tracked insertions/deletions, classic comments, bounded modern root/direct-reply threads, and PNG/JPEG images. Nested/irregular modern threads, rich comment bodies, rich/block/data-bound/combo-box/date/custom-symbol checkbox SDTs, other complex field graphs, arbitrary table-style graphs, complex bookmark/note/revision graphs, and advanced settings remain unsupported or source-bound.
 
 **Schema parameters:**
 
@@ -824,6 +839,23 @@ Append one canonical Word 2010+ checkbox content control with typed checked stat
 **Schema returns:**
 
 - `run` (object) — Appended paragraph run carrying bounded canonical checkbox content-control metadata.
+
+#### `paragraph.addDropdownContentControl`
+
+Append one canonical inline Word drop-down content control with an ordered displayText/value choice table and typed selectedValue. OpenChestnut derives visible text from the selected choice.
+
+**Schema parameters:**
+
+- `choices` (Array<string|object>) required — Ordered 1 to 256 choice table. A string uses the same displayText and value; objects require unique XML-safe displayText and value strings of 1 to 255 characters.
+- `selectedValue` (string) — Initial internal choice value; defaults to the first choice.
+- `id` (string) — Agent-facing model ID; generated when omitted.
+- `tag` (string) required — Drop-down SDT tag, 1 to 64 characters without controls.
+- `alias` (string) — Human title/alias, at most 255 characters; defaults to tag.
+- `style` (object) — Optional modeled run formatting for the derived visible choice text.
+
+**Schema returns:**
+
+- `run` (object) — Appended paragraph run carrying bounded canonical drop-down content-control metadata.
 
 #### `paragraph.addField`
 

@@ -499,6 +499,150 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void InlineDropdownContentControlAuthorsImportsEditsAndBindsChoiceTopology()
+    {
+        var document = new DocumentArtifact { Id = "document/dropdown", Name = "Drop-down template" };
+        var paragraph = new DocumentBlock
+        {
+            Id = "document/dropdown/priority",
+            StyleId = "Normal",
+            Paragraph = new DocumentParagraph { Text = "Priority: Medium." },
+        };
+        paragraph.Paragraph.Runs.Add(new DocumentRun { Text = "Priority: " });
+        var control = new DocumentTextContentControl
+        {
+            Id = "priority",
+            Tag = "PRIORITY",
+            Alias = "Priority",
+            ControlType = DocumentContentControlType.DropDown,
+            SelectedValue = "medium",
+        };
+        control.Choices.Add(new[]
+        {
+            new DocumentContentControlChoice { DisplayText = "Low", Value = "low" },
+            new DocumentContentControlChoice { DisplayText = "Medium", Value = "medium" },
+            new DocumentContentControlChoice { DisplayText = "High", Value = "high" },
+        });
+        paragraph.Paragraph.Runs.Add(new DocumentRun { Text = "Medium", TextContentControl = control });
+        paragraph.Paragraph.Runs.Add(new DocumentRun { Text = "." });
+        document.Blocks.Add(paragraph);
+
+        var authored = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = new ArtifactEnvelope
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Family = ArtifactFamily.Document,
+                Document = document,
+            },
+        });
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var sdt = Assert.Single(package.MainDocumentPart!.Document!.Descendants<W.SdtRun>());
+            var dropdown = Assert.IsType<W.SdtContentDropDownList>(sdt.SdtProperties!.LastChild);
+            Assert.Equal("medium", dropdown.LastValue!.Value);
+            Assert.Equal(
+                new[] { ("Low", "low"), ("Medium", "medium"), ("High", "high") },
+                dropdown.Elements<W.ListItem>().Select(item => (item.DisplayText!.Value!, item.Value!.Value!)).ToArray());
+            Assert.Equal("Medium", sdt.InnerText);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedParagraph = Assert.Single(imported.Artifact.Document.Blocks).Paragraph;
+        var importedRun = Assert.Single(importedParagraph.Runs, run => run.TextContentControl is not null);
+        Assert.Equal(DocumentContentControlType.DropDown, importedRun.TextContentControl.ControlType);
+        Assert.Equal("medium", importedRun.TextContentControl.SelectedValue);
+        Assert.Equal(new[] { "low", "medium", "high" }, importedRun.TextContentControl.Choices.Select(choice => choice.Value).ToArray());
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact.Clone(),
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(authored.File, unchanged.File);
+
+        importedRun.TextContentControl.SelectedValue = "high";
+        importedRun.Text = "High";
+        importedParagraph.Text = "Priority: High.";
+        var edited = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var roundTrip = DocxCodec.Import(edited.File.ToByteArray(), EffectiveCodecLimits.From(null)).Artifact;
+        var editedRun = Assert.Single(Assert.Single(roundTrip.Document.Blocks).Paragraph.Runs, run => run.TextContentControl is not null);
+        Assert.Equal("high", editedRun.TextContentControl.SelectedValue);
+        Assert.Equal("High", editedRun.Text);
+
+        var changedChoices = roundTrip.Clone();
+        var changedChoiceRun = Assert.Single(Assert.Single(changedChoices.Document.Blocks).Paragraph.Runs, run => run.TextContentControl is not null);
+        changedChoiceRun.TextContentControl.Choices[0].DisplayText = "Routine";
+        var rejectedChoices = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = changedChoices,
+        });
+        Assert.False(rejectedChoices.Ok);
+        Assert.Equal("document_content_control_topology_changed", Assert.Single(rejectedChoices.Diagnostics).Code);
+
+        var invalidSelection = roundTrip.Clone();
+        var invalidSelectionRun = Assert.Single(Assert.Single(invalidSelection.Document.Blocks).Paragraph.Runs, run => run.TextContentControl is not null);
+        invalidSelectionRun.TextContentControl.SelectedValue = "urgent";
+        var rejectedSelection = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = invalidSelection,
+        });
+        Assert.False(rejectedSelection.Ok);
+        Assert.Equal("invalid_document_content_control", Assert.Single(rejectedSelection.Diagnostics).Code);
+
+        var irregularBytes = DuplicateDropdownDisplayText(authored.File.ToByteArray());
+        var irregular = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(irregularBytes),
+        });
+        Assert.True(irregular.Ok, Diagnostics(irregular));
+        var preserved = Assert.Single(irregular.Artifact.Document.Blocks);
+        Assert.False(preserved.Source.Editable);
+        Assert.Empty(preserved.Paragraph.Runs);
+        var preservedExport = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = irregular.Artifact,
+        });
+        Assert.True(preservedExport.Ok, Diagnostics(preservedExport));
+        Assert.Equal(ByteString.CopyFrom(irregularBytes), preservedExport.File);
+    }
+
+    [Fact]
     public void OfficeSkillProfileRoundTripsFormattingImagesSectionsAndHeaders()
     {
         var authored = Invoke(OfficeSkillProfileExportRequest());
@@ -4843,6 +4987,20 @@ public sealed class DocxCodecTests
         {
             var checkbox = document.MainDocumentPart!.Document!.Descendants<W14.SdtContentCheckBox>().Single();
             checkbox.GetFirstChild<W14.CheckedState>()!.Val = "F0FE";
+            document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] DuplicateDropdownDisplayText(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var items = document.MainDocumentPart!.Document!.Descendants<W.SdtContentDropDownList>().Single().Elements<W.ListItem>().ToArray();
+            items[1].DisplayText = items[0].DisplayText!.Value;
             document.MainDocumentPart.Document.Save();
         }
         return stream.ToArray();
