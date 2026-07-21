@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -294,6 +295,101 @@ try {
   assert.equal(modernRender.summary.verifyOk, true);
   assert.equal(modernRender.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
 
+  const trackedReplacementSourceDocument = DocumentModel.create({
+    name: "Tracked replacement source",
+    blocks: [],
+  });
+  trackedReplacementSourceDocument.addParagraph("The draft budget assumes 30 days of cash buffer.", {
+    runs: [{ text: "The draft budget assumes 30 days of cash buffer.", style: { bold: true, color: "#315A83" } }],
+  });
+  trackedReplacementSourceDocument.addParagraph("Unchanged review context.");
+  const trackedReplacementSourcePath = path.join(outputDir, "tracked-replacement-source.docx");
+  await (await DocumentFile.exportDocx(trackedReplacementSourceDocument)).save(trackedReplacementSourcePath);
+  const trackedReplacementSourceBytes = await fs.readFile(trackedReplacementSourcePath);
+  const { addDocumentTrackedReplacement } = await import(
+    "../skills/documents/skills/documents/examples/openchestnut-tracked-replacement-workflow.mjs"
+  );
+  const trackedReplacementPath = path.join(outputDir, "tracked-replacement.docx");
+  const trackedReplacementAuditPath = path.join(outputDir, "tracked-replacement-audit.json");
+  const trackedReplacementWorkflow = await addDocumentTrackedReplacement({
+    inputPath: trackedReplacementSourcePath,
+    outputPath: trackedReplacementPath,
+    auditPath: trackedReplacementAuditPath,
+    expectedText: "The draft budget assumes 30 days of cash buffer.",
+    search: "30 days",
+    replacement: "45 days",
+    author: "Budget reviewer",
+    date: "2026-07-21T09:30:00Z",
+  });
+  assert.equal(trackedReplacementWorkflow.audit.provider.actual, "open-chestnut");
+  assert.equal(trackedReplacementWorkflow.audit.provider.silentFallback, false);
+  assert.equal(trackedReplacementWorkflow.audit.savePolicy.overwrite, false);
+  assert.deepEqual(trackedReplacementWorkflow.audit.operation.changedParts, ["word/document.xml"]);
+  assert.equal(trackedReplacementWorkflow.audit.operation.targetBlockIndex, 0);
+  assert.deepEqual(await fs.readFile(trackedReplacementSourcePath), trackedReplacementSourceBytes);
+  const trackedReplacementZip = await JSZip.loadAsync(await fs.readFile(trackedReplacementPath));
+  const trackedReplacementXml = await trackedReplacementZip.file("word/document.xml").async("text");
+  assert.equal((trackedReplacementXml.match(/<w:del\b/g) || []).length, 1);
+  assert.equal((trackedReplacementXml.match(/<w:ins\b/g) || []).length, 1);
+  assert.match(trackedReplacementXml, /<w:delText>30 days<\/w:delText>/);
+  assert.match(trackedReplacementXml, /<w:t>45 days<\/w:t>/);
+  const trackedReplacementDocument = await DocumentFile.importDocx(await FileBlob.load(trackedReplacementPath));
+  assert.equal(trackedReplacementDocument.blocks[0].text, "The draft budget assumes 45 days of cash buffer.");
+  assert.equal(trackedReplacementDocument.blocks[0].textEditable, false);
+  const trackedReplacementRender = await verifyDocumentFile(trackedReplacementPath, {
+    outputDir: path.join(outputDir, "tracked-replacement-render"),
+    previewFormat: "png",
+    nativeRender: nativeStatus.available ? "required" : "auto",
+  });
+  assert.equal(trackedReplacementRender.summary.verifyOk, true);
+  assert.equal(trackedReplacementRender.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+
+  const trackedReplacementBytes = await fs.readFile(trackedReplacementPath);
+  const trackedReplacementSha256 = createHash("sha256").update(trackedReplacementBytes).digest("hex");
+  const acceptedTrackedReplacement = await DocumentFile.finalizeRevisions(new FileBlob(trackedReplacementBytes), {
+    mode: "accept",
+    expectedSourceSha256: trackedReplacementSha256,
+  });
+  assert.equal(acceptedTrackedReplacement.metadata.revisionFinalization.insertionCount, 1);
+  assert.equal(acceptedTrackedReplacement.metadata.revisionFinalization.deletionCount, 1);
+  const acceptedTrackedReplacementPath = path.join(outputDir, "tracked-replacement-accepted.docx");
+  await acceptedTrackedReplacement.save(acceptedTrackedReplacementPath);
+  const acceptedTrackedReplacementDocument = await DocumentFile.importDocx(acceptedTrackedReplacement);
+  assert.equal(acceptedTrackedReplacementDocument.blocks[0].text, "The draft budget assumes 45 days of cash buffer.");
+  const acceptedTrackedReplacementRender = await verifyDocumentFile(acceptedTrackedReplacementPath, {
+    outputDir: path.join(outputDir, "tracked-replacement-accepted-render"),
+    previewFormat: "png",
+    nativeRender: nativeStatus.available ? "required" : "auto",
+  });
+  assert.equal(acceptedTrackedReplacementRender.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+
+  const rejectedTrackedReplacement = await DocumentFile.finalizeRevisions(new FileBlob(trackedReplacementBytes), {
+    mode: "reject",
+    expectedSourceSha256: trackedReplacementSha256,
+  });
+  const rejectedTrackedReplacementPath = path.join(outputDir, "tracked-replacement-rejected.docx");
+  await rejectedTrackedReplacement.save(rejectedTrackedReplacementPath);
+  const rejectedTrackedReplacementDocument = await DocumentFile.importDocx(rejectedTrackedReplacement);
+  assert.equal(rejectedTrackedReplacementDocument.blocks[0].text, "The draft budget assumes 30 days of cash buffer.");
+  const rejectedTrackedReplacementRender = await verifyDocumentFile(rejectedTrackedReplacementPath, {
+    outputDir: path.join(outputDir, "tracked-replacement-rejected-render"),
+    previewFormat: "png",
+    nativeRender: nativeStatus.available ? "required" : "auto",
+  });
+  assert.equal(rejectedTrackedReplacementRender.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+  await assert.rejects(
+    () => addDocumentTrackedReplacement({
+      inputPath: trackedReplacementSourcePath,
+      outputPath: trackedReplacementPath,
+      auditPath: path.join(outputDir, "must-not-publish-tracked-replacement-audit.json"),
+      expectedText: "The draft budget assumes 30 days of cash buffer.",
+      search: "30 days",
+      replacement: "45 days",
+      author: "Budget reviewer",
+    }),
+    (error) => error?.code === "EEXIST",
+  );
+
   const revisionSourceDocument = DocumentModel.create({
     name: "Bounded revision finalization",
     settings: { trackRevisions: true },
@@ -432,6 +528,7 @@ try {
   assert.match(skillText, /paragraph\.addField/);
   assert.match(skillText, /openchestnut-classic-comment-edit-workflow\.mjs/);
   assert.match(skillText, /openchestnut-modern-comment-thread-workflow\.mjs/);
+  assert.match(skillText, /openchestnut-tracked-replacement-workflow\.mjs/);
   assert.match(skillText, /openchestnut-revision-finalization-workflow\.mjs/);
   assert.doesNotMatch(skillText, /Author\/edit with `python-docx`|Default tool: python-docx/);
   const commentsGuide = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "tasks", "comments_manage.md"), "utf8");
@@ -441,6 +538,7 @@ try {
   assert.doesNotMatch(commentsGuide, /If the task is to \*insert\* new comments.+use the OOXML-level guide/);
   const manifestText = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "manifest.txt"), "utf8");
   assert.match(manifestText, /^examples\/openchestnut-modern-comment-thread-workflow\.mjs$/m);
+  assert.match(manifestText, /^examples\/openchestnut-tracked-replacement-workflow\.mjs$/m);
   assert.match(manifestText, /^examples\/openchestnut-revision-finalization-workflow\.mjs$/m);
   assert.match(manifestText, /^examples\/end_to_end_smoke_test\.md$/m);
   const controlsGuide = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "tasks", "forms_content_controls.md"), "utf8");

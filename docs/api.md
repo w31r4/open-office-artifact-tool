@@ -11,7 +11,7 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.addChange` | api | Append one bounded whole-paragraph tracked insertion or deletion. OpenChestnut authors native w:ins/w:del markup and permits fixed-topology imported text/author/date edits; mixed or nested revision graphs remain source-bound. |
 | `document.addCitation` | api | Add a whole-paragraph bibliography-backed citation exported as a native w:fldSimple CITATION field plus a bounded bookmark. Recognized imports allow display-text edits while source tags and topology remain fixed. |
 | `document.addComment` | api | Attach a whole-paragraph Word comment. Classic roots remain minimal; bounded modern roots may carry resolved, durable/UTC, and provider-person metadata through OpenChestnut. |
-| `document.addDeletion` | api | Append one bounded whole-paragraph tracked deletion using native w:del/w:delText markup. In-paragraph replacements, mixed normal/revision runs, moves, and property changes require an explicit advanced package workflow. |
+| `document.addDeletion` | api | Append one bounded whole-paragraph tracked deletion using native w:del/w:delText markup. For one exact in-paragraph replacement in existing source bytes, use DocumentFile.addTrackedReplacement; mixed, moved, nested, and property-level revisions remain outside the bounded profile. |
 | `document.addEndnote` | api | Append one native plain-text endnote at the end of one paragraph or list item. Recognized imported canonical endnotes permit body-text edits only; anchor, kind, native ID, and note topology remain source-bound. |
 | `document.addField` | api | Append a bounded w:fldSimple block for PAGE, NUMPAGES, SECTION, date/time, and selected document-property commands. External-content and arbitrary reference commands fail closed. |
 | `document.addFooter` | api | Add a default, first-page, or even-page DOCX footer, optionally section-scoped; first/even activation is independent from the preserved relationship reference. |
@@ -19,7 +19,7 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.addHeader` | api | Add a default, first-page, or even-page DOCX header, optionally section-scoped; first/even activation is independent from the preserved relationship reference. |
 | `document.addHyperlink` | api | Append a native w:hyperlink backed by an external relationship or internal bookmark anchor; native import restores URL/anchor, relationship identity, tooltip, and history state. |
 | `document.addImage` | api | Append an inspectable image block; dataUrl images export as native DOCX media parts with DrawingML inline pictures. |
-| `document.addInsertion` | api | Append one bounded whole-paragraph tracked insertion using native w:ins markup. In-paragraph replacements, mixed normal/revision runs, moves, and property changes require an explicit advanced package workflow. |
+| `document.addInsertion` | api | Append one bounded whole-paragraph tracked insertion using native w:ins markup. For one exact in-paragraph replacement in existing source bytes, use DocumentFile.addTrackedReplacement; mixed, moved, nested, and property-level revisions remain outside the bounded profile. |
 | `document.addListItem` | api | Append a numbered or character-bulleted list item using native DOCX numbering definitions. Picture bullets remain model-only and make canonical OpenChestnut export fail closed. |
 | `document.addParagraph` | api | Append a styled paragraph with optional run spans, including character-style runStyleId references plus direct/theme and complex-script semantics. |
 | `document.addSection` | api | Append a DOCX section break with page size, orientation, margin, and break-type metadata backed by w:sectPr. |
@@ -42,8 +42,9 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.verify` | api | Return QA issues for invalid/duplicate content-control IDs and native IDs, malformed tags/aliases, fake lists, invalid links/citations/bibliography sources, malformed tracked changes, duplicate/dangling/reversed bookmark ranges, invalid footnotes/endnotes, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells. |
 | `documentComment.reopen` | api | Clear the resolved state of a bounded modern comment without changing its root/reply topology or durable identity. |
 | `documentComment.resolve` | api | Set resolved=true for a bounded modern comment. Imported edits re-prove source hashes and commentsExtended topology while keeping thread identity fixed. |
+| `DocumentFile.addTrackedReplacement` | api | Add one exact in-paragraph replacement to hash-bound DOCX source bytes as adjacent native w:del/w:ins runs. The full expected paragraph, semantic block index, unique one-node literal match, preserved run formatting, exact changed-part audit, and fail-closed topology checks prevent ambiguous or lossy reconstruction. |
 | `DocumentFile.exportDocx` | api | Export DocumentModel to DOCX through the single bundled OpenChestnut codec. Only limits is accepted; legacy codec and lossy-fallback options fail explicitly. |
-| `DocumentFile.finalizeRevisions` | api | Accept or reject the bounded direct whole-paragraph one-run DOCX revision profile from exact source bytes. The mandatory SHA-256 binding, decompression budgets, exact changed-part audit, and fail-closed graph checks prevent silent model reconstruction or broad package mutation. |
+| `DocumentFile.finalizeRevisions` | api | Accept or reject bounded direct whole-paragraph one-run revisions and exact adjacent in-paragraph w:del + w:ins pairs from source bytes. Mandatory SHA-256 binding, decompression budgets, exact changed-part audit, and fail-closed graph checks prevent silent model reconstruction or broad package mutation. |
 | `DocumentFile.importDocx` | api | Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Recognized inline controls, fields, revisions, notes, citations, simple tables, and other exact profiles are fixed-topology editable; otherwise read-only paragraphs and complex table cells separately advertise textPatchable when one ordinary native text node can be patched without rebuilding the surrounding graph. |
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
@@ -135,7 +136,7 @@ Attach a whole-paragraph Word comment. Classic roots remain minimal; bounded mod
 - `date` (string) — Optional ISO-style comment timestamp written to w:date.
 - `resolved` (boolean) — Optional w15:done state. Its presence selects the bounded modern comment graph.
 - `parentId` (string) — Root comment model ID for a direct reply; prefer document.replyToComment().
-- `paraId` (string) — Optional eight-hex-digit w14/w15 paragraph identity; generated deterministically when omitted for a modern source-free graph.
+- `paraId` (string) — Optional w14/w15 paragraph identity from 00000001 through 7FFFFFFF; generated deterministically when omitted for a modern source-free graph.
 - `durableId` (string) — Optional Office 2019 durable identity from 00000001 through 7FFFFFFE; generated for the complete thread when required.
 - `dateUtc` (string) — Optional ISO 8601 Office 2021 UTC metadata.
 - `person` (object) — Optional presence identity for this author: providerId is 1-100 characters and userId is 1-300. Every comment with the same author must use the same identity or omit it consistently.
@@ -147,7 +148,7 @@ Attach a whole-paragraph Word comment. Classic roots remain minimal; bounded mod
 
 #### `document.addDeletion`
 
-Append one bounded whole-paragraph tracked deletion using native w:del/w:delText markup. In-paragraph replacements, mixed normal/revision runs, moves, and property changes require an explicit advanced package workflow.
+Append one bounded whole-paragraph tracked deletion using native w:del/w:delText markup. For one exact in-paragraph replacement in existing source bytes, use DocumentFile.addTrackedReplacement; mixed, moved, nested, and property-level revisions remain outside the bounded profile.
 
 **Schema parameters:**
 
@@ -275,7 +276,7 @@ Append an inspectable image block; dataUrl images export as native DOCX media pa
 
 #### `document.addInsertion`
 
-Append one bounded whole-paragraph tracked insertion using native w:ins markup. In-paragraph replacements, mixed normal/revision runs, moves, and property changes require an explicit advanced package workflow.
+Append one bounded whole-paragraph tracked insertion using native w:ins markup. For one exact in-paragraph replacement in existing source bytes, use DocumentFile.addTrackedReplacement; mixed, moved, nested, and property-level revisions remain outside the bounded profile.
 
 **Schema parameters:**
 
@@ -620,6 +621,26 @@ Set resolved=true for a bounded modern comment. Imported edits re-prove source h
 
 - `comment` (DocumentComment) — The same comment facade with resolved=true; imported edits re-prove source hashes and commentsExtended topology.
 
+#### `DocumentFile.addTrackedReplacement`
+
+Add one exact in-paragraph replacement to hash-bound DOCX source bytes as adjacent native w:del/w:ins runs. The full expected paragraph, semantic block index, unique one-node literal match, preserved run formatting, exact changed-part audit, and fail-closed topology checks prevent ambiguous or lossy reconstruction.
+
+**Schema parameters:**
+
+- `docx` (FileBlob|Uint8Array|ArrayBuffer) required — Original DOCX bytes. OpenChestnut edits this package directly and never rebuilds it from the imported JavaScript model.
+- `targetBlockIndex` (number) required — Zero-based semantic body-block index from the exact source document inspect result.
+- `expectedText` (string) required — Exact full text of the target paragraph; stale text fails closed before mutation.
+- `search` (string) required — Non-empty literal that must occur exactly once inside one direct ordinary w:r/w:t node. Duplicate and cross-run matches fail closed.
+- `replacement` (string) required — Non-empty replacement text written in a native adjacent w:ins run with the source run formatting.
+- `author` (string) required — Revision author, 1 through 255 characters without control characters.
+- `date` (string) — Optional ISO 8601 revision timestamp.
+- `expectedSourceSha256` (string) required — Lowercase 64-hex SHA-256 of the exact input bytes; JavaScript and OpenChestnut both verify it.
+- `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxCells, and maxCompressionRatio codec budgets.
+
+**Schema returns:**
+
+- `blob` (FileBlob) — Source-preserving DOCX with metadata.trackedReplacement containing source/output and paragraph-element hashes, UTF-16 text hashes/counts, package-local native revision IDs, semantic/body indexes, and the exact changed-part list. Only word/document.xml may change.
+
 #### `DocumentFile.exportDocx`
 
 Export DocumentModel to DOCX through the single bundled OpenChestnut codec. Only limits is accepted; legacy codec and lossy-fallback options fail explicitly.
@@ -635,7 +656,7 @@ Export DocumentModel to DOCX through the single bundled OpenChestnut codec. Only
 
 #### `DocumentFile.finalizeRevisions`
 
-Accept or reject the bounded direct whole-paragraph one-run DOCX revision profile from exact source bytes. The mandatory SHA-256 binding, decompression budgets, exact changed-part audit, and fail-closed graph checks prevent silent model reconstruction or broad package mutation.
+Accept or reject bounded direct whole-paragraph one-run revisions and exact adjacent in-paragraph w:del + w:ins pairs from source bytes. Mandatory SHA-256 binding, decompression budgets, exact changed-part audit, and fail-closed graph checks prevent silent model reconstruction or broad package mutation.
 
 **Schema parameters:**
 
@@ -647,7 +668,7 @@ Accept or reject the bounded direct whole-paragraph one-run DOCX revision profil
 
 **Schema returns:**
 
-- `blob` (FileBlob) — Rewritten DOCX with metadata.revisionFinalization containing source/output hashes, insertion/deletion counts, tracking before/after, and exact changed parts. Mixed, nested, multi-run, moved, property-level, non-body, malformed, or absent revisions fail closed.
+- `blob` (FileBlob) — Rewritten DOCX with metadata.revisionFinalization containing source/output hashes, insertion/deletion counts, tracking before/after, and exact changed parts. Direct whole-paragraph one-run revisions and one adjacent direct-run deletion/insertion pair are accepted; mixed, nested, multi-run, moved, property-level, non-body, malformed, or absent revisions fail closed.
 
 #### `DocumentFile.importDocx`
 

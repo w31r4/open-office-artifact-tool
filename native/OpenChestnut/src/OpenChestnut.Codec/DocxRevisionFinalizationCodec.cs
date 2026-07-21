@@ -1,7 +1,5 @@
 using System.IO.Compression;
 using System.Security.Cryptography;
-using System.Xml;
-using System.Xml.Linq;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using OpenOffice.Artifact.Wire.V1;
@@ -14,23 +12,13 @@ internal sealed record DocxRevisionFinalizationOutput(
     DocumentRevisionFinalizationResult Result,
     IReadOnlyList<Diagnostic> Diagnostics);
 
-// Finalizes only the same bounded whole-paragraph insertion/deletion profile
-// exposed by DocxTrackedChangeCodec. Every other revision topology fails before
-// bytes are written so a narrow operation cannot silently flatten Word markup.
+// Finalizes the bounded whole-paragraph profile plus the exact adjacent
+// in-paragraph deletion/insertion pair authored by DocxTrackedReplacementCodec.
+// Every other topology fails before bytes are written.
 internal static class DocxRevisionFinalizationCodec
 {
     private const string DocumentPath = "word/document.xml";
     private const string SettingsPath = "word/settings.xml";
-
-    private static readonly HashSet<string> RevisionElementNames = new(StringComparer.Ordinal)
-    {
-        "ins", "del",
-        "moveFrom", "moveTo", "moveFromRangeStart", "moveFromRangeEnd", "moveToRangeStart", "moveToRangeEnd",
-        "customXmlInsRangeStart", "customXmlInsRangeEnd", "customXmlDelRangeStart", "customXmlDelRangeEnd",
-        "customXmlMoveFromRangeStart", "customXmlMoveFromRangeEnd", "customXmlMoveToRangeStart", "customXmlMoveToRangeEnd",
-        "rPrChange", "pPrChange", "tblPrChange", "tblGridChange", "trPrChange", "tcPrChange", "sectPrChange", "numPrChange",
-        "cellIns", "cellDel", "cellMerge",
-    };
 
     internal static DocxRevisionFinalizationOutput Finalize(
         byte[] sourceBytes,
@@ -50,7 +38,7 @@ internal static class DocxRevisionFinalizationCodec
                 "DOCX revision finalization requires expected_source_sha256 to match the exact input bytes.");
 
         var sourceOpaque = PackageGuards.ValidateAndCollectOpaque(sourceBytes, limits, OpcPackageProfile.Docx, includeSourcePackage: false);
-        var revisionInventory = RevisionInventory(sourceBytes);
+        var revisionInventory = DocxRevisionMarkup.Inventory(sourceBytes);
         var outsideMainDocument = revisionInventory
             .Where(item => !item.Key.Equals(DocumentPath, StringComparison.OrdinalIgnoreCase) && item.Value > 0)
             .Select(item => item.Key)
@@ -87,25 +75,33 @@ internal static class DocxRevisionFinalizationCodec
                 throw new CodecException("missing_document_part", "DOCX package has no Main Document part.", DocumentPath);
             var body = mainPart.Document?.Body ??
                 throw new CodecException("missing_document_body", "DOCX package has no document body.", DocumentPath);
-            var supported = body.Descendants<W.Paragraph>()
-                .Select(paragraph => new
+            var supported = new List<OpenXmlCompositeElement>();
+            foreach (var paragraph in body.Elements<W.Paragraph>())
+            {
+                var directRevisions = paragraph.ChildElements
+                    .Where(child => child is W.InsertedRun or W.DeletedRun)
+                    .Cast<OpenXmlCompositeElement>()
+                    .ToArray();
+                if (directRevisions.Length == 0) continue;
+                if (DocxTrackedChangeCodec.TryRead(paragraph, out _, out _, out var editable) && editable)
                 {
-                    Paragraph = paragraph,
-                    Read = DocxTrackedChangeCodec.TryRead(paragraph, out var change, out _, out var editable),
-                    Change = change,
-                    Editable = editable,
-                })
-                .Where(item => item.Read && item.Editable)
-                .ToArray();
-            if (supported.Length != mainRevisionCount)
+                    supported.Add(directRevisions.Single());
+                    continue;
+                }
+                if (DocxTrackedReplacementCodec.TryReadFinalizable(paragraph, out var replacement))
+                {
+                    supported.Add(replacement.Deletion);
+                    supported.Add(replacement.Insertion);
+                }
+            }
+            if (supported.Count != mainRevisionCount)
                 throw new CodecException(
                     "unsupported_document_revision_topology",
-                    "DOCX contains mixed, nested, multi-run, move, property, table, or otherwise unsupported revision markup. Only one direct whole-paragraph w:ins or w:del with one text run can be finalized.",
+                    "DOCX contains unsupported revision markup. This bounded finalizer accepts direct whole-paragraph one-run w:ins/w:del blocks or one adjacent direct-run w:del + w:ins replacement pair in a body paragraph; mixed, nested, moved, property-level, table, non-body, or malformed graphs fail closed.",
                     DocumentPath);
 
-            foreach (var item in supported)
+            foreach (var wrapper in supported)
             {
-                var wrapper = item.Paragraph.ChildElements.Single(child => child is W.InsertedRun or W.DeletedRun);
                 switch (wrapper)
                 {
                     case W.InsertedRun insertion:
@@ -135,7 +131,7 @@ internal static class DocxRevisionFinalizationCodec
         var outputBytes = stream.ToArray();
         DocxCodec.ValidateOutputBudget(outputBytes, limits);
         var retainedValidationErrorCount = DocxCodec.ValidateOffice2021AgainstSource(sourceBytes, outputBytes);
-        if (RevisionInventory(outputBytes).Values.Sum() != 0)
+        if (DocxRevisionMarkup.Inventory(outputBytes).Values.Sum() != 0)
             throw new CodecException(
                 "document_revision_finalization_incomplete",
                 "DOCX still contains revision markup after bounded finalization.",
@@ -202,40 +198,6 @@ internal static class DocxRevisionFinalizationCodec
         revision.Remove();
     }
 
-    private static Dictionary<string, int> RevisionInventory(byte[] bytes)
-    {
-        var result = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        try
-        {
-            using var stream = new MemoryStream(bytes, writable: false);
-            using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: false);
-            foreach (var entry in archive.Entries.Where(entry =>
-                         entry.FullName.StartsWith("word/", StringComparison.OrdinalIgnoreCase) &&
-                         entry.FullName.EndsWith(".xml", StringComparison.OrdinalIgnoreCase)))
-            {
-                using var partStream = entry.Open();
-                using var reader = XmlReader.Create(partStream, new XmlReaderSettings
-                {
-                    DtdProcessing = DtdProcessing.Prohibit,
-                    XmlResolver = null,
-                });
-                var document = XDocument.Load(reader, LoadOptions.None);
-                var count = document.Descendants().Count(element =>
-                    IsWordprocessingNamespace(element.Name.NamespaceName) &&
-                    RevisionElementNames.Contains(element.Name.LocalName));
-                result[entry.FullName] = count;
-            }
-        }
-        catch (XmlException exception)
-        {
-            throw new CodecException(
-                "invalid_document_revision_xml",
-                "DOCX contains malformed WordprocessingML while scanning revision scope.",
-                innerException: exception);
-        }
-        return result;
-    }
-
     private static string[] ChangedParts(byte[] sourceBytes, byte[] outputBytes)
     {
         var source = PartHashes(sourceBytes);
@@ -265,9 +227,6 @@ internal static class DocxRevisionFinalizationCodec
         }
         return result;
     }
-
-    private static bool IsWordprocessingNamespace(string value) =>
-        value.Contains("wordprocessingml", StringComparison.OrdinalIgnoreCase);
 
     private static bool Enabled(W.OnOffType? value) => value is not null && value.Val?.Value != false;
     private static bool IsSha256(string value) => value.Length == 64 && value.All(Uri.IsHexDigit);

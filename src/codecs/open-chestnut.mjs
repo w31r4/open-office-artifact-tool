@@ -3110,6 +3110,104 @@ export async function finalizeDocxRevisionsWithOpenChestnut(input, options = {})
   });
 }
 
+export async function addDocxTrackedReplacementWithOpenChestnut(input, options = {}) {
+  assertCodecOptions(options, new Set([
+    "targetBlockIndex", "expectedText", "search", "replacement", "author", "date", "expectedSourceSha256", "limits",
+  ]), "addDocxTrackedReplacementWithOpenChestnut");
+  if (!Number.isInteger(options.targetBlockIndex) || options.targetBlockIndex < 0 || options.targetBlockIndex > 0xffff_ffff) {
+    throw new TypeError("addDocxTrackedReplacementWithOpenChestnut targetBlockIndex must be an unsigned 32-bit integer from document.inspect().");
+  }
+  const expectedText = typeof options.expectedText === "string" ? options.expectedText : "";
+  const search = typeof options.search === "string" ? options.search : "";
+  const replacement = typeof options.replacement === "string" ? options.replacement : "";
+  for (const [label, value] of [["expectedText", expectedText], ["search", search], ["replacement", replacement]]) {
+    if (!value || value.length > 1_000_000 || !isXmlSafeText(value)) {
+      throw new TypeError(`addDocxTrackedReplacementWithOpenChestnut ${label} must contain 1 through 1,000,000 XML-safe characters.`);
+    }
+  }
+  const author = typeof options.author === "string" ? options.author : "";
+  if (!author.trim() || author.length > 255 || /[\u0000-\u001f\u007f]/.test(author)) {
+    throw new TypeError("addDocxTrackedReplacementWithOpenChestnut author must contain 1 through 255 characters without controls.");
+  }
+  const date = options.date == null || options.date === "" ? undefined : String(options.date);
+  if (date !== undefined && (date.length > 64 || Number.isNaN(Date.parse(date)))) {
+    throw new TypeError("addDocxTrackedReplacementWithOpenChestnut date must be an ISO 8601 timestamp of at most 64 characters.");
+  }
+  const expectedSourceSha256 = String(options.expectedSourceSha256 || "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(expectedSourceSha256)) {
+    throw new TypeError("addDocxTrackedReplacementWithOpenChestnut expectedSourceSha256 must be a 64-character SHA-256 hex digest.");
+  }
+  const file = await inputBytes(input);
+  const actualSourceSha256 = createHash("sha256").update(file).digest("hex");
+  if (actualSourceSha256 !== expectedSourceSha256) {
+    throw new OpenChestnutCodecError("DOCX tracked replacement source bytes do not match expectedSourceSha256.", [], { code: "document_source_hash_mismatch" });
+  }
+  const response = await invokeOpenChestnut({
+    protocolVersion: OPEN_CHESTNUT_PROTOCOL_VERSION,
+    operation: CodecOperation.ADD_DOCX_TRACKED_REPLACEMENT,
+    family: ArtifactFamily.DOCUMENT,
+    file,
+    limits: codecLimits(options.limits),
+    trackedReplacement: {
+      expectedSourceSha256,
+      targetBlockIndex: options.targetBlockIndex,
+      expectedParagraphText: expectedText,
+      search,
+      replacement,
+      author,
+      date,
+    },
+  });
+  const result = response.trackedReplacement;
+  const outputSha256 = createHash("sha256").update(response.file).digest("hex");
+  const deletedTextSha256 = createHash("sha256").update(search).digest("hex");
+  const insertedTextSha256 = createHash("sha256").update(replacement).digest("hex");
+  const changedParts = result ? [...result.changedParts] : [];
+  if (!result ||
+      result.sourceSha256 !== expectedSourceSha256 ||
+      result.outputSha256 !== outputSha256 ||
+      outputSha256 === expectedSourceSha256 ||
+      result.targetBlockIndex !== options.targetBlockIndex ||
+      !Number.isInteger(result.targetBodyIndex) ||
+      !/^[0-9a-f]{64}$/.test(result.sourceElementSha256) ||
+      !/^[0-9a-f]{64}$/.test(result.outputElementSha256) ||
+      result.sourceElementSha256 === result.outputElementSha256 ||
+      result.deletedTextSha256 !== deletedTextSha256 ||
+      result.insertedTextSha256 !== insertedTextSha256 ||
+      result.deletedTextChars !== search.length ||
+      result.insertedTextChars !== replacement.length ||
+      !/^\d+$/.test(result.deletionNativeRevisionId) ||
+      !/^\d+$/.test(result.insertionNativeRevisionId) ||
+      result.deletionNativeRevisionId === result.insertionNativeRevisionId ||
+      changedParts.length !== 1 || changedParts[0] !== "word/document.xml") {
+    throw new OpenChestnutCodecError("OpenChestnut returned an invalid DOCX tracked-replacement audit result.", [], { code: "invalid_open_chestnut_response" });
+  }
+  return new FileBlob(response.file, {
+    type: DOCX_MIME,
+    metadata: {
+      artifactKind: "document",
+      codec: "open-chestnut",
+      operation: "add-tracked-replacement",
+      diagnostics: response.diagnostics,
+      trackedReplacement: {
+        sourceSha256: result.sourceSha256,
+        outputSha256,
+        targetBlockIndex: result.targetBlockIndex,
+        targetBodyIndex: result.targetBodyIndex,
+        sourceElementSha256: result.sourceElementSha256,
+        outputElementSha256: result.outputElementSha256,
+        deletedTextSha256,
+        insertedTextSha256,
+        deletedTextChars: result.deletedTextChars,
+        insertedTextChars: result.insertedTextChars,
+        deletionNativeRevisionId: result.deletionNativeRevisionId,
+        insertionNativeRevisionId: result.insertionNativeRevisionId,
+        changedParts,
+      },
+    },
+  });
+}
+
 function documentFromEnvelope(envelope) {
   if (envelope.family !== ArtifactFamily.DOCUMENT || envelope.payload.case !== "document") {
     throw new OpenChestnutCodecError("OpenChestnut response does not contain a document artifact.", [], { code: "invalid_document_artifact" });

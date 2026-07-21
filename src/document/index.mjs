@@ -1281,7 +1281,8 @@ export class DocumentModel {
       const parent = comment.parentId ? this.comments.find((item) => item.id === comment.parentId) : undefined;
       if (comment.parentId && !parent) issues.push(verificationIssue("document", "missingCommentParent", `Comment ${comment.id} points at missing parent comment ${comment.parentId}.`, { id: comment.id, parentId: comment.parentId }));
       if (parent && parent.targetId !== comment.targetId) issues.push(verificationIssue("document", "commentParentTargetMismatch", `Comment ${comment.id} and parent ${parent.id} target different blocks.`, { id: comment.id, parentId: parent.id, targetId: comment.targetId, parentTargetId: parent.targetId }));
-      if (comment.paraId && !/^[0-9A-Fa-f]{8}$/.test(comment.paraId)) issues.push(verificationIssue("document", "invalidCommentParaId", `Comment ${comment.id} has invalid paraId ${comment.paraId}.`, { id: comment.id, paraId: comment.paraId }));
+      const commentParaNumber = /^[0-9A-Fa-f]{8}$/.test(comment.paraId || "") ? Number.parseInt(comment.paraId, 16) : undefined;
+      if (comment.paraId && (!commentParaNumber || commentParaNumber >= 0x80000000)) issues.push(verificationIssue("document", "invalidCommentParaId", `Comment ${comment.id} has invalid paraId ${comment.paraId}; expected 00000001 through 7FFFFFFF.`, { id: comment.id, paraId: comment.paraId }));
       else if (comment.paraId && commentParaIds.has(comment.paraId.toUpperCase())) issues.push(verificationIssue("document", "duplicateCommentParaId", `Comment ${comment.id} duplicates paraId ${comment.paraId}.`, { id: comment.id, paraId: comment.paraId }));
       if (comment.paraId) commentParaIds.add(comment.paraId.toUpperCase());
       const durableNumber = /^[0-9A-Fa-f]{8}$/.test(comment.durableId || "") ? Number.parseInt(comment.durableId, 16) : undefined;
@@ -1428,6 +1429,11 @@ export class DocumentFile {
   static async importDocx(blobOrBuffer, options = {}) {
     const { importDocxWithOpenChestnut } = await import("../codecs/open-chestnut.mjs");
     return importDocxWithOpenChestnut(blobOrBuffer, options);
+  }
+
+  static async addTrackedReplacement(blobOrBuffer, options = {}) {
+    const { addDocxTrackedReplacementWithOpenChestnut } = await import("../codecs/open-chestnut.mjs");
+    return addDocxTrackedReplacementWithOpenChestnut(blobOrBuffer, options);
   }
 
   static async finalizeRevisions(blobOrBuffer, options = {}) {

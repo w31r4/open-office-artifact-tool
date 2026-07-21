@@ -383,7 +383,36 @@ Enable native future-change tracking independently from authored redlines:
 document.setSettings({ trackRevisions: true });
 ```
 
-Finalize the bounded whole-paragraph revision profile from the original bytes, not from a reconstructed model:
+Add one exact in-paragraph tracked replacement directly to original source bytes:
+
+```js
+import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import { DocumentFile, FileBlob } from "open-office-artifact-tool";
+
+const bytes = await fs.readFile("input.docx");
+const source = new FileBlob(bytes);
+const document = await DocumentFile.importDocx(source);
+const targetBlockIndex = document.blocks.findIndex(
+  (block) => block.kind === "paragraph" && block.text === "The term is 30 days.",
+);
+const expectedSourceSha256 = crypto.createHash("sha256").update(bytes).digest("hex");
+const reviewed = await DocumentFile.addTrackedReplacement(source, {
+  targetBlockIndex,
+  expectedText: "The term is 30 days.",
+  search: "30 days",
+  replacement: "45 days",
+  author: "Reviewer",
+  date: "2026-07-21T09:30:00Z",
+  expectedSourceSha256,
+});
+console.log(reviewed.metadata.trackedReplacement);
+await reviewed.save("reviewed.docx");
+```
+
+The full paragraph snapshot and block index bind the semantic target; the literal must occur exactly once inside one direct ordinary native text node. OpenChestnut clones the matched run formatting into adjacent `w:del`/`w:ins` wrappers, allocates collision-free native IDs, changes only `word/document.xml`, and reports byte, element, text, index, native-ID, and changed-part evidence. Stale, duplicate, cross-run, table, hyperlink, field, content-control, drawing, or already-revised targets fail closed. Use `examples/openchestnut-tracked-replacement-workflow.mjs` for immutable-source, no-overwrite, reimport, render, and audit checks.
+
+Finalize either bounded revision profile from the original bytes, not from a reconstructed model:
 
 ```js
 import crypto from "node:crypto";
@@ -401,7 +430,7 @@ console.log(clean.metadata.revisionFinalization);
 await clean.save("accepted.docx");
 ```
 
-This primitive only accepts direct whole-paragraph `w:ins`/`w:del` wrappers with one recognized run. It fails closed for mixed, nested, moved, property-level, multi-run, or non-body revision graphs. Use `examples/openchestnut-revision-finalization-workflow.mjs` when you also need immutable-source checks, no-overwrite publication, second import, semantic verification, and a byte-bound audit.
+This primitive accepts direct whole-paragraph `w:ins`/`w:del` wrappers with one recognized run and one exact adjacent direct-run `w:del` + `w:ins` pair. It fails closed for other mixed, nested, moved, property-level, multi-run, table, or non-body revision graphs. Use `examples/openchestnut-revision-finalization-workflow.mjs` for the richer whole-block projection workflow; the tracked-replacement example and API metadata provide the source-bound evidence for the inline pair.
 
 Imported unsupported package graphs are source-bound. Keep edits within recognized editable blocks; if OpenChestnut rejects an edit, narrow the edit or report the unsupported boundary instead of flattening or silently rebuilding the document.
 
@@ -436,11 +465,11 @@ For final visual QA, export the DOCX and use the packaged `render_docx.py` workf
 - Plain-text footnotes/endnotes anchored at the end of one paragraph or list item; recognized imported note bodies allow text-only edits
 - PNG/JPEG inline images
 - Classic whole-paragraph comments and bounded modern root/direct-reply threads
-- Standalone whole-paragraph tracked insertions/deletions with one text run, author, and optional ISO timestamp; native `trackRevisions` intent; and source-hash-bound accept/reject finalization for that exact profile
+- Standalone whole-paragraph tracked insertions/deletions plus one exact source-bound in-paragraph replacement as adjacent native deletion/insertion runs; native `trackRevisions` intent; and source-hash-bound accept/reject finalization for both bounded profiles
 - Inline plain-text content-control runs with tag/alias identity, transactional fill-by-tag, and fixed-topology imported edits
 - Canonical bibliography source catalogs and whole-paragraph `CITATION` fields with fixed imported source/tag topology
 
-In-paragraph tracked replacements, mixed accepted/revision runs, multi-run or nested revisions, moves, property changes, and non-body revision stories are advanced package workflows, not ordinary public-model authoring or bounded finalization. Bookmarks spanning multiple blocks or table cells, nested/crossing ranges, multi-paragraph or reused note graphs, complex bibliography contributor roles/field switches/output fields, nested/irregular modern comment graphs, rich/block/cell/data-bound/dropdown/date/checkbox content controls, complex fields other than the canonical one-paragraph TOC placeholder, floating drawings, and other advanced graphs are likewise outside source-free authoring. Recognized imported whole-block bookmarks are inspectable/resolvable but fixed-topology and read-only. Canonical imported footnote/endnote text, bounded citation/source content, bounded inline plain-text control text/tag/alias, canonical modern-comment text/resolved state, and canonical unrefreshed TOC instruction/display may change, but their anchors, native IDs, tags, and topology remain source-bound; refreshed cross-paragraph TOC graphs and other imported advanced graphs are preserved only while their source evidence remains valid.
+In-paragraph revision graphs beyond the exact one-node deletion/insertion pair, other mixed accepted/revision runs, multi-run or nested revisions, moves, property changes, tables, and non-body revision stories are advanced package workflows, not ordinary public-model authoring or bounded finalization. Bookmarks spanning multiple blocks or table cells, nested/crossing ranges, multi-paragraph or reused note graphs, complex bibliography contributor roles/field switches/output fields, nested/irregular modern comment graphs, rich/block/cell/data-bound/dropdown/date/checkbox content controls, complex fields other than the canonical one-paragraph TOC placeholder, floating drawings, and other advanced graphs are likewise outside source-free authoring. Recognized imported whole-block bookmarks are inspectable/resolvable but fixed-topology and read-only. Canonical imported footnote/endnote text, bounded citation/source content, bounded inline plain-text control text/tag/alias, canonical modern-comment text/resolved state, and canonical unrefreshed TOC instruction/display may change, but their anchors, native IDs, tags, and topology remain source-bound; refreshed cross-paragraph TOC graphs and other imported advanced graphs are preserved only while their source evidence remains valid.
 
 Use `DocumentFile.inspectDocx` or `DocumentFile.patchDocx` only when the user explicitly requests package-level inspection or patching. These are deliberate low-level operations, never an automatic fallback for ordinary authoring.
 

@@ -2526,6 +2526,64 @@ shell, so their contract/adversarial tests passed while those real-provider
 repeats were skipped; hosted CI supplies them. `npm whoami` still returns
 `ENEEDAUTH`, so no npm publish, tag, or release operation was attempted.
 
+### DOCX source-bound in-paragraph tracked replacement
+
+On 2026-07-21, the public Documents surface added
+`DocumentFile.addTrackedReplacement`. The operation receives the original DOCX
+bytes, requires their exact SHA-256, a zero-based semantic body-block index, the
+full expected paragraph snapshot, one non-empty search literal, replacement
+text, revision author, and optional timestamp. OpenChestnut edits the validated
+package directly through the C# Open XML SDK codec; JavaScript does not rebuild
+the document model or select a fallback codec.
+
+The target must be a direct body paragraph containing only ordinary direct text
+runs, with exactly one `w:t` in each run. The literal must occur exactly once
+inside one text node. The codec splits only that run, clones its formatting, and
+writes one adjacent native `w:del` / `w:ins` pair with `w:delText`, collision-free
+package-local decimal IDs, matching author/date metadata, and preserved
+prefix/suffix text. Stale source bytes or paragraph text, duplicate or cross-run
+matches, tables, hyperlinks, fields, content controls, drawings, comments,
+existing target revisions, and other unsupported topologies fail before output.
+Only `word/document.xml` may change. The returned audit binds source/output and
+paragraph-element hashes, deleted/inserted UTF-8 hashes plus UTF-16 counts,
+semantic/body indexes, native IDs, diagnostics, and exact changed parts.
+
+`DocumentFile.finalizeRevisions` now accepts or rejects that exact adjacent pair
+in addition to the existing direct whole-paragraph one-run profile. Other mixed,
+nested, moved, property-level, table, non-body, malformed, or unsupported
+revision graphs still fail closed. Reimport exposes the tracked pair's accepted
+view as a source-bound, non-editable paragraph; final accept/reject produces the
+expected clean text and proves that no revision markup remains. The same change
+also corrected deterministic modern-comment `w14:paraId` generation: generated
+and explicit paragraph identities are now constrained to the Office 2021
+`00000001` through `7FFFFFFF` range, with native and model-level regressions.
+
+The Documents plugin ships
+`openchestnut-tracked-replacement-workflow.mjs`. It resolves an exact paragraph
+or explicit block index, protects the source, invokes the typed primitive,
+checks the audit and one-part package scope, reimports the accepted-view
+projection, verifies and model-renders it, refuses overwrite, and emits a
+byte-bound audit. LibreOffice native rendering was manually reviewed for all
+three one-page states: the tracked copy showed the deletion and insertion, the
+accepted copy retained only the replacement, the rejected copy restored only
+the source text, and surrounding run formatting and page layout remained
+intact.
+
+The local candidate passed the complete `npm test` suite, including all 20
+repository-only templates, all four published Office/PDF Skills, LibreOffice,
+Poppler, MuPDF.js, qpdf, Playwright, reference-Skill sync, and Agent eval gates.
+OpenChestnut passed `309/309`; OfficeBridge passed `5/5`; protocol lint and the
+deterministic source-built WASM gate passed over 39 audited build files. The
+bundled runtime is 38 files and 14,831,808 bytes. Generated API docs and the
+clean-install/package gate passed; the dry-run tarball contains 474 files,
+9,103,248 compressed bytes, and 24,073,160 unpacked bytes (`SHA-1
+525b421d225a6dc43e2ebe01681a8387f849405a`). Independent Python environments
+for pikepdf, pyHanko, veraPDF, and OCRmyPDF were not configured in this local
+shell, so their contract/adversarial tests passed while those real-provider
+repeats were skipped; hosted CI supplies them. Network publication remains a
+separate gate: `npm whoami` authentication is unavailable, so no npm publish,
+tag, or release operation was attempted.
+
 ## Publishing
 
 Before publishing:

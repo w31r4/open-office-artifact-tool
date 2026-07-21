@@ -87,7 +87,7 @@ internal static class DocxExtendedCommentCodec
         {
             var nativeId = comment.Id?.Value ?? string.Empty;
             var paragraph = comment.Elements<W.Paragraph>().SingleOrDefault();
-            var paragraphId = NormalizeHex(Attribute(paragraph, "paraId", W14));
+            var paragraphId = NormalizeParagraphId(Attribute(paragraph, "paraId", W14));
             if (paragraph is null || paragraphId is null || !commentByParagraphId.TryAdd(paragraphId, (nativeId, comment)))
             {
                 reason = $"modern comment {nativeId} requires one unique eight-digit w14:paraId";
@@ -104,8 +104,8 @@ internal static class DocxExtendedCommentCodec
         var extendedByParagraphId = new Dictionary<string, (W15.CommentEx Element, string Parent, bool Done)>(StringComparer.Ordinal);
         foreach (var element in commentsEx.Elements<W15.CommentEx>())
         {
-            var paragraphId = NormalizeHex(Attribute(element, "paraId", W15Ns));
-            var parent = NormalizeOptionalHex(Attribute(element, "paraIdParent", W15Ns), out var parentValid);
+            var paragraphId = NormalizeParagraphId(Attribute(element, "paraId", W15Ns));
+            var parent = NormalizeOptionalParagraphId(Attribute(element, "paraIdParent", W15Ns), out var parentValid);
             if (paragraphId is null || !parentValid || !TryBoolean(Attribute(element, "done", W15Ns), out var done) ||
                 !extendedByParagraphId.TryAdd(paragraphId, (element, parent, done)))
             {
@@ -140,7 +140,7 @@ internal static class DocxExtendedCommentCodec
             }
             foreach (var element in root.Elements<W16Cid.CommentId>())
             {
-                var paragraphId = NormalizeHex(Attribute(element, "paraId", W16CidNs));
+                var paragraphId = NormalizeParagraphId(Attribute(element, "paraId", W16CidNs));
                 var durableId = NormalizeDurableId(Attribute(element, "durableId", W16CidNs));
                 if (paragraphId is null || durableId is null || !durableByParagraphId.TryAdd(paragraphId, durableId))
                 {
@@ -283,7 +283,10 @@ internal static class DocxExtendedCommentCodec
         var modern = comments.Any(item => IsModern(item.Artifact));
         if (!modern) return;
 
-        var paragraphIds = PlanIds(comments.Select(item => (item.Artifact.Id, item.Artifact.ParagraphId)), "paragraph");
+        var paragraphIds = PlanIds(
+            comments.Select(item => (item.Artifact.Id, item.Artifact.ParagraphId)),
+            "paragraph",
+            boundedParagraph: true);
         var byArtifactId = comments.ToDictionary(item => item.Artifact.Id, StringComparer.Ordinal);
         var commentsExPart = owner.AddNewPart<WordprocessingCommentsExPart>();
         var commentsEx = new W15.CommentsEx();
@@ -380,7 +383,7 @@ internal static class DocxExtendedCommentCodec
             throw new CodecException("document_comment_source_binding_mismatch", "A modeled modern comment lost its resolved-state presence.", "word/commentsExtended.xml");
         if (requested.Resolved == original.Resolved) return false;
         var element = graph.CommentsExPart!.CommentsEx!.Elements<W15.CommentEx>()
-            .Single(item => NormalizeHex(Attribute(item, "paraId", W15Ns)) == original.ParagraphId);
+            .Single(item => NormalizeParagraphId(Attribute(item, "paraId", W15Ns)) == original.ParagraphId);
         SetAttribute(element, "w15", "done", W15Ns, requested.Resolved ? "1" : "0");
         return true;
     }
@@ -403,33 +406,41 @@ internal static class DocxExtendedCommentCodec
     private static Dictionary<string, string> PlanIds(
         IEnumerable<(string Id, string Requested)> source,
         string purpose,
-        bool boundedDurable = false)
+        bool boundedDurable = false,
+        bool boundedParagraph = false)
     {
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
         var used = new HashSet<string>(StringComparer.Ordinal);
         foreach (var (id, requested) in source)
         {
-            var normalized = boundedDurable ? NormalizeDurableId(requested) : NormalizeHex(requested);
+            var normalized = boundedDurable
+                ? NormalizeDurableId(requested)
+                : boundedParagraph
+                    ? NormalizeParagraphId(requested)
+                    : NormalizeHex(requested);
             if (requested.Length > 0 && normalized is null)
                 throw new CodecException(
                     "invalid_document_comment",
                     boundedDurable
                         ? $"Document comment {id} {purpose} ID must be between 00000001 and 7FFFFFFE."
+                        : boundedParagraph
+                            ? $"Document comment {id} {purpose} ID must be between 00000001 and 7FFFFFFF."
                         : $"Document comment {id} {purpose} ID must contain exactly eight hexadecimal digits.");
             var candidate = normalized;
             for (var salt = 0; candidate is null || used.Contains(candidate); salt++)
-                candidate = DeterministicHex($"{purpose}:{id}:{salt}", boundedDurable);
+                candidate = DeterministicHex($"{purpose}:{id}:{salt}", boundedDurable, boundedParagraph);
             used.Add(candidate);
             result.Add(id, candidate);
         }
         return result;
     }
 
-    private static string DeterministicHex(string value, bool boundedDurable)
+    private static string DeterministicHex(string value, bool boundedDurable, bool boundedParagraph)
     {
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(value));
-        if (!boundedDurable) return Convert.ToHexString(hash.AsSpan(0, 4));
-        var number = BinaryPrimitives.ReadUInt32BigEndian(hash.AsSpan(0, 4)) % 0x7FFFFFFE + 1;
+        if (!boundedDurable && !boundedParagraph) return Convert.ToHexString(hash.AsSpan(0, 4));
+        var raw = BinaryPrimitives.ReadUInt32BigEndian(hash.AsSpan(0, 4));
+        var number = boundedDurable ? raw % 0x7FFFFFFE + 1 : raw % 0x7FFFFFFF + 1;
         return number.ToString("X8", CultureInfo.InvariantCulture);
     }
 
@@ -448,10 +459,19 @@ internal static class DocxExtendedCommentCodec
         return normalized;
     }
 
-    private static string NormalizeOptionalHex(string? value, out bool valid)
+    private static string? NormalizeParagraphId(string? value)
+    {
+        var normalized = NormalizeHex(value);
+        if (normalized is null ||
+            !uint.TryParse(normalized, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var number) ||
+            number == 0 || number >= 0x80000000) return null;
+        return normalized;
+    }
+
+    private static string NormalizeOptionalParagraphId(string? value, out bool valid)
     {
         if (string.IsNullOrEmpty(value)) { valid = true; return string.Empty; }
-        var normalized = NormalizeHex(value);
+        var normalized = NormalizeParagraphId(value);
         valid = normalized is not null;
         return normalized ?? string.Empty;
     }

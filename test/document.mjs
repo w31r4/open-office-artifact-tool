@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import JSZip from "jszip";
 
 import { DocumentFile, DocumentModel } from "../src/index.mjs";
 import { DocumentFile as DocumentFileModule, DocumentModel as DocumentModelModule } from "../src/document/index.mjs";
@@ -254,6 +255,74 @@ const firstDocx = await DocumentFile.exportDocx(document);
 assert.equal(firstDocx.type, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 const firstDocxBytes = Buffer.from(await firstDocx.arrayBuffer());
 const firstDocxSha256 = createHash("sha256").update(firstDocxBytes).digest("hex");
+const trackedReplacement = await DocumentFile.addTrackedReplacement(firstDocx, {
+  expectedSourceSha256: firstDocxSha256,
+  targetBlockIndex: document.blocks.indexOf(formatted),
+  expectedText: "Bold and colored",
+  search: "colored",
+  replacement: "reviewed",
+  author: "Reviewer",
+  date: "2026-07-21T09:30:00Z",
+});
+const trackedReplacementBytes = Buffer.from(await trackedReplacement.arrayBuffer());
+const trackedReplacementSha256 = createHash("sha256").update(trackedReplacementBytes).digest("hex");
+assert.deepEqual(trackedReplacement.metadata.trackedReplacement, {
+  sourceSha256: firstDocxSha256,
+  outputSha256: trackedReplacementSha256,
+  targetBlockIndex: document.blocks.indexOf(formatted),
+  targetBodyIndex: document.blocks.indexOf(formatted),
+  sourceElementSha256: trackedReplacement.metadata.trackedReplacement.sourceElementSha256,
+  outputElementSha256: trackedReplacement.metadata.trackedReplacement.outputElementSha256,
+  deletedTextSha256: createHash("sha256").update("colored").digest("hex"),
+  insertedTextSha256: createHash("sha256").update("reviewed").digest("hex"),
+  deletedTextChars: "colored".length,
+  insertedTextChars: "reviewed".length,
+  deletionNativeRevisionId: trackedReplacement.metadata.trackedReplacement.deletionNativeRevisionId,
+  insertionNativeRevisionId: trackedReplacement.metadata.trackedReplacement.insertionNativeRevisionId,
+  changedParts: ["word/document.xml"],
+});
+assert.match(trackedReplacement.metadata.trackedReplacement.sourceElementSha256, /^[0-9a-f]{64}$/);
+assert.match(trackedReplacement.metadata.trackedReplacement.outputElementSha256, /^[0-9a-f]{64}$/);
+assert.notEqual(trackedReplacement.metadata.trackedReplacement.sourceElementSha256, trackedReplacement.metadata.trackedReplacement.outputElementSha256);
+assert.notEqual(trackedReplacement.metadata.trackedReplacement.deletionNativeRevisionId, trackedReplacement.metadata.trackedReplacement.insertionNativeRevisionId);
+assert.deepEqual(Buffer.from(await firstDocx.arrayBuffer()), firstDocxBytes, "tracked replacement must not mutate its source blob");
+const trackedReplacementDocument = await DocumentFile.importDocx(trackedReplacement);
+const trackedReplacementTarget = trackedReplacementDocument.blocks[document.blocks.indexOf(formatted)];
+assert.equal(trackedReplacementTarget.kind, "paragraph");
+assert.equal(trackedReplacementTarget.text, "Bold and reviewed");
+assert.equal(trackedReplacementTarget.textEditable, false);
+
+const acceptedTrackedReplacement = await DocumentFile.finalizeRevisions(trackedReplacement, {
+  mode: "accept",
+  expectedSourceSha256: trackedReplacementSha256,
+});
+assert.equal(acceptedTrackedReplacement.metadata.revisionFinalization.insertionCount, 2);
+assert.equal(acceptedTrackedReplacement.metadata.revisionFinalization.deletionCount, 2);
+const acceptedTrackedReplacementDocument = await DocumentFile.importDocx(acceptedTrackedReplacement);
+assert.equal(acceptedTrackedReplacementDocument.blocks[document.blocks.indexOf(formatted)].text, "Bold and reviewed");
+assert.equal(acceptedTrackedReplacementDocument.blocks.some((block) => block.text === "Added wording"), true);
+assert.equal(acceptedTrackedReplacementDocument.blocks.some((block) => block.text === "Removed wording"), false);
+
+const rejectedTrackedReplacement = await DocumentFile.finalizeRevisions(trackedReplacement, {
+  mode: "reject",
+  keepTracking: true,
+  expectedSourceSha256: trackedReplacementSha256,
+});
+const rejectedTrackedReplacementDocument = await DocumentFile.importDocx(rejectedTrackedReplacement);
+assert.equal(rejectedTrackedReplacementDocument.blocks[document.blocks.indexOf(formatted)].text, "Bold and colored");
+assert.equal(rejectedTrackedReplacementDocument.blocks.some((block) => block.text === "Added wording"), false);
+assert.equal(rejectedTrackedReplacementDocument.blocks.some((block) => block.text === "Removed wording"), true);
+await assert.rejects(
+  () => DocumentFile.addTrackedReplacement(firstDocx, {
+    expectedSourceSha256: "0".repeat(64),
+    targetBlockIndex: 0,
+    expectedText: document.blocks[0].text,
+    search: "OpenChestnut",
+    replacement: "OpenChestnut native",
+    author: "Reviewer",
+  }),
+  (error) => error?.code === "document_source_hash_mismatch",
+);
 const acceptedRevisions = await DocumentFile.finalizeRevisions(firstDocx, {
   mode: "accept",
   expectedSourceSha256: firstDocxSha256,
@@ -463,7 +532,20 @@ const explicitOpenDocx = await DocumentFile.exportDocx(explicitOpenCommentDocume
 const importedExplicitOpen = await DocumentFile.importDocx(explicitOpenDocx);
 assert.equal(importedExplicitOpen.comments[0].resolved, false);
 assert.match(importedExplicitOpen.comments[0].paraId, /^[0-9A-F]{8}$/);
+assert.ok(Number.parseInt(importedExplicitOpen.comments[0].paraId, 16) > 0);
+assert.ok(Number.parseInt(importedExplicitOpen.comments[0].paraId, 16) < 0x80000000);
 assert.equal(importedExplicitOpen.comments[0]._resolvedSpecified, true);
+
+const invalidPackageParaIdZip = await JSZip.loadAsync(Buffer.from(await modernDocx.arrayBuffer()));
+for (const partPath of ["word/comments.xml", "word/commentsExtended.xml", "word/commentsIds.xml"]) {
+  const part = invalidPackageParaIdZip.file(partPath);
+  if (part) invalidPackageParaIdZip.file(partPath, (await part.async("text")).replaceAll("11111111", "00000000"));
+}
+const invalidPackageParaIdInspection = await DocumentFile.inspectDocx(await invalidPackageParaIdZip.generateAsync({ type: "uint8array" }));
+assert.equal(invalidPackageParaIdInspection.ok, false);
+assert.equal(invalidPackageParaIdInspection.issues.some((issue) => issue.type === "docxCommentParaIdMissing"), true);
+assert.equal(invalidPackageParaIdInspection.issues.some((issue) => issue.type === "docxCommentExParaIdInvalid"), true);
+assert.equal(invalidPackageParaIdInspection.issues.some((issue) => issue.type === "docxCommentIdParaIdInvalid"), true);
 
 const nestedCommentDocument = DocumentModel.create({ name: "Nested comment rejection", blocks: [] });
 const nestedTarget = nestedCommentDocument.addParagraph("Nested replies fail closed.");
@@ -500,6 +582,21 @@ await assert.rejects(
   () => DocumentFile.exportDocx(invalidDurableCommentDocument),
   (error) => error?.code === "invalid_document_comment" && /00000001.*7FFFFFFE/i.test(error.message),
 );
+
+for (const paraId of ["00000000", "80000000"]) {
+  const invalidParaCommentDocument = DocumentModel.create({ name: "Invalid paragraph comment identity", blocks: [] });
+  const invalidParaTarget = invalidParaCommentDocument.addParagraph("Paragraph identities must remain inside the Open XML range.");
+  invalidParaCommentDocument.addComment(invalidParaTarget, "Invalid paragraph identity", {
+    author: "Reviewer",
+    resolved: false,
+    paraId,
+  });
+  assert.equal(invalidParaCommentDocument.verify().issues.some((issue) => issue.type === "invalidCommentParaId"), true);
+  await assert.rejects(
+    () => DocumentFile.exportDocx(invalidParaCommentDocument),
+    (error) => error?.code === "invalid_document_comment" && /00000001.*7FFFFFFF/i.test(error.message),
+  );
+}
 
 const inconsistentPeopleDocument = DocumentModel.create({ name: "Inconsistent people", blocks: [] });
 const inconsistentPeopleTarget = inconsistentPeopleDocument.addParagraph("People metadata must remain author-consistent.");

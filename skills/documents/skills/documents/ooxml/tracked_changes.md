@@ -15,7 +15,34 @@ document.addDeletion("Removed wording", {
 });
 ```
 
-OpenChestnut writes these as native `<w:ins>` or `<w:del>` markup, re-imports them semantically, and permits fixed-topology text/author/date edits. It keeps `w:id` and unmodeled run/paragraph formatting source-bound. The same bounded direct whole-paragraph profile supports native accept/reject finalization; mixed normal/revision runs, in-paragraph replacements, nested changes, moves, property changes, and other story parts require an explicit OOXML or Office-host route.
+OpenChestnut writes these as native `<w:ins>` or `<w:del>` markup, re-imports them semantically, and permits fixed-topology text/author/date edits. It keeps `w:id` and unmodeled run/paragraph formatting source-bound.
+
+For one exact replacement inside an existing ordinary paragraph, use the source-bound file primitive instead of rebuilding the document model:
+
+```js
+import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import { DocumentFile, FileBlob } from "open-office-artifact-tool";
+
+const bytes = await fs.readFile("input.docx");
+const source = new FileBlob(bytes);
+const document = await DocumentFile.importDocx(source);
+const targetBlockIndex = document.blocks.findIndex(
+  (block) => block.kind === "paragraph" && block.text === "The term is 30 days.",
+);
+const reviewed = await DocumentFile.addTrackedReplacement(source, {
+  expectedSourceSha256: crypto.createHash("sha256").update(bytes).digest("hex"),
+  targetBlockIndex,
+  expectedText: "The term is 30 days.",
+  search: "30 days",
+  replacement: "45 days",
+  author: "Reviewer",
+  date: "2026-07-21T09:30:00Z",
+});
+await reviewed.save("reviewed.docx");
+```
+
+The index and full paragraph snapshot bind the target in the exact source bytes. `search` must occur once inside one direct ordinary `w:r/w:t`; OpenChestnut clones that run's formatting into one adjacent `w:del` + `w:ins` pair, uses `w:delText` for the old text, allocates collision-free package-local IDs, and permits only `word/document.xml` to change. Stale text, duplicate/cross-run matches, tables, hyperlinks, fields, controls, drawings, existing revisions, and other native topologies fail closed. The operation returns source/output, paragraph-element, deleted/inserted-text, native-ID, block/body-index, and changed-part evidence in `metadata.trackedReplacement`. Prefer `examples/openchestnut-tracked-replacement-workflow.mjs` when publishing because it also protects the source, refuses overwrite, reimports, renders, and writes an audit.
 
 The same public boundary now supports the native future-edit setting and file-level finalization:
 
@@ -29,7 +56,7 @@ const finalized = await DocumentFile.finalizeRevisions(sourceDocx, {
 });
 ```
 
-`finalizeRevisions` accepts the original DOCX bytes directly, rechecks the exact source SHA-256 inside OpenChestnut, rewrites only `word/document.xml` and—when the existing tracking flag changes—`word/settings.xml`, and returns source/output hashes, revision counts, tracking state, and the exact changed-part list in `metadata.revisionFinalization`. It supports only direct whole-paragraph `w:ins`/`w:del` wrappers with one recognized run. Any other revision element, story part, mixed or nested graph, move, property change, or malformed wrapper fails closed before an output is published. `keepTracking` preserves an existing tracking flag; it does not silently enable one that was absent.
+`finalizeRevisions` accepts the original DOCX bytes directly, rechecks the exact source SHA-256 inside OpenChestnut, rewrites only `word/document.xml` and—when the existing tracking flag changes—`word/settings.xml`, and returns source/output hashes, revision counts, tracking state, and the exact changed-part list in `metadata.revisionFinalization`. It supports direct whole-paragraph `w:ins`/`w:del` wrappers with one recognized run plus the exact adjacent direct-run pair authored above. Any other revision element, story part, mixed or nested graph, move, property change, table target, or malformed wrapper fails closed before an output is published. `keepTracking` preserves an existing tracking flag; it does not silently enable one that was absent.
 
 Do not silently rebuild a complex revision graph through the public model. Unsupported imported topologies are visible but read-only and must be preserved unchanged, handled by an explicit package workflow, or finalized in a real Word host.
 
@@ -59,16 +86,17 @@ Pseudo-structure:
 ```
 
 ## Advanced route: use the helper script
-See `scripts/docx_ooxml_patch.py` for a runnable patcher that:
+Use this only for graphs outside the typed one-node replacement. See `scripts/docx_ooxml_patch.py` for a runnable patcher that:
 - enables `<w:trackRevisions/>`
 - converts an existing `<w:ins>` to `<w:del>` and inserts a new `<w:ins>`
 
 The CLI defaults to auto-generated `w:id` values (`--del-id auto --ins-id auto`) by scanning existing ids and choosing new ones.
 
-For a bounded accept/reject transaction, prefer `examples/openchestnut-revision-finalization-workflow.mjs`. It inspects the revisions, binds the source hash, calls the typed OpenChestnut primitive, re-imports the output, proves that no revisions remain, refuses overwrite, and writes a byte-bound audit. The Python `accept_tracked_changes.py` helper is an explicit broader package route, not a silent fallback from the public API.
+For a bounded whole-block accept/reject transaction, prefer `examples/openchestnut-revision-finalization-workflow.mjs`. It inspects the modeled revisions, binds the source hash, calls the typed OpenChestnut primitive, re-imports the output, proves that no revisions remain, refuses overwrite, and writes a byte-bound audit. For an inline pair, call the same `DocumentFile.finalizeRevisions` API against the tracked output and retain both operation audits. The Python `accept_tracked_changes.py` helper is an explicit broader package route, not a silent fallback from the public API.
 
 ## Verification
 - Render to PDF/PNG for layout sanity (`tasks/verify_render.md`)
 - Confirm Word shows the change as tracked
-- Re-import through `DocumentFile.importDocx`; supported whole-paragraph revisions should inspect as `kind: "change"`, while complex graphs must remain source-bound
+- Re-import through `DocumentFile.importDocx`; supported whole-paragraph revisions inspect as `kind: "change"`, while the exact inline pair exposes its accepted-view paragraph as source-bound and read-only until finalization
+- Inspect `word/document.xml`: the old text must be one `w:delText` and the replacement one adjacent `w:t`; after finalization no revision element may remain
 - Be aware: renders usually show redlines, but always verify the OOXML is correct too

@@ -763,6 +763,33 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void ModernCommentGeneratedParagraphIdsStayInsideTheOpenXmlRange()
+    {
+        var request = ModernCommentExportRequest();
+        foreach (var comment in request.Artifact.Document.Comments)
+        {
+            comment.ParagraphId = string.Empty;
+            comment.DurableId = string.Empty;
+        }
+
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using var stream = new MemoryStream(authored.File.ToByteArray());
+        using var package = WordprocessingDocument.Open(stream, false);
+        var paragraphIds = package.MainDocumentPart!.WordprocessingCommentsExPart!.CommentsEx!
+            .Elements<W15.CommentEx>()
+            .Select(element => element.GetAttribute("paraId", "http://schemas.microsoft.com/office/word/2012/wordml").Value)
+            .ToArray();
+        Assert.Equal(2, paragraphIds.Length);
+        Assert.All(paragraphIds, value =>
+        {
+            var number = Convert.ToUInt32(value, 16);
+            Assert.True(number > 0 && number < 0x80000000, $"Generated paragraph ID {value} is outside the Open XML range.");
+        });
+        Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+    }
+
+    [Fact]
     public void ModernCommentThreadRejectsNestedRepliesAndSourceMetadataTampering()
     {
         var nested = ModernCommentExportRequest();

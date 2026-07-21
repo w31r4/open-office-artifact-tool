@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 342);
+assert.equal(HELP_CATALOG.length, 343);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -76,8 +76,11 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.worksheets.getSele
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.recalculate"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.resolve"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "SpreadsheetFile.inspectXlsx"));
+assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.addTrackedReplacement")?.schema?.parameters?.targetBlockIndex?.required, true);
+assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.addTrackedReplacement")?.schema?.parameters?.expectedSourceSha256?.required, true);
+assert.match(HELP_CATALOG.find((item) => item.name === "DocumentFile.addTrackedReplacement")?.summary || "", /in-paragraph.*w:del\/w:ins.*expected paragraph.*unique one-node.*fail-closed/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.finalizeRevisions")?.schema?.parameters?.expectedSourceSha256?.required, true);
-assert.match(HELP_CATALOG.find((item) => item.name === "DocumentFile.finalizeRevisions")?.summary || "", /source bytes.*SHA-256.*changed-part.*fail-closed/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "DocumentFile.finalizeRevisions")?.summary || "", /whole-paragraph.*in-paragraph.*source bytes.*SHA-256.*changed-part.*fail-closed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.setSettings")?.summary || "", /trackRevisions.*inside the OpenChestnut 0\.2 DOCX boundary/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.speakerNotes.capability")?.schema?.returns?.capability?.description || "", /sourceBound.*partPresent.*editable.*addable.*preflight.*not mutable write authority/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.importXlsx")?.schema?.returns?.workbook?.description || "", /images.*charts/i);
@@ -350,7 +353,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.sc
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.schema?.returns?.inspection?.description || "", /mupdfWidget.*mupdfFormField/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.summary || "", /MuPDF/);
 const documentCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "document");
-assert.equal(documentCatalog.length, 48);
+assert.equal(documentCatalog.length, 49);
 assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.schema?.parameters?.pictureBullet?.type, "string|object");

@@ -117,7 +117,7 @@ internal static class DocxClassicCommentCodec
                         "invalid_document_comment",
                         $"Document comment {comment.Id} created_at must be an ISO 8601 date-time.");
             }
-            ValidateOptionalHex(comment.ParagraphId, $"Document comment {comment.Id} paragraph_id");
+            ValidateOptionalParagraphId(comment.ParagraphId, $"Document comment {comment.Id} paragraph_id");
             ValidateOptionalDurableId(comment.DurableId, $"Document comment {comment.Id} durable_id");
             if (comment.HasDateUtc)
             {
@@ -741,5 +741,14 @@ internal static class DocxClassicCommentCodec
         if (!uint.TryParse(value, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var number) ||
             number == 0 || number >= 0x7FFFFFFF)
             throw new CodecException("invalid_document_comment", $"{name} must be between 00000001 and 7FFFFFFE when present.");
+    }
+
+    private static void ValidateOptionalParagraphId(string value, string name)
+    {
+        if (value.Length == 0) return;
+        ValidateOptionalHex(value, name);
+        if (!uint.TryParse(value, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var number) ||
+            number == 0 || number >= 0x80000000)
+            throw new CodecException("invalid_document_comment", $"{name} must be between 00000001 and 7FFFFFFF when present.");
     }
 }

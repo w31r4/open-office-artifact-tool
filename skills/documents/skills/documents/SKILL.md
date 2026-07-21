@@ -215,27 +215,33 @@ node examples/openchestnut-modern-comment-thread-workflow.mjs input.docx reviewe
   "Please confirm the release evidence." "Release evidence approved." \
   "The evidence is attached." "Evidence retained with the approval." resolved
 
-# 3) Sanitize Google Docs-targeted title blocks after OpenChestnut export
+# 3) Add one source-bound native in-paragraph tracked replacement.
+# request.json contains targetBlockIndex, expectedText, search, replacement,
+# author, and optional date.
+node examples/openchestnut-tracked-replacement-workflow.mjs \
+  input.docx reviewed.docx reviewed.audit.json request.json
+
+# 4) Sanitize Google Docs-targeted title blocks after OpenChestnut export
 python scripts/google_docs_title_sanitize.py input.docx --out sanitized.docx
 python scripts/google_docs_title_sanitize.py sanitized.docx --check
 
-# 4) Render any DOCX to PNGs (visual QA)
+# 5) Render any DOCX to PNGs (visual QA)
 python render_docx.py input.docx --output_dir out
 
-# 5) Remove reviewer comments (explicit package-level finalization)
+# 6) Remove reviewer comments (explicit package-level finalization)
 python scripts/comments_strip.py input.docx --out no_comments.docx
 
-# 6) Finalize the bounded whole-paragraph revision profile through OpenChestnut
+# 7) Finalize bounded whole-paragraph revisions or a canonical tracked replacement through OpenChestnut
 node examples/openchestnut-revision-finalization-workflow.mjs input.docx accepted.docx audit.json accept
 # Reject instead, while preserving an existing trackRevisions setting:
 node examples/openchestnut-revision-finalization-workflow.mjs input.docx rejected.docx audit.json reject --keep-tracking
 
-# 7) Accessibility audit (+ optional explicit package fixes)
+# 8) Accessibility audit (+ optional explicit package fixes)
 python scripts/a11y_audit.py input.docx
 python scripts/a11y_audit.py input.docx --out_json a11y_report.json
 python scripts/a11y_audit.py input.docx --fix_image_alt from_filename --out a11y_fixed.docx
 
-# 8) Redact sensitive text (explicit package patch; layout-preserving by default)
+# 9) Redact sensitive text (explicit package patch; layout-preserving by default)
 python scripts/redact_docx.py input.docx redacted.docx --emails --phones
 ```
 
@@ -360,7 +366,7 @@ This is a quick index so you can jump from a helper script to the right task gui
 - `insert_toc.py` → `tasks/toc_workflow.md`
 
 ### Review lifecycle (comments / tracked changes)
-- Public `document.addInsertion(...)` / `document.addDeletion(...)` authors standalone whole-paragraph revisions, `document.setSettings({ trackRevisions: true })` enables native future-change tracking, and `examples/openchestnut-revision-finalization-workflow.mjs` performs source-hash-bound accept/reject for the same bounded revision profile. `add_tracked_replacements.py` and `accept_tracked_changes.py` remain explicit package helpers for in-paragraph or broader graphs → `ooxml/tracked_changes.md`, `tasks/clean_tracked_changes.md`
+- Public `document.addInsertion(...)` / `document.addDeletion(...)` authors standalone whole-paragraph revisions, `DocumentFile.addTrackedReplacement(...)` plus `examples/openchestnut-tracked-replacement-workflow.mjs` adds one exact source-bound native in-paragraph deletion/insertion pair, and `document.setSettings({ trackRevisions: true })` enables future-change tracking. `DocumentFile.finalizeRevisions(...)` accepts/rejects both bounded profiles; the shipped revision-finalization workflow adds richer whole-block projection checks. `add_tracked_replacements.py` and `accept_tracked_changes.py` remain explicit helpers only for broader graphs → `ooxml/tracked_changes.md`, `tasks/clean_tracked_changes.md`
 - `examples/openchestnut-classic-comment-edit-workflow.mjs` is the preferred public route for one uniquely located imported classic comment when only its text may change
 - `examples/openchestnut-modern-comment-thread-workflow.mjs` handles one recognized root plus one direct reply: text and root resolved state may change, while imported identity, people/durable metadata, anchors, and topology stay source-bound; nested or irregular graphs fail closed
 - `comments_add.py`, `comments_extract.py`, `comments_apply_patch.py`, `comments_strip.py` → `tasks/comments_manage.md`
@@ -459,7 +465,7 @@ Then inspect the generated `page-<N>.png` files.
 - If you have mixed portrait/landscape or margin weirdness: `tasks/sections_layout.md`
 - If images shift or overlap across renderers: `tasks/images_figures.md`
 - If you need spreadsheet ↔ table round-tripping: `tasks/tables_spreadsheets.md`
-- If you need **tracked changes (redlines)**: use public `document.addInsertion(...)` / `document.addDeletion(...)` and `document.setSettings({ trackRevisions: true })` for the bounded profile, then route complex/in-paragraph work through `ooxml/tracked_changes.md`
+- If you need **tracked changes (redlines)**: use public `document.addInsertion(...)` / `document.addDeletion(...)` for whole blocks, or `examples/openchestnut-tracked-replacement-workflow.mjs` for one exact source-bound in-paragraph literal; use `document.setSettings({ trackRevisions: true })` for future edits, then route broader graphs through `ooxml/tracked_changes.md`
 - If you need **comments**: `ooxml/comments.md`
 - If you need **hyperlinks/fields/page numbers/headers**: `ooxml/hyperlinks_and_fields.md`
 - If LibreOffice headless is failing: `troubleshooting/libreoffice_headless.md`

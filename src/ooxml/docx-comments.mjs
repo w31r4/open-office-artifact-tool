@@ -103,7 +103,7 @@ function classicCommentParaIds(xml, partPath) {
   for (const match of String(xml || "").matchAll(/<(?:[A-Za-z_][\w.-]*:)?comment\b[^>]*>[\s\S]*?<\/(?:[A-Za-z_][\w.-]*:)?comment>/g)) {
     const paragraphs = [...match[0].matchAll(/<(?:[A-Za-z_][\w.-]*:)?p\b[^>]*>/g)];
     const paraId = paragraphs.length ? localAttribute(paragraphs.at(-1)[0], "paraId")?.toUpperCase() : undefined;
-    if (!paraId || !PARA_ID.test(paraId)) issues.push(issue("docxCommentParaIdMissing", `DOCX comment in ${partPath} requires an eight-digit paraId when commentsExtended is present.`, { path: partPath, paraId }));
+    if (!validParagraphId(paraId)) issues.push(issue("docxCommentParaIdMissing", `DOCX comment in ${partPath} requires a paraId from 00000001 through 7FFFFFFF when commentsExtended is present.`, { path: partPath, paraId }));
     else {
       if (paraIds.has(paraId)) issues.push(issue("docxCommentParaIdDuplicate", `DOCX comments part ${partPath} contains duplicate paraId ${paraId}.`, { path: partPath, paraId }));
       paraIds.add(paraId);
@@ -127,8 +127,8 @@ function validateExtendedPart(bytesByPath, contentTypes, entry) {
   for (const match of extendedXml.matchAll(/<(?:[A-Za-z_][\w.-]*:)?commentEx\b[^>]*\/?\s*>/g)) {
     const paraId = localAttribute(match[0], "paraId")?.toUpperCase();
     const parentParaId = localAttribute(match[0], "paraIdParent")?.toUpperCase();
-    if (!paraId || !PARA_ID.test(paraId)) {
-      issues.push(issue("docxCommentExParaIdInvalid", `DOCX commentEx in ${entry.target} requires an eight-digit paraId.`, { path: entry.target, paraId }));
+    if (!validParagraphId(paraId)) {
+      issues.push(issue("docxCommentExParaIdInvalid", `DOCX commentEx in ${entry.target} requires a paraId from 00000001 through 7FFFFFFF.`, { path: entry.target, paraId }));
       continue;
     }
     if (extensionParents.has(paraId)) issues.push(issue("docxCommentExParaIdDuplicate", `DOCX commentsExtended part ${entry.target} contains duplicate paraId ${paraId}.`, { path: entry.target, paraId }));
@@ -155,6 +155,10 @@ function validDurableId(value) {
   return PARA_ID.test(String(value || "")) && Number.parseInt(value, 16) > 0 && Number.parseInt(value, 16) < 0x7FFFFFFF;
 }
 
+function validParagraphId(value) {
+  return PARA_ID.test(String(value || "")) && Number.parseInt(value, 16) > 0 && Number.parseInt(value, 16) < 0x80000000;
+}
+
 function validateCommentsIdsPart(bytesByPath, contentTypes, entry) {
   const issues = relationshipEnvelopeIssues(bytesByPath, contentTypes, entry, { prefix: "docxCommentsIds", label: "commentsIds", contentType: DOCX_COMMENTS_IDS_CONTENT_TYPE, root: "commentsIds", namespace: WORD_2016_COMMENT_ID_NAMESPACE });
   if (!entry.target || !bytesByPath.has(entry.target)) return issues;
@@ -170,7 +174,7 @@ function validateCommentsIdsPart(bytesByPath, contentTypes, entry) {
   for (const match of packageXml(bytesByPath, entry.target).matchAll(/<(?:[A-Za-z_][\w.-]*:)?commentId\b[^>]*\/?\s*>/g)) {
     const paraId = localAttribute(match[0], "paraId")?.toUpperCase();
     const durableId = localAttribute(match[0], "durableId")?.toUpperCase();
-    if (!paraId || !PARA_ID.test(paraId)) issues.push(issue("docxCommentIdParaIdInvalid", `DOCX commentId in ${entry.target} requires an eight-digit paraId.`, { path: entry.target, paraId }));
+    if (!validParagraphId(paraId)) issues.push(issue("docxCommentIdParaIdInvalid", `DOCX commentId in ${entry.target} requires a paraId from 00000001 through 7FFFFFFF.`, { path: entry.target, paraId }));
     else {
       if (mappedParaIds.has(paraId)) issues.push(issue("docxCommentIdParaIdDuplicate", `DOCX commentsIds part ${entry.target} contains duplicate paraId ${paraId}.`, { path: entry.target, paraId }));
       mappedParaIds.add(paraId);

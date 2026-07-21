@@ -76,6 +76,14 @@ through `document.resolve(cell.id + "/text")` or
 `table.getCell(row, column).replaceText(old, next)`; whole-cell assignment still
 fails when `cell.editable` is false.
 
+When a user explicitly needs one true redline inside an existing ordinary
+paragraph, do not use the untracked `textPatchable` route. Use
+`DocumentFile.addTrackedReplacement(...)` or
+`examples/openchestnut-tracked-replacement-workflow.mjs`; bind the exact source
+hash, semantic block index, full paragraph snapshot, and unique one-node
+literal. Broader/cross-run revision graphs still require the explicit OOXML or
+Office-host route.
+
 Preserve the original and make minimal, local changes. If OpenChestnut rejects
 an edit, narrow the edit or report the unsupported boundary instead of
 flattening or rebuilding the file.
