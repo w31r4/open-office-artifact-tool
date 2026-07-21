@@ -45,16 +45,16 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `DocumentFile.addTrackedReplacement` | api | Add one exact replacement inside a direct body paragraph or bounded table-cell paragraph to hash-bound DOCX source bytes as adjacent native w:del/w:ins runs. A structured paragraph/tableCell selector, full expected text, and one unique literal contained in either one ordinary run or adjacent run fragments with identical w:rPr preserve source formatting; mixed formatting and broader topologies fail closed with exact changed-part audit. |
 | `DocumentFile.exportDocx` | api | Export DocumentModel to DOCX through the single bundled OpenChestnut codec. Only limits is accepted; legacy codec and lossy-fallback options fail explicitly. |
 | `DocumentFile.finalizeRevisions` | api | Accept or reject bounded direct whole-paragraph one-run revisions and exact adjacent in-paragraph w:del + w:ins pairs from source bytes, including same-format fragmented deletions in direct body paragraphs or bounded table-cell paragraphs. Mandatory SHA-256 binding, decompression budgets, exact changed-part audit, and fail-closed graph checks prevent silent model reconstruction or broad package mutation. |
-| `DocumentFile.importDocx` | api | Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Recognized inline controls, fields, revisions, notes, citations, simple tables, and other exact profiles are fixed-topology editable; otherwise read-only paragraphs and complex table cells separately advertise textPatchable when one ordinary native text node can be patched without rebuilding the surrounding graph. |
+| `DocumentFile.importDocx` | api | Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Recognized inline controls, fields, revisions, notes, citations, simple tables, and other exact profiles are fixed-topology editable; otherwise read-only paragraphs and complex table cells separately advertise textPatchable when at least one direct ordinary native text node can participate in a bounded literal patch. A unique literal may span adjacent same-format runs without rebuilding the surrounding graph. |
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
 | `DocumentModel.create` | api | Create a document with paragraph/character styles, formatted paragraphs/runs, inline plain-text content controls, canonical inline SEQ/REF/PAGEREF fields, sections, headers/footers, lists, TableGrid fixed-geometry tables, links, bounded whole-block bookmarks, plain-text footnotes/endnotes, canonical bibliography-backed citations, simple fields, a canonical complex TOC placeholder, bounded whole-paragraph tracked insertions/deletions, classic comments, bounded modern root/direct-reply threads, and PNG/JPEG images. Nested/irregular modern threads, rich comment bodies, rich/block/data-bound/dropdown/date/checkbox SDTs, other complex field graphs, arbitrary table-style graphs, complex bookmark/note/revision graphs, and advanced settings remain unsupported or source-bound. |
-| `documentTableCell.replaceText` | api | Apply a literal source-bound text patch to one table cell that advertises textPatchable. The search must resolve to exactly one ordinary native w:t node; whole-cell replacement, cross-run matches, fields, controls, revisions, and ambiguous matches fail closed. |
-| `exportDocxWithOpenChestnut` | api | Export bounded DocumentModel paragraphs/runs, fields, tables, bookmarks, notes, citations, tracked changes, comments, images, sections, numbering, and settings; recognized imports permit exact-profile semantic edits plus hash-bound literal patches to one uniquely matched ordinary paragraph or table-cell w:t node while preserving all surrounding native markup. |
-| `importDocxWithOpenChestnut` | api | Import DOCX bytes through OpenChestnut with source-bound blocks, exact-profile editable semantics, and separate textEditable/textPatchable capability evidence. Literal patch capability never implies whole-paragraph/cell editability; cross-node, ambiguous, field/control/revision text remains fail-closed. |
+| `documentTableCell.replaceText` | api | Apply a literal source-bound text patch to one table cell that advertises textPatchable. The search must resolve exactly once inside one ordinary native w:t node or adjacent non-empty direct runs with byte-identical w:rPr. Whole-cell replacement, mixed formatting, empty-run gaps, paragraph boundaries, fields, controls, revisions, and ambiguous matches fail closed. |
+| `exportDocxWithOpenChestnut` | api | Export bounded DocumentModel paragraphs/runs, fields, tables, bookmarks, notes, citations, tracked changes, comments, images, sections, numbering, and settings; recognized imports permit exact-profile semantic edits plus hash-bound literal patches to one unique ordinary paragraph or table-cell span inside one direct w:r/w:t or adjacent same-format runs while preserving all surrounding native markup. |
+| `importDocxWithOpenChestnut` | api | Import DOCX bytes through OpenChestnut with source-bound blocks, exact-profile editable semantics, and separate textEditable/textPatchable capability evidence. Literal patch capability never implies whole-paragraph/cell editability; only adjacent non-empty direct runs with byte-identical w:rPr may form one patch span, while mixed-format, gapped, cross-paragraph, ambiguous, field/control/revision text remains fail-closed. |
 | `paragraph.addField` | api | Append a logical inline SEQ, REF, or PAGEREF field run. A SEQ run may add a bookmark around only its cached result for real caption-number targets. OpenChestnut authors/imports the canonical native graph; imported field position, instruction, and bookmark identity remain source-bound while cached display text is editable. |
 | `paragraph.addTextContentControl` | api | Append one inline plain-text Word content-control run with agent ID, tag, alias, text, and optional run formatting. OpenChestnut assigns native w:id identity and authors canonical w:sdt markup. |
-| `paragraph.replaceText` | api | Replace literal paragraph text without flattening formatting boundaries. Fully editable one-run paragraphs update their existing run; imported source-bound paragraphs advertise textPatchable only when OpenChestnut can replace one unique ordinary w:r/w:t node while preserving all other native markup. |
+| `paragraph.replaceText` | api | Replace literal paragraph text without flattening formatting boundaries. Fully editable one-run paragraphs update their existing run; imported source-bound paragraphs advertise textPatchable when OpenChestnut can replace one unique ordinary w:r/w:t node or adjacent non-empty direct runs with byte-identical w:rPr while preserving all native topology and surrounding markup. Mixed formatting, empty-run gaps, paragraph boundaries, fields, controls, revisions, and duplicate matches fail closed. |
 
 ### document details
 
@@ -673,7 +673,7 @@ Accept or reject bounded direct whole-paragraph one-run revisions and exact adja
 
 #### `DocumentFile.importDocx`
 
-Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Recognized inline controls, fields, revisions, notes, citations, simple tables, and other exact profiles are fixed-topology editable; otherwise read-only paragraphs and complex table cells separately advertise textPatchable when one ordinary native text node can be patched without rebuilding the surrounding graph.
+Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Recognized inline controls, fields, revisions, notes, citations, simple tables, and other exact profiles are fixed-topology editable; otherwise read-only paragraphs and complex table cells separately advertise textPatchable when at least one direct ordinary native text node can participate in a bounded literal patch. A unique literal may span adjacent same-format runs without rebuilding the surrounding graph.
 
 **Schema parameters:**
 
@@ -757,11 +757,11 @@ Create a document with paragraph/character styles, formatted paragraphs/runs, in
 
 #### `documentTableCell.replaceText`
 
-Apply a literal source-bound text patch to one table cell that advertises textPatchable. The search must resolve to exactly one ordinary native w:t node; whole-cell replacement, cross-run matches, fields, controls, revisions, and ambiguous matches fail closed.
+Apply a literal source-bound text patch to one table cell that advertises textPatchable. The search must resolve exactly once inside one ordinary native w:t node or adjacent non-empty direct runs with byte-identical w:rPr. Whole-cell replacement, mixed formatting, empty-run gaps, paragraph boundaries, fields, controls, revisions, and ambiguous matches fail closed.
 
 **Schema parameters:**
 
-- `search` (string) required — Non-empty literal text that must occur exactly once in the visible cell and exactly once in one ordinary native w:t node.
+- `search` (string) required — Non-empty literal text that must occur exactly once in the visible cell. A source-bound match may occupy one ordinary direct w:r/w:t or adjacent non-empty direct runs only when their exact w:rPr markup is identical and it never crosses a paragraph boundary.
 - `replacement` (string) required — XML-safe replacement text, up to 1,000,000 characters.
 
 **Schema returns:**
@@ -770,7 +770,7 @@ Apply a literal source-bound text patch to one table cell that advertises textPa
 
 #### `exportDocxWithOpenChestnut`
 
-Export bounded DocumentModel paragraphs/runs, fields, tables, bookmarks, notes, citations, tracked changes, comments, images, sections, numbering, and settings; recognized imports permit exact-profile semantic edits plus hash-bound literal patches to one uniquely matched ordinary paragraph or table-cell w:t node while preserving all surrounding native markup.
+Export bounded DocumentModel paragraphs/runs, fields, tables, bookmarks, notes, citations, tracked changes, comments, images, sections, numbering, and settings; recognized imports permit exact-profile semantic edits plus hash-bound literal patches to one unique ordinary paragraph or table-cell span inside one direct w:r/w:t or adjacent same-format runs while preserving all surrounding native markup.
 
 **Schema parameters:**
 
@@ -783,7 +783,7 @@ Export bounded DocumentModel paragraphs/runs, fields, tables, bookmarks, notes, 
 
 #### `importDocxWithOpenChestnut`
 
-Import DOCX bytes through OpenChestnut with source-bound blocks, exact-profile editable semantics, and separate textEditable/textPatchable capability evidence. Literal patch capability never implies whole-paragraph/cell editability; cross-node, ambiguous, field/control/revision text remains fail-closed.
+Import DOCX bytes through OpenChestnut with source-bound blocks, exact-profile editable semantics, and separate textEditable/textPatchable capability evidence. Literal patch capability never implies whole-paragraph/cell editability; only adjacent non-empty direct runs with byte-identical w:rPr may form one patch span, while mixed-format, gapped, cross-paragraph, ambiguous, field/control/revision text remains fail-closed.
 
 **Schema parameters:**
 
@@ -828,11 +828,11 @@ Append one inline plain-text Word content-control run with agent ID, tag, alias,
 
 #### `paragraph.replaceText`
 
-Replace literal paragraph text without flattening formatting boundaries. Fully editable one-run paragraphs update their existing run; imported source-bound paragraphs advertise textPatchable only when OpenChestnut can replace one unique ordinary w:r/w:t node while preserving all other native markup.
+Replace literal paragraph text without flattening formatting boundaries. Fully editable one-run paragraphs update their existing run; imported source-bound paragraphs advertise textPatchable when OpenChestnut can replace one unique ordinary w:r/w:t node or adjacent non-empty direct runs with byte-identical w:rPr while preserving all native topology and surrounding markup. Mixed formatting, empty-run gaps, paragraph boundaries, fields, controls, revisions, and duplicate matches fail closed.
 
 **Schema parameters:**
 
-- `search` (string) required — Non-empty literal text that must occur exactly once for a source-bound patch.
+- `search` (string) required — Non-empty literal text that must occur exactly once. A source-bound match may occupy one ordinary direct w:r/w:t or adjacent non-empty direct runs only when their exact w:rPr markup is identical.
 - `replacement` (string) required — XML-safe replacement text, up to 1,000,000 characters.
 
 **Schema returns:**

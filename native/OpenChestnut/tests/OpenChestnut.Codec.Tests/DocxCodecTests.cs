@@ -2081,6 +2081,188 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void SourcePreservingExportPatchesAdjacentSameFormatRunSpans()
+    {
+        var paragraphAuthored = Invoke(ExportRequest(includeSecondParagraph: true));
+        var paragraphSource = AddFragmentedReadOnlyParagraph(paragraphAuthored.File.ToByteArray());
+        var paragraphImported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(paragraphSource),
+        });
+        Assert.True(paragraphImported.Ok, Diagnostics(paragraphImported));
+        var paragraphBlock = paragraphImported.Artifact.Document.Blocks[1];
+        Assert.False(paragraphBlock.Source.Editable);
+        Assert.True(paragraphBlock.Source.TextPatchable);
+        paragraphBlock.TextPatches.Add(new DocumentTextPatch
+        {
+            Search = "Editable",
+            Replacement = "Reviewed",
+            SourceTextSha256 = HashText("Editable paragraph"),
+        });
+
+        var paragraphExported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = paragraphImported.Artifact,
+        });
+        Assert.True(paragraphExported.Ok, Diagnostics(paragraphExported));
+        using (var stream = new MemoryStream(paragraphExported.File.ToByteArray()))
+        using (var document = WordprocessingDocument.Open(stream, false))
+        {
+            var paragraph = document.MainDocumentPart!.Document!.Body!.Elements<W.Paragraph>().ElementAt(1);
+            Assert.Equal("Reviewed paragraph", paragraph.InnerText);
+            Assert.Equal(new[] { "Reviewed", " paragraph" }, paragraph.Elements<W.Run>().Select(run => run.InnerText));
+            Assert.NotNull(paragraph.ParagraphProperties?.GetFirstChild<W.WidowControl>());
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        }
+        var paragraphRoundTrip = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = paragraphExported.File,
+        });
+        Assert.True(paragraphRoundTrip.Ok, Diagnostics(paragraphRoundTrip));
+        Assert.Equal("Reviewed paragraph", paragraphRoundTrip.Artifact.Document.Blocks[1].Paragraph.Text);
+        Assert.True(paragraphRoundTrip.Artifact.Document.Blocks[1].Source.TextPatchable);
+
+        var tableAuthored = Invoke(ExportRequest());
+        var tableSource = AddFragmentedTableCell(tableAuthored.File.ToByteArray());
+        var tableImported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(tableSource),
+        });
+        Assert.True(tableImported.Ok, Diagnostics(tableImported));
+        var table = tableImported.Artifact.Document.Blocks[1].Table;
+        Assert.False(table.Rows[0].RichCells[0].Editable);
+        Assert.True(table.Rows[0].RichCells[0].TextPatchable);
+        table.TextPatches.Add(new DocumentTableTextPatch
+        {
+            Row = 0,
+            Column = 0,
+            Search = "Revenue",
+            Replacement = "Net revenue",
+            SourceTextSha256 = HashText("Revenue"),
+        });
+        var tableExported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = tableImported.Artifact,
+        });
+        Assert.True(tableExported.Ok, Diagnostics(tableExported));
+        using (var stream = new MemoryStream(tableExported.File.ToByteArray()))
+        using (var document = WordprocessingDocument.Open(stream, false))
+        {
+            var cell = document.MainDocumentPart!.Document!.Body!.Elements<W.Table>().Single().Elements<W.TableRow>().Single().Elements<W.TableCell>().First();
+            Assert.Equal("Net revenue", cell.InnerText);
+            Assert.Equal(new[] { "Net revenue", string.Empty }, cell.Elements<W.Paragraph>().Single().Elements<W.Run>().Select(run => run.InnerText));
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        }
+        var tableRoundTrip = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = tableExported.File,
+        });
+        Assert.True(tableRoundTrip.Ok, Diagnostics(tableRoundTrip));
+        Assert.Equal("Net revenue", tableRoundTrip.Artifact.Document.Blocks[1].Table.Rows[0].Cells[0]);
+        Assert.True(tableRoundTrip.Artifact.Document.Blocks[1].Table.Rows[0].RichCells[0].TextPatchable);
+    }
+
+    [Theory]
+    [InlineData(true, false, "different formatting")]
+    [InlineData(false, true, "empty-run gap")]
+    public void SourcePreservingRunSpanPatchRejectsFormattingAndEmptyRunGaps(
+        bool mixedFormatting,
+        bool emptyRunGap,
+        string expectedReason)
+    {
+        var authored = Invoke(ExportRequest(includeSecondParagraph: true));
+        var source = AddFragmentedReadOnlyParagraph(authored.File.ToByteArray(), mixedFormatting, emptyRunGap);
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(source),
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var block = imported.Artifact.Document.Blocks[1];
+        Assert.True(block.Source.TextPatchable);
+        block.TextPatches.Add(new DocumentTextPatch
+        {
+            Search = "Editable",
+            Replacement = "Reviewed",
+            SourceTextSha256 = HashText("Editable paragraph"),
+        });
+        var rejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.False(rejected.Ok);
+        var diagnostic = Assert.Single(rejected.Diagnostics);
+        Assert.Equal("unsupported_document_edit", diagnostic.Code);
+        Assert.Contains(expectedReason, diagnostic.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TableTextPatchDoesNotEnterControlsOrCrossParagraphs()
+    {
+        var authored = Invoke(ExportRequest());
+        var controlled = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(WrapFirstTableCellRunInContentControl(authored.File.ToByteArray())),
+        });
+        Assert.True(controlled.Ok, Diagnostics(controlled));
+        Assert.False(controlled.Artifact.Document.Blocks[1].Table.Rows[0].RichCells[0].TextPatchable);
+
+        var crossParagraph = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(AddSecondTableParagraph(authored.File.ToByteArray())),
+        });
+        Assert.True(crossParagraph.Ok, Diagnostics(crossParagraph));
+        crossParagraph.Artifact.Document.Blocks[1].Table.TextPatches.Add(new DocumentTableTextPatch
+        {
+            Row = 0,
+            Column = 0,
+            Search = "Revenue detail",
+            Replacement = "Net revenue detail",
+            SourceTextSha256 = HashText("Revenue detail"),
+        });
+        var rejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = crossParagraph.Artifact,
+        });
+        Assert.False(rejected.Ok);
+        var diagnostic = Assert.Single(rejected.Diagnostics);
+        Assert.Equal("unsupported_document_edit", diagnostic.Code);
+        Assert.Contains("paragraph boundary", diagnostic.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SourcePreservingExportRejectsTamperedBinding()
     {
         var exported = Invoke(ExportRequest());
@@ -4094,6 +4276,85 @@ public sealed class DocxCodecTests
         }
         return stream.ToArray();
     }
+
+    private static byte[] AddFragmentedReadOnlyParagraph(
+        byte[] bytes,
+        bool mixedFormatting = false,
+        bool emptyRunGap = false)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true))
+        {
+            var paragraph = document.MainDocumentPart!.Document!.Body!.Elements<W.Paragraph>().ElementAt(1);
+            var properties = paragraph.ParagraphProperties ?? paragraph.PrependChild(new W.ParagraphProperties());
+            properties.Append(new W.WidowControl());
+            var source = paragraph.Elements<W.Run>().Single();
+            var first = FragmentRun(source, "Edit");
+            var second = FragmentRun(source, "able paragraph");
+            if (mixedFormatting)
+            {
+                var runProperties = second.RunProperties ?? second.PrependChild(new W.RunProperties());
+                runProperties.Append(new W.Bold());
+            }
+            source.Remove();
+            paragraph.Append(first);
+            if (emptyRunGap) paragraph.Append(FragmentRun(first, string.Empty));
+            paragraph.Append(second);
+            document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddFragmentedTableCell(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true))
+        {
+            var paragraph = document.MainDocumentPart!.Document!.Body!.Elements<W.Table>().Single()
+                .Elements<W.TableRow>().Single().Elements<W.TableCell>().First().Elements<W.Paragraph>().Single();
+            var source = paragraph.Elements<W.Run>().Single();
+            source.InsertBeforeSelf(FragmentRun(source, "Rev"));
+            source.InsertBeforeSelf(FragmentRun(source, "enue"));
+            source.Remove();
+            document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] WrapFirstTableCellRunInContentControl(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true))
+        {
+            var paragraph = document.MainDocumentPart!.Document!.Body!.Elements<W.Table>().Single()
+                .Elements<W.TableRow>().Single().Elements<W.TableCell>().First().Elements<W.Paragraph>().Single();
+            var run = paragraph.Elements<W.Run>().Single();
+            run.Remove();
+            paragraph.Append(new W.SdtRun(
+                new W.SdtProperties(new W.SdtId { Val = 8123 }, new W.Tag { Val = "protected-cell" }),
+                new W.SdtContentRun(run)));
+            document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static W.Run FragmentRun(W.Run source, string value)
+    {
+        var run = (W.Run)source.CloneNode(true);
+        var text = run.Elements<W.Text>().Single();
+        text.Text = value;
+        text.Space = value.Length != value.Trim().Length ? SpaceProcessingModeValues.Preserve : null;
+        return run;
+    }
+
+    private static string HashText(string value) =>
+        Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
 
     private static byte[] AddMergedTableGeometry(byte[] bytes, bool mismatchContinuation = false)
     {

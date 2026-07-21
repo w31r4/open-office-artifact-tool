@@ -52,12 +52,20 @@ if (!reimported.blocks.some((block) => block.id === target.id && block.text.incl
 
 When only `textPatchable` is true, assignment to `range.text` is rejected. The
 literal search must be non-empty and resolve to exactly one ordinary native
-`w:r/w:t` node. Matches spanning runs, hyperlinks, fields, content controls,
-tracked revisions, or duplicate native text nodes fail closed. Complex table
-cells use the same contract through `document.resolve(cell.id + "/text")` or
+`w:r/w:t` node or adjacent non-empty ordinary runs with byte-identical `w:rPr`.
+Mixed-format spans, empty-run gaps, paragraph boundaries, hyperlinks, fields,
+content controls, tracked revisions, or duplicate visible matches fail closed.
+Complex table cells use the same contract through
+`document.resolve(cell.id + "/text")` or
 `table.getCell(row, column).replaceText(old, next)`; `cell.value = ...` remains
 unavailable when `cell.editable` is false. Export, re-import, and native-render
 every result before delivery.
+
+Use `examples/openchestnut-source-text-patch-workflow.mjs` when editing a real
+input file. It takes an explicit paragraph or physical table-cell selector,
+keeps the input immutable, requires `textPatchable` rather than whole-text
+editing, checks that only `word/document.xml` changed, publishes without
+overwrite, reimports, verifies, and writes an audit JSON.
 
 ## Create and export
 

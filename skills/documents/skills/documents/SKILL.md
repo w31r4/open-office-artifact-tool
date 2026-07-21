@@ -192,7 +192,7 @@ While making and revising the DOCX, please adhere to and check against these qua
 When the user asks to edit an existing document, preserve the original and make minimal, local changes:
 
 - Prefer inline edits (small replacements) over rewriting whole paragraphs.
-- Inspect the target's `textEditable` and `textPatchable` evidence before mutation. Use text assignment only when `textEditable` is true; use `resolve(.../text).replace(old, next)` for one unique literal match when only `textPatchable` is true. If neither capability is advertised, or the match crosses native runs/fields/controls/revisions, fail closed instead of rebuilding the paragraph or cell.
+- Inspect the target's `textEditable` and `textPatchable` evidence before mutation. Use text assignment only when `textEditable` is true; use `resolve(.../text).replace(old, next)` for one unique literal match when only `textPatchable` is true. A literal may occupy one ordinary `w:t` or adjacent non-empty ordinary runs with byte-identical `w:rPr`; mixed formatting, empty-run gaps, paragraph boundaries, fields, controls, revisions, and other graphs fail closed instead of being rebuilt.
 - Use clear inline annotations/comments at the point of change (margin comments or comment markers). Don’t move all feedback to the end.
 - Keep the original structure unless there’s a strong reason; if a restructure is needed, do it surgically and explain via comments.
 - Don’t “cross out everything and rewrite”; avoid heavy, blanket deletions. The goal is trackable improvements, not a fresh draft unless explicitly requested.
@@ -203,46 +203,54 @@ When the user asks to edit an existing document, preserve the original and make 
 # 0) Run the shipped public-API/OpenChestnut create-import-edit-export example
 node examples/openchestnut-end-to-end.mjs output.docx
 
-# 1) Apply one bounded imported classic-comment text edit with full reimport/audit evidence
+# 1) Apply one source-bound literal edit to block 0. This permits a match split
+# across adjacent native runs only when their formatting is byte-identical.
+node examples/openchestnut-source-text-patch-workflow.mjs \
+  input.docx edited.docx edited.audit.json paragraph 0 "Quarterly" "Annual"
+# For table cell row 1, column 2 in block 4:
+node examples/openchestnut-source-text-patch-workflow.mjs \
+  input.docx edited.docx edited.audit.json tableCell 4 "Pending" "Approved" 1 2
+
+# 2) Apply one bounded imported classic-comment text edit with full reimport/audit evidence
 node examples/openchestnut-classic-comment-edit-workflow.mjs input.docx reviewed.docx audit.json \
   "Decision: proceed with controlled rollout." \
   "Please confirm the final retention wording." \
   "Approved after legal review."
 
-# 2) Edit one bounded modern root + direct reply and mark the root resolved
+# 3) Edit one bounded modern root + direct reply and mark the root resolved
 node examples/openchestnut-modern-comment-thread-workflow.mjs input.docx reviewed.docx audit.json \
   "Decision: proceed with controlled rollout." \
   "Please confirm the release evidence." "Release evidence approved." \
   "The evidence is attached." "Evidence retained with the approval." resolved
 
-# 3) Add one source-bound native single-format in-paragraph tracked replacement.
+# 4) Add one source-bound native single-format in-paragraph tracked replacement.
 # request.json contains either paragraph-only targetBlockIndex or a structured
 # paragraph/tableCell target, plus expectedText, search, replacement, author,
 # and optional date.
 node examples/openchestnut-tracked-replacement-workflow.mjs \
   input.docx reviewed.docx reviewed.audit.json request.json
 
-# 4) Sanitize Google Docs-targeted title blocks after OpenChestnut export
+# 5) Sanitize Google Docs-targeted title blocks after OpenChestnut export
 python scripts/google_docs_title_sanitize.py input.docx --out sanitized.docx
 python scripts/google_docs_title_sanitize.py sanitized.docx --check
 
-# 5) Render any DOCX to PNGs (visual QA)
+# 6) Render any DOCX to PNGs (visual QA)
 python render_docx.py input.docx --output_dir out
 
-# 6) Remove reviewer comments (explicit package-level finalization)
+# 7) Remove reviewer comments (explicit package-level finalization)
 python scripts/comments_strip.py input.docx --out no_comments.docx
 
-# 7) Finalize bounded whole-paragraph revisions or a canonical tracked replacement through OpenChestnut
+# 8) Finalize bounded whole-paragraph revisions or a canonical tracked replacement through OpenChestnut
 node examples/openchestnut-revision-finalization-workflow.mjs input.docx accepted.docx audit.json accept
 # Reject instead, while preserving an existing trackRevisions setting:
 node examples/openchestnut-revision-finalization-workflow.mjs input.docx rejected.docx audit.json reject --keep-tracking
 
-# 8) Accessibility audit (+ optional explicit package fixes)
+# 9) Accessibility audit (+ optional explicit package fixes)
 python scripts/a11y_audit.py input.docx
 python scripts/a11y_audit.py input.docx --out_json a11y_report.json
 python scripts/a11y_audit.py input.docx --fix_image_alt from_filename --out a11y_fixed.docx
 
-# 9) Redact sensitive text (explicit package patch; layout-preserving by default)
+# 10) Redact sensitive text (explicit package patch; layout-preserving by default)
 python scripts/redact_docx.py input.docx redacted.docx --emails --phones
 ```
 
@@ -335,6 +343,7 @@ Scripts:
 
 Examples:
 - `examples/openchestnut-end-to-end.mjs` — runnable public-API create → export → import → edit → export → import vertical slice
+- `examples/openchestnut-source-text-patch-workflow.mjs` — source-bound paragraph/table-cell literal replacement with same-format run-fragment support, immutable input, exact changed-part audit, no-replace publication, second import, verification, and model render evidence
 - `examples/openchestnut-classic-comment-edit-workflow.mjs` — imported classic-comment text-only edit with a unique text anchor, fixed comment topology, second import, model render, byte-bound audit, and atomic output
 - `examples/openchestnut-modern-comment-thread-workflow.mjs` — imported bounded root/direct-reply text and resolved-state edit with fixed identities/topology, second import, model/native render, byte-bound audit, and atomic output
 - `examples/end_to_end_smoke_test.md` — optional reference-compatible checklist for the explicit Python render/package-patch helpers; keep the public OpenChestnut workflow above as the default

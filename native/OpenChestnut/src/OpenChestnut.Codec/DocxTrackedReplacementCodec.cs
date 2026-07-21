@@ -201,7 +201,7 @@ internal static class DocxTrackedReplacementCodec
         if (!TryReadRevisionRuns(deletion, deleted: true, out var deletedText, out var deletionRuns) ||
             !TryReadRevisionRuns(insertion, deleted: false, out var insertedText, out var insertionRuns) ||
             insertionRuns.Length != 1 ||
-            !SameRunProperties(deletionRuns.Concat(insertionRuns)) ||
+            !DocxLiteralTextSpanCodec.SameRunProperties(deletionRuns.Concat(insertionRuns)) ||
             deletedText.Length == 0 || insertedText.Length == 0 ||
             string.IsNullOrWhiteSpace(deletion.Id?.Value) || string.IsNullOrWhiteSpace(insertion.Id?.Value) ||
             deletion.Id?.Value == insertion.Id?.Value ||
@@ -218,9 +218,6 @@ internal static class DocxTrackedReplacementCodec
             checked((uint)insertionRuns.Length));
         return true;
     }
-
-    private sealed record TargetRunSegment(W.Run Run, W.Text Text, int RunIndex, int Start, int Length);
-    private sealed record TargetSpan(IReadOnlyList<TargetRunSegment> Segments);
 
     private static DocxResolvedTrackedReplacementTarget ResolveTarget(
         W.Body body,
@@ -304,88 +301,41 @@ internal static class DocxTrackedReplacementCodec
             selector.Clone());
     }
 
-    private static TargetSpan FindTarget(W.Paragraph paragraph, string expectedText, string search)
+    private static DocxLiteralTextSpan FindTarget(W.Paragraph paragraph, string expectedText, string search)
     {
         var children = paragraph.ChildElements.Where(child => child is not W.ParagraphProperties).ToArray();
         if (children.Length == 0 || children.Any(child => child is not W.Run))
             throw Unsupported("Target paragraph must contain only direct ordinary text runs and no fields, hyperlinks, content controls, drawings, or existing revisions.");
 
         var runs = children.Cast<W.Run>().ToArray();
-        var textNodes = new List<(W.Run Run, W.Text Text)>();
         foreach (var run in runs)
         {
             if (!TryReadTextRun(run, deleted: false, out _) || run.Elements<W.Text>().Count() != 1)
                 throw Unsupported("Target paragraph must contain exactly one plain w:t node in each direct run.");
-            textNodes.Add((run, run.Elements<W.Text>().Single()));
         }
-        var paragraphText = string.Concat(textNodes.Select(item => item.Text.Text));
-        if (!paragraphText.Equals(expectedText, StringComparison.Ordinal))
-            throw new CodecException(
+        var resolution = DocxLiteralTextSpanCodec.Resolve(paragraph, expectedText, search);
+        return resolution.Status switch
+        {
+            DocxLiteralTextSpanStatus.Success when resolution.Span is not null => resolution.Span,
+            DocxLiteralTextSpanStatus.TextMismatch => throw new CodecException(
                 "document_tracked_replacement_text_mismatch",
                 "DOCX tracked replacement expected_paragraph_text does not match the exact target paragraph.",
-                DocumentPath);
-
-        var matches = new List<int>();
-        for (var index = paragraphText.IndexOf(search, StringComparison.Ordinal);
-             index >= 0;
-             index = paragraphText.IndexOf(search, index + 1, StringComparison.Ordinal))
-            matches.Add(index);
-        if (matches.Count != 1)
-            throw new CodecException(
+                DocumentPath),
+            DocxLiteralTextSpanStatus.MatchNotUnique => throw new CodecException(
                 "document_tracked_replacement_match_not_unique",
-                $"DOCX tracked replacement requires exactly one literal match in the target paragraph; found {matches.Count}.",
-                DocumentPath);
-
-        var matchStart = matches[0];
-        var matchEnd = checked(matchStart + search.Length);
-        var segments = new List<TargetRunSegment>();
-        var textOffset = 0;
-        for (var runIndex = 0; runIndex < textNodes.Count; runIndex++)
-        {
-            var item = textNodes[runIndex];
-            var runStart = textOffset;
-            var runEnd = checked(runStart + item.Text.Text.Length);
-            var segmentStart = Math.Max(matchStart, runStart);
-            var segmentEnd = Math.Min(matchEnd, runEnd);
-            if (segmentStart < segmentEnd)
-                segments.Add(new TargetRunSegment(
-                    item.Run,
-                    item.Text,
-                    runIndex,
-                    segmentStart - runStart,
-                    segmentEnd - segmentStart));
-            textOffset = runEnd;
-        }
-        if (segments.Count == 0 ||
-            string.Concat(segments.Select(segment => segment.Text.Text.Substring(segment.Start, segment.Length))) != search)
-            throw new CodecException(
+                $"DOCX tracked replacement requires exactly one literal match in the target paragraph; found {resolution.MatchCount}.",
+                DocumentPath),
+            DocxLiteralTextSpanStatus.RunPropertyMismatch => throw new CodecException(
+                "document_tracked_replacement_cross_run_format_mismatch",
+                "DOCX tracked replacement cannot infer one insertion format from a literal spanning runs with different w:rPr markup.",
+                DocumentPath),
+            DocxLiteralTextSpanStatus.EmptyRunGap => throw Unsupported("A fragmented literal match cannot cross an empty native run."),
+            _ => throw new CodecException(
                 "document_tracked_replacement_verification_failed",
-                "DOCX tracked replacement could not map the unique literal to native run segments.",
-                DocumentPath);
-        if (segments.Count > 1)
-        {
-            if (segments[^1].RunIndex - segments[0].RunIndex + 1 != segments.Count)
-                throw Unsupported("A fragmented literal match cannot cross an empty native run.");
-            if (!SameRunProperties(segments.Select(segment => segment.Run)))
-                throw new CodecException(
-                    "document_tracked_replacement_cross_run_format_mismatch",
-                    "DOCX tracked replacement cannot infer one insertion format from a literal spanning runs with different w:rPr markup.",
-                    DocumentPath);
-        }
-        return new TargetSpan(segments);
+                $"DOCX tracked replacement could not map the unique literal to native run segments: {DocxLiteralTextSpanCodec.FailureDescription(resolution.Status)}.",
+                DocumentPath),
+        };
     }
-
-    private static bool SameRunProperties(IEnumerable<W.Run> runs)
-    {
-        using var iterator = runs.GetEnumerator();
-        if (!iterator.MoveNext()) return false;
-        var expected = RunPropertiesKey(iterator.Current);
-        while (iterator.MoveNext())
-            if (!RunPropertiesKey(iterator.Current).Equals(expected, StringComparison.Ordinal)) return false;
-        return true;
-    }
-
-    private static string RunPropertiesKey(W.Run run) => run.RunProperties?.OuterXml ?? string.Empty;
 
     private static W.Run CloneRun(W.Run source, string value, bool deleted)
     {

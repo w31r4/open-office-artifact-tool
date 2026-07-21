@@ -69,12 +69,20 @@ await output.save("edited.docx");
 For an imported paragraph or table cell, `textEditable` means the whole modeled
 text value can be assigned without changing its verified topology.
 `textPatchable` is deliberately narrower: `range.replace(old, next)` must use a
-non-empty literal that occurs exactly once in one ordinary native `w:t` node.
-Cross-run matches, duplicate matches, fields, content controls, revisions, and
-other complex text graphs fail closed. A table cell exposes the same operation
-through `document.resolve(cell.id + "/text")` or
+non-empty literal that occurs exactly once in one ordinary native `w:t` node or
+across adjacent non-empty ordinary runs whose exact `w:rPr` markup matches.
+Mixed formatting, empty-run gaps, paragraph boundaries, duplicate matches,
+fields, content controls, revisions, and other complex text graphs fail closed.
+A table cell exposes the same operation through
+`document.resolve(cell.id + "/text")` or
 `table.getCell(row, column).replaceText(old, next)`; whole-cell assignment still
 fails when `cell.editable` is false.
+
+For an auditable existing-file transaction, use
+`../examples/openchestnut-source-text-patch-workflow.mjs`. It binds a structured
+paragraph or physical table-cell target, protects the input, permits only
+`word/document.xml` to change, publishes without overwrite, reimports, verifies,
+and emits an audit JSON before the required native render review.
 
 When a user explicitly needs one true redline inside an existing ordinary
 paragraph, do not use the untracked `textPatchable` route. Use

@@ -8,12 +8,13 @@ using W = DocumentFormat.OpenXml.Wordprocessing;
 namespace OpenChestnut.Codec;
 
 // Owns the narrowest source-bound paragraph edit: one literal replacement in
-// one ordinary w:r/w:t node. It intentionally does not interpret arbitrary
-// InnerText, cross formatting boundaries, or enter hyperlinks, fields,
-// content controls, revisions, drawings, or other nested run graphs.
+// an ordinary w:r/w:t node or an adjacent same-format run span. It
+// intentionally does not cross formatting boundaries or enter hyperlinks,
+// fields, content controls, revisions, drawings, or other nested run graphs.
 internal static class DocxPlainTextPatchCodec
 {
-    internal static bool IsPatchable(W.Paragraph paragraph) => PatchableTexts(paragraph).Any();
+    internal static bool IsPatchable(W.Paragraph paragraph) =>
+        DocxLiteralTextSpanCodec.IsPatchable(paragraph);
 
     internal static void Validate(DocumentBlock block)
     {
@@ -43,25 +44,18 @@ internal static class DocxPlainTextPatchCodec
         {
             if (!sourceHash.Equals(patch.SourceTextSha256, StringComparison.OrdinalIgnoreCase))
                 throw Unsupported($"Document block {requested.Id} text no longer matches the patch source binding.");
-            var matches = new List<(W.Text Text, int Offset)>();
-            foreach (var text in PatchableTexts(paragraph))
-            {
-                var candidateOffset = text.Text.IndexOf(patch.Search, StringComparison.Ordinal);
-                if (candidateOffset < 0) continue;
-                if (text.Text.IndexOf(patch.Search, candidateOffset + 1, StringComparison.Ordinal) >= 0)
-                    throw Unsupported($"Document block {requested.Id} text patch is ambiguous within one native text node.");
-                matches.Add((text, candidateOffset));
-            }
-            if (matches.Count != 1)
-                throw Unsupported($"Document block {requested.Id} text patch must match exactly one plain native text node; found {matches.Count}.");
             var expectedOffset = expected.IndexOf(patch.Search, StringComparison.Ordinal);
             if (expectedOffset < 0 || expected.IndexOf(patch.Search, expectedOffset + 1, StringComparison.Ordinal) >= 0)
                 throw Unsupported($"Document block {requested.Id} text patch requires exactly one visible match.");
+            var resolution = DocxLiteralTextSpanCodec.Resolve(paragraph, expected, patch.Search);
+            if (resolution.Status == DocxLiteralTextSpanStatus.TextMismatch)
+                throw Unsupported($"Document block {requested.Id} native text no longer matches its semantic source snapshot.");
+            if (resolution.Status == DocxLiteralTextSpanStatus.MatchNotUnique)
+                throw Unsupported($"Document block {requested.Id} text patch requires exactly one visible match; found {resolution.MatchCount}.");
+            if (resolution.Status != DocxLiteralTextSpanStatus.Success || resolution.Span is null)
+                throw Unsupported($"Document block {requested.Id} text patch must stay inside one ordinary native text node or adjacent same-format runs; {DocxLiteralTextSpanCodec.FailureDescription(resolution.Status)}.");
             expected = expected.Remove(expectedOffset, patch.Search.Length).Insert(expectedOffset, patch.Replacement);
-            var (target, offset) = matches[0];
-            var value = target.Text.Remove(offset, patch.Search.Length).Insert(offset, patch.Replacement);
-            target.Text = value;
-            target.Space = value.Length != value.Trim().Length ? SpaceProcessingModeValues.Preserve : null;
+            DocxLiteralTextSpanCodec.Replace(resolution.Span, patch.Replacement);
         }
         if (!ResidualHash(paragraph).Equals(residual, StringComparison.OrdinalIgnoreCase))
             throw new CodecException(
@@ -85,13 +79,6 @@ internal static class DocxPlainTextPatchCodec
         }
         return Hash(Encoding.UTF8.GetBytes(clone.OuterXml));
     }
-
-    private static IEnumerable<W.Text> PatchableTexts(W.Paragraph paragraph) =>
-        paragraph.Descendants<W.Text>().Where(text =>
-            text.Parent is W.Run run &&
-            ReferenceEquals(run.Parent, paragraph) &&
-            run.Elements<W.Text>().Count() == 1 &&
-            run.ChildElements.All(child => child is W.RunProperties or W.Text));
 
     private static bool XmlSafe(string value)
     {

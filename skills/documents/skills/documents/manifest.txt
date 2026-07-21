@@ -34,6 +34,7 @@ references/design_presets.md
 references/header_templates.md
 artifact_tool/API_QUICK_START.md
 examples/openchestnut-end-to-end.mjs
+examples/openchestnut-source-text-patch-workflow.mjs
 examples/openchestnut-classic-comment-edit-workflow.mjs
 examples/openchestnut-modern-comment-thread-workflow.mjs
 examples/openchestnut-tracked-replacement-workflow.mjs

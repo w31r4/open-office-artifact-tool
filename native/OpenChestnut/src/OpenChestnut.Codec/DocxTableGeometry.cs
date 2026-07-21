@@ -42,7 +42,7 @@ internal static class DocxTableGeometry
                     RowSpan = merge == DocumentTableVerticalMerge.Continue ? 0u : 1u,
                     VerticalMerge = merge,
                     Editable = merge != DocumentTableVerticalMerge.Continue && IsSimpleCell(cell),
-                    TextPatchable = merge != DocumentTableVerticalMerge.Continue && PatchableTexts(cell).Any(),
+                    TextPatchable = merge != DocumentTableVerticalMerge.Continue && DocxLiteralTextSpanCodec.IsPatchable(cell),
                 };
                 targetRow.Cells.Add(text);
                 targetRow.RichCells.Add(richCell);
@@ -145,14 +145,4 @@ internal static class DocxTableGeometry
                run.Elements<W.Text>().Count() == 1;
     }
 
-    // A patchable text node is deliberately narrower than arbitrary InnerText:
-    // it must be one ordinary w:t owned directly by one ordinary w:r inside a
-    // paragraph. Hyperlinks, fields, controls, revisions, drawings, and text
-    // split across native nodes therefore remain fail-closed.
-    internal static IEnumerable<W.Text> PatchableTexts(W.TableCell cell) =>
-        cell.Descendants<W.Text>().Where(text =>
-            text.Parent is W.Run run &&
-            run.Parent is W.Paragraph &&
-            run.Elements<W.Text>().Count() == 1 &&
-            run.ChildElements.All(child => child is W.RunProperties or W.Text));
 }

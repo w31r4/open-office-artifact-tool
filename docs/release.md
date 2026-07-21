@@ -2694,6 +2694,65 @@ re-ran and passed every code, documentation, package, and .NET command; before
 the commit it correctly reported the dirty candidate plus unavailable npm auth
 as release blockers. No npm publish, tag, or release operation was attempted.
 
+### DOCX source-bound literal patch across same-format run fragments
+
+On 2026-07-21, the ordinary imported-text patch path gained the same bounded
+run-fragment tolerance as tracked replacement. A unique literal in an otherwise
+read-only paragraph or complex table cell may occupy one direct ordinary
+`w:r/w:t` or adjacent non-empty direct runs whose exact `w:rPr` markup is
+byte-identical. OpenChestnut retains every native run and text node, writes the
+replacement into the first matched node, retains any suffix in the last, and
+empties only covered intermediate text payloads. The residual topology hash and
+postwrite visible-text proof remain mandatory.
+
+One internal `DocxLiteralTextSpan` resolver now maps visible offsets to native
+segments for paragraph patches, table-cell patches, and tracked replacement.
+It owns direct-parent checks, paragraph boundaries, child adjacency, empty-run
+gaps, and run-property identity, removing three divergent definitions of the
+same safety boundary. Table capability discovery was tightened at the same
+time: text nested inside a content control no longer makes a cell appear
+patchable merely because it contains a descendant `w:t`.
+
+Native integration tests cover paragraph and table-cell success, fixed run
+topology, second import, Open XML SDK validation, mixed formatting, empty-run
+gaps, cross-paragraph matches, and content-control isolation. The JavaScript
+test crosses the public bundled-WASM facade, proves that only
+`word/document.xml` changes, reimports both paragraph and table results, and
+rejects a mixed-format span. The shipped
+`openchestnut-source-text-patch-workflow.mjs` adds explicit paragraph/table-cell
+selection, immutable input, no-overwrite publication, source/output hashes,
+changed-part audit, second import, model verification, and the required native
+render-review handoff. Broader formatting changes, paragraph-spanning text,
+fields, hyperlinks, controls, revisions, and ambiguous literals remain
+fail-closed.
+
+Real LibreOffice/Poppler QA ran the packaged workflow twice over one source
+fixture: `Quarterly plan` was split across two direct runs and became
+`Annual plan`; the table value `Revenue` was independently split across two
+runs and became `Net revenue`. Source and final files each rendered as one
+1547 by 2002 page and were manually reviewed with no clipping, table drift, or
+format loss. The native pixel diff was confined to `(182, 551, 798, 834)`;
+the title, right half of the table, unchanged review context, and lower page
+remained byte-identical. Both transaction audits reported exactly
+`word/document.xml` as changed and re-proved `textPatchable=true` with
+`textEditable=false` after import.
+
+The complete `npm test` gate passed, including all 20 repository-only templates,
+all four Office/PDF Skills, LibreOffice, Poppler, MuPDF.js, qpdf, Playwright,
+reference-Skill sync, and Agent eval checks. OpenChestnut passed `315/315` and
+OfficeBridge passed `5/5`; generated API docs and protocol lint/idempotent
+generation passed. Deterministic source-built WASM verification matched 39
+audited build files, and the bundled runtime is 38 files and 14,854,336 bytes.
+The clean-install/package gate produced 475 files, 9,114,869 compressed bytes,
+and 24,125,079 unpacked bytes (`SHA-1
+54a22e4c70654948cc1154c57c71a54914f37574`). Independent Python environments
+for pikepdf, pyHanko, veraPDF, and OCRmyPDF were not configured in this local
+shell, so their contract/adversarial gates passed while their real-provider
+repeats were skipped; hosted CI supplies them. The offline release wrapper then
+re-ran and passed every code, documentation, package, and .NET command with
+registry/auth checks explicitly disabled. No npm publish, tag, or release
+operation was attempted.
+
 ## Publishing
 
 Before publishing:

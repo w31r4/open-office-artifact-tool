@@ -295,6 +295,80 @@ try {
   assert.equal(modernRender.summary.verifyOk, true);
   assert.equal(modernRender.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
 
+  const fragmentedPatchDocument = DocumentModel.create({ name: "Fragmented source text patch", blocks: [] });
+  fragmentedPatchDocument.addParagraph("Quarterly plan");
+  fragmentedPatchDocument.addParagraph("Unchanged review context.");
+  fragmentedPatchDocument.addTable({ values: [["Revenue", "42"]] });
+  const fragmentedPatchAuthored = await DocumentFile.exportDocx(fragmentedPatchDocument);
+  const fragmentedPatchZip = await JSZip.loadAsync(await fragmentedPatchAuthored.arrayBuffer());
+  const fragmentedPatchOriginalXml = await fragmentedPatchZip.file("word/document.xml").async("text");
+  const fragmentedPatchSourceXml = fragmentedPatchOriginalXml.replace(
+    '<w:pPr><w:pStyle w:val="Normal" /></w:pPr><w:r><w:t>Quarterly plan</w:t></w:r>',
+    '<w:pPr><w:pStyle w:val="Normal" /><w:widowControl /></w:pPr><w:r><w:t>Quarter</w:t></w:r><w:r><w:t>ly plan</w:t></w:r>',
+  ).replace(
+    '<w:r><w:rPr><w:b /></w:rPr><w:t>Revenue</w:t></w:r>',
+    '<w:r><w:rPr><w:b /></w:rPr><w:t>Rev</w:t></w:r><w:r><w:rPr><w:b /></w:rPr><w:t>enue</w:t></w:r>',
+  );
+  assert.notEqual(fragmentedPatchSourceXml, fragmentedPatchOriginalXml);
+  const fragmentedPatchSourcePath = path.join(outputDir, "fragmented-patch-source.docx");
+  await (await DocumentFile.patchDocx(fragmentedPatchAuthored, [
+    { path: "word/document.xml", xml: fragmentedPatchSourceXml },
+  ])).save(fragmentedPatchSourcePath);
+  const fragmentedPatchSourceBytes = await fs.readFile(fragmentedPatchSourcePath);
+  const fragmentedPatchImported = await DocumentFile.importDocx(await FileBlob.load(fragmentedPatchSourcePath));
+  const fragmentedPatchTargetIndex = fragmentedPatchImported.blocks.findIndex((block) => block.text === "Quarterly plan");
+  assert.ok(fragmentedPatchTargetIndex >= 0);
+  assert.equal(fragmentedPatchImported.blocks[fragmentedPatchTargetIndex].textEditable, false);
+  assert.equal(fragmentedPatchImported.blocks[fragmentedPatchTargetIndex].textPatchable, true);
+  const { patchImportedText } = await import(
+    "../skills/documents/skills/documents/examples/openchestnut-source-text-patch-workflow.mjs"
+  );
+  const fragmentedPatchOutputPath = path.join(outputDir, "fragmented-patch-output.docx");
+  const fragmentedPatchAuditPath = path.join(outputDir, "fragmented-patch-audit.json");
+  const fragmentedPatchWorkflow = await patchImportedText({
+    inputPath: fragmentedPatchSourcePath,
+    outputPath: fragmentedPatchOutputPath,
+    auditPath: fragmentedPatchAuditPath,
+    target: { kind: "paragraph", blockIndex: fragmentedPatchTargetIndex },
+    search: "Quarterly",
+    replacement: "Annual",
+  });
+  assert.equal(fragmentedPatchWorkflow.audit.provider.actual, "open-chestnut");
+  assert.equal(fragmentedPatchWorkflow.audit.provider.silentFallback, false);
+  assert.deepEqual(fragmentedPatchWorkflow.audit.validation.changedParts, ["word/document.xml"]);
+  assert.equal(fragmentedPatchWorkflow.audit.validation.reimport.textPatchable, true);
+  assert.deepEqual(await fs.readFile(fragmentedPatchSourcePath), fragmentedPatchSourceBytes);
+  const fragmentedPatchRoundTrip = await DocumentFile.importDocx(await FileBlob.load(fragmentedPatchOutputPath));
+  assert.equal(fragmentedPatchRoundTrip.blocks[fragmentedPatchTargetIndex].text, "Annual plan");
+  assert.equal(fragmentedPatchRoundTrip.blocks[1].text, "Unchanged review context.");
+  const fragmentedPatchTableIndex = fragmentedPatchRoundTrip.blocks.findIndex((block) => block.kind === "table");
+  assert.ok(fragmentedPatchTableIndex >= 0);
+  assert.equal(fragmentedPatchRoundTrip.blocks[fragmentedPatchTableIndex].getCell(0, 0).textPatchable, true);
+  const fragmentedPatchTableSourceBytes = await fs.readFile(fragmentedPatchOutputPath);
+  const fragmentedPatchFinalPath = path.join(outputDir, "fragmented-patch-table-output.docx");
+  const fragmentedPatchTableAuditPath = path.join(outputDir, "fragmented-patch-table-audit.json");
+  const fragmentedPatchTableWorkflow = await patchImportedText({
+    inputPath: fragmentedPatchOutputPath,
+    outputPath: fragmentedPatchFinalPath,
+    auditPath: fragmentedPatchTableAuditPath,
+    target: { kind: "tableCell", blockIndex: fragmentedPatchTableIndex, row: 0, column: 0 },
+    search: "Revenue",
+    replacement: "Net revenue",
+  });
+  assert.equal(fragmentedPatchTableWorkflow.audit.operation.target.kind, "tableCell");
+  assert.deepEqual(fragmentedPatchTableWorkflow.audit.validation.changedParts, ["word/document.xml"]);
+  assert.deepEqual(await fs.readFile(fragmentedPatchOutputPath), fragmentedPatchTableSourceBytes);
+  const fragmentedPatchFinal = await DocumentFile.importDocx(await FileBlob.load(fragmentedPatchFinalPath));
+  assert.equal(fragmentedPatchFinal.blocks[fragmentedPatchTargetIndex].text, "Annual plan");
+  assert.equal(fragmentedPatchFinal.blocks[fragmentedPatchTableIndex].getCell(0, 0).value, "Net revenue");
+  const fragmentedPatchRender = await verifyDocumentFile(fragmentedPatchFinalPath, {
+    outputDir: path.join(outputDir, "fragmented-patch-render"),
+    previewFormat: "png",
+    nativeRender: nativeStatus.available ? "required" : "auto",
+  });
+  assert.equal(fragmentedPatchRender.summary.verifyOk, true);
+  assert.equal(fragmentedPatchRender.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+
   const trackedReplacementSourceDocument = DocumentModel.create({
     name: "Tracked replacement source",
     blocks: [],
@@ -596,6 +670,7 @@ try {
   assert.match(skillText, /document\.addCitation/);
   assert.match(skillText, /document\.addTableOfContents/);
   assert.match(skillText, /paragraph\.addField/);
+  assert.match(skillText, /openchestnut-source-text-patch-workflow\.mjs/);
   assert.match(skillText, /openchestnut-classic-comment-edit-workflow\.mjs/);
   assert.match(skillText, /openchestnut-modern-comment-thread-workflow\.mjs/);
   assert.match(skillText, /openchestnut-tracked-replacement-workflow\.mjs/);
@@ -607,6 +682,7 @@ try {
   assert.match(commentsGuide, /\.resolve\(\)/);
   assert.doesNotMatch(commentsGuide, /If the task is to \*insert\* new comments.+use the OOXML-level guide/);
   const manifestText = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "manifest.txt"), "utf8");
+  assert.match(manifestText, /^examples\/openchestnut-source-text-patch-workflow\.mjs$/m);
   assert.match(manifestText, /^examples\/openchestnut-modern-comment-thread-workflow\.mjs$/m);
   assert.match(manifestText, /^examples\/openchestnut-tracked-replacement-workflow\.mjs$/m);
   assert.match(manifestText, /^examples\/openchestnut-revision-finalization-workflow\.mjs$/m);

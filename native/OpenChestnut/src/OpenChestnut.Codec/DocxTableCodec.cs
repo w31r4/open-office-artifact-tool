@@ -214,26 +214,29 @@ internal static class DocxTableCodec
                 throw Unsupported($"Source-preserving DOCX table cell {rowIndex},{cellIndex} contains no safely patchable plain text node.");
             var sourceHash = Hash(Encoding.UTF8.GetBytes(sourceValue));
             var cell = rows[rowIndex].Elements<W.TableCell>().ElementAt(cellIndex);
+            var expected = sourceValue;
             foreach (var patch in group)
             {
                 if (!sourceHash.Equals(patch.SourceTextSha256, StringComparison.OrdinalIgnoreCase))
                     throw Unsupported($"Source-preserving DOCX table cell {rowIndex},{cellIndex} text no longer matches the patch source binding.");
-                var matches = new List<(W.Text Text, int Index)>();
-                foreach (var text in DocxTableGeometry.PatchableTexts(cell))
-                {
-                    var index = text.Text.IndexOf(patch.Search, StringComparison.Ordinal);
-                    if (index < 0) continue;
-                    if (text.Text.IndexOf(patch.Search, index + 1, StringComparison.Ordinal) >= 0)
-                        throw Unsupported($"Source-preserving DOCX table cell {rowIndex},{cellIndex} text patch is ambiguous within one native text node.");
-                    matches.Add((text, index));
-                }
-                if (matches.Count != 1)
-                    throw Unsupported($"Source-preserving DOCX table cell {rowIndex},{cellIndex} text patch must match exactly one plain native text node; found {matches.Count}.");
-                var (target, offset) = matches[0];
-                var value = target.Text.Remove(offset, patch.Search.Length).Insert(offset, patch.Replacement);
-                target.Text = value;
-                target.Space = value.Length != value.Trim().Length ? SpaceProcessingModeValues.Preserve : null;
+                var offset = expected.IndexOf(patch.Search, StringComparison.Ordinal);
+                if (offset < 0 || expected.IndexOf(patch.Search, offset + 1, StringComparison.Ordinal) >= 0)
+                    throw Unsupported($"Source-preserving DOCX table cell {rowIndex},{cellIndex} text patch requires exactly one visible match.");
+                var resolution = DocxLiteralTextSpanCodec.Resolve(cell, expected, patch.Search);
+                if (resolution.Status == DocxLiteralTextSpanStatus.TextMismatch)
+                    throw Unsupported($"Source-preserving DOCX table cell {rowIndex},{cellIndex} native text no longer matches its semantic source snapshot.");
+                if (resolution.Status == DocxLiteralTextSpanStatus.MatchNotUnique)
+                    throw Unsupported($"Source-preserving DOCX table cell {rowIndex},{cellIndex} text patch requires exactly one visible match; found {resolution.MatchCount}.");
+                if (resolution.Status != DocxLiteralTextSpanStatus.Success || resolution.Span is null)
+                    throw Unsupported($"Source-preserving DOCX table cell {rowIndex},{cellIndex} text patch must stay inside one ordinary native text node or adjacent same-format runs; {DocxLiteralTextSpanCodec.FailureDescription(resolution.Status)}.");
+                expected = expected.Remove(offset, patch.Search.Length).Insert(offset, patch.Replacement);
+                DocxLiteralTextSpanCodec.Replace(resolution.Span, patch.Replacement);
             }
+            if (!string.Concat(cell.Descendants<W.Text>().Select(text => text.Text)).Equals(expected, StringComparison.Ordinal))
+                throw new CodecException(
+                    "document_semantics_not_applied",
+                    $"Source-preserving DOCX table cell {rowIndex},{cellIndex} text patches did not produce the requested visible text.",
+                    "word/document.xml");
         }
     }
 

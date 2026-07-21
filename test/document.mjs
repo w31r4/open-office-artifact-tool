@@ -5,6 +5,22 @@ import JSZip from "jszip";
 import { DocumentFile, DocumentModel } from "../src/index.mjs";
 import { DocumentFile as DocumentFileModule, DocumentModel as DocumentModelModule } from "../src/document/index.mjs";
 
+async function changedZipParts(left, right) {
+  const hashes = async (value) => {
+    const zip = await JSZip.loadAsync(await value.arrayBuffer());
+    const result = new Map();
+    for (const [name, entry] of Object.entries(zip.files)) {
+      if (entry.dir) continue;
+      result.set(name, createHash("sha256").update(await entry.async("uint8array")).digest("hex"));
+    }
+    return result;
+  };
+  const [before, after] = await Promise.all([hashes(left), hashes(right)]);
+  return [...new Set([...before.keys(), ...after.keys()])]
+    .filter((name) => before.get(name) !== after.get(name))
+    .sort();
+}
+
 assert.strictEqual(DocumentModel, DocumentModelModule);
 assert.strictEqual(DocumentFile, DocumentFileModule);
 
@@ -255,6 +271,62 @@ const firstDocx = await DocumentFile.exportDocx(document);
 assert.equal(firstDocx.type, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 const firstDocxBytes = Buffer.from(await firstDocx.arrayBuffer());
 const firstDocxSha256 = createHash("sha256").update(firstDocxBytes).digest("hex");
+
+const fragmentedPatchFixture = DocumentModel.create({ name: "Fragmented source-bound patch", blocks: [] });
+fragmentedPatchFixture.addParagraph("Quarterly plan");
+fragmentedPatchFixture.addTable({ values: [["Revenue", "42"]] });
+const fragmentedPatchBase = await DocumentFile.exportDocx(fragmentedPatchFixture);
+const fragmentedPatchBaseZip = await JSZip.loadAsync(await fragmentedPatchBase.arrayBuffer());
+const fragmentedPatchBaseXml = await fragmentedPatchBaseZip.file("word/document.xml").async("text");
+const fragmentedPatchXml = fragmentedPatchBaseXml
+  .replace(
+    '<w:pPr><w:pStyle w:val="Normal" /></w:pPr><w:r><w:t>Quarterly plan</w:t></w:r>',
+    '<w:pPr><w:pStyle w:val="Normal" /><w:widowControl /></w:pPr><w:r><w:t>Quarter</w:t></w:r><w:r><w:t>ly plan</w:t></w:r>',
+  )
+  .replace(
+    '<w:r><w:rPr><w:b /></w:rPr><w:t>Revenue</w:t></w:r>',
+    '<w:r><w:rPr><w:b /></w:rPr><w:t>Rev</w:t></w:r><w:r><w:rPr><w:b /></w:rPr><w:t>enue</w:t></w:r>',
+  );
+assert.notEqual(fragmentedPatchXml, fragmentedPatchBaseXml);
+const fragmentedPatchSource = await DocumentFile.patchDocx(fragmentedPatchBase, [
+  { path: "word/document.xml", xml: fragmentedPatchXml },
+]);
+const fragmentedImported = await DocumentFile.importDocx(fragmentedPatchSource);
+const fragmentedParagraph = fragmentedImported.blocks.find((block) => block.kind === "paragraph" && block.text === "Quarterly plan");
+const fragmentedTable = fragmentedImported.blocks.find((block) => block.kind === "table");
+const fragmentedCell = fragmentedTable.getCell(0, 0);
+assert.equal(fragmentedParagraph.textEditable, false);
+assert.equal(fragmentedParagraph.textPatchable, true);
+assert.equal(fragmentedCell.editable, false);
+assert.equal(fragmentedCell.textPatchable, true);
+fragmentedImported.resolve(`${fragmentedParagraph.id}/text`).replace("Quarterly", "Annual");
+fragmentedImported.resolve(`${fragmentedCell.id}/text`).replace("Revenue", "Net revenue");
+const fragmentedPatchOutput = await DocumentFile.exportDocx(fragmentedImported);
+assert.deepEqual(await changedZipParts(fragmentedPatchSource, fragmentedPatchOutput), ["word/document.xml"]);
+const fragmentedPatchOutputZip = await JSZip.loadAsync(await fragmentedPatchOutput.arrayBuffer());
+const fragmentedPatchOutputXml = await fragmentedPatchOutputZip.file("word/document.xml").async("text");
+assert.match(fragmentedPatchOutputXml, /<w:widowControl\s*\/>[\s\S]*?<w:r><w:t>Annual<\/w:t><\/w:r><w:r><w:t xml:space="preserve"> plan<\/w:t><\/w:r>/);
+assert.match(fragmentedPatchOutputXml, /<w:r><w:rPr><w:b\s*\/><\/w:rPr><w:t>Net revenue<\/w:t><\/w:r><w:r><w:rPr><w:b\s*\/><\/w:rPr><w:t\s*\/><\/w:r>/);
+const fragmentedRoundTrip = await DocumentFile.importDocx(fragmentedPatchOutput);
+assert.equal(fragmentedRoundTrip.blocks.find((block) => block.kind === "paragraph")?.text, "Annual plan");
+assert.equal(fragmentedRoundTrip.blocks.find((block) => block.kind === "table")?.getCell(0, 0).value, "Net revenue");
+
+const mixedFormattingXml = fragmentedPatchXml.replace(
+  '<w:r><w:t>ly plan</w:t></w:r>',
+  '<w:r><w:rPr><w:i /></w:rPr><w:t>ly plan</w:t></w:r>',
+);
+const mixedFormattingSource = await DocumentFile.patchDocx(fragmentedPatchBase, [
+  { path: "word/document.xml", xml: mixedFormattingXml },
+]);
+const mixedFormattingDocument = await DocumentFile.importDocx(mixedFormattingSource);
+const mixedFormattingParagraph = mixedFormattingDocument.blocks.find((block) => block.kind === "paragraph");
+assert.equal(mixedFormattingParagraph.textPatchable, true);
+mixedFormattingDocument.resolve(`${mixedFormattingParagraph.id}/text`).replace("Quarterly", "Annual");
+await assert.rejects(
+  () => DocumentFile.exportDocx(mixedFormattingDocument),
+  (error) => error?.code === "unsupported_document_edit" && /different formatting/.test(error.message),
+);
+
 const trackedReplacement = await DocumentFile.addTrackedReplacement(firstDocx, {
   expectedSourceSha256: firstDocxSha256,
   targetBlockIndex: document.blocks.indexOf(formatted),
