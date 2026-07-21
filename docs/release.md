@@ -2584,6 +2584,66 @@ repeats were skipped; hosted CI supplies them. Network publication remains a
 separate gate: `npm whoami` authentication is unavailable, so no npm publish,
 tag, or release operation was attempted.
 
+### DOCX source-bound table-cell tracked replacement
+
+On 2026-07-21, the same source-bound tracked-replacement transaction gained a
+structured target contract. New callers select either
+`{ kind: "paragraph", blockIndex }` or
+`{ kind: "tableCell", blockIndex, row, column }`; the existing
+`targetBlockIndex` remains a paragraph-only compatibility selector and is
+mutually exclusive with `target`. The protobuf wire uses an explicit oneof and
+the returned audit repeats the target that OpenChestnut re-proved. This is an
+extension of one deep file transaction, not a second table-specific editing
+surface.
+
+The table profile accepts only a direct body table with a valid bounded
+physical grid. The selected non-continuation physical cell must contain exactly
+one direct paragraph, whose children must be ordinary direct text runs with
+one `w:t` each. The exact full cell text and source SHA-256 are mandatory; the
+search literal must occur once in one native text node. OpenChestnut then
+clones the matched run formatting into an adjacent native `w:del` / `w:ins`
+pair, changes only `word/document.xml`, and returns target, package, paragraph,
+text, native-ID, and changed-part evidence. Out-of-range indexes—including the
+full unsigned 32-bit edge—stale or duplicate text, cross-run matches,
+multi-paragraph or nested cells, vertical-merge continuations, irregular grids,
+fields, controls, hyperlinks, drawings, and existing target revisions fail
+closed before publication.
+
+`DocumentFile.finalizeRevisions` now re-proves and accepts or rejects the exact
+pair in either a direct body paragraph or the bounded table-cell paragraph. It
+still accepts the prior direct whole-paragraph one-run profile; mixed, nested,
+moved, property-level, non-body-story, and irregular-table graphs remain
+unsupported. The shipped Documents workflow discovers a unique paragraph or
+physical cell, accepts an explicit structured target when discovery is
+ambiguous, protects the source, audits the one-part scope, reimports the
+accepted-view projection, renders, and publishes output plus audit without
+overwrite.
+
+Real LibreOffice/Poppler QA exercised one formatted three-row table in source,
+tracked, accepted, and rejected states. The tracked page displayed the native
+deletion/insertion review marks inside the selected cell and a margin change
+bar. The accepted page retained only `45 days`; the rejected page restored only
+`30 days`. Headers, fills, borders, the non-target row, and surrounding
+paragraph stayed intact. Source and rejected page PNGs were byte-identical at
+1547 by 2002 pixels (SHA-256
+`2d6d26f2994adee3b96b3cdb982bf5ff779f10abdca0bc3907788a20079c7a08`).
+
+The local candidate passed the complete `npm test` suite, including all 20
+repository-only templates, all four Office/PDF Skills, LibreOffice, Poppler,
+MuPDF.js, qpdf, Playwright, reference-Skill sync, and Agent eval gates.
+OpenChestnut passed `310/310`; OfficeBridge passed `5/5`; protobuf lint and
+idempotent generation passed; the deterministic source-built WASM gate matched
+39 audited build files. The bundled runtime is 38 files and 14,846,144 bytes.
+Generated API docs and the clean-install/package gate passed; the dry-run
+tarball contains 474 files, 9,109,567 compressed bytes, and 24,099,148 unpacked
+bytes (`SHA-1 c54fdaaa82eec4c44975db597f9758deb897ca07`). Independent Python
+environments for pikepdf, pyHanko, veraPDF, and OCRmyPDF were not configured in
+this local shell, so their contract/adversarial gates passed while their real
+provider repeats were skipped; hosted CI supplies them. The offline release
+wrapper passed every code, documentation, package, and .NET gate; npm auth and
+registry lookup were deliberately skipped, and no publish, tag, or release
+operation was attempted.
+
 ## Publishing
 
 Before publishing:

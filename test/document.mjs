@@ -269,6 +269,7 @@ const trackedReplacementSha256 = createHash("sha256").update(trackedReplacementB
 assert.deepEqual(trackedReplacement.metadata.trackedReplacement, {
   sourceSha256: firstDocxSha256,
   outputSha256: trackedReplacementSha256,
+  target: { kind: "paragraph", blockIndex: document.blocks.indexOf(formatted) },
   targetBlockIndex: document.blocks.indexOf(formatted),
   targetBodyIndex: document.blocks.indexOf(formatted),
   sourceElementSha256: trackedReplacement.metadata.trackedReplacement.sourceElementSha256,
@@ -312,6 +313,73 @@ const rejectedTrackedReplacementDocument = await DocumentFile.importDocx(rejecte
 assert.equal(rejectedTrackedReplacementDocument.blocks[document.blocks.indexOf(formatted)].text, "Bold and colored");
 assert.equal(rejectedTrackedReplacementDocument.blocks.some((block) => block.text === "Added wording"), false);
 assert.equal(rejectedTrackedReplacementDocument.blocks.some((block) => block.text === "Removed wording"), true);
+
+const tableBlockIndex = document.blocks.indexOf(table);
+const tableTrackedReplacement = await DocumentFile.addTrackedReplacement(firstDocx, {
+  expectedSourceSha256: firstDocxSha256,
+  target: { kind: "tableCell", blockIndex: tableBlockIndex, row: 1, column: 1 },
+  expectedText: "Pending",
+  search: "Pending",
+  replacement: "Approved",
+  author: "Table reviewer",
+  date: "2026-07-21T11:00:00Z",
+});
+const tableTrackedBytes = Buffer.from(await tableTrackedReplacement.arrayBuffer());
+const tableTrackedSha256 = createHash("sha256").update(tableTrackedBytes).digest("hex");
+assert.deepEqual(tableTrackedReplacement.metadata.trackedReplacement.target, {
+  kind: "tableCell",
+  blockIndex: tableBlockIndex,
+  row: 1,
+  column: 1,
+});
+assert.equal(tableTrackedReplacement.metadata.trackedReplacement.targetBlockIndex, tableBlockIndex);
+assert.equal(tableTrackedReplacement.metadata.trackedReplacement.targetBodyIndex, tableBlockIndex);
+assert.equal(tableTrackedReplacement.metadata.trackedReplacement.outputSha256, tableTrackedSha256);
+assert.deepEqual(tableTrackedReplacement.metadata.trackedReplacement.changedParts, ["word/document.xml"]);
+assert.deepEqual(Buffer.from(await firstDocx.arrayBuffer()), firstDocxBytes, "table tracked replacement must not mutate its source blob");
+const tableTrackedDocument = await DocumentFile.importDocx(tableTrackedReplacement);
+assert.equal(tableTrackedDocument.blocks[tableBlockIndex].kind, "table");
+assert.equal(tableTrackedDocument.blocks[tableBlockIndex].getCell(1, 1).value, "Approved");
+const tableTrackedZip = await JSZip.loadAsync(tableTrackedBytes);
+const tableTrackedXml = await tableTrackedZip.file("word/document.xml").async("text");
+assert.match(tableTrackedXml, /<w:tc>[\s\S]*?<w:del\b[\s\S]*?<w:delText>Pending<\/w:delText>[\s\S]*?<w:ins\b[\s\S]*?<w:t>Approved<\/w:t>[\s\S]*?<\/w:tc>/);
+
+const acceptedTableTrackedReplacement = await DocumentFile.finalizeRevisions(tableTrackedReplacement, {
+  mode: "accept",
+  expectedSourceSha256: tableTrackedSha256,
+});
+assert.equal(acceptedTableTrackedReplacement.metadata.revisionFinalization.insertionCount, 2);
+assert.equal(acceptedTableTrackedReplacement.metadata.revisionFinalization.deletionCount, 2);
+assert.equal((await DocumentFile.importDocx(acceptedTableTrackedReplacement)).blocks[tableBlockIndex].getCell(1, 1).value, "Approved");
+
+const rejectedTableTrackedReplacement = await DocumentFile.finalizeRevisions(tableTrackedReplacement, {
+  mode: "reject",
+  expectedSourceSha256: tableTrackedSha256,
+});
+assert.equal((await DocumentFile.importDocx(rejectedTableTrackedReplacement)).blocks[tableBlockIndex].getCell(1, 1).value, "Pending");
+await assert.rejects(
+  () => DocumentFile.addTrackedReplacement(firstDocx, {
+    expectedSourceSha256: firstDocxSha256,
+    target: { kind: "paragraph", blockIndex: 0 },
+    targetBlockIndex: 0,
+    expectedText: document.blocks[0].text,
+    search: "OpenChestnut",
+    replacement: "OpenChestnut native",
+    author: "Reviewer",
+  }),
+  /either target or targetBlockIndex, not both/,
+);
+await assert.rejects(
+  () => DocumentFile.addTrackedReplacement(firstDocx, {
+    expectedSourceSha256: firstDocxSha256,
+    target: { kind: "tableCell", blockIndex: tableBlockIndex, row: -1, column: 1 },
+    expectedText: "Pending",
+    search: "Pending",
+    replacement: "Approved",
+    author: "Reviewer",
+  }),
+  /row and column must be unsigned 32-bit physical indexes/,
+);
 await assert.rejects(
   () => DocumentFile.addTrackedReplacement(firstDocx, {
     expectedSourceSha256: "0".repeat(64),

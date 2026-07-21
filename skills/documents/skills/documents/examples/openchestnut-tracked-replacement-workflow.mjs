@@ -37,10 +37,66 @@ function uniqueLiteralIndex(value, search) {
   return first;
 }
 
+function trackedReplacementCandidates(document, expectedText) {
+  const candidates = [];
+  for (let blockIndex = 0; blockIndex < document.blocks.length; blockIndex += 1) {
+    const block = document.blocks[blockIndex];
+    if (block.kind === "paragraph" && block.text === expectedText) {
+      candidates.push({ kind: "paragraph", blockIndex });
+      continue;
+    }
+    if (block.kind !== "table") continue;
+    for (let row = 0; row < block.rows; row += 1) {
+      for (let column = 0; column < block.columns; column += 1) {
+        const cell = block.getCell(row, column);
+        if (cell.value === expectedText && cell.verticalMerge !== "continue") {
+          candidates.push({ kind: "tableCell", blockIndex, row, column });
+        }
+      }
+    }
+  }
+  return candidates;
+}
+
+function normalizeTrackedReplacementTarget(target, targetBlockIndex, candidates) {
+  if (target !== undefined && targetBlockIndex !== undefined) {
+    throw new Error("Use target or the paragraph-only targetBlockIndex compatibility option, not both.");
+  }
+  const selected = target !== undefined
+    ? target
+    : targetBlockIndex !== undefined
+      ? { kind: "paragraph", blockIndex: Number(targetBlockIndex) }
+      : candidates.length === 1
+        ? candidates[0]
+        : undefined;
+  if (!selected || typeof selected !== "object" ||
+      !["paragraph", "tableCell"].includes(selected.kind) ||
+      !Number.isInteger(selected.blockIndex) || selected.blockIndex < 0 || selected.blockIndex > 0xffff_ffff) {
+    throw new Error(`Tracked replacement requires one explicit paragraph/table-cell target; exact-text discovery found ${candidates.length}.`);
+  }
+  if (selected.kind === "paragraph") return { kind: "paragraph", blockIndex: selected.blockIndex };
+  if (!Number.isInteger(selected.row) || selected.row < 0 || selected.row > 0xffff_ffff ||
+      !Number.isInteger(selected.column) || selected.column < 0 || selected.column > 0xffff_ffff) {
+    throw new Error("A tableCell target requires unsigned 32-bit physical row and column indexes.");
+  }
+  return { kind: "tableCell", blockIndex: selected.blockIndex, row: selected.row, column: selected.column };
+}
+
+function targetSnapshot(document, target) {
+  const block = document.blocks[target.blockIndex];
+  if (target.kind === "paragraph") return block?.kind === "paragraph"
+    ? { text: block.text, sourceBound: block.textEditable === false }
+    : undefined;
+  if (block?.kind !== "table" || target.row >= block.rows || target.column >= block.columns) return undefined;
+  const cell = block.getCell(target.row, target.column);
+  return { text: cell.value, sourceBound: cell.editable === false };
+}
+
 export async function addDocumentTrackedReplacement({
   inputPath,
   outputPath,
   auditPath,
+  target,
   targetBlockIndex,
   expectedText,
   search,
@@ -63,23 +119,14 @@ export async function addDocumentTrackedReplacement({
   const sourceSha256 = sha256(source);
   const sourceBlob = new FileBlob(source, { type: DOCX_MIME, name: path.basename(sourcePath) });
   const sourceDocument = await DocumentFile.importDocx(sourceBlob);
-  const candidates = sourceDocument.blocks
-    .map((block, index) => ({ block, index }))
-    .filter(({ block }) => block.kind === "paragraph" && block.text === expected);
-  const selectedIndex = targetBlockIndex === undefined
-    ? (candidates.length === 1 ? candidates[0].index : undefined)
-    : Number(targetBlockIndex);
-  if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= sourceDocument.blocks.length) {
-    throw new Error(`Tracked replacement requires one explicit target block; exact-text discovery found ${candidates.length}.`);
-  }
-  const selected = sourceDocument.blocks[selectedIndex];
-  if (selected.kind !== "paragraph" || selected.text !== expected) {
-    throw new Error("targetBlockIndex does not identify the expected exact paragraph snapshot.");
-  }
+  const candidates = trackedReplacementCandidates(sourceDocument, expected);
+  const selectedTarget = normalizeTrackedReplacementTarget(target, targetBlockIndex, candidates);
+  const selected = targetSnapshot(sourceDocument, selectedTarget);
+  if (!selected || selected.text !== expected) throw new Error("target does not identify the expected exact paragraph/table-cell snapshot.");
 
   const tracked = await DocumentFile.addTrackedReplacement(sourceBlob, {
     expectedSourceSha256: sourceSha256,
-    targetBlockIndex: selectedIndex,
+    target: selectedTarget,
     expectedText: expected,
     search: oldText,
     replacement: newText,
@@ -91,7 +138,9 @@ export async function addDocumentTrackedReplacement({
   if (!operation || operation.sourceSha256 !== sourceSha256 || operation.outputSha256 !== sha256(output)) {
     throw new Error("OpenChestnut tracked-replacement audit does not bind the exact source and output bytes.");
   }
-  if (operation.targetBlockIndex !== selectedIndex || operation.changedParts.join("\n") !== "word/document.xml") {
+  if (JSON.stringify(operation.target) !== JSON.stringify(selectedTarget) ||
+      operation.targetBlockIndex !== selectedTarget.blockIndex ||
+      operation.changedParts.join("\n") !== "word/document.xml") {
     throw new Error("OpenChestnut tracked replacement changed an unexpected target or OPC part.");
   }
   if (operation.deletedTextSha256 !== sha256(Buffer.from(oldText, "utf8")) ||
@@ -101,9 +150,9 @@ export async function addDocumentTrackedReplacement({
 
   const acceptedProjection = `${expected.slice(0, matchIndex)}${newText}${expected.slice(matchIndex + oldText.length)}`;
   const reimported = await DocumentFile.importDocx(new FileBlob(output, { type: DOCX_MIME, name: path.basename(finalPath) }));
-  const reimportedTarget = reimported.blocks[selectedIndex];
-  if (reimportedTarget?.kind !== "paragraph" || reimportedTarget.text !== acceptedProjection || reimportedTarget.textEditable !== false) {
-    throw new Error("Tracked DOCX re-import does not expose the expected accepted-view, source-bound paragraph projection.");
+  const reimportedTarget = targetSnapshot(reimported, selectedTarget);
+  if (!reimportedTarget || reimportedTarget.text !== acceptedProjection || !reimportedTarget.sourceBound) {
+    throw new Error("Tracked DOCX re-import does not expose the expected accepted-view, source-bound paragraph/table-cell projection.");
   }
   const verification = reimported.verify({ visualQa: true });
   if (!verification.ok) throw new Error(`Document verification failed: ${verification.ndjson}`);
@@ -119,6 +168,7 @@ export async function addDocumentTrackedReplacement({
     savePolicy: { strategy: "rewrite", overwrite: false },
     operation: {
       type: "add-tracked-replacement",
+      target: operation.target,
       targetBlockIndex: operation.targetBlockIndex,
       targetBodyIndex: operation.targetBodyIndex,
       sourceElementSha256: operation.sourceElementSha256,
@@ -163,6 +213,7 @@ if (entry === import.meta.url) {
     outputPath: result.outputPath,
     auditPath: result.auditPath,
     outputSha256: result.audit.output.sha256,
+    target: result.audit.operation.target,
     targetBlockIndex: result.audit.operation.targetBlockIndex,
   }));
 }

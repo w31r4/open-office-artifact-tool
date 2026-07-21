@@ -3112,11 +3112,9 @@ export async function finalizeDocxRevisionsWithOpenChestnut(input, options = {})
 
 export async function addDocxTrackedReplacementWithOpenChestnut(input, options = {}) {
   assertCodecOptions(options, new Set([
-    "targetBlockIndex", "expectedText", "search", "replacement", "author", "date", "expectedSourceSha256", "limits",
+    "target", "targetBlockIndex", "expectedText", "search", "replacement", "author", "date", "expectedSourceSha256", "limits",
   ]), "addDocxTrackedReplacementWithOpenChestnut");
-  if (!Number.isInteger(options.targetBlockIndex) || options.targetBlockIndex < 0 || options.targetBlockIndex > 0xffff_ffff) {
-    throw new TypeError("addDocxTrackedReplacementWithOpenChestnut targetBlockIndex must be an unsigned 32-bit integer from document.inspect().");
-  }
+  const { target, wireTarget } = documentTrackedReplacementTarget(options);
   const expectedText = typeof options.expectedText === "string" ? options.expectedText : "";
   const search = typeof options.search === "string" ? options.search : "";
   const replacement = typeof options.replacement === "string" ? options.replacement : "";
@@ -3150,12 +3148,13 @@ export async function addDocxTrackedReplacementWithOpenChestnut(input, options =
     limits: codecLimits(options.limits),
     trackedReplacement: {
       expectedSourceSha256,
-      targetBlockIndex: options.targetBlockIndex,
+      targetBlockIndex: target.blockIndex,
       expectedParagraphText: expectedText,
       search,
       replacement,
       author,
       date,
+      target: wireTarget,
     },
   });
   const result = response.trackedReplacement;
@@ -3163,11 +3162,13 @@ export async function addDocxTrackedReplacementWithOpenChestnut(input, options =
   const deletedTextSha256 = createHash("sha256").update(search).digest("hex");
   const insertedTextSha256 = createHash("sha256").update(replacement).digest("hex");
   const changedParts = result ? [...result.changedParts] : [];
+  const returnedTarget = publicDocumentTrackedReplacementTarget(result?.target);
   if (!result ||
       result.sourceSha256 !== expectedSourceSha256 ||
       result.outputSha256 !== outputSha256 ||
       outputSha256 === expectedSourceSha256 ||
-      result.targetBlockIndex !== options.targetBlockIndex ||
+      result.targetBlockIndex !== target.blockIndex ||
+      !sameDocumentTrackedReplacementTarget(returnedTarget, target) ||
       !Number.isInteger(result.targetBodyIndex) ||
       !/^[0-9a-f]{64}$/.test(result.sourceElementSha256) ||
       !/^[0-9a-f]{64}$/.test(result.outputElementSha256) ||
@@ -3192,6 +3193,7 @@ export async function addDocxTrackedReplacementWithOpenChestnut(input, options =
       trackedReplacement: {
         sourceSha256: result.sourceSha256,
         outputSha256,
+        target: returnedTarget,
         targetBlockIndex: result.targetBlockIndex,
         targetBodyIndex: result.targetBodyIndex,
         sourceElementSha256: result.sourceElementSha256,
@@ -3206,6 +3208,71 @@ export async function addDocxTrackedReplacementWithOpenChestnut(input, options =
       },
     },
   });
+}
+
+function documentTrackedReplacementTarget(options) {
+  if (options.target === undefined) {
+    if (!Number.isInteger(options.targetBlockIndex) || options.targetBlockIndex < 0 || options.targetBlockIndex > 0xffff_ffff) {
+      throw new TypeError("addDocxTrackedReplacementWithOpenChestnut targetBlockIndex must be an unsigned 32-bit integer from document.inspect().");
+    }
+    const target = { kind: "paragraph", blockIndex: options.targetBlockIndex };
+    return {
+      target,
+      wireTarget: { blockIndex: target.blockIndex, location: { case: "bodyParagraph", value: {} } },
+    };
+  }
+  if (options.targetBlockIndex !== undefined) {
+    throw new TypeError("addDocxTrackedReplacementWithOpenChestnut accepts either target or targetBlockIndex, not both.");
+  }
+  if (!options.target || typeof options.target !== "object" || Array.isArray(options.target)) {
+    throw new TypeError("addDocxTrackedReplacementWithOpenChestnut target must be a paragraph or tableCell selector object.");
+  }
+  const kind = String(options.target.kind || "");
+  const blockIndex = options.target.blockIndex;
+  if (!Number.isInteger(blockIndex) || blockIndex < 0 || blockIndex > 0xffff_ffff) {
+    throw new TypeError("addDocxTrackedReplacementWithOpenChestnut target.blockIndex must be an unsigned 32-bit integer from document.inspect().");
+  }
+  if (kind === "paragraph") {
+    if (options.target.row !== undefined || options.target.column !== undefined) {
+      throw new TypeError("addDocxTrackedReplacementWithOpenChestnut paragraph target cannot include row or column.");
+    }
+    const target = { kind, blockIndex };
+    return { target, wireTarget: { blockIndex, location: { case: "bodyParagraph", value: {} } } };
+  }
+  if (kind !== "tableCell") {
+    throw new TypeError("addDocxTrackedReplacementWithOpenChestnut target.kind must be paragraph or tableCell.");
+  }
+  const row = options.target.row;
+  const column = options.target.column;
+  if (!Number.isInteger(row) || row < 0 || row > 0xffff_ffff ||
+      !Number.isInteger(column) || column < 0 || column > 0xffff_ffff) {
+    throw new TypeError("addDocxTrackedReplacementWithOpenChestnut tableCell target row and column must be unsigned 32-bit physical indexes from document.inspect().");
+  }
+  const target = { kind, blockIndex, row, column };
+  return {
+    target,
+    wireTarget: { blockIndex, location: { case: "tableCell", value: { row, column } } },
+  };
+}
+
+function publicDocumentTrackedReplacementTarget(target) {
+  if (!target || !Number.isInteger(target.blockIndex)) return undefined;
+  if (target.location.case === "bodyParagraph") return { kind: "paragraph", blockIndex: target.blockIndex };
+  if (target.location.case === "tableCell" && target.location.value &&
+      Number.isInteger(target.location.value.row) && Number.isInteger(target.location.value.column)) {
+    return {
+      kind: "tableCell",
+      blockIndex: target.blockIndex,
+      row: target.location.value.row,
+      column: target.location.value.column,
+    };
+  }
+  return undefined;
+}
+
+function sameDocumentTrackedReplacementTarget(left, right) {
+  return left?.kind === right.kind && left.blockIndex === right.blockIndex &&
+    (right.kind !== "tableCell" || left.row === right.row && left.column === right.column);
 }
 
 function documentFromEnvelope(envelope) {

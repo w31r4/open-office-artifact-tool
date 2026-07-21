@@ -76,11 +76,15 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.worksheets.getSele
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.recalculate"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.resolve"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "SpreadsheetFile.inspectXlsx"));
-assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.addTrackedReplacement")?.schema?.parameters?.targetBlockIndex?.required, true);
+assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.addTrackedReplacement")?.schema?.parameters?.targetBlockIndex?.required, undefined);
+assert.match(HELP_CATALOG.find((item) => item.name === "DocumentFile.addTrackedReplacement")?.schema?.parameters?.target?.description || "", /paragraph.*tableCell.*physical indexes/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.addTrackedReplacement")?.schema?.parameters?.expectedSourceSha256?.required, true);
-assert.match(HELP_CATALOG.find((item) => item.name === "DocumentFile.addTrackedReplacement")?.summary || "", /in-paragraph.*w:del\/w:ins.*expected paragraph.*unique one-node.*fail-closed/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "DocumentFile.addTrackedReplacement")?.summary || "", /body paragraph.*table-cell paragraph.*w:del\/w:ins.*structured.*unique one-node.*fail-closed/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.finalizeRevisions")?.schema?.parameters?.expectedSourceSha256?.required, true);
-assert.match(HELP_CATALOG.find((item) => item.name === "DocumentFile.finalizeRevisions")?.summary || "", /whole-paragraph.*in-paragraph.*source bytes.*SHA-256.*changed-part.*fail-closed/i);
+const revisionFinalizationSummary = HELP_CATALOG.find((item) => item.name === "DocumentFile.finalizeRevisions")?.summary || "";
+assert.match(revisionFinalizationSummary, /whole-paragraph.*in-paragraph.*source bytes/i);
+assert.match(revisionFinalizationSummary, /table-cell/i);
+assert.match(revisionFinalizationSummary, /SHA-256.*changed-part.*fail-closed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.setSettings")?.summary || "", /trackRevisions.*inside the OpenChestnut 0\.2 DOCX boundary/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.speakerNotes.capability")?.schema?.returns?.capability?.description || "", /sourceBound.*partPresent.*editable.*addable.*preflight.*not mutable write authority/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.importXlsx")?.schema?.returns?.workbook?.description || "", /images.*charts/i);

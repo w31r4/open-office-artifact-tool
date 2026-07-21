@@ -32,7 +32,7 @@ const targetBlockIndex = document.blocks.findIndex(
 );
 const reviewed = await DocumentFile.addTrackedReplacement(source, {
   expectedSourceSha256: crypto.createHash("sha256").update(bytes).digest("hex"),
-  targetBlockIndex,
+  target: { kind: "paragraph", blockIndex: targetBlockIndex },
   expectedText: "The term is 30 days.",
   search: "30 days",
   replacement: "45 days",
@@ -42,7 +42,9 @@ const reviewed = await DocumentFile.addTrackedReplacement(source, {
 await reviewed.save("reviewed.docx");
 ```
 
-The index and full paragraph snapshot bind the target in the exact source bytes. `search` must occur once inside one direct ordinary `w:r/w:t`; OpenChestnut clones that run's formatting into one adjacent `w:del` + `w:ins` pair, uses `w:delText` for the old text, allocates collision-free package-local IDs, and permits only `word/document.xml` to change. Stale text, duplicate/cross-run matches, tables, hyperlinks, fields, controls, drawings, existing revisions, and other native topologies fail closed. The operation returns source/output, paragraph-element, deleted/inserted-text, native-ID, block/body-index, and changed-part evidence in `metadata.trackedReplacement`. Prefer `examples/openchestnut-tracked-replacement-workflow.mjs` when publishing because it also protects the source, refuses overwrite, reimports, renders, and writes an audit.
+The same transaction accepts `{ kind: "tableCell", blockIndex, row, column }` when the exact imported block is a direct body table with a stable physical grid and the selected non-continuation cell contains exactly one direct paragraph. `targetBlockIndex` remains a paragraph-only compatibility selector and cannot be combined with `target`.
+
+The structured selector and full paragraph/cell snapshot bind the target in the exact source bytes. `search` must occur once inside one direct ordinary `w:r/w:t`; OpenChestnut clones that run's formatting into one adjacent `w:del` + `w:ins` pair, uses `w:delText` for the old text, allocates collision-free package-local IDs, and permits only `word/document.xml` to change. Stale text, duplicate/cross-run matches, multi-paragraph/nested/continuation/irregular table cells, hyperlinks, fields, controls, drawings, existing revisions, and other native topologies fail closed. The operation returns the re-proved target plus source/output, paragraph-element, deleted/inserted-text, native-ID, block/body-index, and changed-part evidence in `metadata.trackedReplacement`. Prefer `examples/openchestnut-tracked-replacement-workflow.mjs` when publishing because it also discovers one unique paragraph/table cell, protects the source, refuses overwrite, reimports, renders, and writes an audit.
 
 The same public boundary now supports the native future-edit setting and file-level finalization:
 
@@ -56,7 +58,7 @@ const finalized = await DocumentFile.finalizeRevisions(sourceDocx, {
 });
 ```
 
-`finalizeRevisions` accepts the original DOCX bytes directly, rechecks the exact source SHA-256 inside OpenChestnut, rewrites only `word/document.xml` and—when the existing tracking flag changes—`word/settings.xml`, and returns source/output hashes, revision counts, tracking state, and the exact changed-part list in `metadata.revisionFinalization`. It supports direct whole-paragraph `w:ins`/`w:del` wrappers with one recognized run plus the exact adjacent direct-run pair authored above. Any other revision element, story part, mixed or nested graph, move, property change, table target, or malformed wrapper fails closed before an output is published. `keepTracking` preserves an existing tracking flag; it does not silently enable one that was absent.
+`finalizeRevisions` accepts the original DOCX bytes directly, rechecks the exact source SHA-256 inside OpenChestnut, rewrites only `word/document.xml` and—when the existing tracking flag changes—`word/settings.xml`, and returns source/output hashes, revision counts, tracking state, and the exact changed-part list in `metadata.revisionFinalization`. It supports direct body whole-paragraph `w:ins`/`w:del` wrappers with one recognized run plus exact adjacent direct-run pairs in direct body paragraphs or bounded table cells authored above. Any other revision element, story part, mixed or nested graph, move, property change, irregular table target, or malformed wrapper fails closed before an output is published. `keepTracking` preserves an existing tracking flag; it does not silently enable one that was absent.
 
 Do not silently rebuild a complex revision graph through the public model. Unsupported imported topologies are visible but read-only and must be preserved unchanged, handled by an explicit package workflow, or finalized in a real Word host.
 
@@ -97,6 +99,6 @@ For a bounded whole-block accept/reject transaction, prefer `examples/openchestn
 ## Verification
 - Render to PDF/PNG for layout sanity (`tasks/verify_render.md`)
 - Confirm Word shows the change as tracked
-- Re-import through `DocumentFile.importDocx`; supported whole-paragraph revisions inspect as `kind: "change"`, while the exact inline pair exposes its accepted-view paragraph as source-bound and read-only until finalization
+- Re-import through `DocumentFile.importDocx`; supported whole-paragraph revisions inspect as `kind: "change"`, while the exact inline pair exposes its accepted-view paragraph or table-cell value as source-bound and read-only until finalization
 - Inspect `word/document.xml`: the old text must be one `w:delText` and the replacement one adjacent `w:t`; after finalization no revision element may remain
 - Be aware: renders usually show redlines, but always verify the OOXML is correct too

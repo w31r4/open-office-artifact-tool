@@ -14,7 +14,9 @@ internal sealed record DocxRevisionFinalizationOutput(
 
 // Finalizes the bounded whole-paragraph profile plus the exact adjacent
 // in-paragraph deletion/insertion pair authored by DocxTrackedReplacementCodec.
-// Every other topology fails before bytes are written.
+// The pair may live in a direct body paragraph or one structurally bounded
+// direct table-cell paragraph. Every other topology fails before bytes are
+// written.
 internal static class DocxRevisionFinalizationCodec
 {
     private const string DocumentPath = "word/document.xml";
@@ -76,19 +78,21 @@ internal static class DocxRevisionFinalizationCodec
             var body = mainPart.Document?.Body ??
                 throw new CodecException("missing_document_body", "DOCX package has no document body.", DocumentPath);
             var supported = new List<OpenXmlCompositeElement>();
-            foreach (var paragraph in body.Elements<W.Paragraph>())
+            foreach (var paragraph in body.Descendants<W.Paragraph>())
             {
                 var directRevisions = paragraph.ChildElements
                     .Where(child => child is W.InsertedRun or W.DeletedRun)
                     .Cast<OpenXmlCompositeElement>()
                     .ToArray();
                 if (directRevisions.Length == 0) continue;
-                if (DocxTrackedChangeCodec.TryRead(paragraph, out _, out _, out var editable) && editable)
+                if (paragraph.Parent is W.Body &&
+                    DocxTrackedChangeCodec.TryRead(paragraph, out _, out _, out var editable) && editable)
                 {
                     supported.Add(directRevisions.Single());
                     continue;
                 }
-                if (DocxTrackedReplacementCodec.TryReadFinalizable(paragraph, out var replacement))
+                var boundedOwner = paragraph.Parent is W.Body || IsBoundedTableCellParagraph(paragraph);
+                if (boundedOwner && DocxTrackedReplacementCodec.TryReadFinalizable(paragraph, out var replacement))
                 {
                     supported.Add(replacement.Deletion);
                     supported.Add(replacement.Insertion);
@@ -97,7 +101,7 @@ internal static class DocxRevisionFinalizationCodec
             if (supported.Count != mainRevisionCount)
                 throw new CodecException(
                     "unsupported_document_revision_topology",
-                    "DOCX contains unsupported revision markup. This bounded finalizer accepts direct whole-paragraph one-run w:ins/w:del blocks or one adjacent direct-run w:del + w:ins replacement pair in a body paragraph; mixed, nested, moved, property-level, table, non-body, or malformed graphs fail closed.",
+                    "DOCX contains unsupported revision markup. This bounded finalizer accepts direct whole-paragraph one-run w:ins/w:del blocks in the body, or one adjacent direct-run w:del + w:ins replacement pair in a direct body paragraph or one bounded direct table-cell paragraph; mixed, nested, moved, property-level, non-body-story, irregular-table, or malformed graphs fail closed.",
                     DocumentPath);
 
             foreach (var wrapper in supported)
@@ -196,6 +200,28 @@ internal static class DocxRevisionFinalizationCodec
             revision.InsertBeforeSelf(run);
         }
         revision.Remove();
+    }
+
+    private static bool IsBoundedTableCellParagraph(W.Paragraph paragraph)
+    {
+        if (paragraph.Parent is not W.TableCell cell ||
+            cell.Parent is not W.TableRow row ||
+            row.Parent is not W.Table table ||
+            table.Parent is not W.Body)
+            return false;
+        if (cell.ChildElements.Any(child => child is not W.TableCellProperties and not W.Paragraph) ||
+            cell.Elements<W.Paragraph>().Count() != 1 ||
+            row.ChildElements.Any(child => child is not W.TableRowProperties and not W.TableCell) ||
+            table.ChildElements.Any(child => child is not W.TableProperties and not W.TableGrid and not W.TableRow))
+            return false;
+
+        var geometry = DocxTableGeometry.Read(table, out var validGeometry);
+        if (!validGeometry) return false;
+        var rowIndex = table.Elements<W.TableRow>().TakeWhile(candidate => !ReferenceEquals(candidate, row)).Count();
+        var columnIndex = row.Elements<W.TableCell>().TakeWhile(candidate => !ReferenceEquals(candidate, cell)).Count();
+        return rowIndex < geometry.Rows.Count &&
+               columnIndex < geometry.Rows[rowIndex].RichCells.Count &&
+               geometry.Rows[rowIndex].RichCells[columnIndex].VerticalMerge != DocumentTableVerticalMerge.Continue;
     }
 
     private static string[] ChangedParts(byte[] sourceBytes, byte[] outputBytes)

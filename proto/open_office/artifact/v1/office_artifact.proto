@@ -109,8 +109,10 @@ message DocumentRevisionFinalizationResult {
 }
 
 // Adds one source-bound, in-paragraph replacement as adjacent native w:del
-// and w:ins wrappers. target_block_index is the zero-based semantic block
-// index emitted by DocumentModel.inspect for the exact source bytes.
+// and w:ins wrappers. target_block_index remains the compatibility selector
+// for a direct body paragraph. New callers also send target, whose oneof makes
+// a direct body paragraph or one physical table cell explicit without
+// overloading absent row/column scalar values.
 message DocumentTrackedReplacementRequest {
   string expected_source_sha256 = 1;
   uint32 target_block_index = 2;
@@ -119,10 +121,12 @@ message DocumentTrackedReplacementRequest {
   string replacement = 5;
   string author = 6;
   optional string date = 7;
+  DocumentTrackedReplacementTarget target = 8;
 }
 
 // Byte-bound audit for one tracked replacement. Native revision IDs and body
 // indexes are package-local source evidence, not durable artifact identity.
+// target repeats the structured selector that OpenChestnut re-proved.
 message DocumentTrackedReplacementResult {
   string source_sha256 = 1;
   string output_sha256 = 2;
@@ -137,6 +141,7 @@ message DocumentTrackedReplacementResult {
   string deletion_native_revision_id = 11;
   string insertion_native_revision_id = 12;
   repeated string changed_parts = 13;
+  DocumentTrackedReplacementTarget target = 14;
 }
 
 message ArtifactEnvelope {
@@ -2757,4 +2762,25 @@ message PresentationCustomShowSourceBinding {
   string show_xml_sha256 = 2;
   string semantic_sha256 = 3;
   bool editable = 4;
+}
+
+// Appended to preserve every pre-existing generated descriptor index while
+// the tracked-replacement request/result reference this additive protocol-2
+// target contract.
+message DocumentTrackedReplacementTarget {
+  uint32 block_index = 1;
+
+  oneof location {
+    DocumentTrackedReplacementBodyParagraph body_paragraph = 2;
+    DocumentTrackedReplacementTableCell table_cell = 3;
+  }
+}
+
+message DocumentTrackedReplacementBodyParagraph {}
+
+// row and column are zero-based physical row/cell indexes from the exact
+// imported table block. They are source selectors, not persistent identities.
+message DocumentTrackedReplacementTableCell {
+  uint32 row = 1;
+  uint32 column = 2;
 }

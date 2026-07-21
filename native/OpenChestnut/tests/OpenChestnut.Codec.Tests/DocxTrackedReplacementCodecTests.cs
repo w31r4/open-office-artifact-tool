@@ -44,6 +44,8 @@ public sealed class DocxTrackedReplacementCodecTests
         Assert.Equal(Hash(added.File.Span), audit.OutputSha256);
         Assert.Equal((uint)0, audit.TargetBlockIndex);
         Assert.Equal((uint)0, audit.TargetBodyIndex);
+        Assert.Equal(DocumentTrackedReplacementTarget.LocationOneofCase.BodyParagraph, audit.Target.LocationCase);
+        Assert.Equal((uint)0, audit.Target.BlockIndex);
         Assert.Equal(HashText(oldText), audit.DeletedTextSha256);
         Assert.Equal(HashText(newText), audit.InsertedTextSha256);
         Assert.Equal((uint)oldText.Length, audit.DeletedTextChars);
@@ -92,6 +94,103 @@ public sealed class DocxTrackedReplacementCodecTests
     }
 
     [Fact]
+    public void AddsAndFinalizesTrackedReplacementInBoundedTableCell()
+    {
+        const string sourceText = "Payment is due in 30 days.";
+        const string oldText = "30 days";
+        const string newText = "45 days";
+        var table = new DocumentBlock
+        {
+            Id = "table/terms",
+            StyleId = "TableGrid",
+            Table = new DocumentTable
+            {
+                GridColumns = 2,
+                Formatting = new DocumentTableFormatting
+                {
+                    WidthDxa = 9000,
+                    IndentDxa = 120,
+                    CellMarginsDxa = new DocumentTableCellMargins { Top = 80, Bottom = 80, Start = 120, End = 120 },
+                    BorderColor = "445566",
+                    BorderSize = 8,
+                    HeaderFill = "E2E8F0",
+                },
+            },
+        };
+        table.Table.Formatting.ColumnWidthsDxa.Add([2800U, 6200U]);
+        var header = new DocumentTableRow();
+        header.Cells.Add(["Term", "Value"]);
+        var terms = new DocumentTableRow();
+        terms.Cells.Add(["Payment", sourceText]);
+        table.Table.Rows.Add([header, terms]);
+        var source = ExportDocx(table);
+        var sourceHash = Hash(source);
+
+        var added = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.AddDocxTrackedReplacement,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(source),
+            TrackedReplacement = new DocumentTrackedReplacementRequest
+            {
+                ExpectedSourceSha256 = sourceHash,
+                TargetBlockIndex = 0,
+                Target = new DocumentTrackedReplacementTarget
+                {
+                    BlockIndex = 0,
+                    TableCell = new DocumentTrackedReplacementTableCell { Row = 1, Column = 1 },
+                },
+                ExpectedParagraphText = sourceText,
+                Search = oldText,
+                Replacement = newText,
+                Author = "Contract reviewer",
+                Date = "2026-07-21T11:00:00Z",
+            },
+        });
+
+        Assert.True(added.Ok, Diagnostics(added));
+        var audit = Assert.IsType<DocumentTrackedReplacementResult>(added.TrackedReplacement);
+        Assert.Equal(DocumentTrackedReplacementTarget.LocationOneofCase.TableCell, audit.Target.LocationCase);
+        Assert.Equal((uint)0, audit.Target.BlockIndex);
+        Assert.Equal((uint)1, audit.Target.TableCell.Row);
+        Assert.Equal((uint)1, audit.Target.TableCell.Column);
+        Assert.Equal(["word/document.xml"], audit.ChangedParts);
+
+        using (var stream = new MemoryStream(added.File.ToByteArray(), writable: false))
+        using (var package = WordprocessingDocument.Open(stream, isEditable: false))
+        {
+            var nativeTable = package.MainDocumentPart!.Document!.Body!.Elements<W.Table>().Single();
+            var cells = nativeTable.Elements<W.TableRow>().ElementAt(1).Elements<W.TableCell>().ToArray();
+            Assert.Equal("Payment", string.Concat(cells[0].Descendants<W.Text>().Select(value => value.Text)));
+            var paragraph = cells[1].Elements<W.Paragraph>().Single();
+            Assert.Equal(oldText, paragraph.Elements<W.DeletedRun>().Single().Descendants<W.DeletedText>().Single().Text);
+            Assert.Equal(newText, paragraph.Elements<W.InsertedRun>().Single().Descendants<W.Text>().Single().Text);
+            Assert.Equal(sourceText.Replace(oldText, newText), string.Concat(paragraph.Descendants<W.Text>().Select(value => value.Text)));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = added.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedTable = Assert.Single(imported.Artifact.Document.Blocks).Table;
+        Assert.Equal(sourceText.Replace(oldText, newText), importedTable.Rows[1].Cells[1]);
+
+        var accepted = Finalize(added.File.ToByteArray(), DocumentRevisionFinalizationMode.Accept);
+        Assert.Equal(sourceText.Replace(oldText, newText), TableCellText(accepted.File.ToByteArray(), 1, 1));
+        AssertNoRevisions(accepted.File.ToByteArray());
+
+        var rejected = Finalize(added.File.ToByteArray(), DocumentRevisionFinalizationMode.Reject);
+        Assert.Equal(sourceText, TableCellText(rejected.File.ToByteArray(), 1, 1));
+        AssertNoRevisions(rejected.File.ToByteArray());
+        Assert.Equal(sourceHash, Hash(source));
+    }
+
+    [Fact]
     public void FailsClosedForStaleAmbiguousCrossRunAndUnsupportedTargets()
     {
         const string repeated = "draft wording and draft wording";
@@ -123,6 +222,48 @@ public sealed class DocxTrackedReplacementCodecTests
         table.Table.Rows.Add(row);
         var tableSource = ExportDocx(table);
         AssertFailure(Add(tableSource, "cell", "cell", "updated"), "unsupported_document_tracked_replacement_target");
+        AssertFailure(AddTableCell(tableSource, "cell", "cell", "updated", row: 2, column: 0), "document_tracked_replacement_target_not_found");
+        AssertFailure(AddTableCell(tableSource, "cell", "cell", "updated", row: 0, column: 2), "document_tracked_replacement_target_not_found");
+        AssertFailure(AddTableCell(tableSource, "cell", "cell", "updated", row: uint.MaxValue, column: 0), "document_tracked_replacement_target_not_found");
+        AssertFailure(AddTableCell(tableSource, "cell", "cell", "updated", row: 0, column: uint.MaxValue), "document_tracked_replacement_target_not_found");
+
+        var multipleParagraphs = EditDocx(tableSource, body =>
+        {
+            var cell = body.Elements<W.Table>().Single().Descendants<W.TableCell>().Single();
+            cell.Append(new W.Paragraph(new W.Run(new W.Text("second paragraph"))));
+        });
+        AssertFailure(AddTableCell(multipleParagraphs, "cellsecond paragraph", "cell", "updated"), "unsupported_document_tracked_replacement_topology");
+
+        var invalidMergeContinuation = EditDocx(tableSource, body =>
+        {
+            var cell = body.Elements<W.Table>().Single().Descendants<W.TableCell>().Single();
+            var properties = cell.TableCellProperties ??= new W.TableCellProperties();
+            properties.Append(new W.VerticalMerge { Val = W.MergedCellValues.Continue });
+        });
+        AssertFailure(AddTableCell(invalidMergeContinuation, "cell", "cell", "updated"), "unsupported_document_tracked_replacement_topology");
+
+        var mismatchedTarget = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.AddDocxTrackedReplacement,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(tableSource),
+            TrackedReplacement = new DocumentTrackedReplacementRequest
+            {
+                ExpectedSourceSha256 = Hash(tableSource),
+                TargetBlockIndex = 0,
+                Target = new DocumentTrackedReplacementTarget
+                {
+                    BlockIndex = 1,
+                    TableCell = new DocumentTrackedReplacementTableCell { Row = 0, Column = 0 },
+                },
+                ExpectedParagraphText = "cell",
+                Search = "cell",
+                Replacement = "updated",
+                Author = "Reviewer",
+            },
+        });
+        AssertFailure(mismatchedTarget, "document_tracked_replacement_target_mismatch");
     }
 
     private static CodecResponse Add(
@@ -141,6 +282,36 @@ public sealed class DocxTrackedReplacementCodecTests
             {
                 ExpectedSourceSha256 = expectedHash ?? Hash(source),
                 TargetBlockIndex = targetBlockIndex,
+                ExpectedParagraphText = expectedText,
+                Search = search,
+                Replacement = replacement,
+                Author = "Reviewer",
+                Date = "2026-07-21T10:00:00Z",
+            },
+        });
+
+    private static CodecResponse AddTableCell(
+        byte[] source,
+        string expectedText,
+        string search,
+        string replacement,
+        uint row = 0,
+        uint column = 0,
+        uint blockIndex = 0) => Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.AddDocxTrackedReplacement,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(source),
+            TrackedReplacement = new DocumentTrackedReplacementRequest
+            {
+                ExpectedSourceSha256 = Hash(source),
+                TargetBlockIndex = blockIndex,
+                Target = new DocumentTrackedReplacementTarget
+                {
+                    BlockIndex = blockIndex,
+                    TableCell = new DocumentTrackedReplacementTableCell { Row = row, Column = column },
+                },
                 ExpectedParagraphText = expectedText,
                 Search = search,
                 Replacement = replacement,
@@ -187,6 +358,20 @@ public sealed class DocxTrackedReplacementCodecTests
         return response.File.ToByteArray();
     }
 
+    private static byte[] EditDocx(byte[] source, Action<W.Body> edit)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(source);
+        stream.Position = 0;
+        using (var package = WordprocessingDocument.Open(stream, isEditable: true))
+        {
+            var document = package.MainDocumentPart!.Document!;
+            edit(document.Body!);
+            document.Save();
+        }
+        return stream.ToArray();
+    }
+
     private static DocumentBlock Paragraph(string text, bool bold = false)
     {
         var block = new DocumentBlock
@@ -204,6 +389,15 @@ public sealed class DocxTrackedReplacementCodecTests
         using var stream = new MemoryStream(bytes, writable: false);
         using var package = WordprocessingDocument.Open(stream, isEditable: false);
         return string.Concat(package.MainDocumentPart!.Document!.Body!.Descendants<W.Text>().Select(value => value.Text));
+    }
+
+    private static string TableCellText(byte[] bytes, int row, int column)
+    {
+        using var stream = new MemoryStream(bytes, writable: false);
+        using var package = WordprocessingDocument.Open(stream, isEditable: false);
+        var table = package.MainDocumentPart!.Document!.Body!.Elements<W.Table>().Single();
+        var cell = table.Elements<W.TableRow>().ElementAt(row).Elements<W.TableCell>().ElementAt(column);
+        return string.Concat(cell.Descendants<W.Text>().Select(value => value.Text));
     }
 
     private static void AssertNoRevisions(byte[] bytes)

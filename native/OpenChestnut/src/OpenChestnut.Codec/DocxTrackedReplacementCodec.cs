@@ -20,6 +20,11 @@ internal sealed record DocxInlineTrackedReplacement(
     string DeletedText,
     string InsertedText);
 
+internal sealed record DocxResolvedTrackedReplacementTarget(
+    W.Paragraph Paragraph,
+    uint BodyIndex,
+    DocumentTrackedReplacementTarget Selector);
+
 // Adds one exact, direct-run replacement to an existing DOCX. This operation
 // deliberately owns package mutation instead of expanding the general
 // DocumentParagraph model with source-only revision topology.
@@ -53,6 +58,7 @@ internal static class DocxTrackedReplacementCodec
         stream.Write(sourceBytes);
         stream.Position = 0;
         uint bodyIndex;
+        DocumentTrackedReplacementTarget selector;
         string sourceElementHash;
         using (var package = WordprocessingDocument.Open(stream, isEditable: true, new OpenSettings { AutoSave = false }))
         {
@@ -60,19 +66,10 @@ internal static class DocxTrackedReplacementCodec
                 throw new CodecException("missing_document_part", "DOCX package has no Main Document part.", DocumentPath);
             var body = mainPart.Document?.Body ??
                 throw new CodecException("missing_document_body", "DOCX package has no document body.", DocumentPath);
-            var blocks = body.ChildElements.Where(element => element is not W.SectionProperties).ToArray();
-            if (request.TargetBlockIndex >= blocks.Length)
-                throw new CodecException(
-                    "document_tracked_replacement_target_not_found",
-                    $"DOCX tracked replacement target block {request.TargetBlockIndex} is outside the {blocks.Length}-block document body.",
-                    DocumentPath);
-            if (blocks[request.TargetBlockIndex] is not W.Paragraph paragraph)
-                throw new CodecException(
-                    "unsupported_document_tracked_replacement_target",
-                    $"DOCX tracked replacement target block {request.TargetBlockIndex} is not a paragraph.",
-                    DocumentPath);
-
-            bodyIndex = BodyIndex(body, paragraph);
+            var resolved = ResolveTarget(body, request);
+            var paragraph = resolved.Paragraph;
+            bodyIndex = resolved.BodyIndex;
+            selector = resolved.Selector;
             sourceElementHash = HashElement(paragraph);
             var target = FindTarget(paragraph, request.ExpectedParagraphText, request.Search);
             var date = Date(request);
@@ -131,9 +128,9 @@ internal static class DocxTrackedReplacementCodec
         {
             var body = package.MainDocumentPart?.Document?.Body ??
                 throw new CodecException("missing_document_body", "Rewritten DOCX package has no document body.", DocumentPath);
-            var blocks = body.ChildElements.Where(element => element is not W.SectionProperties).ToArray();
-            if (request.TargetBlockIndex >= blocks.Length ||
-                blocks[request.TargetBlockIndex] is not W.Paragraph paragraph ||
+            var resolved = ResolveTarget(body, request);
+            var paragraph = resolved.Paragraph;
+            if (!SameTarget(resolved.Selector, selector) ||
                 !TryReadFinalizable(paragraph, out var replacement) ||
                 replacement.Deletion.Id?.Value != deletionId ||
                 replacement.Insertion.Id?.Value != insertionId ||
@@ -161,6 +158,7 @@ internal static class DocxTrackedReplacementCodec
             InsertedTextChars = checked((uint)request.Replacement.Length),
             DeletionNativeRevisionId = deletionId,
             InsertionNativeRevisionId = insertionId,
+            Target = selector.Clone(),
         };
         result.ChangedParts.Add(changedParts);
         var diagnostics = new List<Diagnostic>();
@@ -199,6 +197,88 @@ internal static class DocxTrackedReplacementCodec
     }
 
     private sealed record TargetRun(W.Run Run, W.Text Text, int MatchIndex);
+
+    private static DocxResolvedTrackedReplacementTarget ResolveTarget(
+        W.Body body,
+        DocumentTrackedReplacementRequest request)
+    {
+        var selector = request.Target;
+        var blockIndex = selector?.BlockIndex ?? request.TargetBlockIndex;
+        if (selector is not null && selector.BlockIndex != request.TargetBlockIndex)
+            throw new CodecException(
+                "document_tracked_replacement_target_mismatch",
+                "DOCX tracked replacement structured target block_index must match compatibility target_block_index.",
+                DocumentPath);
+
+        var blocks = body.ChildElements.Where(element => element is not W.SectionProperties).ToArray();
+        if (blockIndex >= blocks.Length)
+            throw new CodecException(
+                "document_tracked_replacement_target_not_found",
+                $"DOCX tracked replacement target block {blockIndex} is outside the {blocks.Length}-block document body.",
+                DocumentPath);
+
+        if (selector is null || selector.LocationCase == DocumentTrackedReplacementTarget.LocationOneofCase.BodyParagraph)
+        {
+            if (blocks[blockIndex] is not W.Paragraph paragraph)
+                throw new CodecException(
+                    "unsupported_document_tracked_replacement_target",
+                    $"DOCX tracked replacement target block {blockIndex} is not a direct body paragraph.",
+                    DocumentPath);
+            return new DocxResolvedTrackedReplacementTarget(
+                paragraph,
+                BodyIndex(body, paragraph),
+                new DocumentTrackedReplacementTarget
+                {
+                    BlockIndex = blockIndex,
+                    BodyParagraph = new DocumentTrackedReplacementBodyParagraph(),
+                });
+        }
+
+        if (selector.LocationCase != DocumentTrackedReplacementTarget.LocationOneofCase.TableCell ||
+            selector.TableCell is null)
+            throw new CodecException(
+                "invalid_document_tracked_replacement_target",
+                "DOCX tracked replacement target must select a body paragraph or table cell.",
+                DocumentPath);
+        if (blocks[blockIndex] is not W.Table table)
+            throw new CodecException(
+                "unsupported_document_tracked_replacement_target",
+                $"DOCX tracked replacement target block {blockIndex} is not a direct body table.",
+                DocumentPath);
+        if (table.ChildElements.Any(child => child is not W.TableProperties and not W.TableGrid and not W.TableRow))
+            throw Unsupported("Target table must contain only direct rows plus bounded table properties and grid metadata.");
+
+        var rows = table.Elements<W.TableRow>().ToArray();
+        if (selector.TableCell.Row >= rows.Length)
+            throw TargetNotFound($"Target table row {selector.TableCell.Row} is outside the {rows.Length}-row physical table.");
+        var rowIndex = (int)selector.TableCell.Row;
+        var row = rows[rowIndex];
+        if (row.ChildElements.Any(child => child is not W.TableRowProperties and not W.TableCell))
+            throw Unsupported($"Target table row {rowIndex} contains unsupported native children.");
+        var cells = row.Elements<W.TableCell>().ToArray();
+        if (selector.TableCell.Column >= cells.Length)
+            throw TargetNotFound($"Target table cell {rowIndex},{selector.TableCell.Column} is outside the {cells.Length}-cell physical row.");
+        var columnIndex = (int)selector.TableCell.Column;
+
+        var geometry = DocxTableGeometry.Read(table, out var validGeometry);
+        if (!validGeometry || rowIndex >= geometry.Rows.Count || columnIndex >= geometry.Rows[rowIndex].RichCells.Count)
+            throw Unsupported("Target table does not have a stable bounded physical grid.");
+        var semanticCell = geometry.Rows[rowIndex].RichCells[columnIndex];
+        if (semanticCell.VerticalMerge == DocumentTableVerticalMerge.Continue)
+            throw Unsupported($"Target table cell {rowIndex},{columnIndex} is a vertical-merge continuation and has no independent editable text owner.");
+
+        var cell = cells[columnIndex];
+        if (cell.ChildElements.Any(child => child is not W.TableCellProperties and not W.Paragraph))
+            throw Unsupported($"Target table cell {rowIndex},{columnIndex} contains nested tables, controls, or unsupported native children.");
+        var paragraphs = cell.Elements<W.Paragraph>().ToArray();
+        if (paragraphs.Length != 1)
+            throw Unsupported($"Target table cell {rowIndex},{columnIndex} must contain exactly one direct paragraph; found {paragraphs.Length}.");
+
+        return new DocxResolvedTrackedReplacementTarget(
+            paragraphs[0],
+            BodyIndex(body, table),
+            selector.Clone());
+    }
 
     private static TargetRun FindTarget(W.Paragraph paragraph, string expectedText, string search)
     {
@@ -291,6 +371,12 @@ internal static class DocxTrackedReplacementCodec
     {
         if (request is null)
             throw new CodecException("missing_tracked_replacement", "DOCX tracked replacement requires tracked_replacement options.");
+        if (request.Target is not null &&
+            request.Target.LocationCase is not DocumentTrackedReplacementTarget.LocationOneofCase.BodyParagraph and
+                not DocumentTrackedReplacementTarget.LocationOneofCase.TableCell)
+            throw new CodecException(
+                "invalid_document_tracked_replacement_target",
+                "DOCX tracked replacement target must select a body paragraph or table cell.");
         ValidateText(request.ExpectedParagraphText, "expected paragraph text");
         ValidateText(request.Search, "search text");
         ValidateText(request.Replacement, "replacement text");
@@ -321,12 +407,18 @@ internal static class DocxTrackedReplacementCodec
     private static SpaceProcessingModeValues? Preserve(string value) =>
         value.Length != value.Trim().Length ? SpaceProcessingModeValues.Preserve : null;
 
-    private static uint BodyIndex(W.Body body, W.Paragraph paragraph)
+    private static uint BodyIndex(W.Body body, OpenXmlElement element)
     {
         for (var index = 0; index < body.ChildElements.Count; index++)
-            if (ReferenceEquals(body.ChildElements[index], paragraph)) return checked((uint)index);
-        throw new CodecException("document_tracked_replacement_target_not_found", "DOCX tracked replacement target paragraph is not in the document body.", DocumentPath);
+            if (ReferenceEquals(body.ChildElements[index], element)) return checked((uint)index);
+        throw new CodecException("document_tracked_replacement_target_not_found", "DOCX tracked replacement target owner is not in the document body.", DocumentPath);
     }
+
+    private static bool SameTarget(DocumentTrackedReplacementTarget left, DocumentTrackedReplacementTarget right) =>
+        left.BlockIndex == right.BlockIndex &&
+        left.LocationCase == right.LocationCase &&
+        (left.LocationCase != DocumentTrackedReplacementTarget.LocationOneofCase.TableCell ||
+         left.TableCell.Row == right.TableCell.Row && left.TableCell.Column == right.TableCell.Column);
 
     private static string[] ChangedParts(byte[] sourceBytes, byte[] outputBytes)
     {
@@ -359,5 +451,6 @@ internal static class DocxTrackedReplacementCodec
     private static string HashElement(OpenXmlElement element) => Hash(Encoding.UTF8.GetBytes(element.OuterXml));
     private static bool IsSha256(string value) => value.Length == 64 && value.All(Uri.IsHexDigit);
     private static string Hash(ReadOnlySpan<byte> bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+    private static CodecException TargetNotFound(string message) => new("document_tracked_replacement_target_not_found", message, DocumentPath);
     private static CodecException Unsupported(string message) => new("unsupported_document_tracked_replacement_topology", message, DocumentPath);
 }

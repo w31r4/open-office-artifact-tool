@@ -390,6 +390,68 @@ try {
     (error) => error?.code === "EEXIST",
   );
 
+  const tableTrackedSource = DocumentModel.create({ name: "Table tracked replacement source", blocks: [] });
+  tableTrackedSource.addParagraph("Contract review matrix");
+  tableTrackedSource.addTable({
+    name: "contract-terms",
+    styleId: "TableGrid",
+    widthDxa: 9000,
+    indentDxa: 120,
+    columnWidthsDxa: [2800, 6200],
+    cellMarginsDxa: { top: 80, right: 120, bottom: 80, left: 120 },
+    borderColor: "445566",
+    borderSize: 8,
+    headerFill: "E2E8F0",
+    values: [["Term", "Current wording"], ["Payment", "Payment is due in 30 days."]],
+  });
+  tableTrackedSource.addParagraph("Unchanged approval context.");
+  const tableTrackedSourcePath = path.join(outputDir, "table-tracked-source.docx");
+  await (await DocumentFile.exportDocx(tableTrackedSource)).save(tableTrackedSourcePath);
+  const tableTrackedSourceBytes = await fs.readFile(tableTrackedSourcePath);
+  const tableTrackedPath = path.join(outputDir, "table-tracked.docx");
+  const tableTrackedAuditPath = path.join(outputDir, "table-tracked-audit.json");
+  const tableTrackedWorkflow = await addDocumentTrackedReplacement({
+    inputPath: tableTrackedSourcePath,
+    outputPath: tableTrackedPath,
+    auditPath: tableTrackedAuditPath,
+    expectedText: "Payment is due in 30 days.",
+    search: "30 days",
+    replacement: "45 days",
+    author: "Contract reviewer",
+    date: "2026-07-21T11:00:00Z",
+  });
+  assert.deepEqual(tableTrackedWorkflow.audit.operation.target, {
+    kind: "tableCell",
+    blockIndex: 1,
+    row: 1,
+    column: 1,
+  });
+  assert.deepEqual(tableTrackedWorkflow.audit.operation.changedParts, ["word/document.xml"]);
+  assert.deepEqual(await fs.readFile(tableTrackedSourcePath), tableTrackedSourceBytes);
+  const tableTrackedDocument = await DocumentFile.importDocx(await FileBlob.load(tableTrackedPath));
+  assert.equal(tableTrackedDocument.blocks[1].getCell(1, 1).value, "Payment is due in 45 days.");
+  assert.equal(tableTrackedDocument.blocks[1].getCell(1, 1).editable, false);
+  const tableTrackedRender = await verifyDocumentFile(tableTrackedPath, {
+    outputDir: path.join(outputDir, "table-tracked-render"),
+    previewFormat: "png",
+    nativeRender: nativeStatus.available ? "required" : "auto",
+  });
+  assert.equal(tableTrackedRender.summary.verifyOk, true);
+  assert.equal(tableTrackedRender.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+
+  const tableTrackedBytes = await fs.readFile(tableTrackedPath);
+  const tableTrackedSha256 = createHash("sha256").update(tableTrackedBytes).digest("hex");
+  const acceptedTableTracked = await DocumentFile.finalizeRevisions(new FileBlob(tableTrackedBytes), {
+    mode: "accept",
+    expectedSourceSha256: tableTrackedSha256,
+  });
+  const rejectedTableTracked = await DocumentFile.finalizeRevisions(new FileBlob(tableTrackedBytes), {
+    mode: "reject",
+    expectedSourceSha256: tableTrackedSha256,
+  });
+  assert.equal((await DocumentFile.importDocx(acceptedTableTracked)).blocks[1].getCell(1, 1).value, "Payment is due in 45 days.");
+  assert.equal((await DocumentFile.importDocx(rejectedTableTracked)).blocks[1].getCell(1, 1).value, "Payment is due in 30 days.");
+
   const revisionSourceDocument = DocumentModel.create({
     name: "Bounded revision finalization",
     settings: { trackRevisions: true },

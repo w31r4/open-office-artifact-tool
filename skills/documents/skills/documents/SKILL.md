@@ -216,8 +216,9 @@ node examples/openchestnut-modern-comment-thread-workflow.mjs input.docx reviewe
   "The evidence is attached." "Evidence retained with the approval." resolved
 
 # 3) Add one source-bound native in-paragraph tracked replacement.
-# request.json contains targetBlockIndex, expectedText, search, replacement,
-# author, and optional date.
+# request.json contains either paragraph-only targetBlockIndex or a structured
+# paragraph/tableCell target, plus expectedText, search, replacement, author,
+# and optional date.
 node examples/openchestnut-tracked-replacement-workflow.mjs \
   input.docx reviewed.docx reviewed.audit.json request.json
 
@@ -366,7 +367,7 @@ This is a quick index so you can jump from a helper script to the right task gui
 - `insert_toc.py` → `tasks/toc_workflow.md`
 
 ### Review lifecycle (comments / tracked changes)
-- Public `document.addInsertion(...)` / `document.addDeletion(...)` authors standalone whole-paragraph revisions, `DocumentFile.addTrackedReplacement(...)` plus `examples/openchestnut-tracked-replacement-workflow.mjs` adds one exact source-bound native in-paragraph deletion/insertion pair, and `document.setSettings({ trackRevisions: true })` enables future-change tracking. `DocumentFile.finalizeRevisions(...)` accepts/rejects both bounded profiles; the shipped revision-finalization workflow adds richer whole-block projection checks. `add_tracked_replacements.py` and `accept_tracked_changes.py` remain explicit helpers only for broader graphs → `ooxml/tracked_changes.md`, `tasks/clean_tracked_changes.md`
+- Public `document.addInsertion(...)` / `document.addDeletion(...)` authors standalone whole-paragraph revisions, while `DocumentFile.addTrackedReplacement(...)` plus `examples/openchestnut-tracked-replacement-workflow.mjs` adds one exact source-bound native in-paragraph deletion/insertion pair in either a direct body paragraph or one bounded direct table-cell paragraph. `document.setSettings({ trackRevisions: true })` independently enables future-change tracking. `DocumentFile.finalizeRevisions(...)` accepts/rejects both bounded profiles; the shipped revision-finalization workflow adds richer whole-block projection checks. `add_tracked_replacements.py` and `accept_tracked_changes.py` remain explicit helpers only for broader graphs → `ooxml/tracked_changes.md`, `tasks/clean_tracked_changes.md`
 - `examples/openchestnut-classic-comment-edit-workflow.mjs` is the preferred public route for one uniquely located imported classic comment when only its text may change
 - `examples/openchestnut-modern-comment-thread-workflow.mjs` handles one recognized root plus one direct reply: text and root resolved state may change, while imported identity, people/durable metadata, anchors, and topology stay source-bound; nested or irregular graphs fail closed
 - `comments_add.py`, `comments_extract.py`, `comments_apply_patch.py`, `comments_strip.py` → `tasks/comments_manage.md`
@@ -465,7 +466,7 @@ Then inspect the generated `page-<N>.png` files.
 - If you have mixed portrait/landscape or margin weirdness: `tasks/sections_layout.md`
 - If images shift or overlap across renderers: `tasks/images_figures.md`
 - If you need spreadsheet ↔ table round-tripping: `tasks/tables_spreadsheets.md`
-- If you need **tracked changes (redlines)**: use public `document.addInsertion(...)` / `document.addDeletion(...)` for whole blocks, or `examples/openchestnut-tracked-replacement-workflow.mjs` for one exact source-bound in-paragraph literal; use `document.setSettings({ trackRevisions: true })` for future edits, then route broader graphs through `ooxml/tracked_changes.md`
+- If you need **tracked changes (redlines)**: use public `document.addInsertion(...)` / `document.addDeletion(...)` for whole blocks, or `examples/openchestnut-tracked-replacement-workflow.mjs` for one exact source-bound literal inside a direct body paragraph or bounded single-paragraph table cell; use `document.setSettings({ trackRevisions: true })` for future edits, then route broader graphs through `ooxml/tracked_changes.md`
 - If you need **comments**: `ooxml/comments.md`
 - If you need **hyperlinks/fields/page numbers/headers**: `ooxml/hyperlinks_and_fields.md`
 - If LibreOffice headless is failing: `troubleshooting/libreoffice_headless.md`

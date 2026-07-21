@@ -42,9 +42,9 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.verify` | api | Return QA issues for invalid/duplicate content-control IDs and native IDs, malformed tags/aliases, fake lists, invalid links/citations/bibliography sources, malformed tracked changes, duplicate/dangling/reversed bookmark ranges, invalid footnotes/endnotes, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells. |
 | `documentComment.reopen` | api | Clear the resolved state of a bounded modern comment without changing its root/reply topology or durable identity. |
 | `documentComment.resolve` | api | Set resolved=true for a bounded modern comment. Imported edits re-prove source hashes and commentsExtended topology while keeping thread identity fixed. |
-| `DocumentFile.addTrackedReplacement` | api | Add one exact in-paragraph replacement to hash-bound DOCX source bytes as adjacent native w:del/w:ins runs. The full expected paragraph, semantic block index, unique one-node literal match, preserved run formatting, exact changed-part audit, and fail-closed topology checks prevent ambiguous or lossy reconstruction. |
+| `DocumentFile.addTrackedReplacement` | api | Add one exact replacement inside a direct body paragraph or bounded table-cell paragraph to hash-bound DOCX source bytes as adjacent native w:del/w:ins runs. A structured paragraph/tableCell selector, full expected text, unique one-node literal match, preserved run formatting, exact changed-part audit, and fail-closed topology checks prevent ambiguous or lossy reconstruction. |
 | `DocumentFile.exportDocx` | api | Export DocumentModel to DOCX through the single bundled OpenChestnut codec. Only limits is accepted; legacy codec and lossy-fallback options fail explicitly. |
-| `DocumentFile.finalizeRevisions` | api | Accept or reject bounded direct whole-paragraph one-run revisions and exact adjacent in-paragraph w:del + w:ins pairs from source bytes. Mandatory SHA-256 binding, decompression budgets, exact changed-part audit, and fail-closed graph checks prevent silent model reconstruction or broad package mutation. |
+| `DocumentFile.finalizeRevisions` | api | Accept or reject bounded direct whole-paragraph one-run revisions and exact adjacent in-paragraph w:del + w:ins pairs from source bytes, including the bounded direct table-cell profile. Mandatory SHA-256 binding, decompression budgets, exact changed-part audit, and fail-closed graph checks prevent silent model reconstruction or broad package mutation. |
 | `DocumentFile.importDocx` | api | Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Recognized inline controls, fields, revisions, notes, citations, simple tables, and other exact profiles are fixed-topology editable; otherwise read-only paragraphs and complex table cells separately advertise textPatchable when one ordinary native text node can be patched without rebuilding the surrounding graph. |
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
@@ -623,13 +623,14 @@ Set resolved=true for a bounded modern comment. Imported edits re-prove source h
 
 #### `DocumentFile.addTrackedReplacement`
 
-Add one exact in-paragraph replacement to hash-bound DOCX source bytes as adjacent native w:del/w:ins runs. The full expected paragraph, semantic block index, unique one-node literal match, preserved run formatting, exact changed-part audit, and fail-closed topology checks prevent ambiguous or lossy reconstruction.
+Add one exact replacement inside a direct body paragraph or bounded table-cell paragraph to hash-bound DOCX source bytes as adjacent native w:del/w:ins runs. A structured paragraph/tableCell selector, full expected text, unique one-node literal match, preserved run formatting, exact changed-part audit, and fail-closed topology checks prevent ambiguous or lossy reconstruction.
 
 **Schema parameters:**
 
 - `docx` (FileBlob|Uint8Array|ArrayBuffer) required — Original DOCX bytes. OpenChestnut edits this package directly and never rebuilds it from the imported JavaScript model.
-- `targetBlockIndex` (number) required — Zero-based semantic body-block index from the exact source document inspect result.
-- `expectedText` (string) required — Exact full text of the target paragraph; stale text fails closed before mutation.
+- `target` (object) — Preferred structured selector: { kind: 'paragraph', blockIndex } or { kind: 'tableCell', blockIndex, row, column }. Table row/column are zero-based physical indexes from the exact imported table block.
+- `targetBlockIndex` (number) — Compatibility selector for a direct body paragraph. Omit when target is supplied; the two forms are mutually exclusive.
+- `expectedText` (string) required — Exact full text of the target paragraph or single-paragraph table cell; stale text fails closed before mutation.
 - `search` (string) required — Non-empty literal that must occur exactly once inside one direct ordinary w:r/w:t node. Duplicate and cross-run matches fail closed.
 - `replacement` (string) required — Non-empty replacement text written in a native adjacent w:ins run with the source run formatting.
 - `author` (string) required — Revision author, 1 through 255 characters without control characters.
@@ -639,7 +640,7 @@ Add one exact in-paragraph replacement to hash-bound DOCX source bytes as adjace
 
 **Schema returns:**
 
-- `blob` (FileBlob) — Source-preserving DOCX with metadata.trackedReplacement containing source/output and paragraph-element hashes, UTF-16 text hashes/counts, package-local native revision IDs, semantic/body indexes, and the exact changed-part list. Only word/document.xml may change.
+- `blob` (FileBlob) — Source-preserving DOCX with metadata.trackedReplacement containing the re-proved structured target, source/output and paragraph-element hashes, UTF-16 text hashes/counts, package-local native revision IDs, semantic/body indexes, and the exact changed-part list. Only word/document.xml may change.
 
 #### `DocumentFile.exportDocx`
 
@@ -656,7 +657,7 @@ Export DocumentModel to DOCX through the single bundled OpenChestnut codec. Only
 
 #### `DocumentFile.finalizeRevisions`
 
-Accept or reject bounded direct whole-paragraph one-run revisions and exact adjacent in-paragraph w:del + w:ins pairs from source bytes. Mandatory SHA-256 binding, decompression budgets, exact changed-part audit, and fail-closed graph checks prevent silent model reconstruction or broad package mutation.
+Accept or reject bounded direct whole-paragraph one-run revisions and exact adjacent in-paragraph w:del + w:ins pairs from source bytes, including the bounded direct table-cell profile. Mandatory SHA-256 binding, decompression budgets, exact changed-part audit, and fail-closed graph checks prevent silent model reconstruction or broad package mutation.
 
 **Schema parameters:**
 
@@ -668,7 +669,7 @@ Accept or reject bounded direct whole-paragraph one-run revisions and exact adja
 
 **Schema returns:**
 
-- `blob` (FileBlob) — Rewritten DOCX with metadata.revisionFinalization containing source/output hashes, insertion/deletion counts, tracking before/after, and exact changed parts. Direct whole-paragraph one-run revisions and one adjacent direct-run deletion/insertion pair are accepted; mixed, nested, multi-run, moved, property-level, non-body, malformed, or absent revisions fail closed.
+- `blob` (FileBlob) — Rewritten DOCX with metadata.revisionFinalization containing source/output hashes, insertion/deletion counts, tracking before/after, and exact changed parts. Direct body whole-paragraph one-run revisions plus exact adjacent direct-run deletion/insertion pairs in direct body paragraphs or bounded table cells are accepted; mixed, nested, multi-run, moved, property-level, non-body-story, irregular-table, malformed, or absent revisions fail closed.
 
 #### `DocumentFile.importDocx`
 
