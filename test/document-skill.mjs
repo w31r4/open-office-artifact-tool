@@ -116,18 +116,24 @@ try {
   assert.equal(commentsDocument.comments[0].initials, "LR");
   assert.equal(commentsDocument.comments[0].text, "Approved after source-bound review.");
 
-  const controls = await runFixture("open-chestnut-content-controls");
+  const controls = await runFixture("open-chestnut-content-controls", {
+    nativeRender: nativeStatus.available ? "required" : "auto",
+  });
   const controlsDocument = await DocumentFile.importDocx(await FileBlob.load(controls.docxPath));
-  assert.deepEqual(controlsDocument.contentControls.map((control) => [control.tag, control.text]), [
-    ["CUSTOMER_NAME", "Grace Hopper"],
-    ["ACCOUNT_ID", "AC-2048"],
+  assert.deepEqual(controlsDocument.contentControls.map((control) => [control.tag, control.controlType, control.controlType === "checkbox" ? control.checked : control.text]), [
+    ["CUSTOMER_NAME", "text", "Grace Hopper"],
+    ["ACCOUNT_ID", "text", "AC-2048"],
+    ["APPROVED", "checkbox", true],
   ]);
+  assert.equal(controls.qa.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
   assert.equal(controlsDocument.inspect({ kind: "contentControl" }).ndjson.includes("Customer name"), true);
   const controlsZip = await JSZip.loadAsync(await fs.readFile(controls.docxPath));
   const controlsXml = await controlsZip.file("word/document.xml").async("text");
-  assert.equal((controlsXml.match(/<w:sdt>/g) || []).length, 2);
+  assert.equal((controlsXml.match(/<w:sdt>/g) || []).length, 3);
   assert.match(controlsXml, /<w:tag w:val="CUSTOMER_NAME"\s*\/>/);
   assert.match(controlsXml, /<w:tag w:val="ACCOUNT_ID"\s*\/>/);
+  assert.match(controlsXml, /<w:tag w:val="APPROVED"\s*\/>/);
+  assert.match(controlsXml, /<w14:checkbox>[\s\S]*<w14:checked w14:val="1"\s*\/>/);
 
   const bibliography = await runFixture("open-chestnut-bibliography");
   const bibliographyDocument = await DocumentFile.importDocx(await FileBlob.load(bibliography.docxPath));
@@ -665,7 +671,9 @@ try {
   assert.match(skillText, /document\.addInsertion/);
   assert.match(skillText, /document\.addDeletion/);
   assert.match(skillText, /paragraph\.addTextContentControl/);
+  assert.match(skillText, /paragraph\.addCheckboxContentControl/);
   assert.match(skillText, /document\.fillContentControls/);
+  assert.match(skillText, /document\.setCheckboxContentControls/);
   assert.match(skillText, /document\.addBibliographySource/);
   assert.match(skillText, /document\.addCitation/);
   assert.match(skillText, /document\.addTableOfContents/);
@@ -689,8 +697,10 @@ try {
   assert.match(manifestText, /^examples\/end_to_end_smoke_test\.md$/m);
   const controlsGuide = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "tasks", "forms_content_controls.md"), "utf8");
   assert.match(controlsGuide, /paragraph\.addTextContentControl/);
+  assert.match(controlsGuide, /paragraph\.addCheckboxContentControl/);
   assert.match(controlsGuide, /document\.fillContentControls/);
-  assert.match(controlsGuide, /Rich.*block.*cell.*dropdown.*date.*checkbox/is);
+  assert.match(controlsGuide, /document\.setCheckboxContentControls/);
+  assert.match(controlsGuide, /Rich.*block.*cell.*dropdown.*date.*custom-symbol checkbox/is);
 } finally {
   await fs.rm(outputDir, { recursive: true, force: true });
 }

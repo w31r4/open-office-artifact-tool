@@ -2446,11 +2446,12 @@ message DocumentRun {
   bool italic = 4;
   bool underline = 5;
   DocumentRunFormatting formatting = 6;
-  // One bounded inline Word plain-text content control. The model ID is
+  // One bounded inline Word plain-text or checkbox content control. The model ID is
   // agent-facing identity for one object lifetime; native_id is package-local
   // w:sdtPr/w:id identity and is assigned deterministically when omitted.
-  // Rich text, block/cell controls, data binding, dropdown/date/checkbox
-  // properties, placeholder documents, locking, and nested SDTs stay opaque.
+  // Rich text, block/cell controls, data binding, dropdown/date controls,
+  // custom checkbox symbols, placeholder documents, locking, and nested SDTs
+  // stay opaque.
   DocumentTextContentControl text_content_control = 7;
   // One logical inline Word field represented by the public run's text as its
   // cached display result. OpenChestnut authors/imports a canonical five-run
@@ -2472,6 +2473,16 @@ message DocumentTextContentControl {
   string tag = 2;
   string alias = 3;
   optional uint32 native_id = 4;
+  DocumentContentControlType control_type = 5;
+  // Meaningful only when control_type is CHECKBOX. The canonical visible
+  // glyph and w14 checked/unchecked symbol declarations are codec-owned.
+  bool checked = 6;
+}
+
+enum DocumentContentControlType {
+  DOCUMENT_CONTENT_CONTROL_TYPE_UNSPECIFIED = 0;
+  DOCUMENT_CONTENT_CONTROL_TYPE_PLAIN_TEXT = 1;
+  DOCUMENT_CONTENT_CONTROL_TYPE_CHECKBOX = 2;
 }
 
 message DocumentImage {

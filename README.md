@@ -61,7 +61,7 @@ console.log(reopened.inspect({ kind: "worksheet,table,chart" }).ndjson);
 | 格式 | 文件管线 | 当前核心能力 |
 | --- | --- | --- |
 | XLSX | OpenChestnut C# WASM | 单元格与公式、样式与布局、表格、图片、基础验证、标准 data bar/icon set 等条件格式、评论、图表、sparklines、有界 What-If Data Tables 和有界原生 PivotTables。 |
-| DOCX | OpenChestnut C# WASM | 结构化文本与样式、分节、页眉页脚、列表、表格、链接、字段、图片、经典评论、有界现代评论线程和行内纯文本内容控件。 |
+| DOCX | OpenChestnut C# WASM | 结构化文本与样式、分节、页眉页脚、列表、表格、链接、字段、图片、经典评论、有界现代评论线程，以及行内纯文本和规范复选框内容控件。 |
 | PPTX | OpenChestnut C# WASM | 形状与富文本、图片及可逆裁剪、表格、连接线、图表、直接背景、纯文本演讲者备注、经典评论和有界 Office 2021 现代评论线程；Master/Layout 仅保真、不可编辑。 |
 | PDF | 独立模型 + MuPDF.js | Tagged PDF 创建；任意 PDF 原生读取/检查/渲染；有界批注、表单、页面、元数据、链接和 rewrite/incremental 编辑；真实 rewrite 脱敏；有界本地 PKCS#12 签名与独立验签。严格 sanitize、PDF/UA、OCR 与高级签名由专项工具复核。 |
 

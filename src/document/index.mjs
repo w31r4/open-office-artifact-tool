@@ -175,21 +175,37 @@ class DocumentTableBlock {
   toProto() { return { kind: "table", id: this.id, name: this.name, styleId: this.styleId, gridColumns: this.gridColumns, cells: this.cells, textPatches: this.textPatches, widthDxa: this.widthDxa, indentDxa: this.indentDxa, columnWidthsDxa: this.columnWidthsDxa, cellMarginsDxa: this.cellMarginsDxa, borderColor: this.borderColor, borderSize: this.borderSize, headerFill: this.headerFill, values: this.values }; }
 }
 
+const DOCUMENT_CHECKBOX_GLYPHS = Object.freeze({ checked: "☒", unchecked: "☐" });
+
+function documentCheckboxGlyph(checked) {
+  return checked ? DOCUMENT_CHECKBOX_GLYPHS.checked : DOCUMENT_CHECKBOX_GLYPHS.unchecked;
+}
+
 function normalizeDocumentTextContentControl(value) {
   if (value == null || value === false) return undefined;
   const source = typeof value === "string" ? { tag: value } : value;
-  if (!source || typeof source !== "object") throw new TypeError("Document text content control must be an object or tag string.");
+  if (!source || typeof source !== "object") throw new TypeError("Document content control must be an object or tag string.");
   const tag = String(source.tag ?? source.name ?? "").trim();
-  if (!tag) throw new TypeError("Document text content control requires a non-empty tag.");
+  if (!tag) throw new TypeError("Document content control requires a non-empty tag.");
   const nativeId = source.nativeId == null ? undefined : Number(source.nativeId);
   if (nativeId !== undefined && (!Number.isInteger(nativeId) || nativeId < 1 || nativeId > 0x7fffffff)) {
-    throw new TypeError("Document text content control nativeId must be an integer from 1 through 2147483647.");
+    throw new TypeError("Document content control nativeId must be an integer from 1 through 2147483647.");
+  }
+  const rawType = String(source.controlType ?? source.type ?? (source.checked !== undefined ? "checkbox" : "text")).trim().toLowerCase();
+  const controlType = rawType === "text" || rawType === "plain-text" || rawType === "plaintext"
+    ? "text"
+    : rawType === "checkbox" || rawType === "check-box" ? "checkbox" : undefined;
+  if (!controlType) throw new TypeError("Document content control type must be text or checkbox.");
+  if (controlType === "checkbox" && source.checked !== undefined && typeof source.checked !== "boolean") {
+    throw new TypeError("Document checkbox content control checked state must be boolean.");
   }
   return {
     id: String(source.id || aid("dcc")),
     tag,
     alias: String(source.alias ?? source.title ?? tag),
     nativeId,
+    controlType,
+    ...(controlType === "checkbox" ? { checked: source.checked === true } : {}),
   };
 }
 
@@ -215,8 +231,15 @@ function normalizeDocumentRun(run = {}, theme = {}) {
   const contentControl = normalizeDocumentTextContentControl(run.contentControl ?? run.textContentControl ?? run.control);
   const inlineField = normalizeDocumentInlineField(run.inlineField ?? run.field);
   if (contentControl && inlineField) throw new TypeError("Document run cannot be both a content control and an inline field.");
+  const requestedText = String(run.text ?? run.value ?? "");
+  const text = contentControl?.controlType === "checkbox"
+    ? documentCheckboxGlyph(contentControl.checked)
+    : requestedText;
+  if (contentControl?.controlType === "checkbox" && requestedText && requestedText !== text) {
+    throw new TypeError("Document checkbox content-control text is codec-owned; set checked instead of supplying a visible glyph.");
+  }
   return {
-    text: String(run.text ?? run.value ?? ""),
+    text,
     style: normalizeDocxRunStyle(run.style || run.textStyle || {}, theme),
     ...(contentControl ? { contentControl } : {}),
     ...(inlineField ? { inlineField } : {}),
@@ -258,6 +281,10 @@ class DocumentParagraphBlock {
   _syncText() { this.text = this.runs.map((run) => String(run.text ?? "")).join(""); return this.text; }
   addRun(text, config = {}) { const run = normalizeDocumentRun({ ...config, text }, this.document.theme); this.runs.push(run); this._syncText(); return run; }
   addTextContentControl(text, config = {}) { return this.addRun(text, { ...config, contentControl: config.contentControl || config }); }
+  addCheckboxContentControl(checked = false, config = {}) {
+    if (typeof checked !== "boolean") throw new TypeError("Document checkbox content control checked state must be boolean.");
+    return this.addRun("", { ...config, contentControl: { ...(config.contentControl || config), controlType: "checkbox", checked } });
+  }
   addField(instruction, display = "0", config = {}) {
     return this.addRun(display, {
       ...config,
@@ -296,7 +323,7 @@ class DocumentParagraphBlock {
   toProto() { return { kind: "paragraph", id: this.id, name: this.name, styleId: this.styleId, textEditable: this.textEditable, textPatchable: this.textPatchable, textPatches: this.textPatches, paragraphFormat: Object.keys(this.paragraphFormat).length ? this.paragraphFormat : undefined, text: this.text, runs: documentRunsNeedSerialization(this.runs) ? this.runs : undefined }; }
 }
 
-class DocumentTextContentControlHandle {
+class DocumentContentControlHandle {
   constructor(block, runIndex) { this.document = block.document; this.block = block; this.runIndex = runIndex; this.kind = "contentControl"; }
   get run() { return this.block.runs[this.runIndex]; }
   get control() { return this.run?.contentControl; }
@@ -307,14 +334,39 @@ class DocumentTextContentControlHandle {
   get alias() { return this.control?.alias || ""; }
   set alias(value) { this.control.alias = String(value ?? ""); }
   get nativeId() { return this.control?.nativeId; }
+  get controlType() { return this.control?.controlType || "text"; }
   get text() { return String(this.run?.text ?? ""); }
-  set text(value) { this.run.text = String(value ?? ""); this.block._syncText(); }
-  inspectRecord() { return { kind: this.kind, id: this.id, targetId: this.targetId, runIndex: this.runIndex, tag: this.tag, alias: this.alias, nativeId: this.nativeId, text: this.text, textChars: this.text.length }; }
+  set text(value) {
+    if (this.controlType === "checkbox") throw new TypeError("Checkbox content-control text is codec-owned; set checked instead.");
+    this.run.text = String(value ?? "");
+    this.block._syncText();
+  }
+  get checked() { return this.controlType === "checkbox" ? this.control?.checked === true : undefined; }
+  set checked(value) {
+    if (this.controlType !== "checkbox") throw new TypeError("Only checkbox content controls have checked state.");
+    if (typeof value !== "boolean") throw new TypeError("Document checkbox content control checked state must be boolean.");
+    this.control.checked = value;
+    this.run.text = documentCheckboxGlyph(value);
+    this.block._syncText();
+  }
+  inspectRecord() {
+    return {
+      kind: this.kind,
+      id: this.id,
+      targetId: this.targetId,
+      runIndex: this.runIndex,
+      tag: this.tag,
+      alias: this.alias,
+      nativeId: this.nativeId,
+      controlType: this.controlType,
+      ...(this.controlType === "checkbox" ? { checked: this.checked, visibleText: this.text } : { text: this.text, textChars: this.text.length }),
+    };
+  }
 }
 
 function documentTextContentControls(document) {
   return document.blocks.flatMap((block) => block.kind === "paragraph"
-    ? block.runs.flatMap((run, runIndex) => run.contentControl ? [new DocumentTextContentControlHandle(block, runIndex)] : [])
+    ? block.runs.flatMap((run, runIndex) => run.contentControl ? [new DocumentContentControlHandle(block, runIndex)] : [])
     : []);
 }
 
@@ -970,7 +1022,7 @@ export class DocumentModel {
   fillContentControls(values = {}, options = {}) {
     const entries = values instanceof Map ? [...values.entries()] : Object.entries(values || {});
     const requested = new Map(entries.map(([tag, value]) => [String(tag), String(value ?? "")]));
-    const controls = this.contentControls;
+    const controls = this.contentControls.filter((control) => control.controlType === "text");
     const matched = new Set(controls.filter((control) => requested.has(control.tag)).map((control) => control.tag));
     const missingTags = [...requested.keys()].filter((tag) => !matched.has(tag));
     if (options.strict !== false && missingTags.length) throw new Error(`Unknown document content-control tag(s): ${missingTags.join(", ")}`);
@@ -978,6 +1030,24 @@ export class DocumentModel {
     for (const control of controls) {
       if (!requested.has(control.tag)) continue;
       control.text = requested.get(control.tag);
+      updated += 1;
+    }
+    return { updated, matchedTags: [...matched], missingTags };
+  }
+  setCheckboxContentControls(values = {}, options = {}) {
+    const entries = values instanceof Map ? [...values.entries()] : Object.entries(values || {});
+    const requested = new Map(entries.map(([tag, value]) => {
+      if (typeof value !== "boolean") throw new TypeError(`Document checkbox content-control ${String(tag)} state must be boolean.`);
+      return [String(tag), value];
+    }));
+    const controls = this.contentControls.filter((control) => control.controlType === "checkbox");
+    const matched = new Set(controls.filter((control) => requested.has(control.tag)).map((control) => control.tag));
+    const missingTags = [...requested.keys()].filter((tag) => !matched.has(tag));
+    if (options.strict !== false && missingTags.length) throw new Error(`Unknown document checkbox content-control tag(s): ${missingTags.join(", ")}`);
+    let updated = 0;
+    for (const control of controls) {
+      if (!requested.has(control.tag)) continue;
+      control.checked = requested.get(control.tag);
       updated += 1;
     }
     return { updated, matchedTags: [...matched], missingTags };
@@ -1115,6 +1185,8 @@ export class DocumentModel {
       else contentControlIds.add(control.id);
       if (!control.tag || control.tag.length > 64 || /[\u0000-\u001f\u007f]/.test(control.tag)) issues.push(verificationIssue("document", "invalidContentControlTag", `Content control ${control.id} tag must contain 1 to 64 characters without controls.`, { id: control.id, tag: control.tag }));
       if (control.alias.length > 255 || /[\u0000-\u001f\u007f]/.test(control.alias)) issues.push(verificationIssue("document", "invalidContentControlAlias", `Content control ${control.id} alias must contain at most 255 characters without controls.`, { id: control.id, alias: control.alias }));
+      if (control.controlType !== "text" && control.controlType !== "checkbox") issues.push(verificationIssue("document", "invalidContentControlType", `Content control ${control.id} type must be text or checkbox.`, { id: control.id, controlType: control.controlType }));
+      if (control.controlType === "checkbox" && (typeof control.checked !== "boolean" || control.text !== documentCheckboxGlyph(control.checked))) issues.push(verificationIssue("document", "invalidCheckboxContentControl", `Checkbox content control ${control.id} must have boolean checked state and its canonical visible glyph.`, { id: control.id, checked: control.checked, visibleText: control.text }));
       if (control.nativeId !== undefined && (!Number.isInteger(control.nativeId) || control.nativeId < 1 || control.nativeId > 0x7fffffff || nativeContentControlIds.has(control.nativeId))) issues.push(verificationIssue("document", "invalidContentControlNativeId", `Content control ${control.id} has an invalid or duplicate nativeId.`, { id: control.id, nativeId: control.nativeId }));
       if (control.nativeId !== undefined) nativeContentControlIds.add(control.nativeId);
     }

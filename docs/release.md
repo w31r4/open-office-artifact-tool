@@ -72,6 +72,50 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### DOCX canonical checkbox content controls
+
+On 2026-07-21, the Documents model, versioned protobuf wire, OpenChestnut C#
+codec, bundled WASM runtime, Help catalog, and runnable Documents Skill added a
+bounded Word 2010+ checkbox content-control profile. Source-free documents can
+author `paragraph.addCheckboxContentControl(...)`; imported canonical controls
+expose typed `controlType` and boolean `checked` state; and
+`document.setCheckboxContentControls(...)` applies strict transactional updates
+by tag. OpenChestnut owns the visible `☐`/`☒` glyph and canonical
+`w14:checkbox` symbol declarations, so agents do not edit presentation text to
+change state.
+
+The supported profile is one inline SDT with one modeled run, a unique native
+ID, and fixed `2610`/`2612` MS Gothic symbol declarations. Imported control
+type, native identity, symbol declarations, location, and topology remain
+source-bound. Rich, block/cell, nested, data-bound, dropdown/date, legacy,
+custom-symbol, locked, and otherwise irregular controls stay opaque and
+byte-preserved when unchanged; conversion, topology mutation, direct glyph
+editing, cross-type fill calls, and malformed state fail closed. An unchanged
+canonical import re-exports its original bytes exactly.
+
+The shipped Documents fixture now authors text and checkbox controls together,
+imports them, updates each through its typed primitive, exports and imports a
+second time, inspects/verifies the final semantics, and asserts native
+`w14:checked`, `w14:checkedState`, and `w14:uncheckedState` markup. Its real
+LibreOffice/Poppler render passed in the complete suite. A separate two-page
+Letter fixture was also rendered through the packaged Documents helper and
+visually reviewed page by page; the checked box, tables, revision text,
+footnotes, and page break showed no clipping, overlap, or stray glyphs.
+
+The complete local `npm test` suite passed, including Playwright,
+LibreOffice/Poppler, MuPDF.js, qpdf, all five plugin bundles, the 20-template
+corpus, and every Office/PDF regression. OpenChestnut passed `316/316` and
+OfficeBridge passed `5/5`. Protocol generation/lint and API-document
+regeneration are byte-stable. Two source-built WASM runs produced the same 39
+audited files; the bundled runtime contains 38 files and 14,859,968 bytes. The
+production clean-install tarball contains 475 files, 9,118,297 compressed
+bytes, and 24,144,421 unpacked bytes. The offline release check repeated the
+full code, documentation, package, license, JavaScript, and .NET gates and
+reported publish-ready; npm authentication and the actual publish/tag remain
+external release steps. Real pikepdf, pyHanko, veraPDF, and OCRmyPDF provider
+repeats were not configured in this shell, so their contract/adversarial suites
+passed while those explicitly environment-gated executions were skipped.
+
 ### PPTX canonical area, doughnut, scatter, and bubble charts
 
 On 2026-07-20, the Presentation/OpenChestnut path added four literal native

@@ -7,6 +7,7 @@ using DocumentFormat.OpenXml.Validation;
 using Google.Protobuf;
 using OpenOffice.Artifact.Wire.V1;
 using B = DocumentFormat.OpenXml.Bibliography;
+using W14 = DocumentFormat.OpenXml.Office2010.Word;
 using W15 = DocumentFormat.OpenXml.Office2013.Word;
 using W16Cid = DocumentFormat.OpenXml.Office2019.Word.Cid;
 using W16Cex = DocumentFormat.OpenXml.Office2021.Word.CommentsExt;
@@ -368,6 +369,133 @@ public sealed class DocxCodecTests
         });
         Assert.False(rejectedComplex.Ok);
         Assert.Equal("unsupported_document_edit", Assert.Single(rejectedComplex.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void InlineCheckboxContentControlAuthorsImportsEditsAndRejectsIrregularGraphs()
+    {
+        var document = new DocumentArtifact { Id = "document/checkbox", Name = "Checkbox template" };
+        var paragraph = new DocumentBlock
+        {
+            Id = "document/checkbox/terms",
+            StyleId = "Normal",
+            Paragraph = new DocumentParagraph { Text = "Accept terms: ☐ I agree." },
+        };
+        paragraph.Paragraph.Runs.Add(new DocumentRun { Text = "Accept terms: " });
+        paragraph.Paragraph.Runs.Add(new DocumentRun
+        {
+            Text = "☐",
+            TextContentControl = new DocumentTextContentControl
+            {
+                Id = "terms-accepted",
+                Tag = "TERMS_ACCEPTED",
+                Alias = "Terms accepted",
+                ControlType = DocumentContentControlType.Checkbox,
+                Checked = false,
+            },
+        });
+        paragraph.Paragraph.Runs.Add(new DocumentRun { Text = " I agree." });
+        document.Blocks.Add(paragraph);
+
+        var authored = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = new ArtifactEnvelope
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Family = ArtifactFamily.Document,
+                Document = document,
+            },
+        });
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var control = Assert.Single(package.MainDocumentPart!.Document!.Descendants<W.SdtRun>());
+            var checkbox = Assert.IsType<W14.SdtContentCheckBox>(control.SdtProperties!.LastChild);
+            Assert.Equal(W14.OnOffValues.Zero, checkbox.GetFirstChild<W14.Checked>()!.Val!.Value);
+            Assert.Equal("2612", checkbox.GetFirstChild<W14.CheckedState>()!.Val!.Value);
+            Assert.Equal("MS Gothic", checkbox.GetFirstChild<W14.CheckedState>()!.Font!.Value);
+            Assert.Equal("2610", checkbox.GetFirstChild<W14.UncheckedState>()!.Val!.Value);
+            Assert.Equal("☐", control.InnerText);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedParagraph = Assert.Single(imported.Artifact.Document.Blocks).Paragraph;
+        var importedRun = Assert.Single(importedParagraph.Runs, run => run.TextContentControl is not null);
+        Assert.Equal(DocumentContentControlType.Checkbox, importedRun.TextContentControl.ControlType);
+        Assert.False(importedRun.TextContentControl.Checked);
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact.Clone(),
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(authored.File, unchanged.File);
+
+        importedRun.TextContentControl.Checked = true;
+        importedRun.Text = "☒";
+        importedParagraph.Text = "Accept terms: ☒ I agree.";
+        var edited = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var roundTrip = DocxCodec.Import(edited.File.ToByteArray(), EffectiveCodecLimits.From(null)).Artifact;
+        var editedRun = Assert.Single(Assert.Single(roundTrip.Document.Blocks).Paragraph.Runs, run => run.TextContentControl is not null);
+        Assert.True(editedRun.TextContentControl.Checked);
+        Assert.Equal("☒", editedRun.Text);
+
+        var changedType = roundTrip.Clone();
+        var changedRun = Assert.Single(Assert.Single(changedType.Document.Blocks).Paragraph.Runs, run => run.TextContentControl is not null);
+        changedRun.TextContentControl.ControlType = DocumentContentControlType.PlainText;
+        var rejectedType = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = changedType,
+        });
+        Assert.False(rejectedType.Ok);
+        Assert.Equal("document_content_control_topology_changed", Assert.Single(rejectedType.Diagnostics).Code);
+
+        var irregularBytes = AddCustomCheckboxSymbol(authored.File.ToByteArray());
+        var irregular = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(irregularBytes),
+        });
+        Assert.True(irregular.Ok, Diagnostics(irregular));
+        var preserved = Assert.Single(irregular.Artifact.Document.Blocks);
+        Assert.False(preserved.Source.Editable);
+        Assert.Empty(preserved.Paragraph.Runs);
+        var preservedExport = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = irregular.Artifact,
+        });
+        Assert.True(preservedExport.Ok, Diagnostics(preservedExport));
+        Assert.Equal(ByteString.CopyFrom(irregularBytes), preservedExport.File);
     }
 
     [Fact]
@@ -4705,4 +4833,19 @@ public sealed class DocxCodecTests
         }
         return stream.ToArray();
     }
+
+    private static byte[] AddCustomCheckboxSymbol(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var checkbox = document.MainDocumentPart!.Document!.Descendants<W14.SdtContentCheckBox>().Single();
+            checkbox.GetFirstChild<W14.CheckedState>()!.Val = "F0FE";
+            document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
 }

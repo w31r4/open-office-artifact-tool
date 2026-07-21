@@ -620,6 +620,53 @@ assert.equal(roundTrip.contentControls[0].text, "Grace Hopper");
 assert.equal(roundTrip.resolve(roundTrip.contentControls[0].targetId)?.text, "Customer: Grace Hopper.");
 assert.equal(roundTrip.verify({ visualQa: true }).ok, true);
 
+const checkboxDocument = DocumentModel.create({ name: "Checkbox content-control profile", blocks: [] });
+const checkboxParagraph = checkboxDocument.addParagraph("Terms: ");
+checkboxParagraph.addCheckboxContentControl(false, {
+  id: "terms-accepted-control",
+  tag: "TERMS_ACCEPTED",
+  alias: "Terms accepted",
+  style: { fontFamily: "Aptos", fontSize: 12 },
+});
+checkboxParagraph.addRun(" I agree.");
+const checkboxControl = checkboxDocument.contentControls[0];
+assert.equal(checkboxControl.controlType, "checkbox");
+assert.equal(checkboxControl.checked, false);
+assert.equal(checkboxControl.text, "☐");
+assert.equal(checkboxParagraph.text, "Terms: ☐ I agree.");
+assert.throws(() => { checkboxControl.text = "x"; }, /set checked instead/i);
+assert.throws(() => checkboxDocument.fillContentControls({ TERMS_ACCEPTED: "yes" }), /Unknown document content-control tag/i);
+assert.throws(() => checkboxDocument.setCheckboxContentControls({ TERMS_ACCEPTED: true, MISSING: false }), /Unknown document checkbox content-control tag/i);
+assert.equal(checkboxControl.checked, false, "strict checkbox updates must fail before mutation");
+assert.deepEqual(checkboxDocument.setCheckboxContentControls({ TERMS_ACCEPTED: true }), { updated: 1, matchedTags: ["TERMS_ACCEPTED"], missingTags: [] });
+assert.equal(checkboxControl.checked, true);
+assert.equal(checkboxParagraph.text, "Terms: ☒ I agree.");
+assert.equal(checkboxDocument.inspect({ kind: "contentControl" }).ndjson.includes('"controlType":"checkbox"'), true);
+assert.equal(checkboxDocument.verify().ok, true);
+const checkboxDocx = await DocumentFile.exportDocx(checkboxDocument);
+const importedCheckboxDocument = await DocumentFile.importDocx(checkboxDocx);
+const importedCheckbox = importedCheckboxDocument.contentControls[0];
+assert.equal(importedCheckbox.controlType, "checkbox");
+assert.equal(importedCheckbox.checked, true);
+assert.equal(importedCheckbox.text, "☒");
+assert.ok(Number.isInteger(importedCheckbox.nativeId));
+assert.deepEqual(importedCheckboxDocument.setCheckboxContentControls({ TERMS_ACCEPTED: false }), { updated: 1, matchedTags: ["TERMS_ACCEPTED"], missingTags: [] });
+const editedCheckboxDocx = await DocumentFile.exportDocx(importedCheckboxDocument);
+const roundTripCheckboxDocument = await DocumentFile.importDocx(editedCheckboxDocx);
+assert.equal(roundTripCheckboxDocument.contentControls[0].checked, false);
+assert.equal(roundTripCheckboxDocument.contentControls[0].text, "☐");
+assert.equal(roundTripCheckboxDocument.resolve(roundTripCheckboxDocument.contentControls[0].targetId).text, "Terms: ☐ I agree.");
+const checkboxTypeTamper = await DocumentFile.importDocx(checkboxDocx);
+checkboxTypeTamper.resolve(checkboxTypeTamper.contentControls[0].targetId).runs[checkboxTypeTamper.contentControls[0].runIndex].contentControl.controlType = "text";
+await assert.rejects(
+  () => DocumentFile.exportDocx(checkboxTypeTamper),
+  (error) => error?.code === "document_content_control_topology_changed" && /source-bound/i.test(error.message),
+);
+assert.throws(
+  () => checkboxDocument.addParagraph("", { runs: [{ text: "X", contentControl: { tag: "INVALID_CHECKBOX", controlType: "checkbox", checked: false } }] }),
+  /text is codec-owned/i,
+);
+
 const modernCommentDocument = DocumentModel.create({ name: "Modern comment thread", blocks: [] });
 const modernCommentTarget = modernCommentDocument.addParagraph("Review the bounded modern comment thread.");
 const modernRoot = modernCommentDocument.addComment(modernCommentTarget, "Please confirm the evidence.", {

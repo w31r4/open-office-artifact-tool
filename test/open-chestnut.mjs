@@ -105,6 +105,8 @@ document.addParagraph("", { runs: [
   { text: "Owner: " },
   { text: "Ada", contentControl: { id: "owner-control", tag: "OWNER", alias: "Owner" } },
 ] });
+const approvalParagraph = document.addParagraph("Approved: ");
+approvalParagraph.addCheckboxContentControl(false, { id: "approval-control", tag: "APPROVED", alias: "Approved" });
 document.addHeader("Confidential", { referenceType: "default", sectionIndex: 0 });
 document.addFooter("Page ", { referenceType: "default", sectionIndex: 0, fieldInstruction: "PAGE" });
 document.addField("PAGE", "1");
@@ -122,6 +124,10 @@ const docxZip = await JSZip.loadAsync(docx.bytes);
 assert.ok(docxZip.file("word/document.xml"));
 assert.ok(docxZip.file("word/styles.xml"));
 assert.match(await docxZip.file("word/document.xml").async("text"), /<w:sdt>[\s\S]*<w:tag w:val="OWNER"\s*\/>[\s\S]*<w:text\s*\/>[\s\S]*Ada[\s\S]*<\/w:sdt>/);
+const docxXml = await docxZip.file("word/document.xml").async("text");
+assert.match(docxXml, /<w:tag w:val="APPROVED"\s*\/>[\s\S]*<w14:checkbox>[\s\S]*<w14:checked w14:val="0"\s*\/>[\s\S]*☐/);
+assert.match(docxXml, /<w14:checkedState(?=[^>]*w14:val="2612")(?=[^>]*w14:font="MS Gothic")[^>]*\/>/);
+assert.match(docxXml, /<w14:uncheckedState(?=[^>]*w14:val="2610")(?=[^>]*w14:font="MS Gothic")[^>]*\/>/);
 assert.ok(Object.keys(docxZip.files).some((part) => /(?:^|\/)media\/[^/]+\.png$/.test(part)));
 const importedDocument = await importDocxWithOpenChestnut(docx);
 assert.equal(importedDocument.defaultRunStyle.fontFamily, "Aptos");
@@ -132,13 +138,17 @@ assert.equal(importedDocument.headers[0].text, "Confidential");
 assert.equal(importedDocument.footers[0].fieldInstruction, "PAGE");
 assert.equal(importedDocument.comments.length, 1);
 assert.equal(importedDocument.contentControls[0].tag, "OWNER");
+assert.equal(importedDocument.contentControls[1].controlType, "checkbox");
+assert.equal(importedDocument.contentControls[1].checked, false);
 assert.deepEqual(importedDocument.fillContentControls({ OWNER: "Grace" }), { updated: 1, matchedTags: ["OWNER"], missingTags: [] });
+assert.deepEqual(importedDocument.setCheckboxContentControls({ APPROVED: true }), { updated: 1, matchedTags: ["APPROVED"], missingTags: [] });
 importedDocument.blocks[2].text = "Edited through OpenChestnut.";
 importedDocument.blocks[2].runs = [{ text: importedDocument.blocks[2].text, style: {} }];
 const docx2 = await exportDocxWithOpenChestnut(importedDocument);
 const importedDocument2 = await importDocxWithOpenChestnut(docx2);
 assert.equal(importedDocument2.blocks[2].text, "Edited through OpenChestnut.");
 assert.equal(importedDocument2.contentControls[0].text, "Grace");
+assert.equal(importedDocument2.contentControls[1].checked, true);
 await assert.rejects(exportDocxWithOpenChestnut(document, { allowLossy: true }), /does not accept option/i);
 
 // PPTX: source-free roundRect/textbox, basic effect styling, connector arrows,

@@ -8,15 +8,17 @@ existing template that contains Word structured document tags (SDTs).
 Choose the route before editing:
 
 - Use public `paragraph.addTextContentControl(...)`,
-  `document.contentControls`, and `document.fillContentControls(...)` for
-  source-free body paragraphs and recognized imported inline plain-text
+  `paragraph.addCheckboxContentControl(...)`, `document.contentControls`,
+  `document.fillContentControls(...)`, and
+  `document.setCheckboxContentControls(...)` for source-free body paragraphs
+  and recognized imported inline plain-text or canonical Word 2010+ checkbox
   controls.
 - Use `scripts/content_controls.py` only for explicit package work such as
   wrapping placeholders in an existing template, controls in headers/footers,
   or inspection of controls outside the bounded public model.
-- Detect rich, block, cell, nested, data-bound, dropdown, date, checkbox,
-  placeholder-document, and locked controls. Preserve them unchanged or fail
-  closed; do not flatten them into plain text.
+- Detect rich, block, cell, nested, data-bound, dropdown, date, legacy or
+  custom-symbol checkbox, placeholder-document, and locked controls. Preserve
+  them unchanged or fail closed; do not flatten them into plain text.
 
 ## Public API golden path
 
@@ -65,6 +67,29 @@ document.addParagraph("", {
 });
 ```
 
+### Author and set one checkbox control
+
+Use the typed checkbox primitive instead of writing a Unicode box yourself:
+
+```js
+const terms = document.addParagraph("Terms accepted: ");
+terms.addCheckboxContentControl(false, {
+  id: "terms-accepted",
+  tag: "TERMS_ACCEPTED",
+  alias: "Terms accepted",
+});
+
+const update = document.setCheckboxContentControls({
+  TERMS_ACCEPTED: true,
+});
+if (update.missingTags.length) throw new Error("Required checkbox is missing");
+```
+
+OpenChestnut owns the visible `☐`/`☒` glyph and the exact
+`w14:checkbox`, `w14:checked`, `w14:checkedState`, and
+`w14:uncheckedState` declarations. The public value is boolean. Supplying or
+editing the visible glyph directly fails closed.
+
 ### Inspect and fill by tag
 
 ```js
@@ -80,7 +105,9 @@ for (const control of imported.contentControls) {
     tag: control.tag,
     alias: control.alias,
     nativeId: control.nativeId,
+    controlType: control.controlType,
     text: control.text,
+    checked: control.checked,
   });
 }
 
@@ -100,9 +127,11 @@ the same tag are all filled. Pass `{ strict: false }` only when partial
 template population is intentional; inspect `missingTags` in the returned
 result.
 
-For a single recognized control, mutate `control.text`, `control.tag`, or
-`control.alias`. Imported control topology and native identity are source-bound:
-adding, removing, or reordering a recognized imported control fails closed.
+For a single recognized text control, mutate `control.text`; for a checkbox,
+mutate `control.checked`. Both types allow `control.tag` and `control.alias`.
+Imported control type, symbol declaration, topology, and native identity are
+source-bound: adding, removing, reordering, or converting a recognized
+imported control fails closed.
 
 ### Verify and render
 
@@ -164,11 +193,13 @@ through OpenChestnut where possible, and render again.
 
 - Placeholder text split across Word runs may not be wrapped by the helper.
   Retype the token contiguously or perform a reviewed narrow package patch.
-- The public model recognizes only one run-level plain-text `w:sdt` containing
-  one supported text run and canonical `w:sdtPr` metadata.
-- Rich, block, cell, nested, data-bound, dropdown, date, checkbox,
-  placeholder-document, locked, or extension-bearing controls remain opaque
-  and source-bound. Do not reconstruct them as ordinary text.
+- The public model recognizes one run-level plain-text `w:sdt` or one canonical
+  Word 2010+ `w14:checkbox`, each containing exactly one supported run and
+  canonical `w:sdtPr` metadata.
+- Rich, block, cell, nested, data-bound, dropdown, date, legacy checkbox,
+  custom-symbol checkbox, placeholder-document, locked, or unrelated
+  extension-bearing controls remain opaque and source-bound. Do not
+  reconstruct them as ordinary text or a canonical checkbox.
 - Controls in footnotes, comments, headers, footers, and text boxes are outside
   the public body-inline profile. Route them explicitly or report the boundary.
 - Never claim a template is fully populated until requested tags, native

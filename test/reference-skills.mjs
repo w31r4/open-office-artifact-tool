@@ -285,8 +285,9 @@ try {
   assert.equal(documentRoundTrip.blocks.filter((block) => block.kind === "listItem").length, 3);
   assert.equal(documentRoundTrip.comments[0]?.text, "Recommendation wording verified for the release record.");
   assert.equal(documentRoundTrip.bookmarks[0]?.name, "DecisionSection");
-  assert.deepEqual(documentRoundTrip.contentControls.map((control) => [control.tag, control.alias, control.text]), [
-    ["OWNER", "Brief owner", DEFAULT_BRIEF.owner],
+  assert.deepEqual(documentRoundTrip.contentControls.map((control) => [control.tag, control.alias, control.controlType, control.controlType === "checkbox" ? control.checked : control.text]), [
+    ["OWNER", "Brief owner", "text", DEFAULT_BRIEF.owner],
+    ["FINAL_APPROVAL", "Final approval", "checkbox", true],
   ]);
   assert.deepEqual(documentRoundTrip.notes.map((note) => [note.kind, note.text]), [
     ["footnote", "The final gate includes native rendering, package validation, and semantic re-import."],
@@ -315,6 +316,8 @@ try {
   assert.match(documentXml, /<w:endnoteReference\b[^>]*w:id="1"/);
   assert.match(documentXml, /<w:sdt>/);
   assert.match(documentXml, /<w:tag w:val="OWNER"\s*\/>/);
+  assert.match(documentXml, /<w:tag w:val="FINAL_APPROVAL"\s*\/>/);
+  assert.match(documentXml, /<w14:checkbox>[\s\S]*<w14:checked w14:val="1"\s*\/>/);
   assert.match(documentXml, /<w:t>Artifact Platform<\/w:t>/);
   const footnotesXml = await documentPackage.file("word/footnotes.xml").async("text");
   const endnotesXml = await documentPackage.file("word/endnotes.xml").async("text");

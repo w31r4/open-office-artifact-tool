@@ -15,7 +15,9 @@
         { "text": "Customer: " },
         { "text": "{{CUSTOMER_NAME}}", "contentControl": { "id": "customer-name", "tag": "CUSTOMER_NAME", "alias": "Customer name" } },
         { "text": " / Account: " },
-        { "text": "{{ACCOUNT_ID}}", "contentControl": { "id": "account-id", "tag": "ACCOUNT_ID", "alias": "Account ID" } }
+        { "text": "{{ACCOUNT_ID}}", "contentControl": { "id": "account-id", "tag": "ACCOUNT_ID", "alias": "Account ID" } },
+        { "text": " / Approved: " },
+        { "text": "", "contentControl": { "id": "approved", "tag": "APPROVED", "alias": "Approved", "controlType": "checkbox", "checked": false } }
       ]
     }
   ],
@@ -27,11 +29,20 @@
         "ACCOUNT_ID": "AC-2048"
       },
       "expectUpdated": 2
+    },
+    {
+      "kind": "checkboxContentControls",
+      "values": {
+        "APPROVED": true
+      },
+      "expectUpdated": 1
     }
   ],
   "expectInspect": [
     { "kind": "contentControl", "pattern": "CUSTOMER_NAME" },
-    { "kind": "contentControl", "pattern": "ACCOUNT_ID" }
+    { "kind": "contentControl", "pattern": "ACCOUNT_ID" },
+    { "kind": "contentControl", "pattern": "APPROVED" },
+    { "kind": "contentControl", "pattern": "checkbox" }
   ],
   "qa": {
     "previewFormat": "svg",

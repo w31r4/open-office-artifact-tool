@@ -126,6 +126,8 @@ internal static class DocxCodec
             DocxSettingsCodec.Author(mainPart, envelope.Document);
             var body = new W.Body();
             mainPart.Document = new W.Document(body);
+            if (DocxTextContentControlCodec.UsesCheckboxes(envelope.Document))
+                mainPart.Document.AddNamespaceDeclaration("w14", DocxTextContentControlCodec.CheckboxNamespace);
             uint sectionIndex = 0;
             for (var blockIndex = 0; blockIndex < envelope.Document.Blocks.Count; blockIndex++)
             {

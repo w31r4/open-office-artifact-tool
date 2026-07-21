@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 343);
+assert.equal(HELP_CATALOG.length, 345);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -357,7 +357,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.sc
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.schema?.returns?.inspection?.description || "", /mupdfWidget.*mupdfFormField/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.summary || "", /MuPDF/);
 const documentCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "document");
-assert.equal(documentCatalog.length, 49);
+assert.equal(documentCatalog.length, 51);
 assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.schema?.parameters?.pictureBullet?.type, "string|object");
@@ -366,13 +366,17 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.
 assert.match(HELP_CATALOG.find((item) => item.name === "DocumentModel.create")?.schema?.parameters?.styles?.description || "", /numberingId\/numberingLevel/);
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.schema?.returns?.document?.type, "DocumentModel");
 assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addTextContentControl")?.schema?.parameters?.tag?.required, true);
+assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addCheckboxContentControl")?.schema?.parameters?.checked?.type, "boolean");
+assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addCheckboxContentControl")?.schema?.parameters?.tag?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addField")?.schema?.parameters?.instruction?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "paragraph.addField")?.summary || "", /bookmark around only its cached result.*source-bound.*cached display text is editable/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addField")?.schema?.parameters?.bookmarkName?.type, "string");
 assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addField")?.schema?.parameters?.bookmarkNativeId?.type, "number");
-assert.equal(HELP_CATALOG.find((item) => item.name === "document.contentControls")?.schema?.returns?.controls?.type, "DocumentTextContentControlHandle[]");
+assert.equal(HELP_CATALOG.find((item) => item.name === "document.contentControls")?.schema?.returns?.controls?.type, "DocumentContentControlHandle[]");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.fillContentControls")?.schema?.parameters?.values?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.fillContentControls")?.schema?.returns?.result?.description || "", /updated.*matchedTags.*missingTags/);
+assert.equal(HELP_CATALOG.find((item) => item.name === "document.setCheckboxContentControls")?.schema?.parameters?.values?.required, true);
+assert.match(HELP_CATALOG.find((item) => item.name === "document.setCheckboxContentControls")?.summary || "", /tag-to-boolean.*do not silently coerce/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.materializeFields")?.schema?.parameters?.dryRun?.type, "boolean");
 assert.match(HELP_CATALOG.find((item) => item.name === "document.materializeFields")?.summary || "", /SEQ counters.*REF cached results.*PAGEREF.*pagination host/i);
 const presentationCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "presentation");
@@ -578,6 +582,7 @@ assert.match(document.help("document.addBookmark").ndjson, /native Word bookmark
 assert.match(document.help("document.addFootnote").ndjson, /native bounded footnote/i);
 assert.match(document.help("document.addEndnote").ndjson, /native bounded endnote/i);
 assert.match(document.help("document.fillContentControls").ndjson, /Unknown tags fail before mutation/i);
+assert.match(document.help("document.setCheckboxContentControls").ndjson, /tag-to-boolean checked-state mapping/i);
 assert.match(document.help("document.addBibliographySource").ndjson, /bibliography source/);
 assert.match(document.help("document.applyDesignPreset").ndjson, /design preset/);
 assert.match(document.help("document.layoutJson").ndjson, /layout JSON/);

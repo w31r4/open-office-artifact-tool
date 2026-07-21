@@ -145,6 +145,15 @@ export function buildDocument(spec = DEFAULT_BRIEF) {
       keepNext: true,
     },
   });
+  const approval = document.addParagraph("FINAL APPROVAL  ", {
+    name: "final-approval",
+    styleId: "BriefMeta",
+  });
+  approval.addCheckboxContentControl(false, {
+    id: "final-approval-control",
+    tag: "FINAL_APPROVAL",
+    alias: "Final approval",
+  });
   document.addParagraph(spec.summary, {
     name: "executive-summary",
     styleId: "Normal",
@@ -259,6 +268,11 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
     matchedTags: ["OWNER"],
     missingTags: [],
   });
+  assert.deepEqual(imported.setCheckboxContentControls({ FINAL_APPROVAL: true }), {
+    updated: 1,
+    matchedTags: ["FINAL_APPROVAL"],
+    missingTags: [],
+  });
   assert.equal(imported.bookmarks.length, 2);
   const importedDecisionBookmark = imported.bookmarks.find((bookmark) => bookmark.name === "DecisionSection");
   assert.ok(importedDecisionBookmark);
@@ -314,8 +328,9 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
   assert.equal(finalDocument.bookmarks.some((bookmark) => bookmark.name === "DecisionSection"), true);
   assert.equal(finalDocument.bibliographySources[0]?.title, `${spec.sourceLabel} — verified`);
   assert.equal(finalDocument.blocks.find((block) => block.kind === "citation")?.text, `(${spec.owner}, 2026, verified)`);
-  assert.deepEqual(finalDocument.contentControls.map((control) => [control.tag, control.alias, control.text]), [
-    ["OWNER", "Brief owner", spec.owner],
+  assert.deepEqual(finalDocument.contentControls.map((control) => [control.tag, control.alias, control.controlType, control.controlType === "checkbox" ? control.checked : control.text]), [
+    ["OWNER", "Brief owner", "text", spec.owner],
+    ["FINAL_APPROVAL", "Final approval", "checkbox", true],
   ]);
   assert.equal(
     finalDocument.blocks.some((block) => block.kind === "hyperlink" && block.anchor === "DecisionSection"),
@@ -339,7 +354,7 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
     kind: "document,paragraph,listItem,table,comment,bookmark,note,contentControl,header,footer,hyperlink,citation,bibliographySource,change,layout",
     maxChars: 32_000,
   });
-  for (const expected of [spec.title, "Verified", "Recommendation wording verified", "application-compatibility", "semantic re-import", "Evidence snapshot", "DecisionSection", "ProjectEvidence", "2026, verified", "OWNER", "LAUNCH READINESS"]) {
+  for (const expected of [spec.title, "Verified", "Recommendation wording verified", "application-compatibility", "semantic re-import", "Evidence snapshot", "DecisionSection", "ProjectEvidence", "2026, verified", "OWNER", "FINAL_APPROVAL", "checkbox", "LAUNCH READINESS"]) {
     assert.match(inspection.ndjson, new RegExp(expected));
   }
 

@@ -15,6 +15,7 @@ import {
   CodecRequestSchema,
   CodecResponseSchema,
   DocumentChangeType,
+  DocumentContentControlType,
   DocumentHeaderFooterReference,
   DocumentNoteKind,
   DocumentRevisionFinalizationMode,
@@ -1756,8 +1757,14 @@ function wireDocumentTextContentControl(control, nativeId, blockId) {
   const id = String(control?.id || "").trim();
   const tag = String(control?.tag || "").trim();
   const alias = String(control?.alias ?? tag);
-  if (!id || !tag || tag.length > 64 || alias.length > 255 || /[\u0000-\u001f\u007f]/.test(tag + alias)) throw new OpenChestnutCodecError(`Document block ${blockId} has an invalid plain-text content control.`, [], { code: "invalid_document_content_control" });
-  return { id, tag, alias, nativeId };
+  const controlType = String(control?.controlType || "text") === "checkbox"
+    ? DocumentContentControlType.CHECKBOX
+    : String(control?.controlType || "text") === "text" ? DocumentContentControlType.PLAIN_TEXT : undefined;
+  if (!id || !tag || tag.length > 64 || alias.length > 255 || /[\u0000-\u001f\u007f]/.test(tag + alias) || controlType === undefined) throw new OpenChestnutCodecError(`Document block ${blockId} has an invalid content control.`, [], { code: "invalid_document_content_control" });
+  if (controlType === DocumentContentControlType.CHECKBOX && typeof control.checked !== "boolean") {
+    throw new OpenChestnutCodecError(`Document block ${blockId} has an invalid checkbox content-control state.`, [], { code: "invalid_document_content_control" });
+  }
+  return { id, tag, alias, nativeId, controlType, checked: controlType === DocumentContentControlType.CHECKBOX && control.checked === true };
 }
 
 function documentRun(run, blockId, contentControlNativeId) {
@@ -1768,6 +1775,9 @@ function documentRun(run, blockId, contentControlNativeId) {
     throw new OpenChestnutCodecError(`Document block ${blockId} inline field must be canonical SEQ <label> \\* ARABIC, REF <bookmark> \\h, or PAGEREF <bookmark> \\h.`, [], { code: "invalid_document_inline_field" });
   }
   if (run.contentControl && inlineInstruction !== undefined) throw new OpenChestnutCodecError(`Document block ${blockId} run cannot combine a content control and an inline field.`, [], { code: "invalid_document_inline_field" });
+  if (run.contentControl?.controlType === "checkbox" && String(run.text ?? "") !== (run.contentControl.checked ? "☒" : "☐")) {
+    throw new OpenChestnutCodecError(`Document block ${blockId} checkbox content-control visible glyph does not match checked state.`, [], { code: "invalid_document_content_control" });
+  }
   const bookmarkName = inlineInstruction === undefined ? "" : String(run.inlineField?.bookmarkName || "").trim();
   let bookmarkNativeId = "";
   if (run.inlineField?.bookmarkNativeId !== undefined) {
@@ -1793,7 +1803,11 @@ function documentRun(run, blockId, contentControlNativeId) {
 
 function documentContentControlTopology(runs = []) {
   return runs.flatMap((run, index) => run.textContentControl || run.contentControl
-    ? [{ index, nativeId: Number((run.textContentControl || run.contentControl).nativeId) }]
+    ? [{
+        index,
+        nativeId: Number((run.textContentControl || run.contentControl).nativeId),
+        controlType: (run.textContentControl || run.contentControl).controlType === DocumentContentControlType.CHECKBOX || (run.textContentControl || run.contentControl).controlType === "checkbox" ? "checkbox" : "text",
+      }]
     : []);
 }
 
@@ -1802,7 +1816,7 @@ function assertDocumentContentControlTopology(block, original) {
   const requested = documentContentControlTopology(block.runs || []);
   const source = documentContentControlTopology(original.content.value.runs || []);
   if (JSON.stringify(requested) !== JSON.stringify(source)) {
-    throw new OpenChestnutCodecError(`Imported document paragraph ${block.id} plain-text content-control topology is source-bound.`, [], { code: "document_content_control_topology_changed" });
+    throw new OpenChestnutCodecError(`Imported document paragraph ${block.id} content-control topology is source-bound.`, [], { code: "document_content_control_topology_changed" });
   }
 }
 
@@ -3337,6 +3351,8 @@ function documentFromEnvelope(envelope) {
               tag: run.textContentControl.tag,
               alias: run.textContentControl.alias,
               nativeId: run.textContentControl.nativeId,
+              controlType: run.textContentControl.controlType === DocumentContentControlType.CHECKBOX ? "checkbox" : "text",
+              ...(run.textContentControl.controlType === DocumentContentControlType.CHECKBOX ? { checked: run.textContentControl.checked === true } : {}),
             } } : {}),
             ...(run.inlineField ? { inlineField: {
               instruction: run.inlineField.instruction,

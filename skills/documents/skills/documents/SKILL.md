@@ -314,7 +314,7 @@ Scripts:
 - `render_docx.py` — canonical DOCX → PNG renderer (optional PDF via `--emit_pdf`; do not deliver intermediates unless asked).
 - `scripts/render_and_diff.py` — render + per-page image diff between two DOCXs.
 - `scripts/google_docs_title_sanitize.py` — deterministic OOXML sanitizer/audit for Google Docs-targeted DOCX title blocks; removes Word Title-style bottom borders/rules before render/import.
-- `scripts/content_controls.py` — explicit package route to list / wrap / fill controls in existing templates or parts outside the public body-inline model. Use `paragraph.addTextContentControl(...)`, `document.contentControls`, and `document.fillContentControls(...)` for the bounded inline plain-text profile.
+- `scripts/content_controls.py` — explicit package route to list / wrap / fill controls in existing templates or parts outside the public body-inline model. Use `paragraph.addTextContentControl(...)`, `paragraph.addCheckboxContentControl(...)`, `document.contentControls`, `document.fillContentControls(...)`, and `document.setCheckboxContentControls(...)` for the bounded inline text/checkbox profiles.
 - `scripts/captions_and_crossrefs.py` — insert Caption paragraphs for tables/figures + optional bookmarks around caption numbers.
 - `scripts/insert_ref_fields.py` — replace `[[REF:bookmark]]` markers with real `REF` fields (cross-references).
 - `scripts/internal_nav.py` — add internal navigation links (static TOC + Top/Bottom + figN/tblN jump links).
@@ -342,7 +342,7 @@ Scripts:
 > `scripts/xlsx_to_docx_table.py` also marks header rows as repeating headers (`w:tblHeader`) to improve a11y and multi-page tables.
 
 Examples:
-- `examples/openchestnut-end-to-end.mjs` — runnable public-API create → export → import → edit → export → import vertical slice
+- `examples/openchestnut-end-to-end.mjs` — runnable public-API create → export → import → typed text/checkbox-control edit → export → import vertical slice
 - `examples/openchestnut-source-text-patch-workflow.mjs` — source-bound paragraph/table-cell literal replacement with same-format run-fragment support, immutable input, exact changed-part audit, no-replace publication, second import, verification, and model render evidence
 - `examples/openchestnut-classic-comment-edit-workflow.mjs` — imported classic-comment text-only edit with a unique text anchor, fixed comment topology, second import, model render, byte-bound audit, and atomic output
 - `examples/openchestnut-modern-comment-thread-workflow.mjs` — imported bounded root/direct-reply text and resolved-state edit with fixed identities/topology, second import, model/native render, byte-bound audit, and atomic output
@@ -391,7 +391,7 @@ This is a quick index so you can jump from a helper script to the right task gui
 - `merge_docx_append.py` → `tasks/multi_doc_merge.md`
 
 ### Forms & protection
-- Public `paragraph.addTextContentControl(...)`, `document.contentControls`, and `document.fillContentControls(...)` handle source-free and recognized imported inline plain-text controls; `content_controls.py` handles explicit existing-template/package routes → `tasks/forms_content_controls.md`
+- Public `paragraph.addTextContentControl(...)`, `paragraph.addCheckboxContentControl(...)`, `document.contentControls`, `document.fillContentControls(...)`, and `document.setCheckboxContentControls(...)` handle source-free and recognized imported inline plain-text/canonical checkbox controls; `content_controls.py` handles explicit existing-template/package routes → `tasks/forms_content_controls.md`
 - `set_protection.py` → `tasks/protection_restrict_editing.md`
 
 ### QA / regression
@@ -462,7 +462,7 @@ Then inspect the generated `page-<N>.png` files.
 - If you need to **scrub personal metadata** (author/rsid/custom props): `tasks/privacy_scrub_metadata.md`
 - If you need to **merge/append DOCXs**: `tasks/multi_doc_merge.md`
 - If you need **format consistency / style cleanup**: `tasks/style_lint_normalize.md`
-- If you need **forms / content controls (SDTs)**: use the public API for inline plain-text controls, then follow `tasks/forms_content_controls.md` for import, strict tag filling, advanced package routes, and fail-closed boundaries
+- If you need **forms / content controls (SDTs)**: use the public API for inline plain-text or canonical Word 2010+ checkbox controls, then follow `tasks/forms_content_controls.md` for typed updates, strict tag matching, advanced package routes, and fail-closed boundaries
 - If you need **bibliography-backed citations**: use `document.addBibliographySource(...)` and `document.addCitation(...)` for the canonical source catalog plus whole-paragraph `CITATION` profile; keep imported source order/tags and citation tags fixed
 - If you need a **native Table of Contents field** in a new or canonical document: use `document.addTableOfContents(...)`, preserve the resulting `settings.updateFields` refresh hint, then follow `tasks/toc_workflow.md` for host refresh and page-level verification
 - If you need **inline numbering/cross-reference fields** in a new or canonical paragraph: use `paragraph.addField(...)`, including `bookmarkName` on a `SEQ` field when `REF`/`PAGEREF` must target only the caption number; use `document.materializeFields()` for transactional `SEQ`/`REF` caches, then follow `tasks/captions_crossrefs.md`; use the explicit package helper for bulk/arbitrary-package insertion and a real pagination host for `PAGEREF`
