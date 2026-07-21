@@ -13,6 +13,7 @@ namespace OpenChestnut.Codec;
 internal sealed class DocxPartContext
 {
     private readonly HashSet<string> _mutatedRelationshipIds = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _mutatedNumberingRelationshipIds = new(StringComparer.Ordinal);
     private readonly HashSet<string> _mutatedPartPaths = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _mutatedNoteRelationshipIds = new(StringComparer.Ordinal);
     private XDocument? _numberingDocument;
@@ -48,6 +49,7 @@ internal sealed class DocxPartContext
     internal IReadOnlySet<string> BibliographyTags => _bibliographyTags;
     internal bool HasMutations =>
         _mutatedRelationshipIds.Count > 0 ||
+        _mutatedNumberingRelationshipIds.Count > 0 ||
         _mutatedPartPaths.Count > 0 ||
         _mutatedNoteRelationshipIds.Count > 0 ||
         _mutatedNumberingPartPath is not null ||
@@ -72,6 +74,16 @@ internal sealed class DocxPartContext
 
     internal void MarkPartMutated(OpenXmlPart part) =>
         _mutatedPartPaths.Add(part.Uri.OriginalString.TrimStart('/'));
+
+    internal void MarkNumberingRelationshipMutated(string relationshipId)
+    {
+        if (string.IsNullOrWhiteSpace(relationshipId))
+            throw new CodecException(
+                "document_numbering_source_binding_mismatch",
+                "A modeled Numbering relationship is missing its package-local ID.",
+                "word/numbering.xml");
+        _mutatedNumberingRelationshipIds.Add(relationshipId);
+    }
 
     // Read semantic support parts without materializing an Open XML SDK root.
     // This prevents AutoSave from normalizing untouched source XML during a
@@ -240,7 +252,10 @@ internal sealed class DocxPartContext
     }
 
     internal bool IgnoresModeledRelationship(OpenOffice.Artifact.Wire.V1.OpaqueOpcRelationship relationship) =>
-        relationship.SourcePath.Equals("word/document.xml", StringComparison.OrdinalIgnoreCase) &&
+        (relationship.SourcePath.Equals("word/numbering.xml", StringComparison.OrdinalIgnoreCase) &&
+         relationship.Type.EndsWith("/image", StringComparison.Ordinal) &&
+         _mutatedNumberingRelationshipIds.Contains(relationship.Id)) ||
+        (relationship.SourcePath.Equals("word/document.xml", StringComparison.OrdinalIgnoreCase) &&
         ((relationship.Type.EndsWith("/hyperlink", StringComparison.Ordinal) &&
           _mutatedRelationshipIds.Contains(relationship.Id)) ||
          ((relationship.Type.EndsWith("/commentsExtended", StringComparison.OrdinalIgnoreCase) ||
@@ -256,10 +271,12 @@ internal sealed class DocxPartContext
           relationship.Id.Equals(_mutatedSettingsRelationshipId, StringComparison.Ordinal)) ||
          ((relationship.Type.EndsWith("/footnotes", StringComparison.Ordinal) ||
            relationship.Type.EndsWith("/endnotes", StringComparison.Ordinal)) &&
-          _mutatedNoteRelationshipIds.Contains(relationship.Id)));
+          _mutatedNoteRelationshipIds.Contains(relationship.Id))));
 
     internal bool IgnoresModeledPart(OpenOffice.Artifact.Wire.V1.OpaqueOpcPart part) =>
         _mutatedPartPaths.Contains(part.Path) ||
+        (_mutatedNumberingRelationshipIds.Count > 0 &&
+         part.Path.Equals("word/_rels/numbering.xml.rels", StringComparison.OrdinalIgnoreCase)) ||
         (_mutatedNumberingPartPath is not null &&
          part.Path.Equals(_mutatedNumberingPartPath, StringComparison.OrdinalIgnoreCase)) ||
         (_mutatedCommentsPartPath is not null &&

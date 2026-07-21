@@ -3109,6 +3109,47 @@ repeats were skipped. The offline release wrapper re-ran and passed every code,
 documentation, package, and .NET command with registry/auth checks explicitly
 disabled. No npm publish, tag, or release operation was attempted.
 
+### DOCX canonical picture bullets
+
+On 2026-07-22, Documents gained a bounded native picture-bullet path across the
+public `DocumentModel`, versioned protobuf wire, OpenChestnut C# codec, bundled
+WASM runtime, Help catalog, and native Skill workflow. A source-free numbering
+level may use one embedded PNG/JPEG/GIF asset or an absolute HTTP(S) reference.
+The wire carries only semantic source, dimensions, and alternative text;
+package-local `numPicBulletId`, relationship IDs, and part paths remain owned by
+the codec. Equal markers share one canonical VML resource.
+
+Recognized imports project that marker semantically and preserve an unchanged
+package byte-for-byte. An edit must update every modeled paragraph sharing the
+same native `numId` and level, must retain embedded-versus-external source kind,
+and creates a fresh instance-local level override rather than overwriting a
+potentially shared original image. Partial-group edits, source-kind transitions,
+irregular VML, transforms, DrawingML, and broader inherited numbering graphs
+remain opaque/read-only and fail closed. GIF support is scoped to picture
+bullets; an ordinary GIF drawing remains opaque, preserving the existing
+PNG/JPEG ordinary-image contract.
+
+The shipped Documents fixture authored two shared blue markers, imported them,
+changed both coherently to one green marker, exported, imported again, inspected
+the native numbering graph, and entered real LibreOffice/Poppler QA. The final
+one-page render was 1275 by 1650 pixels and 74,483 bytes with short hash
+`8030fb2f`; manual review confirmed two aligned green markers, intact wrapping,
+and an unaffected following decimal item.
+
+The complete `npm test` gate passed, including the bundled-WASM path, all 20
+repository-only templates, Documents/PDF Skills, MuPDF.js, qpdf, LibreOffice,
+Poppler, and Playwright. OpenChestnut passed `333/333` and OfficeBridge passed
+`5/5`; generated API docs, the clean-install package workflow, and deterministic
+source-built WASM verification passed. Two clean builds matched 39 audited files,
+and the manifest-bound runtime contains 38 files and 14,964,416 bytes. The npm
+tarball contains 476 files, 9,185,107 compressed bytes, and 24,383,801 unpacked
+bytes (`SHA-1 16d151e39211386fadfb15b3580bccb78d8dbaec`). The unpacked
+ceiling moved narrowly to 24,410,000 bytes for the measured codec/runtime growth,
+leaving 26,199 bytes of headroom. Dedicated local Python environments for
+pikepdf, pyHanko, veraPDF, and OCRmyPDF were not configured, so their
+contract/adversarial gates passed while real-provider repeats were skipped. No
+npm publish, tag, or release operation was attempted.
+
 ## Publishing
 
 Before publishing:

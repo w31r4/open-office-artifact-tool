@@ -2359,6 +2359,308 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void DirectAuthoringBuildsSharedEmbeddedAndExternalPictureBullets()
+    {
+        var request = PictureBulletExportRequest(includeExternalLevel: true);
+        var exported = Invoke(request);
+        Assert.True(exported.Ok, Diagnostics(exported));
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = WordprocessingDocument.Open(stream, false))
+        {
+            var part = document.MainDocumentPart!.NumberingDefinitionsPart!;
+            var definitions = part.Numbering!.Elements<W.NumberingPictureBullet>().ToArray();
+            Assert.Equal(2, definitions.Length);
+            Assert.Equal([0, 1], definitions.Select(item => item.NumberingPictureBulletId!.Value).ToArray());
+            Assert.Equal(["Picture bullet", "External picture bullet"], definitions
+                .Select(item => Assert.Single(item.Descendants<V.Shape>()).Alternate?.Value ?? string.Empty)
+                .ToArray());
+            Assert.Single(part.ImageParts);
+            var external = Assert.Single(part.ExternalRelationships);
+            Assert.EndsWith("/image", external.RelationshipType, StringComparison.Ordinal);
+            Assert.Equal("https://example.test/list-marker.png", external.Uri.OriginalString);
+
+            var levels = part.Numbering.Elements<W.AbstractNum>().Single().Elements<W.Level>().ToArray();
+            Assert.Equal([0, 1], levels.Select(level => level.LevelIndex!.Value).ToArray());
+            Assert.Equal([0, 1], levels.Select(level => level.LevelPictureBulletId!.Val!.Value).ToArray());
+            Assert.All(levels, level => Assert.Equal(W.NumberFormatValues.Bullet, level.NumberingFormat!.Val!.Value));
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = exported.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.Single(imported.Artifact.Assets);
+        Assert.Equal(imported.Artifact.Document.Blocks[0].Paragraph.Numbering.PictureBullet,
+            imported.Artifact.Document.Blocks[1].Paragraph.Numbering.PictureBullet);
+        var embedded = imported.Artifact.Document.Blocks[0].Paragraph.Numbering.PictureBullet;
+        Assert.Equal(DocumentPictureBullet.SourceOneofCase.AssetId, embedded.SourceCase);
+        Assert.Equal(152_400, embedded.WidthEmu);
+        Assert.Equal(152_400, embedded.HeightEmu);
+        var linked = imported.Artifact.Document.Blocks[2].Paragraph.Numbering.PictureBullet;
+        Assert.Equal(DocumentPictureBullet.SourceOneofCase.Uri, linked.SourceCase);
+        Assert.Equal("https://example.test/list-marker.png", linked.Uri);
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(exported.File.ToByteArray(), unchanged.File.ToByteArray());
+    }
+
+    [Fact]
+    public void DirectPictureBulletAuthoringRejectsConflictingSharedLevelDefinitions()
+    {
+        var request = PictureBulletExportRequest();
+        request.Artifact.Document.Blocks[1].Paragraph.Numbering.PictureBullet = new DocumentPictureBullet
+        {
+            Uri = "https://example.test/conflict.png",
+            WidthEmu = 152_400,
+            HeightEmu = 152_400,
+            AltText = "Conflicting picture bullet",
+        };
+        var response = Invoke(request);
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_document_numbering", Assert.Single(response.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void DirectPictureBulletAuthoringSupportsGifAssets()
+    {
+        var request = PictureBulletExportRequest();
+        var gif = Convert.FromBase64String("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==");
+        var digest = Convert.ToHexString(SHA256.HashData(gif)).ToLowerInvariant();
+        var assetId = $"asset/document/image/{digest}";
+        request.Artifact.Assets.Clear();
+        request.Artifact.Assets.Add(new Asset
+        {
+            Id = assetId,
+            FileName = "picture-bullet.gif",
+            ContentType = "image/gif",
+            Data = ByteString.CopyFrom(gif),
+            Sha256 = digest,
+        });
+        foreach (var block in request.Artifact.Document.Blocks)
+            block.Paragraph.Numbering.PictureBullet.AssetId = assetId;
+
+        var exported = Invoke(request);
+        Assert.True(exported.Ok, Diagnostics(exported));
+        using var stream = new MemoryStream(exported.File.ToByteArray());
+        using var package = WordprocessingDocument.Open(stream, false);
+        Assert.Equal("image/gif", Assert.Single(package.MainDocumentPart!.NumberingDefinitionsPart!.ImageParts).ContentType);
+        Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+    }
+
+    [Fact]
+    public void OrdinaryGifDrawingRemainsOpaqueWhilePictureBulletsUseGif()
+    {
+        var authored = Invoke(OfficeSkillProfileExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        byte[] source;
+        using (var stream = new MemoryStream())
+        {
+            stream.Write(authored.File.ToByteArray());
+            stream.Position = 0;
+            using (var package = WordprocessingDocument.Open(stream, true))
+            {
+                var mainPart = package.MainDocumentPart!;
+                var oldPart = Assert.Single(mainPart.ImageParts);
+                var relationshipId = mainPart.GetIdOfPart(oldPart);
+                mainPart.DeletePart(oldPart);
+                var gifPart = mainPart.AddImagePart(ImagePartType.Gif, relationshipId);
+                using var input = new MemoryStream(Convert.FromBase64String("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="), writable: false);
+                gifPart.FeedData(input);
+            }
+            source = stream.ToArray();
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(source),
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var imageBlock = imported.Artifact.Document.Blocks.Single(block => block.Source?.BodyIndex == 2);
+        Assert.Equal(DocumentBlock.ContentOneofCase.Opaque, imageBlock.ContentCase);
+        Assert.False(imageBlock.Source.Editable);
+        Assert.Empty(imported.Artifact.Assets);
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(source, unchanged.File.ToByteArray());
+    }
+
+    [Fact]
+    public void SourcePreservingExportEditsCompletePictureBulletGroupThroughNewSharedResource()
+    {
+        var source = Invoke(PictureBulletExportRequest());
+        Assert.True(source.Ok, Diagnostics(source));
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = source.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+
+        var replacementBytes = Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=");
+        var replacementDigest = Convert.ToHexString(SHA256.HashData(replacementBytes)).ToLowerInvariant();
+        var replacementId = $"asset/document/image/{replacementDigest}";
+        imported.Artifact.Assets.Add(new Asset
+        {
+            Id = replacementId,
+            FileName = "replacement-picture-bullet.png",
+            ContentType = "image/png",
+            Data = ByteString.CopyFrom(replacementBytes),
+            Sha256 = replacementDigest,
+        });
+        foreach (var block in imported.Artifact.Document.Blocks)
+        {
+            block.Paragraph.Numbering.PictureBullet.AssetId = replacementId;
+            block.Paragraph.Numbering.PictureBullet.WidthEmu = 190_500;
+            block.Paragraph.Numbering.PictureBullet.HeightEmu = 177_800;
+            block.Paragraph.Numbering.PictureBullet.AltText = "Updated picture bullet";
+        }
+
+        var exported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(exported.Ok, Diagnostics(exported));
+        using (var stream = new MemoryStream(exported.File.ToByteArray()))
+        using (var document = WordprocessingDocument.Open(stream, false))
+        {
+            var numbering = document.MainDocumentPart!.NumberingDefinitionsPart!.Numbering!;
+            Assert.Equal(2, numbering.Elements<W.NumberingPictureBullet>().Count());
+            var originalLevel = numbering.Elements<W.AbstractNum>().Single().Elements<W.Level>().Single();
+            Assert.Equal(0, originalLevel.LevelPictureBulletId!.Val!.Value);
+            var localLevel = numbering.Elements<W.NumberingInstance>().Single().Elements<W.LevelOverride>().Single().Elements<W.Level>().Single();
+            Assert.Equal(1, localLevel.LevelPictureBulletId!.Val!.Value);
+            var updatedShape = numbering.Elements<W.NumberingPictureBullet>().Single(item => item.NumberingPictureBulletId!.Value == 1)
+                .Descendants<V.Shape>().Single();
+            Assert.Equal("width:15pt;height:14pt", updatedShape.Style!.Value);
+            Assert.Equal("Updated picture bullet", updatedShape.Alternate!.Value);
+            Assert.Equal(2, document.MainDocumentPart.NumberingDefinitionsPart.ImageParts.Count());
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(document));
+        }
+
+        var roundTrip = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = exported.File,
+        });
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        Assert.All(roundTrip.Artifact.Document.Blocks, block =>
+        {
+            Assert.Equal(replacementId, block.Paragraph.Numbering.PictureBullet.AssetId);
+            Assert.Equal(190_500, block.Paragraph.Numbering.PictureBullet.WidthEmu);
+            Assert.Equal(177_800, block.Paragraph.Numbering.PictureBullet.HeightEmu);
+            Assert.Equal("Updated picture bullet", block.Paragraph.Numbering.PictureBullet.AltText);
+        });
+    }
+
+    [Fact]
+    public void PictureBulletDefinitionEditRejectsPartialGroupAndSourceKindTransition()
+    {
+        var source = Invoke(PictureBulletExportRequest());
+        Assert.True(source.Ok, Diagnostics(source));
+
+        CodecResponse Import() => Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = source.File,
+        });
+        CodecResponse Export(ArtifactEnvelope artifact) => Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = artifact,
+        });
+
+        var partial = Import();
+        partial.Artifact.Document.Blocks[0].Paragraph.Numbering.PictureBullet.AltText = "Partial edit";
+        var partialRejected = Export(partial.Artifact);
+        Assert.False(partialRejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(partialRejected.Diagnostics).Code);
+
+        var transition = Import();
+        foreach (var block in transition.Artifact.Document.Blocks)
+            block.Paragraph.Numbering.PictureBullet.Uri = "https://example.test/replacement.png";
+        var transitionRejected = Export(transition.Artifact);
+        Assert.False(transitionRejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(transitionRejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void IrregularPictureBulletGraphRemainsBytePreservedAndReadOnly()
+    {
+        var authored = Invoke(PictureBulletExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var source = MakePictureBulletShapeIrregular(authored.File.ToByteArray());
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(source),
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.All(imported.Artifact.Document.Blocks, block =>
+        {
+            Assert.False(block.Source.Editable);
+            Assert.Null(block.Paragraph.Numbering.PictureBullet);
+        });
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(source, unchanged.File.ToByteArray());
+
+        imported.Artifact.Document.Blocks[0].Paragraph.Text = "Unsafe irregular picture-bullet edit";
+        imported.Artifact.Document.Blocks[0].Paragraph.Runs[0].Text = "Unsafe irregular picture-bullet edit";
+        var rejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void NonconformantVerticalMergeRemainsSourcePreservedAndReadOnly()
     {
         var authored = Invoke(ExportRequest());
@@ -5341,6 +5643,88 @@ public sealed class DocxCodecTests
                 Document = document,
             },
         };
+    }
+
+    private static CodecRequest PictureBulletExportRequest(bool includeExternalLevel = false)
+    {
+        var png = Convert.FromBase64String(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=");
+        var digest = Convert.ToHexString(SHA256.HashData(png)).ToLowerInvariant();
+        var assetId = $"asset/document/image/{digest}";
+        var picture = new DocumentPictureBullet
+        {
+            AssetId = assetId,
+            WidthEmu = 152_400,
+            HeightEmu = 152_400,
+            AltText = "Picture bullet",
+        };
+
+        static DocumentBlock Item(string id, string text, uint level, DocumentPictureBullet marker) => new()
+        {
+            Id = id,
+            StyleId = "Normal",
+            Paragraph = new DocumentParagraph
+            {
+                Text = text,
+                Numbering = new DocumentNumbering
+                {
+                    NumberingId = 77,
+                    AbstractNumberingId = 9,
+                    Level = level,
+                    NumberFormat = "bullet",
+                    Start = 1,
+                    LevelText = "•",
+                    PictureBullet = marker,
+                },
+            },
+        };
+
+        var document = new DocumentArtifact { Id = "document/picture-bullets", Name = "Picture bullets" };
+        document.Blocks.Add(Item("document/picture/first", "First picture item", 0, picture.Clone()));
+        document.Blocks.Add(Item("document/picture/second", "Second picture item", 0, picture.Clone()));
+        if (includeExternalLevel)
+            document.Blocks.Add(Item("document/picture/external", "External picture item", 1, new DocumentPictureBullet
+            {
+                Uri = "https://example.test/list-marker.png",
+                WidthEmu = 127_000,
+                HeightEmu = 127_000,
+                AltText = "External picture bullet",
+            }));
+        var envelope = new ArtifactEnvelope
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Family = ArtifactFamily.Document,
+            Document = document,
+        };
+        envelope.Assets.Add(new Asset
+        {
+            Id = assetId,
+            FileName = "picture-bullet.png",
+            ContentType = "image/png",
+            Data = ByteString.CopyFrom(png),
+            Sha256 = digest,
+        });
+        return new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = envelope,
+        };
+    }
+
+    private static byte[] MakePictureBulletShapeIrregular(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var package = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = false }))
+        {
+            var numbering = package.MainDocumentPart!.NumberingDefinitionsPart!.Numbering!;
+            foreach (var shape in numbering.Descendants<V.Shape>()) shape.FillColor = "#FF0000";
+            numbering.Save();
+        }
+        return stream.ToArray();
     }
 
     private static CodecRequest MergedTableExportRequest()

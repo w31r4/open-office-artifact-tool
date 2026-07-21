@@ -111,13 +111,13 @@ internal static class DocxCodec
 
         var diagnostics = new List<Diagnostic>();
 
-        var numberingPlan = DocxDirectNumbering.CreatePlan(envelope.Document);
+        var numberingPlan = DocxDirectNumbering.CreatePlan(envelope.Document, imageAssets);
         using var stream = new MemoryStream();
         using (var package = WordprocessingDocument.Create(stream, WordprocessingDocumentType.Document, autoSave: true))
         {
             var mainPart = package.AddMainDocumentPart();
             DocxDirectStyles.AddRequiredStyles(mainPart, envelope.Document);
-            DocxDirectNumbering.Apply(mainPart, numberingPlan);
+            DocxDirectNumbering.Apply(mainPart, numberingPlan, imageAssets);
             var context = new DocxPartContext(
                 mainPart,
                 imageAssets,

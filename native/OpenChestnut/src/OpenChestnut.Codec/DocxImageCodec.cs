@@ -50,7 +50,7 @@ internal sealed class DocxImageAssetCatalog
         var asset = new Asset
         {
             Id = id,
-            FileName = $"document-image-{digest[..16]}.{(contentType == "image/png" ? "png" : "jpg")}",
+            FileName = $"document-image-{digest[..16]}.{ExtensionFor(contentType)}",
             ContentType = contentType,
             Data = ByteString.CopyFrom(data),
             Sha256 = digest,
@@ -63,8 +63,15 @@ internal sealed class DocxImageAssetCatalog
     {
         "image/png" => ImagePartType.Png,
         "image/jpeg" => ImagePartType.Jpeg,
+        "image/gif" => ImagePartType.Gif,
         _ => throw Invalid($"Unsupported document image content type {contentType}."),
     };
+
+    internal static bool IsOrdinaryDocumentImage(Asset asset) =>
+        Normalize(asset.ContentType) is "image/png" or "image/jpeg";
+
+    internal static bool IsOrdinaryDocumentImage(ImagePart part) =>
+        Normalize(part.ContentType) is "image/png" or "image/jpeg";
 
     internal static bool SameContentType(ImagePart part, Asset asset) =>
         Normalize(part.ContentType).Equals(Normalize(asset.ContentType), StringComparison.Ordinal);
@@ -100,10 +107,19 @@ internal sealed class DocxImageAssetCatalog
         {
             "image/png" => data.AsSpan().StartsWith(Convert.FromHexString("89504E470D0A1A0A")),
             "image/jpeg" => data.Length >= 4 && data[0] == 0xff && data[1] == 0xd8 && data[2] == 0xff,
+            "image/gif" => data.AsSpan().StartsWith("GIF87a"u8) || data.AsSpan().StartsWith("GIF89a"u8),
             _ => false,
         };
-        if (!valid) throw Invalid($"{label} bytes do not match a supported PNG or JPEG content type.");
+        if (!valid) throw Invalid($"{label} bytes do not match a supported PNG, JPEG, or GIF content type.");
     }
+
+    private static string ExtensionFor(string contentType) => contentType switch
+    {
+        "image/png" => "png",
+        "image/jpeg" => "jpg",
+        "image/gif" => "gif",
+        _ => "bin",
+    };
 
     private static string Normalize(string value) => value.Equals("image/jpg", StringComparison.OrdinalIgnoreCase)
         ? "image/jpeg"
@@ -135,7 +151,8 @@ internal static class DocxImageCodec
             parts.Extent.Cx.Value > 95_250_000_000L || parts.Extent.Cy.Value > 95_250_000_000L) return false;
         try
         {
-            if (context.Owner.GetPartById(relationshipId) is not ImagePart part) return false;
+            if (context.Owner.GetPartById(relationshipId) is not ImagePart part ||
+                !DocxImageAssetCatalog.IsOrdinaryDocumentImage(part)) return false;
             var asset = context.Images?.Import(part) ?? throw new CodecException("invalid_document_image_asset", "Document image import has no asset catalog.");
             image = new DocumentImage
             {
@@ -281,7 +298,9 @@ internal static class DocxImageCodec
         if (image is null) throw Invalid(blockId, "payload is missing");
         if (string.IsNullOrWhiteSpace(image.AssetId) || image.AssetId.Length > 512) throw Invalid(blockId, "asset ID must contain 1 through 512 characters");
         if (assets is null) throw Invalid(blockId, "requires an asset catalog");
-        _ = assets.Get(image.AssetId);
+        var asset = assets.Get(image.AssetId);
+        if (!DocxImageAssetCatalog.IsOrdinaryDocumentImage(asset))
+            throw Invalid(blockId, "ordinary document images support PNG or JPEG assets");
         if (image.AltText.Length > 32_767 || image.AltText.Any(char.IsControl)) throw Invalid(blockId, "alternative text must contain at most 32767 characters without controls");
         if (image.WidthEmu is <= 0 or > 95_250_000_000L || image.HeightEmu is <= 0 or > 95_250_000_000L)
             throw Invalid(blockId, "width and height must be positive bounded EMU values");

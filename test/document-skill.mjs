@@ -112,6 +112,27 @@ try {
   assert.match(floatingXml, /<wp:positionV relativeFrom="paragraph"><wp:posOffset>0<\/wp:posOffset><\/wp:positionV>/);
   assert.match(floatingXml, /<wp:wrapTopAndBottom\s*\/>/);
 
+  const pictureBullets = await runFixture("open-chestnut-picture-bullets", {
+    nativeRender: nativeStatus.available ? "required" : "auto",
+  });
+  const pictureBulletDocument = await DocumentFile.importDocx(await FileBlob.load(pictureBullets.docxPath));
+  const pictureBulletItems = pictureBulletDocument.blocks.filter((block) => block.kind === "listItem" && block.pictureBullet);
+  assert.equal(pictureBulletItems.length, 2);
+  assert.deepEqual(pictureBulletItems[0].pictureBullet, pictureBulletItems[1].pictureBullet);
+  assert.equal(pictureBulletItems[0].pictureBullet.widthPt, 16);
+  assert.equal(pictureBulletItems[0].pictureBullet.heightPt, 14);
+  assert.equal(pictureBulletItems[0].pictureBullet.alt, "Approved green action marker");
+  assert.equal(pictureBullets.qa.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+  if (nativeStatus.available) {
+    assert.equal(pictureBullets.qa.summary.nativeRender.ok, true);
+    assert.ok(pictureBullets.qa.summary.nativeRender.pages.length >= 1);
+  }
+  const pictureBulletZip = await JSZip.loadAsync(await fs.readFile(pictureBullets.docxPath));
+  const pictureBulletNumberingXml = await pictureBulletZip.file("word/numbering.xml").async("text");
+  assert.equal((pictureBulletNumberingXml.match(/<w:numPicBullet\b/g) || []).length, 2);
+  assert.match(pictureBulletNumberingXml, /<w:lvlOverride[^>]*w:ilvl="0">[\s\S]*<w:lvlPicBulletId w:val="1"\s*\/>/);
+  assert.match(pictureBulletNumberingXml, /<v:shape(?=[^>]*style="width:16pt;height:14pt")(?=[^>]*alt="Approved green action marker")[^>]*>/);
+
   const watermark = await runFixture("open-chestnut-watermark", {
     nativeRender: nativeStatus.available ? "required" : "auto",
   });

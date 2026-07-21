@@ -24,6 +24,8 @@ assert.equal(status.protocolVersion, 2);
 assert.equal(status.assemblyName, "OpenChestnut.Runtime.dll");
 
 const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
+const replacementPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+const gif = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
 
 // XLSX: create, import, edit, and re-export the canonical 0.2 slice.
 const workbook = Workbook.create();
@@ -133,6 +135,25 @@ document.addFooter("Page ", { referenceType: "default", sectionIndex: 0, fieldIn
 document.addField("PAGE", "1");
 document.addHyperlink("Evidence", "https://example.com/evidence");
 document.addListItem("First action", { listType: "number", numberingId: 7 });
+document.addListItem("Picture action one", {
+  listType: "bullet",
+  numberingId: 8,
+  abstractNumberingId: 8,
+  pictureBullet: { dataUrl: png, sizePt: 12, alt: "Action marker" },
+});
+document.addListItem("Picture action two", {
+  listType: "bullet",
+  numberingId: 8,
+  abstractNumberingId: 8,
+  pictureBullet: { dataUrl: png, sizePt: 12, alt: "Action marker" },
+});
+document.addListItem("External marker action", {
+  listType: "bullet",
+  level: 1,
+  numberingId: 8,
+  abstractNumberingId: 8,
+  pictureBullet: { uri: "https://example.test/list-marker.png", sizePt: 10, alt: "External action marker" },
+});
 document.addTable({ values: [["Metric", "Value"], ["Revenue", "42"]], widthDxa: 9000, columnWidthsDxa: [3600, 5400], styleId: "TableGrid" });
 document.addImage({
   name: "Logo",
@@ -172,6 +193,10 @@ assert.match(docxXml, /<w:tag w:val="PRIORITY"\s*\/>[\s\S]*<w:dropDownList w:las
 assert.match(docxXml, /<w:tag w:val="CONTACT_METHOD"\s*\/>[\s\S]*<w:comboBox w:lastValue="email">[\s\S]*<w:listItem(?=[^>]*w:displayText="Phone call")(?=[^>]*w:value="phone")[^>]*\/>[\s\S]*Email/);
 assert.match(docxXml, /<w:tag w:val="REVIEW_DATE"\s*\/>[\s\S]*<w:date w:fullDate="2026-07-21T00:00:00Z">[\s\S]*<w:dateFormat w:val="yyyy-MM-dd"\s*\/>[\s\S]*<w:lid w:val="en-US"\s*\/>[\s\S]*<w:storeMappedDataAs w:val="date"\s*\/>[\s\S]*<w:calendar w:val="gregorian"\s*\/>[\s\S]*2026-07-21/);
 assert.match(docxXml, /<w:sdt>[\s\S]*?<w:tag w:val="EXECUTIVE_SUMMARY"\s*\/>[\s\S]*?<w:text\s*\/>[\s\S]*?<w:sdtContent>\s*<w:p>[\s\S]*Executive summary[\s\S]*?<\/w:p>\s*<\/w:sdtContent>\s*<\/w:sdt>/);
+const numberingXml = await docxZip.file("word/numbering.xml").async("text");
+assert.equal((numberingXml.match(/<w:numPicBullet\b/g) || []).length, 2);
+assert.equal((numberingXml.match(/<w:lvlPicBulletId\b/g) || []).length, 2);
+assert.match(numberingXml, /<v:shape(?=[^>]*style="width:12pt;height:12pt")(?=[^>]*alt="Action marker")(?=[^>]*o:bullet="(?:t|true)")[^>]*>/);
 assert.ok(Object.keys(docxZip.files).some((part) => /(?:^|\/)media\/[^/]+\.png$/.test(part)));
 const importedDocument = await importDocxWithOpenChestnut(docx);
 assert.deepEqual(importedDocument.settings.documentProtection, { edit: "comments", enforcement: true, formatting: false });
@@ -195,6 +220,17 @@ assert.equal(importedDocument.contentControls[4].controlType, "date");
 assert.equal(importedDocument.contentControls[4].dateValue, "2026-07-21");
 assert.equal(importedDocument.contentControls[5].placement, "block");
 assert.equal(importedDocument.contentControls[5].tag, "EXECUTIVE_SUMMARY");
+const importedPictureItems = importedDocument.blocks.filter((block) => block.kind === "listItem" && block.pictureBullet);
+assert.equal(importedPictureItems.length, 3);
+assert.deepEqual(importedPictureItems[0].pictureBullet, {
+  dataUrl: png,
+  uri: undefined,
+  widthPt: 12,
+  heightPt: 12,
+  alt: "Action marker",
+});
+assert.deepEqual(importedPictureItems[0].pictureBullet, importedPictureItems[1].pictureBullet);
+assert.equal(importedPictureItems[2].pictureBullet.uri, "https://example.test/list-marker.png");
 const importedDocumentImage = importedDocument.blocks.find((block) => block.kind === "image");
 const importedDocumentImageIndex = importedDocument.blocks.indexOf(importedDocumentImage);
 assert.equal(importedDocumentImage.placement.type, "floating");
@@ -205,6 +241,98 @@ assert.equal(importedDocumentImage.placement.wrapSide, "bothSides");
 assert.deepEqual(importedDocumentImage.placement.distanceFromTextPx, { top: 0, right: 12, bottom: 4, left: 12 });
 const unchangedDocx = await exportDocxWithOpenChestnut(importedDocument);
 assert.deepEqual(Buffer.from(unchangedDocx.bytes), Buffer.from(docx.bytes));
+
+const gifPictureDocument = DocumentModel.create({ blocks: [] });
+gifPictureDocument.addListItem("GIF marker", {
+  listType: "bullet",
+  numberFormat: "bullet",
+  levelText: "•",
+  numberingId: 71,
+  abstractNumberingId: 71,
+  pictureBullet: { dataUrl: gif, widthPt: 11, heightPt: 9, alt: "GIF marker" },
+});
+const gifPictureRoundtrip = await importDocxWithOpenChestnut(await exportDocxWithOpenChestnut(gifPictureDocument));
+assert.deepEqual(gifPictureRoundtrip.blocks[0].pictureBullet, {
+  dataUrl: gif,
+  uri: undefined,
+  widthPt: 11,
+  heightPt: 9,
+  alt: "GIF marker",
+});
+
+const conflictingPictureDocument = DocumentModel.create({ blocks: [] });
+for (const [text, dataUrl] of [["Blue marker", png], ["Green marker", replacementPng]]) {
+  conflictingPictureDocument.addListItem(text, {
+    listType: "bullet",
+    numberFormat: "bullet",
+    levelText: "•",
+    numberingId: 72,
+    abstractNumberingId: 72,
+    pictureBullet: { dataUrl, sizePt: 12, alt: `${text} image` },
+  });
+}
+await assert.rejects(
+  exportDocxWithOpenChestnut(conflictingPictureDocument),
+  (error) => error?.code === "invalid_document_numbering" && /conflicting definitions/i.test(error.message),
+);
+
+const invalidPictureDocument = DocumentModel.create({ blocks: [] });
+invalidPictureDocument.addListItem("Invalid marker", {
+  listType: "bullet",
+  numberFormat: "bullet",
+  levelText: "•",
+  pictureBullet: "data:image/png;base64,AAAA",
+});
+await assert.rejects(
+  exportDocxWithOpenChestnut(invalidPictureDocument),
+  (error) => error?.code === "invalid_document_picture_bullet" && /do not match image\/png|valid PNG/i.test(error.message),
+);
+
+const ambiguousPictureDocument = DocumentModel.create({ blocks: [] });
+const ambiguousPictureItem = ambiguousPictureDocument.addListItem("Ambiguous marker", {
+  listType: "bullet",
+  numberFormat: "bullet",
+  levelText: "•",
+  pictureBullet: { dataUrl: gif, sizePt: 12, alt: "Ambiguous marker" },
+});
+ambiguousPictureItem.pictureBullet.uri = "https://example.test/also-a-marker.gif";
+await assert.rejects(
+  exportDocxWithOpenChestnut(ambiguousPictureDocument),
+  (error) => error?.code === "invalid_document_picture_bullet" && /exactly one embedded dataUrl or external uri/i.test(error.message),
+);
+
+const noncanonicalPictureDocument = DocumentModel.create({ blocks: [] });
+noncanonicalPictureDocument.addListItem("Noncanonical marker", {
+  listType: "bullet",
+  numberFormat: "bullet",
+  levelText: "•",
+  pictureBullet: { dataUrl: gif.replace(/=+$/, ""), sizePt: 12, alt: "Noncanonical marker" },
+});
+await assert.rejects(
+  exportDocxWithOpenChestnut(noncanonicalPictureDocument),
+  (error) => error?.code === "invalid_document_picture_bullet" && /valid decoded bytes/i.test(error.message),
+);
+
+const partialPictureBulletEdit = await importDocxWithOpenChestnut(docx);
+partialPictureBulletEdit.blocks.find((block) => block.text === "Picture action one").pictureBullet.alt = "Partial marker edit";
+await assert.rejects(
+  exportDocxWithOpenChestnut(partialPictureBulletEdit),
+  (error) => error?.code === "unsupported_document_edit" && /coherently/i.test(error.message),
+);
+
+const pictureSourceKindTransition = await importDocxWithOpenChestnut(docx);
+for (const block of pictureSourceKindTransition.blocks.filter((item) => item.pictureBullet?.dataUrl)) {
+  block.pictureBullet = {
+    uri: "https://example.test/replacement-marker.png",
+    widthPt: block.pictureBullet.widthPt,
+    heightPt: block.pictureBullet.heightPt,
+    alt: block.pictureBullet.alt,
+  };
+}
+await assert.rejects(
+  exportDocxWithOpenChestnut(pictureSourceKindTransition),
+  (error) => error?.code === "unsupported_document_edit" && /source topology is source-bound/i.test(error.message),
+);
 
 const inlineTransitionDocument = await importDocxWithOpenChestnut(docx);
 delete inlineTransitionDocument.blocks.find((block) => block.kind === "image").placement;
@@ -243,6 +371,12 @@ importedDocumentImage.placement = {
 };
 importedDocument.blocks[2].text = "Edited through OpenChestnut.";
 importedDocument.blocks[2].runs = [{ text: importedDocument.blocks[2].text, style: {} }];
+for (const block of importedPictureItems.slice(0, 2)) {
+  block.pictureBullet.dataUrl = replacementPng;
+  block.pictureBullet.widthPt = 15;
+  block.pictureBullet.heightPt = 14;
+  block.pictureBullet.alt = "Updated action marker";
+}
 const docx2 = await exportDocxWithOpenChestnut(importedDocument);
 const importedDocument2 = await importDocxWithOpenChestnut(docx2);
 assert.equal(importedDocument2.blocks[2].text, "Edited through OpenChestnut.");
@@ -256,6 +390,13 @@ assert.equal(importedDocument2.contentControls[4].dateValue, "2028-02-29");
 assert.equal(importedDocument2.contentControls[4].text, "2028-02-29");
 assert.equal(importedDocument2.contentControls[5].placement, "block");
 assert.equal(importedDocument2.contentControls[5].text, "Updated executive summary");
+const editedPictureItems = importedDocument2.blocks.filter((block) => block.kind === "listItem" && block.pictureBullet);
+assert.equal(editedPictureItems[0].pictureBullet.dataUrl, replacementPng);
+assert.equal(editedPictureItems[0].pictureBullet.widthPt, 15);
+assert.equal(editedPictureItems[0].pictureBullet.heightPt, 14);
+assert.equal(editedPictureItems[0].pictureBullet.alt, "Updated action marker");
+assert.deepEqual(editedPictureItems[0].pictureBullet, editedPictureItems[1].pictureBullet);
+assert.equal(editedPictureItems[2].pictureBullet.uri, "https://example.test/list-marker.png");
 const editedDocumentImage = importedDocument2.blocks.find((block) => block.kind === "image");
 assert.deepEqual(editedDocumentImage.placement.horizontal, { relativeTo: "page", offsetPx: 48 });
 assert.deepEqual(editedDocumentImage.placement.vertical, { relativeTo: "margin", offsetPx: 16 });

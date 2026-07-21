@@ -98,6 +98,23 @@ document.addListItem("Confirm the owner and launch date.", {
   numberFormat: "bullet",
   levelText: "•",
 });
+
+const statusMarker = {
+  dataUrl: "data:image/png;base64,...",
+  widthPt: 14,
+  heightPt: 14,
+  alt: "Ready status",
+};
+for (const itemText of ["Validate the package", "Review the native render"]) {
+  document.addListItem(itemText, {
+    listType: "bullet",
+    numberFormat: "bullet",
+    levelText: "•",
+    numberingId: 41,
+    abstractNumberingId: 4,
+    pictureBullet: statusMarker,
+  });
+}
 document.addTable({
   name: "decision-evidence",
   widthDxa: 9000,
@@ -515,7 +532,7 @@ field span is deliberately opaque/source-bound and read-only. Do not rebuild
 that result graph to claim a lossless edit. Use `tasks/toc_workflow.md` for the
 native-refresh and deterministic static-TOC alternatives.
 
-Use real `addListItem` calls for lists and exact `widthDxa`, `indentDxa`, `columnWidthsDxa`, and `cellMarginsDxa` values for tables. Do not fake lists with text markers or use tables as prose layout containers.
+Use real `addListItem` calls for lists and exact `widthDxa`, `indentDxa`, `columnWidthsDxa`, and `cellMarginsDxa` values for tables. Do not fake lists with text markers or use tables as prose layout containers. A `pictureBullet` may be an embedded PNG/JPEG/GIF data URL, an absolute HTTP(S) URI, or a configuration object with 4–72 point dimensions and non-empty alt text. The marker belongs to the numbering level, so all items with the same `numberingId` and `level` must match. Imported edits must update that complete group and must not switch between embedded and external sources; external URIs are preserved but never fetched. Render the result through the native QA path before delivery.
 
 `document.addSection(...)` inserts a section break before the blocks that follow it. Use it only when the document actually changes section geometry or header/footer behavior; never append an otherwise unused section block at the end of a document.
 

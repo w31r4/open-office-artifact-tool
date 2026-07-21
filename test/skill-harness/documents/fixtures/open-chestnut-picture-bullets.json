@@ -1,0 +1,97 @@
+{
+  "name": "open-chestnut-picture-bullets",
+  "outputName": "picture-bullet-review.docx",
+  "defaultRunStyle": {
+    "fontFamily": "Aptos",
+    "fontSize": 11,
+    "color": "#172033"
+  },
+  "blocks": [
+    {
+      "kind": "paragraph",
+      "name": "title",
+      "styleId": "Title",
+      "text": "Picture Bullet Review"
+    },
+    {
+      "kind": "paragraph",
+      "name": "lead",
+      "text": "The two action items below share one native Word picture-numbering resource."
+    },
+    {
+      "kind": "listItem",
+      "name": "picture-action-one",
+      "text": "Confirm the release owner.",
+      "listType": "bullet",
+      "numberFormat": "bullet",
+      "levelText": "•",
+      "numberingId": 41,
+      "abstractNumberingId": 4,
+      "pictureBullet": {
+        "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAMUlEQVR4nGNQTX79n5aYYdQC1dEgUh1NRaqjGS15tKhIHi1Nk0crnNejVebrwd2qAABNdoDMKISESAAAAABJRU5ErkJggg==",
+        "widthPt": 14,
+        "heightPt": 14,
+        "alt": "Blue action marker"
+      }
+    },
+    {
+      "kind": "listItem",
+      "name": "picture-action-two",
+      "text": "Verify the native page render.",
+      "listType": "bullet",
+      "numberFormat": "bullet",
+      "levelText": "•",
+      "numberingId": 41,
+      "abstractNumberingId": 4,
+      "pictureBullet": {
+        "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAMUlEQVR4nGNQTX79n5aYYdQC1dEgUh1NRaqjGS15tKhIHi1Nk0crnNejVebrwd2qAABNdoDMKISESAAAAABJRU5ErkJggg==",
+        "widthPt": 14,
+        "heightPt": 14,
+        "alt": "Blue action marker"
+      }
+    },
+    {
+      "kind": "listItem",
+      "name": "numbered-follow-up",
+      "text": "Record the visual QA result.",
+      "listType": "number",
+      "numberFormat": "decimal",
+      "levelText": "%1.",
+      "numberingId": 42,
+      "abstractNumberingId": 5
+    }
+  ],
+  "edits": [
+    {
+      "kind": "listItem",
+      "matchText": "Confirm the release owner.",
+      "pictureBullet": {
+        "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAMUlEQVR4nGMQW+z1n5aYYdQCsdEgEhtNRWKjGW3xaFGxeLQ0XTxa4XiNVpleg7tVAQAE34S9d7s/SwAAAABJRU5ErkJggg==",
+        "widthPt": 16,
+        "heightPt": 14,
+        "alt": "Approved green action marker"
+      }
+    },
+    {
+      "kind": "listItem",
+      "matchText": "Verify the native page render.",
+      "pictureBullet": {
+        "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAMUlEQVR4nGMQW+z1n5aYYdQCsdEgEhtNRWKjGW3xaFGxeLQ0XTxa4XiNVpleg7tVAQAE34S9d7s/SwAAAABJRU5ErkJggg==",
+        "widthPt": 16,
+        "heightPt": 14,
+        "alt": "Approved green action marker"
+      }
+    }
+  ],
+  "expectInspect": [
+    { "kind": "listItem", "pattern": "Blue action marker" },
+    { "kind": "listItem", "pattern": "Confirm the release owner" },
+    { "kind": "listItem", "pattern": "Record the visual QA result" }
+  ],
+  "qa": {
+    "previewFormat": "png",
+    "nativeRender": "auto",
+    "inspectKind": "document,paragraph,listItem,layout",
+    "maxChars": 16000
+  }
+}

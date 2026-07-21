@@ -39,14 +39,14 @@ const files = report.files.map((item) => item.path);
 const maxPackedBytes = 9_840_000;
 // The bundled OpenChestnut runtime is an audited product payload, not an
 // optional download. Keep its unpacked budget tight while allowing the
-// audited PDF provider/docs growth plus the bounded DOCX/PPTX modern-comment and
-// native XLSX PivotTable codecs and runnable workflows. The local PPTX
-// losslessly recompressed candidate measures 23,525,110 unpacked bytes, so the
-// unchanged ceiling restores about 835 KiB of explicit product-growth headroom.
+// audited PDF provider/docs growth plus the bounded DOCX/PPTX modern-comment,
+// native XLSX PivotTable, and DOCX picture-bullet codecs and runnable workflows.
+// The picture-bullet candidate measures 24,383,801 unpacked bytes; the narrowly
+// raised ceiling retains only 26,199 bytes of explicit product-growth headroom.
 // The repository-only MIT Default Template Library is excluded from the npm
 // tarball. Its retained Office/PNG sources must never consume this consumer
 // package budget.
-const maxUnpackedBytes = 24_380_000;
+const maxUnpackedBytes = 24_410_000;
 // Public Skill PNGs are required user-facing assets. They are retained with
 // byte-identical non-IDAT chunks and inflated scanline streams, but their IDAT
 // payloads are deterministically recompressed. Prevent future PNG tooling from

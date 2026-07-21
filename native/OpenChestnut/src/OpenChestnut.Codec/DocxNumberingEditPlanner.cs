@@ -27,17 +27,18 @@ internal static class DocxNumberingEditPlanner
 
         var numbering = context.NumberingDocument ??
             throw Unsupported("Numbering-definition edits require a source Numbering part.");
+        var authoredPictures = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var group in edits.GroupBy(candidate => Key(candidate.Original)))
         {
-            var targetDefinitions = group.Select(candidate => Definition(candidate.Requested)).Distinct().ToArray();
-            if (targetDefinitions.Length != 1)
+            var targetDefinitions = group.Select(candidate => Definition(candidate.Requested)).ToArray();
+            if (targetDefinitions.Skip(1).Any(candidate => !SameDefinition(candidate, targetDefinitions[0])))
                 throw Unsupported($"All paragraphs using numId {group.Key.NumberingId} level {group.Key.Level} must request one coherent numbering definition.");
 
             var affected = candidates.Where(candidate => Key(candidate.Original) == group.Key).ToArray();
             var target = targetDefinitions[0];
             if (affected.Any(candidate => !candidate.Editable || !SameIdentity(candidate.Requested, candidate.Original)))
                 throw Unsupported($"Numbering-definition edits require every numId {group.Key.NumberingId} level {group.Key.Level} paragraph to keep its source identity and editable topology.");
-            if (affected.Any(candidate => Definition(candidate.Requested) != target))
+            if (affected.Any(candidate => !SameDefinition(Definition(candidate.Requested), target)))
                 throw Unsupported($"Numbering-definition edits must update every numId {group.Key.NumberingId} level {group.Key.Level} paragraph coherently.");
             if (affected.Any(candidate => !string.IsNullOrEmpty(candidate.Original.NumberingStyleId)))
                 throw Unsupported("Numbering definitions reached through styleLink or numStyleLink remain source-bound.");
@@ -52,12 +53,35 @@ internal static class DocxNumberingEditPlanner
             if (context.HasNumberingReferenceOutsideMainDocument(group.Key.NumberingId))
                 throw Unsupported($"Numbering instance {group.Key.NumberingId} is referenced outside the modeled main-document paragraphs.");
 
-            ApplyGroup(numbering, group.Key, group.First().Original, target);
+            var original = Definition(group.First().Original);
+            int? replacementPictureBulletId = null;
+            if (!DocxPictureBulletCodec.SemanticKey(original.PictureBullet)
+                    .Equals(DocxPictureBulletCodec.SemanticKey(target.PictureBullet), StringComparison.Ordinal))
+            {
+                if (original.PictureBullet is null || target.PictureBullet is null ||
+                    original.PictureBullet.SourceCase != target.PictureBullet.SourceCase)
+                    throw Unsupported($"Picture-bullet edits for numId {group.Key.NumberingId} level {group.Key.Level} must retain the source kind and cannot add or remove the native picture-bullet topology.");
+                DocxPictureBulletCodec.Validate(target.PictureBullet, context.Images, $"DOCX numId {group.Key.NumberingId} level {group.Key.Level} picture bullet");
+                var pictureKey = DocxPictureBulletCodec.SemanticKey(target.PictureBullet);
+                if (!authoredPictures.TryGetValue(pictureKey, out var pictureBulletId))
+                {
+                    pictureBulletId = DocxPictureBulletCodec.AuthorSource(context, numbering, target.PictureBullet);
+                    authoredPictures.Add(pictureKey, pictureBulletId);
+                }
+                replacementPictureBulletId = pictureBulletId;
+            }
+
+            ApplyGroup(numbering, group.Key, group.First().Original, target, replacementPictureBulletId);
         }
         context.SaveNumberingDocument();
     }
 
-    private static void ApplyGroup(XDocument numbering, NumberingKey key, DocumentNumbering original, NumberingDefinition target)
+    private static void ApplyGroup(
+        XDocument numbering,
+        NumberingKey key,
+        DocumentNumbering original,
+        NumberingDefinition target,
+        int? replacementPictureBulletId)
     {
         var root = numbering.Root ?? throw Unsupported("The source Numbering part has no root element.");
         var instance = Unique(root.Elements(Wml + "num"), element => IntegerAttribute(element, Wml + "numId") == key.NumberingId,
@@ -80,13 +104,14 @@ internal static class DocxNumberingEditPlanner
         if (nestedLevels.Length > 1) throw Unsupported($"Numbering instance {key.NumberingId} level {key.Level} has duplicate nested definitions.");
         if (nestedLevels.Length == 1)
         {
-            SetDefinition(nestedLevels[0], key.Level, target);
+            SetDefinition(nestedLevels[0], key.Level, target, replacementPictureBulletId);
             return;
         }
 
         var startOverrides = levelOverride?.Elements(Wml + "startOverride").Take(2).ToArray() ?? [];
         if (startOverrides.Length > 1) throw Unsupported($"Numbering instance {key.NumberingId} level {key.Level} has duplicate start overrides.");
-        var onlyStartChanged = original.NumberFormat == target.NumberFormat && original.LevelText == target.LevelText;
+        var onlyStartChanged = original.NumberFormat == target.NumberFormat && original.LevelText == target.LevelText &&
+            replacementPictureBulletId is null;
         if (levelOverride is not null && startOverrides.Length == 1 && onlyStartChanged)
         {
             startOverrides[0].SetAttributeValue(Wml + "val", target.Start);
@@ -98,18 +123,24 @@ internal static class DocxNumberingEditPlanner
         var sourceLevel = Unique(abstractNumbering.Elements(Wml + "lvl"), element => IntegerAttribute(element, Wml + "ilvl") == key.Level,
             $"Abstract numbering definition {abstractId} level {key.Level} is missing or duplicated.");
         var clonedLevel = new XElement(sourceLevel);
-        SetDefinition(clonedLevel, key.Level, target);
+        SetDefinition(clonedLevel, key.Level, target, replacementPictureBulletId);
         instance.Add(new XElement(Wml + "lvlOverride",
             new XAttribute(Wml + "ilvl", key.Level),
             clonedLevel));
     }
 
-    private static void SetDefinition(XElement level, int levelIndex, NumberingDefinition target)
+    private static void SetDefinition(
+        XElement level,
+        int levelIndex,
+        NumberingDefinition target,
+        int? replacementPictureBulletId)
     {
         level.SetAttributeValue(Wml + "ilvl", levelIndex);
         SetLevelChild(level, "start", target.Start.ToString(), 0);
         SetLevelChild(level, "numFmt", target.NumberFormat, 1);
         SetLevelChild(level, "lvlText", target.LevelText, 6);
+        if (replacementPictureBulletId is not null)
+            SetLevelChild(level, "lvlPicBulletId", replacementPictureBulletId.Value.ToString(), 7);
     }
 
     private static void SetLevelChild(XElement level, string localName, string value, int order)
@@ -156,9 +187,13 @@ internal static class DocxNumberingEditPlanner
         left.AbstractNumberingId == right.AbstractNumberingId &&
         left.NumberingStyleId.Equals(right.NumberingStyleId, StringComparison.Ordinal);
 
-    private static bool SameDefinition(DocumentNumbering left, DocumentNumbering right) => Definition(left) == Definition(right);
+    private static bool SameDefinition(DocumentNumbering left, DocumentNumbering right) => SameDefinition(Definition(left), Definition(right));
+    private static bool SameDefinition(NumberingDefinition left, NumberingDefinition right) =>
+        left.NumberFormat.Equals(right.NumberFormat, StringComparison.Ordinal) && left.Start == right.Start &&
+        left.LevelText.Equals(right.LevelText, StringComparison.Ordinal) &&
+        DocxPictureBulletCodec.SemanticKey(left.PictureBullet).Equals(DocxPictureBulletCodec.SemanticKey(right.PictureBullet), StringComparison.Ordinal);
     private static NumberingKey Key(DocumentNumbering value) => new(checked((int)value.NumberingId), checked((int)value.Level));
-    private static NumberingDefinition Definition(DocumentNumbering value) => new(value.NumberFormat, value.Start, value.LevelText);
+    private static NumberingDefinition Definition(DocumentNumbering value) => new(value.NumberFormat, value.Start, value.LevelText, value.PictureBullet);
 
     private static XElement Unique(IEnumerable<XElement> source, Func<XElement, bool> predicate, string message)
     {
@@ -171,6 +206,10 @@ internal static class DocxNumberingEditPlanner
         int.TryParse(element?.Attribute(name)?.Value, out var value) ? value : null;
 
     private sealed record NumberingKey(int NumberingId, int Level);
-    private sealed record NumberingDefinition(string NumberFormat, uint Start, string LevelText);
+    private sealed record NumberingDefinition(
+        string NumberFormat,
+        uint Start,
+        string LevelText,
+        DocumentPictureBullet? PictureBullet);
     private static CodecException Unsupported(string message) => new("unsupported_document_edit", message, "word/numbering.xml");
 }

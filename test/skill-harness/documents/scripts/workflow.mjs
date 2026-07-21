@@ -398,6 +398,7 @@ export async function runDocumentFixture(fixturePath, options = {}) {
         if (Object.prototype.hasOwnProperty.call(edit, "start")) listItem.start = Number(edit.start);
         if (Object.prototype.hasOwnProperty.call(edit, "levelText")) listItem.levelText = String(edit.levelText);
         if (Object.prototype.hasOwnProperty.call(edit, "listType")) listItem.listType = String(edit.listType);
+        if (Object.prototype.hasOwnProperty.call(edit, "pictureBullet")) listItem.pictureBullet = structuredClone(edit.pictureBullet);
         continue;
       }
       if (edit.kind === "comment") {

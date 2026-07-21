@@ -12,7 +12,12 @@ and real list blocks.
    real structural reason.
 3. Do not type manual heading numbers or bullet characters into paragraph text.
    Use `addListItem(...)` for ordinary numbered/bulleted content.
-4. Imported complex multilevel heading-numbering graphs are source-bound. Do
+4. Picture markers belong to a numbering level, not an individual paragraph.
+   Every item sharing `numberingId` and `level` must use the same embedded
+   PNG/JPEG/GIF or external HTTP(S) marker. Edit the complete imported group
+   together and retain its embedded-versus-external source kind.
+5. Imported complex multilevel heading-numbering or irregular picture-bullet
+   graphs are source-bound. Do
    not rebuild or flatten them when OpenChestnut rejects an edit.
 
 ## Public API pattern
@@ -49,12 +54,32 @@ document.addListItem("First action", {
   abstractNumberingId: 4,
 });
 
+const pictureMarker = {
+  dataUrl: "data:image/png;base64,...",
+  sizePt: 12,
+  alt: "Action marker",
+};
+for (const text of ["Validate the output", "Review every native page"]) {
+  document.addListItem(text, {
+    listType: "bullet",
+    numberFormat: "bullet",
+    levelText: "•",
+    numberingId: 42,
+    abstractNumberingId: 5,
+    pictureBullet: pictureMarker,
+  });
+}
+
 await (await DocumentFile.exportDocx(document)).save("out.docx");
 ```
 
-Complex automatic TOCs and outline-linked multilevel heading numbering are not
-source-free authoring features in the current model. Preserve imported versions
-unchanged or report that boundary.
+Picture bullets accept bounded embedded PNG/JPEG/GIF data URLs or absolute
+HTTP(S) references; external bytes are not fetched. Imported canonical markers
+can be changed only as a complete same-`numberingId`/same-level group without
+switching source kind. Complex automatic TOCs, outline-linked multilevel heading
+numbering, inherited picture bullets, and irregular VML are not source-free
+authoring features in the current model. Preserve imported versions unchanged
+or report that boundary.
 
 ## Validate and render
 

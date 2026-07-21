@@ -21,7 +21,7 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.addHyperlink` | api | Append a native w:hyperlink backed by an external relationship or internal bookmark anchor; native import restores URL/anchor, relationship identity, tooltip, and history state. |
 | `document.addImage` | api | Append an inspectable embedded PNG/JPEG image. Images are inline by default; an explicit bounded placement authors a native foreground wp:anchor with square or top-and-bottom wrapping. |
 | `document.addInsertion` | api | Append one bounded whole-paragraph tracked insertion using native w:ins markup. For one exact in-paragraph replacement in existing source bytes, use DocumentFile.addTrackedReplacement; mixed, moved, nested, and property-level revisions remain outside the bounded profile. |
-| `document.addListItem` | api | Append a numbered or character-bulleted list item using native DOCX numbering definitions. Picture bullets remain model-only and make canonical OpenChestnut export fail closed. |
+| `document.addListItem` | api | Append a numbered, character-bulleted, or bounded picture-bulleted list item using native DOCX numbering definitions. Picture markers are shared numbering-level resources: every item using the same numberingId and level must agree, and recognized imported edits must update the complete group without changing embedded-versus-external source kind. |
 | `document.addParagraph` | api | Append a styled paragraph with optional run spans, including character-style runStyleId references plus direct/theme and complex-script semantics. |
 | `document.addSection` | api | Append a DOCX section break with page size, orientation, margin, and break-type metadata backed by w:sectPr. |
 | `document.addTable` | api | Append a Word-style table with physical cell values, optional logical merge geometry, and fixed-layout width/margin/border/header formatting. |
@@ -322,7 +322,7 @@ Append one bounded whole-paragraph tracked insertion using native w:ins markup. 
 
 #### `document.addListItem`
 
-Append a numbered or character-bulleted list item using native DOCX numbering definitions. Picture bullets remain model-only and make canonical OpenChestnut export fail closed.
+Append a numbered, character-bulleted, or bounded picture-bulleted list item using native DOCX numbering definitions. Picture markers are shared numbering-level resources: every item using the same numberingId and level must agree, and recognized imported edits must update the complete group without changing embedded-versus-external source kind.
 
 **Schema parameters:**
 
@@ -335,7 +335,7 @@ Append a numbered or character-bulleted list item using native DOCX numbering de
 - `numberingId` (number|string) — Optional list-instance identity used to group levels during export and preserved by native import.
 - `abstractNumberingId` (number|string) — Optional abstract numbering identity used to share one compatible multilevel definition across list instances; preserved by native import.
 - `numberingStyleId` (string) — Optional Word numbering-style identity resolved through styleLink/numStyleLink and flattened safely on second export.
-- `pictureBullet` (string|object) — Model-only picture marker metadata. OpenChestnut 0.2 authors character and numbered lists, but rejects picture-bullet DOCX export.
+- `pictureBullet` (string|object) — Optional embedded PNG/JPEG/GIF base64 data URL, absolute HTTP(S) URI, or { dataUrl|uri, widthPt|sizePt, heightPt, alt } marker. Width and height are 4 through 72 points; external resources are referenced but never fetched. All list items sharing numberingId and level must use the same marker. Recognized imported markers allow only a coherent full-group edit with the original embedded/external source kind; irregular VML and broader inherited numbering graphs fail closed.
 - `styleId` (string) — Named paragraph style ID.
 
 **Schema returns:**

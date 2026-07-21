@@ -23,6 +23,7 @@ import {
   DocumentImageWrapSide,
   DocumentNoteKind,
   DocumentProtectionMode,
+  DocumentPictureBulletSchema,
   DocumentRevisionFinalizationMode,
   DocumentSectionBreak,
   DocumentStyleType,
@@ -2200,7 +2201,103 @@ function sameDocumentTableFormatting(block, table) {
     block.headerFill === expected.headerFill;
 }
 
-function sameDocumentNumbering(block, paragraph) {
+const DOCUMENT_PICTURE_BULLET_EMU_PER_POINT = 12_700;
+const DOCUMENT_PICTURE_BULLET_MAX_BYTES = 8 * 1024 * 1024;
+
+function documentPictureBulletAsset(dataUrl, assets, label) {
+  const match = /^data:(image\/(?:png|jpeg|gif));base64,([A-Za-z0-9+/=]+)$/i.exec(String(dataUrl || ""));
+  if (!match) throw new OpenChestnutCodecError(`${label} must use a base64 PNG, JPEG, or GIF data URL.`, [], { code: "invalid_document_picture_bullet" });
+  const contentType = match[1].toLowerCase();
+  const encoded = match[2];
+  if (encoded.length % 4 === 1 || /=[^=]|={3,}/.test(encoded)) {
+    throw new OpenChestnutCodecError(`${label} contains invalid base64.`, [], { code: "invalid_document_picture_bullet" });
+  }
+  const bytes = new Uint8Array(Buffer.from(encoded, "base64"));
+  if (!bytes.length || bytes.length > DOCUMENT_PICTURE_BULLET_MAX_BYTES || Buffer.from(bytes).toString("base64") !== encoded) {
+    throw new OpenChestnutCodecError(`${label} must contain 1 through ${DOCUMENT_PICTURE_BULLET_MAX_BYTES} valid decoded bytes.`, [], { code: "invalid_document_picture_bullet" });
+  }
+  const matchesFormat = contentType === "image/png"
+    ? Buffer.from(bytes.subarray(0, 8)).equals(Buffer.from("89504e470d0a1a0a", "hex"))
+    : contentType === "image/jpeg"
+      ? bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+      : bytes.length >= 6 && new Set(["GIF87a", "GIF89a"]).has(Buffer.from(bytes.subarray(0, 6)).toString("ascii"));
+  if (!matchesFormat) throw new OpenChestnutCodecError(`${label} bytes do not match ${contentType}.`, [], { code: "invalid_document_picture_bullet" });
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  const assetId = `asset/document/image/${sha256}`;
+  const extension = contentType === "image/jpeg" ? "jpg" : contentType.slice("image/".length);
+  assets.set(assetId, { id: assetId, fileName: `picture-bullet-${sha256.slice(0, 16)}.${extension}`, contentType, data: bytes, sha256 });
+  return assetId;
+}
+
+function documentPictureBulletUri(value, label) {
+  const uri = String(value || "");
+  if (!uri || uri.length > 4_096 || /[\u0000-\u001f\u007f]/.test(uri)) {
+    throw new OpenChestnutCodecError(`${label} URI must contain 1 through 4096 characters without controls.`, [], { code: "invalid_document_picture_bullet" });
+  }
+  let parsed;
+  try { parsed = new URL(uri); } catch { parsed = undefined; }
+  if (!parsed || !new Set(["http:", "https:"]).has(parsed.protocol)) {
+    throw new OpenChestnutCodecError(`${label} URI must be absolute http(s).`, [], { code: "invalid_document_picture_bullet" });
+  }
+  return uri;
+}
+
+function wireDocumentPictureBullet(value, assets, label) {
+  if (!value) return undefined;
+  if (typeof value !== "object" || Array.isArray(value) || Boolean(value.dataUrl) === Boolean(value.uri)) {
+    throw new OpenChestnutCodecError(`${label} requires exactly one embedded dataUrl or external uri.`, [], { code: "invalid_document_picture_bullet" });
+  }
+  const source = value.dataUrl
+    ? { case: "assetId", value: documentPictureBulletAsset(value.dataUrl, assets, label) }
+    : { case: "uri", value: documentPictureBulletUri(value.uri, label) };
+  const widthEmu = Math.round(Number(value.widthPt) * DOCUMENT_PICTURE_BULLET_EMU_PER_POINT);
+  const heightEmu = Math.round(Number(value.heightPt) * DOCUMENT_PICTURE_BULLET_EMU_PER_POINT);
+  const altText = String(value.alt || "Picture bullet");
+  if (!Number.isSafeInteger(widthEmu) || !Number.isSafeInteger(heightEmu) ||
+      widthEmu < 4 * DOCUMENT_PICTURE_BULLET_EMU_PER_POINT || widthEmu > 72 * DOCUMENT_PICTURE_BULLET_EMU_PER_POINT ||
+      heightEmu < 4 * DOCUMENT_PICTURE_BULLET_EMU_PER_POINT || heightEmu > 72 * DOCUMENT_PICTURE_BULLET_EMU_PER_POINT ||
+      !altText || altText.length > 255 || /[\u0000-\u001f\u007f]/.test(altText)) {
+    throw new OpenChestnutCodecError(`${label} dimensions or alternative text are outside the bounded DOCX profile.`, [], { code: "invalid_document_picture_bullet" });
+  }
+  return create(DocumentPictureBulletSchema, { source, widthEmu, heightEmu, altText });
+}
+
+function publicDocumentPictureBullet(value, assets, label) {
+  if (!value) return undefined;
+  let dataUrl;
+  let uri;
+  if (value.source?.case === "assetId") {
+    const asset = assets.get(value.source.value);
+    if (!asset || !new Set(["image/png", "image/jpeg", "image/gif"]).has(asset.contentType)) {
+      throw new OpenChestnutCodecError(`${label} references a missing or unsupported image asset.`, [], { code: "invalid_document_asset" });
+    }
+    dataUrl = `data:${asset.contentType};base64,${Buffer.from(asset.data).toString("base64")}`;
+  } else if (value.source?.case === "uri") {
+    uri = documentPictureBulletUri(value.source.value, label);
+  } else {
+    throw new OpenChestnutCodecError(`${label} has no image source.`, [], { code: "invalid_document_picture_bullet" });
+  }
+  const widthPt = Number(value.widthEmu) / DOCUMENT_PICTURE_BULLET_EMU_PER_POINT;
+  const heightPt = Number(value.heightEmu) / DOCUMENT_PICTURE_BULLET_EMU_PER_POINT;
+  if (!Number.isFinite(widthPt) || widthPt < 4 || widthPt > 72 || !Number.isFinite(heightPt) || heightPt < 4 || heightPt > 72) {
+    throw new OpenChestnutCodecError(`${label} dimensions are outside the bounded DOCX profile.`, [], { code: "invalid_document_picture_bullet" });
+  }
+  return { dataUrl, uri, widthPt, heightPt, alt: String(value.altText || "Picture bullet") };
+}
+
+function sameDocumentPictureBullet(left, right, assets, label) {
+  const publicRight = publicDocumentPictureBullet(right, assets, label);
+  if (!left || !publicRight) return !left && !publicRight;
+  return (left.dataUrl || "") === (publicRight.dataUrl || "") && (left.uri || "") === (publicRight.uri || "") &&
+    left.widthPt === publicRight.widthPt && left.heightPt === publicRight.heightPt && left.alt === publicRight.alt;
+}
+
+function documentPictureBulletDefinitionKey(value) {
+  if (!value) return "none";
+  return JSON.stringify([value.source?.case || "none", value.source?.value || "", value.widthEmu, value.heightEmu, value.altText]);
+}
+
+function sameDocumentNumbering(block, paragraph, assets) {
   const numbering = paragraph.numbering;
   if (!numbering || block.kind !== "listItem") return false;
   const numberFormat = numbering.numberFormat || "decimal";
@@ -2212,7 +2309,8 @@ function sameDocumentNumbering(block, paragraph) {
     block.levelText === (numbering.levelText || (numberFormat === "bullet" ? "•" : `%${numbering.level + 1}.`)) &&
     block.numberingId === numbering.numberingId &&
     block.abstractNumberingId === numbering.abstractNumberingId &&
-    (block.numberingStyleId || "") === (numbering.numberingStyleId || "");
+    (block.numberingStyleId || "") === (numbering.numberingStyleId || "") &&
+    sameDocumentPictureBullet(block.pictureBullet, numbering.pictureBullet, assets, `Document list item ${block.id} picture bullet`);
 }
 
 function sameDocumentNumberingIdentity(block, numbering) {
@@ -2223,7 +2321,7 @@ function sameDocumentNumberingIdentity(block, numbering) {
     (block.numberingStyleId || "") === (numbering.numberingStyleId || "");
 }
 
-function editedDocumentNumbering(block, source) {
+function editedDocumentNumbering(block, source, assets) {
   if (!sameDocumentNumberingIdentity(block, source)) {
     throw new OpenChestnutCodecError(`Document list item ${block.id} numbering identity, level, and style linkage are source-bound.`, [], { code: "unsupported_document_edit" });
   }
@@ -2240,10 +2338,15 @@ function editedDocumentNumbering(block, source) {
   if (block.listType !== listType) {
     throw new OpenChestnutCodecError(`Document list item ${block.id} listType must be ${listType} for numberFormat ${numberFormat || "(empty)"}.`, [], { code: "invalid_document_numbering" });
   }
-  return { ...source, numberFormat, start, levelText };
+  const pictureBullet = wireDocumentPictureBullet(block.pictureBullet, assets, `Document list item ${block.id} picture bullet`);
+  if (Boolean(pictureBullet) !== Boolean(source.pictureBullet) ||
+      pictureBullet && pictureBullet.source?.case !== source.pictureBullet?.source?.case) {
+    throw new OpenChestnutCodecError(`Document list item ${block.id} picture-bullet source topology is source-bound.`, [], { code: "unsupported_document_edit" });
+  }
+  return { ...source, numberFormat, start, levelText, pictureBullet };
 }
 
-function directDocumentNumberingPlan(document) {
+function directDocumentNumberingPlan(document, assets) {
   const groups = new Map();
   const usedNumberingIds = new Set();
   const usedAbstractIds = new Set();
@@ -2258,12 +2361,10 @@ function directDocumentNumberingPlan(document) {
     }
     return normalized;
   };
-  const sameDefinition = (left, right) => left.numberFormat === right.numberFormat && left.start === right.start && left.levelText === right.levelText;
+  const sameDefinition = (left, right) => left.numberFormat === right.numberFormat && left.start === right.start && left.levelText === right.levelText &&
+    documentPictureBulletDefinitionKey(left.pictureBullet) === documentPictureBulletDefinitionKey(right.pictureBullet);
 
   for (const block of document.blocks.filter((item) => item.kind === "listItem")) {
-    if (block.pictureBullet) {
-      throw new OpenChestnutCodecError(`The DOCX WebAssembly vertical slice cannot directly author picture bullet ${block.id}.`, [], { code: "unsupported_document_features" });
-    }
     if (block.numberingStyleId) {
       throw new OpenChestnutCodecError(`The DOCX WebAssembly vertical slice cannot directly author style-linked numbering for list item ${block.id}.`, [], { code: "unsupported_document_features" });
     }
@@ -2276,6 +2377,9 @@ function directDocumentNumberingPlan(document) {
     if (!levelText || levelText.length > 1_024) invalid(`Document list item ${block.id} levelText must contain 1 through 1024 characters.`);
     const expectedListType = numberFormat === "bullet" ? "bullet" : "number";
     if (block.listType !== expectedListType) invalid(`Document list item ${block.id} listType must be ${expectedListType} for numberFormat ${numberFormat}.`);
+    if (block.pictureBullet && (numberFormat !== "bullet" || [...levelText].length !== 1)) {
+      invalid(`Document list item ${block.id} picture bullet requires bullet semantics and exactly one levelText character.`);
+    }
 
     const explicitNumberingId = block.numberingId == null ? undefined : integer(block.numberingId, `Document list item ${block.id} numberingId`, { positive: true });
     const explicitAbstractId = block.abstractNumberingId == null ? undefined : integer(block.abstractNumberingId, `Document list item ${block.id} abstractNumberingId`);
@@ -2286,7 +2390,8 @@ function directDocumentNumberingPlan(document) {
     const group = groups.get(key);
     if (group.explicitNumberingId !== explicitNumberingId) invalid(`Document numbering group ${key} has conflicting numbering IDs.`);
     if (explicitAbstractId != null) group.abstractIds.add(explicitAbstractId);
-    const definition = { numberFormat, start, levelText };
+    const pictureBullet = wireDocumentPictureBullet(block.pictureBullet, assets, `Document list item ${block.id} picture bullet`);
+    const definition = { numberFormat, start, levelText, pictureBullet };
     const existing = group.definitions.get(level);
     if (existing && !sameDefinition(existing, definition)) invalid(`Document numbering ${explicitNumberingId ?? key} level ${level} has conflicting definitions.`);
     group.definitions.set(level, definition);
@@ -3018,11 +3123,11 @@ function wireDocumentSection(block) {
   };
 }
 
-function unchangedSourceBlock(block, original) {
+function unchangedSourceBlock(block, original, assets) {
   switch (original.content.case) {
     case "paragraph": {
       if (original.content.value.numbering) {
-        return block.styleId === (original.styleId || "Normal") && sameDocumentNumbering(block, original.content.value);
+        return block.styleId === (original.styleId || "Normal") && sameDocumentNumbering(block, original.content.value, assets);
       }
       if (block.kind !== "paragraph" || block.text !== original.content.value.text || block.styleId !== (original.styleId || "Normal")) return false;
       if (original.source?.editable !== false) return false;
@@ -3111,7 +3216,7 @@ function patchedSourceParagraphBlock(block, original) {
 function documentBlock(block, original, directNumbering, assets, contentControlNativeIds) {
   const patchedParagraph = patchedSourceParagraphBlock(block, original);
   if (patchedParagraph) return patchedParagraph;
-  if (original && unchangedSourceBlock(block, original)) return original;
+  if (original && unchangedSourceBlock(block, original, assets)) return original;
   const common = {
     id: original?.id || block.id,
     name: block.name || original?.name || "",
@@ -3152,7 +3257,7 @@ function documentBlock(block, original, directNumbering, assets, contentControlN
     if (original.source?.editable === false) {
       throw new OpenChestnutCodecError(`Document list item ${block.id} is source-preserved but its paragraph topology is not editable.`, [], { code: "unsupported_document_edit" });
     }
-    const numbering = editedDocumentNumbering(block, source.numbering);
+    const numbering = editedDocumentNumbering(block, source.numbering, assets);
     const text = String(block.text ?? "");
     if (text.length > 1_000_000) throw new OpenChestnutCodecError(`Document list item ${block.id} text exceeds 1,000,000 characters.`, [], { code: "invalid_document_numbering" });
     return {
@@ -3320,9 +3425,9 @@ function documentEnvelope(document) {
       throw new OpenChestnutCodecError(`Imported document block ${slot.wire.id} is source-bound and read-only in OpenChestnut 0.2.`, [], { code: "unsupported_document_edit" });
     }
   }
-  const directNumbering = state ? undefined : directDocumentNumberingPlan(document);
-  const contentControlNativeIds = planDocumentContentControls(document);
   const assets = new Map((state?.assets || []).map((asset) => [asset.id, asset]));
+  const directNumbering = state ? undefined : directDocumentNumberingPlan(document, assets);
+  const contentControlNativeIds = planDocumentContentControls(document);
   const defaultRunSource = Object.fromEntries([...DOCUMENT_RUN_STYLE_KEYS].filter((key) => key !== "runStyleId" && Object.hasOwn(document.defaultRunStyle || {}, key)).map((key) => [key, document.defaultRunStyle[key]]));
   const blocks = document.blocks.map((block, index) => documentBlock(block, state?.blocks[index], directNumbering?.get(block), assets, contentControlNativeIds));
   return {
@@ -3671,6 +3776,7 @@ function documentFromEnvelope(envelope) {
             numberingId: numbering.numberingId,
             abstractNumberingId: numbering.abstractNumberingId,
             numberingStyleId: numbering.numberingStyleId || undefined,
+            pictureBullet: publicDocumentPictureBullet(numbering.pictureBullet, assets, `Document list item ${block.id} picture bullet`),
           };
         }
         return {

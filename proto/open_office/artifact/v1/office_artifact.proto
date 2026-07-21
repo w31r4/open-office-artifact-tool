@@ -2494,6 +2494,21 @@ message DocumentNumbering {
   // Friendly numbering-style identity resolved from w:styleLink or
   // w:numStyleLink. Linked style graphs remain source-bound.
   string numbering_style_id = 7;
+  // Optional shared picture-numbering symbol for this effective numId/level
+  // definition. Embedded images use a content-addressed envelope Asset;
+  // external images remain non-fetched absolute http(s) URIs. Native
+  // numPicBulletId and relationship IDs are package-local codec details.
+  DocumentPictureBullet picture_bullet = 8;
+}
+
+message DocumentPictureBullet {
+  oneof source {
+    string asset_id = 1;
+    string uri = 2;
+  }
+  int64 width_emu = 3;
+  int64 height_emu = 4;
+  string alt_text = 5;
 }
 
 message DocumentRun {

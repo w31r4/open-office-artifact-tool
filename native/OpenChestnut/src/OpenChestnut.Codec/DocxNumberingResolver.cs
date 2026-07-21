@@ -1,4 +1,5 @@
 using System.Xml.Linq;
+using System.Text;
 using OpenOffice.Artifact.Wire.V1;
 
 namespace OpenChestnut.Codec;
@@ -24,6 +25,7 @@ internal static class DocxNumberingResolver
         var numbering = context.NumberingDocument;
         if (numbering?.Root is null) return null;
         var instance = ResolveInstance(
+            context,
             numbering,
             context.StylesDocument,
             numberingId,
@@ -43,6 +45,7 @@ internal static class DocxNumberingResolver
             Start = checked((uint)level.Start),
             LevelText = level.LevelText,
             NumberingStyleId = instance.NumberingStyleId,
+            PictureBullet = level.PictureBullet?.Clone(),
         };
     }
 
@@ -63,6 +66,7 @@ internal static class DocxNumberingResolver
     }
 
     private static InstanceDefinition? ResolveInstance(
+        DocxPartContext context,
         XDocument numbering,
         XDocument? styles,
         int numberingId,
@@ -91,14 +95,14 @@ internal static class DocxNumberingResolver
             {
                 var linkedNumberingId = ResolveNumberingStyle(styles, numberingStyleLink);
                 if (linkedNumberingId is null or <= 0) return null;
-                var linked = ResolveInstance(numbering, styles, linkedNumberingId.Value, trail, depth + 1);
+                var linked = ResolveInstance(context, numbering, styles, linkedNumberingId.Value, trail, depth + 1);
                 if (linked is null) return null;
                 levels = linked.Levels.ToDictionary(item => item.Key, item => item.Value);
                 numberingStyleId = numberingStyleLink;
             }
             else
             {
-                var directLevels = ReadLevels(abstractNumbering.Elements(W + "lvl"));
+                var directLevels = ReadLevels(context, numbering, abstractNumbering.Elements(W + "lvl"));
                 if (directLevels is null) return null;
                 levels = directLevels;
             }
@@ -112,7 +116,7 @@ internal static class DocxNumberingResolver
                 if (nestedLevels.Length > 1) return null;
                 if (nestedLevels.Length == 1)
                 {
-                    var nested = ReadLevel(nestedLevels[0], levelIndex.Value);
+                    var nested = ReadLevel(context, numbering, nestedLevels[0], levelIndex.Value);
                     if (nested is null) return null;
                     levels[levelIndex.Value] = nested;
                     continue;
@@ -141,18 +145,25 @@ internal static class DocxNumberingResolver
         return IntegerAttribute(style.Element(W + "pPr")?.Element(W + "numPr")?.Element(W + "numId"), W + "val");
     }
 
-    private static Dictionary<int, LevelDefinition>? ReadLevels(IEnumerable<XElement> source)
+    private static Dictionary<int, LevelDefinition>? ReadLevels(
+        DocxPartContext context,
+        XDocument numbering,
+        IEnumerable<XElement> source)
     {
         var levels = new Dictionary<int, LevelDefinition>();
         foreach (var element in source)
         {
-            var level = ReadLevel(element);
+            var level = ReadLevel(context, numbering, element);
             if (level is null || !levels.TryAdd(level.Level, level)) return null;
         }
         return levels;
     }
 
-    private static LevelDefinition? ReadLevel(XElement element, int? expectedLevel = null)
+    private static LevelDefinition? ReadLevel(
+        DocxPartContext context,
+        XDocument numbering,
+        XElement element,
+        int? expectedLevel = null)
     {
         var declaredLevel = IntegerAttribute(element, W + "ilvl");
         var level = expectedLevel ?? declaredLevel;
@@ -163,7 +174,10 @@ internal static class DocxNumberingResolver
         var start = IntegerAttribute(element.Element(W + "start"), W + "val") ?? 1;
         if (start < 0 || numberFormat.Length > 128 || levelText.Length > 1024 || paragraphStyleId.Length > 253)
             return null;
-        return new LevelDefinition(level.Value, numberFormat, start, levelText, paragraphStyleId);
+        if (!DocxPictureBulletCodec.TryRead(context, numbering, element, out var pictureBullet)) return null;
+        if (pictureBullet is not null &&
+            (!numberFormat.Equals("bullet", StringComparison.Ordinal) || levelText.EnumerateRunes().Count() != 1)) return null;
+        return new LevelDefinition(level.Value, numberFormat, start, levelText, paragraphStyleId, pictureBullet);
     }
 
     private static int? IntegerAttribute(XElement? element, XName name) =>
@@ -193,5 +207,6 @@ internal static class DocxNumberingResolver
         string NumberFormat,
         int Start,
         string LevelText,
-        string ParagraphStyleId);
+        string ParagraphStyleId,
+        DocumentPictureBullet? PictureBullet);
 }
