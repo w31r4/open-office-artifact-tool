@@ -64,6 +64,7 @@ internal static class DocxCodec
         DocxNoteCodec.Read(context, body, document, ref semanticItems, limits);
         DocxBookmarkCodec.Read(body, document, ref semanticItems, limits);
         DocxClassicCommentCodec.Read(context, body, document, ref semanticItems, limits, diagnostics);
+        DocxWatermarkCodec.Read(mainPart, body, document, diagnostics);
         DocxHeaderFooterCodec.Read(mainPart, body, document, diagnostics);
 
         var envelope = new ArtifactEnvelope
@@ -170,6 +171,7 @@ internal static class DocxCodec
                envelope.Document.Comments.Any(comment => comment.Source is not null) ||
                envelope.Document.Bookmarks.Any(bookmark => bookmark.Source is not null) ||
                envelope.Document.Notes.Any(note => note.Source is not null) ||
+               envelope.Document.Watermarks.Any(watermark => watermark.Source is not null) ||
                envelope.Document.Bibliography?.Source is not null;
     }
 
@@ -204,6 +206,7 @@ internal static class DocxCodec
             DocxDirectStyles.AssertSourceUnchanged(mainPart, envelope.Document);
             DocxSettingsCodec.AssertSourceBoundSettings(mainPart, envelope.Document);
             DocxHeaderFooterCodec.AssertSourceUnchanged(mainPart, body, envelope.Document);
+            DocxWatermarkCodec.ApplySource(context, body, envelope.Document);
             DocxSettingsCodec.ApplySource(mainPart, envelope.Document, context);
             var irregularComplexFields = IrregularComplexFieldBodyIndexes(body);
             var sourceElements = body.ChildElements.Where(element => element is not W.SectionProperties).ToArray();
@@ -928,10 +931,11 @@ internal static class DocxCodec
             envelope.Document,
             allowSourceBoundCatalog: envelope.OpaqueOpc?.SourcePackage is { Data.IsEmpty: false });
         DocxHeaderFooterCodec.Validate(envelope.Document);
+        DocxWatermarkCodec.Validate(envelope.Document);
         DocxContentControlCodec.Validate(envelope.Document);
         DocxBibliographyCodec.Validate(envelope.Document);
 
-        ulong semanticItems = checked((ulong)envelope.Document.Comments.Count + (ulong)envelope.Document.Bookmarks.Count + (ulong)envelope.Document.Notes.Count);
+        ulong semanticItems = checked((ulong)envelope.Document.Comments.Count + (ulong)envelope.Document.Bookmarks.Count + (ulong)envelope.Document.Notes.Count + (ulong)envelope.Document.Watermarks.Count);
         foreach (var block in envelope.Document.Blocks)
         {
             DocxPlainTextPatchCodec.Validate(block);

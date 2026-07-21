@@ -82,13 +82,14 @@ export function createDocumentFromFixture(fixture = {}) {
   for (const settings of fixture.sectionSettings || []) document.setSectionSettings(settings.sectionIndex, settings);
   for (const header of fixture.headers || []) document.addHeader(header.text || "", header);
   for (const footer of fixture.footers || []) document.addFooter(footer.text || "", footer);
+  for (const watermark of fixture.watermarks || []) document.addWatermark(watermark.text || "", watermark);
   for (const comment of fixture.comments || []) {
     const target = byName.get(comment.targetName) || comment.targetId;
     assert.ok(target, `Missing document fixture comment target ${comment.targetName || comment.targetId}`);
     document.addComment(target, comment.text || "", comment);
   }
   for (const expected of fixture.expectInspect || []) {
-    assert.match(document.inspect({ kind: expected.kind || "document,paragraph,listItem,table,comment,header,footer,hyperlink,field,citation,bibliographySource,image,section,style", maxChars: 20_000 }).ndjson, new RegExp(expected.pattern));
+    assert.match(document.inspect({ kind: expected.kind || "document,paragraph,listItem,table,comment,header,footer,watermark,hyperlink,field,citation,bibliographySource,image,section,style", maxChars: 20_000 }).ndjson, new RegExp(expected.pattern));
   }
   return document;
 }
@@ -144,7 +145,7 @@ export async function verifyDocumentFile(inputPath, options = {}) {
   const docxBlob = new FileBlob(loaded.bytes, { type: DOCX_MIME, name: path.basename(absoluteInput) });
   const document = await DocumentFile.importDocx(docxBlob);
   const maxChars = options.maxChars ?? 20_000;
-  const inspect = document.inspect({ kind: options.inspectKind || "document,paragraph,listItem,table,comment,header,footer,hyperlink,field,citation,bibliographySource,image,section,style,layout", maxChars });
+  const inspect = document.inspect({ kind: options.inspectKind || "document,paragraph,listItem,table,comment,header,footer,watermark,hyperlink,field,citation,bibliographySource,image,section,style,layout", maxChars });
   const packageInspect = await DocumentFile.inspectDocx(docxBlob, { includeText: options.includePackageText === true, maxChars });
   const verify = verifyArtifact(document, { visualQa: true, maxChars });
   const layoutBlob = await document.render({ format: "layout" });
@@ -298,6 +299,16 @@ export async function runDocumentFixture(fixturePath, options = {}) {
         for (const field of ["alt", "widthPx", "heightPx", "dataUrl", "placement"]) {
           if (Object.prototype.hasOwnProperty.call(edit, field)) image[field] = edit[field];
         }
+        continue;
+      }
+      if (edit.kind === "watermark") {
+        const watermark = imported.watermarks.find((item) =>
+          (!edit.matchText || item.text === edit.matchText) &&
+          (edit.sectionIndex == null || item.sectionIndex === Number(edit.sectionIndex)) &&
+          (!edit.referenceType || item.referenceType === edit.referenceType));
+        assert.ok(watermark, `Missing source-bound watermark fixture target ${edit.matchText || "(unspecified)"}.`);
+        if (edit.remove === true) watermark.remove();
+        else if (Object.prototype.hasOwnProperty.call(edit, "text")) watermark.text = String(edit.text);
         continue;
       }
       if (edit.kind === "section") {

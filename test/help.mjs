@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 352);
+assert.equal(HELP_CATALOG.length, 354);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -266,6 +266,11 @@ assert.ok(HELP_CATALOG.find((item) => item.name === "DocumentFile.patchDocx")?.s
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.schema?.parameters?.preferNative, undefined);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addHeader")?.schema?.parameters?.referenceType?.type, "string");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addFooter")?.schema?.parameters?.referenceType?.type, "string");
+assert.equal(HELP_CATALOG.find((item) => item.name === "document.addWatermark")?.schema?.parameters?.text?.required, true);
+assert.equal(HELP_CATALOG.find((item) => item.name === "document.addWatermark")?.schema?.parameters?.sectionIndex?.type, "number");
+assert.equal(HELP_CATALOG.find((item) => item.name === "document.addWatermark")?.schema?.returns?.watermark?.type, "DocumentWatermark");
+assert.equal(HELP_CATALOG.find((item) => item.name === "documentWatermark.remove")?.schema?.returns?.watermark?.type, "undefined");
+assert.match(HELP_CATALOG.find((item) => item.name === "documentWatermark.remove")?.summary || "", /exact element.*header residual hashes.*never heuristically/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addHeader")?.schema?.parameters?.activateVariant?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addFooter")?.schema?.parameters?.activateVariant?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.setSectionSettings")?.schema?.parameters?.differentFirstPage?.type, "boolean");
@@ -358,7 +363,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.sc
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.schema?.returns?.inspection?.description || "", /mupdfWidget.*mupdfFormField/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.summary || "", /MuPDF/);
 const documentCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "document");
-assert.equal(documentCatalog.length, 58);
+assert.equal(documentCatalog.length, 60);
 assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.schema?.parameters?.pictureBullet?.type, "string|object");
@@ -605,6 +610,8 @@ assert.match(document.help("document.setDropdownContentControls").ndjson, /tag-t
 assert.match(document.help("document.setComboBoxContentControls").ndjson, /tag-to-string value mapping/i);
 assert.match(document.help("document.setDateContentControls").ndjson, /tag-to-string date mapping/i);
 assert.match(document.help("document.addBibliographySource").ndjson, /bibliography source/);
+assert.match(document.help("document.addWatermark").ndjson, /canonical VML text watermark/i);
+assert.match(document.help("documentWatermark.remove").ndjson, /complete header paragraph/i);
 assert.match(document.help("document.applyDesignPreset").ndjson, /design preset/);
 assert.match(document.help("document.layoutJson").ndjson, /layout JSON/);
 assert.match(document.help("document.resolve").ndjson, /stable document/);

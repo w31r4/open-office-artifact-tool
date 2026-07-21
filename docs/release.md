@@ -3066,6 +3066,49 @@ re-ran and passed every code, documentation, package, and .NET command with
 registry/auth checks explicitly disabled. No npm publish, tag, or release
 operation was attempted.
 
+### DOCX canonical text watermarks
+
+On 2026-07-22, Documents gained a typed `document.watermarks` collection plus
+`document.addWatermark(...)` and `watermark.remove()`. OpenChestnut now authors
+canonical VML text watermarks in explicitly referenced DOCX header parts and
+imports a deliberately bounded form: one exclusive canonical watermark
+paragraph in a header part referenced by exactly one section/header scope. The
+public protobuf contract records section/scope identity and an exact source
+binding. First-page and even-page watermarks activate the corresponding Word
+section/settings semantics.
+
+For imported canonical watermarks, exact no-op export preserves the package
+bytes. Text edits change only the bound `v:textpath` value, and removal deletes
+only the bound watermark paragraph; tests prove that only the expected
+`word/headerN.xml` part changes and that a second import retains the requested
+state. Stale bindings, scope or order changes, imported additions, shared header
+parts, multiple candidates, DrawingML/image watermarks, and irregular WordArt
+remain opaque or fail closed rather than being rebuilt through a lossy model.
+Ordinary header text and a source-free watermark can share one header part.
+
+The shipped Documents workflow protects the source, selects one exact imported
+watermark, performs an edit or removal, requires a one-part mutation, reimports
+the result, verifies the model, and emits a byte-bound audit. Its real
+LibreOffice/Poppler fixture rendered one page at 1275 by 1650 pixels. Manual
+review confirmed the pale diagonal `INTERNAL REVIEW` watermark and unchanged,
+unclipped body layout; the rendered PNG was 99,931 bytes with short SHA-256
+`a4e824de`.
+
+The complete `npm test` gate passed, including the bundled-WASM clean-install
+watermark path, the Documents Skill edit/remove workflows, LibreOffice,
+Poppler, MuPDF.js, qpdf, and Playwright. OpenChestnut passed `326/326` and
+OfficeBridge passed `5/5`; protocol lint/idempotent generation and generated API
+docs passed. Deterministic source-built WASM verification matched 39 audited
+build files, and the bundled runtime is 38 files and 14,947,008 bytes. The
+clean-install/package gate produced 476 files, 9,174,119 compressed bytes, and
+24,354,515 unpacked bytes (`SHA-1
+45041b29985f276ad9b3fa7ca717f644eac6cbb7`). Independent Python environments
+for pikepdf, pyHanko, veraPDF, and OCRmyPDF were not configured in this local
+shell, so their contract/adversarial gates passed while their real-provider
+repeats were skipped. The offline release wrapper re-ran and passed every code,
+documentation, package, and .NET command with registry/auth checks explicitly
+disabled. No npm publish, tag, or release operation was attempted.
+
 ## Publishing
 
 Before publishing:

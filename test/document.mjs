@@ -95,6 +95,32 @@ floatingImage.placement.horizontal.offsetPx = Number.POSITIVE_INFINITY;
 assert.equal(floatingDocument.verify().issues.some((issue) => issue.type === "invalidImagePlacement"), true);
 floatingImage.placement.horizontal.offsetPx = 240;
 
+const watermarkModel = DocumentModel.create({ name: "Watermark model", blocks: [] });
+watermarkModel.addParagraph("Draft review body");
+const modelWatermark = watermarkModel.addWatermark("DRAFT", { id: "watermark/model", sectionIndex: 0 });
+assert.equal(watermarkModel.resolve(modelWatermark.id), modelWatermark);
+assert.deepEqual(modelWatermark.toProto(), {
+  kind: "watermark",
+  id: "watermark/model",
+  text: "DRAFT",
+  referenceType: "default",
+  sectionIndex: 0,
+  editable: true,
+  sourceBound: false,
+});
+assert.match(watermarkModel.inspect({ kind: "document,watermark" }).ndjson, /"kind":"watermark".*"text":"DRAFT"/);
+assert.match(await (await watermarkModel.render()).text(), /rotate\(-45 306 396\).*DRAFT/);
+assert.equal(watermarkModel.verify().ok, true);
+assert.throws(() => watermarkModel.addWatermark("SECOND", { sectionIndex: 0 }), /already has a default text watermark/i);
+assert.throws(() => DocumentModel.create({ blocks: [], watermarks: [{ text: "   " }] }), /cannot be blank/i);
+assert.throws(() => DocumentModel.create({ blocks: [], watermarks: [{ text: "DRAFT", referenceType: "odd" }] }), /must be default, first, or even/i);
+const evenWatermarkModel = DocumentModel.create({ name: "Even watermark activation", blocks: [] });
+evenWatermarkModel.addWatermark("EVEN REVIEW", { referenceType: "even", sectionIndex: 0 });
+assert.equal(evenWatermarkModel.settings.evenAndOddHeaders, true);
+modelWatermark.remove();
+assert.equal(watermarkModel.watermarks.length, 0);
+assert.throws(() => modelWatermark.remove(), /no longer attached/i);
+
 const document = DocumentModel.create({
   name: "OpenChestnut document profile",
   defaultRunStyle: { fontFamily: "Aptos", fontSize: 11, color: "#202020" },
@@ -314,6 +340,46 @@ const firstDocx = await DocumentFile.exportDocx(document);
 assert.equal(firstDocx.type, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 const firstDocxBytes = Buffer.from(await firstDocx.arrayBuffer());
 const firstDocxSha256 = createHash("sha256").update(firstDocxBytes).digest("hex");
+
+const watermarkDocument = DocumentModel.create({ name: "Watermark OpenChestnut slice", blocks: [] });
+watermarkDocument.addParagraph("Native watermark verification body.");
+watermarkDocument.addWatermark("CONFIDENTIAL", { id: "watermark/confidential", sectionIndex: 0 });
+const watermarkDocx = await DocumentFile.exportDocx(watermarkDocument);
+const watermarkZip = await JSZip.loadAsync(await watermarkDocx.arrayBuffer());
+const watermarkHeaderPath = Object.keys(watermarkZip.files).find((name) => /^word\/header\d+\.xml$/.test(name));
+assert.ok(watermarkHeaderPath);
+assert.match(await watermarkZip.file(watermarkHeaderPath).async("text"), /<v:textpath[^>]*string="CONFIDENTIAL"/);
+const importedWatermarkDocument = await DocumentFile.importDocx(watermarkDocx);
+assert.equal(importedWatermarkDocument.watermarks.length, 1);
+assert.equal(importedWatermarkDocument.watermarks[0].text, "CONFIDENTIAL");
+assert.equal(importedWatermarkDocument.watermarks[0].sourceBound, true);
+assert.equal(importedWatermarkDocument.watermarks[0].editable, true);
+assert.equal(importedWatermarkDocument.resolve(importedWatermarkDocument.watermarks[0].id), importedWatermarkDocument.watermarks[0]);
+const importedWatermarkInspect = importedWatermarkDocument.inspect({ kind: "watermark" }).ndjson;
+assert.match(importedWatermarkInspect, /"sourceBound":true/);
+const watermarkNoOp = await DocumentFile.exportDocx(importedWatermarkDocument);
+assert.deepEqual(Buffer.from(await watermarkNoOp.arrayBuffer()), Buffer.from(await watermarkDocx.arrayBuffer()), "unchanged imported watermark must preserve exact source bytes");
+importedWatermarkDocument.watermarks[0].text = "INTERNAL REVIEW";
+const editedWatermarkDocx = await DocumentFile.exportDocx(importedWatermarkDocument);
+assert.deepEqual(await changedZipParts(watermarkDocx, editedWatermarkDocx), [watermarkHeaderPath]);
+const editedWatermarkRoundTrip = await DocumentFile.importDocx(editedWatermarkDocx);
+assert.equal(editedWatermarkRoundTrip.watermarks[0].text, "INTERNAL REVIEW");
+editedWatermarkRoundTrip.watermarks[0].remove();
+const removedWatermarkDocx = await DocumentFile.exportDocx(editedWatermarkRoundTrip);
+assert.deepEqual(await changedZipParts(editedWatermarkDocx, removedWatermarkDocx), [watermarkHeaderPath]);
+const removedWatermarkRoundTrip = await DocumentFile.importDocx(removedWatermarkDocx);
+assert.equal(removedWatermarkRoundTrip.watermarks.length, 0);
+removedWatermarkRoundTrip.addWatermark("UNSAFE ADD", { sectionIndex: 0 });
+await assert.rejects(
+  () => DocumentFile.exportDocx(removedWatermarkRoundTrip),
+  (error) => error?.code === "document_watermark_topology_changed" && /cannot add a watermark/i.test(error.message),
+);
+const watermarkScopeTamper = await DocumentFile.importDocx(watermarkDocx);
+watermarkScopeTamper.watermarks[0].referenceType = "first";
+await assert.rejects(
+  () => DocumentFile.exportDocx(watermarkScopeTamper),
+  (error) => error?.code === "unsupported_document_watermark_edit" && /fixed after import/i.test(error.message),
+);
 
 const fragmentedPatchFixture = DocumentModel.create({ name: "Fragmented source-bound patch", blocks: [] });
 fragmentedPatchFixture.addParagraph("Quarterly plan");

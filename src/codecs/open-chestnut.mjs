@@ -2789,6 +2789,65 @@ function publicHeaderFooter(block) {
   };
 }
 
+function documentWatermarkSnapshot(watermark) {
+  return {
+    id: watermark.id,
+    text: watermark.text,
+    referenceType: watermark.referenceType,
+    sectionIndex: watermark.sectionIndex,
+  };
+}
+
+function wireDocumentWatermark(watermark, slot) {
+  const snapshot = documentWatermarkSnapshot(watermark);
+  if (!snapshot.id || snapshot.id.length > 512 || /[\u0000-\u001f\u007f]/.test(snapshot.id)) {
+    throw new OpenChestnutCodecError("Document watermarks require unique IDs of 1 through 512 characters without controls.", [], { code: "invalid_document_watermark" });
+  }
+  if (!snapshot.text.trim() || snapshot.text.length > 256 || !isXmlSafeText(snapshot.text)) {
+    throw new OpenChestnutCodecError(`Document watermark ${snapshot.id} text must contain 1 through 256 XML-safe characters and cannot be blank.`, [], { code: "invalid_document_watermark" });
+  }
+  if (slot) {
+    if (snapshot.id !== slot.wire.id || snapshot.referenceType !== publicHeaderFooterReference(slot.wire.reference) || snapshot.sectionIndex !== slot.wire.sectionIndex) {
+      throw new OpenChestnutCodecError(`Document watermark ${snapshot.id} source identity, section, and header reference are fixed after import.`, [], { code: "unsupported_document_watermark_edit" });
+    }
+    if (snapshot.text !== slot.publicSnapshot.text && slot.wire.source?.editable !== true) {
+      throw new OpenChestnutCodecError(`Document watermark ${snapshot.id} is source-bound and read-only.`, [], { code: "unsupported_document_watermark_edit" });
+    }
+  }
+  return {
+    id: snapshot.id,
+    text: snapshot.text,
+    reference: headerFooterReference(snapshot.referenceType),
+    sectionIndex: uint32(snapshot.sectionIndex, `Document watermark ${snapshot.id} sectionIndex`),
+    source: slot?.wire.source,
+  };
+}
+
+function wireDocumentWatermarks(document, state) {
+  if (!state) return document.watermarks.map((watermark) => wireDocumentWatermark(watermark));
+  const slots = state.watermarkSlots || [];
+  const byId = new Map(slots.map((slot, index) => [slot.wire.id, { slot, index }]));
+  let previousIndex = -1;
+  const retained = document.watermarks.map((watermark) => {
+    const match = byId.get(watermark.id);
+    if (!match) {
+      throw new OpenChestnutCodecError("Source-preserving DOCX export cannot add a watermark to an imported document; only recognized existing watermarks may be edited or removed.", [], { code: "document_watermark_topology_changed" });
+    }
+    if (match.index <= previousIndex) {
+      throw new OpenChestnutCodecError("Source-preserving DOCX export cannot reorder imported watermarks.", [], { code: "document_watermark_topology_changed" });
+    }
+    previousIndex = match.index;
+    return wireDocumentWatermark(watermark, match.slot);
+  });
+  const retainedIds = new Set(retained.map((watermark) => watermark.id));
+  for (const slot of slots) {
+    if (!retainedIds.has(slot.wire.id) && slot.wire.source?.editable !== true) {
+      throw new OpenChestnutCodecError(`Document watermark ${slot.wire.id} is source-bound and cannot be removed.`, [], { code: "unsupported_document_watermark_edit" });
+    }
+  }
+  return retained;
+}
+
 function documentSectionBreak(value) {
   if (value === "continuous") return DocumentSectionBreak.CONTINUOUS;
   if (value === "evenPage") return DocumentSectionBreak.EVEN_PAGE;
@@ -3286,6 +3345,7 @@ function documentEnvelope(document) {
         defaultRunStyle: documentRunFormatting(defaultRunSource, "Document default run style"),
         headers: document.headers.map(wireHeaderFooter),
         footers: document.footers.map(wireHeaderFooter),
+        watermarks: wireDocumentWatermarks(document, state),
         evenAndOddHeaders: Boolean(document.settings?.evenAndOddHeaders),
         updateFields: Boolean(document.settings?.updateFields),
         trackRevisions: Boolean(document.settings?.trackRevisions),
@@ -3792,6 +3852,14 @@ function documentFromEnvelope(envelope) {
     bibliographySources: (source.bibliography?.sources || []).map(publicDocumentBibliographySource),
     headers: (source.headers || []).map(publicHeaderFooter),
     footers: (source.footers || []).map(publicHeaderFooter),
+    watermarks: (source.watermarks || []).map((watermark) => ({
+      id: watermark.id,
+      text: watermark.text,
+      referenceType: publicHeaderFooterReference(watermark.reference),
+      sectionIndex: watermark.sectionIndex,
+      editable: watermark.source?.editable === true,
+      sourceBound: Boolean(watermark.source),
+    })),
     settings: {
       evenAndOddHeaders: Boolean(source.evenAndOddHeaders),
       updateFields: Boolean(source.updateFields),
@@ -3813,6 +3881,10 @@ function documentFromEnvelope(envelope) {
     wire,
     publicSnapshot: documentNoteSnapshot(document.notes[index]),
   }));
+  const watermarkSlots = (source.watermarks || []).map((wire, index) => ({
+    wire,
+    publicSnapshot: documentWatermarkSnapshot(document.watermarks[index]),
+  }));
   const readOnlyBlockSlots = source.blocks.flatMap((wire, index) => {
     if (wire.content.case !== "opaque" && (wire.source?.editable !== false || wire.source?.textPatchable === true)) return [];
     const block = document.blocks[index];
@@ -3820,7 +3892,7 @@ function documentFromEnvelope(envelope) {
   });
   Object.defineProperty(document, DOCUMENT_STATE, {
     configurable: true,
-    value: { source: envelope.source, opaqueOpc: envelope.opaqueOpc, diagnostics: envelope.diagnostics, assets: envelope.assets || [], blocks: source.blocks, readOnlyBlockSlots, comments: commentSlots, bookmarks: bookmarkSlots, notes: noteSlots, bibliography: source.bibliography, headers: source.headers || [], footers: source.footers || [] },
+    value: { source: envelope.source, opaqueOpc: envelope.opaqueOpc, diagnostics: envelope.diagnostics, assets: envelope.assets || [], blocks: source.blocks, readOnlyBlockSlots, comments: commentSlots, bookmarks: bookmarkSlots, notes: noteSlots, watermarkSlots, bibliography: source.bibliography, headers: source.headers || [], footers: source.footers || [] },
     writable: true,
   });
   return document;

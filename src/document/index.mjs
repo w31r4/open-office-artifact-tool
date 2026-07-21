@@ -850,6 +850,63 @@ class DocumentHeaderFooterBlock {
   toProto() { return { kind: this.kind, id: this.id, name: this.name, styleId: this.styleId, referenceType: this.referenceType, variantActive: this.variantActive, relationshipId: this.relationshipId, partPath: this.partPath, sectionIndex: this.sectionIndex, fieldInstruction: this.fieldInstruction, text: this.text }; }
 }
 
+class DocumentWatermark {
+  constructor(document, text, config = {}) {
+    const value = String(text ?? "");
+    if (!value.trim() || value.length > 256 || !isXmlSafeText(value)) {
+      throw new TypeError("Document watermark text must contain 1 through 256 XML-safe characters and cannot be blank.");
+    }
+    const sectionIndex = config.sectionIndex == null ? 0 : Number(config.sectionIndex);
+    if (!Number.isInteger(sectionIndex) || sectionIndex < 0 || sectionIndex > 0xffff_ffff) {
+      throw new TypeError("Document watermark sectionIndex must be an unsigned 32-bit integer.");
+    }
+    this.document = document;
+    this.kind = "watermark";
+    this.id = config.id || aid("dwm");
+    this.text = value;
+    const referenceType = config.referenceType ?? config.type ?? "default";
+    if (!["default", "first", "even"].includes(referenceType)) {
+      throw new TypeError("Document watermark referenceType must be default, first, or even.");
+    }
+    this.referenceType = referenceType;
+    this.sectionIndex = sectionIndex;
+    this.editable = config.editable !== false;
+    this.sourceBound = Boolean(config.sourceBound);
+  }
+
+  inspectRecord(index) {
+    return {
+      kind: this.kind,
+      id: this.id,
+      index,
+      text: this.text,
+      referenceType: this.referenceType,
+      sectionIndex: this.sectionIndex,
+      editable: this.editable,
+      sourceBound: this.sourceBound,
+    };
+  }
+
+  toProto() {
+    return {
+      kind: this.kind,
+      id: this.id,
+      text: this.text,
+      referenceType: this.referenceType,
+      sectionIndex: this.sectionIndex,
+      editable: this.editable,
+      sourceBound: this.sourceBound,
+    };
+  }
+
+  remove() {
+    if (!this.editable) throw new Error(`Document watermark ${this.id} is source-bound and cannot be removed.`);
+    const index = this.document.watermarks.indexOf(this);
+    if (index < 0) throw new Error(`Document watermark ${this.id} is no longer attached to its document.`);
+    this.document.watermarks.splice(index, 1);
+  }
+}
+
 function documentCommentInitials(author) {
   const words = String(author || "User").trim().split(/\s+/).filter(Boolean);
   return (words.length > 1 ? words.map((word) => word[0]).join("") : (words[0] || "U").slice(0, 2)).slice(0, 4).toUpperCase();
@@ -1215,6 +1272,7 @@ export class DocumentModel {
     this.bibliographySources = [];
     this.headers = [];
     this.footers = [];
+    this.watermarks = [];
     this.sectionSettings = [];
     const preservesEvenOddActivation = Object.prototype.hasOwnProperty.call(options.settings || {}, "evenAndOddHeaders");
     for (const source of options.bibliographySources || options.bibliography?.sources || []) this.addBibliographySource(source);
@@ -1234,7 +1292,8 @@ export class DocumentModel {
     this.sectionSettings = normalizeDocxSectionSettings(options.sectionSettings || [], this.blocks);
     for (const header of options.headers || []) this.addHeader(header.text, { ...header, _restore: true });
     for (const footer of options.footers || []) this.addFooter(footer.text, { ...footer, _restore: true });
-    if (!preservesEvenOddActivation && [...this.headers, ...this.footers].some((block) => block.referenceType === "even" && block.variantActive !== false)) this.settings = normalizeDocxSettings({ ...this.settings, evenAndOddHeaders: true });
+    for (const watermark of options.watermarks || []) this.addWatermark(watermark.text, { ...watermark, _restore: true });
+    if (!preservesEvenOddActivation && [...this.headers, ...this.footers, ...this.watermarks].some((block) => block.referenceType === "even" && block.variantActive !== false)) this.settings = normalizeDocxSettings({ ...this.settings, evenAndOddHeaders: true });
     for (const bookmark of options.bookmarks || []) this.addBookmark(bookmark.targetId, bookmark.name, bookmark);
     for (const note of options.notes || []) this.addNote(note.kind || note.noteKind, note.targetId, note.text, note);
     for (const comment of options.comments || []) this.addComment(comment.targetId, comment.text, comment);
@@ -1440,6 +1499,15 @@ export class DocumentModel {
   addTable(config = {}) { const block = new DocumentTableBlock(this, config); this.blocks.push(block); return block; }
   addHeader(text, config = {}) { const block = new DocumentHeaderFooterBlock(this, "header", text, config); this.headers.push(block); if (!config._restore && block.referenceType === "even" && block.variantActive !== false) this.settings = normalizeDocxSettings({ ...this.settings, evenAndOddHeaders: true }); return block; }
   addFooter(text, config = {}) { const block = new DocumentHeaderFooterBlock(this, "footer", text, config); this.footers.push(block); if (!config._restore && block.referenceType === "even" && block.variantActive !== false) this.settings = normalizeDocxSettings({ ...this.settings, evenAndOddHeaders: true }); return block; }
+  addWatermark(text, config = {}) {
+    const watermark = new DocumentWatermark(this, text, config);
+    if (this.watermarks.some((item) => item.sectionIndex === watermark.sectionIndex && item.referenceType === watermark.referenceType)) {
+      throw new Error(`Document section ${watermark.sectionIndex} already has a ${watermark.referenceType} text watermark.`);
+    }
+    this.watermarks.push(watermark);
+    if (!config._restore && watermark.referenceType === "even") this.settings = normalizeDocxSettings({ ...this.settings, evenAndOddHeaders: true });
+    return watermark;
+  }
   addBookmark(target, name, config = {}) {
     const targetEndpoint = documentBookmarkEndpoint(target ?? config.target ?? config.targetId);
     const targetId = targetEndpoint?.id;
@@ -1478,15 +1546,15 @@ export class DocumentModel {
       if (table && row < table.rows && column < table.columns) return table.getCell(row, column);
       return undefined;
     }
-    return token === `${this.id}/settings` ? this.settings : token === `${this.id}/theme` ? this.theme : this.id === token ? this : this.blocks.find((block) => block.id === token) || this.headers.find((block) => block.id === token) || this.footers.find((block) => block.id === token) || this.bookmarks.find((bookmark) => bookmark.id === token || bookmark.name === token) || this.notes.find((note) => note.id === token) || this.comments.find((comment) => comment.id === token) || this.bibliographySources.find((source) => source.id === token || source.tag === token) || this.styles.get(token);
+    return token === `${this.id}/settings` ? this.settings : token === `${this.id}/theme` ? this.theme : this.id === token ? this : this.blocks.find((block) => block.id === token) || this.headers.find((block) => block.id === token) || this.footers.find((block) => block.id === token) || this.watermarks.find((watermark) => watermark.id === token) || this.bookmarks.find((bookmark) => bookmark.id === token || bookmark.name === token) || this.notes.find((note) => note.id === token) || this.comments.find((comment) => comment.id === token) || this.bibliographySources.find((source) => source.id === token || source.tag === token) || this.styles.get(token);
   }
 
-  toProto() { return { id: this.id, name: this.name, designPreset: this.designPreset, theme: this.theme, defaultRunStyle: this.defaultRunStyle, settings: this.settings, bibliography: this.bibliography, bibliographySources: this.bibliographySources.map((source) => source.toProto()), sectionSettings: this.sectionSettings, styles: Object.fromEntries(this.styles.values().map((style) => [style.id, style])), blocks: this.blocks.map((block) => block.toProto()), headers: this.headers.map((block) => block.toProto()), footers: this.footers.map((block) => block.toProto()), bookmarks: this.bookmarks.map((bookmark) => bookmark.toProto()), notes: this.notes.map((note) => note.toProto()), comments: this.comments.map((comment) => comment.toProto()) }; }
+  toProto() { return { id: this.id, name: this.name, designPreset: this.designPreset, theme: this.theme, defaultRunStyle: this.defaultRunStyle, settings: this.settings, bibliography: this.bibliography, bibliographySources: this.bibliographySources.map((source) => source.toProto()), sectionSettings: this.sectionSettings, styles: Object.fromEntries(this.styles.values().map((style) => [style.id, style])), blocks: this.blocks.map((block) => block.toProto()), headers: this.headers.map((block) => block.toProto()), footers: this.footers.map((block) => block.toProto()), watermarks: this.watermarks.map((watermark) => watermark.toProto()), bookmarks: this.bookmarks.map((bookmark) => bookmark.toProto()), notes: this.notes.map((note) => note.toProto()), comments: this.comments.map((comment) => comment.toProto()) }; }
 
   inspect(options = {}) {
-    const kinds = normalizeKinds(options.kind, ["paragraph", "contentControl", "table", "listItem", "hyperlink", "field", "citation", "bibliographySource", "image", "section", "change", "bookmark", "footnote", "endnote", "comment", "header", "footer"]);
+    const kinds = normalizeKinds(options.kind, ["paragraph", "contentControl", "table", "listItem", "hyperlink", "field", "citation", "bibliographySource", "image", "section", "change", "bookmark", "footnote", "endnote", "comment", "header", "footer", "watermark"]);
     const records = [];
-    if (kinds.has("document")) records.push({ kind: "document", id: this.id, name: this.name, blocks: this.blocks.length, contentControls: this.contentControls.length, sections: this.blocks.filter((block) => block.kind === "section").length + 1, bookmarks: this.bookmarks.length, notes: this.notes.length, footnotes: this.notes.filter((note) => note.kind === "footnote").length, endnotes: this.notes.filter((note) => note.kind === "endnote").length, bibliographySources: this.bibliographySources.length, designPreset: this.designPreset, defaultRunStyle: this.defaultRunStyle, settings: this.settings, sectionSettings: this.sectionSettings });
+    if (kinds.has("document")) records.push({ kind: "document", id: this.id, name: this.name, blocks: this.blocks.length, contentControls: this.contentControls.length, sections: this.blocks.filter((block) => block.kind === "section").length + 1, watermarks: this.watermarks.length, bookmarks: this.bookmarks.length, notes: this.notes.length, footnotes: this.notes.filter((note) => note.kind === "footnote").length, endnotes: this.notes.filter((note) => note.kind === "endnote").length, bibliographySources: this.bibliographySources.length, designPreset: this.designPreset, defaultRunStyle: this.defaultRunStyle, settings: this.settings, sectionSettings: this.sectionSettings });
     if (kinds.has("theme")) records.push({ kind: "theme", id: `${this.id}/theme`, ...this.theme });
     if (kinds.has("settings")) records.push({ kind: "settings", id: `${this.id}/settings`, ...this.settings });
     if (kinds.has("layout")) records.push(...documentLayoutRecords(this, options));
@@ -1495,6 +1563,7 @@ export class DocumentModel {
     if (kinds.has("tableCell")) for (const table of this.blocks.filter((block) => block.kind === "table")) for (let row = 0; row < table.rows; row += 1) for (let column = 0; column < table.columns; column += 1) records.push(table.getCell(row, column).inspectRecord());
     if (kinds.has("header")) records.push(...this.headers.map((block, index) => documentInspectRecord(this, block, index)));
     if (kinds.has("footer")) records.push(...this.footers.map((block, index) => documentInspectRecord(this, block, index)));
+    if (kinds.has("watermark")) records.push(...this.watermarks.map((watermark, index) => watermark.inspectRecord(index)));
     if (kinds.has("bookmark")) records.push(...this.bookmarks.map((bookmark) => bookmark.inspectRecord()));
     if (kinds.has("note") || kinds.has("footnote") || kinds.has("endnote")) records.push(...this.notes.filter((note) => kinds.has("note") || kinds.has(note.kind)).map((note, index) => note.inspectRecord(index)));
     if (kinds.has("bibliographySource")) records.push(...this.bibliographySources.map((source, index) => source.inspectRecord(index)));
@@ -1712,6 +1781,18 @@ export class DocumentModel {
         issues.push(verificationIssue("document", "invalidHeaderFooterSection", `${block.kind} ${block.id} targets invalid section index ${block.sectionIndex}; expected 0 through ${finalSectionIndex}.`, { id: block.id, kind: block.kind, sectionIndex: block.sectionIndex, finalSectionIndex }));
       }
     }
+    const watermarkIds = new Set();
+    const watermarkScopes = new Set();
+    for (const watermark of this.watermarks) {
+      const scope = `${watermark.sectionIndex}:${watermark.referenceType}`;
+      if (!watermark.id || watermarkIds.has(watermark.id)) issues.push(verificationIssue("document", "invalidWatermarkId", `Watermark ${watermark.id || "(unnamed)"} requires a unique non-empty ID.`, { id: watermark.id }));
+      watermarkIds.add(watermark.id);
+      if (watermarkScopes.has(scope)) issues.push(verificationIssue("document", "duplicateWatermarkScope", `Section ${watermark.sectionIndex} has more than one ${watermark.referenceType} text watermark.`, { id: watermark.id, sectionIndex: watermark.sectionIndex, referenceType: watermark.referenceType }));
+      watermarkScopes.add(scope);
+      if (!watermark.text.trim() || watermark.text.length > 256 || !isXmlSafeText(watermark.text)) issues.push(verificationIssue("document", "invalidWatermarkText", `Watermark ${watermark.id} text must contain 1 through 256 XML-safe characters and cannot be blank.`, { id: watermark.id, textChars: watermark.text.length }));
+      if (!new Set(["default", "first", "even"]).has(watermark.referenceType)) issues.push(verificationIssue("document", "invalidWatermarkReference", `Watermark ${watermark.id} has invalid header reference ${watermark.referenceType}.`, { id: watermark.id, referenceType: watermark.referenceType }));
+      if (!Number.isInteger(watermark.sectionIndex) || watermark.sectionIndex < 0 || watermark.sectionIndex > finalSectionIndex) issues.push(verificationIssue("document", "invalidWatermarkSection", `Watermark ${watermark.id} targets invalid section index ${watermark.sectionIndex}; expected 0 through ${finalSectionIndex}.`, { id: watermark.id, sectionIndex: watermark.sectionIndex, finalSectionIndex }));
+    }
     const commentParaIds = new Set();
     const commentDurableIds = new Set();
     for (const comment of this.comments) {
@@ -1758,6 +1839,11 @@ export class DocumentModel {
     const margin = 72;
     let y = 72;
     const parts = [`<rect width="100%" height="100%" fill="white"/>`];
+    const firstSectionUsesFirst = this.sectionSettings.some((settings) => settings.sectionIndex === 0 && settings.differentFirstPage === true) || this.headers.some((header) => header.sectionIndex === 0 && header.referenceType === "first" && header.variantActive !== false) || this.watermarks.some((watermark) => watermark.sectionIndex === 0 && watermark.referenceType === "first");
+    const firstWatermarkReference = firstSectionUsesFirst ? "first" : "default";
+    for (const watermark of this.watermarks.filter((item) => item.sectionIndex === 0 && item.referenceType === firstWatermarkReference)) {
+      parts.push(`<text x="306" y="396" text-anchor="middle" transform="rotate(-45 306 396)" font-family="Arial" font-size="64" font-weight="700" fill="#94a3b8" opacity="0.22">${xmlEscape(watermark.text)}</text>`);
+    }
     const firstPageHeaderFooter = resolveDocxPageHeaderFooter(planDocxHeaderFooterSections(this), 0, 1);
     const firstPageHeaderIds = new Set(firstPageHeaderFooter.headers);
     const firstPageFooterIds = new Set(firstPageHeaderFooter.footers);

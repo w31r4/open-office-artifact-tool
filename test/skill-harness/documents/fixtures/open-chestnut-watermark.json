@@ -1,0 +1,54 @@
+{
+  "name": "open-chestnut-watermark",
+  "outputName": "watermark-review.docx",
+  "defaultRunStyle": {
+    "fontFamily": "Aptos",
+    "fontSize": 18,
+    "color": "#172033"
+  },
+  "blocks": [
+    {
+      "kind": "paragraph",
+      "name": "title",
+      "styleId": "Title",
+      "text": "Controlled Review Copy"
+    },
+    {
+      "kind": "paragraph",
+      "name": "body",
+      "text": "This document exercises the canonical OpenChestnut text-watermark workflow."
+    },
+    {
+      "kind": "paragraph",
+      "name": "verification",
+      "text": "The imported watermark is edited in place and every rendered page must be reviewed before delivery."
+    }
+  ],
+  "watermarks": [
+    {
+      "id": "watermark/review",
+      "text": "DRAFT",
+      "sectionIndex": 0,
+      "referenceType": "default"
+    }
+  ],
+  "edits": [
+    {
+      "kind": "watermark",
+      "matchText": "DRAFT",
+      "sectionIndex": 0,
+      "referenceType": "default",
+      "text": "INTERNAL REVIEW"
+    }
+  ],
+  "expectInspect": [
+    { "kind": "watermark", "pattern": "DRAFT" },
+    { "kind": "paragraph", "pattern": "Controlled Review Copy" }
+  ],
+  "qa": {
+    "previewFormat": "png",
+    "nativeRender": "auto",
+    "inspectKind": "document,paragraph,watermark,layout",
+    "maxChars": 16000
+  }
+}

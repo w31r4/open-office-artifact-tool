@@ -174,6 +174,32 @@ Read `../tasks/images_figures.md` before using floating placement. Re-import the
 result, inspect the image record, then run native DOCX render QA; the model SVG
 is useful for planning but is not authoritative for cross-renderer anchoring.
 
+## Canonical text watermarks
+
+For a new document, add one text watermark per section/header-reference scope:
+
+```js
+document.addWatermark("DRAFT", {
+  sectionIndex: 0,
+  referenceType: "default",
+});
+```
+
+After importing an existing DOCX, inspect `document.watermarks`; never infer
+editability from a visible background object. A recognized object exposes
+`sourceBound === true` and `editable === true`. Locate exactly one record, edit
+only `.text`, or call `.remove()`, then export and import again. OpenChestnut
+protects the exact VML paragraph and the residual header part. It rejects
+scope changes, reordering, new watermark relationships in an imported package,
+shared headers, multiple objects, DrawingML, images, and irregular VML rather
+than rebuilding or heuristically deleting them.
+
+Use `examples/openchestnut-watermark-workflow.mjs` for imported files. It keeps
+the input immutable, allows exactly one changed `word/headerN.xml` part, writes
+an audit, and requires native page render review. Read
+`../tasks/watermarks_background.md` for the full workflow and the explicitly
+separate heuristic package-tool boundary.
+
 ## Imported classic comment: bounded text-only edit
 
 For one ordinary imported classic comment, locate both its paragraph and

@@ -346,6 +346,7 @@ Examples:
 - `examples/openchestnut-source-text-patch-workflow.mjs` — source-bound paragraph/table-cell literal replacement with same-format run-fragment support, immutable input, exact changed-part audit, no-replace publication, second import, verification, and model render evidence
 - `examples/openchestnut-classic-comment-edit-workflow.mjs` — imported classic-comment text-only edit with a unique text anchor, fixed comment topology, second import, model render, byte-bound audit, and atomic output
 - `examples/openchestnut-modern-comment-thread-workflow.mjs` — imported bounded root/direct-reply text and resolved-state edit with fixed identities/topology, second import, model/native render, byte-bound audit, and atomic output
+- `examples/openchestnut-watermark-workflow.mjs` — unique recognized canonical VML text-watermark edit/removal with immutable input, exact one-header-part scope, second import, model render, and byte-bound audit
 - `examples/end_to_end_smoke_test.md` — optional reference-compatible checklist for the explicit Python render/package-patch helpers; keep the public OpenChestnut workflow above as the default
 
 > Note: `manifest.txt` is **machine-readable** and is used by download tooling. It must contain only relative file paths (one per line).
@@ -484,7 +485,7 @@ Then inspect the generated `page-<N>.png` files.
 - If you need to **diff two DOCXs** (render + per-page diff): `tasks/compare_diff.md`
 - If you need **templates / style packs (DOTX)**: `tasks/templates_style_packs.md`
 - If you need a **first-page header / cover / title block**: `references/header_templates.md`
-- If you need **watermark audit/removal**: `tasks/watermarks_background.md`
+- If you need a **text watermark**, use public `document.addWatermark(...)` or the shipped source-bound edit/removal workflow, then follow `tasks/watermarks_background.md`; image, DrawingML, shared-header, multiple, and irregular VML backgrounds stay opaque or require an explicit reviewed package route
 - If you need **true footnotes/endnotes**: use public `document.addFootnote(...)` / `document.addEndnote(...)` for the bounded plain-text profile, then follow `tasks/footnotes_endnotes.md` for import, audit, advanced graphs, and render QA
 - If you want reproducible fixtures for edge cases: `tasks/fixtures_edge_cases.md`
 

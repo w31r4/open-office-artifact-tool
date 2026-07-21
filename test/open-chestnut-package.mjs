@@ -68,6 +68,7 @@ try {
     document.addInsertion("packaged accepted insertion", { author: "Package QA" });
     document.addDeletion("packaged removed deletion", { author: "Package QA" });
     document.setSettings({ trackRevisions: true, documentProtection: "comments" });
+    document.addWatermark("PACKAGED DRAFT", { sectionIndex: 0 });
     document.addImage({
       dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==",
       alt: "Packed floating image",
@@ -87,6 +88,7 @@ try {
     const importedDocument = await DocumentFile.importDocx(docx);
     if (importedDocument.blocks[0].text !== "clean install DOCX") process.exit(11);
     if (importedDocument.settings.documentProtection?.edit !== "comments") process.exit(42);
+    if (importedDocument.watermarks.length !== 1 || importedDocument.watermarks[0].text !== "PACKAGED DRAFT") process.exit(46);
     const importedImage = importedDocument.blocks.find((block) => block.kind === "image");
     if (
       importedImage?.placement?.type !== "floating" ||
@@ -102,10 +104,12 @@ try {
       wrap: "topAndBottom",
       distanceFromTextPx: { top: 4, right: 0, bottom: 4, left: 0 },
     };
+    importedDocument.watermarks[0].text = "PACKAGED REVIEW";
     const packagedDocument2 = await DocumentFile.importDocx(await DocumentFile.exportDocx(importedDocument));
     if (packagedDocument2.blocks[0].text !== "clean install DOCX") process.exit(12);
     const packagedImage2 = packagedDocument2.blocks.find((block) => block.kind === "image");
     if (packagedImage2?.placement?.wrap !== "topAndBottom" || packagedImage2.placement.horizontal.relativeTo !== "page") process.exit(45);
+    if (packagedDocument2.watermarks.length !== 1 || packagedDocument2.watermarks[0].text !== "PACKAGED REVIEW") process.exit(47);
     const docxSourceHash = createHash("sha256").update(docx.bytes).digest("hex");
     const finalizedDocx = await DocumentFile.finalizeRevisions(docx, {
       mode: "accept",

@@ -30,6 +30,7 @@ internal sealed class DocxHeaderFooterPlan
 internal static class DocxHeaderFooterCodec
 {
     private sealed record Group(bool Header, uint SectionIndex, DocumentHeaderFooterReference Reference, IReadOnlyList<DocumentHeaderFooter> Blocks);
+    private sealed record HeaderGroup(uint SectionIndex, DocumentHeaderFooterReference Reference, IReadOnlyList<DocumentHeaderFooter> Blocks, IReadOnlyList<DocumentWatermark> Watermarks);
 
     internal static void Read(
         MainDocumentPart mainPart,
@@ -61,36 +62,39 @@ internal static class DocxHeaderFooterCodec
             plan.SetDifferentFirstPage(settings.SectionIndex,
                 settings.HasDifferentFirstPage && settings.DifferentFirstPage);
 
-        var groups = Groups(document, sectionCount).ToArray();
-        foreach (var group in groups)
+        foreach (var group in HeaderGroups(document, sectionCount))
+        {
+            var activeFirst = group.Reference == DocumentHeaderFooterReference.First &&
+                (group.Watermarks.Count > 0 || group.Blocks.Any(block => !block.HasVariantActive || block.VariantActive));
+            if (activeFirst && document.SectionSettings.All(item => item.SectionIndex != group.SectionIndex))
+                plan.SetDifferentFirstPage(group.SectionIndex, true);
+
+            var part = mainPart.AddNewPart<HeaderPart>();
+            part.Header = new W.Header(
+                group.Blocks.Select(BuildParagraph)
+                    .Concat(group.Watermarks.Select((watermark, index) => DocxWatermarkCodec.Build(watermark, checked((uint)index + 1U)))));
+            part.Header.Save();
+            plan.AddReference(group.SectionIndex, new W.HeaderReference
+            {
+                Type = ToNativeReference(group.Reference),
+                Id = mainPart.GetIdOfPart(part),
+            });
+        }
+
+        foreach (var group in Groups(document, sectionCount).Where(group => !group.Header))
         {
             var activeFirst = group.Reference == DocumentHeaderFooterReference.First &&
                 group.Blocks.Any(block => !block.HasVariantActive || block.VariantActive);
             if (activeFirst && document.SectionSettings.All(item => item.SectionIndex != group.SectionIndex))
                 plan.SetDifferentFirstPage(group.SectionIndex, true);
-
-            if (group.Header)
+            var part = mainPart.AddNewPart<FooterPart>();
+            part.Footer = new W.Footer(group.Blocks.Select(BuildParagraph));
+            part.Footer.Save();
+            plan.AddReference(group.SectionIndex, new W.FooterReference
             {
-                var part = mainPart.AddNewPart<HeaderPart>();
-                part.Header = new W.Header(group.Blocks.Select(BuildParagraph));
-                part.Header.Save();
-                plan.AddReference(group.SectionIndex, new W.HeaderReference
-                {
-                    Type = ToNativeReference(group.Reference),
-                    Id = mainPart.GetIdOfPart(part),
-                });
-            }
-            else
-            {
-                var part = mainPart.AddNewPart<FooterPart>();
-                part.Footer = new W.Footer(group.Blocks.Select(BuildParagraph));
-                part.Footer.Save();
-                plan.AddReference(group.SectionIndex, new W.FooterReference
-                {
-                    Type = ToNativeReference(group.Reference),
-                    Id = mainPart.GetIdOfPart(part),
-                });
-            }
+                Type = ToNativeReference(group.Reference),
+                Id = mainPart.GetIdOfPart(part),
+            });
         }
 
         return plan;
@@ -183,6 +187,7 @@ internal static class DocxHeaderFooterCodec
             var parsed = new List<DocumentHeaderFooter>(paragraphs.Length);
             for (var index = 0; index < paragraphs.Length; index++)
             {
+                if (header && DocxWatermarkCodec.IsCanonicalParagraph(paragraphs[index])) continue;
                 if (!TryReadParagraph(paragraphs[index], out var text, out var styleId, out var fieldInstruction))
                 {
                     parsed.Clear();
@@ -257,6 +262,22 @@ internal static class DocxHeaderFooterCodec
                          SectionIndex: item.HasSectionIndex ? item.SectionIndex : sectionCount - 1,
                          item.Reference)))
                 yield return new Group(header, group.Key.SectionIndex, group.Key.Reference, group.ToArray());
+    }
+
+    private static IEnumerable<HeaderGroup> HeaderGroups(DocumentArtifact document, uint sectionCount)
+    {
+        var headers = document.Headers.GroupBy(item => (
+            SectionIndex: item.HasSectionIndex ? item.SectionIndex : sectionCount - 1,
+            item.Reference)).ToDictionary(group => group.Key, group => (IReadOnlyList<DocumentHeaderFooter>)group.ToArray());
+        var watermarks = document.Watermarks.GroupBy(item => (
+            SectionIndex: item.HasSectionIndex ? item.SectionIndex : 0U,
+            item.Reference)).ToDictionary(group => group.Key, group => (IReadOnlyList<DocumentWatermark>)group.ToArray());
+        foreach (var key in headers.Keys.Concat(watermarks.Keys).Distinct().OrderBy(key => key.SectionIndex).ThenBy(key => (int)key.Reference))
+            yield return new HeaderGroup(
+                key.SectionIndex,
+                key.Reference,
+                headers.GetValueOrDefault(key) ?? [],
+                watermarks.GetValueOrDefault(key) ?? []);
     }
 
     private static W.HeaderFooterValues ToNativeReference(DocumentHeaderFooterReference value) => value switch

@@ -112,6 +112,65 @@ try {
   assert.match(floatingXml, /<wp:positionV relativeFrom="paragraph"><wp:posOffset>0<\/wp:posOffset><\/wp:positionV>/);
   assert.match(floatingXml, /<wp:wrapTopAndBottom\s*\/>/);
 
+  const watermark = await runFixture("open-chestnut-watermark", {
+    nativeRender: nativeStatus.available ? "required" : "auto",
+  });
+  const watermarkDocument = await DocumentFile.importDocx(await FileBlob.load(watermark.docxPath));
+  assert.equal(watermarkDocument.watermarks.length, 1);
+  assert.equal(watermarkDocument.watermarks[0].text, "INTERNAL REVIEW");
+  assert.equal(watermarkDocument.watermarks[0].referenceType, "default");
+  assert.equal(watermarkDocument.watermarks[0].sectionIndex, 0);
+  assert.equal(watermarkDocument.watermarks[0].sourceBound, true);
+  assert.equal(watermarkDocument.watermarks[0].editable, true);
+  assert.equal(watermarkDocument.resolve(watermarkDocument.watermarks[0].id), watermarkDocument.watermarks[0]);
+  assert.match(watermarkDocument.inspect({ kind: "watermark" }).ndjson, /"text":"INTERNAL REVIEW"/);
+  assert.equal(watermark.qa.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+  if (nativeStatus.available) {
+    assert.equal(watermark.qa.summary.nativeRender.ok, true);
+    assert.ok(watermark.qa.summary.nativeRender.pages.length >= 1);
+  }
+  const watermarkZip = await JSZip.loadAsync(await fs.readFile(watermark.docxPath));
+  const watermarkHeaderPath = Object.keys(watermarkZip.files).find((name) => /^word\/header\d+\.xml$/.test(name));
+  assert.ok(watermarkHeaderPath);
+  assert.match(await watermarkZip.file(watermarkHeaderPath).async("text"), /<v:textpath[^>]*string="INTERNAL REVIEW"/);
+  const watermarkSourceBytes = await fs.readFile(watermark.docxPath);
+  const { editDocumentWatermark } = await import(
+    "../skills/documents/skills/documents/examples/openchestnut-watermark-workflow.mjs"
+  );
+  const watermarkWorkflowOutput = path.join(outputDir, "watermark-approved.docx");
+  const watermarkWorkflowAudit = path.join(outputDir, "watermark-approved-audit.json");
+  const watermarkWorkflow = await editDocumentWatermark({
+    inputPath: watermark.docxPath,
+    outputPath: watermarkWorkflowOutput,
+    auditPath: watermarkWorkflowAudit,
+    expectedText: "INTERNAL REVIEW",
+    replacementText: "APPROVED COPY",
+    sectionIndex: 0,
+    referenceType: "default",
+  });
+  assert.deepEqual(watermarkWorkflow.audit.operation.changedParts, [watermarkHeaderPath]);
+  assert.equal(watermarkWorkflow.audit.provider.actual, "open-chestnut");
+  assert.equal(watermarkWorkflow.audit.provider.silentFallback, false);
+  assert.equal(watermarkWorkflow.audit.validation.secondImport, true);
+  assert.equal(watermarkWorkflow.audit.validation.nativeRenderRequiredBeforeDelivery, true);
+  assert.deepEqual(await fs.readFile(watermark.docxPath), watermarkSourceBytes);
+  const watermarkWorkflowDocument = await DocumentFile.importDocx(await FileBlob.load(watermarkWorkflowOutput));
+  assert.equal(watermarkWorkflowDocument.watermarks[0]?.text, "APPROVED COPY");
+  const watermarkRemovalOutput = path.join(outputDir, "watermark-removed.docx");
+  const watermarkRemovalAudit = path.join(outputDir, "watermark-removed-audit.json");
+  const watermarkRemoval = await editDocumentWatermark({
+    inputPath: watermarkWorkflowOutput,
+    outputPath: watermarkRemovalOutput,
+    auditPath: watermarkRemovalAudit,
+    expectedText: "APPROVED COPY",
+    sectionIndex: 0,
+    referenceType: "default",
+    remove: true,
+  });
+  assert.equal(watermarkRemoval.audit.operation.type, "canonical-text-watermark-remove");
+  assert.deepEqual(watermarkRemoval.audit.operation.changedParts, [watermarkHeaderPath]);
+  assert.equal((await DocumentFile.importDocx(await FileBlob.load(watermarkRemovalOutput))).watermarks.length, 0);
+
   const merged = await runFixture("open-chestnut-merged-table");
   const mergedDocument = await DocumentFile.importDocx(await FileBlob.load(merged.docxPath));
   const mergedTable = mergedDocument.blocks.find((block) => block.kind === "table");
@@ -758,6 +817,7 @@ try {
   assert.match(skillText, /openchestnut-source-text-patch-workflow\.mjs/);
   assert.match(skillText, /openchestnut-classic-comment-edit-workflow\.mjs/);
   assert.match(skillText, /openchestnut-modern-comment-thread-workflow\.mjs/);
+  assert.match(skillText, /openchestnut-watermark-workflow\.mjs/);
   assert.match(skillText, /openchestnut-tracked-replacement-workflow\.mjs/);
   assert.match(skillText, /openchestnut-revision-finalization-workflow\.mjs/);
   assert.doesNotMatch(skillText, /Author\/edit with `python-docx`|Default tool: python-docx/);
@@ -769,9 +829,17 @@ try {
   const manifestText = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "manifest.txt"), "utf8");
   assert.match(manifestText, /^examples\/openchestnut-source-text-patch-workflow\.mjs$/m);
   assert.match(manifestText, /^examples\/openchestnut-modern-comment-thread-workflow\.mjs$/m);
+  assert.match(manifestText, /^examples\/openchestnut-watermark-workflow\.mjs$/m);
   assert.match(manifestText, /^examples\/openchestnut-tracked-replacement-workflow\.mjs$/m);
   assert.match(manifestText, /^examples\/openchestnut-revision-finalization-workflow\.mjs$/m);
   assert.match(manifestText, /^examples\/end_to_end_smoke_test\.md$/m);
+  const watermarkGuide = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "tasks", "watermarks_background.md"), "utf8");
+  assert.match(watermarkGuide, /document\.addWatermark/);
+  assert.match(watermarkGuide, /watermark\.remove\(\)/);
+  assert.match(watermarkGuide, /openchestnut-watermark-workflow\.mjs/);
+  assert.match(watermarkGuide, /exactly one `word\/headerN\.xml`/);
+  assert.match(watermarkGuide, /shared header.*multiple/is);
+  assert.match(watermarkGuide, /image watermarks.*DrawingML watermarks.*irregular VML/is);
   const controlsGuide = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "tasks", "forms_content_controls.md"), "utf8");
   assert.match(controlsGuide, /paragraph\.addTextContentControl/);
   assert.match(controlsGuide, /document\.addBlockTextContentControl/);
