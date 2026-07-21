@@ -72,6 +72,58 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### DOCX passwordless document protection
+
+On 2026-07-21, the existing `document.setSettings(...)` state surface, the
+versioned protobuf wire, OpenChestnut C# codec, bundled WASM runtime, public
+Help/API catalog, and Documents Skill added one bounded passwordless
+`w:documentProtection` profile. The public state accepts explicit `none`,
+`readOnly`, `comments`, `trackedChanges`, and `forms` modes plus boolean
+`enforcement` and `formatting`; string modes default to enforcement on and
+formatting protection off. `false`, `null`, or `off` removes the native element,
+while explicit `none` remains a distinct round-trippable setting.
+
+OpenChestnut recognizes exactly one leaf `w:documentProtection` with the three
+canonical WordprocessingML attributes. Source-free authoring, import, semantic
+mode/flag edits, removal, second import, and Office 2021 validation are covered.
+Password hashes/verifiers, cryptographic or extension attributes, duplicate
+elements, IRM, and permission exceptions are deliberately outside the semantic
+model. Such imported markup remains source-owned: a no-op preserves it, an
+unrelated supported settings edit does not remove it, and an attempted semantic
+replacement returns `unsupported_document_protection_edit` before output. This
+setting is documented as an editing restriction, not encryption, authentication,
+or access control.
+
+The Documents plugin now routes the normal workflow through
+`document.setSettings({ documentProtection: ... })`, reimports the result, checks
+native settings markup, and requires render verification. The retained Python
+package helper is explicit compatibility tooling rather than a fallback and now
+refuses to replace password/cryptographic or otherwise unsupported protection.
+The bundled workspace Python plus `lxml` exercised both a canonical `forms`
+round trip and that fail-closed password-verifier branch; plain system Python
+without `lxml` remains an unmet optional-helper prerequisite, not a fallback.
+The runnable fixture authors `readOnly`, edits it to `comments`, imports twice,
+and compares an unrestricted control with the protected result. LibreOffice and
+Poppler produced one 1275 by 1650 page for each; strict comparison found zero
+different pixels. Both original-resolution pages were manually reviewed without
+clipping, overlap, table drift, or pagination change. The model PNG comparison
+likewise reported zero different pixels.
+
+The complete local `npm test` gate passed, including the 20 repository-only
+templates, all published Office/PDF Skills, LibreOffice, Poppler, MuPDF.js,
+qpdf, Playwright, reference-Skill sync, Agent evals, package metadata, and Help.
+OpenChestnut passed `322/322`; OfficeBridge passed `5/5`; protobuf lint and
+idempotent generation passed against the staged generated binding. Two clean
+OpenChestnut builds reproduced the same 39-file audit set; the bundled runtime
+contains 38 files and 14,890,176 bytes. Generated API docs and the production
+clean-install/package gate passed; the dry-run tarball contains 475 files,
+9,146,227 compressed bytes, and 24,240,784 unpacked bytes (SHA-1
+`807f0c5ea43df9a488e2459c78627998c521e8da`). Optional real pikepdf, pyHanko,
+veraPDF, and OCRmyPDF provider branches remained explicitly skipped because
+their configured external test environments were absent; contract and
+fail-closed gates passed. npm authentication remains the external publication
+blocker, so no publish, tag, or release operation was attempted.
+
 ### DOCX block plain-text content controls
 
 On 2026-07-21, the Documents model, versioned protobuf wire, OpenChestnut C#

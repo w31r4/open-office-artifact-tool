@@ -392,7 +392,7 @@ This is a quick index so you can jump from a helper script to the right task gui
 
 ### Forms & protection
 - Public `paragraph.addTextContentControl(...)`, `document.addBlockTextContentControl(...)`, `paragraph.addCheckboxContentControl(...)`, `paragraph.addDropdownContentControl(...)`, `paragraph.addComboBoxContentControl(...)`, `paragraph.addDateContentControl(...)`, `document.contentControls`, `document.fillContentControls(...)`, `document.setCheckboxContentControls(...)`, `document.setDropdownContentControls(...)`, `document.setComboBoxContentControls(...)`, and `document.setDateContentControls(...)` handle source-free and recognized imported inline plain-text/canonical checkbox/canonical drop-down/canonical combo-box/canonical ISO-date controls plus one canonical block plain-text paragraph; `content_controls.py` handles explicit existing-template/package routes → `tasks/forms_content_controls.md`
-- `set_protection.py` → `tasks/protection_restrict_editing.md`
+- Public `document.setSettings({ documentProtection: ... })` authors, imports, changes, or removes the bounded passwordless Word editing-restriction modes; `set_protection.py` remains an explicit reference-compatible package helper and never a silent fallback → `tasks/protection_restrict_editing.md`
 
 ### QA / regression
 - `render_and_diff.py`, `render_docx.py` → `tasks/compare_diff.md`, `tasks/verify_render.md`

@@ -180,7 +180,8 @@ assert.match(HELP_CATALOG.find((item) => item.name === "document.addCitation")?.
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addChange")?.summary || "", /native w:ins\/w:del.*fixed-topology/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.replyToComment")?.summary || "", /source-free direct reply.*commentsExtended.*nested replies.*imported topology.*fail closed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "documentComment.resolve")?.summary || "", /resolved=true.*source hashes.*commentsExtended topology/i);
-assert.match(HELP_CATALOG.find((item) => item.name === "document.setSettings")?.summary || "", /evenAndOddHeaders.*trackRevisions.*updateFields.*inside the OpenChestnut 0\.2 DOCX boundary.*mirrorMargins.*documentProtection.*unsupported/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "document.setSettings")?.summary || "", /evenAndOddHeaders.*trackRevisions.*updateFields.*passwordless documentProtection.*inside the OpenChestnut 0\.2 DOCX boundary.*mirrorMargins.*unsupported.*source-owned.*fail closed/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "document.setSettings")?.schema?.parameters?.settings?.description || "", /none\/readOnly\/comments\/trackedChanges\/forms.*password hashes.*source-owned.*mirrorMargins.*fail closed/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.extractTables"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.addPage"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.page.setReadingOrder"));

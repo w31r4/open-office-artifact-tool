@@ -66,8 +66,18 @@ def _ensure_settings_override(ct_root: etree._Element) -> bool:
 
 def set_protection(settings_root: etree._Element, mode: str) -> bool:
     changed = False
-    # remove any existing
-    for el in list(settings_root.xpath(".//w:documentProtection", namespaces=NS)):
+    existing = list(settings_root.findall(f"{{{W_NS}}}documentProtection"))
+    allowed_attributes = {
+        f"{{{W_NS}}}edit",
+        f"{{{W_NS}}}enforcement",
+        f"{{{W_NS}}}formatting",
+    }
+    if len(existing) > 1 or any(len(el) or set(el.attrib) - allowed_attributes for el in existing):
+        raise ValueError(
+            "Existing documentProtection contains password, cryptographic, extension, or otherwise unsupported markup; refusing to replace it."
+        )
+    # Remove only the bounded direct settings child. Unsupported variants fail above.
+    for el in existing:
         el.getparent().remove(el)
         changed = True
 

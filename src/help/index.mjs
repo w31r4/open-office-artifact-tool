@@ -302,7 +302,7 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.replyToComment", summary: "Add one source-free direct reply to a root comment. OpenChestnut authors the bounded commentsExtended graph; nested replies and imported topology changes fail closed." },
   { artifactKind: "document", kind: "api", name: "documentComment.resolve", summary: "Set resolved=true for a bounded modern comment. Imported edits re-prove source hashes and commentsExtended topology while keeping thread identity fixed." },
   { artifactKind: "document", kind: "api", name: "documentComment.reopen", summary: "Clear the resolved state of a bounded modern comment without changing its root/reply topology or durable identity." },
-  { artifactKind: "document", kind: "api", name: "document.setSettings", summary: "Set model settings. evenAndOddHeaders, trackRevisions, and the updateFields refresh hint are inside the OpenChestnut 0.2 DOCX boundary; mirrorMargins and documentProtection remain unsupported through the facade." },
+  { artifactKind: "document", kind: "api", name: "document.setSettings", summary: "Set model settings. evenAndOddHeaders, trackRevisions, the updateFields refresh hint, and bounded passwordless documentProtection are inside the OpenChestnut 0.2 DOCX boundary; mirrorMargins remains unsupported. Password/cryptographic protection variants stay source-owned and fail closed on replacement." },
   { artifactKind: "document", kind: "api", name: "document.setSectionSettings", summary: "Set per-section Word behavior such as different-first-page header/footer activation without changing preserved header/footer references." },
   { artifactKind: "document", kind: "api", name: "document.applyDesignPreset", summary: "Apply a clean-room report or memo design preset that updates named styles for consistent DOCX export and SVG/layout previews." },
   { artifactKind: "document", kind: "api", name: "document.styles.effective", summary: "Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata." },
@@ -988,7 +988,7 @@ const DOCUMENT_HELP_SCHEMAS = {
     footers: { type: "object[]", description: "Footer block models." },
     sectionSettings: { type: "object[]", description: "Per-section settings with zero-based sectionIndex and differentFirstPage activation state." },
     comments: { type: "object[]", description: "Classic whole-paragraph comments. Parent/reply, resolved, durable-ID, UTC/person, and modern extension metadata are outside the OpenChestnut 0.2 boundary." },
-    settings: { type: "object", description: "evenAndOddHeaders and the updateFields-on-open refresh hint are authorable. Revision tracking, mirrored margins, and documentProtection are model-only or import-preserved read-only." },
+    settings: { type: "object", description: "evenAndOddHeaders, trackRevisions, the updateFields-on-open refresh hint, and bounded passwordless documentProtection are authorable. mirrorMargins remains model-only; password/cryptographic protection variants are source-owned and cannot be replaced through the semantic model." },
   }, "document", "DocumentModel", "Editable document facade."),
   "document.addParagraph": helpSchema({
     text: { type: "string", required: true, description: "Paragraph text." },
@@ -1247,8 +1247,8 @@ const DOCUMENT_HELP_SCHEMAS = {
   "documentComment.resolve": helpSchema({}, "comment", "DocumentComment", "The same comment facade with resolved=true; imported edits re-prove source hashes and commentsExtended topology."),
   "documentComment.reopen": helpSchema({}, "comment", "DocumentComment", "The same comment facade with resolved=false; root/reply, paragraph, durable, UTC, and people identity remain fixed."),
   "document.setSettings": helpSchema({
-    settings: { type: "object", required: true, description: "Partial settings object. evenAndOddHeaders, updateFields, and trackRevisions are inside the OpenChestnut 0.2 DOCX boundary; mirrorMargins and documentProtection make export fail closed." },
-  }, "document", "DocumentModel", "Document facade with normalized settings; updateFields is a refresh request, not proof that cached field results are current."),
+    settings: { type: "object", required: true, description: "Partial settings object. evenAndOddHeaders, updateFields, and trackRevisions are booleans. documentProtection accepts false/null/off to remove the element, none/readOnly/comments/trackedChanges/forms, or { edit, enforcement, formatting }; password hashes, cryptographic attributes, IRM, and permission exceptions are unsupported/source-owned. mirrorMargins makes canonical export fail closed." },
+  }, "document", "DocumentModel", "Document facade with normalized settings; updateFields is a refresh request, and passwordless documentProtection is an editing restriction rather than encryption or access control."),
   "document.setSectionSettings": helpSchema({
     sectionIndex: { type: "number", required: true, description: "Zero-based section index from 0 through the number of section-break blocks." },
     differentFirstPage: { type: "boolean", description: "Whether the section activates first-page header/footer references through w:titlePg." },

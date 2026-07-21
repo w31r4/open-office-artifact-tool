@@ -487,6 +487,16 @@ Enable native future-change tracking independently from authored redlines:
 document.setSettings({ trackRevisions: true });
 ```
 
+Set one bounded passwordless Word editing restriction through the same settings state:
+
+```js
+document.setSettings({ documentProtection: "readOnly" });
+// Also supported: "comments", "trackedChanges", "forms", or explicit "none".
+// Remove the element with false, null, or "off".
+```
+
+The canonical object form is `{ edit, enforcement, formatting }`; string modes default to `enforcement: true` and `formatting: false`. This is a Word editing restriction, not encryption or access control. Password verifiers, cryptographic attributes, IRM, and permission exceptions remain source-owned. OpenChestnut preserves such imported markup when the semantic setting is left untouched and fails closed if the public model tries to replace it.
+
 Add one exact in-paragraph tracked replacement directly to original source bytes:
 
 ```js
@@ -583,6 +593,7 @@ For final visual QA, export the DOCX and use the packaged `render_docx.py` workf
 - PNG/JPEG inline images
 - Classic whole-paragraph comments and bounded modern root/direct-reply threads
 - Standalone whole-paragraph tracked insertions/deletions plus one exact source-bound in-paragraph replacement as adjacent native deletion/insertion runs; native `trackRevisions` intent; and source-hash-bound accept/reject finalization for both bounded profiles
+- Passwordless `documentProtection` settings for `none`, `readOnly`, `comments`, `trackedChanges`, and `forms`, with explicit enforcement/formatting flags and source-bound preservation of password/cryptographic variants
 - Block/inline plain-text, canonical Word 2010+ checkbox, canonical Word drop-down, canonical Word combo-box, and canonical ISO/Gregorian date content controls with explicit placement, typed values, tag/alias identity, transactional tag updates, and fixed-topology imported edits
 - Canonical bibliography source catalogs and whole-paragraph `CITATION` fields with fixed imported source/tag topology
 

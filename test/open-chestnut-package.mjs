@@ -67,11 +67,12 @@ try {
     const document = DocumentModel.create({ paragraphs: ["clean install DOCX"] });
     document.addInsertion("packaged accepted insertion", { author: "Package QA" });
     document.addDeletion("packaged removed deletion", { author: "Package QA" });
-    document.setSettings({ trackRevisions: true });
+    document.setSettings({ trackRevisions: true, documentProtection: "comments" });
     const docx = await DocumentFile.exportDocx(document);
     if (docx.metadata.codec !== "open-chestnut" || docx.bytes[0] !== 0x50 || docx.bytes[1] !== 0x4b) process.exit(10);
     const importedDocument = await DocumentFile.importDocx(docx);
     if (importedDocument.blocks[0].text !== "clean install DOCX") process.exit(11);
+    if (importedDocument.settings.documentProtection?.edit !== "comments") process.exit(42);
     if ((await DocumentFile.importDocx(await DocumentFile.exportDocx(importedDocument))).blocks[0].text !== "clean install DOCX") process.exit(12);
     const docxSourceHash = createHash("sha256").update(docx.bytes).digest("hex");
     const finalizedDocx = await DocumentFile.finalizeRevisions(docx, {
@@ -84,6 +85,7 @@ try {
     if (JSON.stringify(finalization.changedParts) !== JSON.stringify(["word/document.xml", "word/settings.xml"])) process.exit(15);
     const finalizedDocument = await DocumentFile.importDocx(finalizedDocx);
     if (finalizedDocument.blocks.some((block) => block.kind === "change") || finalizedDocument.settings.trackRevisions) process.exit(16);
+    if (finalizedDocument.settings.documentProtection?.edit !== "comments") process.exit(43);
     if (!finalizedDocument.blocks.some((block) => block.text === "packaged accepted insertion") || finalizedDocument.blocks.some((block) => block.text === "packaged removed deletion")) process.exit(17);
     if (createHash("sha256").update(docx.bytes).digest("hex") !== docxSourceHash) process.exit(18);
 

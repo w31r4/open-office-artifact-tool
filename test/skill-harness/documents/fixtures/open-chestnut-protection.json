@@ -1,0 +1,49 @@
+{
+  "name": "open-chestnut-protection",
+  "outputName": "protected-review.docx",
+  "settings": {
+    "documentProtection": "readOnly"
+  },
+  "blocks": [
+    {
+      "kind": "paragraph",
+      "name": "title",
+      "styleId": "Title",
+      "text": "Protected review copy"
+    },
+    {
+      "kind": "paragraph",
+      "name": "summary",
+      "text": "Reviewers may comment without changing the approved wording."
+    },
+    {
+      "kind": "table",
+      "name": "approval-table",
+      "styleId": "TableGrid",
+      "values": [
+        ["Gate", "Status"],
+        ["Content", "Approved"],
+        ["Visual QA", "Passed"]
+      ],
+      "widthDxa": 8600,
+      "columnWidthsDxa": [4300, 4300]
+    }
+  ],
+  "edits": [
+    {
+      "kind": "settings",
+      "values": {
+        "documentProtection": {
+          "edit": "comments",
+          "enforcement": true,
+          "formatting": false
+        }
+      }
+    }
+  ],
+  "qa": {
+    "previewFormat": "png",
+    "nativeRender": "auto",
+    "inspectKind": "document,paragraph,table,layout"
+  }
+}

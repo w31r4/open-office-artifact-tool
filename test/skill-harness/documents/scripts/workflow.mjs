@@ -61,9 +61,9 @@ function addFixtureBlock(document, block = {}) {
 
 export function createDocumentFromFixture(fixture = {}) {
   const settings = fixture.settings || {};
-  const unsupportedSettings = Object.keys(settings).filter((key) => !new Set(["evenAndOddHeaders", "updateFields", "trackRevisions"]).has(key));
+  const unsupportedSettings = Object.keys(settings).filter((key) => !new Set(["evenAndOddHeaders", "updateFields", "trackRevisions", "documentProtection"]).has(key));
   if (unsupportedSettings.length) {
-    throw new Error(`Document fixture settings are limited to evenAndOddHeaders, updateFields, and trackRevisions; imported ${unsupportedSettings.join(", ")} semantics are read-only.`);
+    throw new Error(`Document fixture settings are limited to evenAndOddHeaders, updateFields, trackRevisions, and passwordless documentProtection; imported ${unsupportedSettings.join(", ")} semantics are read-only.`);
   }
   const document = DocumentModel.create({
     name: fixture.name || "Fixture document",

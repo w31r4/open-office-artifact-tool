@@ -3913,6 +3913,186 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void PasswordlessDocumentProtectionAuthorsAndImportsEveryBoundedMode()
+    {
+        var modes = new[]
+        {
+            (DocumentProtectionMode.None, W.DocumentProtectionValues.None),
+            (DocumentProtectionMode.ReadOnly, W.DocumentProtectionValues.ReadOnly),
+            (DocumentProtectionMode.Comments, W.DocumentProtectionValues.Comments),
+            (DocumentProtectionMode.TrackedChanges, W.DocumentProtectionValues.TrackedChanges),
+            (DocumentProtectionMode.Forms, W.DocumentProtectionValues.Forms),
+        };
+
+        foreach (var (mode, expectedEdit) in modes)
+        {
+            var request = ExportRequest();
+            request.Artifact.Document.DocumentProtection = new DocumentProtectionSettings
+            {
+                Mode = mode,
+                Enforcement = true,
+                Formatting = mode == DocumentProtectionMode.Forms,
+            };
+            var authored = Invoke(request);
+            Assert.True(authored.Ok, $"{mode}: {Diagnostics(authored)}");
+
+            using (var stream = new MemoryStream(authored.File.ToByteArray()))
+            using (var package = WordprocessingDocument.Open(stream, false))
+            {
+                var protection = package.MainDocumentPart!.DocumentSettingsPart!.Settings!
+                    .GetFirstChild<W.DocumentProtection>()!;
+                Assert.Equal(expectedEdit, protection.Edit!.Value);
+                Assert.True(protection.Enforcement!.Value);
+                Assert.Equal(mode == DocumentProtectionMode.Forms, protection.Formatting!.Value);
+                Assert.Equal(3, protection.GetAttributes().Count);
+                Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            }
+
+            var imported = Invoke(new CodecRequest
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Operation = CodecOperation.ImportDocx,
+                Family = ArtifactFamily.Document,
+                File = authored.File,
+            });
+            Assert.True(imported.Ok, $"{mode}: {Diagnostics(imported)}");
+            Assert.Equal(mode, imported.Artifact.Document.DocumentProtection.Mode);
+            Assert.True(imported.Artifact.Document.DocumentProtection.Enforcement);
+            Assert.Equal(mode == DocumentProtectionMode.Forms, imported.Artifact.Document.DocumentProtection.Formatting);
+        }
+
+        var invalid = ExportRequest();
+        invalid.Artifact.Document.DocumentProtection = new DocumentProtectionSettings();
+        var rejected = Invoke(invalid);
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_document_protection", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void SourceBoundDocumentProtectionEditsRemovesAndFailsClosedOnPasswordVerifierMarkup()
+    {
+        var request = ExportRequest();
+        request.Artifact.Document.DocumentProtection = new DocumentProtectionSettings
+        {
+            Mode = DocumentProtectionMode.ReadOnly,
+            Enforcement = true,
+        };
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(authored.File, unchanged.File);
+
+        imported.Artifact.Document.DocumentProtection = new DocumentProtectionSettings
+        {
+            Mode = DocumentProtectionMode.Comments,
+            Enforcement = false,
+            Formatting = true,
+        };
+        var edited = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var reimported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = edited.File,
+        });
+        Assert.True(reimported.Ok, Diagnostics(reimported));
+        Assert.Equal(DocumentProtectionMode.Comments, reimported.Artifact.Document.DocumentProtection.Mode);
+        Assert.False(reimported.Artifact.Document.DocumentProtection.Enforcement);
+        Assert.True(reimported.Artifact.Document.DocumentProtection.Formatting);
+
+        reimported.Artifact.Document.DocumentProtection = null;
+        var removed = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = reimported.Artifact,
+        });
+        Assert.True(removed.Ok, Diagnostics(removed));
+        using (var stream = new MemoryStream(removed.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+            Assert.Null(package.MainDocumentPart!.DocumentSettingsPart!.Settings!.GetFirstChild<W.DocumentProtection>());
+
+        var protectedSource = AddProtectionPasswordVerifier(authored.File.ToByteArray());
+        var opaque = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(protectedSource),
+        });
+        Assert.True(opaque.Ok, Diagnostics(opaque));
+        Assert.Null(opaque.Artifact.Document.DocumentProtection);
+        var preserved = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = opaque.Artifact,
+        });
+        Assert.True(preserved.Ok, Diagnostics(preserved));
+        Assert.Equal(protectedSource, preserved.File.ToByteArray());
+
+        opaque.Artifact.Document.UpdateFields = true;
+        var unrelatedEdit = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = opaque.Artifact,
+        });
+        Assert.True(unrelatedEdit.Ok, Diagnostics(unrelatedEdit));
+        using (var stream = new MemoryStream(unrelatedEdit.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var settings = package.MainDocumentPart!.DocumentSettingsPart!.Settings!;
+            Assert.True(settings.GetFirstChild<W.UpdateFieldsOnOpen>()?.Val?.Value);
+            Assert.Equal("AA==", settings.GetFirstChild<W.DocumentProtection>()!
+                .GetAttribute("hash", "http://schemas.openxmlformats.org/wordprocessingml/2006/main").Value);
+        }
+        opaque.Artifact.Document.UpdateFields = false;
+
+        opaque.Artifact.Document.DocumentProtection = new DocumentProtectionSettings
+        {
+            Mode = DocumentProtectionMode.Forms,
+            Enforcement = true,
+        };
+        var unsafeEdit = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = opaque.Artifact,
+        });
+        Assert.False(unsafeEdit.Ok);
+        Assert.Equal("unsupported_document_protection_edit", Assert.Single(unsafeEdit.Diagnostics).Code);
+    }
+
+    [Fact]
     public void RevisionFinalizationAcceptsAndRejectsBoundedChangesWithExactPartAudit()
     {
         var authored = Invoke(TrackedChangeExportRequest(trackRevisions: true));
@@ -5424,6 +5604,25 @@ public sealed class DocxCodecTests
             var properties = document.MainDocumentPart!.Document!.Descendants<W.SdtRun>().Single().SdtProperties!;
             properties.Append(new W.SdtContentDate());
             document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddProtectionPasswordVerifier(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var protection = document.MainDocumentPart!.DocumentSettingsPart!.Settings!
+                .GetFirstChild<W.DocumentProtection>()!;
+            protection.SetAttribute(new OpenXmlAttribute(
+                "w",
+                "hash",
+                "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+                "AA=="));
+            document.MainDocumentPart.DocumentSettingsPart.Settings.Save();
         }
         return stream.ToArray();
     }

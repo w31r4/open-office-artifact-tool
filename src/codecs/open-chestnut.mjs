@@ -18,6 +18,7 @@ import {
   DocumentContentControlType,
   DocumentHeaderFooterReference,
   DocumentNoteKind,
+  DocumentProtectionMode,
   DocumentRevisionFinalizationMode,
   DocumentSectionBreak,
   DocumentStyleType,
@@ -3089,8 +3090,36 @@ function documentBlock(block, original, directNumbering, assets, contentControlN
 function unsupportedDocumentCollections(document) {
   const unsupported = [];
   if (document.settings?.mirrorMargins) unsupported.push("mirrored margins");
-  if (document.settings?.documentProtection != null) unsupported.push("document protection");
   return unsupported;
+}
+
+function wireDocumentProtection(value) {
+  if (value == null) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new OpenChestnutCodecError("Document protection must be a normalized settings object.", [], { code: "invalid_document_protection" });
+  }
+  const mode = value.edit === "none"
+    ? DocumentProtectionMode.NONE
+    : value.edit === "readOnly" ? DocumentProtectionMode.READ_ONLY
+      : value.edit === "comments" ? DocumentProtectionMode.COMMENTS
+        : value.edit === "trackedChanges" ? DocumentProtectionMode.TRACKED_CHANGES
+          : value.edit === "forms" ? DocumentProtectionMode.FORMS : undefined;
+  if (mode === undefined || typeof value.enforcement !== "boolean" || typeof value.formatting !== "boolean") {
+    throw new OpenChestnutCodecError("Document protection requires a canonical mode plus boolean enforcement and formatting flags.", [], { code: "invalid_document_protection" });
+  }
+  return { mode, enforcement: value.enforcement, formatting: value.formatting };
+}
+
+function publicDocumentProtection(value) {
+  if (!value) return null;
+  const edit = value.mode === DocumentProtectionMode.NONE
+    ? "none"
+    : value.mode === DocumentProtectionMode.READ_ONLY ? "readOnly"
+      : value.mode === DocumentProtectionMode.COMMENTS ? "comments"
+        : value.mode === DocumentProtectionMode.TRACKED_CHANGES ? "trackedChanges"
+          : value.mode === DocumentProtectionMode.FORMS ? "forms" : undefined;
+  if (!edit) throw new OpenChestnutCodecError("OpenChestnut returned an unsupported document-protection mode.", [], { code: "invalid_document_protection" });
+  return { edit, enforcement: Boolean(value.enforcement), formatting: Boolean(value.formatting) };
 }
 
 function documentEnvelope(document) {
@@ -3153,6 +3182,7 @@ function documentEnvelope(document) {
         evenAndOddHeaders: Boolean(document.settings?.evenAndOddHeaders),
         updateFields: Boolean(document.settings?.updateFields),
         trackRevisions: Boolean(document.settings?.trackRevisions),
+        documentProtection: wireDocumentProtection(document.settings?.documentProtection),
         sectionSettings: (document.sectionSettings || []).map((settings) => ({
           sectionIndex: uint32(settings.sectionIndex, "Document section settings index"),
           differentFirstPage: settings.differentFirstPage == null ? undefined : Boolean(settings.differentFirstPage),
@@ -3658,6 +3688,7 @@ function documentFromEnvelope(envelope) {
       evenAndOddHeaders: Boolean(source.evenAndOddHeaders),
       updateFields: Boolean(source.updateFields),
       trackRevisions: Boolean(source.trackRevisions),
+      documentProtection: publicDocumentProtection(source.documentProtection),
     },
     sectionSettings: (source.sectionSettings || []).map((settings) => ({ sectionIndex: settings.sectionIndex, differentFirstPage: settings.differentFirstPage })),
   });

@@ -2169,6 +2169,26 @@ message DocumentArtifact {
   // Whether compatible WordprocessingML hosts should track subsequent edits.
   // This setting is independent from the presence of existing revision marks.
   bool track_revisions = 15;
+  // One bounded passwordless document-editing restriction from
+  // word/settings.xml. Absence means no modeled restriction. Password hashes,
+  // cryptographic verifier attributes, permission exceptions, IRM, and
+  // extension-bearing protection remain source-owned and fail closed on edit.
+  DocumentProtectionSettings document_protection = 16;
+}
+
+enum DocumentProtectionMode {
+  DOCUMENT_PROTECTION_MODE_UNSPECIFIED = 0;
+  DOCUMENT_PROTECTION_MODE_NONE = 1;
+  DOCUMENT_PROTECTION_MODE_READ_ONLY = 2;
+  DOCUMENT_PROTECTION_MODE_COMMENTS = 3;
+  DOCUMENT_PROTECTION_MODE_TRACKED_CHANGES = 4;
+  DOCUMENT_PROTECTION_MODE_FORMS = 5;
+}
+
+message DocumentProtectionSettings {
+  DocumentProtectionMode mode = 1;
+  bool enforcement = 2;
+  bool formatting = 3;
 }
 
 message DocumentBibliography {

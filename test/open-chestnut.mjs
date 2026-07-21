@@ -90,6 +90,7 @@ await assert.rejects(exportXlsxWithOpenChestnut(workbook, { allowLossy: true }),
 // table, list, link, and classic comment.
 const document = DocumentModel.create({
   name: "Core document",
+  settings: { documentProtection: "comments" },
   blocks: [],
   defaultRunStyle: { fontFamily: "Aptos", fontSize: 11, color: "#111827" },
 });
@@ -143,6 +144,7 @@ assert.deepEqual([...docx.bytes.slice(0, 4)], [0x50, 0x4b, 0x03, 0x04]);
 const docxZip = await JSZip.loadAsync(docx.bytes);
 assert.ok(docxZip.file("word/document.xml"));
 assert.ok(docxZip.file("word/styles.xml"));
+assert.match(await docxZip.file("word/settings.xml").async("text"), /<w:documentProtection(?=[^>]*w:edit="comments")(?=[^>]*w:enforcement="true")[^>]*\/>/);
 assert.match(await docxZip.file("word/document.xml").async("text"), /<w:sdt>[\s\S]*<w:tag w:val="OWNER"\s*\/>[\s\S]*<w:text\s*\/>[\s\S]*Ada[\s\S]*<\/w:sdt>/);
 const docxXml = await docxZip.file("word/document.xml").async("text");
 assert.match(docxXml, /<w:tag w:val="APPROVED"\s*\/>[\s\S]*<w14:checkbox>[\s\S]*<w14:checked w14:val="0"\s*\/>[\s\S]*☐/);
@@ -154,6 +156,7 @@ assert.match(docxXml, /<w:tag w:val="REVIEW_DATE"\s*\/>[\s\S]*<w:date w:fullDate
 assert.match(docxXml, /<w:sdt>[\s\S]*?<w:tag w:val="EXECUTIVE_SUMMARY"\s*\/>[\s\S]*?<w:text\s*\/>[\s\S]*?<w:sdtContent>\s*<w:p>[\s\S]*Executive summary[\s\S]*?<\/w:p>\s*<\/w:sdtContent>\s*<\/w:sdt>/);
 assert.ok(Object.keys(docxZip.files).some((part) => /(?:^|\/)media\/[^/]+\.png$/.test(part)));
 const importedDocument = await importDocxWithOpenChestnut(docx);
+assert.deepEqual(importedDocument.settings.documentProtection, { edit: "comments", enforcement: true, formatting: false });
 assert.equal(importedDocument.defaultRunStyle.fontFamily, "Aptos");
 assert.ok(importedDocument.styles.get("CoreHeading"));
 assert.equal(importedDocument.blocks[0].text, "Quarterly brief");

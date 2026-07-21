@@ -1282,6 +1282,67 @@ importedTrackedSettings.setSettings({ trackRevisions: false });
 const untrackedSettingsDocx = await DocumentFile.exportDocx(importedTrackedSettings);
 assert.equal((await DocumentFile.importDocx(untrackedSettingsDocx)).settings.trackRevisions, false);
 
+const protectedSettings = DocumentModel.create({
+  name: "Passwordless document protection",
+  settings: { documentProtection: "readOnly" },
+  blocks: [{ kind: "paragraph", text: "Bounded editing restriction." }],
+});
+assert.deepEqual(protectedSettings.settings.documentProtection, {
+  edit: "readOnly",
+  enforcement: true,
+  formatting: false,
+});
+assert.throws(
+  () => protectedSettings.setSettings({ documentProtection: { edit: "readOnly", password: "secret" } }),
+  /Password hashing is intentionally unsupported/,
+);
+const protectedDocx = await DocumentFile.exportDocx(protectedSettings);
+const protectedZip = await JSZip.loadAsync(await protectedDocx.arrayBuffer());
+const protectedXml = await protectedZip.file("word/settings.xml").async("text");
+assert.match(protectedXml, /<w:documentProtection(?=[^>]*w:edit="readOnly")(?=[^>]*w:enforcement="true")(?=[^>]*w:formatting="false")[^>]*\/>/);
+const importedProtectedSettings = await DocumentFile.importDocx(protectedDocx);
+assert.deepEqual(importedProtectedSettings.settings.documentProtection, protectedSettings.settings.documentProtection);
+assert.deepEqual(
+  Buffer.from(await (await DocumentFile.exportDocx(importedProtectedSettings)).arrayBuffer()),
+  Buffer.from(await protectedDocx.arrayBuffer()),
+  "an unchanged source-bound protection setting must preserve the source package exactly",
+);
+importedProtectedSettings.setSettings({ documentProtection: { edit: "comments", enforcement: false, formatting: true } });
+const commentsProtectedDocx = await DocumentFile.exportDocx(importedProtectedSettings);
+const commentsProtectedRoundTrip = await DocumentFile.importDocx(commentsProtectedDocx);
+assert.deepEqual(commentsProtectedRoundTrip.settings.documentProtection, {
+  edit: "comments",
+  enforcement: false,
+  formatting: true,
+});
+commentsProtectedRoundTrip.setSettings({ documentProtection: "none" });
+const explicitNoneDocx = await DocumentFile.exportDocx(commentsProtectedRoundTrip);
+assert.equal((await DocumentFile.importDocx(explicitNoneDocx)).settings.documentProtection.edit, "none");
+commentsProtectedRoundTrip.setSettings({ documentProtection: false });
+const unprotectedDocx = await DocumentFile.exportDocx(commentsProtectedRoundTrip);
+const unprotectedZip = await JSZip.loadAsync(await unprotectedDocx.arrayBuffer());
+assert.doesNotMatch(await unprotectedZip.file("word/settings.xml").async("text"), /documentProtection/);
+assert.equal((await DocumentFile.importDocx(unprotectedDocx)).settings.documentProtection, null);
+
+const verifierSource = await DocumentFile.patchDocx(protectedDocx, [{
+  path: "word/settings.xml",
+  xml: protectedXml.replace(/<w:documentProtection\b([^>]*)\/>/, '<w:documentProtection$1 w:hash="AA=="/>'),
+}]);
+const importedVerifierSource = await DocumentFile.importDocx(verifierSource);
+assert.equal(importedVerifierSource.settings.documentProtection, null);
+const preservedVerifierSource = await DocumentFile.exportDocx(importedVerifierSource);
+assert.deepEqual(await changedZipParts(verifierSource, preservedVerifierSource), [],
+  "unsupported password-verifier markup must remain source-owned without changing any package part");
+assert.match(
+  await (await JSZip.loadAsync(await preservedVerifierSource.arrayBuffer())).file("word/settings.xml").async("text"),
+  /w:hash="AA=="/,
+);
+importedVerifierSource.setSettings({ documentProtection: "forms" });
+await assert.rejects(
+  () => DocumentFile.exportDocx(importedVerifierSource),
+  (error) => error?.code === "unsupported_document_protection_edit" && /password verifiers/i.test(error.message),
+);
+
 const unsupportedTableStyle = DocumentModel.create({ name: "Unsupported table style", blocks: [] });
 unsupportedTableStyle.styles.add("ComparisonTable", { name: "Comparison Table", type: "table" });
 unsupportedTableStyle.addTable({

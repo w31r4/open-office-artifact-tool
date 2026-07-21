@@ -637,6 +637,44 @@ try {
   assert.equal(settingsDocument.headers.some((item) => item.referenceType === "even"), true);
   assert.equal(settingsDocument.footers[0]?.fieldInstruction, "PAGE");
 
+  const protection = await runFixture("open-chestnut-protection");
+  const protectedDocument = await DocumentFile.importDocx(await FileBlob.load(protection.docxPath));
+  assert.deepEqual(protectedDocument.settings.documentProtection, {
+    edit: "comments",
+    enforcement: true,
+    formatting: false,
+  });
+  const protectionZip = await JSZip.loadAsync(await fs.readFile(protection.docxPath));
+  assert.match(
+    await protectionZip.file("word/settings.xml").async("text"),
+    /<w:documentProtection(?=[^>]*w:edit="comments")(?=[^>]*w:enforcement="true")(?=[^>]*w:formatting="false")[^>]*\/>/,
+  );
+
+  const unprotectedFixture = structuredClone(protection.fixture);
+  unprotectedFixture.settings.documentProtection = false;
+  unprotectedFixture.edits = [];
+  const unprotectedPath = path.join(outputDir, "open-chestnut-protection", "unprotected-layout-control.docx");
+  await (await DocumentFile.exportDocx(createDocumentFromFixture(unprotectedFixture))).save(unprotectedPath);
+  const protectionBaselineDir = path.join(outputDir, "protection-layout-baseline");
+  await verifyDocumentFile(unprotectedPath, {
+    outputDir: path.join(outputDir, "protection-unprotected-qa"),
+    previewFormat: "png",
+    nativeRender: nativeStatus.available ? "required" : "auto",
+    baselineDir: protectionBaselineDir,
+    writeBaseline: true,
+  });
+  const protectedLayoutQa = await verifyDocumentFile(protection.docxPath, {
+    outputDir: path.join(outputDir, "protection-protected-qa"),
+    previewFormat: "png",
+    nativeRender: nativeStatus.available ? "required" : "auto",
+    baselineDir: protectionBaselineDir,
+  });
+  assert.equal(protectedLayoutQa.summary.modelPixelDiff.changed, false);
+  if (nativeStatus.available) {
+    assert.equal(protectedLayoutQa.summary.nativeRender.pageCountMatches, true);
+    assert.equal(protectedLayoutQa.summary.nativeRender.pages.every((page) => page.pixelDiff.changed === false), true);
+  }
+
   const baselineWrite = await verifyDocumentFile(business.docxPath, {
     outputDir: path.join(outputDir, "baseline-write"),
     previewFormat: "png",
@@ -690,6 +728,7 @@ try {
   assert.match(skillText, /document\.setDropdownContentControls/);
   assert.match(skillText, /document\.setComboBoxContentControls/);
   assert.match(skillText, /document\.setDateContentControls/);
+  assert.match(skillText, /document\.setSettings\(\{ documentProtection/);
   assert.match(skillText, /document\.addBibliographySource/);
   assert.match(skillText, /document\.addCitation/);
   assert.match(skillText, /document\.addTableOfContents/);
@@ -724,6 +763,10 @@ try {
   assert.match(controlsGuide, /document\.setComboBoxContentControls/);
   assert.match(controlsGuide, /document\.setDateContentControls/);
   assert.match(controlsGuide, /Rich.*multi-paragraph.*table\/cell.*nested.*data-bound.*irregular.*localized-date.*custom-symbol checkbox/is);
+  const protectionGuide = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "tasks", "protection_restrict_editing.md"), "utf8");
+  assert.match(protectionGuide, /document\.setSettings\(\{ documentProtection/);
+  assert.match(protectionGuide, /not encryption/i);
+  assert.match(protectionGuide, /fail closed/i);
 } finally {
   await fs.rm(outputDir, { recursive: true, force: true });
 }

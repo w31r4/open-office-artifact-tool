@@ -41,7 +41,7 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.setDateContentControls` | api | Transactionally set every recognized canonical date control from a tag-to-YYYY-MM-DD mapping. Invalid Gregorian dates, unknown tags, and other control types fail before mutation. |
 | `document.setDropdownContentControls` | api | Transactionally set every recognized canonical drop-down control from a tag-to-choice-value string mapping. Unknown tags or values outside the declared choice table fail before mutation. |
 | `document.setSectionSettings` | api | Set per-section Word behavior such as different-first-page header/footer activation without changing preserved header/footer references. |
-| `document.setSettings` | api | Set model settings. evenAndOddHeaders, trackRevisions, and the updateFields refresh hint are inside the OpenChestnut 0.2 DOCX boundary; mirrorMargins and documentProtection remain unsupported through the facade. |
+| `document.setSettings` | api | Set model settings. evenAndOddHeaders, trackRevisions, the updateFields refresh hint, and bounded passwordless documentProtection are inside the OpenChestnut 0.2 DOCX boundary; mirrorMargins remains unsupported. Password/cryptographic protection variants stay source-owned and fail closed on replacement. |
 | `document.styles.effective` | api | Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata. |
 | `document.textRange` | api | Inspect or resolve stable textRange anchors such as blockId/text and tableId/cell/row/column/text. Assignment is limited to fully editable text; replace() also supports explicitly advertised source-bound literal patches. |
 | `document.verify` | api | Return QA issues for invalid/duplicate content-control IDs and native IDs, malformed tags/aliases, invalid block-control profiles, fake lists, invalid links/citations/bibliography sources, malformed tracked changes, duplicate/dangling/reversed bookmark ranges, invalid footnotes/endnotes, unknown styles, malformed tables, bad images/sections, dangling comments, visual overflow, and prose-like table cells. |
@@ -638,15 +638,15 @@ Set per-section Word behavior such as different-first-page header/footer activat
 
 #### `document.setSettings`
 
-Set model settings. evenAndOddHeaders, trackRevisions, and the updateFields refresh hint are inside the OpenChestnut 0.2 DOCX boundary; mirrorMargins and documentProtection remain unsupported through the facade.
+Set model settings. evenAndOddHeaders, trackRevisions, the updateFields refresh hint, and bounded passwordless documentProtection are inside the OpenChestnut 0.2 DOCX boundary; mirrorMargins remains unsupported. Password/cryptographic protection variants stay source-owned and fail closed on replacement.
 
 **Schema parameters:**
 
-- `settings` (object) required — Partial settings object. evenAndOddHeaders, updateFields, and trackRevisions are inside the OpenChestnut 0.2 DOCX boundary; mirrorMargins and documentProtection make export fail closed.
+- `settings` (object) required — Partial settings object. evenAndOddHeaders, updateFields, and trackRevisions are booleans. documentProtection accepts false/null/off to remove the element, none/readOnly/comments/trackedChanges/forms, or { edit, enforcement, formatting }; password hashes, cryptographic attributes, IRM, and permission exceptions are unsupported/source-owned. mirrorMargins makes canonical export fail closed.
 
 **Schema returns:**
 
-- `document` (DocumentModel) — Document facade with normalized settings; updateFields is a refresh request, not proof that cached field results are current.
+- `document` (DocumentModel) — Document facade with normalized settings; updateFields is a refresh request, and passwordless documentProtection is an editing restriction rather than encryption or access control.
 
 #### `document.styles.effective`
 
@@ -829,7 +829,7 @@ Create a document with paragraph/character styles, formatted paragraphs/runs, in
 - `footers` (object[]) — Footer block models.
 - `sectionSettings` (object[]) — Per-section settings with zero-based sectionIndex and differentFirstPage activation state.
 - `comments` (object[]) — Classic whole-paragraph comments. Parent/reply, resolved, durable-ID, UTC/person, and modern extension metadata are outside the OpenChestnut 0.2 boundary.
-- `settings` (object) — evenAndOddHeaders and the updateFields-on-open refresh hint are authorable. Revision tracking, mirrored margins, and documentProtection are model-only or import-preserved read-only.
+- `settings` (object) — evenAndOddHeaders, trackRevisions, the updateFields-on-open refresh hint, and bounded passwordless documentProtection are authorable. mirrorMargins remains model-only; password/cryptographic protection variants are source-owned and cannot be replaced through the semantic model.
 
 **Schema returns:**
 
