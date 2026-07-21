@@ -18,6 +18,8 @@
         { "text": "{{ACCOUNT_ID}}", "contentControl": { "id": "account-id", "tag": "ACCOUNT_ID", "alias": "Account ID" } },
         { "text": " / Priority: " },
         { "text": "", "contentControl": { "id": "priority", "tag": "PRIORITY", "alias": "Priority", "controlType": "dropdown", "selectedValue": "medium", "choices": [{ "displayText": "Low", "value": "low" }, { "displayText": "Medium", "value": "medium" }, { "displayText": "High", "value": "high" }] } },
+        { "text": " / Contact: " },
+        { "text": "", "contentControl": { "id": "contact-method", "tag": "CONTACT_METHOD", "alias": "Contact method", "controlType": "comboBox", "value": "email", "choices": [{ "displayText": "Email", "value": "email" }, { "displayText": "Phone call", "value": "phone" }] } },
         { "text": " / Approved: " },
         { "text": "", "contentControl": { "id": "approved", "tag": "APPROVED", "alias": "Approved", "controlType": "checkbox", "checked": false } }
       ]
@@ -45,6 +47,13 @@
         "PRIORITY": "high"
       },
       "expectUpdated": 1
+    },
+    {
+      "kind": "comboBoxContentControls",
+      "values": {
+        "CONTACT_METHOD": "Pager duty"
+      },
+      "expectUpdated": 1
     }
   ],
   "expectInspect": [
@@ -53,7 +62,9 @@
     { "kind": "contentControl", "pattern": "APPROVED" },
     { "kind": "contentControl", "pattern": "checkbox" },
     { "kind": "contentControl", "pattern": "PRIORITY" },
-    { "kind": "contentControl", "pattern": "dropdown" }
+    { "kind": "contentControl", "pattern": "dropdown" },
+    { "kind": "contentControl", "pattern": "CONTACT_METHOD" },
+    { "kind": "contentControl", "pattern": "comboBox" }
   ],
   "qa": {
     "previewFormat": "svg",

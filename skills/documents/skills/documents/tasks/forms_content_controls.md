@@ -9,15 +9,17 @@ Choose the route before editing:
 
 - Use public `paragraph.addTextContentControl(...)`,
   `paragraph.addCheckboxContentControl(...)`,
-  `paragraph.addDropdownContentControl(...)`, `document.contentControls`,
+  `paragraph.addDropdownContentControl(...)`,
+  `paragraph.addComboBoxContentControl(...)`, `document.contentControls`,
   `document.fillContentControls(...)`, `document.setCheckboxContentControls(...)`,
-  and `document.setDropdownContentControls(...)` for source-free body
+  `document.setDropdownContentControls(...)`, and
+  `document.setComboBoxContentControls(...)` for source-free body
   paragraphs and recognized imported inline plain-text, canonical Word 2010+
-  checkbox, or canonical Word drop-down controls.
+  checkbox, canonical Word drop-down, or canonical Word combo-box controls.
 - Use `scripts/content_controls.py` only for explicit package work such as
   wrapping placeholders in an existing template, controls in headers/footers,
   or inspection of controls outside the bounded public model.
-- Detect rich, block, cell, nested, data-bound, combo-box, irregular drop-down,
+- Detect rich, block, cell, nested, data-bound, irregular list-control,
   date, legacy or custom-symbol checkbox, placeholder-document, and locked
   controls. Preserve them unchanged or fail closed; do not flatten them into
   plain text.
@@ -120,6 +122,36 @@ the matching `displayText`. Unknown tags and values outside the declared table
 fail before mutation. A string choice is shorthand for identical display text
 and value.
 
+### Author and set one combo-box control
+
+Use a combo box only when the user may choose a known value **or** type a
+bounded custom value. Use a drop-down when values must remain a strict enum:
+
+```js
+const contact = document.addParagraph("Contact method: ");
+contact.addComboBoxContentControl([
+  { displayText: "Email", value: "email" },
+  { displayText: "Phone call", value: "phone" },
+], {
+  id: "contact-method",
+  tag: "CONTACT_METHOD",
+  alias: "Contact method",
+  value: "email",
+});
+
+const custom = document.setComboBoxContentControls({
+  CONTACT_METHOD: "Pager duty",
+});
+if (custom.missingTags.length) throw new Error("Required combo box is missing");
+```
+
+OpenChestnut authors canonical `w:comboBox` / `w:listItem` markup. The mutable
+`value` may match a declared internal value, in which case Word shows that
+item's `displayText`, or it may be XML-safe custom text of 1–255 characters,
+which is shown verbatim. Choice order and identity remain source-bound after
+import. Unknown tags, empty/control-bearing values, and direct visible-text
+edits fail before mutation.
+
 ### Inspect and fill by tag
 
 ```js
@@ -140,6 +172,7 @@ for (const control of imported.contentControls) {
     checked: control.checked,
     choices: control.choices,
     selectedValue: control.selectedValue,
+    value: control.value,
   });
 }
 
@@ -160,9 +193,10 @@ template population is intentional; inspect `missingTags` in the returned
 result.
 
 For a single recognized text control, mutate `control.text`; for a checkbox,
-mutate `control.checked`; for a drop-down, mutate `control.selectedValue`.
+mutate `control.checked`; for a drop-down, mutate `control.selectedValue`; for
+a combo box, mutate `control.value`.
 All types allow `control.tag` and `control.alias`. Imported control type,
-drop-down choices/order, symbol declaration, topology, and native identity are
+drop-down/combo-box choices and order, symbol declaration, topology, and native identity are
 source-bound: adding, removing, reordering, redefining, or converting a
 recognized imported control fails closed.
 
@@ -227,10 +261,12 @@ through OpenChestnut where possible, and render again.
 - Placeholder text split across Word runs may not be wrapped by the helper.
   Retype the token contiguously or perform a reviewed narrow package patch.
 - The public model recognizes one run-level plain-text `w:sdt`, one canonical
-  Word 2010+ `w14:checkbox`, or one canonical `w:dropDownList`, each containing
-  exactly one supported run and canonical `w:sdtPr` metadata. Drop-downs are
-  bounded to 1–256 unique display/value pairs of at most 255 characters.
-- Rich, block, cell, nested, data-bound, combo-box, irregular drop-down, date,
+  Word 2010+ `w14:checkbox`, one canonical `w:dropDownList`, or one canonical
+  `w:comboBox`, each containing exactly one supported run and canonical
+  `w:sdtPr` metadata. Both list controls are bounded to 1–256 unique
+  display/value pairs of at most 255 characters; combo-box custom values are
+  bounded to 1–255 characters.
+- Rich, block, cell, nested, data-bound, irregular drop-down/combo-box, date,
   legacy checkbox, custom-symbol checkbox, placeholder-document, locked, or
   unrelated extension-bearing controls remain opaque and source-bound. Do not
   reconstruct them as ordinary text or a canonical control.

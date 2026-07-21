@@ -314,7 +314,7 @@ Scripts:
 - `render_docx.py` — canonical DOCX → PNG renderer (optional PDF via `--emit_pdf`; do not deliver intermediates unless asked).
 - `scripts/render_and_diff.py` — render + per-page image diff between two DOCXs.
 - `scripts/google_docs_title_sanitize.py` — deterministic OOXML sanitizer/audit for Google Docs-targeted DOCX title blocks; removes Word Title-style bottom borders/rules before render/import.
-- `scripts/content_controls.py` — explicit package route to list / wrap / fill controls in existing templates or parts outside the public body-inline model. Use `paragraph.addTextContentControl(...)`, `paragraph.addCheckboxContentControl(...)`, `paragraph.addDropdownContentControl(...)`, `document.contentControls`, `document.fillContentControls(...)`, `document.setCheckboxContentControls(...)`, and `document.setDropdownContentControls(...)` for the bounded inline text/checkbox/drop-down profiles.
+- `scripts/content_controls.py` — explicit package route to list / wrap / fill controls in existing templates or parts outside the public body-inline model. Use `paragraph.addTextContentControl(...)`, `paragraph.addCheckboxContentControl(...)`, `paragraph.addDropdownContentControl(...)`, `paragraph.addComboBoxContentControl(...)`, `document.contentControls`, `document.fillContentControls(...)`, `document.setCheckboxContentControls(...)`, `document.setDropdownContentControls(...)`, and `document.setComboBoxContentControls(...)` for the bounded inline text/checkbox/drop-down/combo-box profiles.
 - `scripts/captions_and_crossrefs.py` — insert Caption paragraphs for tables/figures + optional bookmarks around caption numbers.
 - `scripts/insert_ref_fields.py` — replace `[[REF:bookmark]]` markers with real `REF` fields (cross-references).
 - `scripts/internal_nav.py` — add internal navigation links (static TOC + Top/Bottom + figN/tblN jump links).
@@ -342,7 +342,7 @@ Scripts:
 > `scripts/xlsx_to_docx_table.py` also marks header rows as repeating headers (`w:tblHeader`) to improve a11y and multi-page tables.
 
 Examples:
-- `examples/openchestnut-end-to-end.mjs` — runnable public-API create → export → import → typed text/checkbox-control edit → export → import vertical slice
+- `examples/openchestnut-end-to-end.mjs` — runnable public-API create → export → import → typed text/checkbox/drop-down/combo-box-control edit → export → import vertical slice
 - `examples/openchestnut-source-text-patch-workflow.mjs` — source-bound paragraph/table-cell literal replacement with same-format run-fragment support, immutable input, exact changed-part audit, no-replace publication, second import, verification, and model render evidence
 - `examples/openchestnut-classic-comment-edit-workflow.mjs` — imported classic-comment text-only edit with a unique text anchor, fixed comment topology, second import, model render, byte-bound audit, and atomic output
 - `examples/openchestnut-modern-comment-thread-workflow.mjs` — imported bounded root/direct-reply text and resolved-state edit with fixed identities/topology, second import, model/native render, byte-bound audit, and atomic output
@@ -391,7 +391,7 @@ This is a quick index so you can jump from a helper script to the right task gui
 - `merge_docx_append.py` → `tasks/multi_doc_merge.md`
 
 ### Forms & protection
-- Public `paragraph.addTextContentControl(...)`, `paragraph.addCheckboxContentControl(...)`, `paragraph.addDropdownContentControl(...)`, `document.contentControls`, `document.fillContentControls(...)`, `document.setCheckboxContentControls(...)`, and `document.setDropdownContentControls(...)` handle source-free and recognized imported inline plain-text/canonical checkbox/canonical drop-down controls; `content_controls.py` handles explicit existing-template/package routes → `tasks/forms_content_controls.md`
+- Public `paragraph.addTextContentControl(...)`, `paragraph.addCheckboxContentControl(...)`, `paragraph.addDropdownContentControl(...)`, `paragraph.addComboBoxContentControl(...)`, `document.contentControls`, `document.fillContentControls(...)`, `document.setCheckboxContentControls(...)`, `document.setDropdownContentControls(...)`, and `document.setComboBoxContentControls(...)` handle source-free and recognized imported inline plain-text/canonical checkbox/canonical drop-down/canonical combo-box controls; `content_controls.py` handles explicit existing-template/package routes → `tasks/forms_content_controls.md`
 - `set_protection.py` → `tasks/protection_restrict_editing.md`
 
 ### QA / regression

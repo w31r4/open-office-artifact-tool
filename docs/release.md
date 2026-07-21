@@ -72,6 +72,48 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### DOCX canonical combo-box content controls
+
+On 2026-07-21, the Documents model, public Help/API catalog, versioned
+protobuf wire, OpenChestnut C# codec, bundled WASM runtime, and runnable
+Documents Skill added a bounded Word 2007+ combo-box SDT profile. Source-free
+documents can call `paragraph.addComboBoxContentControl(...)` with 1–256
+ordered unique display/value pairs. A typed `value` may select a declared
+choice, whose `displayText` becomes visible, or carry 1–255 characters of
+XML-safe custom text, which becomes visible verbatim.
+
+`document.setComboBoxContentControls(...)` validates every requested value and
+unknown tag before mutating any control. `fillContentControls()`, checkbox, and
+drop-down setters never coerce a combo box. Imported canonical controls expose
+defensive choices and mutable `value`, tag, and alias; native ID, type, choice
+identity/order, and run topology remain source-bound. OpenChestnut authors and
+imports canonical `w:comboBox`, `w:lastValue`, and `w:listItem` markup, returns
+unchanged source bytes for a no-op import/export, and fails closed on choice,
+type, or direct visible-text tampering. Irregular combo boxes remain opaque and
+byte-preserved only while unchanged.
+
+The C# codec test covers declared and custom values, Office 2021 validation,
+no-op byte identity, second import, declared-choice projection, choice
+topology tampering, and visible-text mismatch. JS model/codec tests cover
+defensive handles, strict transaction rollback, cross-type refusal, custom and
+declared values, source-bound topology, native markup, and two OpenChestnut
+round trips. The native Documents fixture and shipped end-to-end example now
+exercise text, checkbox, drop-down, and combo-box controls together and enter
+the same semantic/package/render QA gates as the other document workflows.
+
+The complete local release gate passed on 2026-07-21: `npm test`, generated
+API docs, the production clean-install/package test, OpenChestnut `318/318`,
+OfficeBridge `5/5`, and two deterministic source builds over 39 audited files.
+The bundled OpenChestnut runtime contains 38 files at 14,868,160 bytes. The
+production dry-run tarball contains 475 files, is 9,126,868 bytes compressed,
+and 24,184,583 bytes unpacked. LibreOffice/Poppler rendered and reviewed both
+pages of the final example; Playwright/Chromium and the real qpdf adapter also
+ran in the complete npm suite. Optional pikepdf, pyHanko, veraPDF, and OCRmyPDF
+real-provider tests remained environment-gated while their contract and
+adversarial tests passed. The offline release audit passed every code,
+documentation, package, and .NET gate; its only publication blocker after a
+clean commit is unavailable npm authentication.
+
 ### DOCX canonical drop-down content controls
 
 On 2026-07-21, the Documents model, versioned protobuf wire, OpenChestnut C#
@@ -90,12 +132,12 @@ one `w:dropDownList` with 1–256 ordered, unique display/value pairs of at most
 choice display/value/order stay source-bound; only selection, tag, and alias
 may change. Choice or type mutation fails with
 `document_content_control_topology_changed`. Duplicate/irregular native lists,
-combo boxes, richer SDTs, and controls outside body runs remain opaque and
+irregular combo boxes, richer SDTs, and controls outside body runs remain opaque and
 byte-preserved while unchanged. A canonical unchanged import returns the
 original package bytes exactly.
 
 The Documents fixture and shipped end-to-end example now author text,
-checkbox, and drop-down controls together, import them, update each through
+checkbox, drop-down, and combo-box controls together, import them, update each through
 its typed primitive, export/import a second time, and assert native
 `w:dropDownList`, `w:lastValue`, and `w:listItem` markup plus semantic
 inspect/resolve/verify results. The final two-page DOCX was rendered through
@@ -131,13 +173,13 @@ change state.
 The supported profile is one inline SDT with one modeled run, a unique native
 ID, and fixed `2610`/`2612` MS Gothic symbol declarations. Imported control
 type, native identity, symbol declarations, location, and topology remain
-source-bound. Rich, block/cell, nested, data-bound, combo-box/irregular-drop-down/date,
+source-bound. Rich, block/cell, nested, data-bound, irregular-list/date,
 legacy, custom-symbol, locked, and otherwise irregular controls stay opaque and
 byte-preserved when unchanged; conversion, topology mutation, direct glyph
 editing, cross-type fill calls, and malformed state fail closed. An unchanged
 canonical import re-exports its original bytes exactly.
 
-The shipped Documents fixture now authors text, checkbox, and drop-down controls together,
+The shipped Documents fixture now authors text, checkbox, drop-down, and combo-box controls together,
 imports them, updates each through its typed primitive, exports and imports a
 second time, inspects/verifies the final semantics, and asserts native
 `w14:checked`, `w14:checkedState`, and `w14:uncheckedState` markup. Its real

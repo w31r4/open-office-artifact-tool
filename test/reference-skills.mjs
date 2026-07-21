@@ -289,6 +289,7 @@ try {
     ["OWNER", "Brief owner", "text", DEFAULT_BRIEF.owner],
     ["FINAL_APPROVAL", "Final approval", "checkbox", true],
     ["REVIEW_PRIORITY", "Review priority", "dropdown", "High"],
+    ["REVIEW_ROUTE", "Review route", "comboBox", "Security hotline"],
   ]);
   assert.deepEqual(documentRoundTrip.notes.map((note) => [note.kind, note.text]), [
     ["footnote", "The final gate includes native rendering, package validation, and semantic re-import."],
@@ -318,6 +319,7 @@ try {
   assert.match(documentXml, /<w:sdt>/);
   assert.match(documentXml, /<w:tag w:val="OWNER"\s*\/>/);
   assert.match(documentXml, /<w:tag w:val="FINAL_APPROVAL"\s*\/>/);
+  assert.match(documentXml, /<w:tag w:val="REVIEW_ROUTE"\s*\/>[\s\S]*<w:comboBox w:lastValue="Security hotline">/);
   assert.match(documentXml, /<w14:checkbox>[\s\S]*<w14:checked w14:val="1"\s*\/>/);
   assert.match(documentXml, /<w:t>Artifact Platform<\/w:t>/);
   const footnotesXml = await documentPackage.file("word/footnotes.xml").async("text");

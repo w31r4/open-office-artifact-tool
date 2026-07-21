@@ -749,6 +749,82 @@ assert.throws(
   /displayText and value must be strings/i,
 );
 
+const comboBoxDocument = DocumentModel.create({ name: "Combo-box content-control profile", blocks: [] });
+const comboBoxParagraph = comboBoxDocument.addParagraph("Contact method: ");
+comboBoxParagraph.addComboBoxContentControl([
+  { displayText: "Email", value: "email" },
+  { displayText: "Phone call", value: "phone" },
+], {
+  id: "contact-method-control",
+  tag: "CONTACT_METHOD",
+  alias: "Contact method",
+  value: "email",
+  style: { fontFamily: "Aptos", fontSize: 12 },
+});
+comboBoxParagraph.addRun(".");
+const comboBoxControl = comboBoxDocument.contentControls[0];
+assert.equal(comboBoxControl.controlType, "comboBox");
+assert.equal(comboBoxControl.value, "email");
+assert.equal(comboBoxControl.text, "Email");
+assert.equal(comboBoxParagraph.text, "Contact method: Email.");
+assert.deepEqual(comboBoxControl.choices, [
+  { displayText: "Email", value: "email" },
+  { displayText: "Phone call", value: "phone" },
+]);
+const defensiveComboBoxChoices = comboBoxControl.choices;
+defensiveComboBoxChoices[0].displayText = "Changed copy";
+assert.equal(comboBoxControl.choices[0].displayText, "Email");
+assert.throws(() => { comboBoxControl.text = "Pager duty"; }, /set value instead/i);
+assert.throws(() => comboBoxDocument.fillContentControls({ CONTACT_METHOD: "Pager duty" }), /Unknown document content-control tag/i);
+assert.throws(() => comboBoxDocument.setDropdownContentControls({ CONTACT_METHOD: "email" }), /Unknown document drop-down content-control tag/i);
+assert.throws(() => comboBoxDocument.setComboBoxContentControls({ CONTACT_METHOD: "Pager duty", MISSING: "Other" }), /Unknown document combo-box content-control tag/i);
+assert.equal(comboBoxControl.value, "email", "strict combo-box updates must fail before mutation");
+assert.throws(() => comboBoxDocument.setComboBoxContentControls({ CONTACT_METHOD: 1 }), /value must be a string/i);
+assert.throws(() => comboBoxDocument.setComboBoxContentControls({ CONTACT_METHOD: "" }), /1 through 255 characters/i);
+assert.equal(comboBoxControl.value, "email", "invalid combo-box values must fail before mutation");
+assert.deepEqual(comboBoxDocument.setComboBoxContentControls({ CONTACT_METHOD: "Pager duty" }), { updated: 1, matchedTags: ["CONTACT_METHOD"], missingTags: [] });
+assert.equal(comboBoxControl.value, "Pager duty");
+assert.equal(comboBoxControl.text, "Pager duty");
+assert.equal(comboBoxParagraph.text, "Contact method: Pager duty.");
+assert.match(comboBoxDocument.inspect({ kind: "contentControl" }).ndjson, /"controlType":"comboBox"/);
+assert.match(comboBoxDocument.inspect({ kind: "contentControl" }).ndjson, /"value":"Pager duty"/);
+assert.equal(comboBoxDocument.verify().ok, true);
+const comboBoxDocx = await DocumentFile.exportDocx(comboBoxDocument);
+const importedComboBoxDocument = await DocumentFile.importDocx(comboBoxDocx);
+const importedComboBox = importedComboBoxDocument.contentControls[0];
+assert.equal(importedComboBox.controlType, "comboBox");
+assert.equal(importedComboBox.value, "Pager duty");
+assert.equal(importedComboBox.text, "Pager duty");
+assert.deepEqual(importedComboBox.choices.map((choice) => choice.value), ["email", "phone"]);
+assert.ok(Number.isInteger(importedComboBox.nativeId));
+assert.deepEqual(importedComboBoxDocument.setComboBoxContentControls({ CONTACT_METHOD: "phone" }), { updated: 1, matchedTags: ["CONTACT_METHOD"], missingTags: [] });
+assert.equal(importedComboBoxDocument.contentControls[0].text, "Phone call");
+const editedComboBoxDocx = await DocumentFile.exportDocx(importedComboBoxDocument);
+const roundTripComboBoxDocument = await DocumentFile.importDocx(editedComboBoxDocx);
+assert.equal(roundTripComboBoxDocument.contentControls[0].value, "phone");
+assert.equal(roundTripComboBoxDocument.contentControls[0].text, "Phone call");
+assert.equal(roundTripComboBoxDocument.resolve(roundTripComboBoxDocument.contentControls[0].targetId).text, "Contact method: Phone call.");
+const comboBoxChoiceTamper = await DocumentFile.importDocx(comboBoxDocx);
+comboBoxChoiceTamper.resolve(comboBoxChoiceTamper.contentControls[0].targetId).runs[comboBoxChoiceTamper.contentControls[0].runIndex].contentControl.choices[0].displayText = "Electronic mail";
+await assert.rejects(
+  () => DocumentFile.exportDocx(comboBoxChoiceTamper),
+  (error) => error?.code === "document_content_control_topology_changed" && /source-bound/i.test(error.message),
+);
+const comboBoxTypeTamper = await DocumentFile.importDocx(comboBoxDocx);
+comboBoxTypeTamper.resolve(comboBoxTypeTamper.contentControls[0].targetId).runs[comboBoxTypeTamper.contentControls[0].runIndex].contentControl.controlType = "dropdown";
+await assert.rejects(
+  () => DocumentFile.exportDocx(comboBoxTypeTamper),
+  (error) => error?.code === "document_content_control_topology_changed" && /source-bound/i.test(error.message),
+);
+assert.throws(
+  () => comboBoxDocument.addParagraph("", { runs: [{ text: "Visible override", contentControl: { tag: "INVALID_COMBO_TEXT", controlType: "comboBox", choices: ["Canonical"], value: "Custom" } }] }),
+  /text is codec-owned/i,
+);
+assert.throws(
+  () => comboBoxDocument.addParagraph("", { runs: [{ contentControl: { tag: "INVALID_COMBO_CHOICES", controlType: "comboBox", choices: [{ displayText: "Same", value: "a" }, { displayText: "Same", value: "b" }] } }] }),
+  /must be unique/i,
+);
+
 const modernCommentDocument = DocumentModel.create({ name: "Modern comment thread", blocks: [] });
 const modernCommentTarget = modernCommentDocument.addParagraph("Review the bounded modern comment thread.");
 const modernRoot = modernCommentDocument.addComment(modernCommentTarget, "Please confirm the evidence.", {

@@ -6,11 +6,12 @@ using W = DocumentFormat.OpenXml.Wordprocessing;
 
 namespace OpenChestnut.Codec;
 
-// Owns three deliberately bounded WordprocessingML SDT profiles: inline
-// plain-text, canonical drop-down, and Word 2010+ checkbox controls. Every
-// profile contains exactly one modeled run with alias, tag, and native ID.
-// Checkbox symbols and drop-down visible text are codec-owned. Every richer
-// SDT remains opaque/source-bound.
+// Owns four deliberately bounded WordprocessingML SDT profiles: inline
+// plain-text, canonical drop-down, canonical combo-box, and Word 2010+
+// checkbox controls. Every profile contains exactly one modeled run with alias,
+// tag, and native ID.
+// Checkbox symbols plus list-control visible text are codec-owned. Every
+// richer SDT remains opaque/source-bound.
 internal static class DocxContentControlCodec
 {
     private const int MaxTagLength = 64;
@@ -79,6 +80,14 @@ internal static class DocxContentControlCodec
                         "invalid_document_content_control",
                         $"Document drop-down content control {control.Id} visible text does not match its selected value.");
             }
+            if (controlType == DocumentContentControlType.ComboBox)
+            {
+                var visibleText = ValidateComboBox(control);
+                if (!run.Text.Equals(visibleText, StringComparison.Ordinal))
+                    throw new CodecException(
+                        "invalid_document_content_control",
+                        $"Document combo-box content control {control.Id} visible text does not match its value.");
+            }
         }
     }
 
@@ -93,8 +102,9 @@ internal static class DocxContentControlCodec
         var textCount = properties.Elements<W.SdtContentText>().Count();
         var checkboxCount = properties.Elements<W14.SdtContentCheckBox>().Count();
         var dropdownCount = properties.Elements<W.SdtContentDropDownList>().Count();
-        if (textCount + checkboxCount + dropdownCount != 1) return false;
-        if (properties.ChildElements.Any(child => child is not W.SdtAlias and not W.Tag and not W.SdtId and not W.SdtContentText and not W14.SdtContentCheckBox and not W.SdtContentDropDownList)) return false;
+        var comboBoxCount = properties.Elements<W.SdtContentComboBox>().Count();
+        if (textCount + checkboxCount + dropdownCount + comboBoxCount != 1) return false;
+        if (properties.ChildElements.Any(child => child is not W.SdtAlias and not W.Tag and not W.SdtId and not W.SdtContentText and not W14.SdtContentCheckBox and not W.SdtContentDropDownList and not W.SdtContentComboBox)) return false;
         var tag = properties.GetFirstChild<W.Tag>()?.Val?.Value;
         var alias = properties.GetFirstChild<W.SdtAlias>()?.Val?.Value ?? tag;
         var nativeId = properties.GetFirstChild<W.SdtId>()?.Val?.Value;
@@ -124,11 +134,23 @@ internal static class DocxContentControlCodec
                    CheckboxFont.Equals(uncheckedState?.Font?.Value, StringComparison.Ordinal) &&
                    visibleText.Equals(isChecked ? CheckedGlyph : UncheckedGlyph, StringComparison.Ordinal);
         }
-        if (dropdownCount == 0) return true;
-        var dropdown = properties.GetFirstChild<W.SdtContentDropDownList>()!;
-        var choices = dropdown.Elements<W.ListItem>().ToArray();
-        var lastValue = dropdown.LastValue?.Value;
-        if (dropdown.ExtendedAttributes.Any() || choices.Length is < 1 or > MaxChoiceCount || choices.Length != dropdown.ChildElements.Count || !ValidText(lastValue, 1, MaxChoiceTextLength)) return false;
+        if (dropdownCount + comboBoxCount == 0) return true;
+        OpenXmlCompositeElement listControl;
+        string? lastValue;
+        if (dropdownCount == 1)
+        {
+            var dropdown = properties.GetFirstChild<W.SdtContentDropDownList>()!;
+            listControl = dropdown;
+            lastValue = dropdown.LastValue?.Value;
+        }
+        else
+        {
+            var comboBox = properties.GetFirstChild<W.SdtContentComboBox>()!;
+            listControl = comboBox;
+            lastValue = comboBox.LastValue?.Value;
+        }
+        var choices = listControl.Elements<W.ListItem>().ToArray();
+        if (listControl.ExtendedAttributes.Any() || choices.Length is < 1 or > MaxChoiceCount || choices.Length != listControl.ChildElements.Count || !ValidText(lastValue, 1, MaxChoiceTextLength)) return false;
         var values = new HashSet<string>(StringComparer.Ordinal);
         var displayTexts = new HashSet<string>(StringComparer.Ordinal);
         string? selectedDisplayText = null;
@@ -139,7 +161,9 @@ internal static class DocxContentControlCodec
             if (choice.HasChildren || choice.ExtendedAttributes.Any() || !ValidText(displayText, 1, MaxChoiceTextLength) || !ValidText(value, 1, MaxChoiceTextLength) || !values.Add(value!) || !displayTexts.Add(displayText!)) return false;
             if (value!.Equals(lastValue, StringComparison.Ordinal)) selectedDisplayText = displayText;
         }
-        return selectedDisplayText is not null && visibleText.Equals(selectedDisplayText, StringComparison.Ordinal);
+        return dropdownCount == 1
+            ? selectedDisplayText is not null && visibleText.Equals(selectedDisplayText, StringComparison.Ordinal)
+            : visibleText.Equals(selectedDisplayText ?? lastValue, StringComparison.Ordinal);
     }
 
     internal static DocumentRun Read(W.SdtRun source, string modelId)
@@ -147,12 +171,13 @@ internal static class DocxContentControlCodec
         if (!IsSupported(source))
             throw new CodecException(
                 "unsupported_document_content_control",
-                "DOCX inline content control is outside the bounded plain-text, canonical checkbox, or canonical drop-down SDT profiles.",
+                "DOCX inline content control is outside the bounded plain-text, canonical checkbox, canonical drop-down, or canonical combo-box SDT profiles.",
                 "word/document.xml");
         var properties = source.SdtProperties!;
         var result = DocxCodec.ReadRun((W.Run)source.SdtContentRun!.FirstChild!);
         var checkbox = properties.GetFirstChild<W14.SdtContentCheckBox>();
         var dropdown = properties.GetFirstChild<W.SdtContentDropDownList>();
+        var comboBox = properties.GetFirstChild<W.SdtContentComboBox>();
         result.TextContentControl = new DocumentTextContentControl
         {
             Id = modelId,
@@ -161,12 +186,16 @@ internal static class DocxContentControlCodec
             NativeId = checked((uint)properties.GetFirstChild<W.SdtId>()!.Val!.Value),
             ControlType = checkbox is not null
                 ? DocumentContentControlType.Checkbox
-                : dropdown is not null ? DocumentContentControlType.DropDown : DocumentContentControlType.PlainText,
+                : dropdown is not null
+                    ? DocumentContentControlType.DropDown
+                    : comboBox is not null ? DocumentContentControlType.ComboBox : DocumentContentControlType.PlainText,
             Checked = checkbox is not null && IsChecked(checkbox.GetFirstChild<W14.Checked>()?.Val?.Value),
             SelectedValue = dropdown?.LastValue?.Value ?? string.Empty,
+            Value = comboBox?.LastValue?.Value ?? string.Empty,
         };
-        if (dropdown is not null)
-            result.TextContentControl.Choices.Add(dropdown.Elements<W.ListItem>().Select(choice => new DocumentContentControlChoice
+        var listControl = (OpenXmlCompositeElement?)dropdown ?? comboBox;
+        if (listControl is not null)
+            result.TextContentControl.Choices.Add(listControl.Elements<W.ListItem>().Select(choice => new DocumentContentControlChoice
             {
                 DisplayText = choice.DisplayText!.Value!,
                 Value = choice.Value!.Value!,
@@ -199,6 +228,16 @@ internal static class DocxContentControlCodec
                 Value = choice.Value,
             }));
             properties.Append(dropdown);
+        }
+        else if (controlType == DocumentContentControlType.ComboBox)
+        {
+            var comboBox = new W.SdtContentComboBox { LastValue = control.Value };
+            comboBox.Append(control.Choices.Select(choice => new W.ListItem
+            {
+                DisplayText = choice.DisplayText,
+                Value = choice.Value,
+            }));
+            properties.Append(comboBox);
         }
         else
             properties.Append(new W.SdtContentText());
@@ -238,6 +277,7 @@ internal static class DocxContentControlCodec
             DocumentContentControlType.PlainText => DocumentContentControlType.PlainText,
             DocumentContentControlType.Checkbox => DocumentContentControlType.Checkbox,
             DocumentContentControlType.DropDown => DocumentContentControlType.DropDown,
+            DocumentContentControlType.ComboBox => DocumentContentControlType.ComboBox,
             _ => throw new CodecException(
                 "invalid_document_content_control",
                 $"Document content control {control.Id} has an unsupported control type."),
@@ -245,30 +285,43 @@ internal static class DocxContentControlCodec
 
     private static DocumentContentControlChoice ValidateDropdown(DocumentTextContentControl control)
     {
-        if (control.Choices.Count is < 1 or > MaxChoiceCount)
-            throw new CodecException(
-                "invalid_document_content_control",
-                $"Document drop-down content control {control.Id} requires 1 through {MaxChoiceCount} choices.");
-        var values = new HashSet<string>(StringComparer.Ordinal);
-        var displayTexts = new HashSet<string>(StringComparer.Ordinal);
-        DocumentContentControlChoice? selected = null;
-        foreach (var choice in control.Choices)
-        {
-            ValidateText(choice.DisplayText, $"Document drop-down content control {control.Id} choice display text", 1, MaxChoiceTextLength);
-            ValidateText(choice.Value, $"Document drop-down content control {control.Id} choice value", 1, MaxChoiceTextLength);
-            if (!values.Add(choice.Value) || !displayTexts.Add(choice.DisplayText))
-                throw new CodecException(
-                    "invalid_document_content_control",
-                    $"Document drop-down content control {control.Id} choice values and display text must be unique.");
-            if (choice.Value.Equals(control.SelectedValue, StringComparison.Ordinal)) selected = choice;
-        }
+        var selected = ValidateChoices(control, "drop-down", control.SelectedValue);
         return selected ?? throw new CodecException(
             "invalid_document_content_control",
             $"Document drop-down content control {control.Id} selected value must match one declared choice.");
     }
 
+    private static string ValidateComboBox(DocumentTextContentControl control)
+    {
+        ValidateText(control.Value, $"Document combo-box content control {control.Id} value", 1, MaxChoiceTextLength);
+        var selected = ValidateChoices(control, "combo-box", control.Value);
+        return selected?.DisplayText ?? control.Value;
+    }
+
+    private static DocumentContentControlChoice? ValidateChoices(DocumentTextContentControl control, string label, string currentValue)
+    {
+        if (control.Choices.Count is < 1 or > MaxChoiceCount)
+            throw new CodecException(
+                "invalid_document_content_control",
+                $"Document {label} content control {control.Id} requires 1 through {MaxChoiceCount} choices.");
+        var values = new HashSet<string>(StringComparer.Ordinal);
+        var displayTexts = new HashSet<string>(StringComparer.Ordinal);
+        DocumentContentControlChoice? selected = null;
+        foreach (var choice in control.Choices)
+        {
+            ValidateText(choice.DisplayText, $"Document {label} content control {control.Id} choice display text", 1, MaxChoiceTextLength);
+            ValidateText(choice.Value, $"Document {label} content control {control.Id} choice value", 1, MaxChoiceTextLength);
+            if (!values.Add(choice.Value) || !displayTexts.Add(choice.DisplayText))
+                throw new CodecException(
+                    "invalid_document_content_control",
+                    $"Document {label} content control {control.Id} choice values and display text must be unique.");
+            if (choice.Value.Equals(currentValue, StringComparison.Ordinal)) selected = choice;
+        }
+        return selected;
+    }
+
     private static string ChoiceSignature(DocumentTextContentControl control) =>
-        NormalizedType(control) == DocumentContentControlType.DropDown
+        NormalizedType(control) is DocumentContentControlType.DropDown or DocumentContentControlType.ComboBox
             ? string.Join(".", control.Choices.Select(choice =>
                 $"{Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(choice.DisplayText))}:{Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(choice.Value))}"))
             : string.Empty;

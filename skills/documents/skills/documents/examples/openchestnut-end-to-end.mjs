@@ -167,6 +167,16 @@ export function buildDocument(spec = DEFAULT_BRIEF) {
     alias: "Review priority",
     selectedValue: "routine",
   });
+  priority.addRun("    |    REVIEW ROUTE  ");
+  priority.addComboBoxContentControl([
+    { displayText: "Email", value: "email" },
+    { displayText: "Phone call", value: "phone" },
+  ], {
+    id: "review-route-control",
+    tag: "REVIEW_ROUTE",
+    alias: "Review route",
+    value: "email",
+  });
   document.addParagraph(spec.summary, {
     name: "executive-summary",
     styleId: "Normal",
@@ -199,7 +209,10 @@ export function buildDocument(spec = DEFAULT_BRIEF) {
     date: "2026-07-16T08:11:00Z",
   });
 
-  document.addParagraph("Evidence", { styleId: "BriefHeading1" });
+  document.addParagraph("Evidence", {
+    styleId: "BriefHeading1",
+    paragraphFormat: { pageBreakBefore: true },
+  });
   document.addTable({
     name: "readiness-evidence",
     styleId: "TableGrid",
@@ -291,6 +304,11 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
     matchedTags: ["REVIEW_PRIORITY"],
     missingTags: [],
   });
+  assert.deepEqual(imported.setComboBoxContentControls({ REVIEW_ROUTE: "Security hotline" }), {
+    updated: 1,
+    matchedTags: ["REVIEW_ROUTE"],
+    missingTags: [],
+  });
   assert.equal(imported.bookmarks.length, 2);
   const importedDecisionBookmark = imported.bookmarks.find((bookmark) => bookmark.name === "DecisionSection");
   assert.ok(importedDecisionBookmark);
@@ -350,6 +368,7 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
     ["OWNER", "Brief owner", "text", spec.owner],
     ["FINAL_APPROVAL", "Final approval", "checkbox", true],
     ["REVIEW_PRIORITY", "Review priority", "dropdown", "High"],
+    ["REVIEW_ROUTE", "Review route", "comboBox", "Security hotline"],
   ]);
   assert.equal(
     finalDocument.blocks.some((block) => block.kind === "hyperlink" && block.anchor === "DecisionSection"),
@@ -371,9 +390,9 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
 
   const inspection = finalDocument.inspect({
     kind: "document,paragraph,listItem,table,comment,bookmark,note,contentControl,header,footer,hyperlink,citation,bibliographySource,change,layout",
-    maxChars: 32_000,
+    maxChars: 64_000,
   });
-  for (const expected of [spec.title, "Verified", "Recommendation wording verified", "application-compatibility", "semantic re-import", "Evidence snapshot", "DecisionSection", "ProjectEvidence", "2026, verified", "OWNER", "FINAL_APPROVAL", "checkbox", "REVIEW_PRIORITY", "dropdown", "LAUNCH READINESS"]) {
+  for (const expected of [spec.title, "Verified", "Recommendation wording verified", "application-compatibility", "semantic re-import", "Evidence snapshot", "DecisionSection", "ProjectEvidence", "2026, verified", "OWNER", "FINAL_APPROVAL", "checkbox", "REVIEW_PRIORITY", "dropdown", "REVIEW_ROUTE", "comboBox", "Security hotline", "LAUNCH READINESS"]) {
     assert.match(inspection.ndjson, new RegExp(expected));
   }
 

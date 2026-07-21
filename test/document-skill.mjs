@@ -124,18 +124,20 @@ try {
     ["CUSTOMER_NAME", "text", "Grace Hopper"],
     ["ACCOUNT_ID", "text", "AC-2048"],
     ["PRIORITY", "dropdown", "High"],
+    ["CONTACT_METHOD", "comboBox", "Pager duty"],
     ["APPROVED", "checkbox", true],
   ]);
   assert.equal(controls.qa.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
   assert.equal(controlsDocument.inspect({ kind: "contentControl" }).ndjson.includes("Customer name"), true);
   const controlsZip = await JSZip.loadAsync(await fs.readFile(controls.docxPath));
   const controlsXml = await controlsZip.file("word/document.xml").async("text");
-  assert.equal((controlsXml.match(/<w:sdt>/g) || []).length, 4);
+  assert.equal((controlsXml.match(/<w:sdt>/g) || []).length, 5);
   assert.match(controlsXml, /<w:tag w:val="CUSTOMER_NAME"\s*\/>/);
   assert.match(controlsXml, /<w:tag w:val="ACCOUNT_ID"\s*\/>/);
   assert.match(controlsXml, /<w:tag w:val="APPROVED"\s*\/>/);
   assert.match(controlsXml, /<w14:checkbox>[\s\S]*<w14:checked w14:val="1"\s*\/>/);
   assert.match(controlsXml, /<w:tag w:val="PRIORITY"\s*\/>[\s\S]*<w:dropDownList w:lastValue="high">[\s\S]*<w:listItem(?=[^>]*w:displayText="High")(?=[^>]*w:value="high")[^>]*\/>/);
+  assert.match(controlsXml, /<w:tag w:val="CONTACT_METHOD"\s*\/>[\s\S]*<w:comboBox w:lastValue="Pager duty">[\s\S]*<w:listItem(?=[^>]*w:displayText="Phone call")(?=[^>]*w:value="phone")[^>]*\/>/);
 
   const bibliography = await runFixture("open-chestnut-bibliography");
   const bibliographyDocument = await DocumentFile.importDocx(await FileBlob.load(bibliography.docxPath));
@@ -674,8 +676,12 @@ try {
   assert.match(skillText, /document\.addDeletion/);
   assert.match(skillText, /paragraph\.addTextContentControl/);
   assert.match(skillText, /paragraph\.addCheckboxContentControl/);
+  assert.match(skillText, /paragraph\.addDropdownContentControl/);
+  assert.match(skillText, /paragraph\.addComboBoxContentControl/);
   assert.match(skillText, /document\.fillContentControls/);
   assert.match(skillText, /document\.setCheckboxContentControls/);
+  assert.match(skillText, /document\.setDropdownContentControls/);
+  assert.match(skillText, /document\.setComboBoxContentControls/);
   assert.match(skillText, /document\.addBibliographySource/);
   assert.match(skillText, /document\.addCitation/);
   assert.match(skillText, /document\.addTableOfContents/);
@@ -701,10 +707,12 @@ try {
   assert.match(controlsGuide, /paragraph\.addTextContentControl/);
   assert.match(controlsGuide, /paragraph\.addCheckboxContentControl/);
   assert.match(controlsGuide, /paragraph\.addDropdownContentControl/);
+  assert.match(controlsGuide, /paragraph\.addComboBoxContentControl/);
   assert.match(controlsGuide, /document\.fillContentControls/);
   assert.match(controlsGuide, /document\.setCheckboxContentControls/);
   assert.match(controlsGuide, /document\.setDropdownContentControls/);
-  assert.match(controlsGuide, /Rich.*block.*cell.*combo-box.*date.*custom-symbol checkbox/is);
+  assert.match(controlsGuide, /document\.setComboBoxContentControls/);
+  assert.match(controlsGuide, /Rich.*block.*cell.*irregular.*date.*custom-symbol checkbox/is);
 } finally {
   await fs.rm(outputDir, { recursive: true, force: true });
 }

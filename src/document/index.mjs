@@ -183,25 +183,25 @@ function documentCheckboxGlyph(checked) {
   return checked ? DOCUMENT_CHECKBOX_GLYPHS.checked : DOCUMENT_CHECKBOX_GLYPHS.unchecked;
 }
 
-function normalizeDocumentDropdownChoices(value) {
+function normalizeDocumentContentControlChoices(value, controlType = "drop-down") {
   if (!Array.isArray(value) || value.length < 1 || value.length > DOCUMENT_DROPDOWN_MAX_CHOICES) {
-    throw new TypeError(`Document drop-down content control requires 1 through ${DOCUMENT_DROPDOWN_MAX_CHOICES} choices.`);
+    throw new TypeError(`Document ${controlType} content control requires 1 through ${DOCUMENT_DROPDOWN_MAX_CHOICES} choices.`);
   }
   const values = new Set();
   const displayTexts = new Set();
   return value.map((choice, index) => {
     const source = typeof choice === "string" ? { displayText: choice, value: choice } : choice;
-    if (!source || typeof source !== "object") throw new TypeError(`Document drop-down choice ${index + 1} must be a string or object.`);
+    if (!source || typeof source !== "object") throw new TypeError(`Document ${controlType} choice ${index + 1} must be a string or object.`);
     const displayText = source.displayText ?? source.text ?? source.label ?? "";
     const itemValue = source.value ?? source.id ?? "";
     if (typeof displayText !== "string" || typeof itemValue !== "string") {
-      throw new TypeError(`Document drop-down choice ${index + 1} displayText and value must be strings.`);
+      throw new TypeError(`Document ${controlType} choice ${index + 1} displayText and value must be strings.`);
     }
     if (!displayText || !itemValue || displayText.length > DOCUMENT_DROPDOWN_MAX_TEXT_LENGTH || itemValue.length > DOCUMENT_DROPDOWN_MAX_TEXT_LENGTH || !isXmlSafeText(displayText) || !isXmlSafeText(itemValue) || /[\u0000-\u001f\u007f]/.test(displayText + itemValue)) {
-      throw new TypeError(`Document drop-down choice ${index + 1} requires XML-safe displayText and value strings of 1 through ${DOCUMENT_DROPDOWN_MAX_TEXT_LENGTH} characters.`);
+      throw new TypeError(`Document ${controlType} choice ${index + 1} requires XML-safe displayText and value strings of 1 through ${DOCUMENT_DROPDOWN_MAX_TEXT_LENGTH} characters.`);
     }
     if (values.has(itemValue) || displayTexts.has(displayText)) {
-      throw new TypeError("Document drop-down content-control choice values and displayText strings must be unique.");
+      throw new TypeError(`Document ${controlType} content-control choice values and displayText strings must be unique.`);
     }
     values.add(itemValue);
     displayTexts.add(displayText);
@@ -209,8 +209,20 @@ function normalizeDocumentDropdownChoices(value) {
   });
 }
 
-function documentDropdownChoice(control, selectedValue = control?.selectedValue) {
-  return control?.choices?.find((choice) => choice.value === selectedValue);
+function documentContentControlChoice(control, value) {
+  return control?.choices?.find((choice) => choice.value === value);
+}
+
+function normalizeDocumentComboBoxValue(value) {
+  if (typeof value !== "string") throw new TypeError("Document combo-box content-control value must be a string.");
+  if (!value || value.length > DOCUMENT_DROPDOWN_MAX_TEXT_LENGTH || !isXmlSafeText(value) || /[\u0000-\u001f\u007f]/.test(value)) {
+    throw new TypeError(`Document combo-box content-control value must be XML-safe and contain 1 through ${DOCUMENT_DROPDOWN_MAX_TEXT_LENGTH} characters.`);
+  }
+  return value;
+}
+
+function documentComboBoxVisibleText(control, value = control?.value) {
+  return documentContentControlChoice(control, value)?.displayText ?? value;
 }
 
 function normalizeDocumentContentControl(value) {
@@ -230,13 +242,14 @@ function normalizeDocumentContentControl(value) {
   const controlType = rawType === "text" || rawType === "plain-text" || rawType === "plaintext"
     ? "text"
     : rawType === "checkbox" || rawType === "check-box" ? "checkbox"
-      : rawType === "dropdown" || rawType === "drop-down" || rawType === "drop_down" ? "dropdown" : undefined;
-  if (!controlType) throw new TypeError("Document content control type must be text, checkbox, or dropdown.");
+      : rawType === "dropdown" || rawType === "drop-down" || rawType === "drop_down" ? "dropdown"
+        : rawType === "combobox" || rawType === "combo-box" || rawType === "combo_box" ? "comboBox" : undefined;
+  if (!controlType) throw new TypeError("Document content control type must be text, checkbox, dropdown, or comboBox.");
   if (controlType === "checkbox" && source.checked !== undefined && typeof source.checked !== "boolean") {
     throw new TypeError("Document checkbox content control checked state must be boolean.");
   }
-  const choices = controlType === "dropdown"
-    ? normalizeDocumentDropdownChoices(source.choices ?? source.items ?? source.options)
+  const choices = controlType === "dropdown" || controlType === "comboBox"
+    ? normalizeDocumentContentControlChoices(source.choices ?? source.items ?? source.options, controlType === "comboBox" ? "combo-box" : "drop-down")
     : undefined;
   const requestedSelectedValue = source.selectedValue ?? source.value;
   if (controlType === "dropdown" && requestedSelectedValue !== undefined && typeof requestedSelectedValue !== "string") {
@@ -246,6 +259,9 @@ function normalizeDocumentContentControl(value) {
   if (controlType === "dropdown" && !choices.some((choice) => choice.value === selectedValue)) {
     throw new TypeError(`Document drop-down content-control selectedValue ${selectedValue} does not match a choice value.`);
   }
+  const comboBoxValue = controlType === "comboBox"
+    ? normalizeDocumentComboBoxValue(source.value ?? source.selectedValue ?? choices[0].value)
+    : undefined;
   return {
     id: String(source.id || aid("dcc")),
     tag,
@@ -254,6 +270,7 @@ function normalizeDocumentContentControl(value) {
     controlType,
     ...(controlType === "checkbox" ? { checked: source.checked === true } : {}),
     ...(controlType === "dropdown" ? { choices, selectedValue } : {}),
+    ...(controlType === "comboBox" ? { choices, value: comboBoxValue } : {}),
   };
 }
 
@@ -282,7 +299,8 @@ function normalizeDocumentRun(run = {}, theme = {}) {
   const requestedText = String(run.text ?? run.value ?? "");
   const text = contentControl?.controlType === "checkbox"
     ? documentCheckboxGlyph(contentControl.checked)
-    : contentControl?.controlType === "dropdown" ? documentDropdownChoice(contentControl).displayText : requestedText;
+    : contentControl?.controlType === "dropdown" ? documentContentControlChoice(contentControl, contentControl.selectedValue).displayText
+      : contentControl?.controlType === "comboBox" ? documentComboBoxVisibleText(contentControl) : requestedText;
   if (contentControl?.controlType !== "text" && contentControl && requestedText && requestedText !== text) {
     throw new TypeError(`Document ${contentControl.controlType} content-control text is codec-owned; set its typed value instead of supplying visible text.`);
   }
@@ -344,6 +362,17 @@ class DocumentParagraphBlock {
       },
     });
   }
+  addComboBoxContentControl(choices, config = {}) {
+    return this.addRun("", {
+      ...config,
+      contentControl: {
+        ...(config.contentControl || config),
+        controlType: "comboBox",
+        choices,
+        value: config.value,
+      },
+    });
+  }
   addField(instruction, display = "0", config = {}) {
     return this.addRun(display, {
       ...config,
@@ -398,6 +427,7 @@ class DocumentContentControlHandle {
   set text(value) {
     if (this.controlType === "checkbox") throw new TypeError("Checkbox content-control text is codec-owned; set checked instead.");
     if (this.controlType === "dropdown") throw new TypeError("Drop-down content-control text is codec-owned; set selectedValue instead.");
+    if (this.controlType === "comboBox") throw new TypeError("Combo-box content-control text is codec-owned; set value instead.");
     if (this.controlType !== "text") throw new TypeError(`Unsupported ${this.controlType} content-control text mutation.`);
     this.run.text = String(value ?? "");
     this.block._syncText();
@@ -410,16 +440,24 @@ class DocumentContentControlHandle {
     this.run.text = documentCheckboxGlyph(value);
     this.block._syncText();
   }
-  get choices() { return this.controlType === "dropdown" ? this.control.choices.map((choice) => ({ ...choice })) : undefined; }
+  get choices() { return this.controlType === "dropdown" || this.controlType === "comboBox" ? this.control.choices.map((choice) => ({ ...choice })) : undefined; }
   get selectedValue() { return this.controlType === "dropdown" ? this.control?.selectedValue : undefined; }
   set selectedValue(value) {
     if (this.controlType !== "dropdown") throw new TypeError("Only drop-down content controls have selectedValue state.");
     if (typeof value !== "string") throw new TypeError("Document drop-down content-control selectedValue must be a string.");
     const selectedValue = value;
-    const choice = documentDropdownChoice(this.control, selectedValue);
+    const choice = documentContentControlChoice(this.control, selectedValue);
     if (!choice) throw new TypeError(`Document drop-down content-control selectedValue ${selectedValue} does not match a choice value.`);
     this.control.selectedValue = selectedValue;
     this.run.text = choice.displayText;
+    this.block._syncText();
+  }
+  get value() { return this.controlType === "comboBox" ? this.control?.value : undefined; }
+  set value(value) {
+    if (this.controlType !== "comboBox") throw new TypeError("Only combo-box content controls have editable value state.");
+    const next = normalizeDocumentComboBoxValue(value);
+    this.control.value = next;
+    this.run.text = documentComboBoxVisibleText(this.control, next);
     this.block._syncText();
   }
   inspectRecord() {
@@ -436,6 +474,8 @@ class DocumentContentControlHandle {
         ? { checked: this.checked, visibleText: this.text }
         : this.controlType === "dropdown"
           ? { choices: this.choices, selectedValue: this.selectedValue, visibleText: this.text }
+          : this.controlType === "comboBox"
+            ? { choices: this.choices, value: this.value, visibleText: this.text }
           : { text: this.text, textChars: this.text.length }),
     };
   }
@@ -1154,6 +1194,21 @@ export class DocumentModel {
     }
     return { updated, matchedTags: [...matched], missingTags };
   }
+  setComboBoxContentControls(values = {}, options = {}) {
+    const entries = values instanceof Map ? [...values.entries()] : Object.entries(values || {});
+    const requested = new Map(entries.map(([tag, value]) => [String(tag), normalizeDocumentComboBoxValue(value)]));
+    const controls = this.contentControls.filter((control) => control.controlType === "comboBox");
+    const matched = new Set(controls.filter((control) => requested.has(control.tag)).map((control) => control.tag));
+    const missingTags = [...requested.keys()].filter((tag) => !matched.has(tag));
+    if (options.strict !== false && missingTags.length) throw new Error(`Unknown document combo-box content-control tag(s): ${missingTags.join(", ")}`);
+    let updated = 0;
+    for (const control of controls) {
+      if (!requested.has(control.tag)) continue;
+      control.value = requested.get(control.tag);
+      updated += 1;
+    }
+    return { updated, matchedTags: [...matched], missingTags };
+  }
   materializeFields(options = {}) { return materializeDocumentFields(this, options); }
   addListItem(text, config = {}) { const block = new DocumentListItemBlock(this, text, config); this.blocks.push(block); return block; }
   addList(items = [], config = {}) { return items.map((item) => this.addListItem(typeof item === "string" ? item : item.text, { ...config, ...(typeof item === "string" ? {} : item) })); }
@@ -1287,15 +1342,26 @@ export class DocumentModel {
       else contentControlIds.add(control.id);
       if (!control.tag || control.tag.length > 64 || /[\u0000-\u001f\u007f]/.test(control.tag)) issues.push(verificationIssue("document", "invalidContentControlTag", `Content control ${control.id} tag must contain 1 to 64 characters without controls.`, { id: control.id, tag: control.tag }));
       if (control.alias.length > 255 || /[\u0000-\u001f\u007f]/.test(control.alias)) issues.push(verificationIssue("document", "invalidContentControlAlias", `Content control ${control.id} alias must contain at most 255 characters without controls.`, { id: control.id, alias: control.alias }));
-      if (control.controlType !== "text" && control.controlType !== "checkbox" && control.controlType !== "dropdown") issues.push(verificationIssue("document", "invalidContentControlType", `Content control ${control.id} type must be text, checkbox, or dropdown.`, { id: control.id, controlType: control.controlType }));
+      if (control.controlType !== "text" && control.controlType !== "checkbox" && control.controlType !== "dropdown" && control.controlType !== "comboBox") issues.push(verificationIssue("document", "invalidContentControlType", `Content control ${control.id} type must be text, checkbox, dropdown, or comboBox.`, { id: control.id, controlType: control.controlType }));
       if (control.controlType === "checkbox" && (typeof control.checked !== "boolean" || control.text !== documentCheckboxGlyph(control.checked))) issues.push(verificationIssue("document", "invalidCheckboxContentControl", `Checkbox content control ${control.id} must have boolean checked state and its canonical visible glyph.`, { id: control.id, checked: control.checked, visibleText: control.text }));
       if (control.controlType === "dropdown") {
         try {
-          const choices = normalizeDocumentDropdownChoices(control.choices);
+          const choices = normalizeDocumentContentControlChoices(control.choices);
           const selected = choices.find((choice) => choice.value === control.selectedValue);
           if (!selected || control.text !== selected.displayText) throw new TypeError("selected value and visible text do not match one declared choice");
         } catch (error) {
           issues.push(verificationIssue("document", "invalidDropdownContentControl", `Drop-down content control ${control.id} has invalid choices or selected state: ${error.message}.`, { id: control.id, selectedValue: control.selectedValue, visibleText: control.text }));
+        }
+      }
+      if (control.controlType === "comboBox") {
+        try {
+          const choices = normalizeDocumentContentControlChoices(control.choices, "combo-box");
+          const value = normalizeDocumentComboBoxValue(control.value);
+          const selected = choices.find((choice) => choice.value === value);
+          const visibleText = selected?.displayText ?? value;
+          if (control.text !== visibleText) throw new TypeError("value and visible text do not match the canonical combo-box projection");
+        } catch (error) {
+          issues.push(verificationIssue("document", "invalidComboBoxContentControl", `Combo-box content control ${control.id} has invalid choices or value: ${error.message}.`, { id: control.id, value: control.value, visibleText: control.text }));
         }
       }
       if (control.nativeId !== undefined && (!Number.isInteger(control.nativeId) || control.nativeId < 1 || control.nativeId > 0x7fffffff || nativeContentControlIds.has(control.nativeId))) issues.push(verificationIssue("document", "invalidContentControlNativeId", `Content control ${control.id} has an invalid or duplicate nativeId.`, { id: control.id, nativeId: control.nativeId }));

@@ -1758,13 +1758,14 @@ function documentContentControlTypeName(control) {
   const value = control?.controlType;
   if (value === DocumentContentControlType.CHECKBOX || value === "checkbox") return "checkbox";
   if (value === DocumentContentControlType.DROP_DOWN || value === "dropdown" || value === "drop-down" || value === "drop_down") return "dropdown";
+  if (value === DocumentContentControlType.COMBO_BOX || value === "comboBox" || value === "combobox" || value === "combo-box" || value === "combo_box") return "comboBox";
   if (value === DocumentContentControlType.PLAIN_TEXT || value === DocumentContentControlType.UNSPECIFIED || value === undefined || value === "text") return "text";
   return undefined;
 }
 
-function wireDocumentDropdownState(control, blockId) {
+function wireDocumentContentControlChoices(control, blockId, label) {
   if (!Array.isArray(control?.choices) || control.choices.length < 1 || control.choices.length > 256) {
-    throw new OpenChestnutCodecError(`Document block ${blockId} drop-down content control requires 1 through 256 choices.`, [], { code: "invalid_document_content_control" });
+    throw new OpenChestnutCodecError(`Document block ${blockId} ${label} content control requires 1 through 256 choices.`, [], { code: "invalid_document_content_control" });
   }
   const values = new Set();
   const displayTexts = new Set();
@@ -1772,20 +1773,34 @@ function wireDocumentDropdownState(control, blockId) {
     const displayText = choice?.displayText;
     const value = choice?.value;
     if (typeof displayText !== "string" || typeof value !== "string" || !displayText || !value || displayText.length > 255 || value.length > 255 || !isXmlSafeText(displayText) || !isXmlSafeText(value) || /[\u0000-\u001f\u007f]/.test(displayText + value)) {
-      throw new OpenChestnutCodecError(`Document block ${blockId} drop-down choice ${index + 1} requires XML-safe displayText and value strings of 1 through 255 characters.`, [], { code: "invalid_document_content_control" });
+      throw new OpenChestnutCodecError(`Document block ${blockId} ${label} choice ${index + 1} requires XML-safe displayText and value strings of 1 through 255 characters.`, [], { code: "invalid_document_content_control" });
     }
     if (values.has(value) || displayTexts.has(displayText)) {
-      throw new OpenChestnutCodecError(`Document block ${blockId} drop-down choice values and displayText strings must be unique.`, [], { code: "invalid_document_content_control" });
+      throw new OpenChestnutCodecError(`Document block ${blockId} ${label} choice values and displayText strings must be unique.`, [], { code: "invalid_document_content_control" });
     }
     values.add(value);
     displayTexts.add(displayText);
     return { displayText, value };
   });
+  return { choices, values };
+}
+
+function wireDocumentDropdownState(control, blockId) {
+  const { choices, values } = wireDocumentContentControlChoices(control, blockId, "drop-down");
   const selectedValue = control?.selectedValue;
   if (typeof selectedValue !== "string" || !values.has(selectedValue)) {
     throw new OpenChestnutCodecError(`Document block ${blockId} drop-down selectedValue must match one declared choice value.`, [], { code: "invalid_document_content_control" });
   }
   return { choices, selectedValue };
+}
+
+function wireDocumentComboBoxState(control, blockId) {
+  const { choices } = wireDocumentContentControlChoices(control, blockId, "combo-box");
+  const value = control?.value;
+  if (typeof value !== "string" || !value || value.length > 255 || !isXmlSafeText(value) || /[\u0000-\u001f\u007f]/.test(value)) {
+    throw new OpenChestnutCodecError(`Document block ${blockId} combo-box value must be an XML-safe string of 1 through 255 characters.`, [], { code: "invalid_document_content_control" });
+  }
+  return { choices, value };
 }
 
 function wireDocumentContentControl(control, nativeId, blockId) {
@@ -1796,12 +1811,14 @@ function wireDocumentContentControl(control, nativeId, blockId) {
   const controlType = typeName === "checkbox"
     ? DocumentContentControlType.CHECKBOX
     : typeName === "dropdown" ? DocumentContentControlType.DROP_DOWN
+      : typeName === "comboBox" ? DocumentContentControlType.COMBO_BOX
       : typeName === "text" ? DocumentContentControlType.PLAIN_TEXT : undefined;
   if (!id || !tag || tag.length > 64 || alias.length > 255 || /[\u0000-\u001f\u007f]/.test(tag + alias) || controlType === undefined) throw new OpenChestnutCodecError(`Document block ${blockId} has an invalid content control.`, [], { code: "invalid_document_content_control" });
   if (controlType === DocumentContentControlType.CHECKBOX && typeof control.checked !== "boolean") {
     throw new OpenChestnutCodecError(`Document block ${blockId} has an invalid checkbox content-control state.`, [], { code: "invalid_document_content_control" });
   }
   const dropdown = controlType === DocumentContentControlType.DROP_DOWN ? wireDocumentDropdownState(control, blockId) : undefined;
+  const comboBox = controlType === DocumentContentControlType.COMBO_BOX ? wireDocumentComboBoxState(control, blockId) : undefined;
   return {
     id,
     tag,
@@ -1810,6 +1827,7 @@ function wireDocumentContentControl(control, nativeId, blockId) {
     controlType,
     checked: controlType === DocumentContentControlType.CHECKBOX && control.checked === true,
     ...(dropdown || {}),
+    ...(comboBox || {}),
   };
 }
 
@@ -1829,6 +1847,13 @@ function documentRun(run, blockId, contentControlNativeId) {
     const visibleText = dropdown.choices.find((choice) => choice.value === dropdown.selectedValue).displayText;
     if (String(run.text ?? "") !== visibleText) {
       throw new OpenChestnutCodecError(`Document block ${blockId} drop-down content-control visible text does not match selectedValue.`, [], { code: "invalid_document_content_control" });
+    }
+  }
+  if (documentContentControlTypeName(run.contentControl) === "comboBox") {
+    const comboBox = wireDocumentComboBoxState(run.contentControl, blockId);
+    const visibleText = comboBox.choices.find((choice) => choice.value === comboBox.value)?.displayText ?? comboBox.value;
+    if (String(run.text ?? "") !== visibleText) {
+      throw new OpenChestnutCodecError(`Document block ${blockId} combo-box content-control visible text does not match value.`, [], { code: "invalid_document_content_control" });
     }
   }
   const bookmarkName = inlineInstruction === undefined ? "" : String(run.inlineField?.bookmarkName || "").trim();
@@ -1863,7 +1888,7 @@ function documentContentControlTopology(runs = []) {
         index,
         nativeId: Number(control.nativeId),
         controlType,
-        ...(controlType === "dropdown" ? { choices: (control.choices || []).map((choice) => [String(choice.displayText), String(choice.value)]) } : {}),
+        ...(controlType === "dropdown" || controlType === "comboBox" ? { choices: (control.choices || []).map((choice) => [String(choice.displayText), String(choice.value)]) } : {}),
       }]
     : [];
   });
@@ -3411,11 +3436,17 @@ function documentFromEnvelope(envelope) {
               nativeId: run.textContentControl.nativeId,
               controlType: run.textContentControl.controlType === DocumentContentControlType.CHECKBOX
                 ? "checkbox"
-                : run.textContentControl.controlType === DocumentContentControlType.DROP_DOWN ? "dropdown" : "text",
+                : run.textContentControl.controlType === DocumentContentControlType.DROP_DOWN
+                  ? "dropdown"
+                  : run.textContentControl.controlType === DocumentContentControlType.COMBO_BOX ? "comboBox" : "text",
               ...(run.textContentControl.controlType === DocumentContentControlType.CHECKBOX ? { checked: run.textContentControl.checked === true } : {}),
               ...(run.textContentControl.controlType === DocumentContentControlType.DROP_DOWN ? {
                 choices: run.textContentControl.choices.map((choice) => ({ displayText: choice.displayText, value: choice.value })),
                 selectedValue: run.textContentControl.selectedValue,
+              } : {}),
+              ...(run.textContentControl.controlType === DocumentContentControlType.COMBO_BOX ? {
+                choices: run.textContentControl.choices.map((choice) => ({ displayText: choice.displayText, value: choice.value })),
+                value: run.textContentControl.value,
               } : {}),
             } } : {}),
             ...(run.inlineField ? { inlineField: {

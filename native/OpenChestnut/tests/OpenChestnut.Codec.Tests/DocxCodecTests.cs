@@ -643,6 +643,143 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void InlineComboBoxContentControlAuthorsImportsCustomValuesAndBindsChoiceTopology()
+    {
+        var document = new DocumentArtifact { Id = "document/combo-box", Name = "Combo-box template" };
+        var paragraph = new DocumentBlock
+        {
+            Id = "document/combo-box/contact",
+            StyleId = "Normal",
+            Paragraph = new DocumentParagraph { Text = "Contact method: Email." },
+        };
+        paragraph.Paragraph.Runs.Add(new DocumentRun { Text = "Contact method: " });
+        var control = new DocumentTextContentControl
+        {
+            Id = "contact-method",
+            Tag = "CONTACT_METHOD",
+            Alias = "Contact method",
+            ControlType = DocumentContentControlType.ComboBox,
+            Value = "email",
+        };
+        control.Choices.Add(new[]
+        {
+            new DocumentContentControlChoice { DisplayText = "Email", Value = "email" },
+            new DocumentContentControlChoice { DisplayText = "Phone call", Value = "phone" },
+        });
+        paragraph.Paragraph.Runs.Add(new DocumentRun { Text = "Email", TextContentControl = control });
+        paragraph.Paragraph.Runs.Add(new DocumentRun { Text = "." });
+        document.Blocks.Add(paragraph);
+
+        var authored = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = new ArtifactEnvelope
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Family = ArtifactFamily.Document,
+                Document = document,
+            },
+        });
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var sdt = Assert.Single(package.MainDocumentPart!.Document!.Descendants<W.SdtRun>());
+            var comboBox = Assert.IsType<W.SdtContentComboBox>(sdt.SdtProperties!.LastChild);
+            Assert.Equal("email", comboBox.LastValue!.Value);
+            Assert.Equal(
+                new[] { ("Email", "email"), ("Phone call", "phone") },
+                comboBox.Elements<W.ListItem>().Select(item => (item.DisplayText!.Value!, item.Value!.Value!)).ToArray());
+            Assert.Equal("Email", sdt.InnerText);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedParagraph = Assert.Single(imported.Artifact.Document.Blocks).Paragraph;
+        var importedRun = Assert.Single(importedParagraph.Runs, run => run.TextContentControl is not null);
+        Assert.Equal(DocumentContentControlType.ComboBox, importedRun.TextContentControl.ControlType);
+        Assert.Equal("email", importedRun.TextContentControl.Value);
+        Assert.Equal(new[] { "email", "phone" }, importedRun.TextContentControl.Choices.Select(choice => choice.Value).ToArray());
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact.Clone(),
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(authored.File, unchanged.File);
+
+        importedRun.TextContentControl.Value = "Pager duty";
+        importedRun.Text = "Pager duty";
+        importedParagraph.Text = "Contact method: Pager duty.";
+        var custom = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(custom.Ok, Diagnostics(custom));
+        var customRoundTrip = DocxCodec.Import(custom.File.ToByteArray(), EffectiveCodecLimits.From(null)).Artifact;
+        var customRun = Assert.Single(Assert.Single(customRoundTrip.Document.Blocks).Paragraph.Runs, run => run.TextContentControl is not null);
+        Assert.Equal("Pager duty", customRun.TextContentControl.Value);
+        Assert.Equal("Pager duty", customRun.Text);
+
+        customRun.TextContentControl.Value = "phone";
+        customRun.Text = "Phone call";
+        Assert.Single(customRoundTrip.Document.Blocks).Paragraph.Text = "Contact method: Phone call.";
+        var declared = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = customRoundTrip,
+        });
+        Assert.True(declared.Ok, Diagnostics(declared));
+        var declaredRoundTrip = DocxCodec.Import(declared.File.ToByteArray(), EffectiveCodecLimits.From(null)).Artifact;
+        var declaredRun = Assert.Single(Assert.Single(declaredRoundTrip.Document.Blocks).Paragraph.Runs, run => run.TextContentControl is not null);
+        Assert.Equal("phone", declaredRun.TextContentControl.Value);
+        Assert.Equal("Phone call", declaredRun.Text);
+
+        var changedChoices = declaredRoundTrip.Clone();
+        var changedChoiceRun = Assert.Single(Assert.Single(changedChoices.Document.Blocks).Paragraph.Runs, run => run.TextContentControl is not null);
+        changedChoiceRun.TextContentControl.Choices[0].DisplayText = "Electronic mail";
+        var rejectedChoices = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = changedChoices,
+        });
+        Assert.False(rejectedChoices.Ok);
+        Assert.Equal("document_content_control_topology_changed", Assert.Single(rejectedChoices.Diagnostics).Code);
+
+        var invalidVisibleText = declaredRoundTrip.Clone();
+        var invalidRun = Assert.Single(Assert.Single(invalidVisibleText.Document.Blocks).Paragraph.Runs, run => run.TextContentControl is not null);
+        invalidRun.Text = "phone";
+        var rejectedVisibleText = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = invalidVisibleText,
+        });
+        Assert.False(rejectedVisibleText.Ok);
+        Assert.Equal("invalid_document_content_control", Assert.Single(rejectedVisibleText.Diagnostics).Code);
+    }
+
+    [Fact]
     public void OfficeSkillProfileRoundTripsFormattingImagesSectionsAndHeaders()
     {
         var authored = Invoke(OfficeSkillProfileExportRequest());

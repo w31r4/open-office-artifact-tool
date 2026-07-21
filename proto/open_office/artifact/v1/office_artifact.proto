@@ -2446,12 +2446,13 @@ message DocumentRun {
   bool italic = 4;
   bool underline = 5;
   DocumentRunFormatting formatting = 6;
-  // One bounded inline Word plain-text or checkbox content control. The model ID is
+  // One bounded inline Word plain-text, checkbox, drop-down, or combo-box
+  // content control. The model ID is
   // agent-facing identity for one object lifetime; native_id is package-local
   // w:sdtPr/w:id identity and is assigned deterministically when omitted.
-  // Rich text, block/cell controls, data binding, dropdown/date controls,
-  // custom checkbox symbols, placeholder documents, locking, and nested SDTs
-  // stay opaque.
+  // Rich text, block/cell controls, data binding, date controls, custom
+  // checkbox symbols, placeholder documents, locking, and nested SDTs stay
+  // opaque.
   DocumentTextContentControl text_content_control = 7;
   // One logical inline Word field represented by the public run's text as its
   // cached display result. OpenChestnut authors/imports a canonical five-run
@@ -2477,11 +2478,16 @@ message DocumentTextContentControl {
   // Meaningful only when control_type is CHECKBOX. The canonical visible
   // glyph and w14 checked/unchecked symbol declarations are codec-owned.
   bool checked = 6;
-  // Meaningful only when control_type is DROP_DOWN. Choice order, values, and
-  // display text are source-bound after import; selected_value remains
-  // editable and the visible run text is derived from its matching choice.
+  // Meaningful when control_type is DROP_DOWN or COMBO_BOX. Choice order,
+  // values, and display text are source-bound after import.
   repeated DocumentContentControlChoice choices = 7;
+  // Meaningful only when control_type is DROP_DOWN. It must match one declared
+  // choice value; the visible run text is derived from that choice.
   string selected_value = 8;
+  // Meaningful only when control_type is COMBO_BOX. It may match one declared
+  // choice value (whose display text becomes visible) or carry bounded custom
+  // text (which becomes visible verbatim).
+  string value = 9;
 }
 
 message DocumentContentControlChoice {
@@ -2494,6 +2500,7 @@ enum DocumentContentControlType {
   DOCUMENT_CONTENT_CONTROL_TYPE_PLAIN_TEXT = 1;
   DOCUMENT_CONTENT_CONTROL_TYPE_CHECKBOX = 2;
   DOCUMENT_CONTENT_CONTROL_TYPE_DROP_DOWN = 3;
+  DOCUMENT_CONTENT_CONTROL_TYPE_COMBO_BOX = 4;
 }
 
 message DocumentImage {
