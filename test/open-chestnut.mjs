@@ -134,7 +134,21 @@ document.addField("PAGE", "1");
 document.addHyperlink("Evidence", "https://example.com/evidence");
 document.addListItem("First action", { listType: "number", numberingId: 7 });
 document.addTable({ values: [["Metric", "Value"], ["Revenue", "42"]], widthDxa: 9000, columnWidthsDxa: [3600, 5400], styleId: "TableGrid" });
-document.addImage({ name: "Logo", dataUrl: png, alt: "One pixel logo", widthPx: 32, heightPx: 32 });
+document.addImage({
+  name: "Logo",
+  dataUrl: png,
+  alt: "One pixel logo",
+  widthPx: 32,
+  heightPx: 32,
+  placement: {
+    type: "floating",
+    horizontal: { relativeTo: "margin", offsetPx: 36 },
+    vertical: { relativeTo: "paragraph", offsetPx: 10 },
+    wrap: "square",
+    wrapSide: "bothSides",
+    distanceFromTextPx: { top: 0, right: 12, bottom: 4, left: 12 },
+  },
+});
 document.addSection({ breakType: "nextPage", orientation: "landscape", pageSize: { widthTwips: 15840, heightTwips: 12240 }, margins: { top: 720, right: 720, bottom: 720, left: 720 } });
 document.addComment(bodyParagraph, "Review body paragraph", { author: "Reviewer", initials: "RV", date: "2026-07-16T08:00:00Z" });
 
@@ -147,6 +161,10 @@ assert.ok(docxZip.file("word/styles.xml"));
 assert.match(await docxZip.file("word/settings.xml").async("text"), /<w:documentProtection(?=[^>]*w:edit="comments")(?=[^>]*w:enforcement="true")[^>]*\/>/);
 assert.match(await docxZip.file("word/document.xml").async("text"), /<w:sdt>[\s\S]*<w:tag w:val="OWNER"\s*\/>[\s\S]*<w:text\s*\/>[\s\S]*Ada[\s\S]*<\/w:sdt>/);
 const docxXml = await docxZip.file("word/document.xml").async("text");
+assert.match(docxXml, /<wp:anchor(?=[^>]*behindDoc="0")(?=[^>]*allowOverlap="0")[^>]*>/);
+assert.match(docxXml, /<wp:positionH relativeFrom="margin"><wp:posOffset>342900<\/wp:posOffset><\/wp:positionH>/);
+assert.match(docxXml, /<wp:positionV relativeFrom="paragraph"><wp:posOffset>95250<\/wp:posOffset><\/wp:positionV>/);
+assert.match(docxXml, /<wp:wrapSquare wrapText="bothSides"\s*\/>/);
 assert.match(docxXml, /<w:tag w:val="APPROVED"\s*\/>[\s\S]*<w14:checkbox>[\s\S]*<w14:checked w14:val="0"\s*\/>[\s\S]*☐/);
 assert.match(docxXml, /<w14:checkedState(?=[^>]*w14:val="2612")(?=[^>]*w14:font="MS Gothic")[^>]*\/>/);
 assert.match(docxXml, /<w14:uncheckedState(?=[^>]*w14:val="2610")(?=[^>]*w14:font="MS Gothic")[^>]*\/>/);
@@ -177,12 +195,52 @@ assert.equal(importedDocument.contentControls[4].controlType, "date");
 assert.equal(importedDocument.contentControls[4].dateValue, "2026-07-21");
 assert.equal(importedDocument.contentControls[5].placement, "block");
 assert.equal(importedDocument.contentControls[5].tag, "EXECUTIVE_SUMMARY");
+const importedDocumentImage = importedDocument.blocks.find((block) => block.kind === "image");
+const importedDocumentImageIndex = importedDocument.blocks.indexOf(importedDocumentImage);
+assert.equal(importedDocumentImage.placement.type, "floating");
+assert.deepEqual(importedDocumentImage.placement.horizontal, { relativeTo: "margin", offsetPx: 36 });
+assert.deepEqual(importedDocumentImage.placement.vertical, { relativeTo: "paragraph", offsetPx: 10 });
+assert.equal(importedDocumentImage.placement.wrap, "square");
+assert.equal(importedDocumentImage.placement.wrapSide, "bothSides");
+assert.deepEqual(importedDocumentImage.placement.distanceFromTextPx, { top: 0, right: 12, bottom: 4, left: 12 });
+const unchangedDocx = await exportDocxWithOpenChestnut(importedDocument);
+assert.deepEqual(Buffer.from(unchangedDocx.bytes), Buffer.from(docx.bytes));
+
+const inlineTransitionDocument = await importDocxWithOpenChestnut(docx);
+delete inlineTransitionDocument.blocks.find((block) => block.kind === "image").placement;
+await assert.rejects(
+  exportDocxWithOpenChestnut(inlineTransitionDocument),
+  (error) => error?.code === "unsupported_document_image_edit" && /inline and floating/i.test(error.message),
+);
+
+const unsupportedAnchorXml = docxXml.replace('behindDoc="0"', 'behindDoc="1"');
+assert.notEqual(unsupportedAnchorXml, docxXml);
+const unsupportedAnchorDocx = await DocumentFile.patchDocx(docx, [{ path: "word/document.xml", xml: unsupportedAnchorXml }]);
+const unsupportedAnchorDocument = await importDocxWithOpenChestnut(unsupportedAnchorDocx);
+const unsupportedAnchorBlock = unsupportedAnchorDocument.blocks[importedDocumentImageIndex];
+assert.equal(unsupportedAnchorBlock.kind, "paragraph");
+assert.equal(unsupportedAnchorBlock.textEditable, false);
+assert.match(unsupportedAnchorBlock.name, /Preserved p/i);
+const preservedUnsupportedAnchor = await exportDocxWithOpenChestnut(unsupportedAnchorDocument);
+assert.deepEqual(Buffer.from(preservedUnsupportedAnchor.bytes), Buffer.from(unsupportedAnchorDocx.bytes));
+unsupportedAnchorBlock.text = "Unsafe semantic replacement";
+await assert.rejects(
+  exportDocxWithOpenChestnut(unsupportedAnchorDocument),
+  (error) => error?.code === "unsupported_document_edit" && /read-only/i.test(error.message),
+);
 assert.deepEqual(importedDocument.fillContentControls({ OWNER: "Grace" }), { updated: 1, matchedTags: ["OWNER"], missingTags: [] });
 assert.deepEqual(importedDocument.setCheckboxContentControls({ APPROVED: true }), { updated: 1, matchedTags: ["APPROVED"], missingTags: [] });
 assert.deepEqual(importedDocument.setDropdownContentControls({ PRIORITY: "high" }), { updated: 1, matchedTags: ["PRIORITY"], missingTags: [] });
 assert.deepEqual(importedDocument.setComboBoxContentControls({ CONTACT_METHOD: "Pager duty" }), { updated: 1, matchedTags: ["CONTACT_METHOD"], missingTags: [] });
 assert.deepEqual(importedDocument.setDateContentControls({ REVIEW_DATE: "2028-02-29" }), { updated: 1, matchedTags: ["REVIEW_DATE"], missingTags: [] });
 assert.deepEqual(importedDocument.fillContentControls({ EXECUTIVE_SUMMARY: "Updated executive summary" }), { updated: 1, matchedTags: ["EXECUTIVE_SUMMARY"], missingTags: [] });
+importedDocumentImage.placement = {
+  type: "floating",
+  horizontal: { relativeTo: "page", offsetPx: 48 },
+  vertical: { relativeTo: "margin", offsetPx: 16 },
+  wrap: "topAndBottom",
+  distanceFromTextPx: { top: 6, right: 0, bottom: 8, left: 0 },
+};
 importedDocument.blocks[2].text = "Edited through OpenChestnut.";
 importedDocument.blocks[2].runs = [{ text: importedDocument.blocks[2].text, style: {} }];
 const docx2 = await exportDocxWithOpenChestnut(importedDocument);
@@ -198,6 +256,12 @@ assert.equal(importedDocument2.contentControls[4].dateValue, "2028-02-29");
 assert.equal(importedDocument2.contentControls[4].text, "2028-02-29");
 assert.equal(importedDocument2.contentControls[5].placement, "block");
 assert.equal(importedDocument2.contentControls[5].text, "Updated executive summary");
+const editedDocumentImage = importedDocument2.blocks.find((block) => block.kind === "image");
+assert.deepEqual(editedDocumentImage.placement.horizontal, { relativeTo: "page", offsetPx: 48 });
+assert.deepEqual(editedDocumentImage.placement.vertical, { relativeTo: "margin", offsetPx: 16 });
+assert.equal(editedDocumentImage.placement.wrap, "topAndBottom");
+assert.equal(editedDocumentImage.placement.wrapSide, undefined);
+assert.deepEqual(editedDocumentImage.placement.distanceFromTextPx, { top: 6, right: 0, bottom: 8, left: 0 });
 await assert.rejects(exportDocxWithOpenChestnut(document, { allowLossy: true }), /does not accept option/i);
 
 // PPTX: source-free roundRect/textbox, basic effect styling, connector arrows,

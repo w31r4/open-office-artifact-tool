@@ -2541,6 +2541,52 @@ message DocumentImage {
   string alt_text = 2;
   int64 width_emu = 3;
   int64 height_emu = 4;
+  // Absent means the established inline-picture profile. Present means one
+  // bounded foreground wp:anchor whose positioning, wrap mode, and text
+  // distances are fully semantic. Native stacking/locking/simple-position
+  // details remain codec-owned rather than leaking into the public model.
+  DocumentFloatingImagePlacement floating = 5;
+}
+
+message DocumentFloatingImagePlacement {
+  DocumentImageHorizontalRelativeFrom horizontal_relative_from = 1;
+  int64 horizontal_offset_emu = 2;
+  DocumentImageVerticalRelativeFrom vertical_relative_from = 3;
+  int64 vertical_offset_emu = 4;
+  DocumentImageWrapMode wrap_mode = 5;
+  DocumentImageWrapSide wrap_side = 6;
+  uint32 distance_top_emu = 7;
+  uint32 distance_right_emu = 8;
+  uint32 distance_bottom_emu = 9;
+  uint32 distance_left_emu = 10;
+}
+
+enum DocumentImageHorizontalRelativeFrom {
+  DOCUMENT_IMAGE_HORIZONTAL_RELATIVE_FROM_UNSPECIFIED = 0;
+  DOCUMENT_IMAGE_HORIZONTAL_RELATIVE_FROM_MARGIN = 1;
+  DOCUMENT_IMAGE_HORIZONTAL_RELATIVE_FROM_PAGE = 2;
+  DOCUMENT_IMAGE_HORIZONTAL_RELATIVE_FROM_COLUMN = 3;
+}
+
+enum DocumentImageVerticalRelativeFrom {
+  DOCUMENT_IMAGE_VERTICAL_RELATIVE_FROM_UNSPECIFIED = 0;
+  DOCUMENT_IMAGE_VERTICAL_RELATIVE_FROM_MARGIN = 1;
+  DOCUMENT_IMAGE_VERTICAL_RELATIVE_FROM_PAGE = 2;
+  DOCUMENT_IMAGE_VERTICAL_RELATIVE_FROM_PARAGRAPH = 3;
+}
+
+enum DocumentImageWrapMode {
+  DOCUMENT_IMAGE_WRAP_MODE_UNSPECIFIED = 0;
+  DOCUMENT_IMAGE_WRAP_MODE_SQUARE = 1;
+  DOCUMENT_IMAGE_WRAP_MODE_TOP_AND_BOTTOM = 2;
+}
+
+enum DocumentImageWrapSide {
+  DOCUMENT_IMAGE_WRAP_SIDE_UNSPECIFIED = 0;
+  DOCUMENT_IMAGE_WRAP_SIDE_BOTH_SIDES = 1;
+  DOCUMENT_IMAGE_WRAP_SIDE_LEFT = 2;
+  DOCUMENT_IMAGE_WRAP_SIDE_RIGHT = 3;
+  DOCUMENT_IMAGE_WRAP_SIDE_LARGEST = 4;
 }
 
 enum DocumentSectionBreak {

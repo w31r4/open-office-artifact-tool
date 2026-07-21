@@ -52,6 +52,49 @@ assert.throws(
 const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
 const jpeg = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSUNDX1BST0ZJTEUAAQEAAAHIAAAAAAQwAABtbnRyUkdCIFhZWiAH4AABAAEAAAAAAABhY3NwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAA9tYAAQAAAADTLQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAlkZXNjAAAA8AAAACRyWFlaAAABFAAAABRnWFlaAAABKAAAABRiWFlaAAABPAAAABR3dHB0AAABUAAAABRyVFJDAAABZAAAAChnVFJDAAABZAAAAChiVFJDAAABZAAAAChjcHJ0AAABjAAAADxtbHVjAAAAAAAAAAEAAAAMZW5VUwAAAAgAAAAcAHMAUgBHAEJYWVogAAAAAAAAb6IAADj1AAADkFhZWiAAAAAAAABimQAAt4UAABjaWFlaIAAAAAAAACSgAAAPhAAAts9YWVogAAAAAAAA9tYAAQAAAADTLXBhcmEAAAAAAAQAAAACZmYAAPKnAAANWQAAE9AAAApbAAAAAAAAAABtbHVjAAAAAAAAAAEAAAAMZW5VUwAAACAAAAAcAEcAbwBvAGcAbABlACAASQBuAGMALgAgADIAMAAxADb/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAACAAIDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAABQf/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCQAHTd/9k=";
 
+const floatingPlacement = {
+  type: "floating",
+  horizontal: { relativeTo: "margin", offsetPx: 240 },
+  vertical: { relativeTo: "margin", offsetPx: 24 },
+  wrap: "square",
+  wrapSide: "right",
+  distanceFromTextPx: { top: 2, right: 12, bottom: 6, left: 12 },
+};
+const floatingDocument = DocumentModel.create({ name: "Floating image model", blocks: [] });
+floatingDocument.addParagraph("Text before the floating figure.");
+const floatingImage = floatingDocument.addImage({
+  name: "floating-figure",
+  dataUrl: png,
+  alt: "Floating figure",
+  widthPx: 120,
+  heightPx: 80,
+  placement: floatingPlacement,
+});
+floatingDocument.addParagraph("Text after the floating figure.");
+assert.deepEqual(floatingImage.placement, floatingPlacement);
+assert.deepEqual(floatingImage.toProto().placement, floatingPlacement);
+const floatingLayout = floatingDocument.layoutJson();
+const floatingLayoutElement = floatingLayout.elements.find((element) => element.id === floatingImage.id);
+assert.deepEqual(floatingLayoutElement.bbox, [312, 96, 120, 80]);
+assert.equal(floatingLayoutElement.placement.wrapSide, "right");
+const floatingInspect = floatingDocument.inspect({ kind: "image,layout", maxChars: 12_000 }).ndjson
+  .trim().split("\n").map((line) => JSON.parse(line));
+assert.equal(floatingInspect.find((record) => record.kind === "image")?.placement.horizontal.relativeTo, "margin");
+const floatingPreview = await floatingDocument.render();
+assert.match(await floatingPreview.text(), /<image[^>]*x="312"[^>]*y="96"[^>]*width="120"[^>]*height="80"[^>]*aria-label="Floating figure"/);
+assert.equal(floatingDocument.verify({ visualQa: true }).ok, true);
+
+const validFloatingImage = { dataUrl: png, widthPx: 40, heightPx: 30, placement: floatingPlacement };
+assert.throws(() => floatingDocument.addImage({ ...validFloatingImage, placement: { ...floatingPlacement, zIndex: 4 } }), /unsupported field zIndex/i);
+assert.throws(() => floatingDocument.addImage({ ...validFloatingImage, placement: { ...floatingPlacement, horizontal: { relativeTo: "margin" } } }), /offsetPx is required/i);
+assert.throws(() => floatingDocument.addImage({ ...validFloatingImage, placement: { ...floatingPlacement, horizontal: { relativeTo: "margin", offsetPx: "24" } } }), /must be a number/i);
+assert.throws(() => floatingDocument.addImage({ ...validFloatingImage, placement: { ...floatingPlacement, horizontal: { relativeTo: "margin", offsetPx: 10_001 } } }), /finite pixel value/i);
+assert.throws(() => floatingDocument.addImage({ ...validFloatingImage, placement: { ...floatingPlacement, wrap: "topAndBottom", wrapSide: "left" } }), /cannot specify wrapSide/i);
+assert.throws(() => floatingDocument.addImage({ ...validFloatingImage, placement: { type: "inline", wrap: "square" } }), /cannot carry floating-image fields/i);
+floatingImage.placement.horizontal.offsetPx = Number.POSITIVE_INFINITY;
+assert.equal(floatingDocument.verify().issues.some((issue) => issue.type === "invalidImagePlacement"), true);
+floatingImage.placement.horizontal.offsetPx = 240;
+
 const document = DocumentModel.create({
   name: "OpenChestnut document profile",
   defaultRunStyle: { fontFamily: "Aptos", fontSize: 11, color: "#202020" },

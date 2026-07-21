@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
@@ -114,30 +115,24 @@ internal sealed class DocxImageAssetCatalog
 internal static class DocxImageCodec
 {
     private const string PictureUri = "http://schemas.openxmlformats.org/drawingml/2006/picture";
+    private const long MaxCoordinateEmu = 95_250_000L;
+    private const uint CanonicalRelativeHeight = 251_658_240U;
+
+    private sealed record NativeImageParts(
+        WP.Inline? Inline,
+        WP.Anchor? Anchor,
+        WP.Extent Extent,
+        WP.DocProperties DocProperties,
+        Pic.NonVisualDrawingProperties NonVisual,
+        A.Blip Blip);
 
     internal static bool TryRead(W.Paragraph paragraph, DocxPartContext context, out DocumentImage image)
     {
         image = new DocumentImage();
-        if (!DocxFormattingCodec.IsSupportedParagraphProperties(paragraph.ParagraphProperties) ||
-            paragraph.ChildElements.Any(child => child is not W.ParagraphProperties and not W.Run)) return false;
-        var runs = paragraph.Elements<W.Run>().Take(2).ToArray();
-        if (runs.Length != 1) return false;
-        var run = runs[0];
-        if (run.ChildElements.Any(child => child is not W.RunProperties and not W.Drawing)) return false;
-        var drawings = run.Elements<W.Drawing>().Take(2).ToArray();
-        if (drawings.Length != 1) return false;
-        var inlines = drawings[0].Elements<WP.Inline>().Take(2).ToArray();
-        if (inlines.Length != 1) return false;
-        var inline = inlines[0];
-        var blips = inline.Descendants<A.Blip>().Take(2).ToArray();
-        var pictures = inline.Descendants<Pic.Picture>().Take(2).ToArray();
-        if (inline.GetFirstChild<WP.Extent>() is not { } extent ||
-            inline.GetFirstChild<WP.DocProperties>() is not { } docProperties ||
-            blips.Length != 1 ||
-            blips[0].Embed?.Value is not { Length: > 0 } relationshipId ||
-            pictures.Length != 1) return false;
-        if (extent.Cx?.Value is not > 0 || extent.Cy?.Value is not > 0 ||
-            extent.Cx.Value > 95_250_000_000L || extent.Cy.Value > 95_250_000_000L) return false;
+        if (!TryParts(paragraph, out var parts) ||
+            parts.Blip.Embed?.Value is not { Length: > 0 } relationshipId ||
+            parts.Extent.Cx?.Value is not > 0 || parts.Extent.Cy?.Value is not > 0 ||
+            parts.Extent.Cx.Value > 95_250_000_000L || parts.Extent.Cy.Value > 95_250_000_000L) return false;
         try
         {
             if (context.Owner.GetPartById(relationshipId) is not ImagePart part) return false;
@@ -145,10 +140,15 @@ internal static class DocxImageCodec
             image = new DocumentImage
             {
                 AssetId = asset.Id,
-                AltText = docProperties.Description?.Value ?? string.Empty,
-                WidthEmu = extent.Cx.Value,
-                HeightEmu = extent.Cy.Value,
+                AltText = parts.DocProperties.Description?.Value ?? string.Empty,
+                WidthEmu = parts.Extent.Cx.Value,
+                HeightEmu = parts.Extent.Cy.Value,
             };
+            if (parts.Anchor is not null)
+            {
+                if (!TryReadFloating(parts.Anchor, out var floating)) return false;
+                image.Floating = floating;
+            }
             return image.AltText.Length <= 32_767;
         }
         catch (CodecException)
@@ -167,6 +167,19 @@ internal static class DocxImageCodec
         var relationshipId = context.Owner.GetIdOfPart(part);
         var drawingId = context.NextDrawingId();
         var name = string.IsNullOrWhiteSpace(source.Name) ? $"Image {drawingId}" : source.Name;
+        var graphic = BuildGraphic(source, relationshipId, drawingId, name);
+        OpenXmlElement container = source.Image.Floating is null
+            ? BuildInline(source, drawingId, name, graphic)
+            : BuildAnchor(source, drawingId, name, graphic);
+        var paragraph = new W.Paragraph();
+        var properties = DocxFormattingCodec.BuildParagraphProperties(source.StyleId, null);
+        if (properties is not null) paragraph.ParagraphProperties = properties;
+        paragraph.Append(new W.Run(new W.Drawing(container)));
+        return paragraph;
+    }
+
+    private static A.Graphic BuildGraphic(DocumentBlock source, string relationshipId, uint drawingId, string name)
+    {
         var picture = new Pic.Picture(
             new Pic.NonVisualPictureProperties(
                 new Pic.NonVisualDrawingProperties { Id = drawingId, Name = name, Description = source.Image.AltText },
@@ -179,8 +192,12 @@ internal static class DocxImageCodec
                     new A.Offset { X = 0L, Y = 0L },
                     new A.Extents { Cx = source.Image.WidthEmu, Cy = source.Image.HeightEmu }),
                 new A.PresetGeometry(new A.AdjustValueList()) { Preset = A.ShapeTypeValues.Rectangle }));
-        var graphic = new A.Graphic(new A.GraphicData(picture) { Uri = PictureUri });
-        var inline = new WP.Inline(
+        return new A.Graphic(new A.GraphicData(picture) { Uri = PictureUri });
+    }
+
+    private static WP.Inline BuildInline(DocumentBlock source, uint drawingId, string name, A.Graphic graphic)
+    {
+        return new WP.Inline(
             new WP.Extent { Cx = source.Image.WidthEmu, Cy = source.Image.HeightEmu },
             new WP.DocProperties { Id = drawingId, Name = name, Description = source.Image.AltText },
             new WP.NonVisualGraphicFrameDrawingProperties(new A.GraphicFrameLocks { NoChangeAspect = true }),
@@ -191,19 +208,45 @@ internal static class DocxImageCodec
             DistanceFromLeft = 0U,
             DistanceFromRight = 0U,
         };
-        var paragraph = new W.Paragraph();
-        var properties = DocxFormattingCodec.BuildParagraphProperties(source.StyleId, null);
-        if (properties is not null) paragraph.ParagraphProperties = properties;
-        paragraph.Append(new W.Run(new W.Drawing(inline)));
-        return paragraph;
+    }
+
+    private static WP.Anchor BuildAnchor(DocumentBlock source, uint drawingId, string name, A.Graphic graphic)
+    {
+        var floating = source.Image.Floating!;
+        var anchor = new WP.Anchor(
+            new WP.SimplePosition { X = 0L, Y = 0L },
+            BuildHorizontalPosition(floating),
+            BuildVerticalPosition(floating),
+            new WP.Extent { Cx = source.Image.WidthEmu, Cy = source.Image.HeightEmu },
+            BuildWrap(floating),
+            new WP.DocProperties { Id = drawingId, Name = name, Description = source.Image.AltText },
+            new WP.NonVisualGraphicFrameDrawingProperties(new A.GraphicFrameLocks { NoChangeAspect = true }),
+            graphic)
+        {
+            DistanceFromTop = floating.DistanceTopEmu,
+            DistanceFromRight = floating.DistanceRightEmu,
+            DistanceFromBottom = floating.DistanceBottomEmu,
+            DistanceFromLeft = floating.DistanceLeftEmu,
+            SimplePos = false,
+            RelativeHeight = CanonicalRelativeHeight,
+            BehindDoc = false,
+            Locked = false,
+            LayoutInCell = true,
+            AllowOverlap = false,
+        };
+        return anchor;
     }
 
     internal static void Apply(W.Paragraph paragraph, DocumentBlock requested, DocxPartContext context)
     {
         Validate(requested.Image, requested.Id, context.Images);
-        if (!TryParts(paragraph, out var extent, out var docProperties, out var nonVisual, out var blip))
-            throw new CodecException("unsupported_document_edit", $"Document image {requested.Id} no longer matches the editable inline-picture profile.", "word/document.xml");
-        var relationshipId = blip.Embed?.Value ?? string.Empty;
+        if (!TryParts(paragraph, out var parts))
+            throw new CodecException("unsupported_document_edit", $"Document image {requested.Id} no longer matches the editable inline/floating-picture profile.", "word/document.xml");
+        if ((parts.Anchor is null) != (requested.Image.Floating is null))
+            throw new CodecException("unsupported_document_image_edit", $"Document image {requested.Id} cannot change between inline and floating placement after import.", "word/document.xml");
+        if (parts.Anchor is not null && !TryReadFloating(parts.Anchor, out _))
+            throw new CodecException("unsupported_document_image_edit", $"Document image {requested.Id} floating source graph is outside the editable profile.", "word/document.xml");
+        var relationshipId = parts.Blip.Embed?.Value ?? string.Empty;
         if (context.Owner.GetPartById(relationshipId) is not ImagePart part)
             throw new CodecException("document_source_binding_mismatch", $"Document image {requested.Id} relationship does not resolve to an Image part.", "word/document.xml");
         var replacement = context.Images!.Get(requested.Image.AssetId);
@@ -220,16 +263,17 @@ internal static class DocxImageCodec
         paragraphProperties.ParagraphStyleId = string.IsNullOrWhiteSpace(requested.StyleId)
             ? null
             : new W.ParagraphStyleId { Val = requested.StyleId };
-        extent.Cx = requested.Image.WidthEmu;
-        extent.Cy = requested.Image.HeightEmu;
-        docProperties.Description = requested.Image.AltText;
-        nonVisual.Description = requested.Image.AltText;
+        parts.Extent.Cx = requested.Image.WidthEmu;
+        parts.Extent.Cy = requested.Image.HeightEmu;
+        parts.DocProperties.Description = requested.Image.AltText;
+        parts.NonVisual.Description = requested.Image.AltText;
         var transform = paragraph.Descendants<A.Transform2D>().SingleOrDefault();
         if (transform?.Extents is { } nativeExtent)
         {
             nativeExtent.Cx = requested.Image.WidthEmu;
             nativeExtent.Cy = requested.Image.HeightEmu;
         }
+        if (parts.Anchor is not null) ApplyFloating(parts.Anchor, requested.Image.Floating!);
     }
 
     internal static void Validate(DocumentImage? image, string blockId, DocxImageAssetCatalog? assets)
@@ -241,29 +285,220 @@ internal static class DocxImageCodec
         if (image.AltText.Length > 32_767 || image.AltText.Any(char.IsControl)) throw Invalid(blockId, "alternative text must contain at most 32767 characters without controls");
         if (image.WidthEmu is <= 0 or > 95_250_000_000L || image.HeightEmu is <= 0 or > 95_250_000_000L)
             throw Invalid(blockId, "width and height must be positive bounded EMU values");
+        if (image.Floating is not null) ValidateFloating(image.Floating, blockId);
     }
 
-    private static bool TryParts(
-        W.Paragraph paragraph,
-        out WP.Extent extent,
-        out WP.DocProperties docProperties,
-        out Pic.NonVisualDrawingProperties nonVisual,
-        out A.Blip blip)
+    private static bool TryParts(W.Paragraph paragraph, out NativeImageParts parts)
     {
-        extent = null!;
-        docProperties = null!;
-        nonVisual = null!;
-        blip = null!;
-        var inline = paragraph.Descendants<WP.Inline>().SingleOrDefault();
-        if (inline?.GetFirstChild<WP.Extent>() is not { } nativeExtent ||
-            inline.GetFirstChild<WP.DocProperties>() is not { } nativeProperties ||
-            inline.Descendants<Pic.NonVisualDrawingProperties>().SingleOrDefault() is not { } nativeNonVisual ||
-            inline.Descendants<A.Blip>().SingleOrDefault() is not { Embed.Value: { Length: > 0 } } nativeBlip) return false;
-        extent = nativeExtent;
-        docProperties = nativeProperties;
-        nonVisual = nativeNonVisual;
-        blip = nativeBlip;
+        parts = null!;
+        if (!DocxFormattingCodec.IsSupportedParagraphProperties(paragraph.ParagraphProperties) ||
+            paragraph.ChildElements.Any(child => child is not W.ParagraphProperties and not W.Run)) return false;
+        var runs = paragraph.Elements<W.Run>().Take(2).ToArray();
+        if (runs.Length != 1 || runs[0].ChildElements.Any(child => child is not W.RunProperties and not W.Drawing)) return false;
+        var drawings = runs[0].Elements<W.Drawing>().Take(2).ToArray();
+        if (drawings.Length != 1 || drawings[0].ChildElements.Any(child => child is not WP.Inline and not WP.Anchor)) return false;
+        var inlines = drawings[0].Elements<WP.Inline>().Take(2).ToArray();
+        var anchors = drawings[0].Elements<WP.Anchor>().Take(2).ToArray();
+        if (inlines.Length + anchors.Length != 1) return false;
+        var inline = inlines.SingleOrDefault();
+        var anchor = anchors.SingleOrDefault();
+        OpenXmlElement container = (OpenXmlElement?)inline ?? anchor!;
+        var extents = container.Elements<WP.Extent>().Take(2).ToArray();
+        var documentProperties = container.Elements<WP.DocProperties>().Take(2).ToArray();
+        var blips = container.Descendants<A.Blip>().Take(2).ToArray();
+        var pictures = container.Descendants<Pic.Picture>().Take(2).ToArray();
+        var nonVisuals = container.Descendants<Pic.NonVisualDrawingProperties>().Take(2).ToArray();
+        if (extents.Length != 1 || documentProperties.Length != 1 ||
+            nonVisuals.Length != 1 || blips.Length != 1 || blips[0].Embed?.Value is not { Length: > 0 } || pictures.Length != 1) return false;
+        parts = new NativeImageParts(inline, anchor, extents[0], documentProperties[0], nonVisuals[0], blips[0]);
         return true;
+    }
+
+    private static bool TryReadFloating(WP.Anchor anchor, out DocumentFloatingImagePlacement floating)
+    {
+        floating = new DocumentFloatingImagePlacement();
+        if (anchor.SimplePos?.Value != false || anchor.BehindDoc?.Value != false || anchor.Locked?.Value != false ||
+            anchor.LayoutInCell?.Value != true || anchor.AllowOverlap?.Value != false || anchor.Hidden?.Value == true ||
+            anchor.RelativeHeight?.Value is null || anchor.ExtendedAttributes.Any() ||
+            anchor.ChildElements.Any(child => child is not WP.SimplePosition and not WP.HorizontalPosition and not WP.VerticalPosition and
+                not WP.Extent and not WP.EffectExtent and not WP.WrapSquare and not WP.WrapTopBottom and not WP.DocProperties and
+                not WP.NonVisualGraphicFrameDrawingProperties and not A.Graphic)) return false;
+        var simplePositions = anchor.Elements<WP.SimplePosition>().Take(2).ToArray();
+        var horizontalPositions = anchor.Elements<WP.HorizontalPosition>().Take(2).ToArray();
+        var verticalPositions = anchor.Elements<WP.VerticalPosition>().Take(2).ToArray();
+        var effectExtents = anchor.Elements<WP.EffectExtent>().Take(2).ToArray();
+        if (simplePositions.Length != 1 || simplePositions[0] is not { X.Value: 0, Y.Value: 0 } ||
+            simplePositions[0].ExtendedAttributes.Any() || simplePositions[0].ChildElements.Count != 0 ||
+            horizontalPositions.Length != 1 || verticalPositions.Length != 1 ||
+            horizontalPositions[0] is not { } horizontal || verticalPositions[0] is not { } vertical ||
+            horizontal.ExtendedAttributes.Any() || vertical.ExtendedAttributes.Any() ||
+            !TryPositionOffset(horizontal, out var horizontalOffset) || !TryPositionOffset(vertical, out var verticalOffset) ||
+            effectExtents.Length > 1 || effectExtents.Any(effect => effect.ExtendedAttributes.Any() ||
+                effect.ChildElements.Count != 0 || effect.GetAttributes().Any(attribute => attribute.Value != "0"))) return false;
+        if (!TryHorizontalReference(horizontal.RelativeFrom?.Value, out var horizontalReference) ||
+            !TryVerticalReference(vertical.RelativeFrom?.Value, out var verticalReference) ||
+            !TryWrap(anchor, out var wrapMode, out var wrapSide)) return false;
+        floating = new DocumentFloatingImagePlacement
+        {
+            HorizontalRelativeFrom = horizontalReference,
+            HorizontalOffsetEmu = horizontalOffset,
+            VerticalRelativeFrom = verticalReference,
+            VerticalOffsetEmu = verticalOffset,
+            WrapMode = wrapMode,
+            WrapSide = wrapSide,
+            DistanceTopEmu = anchor.DistanceFromTop?.Value ?? 0U,
+            DistanceRightEmu = anchor.DistanceFromRight?.Value ?? 0U,
+            DistanceBottomEmu = anchor.DistanceFromBottom?.Value ?? 0U,
+            DistanceLeftEmu = anchor.DistanceFromLeft?.Value ?? 0U,
+        };
+        try
+        {
+            ValidateFloating(floating, "source");
+            return true;
+        }
+        catch (CodecException)
+        {
+            floating = new DocumentFloatingImagePlacement();
+            return false;
+        }
+    }
+
+    private static bool TryPositionOffset(OpenXmlCompositeElement position, out long value)
+    {
+        value = 0;
+        var offsets = position.Elements<WP.PositionOffset>().Take(2).ToArray();
+        return offsets.Length == 1 && position.ChildElements.Count == 1 &&
+            !offsets[0].ExtendedAttributes.Any() && offsets[0].ChildElements.Count == 0 &&
+            long.TryParse(offsets[0].Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out value) &&
+            value >= -MaxCoordinateEmu && value <= MaxCoordinateEmu;
+    }
+
+    private static bool TryWrap(WP.Anchor anchor, out DocumentImageWrapMode mode, out DocumentImageWrapSide side)
+    {
+        mode = DocumentImageWrapMode.Unspecified;
+        side = DocumentImageWrapSide.Unspecified;
+        var squares = anchor.Elements<WP.WrapSquare>().Take(2).ToArray();
+        var topBottom = anchor.Elements<WP.WrapTopBottom>().Take(2).ToArray();
+        if (squares.Length + topBottom.Length != 1) return false;
+        if (squares.Length == 1)
+        {
+            if (squares[0].ChildElements.Count != 0 || squares[0].ExtendedAttributes.Any() ||
+                !TryWrapSide(squares[0].WrapText?.Value, out side)) return false;
+            mode = DocumentImageWrapMode.Square;
+            return true;
+        }
+        if (topBottom[0].ChildElements.Count != 0 || topBottom[0].GetAttributes().Count != 0 || topBottom[0].ExtendedAttributes.Any()) return false;
+        mode = DocumentImageWrapMode.TopAndBottom;
+        return true;
+    }
+
+    private static WP.HorizontalPosition BuildHorizontalPosition(DocumentFloatingImagePlacement value) =>
+        new(new WP.PositionOffset(value.HorizontalOffsetEmu.ToString(CultureInfo.InvariantCulture)))
+        {
+            RelativeFrom = value.HorizontalRelativeFrom switch
+            {
+                DocumentImageHorizontalRelativeFrom.Margin => WP.HorizontalRelativePositionValues.Margin,
+                DocumentImageHorizontalRelativeFrom.Page => WP.HorizontalRelativePositionValues.Page,
+                DocumentImageHorizontalRelativeFrom.Column => WP.HorizontalRelativePositionValues.Column,
+                _ => throw Invalid("floating", "horizontal reference is unsupported"),
+            },
+        };
+
+    private static WP.VerticalPosition BuildVerticalPosition(DocumentFloatingImagePlacement value) =>
+        new(new WP.PositionOffset(value.VerticalOffsetEmu.ToString(CultureInfo.InvariantCulture)))
+        {
+            RelativeFrom = value.VerticalRelativeFrom switch
+            {
+                DocumentImageVerticalRelativeFrom.Margin => WP.VerticalRelativePositionValues.Margin,
+                DocumentImageVerticalRelativeFrom.Page => WP.VerticalRelativePositionValues.Page,
+                DocumentImageVerticalRelativeFrom.Paragraph => WP.VerticalRelativePositionValues.Paragraph,
+                _ => throw Invalid("floating", "vertical reference is unsupported"),
+            },
+        };
+
+    private static OpenXmlElement BuildWrap(DocumentFloatingImagePlacement value) => value.WrapMode switch
+    {
+        DocumentImageWrapMode.Square => new WP.WrapSquare { WrapText = value.WrapSide switch
+        {
+            DocumentImageWrapSide.BothSides => WP.WrapTextValues.BothSides,
+            DocumentImageWrapSide.Left => WP.WrapTextValues.Left,
+            DocumentImageWrapSide.Right => WP.WrapTextValues.Right,
+            DocumentImageWrapSide.Largest => WP.WrapTextValues.Largest,
+            _ => throw Invalid("floating", "square wrap side is unsupported"),
+        } },
+        DocumentImageWrapMode.TopAndBottom => new WP.WrapTopBottom(),
+        _ => throw Invalid("floating", "wrap mode is unsupported"),
+    };
+
+    private static void ApplyFloating(WP.Anchor anchor, DocumentFloatingImagePlacement value)
+    {
+        anchor.HorizontalPosition = BuildHorizontalPosition(value);
+        anchor.VerticalPosition = BuildVerticalPosition(value);
+        anchor.DistanceFromTop = value.DistanceTopEmu;
+        anchor.DistanceFromRight = value.DistanceRightEmu;
+        anchor.DistanceFromBottom = value.DistanceBottomEmu;
+        anchor.DistanceFromLeft = value.DistanceLeftEmu;
+        var currentWrap = anchor.ChildElements.Single(child => child is WP.WrapSquare or WP.WrapTopBottom);
+        anchor.ReplaceChild(BuildWrap(value), currentWrap);
+    }
+
+    private static void ValidateFloating(DocumentFloatingImagePlacement value, string blockId)
+    {
+        if (value.HorizontalRelativeFrom is not (DocumentImageHorizontalRelativeFrom.Margin or DocumentImageHorizontalRelativeFrom.Page or DocumentImageHorizontalRelativeFrom.Column))
+            throw Invalid(blockId, "floating horizontal reference must be margin, page, or column");
+        if (value.VerticalRelativeFrom is not (DocumentImageVerticalRelativeFrom.Margin or DocumentImageVerticalRelativeFrom.Page or DocumentImageVerticalRelativeFrom.Paragraph))
+            throw Invalid(blockId, "floating vertical reference must be margin, page, or paragraph");
+        if (value.HorizontalOffsetEmu < -MaxCoordinateEmu || value.HorizontalOffsetEmu > MaxCoordinateEmu ||
+            value.VerticalOffsetEmu < -MaxCoordinateEmu || value.VerticalOffsetEmu > MaxCoordinateEmu)
+            throw Invalid(blockId, "floating offsets exceed the bounded coordinate range");
+        if (value.DistanceTopEmu > MaxCoordinateEmu || value.DistanceRightEmu > MaxCoordinateEmu ||
+            value.DistanceBottomEmu > MaxCoordinateEmu || value.DistanceLeftEmu > MaxCoordinateEmu)
+            throw Invalid(blockId, "floating text distances exceed the bounded coordinate range");
+        if (value.WrapMode == DocumentImageWrapMode.Square &&
+            value.WrapSide is not (DocumentImageWrapSide.BothSides or DocumentImageWrapSide.Left or DocumentImageWrapSide.Right or DocumentImageWrapSide.Largest))
+            throw Invalid(blockId, "square wrap requires a supported side");
+        if (value.WrapMode == DocumentImageWrapMode.TopAndBottom && value.WrapSide != DocumentImageWrapSide.Unspecified)
+            throw Invalid(blockId, "top-and-bottom wrap cannot carry a square-wrap side");
+        if (value.WrapMode is not (DocumentImageWrapMode.Square or DocumentImageWrapMode.TopAndBottom))
+            throw Invalid(blockId, "floating wrap mode must be square or top-and-bottom");
+    }
+
+    private static bool TryHorizontalReference(WP.HorizontalRelativePositionValues? value, out DocumentImageHorizontalRelativeFrom result)
+    {
+        result = value == WP.HorizontalRelativePositionValues.Margin
+            ? DocumentImageHorizontalRelativeFrom.Margin
+            : value == WP.HorizontalRelativePositionValues.Page
+                ? DocumentImageHorizontalRelativeFrom.Page
+                : value == WP.HorizontalRelativePositionValues.Column
+                    ? DocumentImageHorizontalRelativeFrom.Column
+                    : DocumentImageHorizontalRelativeFrom.Unspecified;
+        return result != DocumentImageHorizontalRelativeFrom.Unspecified;
+    }
+
+    private static bool TryVerticalReference(WP.VerticalRelativePositionValues? value, out DocumentImageVerticalRelativeFrom result)
+    {
+        result = value == WP.VerticalRelativePositionValues.Margin
+            ? DocumentImageVerticalRelativeFrom.Margin
+            : value == WP.VerticalRelativePositionValues.Page
+                ? DocumentImageVerticalRelativeFrom.Page
+                : value == WP.VerticalRelativePositionValues.Paragraph
+                    ? DocumentImageVerticalRelativeFrom.Paragraph
+                    : DocumentImageVerticalRelativeFrom.Unspecified;
+        return result != DocumentImageVerticalRelativeFrom.Unspecified;
+    }
+
+    private static bool TryWrapSide(WP.WrapTextValues? value, out DocumentImageWrapSide result)
+    {
+        result = value == WP.WrapTextValues.BothSides
+            ? DocumentImageWrapSide.BothSides
+            : value == WP.WrapTextValues.Left
+                ? DocumentImageWrapSide.Left
+                : value == WP.WrapTextValues.Right
+                    ? DocumentImageWrapSide.Right
+                    : value == WP.WrapTextValues.Largest
+                        ? DocumentImageWrapSide.Largest
+                        : DocumentImageWrapSide.Unspecified;
+        return result != DocumentImageWrapSide.Unspecified;
     }
 
     private static CodecException Invalid(string blockId, string message) =>

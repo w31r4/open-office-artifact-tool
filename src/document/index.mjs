@@ -726,6 +726,63 @@ class DocumentCitationBlock {
   toProto() { return { kind: "citation", id: this.id, name: this.name, styleId: this.styleId, text: this.text, metadata: this.metadata }; }
 }
 
+const DOCUMENT_IMAGE_HORIZONTAL_REFERENCES = new Set(["margin", "page", "column"]);
+const DOCUMENT_IMAGE_VERTICAL_REFERENCES = new Set(["margin", "page", "paragraph"]);
+const DOCUMENT_IMAGE_WRAP_MODES = new Set(["square", "topAndBottom"]);
+const DOCUMENT_IMAGE_WRAP_SIDES = new Set(["bothSides", "left", "right", "largest"]);
+const DOCUMENT_IMAGE_PLACEMENT_KEYS = new Set(["type", "horizontal", "vertical", "wrap", "wrapSide", "distanceFromTextPx"]);
+const DOCUMENT_IMAGE_AXIS_KEYS = new Set(["relativeTo", "offsetPx"]);
+const DOCUMENT_IMAGE_DISTANCE_KEYS = new Set(["top", "right", "bottom", "left"]);
+
+function assertDocumentImageObjectKeys(value, allowed, label) {
+  for (const key of Object.keys(value)) if (!allowed.has(key)) throw new TypeError(`${label} contains unsupported field ${key}.`);
+}
+
+function documentImagePlacementNumber(value, label, { min = -10_000, max = 10_000 } = {}) {
+  if (typeof value !== "number") throw new TypeError(`${label} must be a number.`);
+  const number = value;
+  if (!Number.isFinite(number) || number < min || number > max || !Number.isSafeInteger(Math.round(number * 9_525))) {
+    throw new TypeError(`${label} must be a finite pixel value from ${min} through ${max}.`);
+  }
+  return number;
+}
+
+function normalizeDocumentImageAxis(value, allowedReferences, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError(`${label} must be an object.`);
+  assertDocumentImageObjectKeys(value, DOCUMENT_IMAGE_AXIS_KEYS, label);
+  const relativeTo = String(value.relativeTo || "");
+  if (!allowedReferences.has(relativeTo)) throw new TypeError(`${label}.relativeTo is unsupported.`);
+  if (!Object.hasOwn(value, "offsetPx")) throw new TypeError(`${label}.offsetPx is required.`);
+  return { relativeTo, offsetPx: documentImagePlacementNumber(value.offsetPx, `${label}.offsetPx`) };
+}
+
+function normalizeDocumentImagePlacement(value) {
+  if (value == null) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Document image placement must be an object.");
+  assertDocumentImageObjectKeys(value, DOCUMENT_IMAGE_PLACEMENT_KEYS, "Document image placement");
+  const type = String(value.type || "");
+  if (type === "inline") {
+    if (Object.keys(value).some((key) => key !== "type")) throw new TypeError("Inline document image placement cannot carry floating-image fields.");
+    return undefined;
+  }
+  if (type !== "floating") throw new TypeError("Document image placement.type must be inline or floating.");
+  const horizontal = normalizeDocumentImageAxis(value.horizontal, DOCUMENT_IMAGE_HORIZONTAL_REFERENCES, "Document image horizontal placement");
+  const vertical = normalizeDocumentImageAxis(value.vertical, DOCUMENT_IMAGE_VERTICAL_REFERENCES, "Document image vertical placement");
+  const wrap = String(value.wrap || "");
+  if (!DOCUMENT_IMAGE_WRAP_MODES.has(wrap)) throw new TypeError("Document floating image wrap must be square or topAndBottom.");
+  const wrapSide = value.wrapSide == null ? (wrap === "square" ? "bothSides" : undefined) : String(value.wrapSide);
+  if (wrap === "square" && !DOCUMENT_IMAGE_WRAP_SIDES.has(wrapSide)) throw new TypeError("Document square-wrap image requires wrapSide bothSides, left, right, or largest.");
+  if (wrap === "topAndBottom" && wrapSide !== undefined) throw new TypeError("Document topAndBottom image placement cannot specify wrapSide.");
+  const sourceDistance = value.distanceFromTextPx ?? {};
+  if (!sourceDistance || typeof sourceDistance !== "object" || Array.isArray(sourceDistance)) throw new TypeError("Document image distanceFromTextPx must be an object.");
+  assertDocumentImageObjectKeys(sourceDistance, DOCUMENT_IMAGE_DISTANCE_KEYS, "Document image distanceFromTextPx");
+  const distanceFromTextPx = Object.fromEntries([...DOCUMENT_IMAGE_DISTANCE_KEYS].map((side) => [
+    side,
+    documentImagePlacementNumber(sourceDistance[side] ?? 0, `Document image distanceFromTextPx.${side}`, { min: 0, max: 10_000 }),
+  ]));
+  return { type, horizontal, vertical, wrap, wrapSide, distanceFromTextPx };
+}
+
 class DocumentImageBlock {
   constructor(document, config = {}) {
     this.document = document;
@@ -739,10 +796,12 @@ class DocumentImageBlock {
     this.widthPx = Number(config.widthPx || config.width || 240);
     this.heightPx = Number(config.heightPx || config.height || 160);
     this.styleId = config.styleId || config.style || "Normal";
+    const placement = normalizeDocumentImagePlacement(config.placement);
+    if (placement) this.placement = placement;
   }
 
-  inspectRecord(index) { return { kind: "image", id: this.id, index, name: this.name || undefined, styleId: this.styleId, alt: this.alt, uri: this.uri, prompt: this.prompt, widthPx: this.widthPx, heightPx: this.heightPx, hasDataUrl: Boolean(this.dataUrl) }; }
-  toProto() { return { kind: "image", id: this.id, name: this.name, styleId: this.styleId, dataUrl: this.dataUrl, uri: this.uri, prompt: this.prompt, alt: this.alt, widthPx: this.widthPx, heightPx: this.heightPx }; }
+  inspectRecord(index) { return { kind: "image", id: this.id, index, name: this.name || undefined, styleId: this.styleId, alt: this.alt, uri: this.uri, prompt: this.prompt, widthPx: this.widthPx, heightPx: this.heightPx, placement: normalizeDocumentImagePlacement(this.placement), hasDataUrl: Boolean(this.dataUrl) }; }
+  toProto() { return { kind: "image", id: this.id, name: this.name, styleId: this.styleId, dataUrl: this.dataUrl, uri: this.uri, prompt: this.prompt, alt: this.alt, widthPx: this.widthPx, heightPx: this.heightPx, placement: normalizeDocumentImagePlacement(this.placement) }; }
 }
 
 class DocumentSectionBlock {
@@ -826,7 +885,13 @@ class DocumentComment {
 
 function documentBlockHeight(document, block, pageWidth = 612, margin = 72) {
   if (block.kind === "table") return Math.max(24, block.rows * 24 + 16);
-  if (block.kind === "image") return Math.max(32, Math.min(360, Number(block.heightPx) || 160)) + 20;
+  if (block.kind === "image") {
+    const imageHeight = Math.max(16, Math.min(360, Number(block.heightPx) || 160));
+    const placement = normalizeDocumentImagePlacement(block.placement);
+    if (!placement) return Math.max(32, imageHeight) + 20;
+    if (placement.vertical.relativeTo !== "paragraph" || placement.vertical.offsetPx < 0) return 20;
+    return Math.max(20, placement.vertical.offsetPx + imageHeight + placement.distanceFromTextPx.bottom);
+  }
   if (block.kind === "section") return 34;
   if (block.kind === "change") return 22;
   const style = document.styles.effective(block.styleId) || document.styles.get("Normal") || {};
@@ -893,7 +958,18 @@ function documentLayoutJson(document, options = {}) {
     const comments = document.comments.filter((comment) => comment.targetId === block.id).map((comment) => comment.id);
     const effectiveStyle = block.styleId ? document.styles.effective(block.styleId) : undefined;
     const runs = block.kind === "paragraph" && block.runs?.length ? block.runs.map((run) => ({ text: run.text, style: documentEffectiveRunStyle(document, block, run) })) : undefined;
-    elements.push({ kind: "layoutElement", id: block.id, layoutId: `${block.id}/layout`, blockKind: block.kind, name: block.name || undefined, textRangeId: ("text" in block || "display" in block) ? `${block.id}/text` : undefined, commentIds: comments.length ? comments : undefined, page, bbox: [margin, y, pageWidth - margin * 2, height], styleId: block.styleId, effectiveStyle, runs, textPreview });
+    const placement = block.kind === "image" ? normalizeDocumentImagePlacement(block.placement) : undefined;
+    const imageWidth = block.kind === "image" ? Math.max(16, Number(block.widthPx) || 240) : undefined;
+    const imageHeight = block.kind === "image" ? Math.max(16, Number(block.heightPx) || 160) : undefined;
+    const bbox = placement
+      ? [
+          (placement.horizontal.relativeTo === "page" ? 0 : margin) + placement.horizontal.offsetPx,
+          (placement.vertical.relativeTo === "page" ? 0 : placement.vertical.relativeTo === "margin" ? margin : y) + placement.vertical.offsetPx,
+          imageWidth,
+          imageHeight,
+        ]
+      : [margin, y, pageWidth - margin * 2, height];
+    elements.push({ kind: "layoutElement", id: block.id, layoutId: `${block.id}/layout`, blockKind: block.kind, name: block.name || undefined, textRangeId: ("text" in block || "display" in block) ? `${block.id}/text` : undefined, commentIds: comments.length ? comments : undefined, page, bbox, placement, styleId: block.styleId, effectiveStyle, runs, textPreview });
     y += height;
     if (block.kind === "section") {
       sectionIndex += 1;
@@ -1541,6 +1617,8 @@ export class DocumentModel {
         if (!block.dataUrl && !block.uri && !block.prompt) issues.push(verificationIssue("document", "emptyImage", `Image ${block.id} has no dataUrl, uri, or prompt.`, { id: block.id }));
         if (block.dataUrl && !imageDataFromDataUrl(block.dataUrl)) issues.push(verificationIssue("document", "invalidImageDataUrl", `Image ${block.id} has an unsupported data URL.`, { id: block.id }));
         if (!Number.isFinite(block.widthPx) || !Number.isFinite(block.heightPx) || block.widthPx <= 0 || block.heightPx <= 0) issues.push(verificationIssue("document", "invalidImageDimensions", `Image ${block.id} has invalid dimensions.`, { id: block.id, widthPx: block.widthPx, heightPx: block.heightPx }));
+        try { normalizeDocumentImagePlacement(block.placement); }
+        catch (error) { issues.push(verificationIssue("document", "invalidImagePlacement", `Image ${block.id} has invalid placement: ${error.message}`, { id: block.id, placement: block.placement })); }
       }
       if (block.kind === "section") {
         if (!["portrait", "landscape"].includes(block.orientation)) issues.push(verificationIssue("document", "invalidSectionOrientation", `Section ${block.id} has invalid orientation ${block.orientation}.`, { id: block.id, orientation: block.orientation }));
@@ -1708,16 +1786,21 @@ export class DocumentModel {
         parts.push(`<text x="${margin}" y="${y}" font-family="Arial" font-size="11" fill="#475569">${xmlEscape(block.text)}</text>`);
         y += 20;
       } else if (block.kind === "image") {
-        const imageWidth = Math.max(16, Math.min(width - margin * 2, Number(block.widthPx) || 240));
-        const imageHeight = Math.max(16, Math.min(360, Number(block.heightPx) || 160));
+        const placement = normalizeDocumentImagePlacement(block.placement);
+        const imageWidth = placement ? Math.max(16, Number(block.widthPx) || 240) : Math.max(16, Math.min(width - margin * 2, Number(block.widthPx) || 240));
+        const imageHeight = placement ? Math.max(16, Number(block.heightPx) || 160) : Math.max(16, Math.min(360, Number(block.heightPx) || 160));
+        const imageX = placement ? (placement.horizontal.relativeTo === "page" ? 0 : margin) + placement.horizontal.offsetPx : margin;
+        const imageY = placement ? (placement.vertical.relativeTo === "page" ? 0 : placement.vertical.relativeTo === "margin" ? margin : y) + placement.vertical.offsetPx : y;
         if (block.dataUrl) {
-          parts.push(`<image href="${attrEscape(block.dataUrl)}" x="${margin}" y="${y}" width="${imageWidth}" height="${imageHeight}" preserveAspectRatio="xMidYMid meet"/>`);
-          parts.push(`<text x="${margin}" y="${y + imageHeight + 14}" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(block.alt || block.name || "image")}</text>`);
+          parts.push(`<image href="${attrEscape(block.dataUrl)}" x="${imageX}" y="${imageY}" width="${imageWidth}" height="${imageHeight}" preserveAspectRatio="xMidYMid meet" aria-label="${attrEscape(block.alt || block.name || "image")}"/>`);
+          if (!placement) parts.push(`<text x="${margin}" y="${y + imageHeight + 14}" font-family="Arial" font-size="10" fill="#475569">${xmlEscape(block.alt || block.name || "image")}</text>`);
         } else {
-          parts.push(`<rect x="${margin}" y="${y}" width="${imageWidth}" height="${imageHeight}" fill="#fef3c7" stroke="#f59e0b"/>`);
-          parts.push(`<text x="${margin + 8}" y="${y + 18}" font-family="Arial" font-size="11" fill="#92400e">${xmlEscape(block.alt || block.prompt || block.uri || block.name || "image")}</text>`);
+          parts.push(`<rect x="${imageX}" y="${imageY}" width="${imageWidth}" height="${imageHeight}" fill="#fef3c7" stroke="#f59e0b"/>`);
+          parts.push(`<text x="${imageX + 8}" y="${imageY + 18}" font-family="Arial" font-size="11" fill="#92400e">${xmlEscape(block.alt || block.prompt || block.uri || block.name || "image")}</text>`);
         }
-        y += imageHeight + (block.dataUrl ? 36 : 20);
+        if (!placement) y += imageHeight + (block.dataUrl ? 36 : 20);
+        else if (placement.vertical.relativeTo === "paragraph" && placement.vertical.offsetPx >= 0) y = Math.max(y + 20, imageY + imageHeight + placement.distanceFromTextPx.bottom + 16);
+        else y += 20;
       } else if (block.kind === "section") {
         parts.push(`<line x1="${margin}" x2="${width - margin}" y1="${y}" y2="${y}" stroke="#94a3b8" stroke-dasharray="4 4"/>`);
         parts.push(`<text x="${margin}" y="${y + 16}" font-family="Arial" font-size="10" fill="#64748b">section break: ${xmlEscape(block.breakType)} ${xmlEscape(block.orientation)} ${block.pageSize.widthTwips}x${block.pageSize.heightTwips}</text>`);

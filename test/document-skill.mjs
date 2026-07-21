@@ -90,6 +90,28 @@ try {
   assert.match(businessXml, /<w:sectPr>/);
   assert.match(await fs.readFile(business.qa.summary.files.packageInspect, "utf8"), /word\/document\.xml/);
 
+  const floating = await runFixture("open-chestnut-floating-image", {
+    nativeRender: nativeStatus.available ? "required" : "auto",
+  });
+  const floatingDocument = await DocumentFile.importDocx(await FileBlob.load(floating.docxPath));
+  const floatingImage = floatingDocument.blocks.find((block) => block.kind === "image");
+  assert.deepEqual(floatingImage?.placement.horizontal, { relativeTo: "page", offsetPx: 150 });
+  assert.deepEqual(floatingImage?.placement.vertical, { relativeTo: "paragraph", offsetPx: 0 });
+  assert.equal(floatingImage?.placement.wrap, "topAndBottom");
+  assert.equal(floatingImage?.placement.wrapSide, undefined);
+  assert.deepEqual(floatingImage?.placement.distanceFromTextPx, { top: 8, right: 0, bottom: 8, left: 0 });
+  assert.equal(floating.qa.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+  if (nativeStatus.available) {
+    assert.equal(floating.qa.summary.nativeRender.ok, true);
+    assert.ok(floating.qa.summary.nativeRender.pages.length >= 1);
+  }
+  const floatingZip = await JSZip.loadAsync(await fs.readFile(floating.docxPath));
+  const floatingXml = await floatingZip.file("word/document.xml").async("text");
+  assert.match(floatingXml, /<wp:anchor(?=[^>]*behindDoc="0")(?=[^>]*allowOverlap="0")[^>]*>/);
+  assert.match(floatingXml, /<wp:positionH relativeFrom="page"><wp:posOffset>1428750<\/wp:posOffset><\/wp:positionH>/);
+  assert.match(floatingXml, /<wp:positionV relativeFrom="paragraph"><wp:posOffset>0<\/wp:posOffset><\/wp:positionV>/);
+  assert.match(floatingXml, /<wp:wrapTopAndBottom\s*\/>/);
+
   const merged = await runFixture("open-chestnut-merged-table");
   const mergedDocument = await DocumentFile.importDocx(await FileBlob.load(merged.docxPath));
   const mergedTable = mergedDocument.blocks.find((block) => block.kind === "table");

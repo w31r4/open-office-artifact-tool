@@ -187,6 +187,7 @@ internal static class DocxCodec
         stream.Write(sourceBytes);
         stream.Position = 0;
         DocxPartContext? context = null;
+        var mainDocumentChanged = false;
         // Only explicitly saved modeled parts may be serialized. AutoSave
         // would normalize every SDK DOM we inspected (including preserved
         // styles, headers, and settings) even when the caller made no edit.
@@ -317,6 +318,7 @@ internal static class DocxCodec
                             $"Document block {ordinal} contains no safely patchable plain source text node.",
                             "word/document.xml");
                     DocxPlainTextPatchCodec.Apply(patchableParagraph, block, original.Paragraph.Text);
+                    mainDocumentChanged = true;
                     continue;
                 }
                 if (SemanticHash(block).Equals(binding.SemanticSha256, StringComparison.OrdinalIgnoreCase)) continue;
@@ -325,6 +327,7 @@ internal static class DocxCodec
                         "unsupported_document_edit",
                         $"Document block {ordinal} contains WordprocessingML that is preserved but not yet safely editable by this codec slice.",
                         "word/document.xml");
+                mainDocumentChanged = true;
 
                 if (block.ContentCase == DocumentBlock.ContentOneofCase.Hyperlink)
                 {
@@ -544,10 +547,12 @@ internal static class DocxCodec
             DocxNoteCodec.ApplySource(context, body, envelope.Document);
             DocxClassicCommentCodec.ApplySource(context, body, envelope.Document);
             DocxBibliographyCodec.ApplySource(context, envelope.Document);
-            mainPart.Document!.Save();
+            if (mainDocumentChanged) mainPart.Document!.Save();
         }
 
-        var bytes = stream.ToArray();
+        var bytes = !mainDocumentChanged && context is { HasMutations: false }
+            ? sourceBytes
+            : stream.ToArray();
         ValidateOutputBudget(bytes, limits);
         var retainedValidationErrorCount = ValidateOffice2021AgainstSource(sourceBytes, bytes);
         var outputOpaque = PackageGuards.ValidateAndCollectOpaque(bytes, limits, OpcPackageProfile.Docx, includeSourcePackage: false);
@@ -623,6 +628,16 @@ internal static class DocxCodec
                 {
                     block.Image = image;
                     editable = true;
+                    semanticItems++;
+                    break;
+                }
+                if (paragraph.Descendants<W.Drawing>().Any())
+                {
+                    block.Opaque = new DocumentOpaqueBlock
+                    {
+                        ElementName = paragraph.LocalName,
+                        Text = paragraph.InnerText ?? string.Empty,
+                    };
                     semanticItems++;
                     break;
                 }

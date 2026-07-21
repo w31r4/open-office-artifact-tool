@@ -72,6 +72,52 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### DOCX bounded floating images
+
+On 2026-07-22, the public Documents model, versioned protocol-2 wire,
+OpenChestnut C# codec, bundled WASM runtime, Help/API catalog, and native
+Documents Skill added one deliberately bounded floating-picture profile.
+`document.addImage(...)` remains inline by default; an explicit `placement`
+authors a foreground, non-overlapping `wp:anchor` with absolute horizontal
+margin/page/column and vertical margin/page/paragraph offsets, square or
+top-and-bottom wrap, square-wrap side selection, and four text distances. The
+public model does not expose native stacking, locking, simple-position, or
+overlap controls; OpenChestnut owns those fixed safety choices.
+
+Recognized imported anchors expose the same placement object and permit only
+fixed-topology placement edits. The codec re-proves the original element and
+semantic binding, preserves the image part and relationship, and validates the
+result after write. Imported inline/floating transitions, behind-text or
+overlapping anchors, tight/through wrap, aligned/percentage position, relative
+sizing, external images, effects, and irregular drawing graphs remain opaque,
+source-owned, and fail closed on semantic replacement. A semantic no-op now
+returns the original validated source bytes exactly; unsupported drawing
+paragraphs project as read-only opaque blocks instead of misleading editable
+plain text.
+
+The runnable fixture authors square wrap, imports it, changes only placement to
+top-and-bottom wrap, imports again, inspects the native package, and enters
+LibreOffice/Poppler QA. The final one-page 1275 by 1650 render and the model PNG
+were reviewed at original resolution: title, figure, caption, and body remained
+in logical order without clipping, overlap, margin escape, or page drift. The
+model SVG remains explicitly approximate; native DOCX rendering is the
+authoritative placement gate.
+
+The complete local `npm test` gate passed, including all 20 repository-only
+templates, all published Office/PDF Skills, LibreOffice, Poppler, MuPDF.js,
+qpdf, Playwright, reference-Skill sync, Agent evals, package metadata, and Help.
+OpenChestnut passed `323/323`; OfficeBridge passed `5/5`. Protobuf lint and
+idempotent generation, generated API docs, the production clean-install/package
+test, and the offline release gate passed. Two clean OpenChestnut builds
+reproduced the same 39-file audit set; the bundled runtime contains 38 files and
+14,914,240 bytes. The dry-run tarball contains 475 files, 9,161,655 compressed
+bytes, and 24,289,853 unpacked bytes (SHA-1
+`f8e9aa62586bfda39895ae1d4071ffe1b98271d9`). Optional real pikepdf, pyHanko,
+veraPDF, and OCRmyPDF provider branches remained explicitly skipped because
+their configured external test environments were absent; contract and
+fail-closed gates passed. npm authentication remains the external publication
+blocker, so no publish, tag, or release operation was attempted.
+
 ### DOCX passwordless document protection
 
 On 2026-07-21, the existing `document.setSettings(...)` state surface, the

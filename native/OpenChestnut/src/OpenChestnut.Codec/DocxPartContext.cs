@@ -46,6 +46,17 @@ internal sealed class DocxPartContext
     internal DocxImageAssetCatalog? Images { get; }
     internal IReadOnlyCollection<string> MutatedRelationshipIds => _mutatedRelationshipIds;
     internal IReadOnlySet<string> BibliographyTags => _bibliographyTags;
+    internal bool HasMutations =>
+        _mutatedRelationshipIds.Count > 0 ||
+        _mutatedPartPaths.Count > 0 ||
+        _mutatedNoteRelationshipIds.Count > 0 ||
+        _mutatedNumberingPartPath is not null ||
+        _mutatedCommentsPartPath is not null ||
+        _mutatedCommentsRelationshipId is not null ||
+        _mutatedBibliographyPartPath is not null ||
+        _mutatedBibliographyRelationshipId is not null ||
+        _mutatedSettingsPartPath is not null ||
+        _mutatedSettingsRelationshipId is not null;
 
     internal uint NextDrawingId()
     {

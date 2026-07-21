@@ -12,6 +12,7 @@ using W15 = DocumentFormat.OpenXml.Office2013.Word;
 using W16Cid = DocumentFormat.OpenXml.Office2019.Word.Cid;
 using W16Cex = DocumentFormat.OpenXml.Office2021.Word.CommentsExt;
 using W = DocumentFormat.OpenXml.Wordprocessing;
+using WP = DocumentFormat.OpenXml.Drawing.Wordprocessing;
 using Xunit;
 
 namespace OpenChestnut.Codec.Tests;
@@ -1165,6 +1166,173 @@ public sealed class DocxCodecTests
             block.ContentCase == DocumentBlock.ContentOneofCase.Image && block.Image.AltText == "Edited chart preview");
         Assert.Equal((uint)1_200, roundTrip.Artifact.Document.Blocks.Single(block =>
             block.ContentCase == DocumentBlock.ContentOneofCase.Section).Section.MarginLeftTwips);
+    }
+
+    [Fact]
+    public void FloatingImagesAuthorImportEditAndPreserveUnsupportedSources()
+    {
+        var request = OfficeSkillProfileExportRequest();
+        var square = request.Artifact.Document.Blocks.Single(block => block.ContentCase == DocumentBlock.ContentOneofCase.Image);
+        square.Id = "document/image/square";
+        square.Name = "Square wrapped figure";
+        square.Image.Floating = new DocumentFloatingImagePlacement
+        {
+            HorizontalRelativeFrom = DocumentImageHorizontalRelativeFrom.Margin,
+            HorizontalOffsetEmu = 2_857_500,
+            VerticalRelativeFrom = DocumentImageVerticalRelativeFrom.Paragraph,
+            VerticalOffsetEmu = 95_250,
+            WrapMode = DocumentImageWrapMode.Square,
+            WrapSide = DocumentImageWrapSide.BothSides,
+            DistanceTopEmu = 0,
+            DistanceRightEmu = 114_300,
+            DistanceBottomEmu = 47_625,
+            DistanceLeftEmu = 114_300,
+        };
+        var topBottom = square.Clone();
+        topBottom.Id = "document/image/top-bottom";
+        topBottom.Name = "Top and bottom figure";
+        topBottom.Image.AltText = "Top and bottom figure";
+        topBottom.Image.Floating = new DocumentFloatingImagePlacement
+        {
+            HorizontalRelativeFrom = DocumentImageHorizontalRelativeFrom.Page,
+            HorizontalOffsetEmu = 714_375,
+            VerticalRelativeFrom = DocumentImageVerticalRelativeFrom.Margin,
+            VerticalOffsetEmu = 285_750,
+            WrapMode = DocumentImageWrapMode.TopAndBottom,
+            WrapSide = DocumentImageWrapSide.Unspecified,
+            DistanceTopEmu = 47_625,
+            DistanceRightEmu = 0,
+            DistanceBottomEmu = 47_625,
+            DistanceLeftEmu = 0,
+        };
+        request.Artifact.Document.Blocks.Insert(request.Artifact.Document.Blocks.IndexOf(square) + 1, topBottom);
+
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var anchors = package.MainDocumentPart!.Document!.Body!.Descendants<WP.Anchor>().ToArray();
+            Assert.Equal(2, anchors.Length);
+            Assert.Empty(package.MainDocumentPart.Document.Body.Descendants<WP.Inline>());
+            Assert.Equal("2857500", anchors[0].HorizontalPosition!.GetFirstChild<WP.PositionOffset>()!.Text);
+            Assert.Equal("95250", anchors[0].VerticalPosition!.GetFirstChild<WP.PositionOffset>()!.Text);
+            Assert.Equal(WP.WrapTextValues.BothSides, anchors[0].GetFirstChild<WP.WrapSquare>()!.WrapText!.Value);
+            Assert.NotNull(anchors[1].GetFirstChild<WP.WrapTopBottom>());
+            Assert.False(anchors[0].BehindDoc!.Value);
+            Assert.False(anchors[0].AllowOverlap!.Value);
+            Assert.True(anchors[0].LayoutInCell!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var images = imported.Artifact.Document.Blocks.Where(block => block.ContentCase == DocumentBlock.ContentOneofCase.Image).ToArray();
+        Assert.Equal(2, images.Length);
+        Assert.All(images, image => Assert.True(image.Source.Editable));
+        Assert.Equal(DocumentImageHorizontalRelativeFrom.Margin, images[0].Image.Floating.HorizontalRelativeFrom);
+        Assert.Equal(DocumentImageVerticalRelativeFrom.Paragraph, images[0].Image.Floating.VerticalRelativeFrom);
+        Assert.Equal(DocumentImageWrapMode.Square, images[0].Image.Floating.WrapMode);
+        Assert.Equal(DocumentImageWrapSide.BothSides, images[0].Image.Floating.WrapSide);
+        Assert.Equal(DocumentImageWrapMode.TopAndBottom, images[1].Image.Floating.WrapMode);
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(authored.File, unchanged.File);
+
+        images[0].Image.Floating.HorizontalOffsetEmu += 95_250;
+        images[0].Image.Floating.WrapMode = DocumentImageWrapMode.TopAndBottom;
+        images[0].Image.Floating.WrapSide = DocumentImageWrapSide.Unspecified;
+        images[0].Image.AltText = "Edited floating figure";
+        images[1].Image.Floating.WrapMode = DocumentImageWrapMode.Square;
+        images[1].Image.Floating.WrapSide = DocumentImageWrapSide.Right;
+        images[1].Image.Floating.VerticalOffsetEmu += 47_625;
+        var edited = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var roundTrip = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = edited.File,
+        });
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        var roundTripImages = roundTrip.Artifact.Document.Blocks.Where(block => block.ContentCase == DocumentBlock.ContentOneofCase.Image).ToArray();
+        Assert.Equal(2_952_750, roundTripImages[0].Image.Floating.HorizontalOffsetEmu);
+        Assert.Equal(DocumentImageWrapMode.TopAndBottom, roundTripImages[0].Image.Floating.WrapMode);
+        Assert.Equal("Edited floating figure", roundTripImages[0].Image.AltText);
+        Assert.Equal(DocumentImageWrapMode.Square, roundTripImages[1].Image.Floating.WrapMode);
+        Assert.Equal(DocumentImageWrapSide.Right, roundTripImages[1].Image.Floating.WrapSide);
+
+        var unsupportedBytes = authored.File.ToByteArray();
+        using (var stream = new MemoryStream())
+        {
+            stream.Write(unsupportedBytes);
+            stream.Position = 0;
+            using (var package = WordprocessingDocument.Open(stream, true))
+            {
+                package.MainDocumentPart!.Document!.Body!.Descendants<WP.Anchor>().First().BehindDoc = true;
+                package.MainDocumentPart.Document.Save();
+            }
+            unsupportedBytes = stream.ToArray();
+        }
+        var unsupported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(unsupportedBytes),
+        });
+        Assert.True(unsupported.Ok, Diagnostics(unsupported));
+        var preserved = unsupported.Artifact.Document.Blocks.Single(block => block.Source?.BodyIndex == (uint)request.Artifact.Document.Blocks.IndexOf(square));
+        Assert.Equal(DocumentBlock.ContentOneofCase.Opaque, preserved.ContentCase);
+        Assert.False(preserved.Source.Editable);
+        var preservedExport = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = unsupported.Artifact,
+        });
+        Assert.True(preservedExport.Ok, Diagnostics(preservedExport));
+        Assert.Equal(ByteString.CopyFrom(unsupportedBytes), preservedExport.File);
+
+        var asset = Assert.Single(unsupported.Artifact.Assets);
+        preserved.Image = new DocumentImage
+        {
+            AssetId = asset.Id,
+            AltText = "Unsafe replacement",
+            WidthEmu = 952_500,
+            HeightEmu = 952_500,
+            Floating = square.Image.Floating.Clone(),
+        };
+        var rejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = unsupported.Artifact,
+        });
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(rejected.Diagnostics).Code);
     }
 
     [Fact]

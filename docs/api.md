@@ -19,7 +19,7 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.addFootnote` | api | Append one native plain-text footnote at the end of one paragraph or list item. Recognized imported canonical footnotes permit body-text edits only; anchor, kind, native ID, and note topology remain source-bound. |
 | `document.addHeader` | api | Add a default, first-page, or even-page DOCX header, optionally section-scoped; first/even activation is independent from the preserved relationship reference. |
 | `document.addHyperlink` | api | Append a native w:hyperlink backed by an external relationship or internal bookmark anchor; native import restores URL/anchor, relationship identity, tooltip, and history state. |
-| `document.addImage` | api | Append an inspectable image block; dataUrl images export as native DOCX media parts with DrawingML inline pictures. |
+| `document.addImage` | api | Append an inspectable embedded PNG/JPEG image. Images are inline by default; an explicit bounded placement authors a native foreground wp:anchor with square or top-and-bottom wrapping. |
 | `document.addInsertion` | api | Append one bounded whole-paragraph tracked insertion using native w:ins markup. For one exact in-paragraph replacement in existing source bytes, use DocumentFile.addTrackedReplacement; mixed, moved, nested, and property-level revisions remain outside the bounded profile. |
 | `document.addListItem` | api | Append a numbered or character-bulleted list item using native DOCX numbering definitions. Picture bullets remain model-only and make canonical OpenChestnut export fail closed. |
 | `document.addParagraph` | api | Append a styled paragraph with optional run spans, including character-style runStyleId references plus direct/theme and complex-script semantics. |
@@ -286,7 +286,7 @@ Append a native w:hyperlink backed by an external relationship or internal bookm
 
 #### `document.addImage`
 
-Append an inspectable image block; dataUrl images export as native DOCX media parts with DrawingML inline pictures.
+Append an inspectable embedded PNG/JPEG image. Images are inline by default; an explicit bounded placement authors a native foreground wp:anchor with square or top-and-bottom wrapping.
 
 **Schema parameters:**
 
@@ -297,10 +297,11 @@ Append an inspectable image block; dataUrl images export as native DOCX media pa
 - `widthPx` (number) — Rendered width in pixels.
 - `heightPx` (number) — Rendered height in pixels.
 - `styleId` (string) — Named paragraph style ID.
+- `placement` (object) — Optional image placement. Omit it (or use { type: 'inline' }) for inline flow. The bounded floating profile is { type: 'floating', horizontal: { relativeTo: 'margin'|'page'|'column', offsetPx }, vertical: { relativeTo: 'margin'|'page'|'paragraph', offsetPx }, wrap: 'square'|'topAndBottom', wrapSide?: 'bothSides'|'left'|'right'|'largest', distanceFromTextPx?: { top, right, bottom, left } }. wrapSide is square-only; offsets are bounded to +/-10000 px and text distances to 0..10000 px.
 
 **Schema returns:**
 
-- `image` (DocumentImageBlock) — Appended image block.
+- `image` (DocumentImageBlock) — Appended embedded image block. Recognized imported floating images permit only fixed-topology placement edits; inline/floating transitions and unsupported anchor graphs fail closed.
 
 #### `document.addInsertion`
 

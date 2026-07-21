@@ -1,0 +1,78 @@
+{
+  "name": "open-chestnut-floating-image",
+  "outputName": "floating-image-review.docx",
+  "defaultRunStyle": {
+    "fontFamily": "Aptos",
+    "fontSize": 22,
+    "color": "#172033"
+  },
+  "blocks": [
+    {
+      "kind": "paragraph",
+      "name": "title",
+      "styleId": "Title",
+      "text": "Floating Figure"
+    },
+    {
+      "kind": "image",
+      "name": "architecture-figure",
+      "styleId": "Normal",
+      "alt": "Blue and green architecture figure",
+      "widthPx": 240,
+      "heightPx": 120,
+      "dataUrl": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAPAAAAB4CAYAAADMtn8nAAAACXBIWXMAAAsTAAALEwEAmpwYAAAH90lEQVR42u2dzW9UVRTAp/8A7bSYSVESymhLmrS1hUE7bSW4EBdi5EMw6Zsp7RRrQGlNmLbATKdg3LAySiIoYYHiQqQtYKKJQVwQKnELAu7F8GFUWiQYzfWewalASunHezPvvve7yS9t6DQznLxf733nnXtuIPDoUTS/uW1pMGrtCUZjp4NNsUv663hpU0wBgD2IU8Em6+Jdx6zd81taGwJzHEXBptYNWtzLBBigAFLrybK0Mb5eXJyRufOi8bD+K3COIAK4YnYeLW6xKqYlr7a+WXOVwAG4CetGWaP1/JTylkXjK/UL/yJYAK7kTklzbMWk8soUXRq1rhEkAHfPxI89az05ScKKe14AQyQ+e19iS98kbyQoAAYRtdb9P/vyqAjAsEdM1sX/ElexZQQEwDyKG2P1snx+h2AAGFnoMSgCnyYYAEYKfEoE/olgAJhZaikCjxEMACNLLMcCBALAXBAYAIEBAIEBAIEBEBgA/Ctw6MU+Fe4YVtXbL6ja9C+qbvBXmAKJkcQq3DGkQqt6uTihMAKXtbSrcOK4qsvcQMzZypy5no2hxJKLFPImsFxwS7adQ0KbWLLteySG/Akc7jyBeDYTToxwoYLzAss9L8tmZ5bToVVJLlZwVmBJWCGcMyxuP8bFCs4KXJ28gGwOUb39vKcvwtDLHarizS2qas/bqmZfUtV/skMtPZpSkZGBLPJ9/eGd2Z9V7e5RFVu3qNDqDgS2U+Da9BVkc2oZnbriuQuvfG1CVQ50q4bPdqnlJwdmRcORnaoy3aPK1yQQeK4gmrN44oJrjqmFbV2q9kDvrKV9GLX7+9TCeFf2PRAYgRHY7hn31U5V91Gf7eI+SN2BPlW+rhOBERiBbakNWBFXVYM9avmJAcflnUC/V1WmJ/veCIzACDzb5JRONNUd6s+fuA/Oxgf7VeilDgRGYASeKQv0knnp56mCyZtDMtiPb9yMwAiMwNPlidjrKjKcLri8OSJDaf2ZuhAYgRH40TPv5qwwbpF3QmL9B8WLMzECI7Ct97zLvki5Tt6J5bRe0nvtnhiBEdi2bLMkjdwq70RiSyfVvJSdRmAEtgUpcXS7vDkqM90IjMAIPFGkoQsnIicGjBFYnhNLYQkCIzAC69LFfFRY2V56qcs5vVB26XqBV7//u9r71S313jdmIJ9VPrNfBF646Q3j5M0hj7sQ2EGB3/1yXP39jzJuyGeWz+4HgZ3YmJC3WfjDXgR2SmCZxUyU916J7ZyJ3bol0FR5c5S/kkBgJwTe+/UtZfqQ/4OXBZb9vKYL/FS6G4ER2J8Cz2UzvluQpgAIzBLad0toaYNjurw5TK7OIolFEmtWSA8rrwgsPbYQ2OHHSIfO3DYCvzxGkgZ0XhFYqsgQmGILXxVy1Ozr9YzANR8kERjJ/CVw/ac7PSOwtLFFYCTzlcBu6LZh3zbDXQiMZP4SODKS9ozA0jwegZEMgREYgYElNEtoBEZgklgksRAYgXmMhMBAIQeFHAiMwK4qpdzqnVLKRZRS0pHDbx05pIUsmxkQmM0MJm8nPGJ+IkuScWwnZDuhLztyyOHaxm/oT7Ghnw39Pt3QT0sdBEZg05va7e8zVl757DS1Ywnt2yV0tq1svMvgtrJdCEwSy99tZbON3Q/00VIWgenIYe7RKgmjjlaRzyr37whMIQdHq+QqszIGHW42wOFmCIzA9x8v+py+Bg72cbwoAoOxB3zriiY3bzO8e8B3Owd8IzACP4wF+tjOyJD7NvtHhtNqwYZOT8mLwAjsCPJ4xk0Sy2fxwkmECIzA+ctM65lYOl0UfNl8NOXJmReBETgv98R1B/sLl7D6uN9z97wIjMD5zU7rjG9lpjuvz4nlveRRkWTGvSwvAiNwHjc+dOblMHCpsPJKkQYCI7Ara6dFMic2JnihtpmOHC7vrOF3gSdmZL2Nr1Ifrj2XpgCyGV8O6C5fk/CduGxmKNCmBASePNklfamkUZ50iKw/vCNbdCHN4wX5Xv5Nfiavkdea3AaH7YQGbwtEYGBDv8Eb8xEYEBiBAVhCs4QGBCaJhcCAwG7ryMFjJEBgQGBAYEBgQGAEBgRGYAQGBAYEBgRGYEBgBPa5wJHXkurkdz+osVu3FWPqITGSWEnMEBgKLrBciL/dHMfMGQ6JmRsktk3g2tQVRHOImtTPjl0AMpswZjckdp4RuDp5Adkconr7eccugJvjf2LiLIfEzjMChzuGkM0hFrcfQ2AEdlbg0KpeVZu5jnA2IzENvZBkCc0S2lmBs7Nw4jjS2Uy4Y9jxDDRJLJJYd3sAt7SrJW+NIp5NVG0b1THd5PhFwGMkHiPdJ3E4McJyeo7LZpl58yEvUMjxkHviZDb5IhnU2jSPmB4prY6RxEpi5uQ9LyAwACAwACAwAAIDAAIDAAIDwDQFDjZZNwkEgHkEm2J/BIJR6zLBADBRYOuizMDfEgwAI2fgUyLwboIBYCDR2EBgfktrA8EAMI+SJqsuoEeRnoovERAAo+5/fwzkRmljfD1BATCJ+JrAPaMoGI2NEhQAE+59rTPi7L0CB4qfaVukf3CNAAG4GevGvGg8HJhslDTHVugX3SFIAK7kTkm0tSUw1Qg2tzXppNZVggXgrpm3LBpfGZjOKG6xKvQvnCVoAO6455Vb3MAMR5H+xXVSrkUQAQrzqEh/XRuY6yhujNXrZfWglG6J0DpjPUaAAWyUVTuVdUs7pifOTHG07enpuPkvdwo5HEg5Pl4AAAAASUVORK5CYII=",
+      "placement": {
+        "type": "floating",
+        "horizontal": { "relativeTo": "margin", "offsetPx": 260 },
+        "vertical": { "relativeTo": "paragraph", "offsetPx": 0 },
+        "wrap": "square",
+        "wrapSide": "bothSides",
+        "distanceFromTextPx": { "top": 4, "right": 12, "bottom": 4, "left": 12 }
+      }
+    },
+    {
+      "kind": "paragraph",
+      "name": "caption",
+      "text": "Figure 1. Bounded OpenChestnut floating-image placement."
+    },
+    {
+      "kind": "paragraph",
+      "name": "lead",
+      "text": "Inspect the anchored figure before delivery."
+    },
+    {
+      "kind": "paragraph",
+      "name": "review-one",
+      "text": "The native render must keep this figure inside the page margins."
+    },
+    {
+      "kind": "paragraph",
+      "name": "review-two",
+      "text": "OpenChestnut must preserve the image while changing only its anchor."
+    }
+  ],
+  "edits": [
+    {
+      "kind": "image",
+      "matchAlt": "Blue and green architecture figure",
+      "placement": {
+        "type": "floating",
+        "horizontal": { "relativeTo": "page", "offsetPx": 150 },
+        "vertical": { "relativeTo": "paragraph", "offsetPx": 0 },
+        "wrap": "topAndBottom",
+        "distanceFromTextPx": { "top": 8, "right": 0, "bottom": 8, "left": 0 }
+      }
+    }
+  ],
+  "expectInspect": [
+    { "kind": "image", "pattern": "Blue and green architecture figure" },
+    { "kind": "image", "pattern": "floating" },
+    { "kind": "paragraph", "pattern": "Figure 1" }
+  ],
+  "qa": {
+    "previewFormat": "png",
+    "nativeRender": "auto",
+    "inspectKind": "document,paragraph,image,layout",
+    "maxChars": 16000
+  }
+}

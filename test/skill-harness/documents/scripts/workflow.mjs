@@ -295,7 +295,7 @@ export async function runDocumentFixture(fixturePath, options = {}) {
       if (edit.kind === "image") {
         const image = imported.blocks.find((block) => block.kind === "image" && (!edit.matchAlt || block.alt === edit.matchAlt));
         assert.ok(image, `Missing source-bound image fixture target ${edit.matchAlt || "(unspecified)"}.`);
-        for (const field of ["alt", "widthPx", "heightPx", "dataUrl"]) {
+        for (const field of ["alt", "widthPx", "heightPx", "dataUrl", "placement"]) {
           if (Object.prototype.hasOwnProperty.call(edit, field)) image[field] = edit[field];
         }
         continue;

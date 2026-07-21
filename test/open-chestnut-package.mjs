@@ -68,12 +68,44 @@ try {
     document.addInsertion("packaged accepted insertion", { author: "Package QA" });
     document.addDeletion("packaged removed deletion", { author: "Package QA" });
     document.setSettings({ trackRevisions: true, documentProtection: "comments" });
+    document.addImage({
+      dataUrl: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVR4nGNgYGBgAAAABQABpfZFQAAAAABJRU5ErkJggg==",
+      alt: "Packed floating image",
+      widthPx: 80,
+      heightPx: 60,
+      placement: {
+        type: "floating",
+        horizontal: { relativeTo: "margin", offsetPx: 24 },
+        vertical: { relativeTo: "paragraph", offsetPx: 0 },
+        wrap: "square",
+        wrapSide: "right",
+        distanceFromTextPx: { top: 2, right: 8, bottom: 2, left: 8 },
+      },
+    });
     const docx = await DocumentFile.exportDocx(document);
     if (docx.metadata.codec !== "open-chestnut" || docx.bytes[0] !== 0x50 || docx.bytes[1] !== 0x4b) process.exit(10);
     const importedDocument = await DocumentFile.importDocx(docx);
     if (importedDocument.blocks[0].text !== "clean install DOCX") process.exit(11);
     if (importedDocument.settings.documentProtection?.edit !== "comments") process.exit(42);
-    if ((await DocumentFile.importDocx(await DocumentFile.exportDocx(importedDocument))).blocks[0].text !== "clean install DOCX") process.exit(12);
+    const importedImage = importedDocument.blocks.find((block) => block.kind === "image");
+    if (
+      importedImage?.placement?.type !== "floating" ||
+      importedImage.placement.horizontal.relativeTo !== "margin" ||
+      importedImage.placement.vertical.relativeTo !== "paragraph" ||
+      importedImage.placement.wrap !== "square" ||
+      importedImage.placement.wrapSide !== "right"
+    ) process.exit(44);
+    importedImage.placement = {
+      type: "floating",
+      horizontal: { relativeTo: "page", offsetPx: 36 },
+      vertical: { relativeTo: "paragraph", offsetPx: 0 },
+      wrap: "topAndBottom",
+      distanceFromTextPx: { top: 4, right: 0, bottom: 4, left: 0 },
+    };
+    const packagedDocument2 = await DocumentFile.importDocx(await DocumentFile.exportDocx(importedDocument));
+    if (packagedDocument2.blocks[0].text !== "clean install DOCX") process.exit(12);
+    const packagedImage2 = packagedDocument2.blocks.find((block) => block.kind === "image");
+    if (packagedImage2?.placement?.wrap !== "topAndBottom" || packagedImage2.placement.horizontal.relativeTo !== "page") process.exit(45);
     const docxSourceHash = createHash("sha256").update(docx.bytes).digest("hex");
     const finalizedDocx = await DocumentFile.finalizeRevisions(docx, {
       mode: "accept",

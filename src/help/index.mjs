@@ -291,7 +291,7 @@ export const HELP_CATALOG = [
   { artifactKind: "document", kind: "api", name: "document.addTableOfContents", summary: "Append one canonical one-paragraph complex TOC field with bounded heading levels/switches and enable the native updateFields-on-open hint by default. Refreshed cross-paragraph result graphs remain opaque/source-bound and read-only." },
   { artifactKind: "document", kind: "api", name: "document.addBibliographySource", summary: "Add a canonical Word bibliography source for inspect, resolve, and native b:Sources authoring. Recognized imports allow bounded source content edits while source order, IDs, and tags remain source-bound." },
   { artifactKind: "document", kind: "api", name: "document.addCitation", summary: "Add a whole-paragraph bibliography-backed citation exported as a native w:fldSimple CITATION field plus a bounded bookmark. Recognized imports allow display-text edits while source tags and topology remain fixed." },
-  { artifactKind: "document", kind: "api", name: "document.addImage", summary: "Append an inspectable image block; dataUrl images export as native DOCX media parts with DrawingML inline pictures." },
+  { artifactKind: "document", kind: "api", name: "document.addImage", summary: "Append an inspectable embedded PNG/JPEG image. Images are inline by default; an explicit bounded placement authors a native foreground wp:anchor with square or top-and-bottom wrapping." },
   { artifactKind: "document", kind: "api", name: "document.addSection", summary: "Append a DOCX section break with page size, orientation, margin, and break-type metadata backed by w:sectPr." },
   { artifactKind: "document", kind: "api", name: "document.addChange", summary: "Append one bounded whole-paragraph tracked insertion or deletion. OpenChestnut authors native w:ins/w:del markup and permits fixed-topology imported text/author/date edits; mixed or nested revision graphs remain source-bound." },
   { artifactKind: "document", kind: "api", name: "document.addInsertion", summary: "Append one bounded whole-paragraph tracked insertion using native w:ins markup. For one exact in-paragraph replacement in existing source bytes, use DocumentFile.addTrackedReplacement; mixed, moved, nested, and property-level revisions remain outside the bounded profile." },
@@ -1175,7 +1175,11 @@ const DOCUMENT_HELP_SCHEMAS = {
     widthPx: { type: "number", description: "Rendered width in pixels." },
     heightPx: { type: "number", description: "Rendered height in pixels." },
     styleId: { type: "string", description: "Named paragraph style ID." },
-  }, "image", "DocumentImageBlock", "Appended image block."),
+    placement: {
+      type: "object",
+      description: "Optional image placement. Omit it (or use { type: 'inline' }) for inline flow. The bounded floating profile is { type: 'floating', horizontal: { relativeTo: 'margin'|'page'|'column', offsetPx }, vertical: { relativeTo: 'margin'|'page'|'paragraph', offsetPx }, wrap: 'square'|'topAndBottom', wrapSide?: 'bothSides'|'left'|'right'|'largest', distanceFromTextPx?: { top, right, bottom, left } }. wrapSide is square-only; offsets are bounded to +/-10000 px and text distances to 0..10000 px.",
+    },
+  }, "image", "DocumentImageBlock", "Appended embedded image block. Recognized imported floating images permit only fixed-topology placement edits; inline/floating transitions and unsupported anchor graphs fail closed."),
   "document.addSection": helpSchema({
     breakType: { type: "string", description: "Section break type such as nextPage or continuous." },
     orientation: { type: "string", description: "portrait or landscape." },

@@ -17,6 +17,10 @@ import {
   DocumentChangeType,
   DocumentContentControlType,
   DocumentHeaderFooterReference,
+  DocumentImageHorizontalRelativeFrom,
+  DocumentImageVerticalRelativeFrom,
+  DocumentImageWrapMode,
+  DocumentImageWrapSide,
   DocumentNoteKind,
   DocumentProtectionMode,
   DocumentRevisionFinalizationMode,
@@ -2834,7 +2838,110 @@ function documentImage(block, assets) {
   const widthEmu = Math.round(Number(block.widthPx) * 9_525);
   const heightEmu = Math.round(Number(block.heightPx) * 9_525);
   if (!Number.isSafeInteger(widthEmu) || !Number.isSafeInteger(heightEmu) || widthEmu <= 0 || heightEmu <= 0) throw new OpenChestnutCodecError(`Document image ${block.id} dimensions must be positive bounded pixels.`, [], { code: "invalid_document_image" });
-  return { assetId, altText: String(block.alt || block.name || "image"), widthEmu, heightEmu };
+  return { assetId, altText: String(block.alt || block.name || "image"), widthEmu, heightEmu, floating: wireDocumentFloatingImagePlacement(block) };
+}
+
+function wireDocumentImageHorizontalReference(value) {
+  if (value === "margin") return DocumentImageHorizontalRelativeFrom.MARGIN;
+  if (value === "page") return DocumentImageHorizontalRelativeFrom.PAGE;
+  if (value === "column") return DocumentImageHorizontalRelativeFrom.COLUMN;
+  throw new OpenChestnutCodecError(`Document floating image horizontal relativeTo ${value || "(empty)"} is unsupported.`, [], { code: "invalid_document_image" });
+}
+
+function wireDocumentImageVerticalReference(value) {
+  if (value === "margin") return DocumentImageVerticalRelativeFrom.MARGIN;
+  if (value === "page") return DocumentImageVerticalRelativeFrom.PAGE;
+  if (value === "paragraph") return DocumentImageVerticalRelativeFrom.PARAGRAPH;
+  throw new OpenChestnutCodecError(`Document floating image vertical relativeTo ${value || "(empty)"} is unsupported.`, [], { code: "invalid_document_image" });
+}
+
+function wireDocumentImageWrap(value) {
+  if (value === "square") return DocumentImageWrapMode.SQUARE;
+  if (value === "topAndBottom") return DocumentImageWrapMode.TOP_AND_BOTTOM;
+  throw new OpenChestnutCodecError(`Document floating image wrap ${value || "(empty)"} is unsupported.`, [], { code: "invalid_document_image" });
+}
+
+function wireDocumentImageWrapSide(value) {
+  if (value === undefined) return DocumentImageWrapSide.UNSPECIFIED;
+  if (value === "bothSides") return DocumentImageWrapSide.BOTH_SIDES;
+  if (value === "left") return DocumentImageWrapSide.LEFT;
+  if (value === "right") return DocumentImageWrapSide.RIGHT;
+  if (value === "largest") return DocumentImageWrapSide.LARGEST;
+  throw new OpenChestnutCodecError(`Document floating image wrapSide ${value || "(empty)"} is unsupported.`, [], { code: "invalid_document_image" });
+}
+
+function documentImageEmu(value, label, { unsigned = false } = {}) {
+  const number = Number(value);
+  const emu = Math.round(number * 9_525);
+  if (!Number.isFinite(number) || !Number.isSafeInteger(emu) || (unsigned ? emu < 0 || emu > 0xffff_ffff : Math.abs(emu) > 95_250_000)) {
+    throw new OpenChestnutCodecError(`${label} is outside the bounded pixel range.`, [], { code: "invalid_document_image" });
+  }
+  return emu;
+}
+
+function wireDocumentFloatingImagePlacement(block) {
+  const placement = typeof block?.toProto === "function" ? block.toProto().placement : block?.placement;
+  if (!placement) return undefined;
+  if (placement.type !== "floating") throw new OpenChestnutCodecError(`Document image ${block.id} placement must be floating when present.`, [], { code: "invalid_document_image" });
+  const distance = placement.distanceFromTextPx || {};
+  return {
+    horizontalRelativeFrom: wireDocumentImageHorizontalReference(placement.horizontal?.relativeTo),
+    horizontalOffsetEmu: documentImageEmu(placement.horizontal?.offsetPx, `Document image ${block.id} horizontal offset`),
+    verticalRelativeFrom: wireDocumentImageVerticalReference(placement.vertical?.relativeTo),
+    verticalOffsetEmu: documentImageEmu(placement.vertical?.offsetPx, `Document image ${block.id} vertical offset`),
+    wrapMode: wireDocumentImageWrap(placement.wrap),
+    wrapSide: wireDocumentImageWrapSide(placement.wrapSide),
+    distanceTopEmu: documentImageEmu(distance.top, `Document image ${block.id} top text distance`, { unsigned: true }),
+    distanceRightEmu: documentImageEmu(distance.right, `Document image ${block.id} right text distance`, { unsigned: true }),
+    distanceBottomEmu: documentImageEmu(distance.bottom, `Document image ${block.id} bottom text distance`, { unsigned: true }),
+    distanceLeftEmu: documentImageEmu(distance.left, `Document image ${block.id} left text distance`, { unsigned: true }),
+  };
+}
+
+function publicDocumentImageHorizontalReference(value) {
+  if (value === DocumentImageHorizontalRelativeFrom.MARGIN) return "margin";
+  if (value === DocumentImageHorizontalRelativeFrom.PAGE) return "page";
+  if (value === DocumentImageHorizontalRelativeFrom.COLUMN) return "column";
+  throw new OpenChestnutCodecError("OpenChestnut returned an unsupported document floating-image horizontal reference.", [], { code: "invalid_document_image" });
+}
+
+function publicDocumentImageVerticalReference(value) {
+  if (value === DocumentImageVerticalRelativeFrom.MARGIN) return "margin";
+  if (value === DocumentImageVerticalRelativeFrom.PAGE) return "page";
+  if (value === DocumentImageVerticalRelativeFrom.PARAGRAPH) return "paragraph";
+  throw new OpenChestnutCodecError("OpenChestnut returned an unsupported document floating-image vertical reference.", [], { code: "invalid_document_image" });
+}
+
+function publicDocumentImageWrap(value) {
+  if (value === DocumentImageWrapMode.SQUARE) return "square";
+  if (value === DocumentImageWrapMode.TOP_AND_BOTTOM) return "topAndBottom";
+  throw new OpenChestnutCodecError("OpenChestnut returned an unsupported document floating-image wrap mode.", [], { code: "invalid_document_image" });
+}
+
+function publicDocumentImageWrapSide(value, mode) {
+  if (mode === DocumentImageWrapMode.TOP_AND_BOTTOM && value === DocumentImageWrapSide.UNSPECIFIED) return undefined;
+  if (value === DocumentImageWrapSide.BOTH_SIDES) return "bothSides";
+  if (value === DocumentImageWrapSide.LEFT) return "left";
+  if (value === DocumentImageWrapSide.RIGHT) return "right";
+  if (value === DocumentImageWrapSide.LARGEST) return "largest";
+  throw new OpenChestnutCodecError("OpenChestnut returned an unsupported document floating-image wrap side.", [], { code: "invalid_document_image" });
+}
+
+function publicDocumentFloatingImagePlacement(value) {
+  if (!value) return undefined;
+  return {
+    type: "floating",
+    horizontal: { relativeTo: publicDocumentImageHorizontalReference(value.horizontalRelativeFrom), offsetPx: Number(value.horizontalOffsetEmu) / 9_525 },
+    vertical: { relativeTo: publicDocumentImageVerticalReference(value.verticalRelativeFrom), offsetPx: Number(value.verticalOffsetEmu) / 9_525 },
+    wrap: publicDocumentImageWrap(value.wrapMode),
+    wrapSide: publicDocumentImageWrapSide(value.wrapSide, value.wrapMode),
+    distanceFromTextPx: {
+      top: value.distanceTopEmu / 9_525,
+      right: value.distanceRightEmu / 9_525,
+      bottom: value.distanceBottomEmu / 9_525,
+      left: value.distanceLeftEmu / 9_525,
+    },
+  };
 }
 
 function wireDocumentSection(block) {
@@ -3611,6 +3718,7 @@ function documentFromEnvelope(envelope) {
           alt: image.altText,
           widthPx: Number(image.widthEmu) / 9_525,
           heightPx: Number(image.heightEmu) / 9_525,
+          placement: publicDocumentFloatingImagePlacement(image.floating),
         };
       }
       case "section": {

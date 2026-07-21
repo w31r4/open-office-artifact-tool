@@ -12,7 +12,7 @@ them visually.
 ## Tools + Contract
 
 - Use host-provided workspace dependencies for DOCX artifact work: resolve them through the workspace dependency loader or runtime skill, then treat the returned Node/Python runtimes and package directory as authoritative. Do not use system `node`, system `python`, global npm packages, or repo-local installs.
-- For ordinary DOCX creation, import, semantic editing, bounded whole-block bookmarks/internal links, plain-text footnotes/endnotes, canonical bibliography-backed citations, canonical inline `SEQ`/`REF`/`PAGEREF` field runs plus bounded `SEQ`/`REF` cache materialization, canonical native TOC placeholders with explicit field-refresh intent, and export, **MUST** use the public `open-office-artifact-tool` `DocumentModel`/`DocumentFile` surface and its bundled OpenChestnut codec. Read `artifact_tool/API_QUICK_START.md`, then use `tasks/create_edit.md` for the task workflow.
+- For ordinary DOCX creation, import, semantic editing, inline and bounded foreground floating images, bounded whole-block bookmarks/internal links, plain-text footnotes/endnotes, canonical bibliography-backed citations, canonical inline `SEQ`/`REF`/`PAGEREF` field runs plus bounded `SEQ`/`REF` cache materialization, canonical native TOC placeholders with explicit field-refresh intent, and export, **MUST** use the public `open-office-artifact-tool` `DocumentModel`/`DocumentFile` surface and its bundled OpenChestnut codec. Read `artifact_tool/API_QUICK_START.md`, then use `tasks/create_edit.md` for the task workflow.
 - Python and direct OOXML helpers are reserved for explicit low-level package patches, specialized audits, and render/QA operations documented by this Skill. They are never an automatic authoring fallback. If an imported construct cannot be edited through the supported model, narrow the edit or report the fail-closed boundary.
 - Run any builder or helper file from a writable workspace or temp directory, not from the managed dependency directory itself.
 - Final user-facing responses should describe only the requested document result. Do not link QA intermediates unless the user explicitly asks for them.
@@ -364,6 +364,7 @@ This is a quick index so you can jump from a helper script to the right task gui
 ### Figures / images
 - `images_audit.py`, `a11y_audit.py` → `tasks/images_figures.md`, `tasks/accessibility_a11y.md`
 - `captions_and_crossrefs.py` → `tasks/captions_crossrefs.md`
+- Use `document.addImage({ ..., placement })` for the bounded public floating profile; keep inline placement as the default and treat native rendering as authoritative.
 
 ### Tables / spreadsheets
 - `table_geometry.py` → root `Design Preset Contract` table geometry rules
@@ -473,7 +474,7 @@ Then inspect the generated `page-<N>.png` files.
 - If you need **internal navigation links** (static TOC + Back-to-TOC + Top/Bottom): `tasks/navigation_internal_links.md`
 - If headings/numbering/TOC levels are messy: `tasks/headings_numbering.md`
 - If you have mixed portrait/landscape or margin weirdness: `tasks/sections_layout.md`
-- If images shift or overlap across renderers: `tasks/images_figures.md`
+- If you need a **floating or wrapped image**, or images shift/overlap across renderers: use the bounded `document.addImage({ ..., placement })` profile and follow `tasks/images_figures.md`; never infer support for an imported anchor from its visible appearance alone
 - If you need spreadsheet ↔ table round-tripping: `tasks/tables_spreadsheets.md`
 - If you need **tracked changes (redlines)**: use public `document.addInsertion(...)` / `document.addDeletion(...)` for whole blocks, or `examples/openchestnut-tracked-replacement-workflow.mjs` for one exact source-bound literal inside a direct body paragraph or bounded single-paragraph table cell; use `document.setSettings({ trackRevisions: true })` for future edits, then route broader graphs through `ooxml/tracked_changes.md`
 - If you need **comments**: `ooxml/comments.md`

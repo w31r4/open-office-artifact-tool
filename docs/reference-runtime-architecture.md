@@ -95,7 +95,7 @@ The namespace remains `open_office.artifact.v1`. Protocol version 2 is intention
 - The request contains exactly one supported artifact payload for its declared operation.
 - Office export responses report `metadata.codec: "open-chestnut"` at the JavaScript boundary.
 - XLSX adds basic validation, conditional-format, and one-level threaded-comment records.
-- DOCX adds style/default formatting, paragraph/run formatting, bounded block/inline plain-text content-control identity with explicit placement, section/header/footer, field, image, and passwordless document-protection records. Password verifier/cryptographic variants remain in the source-bound OPC graph and cannot be replaced through the semantic wire.
+- DOCX adds style/default formatting, paragraph/run formatting, bounded block/inline plain-text content-control identity with explicit placement, section/header/footer, field, image, and passwordless document-protection records. An image may carry an independently versioned floating-placement record for bounded absolute margin/page/column or margin/page/paragraph positioning, square/top-and-bottom wrapping, wrap side, and text distances; absence means inline flow. OpenChestnut owns the fixed safe anchor profile, while JavaScript owns the smaller public object. Imported inline/floating topology is immutable, and unrecognized anchors stay in the source-bound OPC graph. Password verifier/cryptographic variants likewise remain source-bound and cannot be replaced through the semantic wire.
 - PPTX adds connector, chart, and basic shadow records.
 
 New fields are added only when the existing public artifact model and wire cannot express an accepted 0.2 capability. The project does not maintain a parallel native object model.

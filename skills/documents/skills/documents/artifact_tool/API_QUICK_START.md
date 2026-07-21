@@ -138,6 +138,42 @@ const output = await DocumentFile.exportDocx(document);
 await output.save("output.docx");
 ```
 
+## Inline and bounded floating images
+
+`document.addImage(...)` creates an inline image when `placement` is absent.
+For intentional wrap-around, pass the bounded floating profile explicitly:
+
+```js
+const figure = document.addImage({
+  dataUrl: "data:image/png;base64,...",
+  alt: "Architecture overview",
+  widthPx: 240,
+  heightPx: 120,
+  placement: {
+    type: "floating",
+    horizontal: { relativeTo: "margin", offsetPx: 260 },
+    vertical: { relativeTo: "paragraph", offsetPx: 0 },
+    wrap: "square",
+    wrapSide: "bothSides",
+    distanceFromTextPx: { top: 4, right: 12, bottom: 4, left: 12 },
+  },
+});
+document.addParagraph("Figure 1. Architecture overview.");
+```
+
+Horizontal `relativeTo` accepts `margin`, `page`, or `column`; vertical accepts
+`margin`, `page`, or `paragraph`. `topAndBottom` wrap omits `wrapSide`. All four
+text distances default to zero. Imported recognized anchors expose the same
+placement object, but only fixed-topology placement edits are allowed: an
+imported inline image cannot become floating and an imported floating image
+cannot become inline. Behind-text, overlapping, tight/through, aligned or
+percentage-positioned, effect-bearing, external, and irregular drawings remain
+source-owned and fail closed on semantic replacement.
+
+Read `../tasks/images_figures.md` before using floating placement. Re-import the
+result, inspect the image record, then run native DOCX render QA; the model SVG
+is useful for planning but is not authoritative for cross-renderer anchoring.
+
 ## Imported classic comment: bounded text-only edit
 
 For one ordinary imported classic comment, locate both its paragraph and
@@ -590,14 +626,14 @@ For final visual QA, export the DOCX and use the packaged `render_docx.py` workf
 - Sections, headers, footers, PAGE/simple fields, and one canonical complex TOC placeholder with an explicit `updateFields` refresh hint
 - External/internal hyperlinks and source-free bookmarks around one paragraph-like block
 - Plain-text footnotes/endnotes anchored at the end of one paragraph or list item; recognized imported note bodies allow text-only edits
-- PNG/JPEG inline images
+- PNG/JPEG inline images plus an explicit bounded foreground floating profile with absolute margin/page/column and margin/page/paragraph offsets, square or top-and-bottom wrap, and fixed-topology imported placement edits
 - Classic whole-paragraph comments and bounded modern root/direct-reply threads
 - Standalone whole-paragraph tracked insertions/deletions plus one exact source-bound in-paragraph replacement as adjacent native deletion/insertion runs; native `trackRevisions` intent; and source-hash-bound accept/reject finalization for both bounded profiles
 - Passwordless `documentProtection` settings for `none`, `readOnly`, `comments`, `trackedChanges`, and `forms`, with explicit enforcement/formatting flags and source-bound preservation of password/cryptographic variants
 - Block/inline plain-text, canonical Word 2010+ checkbox, canonical Word drop-down, canonical Word combo-box, and canonical ISO/Gregorian date content controls with explicit placement, typed values, tag/alias identity, transactional tag updates, and fixed-topology imported edits
 - Canonical bibliography source catalogs and whole-paragraph `CITATION` fields with fixed imported source/tag topology
 
-In-paragraph revision graphs beyond the exact single-format deletion/insertion pair, other mixed accepted/revision runs, mixed-format or nested revisions, moves, property changes, multi-paragraph/nested/continuation/irregular table targets, and non-body revision stories are advanced package workflows, not ordinary public-model authoring or bounded finalization. Bookmarks spanning multiple blocks or table cells, nested/crossing ranges, multi-paragraph or reused note graphs, complex bibliography contributor roles/field switches/output fields, nested/irregular modern comment graphs, rich/multi-paragraph/table/cell/nested/data-bound/locked/placeholder/repeating-section content controls, irregular lists, localized dates, custom checkbox symbols, complex fields other than the canonical one-paragraph TOC placeholder, floating drawings, and other advanced graphs are likewise outside source-free authoring. Recognized imported whole-block bookmarks are inspectable/resolvable but fixed-topology and read-only. Canonical imported footnote/endnote text, bounded citation/source content, bounded block/inline plain-text control text/tag/alias, canonical checkbox checked/tag/alias state, canonical drop-down selectedValue/tag/alias state, canonical combo-box value/tag/alias state, canonical ISO-date dateValue/tag/alias state, canonical modern-comment text/resolved state, and canonical unrefreshed TOC instruction/display may change, but their anchors, native IDs, control types, list choices/order, symbols, native date profile, and topology remain source-bound; refreshed cross-paragraph TOC graphs and other imported advanced graphs are preserved only while their source evidence remains valid.
+In-paragraph revision graphs beyond the exact single-format deletion/insertion pair, other mixed accepted/revision runs, mixed-format or nested revisions, moves, property changes, multi-paragraph/nested/continuation/irregular table targets, and non-body revision stories are advanced package workflows, not ordinary public-model authoring or bounded finalization. Bookmarks spanning multiple blocks or table cells, nested/crossing ranges, multi-paragraph or reused note graphs, complex bibliography contributor roles/field switches/output fields, nested/irregular modern comment graphs, rich/multi-paragraph/table/cell/nested/data-bound/locked/placeholder/repeating-section content controls, irregular lists, localized dates, custom checkbox symbols, complex fields other than the canonical one-paragraph TOC placeholder, and floating drawings outside the bounded foreground absolute-offset square/top-and-bottom profile are likewise outside source-free authoring. Recognized imported whole-block bookmarks are inspectable/resolvable but fixed-topology and read-only. Canonical imported footnote/endnote text, bounded citation/source content, bounded block/inline plain-text control text/tag/alias, canonical checkbox checked/tag/alias state, canonical drop-down selectedValue/tag/alias state, canonical combo-box value/tag/alias state, canonical ISO-date dateValue/tag/alias state, canonical modern-comment text/resolved state, canonical unrefreshed TOC instruction/display, and bounded floating-image placement may change, but their anchors, native IDs, control types, list choices/order, symbols, native date profile, and topology remain source-bound; refreshed cross-paragraph TOC graphs and other imported advanced graphs are preserved only while their source evidence remains valid.
 
 Use `DocumentFile.inspectDocx` or `DocumentFile.patchDocx` only when the user explicitly requests package-level inspection or patching. These are deliberate low-level operations, never an automatic fallback for ordinary authoring.
 
