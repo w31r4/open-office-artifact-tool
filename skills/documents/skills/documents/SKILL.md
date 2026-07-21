@@ -215,7 +215,7 @@ node examples/openchestnut-modern-comment-thread-workflow.mjs input.docx reviewe
   "Please confirm the release evidence." "Release evidence approved." \
   "The evidence is attached." "Evidence retained with the approval." resolved
 
-# 3) Add one source-bound native in-paragraph tracked replacement.
+# 3) Add one source-bound native single-format in-paragraph tracked replacement.
 # request.json contains either paragraph-only targetBlockIndex or a structured
 # paragraph/tableCell target, plus expectedText, search, replacement, author,
 # and optional date.

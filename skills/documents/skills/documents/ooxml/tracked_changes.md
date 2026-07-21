@@ -44,7 +44,7 @@ await reviewed.save("reviewed.docx");
 
 The same transaction accepts `{ kind: "tableCell", blockIndex, row, column }` when the exact imported block is a direct body table with a stable physical grid and the selected non-continuation cell contains exactly one direct paragraph. `targetBlockIndex` remains a paragraph-only compatibility selector and cannot be combined with `target`.
 
-The structured selector and full paragraph/cell snapshot bind the target in the exact source bytes. `search` must occur once inside one direct ordinary `w:r/w:t`; OpenChestnut clones that run's formatting into one adjacent `w:del` + `w:ins` pair, uses `w:delText` for the old text, allocates collision-free package-local IDs, and permits only `word/document.xml` to change. Stale text, duplicate/cross-run matches, multi-paragraph/nested/continuation/irregular table cells, hyperlinks, fields, controls, drawings, existing revisions, and other native topologies fail closed. The operation returns the re-proved target plus source/output, paragraph-element, deleted/inserted-text, native-ID, block/body-index, and changed-part evidence in `metadata.trackedReplacement`. Prefer `examples/openchestnut-tracked-replacement-workflow.mjs` when publishing because it also discovers one unique paragraph/table cell, protects the source, refuses overwrite, reimports, renders, and writes an audit.
+The structured selector and full paragraph/cell snapshot bind the target in the exact source bytes. `search` must occur once inside one direct ordinary `w:r/w:t` or across adjacent non-empty ordinary runs whose exact `w:rPr` markup is identical. OpenChestnut retains each matched source fragment in one `w:del`, writes one adjacent `w:ins` using the same formatting, uses `w:delText` for the old text, allocates collision-free package-local IDs, and permits only `word/document.xml` to change. Stale text, duplicate matches, empty-run gaps, mixed-format spans, multi-paragraph/nested/continuation/irregular table cells, hyperlinks, fields, controls, drawings, existing revisions, and other native topologies fail closed. The operation returns `matchedSourceRunCount` with the re-proved target plus source/output, paragraph-element, deleted/inserted-text, native-ID, block/body-index, and changed-part evidence in `metadata.trackedReplacement`. Prefer `examples/openchestnut-tracked-replacement-workflow.mjs` when publishing because it also discovers one unique paragraph/table cell, protects the source, refuses overwrite, reimports, renders, and writes an audit.
 
 The same public boundary now supports the native future-edit setting and file-level finalization:
 
@@ -88,7 +88,7 @@ Pseudo-structure:
 ```
 
 ## Advanced route: use the helper script
-Use this only for graphs outside the typed one-node replacement. See `scripts/docx_ooxml_patch.py` for a runnable patcher that:
+Use this only for graphs outside the typed single-format replacement. See `scripts/docx_ooxml_patch.py` for a runnable patcher that:
 - enables `<w:trackRevisions/>`
 - converts an existing `<w:ins>` to `<w:del>` and inserts a new `<w:ins>`
 
@@ -100,5 +100,5 @@ For a bounded whole-block accept/reject transaction, prefer `examples/openchestn
 - Render to PDF/PNG for layout sanity (`tasks/verify_render.md`)
 - Confirm Word shows the change as tracked
 - Re-import through `DocumentFile.importDocx`; supported whole-paragraph revisions inspect as `kind: "change"`, while the exact inline pair exposes its accepted-view paragraph or table-cell value as source-bound and read-only until finalization
-- Inspect `word/document.xml`: the old text must be one `w:delText` and the replacement one adjacent `w:t`; after finalization no revision element may remain
+- Inspect `word/document.xml`: concatenate every `w:delText` inside the one deletion wrapper and require the exact old text; the replacement must be one adjacent `w:t`; after finalization no revision element may remain
 - Be aware: renders usually show redlines, but always verify the OOXML is correct too

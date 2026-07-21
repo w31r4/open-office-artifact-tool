@@ -300,7 +300,11 @@ try {
     blocks: [],
   });
   trackedReplacementSourceDocument.addParagraph("The draft budget assumes 30 days of cash buffer.", {
-    runs: [{ text: "The draft budget assumes 30 days of cash buffer.", style: { bold: true, color: "#315A83" } }],
+    runs: [
+      { text: "The draft budget assumes 3", style: { bold: true, color: "#315A83" } },
+      { text: "0 da", style: { bold: true, color: "#315A83" } },
+      { text: "ys of cash buffer.", style: { bold: true, color: "#315A83" } },
+    ],
   });
   trackedReplacementSourceDocument.addParagraph("Unchanged review context.");
   const trackedReplacementSourcePath = path.join(outputDir, "tracked-replacement-source.docx");
@@ -326,12 +330,16 @@ try {
   assert.equal(trackedReplacementWorkflow.audit.savePolicy.overwrite, false);
   assert.deepEqual(trackedReplacementWorkflow.audit.operation.changedParts, ["word/document.xml"]);
   assert.equal(trackedReplacementWorkflow.audit.operation.targetBlockIndex, 0);
+  assert.equal(trackedReplacementWorkflow.audit.operation.matchedSourceRunCount, 3);
   assert.deepEqual(await fs.readFile(trackedReplacementSourcePath), trackedReplacementSourceBytes);
   const trackedReplacementZip = await JSZip.loadAsync(await fs.readFile(trackedReplacementPath));
   const trackedReplacementXml = await trackedReplacementZip.file("word/document.xml").async("text");
   assert.equal((trackedReplacementXml.match(/<w:del\b/g) || []).length, 1);
   assert.equal((trackedReplacementXml.match(/<w:ins\b/g) || []).length, 1);
-  assert.match(trackedReplacementXml, /<w:delText>30 days<\/w:delText>/);
+  assert.deepEqual(
+    [...trackedReplacementXml.matchAll(/<w:delText(?:\s[^>]*)?>([\s\S]*?)<\/w:delText>/g)].map((match) => match[1]),
+    ["3", "0 da", "ys"],
+  );
   assert.match(trackedReplacementXml, /<w:t>45 days<\/w:t>/);
   const trackedReplacementDocument = await DocumentFile.importDocx(await FileBlob.load(trackedReplacementPath));
   assert.equal(trackedReplacementDocument.blocks[0].text, "The draft budget assumes 45 days of cash buffer.");

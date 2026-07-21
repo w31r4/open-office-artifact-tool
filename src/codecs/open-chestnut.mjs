@@ -3177,6 +3177,9 @@ export async function addDocxTrackedReplacementWithOpenChestnut(input, options =
       result.insertedTextSha256 !== insertedTextSha256 ||
       result.deletedTextChars !== search.length ||
       result.insertedTextChars !== replacement.length ||
+      !Number.isInteger(result.matchedSourceRunCount) ||
+      result.matchedSourceRunCount < 1 ||
+      result.matchedSourceRunCount > search.length ||
       !/^\d+$/.test(result.deletionNativeRevisionId) ||
       !/^\d+$/.test(result.insertionNativeRevisionId) ||
       result.deletionNativeRevisionId === result.insertionNativeRevisionId ||
@@ -3202,6 +3205,7 @@ export async function addDocxTrackedReplacementWithOpenChestnut(input, options =
         insertedTextSha256,
         deletedTextChars: result.deletedTextChars,
         insertedTextChars: result.insertedTextChars,
+        matchedSourceRunCount: result.matchedSourceRunCount,
         deletionNativeRevisionId: result.deletionNativeRevisionId,
         insertionNativeRevisionId: result.insertionNativeRevisionId,
         changedParts,

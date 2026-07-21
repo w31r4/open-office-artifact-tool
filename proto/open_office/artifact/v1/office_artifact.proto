@@ -142,6 +142,9 @@ message DocumentTrackedReplacementResult {
   string insertion_native_revision_id = 12;
   repeated string changed_parts = 13;
   DocumentTrackedReplacementTarget target = 14;
+  // Number of adjacent source w:r nodes consumed by the literal match. Values
+  // greater than one are admitted only when every run has identical w:rPr.
+  uint32 matched_source_run_count = 15;
 }
 
 message ArtifactEnvelope {

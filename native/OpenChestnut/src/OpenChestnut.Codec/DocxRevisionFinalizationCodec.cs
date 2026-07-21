@@ -14,6 +14,8 @@ internal sealed record DocxRevisionFinalizationOutput(
 
 // Finalizes the bounded whole-paragraph profile plus the exact adjacent
 // in-paragraph deletion/insertion pair authored by DocxTrackedReplacementCodec.
+// The deletion may retain multiple adjacent source fragments only when every
+// run and the single insertion use identical run-property markup.
 // The pair may live in a direct body paragraph or one structurally bounded
 // direct table-cell paragraph. Every other topology fails before bytes are
 // written.
@@ -101,7 +103,7 @@ internal static class DocxRevisionFinalizationCodec
             if (supported.Count != mainRevisionCount)
                 throw new CodecException(
                     "unsupported_document_revision_topology",
-                    "DOCX contains unsupported revision markup. This bounded finalizer accepts direct whole-paragraph one-run w:ins/w:del blocks in the body, or one adjacent direct-run w:del + w:ins replacement pair in a direct body paragraph or one bounded direct table-cell paragraph; mixed, nested, moved, property-level, non-body-story, irregular-table, or malformed graphs fail closed.",
+                    "DOCX contains unsupported revision markup. This bounded finalizer accepts direct whole-paragraph one-run w:ins/w:del blocks in the body, or one adjacent same-format w:del + single-run w:ins replacement pair in a direct body paragraph or one bounded direct table-cell paragraph; mixed formatting, nested, moved, property-level, non-body-story, irregular-table, or malformed graphs fail closed.",
                     DocumentPath);
 
             foreach (var wrapper in supported)

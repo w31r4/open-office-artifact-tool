@@ -79,7 +79,7 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "SpreadsheetFile.inspectXlsx
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.addTrackedReplacement")?.schema?.parameters?.targetBlockIndex?.required, undefined);
 assert.match(HELP_CATALOG.find((item) => item.name === "DocumentFile.addTrackedReplacement")?.schema?.parameters?.target?.description || "", /paragraph.*tableCell.*physical indexes/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.addTrackedReplacement")?.schema?.parameters?.expectedSourceSha256?.required, true);
-assert.match(HELP_CATALOG.find((item) => item.name === "DocumentFile.addTrackedReplacement")?.summary || "", /body paragraph.*table-cell paragraph.*w:del\/w:ins.*structured.*unique one-node.*fail-closed/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "DocumentFile.addTrackedReplacement")?.summary || "", /body paragraph.*table-cell paragraph.*w:del\/w:ins.*structured.*unique literal.*adjacent run fragments.*mixed formatting.*fail closed/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.finalizeRevisions")?.schema?.parameters?.expectedSourceSha256?.required, true);
 const revisionFinalizationSummary = HELP_CATALOG.find((item) => item.name === "DocumentFile.finalizeRevisions")?.summary || "";
 assert.match(revisionFinalizationSummary, /whole-paragraph.*in-paragraph.*source bytes/i);

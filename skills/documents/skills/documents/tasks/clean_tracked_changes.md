@@ -29,14 +29,14 @@ The workflow:
 
 `--keep-tracking` preserves an existing `<w:trackRevisions/>`; it does not enable tracking when the source did not have it. Without the flag, finalization removes the setting so later manual edits are not automatically tracked.
 
-`DocumentFile.finalizeRevisions` also accepts the exact adjacent direct-run `w:del` + `w:ins` pair produced by `DocumentFile.addTrackedReplacement` and `examples/openchestnut-tracked-replacement-workflow.mjs`, whether it is in a direct body paragraph or one bounded direct table-cell paragraph. The whole-block workflow above performs a richer model projection and therefore expects modeled `kind: "change"` blocks. For an inline pair, hash the tracked output, call the same API directly, retain both `metadata.trackedReplacement` and `metadata.revisionFinalization`, reimport the accepted or rejected paragraph/cell text, inspect the package for zero remaining revision elements, and native-render every page.
+`DocumentFile.finalizeRevisions` also accepts the exact adjacent `w:del` + `w:ins` pair produced by `DocumentFile.addTrackedReplacement` and `examples/openchestnut-tracked-replacement-workflow.mjs`, whether it is in a direct body paragraph or one bounded direct table-cell paragraph. The deletion may contain multiple adjacent source-fragment runs only when every fragment and the single insertion have identical `w:rPr`. The whole-block workflow above performs a richer model projection and therefore expects modeled `kind: "change"` blocks. For an inline pair, hash the tracked output, call the same API directly, retain both `metadata.trackedReplacement` and `metadata.revisionFinalization`, reimport the accepted or rejected paragraph/cell text, inspect the package for zero remaining revision elements, and native-render every page.
 
 ## Capability boundary
 
 The native primitive deliberately fails closed for:
 
 - mixed ordinary and revision runs other than one exact adjacent bounded deletion/insertion pair;
-- more than one run inside a revision wrapper;
+- more than one insertion run, or multiple deletion runs whose exact `w:rPr` differs;
 - nested revisions;
 - `w:moveFrom` / `w:moveTo`;
 - run, paragraph, table, row, or cell property revisions;

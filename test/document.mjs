@@ -278,6 +278,7 @@ assert.deepEqual(trackedReplacement.metadata.trackedReplacement, {
   insertedTextSha256: createHash("sha256").update("reviewed").digest("hex"),
   deletedTextChars: "colored".length,
   insertedTextChars: "reviewed".length,
+  matchedSourceRunCount: 1,
   deletionNativeRevisionId: trackedReplacement.metadata.trackedReplacement.deletionNativeRevisionId,
   insertionNativeRevisionId: trackedReplacement.metadata.trackedReplacement.insertionNativeRevisionId,
   changedParts: ["word/document.xml"],
@@ -335,6 +336,7 @@ assert.deepEqual(tableTrackedReplacement.metadata.trackedReplacement.target, {
 assert.equal(tableTrackedReplacement.metadata.trackedReplacement.targetBlockIndex, tableBlockIndex);
 assert.equal(tableTrackedReplacement.metadata.trackedReplacement.targetBodyIndex, tableBlockIndex);
 assert.equal(tableTrackedReplacement.metadata.trackedReplacement.outputSha256, tableTrackedSha256);
+assert.equal(tableTrackedReplacement.metadata.trackedReplacement.matchedSourceRunCount, 1);
 assert.deepEqual(tableTrackedReplacement.metadata.trackedReplacement.changedParts, ["word/document.xml"]);
 assert.deepEqual(Buffer.from(await firstDocx.arrayBuffer()), firstDocxBytes, "table tracked replacement must not mutate its source blob");
 const tableTrackedDocument = await DocumentFile.importDocx(tableTrackedReplacement);

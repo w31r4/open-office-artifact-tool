@@ -18,16 +18,19 @@ internal sealed record DocxInlineTrackedReplacement(
     W.DeletedRun Deletion,
     W.InsertedRun Insertion,
     string DeletedText,
-    string InsertedText);
+    string InsertedText,
+    uint DeletedRunCount,
+    uint InsertedRunCount);
 
 internal sealed record DocxResolvedTrackedReplacementTarget(
     W.Paragraph Paragraph,
     uint BodyIndex,
     DocumentTrackedReplacementTarget Selector);
 
-// Adds one exact, direct-run replacement to an existing DOCX. This operation
-// deliberately owns package mutation instead of expanding the general
-// DocumentParagraph model with source-only revision topology.
+// Adds one exact direct-text replacement to an existing DOCX. A literal may
+// cross adjacent ordinary runs only when their run properties are identical.
+// This operation deliberately owns package mutation instead of expanding the
+// general DocumentParagraph model with source-only revision topology.
 internal static class DocxTrackedReplacementCodec
 {
     private const string DocumentPath = "word/document.xml";
@@ -58,6 +61,7 @@ internal static class DocxTrackedReplacementCodec
         stream.Write(sourceBytes);
         stream.Position = 0;
         uint bodyIndex;
+        uint matchedSourceRunCount;
         DocumentTrackedReplacementTarget selector;
         string sourceElementHash;
         using (var package = WordprocessingDocument.Open(stream, isEditable: true, new OpenSettings { AutoSave = false }))
@@ -72,26 +76,34 @@ internal static class DocxTrackedReplacementCodec
             selector = resolved.Selector;
             sourceElementHash = HashElement(paragraph);
             var target = FindTarget(paragraph, request.ExpectedParagraphText, request.Search);
+            matchedSourceRunCount = checked((uint)target.Segments.Count);
             var date = Date(request);
-            var prefix = target.Text.Text[..target.MatchIndex];
-            var suffix = target.Text.Text[(target.MatchIndex + request.Search.Length)..];
-            if (prefix.Length > 0) target.Run.InsertBeforeSelf(CloneRun(target.Run, prefix, deleted: false));
-            var deletion = new W.DeletedRun(CloneRun(target.Run, request.Search, deleted: true))
+            var first = target.Segments[0];
+            var last = target.Segments[^1];
+            var prefix = first.Text.Text[..first.Start];
+            var suffix = last.Text.Text[(last.Start + last.Length)..];
+            if (prefix.Length > 0) first.Run.InsertBeforeSelf(CloneRun(first.Run, prefix, deleted: false));
+            var deletion = new W.DeletedRun
             {
                 Id = deletionId,
                 Author = request.Author,
                 Date = date,
             };
-            target.Run.InsertBeforeSelf(deletion);
-            var insertion = new W.InsertedRun(CloneRun(target.Run, request.Replacement, deleted: false))
+            foreach (var segment in target.Segments)
+                deletion.Append(CloneRun(
+                    segment.Run,
+                    segment.Text.Text.Substring(segment.Start, segment.Length),
+                    deleted: true));
+            first.Run.InsertBeforeSelf(deletion);
+            var insertion = new W.InsertedRun(CloneRun(first.Run, request.Replacement, deleted: false))
             {
                 Id = insertionId,
                 Author = request.Author,
                 Date = date,
             };
-            target.Run.InsertBeforeSelf(insertion);
-            if (suffix.Length > 0) target.Run.InsertBeforeSelf(CloneRun(target.Run, suffix, deleted: false));
-            target.Run.Remove();
+            first.Run.InsertBeforeSelf(insertion);
+            if (suffix.Length > 0) first.Run.InsertBeforeSelf(CloneRun(last.Run, suffix, deleted: false));
+            foreach (var segment in target.Segments) segment.Run.Remove();
             mainPart.Document!.Save();
         }
 
@@ -136,6 +148,8 @@ internal static class DocxTrackedReplacementCodec
                 replacement.Insertion.Id?.Value != insertionId ||
                 replacement.DeletedText != request.Search ||
                 replacement.InsertedText != request.Replacement ||
+                replacement.DeletedRunCount != matchedSourceRunCount ||
+                replacement.InsertedRunCount != 1 ||
                 AcceptedText(paragraph) != request.ExpectedParagraphText.Replace(request.Search, request.Replacement, StringComparison.Ordinal))
                 throw new CodecException(
                     "document_tracked_replacement_verification_failed",
@@ -159,6 +173,7 @@ internal static class DocxTrackedReplacementCodec
             DeletionNativeRevisionId = deletionId,
             InsertionNativeRevisionId = insertionId,
             Target = selector.Clone(),
+            MatchedSourceRunCount = matchedSourceRunCount,
         };
         result.ChangedParts.Add(changedParts);
         var diagnostics = new List<Diagnostic>();
@@ -183,8 +198,10 @@ internal static class DocxTrackedReplacementCodec
 
         var deletion = (W.DeletedRun)deletionIndexes[0].child;
         var insertion = (W.InsertedRun)insertionIndexes[0].child;
-        if (!TryReadRevisionRun(deletion, deleted: true, out var deletedText) ||
-            !TryReadRevisionRun(insertion, deleted: false, out var insertedText) ||
+        if (!TryReadRevisionRuns(deletion, deleted: true, out var deletedText, out var deletionRuns) ||
+            !TryReadRevisionRuns(insertion, deleted: false, out var insertedText, out var insertionRuns) ||
+            insertionRuns.Length != 1 ||
+            !SameRunProperties(deletionRuns.Concat(insertionRuns)) ||
             deletedText.Length == 0 || insertedText.Length == 0 ||
             string.IsNullOrWhiteSpace(deletion.Id?.Value) || string.IsNullOrWhiteSpace(insertion.Id?.Value) ||
             deletion.Id?.Value == insertion.Id?.Value ||
@@ -192,11 +209,18 @@ internal static class DocxTrackedReplacementCodec
             deletion.Author?.Value != insertion.Author?.Value || deletion.Date?.Value != insertion.Date?.Value)
             return false;
 
-        replacement = new DocxInlineTrackedReplacement(deletion, insertion, deletedText, insertedText);
+        replacement = new DocxInlineTrackedReplacement(
+            deletion,
+            insertion,
+            deletedText,
+            insertedText,
+            checked((uint)deletionRuns.Length),
+            checked((uint)insertionRuns.Length));
         return true;
     }
 
-    private sealed record TargetRun(W.Run Run, W.Text Text, int MatchIndex);
+    private sealed record TargetRunSegment(W.Run Run, W.Text Text, int RunIndex, int Start, int Length);
+    private sealed record TargetSpan(IReadOnlyList<TargetRunSegment> Segments);
 
     private static DocxResolvedTrackedReplacementTarget ResolveTarget(
         W.Body body,
@@ -280,7 +304,7 @@ internal static class DocxTrackedReplacementCodec
             selector.Clone());
     }
 
-    private static TargetRun FindTarget(W.Paragraph paragraph, string expectedText, string search)
+    private static TargetSpan FindTarget(W.Paragraph paragraph, string expectedText, string search)
     {
         var children = paragraph.ChildElements.Where(child => child is not W.ParagraphProperties).ToArray();
         if (children.Length == 0 || children.Any(child => child is not W.Run))
@@ -301,26 +325,67 @@ internal static class DocxTrackedReplacementCodec
                 "DOCX tracked replacement expected_paragraph_text does not match the exact target paragraph.",
                 DocumentPath);
 
-        var matches = new List<TargetRun>();
-        foreach (var item in textNodes)
-        {
-            for (var index = item.Text.Text.IndexOf(search, StringComparison.Ordinal);
-                 index >= 0;
-                 index = item.Text.Text.IndexOf(search, index + 1, StringComparison.Ordinal))
-                matches.Add(new TargetRun(item.Run, item.Text, index));
-        }
-        if (matches.Count == 0 && paragraphText.Contains(search, StringComparison.Ordinal))
-            throw new CodecException(
-                "document_tracked_replacement_cross_run_match",
-                "DOCX tracked replacement search text crosses native run boundaries; this bounded operation requires one direct w:t match.",
-                DocumentPath);
+        var matches = new List<int>();
+        for (var index = paragraphText.IndexOf(search, StringComparison.Ordinal);
+             index >= 0;
+             index = paragraphText.IndexOf(search, index + 1, StringComparison.Ordinal))
+            matches.Add(index);
         if (matches.Count != 1)
             throw new CodecException(
                 "document_tracked_replacement_match_not_unique",
-                $"DOCX tracked replacement requires exactly one direct w:t match; found {matches.Count}.",
+                $"DOCX tracked replacement requires exactly one literal match in the target paragraph; found {matches.Count}.",
                 DocumentPath);
-        return matches[0];
+
+        var matchStart = matches[0];
+        var matchEnd = checked(matchStart + search.Length);
+        var segments = new List<TargetRunSegment>();
+        var textOffset = 0;
+        for (var runIndex = 0; runIndex < textNodes.Count; runIndex++)
+        {
+            var item = textNodes[runIndex];
+            var runStart = textOffset;
+            var runEnd = checked(runStart + item.Text.Text.Length);
+            var segmentStart = Math.Max(matchStart, runStart);
+            var segmentEnd = Math.Min(matchEnd, runEnd);
+            if (segmentStart < segmentEnd)
+                segments.Add(new TargetRunSegment(
+                    item.Run,
+                    item.Text,
+                    runIndex,
+                    segmentStart - runStart,
+                    segmentEnd - segmentStart));
+            textOffset = runEnd;
+        }
+        if (segments.Count == 0 ||
+            string.Concat(segments.Select(segment => segment.Text.Text.Substring(segment.Start, segment.Length))) != search)
+            throw new CodecException(
+                "document_tracked_replacement_verification_failed",
+                "DOCX tracked replacement could not map the unique literal to native run segments.",
+                DocumentPath);
+        if (segments.Count > 1)
+        {
+            if (segments[^1].RunIndex - segments[0].RunIndex + 1 != segments.Count)
+                throw Unsupported("A fragmented literal match cannot cross an empty native run.");
+            if (!SameRunProperties(segments.Select(segment => segment.Run)))
+                throw new CodecException(
+                    "document_tracked_replacement_cross_run_format_mismatch",
+                    "DOCX tracked replacement cannot infer one insertion format from a literal spanning runs with different w:rPr markup.",
+                    DocumentPath);
+        }
+        return new TargetSpan(segments);
     }
+
+    private static bool SameRunProperties(IEnumerable<W.Run> runs)
+    {
+        using var iterator = runs.GetEnumerator();
+        if (!iterator.MoveNext()) return false;
+        var expected = RunPropertiesKey(iterator.Current);
+        while (iterator.MoveNext())
+            if (!RunPropertiesKey(iterator.Current).Equals(expected, StringComparison.Ordinal)) return false;
+        return true;
+    }
+
+    private static string RunPropertiesKey(W.Run run) => run.RunProperties?.OuterXml ?? string.Empty;
 
     private static W.Run CloneRun(W.Run source, string value, bool deleted)
     {
@@ -334,17 +399,29 @@ internal static class DocxTrackedReplacementCodec
         return run;
     }
 
-    private static bool TryReadRevisionRun(OpenXmlCompositeElement revision, bool deleted, out string text)
+    private static bool TryReadRevisionRuns(
+        OpenXmlCompositeElement revision,
+        bool deleted,
+        out string text,
+        out W.Run[] runs)
     {
         text = string.Empty;
-        if (revision.ChildElements.Count != 1 || revision.FirstChild is not W.Run run) return false;
-        return TryReadTextRun(run, deleted, out text);
+        runs = revision.Elements<W.Run>().ToArray();
+        if (runs.Length == 0 || revision.ChildElements.Any(child => child is not W.Run)) return false;
+        var values = new string[runs.Length];
+        for (var index = 0; index < runs.Length; index++)
+        {
+            if (!TryReadTextRun(runs[index], deleted, out values[index]) || values[index].Length == 0) return false;
+        }
+        text = string.Concat(values);
+        return true;
     }
 
     private static bool TryReadTextRun(W.Run run, bool deleted, out string text)
     {
         text = string.Empty;
-        if (run.ChildElements.Any(child => child is not W.RunProperties &&
+        if (run.Elements<W.RunProperties>().Count() > 1 ||
+            run.ChildElements.Any(child => child is not W.RunProperties &&
                 (deleted ? child is not W.DeletedText : child is not W.Text)))
             return false;
         if (deleted)

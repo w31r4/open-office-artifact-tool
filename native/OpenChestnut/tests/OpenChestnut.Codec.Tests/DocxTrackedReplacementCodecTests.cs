@@ -50,6 +50,7 @@ public sealed class DocxTrackedReplacementCodecTests
         Assert.Equal(HashText(newText), audit.InsertedTextSha256);
         Assert.Equal((uint)oldText.Length, audit.DeletedTextChars);
         Assert.Equal((uint)newText.Length, audit.InsertedTextChars);
+        Assert.Equal((uint)1, audit.MatchedSourceRunCount);
         Assert.NotEqual(audit.DeletionNativeRevisionId, audit.InsertionNativeRevisionId);
         Assert.Equal(["word/document.xml"], audit.ChangedParts);
 
@@ -123,7 +124,14 @@ public sealed class DocxTrackedReplacementCodecTests
         var terms = new DocumentTableRow();
         terms.Cells.Add(["Payment", sourceText]);
         table.Table.Rows.Add([header, terms]);
-        var source = ExportDocx(table);
+        var source = EditDocx(ExportDocx(table), body =>
+        {
+            var paragraph = body.Elements<W.Table>().Single()
+                .Elements<W.TableRow>().ElementAt(1)
+                .Elements<W.TableCell>().ElementAt(1)
+                .Elements<W.Paragraph>().Single();
+            ReplaceRunWithTextParts(paragraph.Elements<W.Run>().Single(), "Payment is due in 3", "0 days.");
+        });
         var sourceHash = Hash(source);
 
         var added = Invoke(new CodecRequest
@@ -155,6 +163,7 @@ public sealed class DocxTrackedReplacementCodecTests
         Assert.Equal((uint)0, audit.Target.BlockIndex);
         Assert.Equal((uint)1, audit.Target.TableCell.Row);
         Assert.Equal((uint)1, audit.Target.TableCell.Column);
+        Assert.Equal((uint)2, audit.MatchedSourceRunCount);
         Assert.Equal(["word/document.xml"], audit.ChangedParts);
 
         using (var stream = new MemoryStream(added.File.ToByteArray(), writable: false))
@@ -164,7 +173,9 @@ public sealed class DocxTrackedReplacementCodecTests
             var cells = nativeTable.Elements<W.TableRow>().ElementAt(1).Elements<W.TableCell>().ToArray();
             Assert.Equal("Payment", string.Concat(cells[0].Descendants<W.Text>().Select(value => value.Text)));
             var paragraph = cells[1].Elements<W.Paragraph>().Single();
-            Assert.Equal(oldText, paragraph.Elements<W.DeletedRun>().Single().Descendants<W.DeletedText>().Single().Text);
+            var deletion = paragraph.Elements<W.DeletedRun>().Single();
+            Assert.Equal(2, deletion.Elements<W.Run>().Count());
+            Assert.Equal(oldText, string.Concat(deletion.Descendants<W.DeletedText>().Select(value => value.Text)));
             Assert.Equal(newText, paragraph.Elements<W.InsertedRun>().Single().Descendants<W.Text>().Single().Text);
             Assert.Equal(sourceText.Replace(oldText, newText), string.Concat(paragraph.Descendants<W.Text>().Select(value => value.Text)));
         }
@@ -191,7 +202,61 @@ public sealed class DocxTrackedReplacementCodecTests
     }
 
     [Fact]
-    public void FailsClosedForStaleAmbiguousCrossRunAndUnsupportedTargets()
+    public void AddsAndFinalizesSameFormatFragmentedReplacement()
+    {
+        const string sourceText = "The cash buffer remains stable.";
+        const string oldText = "cash buffer";
+        const string newText = "liquidity reserve";
+        var paragraph = new DocumentBlock
+        {
+            Id = "paragraph/fragmented",
+            StyleId = "Normal",
+            Paragraph = new DocumentParagraph { Text = sourceText },
+        };
+        foreach (var text in new[] { "The ca", "sh bu", "ffer remains stable." })
+            paragraph.Paragraph.Runs.Add(new DocumentRun { Text = text, Bold = true });
+        var source = ExportDocx(paragraph);
+
+        var added = Add(source, sourceText, oldText, newText);
+        Assert.True(added.Ok, Diagnostics(added));
+        Assert.Equal((uint)3, added.TrackedReplacement.MatchedSourceRunCount);
+        using (var stream = new MemoryStream(added.File.ToByteArray(), writable: false))
+        using (var package = WordprocessingDocument.Open(stream, isEditable: false))
+        {
+            var nativeParagraph = package.MainDocumentPart!.Document!.Body!.Elements<W.Paragraph>().Single();
+            var deletionRuns = nativeParagraph.Elements<W.DeletedRun>().Single().Elements<W.Run>().ToArray();
+            Assert.Equal(3, deletionRuns.Length);
+            Assert.Equal(["ca", "sh bu", "ffer"], deletionRuns.Select(run => run.GetFirstChild<W.DeletedText>()!.Text));
+            Assert.All(deletionRuns, run => Assert.NotNull(run.RunProperties?.Bold));
+            Assert.NotNull(nativeParagraph.Elements<W.InsertedRun>().Single().Elements<W.Run>().Single().RunProperties?.Bold);
+        }
+
+        var accepted = Finalize(added.File.ToByteArray(), DocumentRevisionFinalizationMode.Accept);
+        Assert.Equal(sourceText.Replace(oldText, newText), BodyText(accepted.File.ToByteArray()));
+        AssertNoRevisions(accepted.File.ToByteArray());
+        var rejected = Finalize(added.File.ToByteArray(), DocumentRevisionFinalizationMode.Reject);
+        Assert.Equal(sourceText, BodyText(rejected.File.ToByteArray()));
+        AssertNoRevisions(rejected.File.ToByteArray());
+
+        var mismatchedInsertionFormatting = EditDocx(added.File.ToByteArray(), body =>
+        {
+            var run = body.Descendants<W.InsertedRun>().Single().Elements<W.Run>().Single();
+            run.RunProperties = new W.RunProperties(new W.Italic());
+        });
+        AssertFailure(FinalizeResponse(mismatchedInsertionFormatting, DocumentRevisionFinalizationMode.Accept), "unsupported_document_revision_topology");
+
+        var emptyDeletionFragment = EditDocx(added.File.ToByteArray(), body =>
+        {
+            var deletion = body.Descendants<W.DeletedRun>().Single();
+            var run = (W.Run)deletion.Elements<W.Run>().First().CloneNode(true);
+            run.GetFirstChild<W.DeletedText>()!.Text = string.Empty;
+            deletion.Append(run);
+        });
+        AssertFailure(FinalizeResponse(emptyDeletionFragment, DocumentRevisionFinalizationMode.Accept), "unsupported_document_revision_topology");
+    }
+
+    [Fact]
+    public void FailsClosedForStaleAmbiguousFormattingAndUnsupportedTargets()
     {
         const string repeated = "draft wording and draft wording";
         var repeatedSource = ExportDocx(Paragraph(repeated));
@@ -200,16 +265,27 @@ public sealed class DocxTrackedReplacementCodecTests
         AssertFailure(Add(repeatedSource, "stale paragraph", "draft", "final"), "document_tracked_replacement_text_mismatch");
         AssertFailure(Add(repeatedSource, repeated, "draft", "final", targetBlockIndex: 9), "document_tracked_replacement_target_not_found");
 
-        var crossRun = new DocumentBlock
+        var mixedFormatting = new DocumentBlock
         {
-            Id = "paragraph/cross-run",
+            Id = "paragraph/mixed-formatting",
             StyleId = "Normal",
             Paragraph = new DocumentParagraph { Text = "cash buffer" },
         };
-        crossRun.Paragraph.Runs.Add(new DocumentRun { Text = "cash " });
-        crossRun.Paragraph.Runs.Add(new DocumentRun { Text = "buffer" });
-        var crossRunSource = ExportDocx(crossRun);
-        AssertFailure(Add(crossRunSource, "cash buffer", "cash buffer", "liquidity reserve"), "document_tracked_replacement_cross_run_match");
+        mixedFormatting.Paragraph.Runs.Add(new DocumentRun { Text = "cash ", Bold = true });
+        mixedFormatting.Paragraph.Runs.Add(new DocumentRun { Text = "buffer", Italic = true });
+        var mixedFormattingSource = ExportDocx(mixedFormatting);
+        AssertFailure(
+            Add(mixedFormattingSource, "cash buffer", "cash buffer", "liquidity reserve"),
+            "document_tracked_replacement_cross_run_format_mismatch");
+
+        var emptyRunGap = EditDocx(ExportDocx(Paragraph("cash buffer", bold: true)), body =>
+        {
+            var run = body.Elements<W.Paragraph>().Single().Elements<W.Run>().Single();
+            ReplaceRunWithTextParts(run, "cash", string.Empty, " buffer");
+        });
+        AssertFailure(
+            Add(emptyRunGap, "cash buffer", "cash buffer", "liquidity reserve"),
+            "unsupported_document_tracked_replacement_topology");
 
         var table = new DocumentBlock
         {
@@ -322,7 +398,13 @@ public sealed class DocxTrackedReplacementCodecTests
 
     private static CodecResponse Finalize(byte[] source, DocumentRevisionFinalizationMode mode)
     {
-        var response = Invoke(new CodecRequest
+        var response = FinalizeResponse(source, mode);
+        Assert.True(response.Ok, Diagnostics(response));
+        return response;
+    }
+
+    private static CodecResponse FinalizeResponse(byte[] source, DocumentRevisionFinalizationMode mode) =>
+        Invoke(new CodecRequest
         {
             ProtocolVersion = CodecProtocol.ProtocolVersion,
             Operation = CodecOperation.FinalizeDocxRevisions,
@@ -334,9 +416,6 @@ public sealed class DocxTrackedReplacementCodecTests
                 ExpectedSourceSha256 = Hash(source),
             },
         });
-        Assert.True(response.Ok, Diagnostics(response));
-        return response;
-    }
 
     private static byte[] ExportDocx(params DocumentBlock[] blocks)
     {
@@ -370,6 +449,17 @@ public sealed class DocxTrackedReplacementCodecTests
             document.Save();
         }
         return stream.ToArray();
+    }
+
+    private static void ReplaceRunWithTextParts(W.Run source, params string[] parts)
+    {
+        foreach (var value in parts)
+        {
+            var clone = (W.Run)source.CloneNode(true);
+            clone.Elements<W.Text>().Single().Text = value;
+            source.InsertBeforeSelf(clone);
+        }
+        source.Remove();
     }
 
     private static DocumentBlock Paragraph(string text, bool bold = false)

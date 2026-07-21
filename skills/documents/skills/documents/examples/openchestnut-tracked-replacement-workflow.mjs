@@ -147,6 +147,11 @@ export async function addDocumentTrackedReplacement({
       operation.insertedTextSha256 !== sha256(Buffer.from(newText, "utf8"))) {
     throw new Error("OpenChestnut tracked-replacement audit does not match the requested text hashes.");
   }
+  if (!Number.isInteger(operation.matchedSourceRunCount) ||
+      operation.matchedSourceRunCount < 1 ||
+      operation.matchedSourceRunCount > oldText.length) {
+    throw new Error("OpenChestnut tracked-replacement audit reports an invalid source-run span.");
+  }
 
   const acceptedProjection = `${expected.slice(0, matchIndex)}${newText}${expected.slice(matchIndex + oldText.length)}`;
   const reimported = await DocumentFile.importDocx(new FileBlob(output, { type: DOCX_MIME, name: path.basename(finalPath) }));
@@ -177,6 +182,7 @@ export async function addDocumentTrackedReplacement({
       insertedTextSha256: operation.insertedTextSha256,
       deletedTextChars: operation.deletedTextChars,
       insertedTextChars: operation.insertedTextChars,
+      matchedSourceRunCount: operation.matchedSourceRunCount,
       deletionNativeRevisionId: operation.deletionNativeRevisionId,
       insertionNativeRevisionId: operation.insertionNativeRevisionId,
       changedParts: operation.changedParts,

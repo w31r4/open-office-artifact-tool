@@ -2644,6 +2644,56 @@ wrapper passed every code, documentation, package, and .NET gate; npm auth and
 registry lookup were deliberately skipped, and no publish, tag, or release
 operation was attempted.
 
+### DOCX adjacent same-format run-fragment tracked replacement
+
+On 2026-07-21, the source-bound tracked-replacement transaction stopped treating
+Word's ordinary run splitting as an automatic failure. A unique literal may now
+occupy one direct `w:r/w:t` or span adjacent non-empty ordinary runs when every
+run has byte-identical `w:rPr` markup. One internal target-span representation
+handles both cases: OpenChestnut retains each matched source fragment as its own
+`w:r/w:delText` inside one `w:del`, writes one adjacent single-run `w:ins` with
+the shared formatting, and leaves prefix/suffix text in cloned source runs.
+There is no second JavaScript editing path or lossy model reconstruction.
+
+The additive protobuf audit field `matched_source_run_count` is validated by the
+JavaScript adapter and exposed as
+`metadata.trackedReplacement.matchedSourceRunCount`. The Documents workflow
+copies it into the byte-bound publication audit. The native finalizer accepts
+the same exact graph for both direct body paragraphs and bounded direct
+table-cell paragraphs. Different run-property markup, an
+empty-run gap, empty deletion fragments, more than one insertion run, stale or
+duplicate text, fields/controls/revisions, and broader revision graphs still
+fail closed before publication. Single-run behavior remains the same and reports
+a count of one.
+
+Native tests cover one-run compatibility, a two-run table-cell replacement, a
+three-run formatted body replacement, accept/reject finalization, source-byte
+immutability, adversarial insertion formatting, empty deletion fragments,
+mixed-format source runs, empty-run gaps, stale/duplicate targets, and bounded
+table geometry. The shipped Documents Skill fixture now deliberately splits
+`30 days` across three identically formatted runs and proves the public bundled
+WASM path, three retained deletion fragments, one insertion, second import,
+accept/reject, audit propagation, no-overwrite publication, and native render.
+
+Real LibreOffice/Poppler QA rendered source, tracked, accepted, and rejected
+states as four one-page 1275 by 1650 PNGs, all manually reviewed. The tracked
+page visibly showed the deletion and insertion with the surrounding blue bold
+formatting intact; accept retained only `45 days`; reject restored only
+`30 days`. Source and rejected PNGs were byte-identical (SHA-256
+`f2a1ff1b6e402869fb26e4c264556f22831b20839cf6122fd439d537d512d1ab`).
+
+The complete `npm test` gate passed, including all 20 repository-only templates,
+all four Office/PDF Skills, LibreOffice, Poppler, MuPDF.js, qpdf, Playwright,
+reference-Skill sync, and Agent eval checks. OpenChestnut passed `311/311` and
+OfficeBridge passed `5/5`. Generated API docs passed, and deterministic
+source-built WASM verification matched 39 audited build files; the bundled
+runtime is 38 files and 14,850,752 bytes. The clean-install/package gate produced
+474 files, 9,112,148 compressed bytes, and 24,106,329 unpacked bytes (`SHA-1
+8ad65f87be1de9e1bfcf94915c47e6fd1f69d8b8`). The full release wrapper then
+re-ran and passed every code, documentation, package, and .NET command; before
+the commit it correctly reported the dirty candidate plus unavailable npm auth
+as release blockers. No npm publish, tag, or release operation was attempted.
+
 ## Publishing
 
 Before publishing:

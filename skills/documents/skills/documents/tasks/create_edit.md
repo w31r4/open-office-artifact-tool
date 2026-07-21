@@ -80,9 +80,10 @@ When a user explicitly needs one true redline inside an existing ordinary
 paragraph, do not use the untracked `textPatchable` route. Use
 `DocumentFile.addTrackedReplacement(...)` or
 `examples/openchestnut-tracked-replacement-workflow.mjs`; bind the exact source
-hash, semantic block index, full paragraph snapshot, and unique one-node
-literal. Broader/cross-run revision graphs still require the explicit OOXML or
-Office-host route.
+hash, semantic block index, full paragraph snapshot, and unique literal. The
+literal may span adjacent non-empty ordinary runs only when their exact `w:rPr`
+markup matches; mixed formatting, empty-run gaps, and broader revision graphs
+still require the explicit OOXML or Office-host route.
 
 Preserve the original and make minimal, local changes. If OpenChestnut rejects
 an edit, narrow the edit or report the unsupported boundary instead of
