@@ -356,6 +356,16 @@ async function pruneRuntimePayload(payload, runtime) {
   for (const entry of siteEntries) {
     if (/^pip(?:-|$)/.test(entry.name)) await removePayloadPath(payload, path.join(pythonLibrary, "site-packages", entry.name));
   }
+  // `_tkinter` is a native bridge to the GUI stack removed above. Retaining
+  // just that extension makes an otherwise headless OCR runtime depend on
+  // Tcl/Tk at library-closure time, despite no supported PDF provider using
+  // it. Remove the native bridge as well as the Python package so a pack
+  // cannot accidentally regain a host Tcl/Tk dependency.
+  const dynamicExtensions = path.join(payload, pythonLibrary, "lib-dynload");
+  const dynamicEntries = await fs.readdir(dynamicExtensions, { withFileTypes: true }).catch(() => []);
+  for (const entry of dynamicEntries) {
+    if (/^_tkinter(?:\.|$)/.test(entry.name)) await removePayloadPath(payload, path.join(pythonLibrary, "lib-dynload", entry.name));
+  }
 }
 
 async function verifyPayloadPython(python, pack) {

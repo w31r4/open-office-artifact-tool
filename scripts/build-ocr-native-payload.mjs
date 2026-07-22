@@ -196,15 +196,27 @@ async function listRegularFiles(root) {
 
 async function copyByBasename(source, destinationDirectory, copied) {
   const actual = await fs.realpath(source);
+  const actualStat = await fs.lstat(actual);
+  if (!actualStat.isFile() || actualStat.isSymbolicLink()) fail(`native source is not a regular file: ${source}.`);
   // Keep the *referenced* basename even when Homebrew or the system runtime
   // expresses it as a symlink. The final customer archive forbids symlinks,
   // so each ABI name must become a regular copy of the verified target.
   const name = path.basename(source);
   const destination = path.join(destinationDirectory, name);
-  const existing = copied.get(name);
+  let existing = copied.get(name);
+  if (!existing) {
+    const destinationStat = await fs.lstat(destination).catch(() => undefined);
+    if (destinationStat) {
+      if (!destinationStat.isFile() || destinationStat.isSymbolicLink()) fail(`native library destination is unsafe: ${destination}.`);
+      existing = destination;
+    }
+  }
   if (existing) {
+    const existingStat = await fs.lstat(existing);
+    if (!existingStat.isFile() || existingStat.isSymbolicLink()) fail(`native library destination is unsafe: ${existing}.`);
     const [left, right] = await Promise.all([fs.readFile(existing), fs.readFile(actual)]);
     if (sha256(left) !== sha256(right)) fail(`native library basename collision: ${name}.`);
+    copied.set(name, existing);
     return destination;
   }
   await copyFile(actual, destination);

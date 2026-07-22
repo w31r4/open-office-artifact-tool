@@ -238,7 +238,8 @@ jobs:
           set -euo pipefail
           archive="$RUNNER_TEMP/ocr-core-release/ocr-core-$OCR_CORE_PACK_VERSION-${{ matrix.platform }}.tar.gz"
           destination="$RUNNER_TEMP/ocr-core-consumer"
-          mkdir -p "$destination"
+          home="$RUNNER_TEMP/ocr-home"
+          mkdir -p "$destination" "$home"
           tar -xzf "$archive" -C "$destination"
           test -x "$destination/bin/ocrmypdf"
           test -x "$destination/bin/tesseract"
@@ -246,10 +247,24 @@ jobs:
           test -x "$destination/bin/pdftotext"
           test ! -e "$destination/bin/pip"
           test -z "$(find "$destination/share/tessdata" -type f -name '*.traineddata' -print -quit)"
-          env -i HOME="$RUNNER_TEMP/ocr-home" PATH="$destination/bin:/usr/bin:/bin" "$destination/bin/ocrmypdf" --version | grep -Fx 17.8.1
-          env -i HOME="$RUNNER_TEMP/ocr-home" PATH="$destination/bin:/usr/bin:/bin" "$destination/bin/tesseract" --version | grep -q '^tesseract 5\.'
-          env -i HOME="$RUNNER_TEMP/ocr-home" PATH="$destination/bin:/usr/bin:/bin" "$destination/bin/gs" --version | grep -q '^[0-9]'
-          env -i HOME="$RUNNER_TEMP/ocr-home" PATH="$destination/bin:/usr/bin:/bin" "$destination/bin/pdftotext" -v 2>&1 | grep -q 'Poppler'
+          run_probe() {
+            local name="$1"
+            shift
+            local output="$RUNNER_TEMP/$name-version.txt"
+            if ! env -i HOME="$home" PATH="$destination/bin:/usr/bin:/bin" "$@" > "$output" 2>&1; then
+              cat "$output" >&2
+              return 1
+            fi
+            printf '%s\n' "$output"
+          }
+          ocrmypdf_version="$(run_probe ocrmypdf "$destination/bin/ocrmypdf" --version)"
+          tesseract_version="$(run_probe tesseract "$destination/bin/tesseract" --version)"
+          ghostscript_version="$(run_probe ghostscript "$destination/bin/gs" --version)"
+          pdftotext_version="$(run_probe pdftotext "$destination/bin/pdftotext" -v)"
+          grep -Fx 17.8.1 "$ocrmypdf_version" || { cat "$ocrmypdf_version" >&2; exit 2; }
+          grep -q '^tesseract 5\.' "$tesseract_version" || { cat "$tesseract_version" >&2; exit 2; }
+          grep -q '^[0-9]' "$ghostscript_version" || { cat "$ghostscript_version" >&2; exit 2; }
+          grep -q 'Poppler' "$pdftotext_version" || { cat "$pdftotext_version" >&2; exit 2; }
       - name: Attest immutable OCR core provenance
         if: ${{ inputs.publish == 'true' }}
         uses: actions/attest@v4

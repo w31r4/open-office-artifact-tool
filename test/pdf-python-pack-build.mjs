@@ -8,6 +8,10 @@ import { spawnSync } from "node:child_process";
 const root = path.resolve(import.meta.dirname, "..");
 const buildScript = path.join(root, "scripts", "build-python-provider-pack.mjs");
 const inputPath = path.join(root, "scripts", "pdf-provider-python-release-inputs.v1.json");
+const buildSource = await fs.readFile(buildScript, "utf8");
+
+assert.match(buildSource, /_tkinter/);
+assert.match(buildSource, /lib-dynload/);
 
 function run(arguments_, { expect = 0 } = {}) {
   const result = spawnSync(process.execPath, [buildScript, ...arguments_], { cwd: root, encoding: "utf8" });

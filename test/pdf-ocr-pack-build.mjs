@@ -64,6 +64,7 @@ for (const sourceFragment of [
   "payload library directory contains an unsafe symlink",
   "listMacLibraryFiles",
   "path.basename(source)",
+  "native library destination is unsafe",
   "contains a dangling symlink",
   "contains a symlink directory cycle",
   "resource-root",
@@ -80,6 +81,8 @@ assert.match(workflowSource, /resource_actual/);
 assert.match(workflowSource, /dpkg-query -S/);
 assert.match(workflowSource, /for root_formula in tesseract ghostscript poppler; do brew deps/);
 assert.match(workflowSource, /unapproved Ghostscript resource target/);
+assert.match(workflowSource, /run_probe\(\)/);
+assert.match(workflowSource, /ocr-home/);
 assert.doesNotMatch(workflowSource, /brew deps --include-optional/);
 assert.doesNotMatch(workflowSource, /brew deps --union tesseract ghostscript poppler/);
 
