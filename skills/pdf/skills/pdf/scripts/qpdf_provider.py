@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import re
+import signal
 import shutil
 import subprocess
 import sys
@@ -26,6 +27,7 @@ DEFAULT_TIMEOUT_SECONDS = 120
 MAX_CHECK_LINES = 500
 MAX_JSON_NODES = 2_000_000
 MAX_EVIDENCE_TEXT_CHARS = 4_096
+PROCESS_ISOLATION = "new-process-group" if os.name == "nt" else "new-session"
 
 
 class ProviderError(RuntimeError):
@@ -64,6 +66,11 @@ def run_qpdf(
     violations: list[str] = []
     violation_lock = threading.Lock()
     output_stream = stdout_path.open("wb", buffering=0) if stdout_path is not None else None
+    popen_options: dict[str, Any] = {}
+    if os.name == "nt":
+        popen_options["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    else:
+        popen_options["start_new_session"] = True
     try:
         process = subprocess.Popen(
             command,
@@ -71,20 +78,41 @@ def run_qpdf(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             shell=False,
+            **popen_options,
         )
     except OSError as exc:
         if output_stream is not None:
             output_stream.close()
         raise ProviderError(f"qpdf could not start: {exc}") from exc
 
+    def terminate_process_tree() -> None:
+        """Kill qpdf and descendants that a hostile input/provider may spawn."""
+
+        try:
+            if os.name == "nt":
+                if process.poll() is not None:
+                    return
+                subprocess.run(
+                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                    check=False,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=5,
+                )
+            else:
+                os.killpg(process.pid, signal.SIGKILL)
+        except (OSError, subprocess.SubprocessError):
+            try:
+                process.kill()
+            except OSError:
+                pass
+
     def record_violation(message: str) -> None:
         with violation_lock:
             if not violations:
                 violations.append(message)
-        try:
-            process.kill()
-        except OSError:
-            pass
+        terminate_process_tree()
 
     def pump(stream: Any, buffer: bytearray, limit: int, label: str, sink: Any = None) -> None:
         total = 0
@@ -123,7 +151,7 @@ def run_qpdf(
         process.wait(timeout=timeout_seconds)
     except subprocess.TimeoutExpired:
         timed_out = True
-        process.kill()
+        terminate_process_tree()
         process.wait()
     stdout_thread.join()
     stderr_thread.join()
@@ -423,6 +451,7 @@ def inspect_pdf(
         "ok": True,
         "provider": {"name": "qpdf", "version": version, "executable": str(executable)},
         "silentFallback": False,
+        "execution": {"processIsolation": PROCESS_ISOLATION, "callerIsolationRequired": True},
         "savePolicy": "read-only",
         "source": {"path": str(target), "bytes": target.stat().st_size, "sha256": before_hash},
         "check": {
@@ -539,6 +568,7 @@ def rewrite_pdf(args: argparse.Namespace) -> dict[str, Any]:
         "ok": True,
         "provider": {"name": "qpdf", "version": version, "executable": str(executable)},
         "silentFallback": False,
+        "execution": {"processIsolation": PROCESS_ISOLATION, "callerIsolationRequired": True},
         "operation": "qpdf-rewrite",
         "mode": args.mode,
         "savePolicy": "rewrite",
@@ -608,6 +638,7 @@ def main() -> int:
                 "jsonVersion": 2,
                 "integration": "shipped-thin-script-external-cli",
                 "silentFallback": False,
+                "execution": {"processIsolation": PROCESS_ISOLATION, "callerIsolationRequired": True},
             }
         elif args.command == "inspect":
             executable = qpdf_path()

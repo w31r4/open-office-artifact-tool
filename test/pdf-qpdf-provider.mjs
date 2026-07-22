@@ -78,6 +78,21 @@ function commandAvailable(command) {
   return spawnSync(command, ["--version"], { stdio: "ignore" }).status === 0;
 }
 
+function processExists(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error?.code !== "ESRCH";
+  }
+}
+
+async function waitForGone(pid, timeoutMs = 4_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (processExists(pid) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(processExists(pid), false, `qpdf descendant ${pid} survived process-group termination`);
+}
+
 const manifest = (await fs.readFile(path.join(skillRoot, "manifest.txt"), "utf8")).split(/\r?\n/).filter(Boolean);
 assert.ok(manifest.includes("scripts/qpdf_provider.py"));
 assert.ok(manifest.includes("tasks/repair_linearize.md"));
@@ -94,11 +109,16 @@ try {
   await fs.writeFile(fakeQpdf, [
     "#!/usr/bin/env node",
     "import fs from 'node:fs';",
+    "import { spawn } from 'node:child_process';",
     "const args = process.argv.slice(2);",
+    "const spawnChild = () => { if (process.env.FAKE_QPDF_CHILD_PID) { const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' }); fs.writeFileSync(process.env.FAKE_QPDF_CHILD_PID, String(child.pid)); } };",
     "if (args.includes('--version')) { console.log(`qpdf version ${process.env.FAKE_QPDF_VERSION || '12.3.2'}`); process.exit(0); }",
     "const input = args.at(-1);",
     "if (args.includes('--check')) {",
-    "  if (process.env.FAKE_QPDF_HANG_CHECK === '1') { setInterval(() => {}, 1000); } else {",
+    "  if (process.env.FAKE_QPDF_HANG_CHECK === '1') {",
+    "    spawnChild();",
+    "    setInterval(() => {}, 1000);",
+    "  } else {",
     "  console.log(`checking ${input}`);",
     "  console.log('PDF Version: 1.7');",
     "  console.log('File is not encrypted');",
@@ -108,6 +128,7 @@ try {
     "  process.exit(0);",
     "  }",
     "} else if (args.includes('--json=2')) {",
+    "  if (process.env.FAKE_QPDF_CHILD_ON_JSON === '1') spawnChild();",
     "  if (process.env.FAKE_QPDF_BAD_JSON === '1') { console.log('{}'); process.exit(0); }",
     "  console.log(JSON.stringify({version:2,parameters:{},pages:[{object:'1 0 R',pageposfrom1:1,contents:[],images:[],outlines:[],label:null}],outlines:[],acroform:{fields:[],hasacroform:false,needappearances:false},attachments:{},encrypt:{encrypted:false,ownerpasswordmatched:false,userpasswordmatched:false,parameters:{method:'none',bits:0}},qpdf:[{jsonversion:2,pdfversion:'1.7'},{}]}));",
     "  process.exit(0);",
@@ -125,6 +146,7 @@ try {
   assert.equal(fakeProbe.provider, "qpdf");
   assert.equal(fakeProbe.integration, "shipped-thin-script-external-cli");
   assert.equal(fakeProbe.silentFallback, false);
+  assert.equal(fakeProbe.execution.callerIsolationRequired, true);
   const oldRegistry = run(python, [providerRegistry, "check", "--provider", "qpdf", "--require"], {
     env: { ...fakeEnv, FAKE_QPDF_VERSION: "10.6.3" },
     status: 2,
@@ -142,6 +164,7 @@ try {
   assert.equal(fakeInspect.structure.tagged, false);
   assert.equal(fakeInspect.structure.hasStructTreeRoot, false);
   assert.equal(fakeInspect.source.sha256, sha256(dummyBytes));
+  assert.ok(["new-session", "new-process-group"].includes(fakeInspect.execution.processIsolation));
   const fakeOutput = path.join(tempRoot, "fake-repaired.pdf");
   const fakeRewrite = jsonResult(run(python, [
     qpdfProvider, "rewrite", dummyInput, fakeOutput,
@@ -156,11 +179,17 @@ try {
   assert.equal(providerProbe.providers[0].available, true);
   assert.equal(providerProbe.providers[0].integration, "shipped-thin-script-external-cli");
   const plannedOutput = path.join(tempRoot, "planned-output.pdf");
-  const repairPlan = jsonResult(run(python, [
+  const repairPlanRequiresAcknowledgement = run(python, [
     providerRegistry, "plan", "--task", "repair", "--provider", "qpdf", "--strategy", "rewrite",
     "--input", dummyInput, "--output", plannedOutput, "--require-provider",
+  ], { env: fakeEnv, status: 2 });
+  assert.match(repairPlanRequiresAcknowledgement.stderr, /explicit --invalidate-signatures acknowledgement/);
+  const repairPlan = jsonResult(run(python, [
+    providerRegistry, "plan", "--task", "repair", "--provider", "qpdf", "--strategy", "rewrite",
+    "--input", dummyInput, "--output", plannedOutput, "--invalidate-signatures", "--require-provider",
   ], { env: fakeEnv, status: 0 }));
   assert.equal(repairPlan.providerProbe.available, true);
+  assert.equal(repairPlan.invalidateSignatures, true);
   const falseClean = run(python, [
     providerRegistry, "plan", "--task", "structure-clean", "--provider", "qpdf", "--strategy", "rewrite",
     "--input", dummyInput, "--output", plannedOutput, "--invalidate-signatures",
@@ -174,10 +203,27 @@ try {
   ], { env: fakeEnv, status: 2 });
   assert.match(stale.stderr, /source SHA-256 mismatch/);
   await assert.rejects(fs.access(staleOutput));
+  const overBudgetChildPidPath = path.join(tempRoot, "qpdf-budget-descendant.pid");
   const overBudget = run(python, [
     qpdfProvider, "inspect", dummyInput, "--max-json-bytes", "64",
-  ], { env: fakeEnv, status: 2 });
+  ], {
+    env: process.platform === "win32" ? fakeEnv : {
+      ...fakeEnv,
+      FAKE_QPDF_CHILD_ON_JSON: "1",
+      FAKE_QPDF_CHILD_PID: overBudgetChildPidPath,
+    },
+    status: 2,
+  });
   assert.match(overBudget.stderr, /stdout exceeded the 64 byte budget/);
+  if (process.platform !== "win32") {
+    const childPid = Number((await fs.readFile(overBudgetChildPidPath, "utf8")).trim());
+    assert.ok(Number.isSafeInteger(childPid) && childPid > 0);
+    try {
+      await waitForGone(childPid);
+    } finally {
+      if (processExists(childPid)) process.kill(childPid, "SIGKILL");
+    }
+  }
   const malformedJson = run(python, [qpdfProvider, "inspect", dummyInput], {
     env: { ...fakeEnv, FAKE_QPDF_BAD_JSON: "1" },
     status: 2,
@@ -188,6 +234,19 @@ try {
     status: 2,
   });
   assert.match(timedOut.stderr, /timed out after 1 seconds/);
+  const childPidPath = path.join(tempRoot, "qpdf-descendant.pid");
+  const timedOutTree = run(python, [qpdfProvider, "inspect", dummyInput, "--timeout-seconds", "1"], {
+    env: { ...fakeEnv, FAKE_QPDF_HANG_CHECK: "1", FAKE_QPDF_CHILD_PID: childPidPath },
+    status: 2,
+  });
+  assert.match(timedOutTree.stderr, /timed out after 1 seconds/);
+  const childPid = Number((await fs.readFile(childPidPath, "utf8")).trim());
+  assert.ok(Number.isSafeInteger(childPid) && childPid > 0);
+  try {
+    await waitForGone(childPid);
+  } finally {
+    if (processExists(childPid)) process.kill(childPid, "SIGKILL");
+  }
   const danglingTarget = path.join(tempRoot, "dangling-target.pdf");
   const symlinkOutput = path.join(tempRoot, "symlink-output.pdf");
   await fs.symlink(danglingTarget, symlinkOutput);
