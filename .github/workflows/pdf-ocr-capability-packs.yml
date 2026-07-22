@@ -99,8 +99,11 @@ jobs:
           if [ "${{ matrix.platform }}" = "linux-x64" ]; then
             tessdata_root="$(dirname "$(dpkg -L tesseract-ocr-eng | awk '/eng\.traineddata$/ { print; exit }')")"
             test -d "$tessdata_root"
-            droid_font="$(dpkg -L fonts-droid-fallback | awk '/DroidSansFallbackFull\.ttf$/ { print; exit }')"
+            droid_link="$(find /usr/share/ghostscript -path '*/Resource/CIDFSubst/DroidSansFallback.ttf' -type l -print -quit)"
+            test -n "$droid_link"
+            droid_font="$(readlink -f "$droid_link")"
             test -f "$droid_font"
+            dpkg-query -S "$droid_font" | grep -Eq '^fonts-droid-fallback(:[[:alnum:]-]+)?: '
             resource_args+=(--resource-root "$(dirname "$droid_font")")
             font_notice="/usr/share/doc/fonts-droid-fallback/copyright"
             test -r "$font_notice"
@@ -121,7 +124,11 @@ jobs:
               "${poppler_args[@]}" \
               "${library_args[@]}"
           else
-            for formula in tesseract ghostscript poppler $(brew deps --include-build --include-optional --include-requirements --union tesseract ghostscript poppler); do
+            # With no declaration-expanding flags, `brew deps` reports the
+            # installed formulae's actual runtime dependency closure. That is
+            # intentionally narrower and more reliable than their declared
+            # build/optional dependency graph for a relocatable runtime.
+            for formula in tesseract ghostscript poppler $(brew deps --union tesseract ghostscript poppler); do
               prefix="$(brew --prefix "$formula")"
               if [ -d "$prefix/lib" ]; then library_args+=(--library-root "$prefix/lib"); fi
             done

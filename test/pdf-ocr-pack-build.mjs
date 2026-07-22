@@ -65,6 +65,10 @@ assert.match(nativeSource, /if \(!await isMachOFile\(target\)\) return false;/);
 assert.match(workflowSource, /fonts-droid-fallback/);
 assert.match(workflowSource, /--resource-root/);
 assert.match(workflowSource, /fonts-droid-fallback build input/);
+assert.match(workflowSource, /DroidSansFallback\.ttf/);
+assert.match(workflowSource, /dpkg-query -S/);
+assert.match(workflowSource, /brew deps --union tesseract ghostscript poppler/);
+assert.doesNotMatch(workflowSource, /brew deps --include-optional/);
 
 const invalidPlatform = spawnSync(process.execPath, [nativeBuilder,
   "--platform", "win32-x64",
