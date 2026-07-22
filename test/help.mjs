@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 361);
+assert.equal(HELP_CATALOG.length, 364);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -192,6 +192,9 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.addTable"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.addLink"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.addFlowText"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createPdfjsParser"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "PdfProviders.resolve"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "PdfProviders.ensure"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "PdfProviders.probe"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "verifyArtifact"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "visualQaArtifact"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "renderArtifact"));
@@ -327,7 +330,7 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.sche
 assert.equal(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.schema?.parameters?.diffAlignment?.type, "string");
 assert.equal(HELP_CATALOG.find((item) => item.name === "visualQaArtifact")?.schema?.parameters?.pixelRegistration?.type, "boolean|number|object");
 const pdfCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "pdf");
-assert.equal(pdfCatalog.length, 22);
+assert.equal(pdfCatalog.length, 25);
 assert.ok(pdfCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.addText")?.schema?.parameters?.bbox?.type, "number[]");
 assert.equal(HELP_CATALOG.find((item) => item.name === "pdf.addText")?.schema?.parameters?.headingLevel?.type, "number");
@@ -365,6 +368,11 @@ assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.sc
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.schema?.returns?.inspection?.description || "", /sourceSha256.*mupdfAnnotation.*mupdfLink/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.schema?.returns?.inspection?.description || "", /mupdfWidget.*mupdfFormField/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.summary || "", /MuPDF/);
+assert.match(HELP_CATALOG.find((item) => item.name === "PdfProviders.resolve")?.summary || "", /no MuPDF initialization.*network access.*cache mutation.*automatic provider fallback/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "PdfProviders.resolve")?.schema?.parameters?.inspection?.description || "", /Required for every existing-PDF task except inspect.*sourceSha256.*repair/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "PdfProviders.resolve")?.schema?.parameters?.credentials?.description || "", /never installed or acquired/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "PdfProviders.ensure")?.schema?.returns?.result?.description || "", /pinned catalog assets.*safe extraction.*never downloads credentials or falls back/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "PdfProviders.probe")?.schema?.returns?.state?.description || "", /no network request.*cache write.*MuPDF import.*provider fallback/i);
 const documentCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "document");
 assert.equal(documentCatalog.length, 65);
 assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
@@ -642,6 +650,9 @@ assert.match(document.help("document.resolve").ndjson, /stable document/);
 assert.match(document.help("DocumentFile.importDocx").ndjson, /relationship-driven core DOCX semantics/);
 assert.match(pdf.help("extractTables").ndjson, /table values/);
 assert.match(pdf.help("createPdfjsParser").ndjson, /positioned text/);
+assert.match(pdf.help("PdfProviders.resolve").ndjson, /no MuPDF initialization.*automatic provider fallback/is);
+assert.match(pdf.help("PdfProviders.ensure").ndjson, /catalog digest.*policy fingerprint.*never downloads credentials/is);
+assert.match(pdf.help("PdfProviders.probe").ndjson, /no network request.*cache write.*provider fallback/is);
 assert.match(helpArtifact("*", "renderArtifact").ndjson, /FileBlob metadata/);
 assert.match(helpArtifact("shared", "visualQaArtifact").ndjson, /baseline render/);
 assert.match(helpArtifact("shared", "createPlaywrightRenderer").ndjson, /Playwright renderer adapter/);

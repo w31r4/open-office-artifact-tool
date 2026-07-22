@@ -6,7 +6,7 @@
 
 `open-office-artifact-tool` 提供统一的 JavaScript 对象模型。DOCX、XLSX 和 PPTX 由仓库内的 **OpenChestnut**（C# + Open XML SDK + .NET WebAssembly）读写；PDF 使用独立语义模型与运行时懒加载的 **MuPDF.js** 原生管线。
 
-> **当前状态：** `0.2.0` 发布候选。源码、可复现 WASM 和 npm tarball 已具备验证流程，但尚未执行正式 `npm publish`。
+> **当前状态：** `0.3.0` 发布候选。源码、可复现 WASM 和 npm tarball 已具备验证流程，但尚未执行正式 `npm publish`。
 
 ## 快速开始
 
@@ -48,7 +48,9 @@ console.log(reopened.inspect({ kind: "worksheet,table,chart" }).ndjson);
 
 ### PDF 运行时
 
-官方 `mupdf@1.28.0` 是必需的 npm 依赖，会随正常的 `npm install` 一起解析安装；只有第一次读取、检查、渲染或编辑 PDF 时才初始化 WASM。项目没有 `postinstall`、额外下载器或全局环境写入。ReportLab、pdfplumber、pypdf、Poppler、pikepdf、pyHanko、veraPDF、OCRmyPDF 等仍是按任务选择、单独安装的外部专项工具。
+官方 `mupdf@1.28.0` 是必需的 npm 依赖，会随正常的 `npm install` 一起解析安装；只有第一次读取、检查、渲染或编辑 PDF 时才初始化 WASM。项目没有 `postinstall`、额外下载器或全局环境写入。
+
+qpdf、Python 专项工具、OCR、veraPDF/JRE 等由显式的 `open-office-artifact-tool/pdf/providers` 路由：先根据任务和检查结果返回 `ready`、`installable` 或 `blocked`，再由项目策略决定是否可安装。默认策略禁止下载；目前非 MuPDF 的正式、哈希固定能力包尚未发布，因此会明确 `blocked`，不会偷偷降级到其它工具。已由部署方管理的运行时可使用显式 `system-only` 策略。详见 [PDF Provider Setup](skills/pdf/skills/pdf/tasks/provider_setup.md)。
 
 ## 为什么需要它
 
@@ -63,7 +65,7 @@ console.log(reopened.inspect({ kind: "worksheet,table,chart" }).ndjson);
 | XLSX | OpenChestnut C# WASM | 单元格与公式、样式与布局、表格、图片、基础验证、标准 data bar/icon set 等条件格式、评论、图表、sparklines、有界 What-If Data Tables 和有界原生 PivotTables。 |
 | DOCX | OpenChestnut C# WASM | 结构化文本与样式、分节、页眉页脚、列表、表格、链接、字段、行内图片及有界浮动/环绕图片、经典评论、有界现代评论线程、无密码编辑限制，以及块级纯文本和行内/整单元格纯文本、规范复选框、规范下拉、可输入自定义值的规范组合框、严格 `YYYY-MM-DD` 日期选择器内容控件。 |
 | PPTX | OpenChestnut C# WASM | 形状与富文本、图片及可逆裁剪、表格、连接线、图表、直接背景、纯文本演讲者备注、经典评论和有界 Office 2021 现代评论线程；Master/Layout 仅保真、不可编辑。 |
-| PDF | 独立模型 + MuPDF.js | Tagged PDF 创建；任意 PDF 原生读取/检查/渲染；有界批注、表单、页面、元数据、链接和 rewrite/incremental 编辑；真实 rewrite 脱敏；有界本地 PKCS#12 签名与独立验签。严格 sanitize、PDF/UA、OCR 与高级签名由专项工具复核。 |
+| PDF | 独立模型 + MuPDF.js | Tagged PDF 创建；任意 PDF 原生读取/检查/渲染；有界批注、表单、页面、元数据、链接和 rewrite/incremental 编辑；真实 rewrite 脱敏；有界本地 PKCS#12 签名与独立验签。专项工具经显式 provider 路由；严格 sanitize、PDF/UA、OCR 与高级签名仍要求独立证据。 |
 
 完整且持续更新的边界见 [能力矩阵](https://github.com/w31r4/open-office-artifact-tool/blob/main/docs/coverage.md)。
 
@@ -96,8 +98,8 @@ OpenChestnut 是普通 Office 导入/导出的唯一 parser/writer。显式 OOXM
 
 - 要保留导入 Office 文件中的未建模对象，必须继续使用 import 返回的模型，并保持这些对象的结构不变；丢失源快照或修改不支持的拓扑时，导出失败。
 - 任意已有 PDF 不能像 Word 一样可靠地自动重排全文；原文件编辑必须落在明确、可验证的有界操作中。
-- 项目内 pyHanko 适配器支持源文件绑定的本地 PKCS#12 审批/认证签名和独立验签；pyHanko 运行时仍需单独安装。TSA/LTV、PKCS#11、远程签名和完整 PAdES 声明仍属外部工作流；PDF/A/PDF/UA 验证和扫描件 OCR 分别使用项目内 veraPDF、OCRmyPDF 有界适配器。
-- 主动/辅助内容清理由项目内的 pikepdf 10.10.x 有界适配器完成，但 pikepdf 仍需单独安装；该操作保留 metadata、表单值、XFA、批注和隐藏文字，不能当作完整 sanitize 或脱敏证明。
+- 项目内 pyHanko、veraPDF、OCRmyPDF、pikepdf、qpdf 等适配器都是显式 provider 路线：仅当受管包已验证就绪，或部署方显式选择 `system-only` 运行时时才可执行。私钥、P12、HSM/远程签名凭据、TSA/LTV 和信任根永远由调用方提供；不会被下载器取得。
+- 主动/辅助内容清理由有界 pikepdf 路线完成；它保留 metadata、表单值、XFA、批注和隐藏文字，不能当作完整 sanitize 或脱敏证明。
 - MuPDF.js 能做有界原文件操作，但不能把任意 PDF 变成可自由重排的 Word 文档；rewrite 脱敏也不等于完整 sanitize。签名权限、残留、OCR 与 PDF/UA 仍需独立证据。
 - LibreOffice、Poppler、Playwright 和原生 Office Bridge 是渲染/验证工具，不是隐藏的 Office codec fallback。
 

@@ -352,6 +352,9 @@ export const HELP_CATALOG = [
   { artifactKind: "pdf", kind: "api", name: "PdfFile.renderPdf", summary: "Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or JPEG, enforcing input, page/object, DPI, and preallocation pixel budgets before returning a FileBlob." },
   { artifactKind: "pdf", kind: "api", name: "PdfFile.editPdf", summary: "Apply bounded direct-original MuPDF.js operations with explicit rewrite or byte-prefix-verified incremental save, object-level signature detection, atomic caller-controlled output, and fail-closed rejection of incremental page grafting/redaction/deletion/source-bound annotation or link operations, signed incremental edits, ambiguous radio export values, rotated-page crop requests, unsafe link destinations, clipped native appearances, and unsupported operations. add_text_annotation, add_text_highlight, and add_link bind one exact source hash plus the inspected mupdfPage bbox/rotation snapshot and accept coordinates in its explicit mupdf-page-space after the current 0/90/180/270-degree rotation; raw MediaBox/CropBox remain unrotated PDF-space facts. Text-note and Highlight records expose provider appearanceBbox evidence, and placement fails before publication if the full native appearance would leave the visible page. add_text_highlight accepts one unique native text-search selection plus optional RGB/review metadata, never caller quads or rectangles. duplicate_page binds the exact source/page snapshot and copies one ordinary non-interactive untagged right-angle page to a 1-based output position in a single-operation rewrite; it rejects unsupported page-bound graphs or projected page/object budget overflow and does not synthesize navigation. delete_annotation, update_annotation, delete_link, and update_link require an inspect-returned source hash, source-bound locator, and snapshot precondition; update_annotation changes only non-empty contents, author, or subject fields of a native Text annotation, while update_link changes only a safe non-empty URL. Native link geometry is never patched. set_page_crop changes only the visible CropBox on an unrotated page, while rotate_page writes an absolute right-angle /Rotate value; neither removes hidden original content." },
   { artifactKind: "pdf", kind: "api", name: "createPdfjsParser", summary: "Create an optional PDF.js parser adapter to extract page geometry, positioned text, heuristic tables, and bounded embedded raster or stencil-mask PNG images with placement boxes." },
+  { artifactKind: "pdf", kind: "api", name: "PdfProviders.resolve", summary: "Resolve one explicit PDF task and selected/default provider against the immutable capability catalog and project policy. It is read-only: no MuPDF initialization, network access, cache mutation, credential acquisition, or automatic provider fallback occurs. The result is ready, installable, or blocked with exact packs, platform, sizes, licenses, runtime prerequisites, consents, and operation limits." },
+  { artifactKind: "pdf", kind: "api", name: "PdfProviders.ensure", summary: "Install only a previously installable, policy- and catalog-bound capability resolution into the project-private cache, then return a fresh probe. It uses only catalog-pinned release bytes, validates size/hash/archive/receipt boundaries, and never chooses another provider or obtains credentials. A blocked or ready resolution cannot be forced through this API." },
+  { artifactKind: "pdf", kind: "api", name: "PdfProviders.probe", summary: "Probe exactly one selected PDF provider under the requested policy without downloading, mutating the cache, importing MuPDF, or trying fallback providers. The result reports ready or blocked runtime evidence together with the pinned pack plan." },
 
   {
     artifactKind: "document", kind: "api", name: "document.fontFamilies", summary: "Return a fresh sorted, case-insensitively deduplicated list of document theme and explicit run/style font families.",
@@ -862,6 +865,45 @@ const HELP_DETAIL_OVERRIDES = {
         textContentOptions: { type: "object", description: "Options merged into getTextContent()." },
       },
       returns: { parser: { type: "function", description: "Parser adapter for PdfFile.importPdf()." } },
+    },
+  },
+  "PdfProviders.resolve": {
+    examples: ["const resolution = await PdfProviders.resolve({ task: 'repair', provider: 'qpdf', savePolicy: 'rewrite', mutationAuthorized: true, invalidateSignaturesAuthorized: true, policyPath: '.open-office-artifact-tool/pdf-providers.json' })"],
+    schema: {
+      parameters: {
+        task: { type: "string", required: true, description: "One catalog task such as inspect, repair, ocr, sign, sanitize, or validate-conformance." },
+        provider: { type: "string", description: "Optional provider ID. A task default is a declared preference only; the resolver never substitutes a different provider when it is unavailable." },
+        inspection: { type: "object", description: "Exact-source inspection/preflight evidence. Required for every existing-PDF task except inspect; it must carry a 64-hex sourceSha256 at inspection.summary.sourceSha256 or sourceSha256. A failed MuPDF parse may use a bounded preflight hash record only to route explicit repair." },
+        savePolicy: { type: "string", required: true, description: "One strategy allowed by the selected task, such as read-only, rewrite, incremental, or sanitize." },
+        policyPath: { type: "string", description: "Explicit project policy file. The conventional path is .open-office-artifact-tool/pdf-providers.json; a missing conventional file means disabled, never implicit authorization." },
+        languages: { type: "string[]", description: "Explicit OCR languages. eng and chi_sim are policy defaults; every language must be policy-authorized and catalogued." },
+        mutationAuthorized: { type: "boolean", description: "Required true for a task that mutates source PDF bytes." },
+        invalidateSignaturesAuthorized: { type: "boolean", description: "Required true for a task whose operation can invalidate signatures." },
+        credentials: { type: "string[]", description: "Caller-declared credential kinds such as local-pkcs12. Credentials, private keys, HSMs, remote-signing access, and TSA/LTV access are never installed or acquired." },
+      },
+      returns: { resolution: { type: "object", description: "Read-only ready, installable, or blocked resolution with one provider, catalog digest, policy fingerprint, no-fallback guarantee, precise pack/platform/download/unpacked/license/runtime plan, and required consents." } },
+    },
+  },
+  "PdfProviders.ensure": {
+    examples: ["const installed = await PdfProviders.ensure({ resolution, policyPath: '.open-office-artifact-tool/pdf-providers.json' })"],
+    schema: {
+      parameters: {
+        resolution: { type: "object", required: true, description: "The exact current-package resolution returned with status=installable. Its catalog digest, policy fingerprint, provider, and pack plan must still match." },
+        policyPath: { type: "string", description: "The same persistent project policy file used to resolve. It is re-read before any cache mutation." },
+      },
+      returns: { result: { type: "object", description: "Fresh ready/blocked provider probe plus verified installation receipts. It can only use pinned catalog assets, a bounded project-private cache, hash/size checks, safe extraction, and atomic publication; it never downloads credentials or falls back." } },
+    },
+  },
+  "PdfProviders.probe": {
+    examples: ["const state = await PdfProviders.probe({ provider: 'qpdf', task: 'repair', policyPath: '.open-office-artifact-tool/pdf-providers.json' })"],
+    schema: {
+      parameters: {
+        provider: { type: "string", required: true, description: "One exact catalog provider ID; probing does not search for alternates." },
+        task: { type: "string", description: "Optional catalog task used to include OCR language-pack requirements in the plan." },
+        policyPath: { type: "string", description: "Explicit project policy file; default-missing remains disabled." },
+        languages: { type: "string[]", description: "Explicit OCR language list, required for an OCR task and checked against policy plus catalogued language packs." },
+      },
+      returns: { state: { type: "object", description: "Ready or blocked status with local/system/managed runtime evidence and the selected pack plan. It performs no network request, cache write, MuPDF import, or provider fallback." } },
     },
   },
   "workbook.structuredReferences": {

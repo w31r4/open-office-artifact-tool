@@ -1,5 +1,40 @@
 # Release
 
+## 0.3.0 capability-pack boundary
+
+0.3.0 adds a public, explicit PDF capability-pack control plane without adding
+a second PDF codec or putting large runtimes in the npm tarball:
+
+- `open-office-artifact-tool/pdf/providers` exposes
+  `PdfProviders.resolve`, `ensure`, and `probe`.
+- The canonical source is one versioned catalog under `src/pdf/providers/`:
+  providers reference packs; versions, platforms, artefacts, hashes, sizes,
+  licences, dependencies, runtime paths, and release evidence are not duplicated
+  in the Skill matrix or Python adapter.
+- The default project policy is
+  `.open-office-artifact-tool/pdf-providers.json` with
+  `installPolicy: "disabled"`. `managed` requires a whitelist, licence
+  acknowledgement, exact byte budgets, and explicitly allowed OCR languages;
+  `system-only` supports deployment-owned runtimes without download authority.
+- Managed cache entries are project-private and use per-pack/version/platform
+  locks, temporary downloads, exact size/SHA-256 checks, safe `tar.gz`
+  extraction, atomic publication, and receipts. The installer rejects global
+  package managers, lifecycle hooks, dynamic npm/pip installs, `latest`,
+  undeclared URLs, archive path escape, and symlink/hardlink entries.
+- MuPDF remains the only required, runtime-lazy npm PDF dependency. qpdf,
+  isolated Python specialists, OCR languages/core, veraPDF/JRE, and Poppler are
+  not embedded in the tarball. The first managed targets are `darwin-arm64` and
+  `linux-x64`.
+- The control plane and its adversarial installer tests are shipped, but the
+  non-MuPDF catalogue assets are intentionally unpublished in this release.
+  They resolve as `blocked`; no document, Skill, or API may claim that `ensure`
+  can download a future asset today.
+- P12/private keys, HSM/remote-signing credentials, TSA/LTV access, and trust
+  roots are never capability packs and are never acquired automatically.
+
+This is a breaking public-surface addition from 0.2.0; Office wire protocol 2
+does not change.
+
 ## 0.2.0 boundary
 
 0.2.0 is a breaking convergence release:
@@ -54,7 +89,7 @@ The release candidate is acceptable only when all of the following are true:
 - a production-only packed clean install completes all three Office roundtrips, PDF smoke, and a real packaged Template Creator invocation while `dotnet` is absent from `PATH`, and proves that the repository-only Default Template Library is absent;
 - two clean OpenChestnut builds produce the same runtime file set and hashes;
 - package contents contain no legacy Office codec files, OpenChestnut C# source, incomplete OfficeBridge solution, C# build output, tests, or repository-only scripts;
-- package metadata, version `0.2.0`, licenses, third-party notices, SBOM, and integrity manifest agree;
+- package metadata, version `0.3.0`, licenses, third-party notices, SBOM, and integrity manifest agree;
 - hosted Linux runs the same required non-optional gates.
 
 The single byte-array managed entry point uses a checked-in, small JavaScript
@@ -3307,7 +3342,7 @@ npm publish, tag, or release operation was attempted.
 
 Before publishing:
 
-1. Verify `package.json` and `package-lock.json` both declare `0.2.0`.
+1. Verify `package.json` and `package-lock.json` both declare `0.3.0`.
 2. Rebuild and verify the OpenChestnut runtime from source.
 3. Regenerate API documentation after the final public API change.
 4. Inspect `npm pack --dry-run --json` for the required runtime/proto/Skill files and forbidden legacy files.

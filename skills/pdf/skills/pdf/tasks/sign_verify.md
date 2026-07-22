@@ -7,27 +7,52 @@ separate read-only `scripts/pyhanko_provider.py` validates exact bytes and emits
 typed integrity, trust, revision, and DocMDP evidence for an Agent. PyMuPDF,
 MuPDF.js, pypdf, and qpdf are not signature-trust authorities.
 
-## Install and probe the validation runtime
+## Resolve and probe the signing runtime
 
 The adapter requires the pyHanko core library, not the separately packaged
-`pyhanko` command. Install the validated version range into an explicit Python
-environment:
+`pyhanko` command. First resolve the exact `sign` task through the public
+capability API. A signing runtime is installable only through an authorized,
+hash-pinned managed pack; otherwise select an already-provisioned
+`system-only` Python runtime in [provider setup](provider_setup.md). Do not
+repair a missing runtime with `pip`, `uv`, a package manager, or a global
+installation command.
 
-```bash
-uv venv .venv-pdf
-uv pip install --python .venv-pdf/bin/python \
-  'pyHanko>=0.35.0,<0.36.0' 'pyhanko-certvalidator>=0.31.0,<0.32.0'
-export OPEN_OFFICE_PDF_PROVIDER_PYTHON="$PWD/.venv-pdf/bin/python"
-"$OPEN_OFFICE_PDF_PROVIDER_PYTHON" scripts/pyhanko_sign_provider.py probe
-"$OPEN_OFFICE_PDF_PROVIDER_PYTHON" scripts/pyhanko_provider.py probe
-"$OPEN_OFFICE_PDF_PROVIDER_PYTHON" scripts/pdf_provider.py check \
-  --provider pyhanko --require
+```js
+import { PdfFile } from "open-office-artifact-tool";
+import { PdfProviders } from "open-office-artifact-tool/pdf/providers";
+
+const inspection = await PdfFile.inspectPdf("input.pdf");
+
+let resolution = await PdfProviders.resolve({
+  task: "sign",
+  provider: "pyhanko",
+  inspection,
+  savePolicy: "incremental",
+  mutationAuthorized: true,
+  credentials: ["local-pkcs12"],
+  policyPath: ".open-office-artifact-tool/pdf-providers.json",
+});
+if (resolution.status === "installable") {
+  resolution = await PdfProviders.ensure({ resolution, policyPath: ".open-office-artifact-tool/pdf-providers.json" });
+}
+if (resolution.status !== "ready") throw new Error(resolution.reason.message);
+await PdfProviders.probe({ provider: "pyhanko", task: "sign", policyPath: ".open-office-artifact-tool/pdf-providers.json" });
 ```
 
-No lifecycle hook installs this dependency. Neither adapter uses a system trust
-store, fetches certificates, CRLs, or OCSP responses, invokes a CLI, or routes
-to another provider. The signer supports local PKCS#12 credentials only; TSA,
-LTV/DSS, PKCS#11, remote signing, and complete PAdES conformance remain external.
+After the selected route is ready, run the task-specific probes through the
+same configured Python executable:
+
+```bash
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:?select a ready pyHanko runtime first}"
+"$PYTHON_BIN" scripts/pyhanko_sign_provider.py probe
+"$PYTHON_BIN" scripts/pyhanko_provider.py probe
+"$PYTHON_BIN" scripts/pdf_provider.py check --provider pyhanko --require
+```
+
+Neither adapter uses a system trust store, fetches certificates, CRLs, or OCSP
+responses, invokes a CLI, or routes to another provider. The signer supports
+local PKCS#12 credentials only; TSA, LTV/DSS, PKCS#11, remote signing, and
+complete PAdES conformance remain external.
 
 ## Inspect and sign one exact source
 

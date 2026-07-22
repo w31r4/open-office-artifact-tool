@@ -106,7 +106,7 @@ try {
     registry, "plan", "--task", "verify-signature", "--provider", "pyhanko", "--strategy", "read-only",
     "--input", source, "--require-provider",
   ], { status: 0 }));
-  assert.equal(plan.integration, "shipped-thin-script");
+  assert.equal(plan.integration, "shipped-thin-script-external-python");
   assert.equal(plan.silentFallback, false);
 
   const unsigned = jsonResult(runProvider([provider, "verify", source, "--expected-sha256", sourceHash], { status: 0 }));

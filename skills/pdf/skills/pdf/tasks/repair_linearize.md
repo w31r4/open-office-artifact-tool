@@ -3,8 +3,11 @@
 Use the shipped `scripts/qpdf_provider.py` wrapper when the task needs qpdf's
 structural diagnosis, recoverable cross-reference repair, or linearization. It
 opens the original PDF directly and never reconstructs it through `PdfArtifact`.
-qpdf remains a separately installed Apache-2.0 command-line provider; absence is
-an explicit capability error, not a reason to choose another backend.
+qpdf is selected through the capability resolver: use a verified managed pack
+when published or an explicitly configured `system-only` Apache-2.0 runtime.
+Absence is an explicit capability error, not a reason to choose another backend.
+See [provider setup](provider_setup.md); do not use a package manager or a
+guessed download as an automatic repair path.
 
 ## Probe and inspect
 
@@ -85,7 +88,7 @@ is not optimization of visible content and does not authorize content edits.
   hidden text, OCR layers, signatures, or sensitive content. Do not call it
   sanitize or redaction. Use the strict PyMuPDF sanitize/residue route.
 - `structure-clean` is not a qpdf capability in this Skill. Use the separately
-  installed pikepdf 10.10.x runtime through the shipped fixed-profile
+  selected pikepdf runtime through the shipped fixed-profile
   `pikepdf_provider.py` adapter after fresh source inspection; see
   [active and auxiliary structure cleanup](structure_clean.md).
 

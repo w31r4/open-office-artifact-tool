@@ -28,4 +28,4 @@ An incremental update can retain byte-identical data covered by an earlier signa
 
 ## License boundary
 
-The project and required `mupdf` npm dependency are GNU AGPL-3.0-or-later. Normal npm installation resolves MuPDF.js; its WASM runtime is lazy and no lifecycle installer is used. Optional Python and system providers are installed separately under their own terms. Missing capability or provider evidence is an explicit error, never a reason to fall back to lossy model reconstruction.
+The project and required `mupdf` npm dependency are GNU AGPL-3.0-or-later. Normal npm installation resolves MuPDF.js; its WASM runtime is lazy and no lifecycle installer is used. Optional providers are selected only through the capability resolver: an already-provisioned `system-only` runtime or an authorized, hash-pinned managed pack. The resolver never uses a package manager, global Python installation, lifecycle hook, or unpinned URL. Missing capability or provider evidence is an explicit error, never a reason to fall back to lossy model reconstruction.

@@ -250,28 +250,36 @@ const requiredFiles = [
 for (const file of requiredFiles) assert.ok(manifest.includes(file), `PDF manifest is missing ${file}`);
 
 const skillText = await fs.readFile(path.join(skillRoot, "SKILL.md"), "utf8");
+assert.ok(skillText.split(/\r?\n/).length <= 210, "PDF Skill overview should route, not duplicate task references");
 assert.match(skillText, /scripts\/mupdf\.mjs/);
 assert.match(skillText, /MuPDF\.js/);
+assert.match(skillText, /PdfProviders\.resolve/);
+assert.match(skillText, /PdfProviders\.ensure/);
+assert.match(skillText, /PdfProviders\.probe/);
+assert.match(skillText, /PdfFile\.inspectPdf\("input\.pdf"\).*PdfProviders\.resolve/is);
+assert.match(skillText, /status === "installable"[\s\S]*PdfProviders\.ensure[\s\S]*status !== "ready"/);
+assert.match(skillText, /open-office-artifact-tool\/pdf\/providers/);
+assert.match(skillText, /installPolicy: "disabled"/);
+assert.match(skillText, /installPolicy": "managed"/);
+assert.match(skillText, /system-only/);
+assert.match(skillText, /non-MuPDF packs have no published immutable assets yet/);
+assert.match(skillText, /hash-pinned.*versioned.*release assets/is);
+assert.match(skillText, /silent fallback/i);
 assert.match(skillText, /set_page_crop/);
 assert.match(skillText, /rotate_page/);
-assert.match(skillText, /duplicate_page.*source SHA-256.*only\s+operation.*full rewrite.*Poppler.*pixel identity/s);
-assert.match(skillText, /delete_annotation/);
-assert.match(skillText, /update_annotation/);
-assert.match(skillText, /add_text_annotation.*source SHA-256.*pin.*rewrite/s);
-assert.match(skillText, /add_text_highlight.*source SHA-256.*unique native text selection.*rewrite/s);
-assert.match(skillText, /mupdf-page-space.*0\/90\/180\/270.*appearanceBbox/s);
-assert.match(skillText, /raw `mediaBox`\/`cropBox`.*unrotated PDF-space/s);
-assert.match(skillText, /add_link/);
-assert.match(skillText, /delete_link/);
-assert.match(skillText, /update_link/);
-assert.match(skillText, /update_form_field/);
+assert.match(skillText, /duplicate_page.*source SHA-256.*only operation.*full\s+rewrite.*Poppler.*pixel identity/is);
+assert.match(skillText, /delete_annotation.*update_annotation.*delete_link.*update_link.*update_form_field/is);
+assert.match(skillText, /add_text_annotation.*visible pin.*rewrite/is);
+assert.match(skillText, /add_text_highlight.*unique native text selection.*rewrite/is);
+assert.match(skillText, /mupdf-page-space.*0\/90\/180\/270.*appearanceBbox/is);
+assert.match(skillText, /raw `mediaBox`\/`cropBox`.*unrotated PDF-space/is);
 assert.match(skillText, /sourceSha256/);
 assert.match(skillText, /mupdf-link/);
-assert.match(skillText, /virtual environment executable.*pyvenv\.cfg/s);
+assert.match(skillText, /virtual\s+environment\s+executable.*pyvenv\.cfg/s);
 assert.match(skillText, /verapdf_provider\.py/);
 assert.match(skillText, /ocrmypdf_provider\.py/);
 assert.match(skillText, /redact_ocr_text/);
-assert.match(skillText, /redact_ocr_text.*expected_rotation.*0.*90.*180.*270.*unrotated PyMuPDF page space/s);
+assert.match(skillText, /redact_ocr_text.*expected_rotation.*0.*90.*180.*270.*unrotated PyMuPDF page space/is);
 assert.match(skillText, /pikepdf_provider\.py/);
 assert.match(skillText, /pyhanko_sign_provider\.py/);
 assert.match(skillText, /passphrase.*stdin/is);
@@ -280,7 +288,7 @@ assert.match(skillText, /timestamp.*LTV.*external/is);
 assert.match(skillText, /active-content.*active-and-auxiliary/is);
 assert.match(skillText, /not.*redaction.*metadata.*XFA/is);
 assert.match(skillText, /complete imported PDF.*not a sanitizer/is);
-assert.match(skillText, /machine-rule gate.*human PDF\/UA review/i);
+assert.match(skillText, /machine-rule gate.*human review.*PDF\/UA/is);
 assert.match(skillText, /not redaction/i);
 for (const pattern of [
   /ReportLab/,
@@ -297,8 +305,24 @@ for (const pattern of [
   /original bytes/i,
   /Word-style reflow/,
   /Dynamic XFA/,
-  /accessible board report example/i,
 ]) assert.match(skillText, pattern);
+assert.doesNotMatch(skillText, /brew install|apt-get|uv pip install/i);
+const providerSetupText = await fs.readFile(path.join(skillRoot, "tasks", "provider_setup.md"), "utf8");
+assert.match(providerSetupText, /PdfProviders\.resolve/);
+assert.match(providerSetupText, /PdfProviders\.ensure/);
+assert.match(providerSetupText, /PdfProviders\.probe/);
+assert.match(providerSetupText, /symlink\/hardlink/);
+assert.match(providerSetupText, /enterprise mirror.*identical hash-pinned bytes/is);
+assert.match(providerSetupText, /Current catalog state.*not yet\s+published/is);
+assert.doesNotMatch(providerSetupText, /brew install|apt-get|uv pip install/i);
+const providerMatrixText = await fs.readFile(path.join(skillRoot, "references", "PROVIDER_MATRIX.md"), "utf8");
+assert.match(providerMatrixText, /does \*\*not\*\* duplicate.*versions.*hashes.*URLs/is);
+assert.doesNotMatch(providerMatrixText, /1\.28\.0|1\.27\.2|10\.10\.x|17\.8\.x/i);
+const pdfPluginReadme = await fs.readFile(path.join(repoRoot, "skills", "pdf", "README.md"), "utf8");
+assert.match(pdfPluginReadme, /open-office-artifact-tool\/pdf\/providers/);
+assert.match(pdfPluginReadme, /system-only.*hash-pinned managed pack/is);
+assert.match(pdfPluginReadme, /managed release assets are not published yet.*blocked/is);
+assert.doesNotMatch(pdfPluginReadme, /remain separately installed|brew install|apt-get|uv pip install/i);
 const nativePlacementDocs = [
   await fs.readFile(path.join(skillRoot, "artifact_tool", "API_QUICK_START.md"), "utf8"),
   await fs.readFile(path.join(skillRoot, "tasks", "forms_annotations.md"), "utf8"),

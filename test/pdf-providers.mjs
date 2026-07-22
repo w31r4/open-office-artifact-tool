@@ -1,0 +1,344 @@
+import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { gzipSync } from "node:zlib";
+
+import {
+  PDF_PROVIDER_CATALOG,
+  PdfProviders,
+  resolvePdfCapability,
+  validatePdfProviderCatalog,
+} from "../src/pdf/providers/index.mjs";
+import {
+  PDF_PROVIDER_RECEIPT_SCHEMA,
+  installManagedPackForTest,
+  safeExtractTarGz,
+} from "../src/pdf/providers/installer.mjs";
+
+const repoRoot = path.resolve(import.meta.dirname, "..");
+const platform = `${process.platform}-${process.arch}`;
+const inspectedPdf = Object.freeze({ summary: { sourceSha256: "a".repeat(64) } });
+
+function writeString(buffer, offset, length, value) {
+  Buffer.from(value, "utf8").copy(buffer, offset, 0, Math.min(Buffer.byteLength(value), length));
+}
+
+function writeOctal(buffer, offset, length, value) {
+  const text = Number(value).toString(8).padStart(length - 1, "0");
+  writeString(buffer, offset, length - 1, text);
+  buffer[offset + length - 1] = 0;
+}
+
+function tarHeader({ name, bytes, type = "0", mode = 0o755 }) {
+  const header = Buffer.alloc(512);
+  writeString(header, 0, 100, name);
+  writeOctal(header, 100, 8, mode);
+  writeOctal(header, 108, 8, 0);
+  writeOctal(header, 116, 8, 0);
+  writeOctal(header, 124, 12, bytes.length);
+  writeOctal(header, 136, 12, 0);
+  header.fill(0x20, 148, 156);
+  header[156] = type.charCodeAt(0);
+  writeString(header, 257, 6, "ustar");
+  writeString(header, 263, 2, "00");
+  let checksum = 0;
+  for (const value of header) checksum += value;
+  writeString(header, 148, 6, checksum.toString(8).padStart(6, "0"));
+  header[154] = 0;
+  header[155] = 0x20;
+  return header;
+}
+
+function tarGz(entries) {
+  const records = [];
+  for (const entry of entries) {
+    const bytes = Buffer.from(entry.bytes || "", "utf8");
+    records.push(tarHeader({ ...entry, bytes }), bytes, Buffer.alloc((512 - (bytes.length % 512)) % 512));
+  }
+  records.push(Buffer.alloc(1024));
+  return gzipSync(Buffer.concat(records));
+}
+
+function fixturePack(archive, overrides = {}) {
+  const digest = crypto.createHash("sha256").update(archive).digest("hex");
+  const artifact = {
+    platform,
+    asset: "fixture.tar.gz",
+    version: "1.2.3",
+    url: "https://releases.example.test/open-office-artifact-tool/v1.2.3/fixture.tar.gz",
+    sha256: digest,
+    downloadBytes: archive.length,
+    unpackedBytes: 16 * 1024,
+    archiveFormat: "tar.gz",
+    ...(overrides.artifact || {}),
+  };
+  return {
+    state: "published",
+    version: "1.2.3",
+    platforms: [platform],
+    artifacts: [artifact],
+    entrypoints: [{ path: "bin/tool", kind: "file", executable: true }],
+    ...(overrides.pack || {}),
+  };
+}
+
+function fakeFetch(bytes, calls = undefined) {
+  return async (url) => {
+    calls?.push(String(url));
+    return new Response(bytes, { status: 200 });
+  };
+}
+
+async function listTree(root) {
+  const entries = [];
+  async function walk(directory) {
+    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+      entries.push(path.relative(root, path.join(directory, entry.name)));
+      if (entry.isDirectory()) await walk(path.join(directory, entry.name));
+    }
+  }
+  await walk(root);
+  return entries.sort();
+}
+
+assert.equal(PDF_PROVIDER_CATALOG.releasePolicy.defaultInstallPolicy, "disabled");
+assert.deepEqual(PDF_PROVIDER_CATALOG.releasePolicy.managedPlatforms, ["darwin-arm64", "linux-x64"]);
+assert.equal(PdfProviders.resolve, resolvePdfCapability);
+assert.deepEqual(Object.keys(PdfProviders).sort(), ["ensure", "probe", "resolve"]);
+assert.equal(PDF_PROVIDER_CATALOG.providers.qpdf.packId, "qpdf");
+assert.equal(PDF_PROVIDER_CATALOG.packs.qpdf.state, "unpublished");
+assert.ok(!("managedPack" in PDF_PROVIDER_CATALOG.providers.qpdf), "pack metadata must have one canonical top-level home");
+
+const invalidPlatformCatalog = structuredClone(PDF_PROVIDER_CATALOG);
+invalidPlatformCatalog.packs.qpdf.state = "published";
+invalidPlatformCatalog.packs.qpdf.version = "1.2.3";
+invalidPlatformCatalog.packs.qpdf.artifacts = [{
+  platform: "win32-x64",
+  asset: "qpdf.tar.gz",
+  version: "1.2.3",
+  url: "https://releases.example.test/open-office-artifact-tool/v1.2.3/qpdf.tar.gz",
+  sha256: "a".repeat(64),
+  downloadBytes: 1,
+  unpackedBytes: 1,
+  archiveFormat: "tar.gz",
+}];
+invalidPlatformCatalog.packs.qpdf.releaseEvidence = {
+  sbom: { asset: "qpdf.cdx.json", url: "https://releases.example.test/open-office-artifact-tool/v1.2.3/qpdf.cdx.json", sha256: "b".repeat(64) },
+  thirdPartyNotices: { asset: "qpdf-notices.txt", url: "https://releases.example.test/open-office-artifact-tool/v1.2.3/qpdf-notices.txt", sha256: "c".repeat(64) },
+  verifiedPlatforms: ["win32-x64"],
+};
+assert.throws(() => validatePdfProviderCatalog(invalidPlatformCatalog), /unsupported managed platform|outside the declared managed platforms/);
+
+const builtIn = await PdfProviders.resolve({ task: "inspect", savePolicy: "read-only", inspection: inspectedPdf });
+assert.equal(builtIn.status, "ready");
+assert.equal(builtIn.providerId, "mupdf-js");
+assert.equal(builtIn.policy.installPolicy, "disabled");
+assert.deepEqual(builtIn.policy.allowedOcrLanguages, ["eng", "chi_sim"]);
+assert.equal(builtIn.silentFallback, false);
+
+const missingInspection = await PdfProviders.resolve({
+  task: "repair",
+  provider: "qpdf",
+  savePolicy: "rewrite",
+  mutationAuthorized: true,
+  invalidateSignaturesAuthorized: true,
+});
+assert.equal(missingInspection.status, "blocked");
+assert.equal(missingInspection.reason.code, "inspection-required");
+
+const malformedInspection = await PdfProviders.resolve({
+  task: "repair",
+  provider: "qpdf",
+  savePolicy: "rewrite",
+  inspection: { summary: { sourceSha256: "not-a-hash" } },
+  mutationAuthorized: true,
+  invalidateSignaturesAuthorized: true,
+});
+assert.equal(malformedInspection.status, "blocked");
+assert.equal(malformedInspection.reason.code, "inspection-required");
+
+const disabledQpdf = await PdfProviders.resolve({
+  task: "repair",
+  provider: "qpdf",
+  savePolicy: "rewrite",
+  inspection: inspectedPdf,
+  mutationAuthorized: true,
+  invalidateSignaturesAuthorized: true,
+});
+assert.equal(disabledQpdf.status, "blocked");
+assert.equal(disabledQpdf.reason.code, "provider-or-pack-not-allowed");
+
+const managedQpdf = await PdfProviders.resolve({
+  task: "repair",
+  provider: "qpdf",
+  savePolicy: "rewrite",
+  inspection: inspectedPdf,
+  mutationAuthorized: true,
+  invalidateSignaturesAuthorized: true,
+  policy: {
+    installPolicy: "managed",
+    allowedProviders: ["qpdf"],
+    allowedPacks: ["qpdf"],
+    maxDownloadBytes: 100_000_000,
+    maxUnpackedBytes: 100_000_000,
+  },
+});
+assert.equal(managedQpdf.status, "blocked");
+assert.equal(managedQpdf.reason.code, "managed-artifact-unpublished");
+assert.equal(managedQpdf.installPlan.performsDownload, false);
+await assert.rejects(() => PdfProviders.ensure({ resolution: managedQpdf }), /installable resolution/);
+
+const systemOnlyQpdf = await PdfProviders.resolve({
+  task: "repair",
+  provider: "qpdf",
+  savePolicy: "rewrite",
+  inspection: inspectedPdf,
+  mutationAuthorized: true,
+  invalidateSignaturesAuthorized: true,
+  policy: {
+    installPolicy: "system-only",
+    allowedProviders: ["qpdf"],
+    allowedPacks: [],
+    maxDownloadBytes: 0,
+    maxUnpackedBytes: 0,
+  },
+});
+assert.ok(["ready", "blocked"].includes(systemOnlyQpdf.status));
+assert.notEqual(systemOnlyQpdf.reason.code, "managed-artifact-unpublished");
+assert.equal(systemOnlyQpdf.silentFallback, false);
+
+const missingCredential = await PdfProviders.resolve({
+  task: "sign",
+  provider: "pyhanko",
+  savePolicy: "incremental",
+  inspection: inspectedPdf,
+  mutationAuthorized: true,
+  policy: { installPolicy: "managed", allowedProviders: ["pyhanko"], allowedPacks: ["python-specialists", "qpdf"], acceptedLicenses: ["agpl"], maxDownloadBytes: 1, maxUnpackedBytes: 1 },
+});
+assert.equal(missingCredential.status, "blocked");
+assert.equal(missingCredential.reason.code, "credential-declaration-required");
+
+const ocrLanguagePolicy = await PdfProviders.resolve({
+  task: "ocr",
+  provider: "ocrmypdf",
+  savePolicy: "rewrite",
+  inspection: inspectedPdf,
+  mutationAuthorized: true,
+  ocrLanguages: ["fra"],
+  policy: { installPolicy: "managed", allowedProviders: ["ocrmypdf"], allowedPacks: ["ocr-core", "qpdf", "poppler-qa"], allowedOcrLanguages: ["eng", "chi_sim", "fra"], maxDownloadBytes: 1, maxUnpackedBytes: 1 },
+});
+assert.equal(ocrLanguagePolicy.status, "blocked");
+assert.equal(ocrLanguagePolicy.reason.code, "ocr-language-pack-unpublished");
+
+const missingOcrProbeLanguage = await PdfProviders.probe({
+  provider: "ocrmypdf",
+  task: "ocr",
+  policy: { installPolicy: "system-only", allowedProviders: ["ocrmypdf"] },
+});
+assert.equal(missingOcrProbeLanguage.status, "blocked");
+assert.equal(missingOcrProbeLanguage.reason.code, "ocr-language-required");
+
+const rootImport = await import("node:child_process").then(({ spawnSync }) => spawnSync(process.execPath, ["--input-type=module", "--eval", [
+  "globalThis.fetch=()=>{throw new Error('network must remain unused')}",
+  "await import('open-office-artifact-tool/pdf/providers')",
+  "process.stdout.write('providers-import-ok')",
+].join(";")], { cwd: repoRoot, encoding: "utf8" }));
+assert.equal(rootImport.status, 0, rootImport.stderr);
+assert.equal(rootImport.stdout, "providers-import-ok");
+
+const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-pdf-providers-"));
+try {
+  const policyDirectory = path.join(tempRoot, ".open-office-artifact-tool");
+  await fs.mkdir(policyDirectory);
+  const policyPath = path.join(policyDirectory, "pdf-providers.json");
+  await fs.writeFile(policyPath, JSON.stringify({
+    installPolicy: "managed",
+    allowedProviders: ["qpdf"],
+    allowedPacks: ["qpdf"],
+    maxDownloadBytes: 100_000_000,
+    maxUnpackedBytes: 100_000_000,
+  }), "utf8");
+  const fileBackedQpdf = await PdfProviders.resolve({
+    task: "repair",
+    provider: "qpdf",
+    savePolicy: "rewrite",
+    inspection: inspectedPdf,
+    mutationAuthorized: true,
+    invalidateSignaturesAuthorized: true,
+    policyPath,
+  });
+  assert.equal(fileBackedQpdf.policySource, "explicit-file");
+  assert.equal(fileBackedQpdf.policyPath, policyPath);
+  assert.equal(fileBackedQpdf.cacheRoot, path.join(policyDirectory, "providers"));
+  assert.equal(fileBackedQpdf.reason.code, "managed-artifact-unpublished");
+
+  const normalArchive = tarGz([{ name: "bin/tool", bytes: "#!/bin/sh\necho fixture\n", mode: 0o755 }]);
+  const pack = fixturePack(normalArchive);
+  const cacheRoot = path.join(tempRoot, "cache");
+  const calls = [];
+  const first = await installManagedPackForTest({ cacheRoot, pack, fetchImpl: fakeFetch(normalArchive, calls) });
+  assert.equal(first.ready, true);
+  assert.equal(first.reused, false);
+  assert.equal(calls.length, 1);
+  const receipt = JSON.parse(await fs.readFile(path.join(first.root, ".receipt.json"), "utf8"));
+  assert.equal(receipt.schema, PDF_PROVIDER_RECEIPT_SCHEMA);
+  assert.equal(receipt.artifact.sha256, pack.artifacts[0].sha256);
+  await fs.access(path.join(first.root, "bin", "tool"));
+  assert.ok((await listTree(cacheRoot)).every((entry) => !entry.includes(".fixture-pack.tmp-") && !entry.endsWith(".lock")), "successful install must clean its download staging and lock");
+  const second = await installManagedPackForTest({ cacheRoot, pack, fetchImpl: async () => { throw new Error("cache hit must not download"); } });
+  assert.equal(second.ready, true);
+  assert.equal(second.reused, true);
+
+  const mirrorCalls = [];
+  const mirrorCache = path.join(tempRoot, "mirror-cache");
+  await installManagedPackForTest({
+    cacheRoot: mirrorCache,
+    pack,
+    enterpriseMirror: "https://mirror.example.test/open-office-artifact-tool/v1.2.3/",
+    fetchImpl: fakeFetch(normalArchive, mirrorCalls),
+  });
+  assert.deepEqual(mirrorCalls, ["https://mirror.example.test/open-office-artifact-tool/v1.2.3/fixture.tar.gz"]);
+
+  const concurrentCache = path.join(tempRoot, "concurrent-cache");
+  let concurrentFetches = 0;
+  const delayedFetch = async () => {
+    concurrentFetches += 1;
+    await new Promise((resolve) => setTimeout(resolve, 75));
+    return new Response(normalArchive, { status: 200 });
+  };
+  const concurrent = await Promise.all([
+    installManagedPackForTest({ cacheRoot: concurrentCache, pack, fetchImpl: delayedFetch }),
+    installManagedPackForTest({ cacheRoot: concurrentCache, pack, fetchImpl: delayedFetch }),
+  ]);
+  assert.equal(concurrentFetches, 1, "concurrent installers must share one per-pack lock");
+  assert.ok(concurrent.some((result) => result.reused === false));
+  assert.ok(concurrent.some((result) => result.reused === true));
+
+  const badHash = fixturePack(normalArchive, { artifact: { sha256: "0".repeat(64) } });
+  await assert.rejects(() => installManagedPackForTest({ cacheRoot: path.join(tempRoot, "bad-hash"), pack: badHash, fetchImpl: fakeFetch(normalArchive) }), /SHA-256 mismatch/);
+  const oversize = fixturePack(normalArchive, { artifact: { downloadBytes: normalArchive.length - 1 } });
+  await assert.rejects(() => installManagedPackForTest({ cacheRoot: path.join(tempRoot, "oversize"), pack: oversize, fetchImpl: fakeFetch(normalArchive) }), /exceeds pinned size/);
+  await assert.rejects(() => installManagedPackForTest({ cacheRoot: path.join(tempRoot, "wrong-platform"), pack, platform: "win32-x64", fetchImpl: fakeFetch(normalArchive) }), /exactly one artifact/);
+
+  const traversal = tarGz([{ name: "../escape", bytes: "nope", mode: 0o644 }]);
+  const traversalRoot = path.join(tempRoot, "traversal");
+  await fs.mkdir(traversalRoot);
+  await assert.rejects(() => safeExtractTarGz(traversal, traversalRoot, 16 * 1024), /Unsafe|escape/);
+  const hardlink = tarGz([{ name: "bin/tool", bytes: "target", type: "1", mode: 0o755 }]);
+  await fs.mkdir(path.join(tempRoot, "hardlink"));
+  await assert.rejects(() => safeExtractTarGz(hardlink, path.join(tempRoot, "hardlink"), 16 * 1024), /Unsupported or unsafe/);
+  const symlink = tarGz([{ name: "bin/tool", bytes: "target", type: "2", mode: 0o755 }]);
+  await fs.mkdir(path.join(tempRoot, "symlink"));
+  await assert.rejects(() => safeExtractTarGz(symlink, path.join(tempRoot, "symlink"), 16 * 1024), /Unsupported or unsafe/);
+
+  const interruptedCache = path.join(tempRoot, "interrupted-cache");
+  await assert.rejects(() => installManagedPackForTest({ cacheRoot: interruptedCache, pack, fetchImpl: async () => { throw new Error("offline fixture"); } }), /offline fixture/);
+  const interruptedTree = await listTree(interruptedCache);
+  assert.ok(interruptedTree.every((entry) => !entry.includes(".fixture-pack.tmp-") && !entry.endsWith(".lock")), `interrupted install left temporary state: ${interruptedTree.join(", ")}`);
+} finally {
+  await fs.rm(tempRoot, { recursive: true, force: true });
+}
+
+console.log("pdf providers smoke ok");

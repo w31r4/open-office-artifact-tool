@@ -1118,6 +1118,9 @@ Replace literal paragraph text without flattening formatting boundaries. Fully e
 | `PdfFile.importPdf` | api | Reopen package-generated metadata losslessly or lazily use required MuPDF.js for arbitrary PDFs, producing a bounded reconstructed extraction/QA view with text geometry, raster placements and transforms, links, annotations, widgets, and heuristic table candidates; the view is never an edit representation. |
 | `PdfFile.inspectPdf` | api | Inspect a path or PDF bytes after a pre-WASM input budget, combining native MuPDF page/object/annotation/widget/link, source SHA-256, source-bound annotation and link locators, native annotation quadrilateral/color facts, raw MediaBox/CropBox facts, and effective normalized page rotation with bounded tagged-PDF, language, reading-order, heading, Figure, Link, Artifact, font, and table-structure evidence. |
 | `PdfFile.renderPdf` | api | Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or JPEG, enforcing input, page/object, DPI, and preallocation pixel budgets before returning a FileBlob. |
+| `PdfProviders.ensure` | api | Install only a previously installable, policy- and catalog-bound capability resolution into the project-private cache, then return a fresh probe. It uses only catalog-pinned release bytes, validates size/hash/archive/receipt boundaries, and never chooses another provider or obtains credentials. A blocked or ready resolution cannot be forced through this API. |
+| `PdfProviders.probe` | api | Probe exactly one selected PDF provider under the requested policy without downloading, mutating the cache, importing MuPDF, or trying fallback providers. The result reports ready or blocked runtime evidence together with the pinned pack plan. |
+| `PdfProviders.resolve` | api | Resolve one explicit PDF task and selected/default provider against the immutable capability catalog and project policy. It is read-only: no MuPDF initialization, network access, cache mutation, credential acquisition, or automatic provider fallback occurs. The result is ready, installable, or blocked with exact packs, platform, sizes, licenses, runtime prerequisites, consents, and operation limits. |
 
 ### pdf details
 
@@ -1569,6 +1572,66 @@ Render one page from original PDF bytes through runtime-lazy MuPDF.js as PNG or 
 **Schema returns:**
 
 - `blob` (FileBlob) — Native PNG or JPEG page bytes with provider, page, DPI, and dimensions metadata.
+
+#### `PdfProviders.ensure`
+
+Install only a previously installable, policy- and catalog-bound capability resolution into the project-private cache, then return a fresh probe. It uses only catalog-pinned release bytes, validates size/hash/archive/receipt boundaries, and never chooses another provider or obtains credentials. A blocked or ready resolution cannot be forced through this API.
+
+**Examples:**
+
+- const installed = await PdfProviders.ensure({ resolution, policyPath: '.open-office-artifact-tool/pdf-providers.json' })
+
+**Schema parameters:**
+
+- `resolution` (object) required — The exact current-package resolution returned with status=installable. Its catalog digest, policy fingerprint, provider, and pack plan must still match.
+- `policyPath` (string) — The same persistent project policy file used to resolve. It is re-read before any cache mutation.
+
+**Schema returns:**
+
+- `result` (object) — Fresh ready/blocked provider probe plus verified installation receipts. It can only use pinned catalog assets, a bounded project-private cache, hash/size checks, safe extraction, and atomic publication; it never downloads credentials or falls back.
+
+#### `PdfProviders.probe`
+
+Probe exactly one selected PDF provider under the requested policy without downloading, mutating the cache, importing MuPDF, or trying fallback providers. The result reports ready or blocked runtime evidence together with the pinned pack plan.
+
+**Examples:**
+
+- const state = await PdfProviders.probe({ provider: 'qpdf', task: 'repair', policyPath: '.open-office-artifact-tool/pdf-providers.json' })
+
+**Schema parameters:**
+
+- `provider` (string) required — One exact catalog provider ID; probing does not search for alternates.
+- `task` (string) — Optional catalog task used to include OCR language-pack requirements in the plan.
+- `policyPath` (string) — Explicit project policy file; default-missing remains disabled.
+- `languages` (string[]) — Explicit OCR language list, required for an OCR task and checked against policy plus catalogued language packs.
+
+**Schema returns:**
+
+- `state` (object) — Ready or blocked status with local/system/managed runtime evidence and the selected pack plan. It performs no network request, cache write, MuPDF import, or provider fallback.
+
+#### `PdfProviders.resolve`
+
+Resolve one explicit PDF task and selected/default provider against the immutable capability catalog and project policy. It is read-only: no MuPDF initialization, network access, cache mutation, credential acquisition, or automatic provider fallback occurs. The result is ready, installable, or blocked with exact packs, platform, sizes, licenses, runtime prerequisites, consents, and operation limits.
+
+**Examples:**
+
+- const resolution = await PdfProviders.resolve({ task: 'repair', provider: 'qpdf', savePolicy: 'rewrite', mutationAuthorized: true, invalidateSignaturesAuthorized: true, policyPath: '.open-office-artifact-tool/pdf-providers.json' })
+
+**Schema parameters:**
+
+- `task` (string) required — One catalog task such as inspect, repair, ocr, sign, sanitize, or validate-conformance.
+- `provider` (string) — Optional provider ID. A task default is a declared preference only; the resolver never substitutes a different provider when it is unavailable.
+- `inspection` (object) — Exact-source inspection/preflight evidence. Required for every existing-PDF task except inspect; it must carry a 64-hex sourceSha256 at inspection.summary.sourceSha256 or sourceSha256. A failed MuPDF parse may use a bounded preflight hash record only to route explicit repair.
+- `savePolicy` (string) required — One strategy allowed by the selected task, such as read-only, rewrite, incremental, or sanitize.
+- `policyPath` (string) — Explicit project policy file. The conventional path is .open-office-artifact-tool/pdf-providers.json; a missing conventional file means disabled, never implicit authorization.
+- `languages` (string[]) — Explicit OCR languages. eng and chi_sim are policy defaults; every language must be policy-authorized and catalogued.
+- `mutationAuthorized` (boolean) — Required true for a task that mutates source PDF bytes.
+- `invalidateSignaturesAuthorized` (boolean) — Required true for a task whose operation can invalidate signatures.
+- `credentials` (string[]) — Caller-declared credential kinds such as local-pkcs12. Credentials, private keys, HSMs, remote-signing access, and TSA/LTV access are never installed or acquired.
+
+**Schema returns:**
+
+- `resolution` (object) — Read-only ready, installable, or blocked resolution with one provider, catalog digest, policy fingerprint, no-fallback guarantee, precise pack/platform/download/unpacked/license/runtime plan, and required consents.
 
 ## presentation
 

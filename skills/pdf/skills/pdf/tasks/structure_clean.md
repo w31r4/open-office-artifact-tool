@@ -2,8 +2,8 @@
 
 Use the shipped `scripts/pikepdf_provider.py` adapter when an Agent must create
 a structurally quieter copy of an imported PDF without rebuilding its visible
-pages. The adapter opens the exact original bytes through separately installed
-pikepdf 10.10.x, applies only pikepdf's curated sanitizer operations, saves one
+pages. The adapter opens the exact original bytes through a separately selected
+pikepdf runtime, applies only pikepdf's curated sanitizer operations, saves one
 new full-rewrite revision, and validates the selected postconditions.
 
 This is the `structure-clean` route. It is deliberately narrower than strict
@@ -11,23 +11,22 @@ This is the `structure-clean` route. It is deliberately narrower than strict
 flatten XFA, remove comments, scan OCR/image residue, or certify an untrusted
 file as safe.
 
-## Install and probe
+## Resolve and probe
 
-Install pikepdf into an explicit provider environment. The npm package does not
-install Python packages and has no lifecycle hook:
+Resolve `task: "structure-clean"` with `provider: "pikepdf"`,
+`savePolicy: "rewrite"`, mutation authorization, and signature-invalidation
+authorization before invoking the adapter. Select a ready managed pack when one
+is published or an explicit `system-only` Python runtime; [provider setup](provider_setup.md)
+owns policy and runtime preparation. The npm package never installs Python
+packages and has no lifecycle hook, global-pip path, or fallback.
 
 ```bash
-uv venv .venv-pdf
-uv pip install --python .venv-pdf/bin/python 'pikepdf>=10.10.0,<10.11.0'
-export OPEN_OFFICE_PDF_PROVIDER_PYTHON="$PWD/.venv-pdf/bin/python"
-
-PYTHON_BIN="$OPEN_OFFICE_PDF_PROVIDER_PYTHON"
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
 "$PYTHON_BIN" scripts/pdf_provider.py check --provider pikepdf --require
 "$PYTHON_BIN" scripts/pikepdf_provider.py probe
 ```
 
-The validated adapter requires pikepdf `>=10.10.0,<10.11.0`. A different
-version, missing curated API, invalid interpreter, or import failure is an
+A missing curated API, invalid interpreter, or incompatible provider is an
 explicit capability error. There is no qpdf or PyMuPDF fallback.
 
 ## Choose a fixed profile

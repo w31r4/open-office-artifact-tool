@@ -1,47 +1,48 @@
 # PDF provider matrix
 
-This Skill is a capability router, not a single PDF backend. Select one provider before touching a file. Never catch a provider failure and silently retry through another provider.
+This is the human capability boundary. It intentionally does **not** duplicate
+versions, package sizes, hashes, URLs, platform availability, or installation
+facts: `open-office-artifact-tool/pdf/providers` owns those in its versioned
+catalog and policy resolver.
 
-## Routing matrix
+Choose one provider before touching a file. A provider error is not permission
+to retry through another route.
 
-| Provider | Primary role | Input rule | Save policy | Important boundary |
-| --- | --- | --- | --- | --- |
-| `PdfArtifact` | Greenfield semantic authoring, tagged structure, reading order, inspect/verify, modeled preview | Create a new artifact or reopen a package-generated model envelope | `rewrite` | Never use arbitrary-PDF model reconstruction as a fidelity-preserving edit path. |
-| `PdfFile` + required MuPDF.js | Default arbitrary-PDF parsing, native inspect including raw page boxes/rotation, structured text/image/link evidence plus source-bound widget/form-field snapshots, PNG/JPEG render, bounded annotation/form/page/metadata/link edits, visible CropBox changes, absolute page rotation, one-page grafting, and rewrite redaction | Open original bytes/path directly through the package or `scripts/mupdf.mjs` | `read-only`, `rewrite`, or explicit `incremental` | Runtime-lazy but required npm dependency. Inspection separates raw unrotated PDF-space `mediaBox`/`cropBox` facts from the effective rotation-aware `mupdfPage.bbox` labeled `mupdf-page-space`. `add_text_annotation`, `add_text_highlight`, and `add_link` bind exact source bytes plus that bbox/rotation snapshot and support 0/90/180/270-degree pages. The note accepts a visible `[x,y]` pin and non-empty contents plus optional author/subject; the highlight binds one unique native text-search selection (at most 4,096 characters) with optional RGB/review metadata; the link accepts a safe in-page rectangle and target. Native annotation audits expose `appearanceBbox`; stale evidence, clipped appearances, caller Highlight quads/rectangles, zero/multiple matches, unsafe/duplicate links, and incremental save fail closed. All three placement operations report `coordinateSpace`/`pageRotation`, require rewrite, and require second inspection/render. `duplicate_page` binds the same source/page snapshot, copies one ordinary right-angle page to a 1-based output position, requires a single-operation rewrite, and rejects Tagged PDFs plus annotations, links, widgets/forms, page actions, associated files, article beads, transitions, and template steps. It does not synthesize navigation and requires second inspection plus mapped Poppler pixel identity. `update_form_field` binds exact source bytes plus one `mupdfFormField` snapshot and permits only a single non-password text widget, compatible single combo, or checkbox; shared/radio/list/multi-select/password/mismatched-export fields route explicitly to pypdf. It may be incremental only on unsigned input. `set_page_crop` remains unrotated-only, retains hidden content, and is never redaction; `rotate_page` writes only an absolute right-angle `/Rotate` value. Incremental page grafting/redaction/deletion, source-bound annotation/link creation or mutation, and signed-PDF incremental edits are rejected. Rewrite redaction is not full sanitize. General reflow, complex image replacement, signature trust, and strict scrub remain outside this contract. |
-| ReportLab | Greenfield visual/layout-oriented PDF generation | New document only | `rewrite` | Does not inherit the `PdfArtifact` tagged/reading-order contract. Verify accessibility separately. |
-| pdfplumber | Read-only text, word geometry, table, line, and rectangle extraction | Open original PDF directly | `read-only` | Extraction is evidence, not layout fidelity or an edit representation. |
-| pypdf | Read/inspect, path-safe read-only attachment quarantine, complete-source merge/reorder/selective stamp, basic AcroForm and annotation operations | Open original PDF directly | `read-only`, `rewrite`, or explicit `incremental` | The shipped merge manifest selects every source page exactly once and preserves resolvable navigation; ambiguous collisions or unsupported geometry fail closed. Inspect signatures/DocMDP before mutation; incremental preserves prior bytes but does not prove a permitted signed-document change. |
-| PyMuPDF | Specialist strict scrub/residue/OCR path, bounded image-backed OCR redaction, and retained high-level operations not yet covered by MuPDF.js | Open the original file/bytes directly | explicit `rewrite`, `incremental`, or `sanitize` | Optional external Python `>=1.27.2,<1.28` provider. `redact_ocr_text` is sanitize-only and requires one page, an exact expected 0/90/180/270-degree rotation, exact term, expected match count, Tesseract language data, a bounded raster, and at least 90% placement coverage for every OCR match. Rotated-page OCR is normalized temporarily, while native redaction coordinates stay in unrotated page space and `/Rotate` is restored. It is not the digital-signature authority and must fail closed when a requested capability is absent. |
-| Poppler (`pdfinfo`, `pdftoppm`) | Independent page-count/file evidence and final native raster QA | Read final PDF bytes | `read-only` | A renderer, not an editor or conformance validator. |
-| qpdf | Bounded structural checks plus source-hash-bound recovery rewrite and linearization through `scripts/qpdf_provider.py` | Inspect the original directly; rewrite a verified private snapshot | `read-only` or `rewrite` | Separately installed qpdf 11+ CLI. Not a renderer, text extractor, strict PDF-spec/conformance checker, sanitizer, password workflow, or signature validator. Review warnings and render the result. |
-| pikepdf | Curated JavaScript/external-action/multimedia removal plus optional attachment, thumbnail, search-index, Web Capture, private page-piece, and portfolio cleanup | Inspect a private read-only snapshot bound to the original SHA-256; mutate only that snapshot | `read-only` or `rewrite` | Shipped adapter requires pikepdf `>=10.10,<10.11`, one fixed profile, caller trust/isolation declaration, and signature-invalidation acknowledgement. It rejects encryption/warnings and is not redaction, metadata/form/XFA cleanup, strict sanitize, rendering, or a malware sandbox. |
-| pyHanko | Shipped source-bound local-PKCS#12 approval/certification signing plus read-only integrity, trust, difference, timestamp, DocMDP, and FieldMDP reporting | Inspect/sign a private source and credential snapshot through `scripts/pyhanko_sign_provider.py`; validate exact final bytes through `scripts/pyhanko_provider.py` | `read-only` or bounded `incremental` | Requires separately installed pyHanko core `>=0.35,<0.36` and pyhanko-certvalidator `>=0.31,<0.32`. Signing requires exact source/credential hashes, explicit input trust/isolation, stdin/no-passphrase, one existing/invisible/visible field mode, expected signature count, and explicit certification DocMDP. Output preserves the old prefix, adds one signature, passes internal integrity/DocMDP validation, and promotes without replacement. Trust roots and full delivery validation remain explicit; TSA/LTV, PKCS#11, remote signing, online retrieval, and complete PAdES conformance are not claimed. |
-| veraPDF | Shipped bounded adapter for PDF/A and PDF/UA machine-verifiable validation | Validate a private snapshot bound to the final PDF SHA-256 through `scripts/verapdf_provider.py` | `read-only` | Requires a separately installed veraPDF `>=1.30,<1.31` CLI and one explicit built-in profile. No automatic/custom profile, password, directory, arbitrary flags, repair, or fallback. PDF/UA also has human checkpoints; a green report is not full accessibility certification. |
-| OCRmyPDF / Tesseract | Shipped complete-document searchable-layer OCR plus separate strict image-residue evidence | Bind an exact source hash, OCR a private snapshot through `scripts/ocrmypdf_provider.py`, and publish a distinct output | `rewrite`; Tesseract residue scans are `read-only` | Requires separately installed OCRmyPDF `>=17.8,<17.9`, Tesseract 5.x language data, qpdf 11+, and Poppler `pdftotext`. The adapter fixes standard-PDF/O0/one-job/Tesseract/fpdf2/pypdfium settings, exposes no arbitrary flags or page subset, requires trusted or caller-isolated input, and is not sanitize, malware isolation, PDF/UA repair, or OCR-quality proof. |
+| Provider | Primary role | Save policy | Important boundary |
+| --- | --- | --- | --- |
+| `PdfArtifact` | New tagged semantic authoring, reading order, inspect/verify | `rewrite` | New/trusted model only; never an imported-PDF fidelity editor. |
+| MuPDF.js / `PdfFile` | Default arbitrary-PDF parse, inspect, render, bounded direct-original edit | `read-only`, `rewrite`, explicit `incremental` | No Word-style reflow, complete sanitize, or signature authority. Source-bound edits and page evidence remain mandatory. |
+| ReportLab | New visual/layout PDF | `rewrite` | Does not inherit the `PdfArtifact` tagged/reading-order contract. |
+| pdfplumber | Read-only text, word geometry, tables, lines, rectangles | `read-only` | Extraction is evidence, not an edit representation. |
+| pypdf | Attachment quarantine, complete-source merge/reorder/stamp, complex forms/annotations | `read-only`, `rewrite`, explicit `incremental` | Inspect signatures/DocMDP first; an incremental layout is not authorization. |
+| PyMuPDF | Strict scrub/residue/OCR redaction and selected advanced bounded edits | explicit `rewrite`, `incremental`, `sanitize` | Explicit specialist only. Sanitization is full-rewrite and residue-scanned; it is not the signing authority. |
+| Poppler | Independent file evidence and native raster QA | `read-only` | Renderer/inspector only, not an editor or conformance validator. |
+| qpdf | Structural diagnosis, recovery rewrite, linearization | `read-only`, `rewrite` | Not renderer, text extractor, sanitizer, password workflow, or signature validator. |
+| pikepdf | Fixed-profile active/auxiliary structure cleanup | `read-only`, `rewrite` | Not redaction, metadata/form/XFA cleanup, strict sanitize, rendering, or malware isolation. |
+| pyHanko | Local PKCS#12 signing and exact-source signature validation | `read-only`, bounded `incremental` | Certificates, keys, HSMs, TSA/LTV, remote signing, trust roots, and online retrieval remain explicit caller concerns. |
+| veraPDF | PDF/A and PDF/UA machine-rule validation | `read-only` | One explicit profile; a green report is not repair or universal accessibility certification. |
+| OCRmyPDF / Tesseract | Complete-document searchable layer and OCR residue evidence | `rewrite` / `read-only` | Source-bound rewrite, explicit language data, isolation; not proof of OCR accuracy, sanitization, or PDF/UA repair. |
 
 ## Mandatory routing rules
 
-1. For an existing PDF, preserve the original bytes and pass them directly to the selected provider. Do not import through PDF.js or `PdfArtifact`, export a reconstructed model, and call that a faithful edit.
-2. Declare `read-only`, `rewrite`, `incremental`, or `sanitize` before the operation. Read [save policies](SAVE_POLICIES.md).
-3. Probe the exact provider and capability before editing. Missing provider, unsupported operation, encrypted input, signature restriction, or unsafe save mode is an error.
-4. Keep input and output paths distinct. Never overwrite the source until the output passes semantic/file checks and final rendering review.
-5. Inspect signatures and DocMDP constraints before any mutation. `incremental` describes byte layout, not authorization under a signature policy.
-6. Any redaction or delete operation rejects `incremental` because prior revisions retain the original content. A bounded MuPDF.js rewrite removes matched page content from the rewritten revision but is not a full sanitize claim. High-trust redaction uses `sanitize`: apply redactions, scrub, fully rewrite, scan residue, then render every page.
+1. Preserve original bytes and open them directly through the selected provider.
+   Do not reconstruct an arbitrary PDF and describe it as a faithful edit.
+2. Declare `read-only`, `rewrite`, `incremental`, or `sanitize` before work.
+3. Resolve/probe the exact provider and capability first. Missing provider,
+   unsafe strategy, unsupported operation, encryption, or signature restriction
+   blocks the task.
+4. Keep output distinct from input. Reopen, verify the intended delta, render
+   every final page, and retain audit evidence.
+5. `incremental` preserves old bytes; it is not signature authorization.
+   Redaction and delete operations must not be incremental.
+6. High-trust redaction requires the explicit sanitize route: real redactions,
+   scrub, full rewrite, residue/single-revision checks, then render review.
 
-## Dependency and license record
+## Delivery and licensing boundary
 
-MuPDF.js is a required direct dependency resolved by a normal npm installation and loaded only on the first PDF operation. It remains in its own dependency tarball; there is no lifecycle hook or standalone downloader. All other providers in this matrix are optional external tools installed and licensed separately.
-
-- ReportLab: official [PDF generation documentation](https://docs.reportlab.com/reportlab/userguide/).
-- pdfplumber: project [repository and MIT license](https://github.com/jsvine/pdfplumber).
-- pypdf: official [user/API documentation](https://pypdf.readthedocs.io/en/latest/) and repository license notices.
-- MuPDF.js: official `mupdf@1.28.0`, required by the package under GNU AGPL-3.0-or-later.
-- PyMuPDF: official [documentation](https://pymupdf.readthedocs.io/en/latest/) states GNU AGPL or a commercial license, and its [page-coordinate contract](https://pymupdf.readthedocs.io/en/latest/page.html) defines method coordinates as unrotated page space except for `Page.rect`/`Page.bound`. The shipped specialist adapter accepts `>=1.27.2,<1.28` and hosted CI pins `1.27.2.3`; install and redistribute it only under terms applicable to the deployment. Tesseract 5.x language data remains separately installed for OCR redaction and residue evidence.
-- qpdf: official [manual](https://qpdf.readthedocs.io/en/stable/) and Apache-2.0 project repository; the shipped thin adapter requires JSON v2 from qpdf 11 or newer.
-- pikepdf: optional qpdf-based Python provider under MPL-2.0. The shipped thin adapter targets `>=10.10,<10.11` and exposes only curated fixed-profile structure cleanup; pikepdf and its runtime dependencies remain separately installed.
-- pyHanko: official [signing and validation documentation](https://docs.pyhanko.eu/en/stable/). Both shipped adapters use the separately installed core library directly; no `pyhanko-cli` package is required for the bounded local-PKCS#12 route.
-- veraPDF: official [PDF/A and PDF/UA CLI validation documentation](https://docs.verapdf.org/cli/validation/). The shipped source-bound adapter requires the separately installed 1.30.x CLI.
-- OCRmyPDF and Tesseract: the shipped source-bound adapter targets OCRmyPDF 17.8.x and Tesseract 5.x; [OCRmyPDF's security guidance](https://ocrmypdf.readthedocs.io/en/stable/cloud.html) requires isolation for attacker-chosen files, while its [advanced mode documentation](https://ocrmypdf.readthedocs.io/en/stable/advanced.html) defines the structure-loss boundary. The CLI is MPL-2.0 and Tesseract is Apache-2.0; both remain separately installed.
-- Poppler: separately installed command-line renderer; retain its applicable license notices.
-
-The `scripts/pdf_provider.py check` command reports availability without selecting a substitute.
+MuPDF.js is required through normal npm resolution and remains runtime-lazy.
+All other routes are selected by the capability resolver: they are either a
+ready explicitly provisioned `system-only` runtime, an authorized immutable
+managed pack, or a clear `blocked` result. The resolver reports licence
+acknowledgements before installation; it never silently downloads a provider or
+obtains secrets. See [provider setup](../tasks/provider_setup.md).

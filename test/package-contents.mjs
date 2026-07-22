@@ -5,14 +5,18 @@ import path from "node:path";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const packageMetadata = JSON.parse(await fs.readFile(path.join(repoRoot, "package.json"), "utf8"));
+assert.equal(packageMetadata.version, "0.3.0");
 assert.equal(packageMetadata.license, "AGPL-3.0-or-later");
 assert.equal(packageMetadata.dependencies.mupdf, "1.28.0");
 assert.equal(packageMetadata.exports["./pdf/mupdf"], "./src/pdf/mupdf.mjs");
+assert.equal(packageMetadata.exports["./pdf/providers"], "./src/pdf/providers/index.mjs");
 assert.equal(packageMetadata.bin, undefined, "MuPDF must not require an installer command");
 assert.equal(packageMetadata.scripts.postinstall, undefined, "MuPDF must not require npm lifecycle hooks");
 const pdfFacadeSource = await fs.readFile(path.join(repoRoot, "src", "pdf", "index.mjs"), "utf8");
 assert.match(pdfFacadeSource, /await import\("\.\/mupdf\.mjs"\)/, "MuPDF must load only when a PDF operation needs it");
 assert.doesNotMatch(pdfFacadeSource, /from\s+["']mupdf["']/, "the root PDF facade must not initialize MuPDF eagerly");
+const pdfProvidersSource = await fs.readFile(path.join(repoRoot, "src", "pdf", "providers", "index.mjs"), "utf8");
+assert.doesNotMatch(pdfProvidersSource, /from\s+["']mupdf["']/, "the explicit provider subpath must not initialize MuPDF eagerly");
 const presentationCodecSource = await fs.readFile(path.join(repoRoot, "src", "codecs", "open-chestnut-presentation.mjs"), "utf8");
 assert.match(presentationCodecSource, /from "\.\.\/presentation\/index\.mjs";/, "the Presentation codec must depend on the Presentation leaf module");
 assert.match(presentationCodecSource, /from "\.\/open-chestnut-presentation-charts\.mjs";/, "the Presentation codec must delegate chart wire semantics to the chart leaf module");
@@ -40,14 +44,13 @@ const maxPackedBytes = 9_840_000;
 // The bundled OpenChestnut runtime is an audited product payload, not an
 // optional download. Keep its unpacked budget tight while allowing the
 // audited PDF provider/docs growth plus the bounded Office codecs and runnable
-// workflows. The source-bound SmartArt plain-node candidate measures
-// 24,542,129 unpacked bytes: its 22 KiB codec delta, public wire schema, and
-// runnable workflow are intentional distributed product surface. The narrowly
-// raised ceiling retains only 32,871 bytes of explicit product-growth headroom.
+// workflows. The managed-capability resolver distributes only catalog, policy,
+// and installer source -- never specialist binaries. Keep bounded headroom for
+// its Skill/API contract without concealing a runtime bundle in the npm tarball.
 // The repository-only MIT Default Template Library is excluded from the npm
 // tarball. Its retained Office/PNG sources must never consume this consumer
 // package budget.
-const maxUnpackedBytes = 24_575_000;
+const maxUnpackedBytes = 24_750_000;
 // Public Skill PNGs are required user-facing assets. They are retained with
 // byte-identical non-IDAT chunks and inflated scanline streams, but their IDAT
 // payloads are deterministically recompressed. Prevent future PNG tooling from
@@ -95,6 +98,11 @@ for (const required of [
   "src/pdf/accessibility.mjs",
   "src/pdf/index.mjs",
   "src/pdf/mupdf.mjs",
+  "src/pdf/providers/catalog.mjs",
+  "src/pdf/providers/index.mjs",
+  "src/pdf/providers/installer.mjs",
+  "src/pdf/providers/policy.mjs",
+  "src/pdf/providers/provider-catalog.v1.json",
   "src/document/index.mjs",
   "src/help/index.mjs",
   "src/index.mjs",
@@ -271,6 +279,7 @@ for (const removed of [
 assert.ok(!files.includes("skills/reference-sync.json"), "npm package must exclude the repository-only reference source snapshot");
 assert.ok(files.every((file) => !file.includes("/tests/") && !file.startsWith("test/")), "npm package must exclude development-only test sources");
 assert.ok(files.every((file) => !file.includes(".DS_Store") && !file.includes("__pycache__") && !file.endsWith(".pyc")), "npm package must exclude local metadata and Python bytecode");
+assert.ok(files.filter((file) => file.startsWith("src/pdf/providers/")).every((file) => !/\.(?:tar\.gz|tgz|zip|whl|jar|exe|dylib|so)$/i.test(file)), "npm package must ship provider policy/source only, never capability-pack binaries");
 assert.ok(files.every((file) => !file.startsWith("reference/")), "npm package must exclude reference material");
 assert.ok(!files.includes("native/OfficeBridge/OfficeBridge.sln"), "npm package must not publish a solution whose test project is repository-only");
 assert.ok(files.every((file) => !file.startsWith("skills/default-template-library/")), "npm package must exclude the repository-only retained default template library");

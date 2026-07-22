@@ -16,43 +16,53 @@ import subprocess
 import sys
 
 
-PROVIDERS = {
-    "artifact-tool": {"kind": "command", "commands": ["node"], "role": "greenfield tagged model", "integration": "shipped-js-api"},
-    "reportlab": {"kind": "module", "module": "reportlab", "role": "greenfield layout generation", "integration": "shipped-thin-script"},
-    "pdfplumber": {"kind": "module", "module": "pdfplumber", "role": "read-only extraction", "integration": "shipped-thin-script"},
-    "pypdf": {"kind": "module", "module": "pypdf", "role": "basic structure, attachment quarantine, complete-source merge/reorder/selective stamp, forms, annotations, rewrite/incremental", "integration": "shipped-thin-script"},
-    "pymupdf": {"kind": "module", "module": "pymupdf", "minimum_version": (1, 27, 2), "maximum_version_exclusive": (1, 28, 0), "role": "advanced imported-PDF editing, image-backed OCR redaction, and sanitize", "license": "agpl-or-commercial", "integration": "shipped-thin-script"},
-    "poppler": {"kind": "command", "commands": ["pdfinfo", "pdftoppm"], "role": "native file/render QA", "integration": "shipped-js-adapter-and-cli-workflow"},
-    "qpdf": {"kind": "command", "commands": ["qpdf"], "environment": "OPEN_OFFICE_PDF_QPDF", "minimum_major": 11, "require_version_output": True, "role": "bounded structure inspection, recovery rewrite, and linearization", "integration": "shipped-thin-script-external-cli"},
-    "pikepdf": {"kind": "module", "module": "pikepdf", "minimum_version": (10, 10, 0), "maximum_version_exclusive": (10, 11, 0), "role": "source-bound active and auxiliary PDF structure cleanup", "integration": "shipped-thin-script-external-python"},
-    "pyhanko": {"kind": "module", "module": "pyhanko", "distribution": "pyHanko", "minimum_version": (0, 35, 0), "maximum_version_exclusive": (0, 36, 0), "companion_module": "pyhanko_certvalidator", "companion_distribution": "pyhanko-certvalidator", "companion_minimum_version": (0, 31, 0), "companion_maximum_version_exclusive": (0, 32, 0), "role": "source-bound local-PKCS#12 signing plus read-only signature validation", "integration": "shipped-thin-script-external-python"},
-    "verapdf": {"kind": "command", "commands": ["verapdf"], "environment": "OPEN_OFFICE_PDF_VERAPDF", "minimum_version": (1, 30, 0), "maximum_version_exclusive": (1, 31, 0), "require_version_output": True, "role": "source-bound PDF/A and PDF/UA machine-rule validation", "integration": "shipped-thin-script-external-cli"},
-    "ocrmypdf": {"kind": "command", "commands": ["ocrmypdf"], "environment": "OPEN_OFFICE_PDF_OCRMYPDF", "minimum_version": (17, 8, 0), "maximum_version_exclusive": (17, 9, 0), "require_version_output": True, "role": "source-bound scanned-PDF OCR and searchable layer generation", "integration": "shipped-thin-script-external-cli"},
-    "tesseract": {"kind": "command", "commands": ["tesseract"], "role": "OCR engine used by strict image residue checks", "integration": "external-required-for-image-ocr"},
-}
+CATALOG_SCHEMA = "open-office-artifact-tool.pdf-provider-catalog.v1"
 
 
-TASKS = {
-    "create-tagged": {"providers": ["artifact-tool"], "strategies": ["rewrite"], "input": "none"},
-    "create-layout": {"providers": ["reportlab"], "strategies": ["rewrite"], "input": "none"},
-    "extract": {"providers": ["pdfplumber", "pypdf", "pymupdf"], "strategies": ["read-only"], "input": "existing"},
-    "extract-attachments": {"providers": ["pypdf"], "strategies": ["read-only"], "input": "existing"},
-    "inspect": {"providers": ["artifact-tool", "pypdf", "pymupdf", "qpdf", "pikepdf"], "strategies": ["read-only"], "input": "existing"},
-    "edit-content": {"providers": ["pymupdf"], "strategies": ["rewrite", "incremental"], "input": "existing", "mutation": True},
-    "fill-form": {"providers": ["pypdf", "pymupdf"], "strategies": ["rewrite", "incremental"], "input": "existing", "mutation": True},
-    "annotate": {"providers": ["pypdf", "pymupdf"], "strategies": ["rewrite", "incremental"], "input": "existing", "mutation": True},
-    "merge-stamp": {"providers": ["pypdf"], "strategies": ["rewrite"], "input": "existing", "mutation": True},
-    "repair": {"providers": ["qpdf"], "strategies": ["rewrite"], "input": "existing", "mutation": True},
-    "linearize": {"providers": ["qpdf"], "strategies": ["rewrite"], "input": "existing", "mutation": True},
-    "structure-clean": {"providers": ["pikepdf"], "strategies": ["rewrite"], "input": "existing", "mutation": True, "invalidate_signatures": True},
-    "ocr": {"providers": ["ocrmypdf"], "strategies": ["rewrite"], "input": "existing", "mutation": True},
-    "sign": {"providers": ["pyhanko"], "strategies": ["incremental"], "input": "existing", "mutation": True, "integration": "shipped-thin-script"},
-    "verify-signature": {"providers": ["pyhanko"], "strategies": ["read-only"], "input": "existing", "integration": "shipped-thin-script"},
-    "validate-conformance": {"providers": ["verapdf"], "strategies": ["read-only"], "input": "existing", "integration": "shipped-thin-script"},
-    "redact": {"providers": ["pymupdf"], "strategies": ["sanitize"], "input": "existing", "mutation": True, "invalidate_signatures": True},
-    "sanitize": {"providers": ["pymupdf"], "strategies": ["sanitize"], "input": "existing", "mutation": True, "invalidate_signatures": True},
-    "render": {"providers": ["poppler"], "strategies": ["read-only"], "input": "existing"},
-}
+def load_catalog() -> dict:
+    """Read the canonical Node export without maintaining a Python mirror.
+
+    A packaged Skill may run in the package itself or be copied into an Agent
+    workspace. In both cases Node module resolution finds the installed public
+    `open-office-artifact-tool/pdf/providers` subpath. This command reads data
+    only; it never initializes MuPDF or a specialist provider.
+    """
+
+    node = shutil.which("node")
+    if not node:
+        raise RuntimeError("Node.js is required to read the canonical PDF provider catalog")
+    program = (
+        "import { PDF_PROVIDER_CATALOG } from 'open-office-artifact-tool/pdf/providers';"
+        "process.stdout.write(JSON.stringify(PDF_PROVIDER_CATALOG));"
+    )
+    candidates = [Path.cwd(), *[parent for parent in Path(__file__).resolve().parents if (parent / "package.json").is_file()]]
+    errors = []
+    for cwd in dict.fromkeys(candidates):
+        result = subprocess.run(
+            [node, "--input-type=module", "--eval", program],
+            cwd=str(cwd),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            try:
+                return json.loads(result.stdout)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError("canonical PDF provider catalog emitted invalid JSON") from exc
+        errors.append((result.stderr or result.stdout).strip())
+    detail = next((error for error in errors if error), "module was not resolvable")
+    raise RuntimeError(f"unable to load canonical PDF provider catalog: {detail[:300]}")
+
+
+CATALOG = load_catalog()
+if CATALOG.get("schema") != CATALOG_SCHEMA or CATALOG.get("schemaVersion") != 1:
+    raise RuntimeError("PDF provider catalog has an unsupported schema")
+if not isinstance(CATALOG.get("providers"), dict) or not isinstance(CATALOG.get("tasks"), dict):
+    raise RuntimeError("PDF provider catalog is missing providers or tasks")
+PROVIDERS = CATALOG["providers"]
+TASKS = CATALOG["tasks"]
 
 
 class ContractError(RuntimeError):
@@ -111,95 +121,94 @@ def command_major(version: str | None) -> int | None:
 def semantic_version(value: str | None) -> tuple[int, int, int] | None:
     if not value:
         return None
-    match = re.match(r"^(\d+)\.(\d+)\.(\d+)", value)
+    match = re.search(r"(?<!\d)(\d+)\.(\d+)\.(\d+)", value)
     return tuple(int(part) for part in match.groups()) if match else None
+
+
+def version_in_range(value: str | None, config: dict, prefix: str = "") -> bool:
+    parsed = semantic_version(value)
+    if parsed is None:
+        return False
+    minimum = config.get(f"{prefix}minimumVersion")
+    maximum = config.get(f"{prefix}maximumVersionExclusive")
+    if minimum and parsed < semantic_version(minimum):
+        return False
+    if maximum and parsed >= semantic_version(maximum):
+        return False
+    exact = config.get(f"{prefix}exactVersion")
+    return not exact or parsed == semantic_version(exact)
+
+
+def node_package_version(package: str) -> str | None:
+    node = shutil.which("node")
+    if not node:
+        return None
+    program = "const fs=require('fs'),path=require('path');let p=path.dirname(require.resolve(process.argv[1]));for(;;){const c=path.join(p,'package.json');try{const m=JSON.parse(fs.readFileSync(c));if(m.name===process.argv[1]){process.stdout.write(m.version);break}}catch{}const n=path.dirname(p);if(n===p)process.exit(2);p=n}"
+    try:
+        result = subprocess.run([node, "-e", program, package], check=False, capture_output=True, text=True, timeout=10)
+    except Exception:
+        return None
+    return result.stdout.strip() if result.returncode == 0 and result.stdout.strip() else None
 
 
 def probe_provider(name: str) -> dict:
     config = PROVIDERS[name]
     result = {"provider": name, "role": config["role"], "kind": config["kind"], "integration": config["integration"], "available": False, "evidence": {}}
-    if config["kind"] == "module":
+    if config["kind"] == "core":
+        result["available"] = bool(shutil.which("node"))
+        result["evidence"] = {"runtime": "open-office-artifact-tool", "node": shutil.which("node")}
+    elif config["kind"] == "node-package":
+        version = node_package_version(config["package"])
+        result["available"] = version_in_range(version, config)
+        result["evidence"] = {"package": config["package"], "version": version, "expectedVersion": config["exactVersion"]}
+    elif config["kind"] == "python-module":
         version = module_version(config["module"], config.get("distribution"))
         result["available"] = version is not None and not version.startswith("import-error:")
         result["evidence"]["module"] = config["module"]
         result["evidence"]["version"] = version
-        if config.get("minimum_version") is not None:
-            parsed = semantic_version(version)
+        if config.get("minimumVersion") is not None:
             result["evidence"].update({
-                "minimumVersion": ".".join(str(part) for part in config["minimum_version"]),
-                "maximumVersionExclusive": ".".join(str(part) for part in config["maximum_version_exclusive"]),
+                "minimumVersion": config["minimumVersion"],
+                "maximumVersionExclusive": config["maximumVersionExclusive"],
             })
-            result["available"] = bool(
-                result["available"]
-                and parsed is not None
-                and config["minimum_version"] <= parsed < config["maximum_version_exclusive"]
-            )
-        if config.get("companion_module"):
-            companion = module_version(config["companion_module"], config["companion_distribution"])
-            parsed_companion = semantic_version(companion)
+            result["available"] = bool(result["available"] and version_in_range(version, config))
+        if config.get("companionModule"):
+            companion = module_version(config["companionModule"], config["companionDistribution"])
             result["evidence"].update({
-                "companionModule": config["companion_module"],
+                "companionModule": config["companionModule"],
                 "companionVersion": companion,
-                "companionMinimumVersion": ".".join(str(part) for part in config["companion_minimum_version"]),
-                "companionMaximumVersionExclusive": ".".join(str(part) for part in config["companion_maximum_version_exclusive"]),
+                "companionMinimumVersion": config["companionMinimumVersion"],
+                "companionMaximumVersionExclusive": config["companionMaximumVersionExclusive"],
             })
-            result["available"] = bool(
-                result["available"]
-                and parsed_companion is not None
-                and config["companion_minimum_version"]
-                <= parsed_companion
-                < config["companion_maximum_version_exclusive"]
-            )
+            companion_config = {
+                "minimumVersion": config["companionMinimumVersion"],
+                "maximumVersionExclusive": config["companionMaximumVersionExclusive"],
+            }
+            result["available"] = bool(result["available"] and version_in_range(companion, companion_config))
     elif config["kind"] == "command":
         versions = {
-            command: command_version(command, config.get("environment"), config.get("require_version_output", False))
+            command: command_version(command, config.get("environment"), config.get("requireVersionOutput", False))
             for command in config["commands"]
         }
         result["available"] = all(versions.values())
         result["evidence"]["commands"] = versions
-        if config.get("minimum_major") is not None:
+        if config.get("minimumMajor") is not None:
             majors = {command: command_major(version) for command, version in versions.items()}
-            result["evidence"].update({"majorVersions": majors, "minimumMajor": config["minimum_major"]})
+            result["evidence"].update({"majorVersions": majors, "minimumMajor": config["minimumMajor"]})
             result["available"] = all(
-                major is not None and major >= config["minimum_major"]
+                major is not None and major >= config["minimumMajor"]
                 for major in majors.values()
             )
-        if config.get("minimum_version") is not None:
-            versions_parsed = {
-                command: (
-                    tuple(int(part) for part in match.groups())
-                    if version and (match := re.search(r"(?<!\d)(\d+)\.(\d+)\.(\d+)", version))
-                    else None
-                )
-                for command, version in versions.items()
-            }
+        if config.get("minimumVersion") is not None:
             result["evidence"].update({
-                "semanticVersions": {
-                    command: ".".join(str(part) for part in version) if version else None
-                    for command, version in versions_parsed.items()
-                },
-                "minimumVersion": ".".join(str(part) for part in config["minimum_version"]),
-                "maximumVersionExclusive": ".".join(str(part) for part in config["maximum_version_exclusive"]),
+                "semanticVersions": {command: ".".join(str(part) for part in semantic_version(version)) if semantic_version(version) else None for command, version in versions.items()},
+                "minimumVersion": config["minimumVersion"],
+                "maximumVersionExclusive": config["maximumVersionExclusive"],
             })
-            result["available"] = bool(
-                result["available"]
-                and all(
-                    version is not None
-                    and config["minimum_version"] <= version < config["maximum_version_exclusive"]
-                    for version in versions_parsed.values()
-                )
-            )
-    else:
-        versions = {
-            command: command_version(command, config.get("environment"), config.get("require_version_output", False))
-            for command in config["commands"]
-        }
-        module = module_version(config["module"])
-        result["available"] = any(versions.values()) or (module is not None and not module.startswith("import-error:"))
-        result["evidence"].update({"commands": versions, "module": config["module"], "version": module})
-    if config.get("license"):
-        result["license"] = config["license"]
-        result["licenseAccepted"] = str(os.environ.get("OPEN_OFFICE_PDF_PYMUPDF_LICENSE", "")).lower() in {"agpl", "commercial"}
+            result["available"] = bool(result["available"] and all(version_in_range(version, config) for version in versions.values()))
+    if config.get("license", {}).get("requiresAcknowledgement"):
+        result["license"] = config["license"].get("id", config["license"]["expression"])
+        result["licenseAccepted"] = str(os.environ.get("OPEN_OFFICE_PDF_PYMUPDF_LICENSE", "")).lower() in set(config["license"].get("acceptedValues", []))
     return result
 
 
@@ -240,7 +249,7 @@ def validate_plan(args: argparse.Namespace) -> dict:
             raise ContractError("input and output must be different; never overwrite the source PDF in place")
     elif output_path and args.strategy == "read-only":
         raise ContractError("read-only tasks do not write a PDF --output")
-    if capability.get("invalidate_signatures") and not args.invalidate_signatures:
+    if capability.get("invalidateSignatures") and not args.invalidate_signatures:
         raise ContractError("this destructive rewrite requires explicit --invalidate-signatures acknowledgement")
 
     probe = probe_provider(args.provider)
@@ -262,7 +271,7 @@ def validate_plan(args: argparse.Namespace) -> dict:
         result["output"] = {"path": str(output_path)}
     if license_choice:
         result["licenseChoice"] = license_choice
-    if capability.get("invalidate_signatures"):
+    if capability.get("invalidateSignatures"):
         result["invalidateSignatures"] = True
     return result
 
@@ -274,6 +283,9 @@ def build_parser() -> argparse.ArgumentParser:
     check = subparsers.add_parser("check", help="probe one or every provider")
     check.add_argument("--provider", choices=["all", *PROVIDERS], required=True)
     check.add_argument("--require", action="store_true", help="fail if the selected provider is unavailable")
+
+    catalog = subparsers.add_parser("catalog", help="print the canonical provider catalog without probing a provider runtime")
+    catalog.add_argument("--compact", action="store_true", help="omit indentation")
 
     plan = subparsers.add_parser("plan", help="validate an explicit task/provider/save-policy contract")
     plan.add_argument("--task", choices=TASKS, required=True)
@@ -288,10 +300,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    from python_runtime import reexec_configured_provider_python
-    reexec_configured_provider_python()
     args = build_parser().parse_args()
     try:
+        if args.command == "catalog":
+            print(json.dumps(CATALOG, indent=None if args.compact else 2, sort_keys=True))
+            return 0
+        from python_runtime import reexec_configured_provider_python
+        reexec_configured_provider_python()
         if args.command == "check":
             names = list(PROVIDERS) if args.provider == "all" else [args.provider]
             probes = [probe_provider(name) for name in names]

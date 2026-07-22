@@ -167,7 +167,7 @@ process.exit(compliant ? 0 : 1);
     registry, "plan", "--task", "validate-conformance", "--provider", "verapdf", "--strategy", "read-only",
     "--input", source, "--require-provider",
   ], { env: fakeEnv, status: 0 }));
-  assert.equal(plan.integration, "shipped-thin-script");
+  assert.equal(plan.integration, "shipped-thin-script-external-cli");
   assert.equal(plan.silentFallback, false);
 
   const fakePass = jsonResult(run(python, [

@@ -10,7 +10,11 @@ This modeled profile is not a claim of full PDF/UA conformance.
 
 ## PDF/UA and PDF/A validation
 
-Use the shipped adapter with a separately installed veraPDF 1.30.x CLI for machine-verifiable rules. Bind the final bytes and choose one supported built-in profile explicitly:
+Use the shipped adapter only after the resolver selects a ready veraPDF route
+(a verified managed pack when published, or an explicit `system-only` runtime).
+Bind the final bytes and choose one supported built-in profile explicitly; see
+[provider setup](provider_setup.md) instead of treating an absent runtime as a
+reason to install a global tool:
 
 ```bash
 PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"

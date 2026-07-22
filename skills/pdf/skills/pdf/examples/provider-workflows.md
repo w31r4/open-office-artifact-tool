@@ -18,9 +18,10 @@ The CLI rejects direct or symlink-alias source overwrite and writes output atomi
 
 ## qpdf structure inspection and repair
 
-qpdf is separately installed. The shipped wrapper exposes only bounded inspect,
-recovery rewrite, and linearize operations; it does not pass arbitrary flags
-through to the provider:
+Resolve qpdf first through [provider setup](../tasks/provider_setup.md): use a
+ready managed pack when published or an explicit `system-only` runtime. The
+shipped wrapper exposes only bounded inspect, recovery rewrite, and linearize
+operations; it does not pass arbitrary flags through to the provider:
 
 ```bash
 PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
@@ -44,7 +45,7 @@ DocMDP review. This route is never sanitize; run Poppler over every final page.
 
 ## pikepdf active and auxiliary structure cleanup
 
-Install pikepdf 10.10.x into the explicitly selected provider environment. The
+Resolve the explicitly selected pikepdf runtime before this workflow. The
 adapter exposes no arbitrary object edits or provider flags:
 
 ```bash
@@ -77,9 +78,9 @@ residue policy, and compare every source/output page with Poppler. See
 
 ## pyHanko local-PKCS#12 signing and validation
 
-Install `pyHanko>=0.35,<0.36` into the selected PDF provider environment. The
-core library powers both shipped adapters; the separate `pyhanko-cli` package
-is not required for this bounded workflow.
+Resolve the selected pyHanko runtime before this workflow. The core library
+powers both shipped adapters; the separate `pyhanko-cli` package is not required
+for this bounded workflow, and keys/credentials remain caller-provided.
 
 ```bash
 PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
@@ -122,9 +123,9 @@ PKCS#11/HSM, and remote signing remain explicit external workflows.
 
 ## veraPDF source-bound machine validation
 
-Install veraPDF 1.30.x separately and select the built-in profile that matches
-the delivery requirement. The shipped adapter validates an immutable private
-snapshot rather than accepting arbitrary veraPDF flags:
+Resolve the selected veraPDF runtime and select the built-in profile that
+matches the delivery requirement. The shipped adapter validates an immutable
+private snapshot rather than accepting arbitrary veraPDF flags:
 
 ```bash
 export OPEN_OFFICE_PDF_VERAPDF="/absolute/path/to/verapdf"
@@ -146,8 +147,8 @@ assistive-technology usability.
 
 ## OCRmyPDF complete-document searchable layer
 
-Install OCRmyPDF 17.8.x, Tesseract 5.x with the selected languages, qpdf 11+,
-and Poppler. Bind the operation to a fresh source hash and select the mode
+Resolve OCRmyPDF, Tesseract language packs, qpdf, and Poppler through the
+selected provider route. Bind the operation to a fresh source hash and select the mode
 instead of relying on provider defaults:
 
 ```bash

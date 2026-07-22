@@ -291,7 +291,7 @@ with (root / "source.pdf").open("rb") as source, (root / "existing-field.pdf").o
     path.join(tempRoot, "planned.pdf"),
     "--require-provider",
   ], { env: providerEnv, status: 0 }));
-  assert.equal(plan.integration, "shipped-thin-script");
+  assert.equal(plan.integration, "shipped-thin-script-external-python");
   assert.equal(plan.silentFallback, false);
 
   const visible = path.join(tempRoot, "certified-visible.pdf");

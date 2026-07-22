@@ -4,29 +4,26 @@ Use the shipped `scripts/ocrmypdf_provider.py` adapter for a complete scanned
 PDF that needs searchable text. It is a source-bound full rewrite, not a parser,
 layout editor, accessibility repair, redaction, or sanitize operation.
 
-## Install and probe
+## Resolve and probe
 
-OCRmyPDF remains an explicitly installed external provider. The adapter accepts
-`>=17.8.0,<17.9.0` and requires Tesseract 5.x language data, qpdf 11+, and
-Poppler `pdftotext`. It fixes the OCR renderer to fpdf2 and the rasterizer to
-pypdfium, both supplied by the OCRmyPDF runtime.
+OCRmyPDF is an explicit capability route. First resolve `task: "ocr"` with
+`provider: "ocrmypdf"`, `savePolicy: "rewrite"`, `mutationAuthorized: true`,
+and the requested language(s). The route needs OCRmyPDF, Tesseract language
+data, qpdf, and Poppler `pdftotext`; those facts, their pinned versions, and
+their pack closure come from the public catalog rather than this task page.
+
+Use [provider setup](provider_setup.md) to select a ready managed pack or an
+explicit deployment-owned `system-only` runtime. The current unpublished managed
+catalog blocks rather than downloading a replacement. Do not repair that state
+with brew, apt, global pip, or a guessed download URL.
 
 ```bash
-# macOS
-brew install ocrmypdf poppler
-
-# Debian/Ubuntu system tools plus an exact Python CLI runtime
-sudo apt-get install tesseract-ocr qpdf poppler-utils
-uv venv .venv-ocr
-uv pip install --python .venv-ocr/bin/python 'ocrmypdf==17.8.1'
-export OPEN_OFFICE_PDF_OCRMYPDF="$PWD/.venv-ocr/bin/ocrmypdf"
-
 PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
 "$PYTHON_BIN" scripts/pdf_provider.py check --provider ocrmypdf --require
 "$PYTHON_BIN" scripts/ocrmypdf_provider.py probe
 ```
 
-If a tool is not on `PATH`, set its exact executable with
+For an explicitly selected system runtime, set its exact executable with
 `OPEN_OFFICE_PDF_OCRMYPDF`, `OPEN_OFFICE_PDF_TESSERACT`,
 `OPEN_OFFICE_PDF_QPDF`, or `OPEN_OFFICE_PDF_PDFTOTEXT`. The probe reports the
 resolved versions and installed Tesseract languages. It never installs a

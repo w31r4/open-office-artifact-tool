@@ -6,7 +6,7 @@ An Office and PDF toolkit for agents to create, read, edit, inspect, render, and
 
 `open-office-artifact-tool` provides a unified JavaScript object model. DOCX, XLSX, and PPTX files are read and written by **OpenChestnut**, implemented in C# with the Open XML SDK and compiled to .NET WebAssembly. PDF uses a separate semantic model and a runtime-lazy **MuPDF.js** native pipeline.
 
-> **Current status:** `0.2.0` release candidate. The source tree, reproducible WASM build, and npm tarball have verification gates, but the package has not yet been formally published to npm.
+> **Current status:** `0.3.0` release candidate. The source tree, reproducible WASM build, and npm tarball have verification gates, but the package has not yet been formally published to npm.
 
 ## Quick start
 
@@ -48,7 +48,9 @@ More runnable examples:
 
 ### PDF runtime
 
-The official `mupdf@1.28.0` package is a required npm dependency and is resolved by a normal `npm install`. Its WASM runtime initializes only on the first PDF read, inspect, render, or edit operation. There is no `postinstall`, standalone downloader, or global environment mutation. ReportLab, pdfplumber, pypdf, Poppler, pikepdf, pyHanko, veraPDF, and OCRmyPDF remain separately installed, task-specific external tools.
+The official `mupdf@1.28.0` package is a required npm dependency and is resolved by a normal `npm install`. Its WASM runtime initializes only on the first PDF read, inspect, render, or edit operation. There is no `postinstall`, standalone downloader, or global environment mutation.
+
+qpdf, Python specialists, OCR, and veraPDF/JRE route through the explicit `open-office-artifact-tool/pdf/providers` API. It resolves task/inspection evidence to `ready`, `installable`, or `blocked`; a project policy then decides whether installation is allowed. Downloads are disabled by default. Immutable non-MuPDF capability-pack assets are not yet published, so they deliberately resolve as `blocked` rather than silently falling back. A deployment-owned runtime can be selected only through explicit `system-only` policy. See [PDF Provider Setup](skills/pdf/skills/pdf/tasks/provider_setup.md).
 
 ## Why it exists
 
@@ -63,7 +65,7 @@ The official `mupdf@1.28.0` package is a required npm dependency and is resolved
 | XLSX | OpenChestnut C# WASM | Cells and formulas, styles and layout, tables, images, validation, conditional formatting including standard data bars and icon sets, comments, charts, sparklines, bounded What-If data tables, and bounded native PivotTables. |
 | DOCX | OpenChestnut C# WASM | Structured text and styles, sections, headers and footers, lists, tables, links, fields, inline images plus bounded floating/wrapped images, classic comments, bounded modern comment threads, passwordless editing restrictions, and block plain-text plus inline/table-cell plain-text, canonical checkbox, canonical drop-down, canonical combo-box with bounded custom values, or strict `YYYY-MM-DD` date-picker content controls. |
 | PPTX | OpenChestnut C# WASM | Shapes and rich text, images with reversible cropping, tables, connectors, charts, direct backgrounds, plain-text speaker notes, legacy comments, and bounded Office 2021 modern threads; slide masters and layouts are preserved but cannot be edited. |
-| PDF | Independent model + MuPDF.js | Tagged PDF authoring; native read/inspect/render for arbitrary PDFs; bounded annotation, form, page, metadata, link, rewrite, and incremental edits; real rewrite redaction; bounded local-PKCS#12 signing with independent validation. Specialist tools verify strict sanitization, PDF/UA, OCR, and advanced signing. |
+| PDF | Independent model + MuPDF.js | Tagged PDF authoring; native read/inspect/render for arbitrary PDFs; bounded annotation, form, page, metadata, link, rewrite, and incremental edits; real rewrite redaction; bounded local-PKCS#12 signing with independent validation. Specialist tools are explicit provider routes; strict sanitization, PDF/UA, OCR, and advanced signing still require independent evidence. |
 
 See the [coverage matrix](https://github.com/w31r4/open-office-artifact-tool/blob/main/docs/coverage.md) for complete, continuously updated support boundaries.
 
@@ -96,8 +98,8 @@ The first five `skills/<name>` directories are shipped in the package; loading i
 
 - To preserve unmodeled objects from an imported Office file, keep using the model returned by import and leave those objects structurally unchanged. Discarding the source snapshot or changing unsupported topology causes export to fail.
 - An arbitrary existing PDF cannot be reflowed reliably like a Word document. Original-file editing must stay within explicit, verifiable bounded operations.
-- Shipped pyHanko adapters provide source-bound local-PKCS#12 approval/certification signing and independent validation; the pyHanko runtime remains separately installed. TSA/LTV, PKCS#11, remote signing, and complete PAdES claims remain external workflows. PDF/A/PDF/UA validation and scanned-PDF OCR use the shipped bounded veraPDF and OCRmyPDF adapters.
-- Active/auxiliary structure cleanup uses the shipped bounded pikepdf 10.10.x adapter, while pikepdf remains separately installed. The operation retains metadata, form values, XFA, annotations, and hidden text, so it is not complete sanitize or redaction evidence.
+- Shipped pyHanko, veraPDF, OCRmyPDF, pikepdf, and qpdf adapters are explicit provider routes: they run only when a verified managed pack is ready or the deployment explicitly selects a `system-only` runtime. Private keys, P12 files, HSM/remote-signing credentials, TSA/LTV access, and trust roots are always caller-supplied and are never downloaded.
+- Active/auxiliary structure cleanup uses a bounded pikepdf route. It retains metadata, form values, XFA, annotations, and hidden text, so it is not complete sanitize or redaction evidence.
 - MuPDF.js supports bounded original-file operations, not Word-style arbitrary reflow. Rewrite redaction is also not full sanitization; signatures, residue, OCR, and PDF/UA still require independent evidence.
 - LibreOffice, Poppler, Playwright, and the native Office Bridge are rendering and validation tools, not hidden Office codec fallbacks.
 

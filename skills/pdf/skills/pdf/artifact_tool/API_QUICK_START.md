@@ -499,9 +499,10 @@ revocation, signing, and key-handling boundaries.
 
 ## Validate PDF/A or PDF/UA machine rules on exact bytes
 
-Conformance validation is outside the JavaScript model. Use the shipped thin
-adapter with a separately installed veraPDF 1.30.x CLI, a fresh final-file
-hash, and one explicit built-in profile:
+Conformance validation is outside the JavaScript model. Resolve the explicit
+veraPDF provider first (a verified managed pack when published or a declared
+`system-only` runtime), then use the shipped thin adapter with a fresh
+final-file hash and one explicit built-in profile:
 
 ```bash
 export OPEN_OFFICE_PDF_VERAPDF="/absolute/path/to/verapdf"
@@ -542,4 +543,4 @@ for (let pageIndex = 0; pageIndex < pdf.pages.length; pageIndex += 1) {
 
 `PdfFile.inspectPdf(...)` verifies byte-level evidence such as PDF version, page/object counts, EOF, tagged structure, reading-order IDs, headings, Figure alternative text, Table/TR/TH/TD roles, spans, and font evidence. It complements semantic `pdf.verify()` and visual page review; none of the three replaces the others.
 
-Use `pdftoppm`/`pdfinfo` as independent native render and file QA tools. The surrounding PDF Skill defines the MuPDF.js, ReportLab, pdfplumber, pypdf, PyMuPDF, pyHanko, veraPDF, and OCR routing contract; its shipped thin adapters provide bounded source-bound qpdf 11+ structure operations, pyHanko local-PKCS#12 signing and independent signature validation, and veraPDF 1.30.x conformance validation without exposing any provider as a generic flag passthrough.
+Use `pdftoppm`/`pdfinfo` as independent native render and file QA tools. The surrounding PDF Skill defines the MuPDF.js, ReportLab, pdfplumber, pypdf, PyMuPDF, pyHanko, veraPDF, and OCR routing contract; its capability resolver selects a managed or `system-only` provider without generic flag passthrough or fallback. The thin adapters then provide bounded source-bound qpdf structure operations, pyHanko local-PKCS#12 signing and independent signature validation, and veraPDF conformance validation.
