@@ -434,6 +434,12 @@ const rootImport = await import("node:child_process").then(({ spawnSync }) => sp
 assert.equal(rootImport.status, 0, rootImport.stderr);
 assert.equal(rootImport.stdout, "providers-import-ok");
 
+const liveWorkflow = await fs.readFile(path.join(repoRoot, ".github", "workflows", "pdf-capability-pack-live.yml"), "utf8");
+assert.match(liveWorkflow, /^  ocr-managed-pack:/m);
+assert.match(liveWorkflow, /node test\/pdf-ocr-managed-release\.mjs/);
+assert.match(liveWorkflow, /^  verapdf-managed-pack:/m);
+assert.match(liveWorkflow, /node test\/pdf-verapdf-managed-release\.mjs/);
+
 const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-pdf-providers-"));
 try {
   const oldQpdf = path.join(tempRoot, "old-qpdf.mjs");
