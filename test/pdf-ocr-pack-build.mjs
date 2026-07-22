@@ -8,11 +8,13 @@ const root = path.resolve(import.meta.dirname, "..");
 const inputsPath = path.join(root, "scripts", "pdf-provider-ocr-release-inputs.v1.json");
 const pythonInputsPath = path.join(root, "scripts", "pdf-provider-python-release-inputs.v1.json");
 const nativeBuilder = path.join(root, "scripts", "build-ocr-native-payload.mjs");
+const workflowPath = path.join(root, ".github", "workflows", "pdf-ocr-capability-packs.yml");
 
-const [inputBytes, pythonInputBytes, nativeSource] = await Promise.all([
+const [inputBytes, pythonInputBytes, nativeSource, workflowSource] = await Promise.all([
   fs.readFile(inputsPath),
   fs.readFile(pythonInputsPath),
   fs.readFile(nativeBuilder, "utf8"),
+  fs.readFile(workflowPath, "utf8"),
 ]);
 const inputs = JSON.parse(inputBytes);
 
@@ -26,7 +28,7 @@ assert.equal(
   "the OCR release lock must pin the exact isolated-Python wheel lock it builds",
 );
 assert.deepEqual(inputs.ocrCore.nativeBuild["darwin-arm64"].formulae, ["tesseract", "ghostscript", "poppler"]);
-assert.deepEqual(inputs.ocrCore.nativeBuild["linux-x64"].packages, ["tesseract-ocr", "ghostscript", "poppler-utils", "patchelf"]);
+assert.deepEqual(inputs.ocrCore.nativeBuild["linux-x64"].packages, ["tesseract-ocr", "ghostscript", "poppler-utils", "fonts-droid-fallback", "patchelf"]);
 
 for (const [language, expected] of Object.entries({ eng: "ocr-language-eng", chi_sim: "ocr-language-chi-sim" })) {
   const languageInput = inputs.languages[language];
@@ -53,7 +55,16 @@ for (const sourceFragment of [
   "patchelf",
   "writeLaunchers",
   "native library basename collision",
+  "MACHO_MAGICS",
+  "isMachOFile",
+  "contains a dangling symlink",
+  "contains a symlink directory cycle",
+  "resource-root",
 ]) assert.match(nativeSource, new RegExp(sourceFragment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+assert.match(nativeSource, /if \(!await isMachOFile\(target\)\) return false;/);
+assert.match(workflowSource, /fonts-droid-fallback/);
+assert.match(workflowSource, /--resource-root/);
+assert.match(workflowSource, /fonts-droid-fallback build input/);
 
 const invalidPlatform = spawnSync(process.execPath, [nativeBuilder,
   "--platform", "win32-x64",

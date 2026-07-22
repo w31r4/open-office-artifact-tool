@@ -66,7 +66,7 @@ jobs:
           set -euo pipefail
           if [ "${{ matrix.platform }}" = "linux-x64" ]; then
             sudo apt-get update
-            sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng ghostscript poppler-utils patchelf
+            sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng ghostscript poppler-utils fonts-droid-fallback patchelf
           else
             brew install tesseract ghostscript poppler
           fi
@@ -93,9 +93,19 @@ jobs:
           native_notices="$RUNNER_TEMP/ocr-native-notices.md"
           library_args=()
           poppler_args=()
+          resource_args=()
+          font_notice=""
+          font_package=""
           if [ "${{ matrix.platform }}" = "linux-x64" ]; then
             tessdata_root="$(dirname "$(dpkg -L tesseract-ocr-eng | awk '/eng\.traineddata$/ { print; exit }')")"
             test -d "$tessdata_root"
+            droid_font="$(dpkg -L fonts-droid-fallback | awk '/DroidSansFallbackFull\.ttf$/ { print; exit }')"
+            test -f "$droid_font"
+            resource_args+=(--resource-root "$(dirname "$droid_font")")
+            font_notice="/usr/share/doc/fonts-droid-fallback/copyright"
+            test -r "$font_notice"
+            font_package="$RUNNER_TEMP/fonts-droid-fallback-package.txt"
+            dpkg-query -W -f='${Package} ${Version}\n' fonts-droid-fallback > "$font_package"
             library_args+=(--library-root /usr/lib/x86_64-linux-gnu)
             if [ -d /usr/share/poppler ]; then poppler_args+=(--poppler-root /usr/share/poppler); fi
             node scripts/build-ocr-native-payload.mjs \
@@ -107,6 +117,7 @@ jobs:
               --pdftotext /usr/bin/pdftotext \
               --ghostscript-root /usr/share/ghostscript \
               --tessdata-root "$tessdata_root" \
+              "${resource_args[@]}" \
               "${poppler_args[@]}" \
               "${library_args[@]}"
           else
@@ -130,6 +141,12 @@ jobs:
             cat "$RUNNER_TEMP/ocr-python-notices.md"
             printf '\n\n# Native OCR sidecars\n\n'
             cat "$native_notices"
+            if [ -n "$font_notice" ]; then
+              printf '\n\n## fonts-droid-fallback build input\n\n'
+              cat "$font_package"
+              printf '\n'
+              cat "$font_notice"
+            fi
           } > "$RUNNER_TEMP/ocr-notices.md"
           inputs_sha="$(shasum -a 256 "$OCR_INPUTS" | awk '{print $1}')"
           node scripts/build-pdf-provider-pack.mjs \

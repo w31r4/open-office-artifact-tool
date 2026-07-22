@@ -20,6 +20,20 @@ import { promisify } from "node:util";
 const execFile = promisify(execFileCallback);
 const SUPPORTED_PLATFORMS = new Set(["darwin-arm64", "linux-x64"]);
 const MAX_OUTPUT = 512 * 1024;
+// `otool` can report a non-Mach-O input without a failing process status on
+// some macOS releases. Never let that turn a Python source file or launcher
+// into an `install_name_tool` target. These are every 32/64-bit thin and fat
+// Mach-O magic value, read in big-endian byte order.
+const MACHO_MAGICS = new Set([
+  0xfeedface,
+  0xcefaedfe,
+  0xfeedfacf,
+  0xcffaedfe,
+  0xcafebabe,
+  0xbebafeca,
+  0xcafebabf,
+  0xbfbafeca,
+]);
 
 function fail(message) {
   throw new Error(`OCR native capability-pack build: ${message}`);
@@ -35,7 +49,7 @@ function sha256(bytes) {
 
 function parseArguments(argv) {
   const values = {};
-  const repeated = { "library-root": [] };
+  const repeated = { "library-root": [], "resource-root": [] };
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (!token.startsWith("--")) fail(`unexpected argument ${token}.`);
@@ -66,6 +80,7 @@ function parseArguments(argv) {
     popplerRoot: values["poppler-root"] ? path.resolve(values["poppler-root"]) : undefined,
     tessdataRoot: path.resolve(values["tessdata-root"]),
     libraryRoots: repeated["library-root"].map((value) => path.resolve(value)),
+    resourceRoots: repeated["resource-root"].map((value) => path.resolve(value)),
   };
 }
 
@@ -84,11 +99,13 @@ async function realFile(value, label) {
   return actual;
 }
 
-function containedPath(root, target, label) {
-  const normalizedRoot = path.resolve(root);
+function containedPath(roots, target, label) {
   const normalizedTarget = path.resolve(target);
-  if (normalizedTarget === normalizedRoot || !normalizedTarget.startsWith(`${normalizedRoot}${path.sep}`)) fail(`${label} escapes its root.`);
-  return normalizedTarget;
+  for (const root of roots) {
+    const normalizedRoot = path.resolve(root);
+    if (normalizedTarget === normalizedRoot || normalizedTarget.startsWith(`${normalizedRoot}${path.sep}`)) return normalizedTarget;
+  }
+  fail(`${label} escapes its declared roots.`);
 }
 
 async function copyFile(source, destination, { executable = false } = {}) {
@@ -100,24 +117,33 @@ async function copyFile(source, destination, { executable = false } = {}) {
   await fs.chmod(destination, executable || (sourceStat.mode & 0o111) !== 0 ? 0o755 : 0o644);
 }
 
-async function treeCopy(source, destination, label) {
+async function treeCopy(source, destination, label, { resourceRoots = [] } = {}) {
   const root = await realDirectory(source, label);
+  const trustedRoots = [root, ...await Promise.all(resourceRoots.map((candidate) => realDirectory(candidate, `${label} resource root`)))];
+  const visiting = new Set();
   async function copy(current, target) {
     const link = await fs.lstat(current);
     let actual = current;
     let stat = link;
     if (link.isSymbolicLink()) {
-      actual = await fs.realpath(current);
-      containedPath(root, actual, `${label} symlink`);
+      actual = await fs.realpath(current).catch(() => fail(`${label} contains a dangling symlink: ${current}.`));
+      containedPath(trustedRoots, actual, `${label} symlink`);
       stat = await fs.lstat(actual);
     }
     if (stat.isDirectory()) {
-      await fs.mkdir(target, { recursive: true, mode: 0o755 });
-      const children = await fs.readdir(actual, { withFileTypes: true });
-      children.sort((left, right) => left.name.localeCompare(right.name, "en"));
-      for (const child of children) {
-        if (child.name === "." || child.name === "..") fail(`${label} contains an unsafe entry.`);
-        await copy(path.join(actual, child.name), path.join(target, child.name));
+      const real = await fs.realpath(actual);
+      if (visiting.has(real)) fail(`${label} contains a symlink directory cycle: ${current}.`);
+      visiting.add(real);
+      try {
+        await fs.mkdir(target, { recursive: true, mode: 0o755 });
+        const children = await fs.readdir(actual, { withFileTypes: true });
+        children.sort((left, right) => left.name.localeCompare(right.name, "en"));
+        for (const child of children) {
+          if (child.name === "." || child.name === "..") fail(`${label} contains an unsafe entry.`);
+          await copy(path.join(actual, child.name), path.join(target, child.name));
+        }
+      } finally {
+        visiting.delete(real);
       }
       return;
     }
@@ -208,7 +234,21 @@ function parseMacDependencies(output) {
   return output.split("\n").slice(1).map((line) => line.trim().split(" (")[0]).filter(Boolean);
 }
 
+async function isMachOFile(target) {
+  const stat = await fs.lstat(target).catch(() => undefined);
+  if (!stat?.isFile() || stat.isSymbolicLink() || stat.size < 4) return false;
+  const handle = await fs.open(target, "r");
+  try {
+    const header = Buffer.alloc(4);
+    const { bytesRead } = await handle.read(header, 0, header.length, 0);
+    return bytesRead === header.length && MACHO_MAGICS.has(header.readUInt32BE(0));
+  } finally {
+    await handle.close();
+  }
+}
+
 async function patchMacBinary(target, libraryNames, { library = false } = {}) {
+  if (!await isMachOFile(target)) return false;
   const listed = await run("otool", ["-L", target], `otool ${target}`, { allowFailure: true });
   if (!listed) return false;
   for (const dependency of parseMacDependencies(listed.stdout)) {
@@ -228,6 +268,7 @@ async function finalizeMacPayload(payload, libraryNames) {
   const targets = [...await listRegularFiles(libexec), ...await listRegularFiles(lib)];
   for (const target of targets) await patchMacBinary(target, libraryNames, { library: target.startsWith(`${lib}${path.sep}`) });
   for (const target of targets) {
+    if (!await isMachOFile(target)) continue;
     const listed = await run("otool", ["-L", target], `verify otool ${target}`, { allowFailure: true });
     if (!listed) continue;
     for (const dependency of parseMacDependencies(listed.stdout)) {
@@ -336,7 +377,12 @@ async function build(options) {
 
   const resource = path.join(share, "ghostscript");
   await fs.mkdir(resource, { recursive: true, mode: 0o755 });
-  await treeCopy(await findNamedDirectory(options.ghostscriptRoot, "Resource", "ghostscript root"), path.join(resource, "Resource"), "ghostscript Resource");
+  await treeCopy(
+    await findNamedDirectory(options.ghostscriptRoot, "Resource", "ghostscript root"),
+    path.join(resource, "Resource"),
+    "ghostscript Resource",
+    { resourceRoots: options.resourceRoots },
+  );
   await treeCopy(await findNamedDirectory(options.ghostscriptRoot, "lib", "ghostscript root"), path.join(resource, "lib"), "ghostscript lib");
   await treeCopy(options.tessdataRoot, path.join(share, "tessdata"), "tessdata root");
   await removeTraineddata(path.join(share, "tessdata"));
