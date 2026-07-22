@@ -43,6 +43,18 @@ sheet.getRange("A6:F6").values = [["Quarter summary", null, null, null, null, nu
 sheet.getRange("A6:F6").merge();
 sheet.freezePanes.freezeRows(1);
 sheet.freezePanes.freezeColumns(1);
+sheet.protection = {
+  allow: ["selectLockedCells", "selectUnlockedCells", "sort", "autoFilter"],
+};
+const copiedProtection = sheet.protection;
+copiedProtection.allow.push("formatCells");
+assert.deepEqual(sheet.protection, {
+  enabled: true,
+  allow: ["selectLockedCells", "selectUnlockedCells", "sort", "autoFilter"],
+});
+assert.throws(() => { sheet.protection = { allow: ["unknownOperation"] }; }, /unsupported worksheet protection operation/i);
+assert.throws(() => { sheet.protection = { password: "secret" }; }, /unsupported field.*password.*intentionally not accepted/i);
+assert.throws(() => { sheet.protection = { enabled: false, allow: ["sort"] }; }, /disabled worksheet protection cannot declare allowed operations/i);
 
 const table = sheet.tables.add("A1:F4", true, "SummaryTable");
 table.style = "TableStyleMedium4";
@@ -222,7 +234,7 @@ workbook.recalculate();
 assert.deepEqual(sheet.getRange("F2:F4").values, [[0.4], [0.4166666666666667], [0.4]]);
 assert.equal(sheet.getRange("E2").values[0][0] instanceof Date, true);
 const modelInspect = workbook.inspect({
-  kind: "workbook,sheet,table,formula,style,computedStyle,drawing,dataValidation,conditionalFormat,thread",
+  kind: "workbook,sheet,worksheetProtection,table,formula,style,computedStyle,drawing,dataValidation,conditionalFormat,thread",
   sheetName: "Summary",
   range: "A1:Q34",
   maxChars: 32_000,
@@ -232,6 +244,7 @@ assert.match(modelInspect.ndjson, /"formula":"=\(B2-C2\)\/B2"/);
 assert.match(modelInspect.ndjson, /"drawingType":"chart"/);
 assert.match(modelInspect.ndjson, /"kind":"dataValidation"/);
 assert.match(modelInspect.ndjson, /"kind":"conditionalFormat"/);
+assert.match(modelInspect.ndjson, /"kind":"worksheetProtection"/);
 assert.match(modelInspect.ndjson, /"kind":"dataBar"/);
 assert.match(modelInspect.ndjson, /"kind":"iconSet"/);
 assert.match(modelInspect.ndjson, /Check the calculated margin/);
@@ -266,6 +279,14 @@ assert.equal(Object.keys(firstZip.files).filter((name) => /^xl\/threadedcomments
 assert.equal(Object.keys(firstZip.files).filter((name) => /^xl\/persons\/[^/]+\.xml$/i.test(name)).length, 1);
 assert.equal(firstZip.file("customXml/open-office-artifact.json"), null);
 const firstWorksheetXml = await firstZip.file("xl/worksheets/sheet1.xml").async("text");
+const firstProtectionXml = firstWorksheetXml.match(/<x:sheetProtection\b[^>]*\/>/)?.[0] || "";
+assert.match(firstProtectionXml, /sheet="1"/);
+assert.match(firstProtectionXml, /selectLockedCells="0"/);
+assert.match(firstProtectionXml, /selectUnlockedCells="0"/);
+assert.match(firstProtectionXml, /sort="0"/);
+assert.match(firstProtectionXml, /autoFilter="0"/);
+assert.match(firstProtectionXml, /formatCells="1"/);
+assert.doesNotMatch(firstProtectionXml, /password=|algorithmName=|hashValue=|saltValue=|spinCount=/);
 assert.match(firstWorksheetXml, /<x:mergeCell ref="A6:F6"/);
 assert.match(firstWorksheetXml, /<x:dataValidations count="3">/);
 assert.match(firstWorksheetXml, /type="list" errorStyle="warning" allowBlank="0" showDropDown="0" showInputMessage="1" showErrorMessage="1" errorTitle="Invalid status" error="Choose a value from the list\." promptTitle="Choose a status" prompt="Use one approved workflow state\." sqref="D2:D4"/);
@@ -298,6 +319,10 @@ assert.ok(Math.abs(importedSheet.getRange("A1:A6").format.columnWidthPx - 96) <=
 assert.ok(Math.abs(importedSheet.getRange("A1:F1").format.rowHeightPx - 28) < 0.01);
 assert.equal(importedSheet.getRange("A8:F8").format.rowHidden, true);
 assert.deepEqual(importedSheet.freezePanes.toJSON(), { rows: 1, columns: 1, frozen: true, topLeftCell: "B2", activePane: "bottomRight" });
+assert.deepEqual(importedSheet.protection, {
+  enabled: true,
+  allow: ["selectLockedCells", "selectUnlockedCells", "sort", "autoFilter"],
+});
 assert.equal(importedSheet.tables.items[0].name, "SummaryTable");
 assert.equal(importedSheet.images.items[0].alt, "Green status marker");
 assert.deepEqual(importedSheet.charts.items.map((chart) => chart.type), ["bar", "line", "pie", "area", "doughnut", "scatter"]);
@@ -360,6 +385,7 @@ importedSheet.getRange("A1:F1").format.rowHeightPx = 30;
 importedSheet.freezePanes.unfreeze();
 importedSheet.freezePanes.freezeRows(2);
 importedSheet.freezePanes.freezeColumns(1);
+importedSheet.protection = { allow: ["selectUnlockedCells", "formatCells"] };
 importedSheet.tables.items[0].style = "TableStyleMedium9";
 importedSheet.images.items[0].alt = "Edited green status marker";
 importedSheet.charts.items[1].title = "Edited revenue trend";
@@ -394,6 +420,7 @@ assert.equal(secondSheet.getRange("F2").format.fill, "#BBF7D0");
 assert.ok(Math.abs(secondSheet.getRange("A1:A6").format.columnWidthPx - 104) <= 1);
 assert.ok(Math.abs(secondSheet.getRange("A1:F1").format.rowHeightPx - 30) < 0.01);
 assert.deepEqual(secondSheet.freezePanes.toJSON(), { rows: 2, columns: 1, frozen: true, topLeftCell: "B3", activePane: "bottomRight" });
+assert.deepEqual(secondSheet.protection, { enabled: true, allow: ["selectUnlockedCells", "formatCells"] });
 assert.equal(secondSheet.tables.items[0].style, "TableStyleMedium9");
 assert.equal(secondSheet.images.items[0].alt, "Edited green status marker");
 assert.equal(secondSheet.charts.items[1].title, "Edited revenue trend");
@@ -415,6 +442,10 @@ assert.equal(second.comments.threads[0].comments.length, 2);
 assert.equal(second.comments.threads[0].comments[0].text, "Margin reviewed after edit.");
 assert.equal(second.comments.threads[0].comments[1].text, "Reply reviewed after edit.");
 assert.equal(second.comments.threads[0].resolved, false);
+
+secondSheet.protection = null;
+const protectionRemoved = await SpreadsheetFile.importXlsx(await SpreadsheetFile.exportXlsx(second, { recalculate: false }));
+assert.equal(protectionRemoved.worksheets.getItem("Summary").protection, undefined);
 
 const secondInspect = second.inspect({ kind: "workbook,sheet,table,formula,style,drawing,dataValidation,conditionalFormat,thread", maxChars: 32_000 });
 assert.match(secondInspect.ndjson, /Edited revenue trend/);

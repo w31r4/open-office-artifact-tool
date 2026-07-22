@@ -291,6 +291,45 @@ try {
     assert.equal(dataValidationQa.summary.nativeRender.pageCount, 1);
   }
 
+  const { createProtectedInputWorkbook } = await import(
+    "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-worksheet-protection-workflow.mjs"
+  );
+  const protectionPath = path.join(outputDir, "openchestnut-worksheet-protection-workflow.xlsx");
+  const protectionResult = await createProtectedInputWorkbook(protectionPath);
+  assert.equal(protectionResult.verification.ok, true);
+  assert.equal(protectionResult.audit.provider.actual, "open-chestnut");
+  assert.equal(protectionResult.audit.provider.fallbackUsed, false);
+  assert.equal(protectionResult.audit.securityBoundary, "editing-restriction-not-encryption");
+  assert.deepEqual(protectionResult.audit.validation.allowedOperations, ["selectUnlockedCells", "sort", "autoFilter"]);
+  const protectionWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(protectionPath));
+  const protectedInputs = protectionWorkbook.worksheets.getItem("Inputs");
+  assert.deepEqual(protectedInputs.protection, { enabled: true, allow: ["selectUnlockedCells", "sort", "autoFilter"] });
+  assert.deepEqual(protectedInputs.getRange("B2").format.protection, { locked: false, hidden: false });
+  assert.deepEqual(protectedInputs.getRange("B5").format.protection, { locked: true, hidden: true });
+  const protectionZip = await JSZip.loadAsync(await fs.readFile(protectionPath));
+  const protectionXml = await protectionZip.file("xl/worksheets/sheet1.xml").async("text");
+  const protectionElement = protectionXml.match(/<x:sheetProtection\b[^>]*\/>/)?.[0] || "";
+  assert.match(protectionElement, /sheet="1"/);
+  assert.match(protectionElement, /selectLockedCells="1"/);
+  assert.match(protectionElement, /selectUnlockedCells="0"/);
+  assert.match(protectionElement, /sort="0"/);
+  assert.match(protectionElement, /autoFilter="0"/);
+  assert.doesNotMatch(protectionElement, /password=|algorithmName=|hashValue=|saltValue=|spinCount=/);
+  const protectionNativeStatus = nativeSpreadsheetRenderStatus();
+  const protectionQa = await verifyWorkbookFile(protectionPath, {
+    outputDir: path.join(outputDir, "worksheet-protection-native-qa"),
+    sheetName: "Inputs",
+    range: "A1:D5",
+    renderFormat: "svg",
+    allSheets: true,
+    nativeRender: protectionNativeStatus.available ? "required" : "off",
+  });
+  if (protectionNativeStatus.available) {
+    assert.equal(protectionQa.summary.nativeRender.status, "passed");
+    assert.equal(protectionQa.summary.nativeRender.ok, true);
+    assert.equal(protectionQa.summary.nativeRender.pageCount, 1);
+  }
+
   const { createPivotTableWorkbook } = await import(
     "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-pivot-table-workflow.mjs"
   );

@@ -58,6 +58,29 @@ enum SpreadsheetWorksheetVisibility {
   SPREADSHEET_WORKSHEET_VISIBILITY_VERY_HIDDEN = 3;
 }
 
+// Agent-facing permissions for one active worksheet editing restriction.
+// SpreadsheetML stores the inverse (true means that an operation is locked),
+// so the public wire names the allowed operation and leaves that inversion to
+// OpenChestnut. This avoids leaking schema defaults into JavaScript callers.
+enum SpreadsheetWorksheetProtectionOperation {
+  SPREADSHEET_WORKSHEET_PROTECTION_OPERATION_UNSPECIFIED = 0;
+  SPREADSHEET_WORKSHEET_PROTECTION_OPERATION_SELECT_LOCKED_CELLS = 1;
+  SPREADSHEET_WORKSHEET_PROTECTION_OPERATION_SELECT_UNLOCKED_CELLS = 2;
+  SPREADSHEET_WORKSHEET_PROTECTION_OPERATION_FORMAT_CELLS = 3;
+  SPREADSHEET_WORKSHEET_PROTECTION_OPERATION_FORMAT_COLUMNS = 4;
+  SPREADSHEET_WORKSHEET_PROTECTION_OPERATION_FORMAT_ROWS = 5;
+  SPREADSHEET_WORKSHEET_PROTECTION_OPERATION_INSERT_COLUMNS = 6;
+  SPREADSHEET_WORKSHEET_PROTECTION_OPERATION_INSERT_ROWS = 7;
+  SPREADSHEET_WORKSHEET_PROTECTION_OPERATION_INSERT_HYPERLINKS = 8;
+  SPREADSHEET_WORKSHEET_PROTECTION_OPERATION_DELETE_COLUMNS = 9;
+  SPREADSHEET_WORKSHEET_PROTECTION_OPERATION_DELETE_ROWS = 10;
+  SPREADSHEET_WORKSHEET_PROTECTION_OPERATION_SORT = 11;
+  SPREADSHEET_WORKSHEET_PROTECTION_OPERATION_AUTO_FILTER = 12;
+  SPREADSHEET_WORKSHEET_PROTECTION_OPERATION_PIVOT_TABLES = 13;
+  SPREADSHEET_WORKSHEET_PROTECTION_OPERATION_EDIT_OBJECTS = 14;
+  SPREADSHEET_WORKSHEET_PROTECTION_OPERATION_EDIT_SCENARIOS = 15;
+}
+
 message CodecLimits {
   uint64 max_input_bytes = 1;
   uint64 max_uncompressed_bytes = 2;
@@ -431,6 +454,28 @@ message WorksheetArtifact {
   // sum/count/average/min/max data field. Cached worksheet output and cache
   // records are derived projections, never an independent document model.
   repeated SpreadsheetPivotTableArtifact pivot_tables = 19;
+  // Active passwordless worksheet editing restriction. The explicit enabled
+  // bit permits a source-bound caller to remove a recognized source element;
+  // a new/source-free artifact normally sends only enabled=true. Password and
+  // cryptographic verifier variants stay source-owned and fail closed on edit.
+  SpreadsheetWorksheetProtectionArtifact protection = 20;
+}
+
+message SpreadsheetWorksheetProtectionArtifact {
+  bool enabled = 1;
+  repeated SpreadsheetWorksheetProtectionOperation allowed_operations = 2;
+  SpreadsheetWorksheetProtectionSourceBinding source = 3;
+}
+
+// Hash-bound locator for one recognized worksheet sheetProtection element.
+// It authorizes only an in-place semantic edit/removal against the validated
+// source package; callers cannot forge editability by changing this message.
+message SpreadsheetWorksheetProtectionSourceBinding {
+  string part_path = 1;
+  string worksheet_xml_sha256 = 2;
+  string protection_xml_sha256 = 3;
+  string semantic_sha256 = 4;
+  bool editable = 5;
 }
 
 message SpreadsheetDataValidationArtifact {

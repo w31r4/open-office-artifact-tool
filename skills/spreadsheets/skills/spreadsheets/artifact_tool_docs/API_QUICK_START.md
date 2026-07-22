@@ -197,6 +197,7 @@ await fs.writeFile(`${outputDir}/preview.svg`, previewBytes);
 - `sheet.freezePanes.freezeRows(1)`, `sheet.freezePanes.freezeColumns(2)`, `sheet.freezePanes.unfreeze()`
 - `sheet.tables`, `sheet.charts`, `sheet.sparklineGroups` (`sheet.sparklines` alias), `sheet.shapes`, `sheet.images`
 - `sheet.showGridLines = false`
+- `sheet.protection = { allow: ["selectUnlockedCells", "sort", "autoFilter"] }`; assign `null`, `false`, or `{ enabled: false }` to remove a recognized passwordless restriction.
 - `sheet.dataTables`, `sheet.conditionalFormattings`, `sheet.dataValidations`
 - `sheet.deleteAllDrawings()` removes charts, shapes, and images before a dashboard rebuild.
 
@@ -248,6 +249,33 @@ range.format.borders = {
   right: { style: "thin", color: "#D9D9D9" },
 };
 ```
+
+### Worksheet protection
+
+Cell protection styles and the worksheet restriction are separate layers. Mark
+input cells as unlocked, mark sensitive formulas as hidden/locked, then enable
+the sheet restriction:
+
+```js
+sheet.getRange("B2:B20").format.protection = { locked: false, hidden: false };
+sheet.getRange("D2:D20").format.protection = { locked: true, hidden: true };
+sheet.protection = {
+  allow: ["selectUnlockedCells", "sort", "autoFilter"],
+};
+```
+
+`allow` accepts `selectLockedCells`, `selectUnlockedCells`, `formatCells`,
+`formatColumns`, `formatRows`, `insertColumns`, `insertRows`,
+`insertHyperlinks`, `deleteColumns`, `deleteRows`, `sort`, `autoFilter`,
+`pivotTables`, `editObjects`, and `editScenarios`. OpenChestnut owns the
+inverse native lock flags and their defaults. Assign `null`, `false`, or
+`{ enabled: false }` to remove a recognized passwordless restriction.
+
+This is an editing restriction, not encryption, authentication, or access
+control. Password/hash/cryptographic and extension-bearing protection profiles
+remain source-owned; an unrelated edit preserves them, while semantic
+replacement fails closed. Runnable example:
+`examples/openchestnut-worksheet-protection-workflow.mjs`.
 
 ### Data Validation
 - `range.dataValidation = { rule: { type: "list", formula1: "Categories!$A$2:$A$4" } }`

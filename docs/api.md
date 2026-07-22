@@ -3053,7 +3053,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `workbook.definedNames.add` | api | Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData). |
 | `workbook.fontFamilies` | api | Return a fresh sorted, case-insensitively deduplicated list of workbook default and explicit cell font families. |
 | `workbook.formulaGraph` | api | Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA. |
-| `workbook.inspect` | api | Emit bounded NDJSON records for workbook, connections, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude. |
+| `workbook.inspect` | api | Emit bounded NDJSON records for workbook, connections, sheets, worksheet protections, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude. |
 | `workbook.layoutJson` | api | Return workbook/worksheet layout JSON with cell, table, chart, image, sparkline, rule bounding boxes, and target/search context slicing. |
 | `workbook.recalculate` | api | Recalculate workbook formulas, dynamic-array spills, dependency edges, cycles, and errors. |
 | `workbook.render` | api | Return a lightweight SVG preview for a sheet/range or layout JSON when called with { format: 'layout' }. |
@@ -3080,6 +3080,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `worksheet.getRange` | api | Select an A1 range for values, formulas, formatting, merge, fill, and copy operations. |
 | `worksheet.getUsedRange` | api | Return the worksheet used rectangle, optionally excluding formatting-only cells with valuesOnly=true. |
 | `worksheet.mergeCells` | api | Merge an A1 range as one region or merge each row separately with across=true, retaining only upper-left content. |
+| `worksheet.protection` | api | Author, inspect, edit, or remove one passwordless worksheet editing restriction with an intuitive allowed-operation list. Cell locked/hidden styles become effective only while protection is active. This is not encryption or access control; password/hash variants remain source-owned and fail closed on replacement. |
 | `worksheet.sortState` | api | Get or set bounded worksheet-level row/column sorting; columnSort=true uses unique single-row conditions across the sort range. |
 | `worksheet.unmergeCells` | api | Remove every merged region intersecting an A1 range without discarding the retained upper-left content. |
 | `worksheet.visibility` | api | Read or assign native worksheet visibility as visible, hidden, or veryHidden; at least one sheet must remain visible. |
@@ -5820,7 +5821,7 @@ Return a dependency graph of formula nodes, edges, dependents, cycles, and formu
 
 #### `workbook.inspect`
 
-Emit bounded NDJSON records for workbook, connections, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude.
+Emit bounded NDJSON records for workbook, connections, sheets, worksheet protections, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude.
 
 **Examples:**
 
@@ -6197,6 +6198,19 @@ Merge an A1 range as one region or merge each row separately with across=true, r
 **Schema returns:**
 
 - `worksheet` (Worksheet) — The same worksheet with native merged-range state.
+
+#### `worksheet.protection`
+
+Author, inspect, edit, or remove one passwordless worksheet editing restriction with an intuitive allowed-operation list. Cell locked/hidden styles become effective only while protection is active. This is not encryption or access control; password/hash variants remain source-owned and fail closed on replacement.
+
+**Schema parameters:**
+
+- `enabled` (boolean) — Protection is active when present. Assign null, false, or { enabled: false } to remove a recognized passwordless restriction.
+- `allow` (string[]) — Allowed operations: selectLockedCells, selectUnlockedCells, formatCells, formatColumns, formatRows, insertColumns, insertRows, insertHyperlinks, deleteColumns, deleteRows, sort, autoFilter, pivotTables, editObjects, or editScenarios. Omission allows selection of locked and unlocked cells only.
+
+**Schema returns:**
+
+- `protection` (object|undefined) — Passwordless worksheet editing restriction. OpenChestnut contains SpreadsheetML's inverted lock flags and source binding; password/hash/extension profiles are preserved opaquely and semantic replacement fails closed. This is not encryption, authentication, or access control.
 
 #### `worksheet.sortState`
 

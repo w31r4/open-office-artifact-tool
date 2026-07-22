@@ -72,6 +72,54 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### XLSX passwordless worksheet protection
+
+On 2026-07-22, the Spreadsheet model, protocol-2 wire, OpenChestnut C# codec,
+bundled WASM runtime, Help/API catalog, and runnable Spreadsheet Skill completed
+one bounded worksheet-protection vertical slice. `sheet.protection` exposes an
+active restriction plus an intuitive `allow` list for all 15 standard operation
+classes. OpenChestnut alone maps those permissions onto SpreadsheetML's inverse
+lock attributes and omission defaults. Cell-level `locked`/`hidden` styles now
+have a modeled native sheet restriction that makes them effective in compatible
+hosts.
+
+Source-free workbooks author a complete deterministic passwordless
+`sheetProtection` element. Recognized imports carry worksheet/element/semantic
+hash evidence, preserve the source element when unchanged, and permit a bounded
+permission edit or explicit removal. Password/hash/cryptographic,
+extension-bearing, disabled/partial, duplicate, and otherwise irregular source
+profiles stay opaque: unrelated workbook edits retain them, while attempted
+semantic replacement fails closed with
+`unsupported_worksheet_protection_edit`. The public setter rejects password or
+verifier fields before export. This feature is an editing restriction, not
+encryption, authentication, or access control.
+
+The native tests cover author/import/edit/remove, complete native flag
+inversion, Office 2021 validation, source binding, invalid wire rejection,
+opaque password retention through an unrelated cell edit, and fail-closed
+replacement. The JS test covers defensive public state, inspect/verify,
+native XML, export/import/source-bound edit/second import/removal, and cell
+style retention. The shipped workflow builds visibly styled unlocked inputs and
+hidden locked formulas, tightens permissions after import, imports a second
+time, writes an audit, and enters the existing LibreOffice/Poppler render QA
+gate.
+
+The complete local `npm test` gate passed, including all 20 repository-only
+templates, every published Office/PDF Skill, LibreOffice, Poppler, MuPDF.js,
+qpdf, Playwright, reference-Skill sync, Agent evals, package metadata, Help,
+and the tightened npm payload budget. OpenChestnut passed `339/339`;
+OfficeBridge passed `5/5`. Generated API docs, the production clean-install
+package smoke, `test:pack`, and deterministic OpenChestnut build verification
+passed. Two clean builds reproduced the same 39-file audit set; the bundled
+runtime contains 38 files and 14,996,672 bytes. The final dry-run tarball
+contains 482 files, 9,214,111 compressed bytes, and 24,488,879 unpacked bytes
+(SHA-1 `7d93a0b7e49705384a44285574fb703ff8cbaa2b`). The unpacked ceiling moved
+narrowly from 24,475,000 to 24,515,000 bytes. Optional real pikepdf, pyHanko,
+veraPDF, and OCRmyPDF provider branches remained explicitly skipped because
+their configured external test environments were absent; their contract and
+fail-closed gates passed. npm authentication remains the external publication
+blocker, so no publish, tag, or release operation was attempted.
+
 ### XLSX data-validation admission UX
 
 On 2026-07-22, the Spreadsheet model, protocol-2 wire contract,

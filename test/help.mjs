@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 359);
+assert.equal(HELP_CATALOG.length, 360);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -50,6 +50,9 @@ assert.match(HELP_CATALOG.find((item) => item.name === "workbook.connections")?.
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.freezePanes.freezeRows"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.freezePanes.freezeColumns"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.freezePanes.unfreeze"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.protection"));
+assert.match(HELP_CATALOG.find((item) => item.name === "worksheet.protection")?.summary || "", /passwordless.*allowed-operation.*locked\/hidden.*not encryption.*password\/hash.*source-owned.*fail closed/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "worksheet.protection")?.schema?.parameters?.allow?.description || "", /selectUnlockedCells.*autoFilter.*editObjects/);
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.visibility"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "sheet.dataTables.add"));
 assert.equal(HELP_CATALOG.find((item) => item.name === "sheet.dataTables.add")?.schema?.parameters?.range?.required, true);
@@ -435,7 +438,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /absolute uri.*slideId.*relative action/);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /customShow.*survives the bounded slide clone.*without adding the clone to show membership/i);
 const workbookCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "workbook");
-assert.equal(workbookCatalog.length, 192);
+assert.equal(workbookCatalog.length, 193);
 assert.ok(workbookCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "workbook.trace")?.schema?.parameters?.reference?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "Workbook.create")?.schema?.parameters?.dateSystem?.type, "string");

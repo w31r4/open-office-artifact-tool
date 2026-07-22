@@ -40,6 +40,7 @@ import { spreadsheetImageFromWire, spreadsheetImageSnapshot, wireWorksheetImages
 import { spreadsheetSparklineFromWire, spreadsheetSparklineSnapshot, wireWorksheetSparklines } from "./open-chestnut-spreadsheet-sparklines.mjs";
 import { hydrateWorksheetDataTable, wireWorksheetDataTables } from "./open-chestnut-spreadsheet-data-tables.mjs";
 import { hydrateWorkbookPivots, wireWorksheetPivots } from "./open-chestnut-spreadsheet-pivots.mjs";
+import { publicWorksheetProtectionFromWire, wireWorksheetProtection, worksheetProtectionPublicSnapshot } from "./open-chestnut-spreadsheet-protection.mjs";
 
 export { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
 
@@ -1407,6 +1408,7 @@ function workbookEnvelope(workbook) {
       charts: wireWorksheetCharts(sheet, state?.chartsBySheet?.get(sheet.id)),
       sparklineGroups: wireWorksheetSparklines(sheet, state?.sparklinesBySheet?.get(sheet.id)),
       pivotTables,
+      protection: wireWorksheetProtection(sheet, state?.worksheetSlots?.get(sheet.id)),
       dataValidations: (sheet.dataValidations?.items || []).map((item) => wireDataValidation(item, sheet.name)),
       conditionalFormats: (sheet.conditionalFormattings?.items || []).map((item, index) => wireConditionalFormat(item, sheet.name, index)),
       threadedComments: wireThreadedComments(workbook, sheet),
@@ -1488,7 +1490,12 @@ function workbookFromEnvelope(envelope) {
   for (const sourceSheet of source.worksheets) {
     const sheet = workbook.worksheets.add(sourceSheet.name, { visibility: publicWorksheetVisibility(sourceSheet.visibility) });
     sheet.id = sourceSheet.id || sheet.id;
-    worksheetSlots.set(sheet.id, { wire: sourceSheet, publicSnapshot: worksheetMetadataSnapshot(sheet) });
+    sheet.protection = publicWorksheetProtectionFromWire(sourceSheet.protection);
+    worksheetSlots.set(sheet.id, {
+      wire: sourceSheet,
+      publicSnapshot: worksheetMetadataSnapshot(sheet),
+      publicProtectionSnapshot: worksheetProtectionPublicSnapshot(sheet),
+    });
     sheet.showGridLines = sourceSheet.showGridLines;
     if (sourceSheet.freezePane) {
       sheet.freezePanes.freezeRows(sourceSheet.freezePane.rows);

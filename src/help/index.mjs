@@ -63,7 +63,8 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "worksheet.freezePanes.freezeRows", summary: "Freeze a leading row count in the worksheet view while preserving any frozen columns." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.freezePanes.freezeColumns", summary: "Freeze a leading column count in the worksheet view while preserving any frozen rows." },
   { artifactKind: "workbook", kind: "api", name: "worksheet.freezePanes.unfreeze", summary: "Remove all frozen worksheet panes and restore a single scrollable view." },
-  { artifactKind: "workbook", kind: "api", name: "workbook.inspect", summary: "Emit bounded NDJSON records for workbook, connections, sheets, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude." },
+  { artifactKind: "workbook", kind: "api", name: "worksheet.protection", summary: "Author, inspect, edit, or remove one passwordless worksheet editing restriction with an intuitive allowed-operation list. Cell locked/hidden styles become effective only while protection is active. This is not encryption or access control; password/hash variants remain source-owned and fail closed on replacement." },
+  { artifactKind: "workbook", kind: "api", name: "workbook.inspect", summary: "Emit bounded NDJSON records for workbook, connections, sheets, worksheet protections, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude." },
   { artifactKind: "workbook", kind: "api", name: "workbook.render", summary: "Return a lightweight SVG preview for a sheet/range or layout JSON when called with { format: 'layout' }." },
   { artifactKind: "workbook", kind: "api", name: "workbook.layoutJson", summary: "Return workbook/worksheet layout JSON with cell, table, chart, image, sparkline, rule bounding boxes, and target/search context slicing." },
   { artifactKind: "workbook", kind: "api", name: "workbook.verify", summary: "Return bounded QA issues for source-bound connections, sheets, formulas, tables, charts, and comments." },
@@ -1974,6 +1975,10 @@ const WORKBOOK_HELP_SCHEMAS = {
     formula: { type: "string", description: "Shared or legacy-array formula expression. Imported dynamic-array expressions are read-only." },
     ref: { type: "string", description: "Shared group or legacy-array range; imported dynamic spill ranges are inspection-only." },
   }, "metadata", "object", "Shared/legacy metadata is bounded and editable. dynamicArrayRef/spill metadata is import-preserved read-only; authoring, detaching, or editing it makes canonical XLSX export fail closed."),
+  "worksheet.protection": helpSchema({
+    enabled: { type: "boolean", description: "Protection is active when present. Assign null, false, or { enabled: false } to remove a recognized passwordless restriction." },
+    allow: { type: "string[]", description: "Allowed operations: selectLockedCells, selectUnlockedCells, formatCells, formatColumns, formatRows, insertColumns, insertRows, insertHyperlinks, deleteColumns, deleteRows, sort, autoFilter, pivotTables, editObjects, or editScenarios. Omission allows selection of locked and unlocked cells only." },
+  }, "protection", "object|undefined", "Passwordless worksheet editing restriction. OpenChestnut contains SpreadsheetML's inverted lock flags and source binding; password/hash/extension profiles are preserved opaquely and semantic replacement fails closed. This is not encryption, authentication, or access control."),
   "workbook.definedNames.add": helpSchema({
     name: { type: "string", required: true, description: "Defined name." },
     refersTo: { type: "string", required: true, description: "Sheet-qualified A1 reference." },

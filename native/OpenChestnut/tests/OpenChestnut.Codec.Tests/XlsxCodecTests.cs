@@ -87,6 +87,152 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void PasswordlessWorksheetProtectionAuthorsImportsEditsAndRemoves()
+    {
+        var request = ExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Protection = new SpreadsheetWorksheetProtectionArtifact
+        {
+            Enabled = true,
+            AllowedOperations =
+            {
+                SpreadsheetWorksheetProtectionOperation.SelectLockedCells,
+                SpreadsheetWorksheetProtectionOperation.SelectUnlockedCells,
+                SpreadsheetWorksheetProtectionOperation.Sort,
+                SpreadsheetWorksheetProtectionOperation.AutoFilter,
+            },
+        };
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(authored.Ok, Diagnostics(authored));
+        AssertOffice2021Valid(authored.File.ToByteArray());
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = SpreadsheetDocument.Open(stream, false))
+        {
+            var protection = package.WorkbookPart!.WorksheetParts.Single().Worksheet!.GetFirstChild<SheetProtection>()!;
+            Assert.True(protection.Sheet!.Value);
+            Assert.False(protection.SelectLockedCells!.Value);
+            Assert.False(protection.SelectUnlockedCells!.Value);
+            Assert.False(protection.Sort!.Value);
+            Assert.False(protection.AutoFilter!.Value);
+            Assert.True(protection.FormatCells!.Value);
+            Assert.True(protection.Objects!.Value);
+            Assert.True(protection.Scenarios!.Value);
+            Assert.Null(protection.Password);
+            Assert.Equal(16, protection.GetAttributes().Count);
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedProtection = Assert.Single(imported.Artifact.Workbook.Worksheets).Protection;
+        Assert.True(importedProtection.Enabled);
+        Assert.Equal(
+            [
+                SpreadsheetWorksheetProtectionOperation.SelectLockedCells,
+                SpreadsheetWorksheetProtectionOperation.SelectUnlockedCells,
+                SpreadsheetWorksheetProtectionOperation.Sort,
+                SpreadsheetWorksheetProtectionOperation.AutoFilter,
+            ],
+            importedProtection.AllowedOperations);
+        Assert.True(importedProtection.Source!.Editable);
+        Assert.Equal("xl/worksheets/sheet1.xml", importedProtection.Source.PartPath);
+
+        var omittedDefaults = Import(KeepOnlyWorksheetProtectionSheetFlag(authored.File.ToByteArray()));
+        Assert.True(omittedDefaults.Ok, Diagnostics(omittedDefaults));
+        Assert.Equal(
+            [
+                SpreadsheetWorksheetProtectionOperation.SelectLockedCells,
+                SpreadsheetWorksheetProtectionOperation.SelectUnlockedCells,
+                SpreadsheetWorksheetProtectionOperation.EditObjects,
+                SpreadsheetWorksheetProtectionOperation.EditScenarios,
+            ],
+            omittedDefaults.Artifact.Workbook.Worksheets[0].Protection.AllowedOperations);
+
+        var unchanged = Export(imported.Artifact);
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(ReadWorksheetProtectionXml(authored.File.ToByteArray()), ReadWorksheetProtectionXml(unchanged.File.ToByteArray()));
+
+        var tampered = imported.Artifact.Clone();
+        tampered.Workbook.Worksheets[0].Protection.Source.SemanticSha256 = new string('0', 64);
+        tampered.Workbook.Worksheets[0].Protection.AllowedOperations.Add(SpreadsheetWorksheetProtectionOperation.FormatCells);
+        var tamperedResponse = Export(tampered);
+        Assert.False(tamperedResponse.Ok);
+        Assert.Equal("invalid_worksheet_protection_source_binding", Assert.Single(tamperedResponse.Diagnostics).Code);
+
+        importedProtection.AllowedOperations.Clear();
+        importedProtection.AllowedOperations.Add(SpreadsheetWorksheetProtectionOperation.SelectUnlockedCells);
+        importedProtection.AllowedOperations.Add(SpreadsheetWorksheetProtectionOperation.FormatCells);
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var reimported = Import(edited.File.ToByteArray());
+        Assert.True(reimported.Ok, Diagnostics(reimported));
+        Assert.Equal(
+            [
+                SpreadsheetWorksheetProtectionOperation.SelectUnlockedCells,
+                SpreadsheetWorksheetProtectionOperation.FormatCells,
+            ],
+            reimported.Artifact.Workbook.Worksheets[0].Protection.AllowedOperations);
+
+        var removalSource = reimported.Artifact.Workbook.Worksheets[0].Protection.Source.Clone();
+        reimported.Artifact.Workbook.Worksheets[0].Protection = new SpreadsheetWorksheetProtectionArtifact
+        {
+            Enabled = false,
+            Source = removalSource,
+        };
+        var removed = Export(reimported.Artifact);
+        Assert.True(removed.Ok, Diagnostics(removed));
+        using var removedStream = new MemoryStream(removed.File.ToByteArray());
+        using var removedPackage = SpreadsheetDocument.Open(removedStream, false);
+        Assert.Null(removedPackage.WorkbookPart!.WorksheetParts.Single().Worksheet!.GetFirstChild<SheetProtection>());
+        Assert.Null(Import(removed.File.ToByteArray()).Artifact.Workbook.Worksheets[0].Protection);
+    }
+
+    [Fact]
+    public void WorksheetProtectionFailsClosedForInvalidAndPasswordBoundProfiles()
+    {
+        var invalid = ExportRequest();
+        invalid.Artifact.Workbook.Worksheets[0].Protection = new SpreadsheetWorksheetProtectionArtifact
+        {
+            Enabled = false,
+            AllowedOperations = { SpreadsheetWorksheetProtectionOperation.Sort },
+        };
+        var invalidResponse = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(invalid.ToByteArray()));
+        Assert.False(invalidResponse.Ok);
+        Assert.Equal("invalid_worksheet_protection", Assert.Single(invalidResponse.Diagnostics).Code);
+
+        var request = ExportRequest();
+        request.Artifact.Workbook.Worksheets[0].Protection = new SpreadsheetWorksheetProtectionArtifact
+        {
+            Enabled = true,
+            AllowedOperations = { SpreadsheetWorksheetProtectionOperation.SelectUnlockedCells },
+        };
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var passwordBound = AddWorksheetProtectionPassword(authored.File.ToByteArray());
+        var imported = Import(passwordBound);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.Null(imported.Artifact.Workbook.Worksheets[0].Protection);
+
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, Diagnostics(preserved));
+        Assert.Equal(ReadWorksheetProtectionXml(passwordBound), ReadWorksheetProtectionXml(preserved.File.ToByteArray()));
+
+        imported.Artifact.Workbook.Worksheets[0].Cells[0].StringValue = "Changed quarter";
+        var unrelatedEdit = Export(imported.Artifact);
+        Assert.True(unrelatedEdit.Ok, Diagnostics(unrelatedEdit));
+        using (var stream = new MemoryStream(unrelatedEdit.File.ToByteArray()))
+        using (var package = SpreadsheetDocument.Open(stream, false))
+            Assert.Equal("83AF", package.WorkbookPart!.WorksheetParts.Single().Worksheet!.GetFirstChild<SheetProtection>()!.Password!.Value);
+
+        imported.Artifact.Workbook.Worksheets[0].Protection = new SpreadsheetWorksheetProtectionArtifact
+        {
+            Enabled = true,
+            AllowedOperations = { SpreadsheetWorksheetProtectionOperation.SelectUnlockedCells },
+        };
+        var unsafeEdit = Export(imported.Artifact);
+        Assert.False(unsafeEdit.Ok);
+        Assert.Equal("unsupported_worksheet_protection_edit", Assert.Single(unsafeEdit.Diagnostics).Code);
+    }
+
+    [Fact]
     public void ProtocolAuthorsImportsAndSourcePreservesWorksheetSkillFeatures()
     {
         var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(WorksheetFeatureExportRequest().ToByteArray()));
@@ -6615,6 +6761,9 @@ public sealed class XlsxCodecTests
         File = ByteString.CopyFrom(bytes),
     }.ToByteArray()));
 
+    private static string Diagnostics(CodecResponse response) =>
+        string.Join("\n", response.Diagnostics.Select(item => $"{item.Code}: {item.Message}"));
+
     private static CodecResponse Export(ArtifactEnvelope artifact) => CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(new CodecRequest
     {
         ProtocolVersion = CodecProtocol.ProtocolVersion,
@@ -6622,6 +6771,41 @@ public sealed class XlsxCodecTests
         Family = ArtifactFamily.Workbook,
         Artifact = artifact,
     }.ToByteArray()));
+
+    private static byte[] AddWorksheetProtectionPassword(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var worksheet = document.WorkbookPart!.WorksheetParts.Single().Worksheet!;
+            worksheet.GetFirstChild<SheetProtection>()!.Password = "83AF";
+            worksheet.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] KeepOnlyWorksheetProtectionSheetFlag(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var worksheet = document.WorkbookPart!.WorksheetParts.Single().Worksheet!;
+            worksheet.ReplaceChild(new SheetProtection { Sheet = true }, worksheet.GetFirstChild<SheetProtection>()!);
+            worksheet.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static string? ReadWorksheetProtectionXml(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes);
+        using var document = SpreadsheetDocument.Open(stream, false);
+        return document.WorkbookPart!.WorksheetParts.Single().Worksheet!.GetFirstChild<SheetProtection>()?.OuterXml;
+    }
 
     private static byte[] AddUnmodeledCellFormatProperties(byte[] bytes, out int styleIndex)
     {

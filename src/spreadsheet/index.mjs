@@ -8,6 +8,7 @@ import { resolvedWorksheetChartCategories, resolvedWorksheetChartSeriesBubbleSiz
 import { renderWorksheetChartSvg } from "./chart-preview.mjs";
 import { WorksheetDataTableCollection } from "./data-tables.mjs";
 import { normalizeSpreadsheetDataValidationRecord, spreadsheetDataValidationIssue } from "./data-validations.mjs";
+import { normalizeWorksheetProtection, publicWorksheetProtection } from "./worksheet-protection.mjs";
 import { computePivotValues, normalizePivotConfig } from "./pivots.mjs";
 import { formatSpreadsheetDisplayValue, normalizeXlsxColor, normalizeXlsxThemeConfig, xlsxColorCss, xlsxFillSvgPaint } from "./ooxml-styles.mjs";
 import { planSpreadsheetThreadedComments, validateSpreadsheetThreadedCommentPackageSemantics } from "./ooxml-threaded-comments.mjs";
@@ -1372,7 +1373,9 @@ export class Workbook {
     if (kinds.has("theme")) records.push({ kind: "workbookTheme", id: `${this.id}/theme`, name: this.theme.name, colors: this.theme.colors });
     if (kinds.has("connection") || kinds.has("externalConnection")) records.push(...this.connections.map((connection) => ({ kind: "connection", id: `connection/${connection.connectionId}`, ...connection })));
     for (const sheet of this.worksheets) {
-      if (kinds.has("sheet")) records.push({ kind: "sheet", id: sheet.id, name: sheet.name, visibility: sheet.visibility, active: sheet === activeWorksheet, selected: selectedWorksheetIds.has(sheet.id), rows: sheet.usedBounds().rowCount, cols: sheet.usedBounds().colCount, showGridLines: sheet.showGridLines, freezePanes: sheet.freezePanes.toJSON(), sortState: sheet.sortState, customColumns: sheet.columnDimensions.size, customRows: sheet.rowDimensions.size, mergedRanges: sheet.mergedRanges.length });
+      if (kinds.has("sheet")) records.push({ kind: "sheet", id: sheet.id, name: sheet.name, visibility: sheet.visibility, active: sheet === activeWorksheet, selected: selectedWorksheetIds.has(sheet.id), rows: sheet.usedBounds().rowCount, cols: sheet.usedBounds().colCount, showGridLines: sheet.showGridLines, freezePanes: sheet.freezePanes.toJSON(), sortState: sheet.sortState, protection: sheet.protection, customColumns: sheet.columnDimensions.size, customRows: sheet.rowDimensions.size, mergedRanges: sheet.mergedRanges.length });
+      if ((kinds.has("protection") || kinds.has("worksheetProtection")) && sheet.protection)
+        records.push({ kind: "worksheetProtection", id: `${sheet.id}/protection`, sheet: sheet.name, ...sheet.protection });
       if (kinds.has("table") || kinds.has("region")) records.push(sheet.tableRecord(options));
       if (kinds.has("table")) records.push(...sheet.tables.inspectRecords());
       if (kinds.has("pivotTable") || kinds.has("pivot")) records.push(...sheet.pivotTables.inspectRecords());
@@ -1432,6 +1435,8 @@ export class Workbook {
       const entries = sheet.store.entries();
       try { normalizeWorksheetVisibility(sheet.visibility); }
       catch (error) { issues.push(verificationIssue("workbook", "invalidWorksheetVisibility", error.message, { sheet: sheet.name, visibility: sheet.visibility })); }
+      try { normalizeWorksheetProtection(sheet._protection); }
+      catch (error) { issues.push(verificationIssue("workbook", "invalidWorksheetProtection", error.message, { sheet: sheet.name })); }
       const frozenRows = Number(sheet.freezePanes?.rows ?? 0);
       const frozenColumns = Number(sheet.freezePanes?.columns ?? 0);
       if (!Number.isInteger(frozenRows) || frozenRows < 0 || frozenRows > XLSX_MAX_FREEZE_ROWS) issues.push(verificationIssue("workbook", "invalidFrozenRows", `Worksheet ${sheet.name} has invalid frozen row count ${sheet.freezePanes?.rows}.`, { sheet: sheet.name, rows: sheet.freezePanes?.rows }));
@@ -1881,6 +1886,7 @@ export class Worksheet {
     this.freezePanes = new WorksheetFreezePanes(this);
     this.showGridLines = true;
     this.sortState = undefined;
+    this._protection = normalizeWorksheetProtection(options.protection);
   }
 
   get visibility() { return this._visibility; }
@@ -1895,6 +1901,9 @@ export class Worksheet {
     }
     this._visibility = visibility;
   }
+
+  get protection() { return publicWorksheetProtection(this._protection); }
+  set protection(value) { this._protection = normalizeWorksheetProtection(value); }
 
   getRange(address) {
     return new Range(this, parseRangeAddress(address));
@@ -2121,7 +2130,7 @@ export class Worksheet {
       origin: { left: 40, top: 40 },
       cell: { width: cellW, height: cellH },
       dimensions: this.dimensionRecords(new Set(["dimension"])),
-      view: { visibility: this.visibility, active: this === activeWorksheet, selected: selectedWorksheetIds.has(this.id), showGridLines: this.showGridLines, freezePanes: this.freezePanes.toJSON() },
+      view: { visibility: this.visibility, active: this === activeWorksheet, selected: selectedWorksheetIds.has(this.id), showGridLines: this.showGridLines, freezePanes: this.freezePanes.toJSON(), protection: this.protection },
       width,
       height,
       cells,
@@ -4286,6 +4295,7 @@ function workbookMetadata(workbook) {
     sheets: workbook.worksheets.items.map((sheet) => ({
       name: sheet.name,
       visibility: sheet.visibility,
+      protection: sheet.protection,
       dataValidations: sheet.dataValidations.toJSON(),
       conditionalFormattings: sheet.conditionalFormattings.toJSON(),
       tables: sheet.tables.toJSON(),
@@ -4316,6 +4326,7 @@ function applyWorkbookMetadata(workbook, metadata = {}) {
     const sheet = workbook.worksheets.getItem(sheetData.name);
     if (!sheet) continue;
     if (sheetData.visibility !== undefined) sheet.visibility = sheetData.visibility;
+    if (Object.prototype.hasOwnProperty.call(sheetData, "protection")) sheet.protection = sheetData.protection;
     sheet.dataValidations.items = (sheetData.dataValidations || []).map((item) => normalizeSpreadsheetDataValidationRecord(item));
     sheet.conditionalFormattings.items = (sheetData.conditionalFormattings || []).map((item) => ({ ...item }));
     sheet.tables.items = [];

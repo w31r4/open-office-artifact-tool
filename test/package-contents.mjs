@@ -40,13 +40,13 @@ const maxPackedBytes = 9_840_000;
 // The bundled OpenChestnut runtime is an audited product payload, not an
 // optional download. Keep its unpacked budget tight while allowing the
 // audited PDF provider/docs growth plus the bounded Office codecs and runnable
-// workflows. The data-validation UX candidate measures 24,447,872 unpacked
-// bytes; the narrowly raised ceiling retains only 27,128 bytes of explicit
+// workflows. The worksheet-protection candidate measures 24,488,879 unpacked
+// bytes; the narrowly raised ceiling retains only 26,121 bytes of explicit
 // product-growth headroom.
 // The repository-only MIT Default Template Library is excluded from the npm
 // tarball. Its retained Office/PNG sources must never consume this consumer
 // package budget.
-const maxUnpackedBytes = 24_475_000;
+const maxUnpackedBytes = 24_515_000;
 // Public Skill PNGs are required user-facing assets. They are retained with
 // byte-identical non-IDAT chunks and inflated scanline streams, but their IDAT
 // payloads are deterministically recompressed. Prevent future PNG tooling from
@@ -138,6 +138,8 @@ for (const required of [
   "src/spreadsheet/range-addressing.mjs",
   "src/spreadsheet/range-operations.mjs",
   "src/spreadsheet/structured-references.mjs",
+  "src/spreadsheet/worksheet-protection.mjs",
+  "src/codecs/open-chestnut-spreadsheet-protection.mjs",
   "native/OfficeBridge/src/OfficeBridge.csproj",
   "skills/documents/.codex-plugin/plugin.json",
   "skills/documents/README.md",
@@ -164,6 +166,7 @@ for (const required of [
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-sparkline-workflow.mjs",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-data-table-workflow.mjs",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-data-validation-workflow.mjs",
+  "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-worksheet-protection-workflow.mjs",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-pivot-table-workflow.mjs",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-loan-amortization-workflow.mjs",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-asset-depreciation-workflow.mjs",

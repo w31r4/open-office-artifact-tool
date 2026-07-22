@@ -65,6 +65,7 @@ internal static class XlsxCodec
                 var source = envelope.Workbook.Worksheets[index];
                 var worksheetPart = workbookPart.AddNewPart<WorksheetPart>();
                 worksheetPart.Worksheet = BuildWorksheet(source, styles, dynamicArrays);
+                new XlsxWorksheetProtectionCodec(worksheetPart).Apply(source.Protection, sourceBound: false);
                 worksheetFeatures.ApplyRules(worksheetPart.Worksheet, source, sourceBound: false);
                 var tables = new XlsxTableCodec(worksheetPart, workbookPart, styles, connections);
                 tables.Apply(source.Tables, sourceBound: false, ref nextTableId);
@@ -111,6 +112,7 @@ internal static class XlsxCodec
 
         return workbook.Worksheets.Any(worksheet =>
             worksheet.Source is not null ||
+            worksheet.Protection?.Source is not null ||
             worksheet.Images.Any(image => image.Source is not null) ||
             worksheet.Charts.Any(chart => chart.Source is not null) ||
             worksheet.Tables.Any(table => table.Source is not null || table.QueryTable?.Source is not null) ||
@@ -161,6 +163,7 @@ internal static class XlsxCodec
             if (sheet.Id?.Value is not { Length: > 0 } relationshipId || workbookPart.GetPartById(relationshipId) is not WorksheetPart worksheetPart)
                 throw new CodecException("missing_worksheet_part", $"Worksheet {sheet.Name?.Value ?? index.ToString(CultureInfo.InvariantCulture)} has no readable Worksheet part.");
             var target = ReadWorksheet(worksheetPart, sheet.Name?.Value ?? $"Sheet{index + 1}", index, sharedStrings, styles, dynamicArrays, diagnostics, ref cellCount, limits);
+            if (new XlsxWorksheetProtectionCodec(worksheetPart).Read() is { } protection) target.Protection = protection;
             worksheetFeatures.ReadRules(worksheetPart.Worksheet!, target);
             worksheetMetadata.ReadInto(target, index);
             var tables = new XlsxTableCodec(worksheetPart, workbookPart, styles, connections);
@@ -249,7 +252,9 @@ internal static class XlsxCodec
                 if (sheet.Id?.Value is not { Length: > 0 } relationshipId || workbookPart.GetPartById(relationshipId) is not WorksheetPart worksheetPart)
                     throw new CodecException("missing_worksheet_part", $"Source worksheet {sheet.Name?.Value ?? index.ToString(CultureInfo.InvariantCulture)} has no readable Worksheet part.");
                 var originalWorksheetXmlSha256 = XlsxSparklineCodec.WorksheetXmlSha256(worksheetPart);
+                var protection = new XlsxWorksheetProtectionCodec(worksheetPart);
                 PatchWorksheet(worksheetPart, source, sharedStrings, styles, dynamicArrays);
+                protection.Apply(source.Protection, sourceBound: true);
                 worksheetFeatures.ApplyRules(worksheetPart.Worksheet!, source, sourceBound: true);
                 var tables = new XlsxTableCodec(worksheetPart, workbookPart, styles, connections);
                 tables.Apply(source.Tables, sourceBound: true, ref nextTableId);
@@ -813,6 +818,7 @@ internal static class XlsxCodec
             if (!names.Add(sheet.Name)) throw new CodecException("duplicate_sheet_name", $"Workbook contains duplicate worksheet name {sheet.Name}.");
             if (sheet.SortState is not null)
                 XlsxSortStateCodec.Validate(sheet.SortState, null, sheet.Name, $"Worksheet {sheet.Name}", allowColumnSort: true);
+            XlsxWorksheetProtectionCodec.Validate(sheet.Protection);
             XlsxDrawingCodec.Validate(sheet.Images, sheet.Id);
             XlsxChartCodec.Validate(sheet.Charts, sheet.Id);
             XlsxWorksheetFeatureCodec.Validate(sheet);
