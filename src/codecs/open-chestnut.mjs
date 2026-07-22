@@ -1863,6 +1863,39 @@ function wireDocumentContentControl(control, nativeId, blockId) {
   };
 }
 
+function assertDocumentContentControlVisibleText(control, visibleText, blockId) {
+  if (!control) return;
+  const controlType = documentContentControlTypeName(control);
+  let expected;
+  if (controlType === "checkbox") {
+    if (typeof control.checked !== "boolean") throw new OpenChestnutCodecError(`Document block ${blockId} has an invalid checkbox content-control state.`, [], { code: "invalid_document_content_control" });
+    expected = control.checked ? "☒" : "☐";
+  } else if (controlType === "dropdown") {
+    const state = wireDocumentDropdownState(control, blockId);
+    expected = state.choices.find((choice) => choice.value === state.selectedValue).displayText;
+  } else if (controlType === "comboBox") {
+    const state = wireDocumentComboBoxState(control, blockId);
+    expected = state.choices.find((choice) => choice.value === state.value)?.displayText ?? state.value;
+  } else if (controlType === "date") {
+    expected = wireDocumentDateValue(control, blockId);
+  } else if (controlType === "text") {
+    return;
+  } else {
+    throw new OpenChestnutCodecError(`Document block ${blockId} has an unsupported content-control type.`, [], { code: "invalid_document_content_control" });
+  }
+  if (String(visibleText ?? "") !== expected) {
+    throw new OpenChestnutCodecError(`Document block ${blockId} ${controlType} content-control visible text does not match its typed state.`, [], { code: "invalid_document_content_control" });
+  }
+}
+
+function wireDocumentTableCellContentControl(control, nativeId, blockId, visibleText) {
+  if (!String(control?.alias ?? "").length) {
+    throw new OpenChestnutCodecError(`Document table cell ${blockId} content control requires a non-empty alias.`, [], { code: "invalid_document_content_control" });
+  }
+  assertDocumentContentControlVisibleText(control, visibleText, blockId);
+  return wireDocumentContentControl(control, nativeId, blockId);
+}
+
 function documentRun(run, blockId, contentControlNativeId) {
   const style = run.style || {};
   const formatting = documentRunFormatting(style, `Document block ${blockId}`);
@@ -1871,29 +1904,7 @@ function documentRun(run, blockId, contentControlNativeId) {
     throw new OpenChestnutCodecError(`Document block ${blockId} inline field must be canonical SEQ <label> \\* ARABIC, REF <bookmark> \\h, or PAGEREF <bookmark> \\h.`, [], { code: "invalid_document_inline_field" });
   }
   if (run.contentControl && inlineInstruction !== undefined) throw new OpenChestnutCodecError(`Document block ${blockId} run cannot combine a content control and an inline field.`, [], { code: "invalid_document_inline_field" });
-  if (run.contentControl?.controlType === "checkbox" && String(run.text ?? "") !== (run.contentControl.checked ? "☒" : "☐")) {
-    throw new OpenChestnutCodecError(`Document block ${blockId} checkbox content-control visible glyph does not match checked state.`, [], { code: "invalid_document_content_control" });
-  }
-  if (documentContentControlTypeName(run.contentControl) === "dropdown") {
-    const dropdown = wireDocumentDropdownState(run.contentControl, blockId);
-    const visibleText = dropdown.choices.find((choice) => choice.value === dropdown.selectedValue).displayText;
-    if (String(run.text ?? "") !== visibleText) {
-      throw new OpenChestnutCodecError(`Document block ${blockId} drop-down content-control visible text does not match selectedValue.`, [], { code: "invalid_document_content_control" });
-    }
-  }
-  if (documentContentControlTypeName(run.contentControl) === "comboBox") {
-    const comboBox = wireDocumentComboBoxState(run.contentControl, blockId);
-    const visibleText = comboBox.choices.find((choice) => choice.value === comboBox.value)?.displayText ?? comboBox.value;
-    if (String(run.text ?? "") !== visibleText) {
-      throw new OpenChestnutCodecError(`Document block ${blockId} combo-box content-control visible text does not match value.`, [], { code: "invalid_document_content_control" });
-    }
-  }
-  if (documentContentControlTypeName(run.contentControl) === "date") {
-    const dateValue = wireDocumentDateValue(run.contentControl, blockId);
-    if (String(run.text ?? "") !== dateValue) {
-      throw new OpenChestnutCodecError(`Document block ${blockId} date content-control visible text does not match dateValue.`, [], { code: "invalid_document_content_control" });
-    }
-  }
+  assertDocumentContentControlVisibleText(run.contentControl, run.text, blockId);
   const bookmarkName = inlineInstruction === undefined ? "" : String(run.inlineField?.bookmarkName || "").trim();
   let bookmarkNativeId = "";
   if (run.inlineField?.bookmarkNativeId !== undefined) {
@@ -2004,9 +2015,18 @@ function sameDocumentTableGeometry(block, table) {
 function sameDocumentTableContentControlTopology(block, table) {
   const sourceCells = documentTableCells(table);
   if (!Array.isArray(block.cells) || block.cells.length !== sourceCells.length) return false;
-  return block.cells.every((cell, index) =>
-    (cell.contentControl?.nativeId ?? undefined) === (sourceCells[index].contentControl?.nativeId ?? undefined) &&
-    (cell.contentControl?.controlType ?? undefined) === (sourceCells[index].contentControl?.controlType ?? undefined));
+  const topology = (control) => {
+    if (!control) return undefined;
+    const controlType = documentContentControlTypeName(control);
+    return {
+      nativeId: control.nativeId ?? undefined,
+      controlType,
+      ...(controlType === "dropdown" || controlType === "comboBox"
+        ? { choices: (control.choices || []).map((choice) => [String(choice.displayText), String(choice.value)]) }
+        : {}),
+    };
+  };
+  return block.cells.every((cell, index) => JSON.stringify(topology(cell.contentControl)) === JSON.stringify(topology(sourceCells[index].contentControl)));
 }
 
 function sameDocumentTableContentControls(block, table) {
@@ -2104,7 +2124,7 @@ function authoredDocumentTableGeometry(block, contentControlNativeIds) {
         verticalMerge: merge,
         editable: verticalMerge !== "continue",
         textContentControl: source.contentControl
-          ? wireDocumentContentControl(source.contentControl, contentControlNativeIds.get(source), `${block.id}/cell/${rowIndex}/${column}`)
+          ? wireDocumentTableCellContentControl(source.contentControl, contentControlNativeIds.get(source), `${block.id}/cell/${rowIndex}/${column}`, values[column])
           : undefined,
       };
     });
@@ -3341,7 +3361,7 @@ function documentBlock(block, original, directNumbering, assets, contentControlN
                 return {
                   ...cellValue,
                   textContentControl: requestedCell?.contentControl
-                    ? wireDocumentContentControl(requestedCell.contentControl, contentControlNativeIds.get(requestedCell), `${block.id}/cell/${rowIndex}/${column}`)
+                    ? wireDocumentTableCellContentControl(requestedCell.contentControl, contentControlNativeIds.get(requestedCell), `${block.id}/cell/${rowIndex}/${column}`, cells[column])
                     : undefined,
                 };
               }) || [],

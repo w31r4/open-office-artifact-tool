@@ -231,12 +231,16 @@ try {
     ["APPROVED", "checkbox", true],
     ["EXECUTIVE_SUMMARY", "text", "Ready for approval"],
     ["TABLE_OWNER", "text", "Katherine Johnson"],
+    ["TABLE_APPROVED", "checkbox", true],
+    ["TABLE_PRIORITY", "dropdown", "High"],
+    ["TABLE_CONTACT", "comboBox", "In person"],
+    ["TABLE_REVIEW_DATE", "date", "2028-02-29"],
   ]);
   assert.equal(controls.qa.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
   assert.equal(controlsDocument.inspect({ kind: "contentControl" }).ndjson.includes("Customer name"), true);
   const controlsZip = await JSZip.loadAsync(await fs.readFile(controls.docxPath));
   const controlsXml = await controlsZip.file("word/document.xml").async("text");
-  assert.equal((controlsXml.match(/<w:sdt>/g) || []).length, 8);
+  assert.equal((controlsXml.match(/<w:sdt>/g) || []).length, 12);
   assert.match(controlsXml, /<w:tag w:val="CUSTOMER_NAME"\s*\/>/);
   assert.match(controlsXml, /<w:tag w:val="ACCOUNT_ID"\s*\/>/);
   assert.match(controlsXml, /<w:tag w:val="APPROVED"\s*\/>/);
@@ -250,6 +254,13 @@ try {
   assert.equal(tableCellControl.placement, "tableCell");
   assert.equal(tableCellControl.text, "Katherine Johnson");
   assert.match(controlsXml, /<w:tc>[\s\S]*?<w:sdt>[\s\S]*?<w:tag w:val="TABLE_OWNER"\s*\/>[\s\S]*?Katherine Johnson[\s\S]*?<\/w:sdt>[\s\S]*?<\/w:tc>/);
+  for (const tag of ["TABLE_APPROVED", "TABLE_PRIORITY", "TABLE_CONTACT", "TABLE_REVIEW_DATE"]) {
+    assert.equal(controlsDocument.contentControls.find((control) => control.tag === tag).placement, "tableCell");
+  }
+  assert.match(controlsXml, /<w:tc>[\s\S]*?<w:tag w:val="TABLE_APPROVED"\s*\/>[\s\S]*?<w14:checkbox>[\s\S]*?<w14:checked w14:val="1"\s*\/>[\s\S]*?<\/w:sdt>[\s\S]*?<\/w:tc>/);
+  assert.match(controlsXml, /<w:tc>[\s\S]*?<w:tag w:val="TABLE_PRIORITY"\s*\/>[\s\S]*?<w:dropDownList w:lastValue="high">[\s\S]*?<\/w:sdt>[\s\S]*?<\/w:tc>/);
+  assert.match(controlsXml, /<w:tc>[\s\S]*?<w:tag w:val="TABLE_CONTACT"\s*\/>[\s\S]*?<w:comboBox w:lastValue="In person">[\s\S]*?<\/w:sdt>[\s\S]*?<\/w:tc>/);
+  assert.match(controlsXml, /<w:tc>[\s\S]*?<w:tag w:val="TABLE_REVIEW_DATE"\s*\/>[\s\S]*?<w:date w:fullDate="2028-02-29T00:00:00Z">[\s\S]*?<\/w:sdt>[\s\S]*?<\/w:tc>/);
 
   const bibliography = await runFixture("open-chestnut-bibliography");
   const bibliographyDocument = await DocumentFile.importDocx(await FileBlob.load(bibliography.docxPath));
@@ -827,6 +838,10 @@ try {
   assert.match(skillText, /paragraph\.addTextContentControl/);
   assert.match(skillText, /document\.addBlockTextContentControl/);
   assert.match(skillText, /table\.getCell\(row, column\)\.addTextContentControl/);
+  assert.match(skillText, /table\.getCell\(row, column\)[\s\S]*addCheckboxContentControl/);
+  assert.match(skillText, /table\.getCell\(row, column\)[\s\S]*addDropdownContentControl/);
+  assert.match(skillText, /table\.getCell\(row, column\)[\s\S]*addComboBoxContentControl/);
+  assert.match(skillText, /table\.getCell\(row, column\)[\s\S]*addDateContentControl/);
   assert.match(skillText, /paragraph\.addCheckboxContentControl/);
   assert.match(skillText, /paragraph\.addDropdownContentControl/);
   assert.match(skillText, /paragraph\.addComboBoxContentControl/);

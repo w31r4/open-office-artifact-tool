@@ -328,12 +328,19 @@ run. Multi-run, nested, locked, placeholder, repeating-section, and data-bound
 block SDTs remain opaque/source-bound.
 
 When one source-free rectangular table cell is the template field, wrap its
-existing text with the separate cell primitive:
+existing text or typed value with the matching cell primitive:
 
 ```js
 const approvalTable = document.addTable({
   id: "approval-matrix",
-  values: [["Role", "Owner"], ["Technical review", "{{TABLE_OWNER}}"]],
+  values: [
+    ["Field", "Value"],
+    ["Owner", "{{TABLE_OWNER}}"],
+    ["Approved", "pending"],
+    ["Priority", "pending"],
+    ["Contact", "pending"],
+    ["Review date", "pending"],
+  ],
 });
 approvalTable.getCell(1, 1).addTextContentControl({
   id: "table-owner",
@@ -342,12 +349,35 @@ approvalTable.getCell(1, 1).addTextContentControl({
 });
 
 document.fillContentControls({ TABLE_OWNER: "Katherine Johnson" });
+
+approvalTable.getCell(2, 1).addCheckboxContentControl(false, {
+  tag: "TABLE_APPROVED",
+  alias: "Table approved",
+});
+approvalTable.getCell(3, 1).addDropdownContentControl([
+  { displayText: "Low", value: "low" },
+  { displayText: "High", value: "high" },
+], {
+  tag: "TABLE_PRIORITY",
+  alias: "Table priority",
+  selectedValue: "low",
+});
+approvalTable.getCell(4, 1).addComboBoxContentControl(["Email", "Phone"], {
+  tag: "TABLE_CONTACT",
+  alias: "Table contact",
+  value: "Email",
+});
+approvalTable.getCell(5, 1).addDateContentControl("2026-07-22", {
+  tag: "TABLE_REVIEW_DATE",
+  alias: "Table review date",
+});
 ```
 
 OpenChestnut emits one direct cell-level `w:sdt` containing exactly one
-`w:p/w:r/w:t`. Recognized imports expose the same text/tag/alias handle, but
-native ID, type, table coordinates, wrapper placement, and topology stay fixed;
-adding or removing a control in an imported ordinary table fails closed.
+`w:p/w:r/w:t`. Recognized imports expose the same type-specific state/tag/alias
+handle, but native ID, type, table coordinates, wrapper placement, list choices,
+checkbox symbols, date profile, and topology stay fixed; adding or removing a
+control in an imported ordinary table fails closed.
 
 `document.contentControls` returns fresh handles with `id`, `targetId`,
 `placement`, optional inline-only `runIndex`, optional table-cell-only `row` and
@@ -428,10 +458,10 @@ or machine-locale behavior.
 Re-resolve controls after each independent import because model IDs are
 object-lifetime locators.
 
-OpenChestnut authors and imports the bounded run-level plain-text profile, the
-one-paragraph/one-run body-block and table-cell plain-text profiles, and
-canonical Word 2010+ checkbox, `w:dropDownList`, `w:comboBox`, and ISO/Gregorian
-`w:date` profiles.
+OpenChestnut authors and imports the bounded run-level and whole-table-cell
+plain-text, Word 2010+ checkbox, `w:dropDownList`, `w:comboBox`, and
+ISO/Gregorian `w:date` profiles, plus the separate one-paragraph/one-run
+body-block plain-text profile.
 Rich, multi-paragraph, inline-within-cell, nested, data-bound, locked,
 placeholder, repeating-section, merge-continuation, or irregular cell,
 and other irregular block,
@@ -697,10 +727,10 @@ For final visual QA, export the DOCX and use the packaged `render_docx.py` workf
 - Classic whole-paragraph comments and bounded modern root/direct-reply threads
 - Standalone whole-paragraph tracked insertions/deletions plus one exact source-bound in-paragraph replacement as adjacent native deletion/insertion runs; native `trackRevisions` intent; and source-hash-bound accept/reject finalization for both bounded profiles
 - Passwordless `documentProtection` settings for `none`, `readOnly`, `comments`, `trackedChanges`, and `forms`, with explicit enforcement/formatting flags and source-bound preservation of password/cryptographic variants
-- Block/inline/table-cell plain-text, canonical Word 2010+ checkbox, canonical Word drop-down, canonical Word combo-box, and canonical ISO/Gregorian date content controls with explicit placement, typed values, tag/alias identity, transactional tag updates, and fixed-topology imported edits
+- Block plain-text plus inline/table-cell plain-text, canonical Word 2010+ checkbox, canonical Word drop-down, canonical Word combo-box, and canonical ISO/Gregorian date content controls with explicit placement, typed values, tag/alias identity, transactional tag updates, and fixed-topology imported edits
 - Canonical bibliography source catalogs and whole-paragraph `CITATION` fields with fixed imported source/tag topology
 
-In-paragraph revision graphs beyond the exact single-format deletion/insertion pair, other mixed accepted/revision runs, mixed-format or nested revisions, moves, property changes, multi-paragraph/nested/continuation/irregular table targets, and non-body revision stories are advanced package workflows, not ordinary public-model authoring or bounded finalization. Bookmarks spanning multiple blocks or table cells, nested/crossing ranges, multi-paragraph or reused note graphs, complex bibliography contributor roles/field switches/output fields, nested/irregular modern comment graphs, rich/multi-paragraph/inline-within-cell/nested/data-bound/locked/placeholder/repeating-section cell controls and other irregular content controls, irregular lists, localized dates, custom checkbox symbols, complex fields other than the canonical one-paragraph TOC placeholder, and floating drawings outside the bounded foreground absolute-offset square/top-and-bottom profile are likewise outside source-free authoring. Recognized imported whole-block bookmarks are inspectable/resolvable but fixed-topology and read-only. Canonical imported footnote/endnote text, bounded citation/source content, bounded block/inline/table-cell plain-text control text/tag/alias, canonical checkbox checked/tag/alias state, canonical drop-down selectedValue/tag/alias state, canonical combo-box value/tag/alias state, canonical ISO-date dateValue/tag/alias state, canonical modern-comment text/resolved state, canonical unrefreshed TOC instruction/display, and bounded floating-image placement may change, but their anchors, native IDs, control types, table coordinates, list choices/order, symbols, native date profile, and topology remain source-bound; refreshed cross-paragraph TOC graphs and other imported advanced graphs are preserved only while their source evidence remains valid.
+In-paragraph revision graphs beyond the exact single-format deletion/insertion pair, other mixed accepted/revision runs, mixed-format or nested revisions, moves, property changes, multi-paragraph/nested/continuation/irregular table targets, and non-body revision stories are advanced package workflows, not ordinary public-model authoring or bounded finalization. Bookmarks spanning multiple blocks or table cells, nested/crossing ranges, multi-paragraph or reused note graphs, complex bibliography contributor roles/field switches/output fields, nested/irregular modern comment graphs, rich/multi-paragraph/inline-within-cell/nested/data-bound/locked/placeholder/repeating-section cell controls and other irregular content controls, irregular lists, localized dates, custom checkbox symbols, complex fields other than the canonical one-paragraph TOC placeholder, and floating drawings outside the bounded foreground absolute-offset square/top-and-bottom profile are likewise outside source-free authoring. Recognized imported whole-block bookmarks are inspectable/resolvable but fixed-topology and read-only. Canonical imported footnote/endnote text, bounded citation/source content, bounded block/inline/table-cell text-control state, inline/table-cell checkbox checked state, inline/table-cell drop-down selectedValue, inline/table-cell combo-box value, inline/table-cell ISO-date dateValue, and every recognized control's tag/alias may change, as may canonical modern-comment text/resolved state, canonical unrefreshed TOC instruction/display, and bounded floating-image placement. Their anchors, native IDs, control types, table coordinates, list choices/order, symbols, native date profile, and topology remain source-bound; refreshed cross-paragraph TOC graphs and other imported advanced graphs are preserved only while their source evidence remains valid.
 
 Use `DocumentFile.inspectDocx` or `DocumentFile.patchDocx` only when the user explicitly requests package-level inspection or patching. These are deliberate low-level operations, never an automatic fallback for ordinary authoring.
 

@@ -72,6 +72,57 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### DOCX typed table-cell content controls
+
+On 2026-07-22, the public Documents model, protocol-2 wire contract,
+OpenChestnut C# codec, bundled WASM runtime, Help/API catalog, and runnable
+Documents Skill extended canonical whole-table-cell content controls from plain
+text to all five existing typed profiles. A source-free rectangular physical
+cell now exposes `addTextContentControl()`, `addCheckboxContentControl()`,
+`addDropdownContentControl()`, `addComboBoxContentControl()`, and
+`addDateContentControl()`. The visible checkbox glyph, selected choice display,
+combo-box projection, and ISO date remain codec-owned and are updated through
+the same transactional typed tag setters as inline controls. The separate
+body-level block profile remains plain-text-only.
+
+Recognized imported cell controls preserve unchanged source bytes exactly and
+permit only type-appropriate state plus tag/alias edits. Native ID, control
+type, cell coordinates, wrapper placement, checkbox symbols, ordered list
+choices, native date metadata, and table/SDT topology remain source-bound.
+Adding or removing imported controls, changing a choice table, or presenting
+typed state with inconsistent visible text fails closed. Rich,
+inline-within-cell, nested, multi-paragraph, merge-continuation, data-bound,
+locked, placeholder, repeating-section, extension-bearing, and otherwise
+irregular cell SDTs remain outside semantic replacement.
+
+The native test authors checkbox, drop-down, combo-box, and date cell controls,
+validates their WordprocessingML with the Open XML SDK Office 2021 schema,
+imports, proves byte-exact no-op export, changes each state, imports again, and
+rejects choice-topology tampering. A separate regression keeps typed body-block
+SDTs rejected. The shipped fixture carries 12 instances across the eleven
+supported placement/type profiles, edits all of them through public primitives,
+imports twice, inspects the native markup, and enters required
+LibreOffice/Poppler QA. Its one-page 1275 by 1650 render was reviewed at original
+resolution: both inline and table checkbox glyphs, table values, custom combo
+text, and leap-day dates render without clipping, overlap, or page drift.
+
+The complete local `npm test` gate passed, including all 20 repository-only
+templates, all published Office/PDF Skills, LibreOffice, Poppler, MuPDF.js,
+qpdf, Playwright, reference-Skill sync, Agent evals, package metadata, Help, and
+the tightened npm payload budget. OpenChestnut passed `335/335`; OfficeBridge
+passed `5/5`. Protobuf lint/idempotent generation, generated API docs,
+production clean-install, `test:pack`, and deterministic OpenChestnut build
+verification passed. Two builds reproduced the same 39-file audit set; the
+bundled runtime contains 38 files and 14,970,048 bytes. The dry-run tarball
+contains 477 files, 9,191,614 compressed bytes, and 24,419,321 unpacked bytes
+(SHA-1 `d49df700c34b8f18d78c1e01ea52632d93f69851`). The unpacked ceiling moved
+narrowly from 24,410,000 to 24,440,000 bytes for the measured codec, generated
+API, and public Skill documentation growth. Optional real pikepdf, pyHanko,
+veraPDF, and OCRmyPDF provider branches remained explicitly skipped because
+their configured external test environments were absent; contract and
+fail-closed gates passed. npm authentication remains the external publication
+blocker, so no publish, tag, or release operation was attempted.
+
 ### DOCX bounded floating images
 
 On 2026-07-22, the public Documents model, versioned protocol-2 wire,

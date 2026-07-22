@@ -485,6 +485,22 @@ public sealed class DocxCodecTests
         Assert.False(rejectedAlias.Ok);
         Assert.Equal("invalid_document_content_control", Assert.Single(rejectedAlias.Diagnostics).Code);
 
+        var typedBlock = roundTrip.Clone();
+        var typedBlockParagraph = Assert.Single(typedBlock.Document.Blocks).Paragraph;
+        typedBlockParagraph.Text = "☒";
+        typedBlockParagraph.Runs[0].Text = "☒";
+        typedBlockParagraph.BlockContentControl.ControlType = DocumentContentControlType.Checkbox;
+        typedBlockParagraph.BlockContentControl.Checked = true;
+        var rejectedTypedBlock = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = typedBlock,
+        });
+        Assert.False(rejectedTypedBlock.Ok);
+        Assert.Equal("invalid_document_content_control", Assert.Single(rejectedTypedBlock.Diagnostics).Code);
+
         var changedTopology = roundTrip.Clone();
         Assert.Single(changedTopology.Document.Blocks).Paragraph.BlockContentControl = null;
         var rejectedTopology = Invoke(new CodecRequest
@@ -659,6 +675,166 @@ public sealed class DocxCodecTests
         });
         Assert.False(rejectedType.Ok);
         Assert.Equal("invalid_document_content_control", Assert.Single(rejectedType.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void TableCellTypedContentControlsAuthorImportEditAndBindStateTopology()
+    {
+        static DocumentTextContentControl ListControl(
+            string id,
+            string tag,
+            DocumentContentControlType type,
+            string current)
+        {
+            var control = new DocumentTextContentControl
+            {
+                Id = id,
+                Tag = tag,
+                Alias = tag,
+                ControlType = type,
+            };
+            control.Choices.Add(new DocumentContentControlChoice { DisplayText = "Low", Value = "low" });
+            control.Choices.Add(new DocumentContentControlChoice { DisplayText = "High", Value = "high" });
+            if (type == DocumentContentControlType.DropDown) control.SelectedValue = current;
+            else control.Value = current;
+            return control;
+        }
+
+        var document = new DocumentArtifact { Id = "document/table-cell-typed-controls", Name = "Typed table form" };
+        var tableBlock = new DocumentBlock
+        {
+            Id = "document/table-cell-typed-controls/table",
+            StyleId = "TableGrid",
+            Table = new DocumentTable { GridColumns = 2 },
+        };
+        void AddRow(string label, string visibleText, DocumentTextContentControl control)
+        {
+            var row = new DocumentTableRow();
+            row.Cells.Add(label);
+            row.Cells.Add(visibleText);
+            row.RichCells.Add(new DocumentTableCell { GridColumn = 0, ColumnSpan = 1, RowSpan = 1, Editable = true });
+            row.RichCells.Add(new DocumentTableCell
+            {
+                GridColumn = 1,
+                ColumnSpan = 1,
+                RowSpan = 1,
+                Editable = true,
+                TextContentControl = control,
+            });
+            tableBlock.Table.Rows.Add(row);
+        }
+        AddRow("Approved", "☐", new DocumentTextContentControl
+        {
+            Id = "table-approved",
+            Tag = "TABLE_APPROVED",
+            Alias = "Table approved",
+            ControlType = DocumentContentControlType.Checkbox,
+            Checked = false,
+        });
+        AddRow("Priority", "Low", ListControl("table-priority", "TABLE_PRIORITY", DocumentContentControlType.DropDown, "low"));
+        AddRow("Contact", "High", ListControl("table-contact", "TABLE_CONTACT", DocumentContentControlType.ComboBox, "high"));
+        AddRow("Review date", "2026-07-22", new DocumentTextContentControl
+        {
+            Id = "table-review-date",
+            Tag = "TABLE_REVIEW_DATE",
+            Alias = "Table review date",
+            ControlType = DocumentContentControlType.Date,
+            DateValue = "2026-07-22",
+        });
+        document.Blocks.Add(tableBlock);
+
+        var authored = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = new ArtifactEnvelope
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Family = ArtifactFamily.Document,
+                Document = document,
+            },
+        });
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var controls = package.MainDocumentPart!.Document!.Body!.Elements<W.Table>().Single()
+                .Elements<W.TableRow>()
+                .Select(row => Assert.Single(row.Elements<W.TableCell>().ElementAt(1).Elements<W.SdtBlock>()))
+                .ToArray();
+            Assert.NotNull(controls[0].SdtProperties!.GetFirstChild<W14.SdtContentCheckBox>());
+            Assert.Equal("low", controls[1].SdtProperties!.GetFirstChild<W.SdtContentDropDownList>()!.LastValue!.Value);
+            Assert.Equal("high", controls[2].SdtProperties!.GetFirstChild<W.SdtContentComboBox>()!.LastValue!.Value);
+            Assert.Equal("2026-07-22T00:00:00Z", controls[3].SdtProperties!.GetFirstChild<W.SdtContentDate>()!.FullDate!.InnerText);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedTable = Assert.Single(imported.Artifact.Document.Blocks).Table;
+        Assert.Equal(
+            new[]
+            {
+                DocumentContentControlType.Checkbox,
+                DocumentContentControlType.DropDown,
+                DocumentContentControlType.ComboBox,
+                DocumentContentControlType.Date,
+            },
+            importedTable.Rows.Select(row => row.RichCells[1].TextContentControl.ControlType).ToArray());
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact.Clone(),
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(authored.File, unchanged.File);
+
+        importedTable.Rows[0].Cells[1] = "☒";
+        importedTable.Rows[0].RichCells[1].TextContentControl.Checked = true;
+        importedTable.Rows[1].Cells[1] = "High";
+        importedTable.Rows[1].RichCells[1].TextContentControl.SelectedValue = "high";
+        importedTable.Rows[1].RichCells[1].TextContentControl.Tag = "TABLE_PRIORITY_FINAL";
+        importedTable.Rows[2].Cells[1] = "Pager duty";
+        importedTable.Rows[2].RichCells[1].TextContentControl.Value = "Pager duty";
+        importedTable.Rows[3].Cells[1] = "2028-02-29";
+        importedTable.Rows[3].RichCells[1].TextContentControl.DateValue = "2028-02-29";
+        var edited = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var roundTrip = DocxCodec.Import(edited.File.ToByteArray(), EffectiveCodecLimits.From(null)).Artifact;
+        var roundTripTable = Assert.Single(roundTrip.Document.Blocks).Table;
+        Assert.Equal(new[] { "☒", "High", "Pager duty", "2028-02-29" }, roundTripTable.Rows.Select(row => row.Cells[1]).ToArray());
+        Assert.True(roundTripTable.Rows[0].RichCells[1].TextContentControl.Checked);
+        Assert.Equal("high", roundTripTable.Rows[1].RichCells[1].TextContentControl.SelectedValue);
+        Assert.Equal("TABLE_PRIORITY_FINAL", roundTripTable.Rows[1].RichCells[1].TextContentControl.Tag);
+        Assert.Equal("Pager duty", roundTripTable.Rows[2].RichCells[1].TextContentControl.Value);
+        Assert.Equal("2028-02-29", roundTripTable.Rows[3].RichCells[1].TextContentControl.DateValue);
+
+        var changedChoices = roundTrip.Clone();
+        Assert.Single(changedChoices.Document.Blocks).Table.Rows[1].RichCells[1].TextContentControl.Choices[0].DisplayText = "Minor";
+        var rejectedChoices = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = changedChoices,
+        });
+        Assert.False(rejectedChoices.Ok);
+        Assert.Equal("document_content_control_topology_changed", Assert.Single(rejectedChoices.Diagnostics).Code);
     }
 
     [Fact]

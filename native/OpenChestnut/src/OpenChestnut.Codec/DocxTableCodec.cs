@@ -24,8 +24,8 @@ internal static class DocxTableCodec
             for (var cellIndex = 0; cellIndex < cells.Length; cellIndex++)
             {
                 var content = cells[cellIndex].ChildElements.Where(child => child is not W.TableCellProperties).ToArray();
-                if (content.Length != 1 || content[0] is not W.SdtBlock sdt || !DocxContentControlCodec.IsSupported(sdt)) continue;
-                var paragraph = DocxContentControlCodec.Read(sdt, $"{blockId}/cell/{rowIndex}/{cellIndex}/content-control");
+                if (content.Length != 1 || content[0] is not W.SdtBlock sdt || !DocxContentControlCodec.IsSupported(sdt, allowTyped: true)) continue;
+                var paragraph = DocxContentControlCodec.Read(sdt, $"{blockId}/cell/{rowIndex}/{cellIndex}/content-control", allowTyped: true);
                 artifact.Rows[rowIndex].Cells[cellIndex] = paragraph.Text;
                 artifact.Rows[rowIndex].RichCells[cellIndex].TextContentControl = paragraph.BlockContentControl;
                 artifact.Rows[rowIndex].RichCells[cellIndex].Editable =
@@ -160,11 +160,8 @@ internal static class DocxTableCodec
         foreach (var control in clone.Elements<W.TableRow>()
                      .SelectMany(row => row.Elements<W.TableCell>())
                      .SelectMany(cell => cell.Elements<W.SdtBlock>())
-                     .Where(DocxContentControlCodec.IsSupported))
-        {
-            control.SdtProperties!.GetFirstChild<W.SdtAlias>()!.Val = string.Empty;
-            control.SdtProperties.GetFirstChild<W.Tag>()!.Val = string.Empty;
-        }
+                     .Where(control => DocxContentControlCodec.IsSupported(control, allowTyped: true)))
+            DocxContentControlCodec.MaskTableCellModeledState(control);
         foreach (var text in clone.Descendants<W.Text>())
         {
             text.Text = string.Empty;

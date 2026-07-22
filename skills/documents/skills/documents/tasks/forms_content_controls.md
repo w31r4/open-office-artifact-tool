@@ -10,6 +10,10 @@ Choose the route before editing:
 - Use public `paragraph.addTextContentControl(...)`,
   `document.addBlockTextContentControl(...)`,
   `table.getCell(row, column).addTextContentControl(...)`,
+  `table.getCell(row, column).addCheckboxContentControl(...)`,
+  `table.getCell(row, column).addDropdownContentControl(...)`,
+  `table.getCell(row, column).addComboBoxContentControl(...)`,
+  `table.getCell(row, column).addDateContentControl(...)`,
   `paragraph.addCheckboxContentControl(...)`,
   `paragraph.addDropdownContentControl(...)`,
   `paragraph.addComboBoxContentControl(...)`,
@@ -19,9 +23,9 @@ Choose the route before editing:
   `document.setComboBoxContentControls(...)`, and
   `document.setDateContentControls(...)` for source-free body
   paragraphs, source-free rectangular table cells, and recognized imported
-  inline, one-paragraph block, or one-paragraph table-cell plain-text; canonical Word 2010+
-  checkbox, canonical Word drop-down, canonical Word combo-box, or canonical
-  ISO/Gregorian date controls.
+  inline or one-paragraph table-cell plain-text, checkbox, drop-down, combo-box,
+  and ISO/Gregorian date controls, plus the one-paragraph block plain-text
+  profile.
 - Use `scripts/content_controls.py` only for explicit package work such as
   wrapping placeholders in an existing template, controls in headers/footers,
   or inspection of controls outside the bounded public model.
@@ -107,14 +111,21 @@ topology are source-bound, while text, tag, alias, supported paragraph
 formatting, and supported run formatting remain editable within the fixed
 one-paragraph/one-run profile.
 
-### Author one table-cell plain-text control
+### Author table-cell text and typed controls
 
 Use the cell primitive when a field owns one complete source-free table cell:
 
 ```js
 const approvalTable = document.addTable({
   id: "approval-matrix",
-  values: [["Role", "Owner"], ["Technical review", "{{TABLE_OWNER}}"]],
+  values: [
+    ["Field", "Value"],
+    ["Owner", "{{TABLE_OWNER}}"],
+    ["Approved", "pending"],
+    ["Priority", "pending"],
+    ["Contact", "pending"],
+    ["Review date", "pending"],
+  ],
 });
 const owner = approvalTable.getCell(1, 1).addTextContentControl({
   id: "table-owner",
@@ -123,18 +134,53 @@ const owner = approvalTable.getCell(1, 1).addTextContentControl({
 });
 
 document.fillContentControls({ TABLE_OWNER: "Katherine Johnson" });
+
+const approved = approvalTable.getCell(2, 1).addCheckboxContentControl(false, {
+  id: "table-approved",
+  tag: "TABLE_APPROVED",
+  alias: "Table approved",
+});
+const priority = approvalTable.getCell(3, 1).addDropdownContentControl([
+  { displayText: "Low", value: "low" },
+  { displayText: "High", value: "high" },
+], {
+  id: "table-priority",
+  tag: "TABLE_PRIORITY",
+  alias: "Table priority",
+  selectedValue: "low",
+});
+const contact = approvalTable.getCell(4, 1).addComboBoxContentControl([
+  { displayText: "Email", value: "email" },
+  { displayText: "Phone call", value: "phone" },
+], {
+  id: "table-contact",
+  tag: "TABLE_CONTACT",
+  alias: "Table contact",
+  value: "email",
+});
+const reviewDate = approvalTable.getCell(5, 1).addDateContentControl("2026-07-22", {
+  id: "table-review-date",
+  tag: "TABLE_REVIEW_DATE",
+  alias: "Table review date",
+});
+
+document.setCheckboxContentControls({ TABLE_APPROVED: true });
+document.setDropdownContentControls({ TABLE_PRIORITY: "high" });
+document.setComboBoxContentControls({ TABLE_CONTACT: "Pager duty" });
+document.setDateContentControls({ TABLE_REVIEW_DATE: "2028-02-29" });
 ```
 
 This authors one direct cell-level `w:sdt` around the cell's only
 `w:p/w:r/w:t`. Inspection reports `placement: "tableCell"`, the table-cell
-`targetId`, and `row`/`column`; `fillContentControls()` and direct `owner.text`
-mutation use the same typed text contract as body controls. The table must be
-rectangular. On recognized import, only text, tag, and alias may change; native
-ID, type, row/column, wrapper placement, and topology remain source-bound.
-Adding/removing a control in an imported ordinary table, merge-continuation
-cells, and rich, inline, nested, multi-paragraph, checkbox/list/date,
-data-bound, locked, placeholder, or repeating-section cell controls fail
-closed.
+`targetId`, and `row`/`column`. The same text/checked/selectedValue/value/
+dateValue contract and transactional tag setters apply to inline and table-cell
+controls. The table must be rectangular. On recognized import, only typed
+state, tag, and alias may change; native ID, type, row/column, wrapper placement,
+choice table/order, checkbox symbols, native date profile, and topology remain
+source-bound. Adding/removing a control in an imported ordinary table,
+merge-continuation cells, and rich, inline-within-cell, nested, multi-paragraph,
+data-bound, locked, placeholder, repeating-section, extension-bearing, or
+otherwise irregular cell controls fail closed.
 
 ### Author and set one checkbox control
 

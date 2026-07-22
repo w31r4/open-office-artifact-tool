@@ -846,7 +846,7 @@ assert.throws(
 );
 assert.throws(
   () => tableCellControlTable.getCell(0, 1).addTextContentControl({ tag: "INVALID_TABLE_CHECKBOX", alias: "Invalid", controlType: "checkbox", checked: false }),
-  /only plain text/i,
+  /text content-control creation cannot use type checkbox/i,
 );
 assert.throws(
   () => tableCellControlDocument.addTable({ values: [["A", "B"], ["C"]] }).getCell(0, 0).addTextContentControl({ tag: "RAGGED", alias: "Ragged" }),
@@ -859,6 +859,105 @@ assert.throws(
 assert.throws(
   () => tableCellControlTable.getCell(0.5, 0).addTextContentControl({ tag: "FRACTIONAL", alias: "Fractional" }),
   /existing physical cell/i,
+);
+
+const typedTableControlDocument = DocumentModel.create({ name: "Typed table-cell content-control profile", blocks: [] });
+typedTableControlDocument.applyDesignPreset("report");
+const typedTableControlTable = typedTableControlDocument.addTable({
+  id: "typed-table-controls",
+  values: [
+    ["Field", "Value"],
+    ["Approved", "pending"],
+    ["Priority", "pending"],
+    ["Contact", "pending"],
+    ["Review date", "pending"],
+  ],
+});
+const typedTableChoices = [
+  { displayText: "Low", value: "low" },
+  { displayText: "High", value: "high" },
+];
+const typedTableCheckbox = typedTableControlTable.getCell(1, 1).addCheckboxContentControl(false, {
+  id: "table-approved-control",
+  tag: "TABLE_APPROVED",
+  alias: "Table approved",
+});
+const typedTableDropdown = typedTableControlTable.getCell(2, 1).addDropdownContentControl(typedTableChoices, {
+  id: "table-priority-control",
+  tag: "TABLE_PRIORITY",
+  alias: "Table priority",
+  selectedValue: "low",
+});
+const typedTableComboBox = typedTableControlTable.getCell(3, 1).addComboBoxContentControl(typedTableChoices, {
+  id: "table-contact-control",
+  tag: "TABLE_CONTACT",
+  alias: "Table contact",
+  value: "High",
+});
+const typedTableDate = typedTableControlTable.getCell(4, 1).addDateContentControl("2026-07-22", {
+  id: "table-review-date-control",
+  tag: "TABLE_REVIEW_DATE",
+  alias: "Table review date",
+});
+assert.deepEqual(
+  [typedTableCheckbox, typedTableDropdown, typedTableComboBox, typedTableDate].map((control) => [control.controlType, control.placement, control.row, control.column, control.text]),
+  [
+    ["checkbox", "tableCell", 1, 1, "☐"],
+    ["dropdown", "tableCell", 2, 1, "Low"],
+    ["comboBox", "tableCell", 3, 1, "High"],
+    ["date", "tableCell", 4, 1, "2026-07-22"],
+  ],
+);
+assert.deepEqual(typedTableControlTable.values.map((row) => row[1]), ["Value", "☐", "Low", "High", "2026-07-22"]);
+assert.deepEqual(typedTableControlDocument.setCheckboxContentControls({ TABLE_APPROVED: true }), { updated: 1, matchedTags: ["TABLE_APPROVED"], missingTags: [] });
+assert.deepEqual(typedTableControlDocument.setDropdownContentControls({ TABLE_PRIORITY: "high" }), { updated: 1, matchedTags: ["TABLE_PRIORITY"], missingTags: [] });
+assert.deepEqual(typedTableControlDocument.setComboBoxContentControls({ TABLE_CONTACT: "Pager duty" }), { updated: 1, matchedTags: ["TABLE_CONTACT"], missingTags: [] });
+assert.deepEqual(typedTableControlDocument.setDateContentControls({ TABLE_REVIEW_DATE: "2028-02-29" }), { updated: 1, matchedTags: ["TABLE_REVIEW_DATE"], missingTags: [] });
+assert.deepEqual(typedTableControlTable.values.map((row) => row[1]), ["Value", "☒", "High", "Pager duty", "2028-02-29"]);
+assert.equal(typedTableControlDocument.verify().ok, true);
+const typedTableControlDocx = await DocumentFile.exportDocx(typedTableControlDocument);
+const typedTableControlZip = await JSZip.loadAsync(await typedTableControlDocx.arrayBuffer());
+const typedTableControlXml = await typedTableControlZip.file("word/document.xml").async("text");
+assert.match(typedTableControlXml, /<w:tc>[\s\S]*?<w:tag w:val="TABLE_APPROVED"\s*\/>[\s\S]*?<w14:checkbox>[\s\S]*?<w14:checked w14:val="1"\s*\/>[\s\S]*?<\/w:sdt>[\s\S]*?<\/w:tc>/);
+assert.match(typedTableControlXml, /<w:tc>[\s\S]*?<w:tag w:val="TABLE_PRIORITY"\s*\/>[\s\S]*?<w:dropDownList w:lastValue="high">[\s\S]*?<\/w:sdt>[\s\S]*?<\/w:tc>/);
+assert.match(typedTableControlXml, /<w:tc>[\s\S]*?<w:tag w:val="TABLE_CONTACT"\s*\/>[\s\S]*?<w:comboBox w:lastValue="Pager duty">[\s\S]*?<\/w:sdt>[\s\S]*?<\/w:tc>/);
+assert.match(typedTableControlXml, /<w:tc>[\s\S]*?<w:tag w:val="TABLE_REVIEW_DATE"\s*\/>[\s\S]*?<w:date w:fullDate="2028-02-29T00:00:00Z">[\s\S]*?<\/w:sdt>[\s\S]*?<\/w:tc>/);
+const importedTypedTableControlDocument = await DocumentFile.importDocx(typedTableControlDocx);
+assert.deepEqual(
+  importedTypedTableControlDocument.contentControls.map((control) => [control.tag, control.controlType, control.placement, control.text]),
+  [
+    ["TABLE_APPROVED", "checkbox", "tableCell", "☒"],
+    ["TABLE_PRIORITY", "dropdown", "tableCell", "High"],
+    ["TABLE_CONTACT", "comboBox", "tableCell", "Pager duty"],
+    ["TABLE_REVIEW_DATE", "date", "tableCell", "2028-02-29"],
+  ],
+);
+assert.equal(importedTypedTableControlDocument.contentControls.every((control) => Number.isInteger(control.nativeId)), true);
+const unchangedTypedTableControlDocx = await DocumentFile.exportDocx(importedTypedTableControlDocument);
+assert.deepEqual(Buffer.from(await unchangedTypedTableControlDocx.arrayBuffer()), Buffer.from(await typedTableControlDocx.arrayBuffer()), "unchanged imported typed table-cell content controls must preserve source bytes");
+const importedTypedTableDropdown = importedTypedTableControlDocument.contentControls.find((control) => control.tag === "TABLE_PRIORITY");
+importedTypedTableDropdown.tag = "TABLE_PRIORITY_FINAL";
+importedTypedTableDropdown.alias = "Final table priority";
+assert.deepEqual(importedTypedTableControlDocument.setCheckboxContentControls({ TABLE_APPROVED: false }), { updated: 1, matchedTags: ["TABLE_APPROVED"], missingTags: [] });
+assert.deepEqual(importedTypedTableControlDocument.setDropdownContentControls({ TABLE_PRIORITY_FINAL: "low" }), { updated: 1, matchedTags: ["TABLE_PRIORITY_FINAL"], missingTags: [] });
+assert.deepEqual(importedTypedTableControlDocument.setComboBoxContentControls({ TABLE_CONTACT: "Email" }), { updated: 1, matchedTags: ["TABLE_CONTACT"], missingTags: [] });
+assert.deepEqual(importedTypedTableControlDocument.setDateContentControls({ TABLE_REVIEW_DATE: "2030-12-31" }), { updated: 1, matchedTags: ["TABLE_REVIEW_DATE"], missingTags: [] });
+const roundTripTypedTableControlDocument = await DocumentFile.importDocx(await DocumentFile.exportDocx(importedTypedTableControlDocument));
+assert.deepEqual(roundTripTypedTableControlDocument.blocks.find((block) => block.kind === "table").values.map((row) => row[1]), ["Value", "☐", "Low", "Email", "2030-12-31"]);
+assert.equal(roundTripTypedTableControlDocument.contentControls.find((control) => control.tag === "TABLE_PRIORITY_FINAL").alias, "Final table priority");
+const typedTableChoiceTamper = await DocumentFile.importDocx(typedTableControlDocx);
+typedTableChoiceTamper.blocks.find((block) => block.kind === "table").cells.find((cell) => cell.row === 2 && cell.column === 1).contentControl.choices[0].displayText = "Minor";
+await assert.rejects(
+  () => DocumentFile.exportDocx(typedTableChoiceTamper),
+  (error) => error?.code === "document_content_control_topology_changed" && /source-bound/i.test(error.message),
+);
+assert.throws(
+  () => typedTableControlTable.getCell(0, 0).addCheckboxContentControl("yes", { tag: "INVALID_TABLE_BOOLEAN", alias: "Invalid boolean" }),
+  /checked state must be boolean/i,
+);
+assert.throws(
+  () => typedTableControlTable.getCell(0, 0).addDropdownContentControl(typedTableChoices, { tag: "INVALID_TABLE_CHOICE", alias: "Invalid choice", selectedValue: "missing" }),
+  /does not match a choice value/i,
 );
 
 const checkboxDocument = DocumentModel.create({ name: "Checkbox content-control profile", blocks: [] });

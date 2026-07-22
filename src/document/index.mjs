@@ -123,7 +123,7 @@ class DocumentTableCell {
   get editable() { return this._record()?.editable ?? true; }
   get textPatchable() { return this._record()?.textPatchable === true; }
   get contentControl() { return documentTableCellContentControl(this.table, this.row, this.column); }
-  addTextContentControl(config = {}) {
+  _addContentControl(expectedType, config = {}) {
     if (!Number.isInteger(this.row) || !Number.isInteger(this.column) || this.row < 0 || this.column < 0 || this.row >= this.table.values.length || this.column >= (this.table.values[this.row]?.length ?? 0)) {
       throw new RangeError(`Document table cell ${this.id} must identify an existing physical cell before adding a content control.`);
     }
@@ -136,11 +136,34 @@ class DocumentTableCell {
     const record = this._record();
     if (record.contentControl) throw new Error(`Document table cell ${this.id} already has a content control.`);
     const source = config.contentControl || config;
-    const control = normalizeDocumentContentControl({ ...source, controlType: source.controlType ?? source.type ?? "text" });
-    if (control.controlType !== "text") throw new TypeError("Document table-cell content controls currently support only plain text.");
-    if (!control.alias.length) throw new TypeError("Document table-cell text content controls require a non-empty alias.");
+    const control = normalizeDocumentContentControl({ ...source, controlType: source.controlType ?? source.type ?? expectedType });
+    if (control.controlType !== expectedType) throw new TypeError(`Document table-cell ${expectedType} content-control creation cannot use type ${control.controlType}.`);
+    if (!control.alias.length) throw new TypeError("Document table-cell content controls require a non-empty alias.");
     record.contentControl = control;
-    return this.contentControl;
+    const handle = this.contentControl;
+    if (expectedType === "checkbox") handle.checked = control.checked;
+    else if (expectedType === "dropdown") handle.selectedValue = control.selectedValue;
+    else if (expectedType === "comboBox") handle.value = control.value;
+    else if (expectedType === "date") handle.dateValue = control.dateValue;
+    return handle;
+  }
+  addTextContentControl(config = {}) { return this._addContentControl("text", config); }
+  addCheckboxContentControl(checked = false, config = {}) {
+    if (typeof checked !== "boolean") throw new TypeError("Document checkbox content control checked state must be boolean.");
+    return this._addContentControl("checkbox", { ...(config.contentControl || config), controlType: "checkbox", checked });
+  }
+  addDropdownContentControl(choices, config = {}) {
+    const source = { ...(config.contentControl || config), controlType: "dropdown", choices };
+    if (config.selectedValue !== undefined || config.value !== undefined) source.selectedValue = config.selectedValue ?? config.value;
+    return this._addContentControl("dropdown", source);
+  }
+  addComboBoxContentControl(choices, config = {}) {
+    const source = { ...(config.contentControl || config), controlType: "comboBox", choices };
+    if (config.value !== undefined) source.value = config.value;
+    return this._addContentControl("comboBox", source);
+  }
+  addDateContentControl(dateValue, config = {}) {
+    return this._addContentControl("date", { ...(config.contentControl || config), controlType: "date", dateValue });
   }
   inspectRecord() { return { kind: this.kind, id: this.id, textRangeId: this.textPatchable || this.editable ? `${this.id}/text` : undefined, tableId: this.tableId, row: this.row, column: this.column, gridColumn: this.gridColumn, columnSpan: this.columnSpan, rowSpan: this.rowSpan, verticalMerge: this.verticalMerge, editable: this.editable, textPatchable: this.textPatchable, contentControlId: this.contentControl?.id, pendingTextPatches: this.table.textPatches.filter((item) => item.row === this.row && item.column === this.column).length, value: this.value }; }
 }
@@ -166,8 +189,7 @@ class DocumentTableBlock {
     this.cells = Array.isArray(config.cells) ? config.cells.map((cell) => {
       const verticalMerge = String(cell.verticalMerge || "none");
       const contentControl = normalizeDocumentContentControl(cell.contentControl ?? cell.textContentControl ?? cell.control);
-      if (contentControl?.controlType !== undefined && contentControl.controlType !== "text") throw new TypeError("Document table-cell content controls currently support only plain text.");
-      if (contentControl && !contentControl.alias.length) throw new TypeError("Document table-cell text content controls require a non-empty alias.");
+      if (contentControl && !contentControl.alias.length) throw new TypeError("Document table-cell content controls require a non-empty alias.");
       if (contentControl && verticalMerge === "continue") throw new TypeError("Document vertical-merge continuation cells cannot contain content controls.");
       return {
         row: Math.max(0, Math.round(Number(cell.row) || 0)),
@@ -1433,7 +1455,7 @@ export class DocumentModel {
       if (control.alias.length > 255 || /[\u0000-\u001f\u007f]/.test(control.alias)) issues.push(verificationIssue("document", "invalidContentControlAlias", `Content control ${control.id} alias must contain at most 255 characters without controls.`, { id: control.id, alias: control.alias }));
       if (control.controlType !== "text" && control.controlType !== "checkbox" && control.controlType !== "dropdown" && control.controlType !== "comboBox" && control.controlType !== "date") issues.push(verificationIssue("document", "invalidContentControlType", `Content control ${control.id} type must be text, checkbox, dropdown, comboBox, or date.`, { id: control.id, controlType: control.controlType }));
       if (control.placement === "block" && (control.controlType !== "text" || control.block.runs.length !== 1 || control.block.runs.some((run) => run.contentControl || run.inlineField) || control.block.runs[0]?.text !== control.block.text)) issues.push(verificationIssue("document", "invalidBlockContentControl", `Block content control ${control.id} must be plain text around exactly one ordinary paragraph run whose text matches the paragraph.`, { id: control.id, targetId: control.targetId }));
-      if (control.placement === "tableCell" && (control.controlType !== "text" || !control.alias.length || control.block.getCell(control.row, control.column).value !== control.text)) issues.push(verificationIssue("document", "invalidTableCellContentControl", `Table-cell content control ${control.id} must be plain text around one canonical physical cell paragraph with a non-empty alias.`, { id: control.id, targetId: control.targetId }));
+      if (control.placement === "tableCell" && (!control.alias.length || control.block.getCell(control.row, control.column).value !== control.text)) issues.push(verificationIssue("document", "invalidTableCellContentControl", `Table-cell content control ${control.id} must own one canonical physical cell paragraph with a non-empty alias and matching visible text.`, { id: control.id, targetId: control.targetId }));
       if (control.controlType === "checkbox" && (typeof control.checked !== "boolean" || control.text !== documentCheckboxGlyph(control.checked))) issues.push(verificationIssue("document", "invalidCheckboxContentControl", `Checkbox content control ${control.id} must have boolean checked state and its canonical visible glyph.`, { id: control.id, checked: control.checked, visibleText: control.text }));
       if (control.controlType === "dropdown") {
         try {

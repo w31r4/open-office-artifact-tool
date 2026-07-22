@@ -2518,11 +2518,11 @@ message DocumentRun {
   bool italic = 4;
   bool underline = 5;
   DocumentRunFormatting formatting = 6;
-  // One bounded inline Word plain-text, checkbox, drop-down, or combo-box
-  // content control. The model ID is
+  // One bounded inline Word plain-text, checkbox, drop-down, combo-box, or
+  // ISO/Gregorian date content control. The model ID is
   // agent-facing identity for one object lifetime; native_id is package-local
   // w:sdtPr/w:id identity and is assigned deterministically when omitted.
-  // Rich text, cell controls, data binding, custom checkbox symbols,
+  // Rich text, irregular cell controls, data binding, custom checkbox symbols,
   // placeholder documents, locking, and nested SDTs stay opaque. A separate
   // bounded block-level plain-text profile is represented on
   // DocumentParagraph.block_content_control.
@@ -2767,11 +2767,13 @@ message DocumentTableCell {
   // still must match exactly once and may span only adjacent same-format runs;
   // it is validated against the source cell hash.
   bool text_patchable = 6;
-  // One canonical block-level plain-text SDT wrapping the cell's only
-  // paragraph and run. The cell remains the semantic text owner; this message
-  // supplies typed Agent identity plus the native Word control binding.
-  // Inline, rich, nested, multi-paragraph, repeating-section, checkbox,
-  // list, date, data-bound, locked, and placeholder cell controls stay opaque.
+  // One canonical cell-level SDT wrapping the cell's only paragraph and run.
+  // Plain text, Word 2010+ checkbox, standard drop-down/combo-box, and the
+  // bounded ISO/Gregorian date profile reuse the same typed wire contract as
+  // inline controls. The cell remains the semantic visible-text owner.
+  // Inline-within-cell, rich, nested, multi-paragraph, repeating-section,
+  // irregular list/date, data-bound, locked, and placeholder controls stay
+  // opaque/source-bound.
   DocumentTextContentControl text_content_control = 7;
 }
 

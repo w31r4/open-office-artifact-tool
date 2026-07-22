@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 355);
+assert.equal(HELP_CATALOG.length, 359);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -363,7 +363,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.sc
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.schema?.returns?.inspection?.description || "", /mupdfWidget.*mupdfFormField/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.summary || "", /MuPDF/);
 const documentCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "document");
-assert.equal(documentCatalog.length, 61);
+assert.equal(documentCatalog.length, 65);
 assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.schema?.parameters?.pictureBullet?.type, "string|object");
@@ -391,6 +391,13 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addField")?.sc
 assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addField")?.schema?.parameters?.bookmarkNativeId?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "documentTableCell.addTextContentControl")?.schema?.parameters?.tag?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "documentTableCell.addTextContentControl")?.summary || "", /source-free rectangular table cell.*placement=tableCell.*fixed-topology/i);
+assert.equal(HELP_CATALOG.find((item) => item.name === "documentTableCell.addCheckboxContentControl")?.schema?.parameters?.checked?.type, "boolean");
+assert.match(HELP_CATALOG.find((item) => item.name === "documentTableCell.addCheckboxContentControl")?.summary || "", /source-free rectangular table cell.*checkbox.*checked.*topology remain fixed/i);
+assert.equal(HELP_CATALOG.find((item) => item.name === "documentTableCell.addDropdownContentControl")?.schema?.parameters?.choices?.type, "Array<string|object>");
+assert.equal(HELP_CATALOG.find((item) => item.name === "documentTableCell.addDropdownContentControl")?.schema?.parameters?.selectedValue?.type, "string");
+assert.equal(HELP_CATALOG.find((item) => item.name === "documentTableCell.addComboBoxContentControl")?.schema?.parameters?.value?.type, "string");
+assert.equal(HELP_CATALOG.find((item) => item.name === "documentTableCell.addDateContentControl")?.schema?.parameters?.dateValue?.required, true);
+assert.match(HELP_CATALOG.find((item) => item.name === "documentTableCell.addDateContentControl")?.schema?.parameters?.dateValue?.description || "", /Gregorian.*YYYY-MM-DD.*Date objects.*rejected/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.contentControls")?.schema?.returns?.controls?.type, "DocumentContentControlHandle[]");
 assert.match(HELP_CATALOG.find((item) => item.name === "document.contentControls")?.schema?.returns?.controls?.description || "", /placement.*block, inline, or tableCell.*runIndex.*row\/column/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.fillContentControls")?.schema?.parameters?.values?.required, true);
@@ -608,6 +615,10 @@ assert.match(document.help("document.addBookmark").ndjson, /native Word bookmark
 assert.match(document.help("document.addFootnote").ndjson, /native bounded footnote/i);
 assert.match(document.help("document.addEndnote").ndjson, /native bounded endnote/i);
 assert.match(document.help("documentTableCell.addTextContentControl").ndjson, /existing single paragraph\/run.*source-free rectangular cells.*native ID.*row\/column/is);
+assert.match(document.help("documentTableCell.addCheckboxContentControl").ndjson, /Word 2010\+ checkbox.*visible glyph.*source-free rectangular cells.*symbol profile/is);
+assert.match(document.help("documentTableCell.addDropdownContentControl").ndjson, /ordered 1 to 256 choice table.*selectedValue.*source-free rectangular cells/is);
+assert.match(document.help("documentTableCell.addComboBoxContentControl").ndjson, /declared-or-custom typed value.*custom text.*source-free rectangular cells/is);
+assert.match(document.help("documentTableCell.addDateContentControl").ndjson, /ISO\/Gregorian date.*YYYY-MM-DD.*native date profile/is);
 assert.match(document.help("document.contentControls").ndjson, /placement is block, inline, or tableCell.*row\/column only for table-cell controls/i);
 assert.match(document.help("document.fillContentControls").ndjson, /Unknown tags fail before mutation/i);
 assert.match(document.help("document.setCheckboxContentControls").ndjson, /tag-to-boolean checked-state mapping/i);

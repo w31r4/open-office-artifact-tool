@@ -41,13 +41,37 @@
       "styleId": "TableGrid",
       "values": [
         ["Approval field", "Value"],
-        ["Owner", "{{TABLE_OWNER}}"]
+        ["Owner", "{{TABLE_OWNER}}"],
+        ["Approved", "pending"],
+        ["Priority", "pending"],
+        ["Contact", "pending"],
+        ["Review date", "pending"]
       ],
       "cellContentControls": [
         {
           "row": 1,
           "column": 1,
           "control": { "id": "table-owner", "tag": "TABLE_OWNER", "alias": "Table owner", "controlType": "text" }
+        },
+        {
+          "row": 2,
+          "column": 1,
+          "control": { "id": "table-approved", "tag": "TABLE_APPROVED", "alias": "Table approved", "controlType": "checkbox", "checked": false }
+        },
+        {
+          "row": 3,
+          "column": 1,
+          "control": { "id": "table-priority", "tag": "TABLE_PRIORITY", "alias": "Table priority", "controlType": "dropdown", "selectedValue": "low", "choices": [{ "displayText": "Low", "value": "low" }, { "displayText": "High", "value": "high" }] }
+        },
+        {
+          "row": 4,
+          "column": 1,
+          "control": { "id": "table-contact", "tag": "TABLE_CONTACT", "alias": "Table contact", "controlType": "comboBox", "value": "Email", "choices": [{ "displayText": "Email", "value": "email" }, { "displayText": "Phone call", "value": "phone" }] }
+        },
+        {
+          "row": 5,
+          "column": 1,
+          "control": { "id": "table-review-date", "tag": "TABLE_REVIEW_DATE", "alias": "Table review date", "controlType": "date", "dateValue": "2026-07-21" }
         }
       ]
     }
@@ -66,30 +90,34 @@
     {
       "kind": "checkboxContentControls",
       "values": {
-        "APPROVED": true
+        "APPROVED": true,
+        "TABLE_APPROVED": true
       },
-      "expectUpdated": 1
+      "expectUpdated": 2
     },
     {
       "kind": "dropdownContentControls",
       "values": {
-        "PRIORITY": "high"
+        "PRIORITY": "high",
+        "TABLE_PRIORITY": "high"
       },
-      "expectUpdated": 1
+      "expectUpdated": 2
     },
     {
       "kind": "comboBoxContentControls",
       "values": {
-        "CONTACT_METHOD": "Pager duty"
+        "CONTACT_METHOD": "Pager duty",
+        "TABLE_CONTACT": "In person"
       },
-      "expectUpdated": 1
+      "expectUpdated": 2
     },
     {
       "kind": "dateContentControls",
       "values": {
-        "REVIEW_DATE": "2028-02-29"
+        "REVIEW_DATE": "2028-02-29",
+        "TABLE_REVIEW_DATE": "2028-02-29"
       },
-      "expectUpdated": 1
+      "expectUpdated": 2
     }
   ],
   "expectInspect": [
@@ -106,7 +134,11 @@
     { "kind": "contentControl", "pattern": "EXECUTIVE_SUMMARY" },
     { "kind": "contentControl", "pattern": "block" },
     { "kind": "contentControl", "pattern": "TABLE_OWNER" },
-    { "kind": "contentControl", "pattern": "tableCell" }
+    { "kind": "contentControl", "pattern": "tableCell" },
+    { "kind": "contentControl", "pattern": "TABLE_APPROVED" },
+    { "kind": "contentControl", "pattern": "TABLE_PRIORITY" },
+    { "kind": "contentControl", "pattern": "TABLE_CONTACT" },
+    { "kind": "contentControl", "pattern": "TABLE_REVIEW_DATE" }
   ],
   "qa": {
     "previewFormat": "svg",

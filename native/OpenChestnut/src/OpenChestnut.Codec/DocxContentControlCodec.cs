@@ -6,12 +6,11 @@ using W = DocumentFormat.OpenXml.Wordprocessing;
 
 namespace OpenChestnut.Codec;
 
-// Owns seven deliberately bounded WordprocessingML SDT profiles/placements: inline
-// plain-text, canonical drop-down, canonical combo-box, and Word 2010+
-// checkbox controls, one ISO/Gregorian date picker, plus a block plain-text
-// control and a table-cell plain-text control, each around exactly one
-// paragraph containing one ordinary run. Every
-// profile contains alias, tag, and native ID.
+// Owns eleven deliberately bounded WordprocessingML SDT profiles/placements:
+// inline and whole-table-cell plain-text, canonical drop-down, canonical
+// combo-box, Word 2010+ checkbox, and ISO/Gregorian date controls, plus a block
+// plain-text control. Each profile wraps exactly one paragraph containing one
+// ordinary run and carries alias, tag, and native ID.
 // Checkbox symbols plus list/date-control visible text are codec-owned. Every
 // richer SDT remains opaque/source-bound.
 internal static class DocxContentControlCodec
@@ -92,10 +91,10 @@ internal static class DocxContentControlCodec
                      block.Paragraph.Runs[0].TextContentControl is not null ||
                      block.Paragraph.Runs[0].InlineField is not null ||
                      !block.Paragraph.Text.Equals(block.Paragraph.Runs[0].Text, StringComparison.Ordinal));
-                if (controlType != DocumentContentControlType.PlainText || control.Alias.Length == 0 || invalidParagraphBlock)
+                if ((!item.IsTableCell && controlType != DocumentContentControlType.PlainText) || control.Alias.Length == 0 || invalidParagraphBlock)
                     throw new CodecException(
                         "invalid_document_content_control",
-                        $"{item.Owner} content control {control.Id} must be plain text around exactly one ordinary paragraph run.");
+                        $"{item.Owner} content control {control.Id} must use the bounded placement/type profile around exactly one ordinary paragraph run.");
             }
             if (controlType == DocumentContentControlType.Checkbox &&
                 !item.VisibleText.Equals(control.Checked ? CheckedGlyph : UncheckedGlyph, StringComparison.Ordinal))
@@ -129,40 +128,23 @@ internal static class DocxContentControlCodec
         }
     }
 
-    internal static bool IsSupported(W.SdtBlock source)
+    internal static bool IsSupported(W.SdtBlock source, bool allowTyped = false)
     {
         var properties = source.SdtProperties;
         var content = source.SdtContentBlock;
         if (properties is null || content is null || source.ChildElements.Count != 2 ||
             source.ChildElements[0] is not W.SdtProperties || source.ChildElements[1] is not W.SdtContentBlock ||
             source.GetAttributes().Count != 0 || properties.GetAttributes().Count != 0 || content.GetAttributes().Count != 0) return false;
-        if (properties.Elements<W.SdtAlias>().Count() != 1 ||
-            properties.Elements<W.Tag>().Count() != 1 ||
-            properties.Elements<W.SdtId>().Count() != 1 ||
-            properties.Elements<W.SdtContentText>().Count() != 1 ||
-            properties.ChildElements.Count != 4 ||
-            properties.ChildElements[0] is not W.SdtAlias ||
-            properties.ChildElements[1] is not W.Tag ||
-            properties.ChildElements[2] is not W.SdtId ||
-            properties.ChildElements[3] is not W.SdtContentText) return false;
-        var aliasElement = properties.GetFirstChild<W.SdtAlias>();
-        var tagElement = properties.GetFirstChild<W.Tag>();
-        var idElement = properties.GetFirstChild<W.SdtId>();
-        if (new OpenXmlElement?[] { aliasElement, tagElement, idElement }
-            .Any(child => child is null || child.HasChildren || child.ExtendedAttributes.Any())) return false;
-        var tag = tagElement?.Val?.Value;
-        var alias = aliasElement?.Val?.Value;
-        var nativeId = idElement?.Val?.Value;
-        var textProperty = properties.GetFirstChild<W.SdtContentText>();
-        if (!ValidText(tag, 1, MaxTagLength) || !ValidText(alias, 1, MaxAliasLength) ||
-            nativeId is null or <= 0 || textProperty?.GetAttributes().Count != 0 || textProperty?.HasChildren == true ||
-            content.ChildElements.Count != 1 || content.FirstChild is not W.Paragraph paragraph ||
+        if (content.ChildElements.Count != 1 || content.FirstChild is not W.Paragraph paragraph ||
             !DocxFormattingCodec.IsSupportedParagraphProperties(paragraph.ParagraphProperties)) return false;
         var paragraphChildren = paragraph.ChildElements.Where(child => child is not W.ParagraphProperties).ToArray();
         if (paragraphChildren.Length != 1 || paragraphChildren[0] is not W.Run run ||
             run.Elements<W.RunProperties>().Count() > 1 || run.Elements<W.Text>().Count() != 1 ||
             run.ChildElements.Any(child => child is not W.RunProperties and not W.Text) ||
             !DocxFormattingCodec.IsSupportedRunProperties(run.RunProperties)) return false;
+        var visibleText = string.Concat(run.Elements<W.Text>().Select(value => value.Text));
+        if (!IsSupportedControlProperties(properties, visibleText, requireAlias: true, exactOrder: true) ||
+            !allowTyped && properties.GetFirstChild<W.SdtContentText>() is null) return false;
         try
         {
             var modeledRun = DocxCodec.ReadRun(run);
@@ -184,12 +166,14 @@ internal static class DocxContentControlCodec
         }
     }
 
-    internal static DocumentParagraph Read(W.SdtBlock source, string modelId)
+    internal static DocumentParagraph Read(W.SdtBlock source, string modelId, bool allowTyped = false)
     {
-        if (!IsSupported(source))
+        if (!IsSupported(source, allowTyped))
             throw new CodecException(
                 "unsupported_document_content_control",
-                "DOCX block content control is outside the bounded one-paragraph plain-text SDT profile.",
+                allowTyped
+                    ? "DOCX table-cell content control is outside the bounded one-paragraph text, checkbox, drop-down, combo-box, or date SDT profiles."
+                    : "DOCX block content control is outside the bounded one-paragraph plain-text SDT profile.",
                 "word/document.xml");
         var properties = source.SdtProperties!;
         var paragraph = (W.Paragraph)source.SdtContentBlock!.FirstChild!;
@@ -198,14 +182,7 @@ internal static class DocxContentControlCodec
         {
             Text = string.Concat(run.Elements<W.Text>().Select(value => value.Text)),
             Formatting = DocxFormattingCodec.ReadParagraphFormatting(paragraph.ParagraphProperties),
-            BlockContentControl = new DocumentTextContentControl
-            {
-                Id = modelId,
-                Tag = properties.GetFirstChild<W.Tag>()!.Val!.Value!,
-                Alias = properties.GetFirstChild<W.SdtAlias>()?.Val?.Value ?? properties.GetFirstChild<W.Tag>()!.Val!.Value!,
-                NativeId = checked((uint)properties.GetFirstChild<W.SdtId>()!.Val!.Value),
-                ControlType = DocumentContentControlType.PlainText,
-            },
+            BlockContentControl = ReadControl(properties, modelId),
         };
         result.Runs.Add(DocxCodec.ReadRun(run));
         return result;
@@ -216,7 +193,34 @@ internal static class DocxContentControlCodec
         var properties = source.SdtProperties;
         var content = source.SdtContentRun;
         if (properties is null || content is null || source.ChildElements.Count != 2) return false;
-        if (properties.Elements<W.SdtAlias>().Count() > 1 ||
+        if (content.ChildElements.Count != 1 || content.FirstChild is not W.Run run) return false;
+        if (!run.ChildElements.All(child => child is W.RunProperties or W.Text) ||
+            !DocxFormattingCodec.IsSupportedRunProperties(run.RunProperties)) return false;
+        var visibleText = string.Concat(run.Elements<W.Text>().Select(text => text.Text));
+        if (run.Elements<W.Text>().Count() != 1) return false;
+        return IsSupportedControlProperties(properties, visibleText, requireAlias: false, exactOrder: false);
+    }
+
+    internal static DocumentRun Read(W.SdtRun source, string modelId)
+    {
+        if (!IsSupported(source))
+            throw new CodecException(
+                "unsupported_document_content_control",
+                "DOCX inline content control is outside the bounded plain-text, canonical checkbox, canonical drop-down, canonical combo-box, or canonical date SDT profiles.",
+                "word/document.xml");
+        var properties = source.SdtProperties!;
+        var result = DocxCodec.ReadRun((W.Run)source.SdtContentRun!.FirstChild!);
+        result.TextContentControl = ReadControl(properties, modelId);
+        return result;
+    }
+
+    private static bool IsSupportedControlProperties(
+        W.SdtProperties properties,
+        string visibleText,
+        bool requireAlias,
+        bool exactOrder)
+    {
+        if ((requireAlias ? properties.Elements<W.SdtAlias>().Count() != 1 : properties.Elements<W.SdtAlias>().Count() > 1) ||
             properties.Elements<W.Tag>().Count() != 1 ||
             properties.Elements<W.SdtId>().Count() != 1) return false;
         var textCount = properties.Elements<W.SdtContentText>().Count();
@@ -224,23 +228,29 @@ internal static class DocxContentControlCodec
         var dropdownCount = properties.Elements<W.SdtContentDropDownList>().Count();
         var comboBoxCount = properties.Elements<W.SdtContentComboBox>().Count();
         var dateCount = properties.Elements<W.SdtContentDate>().Count();
-        if (textCount + checkboxCount + dropdownCount + comboBoxCount + dateCount != 1) return false;
-        if (properties.ChildElements.Any(child => child is not W.SdtAlias and not W.Tag and not W.SdtId and not W.SdtContentText and not W14.SdtContentCheckBox and not W.SdtContentDropDownList and not W.SdtContentComboBox and not W.SdtContentDate)) return false;
-        var tag = properties.GetFirstChild<W.Tag>()?.Val?.Value;
-        var alias = properties.GetFirstChild<W.SdtAlias>()?.Val?.Value ?? tag;
-        var nativeId = properties.GetFirstChild<W.SdtId>()?.Val?.Value;
-        if (!ValidText(tag, 1, MaxTagLength) || !ValidText(alias, 0, MaxAliasLength) || nativeId is null or <= 0) return false;
-        if (textCount == 1 && properties.GetFirstChild<W.SdtContentText>()?.MultiLine?.Value == true) return false;
-        if (content.ChildElements.Count != 1 || content.FirstChild is not W.Run run) return false;
-        if (!run.ChildElements.All(child => child is W.RunProperties or W.Text) ||
-            !DocxFormattingCodec.IsSupportedRunProperties(run.RunProperties)) return false;
-        var visibleText = string.Concat(run.Elements<W.Text>().Select(text => text.Text));
-        if (run.Elements<W.Text>().Count() != 1) return false;
-        if (dateCount == 1)
+        if (textCount + checkboxCount + dropdownCount + comboBoxCount + dateCount != 1 ||
+            properties.ChildElements.Any(child => child is not W.SdtAlias and not W.Tag and not W.SdtId and not W.SdtContentText and not W14.SdtContentCheckBox and not W.SdtContentDropDownList and not W.SdtContentComboBox and not W.SdtContentDate)) return false;
+        if (exactOrder &&
+            (properties.ChildElements.Count != 4 ||
+             properties.ChildElements[0] is not W.SdtAlias ||
+             properties.ChildElements[1] is not W.Tag ||
+             properties.ChildElements[2] is not W.SdtId ||
+             !IsControlTypeProperty(properties.ChildElements[3]))) return false;
+        var aliasElement = properties.GetFirstChild<W.SdtAlias>();
+        var tagElement = properties.GetFirstChild<W.Tag>();
+        var idElement = properties.GetFirstChild<W.SdtId>();
+        if (exactOrder && new OpenXmlElement?[] { aliasElement, tagElement, idElement }
+            .Any(child => child is null || child.HasChildren || child.ExtendedAttributes.Any())) return false;
+        var tag = tagElement?.Val?.Value;
+        var alias = aliasElement?.Val?.Value ?? tag;
+        var nativeId = idElement?.Val?.Value;
+        if (!ValidText(tag, 1, MaxTagLength) || !ValidText(alias, requireAlias ? 1 : 0, MaxAliasLength) || nativeId is null or <= 0) return false;
+        if (textCount == 1)
         {
-            var date = properties.GetFirstChild<W.SdtContentDate>()!;
-            return IsCanonicalDate(date, visibleText);
+            var text = properties.GetFirstChild<W.SdtContentText>()!;
+            return text.MultiLine?.Value != true && (!exactOrder || text.GetAttributes().Count == 0 && !text.HasChildren);
         }
+        if (dateCount == 1) return IsCanonicalDate(properties.GetFirstChild<W.SdtContentDate>()!, visibleText);
         if (checkboxCount == 1)
         {
             var checkbox = properties.GetFirstChild<W14.SdtContentCheckBox>()!;
@@ -260,7 +270,6 @@ internal static class DocxContentControlCodec
                    CheckboxFont.Equals(uncheckedState?.Font?.Value, StringComparison.Ordinal) &&
                    visibleText.Equals(isChecked ? CheckedGlyph : UncheckedGlyph, StringComparison.Ordinal);
         }
-        if (dropdownCount + comboBoxCount == 0) return true;
         OpenXmlCompositeElement listControl;
         string? lastValue;
         if (dropdownCount == 1)
@@ -292,20 +301,16 @@ internal static class DocxContentControlCodec
             : visibleText.Equals(selectedDisplayText ?? lastValue, StringComparison.Ordinal);
     }
 
-    internal static DocumentRun Read(W.SdtRun source, string modelId)
+    private static bool IsControlTypeProperty(OpenXmlElement element) =>
+        element is W.SdtContentText or W14.SdtContentCheckBox or W.SdtContentDropDownList or W.SdtContentComboBox or W.SdtContentDate;
+
+    private static DocumentTextContentControl ReadControl(W.SdtProperties properties, string modelId)
     {
-        if (!IsSupported(source))
-            throw new CodecException(
-                "unsupported_document_content_control",
-                "DOCX inline content control is outside the bounded plain-text, canonical checkbox, canonical drop-down, canonical combo-box, or canonical date SDT profiles.",
-                "word/document.xml");
-        var properties = source.SdtProperties!;
-        var result = DocxCodec.ReadRun((W.Run)source.SdtContentRun!.FirstChild!);
         var checkbox = properties.GetFirstChild<W14.SdtContentCheckBox>();
         var dropdown = properties.GetFirstChild<W.SdtContentDropDownList>();
         var comboBox = properties.GetFirstChild<W.SdtContentComboBox>();
         var date = properties.GetFirstChild<W.SdtContentDate>();
-        result.TextContentControl = new DocumentTextContentControl
+        var result = new DocumentTextContentControl
         {
             Id = modelId,
             Tag = properties.GetFirstChild<W.Tag>()!.Val!.Value!,
@@ -324,7 +329,7 @@ internal static class DocxContentControlCodec
         };
         var listControl = (OpenXmlCompositeElement?)dropdown ?? comboBox;
         if (listControl is not null)
-            result.TextContentControl.Choices.Add(listControl.Elements<W.ListItem>().Select(choice => new DocumentContentControlChoice
+            result.Choices.Add(listControl.Elements<W.ListItem>().Select(choice => new DocumentContentControlChoice
             {
                 DisplayText = choice.DisplayText!.Value!,
                 Value = choice.Value!.Value!,
@@ -337,6 +342,12 @@ internal static class DocxContentControlCodec
         var control = source.TextContentControl ?? throw new CodecException(
             "invalid_document_content_control",
             "Document content-control run has no control metadata.");
+        var properties = BuildProperties(control);
+        return new W.SdtRun(properties, new W.SdtContentRun(DocxCodec.BuildRun(source)));
+    }
+
+    private static W.SdtProperties BuildProperties(DocumentTextContentControl control)
+    {
         var properties = new W.SdtProperties();
         if (control.Alias.Length > 0) properties.Append(new W.SdtAlias { Val = control.Alias });
         properties.Append(
@@ -382,7 +393,7 @@ internal static class DocxContentControlCodec
         }
         else
             properties.Append(new W.SdtContentText());
-        return new W.SdtRun(properties, new W.SdtContentRun(DocxCodec.BuildRun(source)));
+        return properties;
     }
 
     internal static W.SdtBlock Build(DocumentBlock source)
@@ -395,13 +406,7 @@ internal static class DocxContentControlCodec
 
     internal static W.SdtBlock BuildBlock(DocumentTextContentControl control, W.Paragraph paragraph)
     {
-        var properties = new W.SdtProperties();
-        properties.Append(
-            new W.SdtAlias { Val = control.Alias },
-            new W.Tag { Val = control.Tag },
-            new W.SdtId { Val = checked((int)control.NativeId) },
-            new W.SdtContentText());
-        return new W.SdtBlock(properties, new W.SdtContentBlock(paragraph));
+        return new W.SdtBlock(BuildProperties(control), new W.SdtContentBlock(paragraph));
     }
 
     internal static void ApplyTableCell(
@@ -415,32 +420,70 @@ internal static class DocxContentControlCodec
         var sourceControl = source.TextContentControl;
         if ((requestedControl is null) != (sourceControl is null) ||
             requestedControl is not null && sourceControl is not null &&
-            (requestedControl.NativeId != sourceControl.NativeId || NormalizedType(requestedControl) != NormalizedType(sourceControl)))
+            (requestedControl.NativeId != sourceControl.NativeId ||
+             NormalizedType(requestedControl) != NormalizedType(sourceControl) ||
+             !ChoiceSignature(requestedControl).Equals(ChoiceSignature(sourceControl), StringComparison.Ordinal)))
             throw new CodecException(
                 "document_content_control_topology_changed",
                 $"{owner} content-control topology is source-bound.",
                 "word/document.xml");
         if (requestedControl is null) return;
         var content = cell.ChildElements.Where(child => child is not W.TableCellProperties).ToArray();
-        if (content.Length != 1 || content[0] is not W.SdtBlock sdt || !IsSupported(sdt))
+        if (content.Length != 1 || content[0] is not W.SdtBlock sdt || !IsSupported(sdt, allowTyped: true))
             throw new CodecException(
                 "unsupported_document_content_control",
-                $"{owner} no longer matches the canonical table-cell plain-text SDT profile.",
+                $"{owner} no longer matches a canonical table-cell text, checkbox, drop-down, combo-box, or date SDT profile.",
                 "word/document.xml");
         sdt.SdtProperties!.GetFirstChild<W.SdtAlias>()!.Val = requestedControl.Alias;
         sdt.SdtProperties.GetFirstChild<W.Tag>()!.Val = requestedControl.Tag;
+        ApplyMutableState(sdt.SdtProperties, requestedControl);
         var text = sdt.SdtContentBlock!.Descendants<W.Text>().Single();
         text.Text = visibleText;
         text.Space = visibleText.Length != visibleText.Trim().Length ? SpaceProcessingModeValues.Preserve : null;
-        var observed = Read(sdt, requestedControl.Id);
+        var observed = Read(sdt, requestedControl.Id, allowTyped: true);
         if (!observed.Text.Equals(visibleText, StringComparison.Ordinal) ||
-            !observed.BlockContentControl.Tag.Equals(requestedControl.Tag, StringComparison.Ordinal) ||
-            !observed.BlockContentControl.Alias.Equals(requestedControl.Alias, StringComparison.Ordinal) ||
-            observed.BlockContentControl.NativeId != requestedControl.NativeId)
+            !observed.BlockContentControl.Equals(requestedControl))
             throw new CodecException(
                 "document_semantics_not_applied",
                 $"{owner} content-control edit did not round trip through the canonical native profile.",
                 "word/document.xml");
+    }
+
+    private static void ApplyMutableState(W.SdtProperties properties, DocumentTextContentControl control)
+    {
+        switch (NormalizedType(control))
+        {
+            case DocumentContentControlType.Checkbox:
+                properties.GetFirstChild<W14.SdtContentCheckBox>()!.GetFirstChild<W14.Checked>()!.Val =
+                    control.Checked ? W14.OnOffValues.One : W14.OnOffValues.Zero;
+                break;
+            case DocumentContentControlType.DropDown:
+                properties.GetFirstChild<W.SdtContentDropDownList>()!.LastValue = control.SelectedValue;
+                break;
+            case DocumentContentControlType.ComboBox:
+                properties.GetFirstChild<W.SdtContentComboBox>()!.LastValue = control.Value;
+                break;
+            case DocumentContentControlType.Date:
+                var dateValue = ValidateDateValue(control.DateValue, control.Id);
+                properties.GetFirstChild<W.SdtContentDate>()!.FullDate =
+                    new DateTimeValue { InnerText = $"{dateValue}T00:00:00Z" };
+                break;
+        }
+    }
+
+    internal static void MaskTableCellModeledState(W.SdtBlock control)
+    {
+        var properties = control.SdtProperties!;
+        properties.GetFirstChild<W.SdtAlias>()!.Val = string.Empty;
+        properties.GetFirstChild<W.Tag>()!.Val = string.Empty;
+        if (properties.GetFirstChild<W14.SdtContentCheckBox>() is { } checkbox)
+            checkbox.GetFirstChild<W14.Checked>()!.Val = W14.OnOffValues.Zero;
+        else if (properties.GetFirstChild<W.SdtContentDropDownList>() is { } dropdown)
+            dropdown.LastValue = string.Empty;
+        else if (properties.GetFirstChild<W.SdtContentComboBox>() is { } comboBox)
+            comboBox.LastValue = string.Empty;
+        else if (properties.GetFirstChild<W.SdtContentDate>() is { } date)
+            date.FullDate = new DateTimeValue { InnerText = "0001-01-01T00:00:00Z" };
     }
 
     internal static void AssertTopology(DocumentParagraph requested, DocumentParagraph original, string blockId)

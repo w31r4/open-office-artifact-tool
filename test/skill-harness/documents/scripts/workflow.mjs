@@ -54,7 +54,16 @@ function addFixtureBlock(document, block = {}) {
         const row = Number(entry.row);
         const column = Number(entry.column);
         if (!Number.isInteger(row) || !Number.isInteger(column) || row < 0 || column < 0) throw new Error("Document fixture table-cell content controls require non-negative integer row and column indexes.");
-        table.getCell(row, column).addTextContentControl(entry.control || entry.contentControl || entry);
+        const control = entry.control || entry.contentControl || entry;
+        const cell = table.getCell(row, column);
+        switch (String(control.controlType ?? control.type ?? "text")) {
+          case "text": cell.addTextContentControl(control); break;
+          case "checkbox": cell.addCheckboxContentControl(control.checked ?? false, control); break;
+          case "dropdown": cell.addDropdownContentControl(control.choices, control); break;
+          case "comboBox": cell.addComboBoxContentControl(control.choices, control); break;
+          case "date": cell.addDateContentControl(control.dateValue, control); break;
+          default: throw new Error(`Unsupported document fixture table-cell content-control type: ${control.controlType ?? control.type}`);
+        }
       }
       return table;
     }

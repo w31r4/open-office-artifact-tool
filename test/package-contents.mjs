@@ -46,7 +46,7 @@ const maxPackedBytes = 9_840_000;
 // The repository-only MIT Default Template Library is excluded from the npm
 // tarball. Its retained Office/PNG sources must never consume this consumer
 // package budget.
-const maxUnpackedBytes = 24_410_000;
+const maxUnpackedBytes = 24_440_000;
 // Public Skill PNGs are required user-facing assets. They are retained with
 // byte-identical non-IDAT chunks and inflated scanline streams, but their IDAT
 // payloads are deterministically recompressed. Prevent future PNG tooling from

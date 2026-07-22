@@ -177,7 +177,7 @@ class DocumentContentControlHandle {
   get alias() { return this.control?.alias || ""; }
   set alias(value) {
     const next = String(value ?? "");
-    if ((this.placement === "block" || this.placement === "tableCell") && !next.length) throw new TypeError("Document block and table-cell text content controls require a non-empty alias.");
+    if ((this.placement === "block" || this.placement === "tableCell") && !next.length) throw new TypeError("Document block and table-cell content controls require a non-empty alias.");
     this.control.alias = next;
   }
   get nativeId() { return this.control?.nativeId; }
