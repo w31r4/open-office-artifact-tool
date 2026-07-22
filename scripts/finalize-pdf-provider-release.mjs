@@ -147,6 +147,11 @@ function releaseAssetUrl(base, asset) {
   return new URL(asset, base).href;
 }
 
+function deterministicBomSerial(...values) {
+  const digest = sha256(Buffer.from(values.join("\u0000"), "utf8"));
+  return `urn:uuid:${digest.slice(0, 8)}-${digest.slice(8, 12)}-5${digest.slice(13, 16)}-${(Number.parseInt(digest[16], 16) & 0x3 | 0x8).toString(16)}${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+}
+
 async function main() {
   const options = parseArguments(process.argv.slice(2));
   const manifests = await collectManifests(options.input);
@@ -175,6 +180,7 @@ async function main() {
   const releaseSbomBytes = Buffer.from(stableJson({
     bomFormat: "CycloneDX",
     specVersion: "1.5",
+    serialNumber: deterministicBomSerial(options.pack, options.version, options.repository, options.workflow, ...options.expectedPlatforms),
     version: 1,
     metadata: {
       component: {

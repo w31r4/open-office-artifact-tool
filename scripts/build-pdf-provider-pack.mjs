@@ -185,10 +185,19 @@ function stableJson(value) {
   return `${JSON.stringify(value, null, 2)}\n`;
 }
 
+function deterministicBomSerial(...values) {
+  const digest = sha256(Buffer.from(values.join("\u0000"), "utf8"));
+  // UUIDv5-shaped, deterministic identifier: the SBOM must be reproducible
+  // across reviewed rebuilds while still satisfying CycloneDX's serialNumber
+  // requirement for GitHub's SBOM attestation parser.
+  return `urn:uuid:${digest.slice(0, 8)}-${digest.slice(8, 12)}-5${digest.slice(13, 16)}-${(Number.parseInt(digest[16], 16) & 0x3 | 0x8).toString(16)}${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+}
+
 function sbomFor({ pack, version, platform, sourceUrl, sourceSha256, license, payloadEntries }) {
   return {
     bomFormat: "CycloneDX",
     specVersion: "1.5",
+    serialNumber: deterministicBomSerial(pack, version, platform, sourceUrl, sourceSha256),
     version: 1,
     metadata: {
       component: {

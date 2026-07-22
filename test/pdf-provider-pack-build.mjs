@@ -61,7 +61,9 @@ try {
   assert.equal((await fs.stat(path.join(unpacked, "bin", "tool"))).mode & 0o111, 0o111);
   assert.equal(await fs.readFile(path.join(unpacked, "share", "data", "fixture.txt"), "utf8"), "fixture\n");
   assert.match(await fs.readFile(path.join(unpacked, "THIRD_PARTY_NOTICES.md"), "utf8"), /fixture notices/);
-  assert.equal(JSON.parse(await fs.readFile(path.join(unpacked, "sbom.cdx.json"), "utf8")).bomFormat, "CycloneDX");
+  const embeddedSbom = JSON.parse(await fs.readFile(path.join(unpacked, "sbom.cdx.json"), "utf8"));
+  assert.equal(embeddedSbom.bomFormat, "CycloneDX");
+  assert.match(embeddedSbom.serialNumber, /^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
 
   const linuxArguments = [...arguments_];
   linuxArguments[linuxArguments.indexOf("darwin-arm64")] = "linux-x64";
@@ -76,7 +78,9 @@ try {
   assert.equal(finalized.catalogFragment.state, "published");
   assert.deepEqual(finalized.catalogFragment.artifacts.map((artifact) => artifact.platform).sort(), ["darwin-arm64", "linux-x64"]);
   assert.equal(finalized.catalogFragment.artifacts.find((artifact) => artifact.platform === "linux-x64").sha256, linux.artifact.sha256);
-  assert.equal(JSON.parse(await fs.readFile(path.join(release, "fixture-pack-1.2.3.sbom.cdx.json"), "utf8")).bomFormat, "CycloneDX");
+  const releaseSbom = JSON.parse(await fs.readFile(path.join(release, "fixture-pack-1.2.3.sbom.cdx.json"), "utf8"));
+  assert.equal(releaseSbom.bomFormat, "CycloneDX");
+  assert.match(releaseSbom.serialNumber, /^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
 
   const malicious = path.join(temporary, "malicious");
   await fs.mkdir(malicious);
