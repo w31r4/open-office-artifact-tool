@@ -2767,6 +2767,12 @@ message DocumentTableCell {
   // still must match exactly once and may span only adjacent same-format runs;
   // it is validated against the source cell hash.
   bool text_patchable = 6;
+  // One canonical block-level plain-text SDT wrapping the cell's only
+  // paragraph and run. The cell remains the semantic text owner; this message
+  // supplies typed Agent identity plus the native Word control binding.
+  // Inline, rich, nested, multi-paragraph, repeating-section, checkbox,
+  // list, date, data-bound, locked, and placeholder cell controls stay opaque.
+  DocumentTextContentControl text_content_control = 7;
 }
 
 message DocumentTableTextPatch {

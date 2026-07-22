@@ -468,7 +468,7 @@ internal static class DocxCodec
                     ulong verificationItems = 0;
                     var verified = ReadBodyBlock(sourceTable, ordinal, binding.BodyIndex, ref verificationItems, limits, context);
                     if (verified.ContentCase != DocumentBlock.ContentOneofCase.Table ||
-                        !DocxTableCodec.SemanticsMatchRequested(sourceTable, block.Table))
+                        !DocxTableCodec.SemanticsMatchRequested(sourceTable, block.Table, block.Id))
                         throw new CodecException(
                             "document_semantics_not_applied",
                             $"Document table block {ordinal} does not match the requested modeled semantics after editing.",
@@ -689,7 +689,7 @@ internal static class DocxCodec
                 break;
             case W.Table table:
                 block.StyleId = table.TableProperties?.TableStyle?.Val?.Value ?? string.Empty;
-                block.Table = DocxTableCodec.Read(table, out editable);
+                block.Table = DocxTableCodec.Read(table, out editable, block.Id);
                 semanticItems += checked((ulong)block.Table.Rows.Sum(row => row.Cells.Count));
                 break;
             default:
@@ -909,6 +909,11 @@ internal static class DocxCodec
                 semantic.Paragraph.BlockContentControl.Id = string.Empty;
             foreach (var run in semantic.Paragraph.Runs)
                 if (run.TextContentControl is not null) run.TextContentControl.Id = string.Empty;
+        }
+        else if (semantic.ContentCase == DocumentBlock.ContentOneofCase.Table)
+        {
+            foreach (var cell in semantic.Table.Rows.SelectMany(row => row.RichCells))
+                if (cell.TextContentControl is not null) cell.TextContentControl.Id = string.Empty;
         }
         return Hash(semantic.ToByteArray());
     }

@@ -6,6 +6,17 @@ import { validateDocxLinkPackageSemantics } from "../ooxml/docx-links.mjs";
 import { normalizeDocxBibliographySource, validateDocxBibliographyPackageSemantics } from "../ooxml/docx-bibliography.mjs";
 import { normalizeDocxSectionSettings, planDocxHeaderFooterSections, resolveDocxPageHeaderFooter } from "../ooxml/docx-sections.mjs";
 import { normalizeDocumentPictureBullet } from "../ooxml/docx-numbering.mjs";
+import {
+  documentCheckboxGlyph,
+  documentComboBoxVisibleText,
+  documentContentControlChoice,
+  documentContentControls,
+  documentTableCellContentControl,
+  normalizeDocumentComboBoxValue,
+  normalizeDocumentContentControl,
+  normalizeDocumentContentControlChoices,
+  normalizeDocumentDateValue,
+} from "./content-controls.mjs";
 import { FileBlob } from "../shared/file-blob.mjs";
 import { officeFontFamilies } from "../shared/font-design-metrics.mjs";
 import { aid } from "../shared/ids.mjs";
@@ -111,7 +122,27 @@ class DocumentTableCell {
   get verticalMerge() { return this._record()?.verticalMerge ?? "none"; }
   get editable() { return this._record()?.editable ?? true; }
   get textPatchable() { return this._record()?.textPatchable === true; }
-  inspectRecord() { return { kind: this.kind, id: this.id, textRangeId: this.textPatchable || this.editable ? `${this.id}/text` : undefined, tableId: this.tableId, row: this.row, column: this.column, gridColumn: this.gridColumn, columnSpan: this.columnSpan, rowSpan: this.rowSpan, verticalMerge: this.verticalMerge, editable: this.editable, textPatchable: this.textPatchable, pendingTextPatches: this.table.textPatches.filter((item) => item.row === this.row && item.column === this.column).length, value: this.value }; }
+  get contentControl() { return documentTableCellContentControl(this.table, this.row, this.column); }
+  addTextContentControl(config = {}) {
+    if (!Number.isInteger(this.row) || !Number.isInteger(this.column) || this.row < 0 || this.column < 0 || this.row >= this.table.values.length || this.column >= (this.table.values[this.row]?.length ?? 0)) {
+      throw new RangeError(`Document table cell ${this.id} must identify an existing physical cell before adding a content control.`);
+    }
+    if (!this.editable) throw new Error(`Document table cell ${this.id} is source-bound and cannot add a content control.`);
+    if (this.table.sourceBound && !this.contentControl) throw new Error(`Document table cell ${this.id} cannot add a content control to an imported table; imported control topology is source-bound.`);
+    if (this.table.textPatches.some((item) => item.row === this.row && item.column === this.column)) {
+      throw new Error(`Document table cell ${this.id} cannot combine a source-bound text patch with a content control.`);
+    }
+    this.table._ensureCellRecords();
+    const record = this._record();
+    if (record.contentControl) throw new Error(`Document table cell ${this.id} already has a content control.`);
+    const source = config.contentControl || config;
+    const control = normalizeDocumentContentControl({ ...source, controlType: source.controlType ?? source.type ?? "text" });
+    if (control.controlType !== "text") throw new TypeError("Document table-cell content controls currently support only plain text.");
+    if (!control.alias.length) throw new TypeError("Document table-cell text content controls require a non-empty alias.");
+    record.contentControl = control;
+    return this.contentControl;
+  }
+  inspectRecord() { return { kind: this.kind, id: this.id, textRangeId: this.textPatchable || this.editable ? `${this.id}/text` : undefined, tableId: this.tableId, row: this.row, column: this.column, gridColumn: this.gridColumn, columnSpan: this.columnSpan, rowSpan: this.rowSpan, verticalMerge: this.verticalMerge, editable: this.editable, textPatchable: this.textPatchable, contentControlId: this.contentControl?.id, pendingTextPatches: this.table.textPatches.filter((item) => item.row === this.row && item.column === this.column).length, value: this.value }; }
 }
 
 function documentTableDefaultColumnWidths(columns, widthDxa) {
@@ -126,6 +157,7 @@ class DocumentTableBlock {
     this.document = document;
     this.kind = "table";
     this.id = config.id || aid("dtb");
+    this.sourceBound = Boolean(config.sourceBound);
     this.name = config.name || "";
     this.styleId = config.styleId || config.style || "TableGrid";
     this.values = (config.values || Array.from({ length: config.rows || 1 }, () => Array.from({ length: config.columns || 1 }, () => ""))).map((row) => [...row]);
@@ -133,6 +165,10 @@ class DocumentTableBlock {
     this.columns = Math.max(0, ...this.values.map((row) => row.length));
     this.cells = Array.isArray(config.cells) ? config.cells.map((cell) => {
       const verticalMerge = String(cell.verticalMerge || "none");
+      const contentControl = normalizeDocumentContentControl(cell.contentControl ?? cell.textContentControl ?? cell.control);
+      if (contentControl?.controlType !== undefined && contentControl.controlType !== "text") throw new TypeError("Document table-cell content controls currently support only plain text.");
+      if (contentControl && !contentControl.alias.length) throw new TypeError("Document table-cell text content controls require a non-empty alias.");
+      if (contentControl && verticalMerge === "continue") throw new TypeError("Document vertical-merge continuation cells cannot contain content controls.");
       return {
         row: Math.max(0, Math.round(Number(cell.row) || 0)),
         column: Math.max(0, Math.round(Number(cell.column) || 0)),
@@ -142,6 +178,7 @@ class DocumentTableBlock {
         verticalMerge,
         editable: verticalMerge === "continue" ? false : cell.editable !== false,
         textPatchable: verticalMerge === "continue" ? false : cell.textPatchable === true,
+        ...(contentControl ? { contentControl } : {}),
       };
     }) : undefined;
     this.textPatches = Array.isArray(config.textPatches) ? config.textPatches.map((patch) => ({
@@ -170,128 +207,27 @@ class DocumentTableBlock {
   }
 
   ensureCell(row, column) { while (this.values.length <= row) this.values.push([]); while (this.values[row].length <= column) this.values[row].push(""); this.rows = this.values.length; this.columns = Math.max(this.columns, column + 1); }
+  _ensureCellRecords() {
+    if (this.cells) return this.cells;
+    if (!this.values.length || !this.columns || this.values.some((row) => row.length !== this.columns)) {
+      throw new Error(`Document table ${this.id} must be rectangular before adding a table-cell content control.`);
+    }
+    this.gridColumns = this.columns;
+    this.cells = this.values.flatMap((row, rowIndex) => row.map((_value, column) => ({
+      row: rowIndex,
+      column,
+      gridColumn: column,
+      columnSpan: 1,
+      rowSpan: 1,
+      verticalMerge: "none",
+      editable: true,
+      textPatchable: false,
+    })));
+    return this.cells;
+  }
   getCell(row, column) { return new DocumentTableCell(this, row, column); }
   inspectRecord(index) { return { kind: "table", id: this.id, index, name: this.name || undefined, rows: this.rows, cols: this.columns, gridColumns: this.gridColumns, cells: this.cells, pendingTextPatches: this.textPatches.length, styleId: this.styleId, widthDxa: this.widthDxa, indentDxa: this.indentDxa, columnWidthsDxa: this.columnWidthsDxa, cellMarginsDxa: this.cellMarginsDxa, borderColor: this.borderColor, borderSize: this.borderSize, headerFill: this.headerFill, values: this.values.map((row, rowIndex) => row.map((_, columnIndex) => this.getCell(rowIndex, columnIndex).value)) }; }
   toProto() { return { kind: "table", id: this.id, name: this.name, styleId: this.styleId, gridColumns: this.gridColumns, cells: this.cells, textPatches: this.textPatches, widthDxa: this.widthDxa, indentDxa: this.indentDxa, columnWidthsDxa: this.columnWidthsDxa, cellMarginsDxa: this.cellMarginsDxa, borderColor: this.borderColor, borderSize: this.borderSize, headerFill: this.headerFill, values: this.values }; }
-}
-
-const DOCUMENT_CHECKBOX_GLYPHS = Object.freeze({ checked: "☒", unchecked: "☐" });
-const DOCUMENT_DROPDOWN_MAX_CHOICES = 256;
-const DOCUMENT_DROPDOWN_MAX_TEXT_LENGTH = 255;
-const DOCUMENT_DATE_VALUE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
-
-function documentCheckboxGlyph(checked) {
-  return checked ? DOCUMENT_CHECKBOX_GLYPHS.checked : DOCUMENT_CHECKBOX_GLYPHS.unchecked;
-}
-
-function normalizeDocumentContentControlChoices(value, controlType = "drop-down") {
-  if (!Array.isArray(value) || value.length < 1 || value.length > DOCUMENT_DROPDOWN_MAX_CHOICES) {
-    throw new TypeError(`Document ${controlType} content control requires 1 through ${DOCUMENT_DROPDOWN_MAX_CHOICES} choices.`);
-  }
-  const values = new Set();
-  const displayTexts = new Set();
-  return value.map((choice, index) => {
-    const source = typeof choice === "string" ? { displayText: choice, value: choice } : choice;
-    if (!source || typeof source !== "object") throw new TypeError(`Document ${controlType} choice ${index + 1} must be a string or object.`);
-    const displayText = source.displayText ?? source.text ?? source.label ?? "";
-    const itemValue = source.value ?? source.id ?? "";
-    if (typeof displayText !== "string" || typeof itemValue !== "string") {
-      throw new TypeError(`Document ${controlType} choice ${index + 1} displayText and value must be strings.`);
-    }
-    if (!displayText || !itemValue || displayText.length > DOCUMENT_DROPDOWN_MAX_TEXT_LENGTH || itemValue.length > DOCUMENT_DROPDOWN_MAX_TEXT_LENGTH || !isXmlSafeText(displayText) || !isXmlSafeText(itemValue) || /[\u0000-\u001f\u007f]/.test(displayText + itemValue)) {
-      throw new TypeError(`Document ${controlType} choice ${index + 1} requires XML-safe displayText and value strings of 1 through ${DOCUMENT_DROPDOWN_MAX_TEXT_LENGTH} characters.`);
-    }
-    if (values.has(itemValue) || displayTexts.has(displayText)) {
-      throw new TypeError(`Document ${controlType} content-control choice values and displayText strings must be unique.`);
-    }
-    values.add(itemValue);
-    displayTexts.add(displayText);
-    return { displayText, value: itemValue };
-  });
-}
-
-function documentContentControlChoice(control, value) {
-  return control?.choices?.find((choice) => choice.value === value);
-}
-
-function normalizeDocumentComboBoxValue(value) {
-  if (typeof value !== "string") throw new TypeError("Document combo-box content-control value must be a string.");
-  if (!value || value.length > DOCUMENT_DROPDOWN_MAX_TEXT_LENGTH || !isXmlSafeText(value) || /[\u0000-\u001f\u007f]/.test(value)) {
-    throw new TypeError(`Document combo-box content-control value must be XML-safe and contain 1 through ${DOCUMENT_DROPDOWN_MAX_TEXT_LENGTH} characters.`);
-  }
-  return value;
-}
-
-function documentComboBoxVisibleText(control, value = control?.value) {
-  return documentContentControlChoice(control, value)?.displayText ?? value;
-}
-
-function normalizeDocumentDateValue(value) {
-  if (typeof value !== "string") throw new TypeError("Document date content-control dateValue must be a string in YYYY-MM-DD form.");
-  const match = DOCUMENT_DATE_VALUE_PATTERN.exec(value);
-  if (!match) throw new TypeError("Document date content-control dateValue must use canonical YYYY-MM-DD form.");
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
-  const daysInMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-  if (year < 1 || month < 1 || month > 12 || day < 1 || day > daysInMonth[month - 1]) {
-    throw new TypeError("Document date content-control dateValue must be a real Gregorian date from 0001-01-01 through 9999-12-31.");
-  }
-  return value;
-}
-
-function normalizeDocumentContentControl(value) {
-  if (value == null || value === false) return undefined;
-  const source = typeof value === "string" ? { tag: value } : value;
-  if (!source || typeof source !== "object") throw new TypeError("Document content control must be an object or tag string.");
-  const tag = String(source.tag ?? source.name ?? "").trim();
-  if (!tag) throw new TypeError("Document content control requires a non-empty tag.");
-  const nativeId = source.nativeId == null ? undefined : Number(source.nativeId);
-  if (nativeId !== undefined && (!Number.isInteger(nativeId) || nativeId < 1 || nativeId > 0x7fffffff)) {
-    throw new TypeError("Document content control nativeId must be an integer from 1 through 2147483647.");
-  }
-  const inferredType = source.checked !== undefined
-    ? "checkbox"
-    : source.dateValue !== undefined ? "date"
-    : source.choices !== undefined || source.items !== undefined || source.options !== undefined || source.selectedValue !== undefined ? "dropdown" : "text";
-  const rawType = String(source.controlType ?? source.type ?? inferredType).trim().toLowerCase();
-  const controlType = rawType === "text" || rawType === "plain-text" || rawType === "plaintext"
-    ? "text"
-    : rawType === "checkbox" || rawType === "check-box" ? "checkbox"
-      : rawType === "dropdown" || rawType === "drop-down" || rawType === "drop_down" ? "dropdown"
-        : rawType === "combobox" || rawType === "combo-box" || rawType === "combo_box" ? "comboBox"
-          : rawType === "date" || rawType === "datepicker" || rawType === "date-picker" || rawType === "date_picker" ? "date" : undefined;
-  if (!controlType) throw new TypeError("Document content control type must be text, checkbox, dropdown, comboBox, or date.");
-  if (controlType === "checkbox" && source.checked !== undefined && typeof source.checked !== "boolean") {
-    throw new TypeError("Document checkbox content control checked state must be boolean.");
-  }
-  const choices = controlType === "dropdown" || controlType === "comboBox"
-    ? normalizeDocumentContentControlChoices(source.choices ?? source.items ?? source.options, controlType === "comboBox" ? "combo-box" : "drop-down")
-    : undefined;
-  const requestedSelectedValue = source.selectedValue ?? source.value;
-  if (controlType === "dropdown" && requestedSelectedValue !== undefined && typeof requestedSelectedValue !== "string") {
-    throw new TypeError("Document drop-down content-control selectedValue must be a string.");
-  }
-  const selectedValue = controlType === "dropdown" ? requestedSelectedValue ?? choices[0].value : undefined;
-  if (controlType === "dropdown" && !choices.some((choice) => choice.value === selectedValue)) {
-    throw new TypeError(`Document drop-down content-control selectedValue ${selectedValue} does not match a choice value.`);
-  }
-  const comboBoxValue = controlType === "comboBox"
-    ? normalizeDocumentComboBoxValue(source.value ?? source.selectedValue ?? choices[0].value)
-    : undefined;
-  const dateValue = controlType === "date" ? normalizeDocumentDateValue(source.dateValue ?? source.value) : undefined;
-  return {
-    id: String(source.id || aid("dcc")),
-    tag,
-    alias: String(source.alias ?? source.title ?? tag),
-    nativeId,
-    controlType,
-    ...(controlType === "checkbox" ? { checked: source.checked === true } : {}),
-    ...(controlType === "dropdown" ? { choices, selectedValue } : {}),
-    ...(controlType === "comboBox" ? { choices, value: comboBoxValue } : {}),
-    ...(controlType === "date" ? { dateValue } : {}),
-  };
 }
 
 function normalizeDocumentInlineField(value) {
@@ -459,101 +395,6 @@ class DocumentParagraphBlock {
   }
   inspectRecord(index) { return { kind: "paragraph", id: this.id, index, name: this.name || undefined, styleId: this.styleId, textEditable: this.textEditable, textPatchable: this.textPatchable, pendingTextPatches: this.textPatches.length, textRangeId: this.textEditable || this.textPatchable ? `${this.id}/text` : undefined, paragraphFormat: Object.keys(this.paragraphFormat).length ? this.paragraphFormat : undefined, blockContentControl: this.blockContentControl, text: this.text, textChars: this.text.length, runs: documentRunsNeedSerialization(this.runs) ? this.runs : undefined }; }
   toProto() { return { kind: "paragraph", id: this.id, name: this.name, styleId: this.styleId, textEditable: this.textEditable, textPatchable: this.textPatchable, textPatches: this.textPatches, paragraphFormat: Object.keys(this.paragraphFormat).length ? this.paragraphFormat : undefined, blockContentControl: this.blockContentControl, text: this.text, runs: documentRunsNeedSerialization(this.runs) ? this.runs : undefined }; }
-}
-
-class DocumentContentControlHandle {
-  constructor(block, runIndex) { this.document = block.document; this.block = block; this.runIndex = runIndex; this.placement = runIndex === undefined ? "block" : "inline"; this.kind = "contentControl"; }
-  get run() { return this.placement === "block" ? this.block.runs[0] : this.block.runs[this.runIndex]; }
-  get control() { return this.placement === "block" ? this.block.blockContentControl : this.run?.contentControl; }
-  get id() { return this.control?.id; }
-  get targetId() { return this.block.id; }
-  get tag() { return this.control?.tag || ""; }
-  set tag(value) { this.control.tag = String(value ?? "").trim(); }
-  get alias() { return this.control?.alias || ""; }
-  set alias(value) {
-    const next = String(value ?? "");
-    if (this.placement === "block" && !next.length) throw new TypeError("Document block text content controls require a non-empty alias.");
-    this.control.alias = next;
-  }
-  get nativeId() { return this.control?.nativeId; }
-  get controlType() { return this.control?.controlType || "text"; }
-  get text() { return this.placement === "block" ? String(this.block.text ?? "") : String(this.run?.text ?? ""); }
-  set text(value) {
-    if (this.controlType === "checkbox") throw new TypeError("Checkbox content-control text is codec-owned; set checked instead.");
-    if (this.controlType === "dropdown") throw new TypeError("Drop-down content-control text is codec-owned; set selectedValue instead.");
-    if (this.controlType === "comboBox") throw new TypeError("Combo-box content-control text is codec-owned; set value instead.");
-    if (this.controlType === "date") throw new TypeError("Date content-control text is codec-owned; set dateValue instead.");
-    if (this.controlType !== "text") throw new TypeError(`Unsupported ${this.controlType} content-control text mutation.`);
-    this.run.text = String(value ?? "");
-    this.block._syncText();
-  }
-  get checked() { return this.controlType === "checkbox" ? this.control?.checked === true : undefined; }
-  set checked(value) {
-    if (this.controlType !== "checkbox") throw new TypeError("Only checkbox content controls have checked state.");
-    if (typeof value !== "boolean") throw new TypeError("Document checkbox content control checked state must be boolean.");
-    this.control.checked = value;
-    this.run.text = documentCheckboxGlyph(value);
-    this.block._syncText();
-  }
-  get choices() { return this.controlType === "dropdown" || this.controlType === "comboBox" ? this.control.choices.map((choice) => ({ ...choice })) : undefined; }
-  get selectedValue() { return this.controlType === "dropdown" ? this.control?.selectedValue : undefined; }
-  set selectedValue(value) {
-    if (this.controlType !== "dropdown") throw new TypeError("Only drop-down content controls have selectedValue state.");
-    if (typeof value !== "string") throw new TypeError("Document drop-down content-control selectedValue must be a string.");
-    const selectedValue = value;
-    const choice = documentContentControlChoice(this.control, selectedValue);
-    if (!choice) throw new TypeError(`Document drop-down content-control selectedValue ${selectedValue} does not match a choice value.`);
-    this.control.selectedValue = selectedValue;
-    this.run.text = choice.displayText;
-    this.block._syncText();
-  }
-  get value() { return this.controlType === "comboBox" ? this.control?.value : undefined; }
-  set value(value) {
-    if (this.controlType !== "comboBox") throw new TypeError("Only combo-box content controls have editable value state.");
-    const next = normalizeDocumentComboBoxValue(value);
-    this.control.value = next;
-    this.run.text = documentComboBoxVisibleText(this.control, next);
-    this.block._syncText();
-  }
-  get dateValue() { return this.controlType === "date" ? this.control?.dateValue : undefined; }
-  set dateValue(value) {
-    if (this.controlType !== "date") throw new TypeError("Only date content controls have dateValue state.");
-    const next = normalizeDocumentDateValue(value);
-    this.control.dateValue = next;
-    this.run.text = next;
-    this.block._syncText();
-  }
-  inspectRecord() {
-    return {
-      kind: this.kind,
-      id: this.id,
-      targetId: this.targetId,
-      placement: this.placement,
-      runIndex: this.runIndex,
-      tag: this.tag,
-      alias: this.alias,
-      nativeId: this.nativeId,
-      controlType: this.controlType,
-      ...(this.controlType === "checkbox"
-        ? { checked: this.checked, visibleText: this.text }
-        : this.controlType === "dropdown"
-          ? { choices: this.choices, selectedValue: this.selectedValue, visibleText: this.text }
-          : this.controlType === "comboBox"
-            ? { choices: this.choices, value: this.value, visibleText: this.text }
-            : this.controlType === "date"
-              ? { dateValue: this.dateValue, visibleText: this.text }
-          : { text: this.text, textChars: this.text.length }),
-    };
-  }
-}
-
-function documentContentControls(document) {
-  return document.blocks.flatMap((block) => block.kind === "paragraph"
-    ? [
-        ...(block.blockContentControl ? [new DocumentContentControlHandle(block)] : []),
-        ...block.runs.flatMap((run, runIndex) => run.contentControl ? [new DocumentContentControlHandle(block, runIndex)] : []),
-      ]
-    : []);
 }
 
 class DocumentChangeBlock {
@@ -1592,6 +1433,7 @@ export class DocumentModel {
       if (control.alias.length > 255 || /[\u0000-\u001f\u007f]/.test(control.alias)) issues.push(verificationIssue("document", "invalidContentControlAlias", `Content control ${control.id} alias must contain at most 255 characters without controls.`, { id: control.id, alias: control.alias }));
       if (control.controlType !== "text" && control.controlType !== "checkbox" && control.controlType !== "dropdown" && control.controlType !== "comboBox" && control.controlType !== "date") issues.push(verificationIssue("document", "invalidContentControlType", `Content control ${control.id} type must be text, checkbox, dropdown, comboBox, or date.`, { id: control.id, controlType: control.controlType }));
       if (control.placement === "block" && (control.controlType !== "text" || control.block.runs.length !== 1 || control.block.runs.some((run) => run.contentControl || run.inlineField) || control.block.runs[0]?.text !== control.block.text)) issues.push(verificationIssue("document", "invalidBlockContentControl", `Block content control ${control.id} must be plain text around exactly one ordinary paragraph run whose text matches the paragraph.`, { id: control.id, targetId: control.targetId }));
+      if (control.placement === "tableCell" && (control.controlType !== "text" || !control.alias.length || control.block.getCell(control.row, control.column).value !== control.text)) issues.push(verificationIssue("document", "invalidTableCellContentControl", `Table-cell content control ${control.id} must be plain text around one canonical physical cell paragraph with a non-empty alias.`, { id: control.id, targetId: control.targetId }));
       if (control.controlType === "checkbox" && (typeof control.checked !== "boolean" || control.text !== documentCheckboxGlyph(control.checked))) issues.push(verificationIssue("document", "invalidCheckboxContentControl", `Checkbox content control ${control.id} must have boolean checked state and its canonical visible glyph.`, { id: control.id, checked: control.checked, visibleText: control.text }));
       if (control.controlType === "dropdown") {
         try {

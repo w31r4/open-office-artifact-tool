@@ -133,9 +133,11 @@ internal static class DocxTableGeometry
 
     internal static bool IsSimpleCell(W.TableCell cell)
     {
-        if (cell.ChildElements.Any(child => child is not W.TableCellProperties and not W.Paragraph)) return false;
+        if (cell.ChildElements.Any(child => child is not W.TableCellProperties and not W.Paragraph and not W.SdtBlock)) return false;
         var paragraphs = cell.Elements<W.Paragraph>().ToArray();
-        if (paragraphs.Length != 1) return false;
+        var controls = cell.Elements<W.SdtBlock>().ToArray();
+        if (paragraphs.Length == 0 && controls.Length == 1) return DocxContentControlCodec.IsSupported(controls[0]);
+        if (paragraphs.Length != 1 || controls.Length != 0) return false;
         var paragraph = paragraphs[0];
         if (paragraph.ChildElements.Any(child => child is not W.ParagraphProperties and not W.Run)) return false;
         var runs = paragraph.Elements<W.Run>().ToArray();

@@ -230,12 +230,13 @@ try {
     ["REVIEW_DATE", "date", "2028-02-29"],
     ["APPROVED", "checkbox", true],
     ["EXECUTIVE_SUMMARY", "text", "Ready for approval"],
+    ["TABLE_OWNER", "text", "Katherine Johnson"],
   ]);
   assert.equal(controls.qa.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
   assert.equal(controlsDocument.inspect({ kind: "contentControl" }).ndjson.includes("Customer name"), true);
   const controlsZip = await JSZip.loadAsync(await fs.readFile(controls.docxPath));
   const controlsXml = await controlsZip.file("word/document.xml").async("text");
-  assert.equal((controlsXml.match(/<w:sdt>/g) || []).length, 7);
+  assert.equal((controlsXml.match(/<w:sdt>/g) || []).length, 8);
   assert.match(controlsXml, /<w:tag w:val="CUSTOMER_NAME"\s*\/>/);
   assert.match(controlsXml, /<w:tag w:val="ACCOUNT_ID"\s*\/>/);
   assert.match(controlsXml, /<w:tag w:val="APPROVED"\s*\/>/);
@@ -244,7 +245,11 @@ try {
   assert.match(controlsXml, /<w:tag w:val="CONTACT_METHOD"\s*\/>[\s\S]*<w:comboBox w:lastValue="Pager duty">[\s\S]*<w:listItem(?=[^>]*w:displayText="Phone call")(?=[^>]*w:value="phone")[^>]*\/>/);
   assert.match(controlsXml, /<w:tag w:val="REVIEW_DATE"\s*\/>[\s\S]*<w:date w:fullDate="2028-02-29T00:00:00Z">[\s\S]*<w:dateFormat w:val="yyyy-MM-dd"\s*\/>/);
   assert.match(controlsXml, /<w:body>[\s\S]*<w:sdt>[\s\S]*?<w:tag w:val="EXECUTIVE_SUMMARY"\s*\/>[\s\S]*?<w:text\s*\/>[\s\S]*?<w:sdtContent>\s*<w:p>[\s\S]*Ready for approval[\s\S]*?<\/w:p>\s*<\/w:sdtContent>\s*<\/w:sdt>/);
-  assert.equal(controlsDocument.contentControls.at(-1).placement, "block");
+  assert.equal(controlsDocument.contentControls.find((control) => control.tag === "EXECUTIVE_SUMMARY").placement, "block");
+  const tableCellControl = controlsDocument.contentControls.find((control) => control.tag === "TABLE_OWNER");
+  assert.equal(tableCellControl.placement, "tableCell");
+  assert.equal(tableCellControl.text, "Katherine Johnson");
+  assert.match(controlsXml, /<w:tc>[\s\S]*?<w:sdt>[\s\S]*?<w:tag w:val="TABLE_OWNER"\s*\/>[\s\S]*?Katherine Johnson[\s\S]*?<\/w:sdt>[\s\S]*?<\/w:tc>/);
 
   const bibliography = await runFixture("open-chestnut-bibliography");
   const bibliographyDocument = await DocumentFile.importDocx(await FileBlob.load(bibliography.docxPath));
@@ -821,6 +826,7 @@ try {
   assert.match(skillText, /document\.addDeletion/);
   assert.match(skillText, /paragraph\.addTextContentControl/);
   assert.match(skillText, /document\.addBlockTextContentControl/);
+  assert.match(skillText, /table\.getCell\(row, column\)\.addTextContentControl/);
   assert.match(skillText, /paragraph\.addCheckboxContentControl/);
   assert.match(skillText, /paragraph\.addDropdownContentControl/);
   assert.match(skillText, /paragraph\.addComboBoxContentControl/);
@@ -864,6 +870,7 @@ try {
   const controlsGuide = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "tasks", "forms_content_controls.md"), "utf8");
   assert.match(controlsGuide, /paragraph\.addTextContentControl/);
   assert.match(controlsGuide, /document\.addBlockTextContentControl/);
+  assert.match(controlsGuide, /table\.getCell\(row, column\)\.addTextContentControl/);
   assert.match(controlsGuide, /paragraph\.addCheckboxContentControl/);
   assert.match(controlsGuide, /paragraph\.addDropdownContentControl/);
   assert.match(controlsGuide, /paragraph\.addComboBoxContentControl/);
@@ -873,7 +880,7 @@ try {
   assert.match(controlsGuide, /document\.setDropdownContentControls/);
   assert.match(controlsGuide, /document\.setComboBoxContentControls/);
   assert.match(controlsGuide, /document\.setDateContentControls/);
-  assert.match(controlsGuide, /Rich.*multi-paragraph.*table\/cell.*nested.*data-bound.*irregular.*localized-date.*custom-symbol checkbox/is);
+  assert.match(controlsGuide, /rich.*multi-paragraph.*inline-within-cell.*nested.*data-bound.*irregular.*localized.*custom-symbol checkbox/is);
   const protectionGuide = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "tasks", "protection_restrict_editing.md"), "utf8");
   assert.match(protectionGuide, /document\.setSettings\(\{ documentProtection/);
   assert.match(protectionGuide, /not encryption/i);

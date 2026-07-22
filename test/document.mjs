@@ -789,6 +789,78 @@ assert.throws(
   /exactly one ordinary paragraph run/i,
 );
 
+const tableCellControlDocument = DocumentModel.create({ name: "Table-cell content-control profile", blocks: [] });
+tableCellControlDocument.applyDesignPreset("report");
+const tableCellControlTable = tableCellControlDocument.addTable({
+  id: "owner-table",
+  values: [["Field", "Value"], ["Owner", "Ada Lovelace"]],
+});
+const tableCellControl = tableCellControlTable.getCell(1, 1).addTextContentControl({
+  id: "table-owner-control",
+  tag: "TABLE_OWNER",
+  alias: "Table owner",
+});
+assert.equal(tableCellControl.placement, "tableCell");
+assert.equal(tableCellControl.targetId, "owner-table/cell/1/1");
+assert.equal(tableCellControl.row, 1);
+assert.equal(tableCellControl.column, 1);
+assert.equal(tableCellControl.text, "Ada Lovelace");
+assert.equal(tableCellControlTable.getCell(1, 1).contentControl.id, tableCellControl.id);
+assert.equal(tableCellControlDocument.resolve(tableCellControl.id).targetId, tableCellControl.targetId);
+assert.equal(tableCellControlDocument.resolve(tableCellControl.targetId).contentControl.id, tableCellControl.id);
+assert.match(tableCellControlDocument.inspect({ kind: "contentControl" }).ndjson, /"placement":"tableCell"/);
+assert.deepEqual(tableCellControlDocument.fillContentControls({ TABLE_OWNER: "Grace Hopper" }), { updated: 1, matchedTags: ["TABLE_OWNER"], missingTags: [] });
+assert.equal(tableCellControlTable.values[1][1], "Grace Hopper");
+assert.equal(tableCellControlDocument.verify().ok, true);
+const tableCellControlDocx = await DocumentFile.exportDocx(tableCellControlDocument);
+const tableCellControlZip = await JSZip.loadAsync(await tableCellControlDocx.arrayBuffer());
+const tableCellControlXml = await tableCellControlZip.file("word/document.xml").async("text");
+assert.match(tableCellControlXml, /<w:tc>[\s\S]*?<w:sdt>[\s\S]*?<w:tag w:val="TABLE_OWNER"\s*\/>[\s\S]*?<w:text\s*\/>[\s\S]*?<w:sdtContent>\s*<w:p>[\s\S]*?Grace Hopper[\s\S]*?<\/w:p>\s*<\/w:sdtContent>\s*<\/w:sdt>[\s\S]*?<\/w:tc>/);
+const importedTableCellControlDocument = await DocumentFile.importDocx(tableCellControlDocx);
+const importedTableCellControl = importedTableCellControlDocument.contentControls.find((control) => control.tag === "TABLE_OWNER");
+assert.equal(importedTableCellControl.placement, "tableCell");
+assert.equal(importedTableCellControl.text, "Grace Hopper");
+assert.ok(Number.isInteger(importedTableCellControl.nativeId));
+assert.equal(importedTableCellControlDocument.resolve(importedTableCellControl.targetId).value, "Grace Hopper");
+const unchangedTableCellControlDocx = await DocumentFile.exportDocx(importedTableCellControlDocument);
+assert.deepEqual(Buffer.from(await unchangedTableCellControlDocx.arrayBuffer()), Buffer.from(await tableCellControlDocx.arrayBuffer()), "unchanged imported table-cell content control must preserve source bytes");
+importedTableCellControlDocument.fillContentControls({ TABLE_OWNER: "Katherine Johnson" });
+importedTableCellControl.tag = "OWNER";
+importedTableCellControl.alias = "Owner";
+const roundTripTableCellControlDocument = await DocumentFile.importDocx(await DocumentFile.exportDocx(importedTableCellControlDocument));
+const roundTripTableCellControl = roundTripTableCellControlDocument.contentControls.find((control) => control.tag === "OWNER");
+assert.equal(roundTripTableCellControl.text, "Katherine Johnson");
+assert.equal(roundTripTableCellControl.alias, "Owner");
+assert.equal(roundTripTableCellControlDocument.resolve(roundTripTableCellControl.targetId).value, "Katherine Johnson");
+const tableCellControlTopologyTamper = await DocumentFile.importDocx(tableCellControlDocx);
+delete tableCellControlTopologyTamper.blocks.find((block) => block.kind === "table").cells.find((cell) => cell.row === 1 && cell.column === 1).contentControl;
+await assert.rejects(
+  () => DocumentFile.exportDocx(tableCellControlTopologyTamper),
+  (error) => error?.code === "document_content_control_topology_changed" && /source-bound/i.test(error.message),
+);
+const importedOrdinaryTableDocument = await DocumentFile.importDocx(firstDocx);
+const importedOrdinaryTable = importedOrdinaryTableDocument.blocks.find((block) => block.kind === "table");
+assert.throws(
+  () => importedOrdinaryTable.getCell(0, 0).addTextContentControl({ tag: "NEW_IMPORTED_CONTROL", alias: "New imported control" }),
+  /cannot add a content control to an imported table.*topology is source-bound/i,
+);
+assert.throws(
+  () => tableCellControlTable.getCell(0, 1).addTextContentControl({ tag: "INVALID_TABLE_CHECKBOX", alias: "Invalid", controlType: "checkbox", checked: false }),
+  /only plain text/i,
+);
+assert.throws(
+  () => tableCellControlDocument.addTable({ values: [["A", "B"], ["C"]] }).getCell(0, 0).addTextContentControl({ tag: "RAGGED", alias: "Ragged" }),
+  /must be rectangular/i,
+);
+assert.throws(
+  () => tableCellControlTable.getCell(9, 9).addTextContentControl({ tag: "OUT_OF_RANGE", alias: "Out of range" }),
+  /existing physical cell/i,
+);
+assert.throws(
+  () => tableCellControlTable.getCell(0.5, 0).addTextContentControl({ tag: "FRACTIONAL", alias: "Fractional" }),
+  /existing physical cell/i,
+);
+
 const checkboxDocument = DocumentModel.create({ name: "Checkbox content-control profile", blocks: [] });
 const checkboxParagraph = checkboxDocument.addParagraph("Terms: ");
 checkboxParagraph.addCheckboxContentControl(false, {

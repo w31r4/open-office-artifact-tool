@@ -46,7 +46,18 @@ function addFixtureBlock(document, block = {}) {
   switch (block.kind) {
     case "paragraph": return document.addParagraph(block.text || "", config);
     case "listItem": return document.addListItem(block.text || "", config);
-    case "table": return document.addTable(config);
+    case "table": {
+      const cellControls = Array.isArray(config.cellContentControls) ? config.cellContentControls : [];
+      delete config.cellContentControls;
+      const table = document.addTable(config);
+      for (const entry of cellControls) {
+        const row = Number(entry.row);
+        const column = Number(entry.column);
+        if (!Number.isInteger(row) || !Number.isInteger(column) || row < 0 || column < 0) throw new Error("Document fixture table-cell content controls require non-negative integer row and column indexes.");
+        table.getCell(row, column).addTextContentControl(entry.control || entry.contentControl || entry);
+      }
+      return table;
+    }
     case "hyperlink": return document.addHyperlink(block.text || "", block.url, config);
     case "field": return document.addField(block.instruction, block.display, config);
     case "toc": return document.addTableOfContents(config);

@@ -14,9 +14,25 @@ namespace OpenChestnut.Codec;
 // carry an exact gridSpan/vMerge chain; ambiguous continuations fail closed.
 internal static class DocxTableCodec
 {
-    internal static DocumentTable Read(W.Table table, out bool editable)
+    internal static DocumentTable Read(W.Table table, out bool editable, string blockId = "document/table")
     {
         var artifact = DocxTableGeometry.Read(table, out var validGeometry);
+        var rows = table.Elements<W.TableRow>().ToArray();
+        for (var rowIndex = 0; rowIndex < rows.Length; rowIndex++)
+        {
+            var cells = rows[rowIndex].Elements<W.TableCell>().ToArray();
+            for (var cellIndex = 0; cellIndex < cells.Length; cellIndex++)
+            {
+                var content = cells[cellIndex].ChildElements.Where(child => child is not W.TableCellProperties).ToArray();
+                if (content.Length != 1 || content[0] is not W.SdtBlock sdt || !DocxContentControlCodec.IsSupported(sdt)) continue;
+                var paragraph = DocxContentControlCodec.Read(sdt, $"{blockId}/cell/{rowIndex}/{cellIndex}/content-control");
+                artifact.Rows[rowIndex].Cells[cellIndex] = paragraph.Text;
+                artifact.Rows[rowIndex].RichCells[cellIndex].TextContentControl = paragraph.BlockContentControl;
+                artifact.Rows[rowIndex].RichCells[cellIndex].Editable =
+                    artifact.Rows[rowIndex].RichCells[cellIndex].VerticalMerge != DocumentTableVerticalMerge.Continue;
+                artifact.Rows[rowIndex].RichCells[cellIndex].TextPatchable = false;
+            }
+        }
         artifact.Formatting = DocxTableFormatting.Read(table, artifact);
         editable = validGeometry && HasSafeContainerTopology(table) &&
                    artifact.Rows.SelectMany(row => row.RichCells).Any(cell => cell.Editable || cell.TextPatchable);
@@ -50,12 +66,23 @@ internal static class DocxTableCodec
             for (var cellIndex = 0; cellIndex < cells.Length; cellIndex++)
             {
                 var value = requested.Rows[rowIndex].Cells[cellIndex];
+                var requestedCell = requested.Rows[rowIndex].RichCells[cellIndex];
+                var sourceCell = source.Rows[rowIndex].RichCells[cellIndex];
+                DocxContentControlCodec.ApplyTableCell(
+                    cells[cellIndex],
+                    requestedCell,
+                    sourceCell,
+                    value,
+                    $"Document table cell {rowIndex},{cellIndex}");
                 if (value == source.Rows[rowIndex].Cells[cellIndex]) continue;
-                if (!source.Rows[rowIndex].RichCells[cellIndex].Editable)
+                if (!sourceCell.Editable)
                     throw Unsupported($"Source-preserving DOCX table cell {rowIndex},{cellIndex} is a continuation or complex cell and cannot be edited.");
-                var text = cells[cellIndex].Descendants<W.Text>().Single();
-                text.Text = value;
-                text.Space = value.Length != value.Trim().Length ? SpaceProcessingModeValues.Preserve : null;
+                if (requestedCell.TextContentControl is null)
+                {
+                    var text = cells[cellIndex].Descendants<W.Text>().Single();
+                    text.Text = value;
+                    text.Space = value.Length != value.Trim().Length ? SpaceProcessingModeValues.Preserve : null;
+                }
             }
         }
         ApplyTextPatches(rows, requested, source);
@@ -130,6 +157,14 @@ internal static class DocxTableCodec
         var artifact = DocxTableGeometry.Read(clone, out _);
         if (DocxTableFormatting.Read(clone, artifact) is not null)
             DocxTableFormatting.MaskModeled(clone, artifact);
+        foreach (var control in clone.Elements<W.TableRow>()
+                     .SelectMany(row => row.Elements<W.TableCell>())
+                     .SelectMany(cell => cell.Elements<W.SdtBlock>())
+                     .Where(DocxContentControlCodec.IsSupported))
+        {
+            control.SdtProperties!.GetFirstChild<W.SdtAlias>()!.Val = string.Empty;
+            control.SdtProperties.GetFirstChild<W.Tag>()!.Val = string.Empty;
+        }
         foreach (var text in clone.Descendants<W.Text>())
         {
             text.Text = string.Empty;
@@ -168,6 +203,9 @@ internal static class DocxTableCodec
                     throw Invalid($"Document table continuation cell {rowIndex},{cellIndex} cannot be text-patchable.");
                 if (cell.VerticalMerge != DocumentTableVerticalMerge.Continue && cell.RowSpan == 0)
                     throw Invalid($"Document table origin cell {rowIndex},{cellIndex} must have a positive row_span.");
+                if (cell.TextContentControl is not null &&
+                    (cell.VerticalMerge == DocumentTableVerticalMerge.Continue || !cell.Editable || cell.TextPatchable))
+                    throw Invalid($"Document table cell {rowIndex},{cellIndex} content control requires an editable origin cell and cannot combine with text patches.");
             }
         }
         foreach (var patch in table.TextPatches)
@@ -184,9 +222,9 @@ internal static class DocxTableCodec
             throw Invalid("Document table grid_columns must be between 1 and 4096 when rich cell geometry is present.");
     }
 
-    internal static bool SemanticsMatchRequested(W.Table table, DocumentTable requested)
+    internal static bool SemanticsMatchRequested(W.Table table, DocumentTable requested, string blockId = "document/table")
     {
-        var actual = Read(table, out _);
+        var actual = Read(table, out _, blockId);
         var expected = requested.Clone();
         foreach (var patch in expected.TextPatches)
         {
@@ -338,7 +376,10 @@ internal static class DocxTableCodec
         var runProperties = DocxTableFormatting.BuildHeaderRunProperties(formatting, header);
         if (runProperties is not null) run.Append(runProperties);
         run.Append(text);
-        cell.Append(new W.Paragraph(run));
+        var paragraph = new W.Paragraph(run);
+        cell.Append(geometry?.TextContentControl is { } control
+            ? DocxContentControlCodec.BuildBlock(control, paragraph)
+            : paragraph);
         return cell;
     }
 

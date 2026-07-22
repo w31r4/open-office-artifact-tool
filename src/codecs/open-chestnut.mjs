@@ -1732,12 +1732,16 @@ function publicDocumentParagraphFormatting(value) {
 }
 
 function planDocumentContentControls(document) {
-  const controls = document.blocks.flatMap((block) => block.kind === "paragraph"
-    ? [
-        ...(block.blockContentControl ? [{ block, target: block, control: block.blockContentControl }] : []),
-        ...block.runs.filter((run) => run.contentControl).map((run) => ({ block, target: run, control: run.contentControl })),
-      ]
-    : []);
+  const controls = document.blocks.flatMap((block) => {
+    if (block.kind === "paragraph") return [
+      ...(block.blockContentControl ? [{ block, target: block, control: block.blockContentControl }] : []),
+      ...block.runs.filter((run) => run.contentControl).map((run) => ({ block, target: run, control: run.contentControl })),
+    ];
+    if (block.kind === "table") return (block.cells || []).flatMap((cell) => cell.contentControl
+      ? [{ block, target: cell, control: cell.contentControl }]
+      : []);
+    return [];
+  });
   const used = new Set();
   for (const { block, control } of controls) {
     if (!control.id || !String(control.id).trim()) throw new OpenChestnutCodecError(`Document block ${block.id} content control requires a non-empty model ID.`, [], { code: "invalid_document_content_control" });
@@ -1980,6 +1984,7 @@ function documentTableCells(table) {
     verticalMerge: mergeName(cell.verticalMerge),
     editable: cell.editable,
     textPatchable: cell.textPatchable,
+    contentControl: publicDocumentContentControl(cell.textContentControl),
   })));
 }
 
@@ -1994,6 +1999,20 @@ function sameDocumentTableGeometry(block, table) {
       cell.rowSpan === source.rowSpan && cell.verticalMerge === source.verticalMerge &&
       cell.editable === source.editable && cell.textPatchable === source.textPatchable;
   });
+}
+
+function sameDocumentTableContentControlTopology(block, table) {
+  const sourceCells = documentTableCells(table);
+  if (!Array.isArray(block.cells) || block.cells.length !== sourceCells.length) return false;
+  return block.cells.every((cell, index) =>
+    (cell.contentControl?.nativeId ?? undefined) === (sourceCells[index].contentControl?.nativeId ?? undefined) &&
+    (cell.contentControl?.controlType ?? undefined) === (sourceCells[index].contentControl?.controlType ?? undefined));
+}
+
+function sameDocumentTableContentControls(block, table) {
+  const sourceCells = documentTableCells(table);
+  if (!Array.isArray(block.cells) || block.cells.length !== sourceCells.length) return false;
+  return block.cells.every((cell, index) => JSON.stringify(cell.contentControl) === JSON.stringify(sourceCells[index].contentControl));
 }
 
 function wireDocumentTableTextPatches(block, source) {
@@ -2028,7 +2047,7 @@ function wireDocumentTableTextPatches(block, source) {
   });
 }
 
-function authoredDocumentTableGeometry(block) {
+function authoredDocumentTableGeometry(block, contentControlNativeIds) {
   const invalid = (message) => {
     throw new OpenChestnutCodecError(`Document table ${block.id} ${message}`, [], { code: "invalid_document_table" });
   };
@@ -2084,6 +2103,9 @@ function authoredDocumentTableGeometry(block) {
         rowSpan,
         verticalMerge: merge,
         editable: verticalMerge !== "continue",
+        textContentControl: source.contentControl
+          ? wireDocumentContentControl(source.contentControl, contentControlNativeIds.get(source), `${block.id}/cell/${rowIndex}/${column}`)
+          : undefined,
       };
     });
     const gridBefore = richCells[0].gridColumn;
@@ -3136,6 +3158,7 @@ function unchangedSourceBlock(block, original, assets) {
     case "table": {
       if (block.kind !== "table" || block.textPatches?.length || !sameTableValues(block, original) ||
           !sameDocumentTableGeometry(block, original.content.value) ||
+          !sameDocumentTableContentControls(block, original.content.value) ||
           !sameDocumentTableFormatting(block, original.content.value)) return false;
       return block.styleId === original.styleId || (!original.styleId && block.styleId === "TableGrid");
     }
@@ -3274,7 +3297,10 @@ function documentBlock(block, original, directNumbering, assets, contentControlN
   }
   if (block.kind === "table") {
     const source = original?.content.case === "table" ? original.content.value : undefined;
-    const authored = !source && Array.isArray(block.cells) ? authoredDocumentTableGeometry(block) : undefined;
+    const authored = !source && Array.isArray(block.cells) ? authoredDocumentTableGeometry(block, contentControlNativeIds) : undefined;
+    if (source && !sameDocumentTableContentControlTopology(block, source)) {
+      throw new OpenChestnutCodecError(`Document table ${block.id} content-control topology is source-bound.`, [], { code: "document_content_control_topology_changed" });
+    }
     if (source && !sameDocumentTableGeometry(block, source)) {
       throw new OpenChestnutCodecError(`Document table ${block.id} grid, span, merge, and per-cell editability metadata are source-bound.`, [], { code: "unsupported_document_edit" });
     }
@@ -3309,7 +3335,16 @@ function documentBlock(block, original, directNumbering, assets, contentControlN
           rows: authored?.rows || (block.values || []).map((cells, rowIndex) => ({
             cells: cells.map((value) => String(value ?? "")),
             ...(source ? {
-              richCells: source.rows[rowIndex]?.richCells.map((cell) => ({ ...cell })) || [],
+              richCells: source.rows[rowIndex]?.richCells.map((cell, column) => {
+                const { $typeName: _typeName, ...cellValue } = cell;
+                const requestedCell = block.cells?.find((candidate) => candidate.row === rowIndex && candidate.column === column);
+                return {
+                  ...cellValue,
+                  textContentControl: requestedCell?.contentControl
+                    ? wireDocumentContentControl(requestedCell.contentControl, contentControlNativeIds.get(requestedCell), `${block.id}/cell/${rowIndex}/${column}`)
+                    : undefined,
+                };
+              }) || [],
               gridBefore: source.rows[rowIndex]?.gridBefore || 0,
               gridAfter: source.rows[rowIndex]?.gridAfter || 0,
             } : {}),
@@ -3815,6 +3850,7 @@ function documentFromEnvelope(envelope) {
           id: block.id,
           name: block.name,
           styleId: block.styleId || "TableGrid",
+          sourceBound: Boolean(block.source),
           values: block.content.value.rows.map((row) => [...row.cells]),
           gridColumns: block.content.value.gridColumns,
           cells: documentTableCells(block.content.value),

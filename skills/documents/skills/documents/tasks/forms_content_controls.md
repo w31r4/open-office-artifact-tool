@@ -9,6 +9,7 @@ Choose the route before editing:
 
 - Use public `paragraph.addTextContentControl(...)`,
   `document.addBlockTextContentControl(...)`,
+  `table.getCell(row, column).addTextContentControl(...)`,
   `paragraph.addCheckboxContentControl(...)`,
   `paragraph.addDropdownContentControl(...)`,
   `paragraph.addComboBoxContentControl(...)`,
@@ -17,13 +18,15 @@ Choose the route before editing:
   `document.setDropdownContentControls(...)`, and
   `document.setComboBoxContentControls(...)`, and
   `document.setDateContentControls(...)` for source-free body
-  paragraphs and recognized imported inline or one-paragraph block plain-text, canonical Word 2010+
+  paragraphs, source-free rectangular table cells, and recognized imported
+  inline, one-paragraph block, or one-paragraph table-cell plain-text; canonical Word 2010+
   checkbox, canonical Word drop-down, canonical Word combo-box, or canonical
   ISO/Gregorian date controls.
 - Use `scripts/content_controls.py` only for explicit package work such as
   wrapping placeholders in an existing template, controls in headers/footers,
   or inspection of controls outside the bounded public model.
-- Detect rich, multi-paragraph/table/cell/nested/data-bound block, irregular list-control,
+- Detect rich, multi-paragraph, inline-within-cell, nested/data-bound/locked/
+  placeholder/repeating-section cell controls and other irregular block controls, irregular list-control,
   localized/noncanonical date, legacy or custom-symbol checkbox,
   placeholder-document, and locked
   controls. Preserve them unchanged or fail closed; do not flatten them into
@@ -103,6 +106,35 @@ document.fillContentControls({
 topology are source-bound, while text, tag, alias, supported paragraph
 formatting, and supported run formatting remain editable within the fixed
 one-paragraph/one-run profile.
+
+### Author one table-cell plain-text control
+
+Use the cell primitive when a field owns one complete source-free table cell:
+
+```js
+const approvalTable = document.addTable({
+  id: "approval-matrix",
+  values: [["Role", "Owner"], ["Technical review", "{{TABLE_OWNER}}"]],
+});
+const owner = approvalTable.getCell(1, 1).addTextContentControl({
+  id: "table-owner",
+  tag: "TABLE_OWNER",
+  alias: "Table owner",
+});
+
+document.fillContentControls({ TABLE_OWNER: "Katherine Johnson" });
+```
+
+This authors one direct cell-level `w:sdt` around the cell's only
+`w:p/w:r/w:t`. Inspection reports `placement: "tableCell"`, the table-cell
+`targetId`, and `row`/`column`; `fillContentControls()` and direct `owner.text`
+mutation use the same typed text contract as body controls. The table must be
+rectangular. On recognized import, only text, tag, and alias may change; native
+ID, type, row/column, wrapper placement, and topology remain source-bound.
+Adding/removing a control in an imported ordinary table, merge-continuation
+cells, and rich, inline, nested, multi-paragraph, checkbox/list/date,
+data-bound, locked, placeholder, or repeating-section cell controls fail
+closed.
 
 ### Author and set one checkbox control
 
@@ -225,6 +257,8 @@ for (const control of imported.contentControls) {
     targetId: control.targetId,
     placement: control.placement,
     runIndex: control.runIndex,
+    row: control.row,
+    column: control.column,
     tag: control.tag,
     alias: control.alias,
     nativeId: control.nativeId,
@@ -331,7 +365,8 @@ through OpenChestnut where possible, and render again.
   display/value pairs of at most 255 characters; combo-box custom values are
   bounded to 1–255 characters. Dates must be real `0001-01-01` through
   `9999-12-31` Gregorian dates in exact `YYYY-MM-DD` form.
-- Rich, multi-paragraph/table/cell/nested/data-bound/locked/placeholder/repeating-section block,
+- Rich, multi-paragraph, inline-within-cell, nested/data-bound/locked/
+  placeholder/repeating-section or irregular cell controls, other irregular block controls,
   irregular drop-down/combo-box, localized-date,
   legacy checkbox, custom-symbol checkbox, placeholder-document, locked, or
   unrelated extension-bearing controls remain opaque and source-bound. Do not

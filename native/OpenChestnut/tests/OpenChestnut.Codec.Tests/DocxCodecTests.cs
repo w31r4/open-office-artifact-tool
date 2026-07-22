@@ -531,6 +531,137 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void TableCellPlainTextContentControlAuthorsImportsEditsAndBindsTopology()
+    {
+        var document = new DocumentArtifact { Id = "document/table-cell-control", Name = "Table-cell form" };
+        var tableBlock = new DocumentBlock
+        {
+            Id = "document/table-cell-control/table",
+            StyleId = "TableGrid",
+            Table = new DocumentTable { GridColumns = 2 },
+        };
+        var row = new DocumentTableRow();
+        row.Cells.Add("Field");
+        row.Cells.Add("Initial value");
+        row.RichCells.Add(new DocumentTableCell
+        {
+            GridColumn = 0,
+            ColumnSpan = 1,
+            RowSpan = 1,
+            Editable = true,
+        });
+        row.RichCells.Add(new DocumentTableCell
+        {
+            GridColumn = 1,
+            ColumnSpan = 1,
+            RowSpan = 1,
+            Editable = true,
+            TextContentControl = new DocumentTextContentControl
+            {
+                Id = "table-owner-control",
+                Tag = "TABLE_OWNER",
+                Alias = "Table owner",
+                ControlType = DocumentContentControlType.PlainText,
+            },
+        });
+        tableBlock.Table.Rows.Add(row);
+        document.Blocks.Add(tableBlock);
+
+        var authored = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = new ArtifactEnvelope
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Family = ArtifactFamily.Document,
+                Document = document,
+            },
+        });
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var table = package.MainDocumentPart!.Document!.Body!.Elements<W.Table>().Single();
+            var cells = table.Elements<W.TableRow>().Single().Elements<W.TableCell>().ToArray();
+            Assert.Single(cells[0].Elements<W.Paragraph>());
+            var control = Assert.Single(cells[1].Elements<W.SdtBlock>());
+            Assert.Empty(cells[1].Elements<W.Paragraph>());
+            Assert.Equal("TABLE_OWNER", control.SdtProperties!.GetFirstChild<W.Tag>()!.Val!.Value);
+            Assert.Equal("Table owner", control.SdtProperties.GetFirstChild<W.SdtAlias>()!.Val!.Value);
+            Assert.Equal("Initial value", control.SdtContentBlock!.InnerText);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedCell = Assert.Single(imported.Artifact.Document.Blocks).Table.Rows[0].RichCells[1];
+        Assert.True(importedCell.Editable);
+        Assert.False(importedCell.TextPatchable);
+        Assert.Equal("TABLE_OWNER", importedCell.TextContentControl.Tag);
+        Assert.True(importedCell.TextContentControl.HasNativeId);
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact.Clone(),
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(authored.File, unchanged.File);
+
+        var importedTable = Assert.Single(imported.Artifact.Document.Blocks).Table;
+        importedTable.Rows[0].Cells[1] = "Ada Lovelace";
+        importedCell.TextContentControl.Tag = "OWNER";
+        importedCell.TextContentControl.Alias = "Owner";
+        var edited = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var roundTrip = DocxCodec.Import(edited.File.ToByteArray(), EffectiveCodecLimits.From(null)).Artifact;
+        var editedCell = Assert.Single(roundTrip.Document.Blocks).Table.Rows[0].RichCells[1];
+        Assert.Equal("Ada Lovelace", Assert.Single(roundTrip.Document.Blocks).Table.Rows[0].Cells[1]);
+        Assert.Equal("OWNER", editedCell.TextContentControl.Tag);
+        Assert.Equal("Owner", editedCell.TextContentControl.Alias);
+
+        var changedTopology = roundTrip.Clone();
+        Assert.Single(changedTopology.Document.Blocks).Table.Rows[0].RichCells[1].TextContentControl = null;
+        var rejectedTopology = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = changedTopology,
+        });
+        Assert.False(rejectedTopology.Ok);
+        Assert.Equal("document_content_control_topology_changed", Assert.Single(rejectedTopology.Diagnostics).Code);
+
+        var invalidType = roundTrip.Clone();
+        Assert.Single(invalidType.Document.Blocks).Table.Rows[0].RichCells[1].TextContentControl.ControlType = DocumentContentControlType.Checkbox;
+        var rejectedType = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = invalidType,
+        });
+        Assert.False(rejectedType.Ok);
+        Assert.Equal("invalid_document_content_control", Assert.Single(rejectedType.Diagnostics).Code);
+    }
+
+    [Fact]
     public void InlineCheckboxContentControlAuthorsImportsEditsAndRejectsIrregularGraphs()
     {
         var document = new DocumentArtifact { Id = "document/checkbox", Name = "Checkbox template" };

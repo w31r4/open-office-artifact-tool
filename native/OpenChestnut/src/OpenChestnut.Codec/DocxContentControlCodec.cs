@@ -6,22 +6,25 @@ using W = DocumentFormat.OpenXml.Wordprocessing;
 
 namespace OpenChestnut.Codec;
 
-// Owns six deliberately bounded WordprocessingML SDT profiles: inline
+// Owns seven deliberately bounded WordprocessingML SDT profiles/placements: inline
 // plain-text, canonical drop-down, canonical combo-box, and Word 2010+
 // checkbox controls, one ISO/Gregorian date picker, plus a block plain-text
-// control around exactly one paragraph containing one ordinary run. Every
+// control and a table-cell plain-text control, each around exactly one
+// paragraph containing one ordinary run. Every
 // profile contains alias, tag, and native ID.
 // Checkbox symbols plus list/date-control visible text are codec-owned. Every
 // richer SDT remains opaque/source-bound.
 internal static class DocxContentControlCodec
 {
     private sealed record ControlReference(
-        DocumentBlock Block,
+        string Owner,
+        DocumentBlock? Block,
         DocumentRun? Run,
         DocumentTextContentControl Control,
-        bool IsBlock)
+        bool IsBlock,
+        string VisibleText)
     {
-        internal string VisibleText => IsBlock ? Block.Paragraph.Text : Run!.Text;
+        internal bool IsTableCell => Block?.ContentCase == DocumentBlock.ContentOneofCase.Table;
     }
 
     private const int MaxTagLength = 64;
@@ -68,9 +71,8 @@ internal static class DocxContentControlCodec
         var nativeIds = new HashSet<uint>();
         foreach (var item in Controls(document))
         {
-            var block = item.Block;
             var control = item.Control;
-            ValidateText(control.Id, $"Document block {block.Id} content-control model ID", 1, 255);
+            ValidateText(control.Id, $"{item.Owner} content-control model ID", 1, 255);
             if (!modelIds.Add(control.Id))
                 throw new CodecException(
                     "invalid_document_content_control",
@@ -84,16 +86,16 @@ internal static class DocxContentControlCodec
             var controlType = NormalizedType(control);
             if (item.IsBlock)
             {
-                if (controlType != DocumentContentControlType.PlainText ||
-                    control.Alias.Length == 0 ||
-                    block.Paragraph.Numbering is not null ||
-                    block.Paragraph.Runs.Count != 1 ||
-                    block.Paragraph.Runs[0].TextContentControl is not null ||
-                    block.Paragraph.Runs[0].InlineField is not null ||
-                    !block.Paragraph.Text.Equals(block.Paragraph.Runs[0].Text, StringComparison.Ordinal))
+                var invalidParagraphBlock = !item.IsTableCell && item.Block is { } block &&
+                    (block.Paragraph.Numbering is not null ||
+                     block.Paragraph.Runs.Count != 1 ||
+                     block.Paragraph.Runs[0].TextContentControl is not null ||
+                     block.Paragraph.Runs[0].InlineField is not null ||
+                     !block.Paragraph.Text.Equals(block.Paragraph.Runs[0].Text, StringComparison.Ordinal));
+                if (controlType != DocumentContentControlType.PlainText || control.Alias.Length == 0 || invalidParagraphBlock)
                     throw new CodecException(
                         "invalid_document_content_control",
-                        $"Document block content control {control.Id} must be plain text around exactly one ordinary paragraph run.");
+                        $"{item.Owner} content control {control.Id} must be plain text around exactly one ordinary paragraph run.");
             }
             if (controlType == DocumentContentControlType.Checkbox &&
                 !item.VisibleText.Equals(control.Checked ? CheckedGlyph : UncheckedGlyph, StringComparison.Ordinal))
@@ -388,13 +390,57 @@ internal static class DocxContentControlCodec
         var control = source.Paragraph.BlockContentControl ?? throw new CodecException(
             "invalid_document_content_control",
             $"Document paragraph {source.Id} has no block content-control metadata.");
+        return BuildBlock(control, DocxCodec.BuildParagraph(source));
+    }
+
+    internal static W.SdtBlock BuildBlock(DocumentTextContentControl control, W.Paragraph paragraph)
+    {
         var properties = new W.SdtProperties();
         properties.Append(
             new W.SdtAlias { Val = control.Alias },
             new W.Tag { Val = control.Tag },
             new W.SdtId { Val = checked((int)control.NativeId) },
             new W.SdtContentText());
-        return new W.SdtBlock(properties, new W.SdtContentBlock(DocxCodec.BuildParagraph(source)));
+        return new W.SdtBlock(properties, new W.SdtContentBlock(paragraph));
+    }
+
+    internal static void ApplyTableCell(
+        W.TableCell cell,
+        DocumentTableCell requested,
+        DocumentTableCell source,
+        string visibleText,
+        string owner)
+    {
+        var requestedControl = requested.TextContentControl;
+        var sourceControl = source.TextContentControl;
+        if ((requestedControl is null) != (sourceControl is null) ||
+            requestedControl is not null && sourceControl is not null &&
+            (requestedControl.NativeId != sourceControl.NativeId || NormalizedType(requestedControl) != NormalizedType(sourceControl)))
+            throw new CodecException(
+                "document_content_control_topology_changed",
+                $"{owner} content-control topology is source-bound.",
+                "word/document.xml");
+        if (requestedControl is null) return;
+        var content = cell.ChildElements.Where(child => child is not W.TableCellProperties).ToArray();
+        if (content.Length != 1 || content[0] is not W.SdtBlock sdt || !IsSupported(sdt))
+            throw new CodecException(
+                "unsupported_document_content_control",
+                $"{owner} no longer matches the canonical table-cell plain-text SDT profile.",
+                "word/document.xml");
+        sdt.SdtProperties!.GetFirstChild<W.SdtAlias>()!.Val = requestedControl.Alias;
+        sdt.SdtProperties.GetFirstChild<W.Tag>()!.Val = requestedControl.Tag;
+        var text = sdt.SdtContentBlock!.Descendants<W.Text>().Single();
+        text.Text = visibleText;
+        text.Space = visibleText.Length != visibleText.Trim().Length ? SpaceProcessingModeValues.Preserve : null;
+        var observed = Read(sdt, requestedControl.Id);
+        if (!observed.Text.Equals(visibleText, StringComparison.Ordinal) ||
+            !observed.BlockContentControl.Tag.Equals(requestedControl.Tag, StringComparison.Ordinal) ||
+            !observed.BlockContentControl.Alias.Equals(requestedControl.Alias, StringComparison.Ordinal) ||
+            observed.BlockContentControl.NativeId != requestedControl.NativeId)
+            throw new CodecException(
+                "document_semantics_not_applied",
+                $"{owner} content-control edit did not round trip through the canonical native profile.",
+                "word/document.xml");
     }
 
     internal static void AssertTopology(DocumentParagraph requested, DocumentParagraph original, string blockId)
@@ -427,12 +473,33 @@ internal static class DocxContentControlCodec
 
     private static IEnumerable<ControlReference> Controls(DocumentArtifact document)
     {
-        foreach (var block in document.Blocks.Where(block => block.ContentCase == DocumentBlock.ContentOneofCase.Paragraph))
+        foreach (var block in document.Blocks)
         {
-            if (block.Paragraph.BlockContentControl is not null)
-                yield return new ControlReference(block, null, block.Paragraph.BlockContentControl, true);
-            foreach (var run in block.Paragraph.Runs.Where(run => run.TextContentControl is not null))
-                yield return new ControlReference(block, run, run.TextContentControl, false);
+            if (block.ContentCase == DocumentBlock.ContentOneofCase.Paragraph)
+            {
+                if (block.Paragraph.BlockContentControl is not null)
+                    yield return new ControlReference($"Document block {block.Id}", block, null, block.Paragraph.BlockContentControl, true, block.Paragraph.Text);
+                foreach (var run in block.Paragraph.Runs.Where(run => run.TextContentControl is not null))
+                    yield return new ControlReference($"Document block {block.Id}", block, run, run.TextContentControl, false, run.Text);
+                continue;
+            }
+            if (block.ContentCase != DocumentBlock.ContentOneofCase.Table) continue;
+            for (var rowIndex = 0; rowIndex < block.Table.Rows.Count; rowIndex++)
+            {
+                var row = block.Table.Rows[rowIndex];
+                for (var cellIndex = 0; cellIndex < row.RichCells.Count; cellIndex++)
+                {
+                    var control = row.RichCells[cellIndex].TextContentControl;
+                    if (control is null) continue;
+                    yield return new ControlReference(
+                        $"Document table {block.Id} cell {rowIndex},{cellIndex}",
+                        block,
+                        null,
+                        control,
+                        true,
+                        cellIndex < row.Cells.Count ? row.Cells[cellIndex] : string.Empty);
+                }
+            }
         }
     }
 

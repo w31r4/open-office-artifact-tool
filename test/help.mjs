@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 354);
+assert.equal(HELP_CATALOG.length, 355);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -363,7 +363,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.sc
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.inspectPdf")?.schema?.returns?.inspection?.description || "", /mupdfWidget.*mupdfFormField/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfFile.importPdf")?.summary || "", /MuPDF/);
 const documentCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "document");
-assert.equal(documentCatalog.length, 60);
+assert.equal(documentCatalog.length, 61);
 assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.schema?.parameters?.pictureBullet?.type, "string|object");
@@ -389,8 +389,10 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addField")?.sc
 assert.match(HELP_CATALOG.find((item) => item.name === "paragraph.addField")?.summary || "", /bookmark around only its cached result.*source-bound.*cached display text is editable/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addField")?.schema?.parameters?.bookmarkName?.type, "string");
 assert.equal(HELP_CATALOG.find((item) => item.name === "paragraph.addField")?.schema?.parameters?.bookmarkNativeId?.type, "number");
+assert.equal(HELP_CATALOG.find((item) => item.name === "documentTableCell.addTextContentControl")?.schema?.parameters?.tag?.required, true);
+assert.match(HELP_CATALOG.find((item) => item.name === "documentTableCell.addTextContentControl")?.summary || "", /source-free rectangular table cell.*placement=tableCell.*fixed-topology/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.contentControls")?.schema?.returns?.controls?.type, "DocumentContentControlHandle[]");
-assert.match(HELP_CATALOG.find((item) => item.name === "document.contentControls")?.schema?.returns?.controls?.description || "", /placement.*block or inline.*runIndex/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "document.contentControls")?.schema?.returns?.controls?.description || "", /placement.*block, inline, or tableCell.*runIndex.*row\/column/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.fillContentControls")?.schema?.parameters?.values?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.fillContentControls")?.schema?.returns?.result?.description || "", /updated.*matchedTags.*missingTags/);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.setCheckboxContentControls")?.schema?.parameters?.values?.required, true);
@@ -605,6 +607,8 @@ assert.match(document.help("documentTableCell.replaceText").ndjson, /visible cel
 assert.match(document.help("document.addBookmark").ndjson, /native Word bookmark/);
 assert.match(document.help("document.addFootnote").ndjson, /native bounded footnote/i);
 assert.match(document.help("document.addEndnote").ndjson, /native bounded endnote/i);
+assert.match(document.help("documentTableCell.addTextContentControl").ndjson, /existing single paragraph\/run.*source-free rectangular cells.*native ID.*row\/column/is);
+assert.match(document.help("document.contentControls").ndjson, /placement is block, inline, or tableCell.*row\/column only for table-cell controls/i);
 assert.match(document.help("document.fillContentControls").ndjson, /Unknown tags fail before mutation/i);
 assert.match(document.help("document.setCheckboxContentControls").ndjson, /tag-to-boolean checked-state mapping/i);
 assert.match(document.help("document.setDropdownContentControls").ndjson, /tag-to-string selected-value mapping/i);

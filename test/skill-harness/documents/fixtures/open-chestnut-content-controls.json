@@ -34,6 +34,22 @@
       "runs": [
         { "text": "{{EXECUTIVE_SUMMARY}}", "style": { "bold": true, "color": "#1D4ED8" } }
       ]
+    },
+    {
+      "kind": "table",
+      "name": "approval-matrix",
+      "styleId": "TableGrid",
+      "values": [
+        ["Approval field", "Value"],
+        ["Owner", "{{TABLE_OWNER}}"]
+      ],
+      "cellContentControls": [
+        {
+          "row": 1,
+          "column": 1,
+          "control": { "id": "table-owner", "tag": "TABLE_OWNER", "alias": "Table owner", "controlType": "text" }
+        }
+      ]
     }
   ],
   "edits": [
@@ -42,9 +58,10 @@
       "values": {
         "CUSTOMER_NAME": "Grace Hopper",
         "ACCOUNT_ID": "AC-2048",
-        "EXECUTIVE_SUMMARY": "Ready for approval"
+        "EXECUTIVE_SUMMARY": "Ready for approval",
+        "TABLE_OWNER": "Katherine Johnson"
       },
-      "expectUpdated": 3
+      "expectUpdated": 4
     },
     {
       "kind": "checkboxContentControls",
@@ -87,7 +104,9 @@
     { "kind": "contentControl", "pattern": "REVIEW_DATE" },
     { "kind": "contentControl", "pattern": "dateValue" },
     { "kind": "contentControl", "pattern": "EXECUTIVE_SUMMARY" },
-    { "kind": "contentControl", "pattern": "block" }
+    { "kind": "contentControl", "pattern": "block" },
+    { "kind": "contentControl", "pattern": "TABLE_OWNER" },
+    { "kind": "contentControl", "pattern": "tableCell" }
   ],
   "qa": {
     "previewFormat": "svg",
