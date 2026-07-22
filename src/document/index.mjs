@@ -598,6 +598,8 @@ const DOCUMENT_IMAGE_AXIS_KEYS = new Set(["relativeTo", "offsetPx"]);
 const DOCUMENT_IMAGE_DISTANCE_KEYS = new Set(["top", "right", "bottom", "left"]);
 const DOCUMENT_SECTION_COLUMN_KEYS = new Set(["count", "spacing", "separator", "definitions"]);
 const DOCUMENT_SECTION_COLUMN_DEFINITION_KEYS = new Set(["width", "spacing"]);
+const DOCUMENT_SECTION_PAGE_NUMBERING_KEYS = new Set(["start", "format"]);
+const DOCUMENT_SECTION_PAGE_NUMBER_FORMATS = new Set(["decimal", "upperRoman", "lowerRoman", "upperLetter", "lowerLetter"]);
 
 function assertDocumentImageObjectKeys(value, allowed, label) {
   for (const key of Object.keys(value)) if (!allowed.has(key)) throw new TypeError(`${label} contains unsupported field ${key}.`);
@@ -675,6 +677,17 @@ function normalizeDocumentSectionColumns(value) {
   };
 }
 
+function normalizeDocumentSectionPageNumbering(value) {
+  if (value == null) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Document section pageNumbering must be an object.");
+  const unknownKeys = Object.keys(value).filter((key) => !DOCUMENT_SECTION_PAGE_NUMBERING_KEYS.has(key));
+  if (unknownKeys.length) throw new TypeError(`Unsupported document section pageNumbering properties: ${unknownKeys.join(", ")}.`);
+  return {
+    ...(Object.hasOwn(value, "start") ? { start: Number(value.start) } : {}),
+    ...(Object.hasOwn(value, "format") ? { format: String(value.format) } : {}),
+  };
+}
+
 class DocumentImageBlock {
   constructor(document, config = {}) {
     this.document = document;
@@ -719,10 +732,11 @@ class DocumentSectionBlock {
       gutter: Number(margins.gutter ?? config.marginGutter ?? 0),
     };
     this.columns = normalizeDocumentSectionColumns(config.columns);
+    this.pageNumbering = normalizeDocumentSectionPageNumbering(config.pageNumbering);
   }
 
-  inspectRecord(index) { return { kind: "section", id: this.id, index, name: this.name || undefined, editable: this.editable, breakType: this.breakType, orientation: this.orientation, pageSize: this.pageSize, margins: this.margins, columns: this.columns }; }
-  toProto() { return { kind: "section", id: this.id, name: this.name, breakType: this.breakType, orientation: this.orientation, pageSize: this.pageSize, margins: this.margins, columns: this.columns }; }
+  inspectRecord(index) { return { kind: "section", id: this.id, index, name: this.name || undefined, editable: this.editable, breakType: this.breakType, orientation: this.orientation, pageSize: this.pageSize, margins: this.margins, columns: this.columns, pageNumbering: this.pageNumbering }; }
+  toProto() { return { kind: "section", id: this.id, name: this.name, breakType: this.breakType, orientation: this.orientation, pageSize: this.pageSize, margins: this.margins, columns: this.columns, pageNumbering: this.pageNumbering }; }
 }
 
 class DocumentHeaderFooterBlock {
@@ -1623,6 +1637,13 @@ export class DocumentModel {
             if (!Number.isInteger(spacing) || spacing < 0 || spacing > 31680) issues.push(verificationIssue("document", "invalidSectionColumns", `Section ${block.id} column spacing must be an integer from 0 through 31680 twentieths of a point.`, { id: block.id, columns: block.columns }));
             if (Number.isInteger(count) && Number.isInteger(spacing) && count >= 1 && spacing >= 0 && Number.isFinite(availableWidth) && (count - 1) * spacing >= availableWidth) issues.push(verificationIssue("document", "sectionColumnsExceedPage", `Section ${block.id} column spacing must leave positive width for every text column.`, { id: block.id, columns: block.columns, margins: block.margins, pageSize: block.pageSize }));
           }
+        }
+        if (block.pageNumbering) {
+          const hasStart = Object.hasOwn(block.pageNumbering, "start");
+          const hasFormat = Object.hasOwn(block.pageNumbering, "format");
+          if (!hasStart && !hasFormat) issues.push(verificationIssue("document", "invalidSectionPageNumbering", `Section ${block.id} pageNumbering requires start or format.`, { id: block.id, pageNumbering: block.pageNumbering }));
+          if (hasStart && (!Number.isInteger(block.pageNumbering.start) || block.pageNumbering.start < 0 || block.pageNumbering.start > 2_147_483_647)) issues.push(verificationIssue("document", "invalidSectionPageNumbering", `Section ${block.id} page-number start must be an integer from 0 through 2147483647.`, { id: block.id, pageNumbering: block.pageNumbering }));
+          if (hasFormat && !DOCUMENT_SECTION_PAGE_NUMBER_FORMATS.has(block.pageNumbering.format)) issues.push(verificationIssue("document", "invalidSectionPageNumbering", `Section ${block.id} page-number format must be decimal, upperRoman, lowerRoman, upperLetter, or lowerLetter.`, { id: block.id, pageNumbering: block.pageNumbering }));
         }
       }
       if (block.kind === "listItem") {

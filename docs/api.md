@@ -23,7 +23,7 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.addInsertion` | api | Append one bounded whole-paragraph tracked insertion using native w:ins markup. For one exact in-paragraph replacement in existing source bytes, use DocumentFile.addTrackedReplacement; mixed, moved, nested, and property-level revisions remain outside the bounded profile. |
 | `document.addListItem` | api | Append a numbered, character-bulleted, or bounded picture-bulleted list item using native DOCX numbering definitions. Picture markers are shared numbering-level resources: every item using the same numberingId and level must agree, and recognized imported edits must update the complete group without changing embedded-versus-external source kind. |
 | `document.addParagraph` | api | Append a styled paragraph with optional run spans, including character-style runStyleId references plus direct/theme and complex-script semantics. |
-| `document.addSection` | api | Append a DOCX section break with page size, orientation, margins, binding gutter, canonical equal-width or explicit-width columns, and break-type metadata backed by w:sectPr. Imported geometry is writable only when page-margin mode and column markup are canonical. |
+| `document.addSection` | api | Append a DOCX section break with page size, orientation, margins, binding gutter, canonical equal-width or explicit-width columns, bounded page-number start/format, and break-type metadata backed by w:sectPr. Imported geometry and page numbering are writable only when their native markup is canonical. |
 | `document.addTable` | api | Append a Word-style table with physical cell values, optional logical merge geometry, and fixed-layout width/margin/border/header formatting. |
 | `document.addTableOfContents` | api | Append one canonical one-paragraph complex TOC field with bounded heading levels/switches and enable the native updateFields-on-open hint by default. Refreshed cross-paragraph result graphs remain opaque/source-bound and read-only. |
 | `document.addWatermark` | api | Add one canonical VML text watermark to a section/header-reference scope. Recognized imported watermarks permit text-only edits or whole-object removal; adding to an imported package, changing scope, shared headers, multiple objects, DrawingML, images, and irregular VML fail closed. |
@@ -364,7 +364,7 @@ Append a styled paragraph with optional run spans, including character-style run
 
 #### `document.addSection`
 
-Append a DOCX section break with page size, orientation, margins, binding gutter, canonical equal-width or explicit-width columns, and break-type metadata backed by w:sectPr. Imported geometry is writable only when page-margin mode and column markup are canonical.
+Append a DOCX section break with page size, orientation, margins, binding gutter, canonical equal-width or explicit-width columns, bounded page-number start/format, and break-type metadata backed by w:sectPr. Imported geometry and page numbering are writable only when their native markup is canonical.
 
 **Schema parameters:**
 
@@ -373,10 +373,11 @@ Append a DOCX section break with page size, orientation, margins, binding gutter
 - `pageSize` (object) — Page width/height in twentieths of a point.
 - `margins` (object) — Top/right/bottom/left margins plus optional non-negative binding gutter in twentieths of a point. document.settings.gutterAtTop chooses top-edge versus binding-side placement.
 - `columns` (object) — Optional canonical text columns. Equal-width profile: { count: 1–45, spacing, separator }. Explicit-width profile: { definitions: [{ width, spacing }], separator }, with 1–45 ordered definitions, positive widths, and non-negative spacing-after values. All values are twentieths of a point; margins, binding-side gutter, widths, and gaps must fit the page content width. The two profiles cannot be mixed; ambiguous or extension-bearing w:cols graphs stay source-owned.
+- `pageNumbering` (object) — Optional canonical section numbering: { start?: integer 0..2147483647, format?: 'decimal'|'upperRoman'|'lowerRoman'|'upperLetter'|'lowerLetter' }. At least one property is required; omitting start continues the prior sequence. This controls PAGE-field presentation but does not add or refresh a field. Chapter numbering, unsupported formats, duplicate leaves, children, or extension-bearing w:pgNumType markup stay source-owned.
 
 **Schema returns:**
 
-- `section` (DocumentSectionBlock) — Appended section break block. inspect reports editable=false when imported mirrorMargins/gutterAtTop mode markup or section-column topology is not canonical.
+- `section` (DocumentSectionBlock) — Appended section break block. inspect reports editable=false when imported mirrorMargins/gutterAtTop mode markup, section-column topology, or page-number markup is not canonical.
 
 #### `document.addTable`
 

@@ -40,6 +40,7 @@ internal static class DocxSectionCodec
             MarginGutterTwips = margins?.Gutter?.Value ?? 0U,
         };
         if (TryReadColumns(source, out var columns) && columns is not null) result.Columns = columns;
+        if (TryReadPageNumbering(source, out var pageNumbering) && pageNumbering is not null) result.PageNumbering = pageNumbering;
         return result;
     }
 
@@ -75,6 +76,9 @@ internal static class DocxSectionCodec
         var sourceColumns = native.GetFirstChild<W.Columns>();
         if (requested.Columns is null) sourceColumns?.Remove();
         else Replace(native, sourceColumns, BuildColumns(requested.Columns));
+        var sourcePageNumbering = native.GetFirstChild<W.PageNumberType>();
+        if (requested.PageNumbering is null) sourcePageNumbering?.Remove();
+        else Replace(native, sourcePageNumbering, BuildPageNumbering(requested.PageNumbering));
     }
 
     internal static string ResidualHash(W.Paragraph paragraph)
@@ -84,6 +88,7 @@ internal static class DocxSectionCodec
         section?.GetFirstChild<W.SectionType>()?.Remove();
         section?.GetFirstChild<W.PageSize>()?.Remove();
         section?.GetFirstChild<W.PageMargin>()?.Remove();
+        section?.GetFirstChild<W.PageNumberType>()?.Remove();
         section?.GetFirstChild<W.Columns>()?.Remove();
         return Hash(clone.OuterXml);
     }
@@ -138,6 +143,15 @@ internal static class DocxSectionCodec
                     throw new CodecException("invalid_document_section", $"{label} column spacing must leave positive width for every text column.");
             }
         }
+        if (section.PageNumbering is not null)
+        {
+            if (!section.PageNumbering.HasStart && section.PageNumbering.Format == DocumentSectionPageNumberFormat.Unspecified)
+                throw new CodecException("invalid_document_section", $"{label} page numbering requires a start value or supported format.");
+            if (section.PageNumbering.HasStart && section.PageNumbering.Start > int.MaxValue)
+                throw new CodecException("invalid_document_section", $"{label} page-number start must not exceed 2147483647.");
+            if (!IsSupportedPageNumberFormat(section.PageNumbering.Format))
+                throw new CodecException("invalid_document_section", $"{label} page-number format is unsupported.");
+        }
     }
 
     private static W.SectionProperties BuildProperties(
@@ -148,6 +162,7 @@ internal static class DocxSectionCodec
         var properties = new W.SectionProperties();
         foreach (var reference in references) properties.Append(reference.CloneNode(true));
         properties.Append(BuildType(source.BreakType), BuildPageSize(source), BuildPageMargin(source));
+        if (source.PageNumbering is not null) properties.Append(BuildPageNumbering(source.PageNumbering));
         if (source.Columns is not null) properties.Append(BuildColumns(source.Columns));
         if (differentFirstPage) properties.Append(new W.TitlePage());
         return properties;
@@ -208,6 +223,14 @@ internal static class DocxSectionCodec
         return result;
     }
 
+    private static W.PageNumberType BuildPageNumbering(DocumentSectionPageNumbering source)
+    {
+        var result = new W.PageNumberType();
+        if (source.HasStart) result.Start = checked((int)source.Start);
+        if (source.Format != DocumentSectionPageNumberFormat.Unspecified) result.Format = ToNativePageNumberFormat(source.Format);
+        return result;
+    }
+
     private static DocumentSection Default() => new()
     {
         BreakType = DocumentSectionBreak.NextPage,
@@ -223,13 +246,14 @@ internal static class DocxSectionCodec
     private static bool IsBounded(W.SectionProperties source)
     {
         if (!source.ChildElements.All(child => child is W.HeaderReference or W.FooterReference or
-                W.SectionType or W.PageSize or W.PageMargin or W.Columns or W.TitlePage) ||
+                W.SectionType or W.PageSize or W.PageMargin or W.PageNumberType or W.Columns or W.TitlePage) ||
             source.Elements<W.SectionType>().Count() > 1 ||
             source.Elements<W.PageSize>().Count() > 1 ||
             source.Elements<W.PageMargin>().Count() > 1 ||
+            source.Elements<W.PageNumberType>().Count() > 1 ||
             source.Elements<W.TitlePage>().Count() > 1)
             return false;
-        return TryReadColumns(source, out _);
+        return TryReadColumns(source, out _) && TryReadPageNumbering(source, out _);
     }
 
     private static bool TryReadColumns(W.SectionProperties source, out DocumentSectionColumns? result)
@@ -300,6 +324,68 @@ internal static class DocxSectionCodec
         return true;
     }
 
+    private static bool TryReadPageNumbering(W.SectionProperties source, out DocumentSectionPageNumbering? result)
+    {
+        result = null;
+        var matches = source.Elements<W.PageNumberType>().ToArray();
+        if (matches.Length == 0) return true;
+        if (matches.Length != 1) return false;
+        var pageNumbering = matches[0];
+        if (pageNumbering.HasChildren || pageNumbering.ExtendedAttributes.Any() || pageNumbering.NamespaceDeclarations.Any() ||
+            pageNumbering.MCAttributes is not null || pageNumbering.ChapterStyle is not null || pageNumbering.ChapterSeparator is not null)
+            return false;
+        try
+        {
+            var value = new DocumentSectionPageNumbering();
+            if (pageNumbering.Start?.Value is { } start)
+            {
+                if (start < 0) return false;
+                value.Start = checked((uint)start);
+            }
+            if (pageNumbering.Format?.Value is { } format)
+            {
+                if (!TryFromNativePageNumberFormat(format, out var publicFormat)) return false;
+                value.Format = publicFormat;
+            }
+            if (!value.HasStart && value.Format == DocumentSectionPageNumberFormat.Unspecified) return false;
+            result = value;
+            return true;
+        }
+        catch (Exception exception) when (exception is FormatException or InvalidOperationException or OverflowException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsSupportedPageNumberFormat(DocumentSectionPageNumberFormat value) =>
+        value is DocumentSectionPageNumberFormat.Unspecified or
+            DocumentSectionPageNumberFormat.Decimal or
+            DocumentSectionPageNumberFormat.UpperRoman or
+            DocumentSectionPageNumberFormat.LowerRoman or
+            DocumentSectionPageNumberFormat.UpperLetter or
+            DocumentSectionPageNumberFormat.LowerLetter;
+
+    private static W.NumberFormatValues ToNativePageNumberFormat(DocumentSectionPageNumberFormat value) => value switch
+    {
+        DocumentSectionPageNumberFormat.Decimal => W.NumberFormatValues.Decimal,
+        DocumentSectionPageNumberFormat.UpperRoman => W.NumberFormatValues.UpperRoman,
+        DocumentSectionPageNumberFormat.LowerRoman => W.NumberFormatValues.LowerRoman,
+        DocumentSectionPageNumberFormat.UpperLetter => W.NumberFormatValues.UpperLetter,
+        DocumentSectionPageNumberFormat.LowerLetter => W.NumberFormatValues.LowerLetter,
+        _ => throw new CodecException("invalid_document_section", "Document section page-number format is unsupported."),
+    };
+
+    private static bool TryFromNativePageNumberFormat(W.NumberFormatValues value, out DocumentSectionPageNumberFormat result)
+    {
+        result = value == W.NumberFormatValues.Decimal ? DocumentSectionPageNumberFormat.Decimal :
+            value == W.NumberFormatValues.UpperRoman ? DocumentSectionPageNumberFormat.UpperRoman :
+            value == W.NumberFormatValues.LowerRoman ? DocumentSectionPageNumberFormat.LowerRoman :
+            value == W.NumberFormatValues.UpperLetter ? DocumentSectionPageNumberFormat.UpperLetter :
+            value == W.NumberFormatValues.LowerLetter ? DocumentSectionPageNumberFormat.LowerLetter :
+            DocumentSectionPageNumberFormat.Unspecified;
+        return result != DocumentSectionPageNumberFormat.Unspecified;
+    }
+
     private static DocumentSectionBreak FromNativeBreak(W.SectionMarkValues? value) =>
         value == W.SectionMarkValues.Continuous ? DocumentSectionBreak.Continuous :
         value == W.SectionMarkValues.EvenPage ? DocumentSectionBreak.EvenPage :
@@ -312,13 +398,27 @@ internal static class DocxSectionCodec
     {
         if (current is null)
         {
-            var anchor = owner.ChildElements.FirstOrDefault(child => child is W.TitlePage);
+            var rank = SectionChildRank(replacement);
+            var anchor = owner.ChildElements.FirstOrDefault(child => SectionChildRank(child) > rank);
             if (anchor is null) owner.Append(replacement);
             else owner.InsertBefore(replacement, anchor);
         }
         else current.InsertAfterSelf(replacement);
         current?.Remove();
     }
+
+    private static int SectionChildRank(OpenXmlElement value) => value switch
+    {
+        W.HeaderReference => 10,
+        W.FooterReference => 20,
+        W.SectionType => 30,
+        W.PageSize => 40,
+        W.PageMargin => 50,
+        W.PageNumberType => 60,
+        W.Columns => 70,
+        W.TitlePage => 80,
+        _ => int.MaxValue,
+    };
 
     private static string Hash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();

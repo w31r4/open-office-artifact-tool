@@ -5317,6 +5317,297 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void SectionPageNumberingAuthorsImportsEditsAndRejectsIrregularGraphs()
+    {
+        var request = ExportRequest();
+        request.Artifact.Document.Blocks.Add(new DocumentBlock
+        {
+            Id = "document/roman-front-matter",
+            Section = new DocumentSection
+            {
+                BreakType = DocumentSectionBreak.NextPage,
+                PageWidthTwips = 12240,
+                PageHeightTwips = 15840,
+                MarginTopTwips = 1440,
+                MarginRightTwips = 1440,
+                MarginBottomTwips = 1440,
+                MarginLeftTwips = 1440,
+                PageNumbering = new DocumentSectionPageNumbering
+                {
+                    Start = 1,
+                    Format = DocumentSectionPageNumberFormat.LowerRoman,
+                },
+                Columns = new DocumentSectionColumns { Count = 2, SpacingTwips = 720 },
+            },
+        });
+
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        string sourcePageNumbering;
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var properties = package.MainDocumentPart!.Document!.Body!
+                .Descendants<W.SectionProperties>().First();
+            var pageNumbering = properties.GetFirstChild<W.PageNumberType>()!;
+            Assert.Equal(1, pageNumbering.Start!.Value);
+            Assert.Equal(W.NumberFormatValues.LowerRoman, pageNumbering.Format!.Value);
+            var children = properties.ChildElements.ToList();
+            Assert.True(children.IndexOf(pageNumbering) < children.IndexOf(properties.GetFirstChild<W.Columns>()!));
+            sourcePageNumbering = pageNumbering.OuterXml;
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var section = imported.Artifact.Document.Blocks.Single(block =>
+            block.ContentCase == DocumentBlock.ContentOneofCase.Section);
+        Assert.True(section.Source.Editable);
+        Assert.True(section.Section.PageNumbering.HasStart);
+        Assert.Equal(1U, section.Section.PageNumbering.Start);
+        Assert.Equal(DocumentSectionPageNumberFormat.LowerRoman, section.Section.PageNumbering.Format);
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(authored.File, unchanged.File);
+
+        var title = imported.Artifact.Document.Blocks[0].Paragraph;
+        title.Text = "Retained page-number front matter";
+        title.Runs[0].Text = title.Text;
+        var bodyEdit = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(bodyEdit.Ok, Diagnostics(bodyEdit));
+        using (var stream = new MemoryStream(bodyEdit.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+            Assert.Equal(sourcePageNumbering, package.MainDocumentPart!.Document!.Body!
+                .Descendants<W.SectionProperties>().First().GetFirstChild<W.PageNumberType>()!.OuterXml);
+
+        section.Section.PageNumbering = new DocumentSectionPageNumbering
+        {
+            Start = 7,
+            Format = DocumentSectionPageNumberFormat.UpperLetter,
+        };
+        var edited = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(edited.Ok, Diagnostics(edited));
+        using (var stream = new MemoryStream(edited.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var pageNumbering = package.MainDocumentPart!.Document!.Body!
+                .Descendants<W.SectionProperties>().First().GetFirstChild<W.PageNumberType>()!;
+            Assert.Equal(7, pageNumbering.Start!.Value);
+            Assert.Equal(W.NumberFormatValues.UpperLetter, pageNumbering.Format!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var editedImport = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = edited.File,
+        });
+        Assert.True(editedImport.Ok, Diagnostics(editedImport));
+        var editedSection = editedImport.Artifact.Document.Blocks.Single(block =>
+            block.ContentCase == DocumentBlock.ContentOneofCase.Section);
+        editedSection.Section.PageNumbering = new DocumentSectionPageNumbering
+        {
+            Format = DocumentSectionPageNumberFormat.Decimal,
+        };
+        var formatOnly = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = editedImport.Artifact,
+        });
+        Assert.True(formatOnly.Ok, Diagnostics(formatOnly));
+        var formatOnlyImport = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = formatOnly.File,
+        });
+        Assert.True(formatOnlyImport.Ok, Diagnostics(formatOnlyImport));
+        var formatOnlyNumbering = formatOnlyImport.Artifact.Document.Blocks.Single(block =>
+            block.ContentCase == DocumentBlock.ContentOneofCase.Section).Section.PageNumbering;
+        Assert.False(formatOnlyNumbering.HasStart);
+        Assert.Equal(DocumentSectionPageNumberFormat.Decimal, formatOnlyNumbering.Format);
+
+        var formatOnlySection = formatOnlyImport.Artifact.Document.Blocks.Single(block =>
+            block.ContentCase == DocumentBlock.ContentOneofCase.Section).Section;
+        formatOnlySection.PageNumbering = new DocumentSectionPageNumbering { Start = 0 };
+        var startOnly = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = formatOnlyImport.Artifact,
+        });
+        Assert.True(startOnly.Ok, Diagnostics(startOnly));
+        var startOnlyImport = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = startOnly.File,
+        });
+        Assert.True(startOnlyImport.Ok, Diagnostics(startOnlyImport));
+        var startOnlySection = startOnlyImport.Artifact.Document.Blocks.Single(block =>
+            block.ContentCase == DocumentBlock.ContentOneofCase.Section).Section;
+        Assert.True(startOnlySection.PageNumbering.HasStart);
+        Assert.Equal(0U, startOnlySection.PageNumbering.Start);
+        Assert.Equal(DocumentSectionPageNumberFormat.Unspecified, startOnlySection.PageNumbering.Format);
+        startOnlySection.PageNumbering = null;
+        var removed = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = startOnlyImport.Artifact,
+        });
+        Assert.True(removed.Ok, Diagnostics(removed));
+        using (var stream = new MemoryStream(removed.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+            Assert.Null(package.MainDocumentPart!.Document!.Body!
+                .Descendants<W.SectionProperties>().First().GetFirstChild<W.PageNumberType>());
+
+        var removedImport = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = removed.File,
+        });
+        Assert.True(removedImport.Ok, Diagnostics(removedImport));
+        removedImport.Artifact.Document.Blocks.Single(block =>
+            block.ContentCase == DocumentBlock.ContentOneofCase.Section).Section.PageNumbering = new DocumentSectionPageNumbering
+        {
+            Start = 3,
+            Format = DocumentSectionPageNumberFormat.LowerLetter,
+        };
+        var readded = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = removedImport.Artifact,
+        });
+        Assert.True(readded.Ok, Diagnostics(readded));
+        using (var stream = new MemoryStream(readded.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var properties = package.MainDocumentPart!.Document!.Body!
+                .Descendants<W.SectionProperties>().First();
+            var children = properties.ChildElements.ToList();
+            var pageNumbering = properties.GetFirstChild<W.PageNumberType>()!;
+            Assert.Equal(3, pageNumbering.Start!.Value);
+            Assert.Equal(W.NumberFormatValues.LowerLetter, pageNumbering.Format!.Value);
+            Assert.True(children.IndexOf(pageNumbering) < children.IndexOf(properties.GetFirstChild<W.Columns>()!));
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var irregularSources = new[]
+        {
+            MutateSectionPageNumbering(authored.File.ToByteArray(), (properties, pageNumbering) =>
+                properties.InsertAfter((W.PageNumberType)pageNumbering.CloneNode(true), pageNumbering)),
+            MutateSectionPageNumbering(authored.File.ToByteArray(), (_, pageNumbering) => pageNumbering.SetAttribute(new OpenXmlAttribute(
+                "w", "compatFlag", "http://schemas.openxmlformats.org/wordprocessingml/2006/main", "retained"))),
+            MutateSectionPageNumbering(authored.File.ToByteArray(), (_, pageNumbering) =>
+            {
+                pageNumbering.ChapterStyle = 1;
+                pageNumbering.ChapterSeparator = W.ChapterSeparatorValues.Hyphen;
+            }),
+            MutateSectionPageNumbering(authored.File.ToByteArray(), (_, pageNumbering) => pageNumbering.Format = W.NumberFormatValues.Ordinal),
+            MutateSectionPageNumbering(authored.File.ToByteArray(), (_, pageNumbering) =>
+            {
+                pageNumbering.Start = null;
+                pageNumbering.Format = null;
+            }),
+        };
+        foreach (var irregularSource in irregularSources)
+        {
+            var irregular = Invoke(new CodecRequest
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Operation = CodecOperation.ImportDocx,
+                Family = ArtifactFamily.Document,
+                File = ByteString.CopyFrom(irregularSource),
+            });
+            Assert.True(irregular.Ok, Diagnostics(irregular));
+            var irregularSection = irregular.Artifact.Document.Blocks.Single(block =>
+                block.ContentCase == DocumentBlock.ContentOneofCase.Section);
+            Assert.False(irregularSection.Source.Editable);
+            Assert.Null(irregularSection.Section.PageNumbering);
+            irregularSection.Section.PageNumbering = new DocumentSectionPageNumbering
+            {
+                Start = 1,
+                Format = DocumentSectionPageNumberFormat.Decimal,
+            };
+            var rejected = Invoke(new CodecRequest
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Operation = CodecOperation.ExportDocx,
+                Family = ArtifactFamily.Document,
+                Artifact = irregular.Artifact,
+            });
+            Assert.False(rejected.Ok);
+            Assert.Equal("unsupported_document_edit", Assert.Single(rejected.Diagnostics).Code);
+        }
+
+        foreach (var invalidPageNumbering in new[]
+                 {
+                     new DocumentSectionPageNumbering(),
+                     new DocumentSectionPageNumbering { Start = 2_147_483_648U },
+                     new DocumentSectionPageNumbering { Format = (DocumentSectionPageNumberFormat)99 },
+                 })
+        {
+            var invalid = ExportRequest();
+            invalid.Artifact.Document.Blocks.Add(new DocumentBlock
+            {
+                Id = "document/invalid-page-numbering",
+                Section = new DocumentSection
+                {
+                    BreakType = DocumentSectionBreak.NextPage,
+                    PageWidthTwips = 12240,
+                    PageHeightTwips = 15840,
+                    MarginTopTwips = 1440,
+                    MarginRightTwips = 1440,
+                    MarginBottomTwips = 1440,
+                    MarginLeftTwips = 1440,
+                    PageNumbering = invalidPageNumbering,
+                },
+            });
+            var invalidResult = Invoke(invalid);
+            Assert.False(invalidResult.Ok);
+            Assert.Equal("invalid_document_section", Assert.Single(invalidResult.Diagnostics).Code);
+        }
+    }
+
+    [Fact]
     public void PasswordlessDocumentProtectionAuthorsAndImportsEveryBoundedMode()
     {
         var modes = new[]
@@ -7477,6 +7768,23 @@ public sealed class DocxCodecTests
             columns.Append(
                 new W.Column { Width = "3000", Space = "720" },
                 new W.Column { Width = "5000" });
+            document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] MutateSectionPageNumbering(
+        byte[] bytes,
+        Action<W.SectionProperties, W.PageNumberType> mutate)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var properties = document.MainDocumentPart!.Document!.Body!
+                .Descendants<W.SectionProperties>().First();
+            mutate(properties, properties.GetFirstChild<W.PageNumberType>()!);
             document.MainDocumentPart.Document.Save();
         }
         return stream.ToArray();

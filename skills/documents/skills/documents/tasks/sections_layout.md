@@ -34,6 +34,7 @@ document.addSection({
   orientation: "landscape",
   pageSize: { widthTwips: 15840, heightTwips: 12240 },
   margins: { top: 720, right: 900, bottom: 720, left: 900 },
+  pageNumbering: { start: 1, format: "lowerRoman" },
   columns: { count: 2, spacing: 720, separator: true },
 });
 document.addParagraph("Landscape-section evidence.");
@@ -78,11 +79,29 @@ root attributes, unknown children, extension-bearing definitions, and other
 ambiguous graphs remain source-owned; inspect reports that section as
 `editable: false`.
 
+`pageNumbering` owns one canonical native `w:pgNumType` leaf. Use `start` to
+restart a section at an integer from 0 through 2147483647; omit it to continue
+the previous section's sequence. The optional `format` is one of `decimal`,
+`upperRoman`, `lowerRoman`, `upperLetter`, or `lowerLetter`. At least one of
+`start` or `format` is required:
+
+```js
+pageNumbering: { start: 1, format: "lowerRoman" }
+```
+
+This setting controls page numbers displayed by PAGE fields; it does not add a
+footer, insert a field, paginate the document, or refresh cached field text.
+Add a PAGE footer/header separately and use native Word/LibreOffice rendering
+for final QA. Chapter style/separator attributes, unsupported number formats,
+duplicate leaves, extensions, and empty `w:pgNumType` markup remain
+source-owned and make the section read-only.
+
 ## Render review
 
 - Only the intended pages change orientation.
 - Page size and margins match the explicit twip values.
 - Text flows through the requested equal-width or asymmetric columns and separator rules.
+- PAGE fields restart/continue and display in the requested section format.
 - Headers and footers appear in the intended section.
 - First/even variants behave as requested.
 - No empty trailing page was introduced.

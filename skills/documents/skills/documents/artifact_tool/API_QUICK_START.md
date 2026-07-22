@@ -693,6 +693,26 @@ ignored equal-width root attributes on a custom graph, unknown children,
 extension attributes, and other ambiguous graphs stay source-owned and make
 the imported section `editable: false` rather than being flattened.
 
+Control the numbering sequence and display format used by PAGE fields in one
+modeled section:
+
+```js
+document.addSection({
+  breakType: "nextPage",
+  pageNumbering: { start: 1, format: "lowerRoman" },
+});
+```
+
+`start` is optional and accepts integers from 0 through 2147483647. Omit it to
+continue the preceding section's sequence. `format` is optional and accepts
+`decimal`, `upperRoman`, `lowerRoman`, `upperLetter`, or `lowerLetter`; at
+least one property is required. Set `section.pageNumbering = undefined` to
+remove the canonical leaf. This setting does not insert a PAGE field or update
+its cached display, so add the header/footer field separately and use a native
+pagination host for final QA. Chapter style/separator settings, unsupported
+formats, duplicate/empty leaves, extensions, and other irregular
+`w:pgNumType` graphs remain source-owned and make section geometry read-only.
+
 Set one bounded passwordless Word editing restriction through the same settings state:
 
 ```js
@@ -799,7 +819,7 @@ For final visual QA, export the DOCX and use the packaged `render_docx.py` workf
 - PNG/JPEG inline images plus an explicit bounded foreground floating profile with absolute margin/page/column and margin/page/paragraph offsets, square or top-and-bottom wrap, and fixed-topology imported placement edits
 - Classic whole-paragraph comments and bounded modern root/direct-reply threads
 - Standalone whole-paragraph tracked insertions/deletions plus one exact source-bound in-paragraph replacement as adjacent native deletion/insertion runs; native `trackRevisions` intent; and source-hash-bound accept/reject finalization for both bounded profiles
-- Canonical facing-page `mirrorMargins`, per-section binding `margins.gutter`, document-wide `gutterAtTop`, canonical equal-width section columns, plus passwordless `documentProtection` settings for `none`, `readOnly`, `comments`, `trackedChanges`, and `forms`, with explicit enforcement/formatting flags and source-bound preservation of irregular/cryptographic variants
+- Canonical facing-page `mirrorMargins`, per-section binding `margins.gutter`, document-wide `gutterAtTop`, canonical equal-/explicit-width section columns, bounded section page-number restart/format settings, plus passwordless `documentProtection` settings for `none`, `readOnly`, `comments`, `trackedChanges`, and `forms`, with explicit enforcement/formatting flags and source-bound preservation of irregular/cryptographic variants
 - Block plain-text plus inline/table-cell plain-text, canonical Word 2010+ checkbox, canonical Word drop-down, canonical Word combo-box, and canonical ISO/Gregorian date content controls with explicit placement, typed values, tag/alias identity, transactional tag updates, and fixed-topology imported edits
 - Canonical bibliography source catalogs and whole-paragraph `CITATION` fields with fixed imported source/tag topology
 

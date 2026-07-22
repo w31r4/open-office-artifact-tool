@@ -753,6 +753,7 @@ try {
   assert.equal(settingsDocument.settings.mirrorMargins, true);
   assert.equal(settingsDocument.settings.gutterAtTop, true);
   assert.equal(settingsDocument.blocks.find((block) => block.kind === "section")?.margins.gutter, 720);
+  assert.deepEqual(settingsDocument.blocks.find((block) => block.kind === "section")?.pageNumbering, { start: 1, format: "lowerRoman" });
   assert.deepEqual(settingsDocument.blocks.find((block) => block.kind === "section")?.columns, { definitions: [{ width: 3000, spacing: 720 }, { width: 5640, spacing: 0 }], separator: true });
   assert.equal(settingsDocument.sectionSettings[0]?.differentFirstPage, true);
   assert.equal(settingsDocument.headers.some((item) => item.referenceType === "first"), true);
@@ -762,6 +763,7 @@ try {
   assert.match(await packageSettingsZip.file("word/settings.xml").async("text"), /<w:mirrorMargins\s*\/>/);
   assert.match(await packageSettingsZip.file("word/settings.xml").async("text"), /<w:gutterAtTop\s*\/>/);
   assert.match(await packageSettingsZip.file("word/document.xml").async("text"), /<w:pgMar\b(?=[^>]*w:gutter="720")[^>]*\/>/);
+  assert.match(await packageSettingsZip.file("word/document.xml").async("text"), /<w:pgNumType\b(?=[^>]*w:start="1")(?=[^>]*w:fmt="lowerRoman")[^>]*\/>/);
   assert.match(await packageSettingsZip.file("word/document.xml").async("text"), /<w:cols\b(?=[^>]*w:equalWidth="(?:false|0)")(?=[^>]*w:sep="(?:true|1)")[^>]*>[\s\S]*?<w:col\b(?=[^>]*w:w="3000")(?=[^>]*w:space="720")[^>]*\/>[\s\S]*?<w:col\b(?=[^>]*w:w="5640")[^>]*\/>[\s\S]*?<\/w:cols>/);
 
   const protection = await runFixture("open-chestnut-protection");
@@ -865,6 +867,7 @@ try {
   assert.match(skillText, /document\.setSettings\(\{ gutterAtTop: true \}\)/);
   assert.match(skillText, /columns: \{ count: 2, spacing: 720, separator: true \}/);
   assert.match(skillText, /definitions: \[\s*\{ width: 3000, spacing: 720 \},\s*\{ width: 5640, spacing: 0 \}/);
+  assert.match(skillText, /pageNumbering: \{ start: 1, format: "lowerRoman" \}/);
   assert.match(skillText, /document\.addBibliographySource/);
   assert.match(skillText, /document\.addCitation/);
   assert.match(skillText, /document\.addTableOfContents/);

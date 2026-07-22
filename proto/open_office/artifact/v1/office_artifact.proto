@@ -2733,6 +2733,9 @@ message DocumentSection {
   // Optional canonical equal-width or explicit-width section columns.
   // Absence leaves the section at the host default.
   DocumentSectionColumns columns = 10;
+  // Optional canonical page-number restart and display format for this
+  // section. PAGE fields remain separate run/header/footer content.
+  DocumentSectionPageNumbering page_numbering = 11;
 }
 
 message DocumentSectionColumns {
@@ -2755,6 +2758,23 @@ message DocumentSectionColumnDefinition {
   uint32 width_twips = 1;
   // Space after this column in twentieths of a point.
   uint32 spacing_after_twips = 2;
+}
+
+message DocumentSectionPageNumbering {
+  // When present, restart this section at the specified non-negative page
+  // number. Omission continues the previous section's numbering sequence.
+  optional uint32 start = 1;
+  // Optional display format. UNSPECIFIED leaves the compatible host default.
+  DocumentSectionPageNumberFormat format = 2;
+}
+
+enum DocumentSectionPageNumberFormat {
+  DOCUMENT_SECTION_PAGE_NUMBER_FORMAT_UNSPECIFIED = 0;
+  DOCUMENT_SECTION_PAGE_NUMBER_FORMAT_DECIMAL = 1;
+  DOCUMENT_SECTION_PAGE_NUMBER_FORMAT_UPPER_ROMAN = 2;
+  DOCUMENT_SECTION_PAGE_NUMBER_FORMAT_LOWER_ROMAN = 3;
+  DOCUMENT_SECTION_PAGE_NUMBER_FORMAT_UPPER_LETTER = 4;
+  DOCUMENT_SECTION_PAGE_NUMBER_FORMAT_LOWER_LETTER = 5;
 }
 
 message DocumentHyperlink {

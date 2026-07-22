@@ -1963,6 +1963,102 @@ const zeroWidthCustomSectionColumn = DocumentModel.create({ blocks: [
 assert.equal(zeroWidthCustomSectionColumn.verify().issues.some((issue) => issue.type === "invalidSectionColumns"), true);
 await assert.rejects(() => DocumentFile.exportDocx(zeroWidthCustomSectionColumn), /custom column widths must be 1 through 31680/i);
 
+const sectionPageNumberingDocument = DocumentModel.create({
+  name: "Section page numbering",
+  blocks: [
+    { kind: "paragraph", text: "Front matter uses a bounded page-number restart." },
+    {
+      kind: "section",
+      breakType: "nextPage",
+      pageNumbering: { start: 1, format: "lowerRoman" },
+      columns: { count: 2, spacing: 720, separator: false },
+    },
+  ],
+});
+const sectionPageNumberingDocx = await DocumentFile.exportDocx(sectionPageNumberingDocument);
+const sectionPageNumberingXml = await (await JSZip.loadAsync(await sectionPageNumberingDocx.arrayBuffer())).file("word/document.xml").async("text");
+const canonicalPageNumberingMarkup = sectionPageNumberingXml.match(/<w:pgNumType\b[^>]*\/>/)?.[0];
+const normalizedPageNumberingTags = (xml) => [...xml.matchAll(/<w:pgNumType\b([^>]*)\/>/g)]
+  .map((match) => match[1].trim().split(/\s+/).filter(Boolean).sort());
+assert.match(canonicalPageNumberingMarkup, /<w:pgNumType\b(?=[^>]*w:start="1")(?=[^>]*w:fmt="lowerRoman")[^>]*\/>/);
+assert.match(sectionPageNumberingXml, /<w:pgNumType\b[^>]*\/>[\s\S]*<w:cols\b/, "pgNumType must precede columns in the native section-property sequence");
+const importedSectionPageNumbering = await DocumentFile.importDocx(sectionPageNumberingDocx);
+const sectionPageNumbering = importedSectionPageNumbering.blocks.find((block) => block.kind === "section");
+assert.equal(sectionPageNumbering?.editable, true);
+assert.deepEqual(sectionPageNumbering?.pageNumbering, { start: 1, format: "lowerRoman" });
+assert.match(importedSectionPageNumbering.inspect({ kind: "section", maxChars: 2_000 }).ndjson, /"pageNumbering":\{"start":1,"format":"lowerRoman"\}/);
+assert.deepEqual(
+  Buffer.from(await (await DocumentFile.exportDocx(importedSectionPageNumbering)).arrayBuffer()),
+  Buffer.from(await sectionPageNumberingDocx.arrayBuffer()),
+  "unchanged canonical section page numbering must preserve the source package exactly",
+);
+importedSectionPageNumbering.blocks.find((block) => block.kind === "paragraph")?.replaceText("Front matter", "Retained front matter");
+const pageNumberingBodyEdit = await DocumentFile.exportDocx(importedSectionPageNumbering);
+const pageNumberingBodyEditXml = await (await JSZip.loadAsync(await pageNumberingBodyEdit.arrayBuffer())).file("word/document.xml").async("text");
+assert.equal(pageNumberingBodyEditXml.match(/<w:pgNumType\b[^>]*\/>/)?.[0], canonicalPageNumberingMarkup, "an unrelated body edit must preserve page-number markup");
+sectionPageNumbering.pageNumbering = { start: 7, format: "upperLetter" };
+const editedSectionPageNumberingDocx = await DocumentFile.exportDocx(importedSectionPageNumbering);
+const editedSectionPageNumbering = await DocumentFile.importDocx(editedSectionPageNumberingDocx);
+const editedPageNumberingSection = editedSectionPageNumbering.blocks.find((block) => block.kind === "section");
+assert.deepEqual(editedPageNumberingSection?.pageNumbering, { start: 7, format: "upperLetter" });
+editedPageNumberingSection.pageNumbering = { format: "decimal" };
+const continuedDecimalDocx = await DocumentFile.exportDocx(editedSectionPageNumbering);
+const continuedDecimalXml = await (await JSZip.loadAsync(await continuedDecimalDocx.arrayBuffer())).file("word/document.xml").async("text");
+assert.match(continuedDecimalXml, /<w:pgNumType\b(?=[^>]*w:fmt="decimal")[^>]*\/>/);
+assert.doesNotMatch(continuedDecimalXml.match(/<w:pgNumType\b[^>]*\/>/)?.[0] || "", /\bw:start=/);
+assert.deepEqual((await DocumentFile.importDocx(continuedDecimalDocx)).blocks.find((block) => block.kind === "section")?.pageNumbering, { format: "decimal" });
+editedPageNumberingSection.pageNumbering = { start: 0 };
+assert.deepEqual((await DocumentFile.importDocx(await DocumentFile.exportDocx(editedSectionPageNumbering))).blocks.find((block) => block.kind === "section")?.pageNumbering, { start: 0 });
+editedPageNumberingSection.pageNumbering = undefined;
+const removedPageNumberingDocx = await DocumentFile.exportDocx(editedSectionPageNumbering);
+assert.doesNotMatch(await (await JSZip.loadAsync(await removedPageNumberingDocx.arrayBuffer())).file("word/document.xml").async("text"), /<w:pgNumType\b/);
+
+for (const [label, markup] of [
+  ["duplicate", `${canonicalPageNumberingMarkup}${canonicalPageNumberingMarkup}`],
+  ["extension-bearing", canonicalPageNumberingMarkup.replace("<w:pgNumType", '<w:pgNumType w:compatFlag="retained"')],
+  ["chapter-numbered", canonicalPageNumberingMarkup.replace("/>", ' w:chapStyle="1" w:chapSep="hyphen"/>')],
+  ["unsupported format", canonicalPageNumberingMarkup.replace('w:fmt="lowerRoman"', 'w:fmt="ordinal"')],
+  ["empty", "<w:pgNumType/>"],
+]) {
+  const irregularPageNumberingSource = await DocumentFile.patchDocx(sectionPageNumberingDocx, [{
+    path: "word/document.xml",
+    xml: sectionPageNumberingXml.replace(canonicalPageNumberingMarkup, markup),
+  }]);
+  const importedIrregularPageNumbering = await DocumentFile.importDocx(irregularPageNumberingSource);
+  const irregularPageNumberingSection = importedIrregularPageNumbering.blocks.find((block) => block.kind === "section");
+  assert.equal(irregularPageNumberingSection?.editable, false, `${label} page numbering must keep section geometry source-owned`);
+  assert.equal(irregularPageNumberingSection?.pageNumbering, undefined);
+  importedIrregularPageNumbering.blocks.find((block) => block.kind === "paragraph")?.replaceText("Front matter", `${label} front matter`);
+  const unrelatedIrregularPageNumberingEdit = await DocumentFile.exportDocx(importedIrregularPageNumbering);
+  const unrelatedIrregularPageNumberingXml = await (await JSZip.loadAsync(await unrelatedIrregularPageNumberingEdit.arrayBuffer())).file("word/document.xml").async("text");
+  const editedSectionMarkup = unrelatedIrregularPageNumberingXml.match(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/)?.[0];
+  const sourceSectionMarkup = (await (await JSZip.loadAsync(await irregularPageNumberingSource.arrayBuffer())).file("word/document.xml").async("text")).match(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/)?.[0];
+  assert.equal(
+    editedSectionMarkup.replace(/<w:pgNumType\b[^>]*\/>/g, ""),
+    sourceSectionMarkup.replace(/<w:pgNumType\b[^>]*\/>/g, ""),
+    `an unrelated body edit must preserve section siblings around ${label} page numbering`,
+  );
+  assert.deepEqual(normalizedPageNumberingTags(editedSectionMarkup), normalizedPageNumberingTags(sourceSectionMarkup), `an unrelated body edit must preserve every ${label} page-number attribute`);
+  irregularPageNumberingSection.pageNumbering = { start: 1, format: "decimal" };
+  await assert.rejects(
+    () => DocumentFile.exportDocx(importedIrregularPageNumbering),
+    (error) => error?.code === "unsupported_document_edit" && /source-bound and read-only/i.test(error.message),
+  );
+}
+
+assert.throws(() => DocumentModel.create({ blocks: [{ kind: "section", pageNumbering: "roman" }] }), /pageNumbering must be an object/i);
+assert.throws(() => DocumentModel.create({ blocks: [{ kind: "section", pageNumbering: { start: 1, chapterStyle: 1 } }] }), /unsupported document section pageNumbering properties: chapterStyle/i);
+for (const [pageNumbering, message] of [
+  [{}, /requires a start value or supported format/i],
+  [{ start: -1 }, /unsigned 32-bit integer|start must be an integer from 0 through 2147483647/i],
+  [{ start: 2_147_483_648 }, /start must not exceed 2147483647/i],
+  [{ format: "ordinal" }, /unsupported document section page-number format/i],
+]) {
+  const invalid = DocumentModel.create({ blocks: [{ kind: "paragraph", text: "Invalid page numbering" }, { kind: "section", pageNumbering }] });
+  assert.equal(invalid.verify().issues.some((issue) => issue.type === "invalidSectionPageNumbering"), true);
+  await assert.rejects(() => DocumentFile.exportDocx(invalid), message);
+}
+
 const protectedSettings = DocumentModel.create({
   name: "Passwordless document protection",
   settings: { documentProtection: "readOnly" },

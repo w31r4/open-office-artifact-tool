@@ -27,6 +27,7 @@ import {
   DocumentPictureBulletSchema,
   DocumentRevisionFinalizationMode,
   DocumentSectionBreak,
+  DocumentSectionPageNumberFormat,
   DocumentStyleType,
   DocumentTableVerticalMerge,
   SpreadsheetCalculationMode,
@@ -3040,6 +3041,32 @@ function publicDocumentSectionBreak(value) {
   return "nextPage";
 }
 
+function documentSectionPageNumberFormat(value) {
+  if (value === "decimal") return DocumentSectionPageNumberFormat.DECIMAL;
+  if (value === "upperRoman") return DocumentSectionPageNumberFormat.UPPER_ROMAN;
+  if (value === "lowerRoman") return DocumentSectionPageNumberFormat.LOWER_ROMAN;
+  if (value === "upperLetter") return DocumentSectionPageNumberFormat.UPPER_LETTER;
+  if (value === "lowerLetter") return DocumentSectionPageNumberFormat.LOWER_LETTER;
+  throw new TypeError(`Unsupported document section page-number format ${value || "(empty)"}.`);
+}
+
+function publicDocumentSectionPageNumberFormat(value) {
+  if (value === DocumentSectionPageNumberFormat.DECIMAL) return "decimal";
+  if (value === DocumentSectionPageNumberFormat.UPPER_ROMAN) return "upperRoman";
+  if (value === DocumentSectionPageNumberFormat.LOWER_ROMAN) return "lowerRoman";
+  if (value === DocumentSectionPageNumberFormat.UPPER_LETTER) return "upperLetter";
+  if (value === DocumentSectionPageNumberFormat.LOWER_LETTER) return "lowerLetter";
+  throw new OpenChestnutCodecError("OpenChestnut returned an unsupported document section page-number format.", [], { code: "invalid_document_section" });
+}
+
+function publicDocumentSectionPageNumbering(value) {
+  if (!value) return undefined;
+  return {
+    ...(value.start === undefined ? {} : { start: value.start }),
+    ...(value.format === DocumentSectionPageNumberFormat.UNSPECIFIED ? {} : { format: publicDocumentSectionPageNumberFormat(value.format) }),
+  };
+}
+
 function documentChangeType(value) {
   if (value === "insert") return DocumentChangeType.INSERT;
   if (value === "delete") return DocumentChangeType.DELETE;
@@ -3185,6 +3212,7 @@ function wireDocumentSection(block) {
   const page = block.pageSize || {};
   const margins = block.margins || {};
   const columns = block.columns;
+  const pageNumbering = block.pageNumbering;
   if (columns && typeof columns.separator !== "boolean") {
     throw new TypeError(`Document section ${block.id} column separator must be boolean.`);
   }
@@ -3209,6 +3237,10 @@ function wireDocumentSection(block) {
       spacingTwips: uint32(Number(columns.spacing), `Document section ${block.id} column spacing`),
       separator: columns.separator,
     }) : undefined,
+    pageNumbering: pageNumbering ? {
+      ...(Object.hasOwn(pageNumbering, "start") ? { start: uint32(Number(pageNumbering.start), `Document section ${block.id} page-number start`) } : {}),
+      ...(Object.hasOwn(pageNumbering, "format") ? { format: documentSectionPageNumberFormat(pageNumbering.format) } : {}),
+    } : undefined,
   };
 }
 
@@ -4001,6 +4033,7 @@ function documentFromEnvelope(envelope) {
             spacing: section.columns.spacingTwips,
             separator: section.columns.separator,
           }) : undefined,
+          pageNumbering: publicDocumentSectionPageNumbering(section.pageNumbering),
         };
       }
       case "opaque":
