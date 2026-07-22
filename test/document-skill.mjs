@@ -747,12 +747,15 @@ try {
   assert.equal(directNumberingDocument.blocks.filter((block) => block.kind === "listItem").length, 2);
   assert.equal(directNumberingDocument.blocks.some((block) => block.text === "Confirm the edited second item."), true);
 
-  const sectionSettings = await runFixture("package-settings");
+  const sectionSettings = await runFixture("package-settings", {
+    nativeRender: nativeStatus.available ? "required" : "auto",
+  });
   const settingsDocument = await DocumentFile.importDocx(await FileBlob.load(sectionSettings.docxPath));
   assert.equal(settingsDocument.settings.evenAndOddHeaders, true);
   assert.equal(settingsDocument.settings.mirrorMargins, true);
   assert.equal(settingsDocument.settings.gutterAtTop, true);
   assert.equal(settingsDocument.blocks.find((block) => block.kind === "section")?.margins.gutter, 720);
+  assert.deepEqual(settingsDocument.blocks.find((block) => block.kind === "section")?.lineNumbering, { countBy: 5, start: 0, distance: 360, restart: "newPage" });
   assert.deepEqual(settingsDocument.blocks.find((block) => block.kind === "section")?.pageNumbering, { start: 1, format: "lowerRoman" });
   assert.deepEqual(settingsDocument.blocks.find((block) => block.kind === "section")?.columns, { definitions: [{ width: 3000, spacing: 720 }, { width: 5640, spacing: 0 }], separator: true });
   assert.equal(settingsDocument.sectionSettings[0]?.differentFirstPage, true);
@@ -763,8 +766,11 @@ try {
   assert.match(await packageSettingsZip.file("word/settings.xml").async("text"), /<w:mirrorMargins\s*\/>/);
   assert.match(await packageSettingsZip.file("word/settings.xml").async("text"), /<w:gutterAtTop\s*\/>/);
   assert.match(await packageSettingsZip.file("word/document.xml").async("text"), /<w:pgMar\b(?=[^>]*w:gutter="720")[^>]*\/>/);
+  assert.match(await packageSettingsZip.file("word/document.xml").async("text"), /<w:lnNumType\b(?=[^>]*w:countBy="5")(?=[^>]*w:start="0")(?=[^>]*w:distance="360")(?=[^>]*w:restart="newPage")[^>]*\/>/);
   assert.match(await packageSettingsZip.file("word/document.xml").async("text"), /<w:pgNumType\b(?=[^>]*w:start="1")(?=[^>]*w:fmt="lowerRoman")[^>]*\/>/);
   assert.match(await packageSettingsZip.file("word/document.xml").async("text"), /<w:cols\b(?=[^>]*w:equalWidth="(?:false|0)")(?=[^>]*w:sep="(?:true|1)")[^>]*>[\s\S]*?<w:col\b(?=[^>]*w:w="3000")(?=[^>]*w:space="720")[^>]*\/>[\s\S]*?<w:col\b(?=[^>]*w:w="5640")[^>]*\/>[\s\S]*?<\/w:cols>/);
+  assert.equal(sectionSettings.qa.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
+  if (nativeStatus.available) assert.equal(sectionSettings.qa.summary.nativeRender.ok, true);
 
   const protection = await runFixture("open-chestnut-protection");
   const protectedDocument = await DocumentFile.importDocx(await FileBlob.load(protection.docxPath));
@@ -868,6 +874,7 @@ try {
   assert.match(skillText, /columns: \{ count: 2, spacing: 720, separator: true \}/);
   assert.match(skillText, /definitions: \[\s*\{ width: 3000, spacing: 720 \},\s*\{ width: 5640, spacing: 0 \}/);
   assert.match(skillText, /pageNumbering: \{ start: 1, format: "lowerRoman" \}/);
+  assert.match(skillText, /lineNumbering: \{ countBy: 5, start: 0, distance: 360, restart: "newPage" \}/);
   assert.match(skillText, /document\.addBibliographySource/);
   assert.match(skillText, /document\.addCitation/);
   assert.match(skillText, /document\.addTableOfContents/);

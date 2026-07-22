@@ -600,6 +600,8 @@ const DOCUMENT_SECTION_COLUMN_KEYS = new Set(["count", "spacing", "separator", "
 const DOCUMENT_SECTION_COLUMN_DEFINITION_KEYS = new Set(["width", "spacing"]);
 const DOCUMENT_SECTION_PAGE_NUMBERING_KEYS = new Set(["start", "format"]);
 const DOCUMENT_SECTION_PAGE_NUMBER_FORMATS = new Set(["decimal", "upperRoman", "lowerRoman", "upperLetter", "lowerLetter"]);
+const DOCUMENT_SECTION_LINE_NUMBERING_KEYS = new Set(["countBy", "start", "distance", "restart"]);
+const DOCUMENT_SECTION_LINE_NUMBER_RESTARTS = new Set(["newPage", "newSection", "continuous"]);
 
 function assertDocumentImageObjectKeys(value, allowed, label) {
   for (const key of Object.keys(value)) if (!allowed.has(key)) throw new TypeError(`${label} contains unsupported field ${key}.`);
@@ -688,6 +690,19 @@ function normalizeDocumentSectionPageNumbering(value) {
   };
 }
 
+function normalizeDocumentSectionLineNumbering(value) {
+  if (value == null) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Document section lineNumbering must be an object.");
+  const unknownKeys = Object.keys(value).filter((key) => !DOCUMENT_SECTION_LINE_NUMBERING_KEYS.has(key));
+  if (unknownKeys.length) throw new TypeError(`Unsupported document section lineNumbering properties: ${unknownKeys.join(", ")}.`);
+  return {
+    countBy: Number(value.countBy ?? 1),
+    ...(Object.hasOwn(value, "start") ? { start: Number(value.start) } : {}),
+    ...(Object.hasOwn(value, "distance") ? { distance: Number(value.distance) } : {}),
+    ...(Object.hasOwn(value, "restart") ? { restart: String(value.restart) } : {}),
+  };
+}
+
 class DocumentImageBlock {
   constructor(document, config = {}) {
     this.document = document;
@@ -733,10 +748,11 @@ class DocumentSectionBlock {
     };
     this.columns = normalizeDocumentSectionColumns(config.columns);
     this.pageNumbering = normalizeDocumentSectionPageNumbering(config.pageNumbering);
+    this.lineNumbering = normalizeDocumentSectionLineNumbering(config.lineNumbering);
   }
 
-  inspectRecord(index) { return { kind: "section", id: this.id, index, name: this.name || undefined, editable: this.editable, breakType: this.breakType, orientation: this.orientation, pageSize: this.pageSize, margins: this.margins, columns: this.columns, pageNumbering: this.pageNumbering }; }
-  toProto() { return { kind: "section", id: this.id, name: this.name, breakType: this.breakType, orientation: this.orientation, pageSize: this.pageSize, margins: this.margins, columns: this.columns, pageNumbering: this.pageNumbering }; }
+  inspectRecord(index) { return { kind: "section", id: this.id, index, name: this.name || undefined, editable: this.editable, breakType: this.breakType, orientation: this.orientation, pageSize: this.pageSize, margins: this.margins, columns: this.columns, pageNumbering: this.pageNumbering, lineNumbering: this.lineNumbering }; }
+  toProto() { return { kind: "section", id: this.id, name: this.name, breakType: this.breakType, orientation: this.orientation, pageSize: this.pageSize, margins: this.margins, columns: this.columns, pageNumbering: this.pageNumbering, lineNumbering: this.lineNumbering }; }
 }
 
 class DocumentHeaderFooterBlock {
@@ -1644,6 +1660,12 @@ export class DocumentModel {
           if (!hasStart && !hasFormat) issues.push(verificationIssue("document", "invalidSectionPageNumbering", `Section ${block.id} pageNumbering requires start or format.`, { id: block.id, pageNumbering: block.pageNumbering }));
           if (hasStart && (!Number.isInteger(block.pageNumbering.start) || block.pageNumbering.start < 0 || block.pageNumbering.start > 2_147_483_647)) issues.push(verificationIssue("document", "invalidSectionPageNumbering", `Section ${block.id} page-number start must be an integer from 0 through 2147483647.`, { id: block.id, pageNumbering: block.pageNumbering }));
           if (hasFormat && !DOCUMENT_SECTION_PAGE_NUMBER_FORMATS.has(block.pageNumbering.format)) issues.push(verificationIssue("document", "invalidSectionPageNumbering", `Section ${block.id} page-number format must be decimal, upperRoman, lowerRoman, upperLetter, or lowerLetter.`, { id: block.id, pageNumbering: block.pageNumbering }));
+        }
+        if (block.lineNumbering) {
+          if (!Number.isInteger(block.lineNumbering.countBy) || block.lineNumbering.countBy < 1 || block.lineNumbering.countBy > 32767) issues.push(verificationIssue("document", "invalidSectionLineNumbering", `Section ${block.id} line-number countBy must be an integer from 1 through 32767.`, { id: block.id, lineNumbering: block.lineNumbering }));
+          if (Object.hasOwn(block.lineNumbering, "start") && (!Number.isInteger(block.lineNumbering.start) || block.lineNumbering.start < 0 || block.lineNumbering.start > 32767)) issues.push(verificationIssue("document", "invalidSectionLineNumbering", `Section ${block.id} line-number start must be an integer from 0 through 32767.`, { id: block.id, lineNumbering: block.lineNumbering }));
+          if (Object.hasOwn(block.lineNumbering, "distance") && (!Number.isInteger(block.lineNumbering.distance) || block.lineNumbering.distance < 0 || block.lineNumbering.distance > 31680)) issues.push(verificationIssue("document", "invalidSectionLineNumbering", `Section ${block.id} line-number distance must be an integer from 0 through 31680 twentieths of a point.`, { id: block.id, lineNumbering: block.lineNumbering }));
+          if (Object.hasOwn(block.lineNumbering, "restart") && !DOCUMENT_SECTION_LINE_NUMBER_RESTARTS.has(block.lineNumbering.restart)) issues.push(verificationIssue("document", "invalidSectionLineNumbering", `Section ${block.id} line-number restart must be newPage, newSection, or continuous.`, { id: block.id, lineNumbering: block.lineNumbering }));
         }
       }
       if (block.kind === "listItem") {

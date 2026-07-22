@@ -2736,6 +2736,9 @@ message DocumentSection {
   // Optional canonical page-number restart and display format for this
   // section. PAGE fields remain separate run/header/footer content.
   DocumentSectionPageNumbering page_numbering = 11;
+  // Optional canonical line numbering shown before each text column in this
+  // section. Paragraph-level suppression remains outside this profile.
+  DocumentSectionLineNumbering line_numbering = 12;
 }
 
 message DocumentSectionColumns {
@@ -3096,4 +3099,27 @@ message PresentationDiagramTextNode {
   string model_id = 1;
   // Editable only within the closed source-bound node profile.
   string text = 2;
+}
+
+// Appended so this additive protocol-2 DOCX section contract does not renumber
+// any pre-existing generated descriptor. DocumentSection references it from
+// field 12 while paragraph-level line-number suppression remains unmodeled.
+message DocumentSectionLineNumbering {
+  // Display every nth line number. The bounded profile accepts 1..32767.
+  uint32 count_by = 1;
+  // Optional zero-based native starting value. The first displayed line is
+  // start + 1 under the WordprocessingML convention.
+  optional uint32 start = 2;
+  // Optional distance from text in twentieths of a point.
+  optional uint32 distance_twips = 3;
+  // Optional restart behavior. UNSPECIFIED retains the host default of
+  // restarting on each new page.
+  DocumentSectionLineNumberRestart restart = 4;
+}
+
+enum DocumentSectionLineNumberRestart {
+  DOCUMENT_SECTION_LINE_NUMBER_RESTART_UNSPECIFIED = 0;
+  DOCUMENT_SECTION_LINE_NUMBER_RESTART_NEW_PAGE = 1;
+  DOCUMENT_SECTION_LINE_NUMBER_RESTART_NEW_SECTION = 2;
+  DOCUMENT_SECTION_LINE_NUMBER_RESTART_CONTINUOUS = 3;
 }

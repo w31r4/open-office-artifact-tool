@@ -41,6 +41,7 @@ internal static class DocxSectionCodec
         };
         if (TryReadColumns(source, out var columns) && columns is not null) result.Columns = columns;
         if (TryReadPageNumbering(source, out var pageNumbering) && pageNumbering is not null) result.PageNumbering = pageNumbering;
+        if (TryReadLineNumbering(source, out var lineNumbering) && lineNumbering is not null) result.LineNumbering = lineNumbering;
         return result;
     }
 
@@ -79,6 +80,9 @@ internal static class DocxSectionCodec
         var sourcePageNumbering = native.GetFirstChild<W.PageNumberType>();
         if (requested.PageNumbering is null) sourcePageNumbering?.Remove();
         else Replace(native, sourcePageNumbering, BuildPageNumbering(requested.PageNumbering));
+        var sourceLineNumbering = native.GetFirstChild<W.LineNumberType>();
+        if (requested.LineNumbering is null) sourceLineNumbering?.Remove();
+        else Replace(native, sourceLineNumbering, BuildLineNumbering(requested.LineNumbering));
     }
 
     internal static string ResidualHash(W.Paragraph paragraph)
@@ -88,6 +92,7 @@ internal static class DocxSectionCodec
         section?.GetFirstChild<W.SectionType>()?.Remove();
         section?.GetFirstChild<W.PageSize>()?.Remove();
         section?.GetFirstChild<W.PageMargin>()?.Remove();
+        section?.GetFirstChild<W.LineNumberType>()?.Remove();
         section?.GetFirstChild<W.PageNumberType>()?.Remove();
         section?.GetFirstChild<W.Columns>()?.Remove();
         return Hash(clone.OuterXml);
@@ -152,6 +157,17 @@ internal static class DocxSectionCodec
             if (!IsSupportedPageNumberFormat(section.PageNumbering.Format))
                 throw new CodecException("invalid_document_section", $"{label} page-number format is unsupported.");
         }
+        if (section.LineNumbering is not null)
+        {
+            if (section.LineNumbering.CountBy is < 1 or > 32767)
+                throw new CodecException("invalid_document_section", $"{label} line-number countBy must be 1 through 32767.");
+            if (section.LineNumbering.HasStart && section.LineNumbering.Start > 32767)
+                throw new CodecException("invalid_document_section", $"{label} line-number start must be 0 through 32767.");
+            if (section.LineNumbering.HasDistanceTwips && section.LineNumbering.DistanceTwips > 31680)
+                throw new CodecException("invalid_document_section", $"{label} line-number distance must be 0 through 31680 twentieths of a point.");
+            if (!IsSupportedLineNumberRestart(section.LineNumbering.Restart))
+                throw new CodecException("invalid_document_section", $"{label} line-number restart is unsupported.");
+        }
     }
 
     private static W.SectionProperties BuildProperties(
@@ -162,6 +178,7 @@ internal static class DocxSectionCodec
         var properties = new W.SectionProperties();
         foreach (var reference in references) properties.Append(reference.CloneNode(true));
         properties.Append(BuildType(source.BreakType), BuildPageSize(source), BuildPageMargin(source));
+        if (source.LineNumbering is not null) properties.Append(BuildLineNumbering(source.LineNumbering));
         if (source.PageNumbering is not null) properties.Append(BuildPageNumbering(source.PageNumbering));
         if (source.Columns is not null) properties.Append(BuildColumns(source.Columns));
         if (differentFirstPage) properties.Append(new W.TitlePage());
@@ -231,6 +248,18 @@ internal static class DocxSectionCodec
         return result;
     }
 
+    private static W.LineNumberType BuildLineNumbering(DocumentSectionLineNumbering source)
+    {
+        var result = new W.LineNumberType
+        {
+            CountBy = checked((short)source.CountBy),
+        };
+        if (source.HasStart) result.Start = checked((short)source.Start);
+        if (source.HasDistanceTwips) result.Distance = source.DistanceTwips.ToString(CultureInfo.InvariantCulture);
+        if (source.Restart != DocumentSectionLineNumberRestart.Unspecified) result.Restart = ToNativeLineNumberRestart(source.Restart);
+        return result;
+    }
+
     private static DocumentSection Default() => new()
     {
         BreakType = DocumentSectionBreak.NextPage,
@@ -246,14 +275,15 @@ internal static class DocxSectionCodec
     private static bool IsBounded(W.SectionProperties source)
     {
         if (!source.ChildElements.All(child => child is W.HeaderReference or W.FooterReference or
-                W.SectionType or W.PageSize or W.PageMargin or W.PageNumberType or W.Columns or W.TitlePage) ||
+                W.SectionType or W.PageSize or W.PageMargin or W.LineNumberType or W.PageNumberType or W.Columns or W.TitlePage) ||
             source.Elements<W.SectionType>().Count() > 1 ||
             source.Elements<W.PageSize>().Count() > 1 ||
             source.Elements<W.PageMargin>().Count() > 1 ||
+            source.Elements<W.LineNumberType>().Count() > 1 ||
             source.Elements<W.PageNumberType>().Count() > 1 ||
             source.Elements<W.TitlePage>().Count() > 1)
             return false;
-        return TryReadColumns(source, out _) && TryReadPageNumbering(source, out _);
+        return TryReadColumns(source, out _) && TryReadPageNumbering(source, out _) && TryReadLineNumbering(source, out _);
     }
 
     private static bool TryReadColumns(W.SectionProperties source, out DocumentSectionColumns? result)
@@ -357,6 +387,46 @@ internal static class DocxSectionCodec
         }
     }
 
+    private static bool TryReadLineNumbering(W.SectionProperties source, out DocumentSectionLineNumbering? result)
+    {
+        result = null;
+        var matches = source.Elements<W.LineNumberType>().ToArray();
+        if (matches.Length == 0) return true;
+        if (matches.Length != 1) return false;
+        var lineNumbering = matches[0];
+        if (lineNumbering.HasChildren || lineNumbering.ExtendedAttributes.Any() || lineNumbering.NamespaceDeclarations.Any() ||
+            lineNumbering.MCAttributes is not null)
+            return false;
+        try
+        {
+            var countBy = lineNumbering.CountBy?.Value ?? (short)1;
+            if (countBy is < 1 or > 32767) return false;
+            var value = new DocumentSectionLineNumbering { CountBy = checked((uint)countBy) };
+            if (lineNumbering.Start?.Value is { } start)
+            {
+                if (start < 0) return false;
+                value.Start = checked((uint)start);
+            }
+            if (lineNumbering.Distance?.Value is { } distanceText)
+            {
+                if (!uint.TryParse(distanceText, NumberStyles.None, CultureInfo.InvariantCulture, out var distance) || distance > 31680)
+                    return false;
+                value.DistanceTwips = distance;
+            }
+            if (lineNumbering.Restart?.Value is { } restart)
+            {
+                if (!TryFromNativeLineNumberRestart(restart, out var publicRestart)) return false;
+                value.Restart = publicRestart;
+            }
+            result = value;
+            return true;
+        }
+        catch (Exception exception) when (exception is FormatException or InvalidOperationException or OverflowException)
+        {
+            return false;
+        }
+    }
+
     private static bool IsSupportedPageNumberFormat(DocumentSectionPageNumberFormat value) =>
         value is DocumentSectionPageNumberFormat.Unspecified or
             DocumentSectionPageNumberFormat.Decimal or
@@ -384,6 +454,29 @@ internal static class DocxSectionCodec
             value == W.NumberFormatValues.LowerLetter ? DocumentSectionPageNumberFormat.LowerLetter :
             DocumentSectionPageNumberFormat.Unspecified;
         return result != DocumentSectionPageNumberFormat.Unspecified;
+    }
+
+    private static bool IsSupportedLineNumberRestart(DocumentSectionLineNumberRestart value) =>
+        value is DocumentSectionLineNumberRestart.Unspecified or
+            DocumentSectionLineNumberRestart.NewPage or
+            DocumentSectionLineNumberRestart.NewSection or
+            DocumentSectionLineNumberRestart.Continuous;
+
+    private static W.LineNumberRestartValues ToNativeLineNumberRestart(DocumentSectionLineNumberRestart value) => value switch
+    {
+        DocumentSectionLineNumberRestart.NewPage => W.LineNumberRestartValues.NewPage,
+        DocumentSectionLineNumberRestart.NewSection => W.LineNumberRestartValues.NewSection,
+        DocumentSectionLineNumberRestart.Continuous => W.LineNumberRestartValues.Continuous,
+        _ => throw new CodecException("invalid_document_section", "Document section line-number restart is unsupported."),
+    };
+
+    private static bool TryFromNativeLineNumberRestart(W.LineNumberRestartValues value, out DocumentSectionLineNumberRestart result)
+    {
+        result = value == W.LineNumberRestartValues.NewPage ? DocumentSectionLineNumberRestart.NewPage :
+            value == W.LineNumberRestartValues.NewSection ? DocumentSectionLineNumberRestart.NewSection :
+            value == W.LineNumberRestartValues.Continuous ? DocumentSectionLineNumberRestart.Continuous :
+            DocumentSectionLineNumberRestart.Unspecified;
+        return result != DocumentSectionLineNumberRestart.Unspecified;
     }
 
     private static DocumentSectionBreak FromNativeBreak(W.SectionMarkValues? value) =>
@@ -414,9 +507,10 @@ internal static class DocxSectionCodec
         W.SectionType => 30,
         W.PageSize => 40,
         W.PageMargin => 50,
-        W.PageNumberType => 60,
-        W.Columns => 70,
-        W.TitlePage => 80,
+        W.LineNumberType => 60,
+        W.PageNumberType => 70,
+        W.Columns => 80,
+        W.TitlePage => 90,
         _ => int.MaxValue,
     };
 

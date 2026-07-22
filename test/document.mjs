@@ -2059,6 +2059,107 @@ for (const [pageNumbering, message] of [
   await assert.rejects(() => DocumentFile.exportDocx(invalid), message);
 }
 
+const sectionLineNumberingDocument = DocumentModel.create({
+  name: "Section line numbering",
+  blocks: [
+    { kind: "paragraph", text: "Review copy uses bounded line numbering." },
+    {
+      kind: "section",
+      breakType: "nextPage",
+      lineNumbering: { countBy: 5, start: 0, distance: 360, restart: "newPage" },
+      pageNumbering: { start: 1, format: "decimal" },
+      columns: { count: 2, spacing: 720, separator: false },
+    },
+  ],
+});
+const sectionLineNumberingDocx = await DocumentFile.exportDocx(sectionLineNumberingDocument);
+const sectionLineNumberingXml = await (await JSZip.loadAsync(await sectionLineNumberingDocx.arrayBuffer())).file("word/document.xml").async("text");
+const canonicalLineNumberingMarkup = sectionLineNumberingXml.match(/<w:lnNumType\b[^>]*\/>/)?.[0];
+const normalizedLineNumberingTags = (xml) => [...xml.matchAll(/<w:lnNumType\b([^>]*)\/>/g)]
+  .map((match) => match[1].trim().split(/\s+/).filter(Boolean).sort());
+assert.match(canonicalLineNumberingMarkup, /<w:lnNumType\b(?=[^>]*w:countBy="5")(?=[^>]*w:start="0")(?=[^>]*w:distance="360")(?=[^>]*w:restart="newPage")[^>]*\/>/);
+assert.match(sectionLineNumberingXml, /<w:lnNumType\b[^>]*\/>[\s\S]*<w:pgNumType\b[\s\S]*<w:cols\b/, "lnNumType must precede page numbering and columns in the native section-property sequence");
+const importedSectionLineNumbering = await DocumentFile.importDocx(sectionLineNumberingDocx);
+const sectionLineNumbering = importedSectionLineNumbering.blocks.find((block) => block.kind === "section");
+assert.equal(sectionLineNumbering?.editable, true);
+assert.deepEqual(sectionLineNumbering?.lineNumbering, { countBy: 5, start: 0, distance: 360, restart: "newPage" });
+assert.match(importedSectionLineNumbering.inspect({ kind: "section", maxChars: 2_000 }).ndjson, /"lineNumbering":\{"countBy":5,"start":0,"distance":360,"restart":"newPage"\}/);
+assert.deepEqual(
+  Buffer.from(await (await DocumentFile.exportDocx(importedSectionLineNumbering)).arrayBuffer()),
+  Buffer.from(await sectionLineNumberingDocx.arrayBuffer()),
+  "unchanged canonical section line numbering must preserve the source package exactly",
+);
+importedSectionLineNumbering.blocks.find((block) => block.kind === "paragraph")?.replaceText("Review copy", "Retained review copy");
+const lineNumberingBodyEdit = await DocumentFile.exportDocx(importedSectionLineNumbering);
+const lineNumberingBodyEditXml = await (await JSZip.loadAsync(await lineNumberingBodyEdit.arrayBuffer())).file("word/document.xml").async("text");
+assert.equal(lineNumberingBodyEditXml.match(/<w:lnNumType\b[^>]*\/>/)?.[0], canonicalLineNumberingMarkup, "an unrelated body edit must preserve line-number markup");
+sectionLineNumbering.lineNumbering = { countBy: 10, start: 4, distance: 480, restart: "continuous" };
+const editedSectionLineNumberingDocx = await DocumentFile.exportDocx(importedSectionLineNumbering);
+const editedSectionLineNumbering = await DocumentFile.importDocx(editedSectionLineNumberingDocx);
+assert.deepEqual(editedSectionLineNumbering.blocks.find((block) => block.kind === "section")?.lineNumbering, { countBy: 10, start: 4, distance: 480, restart: "continuous" });
+const defaultLineNumberingDocument = DocumentModel.create({
+  blocks: [{ kind: "paragraph", text: "Number every line." }, { kind: "section", lineNumbering: {} }],
+});
+assert.deepEqual(defaultLineNumberingDocument.blocks.find((block) => block.kind === "section")?.lineNumbering, { countBy: 1 });
+const defaultLineNumberingDocx = await DocumentFile.exportDocx(defaultLineNumberingDocument);
+const defaultLineNumberingXml = await (await JSZip.loadAsync(await defaultLineNumberingDocx.arrayBuffer())).file("word/document.xml").async("text");
+assert.match(defaultLineNumberingXml, /<w:lnNumType\s+w:countBy="1"\s*\/>/);
+assert.deepEqual((await DocumentFile.importDocx(defaultLineNumberingDocx)).blocks.find((block) => block.kind === "section")?.lineNumbering, { countBy: 1 });
+const editedLineNumberingSection = editedSectionLineNumbering.blocks.find((block) => block.kind === "section");
+editedLineNumberingSection.lineNumbering = undefined;
+const removedLineNumberingDocx = await DocumentFile.exportDocx(editedSectionLineNumbering);
+assert.doesNotMatch(await (await JSZip.loadAsync(await removedLineNumberingDocx.arrayBuffer())).file("word/document.xml").async("text"), /<w:lnNumType\b/);
+
+for (const [label, markup] of [
+  ["duplicate", `${canonicalLineNumberingMarkup}${canonicalLineNumberingMarkup}`],
+  ["extension-bearing", canonicalLineNumberingMarkup.replace("<w:lnNumType", '<w:lnNumType w:compatFlag="retained"')],
+  ["zero increment", canonicalLineNumberingMarkup.replace('w:countBy="5"', 'w:countBy="0"')],
+  ["negative start", canonicalLineNumberingMarkup.replace('w:start="0"', 'w:start="-1"')],
+  ["oversized distance", canonicalLineNumberingMarkup.replace('w:distance="360"', 'w:distance="31681"')],
+  ["invalid distance", canonicalLineNumberingMarkup.replace('w:distance="360"', 'w:distance="invalid"')],
+  ["unsupported restart", canonicalLineNumberingMarkup.replace('w:restart="newPage"', 'w:restart="invalid"')],
+]) {
+  const irregularLineNumberingSource = await DocumentFile.patchDocx(sectionLineNumberingDocx, [{
+    path: "word/document.xml",
+    xml: sectionLineNumberingXml.replace(canonicalLineNumberingMarkup, markup),
+  }]);
+  const importedIrregularLineNumbering = await DocumentFile.importDocx(irregularLineNumberingSource);
+  const irregularLineNumberingSection = importedIrregularLineNumbering.blocks.find((block) => block.kind === "section");
+  assert.equal(irregularLineNumberingSection?.editable, false, `${label} line numbering must keep section geometry source-owned`);
+  assert.equal(irregularLineNumberingSection?.lineNumbering, undefined);
+  importedIrregularLineNumbering.blocks.find((block) => block.kind === "paragraph")?.replaceText("Review copy", `${label} review copy`);
+  const unrelatedIrregularLineNumberingEdit = await DocumentFile.exportDocx(importedIrregularLineNumbering);
+  const unrelatedIrregularLineNumberingXml = await (await JSZip.loadAsync(await unrelatedIrregularLineNumberingEdit.arrayBuffer())).file("word/document.xml").async("text");
+  const editedSectionMarkup = unrelatedIrregularLineNumberingXml.match(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/)?.[0];
+  const sourceSectionMarkup = (await (await JSZip.loadAsync(await irregularLineNumberingSource.arrayBuffer())).file("word/document.xml").async("text")).match(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/)?.[0];
+  assert.equal(
+    editedSectionMarkup.replace(/<w:lnNumType\b[^>]*\/>/g, ""),
+    sourceSectionMarkup.replace(/<w:lnNumType\b[^>]*\/>/g, ""),
+    `an unrelated body edit must preserve section siblings around ${label} line numbering`,
+  );
+  assert.deepEqual(normalizedLineNumberingTags(editedSectionMarkup), normalizedLineNumberingTags(sourceSectionMarkup), `an unrelated body edit must preserve every ${label} line-number attribute`);
+  irregularLineNumberingSection.lineNumbering = { countBy: 1 };
+  await assert.rejects(
+    () => DocumentFile.exportDocx(importedIrregularLineNumbering),
+    (error) => error?.code === "unsupported_document_edit" && /source-bound and read-only/i.test(error.message),
+  );
+}
+
+assert.throws(() => DocumentModel.create({ blocks: [{ kind: "section", lineNumbering: "every" }] }), /lineNumbering must be an object/i);
+assert.throws(() => DocumentModel.create({ blocks: [{ kind: "section", lineNumbering: { countBy: 5, suppressBlankLines: true } }] }), /unsupported document section lineNumbering properties: suppressBlankLines/i);
+for (const [lineNumbering, message] of [
+  [{ countBy: 0 }, /countBy must be 1 through 32767/i],
+  [{ countBy: 32768 }, /countBy must be 1 through 32767/i],
+  [{ countBy: 1, start: -1 }, /unsigned 32-bit integer|start must be 0 through 32767/i],
+  [{ countBy: 1, start: 32768 }, /start must be 0 through 32767/i],
+  [{ countBy: 1, distance: 31681 }, /distance must be 0 through 31680/i],
+  [{ countBy: 1, restart: "eachColumn" }, /unsupported document section line-number restart/i],
+]) {
+  const invalid = DocumentModel.create({ blocks: [{ kind: "paragraph", text: "Invalid line numbering" }, { kind: "section", lineNumbering }] });
+  assert.equal(invalid.verify().issues.some((issue) => issue.type === "invalidSectionLineNumbering"), true);
+  await assert.rejects(() => DocumentFile.exportDocx(invalid), message);
+}
+
 const protectedSettings = DocumentModel.create({
   name: "Passwordless document protection",
   settings: { documentProtection: "readOnly" },

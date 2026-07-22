@@ -27,6 +27,7 @@ import {
   DocumentPictureBulletSchema,
   DocumentRevisionFinalizationMode,
   DocumentSectionBreak,
+  DocumentSectionLineNumberRestart,
   DocumentSectionPageNumberFormat,
   DocumentStyleType,
   DocumentTableVerticalMerge,
@@ -3067,6 +3068,30 @@ function publicDocumentSectionPageNumbering(value) {
   };
 }
 
+function documentSectionLineNumberRestart(value) {
+  if (value === "newPage") return DocumentSectionLineNumberRestart.NEW_PAGE;
+  if (value === "newSection") return DocumentSectionLineNumberRestart.NEW_SECTION;
+  if (value === "continuous") return DocumentSectionLineNumberRestart.CONTINUOUS;
+  throw new TypeError(`Unsupported document section line-number restart ${value || "(empty)"}.`);
+}
+
+function publicDocumentSectionLineNumberRestart(value) {
+  if (value === DocumentSectionLineNumberRestart.NEW_PAGE) return "newPage";
+  if (value === DocumentSectionLineNumberRestart.NEW_SECTION) return "newSection";
+  if (value === DocumentSectionLineNumberRestart.CONTINUOUS) return "continuous";
+  throw new OpenChestnutCodecError("OpenChestnut returned an unsupported document section line-number restart.", [], { code: "invalid_document_section" });
+}
+
+function publicDocumentSectionLineNumbering(value) {
+  if (!value) return undefined;
+  return {
+    countBy: value.countBy,
+    ...(value.start === undefined ? {} : { start: value.start }),
+    ...(value.distanceTwips === undefined ? {} : { distance: value.distanceTwips }),
+    ...(value.restart === DocumentSectionLineNumberRestart.UNSPECIFIED ? {} : { restart: publicDocumentSectionLineNumberRestart(value.restart) }),
+  };
+}
+
 function documentChangeType(value) {
   if (value === "insert") return DocumentChangeType.INSERT;
   if (value === "delete") return DocumentChangeType.DELETE;
@@ -3213,6 +3238,7 @@ function wireDocumentSection(block) {
   const margins = block.margins || {};
   const columns = block.columns;
   const pageNumbering = block.pageNumbering;
+  const lineNumbering = block.lineNumbering;
   if (columns && typeof columns.separator !== "boolean") {
     throw new TypeError(`Document section ${block.id} column separator must be boolean.`);
   }
@@ -3240,6 +3266,12 @@ function wireDocumentSection(block) {
     pageNumbering: pageNumbering ? {
       ...(Object.hasOwn(pageNumbering, "start") ? { start: uint32(Number(pageNumbering.start), `Document section ${block.id} page-number start`) } : {}),
       ...(Object.hasOwn(pageNumbering, "format") ? { format: documentSectionPageNumberFormat(pageNumbering.format) } : {}),
+    } : undefined,
+    lineNumbering: lineNumbering ? {
+      countBy: uint32(Number(lineNumbering.countBy), `Document section ${block.id} line-number countBy`),
+      ...(Object.hasOwn(lineNumbering, "start") ? { start: uint32(Number(lineNumbering.start), `Document section ${block.id} line-number start`) } : {}),
+      ...(Object.hasOwn(lineNumbering, "distance") ? { distanceTwips: uint32(Number(lineNumbering.distance), `Document section ${block.id} line-number distance`) } : {}),
+      ...(Object.hasOwn(lineNumbering, "restart") ? { restart: documentSectionLineNumberRestart(lineNumbering.restart) } : {}),
     } : undefined,
   };
 }
@@ -4034,6 +4066,7 @@ function documentFromEnvelope(envelope) {
             separator: section.columns.separator,
           }) : undefined,
           pageNumbering: publicDocumentSectionPageNumbering(section.pageNumbering),
+          lineNumbering: publicDocumentSectionLineNumbering(section.lineNumbering),
         };
       }
       case "opaque":

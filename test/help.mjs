@@ -382,7 +382,9 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.s
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.columns?.description || "", /equal-width.*count.*1–45.*explicit-width.*definitions.*positive widths.*spacing-after.*cannot be mixed.*source-owned/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.pageNumbering?.type, "object");
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.pageNumbering?.description || "", /start.*0\.\.2147483647.*decimal.*upperRoman.*lowerRoman.*upperLetter.*lowerLetter.*continues the prior sequence.*does not add or refresh.*source-owned/i);
-assert.match(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.returns?.section?.description || "", /page-number markup.*not canonical/i);
+assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.lineNumbering?.type, "object");
+assert.match(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.lineNumbering?.description || "", /countBy.*1\.\.32767.*start.*0\.\.32767.*distance.*0\.\.31680.*newPage.*newSection.*continuous.*defaults countBy to 1.*zero-based.*first displayed line.*paragraph-level suppression.*source-owned/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.returns?.section?.description || "", /line-number markup.*page-number markup.*not canonical/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.schema?.parameters?.pictureBullet?.type, "string|object");
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.summary || "", /picture-bulleted.*shared numbering-level resources.*complete group/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.schema?.parameters?.pictureBullet?.description || "", /PNG\/JPEG\/GIF.*HTTP\(S\).*4 through 72 points.*never fetched.*full-group edit.*fail closed/i);

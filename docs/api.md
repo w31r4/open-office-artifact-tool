@@ -373,11 +373,12 @@ Append a DOCX section break with page size, orientation, margins, binding gutter
 - `pageSize` (object) — Page width/height in twentieths of a point.
 - `margins` (object) — Top/right/bottom/left margins plus optional non-negative binding gutter in twentieths of a point. document.settings.gutterAtTop chooses top-edge versus binding-side placement.
 - `columns` (object) — Optional canonical text columns. Equal-width profile: { count: 1–45, spacing, separator }. Explicit-width profile: { definitions: [{ width, spacing }], separator }, with 1–45 ordered definitions, positive widths, and non-negative spacing-after values. All values are twentieths of a point; margins, binding-side gutter, widths, and gaps must fit the page content width. The two profiles cannot be mixed; ambiguous or extension-bearing w:cols graphs stay source-owned.
+- `lineNumbering` (object) — Optional canonical line numbering before each text column: { countBy?: integer 1..32767, start?: integer 0..32767, distance?: integer 0..31680, restart?: 'newPage'|'newSection'|'continuous' }. An empty object defaults countBy to 1; start is the zero-based native value, so the first displayed line is start + 1. distance is in twentieths of a point. Paragraph-level suppression, duplicate leaves, children, unknown values, or extension-bearing w:lnNumType markup stay source-owned.
 - `pageNumbering` (object) — Optional canonical section numbering: { start?: integer 0..2147483647, format?: 'decimal'|'upperRoman'|'lowerRoman'|'upperLetter'|'lowerLetter' }. At least one property is required; omitting start continues the prior sequence. This controls PAGE-field presentation but does not add or refresh a field. Chapter numbering, unsupported formats, duplicate leaves, children, or extension-bearing w:pgNumType markup stay source-owned.
 
 **Schema returns:**
 
-- `section` (DocumentSectionBlock) — Appended section break block. inspect reports editable=false when imported mirrorMargins/gutterAtTop mode markup, section-column topology, or page-number markup is not canonical.
+- `section` (DocumentSectionBlock) — Appended section break block. inspect reports editable=false when imported mirrorMargins/gutterAtTop mode markup, section-column topology, line-number markup, or page-number markup is not canonical.
 
 #### `document.addTable`
 

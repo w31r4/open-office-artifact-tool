@@ -34,6 +34,7 @@ document.addSection({
   orientation: "landscape",
   pageSize: { widthTwips: 15840, heightTwips: 12240 },
   margins: { top: 720, right: 900, bottom: 720, left: 900 },
+  lineNumbering: { countBy: 5, start: 0, distance: 360, restart: "newPage" },
   pageNumbering: { start: 1, format: "lowerRoman" },
   columns: { count: 2, spacing: 720, separator: true },
 });
@@ -79,6 +80,26 @@ root attributes, unknown children, extension-bearing definitions, and other
 ambiguous graphs remain source-owned; inspect reports that section as
 `editable: false`.
 
+`lineNumbering` owns one canonical native `w:lnNumType` leaf and places line
+numbers before each text column. An empty object enables every-line numbering
+with `countBy: 1`. The bounded fields are:
+
+```js
+lineNumbering: {
+  countBy: 5,         // 1..32767
+  start: 0,           // optional native zero-based value; first display is 1
+  distance: 360,      // optional twentieths of a point
+  restart: "newPage", // optional: newPage | newSection | continuous
+}
+```
+
+Set `section.lineNumbering = undefined` to remove the canonical leaf. This
+does not model paragraph-level `w:suppressLineNumbers`. Duplicate leaves,
+children, extension attributes, invalid numeric values, and unknown restart
+values remain source-owned and make the section read-only. Use native
+Word/LibreOffice pagination to check the displayed numbers and column
+placement; model preview alone is not authoritative.
+
 `pageNumbering` owns one canonical native `w:pgNumType` leaf. Use `start` to
 restart a section at an integer from 0 through 2147483647; omit it to continue
 the previous section's sequence. The optional `format` is one of `decimal`,
@@ -101,6 +122,7 @@ source-owned and make the section read-only.
 - Only the intended pages change orientation.
 - Page size and margins match the explicit twip values.
 - Text flows through the requested equal-width or asymmetric columns and separator rules.
+- Line numbers use the requested increment, offset, restart behavior, and distance in every text column.
 - PAGE fields restart/continue and display in the requested section format.
 - Headers and footers appear in the intended section.
 - First/even variants behave as requested.

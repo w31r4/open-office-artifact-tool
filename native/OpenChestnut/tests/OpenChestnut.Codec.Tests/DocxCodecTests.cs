@@ -5608,6 +5608,293 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void SectionLineNumberingAuthorsImportsEditsAndRejectsIrregularGraphs()
+    {
+        var request = ExportRequest();
+        request.Artifact.Document.Blocks.Add(new DocumentBlock
+        {
+            Id = "document/review-lines",
+            Section = new DocumentSection
+            {
+                BreakType = DocumentSectionBreak.NextPage,
+                PageWidthTwips = 12240,
+                PageHeightTwips = 15840,
+                MarginTopTwips = 1440,
+                MarginRightTwips = 1440,
+                MarginBottomTwips = 1440,
+                MarginLeftTwips = 1440,
+                LineNumbering = new DocumentSectionLineNumbering
+                {
+                    CountBy = 5,
+                    Start = 0,
+                    DistanceTwips = 360,
+                    Restart = DocumentSectionLineNumberRestart.NewPage,
+                },
+                PageNumbering = new DocumentSectionPageNumbering
+                {
+                    Start = 1,
+                    Format = DocumentSectionPageNumberFormat.Decimal,
+                },
+                Columns = new DocumentSectionColumns { Count = 2, SpacingTwips = 720 },
+            },
+        });
+
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        string sourceLineNumbering;
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var properties = package.MainDocumentPart!.Document!.Body!
+                .Descendants<W.SectionProperties>().First();
+            var lineNumbering = properties.GetFirstChild<W.LineNumberType>()!;
+            Assert.Equal(5, lineNumbering.CountBy!.Value);
+            Assert.Equal(0, lineNumbering.Start!.Value);
+            Assert.Equal("360", lineNumbering.Distance!.Value);
+            Assert.Equal(W.LineNumberRestartValues.NewPage, lineNumbering.Restart!.Value);
+            var children = properties.ChildElements.ToList();
+            Assert.True(children.IndexOf(lineNumbering) < children.IndexOf(properties.GetFirstChild<W.PageNumberType>()!));
+            Assert.True(children.IndexOf(lineNumbering) < children.IndexOf(properties.GetFirstChild<W.Columns>()!));
+            sourceLineNumbering = lineNumbering.OuterXml;
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var section = imported.Artifact.Document.Blocks.Single(block =>
+            block.ContentCase == DocumentBlock.ContentOneofCase.Section);
+        Assert.True(section.Source.Editable);
+        Assert.Equal(5U, section.Section.LineNumbering.CountBy);
+        Assert.True(section.Section.LineNumbering.HasStart);
+        Assert.Equal(0U, section.Section.LineNumbering.Start);
+        Assert.True(section.Section.LineNumbering.HasDistanceTwips);
+        Assert.Equal(360U, section.Section.LineNumbering.DistanceTwips);
+        Assert.Equal(DocumentSectionLineNumberRestart.NewPage, section.Section.LineNumbering.Restart);
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(authored.File, unchanged.File);
+
+        var title = imported.Artifact.Document.Blocks[0].Paragraph;
+        title.Text = "Retained review line numbering";
+        title.Runs[0].Text = title.Text;
+        var bodyEdit = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(bodyEdit.Ok, Diagnostics(bodyEdit));
+        using (var stream = new MemoryStream(bodyEdit.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+            Assert.Equal(sourceLineNumbering, package.MainDocumentPart!.Document!.Body!
+                .Descendants<W.SectionProperties>().First().GetFirstChild<W.LineNumberType>()!.OuterXml);
+
+        section.Section.LineNumbering = new DocumentSectionLineNumbering
+        {
+            CountBy = 10,
+            Start = 4,
+            DistanceTwips = 480,
+            Restart = DocumentSectionLineNumberRestart.Continuous,
+        };
+        var edited = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(edited.Ok, Diagnostics(edited));
+        using (var stream = new MemoryStream(edited.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var lineNumbering = package.MainDocumentPart!.Document!.Body!
+                .Descendants<W.SectionProperties>().First().GetFirstChild<W.LineNumberType>()!;
+            Assert.Equal(10, lineNumbering.CountBy!.Value);
+            Assert.Equal(4, lineNumbering.Start!.Value);
+            Assert.Equal("480", lineNumbering.Distance!.Value);
+            Assert.Equal(W.LineNumberRestartValues.Continuous, lineNumbering.Restart!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var editedImport = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = edited.File,
+        });
+        Assert.True(editedImport.Ok, Diagnostics(editedImport));
+        var editedSection = editedImport.Artifact.Document.Blocks.Single(block =>
+            block.ContentCase == DocumentBlock.ContentOneofCase.Section).Section;
+        editedSection.LineNumbering = new DocumentSectionLineNumbering { CountBy = 1 };
+        var defaults = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = editedImport.Artifact,
+        });
+        Assert.True(defaults.Ok, Diagnostics(defaults));
+        using (var stream = new MemoryStream(defaults.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var lineNumbering = package.MainDocumentPart!.Document!.Body!
+                .Descendants<W.SectionProperties>().First().GetFirstChild<W.LineNumberType>()!;
+            Assert.Equal(1, lineNumbering.CountBy!.Value);
+            Assert.Null(lineNumbering.Start);
+            Assert.Null(lineNumbering.Distance);
+            Assert.Null(lineNumbering.Restart);
+        }
+
+        var defaultsImport = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = defaults.File,
+        });
+        Assert.True(defaultsImport.Ok, Diagnostics(defaultsImport));
+        var defaultsSection = defaultsImport.Artifact.Document.Blocks.Single(block =>
+            block.ContentCase == DocumentBlock.ContentOneofCase.Section).Section;
+        Assert.Equal(1U, defaultsSection.LineNumbering.CountBy);
+        Assert.False(defaultsSection.LineNumbering.HasStart);
+        Assert.False(defaultsSection.LineNumbering.HasDistanceTwips);
+        Assert.Equal(DocumentSectionLineNumberRestart.Unspecified, defaultsSection.LineNumbering.Restart);
+        defaultsSection.LineNumbering = null;
+        var removed = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = defaultsImport.Artifact,
+        });
+        Assert.True(removed.Ok, Diagnostics(removed));
+        using (var stream = new MemoryStream(removed.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+            Assert.Null(package.MainDocumentPart!.Document!.Body!
+                .Descendants<W.SectionProperties>().First().GetFirstChild<W.LineNumberType>());
+
+        var removedImport = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = removed.File,
+        });
+        Assert.True(removedImport.Ok, Diagnostics(removedImport));
+        removedImport.Artifact.Document.Blocks.Single(block =>
+            block.ContentCase == DocumentBlock.ContentOneofCase.Section).Section.LineNumbering = new DocumentSectionLineNumbering
+        {
+            CountBy = 2,
+            Restart = DocumentSectionLineNumberRestart.NewSection,
+        };
+        var readded = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = removedImport.Artifact,
+        });
+        Assert.True(readded.Ok, Diagnostics(readded));
+        using (var stream = new MemoryStream(readded.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var properties = package.MainDocumentPart!.Document!.Body!
+                .Descendants<W.SectionProperties>().First();
+            var children = properties.ChildElements.ToList();
+            var lineNumbering = properties.GetFirstChild<W.LineNumberType>()!;
+            Assert.Equal(2, lineNumbering.CountBy!.Value);
+            Assert.Equal(W.LineNumberRestartValues.NewSection, lineNumbering.Restart!.Value);
+            Assert.True(children.IndexOf(lineNumbering) < children.IndexOf(properties.GetFirstChild<W.PageNumberType>()!));
+            Assert.True(children.IndexOf(lineNumbering) < children.IndexOf(properties.GetFirstChild<W.Columns>()!));
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var irregularSources = new[]
+        {
+            MutateSectionLineNumbering(authored.File.ToByteArray(), (properties, lineNumbering) =>
+                properties.InsertAfter((W.LineNumberType)lineNumbering.CloneNode(true), lineNumbering)),
+            MutateSectionLineNumbering(authored.File.ToByteArray(), (_, lineNumbering) => lineNumbering.SetAttribute(new OpenXmlAttribute(
+                "w", "compatFlag", "http://schemas.openxmlformats.org/wordprocessingml/2006/main", "retained"))),
+            MutateSectionLineNumbering(authored.File.ToByteArray(), (_, lineNumbering) => lineNumbering.CountBy = 0),
+            MutateSectionLineNumbering(authored.File.ToByteArray(), (_, lineNumbering) => lineNumbering.Start = -1),
+            MutateSectionLineNumbering(authored.File.ToByteArray(), (_, lineNumbering) => lineNumbering.Distance = "31681"),
+            MutateSectionLineNumbering(authored.File.ToByteArray(), (_, lineNumbering) => lineNumbering.Distance = "invalid"),
+            MutateSectionLineNumbering(authored.File.ToByteArray(), (_, lineNumbering) => lineNumbering.SetAttribute(new OpenXmlAttribute(
+                "w", "restart", "http://schemas.openxmlformats.org/wordprocessingml/2006/main", "invalid"))),
+        };
+        foreach (var irregularSource in irregularSources)
+        {
+            var irregular = Invoke(new CodecRequest
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Operation = CodecOperation.ImportDocx,
+                Family = ArtifactFamily.Document,
+                File = ByteString.CopyFrom(irregularSource),
+            });
+            Assert.True(irregular.Ok, Diagnostics(irregular));
+            var irregularSection = irregular.Artifact.Document.Blocks.Single(block =>
+                block.ContentCase == DocumentBlock.ContentOneofCase.Section);
+            Assert.False(irregularSection.Source.Editable);
+            Assert.Null(irregularSection.Section.LineNumbering);
+            irregularSection.Section.LineNumbering = new DocumentSectionLineNumbering { CountBy = 1 };
+            var rejected = Invoke(new CodecRequest
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Operation = CodecOperation.ExportDocx,
+                Family = ArtifactFamily.Document,
+                Artifact = irregular.Artifact,
+            });
+            Assert.False(rejected.Ok);
+            Assert.Equal("unsupported_document_edit", Assert.Single(rejected.Diagnostics).Code);
+        }
+
+        foreach (var invalidLineNumbering in new[]
+                 {
+                     new DocumentSectionLineNumbering(),
+                     new DocumentSectionLineNumbering { CountBy = 32768 },
+                     new DocumentSectionLineNumbering { CountBy = 1, Start = 32768 },
+                     new DocumentSectionLineNumbering { CountBy = 1, DistanceTwips = 31681 },
+                     new DocumentSectionLineNumbering { CountBy = 1, Restart = (DocumentSectionLineNumberRestart)99 },
+                 })
+        {
+            var invalid = ExportRequest();
+            invalid.Artifact.Document.Blocks.Add(new DocumentBlock
+            {
+                Id = "document/invalid-line-numbering",
+                Section = new DocumentSection
+                {
+                    BreakType = DocumentSectionBreak.NextPage,
+                    PageWidthTwips = 12240,
+                    PageHeightTwips = 15840,
+                    MarginTopTwips = 1440,
+                    MarginRightTwips = 1440,
+                    MarginBottomTwips = 1440,
+                    MarginLeftTwips = 1440,
+                    LineNumbering = invalidLineNumbering,
+                },
+            });
+            var invalidResult = Invoke(invalid);
+            Assert.False(invalidResult.Ok);
+            Assert.Equal("invalid_document_section", Assert.Single(invalidResult.Diagnostics).Code);
+        }
+    }
+
+    [Fact]
     public void PasswordlessDocumentProtectionAuthorsAndImportsEveryBoundedMode()
     {
         var modes = new[]
@@ -7785,6 +8072,23 @@ public sealed class DocxCodecTests
             var properties = document.MainDocumentPart!.Document!.Body!
                 .Descendants<W.SectionProperties>().First();
             mutate(properties, properties.GetFirstChild<W.PageNumberType>()!);
+            document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] MutateSectionLineNumbering(
+        byte[] bytes,
+        Action<W.SectionProperties, W.LineNumberType> mutate)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var properties = document.MainDocumentPart!.Document!.Body!
+                .Descendants<W.SectionProperties>().First();
+            mutate(properties, properties.GetFirstChild<W.LineNumberType>()!);
             document.MainDocumentPart.Document.Save();
         }
         return stream.ToArray();
