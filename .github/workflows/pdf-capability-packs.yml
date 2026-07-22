@@ -149,8 +149,11 @@ jobs:
         if: ${{ inputs.publish == 'true' }}
         uses: actions/attest@v4
         with:
-          subject-path: ${{ runner.temp }}/qpdf-release/*.tar.gz
-          sbom-path: ${{ runner.temp }}/qpdf-release/*.sbom.cdx.json
+          # `actions/attest` binds one SBOM to one subject.  Do not pass globs
+          # here: the action treats the SBOM input as a single file rather than
+          # expanding it like `subject-path`.
+          subject-path: ${{ runner.temp }}/qpdf-release/qpdf-${{ env.PACK_VERSION }}-${{ matrix.platform }}.tar.gz
+          sbom-path: ${{ runner.temp }}/qpdf-release/qpdf-${{ env.PACK_VERSION }}-${{ matrix.platform }}.sbom.cdx.json
       - uses: actions/upload-artifact@v4
         with:
           name: qpdf-${{ matrix.platform }}
