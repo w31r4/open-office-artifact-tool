@@ -596,7 +596,8 @@ const DOCUMENT_IMAGE_WRAP_SIDES = new Set(["bothSides", "left", "right", "larges
 const DOCUMENT_IMAGE_PLACEMENT_KEYS = new Set(["type", "horizontal", "vertical", "wrap", "wrapSide", "distanceFromTextPx"]);
 const DOCUMENT_IMAGE_AXIS_KEYS = new Set(["relativeTo", "offsetPx"]);
 const DOCUMENT_IMAGE_DISTANCE_KEYS = new Set(["top", "right", "bottom", "left"]);
-const DOCUMENT_SECTION_COLUMN_KEYS = new Set(["count", "spacing", "separator"]);
+const DOCUMENT_SECTION_COLUMN_KEYS = new Set(["count", "spacing", "separator", "definitions"]);
+const DOCUMENT_SECTION_COLUMN_DEFINITION_KEYS = new Set(["width", "spacing"]);
 
 function assertDocumentImageObjectKeys(value, allowed, label) {
   for (const key of Object.keys(value)) if (!allowed.has(key)) throw new TypeError(`${label} contains unsupported field ${key}.`);
@@ -652,6 +653,21 @@ function normalizeDocumentSectionColumns(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Document section columns must be an object.");
   const unknownKeys = Object.keys(value).filter((key) => !DOCUMENT_SECTION_COLUMN_KEYS.has(key));
   if (unknownKeys.length) throw new TypeError(`Unsupported document section column properties: ${unknownKeys.join(", ")}.`);
+  if (Object.hasOwn(value, "definitions")) {
+    if (Object.hasOwn(value, "count") || Object.hasOwn(value, "spacing")) {
+      throw new TypeError("Document custom-width section columns cannot combine definitions with equal-width count or spacing.");
+    }
+    if (!Array.isArray(value.definitions)) throw new TypeError("Document custom-width section column definitions must be an array.");
+    const definitions = value.definitions.map((definition, index) => {
+      if (!definition || typeof definition !== "object" || Array.isArray(definition)) {
+        throw new TypeError(`Document custom-width section column definition ${index} must be an object.`);
+      }
+      const unsupported = Object.keys(definition).filter((key) => !DOCUMENT_SECTION_COLUMN_DEFINITION_KEYS.has(key));
+      if (unsupported.length) throw new TypeError(`Unsupported document section column definition properties at index ${index}: ${unsupported.join(", ")}.`);
+      return { width: Number(definition.width), spacing: Number(definition.spacing ?? 0) };
+    });
+    return { definitions, separator: value.separator ?? false };
+  }
   return {
     count: Number(value.count ?? 1),
     spacing: Number(value.spacing ?? 720),
@@ -1580,13 +1596,33 @@ export class DocumentModel {
         if (Number.isFinite(block.pageSize?.widthTwips) && horizontalMargins >= block.pageSize.widthTwips) issues.push(verificationIssue("document", "sectionMarginsExceedPage", `Section ${block.id} horizontal margins and binding gutter exceed page width.`, { id: block.id, margins: block.margins, pageSize: block.pageSize }));
         if (Number.isFinite(block.pageSize?.heightTwips) && verticalMargins >= block.pageSize.heightTwips) issues.push(verificationIssue("document", "sectionMarginsExceedPage", `Section ${block.id} vertical margins and binding gutter exceed page height.`, { id: block.id, margins: block.margins, pageSize: block.pageSize }));
         if (block.columns) {
-          const count = Number(block.columns.count);
-          const spacing = Number(block.columns.spacing);
-          if (!Number.isInteger(count) || count < 1 || count > 45) issues.push(verificationIssue("document", "invalidSectionColumns", `Section ${block.id} equal-width column count must be an integer from 1 through 45.`, { id: block.id, columns: block.columns }));
-          if (!Number.isInteger(spacing) || spacing < 0 || spacing > 31680) issues.push(verificationIssue("document", "invalidSectionColumns", `Section ${block.id} column spacing must be an integer from 0 through 31680 twentieths of a point.`, { id: block.id, columns: block.columns }));
           if (typeof block.columns.separator !== "boolean") issues.push(verificationIssue("document", "invalidSectionColumns", `Section ${block.id} column separator must be boolean.`, { id: block.id, columns: block.columns }));
           const availableWidth = Number(block.pageSize?.widthTwips) - horizontalMargins;
-          if (Number.isInteger(count) && Number.isInteger(spacing) && count >= 1 && spacing >= 0 && Number.isFinite(availableWidth) && (count - 1) * spacing >= availableWidth) issues.push(verificationIssue("document", "sectionColumnsExceedPage", `Section ${block.id} column spacing must leave positive width for every text column.`, { id: block.id, columns: block.columns, margins: block.margins, pageSize: block.pageSize }));
+          if (Object.hasOwn(block.columns, "definitions")) {
+            const definitions = block.columns.definitions;
+            if (Object.hasOwn(block.columns, "count") || Object.hasOwn(block.columns, "spacing")) {
+              issues.push(verificationIssue("document", "invalidSectionColumns", `Section ${block.id} custom-width columns cannot combine definitions with equal-width count or spacing.`, { id: block.id, columns: block.columns }));
+            }
+            if (!Array.isArray(definitions) || definitions.length < 1 || definitions.length > 45) {
+              issues.push(verificationIssue("document", "invalidSectionColumns", `Section ${block.id} custom-width columns require 1 through 45 definitions.`, { id: block.id, columns: block.columns }));
+            } else {
+              let occupiedWidth = 0;
+              definitions.forEach((definition, index) => {
+                const width = Number(definition?.width);
+                const spacing = Number(definition?.spacing);
+                if (!Number.isInteger(width) || width < 1 || width > 31680) issues.push(verificationIssue("document", "invalidSectionColumns", `Section ${block.id} custom-width column ${index} width must be an integer from 1 through 31680 twentieths of a point.`, { id: block.id, index, definition }));
+                if (!Number.isInteger(spacing) || spacing < 0 || spacing > 31680) issues.push(verificationIssue("document", "invalidSectionColumns", `Section ${block.id} custom-width column ${index} spacing must be an integer from 0 through 31680 twentieths of a point.`, { id: block.id, index, definition }));
+                if (Number.isInteger(width) && width > 0 && Number.isInteger(spacing) && spacing >= 0) occupiedWidth += width + spacing;
+              });
+              if (Number.isFinite(availableWidth) && occupiedWidth > availableWidth) issues.push(verificationIssue("document", "sectionColumnsExceedPage", `Section ${block.id} custom column widths and spacing must fit within the positive page content width.`, { id: block.id, columns: block.columns, margins: block.margins, pageSize: block.pageSize }));
+            }
+          } else {
+            const count = Number(block.columns.count);
+            const spacing = Number(block.columns.spacing);
+            if (!Number.isInteger(count) || count < 1 || count > 45) issues.push(verificationIssue("document", "invalidSectionColumns", `Section ${block.id} equal-width column count must be an integer from 1 through 45.`, { id: block.id, columns: block.columns }));
+            if (!Number.isInteger(spacing) || spacing < 0 || spacing > 31680) issues.push(verificationIssue("document", "invalidSectionColumns", `Section ${block.id} column spacing must be an integer from 0 through 31680 twentieths of a point.`, { id: block.id, columns: block.columns }));
+            if (Number.isInteger(count) && Number.isInteger(spacing) && count >= 1 && spacing >= 0 && Number.isFinite(availableWidth) && (count - 1) * spacing >= availableWidth) issues.push(verificationIssue("document", "sectionColumnsExceedPage", `Section ${block.id} column spacing must leave positive width for every text column.`, { id: block.id, columns: block.columns, margins: block.margins, pageSize: block.pageSize }));
+          }
         }
       }
       if (block.kind === "listItem") {

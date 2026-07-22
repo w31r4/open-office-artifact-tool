@@ -55,18 +55,34 @@ Imported section relationship/linkage graphs beyond the modeled section
 boundary are source-bound. If changing one would invalidate source evidence,
 OpenChestnut fails closed; do not flatten the document to force the edit.
 
-`columns` is the bounded equal-width profile: `count` is 1–45, `spacing` is
-in twentieths of a point, and `separator` draws a rule between columns. The
-ordinary margins, binding gutter, and all inter-column spacing must leave
-positive text width. Imported custom-width `w:col` children, duplicate column
-definitions, and extension-bearing column graphs remain source-owned; inspect
-reports that section as `editable: false`.
+`columns` has two mutually exclusive bounded profiles. Equal-width layout uses
+`{ count, spacing, separator }`. Asymmetric layout uses ordered native column
+definitions:
+
+```js
+columns: {
+  definitions: [
+    { width: 3000, spacing: 720 },
+    { width: 5640, spacing: 0 },
+  ],
+  separator: true,
+}
+```
+
+Both profiles allow 1–45 columns and use twentieths of a point. In the custom
+profile, `spacing` means space after that definition; never combine
+`definitions` with equal-width `count` or root `spacing`. Ordinary margins,
+binding gutter, widths, and inter-column gaps
+must fit the page content width. Duplicate containers, ignored equal-width
+root attributes, unknown children, extension-bearing definitions, and other
+ambiguous graphs remain source-owned; inspect reports that section as
+`editable: false`.
 
 ## Render review
 
 - Only the intended pages change orientation.
 - Page size and margins match the explicit twip values.
-- Text flows through the requested equal-width columns and separator rules.
+- Text flows through the requested equal-width or asymmetric columns and separator rules.
 - Headers and footers appear in the intended section.
 - First/even variants behave as requested.
 - No empty trailing page was introduced.

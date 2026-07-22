@@ -664,14 +664,34 @@ document.addSection({
 });
 ```
 
-`columns.count` must be an integer from 1 through 45. `columns.spacing` is in
-twentieths of a point; total inter-column spacing plus horizontal margins and
-any binding-side gutter must leave positive text width. OpenChestnut authors
-one equal-width `w:cols` element, imports and edits that exact bounded profile,
-and can remove it by assigning `section.columns = undefined`. Custom-width
-`w:col` children, duplicate definitions, extension attributes, and other
-irregular column graphs stay source-owned and make the imported section
-`editable: false` rather than being flattened.
+Or define each asymmetric text column explicitly:
+
+```js
+document.addSection({
+  breakType: "continuous",
+  pageSize: { widthTwips: 12240, heightTwips: 15840 },
+  margins: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
+  columns: {
+    definitions: [
+      { width: 3000, spacing: 720 },
+      { width: 5640, spacing: 0 },
+    ],
+    separator: true,
+  },
+});
+```
+
+Both profiles accept 1 through 45 columns and use twentieths of a point.
+Equal-width columns own `count` and one shared `spacing`. Explicit-width
+columns instead own ordered `definitions`; every definition has a positive
+`width`, and its `spacing` is the space after that column. Do not combine
+`definitions` with `count` or root `spacing`. The
+occupied widths/gaps plus horizontal margins and any binding-side gutter must
+fit the page content width. OpenChestnut authors, imports, edits, and removes
+both canonical profiles (`section.columns = undefined`). Duplicate containers,
+ignored equal-width root attributes on a custom graph, unknown children,
+extension attributes, and other ambiguous graphs stay source-owned and make
+the imported section `editable: false` rather than being flattened.
 
 Set one bounded passwordless Word editing restriction through the same settings state:
 

@@ -109,13 +109,34 @@ internal static class DocxSectionCodec
             throw new CodecException("invalid_document_section", $"{label} margins and binding gutter must leave a positive page content area.");
         if (section.Columns is not null)
         {
-            if (section.Columns.Count is < 1 or > 45)
-                throw new CodecException("invalid_document_section", $"{label} equal-width column count must be 1 through 45.");
-            if (section.Columns.SpacingTwips > 31680)
-                throw new CodecException("invalid_document_section", $"{label} column spacing must not exceed 31680 twentieths of a point.");
             var availableWidth = (ulong)section.PageWidthTwips - section.MarginLeftTwips - section.MarginRightTwips - horizontalGutter;
-            if ((ulong)(section.Columns.Count - 1) * section.Columns.SpacingTwips >= availableWidth)
-                throw new CodecException("invalid_document_section", $"{label} column spacing must leave positive width for every text column.");
+            if (section.Columns.Definitions.Count > 0)
+            {
+                if (section.Columns.Count != 0 || section.Columns.SpacingTwips != 0)
+                    throw new CodecException("invalid_document_section", $"{label} custom-width columns cannot combine definitions with equal-width count or spacing.");
+                if (section.Columns.Definitions.Count > 45)
+                    throw new CodecException("invalid_document_section", $"{label} custom-width columns require 1 through 45 definitions.");
+                ulong occupiedWidth = 0;
+                foreach (var definition in section.Columns.Definitions)
+                {
+                    if (definition.WidthTwips is < 1 or > 31680)
+                        throw new CodecException("invalid_document_section", $"{label} custom column widths must be 1 through 31680 twentieths of a point.");
+                    if (definition.SpacingAfterTwips > 31680)
+                        throw new CodecException("invalid_document_section", $"{label} custom column spacing must not exceed 31680 twentieths of a point.");
+                    occupiedWidth += (ulong)definition.WidthTwips + definition.SpacingAfterTwips;
+                }
+                if (occupiedWidth > availableWidth)
+                    throw new CodecException("invalid_document_section", $"{label} custom column widths and spacing must fit within the page content width.");
+            }
+            else
+            {
+                if (section.Columns.Count is < 1 or > 45)
+                    throw new CodecException("invalid_document_section", $"{label} equal-width column count must be 1 through 45.");
+                if (section.Columns.SpacingTwips > 31680)
+                    throw new CodecException("invalid_document_section", $"{label} column spacing must not exceed 31680 twentieths of a point.");
+                if ((ulong)(section.Columns.Count - 1) * section.Columns.SpacingTwips >= availableWidth)
+                    throw new CodecException("invalid_document_section", $"{label} column spacing must leave positive width for every text column.");
+            }
         }
     }
 
@@ -161,13 +182,31 @@ internal static class DocxSectionCodec
         Gutter = source.MarginGutterTwips,
     };
 
-    private static W.Columns BuildColumns(DocumentSectionColumns source) => new()
+    private static W.Columns BuildColumns(DocumentSectionColumns source)
     {
-        EqualWidth = true,
-        ColumnCount = checked((short)source.Count),
-        Space = source.SpacingTwips.ToString(CultureInfo.InvariantCulture),
-        Separator = source.Separator,
-    };
+        var result = new W.Columns { Separator = source.Separator };
+        if (source.Definitions.Count > 0)
+        {
+            result.EqualWidth = false;
+            foreach (var definition in source.Definitions)
+            {
+                var column = new W.Column
+                {
+                    Width = definition.WidthTwips.ToString(CultureInfo.InvariantCulture),
+                };
+                if (definition.SpacingAfterTwips > 0)
+                    column.Space = definition.SpacingAfterTwips.ToString(CultureInfo.InvariantCulture);
+                result.Append(column);
+            }
+        }
+        else
+        {
+            result.EqualWidth = true;
+            result.ColumnCount = checked((short)source.Count);
+            result.Space = source.SpacingTwips.ToString(CultureInfo.InvariantCulture);
+        }
+        return result;
+    }
 
     private static DocumentSection Default() => new()
     {
@@ -200,29 +239,65 @@ internal static class DocxSectionCodec
         if (matches.Length == 0) return true;
         if (matches.Length != 1) return false;
         var columns = matches[0];
-        if (columns.HasChildren || columns.ExtendedAttributes.Any() || columns.NamespaceDeclarations.Any() || columns.MCAttributes is not null)
+        if (columns.ExtendedAttributes.Any() || columns.NamespaceDeclarations.Any() || columns.MCAttributes is not null)
             return false;
         try
         {
-            if (columns.EqualWidth is not null && !columns.EqualWidth.Value) return false;
-            var count = columns.ColumnCount?.Value ?? (short)1;
-            if (count is < 1 or > 45 ||
-                columns.Space?.Value is not { } spacingText ||
-                !uint.TryParse(spacingText, NumberStyles.None, CultureInfo.InvariantCulture, out var spacing) ||
-                spacing > 31680)
-                return false;
-            result = new DocumentSectionColumns
-            {
-                Count = checked((uint)count),
-                SpacingTwips = spacing,
-                Separator = columns.Separator?.Value ?? false,
-            };
-            return true;
+            return columns.EqualWidth?.Value == false
+                ? TryReadCustomWidthColumns(columns, out result)
+                : TryReadEqualWidthColumns(columns, out result);
         }
         catch (Exception exception) when (exception is FormatException or InvalidOperationException or OverflowException)
         {
             return false;
         }
+    }
+
+    private static bool TryReadEqualWidthColumns(W.Columns columns, out DocumentSectionColumns? result)
+    {
+        result = null;
+        if (columns.HasChildren) return false;
+        var count = columns.ColumnCount?.Value ?? (short)1;
+        if (count is < 1 or > 45 ||
+            columns.Space?.Value is not { } spacingText ||
+            !uint.TryParse(spacingText, NumberStyles.None, CultureInfo.InvariantCulture, out var spacing) ||
+            spacing > 31680)
+            return false;
+        result = new DocumentSectionColumns
+        {
+            Count = checked((uint)count),
+            SpacingTwips = spacing,
+            Separator = columns.Separator?.Value ?? false,
+        };
+        return true;
+    }
+
+    private static bool TryReadCustomWidthColumns(W.Columns columns, out DocumentSectionColumns? result)
+    {
+        result = null;
+        if (columns.ColumnCount is not null || columns.Space is not null) return false;
+        var definitions = columns.Elements<W.Column>().ToArray();
+        if (definitions.Length is < 1 or > 45 || columns.ChildElements.Count != definitions.Length) return false;
+        var value = new DocumentSectionColumns { Separator = columns.Separator?.Value ?? false };
+        foreach (var definition in definitions)
+        {
+            if (definition.HasChildren || definition.ExtendedAttributes.Any() || definition.NamespaceDeclarations.Any() || definition.MCAttributes is not null ||
+                definition.Width?.Value is not { } widthText ||
+                !uint.TryParse(widthText, NumberStyles.None, CultureInfo.InvariantCulture, out var width) ||
+                width is < 1 or > 31680)
+                return false;
+            var spacing = 0U;
+            if (definition.Space?.Value is { } spacingText &&
+                (!uint.TryParse(spacingText, NumberStyles.None, CultureInfo.InvariantCulture, out spacing) || spacing > 31680))
+                return false;
+            value.Definitions.Add(new DocumentSectionColumnDefinition
+            {
+                WidthTwips = width,
+                SpacingAfterTwips = spacing,
+            });
+        }
+        result = value;
+        return true;
     }
 
     private static DocumentSectionBreak FromNativeBreak(W.SectionMarkValues? value) =>

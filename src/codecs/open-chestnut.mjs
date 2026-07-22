@@ -3198,11 +3198,17 @@ function wireDocumentSection(block) {
     marginBottomTwips: uint32(Math.round(Number(margins.bottom)), `Document section ${block.id} bottom margin`),
     marginLeftTwips: uint32(Math.round(Number(margins.left)), `Document section ${block.id} left margin`),
     marginGutterTwips: uint32(Math.round(Number(margins.gutter ?? 0)), `Document section ${block.id} gutter margin`),
-    columns: columns ? {
+    columns: columns ? (Object.hasOwn(columns, "definitions") ? {
+      separator: columns.separator,
+      definitions: columns.definitions.map((definition, index) => ({
+        widthTwips: uint32(Number(definition?.width), `Document section ${block.id} custom column ${index} width`),
+        spacingAfterTwips: uint32(Number(definition?.spacing), `Document section ${block.id} custom column ${index} spacing`),
+      })),
+    } : {
       count: uint32(Number(columns.count), `Document section ${block.id} column count`),
       spacingTwips: uint32(Number(columns.spacing), `Document section ${block.id} column spacing`),
       separator: columns.separator,
-    } : undefined,
+    }) : undefined,
   };
 }
 
@@ -3987,7 +3993,14 @@ function documentFromEnvelope(envelope) {
           orientation: section.landscape ? "landscape" : "portrait",
           pageSize: { widthTwips: section.pageWidthTwips, heightTwips: section.pageHeightTwips },
           margins: { top: section.marginTopTwips, right: section.marginRightTwips, bottom: section.marginBottomTwips, left: section.marginLeftTwips, gutter: section.marginGutterTwips },
-          columns: section.columns ? { count: section.columns.count, spacing: section.columns.spacingTwips, separator: section.columns.separator } : undefined,
+          columns: section.columns ? (section.columns.definitions?.length ? {
+            definitions: section.columns.definitions.map((definition) => ({ width: definition.widthTwips, spacing: definition.spacingAfterTwips })),
+            separator: section.columns.separator,
+          } : {
+            count: section.columns.count,
+            spacing: section.columns.spacingTwips,
+            separator: section.columns.separator,
+          }) : undefined,
         };
       }
       case "opaque":

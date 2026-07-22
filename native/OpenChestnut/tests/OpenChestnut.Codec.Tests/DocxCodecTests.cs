@@ -4995,7 +4995,7 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
-    public void EqualWidthSectionColumnsAuthorImportEditAndRejectCustomWidthGraphs()
+    public void SectionColumnsAuthorImportEditAndRejectIrregularGraphs()
     {
         var request = ExportRequest();
         request.Artifact.Document.Blocks.Add(new DocumentBlock
@@ -5143,8 +5143,32 @@ public sealed class DocxCodecTests
         Assert.True(customWidth.Ok, Diagnostics(customWidth));
         var customSection = customWidth.Artifact.Document.Blocks.Single(block =>
             block.ContentCase == DocumentBlock.ContentOneofCase.Section);
-        Assert.False(customSection.Source.Editable);
-        Assert.Null(customSection.Section.Columns);
+        Assert.True(customSection.Source.Editable);
+        Assert.NotNull(customSection.Section.Columns);
+        Assert.Equal(0U, customSection.Section.Columns.Count);
+        Assert.Equal(0U, customSection.Section.Columns.SpacingTwips);
+        Assert.True(customSection.Section.Columns.Separator);
+        Assert.Collection(customSection.Section.Columns.Definitions,
+            definition =>
+            {
+                Assert.Equal(3000U, definition.WidthTwips);
+                Assert.Equal(720U, definition.SpacingAfterTwips);
+            },
+            definition =>
+            {
+                Assert.Equal(5000U, definition.WidthTwips);
+                Assert.Equal(0U, definition.SpacingAfterTwips);
+            });
+
+        var unchangedCustomWidth = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = customWidth.Artifact,
+        });
+        Assert.True(unchangedCustomWidth.Ok, Diagnostics(unchangedCustomWidth));
+        Assert.Equal(customWidthSource, unchangedCustomWidth.File.ToByteArray());
 
         var title = customWidth.Artifact.Document.Blocks[0].Paragraph;
         title.Text = "Quarterly custom-column brief";
@@ -5162,16 +5186,91 @@ public sealed class DocxCodecTests
             Assert.Equal(sourceColumns, package.MainDocumentPart!.Document!.Body!
                 .Descendants<W.SectionProperties>().First().GetFirstChild<W.Columns>()!.OuterXml);
 
-        customSection.Section.Columns = new DocumentSectionColumns { Count = 2, SpacingTwips = 720 };
-        var rejectedCustomWidthEdit = Invoke(new CodecRequest
+        customSection.Section.Columns.Definitions[0].WidthTwips = 3200;
+        customSection.Section.Columns.Definitions[0].SpacingAfterTwips = 360;
+        customSection.Section.Columns.Definitions[1].WidthTwips = 5680;
+        customSection.Section.Columns.Definitions[1].SpacingAfterTwips = 120;
+        customSection.Section.Columns.Separator = false;
+        var editedCustomWidth = Invoke(new CodecRequest
         {
             ProtocolVersion = CodecProtocol.ProtocolVersion,
             Operation = CodecOperation.ExportDocx,
             Family = ArtifactFamily.Document,
             Artifact = customWidth.Artifact,
         });
-        Assert.False(rejectedCustomWidthEdit.Ok);
-        Assert.Equal("unsupported_document_edit", Assert.Single(rejectedCustomWidthEdit.Diagnostics).Code);
+        Assert.True(editedCustomWidth.Ok, Diagnostics(editedCustomWidth));
+        using (var stream = new MemoryStream(editedCustomWidth.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var columns = package.MainDocumentPart!.Document!.Body!
+                .Descendants<W.SectionProperties>().First().GetFirstChild<W.Columns>()!;
+            Assert.False(columns.EqualWidth!.Value);
+            Assert.Null(columns.ColumnCount);
+            Assert.Null(columns.Space);
+            Assert.False(columns.Separator!.Value);
+            Assert.Collection(columns.Elements<W.Column>(),
+                definition =>
+                {
+                    Assert.Equal("3200", definition.Width!.Value);
+                    Assert.Equal("360", definition.Space!.Value);
+                },
+                definition =>
+                {
+                    Assert.Equal("5680", definition.Width!.Value);
+                    Assert.Equal("120", definition.Space!.Value);
+                });
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var editedCustomWidthImport = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = editedCustomWidth.File,
+        });
+        Assert.True(editedCustomWidthImport.Ok, Diagnostics(editedCustomWidthImport));
+        var editedCustomSection = editedCustomWidthImport.Artifact.Document.Blocks.Single(block =>
+            block.ContentCase == DocumentBlock.ContentOneofCase.Section);
+        Assert.True(editedCustomSection.Source.Editable);
+        Assert.Equal(2, editedCustomSection.Section.Columns.Definitions.Count);
+        editedCustomSection.Section.Columns = null;
+        var removedCustomWidth = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = editedCustomWidthImport.Artifact,
+        });
+        Assert.True(removedCustomWidth.Ok, Diagnostics(removedCustomWidth));
+        using (var stream = new MemoryStream(removedCustomWidth.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+            Assert.Null(package.MainDocumentPart!.Document!.Body!
+                .Descendants<W.SectionProperties>().First().GetFirstChild<W.Columns>());
+
+        var irregularCustomWidthSource = SetCustomSectionColumns(authored.File.ToByteArray(), retainEqualWidthAttributes: true);
+        var irregularCustomWidth = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(irregularCustomWidthSource),
+        });
+        Assert.True(irregularCustomWidth.Ok, Diagnostics(irregularCustomWidth));
+        var irregularCustomSection = irregularCustomWidth.Artifact.Document.Blocks.Single(block =>
+            block.ContentCase == DocumentBlock.ContentOneofCase.Section);
+        Assert.False(irregularCustomSection.Source.Editable);
+        Assert.Null(irregularCustomSection.Section.Columns);
+        irregularCustomSection.Section.Columns = new DocumentSectionColumns { Count = 2, SpacingTwips = 720 };
+        var rejectedIrregularCustomWidthEdit = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = irregularCustomWidth.Artifact,
+        });
+        Assert.False(rejectedIrregularCustomWidthEdit.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(rejectedIrregularCustomWidthEdit.Diagnostics).Code);
 
         var invalid = ExportRequest();
         invalid.Artifact.Document.Blocks.Add(new DocumentBlock
@@ -5192,6 +5291,29 @@ public sealed class DocxCodecTests
         var invalidResult = Invoke(invalid);
         Assert.False(invalidResult.Ok);
         Assert.Equal("invalid_document_section", Assert.Single(invalidResult.Diagnostics).Code);
+
+        var invalidCustom = ExportRequest();
+        var invalidCustomColumns = new DocumentSectionColumns();
+        invalidCustomColumns.Definitions.Add(new DocumentSectionColumnDefinition { WidthTwips = 2500, SpacingAfterTwips = 500 });
+        invalidCustomColumns.Definitions.Add(new DocumentSectionColumnDefinition { WidthTwips = 1500 });
+        invalidCustom.Artifact.Document.Blocks.Add(new DocumentBlock
+        {
+            Id = "document/invalid-custom-columns",
+            Section = new DocumentSection
+            {
+                BreakType = DocumentSectionBreak.NextPage,
+                PageWidthTwips = 5000,
+                PageHeightTwips = 5000,
+                MarginTopTwips = 500,
+                MarginRightTwips = 500,
+                MarginBottomTwips = 500,
+                MarginLeftTwips = 500,
+                Columns = invalidCustomColumns,
+            },
+        });
+        var invalidCustomResult = Invoke(invalidCustom);
+        Assert.False(invalidCustomResult.Ok);
+        Assert.Equal("invalid_document_section", Assert.Single(invalidCustomResult.Diagnostics).Code);
     }
 
     [Fact]
@@ -7336,7 +7458,7 @@ public sealed class DocxCodecTests
         return stream.ToArray();
     }
 
-    private static byte[] SetCustomSectionColumns(byte[] bytes)
+    private static byte[] SetCustomSectionColumns(byte[] bytes, bool retainEqualWidthAttributes = false)
     {
         using var stream = new MemoryStream();
         stream.Write(bytes);
@@ -7346,6 +7468,11 @@ public sealed class DocxCodecTests
             var columns = document.MainDocumentPart!.Document!.Body!
                 .Descendants<W.SectionProperties>().First().GetFirstChild<W.Columns>()!;
             columns.EqualWidth = false;
+            if (!retainEqualWidthAttributes)
+            {
+                columns.ColumnCount = null;
+                columns.Space = null;
+            }
             columns.RemoveAllChildren<W.Column>();
             columns.Append(
                 new W.Column { Width = "3000", Space = "720" },
