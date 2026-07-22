@@ -315,6 +315,7 @@ assert.match(providerSetupText, /PdfProviders\.probe/);
 assert.match(providerSetupText, /symlink\/hardlink/);
 assert.match(providerSetupText, /enterprise mirror.*identical hash-pinned bytes/is);
 assert.match(providerSetupText, /Current catalog state.*not yet\s+published/is);
+assert.match(providerSetupText, /OPEN_OFFICE_PDF_TESSDATA_DIRS[\s\S]*private directory/is);
 assert.doesNotMatch(providerSetupText, /brew install|apt-get|uv pip install/i);
 const encryptionTaskText = await fs.readFile(path.join(skillRoot, "tasks", "encryption.md"), "utf8");
 assert.match(encryptionTaskText, /qpdf `>=11\.7\.0`/);

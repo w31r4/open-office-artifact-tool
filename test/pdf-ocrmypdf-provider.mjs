@@ -84,6 +84,7 @@ try {
   const lastArgs = path.join(tempRoot, "last-ocr-args.json");
   const fakeOcr = path.join(tempRoot, "fake-ocrmypdf.mjs");
   const fakeTesseract = path.join(tempRoot, "fake-tesseract.mjs");
+  const fakeGhostscript = path.join(tempRoot, "fake-gs.mjs");
   const fakeQpdf = path.join(tempRoot, "fake-qpdf.mjs");
   const fakePdftotext = path.join(tempRoot, "fake-pdftotext.mjs");
   const nodeShebang = `#!${process.execPath}`;
@@ -120,11 +121,19 @@ const root = path.dirname(process.argv[1]);
 const control = JSON.parse(fs.readFileSync(path.join(root, "control.json"), "utf8"));
 if (process.argv.includes("--version")) { console.log("tesseract " + control.tesseractVersion); process.exit(0); }
 if (process.argv.includes("--list-langs")) {
+  if (process.env.EXPECT_MANAGED_TESSDATA === "1") {
+    const files = fs.readdirSync(process.env.TESSDATA_PREFIX).sort();
+    if (files.join(",") !== "chi_sim.traineddata,eng.traineddata") process.exit(9);
+  }
   console.log("List of available languages (" + control.languages.length + "):");
   for (const language of control.languages) console.log(language);
   process.exit(0);
 }
 process.exit(2);
+`, "utf8");
+
+  await fs.writeFile(fakeGhostscript, `${nodeShebang}
+process.stdout.write("GPL Ghostscript 10.0.0\\n");
 `, "utf8");
 
   await fs.writeFile(fakeQpdf, `${nodeShebang}
@@ -181,12 +190,21 @@ if (control.bigExtractedText) { process.stdout.write("x".repeat(1024 * 1024)); p
 process.stdout.write(control.extractedText || "");
 `, "utf8");
 
-  for (const executable of [fakeOcr, fakeTesseract, fakeQpdf, fakePdftotext]) await fs.chmod(executable, 0o755);
+  for (const executable of [fakeOcr, fakeTesseract, fakeGhostscript, fakeQpdf, fakePdftotext]) await fs.chmod(executable, 0o755);
+  const tessdataEng = path.join(tempRoot, "tessdata-eng");
+  const tessdataChi = path.join(tempRoot, "tessdata-chi");
+  await fs.mkdir(tessdataEng);
+  await fs.mkdir(tessdataChi);
+  await fs.writeFile(path.join(tessdataEng, "eng.traineddata"), "eng fixture", { mode: 0o400 });
+  await fs.writeFile(path.join(tessdataChi, "chi_sim.traineddata"), "chi fixture", { mode: 0o400 });
   const fakeEnv = {
     OPEN_OFFICE_PDF_OCRMYPDF: fakeOcr,
     OPEN_OFFICE_PDF_TESSERACT: fakeTesseract,
+    OPEN_OFFICE_PDF_GS: fakeGhostscript,
     OPEN_OFFICE_PDF_QPDF: fakeQpdf,
     OPEN_OFFICE_PDF_PDFTOTEXT: fakePdftotext,
+    OPEN_OFFICE_PDF_TESSDATA_DIRS: [tessdataEng, tessdataChi].join(path.delimiter),
+    EXPECT_MANAGED_TESSDATA: "1",
   };
   await writeControl(control);
 
@@ -201,6 +219,7 @@ process.stdout.write(control.extractedText || "");
   assert.equal(probe.providerIsSanitizer, false);
   assert.equal(probe.adapterSandboxEnforced, false);
   assert.ok(probe.languages.includes("eng"));
+  assert.equal(probe.components.ghostscript, "10.0.0");
 
   const registryProbe = jsonResult(run(python, [registry, "check", "--provider", "ocrmypdf", "--require"], {
     env: fakeEnv,
@@ -273,6 +292,29 @@ process.stdout.write(control.extractedText || "");
   const oldTesseract = run(python, [provider, "probe"], { env: fakeEnv, status: 2 });
   assert.match(jsonResult(oldTesseract, "stderr").error, /Tesseract >= 5\.0\.0/);
   await writeControl(control);
+  const unavailableGhostscript = run(python, [provider, "probe"], {
+    env: { ...fakeEnv, OPEN_OFFICE_PDF_GS: path.join(tempRoot, "missing-gs") },
+    status: 2,
+  });
+  assert.match(jsonResult(unavailableGhostscript, "stderr").error, /Ghostscript executable is unavailable/);
+  const unsafeTessdata = path.join(tempRoot, "unsafe-tessdata");
+  await fs.mkdir(unsafeTessdata);
+  await fs.symlink(path.join(tessdataEng, "eng.traineddata"), path.join(unsafeTessdata, "eng.traineddata"));
+  const symlinkedTessdata = run(python, [provider, "probe"], {
+    env: { ...fakeEnv, OPEN_OFFICE_PDF_TESSDATA_DIRS: unsafeTessdata },
+    status: 2,
+  });
+  assert.match(jsonResult(symlinkedTessdata, "stderr").error, /managed tessdata entry is unsafe|could not be opened safely/);
+  const linkedTessdata = path.join(tempRoot, "linked-tessdata");
+  const linkSource = path.join(tempRoot, "linked-language-source.traineddata");
+  await fs.mkdir(linkedTessdata);
+  await fs.writeFile(linkSource, "hard-link fixture");
+  await fs.link(linkSource, path.join(linkedTessdata, "eng.traineddata"));
+  const hardLinkedTessdata = run(python, [provider, "probe"], {
+    env: { ...fakeEnv, OPEN_OFFICE_PDF_TESSDATA_DIRS: linkedTessdata },
+    status: 2,
+  });
+  assert.match(jsonResult(hardLinkedTessdata, "stderr").error, /managed tessdata entry is unsafe/);
 
   const unavailableLanguage = run(python, [
     provider, "ocr", source, path.join(tempRoot, "missing-language.pdf"), "--expected-sha256", sourceHash,
@@ -395,11 +437,14 @@ process.stdout.write(control.extractedText || "");
   if (realProvider) {
     const realPdftotext = process.env.OPEN_OFFICE_PDF_PDFTOTEXT_TEST || commandPath("pdftotext");
     const pdftoppm = process.env.OPEN_OFFICE_PDF_PDFTOPPM_TEST || commandPath("pdftoppm");
+    const realGhostscript = process.env.OPEN_OFFICE_PDF_GS_TEST || commandPath("gs");
     assert.ok(realPdftotext, "real OCR test requires Poppler pdftotext");
     assert.ok(pdftoppm, "real OCR test requires Poppler pdftoppm");
+    assert.ok(realGhostscript, "real OCR test requires Ghostscript gs");
     const realEnv = {
       OPEN_OFFICE_PDF_OCRMYPDF: realProvider,
       OPEN_OFFICE_PDF_PDFTOTEXT: realPdftotext,
+      OPEN_OFFICE_PDF_GS: realGhostscript,
       ...(process.env.OPEN_OFFICE_PDF_TESSERACT_TEST ? { OPEN_OFFICE_PDF_TESSERACT: process.env.OPEN_OFFICE_PDF_TESSERACT_TEST } : {}),
     };
     const realProbe = jsonResult(run(python, [provider, "probe"], { env: realEnv, status: 0 }));

@@ -71,7 +71,8 @@
       "requiresPackIds": [],
       "entrypoints": [
         { "path": "bin/pdfinfo", "kind": "file", "executable": true },
-        { "path": "bin/pdftoppm", "kind": "file", "executable": true }
+        { "path": "bin/pdftoppm", "kind": "file", "executable": true },
+        { "path": "bin/pdftotext", "kind": "file", "executable": true }
       ],
       "dependencyClosure": ["Poppler CLI"],
       "estimatedDownloadBytes": null,
@@ -101,9 +102,10 @@
       "entrypoints": [
         { "path": "bin/ocrmypdf", "kind": "file", "executable": true },
         { "path": "bin/tesseract", "kind": "file", "executable": true },
+        { "path": "bin/gs", "kind": "file", "executable": true },
         { "path": "share/tessdata", "kind": "directory", "executable": false }
       ],
-      "dependencyClosure": ["isolated Python", "OCRmyPDF", "Tesseract", "qpdf", "Poppler"],
+      "dependencyClosure": ["isolated Python", "OCRmyPDF", "Tesseract", "Ghostscript", "qpdf", "Poppler"],
       "estimatedDownloadBytes": null,
       "estimatedUnpackedBytes": null,
       "license": { "expression": "MPL-2.0 AND Apache-2.0 AND GPL-2.0-or-later", "requiresAcknowledgement": false }
@@ -226,8 +228,8 @@
       "integration": "shipped-js-adapter-and-cli-workflow",
       "taskIds": ["render"],
       "managedRuntime": {
-        "commandPaths": { "pdfinfo": "bin/pdfinfo", "pdftoppm": "bin/pdftoppm" },
-        "environment": { "OPEN_OFFICE_PDF_PDFINFO": "bin/pdfinfo", "OPEN_OFFICE_PDF_PDFTOPPM": "bin/pdftoppm" }
+        "commandPaths": { "pdfinfo": "bin/pdfinfo", "pdftoppm": "bin/pdftoppm", "pdftotext": "bin/pdftotext" },
+        "environment": { "OPEN_OFFICE_PDF_PDFINFO": "bin/pdfinfo", "OPEN_OFFICE_PDF_PDFTOPPM": "bin/pdftoppm", "OPEN_OFFICE_PDF_PDFTOTEXT": "bin/pdftotext" }
       },
       "license": { "expression": "GPL-2.0-or-later", "requiresAcknowledgement": false },
       "matrixBoundary": "Independent renderer/file evidence only; it is not an editor or conformance validator."
@@ -304,7 +306,23 @@
       "role": "source-bound scanned-PDF OCR and searchable layer generation",
       "integration": "shipped-thin-script-external-cli",
       "taskIds": ["ocr"],
-      "managedRuntime": { "commandPaths": { "ocrmypdf": "bin/ocrmypdf", "tesseract": "bin/tesseract" }, "environment": { "OPEN_OFFICE_PDF_OCRMYPDF": "bin/ocrmypdf" } },
+      "managedRuntime": {
+        "commandPaths": {
+          "ocrmypdf": "bin/ocrmypdf",
+          "tesseract": "bin/tesseract",
+          "gs": "bin/gs",
+          "qpdf": { "packId": "qpdf", "path": "bin/qpdf" },
+          "pdftotext": { "packId": "poppler-qa", "path": "bin/pdftotext" }
+        },
+        "environment": {
+          "OPEN_OFFICE_PDF_OCRMYPDF": "bin/ocrmypdf",
+          "OPEN_OFFICE_PDF_TESSERACT": "bin/tesseract",
+          "OPEN_OFFICE_PDF_GS": "bin/gs",
+          "OPEN_OFFICE_PDF_QPDF": { "packId": "qpdf", "path": "bin/qpdf" },
+          "OPEN_OFFICE_PDF_PDFTOTEXT": { "packId": "poppler-qa", "path": "bin/pdftotext" }
+        },
+        "languageDirectoryEnvironment": "OPEN_OFFICE_PDF_TESSDATA_DIRS"
+      },
       "license": { "expression": "MPL-2.0", "requiresAcknowledgement": false },
       "matrixBoundary": "OCR is a source-bound rewrite with isolated native sidecars and explicit language packs; it is not proof of text correctness or PDF/UA repair."
     },

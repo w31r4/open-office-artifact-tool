@@ -9,8 +9,9 @@ layout editor, accessibility repair, redaction, or sanitize operation.
 OCRmyPDF is an explicit capability route. First resolve `task: "ocr"` with
 `provider: "ocrmypdf"`, `savePolicy: "rewrite"`, `mutationAuthorized: true`,
 and the requested language(s). The route needs OCRmyPDF, Tesseract language
-data, qpdf, and Poppler `pdftotext`; those facts, their pinned versions, and
-their pack closure come from the public catalog rather than this task page.
+data, Ghostscript, qpdf, and Poppler `pdftotext`; those facts, their pinned
+versions, and their pack closure come from the public catalog rather than this
+task page.
 
 Use [provider setup](provider_setup.md) to select a ready managed pack or an
 explicit deployment-owned `system-only` runtime. The current unpublished managed
@@ -25,9 +26,12 @@ PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
 
 For an explicitly selected system runtime, set its exact executable with
 `OPEN_OFFICE_PDF_OCRMYPDF`, `OPEN_OFFICE_PDF_TESSERACT`,
-`OPEN_OFFICE_PDF_QPDF`, or `OPEN_OFFICE_PDF_PDFTOTEXT`. The probe reports the
-resolved versions and installed Tesseract languages. It never installs a
-provider or silently selects a substitute.
+`OPEN_OFFICE_PDF_QPDF`, `OPEN_OFFICE_PDF_PDFTOTEXT`, or
+`OPEN_OFFICE_PDF_GS`. For a ready managed route, pass the resolver-returned
+`runtime.managed.environment` unchanged; its `OPEN_OFFICE_PDF_TESSDATA_DIRS`
+value is copied into a private temporary Tesseract directory rather than used
+in place. The probe reports the resolved versions and installed Tesseract
+languages. It never installs a provider or silently selects a substitute.
 
 OCRmyPDF explicitly warns that it is not a malware boundary for attacker-chosen
 PDFs. `--input-trust trusted` asserts that the source is trusted.

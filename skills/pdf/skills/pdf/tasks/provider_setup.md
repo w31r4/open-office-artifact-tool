@@ -90,6 +90,15 @@ package-manager installs, global pip, dynamic npm installation, lifecycle
 hooks, undeclared URLs, absolute paths, `..`, symlink/hardlink archive entries,
 and cache paths that escape the project directory.
 
+After `ensure` returns `ready`, use only the exact paths in
+`result.runtime.managed`: pass its `pythonPath`, `commandPaths`, and
+`environment` to the selected adapter. Do not reconstruct a cache path or mix
+it with a system runtime. For managed OCR, `environment` includes
+`OPEN_OFFICE_PDF_TESSDATA_DIRS`, a platform path-list of the selected verified
+language-pack directories. `ocrmypdf_provider.py` copies regular, unlinked
+`.traineddata` files into a per-operation private directory and sets its own
+`TESSDATA_PREFIX`; never point `TESSDATA_PREFIX` directly at the project cache.
+
 **Current catalog state:** non-MuPDF managed assets are intentionally not yet
 published. Their resolution is `blocked` with a precise reason, even under a
 permissive policy. Do not substitute a hand-written download URL or claim that
@@ -121,7 +130,8 @@ python3 scripts/qpdf_provider.py probe
 
 Use the analogous selected runtime variables only for the provider actually
 chosen by the resolver: `OPEN_OFFICE_PDF_PROVIDER_PYTHON`,
-`OPEN_OFFICE_PDF_VERAPDF`, `OPEN_OFFICE_PDF_OCRMYPDF`, or the Poppler paths.
+`OPEN_OFFICE_PDF_VERAPDF`, `OPEN_OFFICE_PDF_OCRMYPDF`,
+`OPEN_OFFICE_PDF_GS`, or the Poppler paths.
 For Python, point `OPEN_OFFICE_PDF_PROVIDER_PYTHON` to the virtual-environment
 executable itself (`bin/python` or `Scripts/python.exe`), not its resolved base
 interpreter. Every shipped Python entry point re-executes through that exact

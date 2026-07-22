@@ -399,9 +399,16 @@ function managedRuntime(provider, installed, languages = []) {
   const root = installed[provider.packId]?.root;
   if (!root) throw new Error(`Managed runtime is missing provider pack ${provider.packId}.`);
   const runtime = provider.managedRuntime;
-  const absolute = (relative) => containedPath(root, relative);
-  const commandPaths = Object.fromEntries(Object.entries(runtime.commandPaths || {}).map(([command, target]) => [command, absolute(target)]));
-  const environment = Object.fromEntries(Object.entries(runtime.environment || {}).map(([name, target]) => [name, absolute(target)]));
+  const absolute = (reference, label) => {
+    const target = typeof reference === "string" ? { packId: provider.packId, path: reference } : reference;
+    if (!isPlainObject(target) || !nonEmptyString(target.packId) || !isSafePdfProviderRelativePath(target.path)) {
+      throw new Error(`Managed runtime has an unsafe ${label} reference.`);
+    }
+    const targetRoot = installed[target.packId]?.root;
+    if (!targetRoot) throw new Error(`Managed runtime is missing dependency pack ${target.packId}.`);
+    return containedPath(targetRoot, target.path);
+  };
+  const commandPaths = Object.fromEntries(Object.entries(runtime.commandPaths || {}).map(([command, target]) => [command, absolute(target, `command ${command}`)]));
   const languagePacks = languages.map((language) => {
     const packId = PDF_PROVIDER_CATALOG.ocrLanguagePacks[language];
     const languageRoot = packId ? installed[packId]?.root : undefined;
@@ -411,6 +418,10 @@ function managedRuntime(provider, installed, languages = []) {
     const dataPath = containedPath(languageRoot, entrypoint.path);
     return { language, packId, dataPath, dataDirectory: path.dirname(dataPath) };
   });
+  const environment = Object.fromEntries(Object.entries(runtime.environment || {}).map(([name, target]) => [name, absolute(target, `environment ${name}`)]));
+  if (runtime.languageDirectoryEnvironment && languagePacks.length) {
+    environment[runtime.languageDirectoryEnvironment] = [...new Set(languagePacks.map((language) => language.dataDirectory))].join(path.delimiter);
+  }
   return {
     root,
     pythonPath: runtime.pythonPath ? absolute(runtime.pythonPath) : undefined,
@@ -437,7 +448,7 @@ export async function probeManagedPack({ cacheRoot, packId, platform = currentPd
  * internal dependency seam for deterministic fake-artifact tests; it cannot
  * override catalog URLs, hashes, platforms, or policy checks.
  */
-export async function ensureManagedPacks({ providerId, packIds, policyContext, fetchImpl = globalThis.fetch }) {
+export async function ensureManagedPacks({ providerId, packIds, policyContext, languages = [], fetchImpl = globalThis.fetch }) {
   if (!isPlainObject(policyContext) || !isPlainObject(policyContext.policy)) throw new TypeError("Managed installation requires a resolved file-backed policy context.");
   if (!nonEmptyString(policyContext.cacheRoot) || !nonEmptyString(policyContext.policyPath)) {
     throw new Error("Managed capability installation requires a project policy file and private cache.");
@@ -462,7 +473,7 @@ export async function ensureManagedPacks({ providerId, packIds, policyContext, f
     platform,
     packIds: orderedPackIds,
     installed,
-    runtime: managedRuntime({ ...provider, id: providerId }, installed),
+    runtime: managedRuntime({ ...provider, id: providerId }, installed, languages),
   };
 }
 

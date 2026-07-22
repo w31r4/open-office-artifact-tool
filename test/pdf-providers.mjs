@@ -150,6 +150,12 @@ unsignedPublishedCatalog.packs.qpdf.releaseEvidence = {
   verifiedPlatforms: ["darwin-arm64", "linux-x64"],
 };
 assert.throws(() => validatePdfProviderCatalog(unsignedPublishedCatalog), /artifact-attestation/);
+const ocrRuntimeCatalog = structuredClone(PDF_PROVIDER_CATALOG);
+assert.equal(validatePdfProviderCatalog(ocrRuntimeCatalog), true, "OCR may reference only declared files in its qpdf and Poppler dependency closure");
+assert.equal(ocrRuntimeCatalog.providers.ocrmypdf.managedRuntime.languageDirectoryEnvironment, "OPEN_OFFICE_PDF_TESSDATA_DIRS");
+const escapedOcrRuntimeCatalog = structuredClone(PDF_PROVIDER_CATALOG);
+escapedOcrRuntimeCatalog.providers.ocrmypdf.managedRuntime.commandPaths.qpdf = { packId: "python-foundation", path: "bin/python3" };
+assert.throws(() => validatePdfProviderCatalog(escapedOcrRuntimeCatalog), /outside its dependency closure/);
 const invalidTaskMinimumCatalog = structuredClone(PDF_PROVIDER_CATALOG);
 invalidTaskMinimumCatalog.providers.qpdf.taskMinimumVersions = { unknown: "11.7" };
 assert.throws(() => validatePdfProviderCatalog(invalidTaskMinimumCatalog), /taskMinimumVersions contains an invalid task or version/);

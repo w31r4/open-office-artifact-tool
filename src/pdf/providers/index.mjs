@@ -519,7 +519,12 @@ export async function ensurePdfCapability({ resolution, policyPath } = {}) {
   if (!nonEmptyString(resolution.providerId) || !Array.isArray(resolution.installPlan?.packIds)) throw new Error("Resolution lacks a selected provider or pack plan.");
   const policyContext = await resolvePdfCapabilityPolicy({ policyPath });
   if (policyContext.fingerprint !== resolution.policyFingerprint) throw new Error("Policy changed after resolution; resolve again before installing.");
-  const installation = await ensureManagedPacks({ providerId: resolution.providerId, packIds: resolution.installPlan.packIds, policyContext });
+  const installation = await ensureManagedPacks({
+    providerId: resolution.providerId,
+    packIds: resolution.installPlan.packIds,
+    policyContext,
+    languages: resolution.consents?.ocrLanguages?.requested,
+  });
   const probe = await probePdfProvider({
     provider: resolution.providerId,
     task: resolution.task,

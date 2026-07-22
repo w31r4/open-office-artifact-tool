@@ -115,33 +115,69 @@ function assertArtifact(value, packId, pack, index) {
   if (value.archiveFormat !== "tar.gz") throw catalogError(`${label}.archiveFormat must be tar.gz.`);
 }
 
-function assertManagedRuntime(provider, pack, providerId) {
+function runtimeReference(value, defaultPackId, label) {
+  if (typeof value === "string") return { packId: defaultPackId, path: value };
+  if (!isPlainObject(value) || !nonEmptyString(value.packId) || !isSafeRelativePath(value.path)
+    || Object.keys(value).some((key) => key !== "packId" && key !== "path")) {
+    throw catalogError(`${label} must be a safe runtime path or { packId, path } reference.`);
+  }
+  return { packId: value.packId, path: value.path };
+}
+
+function packClosure(catalog, rootPackId) {
+  const result = new Set();
+  const visit = (packId) => {
+    if (result.has(packId)) return;
+    const pack = catalog.packs[packId];
+    if (!pack) throw catalogError(`unknown capability pack ${packId} in runtime closure.`);
+    result.add(packId);
+    for (const dependency of pack.requiresPackIds) visit(dependency);
+  };
+  visit(rootPackId);
+  return result;
+}
+
+function assertRuntimeReference(catalog, allowedPackIds, defaultPackId, value, label, { requireFile = false, requireExecutable = false } = {}) {
+  const reference = runtimeReference(value, defaultPackId, label);
+  if (!allowedPackIds.has(reference.packId)) throw catalogError(`${label} references pack ${reference.packId} outside its dependency closure.`);
+  const targetPack = catalog.packs[reference.packId];
+  const entrypoint = targetPack.entrypoints.find((entry) => entry.path === reference.path);
+  if (!entrypoint || (requireFile && entrypoint.kind !== "file") || (requireExecutable && !entrypoint.executable)) {
+    throw catalogError(`${label} references undeclared runtime ${reference.packId}:${reference.path}.`);
+  }
+  return reference;
+}
+
+function assertManagedRuntime(catalog, provider, pack, providerId) {
   if (pack.state === "built-in") return;
   const runtime = provider.managedRuntime;
   if (!isPlainObject(runtime)) throw catalogError(`provider ${providerId} must declare managedRuntime for pack ${provider.packId}.`);
-  const entrypoints = new Map(pack.entrypoints.map((entry) => [entry.path, entry]));
-  const referenced = [];
+  const allowedPackIds = packClosure(catalog, provider.packId);
+  let referenced = 0;
   if (runtime.pythonPath !== undefined) {
-    if (!isSafeRelativePath(runtime.pythonPath)) throw catalogError(`provider ${providerId}.managedRuntime.pythonPath is unsafe.`);
-    referenced.push(runtime.pythonPath);
+    assertRuntimeReference(catalog, allowedPackIds, provider.packId, runtime.pythonPath, `provider ${providerId}.managedRuntime.pythonPath`, { requireFile: true, requireExecutable: true });
+    referenced += 1;
   }
   if (runtime.commandPaths !== undefined) {
     if (!isPlainObject(runtime.commandPaths)) throw catalogError(`provider ${providerId}.managedRuntime.commandPaths must be an object.`);
     for (const [command, target] of Object.entries(runtime.commandPaths)) {
-      if (!nonEmptyString(command) || !isSafeRelativePath(target)) throw catalogError(`provider ${providerId}.managedRuntime.commandPaths is unsafe.`);
-      referenced.push(target);
+      if (!nonEmptyString(command)) throw catalogError(`provider ${providerId}.managedRuntime.commandPaths is unsafe.`);
+      assertRuntimeReference(catalog, allowedPackIds, provider.packId, target, `provider ${providerId}.managedRuntime.commandPaths.${command}`, { requireFile: true, requireExecutable: true });
+      referenced += 1;
     }
   }
-  if (!referenced.length) throw catalogError(`provider ${providerId}.managedRuntime must declare a runtime path.`);
-  for (const target of referenced) {
-    const entrypoint = entrypoints.get(target);
-    if (!entrypoint || entrypoint.kind !== "file") throw catalogError(`provider ${providerId} references undeclared entrypoint ${target}.`);
-  }
+  if (!referenced) throw catalogError(`provider ${providerId}.managedRuntime must declare a runtime path.`);
   if (runtime.environment !== undefined) {
     if (!isPlainObject(runtime.environment)) throw catalogError(`provider ${providerId}.managedRuntime.environment must be an object.`);
     for (const [name, target] of Object.entries(runtime.environment)) {
-      if (!/^[A-Z][A-Z0-9_]*$/.test(name) || !isSafeRelativePath(target)) throw catalogError(`provider ${providerId}.managedRuntime.environment is unsafe.`);
-      if (!entrypoints.has(target) && !target.startsWith("share/")) throw catalogError(`provider ${providerId}.managedRuntime.environment references undeclared runtime ${target}.`);
+      if (!/^[A-Z][A-Z0-9_]*$/.test(name)) throw catalogError(`provider ${providerId}.managedRuntime.environment is unsafe.`);
+      assertRuntimeReference(catalog, allowedPackIds, provider.packId, target, `provider ${providerId}.managedRuntime.environment.${name}`);
+    }
+  }
+  if (runtime.languageDirectoryEnvironment !== undefined) {
+    if (!/^[A-Z][A-Z0-9_]*$/.test(runtime.languageDirectoryEnvironment)
+      || runtime.environment?.[runtime.languageDirectoryEnvironment] !== undefined) {
+      throw catalogError(`provider ${providerId}.managedRuntime.languageDirectoryEnvironment must be a distinct environment variable name.`);
     }
   }
 }
@@ -224,7 +260,7 @@ export function validatePdfProviderCatalog(catalog) {
         }
       }
     }
-    assertManagedRuntime(provider, pack, providerId);
+    assertManagedRuntime(catalog, provider, pack, providerId);
   }
 
   if (!isPlainObject(catalog.ocrLanguagePacks)) throw catalogError("ocrLanguagePacks must be an object.");

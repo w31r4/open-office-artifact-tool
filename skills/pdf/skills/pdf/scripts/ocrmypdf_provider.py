@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -47,6 +48,8 @@ DEFAULT_MAX_IMAGE_MPIXELS = 128
 MAX_REQUIRE_TEXT = 32
 MAX_REQUIRE_TEXT_CHARS = 256
 MAX_LANGUAGE_COUNT = 16
+MAX_TESSDATA_DIRECTORIES = 16
+MAX_TESSDATA_FILE_BYTES = 128 * 1024 * 1024
 MAX_DIAGNOSTIC_LINES = 200
 MAX_DIAGNOSTIC_LINE_CHARS = 1_000
 MAX_TEXT_PREVIEW_CHARS = 4_096
@@ -107,6 +110,108 @@ def executable_path(environment: str, command: str, label: str) -> Path:
     return Path(os.path.abspath(candidate))
 
 
+def managed_tessdata_stream(path: Path):
+    """Open one managed language data file without ever following a link."""
+
+    nofollow = getattr(os, "O_NOFOLLOW", None)
+    if nofollow is None:  # Managed packs are intentionally unsupported on Windows for now.
+        raise ProviderError("managed tessdata requires a platform with O_NOFOLLOW support")
+    try:
+        descriptor = os.open(path, os.O_RDONLY | nofollow)
+    except OSError as exc:
+        raise ProviderError(f"managed tessdata entry could not be opened safely: {path}") from exc
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1 or metadata.st_size <= 0 or metadata.st_size > MAX_TESSDATA_FILE_BYTES:
+            raise ProviderError(f"managed tessdata entry is unsafe or outside the size budget: {path}")
+        return os.fdopen(descriptor, "rb"), metadata.st_size
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
+def managed_tessdata_digest(path: Path) -> str:
+    stream, _ = managed_tessdata_stream(path)
+    try:
+        digest = hashlib.sha256()
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+        return digest.hexdigest()
+    finally:
+        stream.close()
+
+
+def copy_managed_tessdata(source: Path, target: Path) -> None:
+    stream, expected_bytes = managed_tessdata_stream(source)
+    copied_bytes = 0
+    try:
+        with target.open("xb") as destination:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                copied_bytes += len(chunk)
+                if copied_bytes > MAX_TESSDATA_FILE_BYTES:
+                    raise ProviderError(f"managed tessdata entry is outside the size budget: {source}")
+                destination.write(chunk)
+            destination.flush()
+            os.fsync(destination.fileno())
+    except FileExistsError as exc:
+        raise ProviderError(f"managed tessdata has an unexpected duplicate destination: {target.name}") from exc
+    finally:
+        stream.close()
+    if copied_bytes != expected_bytes:
+        raise ProviderError(f"managed tessdata entry changed while being copied: {source}")
+    os.chmod(target, 0o400)
+
+
+def managed_tessdata_directory(private_root: Path) -> Path | None:
+    """Materialize a bounded, private language union for managed OCR packs.
+
+    A managed language pack has its own immutable cache root, while Tesseract
+    accepts only one tessdata directory. The caller may provide a path-list of
+    verified managed data directories through OPEN_OFFICE_PDF_TESSDATA_DIRS;
+    this adapter never follows their links or mutates their receipts. It copies
+    regular traineddata files into the per-operation private root and exposes
+    that one union to Tesseract. A missing variable preserves the selected
+    system runtime's normal Tesseract data discovery.
+    """
+
+    raw = os.environ.get("OPEN_OFFICE_PDF_TESSDATA_DIRS", "").strip()
+    if not raw:
+        return None
+    source_texts = [value.strip() for value in raw.split(os.pathsep) if value.strip()]
+    if not source_texts or len(source_texts) > MAX_TESSDATA_DIRECTORIES:
+        raise ProviderError(f"OPEN_OFFICE_PDF_TESSDATA_DIRS must contain 1..{MAX_TESSDATA_DIRECTORIES} directories")
+    destination = private_root / "tessdata"
+    destination.mkdir(mode=0o700, exist_ok=False)
+    copied: set[str] = set()
+    for source_text in source_texts:
+        source = Path(source_text).expanduser()
+        try:
+            source_stat = source.lstat()
+        except OSError as exc:
+            raise ProviderError(f"managed tessdata directory is unavailable: {source_text}") from exc
+        if stat.S_ISLNK(source_stat.st_mode) or not stat.S_ISDIR(source_stat.st_mode):
+            raise ProviderError(f"managed tessdata directory must be a real directory: {source_text}")
+        for child in sorted(source.iterdir(), key=lambda entry: entry.name):
+            if not re.fullmatch(r"[A-Za-z0-9_-]+\.traineddata", child.name):
+                continue
+            try:
+                child_stat = child.lstat()
+            except OSError as exc:
+                raise ProviderError(f"managed tessdata entry became unavailable: {child}") from exc
+            if stat.S_ISLNK(child_stat.st_mode) or not stat.S_ISREG(child_stat.st_mode) or child_stat.st_nlink != 1 or child_stat.st_size <= 0 or child_stat.st_size > MAX_TESSDATA_FILE_BYTES:
+                raise ProviderError(f"managed tessdata entry is unsafe or outside the size budget: {child}")
+            target = destination / child.name
+            if child.name in copied:
+                if managed_tessdata_digest(child) != managed_tessdata_digest(target):
+                    raise ProviderError(f"managed tessdata has conflicting duplicate language data: {child.name}")
+                continue
+            copy_managed_tessdata(child, target)
+            copied.add(child.name)
+    if not copied:
+        raise ProviderError("managed tessdata directories contain no regular traineddata files")
+    return destination
+
+
 def provider_environment(private_root: Path, executables: list[Path]) -> dict[str, str]:
     home = private_root / "home"
     temporary = private_root / "tmp"
@@ -136,6 +241,9 @@ def provider_environment(private_root: Path, executables: list[Path]) -> dict[st
     for name in ("SYSTEMROOT", "WINDIR", "PATHEXT", "COMSPEC"):
         if os.environ.get(name):
             environment[name] = os.environ[name]
+    tessdata = managed_tessdata_directory(private_root)
+    if tessdata is not None:
+        environment["TESSDATA_PREFIX"] = str(tessdata)
     return environment
 
 
@@ -276,8 +384,9 @@ def component_probe(timeout_seconds: int, private_root: Path) -> dict[str, Any]:
     ocrmypdf = executable_path("OPEN_OFFICE_PDF_OCRMYPDF", "ocrmypdf", "OCRmyPDF")
     tesseract = executable_path("OPEN_OFFICE_PDF_TESSERACT", "tesseract", "Tesseract")
     pdftotext = executable_path("OPEN_OFFICE_PDF_PDFTOTEXT", "pdftotext", "Poppler pdftotext")
+    ghostscript = executable_path("OPEN_OFFICE_PDF_GS", "gs", "Ghostscript")
     qpdf_executable = qpdf.qpdf_path()
-    environment = provider_environment(private_root, [ocrmypdf, tesseract, pdftotext, qpdf_executable])
+    environment = provider_environment(private_root, [ocrmypdf, tesseract, pdftotext, ghostscript, qpdf_executable])
 
     ocr_output = bounded_command(ocrmypdf, ["--version"], label="OCRmyPDF --version", environment=environment, timeout_seconds=timeout_seconds)
     ocr_version = semantic_version(ocr_output, "OCRmyPDF")
@@ -310,17 +419,21 @@ def component_probe(timeout_seconds: int, private_root: Path) -> dict[str, Any]:
 
     poppler_output = bounded_command(pdftotext, ["-v"], label="Poppler pdftotext -v", environment=environment, timeout_seconds=timeout_seconds)
     poppler_version = semantic_version(poppler_output, "Poppler pdftotext")
+    ghostscript_output = bounded_command(ghostscript, ["--version"], label="Ghostscript --version", environment=environment, timeout_seconds=timeout_seconds)
+    ghostscript_version = semantic_version(ghostscript_output, "Ghostscript")
     qpdf_version = qpdf.qpdf_version(qpdf_executable, timeout_seconds)
     return {
         "ocrmypdf": ocrmypdf,
         "tesseract": tesseract,
         "pdftotext": pdftotext,
+        "ghostscript": ghostscript,
         "qpdf": qpdf_executable,
         "environment": environment,
         "versions": {
             "ocrmypdf": version_text(ocr_version),
             "tesseract": version_text(tesseract_version),
             "popplerPdftotext": version_text(poppler_version),
+            "ghostscript": version_text(ghostscript_version),
             "qpdf": qpdf_version,
         },
         "languages": sorted(set(languages)),
@@ -639,6 +752,7 @@ def ocr_pdf(args: argparse.Namespace) -> dict[str, Any]:
                 "tesseract": {"version": components["versions"]["tesseract"], "executable": str(components["tesseract"])},
                 "qpdf": {"version": components["versions"]["qpdf"], "executable": str(components["qpdf"])},
                 "popplerPdftotext": {"version": components["versions"]["popplerPdftotext"], "executable": str(components["pdftotext"])},
+                "ghostscript": {"version": components["versions"]["ghostscript"], "executable": str(components["ghostscript"])},
                 "rasterizer": "pypdfium",
                 "pdfRenderer": "fpdf2",
             },
@@ -714,6 +828,7 @@ def probe(args: argparse.Namespace) -> dict[str, Any]:
             "tesseract": components["versions"]["tesseract"],
             "qpdf": components["versions"]["qpdf"],
             "popplerPdftotext": components["versions"]["popplerPdftotext"],
+            "ghostscript": components["versions"]["ghostscript"],
             "pypdfium": "required through OCRmyPDF runtime",
             "fpdf2": "required through OCRmyPDF runtime",
         },
