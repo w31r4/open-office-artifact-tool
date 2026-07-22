@@ -7,7 +7,7 @@
     "license": "PSF-2.0 AND MPL-2.0 AND Apache-2.0 AND GPL-2.0-or-later AND AGPL-3.0-or-later AND BSD-3-Clause AND MIT",
     "pythonInputs": {
       "path": "scripts/pdf-provider-python-release-inputs.v1.json",
-      "sha256": "5b4d54a49e84416a5948bf5589c3ff0a47c6bb6aae48dd7d90253cd608fe3ce7"
+      "sha256": "35b865e49245334c6eb40eda9cc91e0e715f2a29bece2f9f5730d35cf8833d4e"
     },
     "nativeBuild": {
       "darwin-arm64": {
