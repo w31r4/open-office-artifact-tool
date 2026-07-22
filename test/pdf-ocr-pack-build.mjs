@@ -28,7 +28,7 @@ assert.equal(
   "the OCR release lock must pin the exact isolated-Python wheel lock it builds",
 );
 assert.deepEqual(inputs.ocrCore.nativeBuild["darwin-arm64"].formulae, ["tesseract", "ghostscript", "poppler"]);
-assert.deepEqual(inputs.ocrCore.nativeBuild["linux-x64"].packages, ["tesseract-ocr", "tesseract-ocr-eng", "ghostscript", "poppler-utils", "poppler-data", "libgs9-common", "fonts-droid-fallback", "fonts-urw-base35", "patchelf"]);
+assert.deepEqual(inputs.ocrCore.nativeBuild["linux-x64"].packages, ["tesseract-ocr", "tesseract-ocr-eng", "ghostscript", "poppler-utils", "poppler-data", "libgs-common", "fonts-droid-fallback", "fonts-urw-base35", "patchelf"]);
 
 for (const [language, expected] of Object.entries({ eng: "ocr-language-eng", chi_sim: "ocr-language-chi-sim" })) {
   const languageInput = inputs.languages[language];
@@ -76,7 +76,7 @@ assert.match(workflowSource, /fonts-droid-fallback/);
 assert.match(workflowSource, /platform: linux-x64\s+# Jammy ships Tesseract 4\.1[\s\S]*?runner: ubuntu-24\.04/);
 assert.match(workflowSource, /--resource-root/);
 assert.match(workflowSource, /fonts-urw-base35/);
-assert.match(workflowSource, /libgs9-common/);
+assert.match(workflowSource, /libgs-common/);
 assert.match(workflowSource, /poppler-data/);
 assert.match(workflowSource, /resource_target/);
 assert.match(workflowSource, /resource_actual/);

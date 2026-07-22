@@ -68,7 +68,7 @@ jobs:
           set -euo pipefail
           if [ "${{ matrix.platform }}" = "linux-x64" ]; then
             sudo apt-get update
-            sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng ghostscript poppler-utils poppler-data libgs9-common fonts-droid-fallback fonts-urw-base35 patchelf
+            sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng ghostscript poppler-utils poppler-data libgs-common fonts-droid-fallback fonts-urw-base35 patchelf
           else
             brew install tesseract ghostscript poppler
           fi
@@ -102,7 +102,7 @@ jobs:
             # CID fallback, and base-font links. Keep every external target
             # inside this explicit apt-owned allowlist; the pack builder then
             # dereferences only those roots into regular files.
-            resource_packages=(libgs9-common poppler-data fonts-droid-fallback fonts-urw-base35)
+            resource_packages=(libgs-common poppler-data fonts-droid-fallback fonts-urw-base35)
             tessdata_root="$(dirname "$(dpkg -L tesseract-ocr-eng | awk '/eng\.traineddata$/ { print; exit }')")"
             test -d "$tessdata_root"
             ghostscript_resource="$(find /usr/share/ghostscript -type d -name Resource -print -quit)"
