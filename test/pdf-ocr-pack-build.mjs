@@ -57,6 +57,10 @@ for (const sourceFragment of [
   "native library basename collision",
   "MACHO_MAGICS",
   "isMachOFile",
+  "ELF_MAGIC",
+  "isElfFile",
+  "loaderPath",
+  "linuxRpath",
   "listMacLibraryFiles",
   "path.basename(source)",
   "contains a dangling symlink",
@@ -64,7 +68,7 @@ for (const sourceFragment of [
   "resource-root",
 ]) assert.match(nativeSource, new RegExp(sourceFragment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 assert.match(nativeSource, /if \(!await isMachOFile\(target\)\) return false;/);
-assert.match(nativeSource, /@loader_path\/\$\{path\.basename\(target\)\}/);
+assert.match(nativeSource, /path\.relative\(path\.dirname\(target\), destination\)/);
 assert.match(workflowSource, /fonts-droid-fallback/);
 assert.match(workflowSource, /--resource-root/);
 assert.match(workflowSource, /fonts-urw-base35/);

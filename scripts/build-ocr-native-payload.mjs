@@ -34,6 +34,7 @@ const MACHO_MAGICS = new Set([
   0xcafebabf,
   0xbfbafeca,
 ]);
+const ELF_MAGIC = Buffer.from([0x7f, 0x45, 0x4c, 0x46]);
 
 function fail(message) {
   throw new Error(`OCR native capability-pack build: ${message}`);
@@ -270,7 +271,34 @@ async function isMachOFile(target) {
   }
 }
 
-async function patchMacBinary(target, libraryNames, { library = false } = {}) {
+async function isElfFile(target) {
+  const stat = await fs.lstat(target).catch(() => undefined);
+  if (!stat?.isFile() || stat.isSymbolicLink() || stat.size < ELF_MAGIC.length) return false;
+  const handle = await fs.open(target, "r");
+  try {
+    const header = Buffer.alloc(ELF_MAGIC.length);
+    const { bytesRead } = await handle.read(header, 0, header.length, 0);
+    return bytesRead === header.length && header.equals(ELF_MAGIC);
+  } finally {
+    await handle.close();
+  }
+}
+
+function loaderPath(target, destination) {
+  const relative = path.relative(path.dirname(target), destination).split(path.sep).join("/");
+  if (!relative || relative === ".") return `@loader_path/${path.basename(destination)}`;
+  if (path.isAbsolute(relative) || relative.startsWith("/")) fail(`cannot create a relocatable loader path for ${target}.`);
+  return `@loader_path/${relative}`;
+}
+
+function linuxRpath(target, libDirectory) {
+  const relative = path.relative(path.dirname(target), libDirectory).split(path.sep).join("/");
+  if (!relative || relative === ".") return "$ORIGIN";
+  if (path.isAbsolute(relative) || relative.startsWith("/")) fail(`cannot create a relocatable Linux rpath for ${target}.`);
+  return `$ORIGIN/${relative}`;
+}
+
+async function patchMacBinary(target, libraryNames, { library = false, libDirectory } = {}) {
   if (!await isMachOFile(target)) return false;
   const listed = await run("otool", ["-L", target], `otool ${target}`, { allowFailure: true });
   if (!listed) return false;
@@ -278,7 +306,7 @@ async function patchMacBinary(target, libraryNames, { library = false } = {}) {
     const name = path.basename(dependency);
     if (!libraryNames.has(name)) continue;
     if (dependency.startsWith("/System/") || dependency.startsWith("/usr/lib/")) continue;
-    const replacement = library ? `@loader_path/${name}` : `@loader_path/../lib/${name}`;
+    const replacement = loaderPath(target, path.join(libDirectory, name));
     if (dependency !== replacement) await run("install_name_tool", ["-change", dependency, replacement, target], `install_name_tool ${target}`);
   }
   // Every consumer is rewritten to resolve siblings through @loader_path.
@@ -293,7 +321,10 @@ async function finalizeMacPayload(payload, libraryNames) {
   const libexec = path.join(payload, "libexec");
   const lib = path.join(payload, "lib");
   const targets = [...await listRegularFiles(libexec), ...await listRegularFiles(lib)];
-  for (const target of targets) await patchMacBinary(target, libraryNames, { library: target.startsWith(`${lib}${path.sep}`) });
+  for (const target of targets) {
+    const library = path.dirname(target) === lib && path.basename(target).includes(".dylib");
+    await patchMacBinary(target, libraryNames, { library, libDirectory: lib });
+  }
   for (const target of targets) {
     if (!await isMachOFile(target)) continue;
     const listed = await run("otool", ["-L", target], `verify otool ${target}`, { allowFailure: true });
@@ -350,10 +381,12 @@ async function finalizeLinuxPayload(payload) {
   const libexec = path.join(payload, "libexec");
   const lib = path.join(payload, "lib");
   for (const target of await listRegularFiles(libexec)) {
-    await run("patchelf", ["--set-rpath", "$ORIGIN/../lib", target], `patchelf ${target}`);
+    if (!await isElfFile(target)) continue;
+    await run("patchelf", ["--set-rpath", linuxRpath(target, lib), target], `patchelf ${target}`);
   }
   for (const target of await listRegularFiles(lib)) {
-    await run("patchelf", ["--set-rpath", "$ORIGIN", target], `patchelf ${target}`);
+    if (!await isElfFile(target)) continue;
+    await run("patchelf", ["--set-rpath", linuxRpath(target, lib), target], `patchelf ${target}`);
   }
 }
 
@@ -420,7 +453,16 @@ async function build(options) {
     copied = await copyMacLibraries(options, lib);
     await finalizeMacPayload(payload, new Set(copied.keys()));
   } else {
-    copied = await copyLinuxLibraries([path.join(libexec, "tesseract"), path.join(libexec, "gs"), path.join(libexec, "pdftotext")], lib);
+    const pythonNativeFiles = [];
+    for (const target of await listRegularFiles(lib)) {
+      if (await isElfFile(target)) pythonNativeFiles.push(target);
+    }
+    copied = await copyLinuxLibraries([
+      path.join(libexec, "tesseract"),
+      path.join(libexec, "gs"),
+      path.join(libexec, "pdftotext"),
+      ...pythonNativeFiles,
+    ], lib);
     await finalizeLinuxPayload(payload);
   }
   await writeLaunchers(payload, options.platform);
