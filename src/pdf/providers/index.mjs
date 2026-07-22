@@ -236,10 +236,13 @@ function executableFromPath(command, environmentName, environment = process.env)
   return undefined;
 }
 
-async function commandVersion(executable, requireVersionOutput) {
-  for (const args of [["-v"], ["--version"], ["-version"]]) {
+async function commandVersion(executable, requireVersionOutput, timeoutMs = 2_500) {
+  // Prefer the conventional long form. Some document-processing CLIs treat
+  // `-v` as an ordinary input token, so probing it first can create needless
+  // diagnostics or a much slower startup even though `--version` is supported.
+  for (const args of [["--version"], ["-version"], ["-v"]]) {
     try {
-      const { stdout, stderr } = await execFile(executable, args, { timeout: 2_500, maxBuffer: 16 * 1024, windowsHide: true });
+      const { stdout, stderr } = await execFile(executable, args, { timeout: timeoutMs, maxBuffer: 16 * 1024, windowsHide: true });
       const line = String(stdout || stderr || "").trim().split(/\r?\n/, 1)[0];
       if (line && !/couldn't open file/i.test(line) && (!requireVersionOutput || versionParts(line))) return line.slice(0, 300);
     } catch (error) {
@@ -258,7 +261,7 @@ async function probeCommand(provider, commandPaths = undefined, taskId = undefin
   const commands = {};
   for (const command of provider.commands) {
     const executable = commandPaths?.[command] || executableFromPath(command, provider.environment);
-    const version = executable ? await commandVersion(executable, provider.requireVersionOutput) : undefined;
+    const version = executable ? await commandVersion(executable, provider.requireVersionOutput, provider.probeTimeoutMs) : undefined;
     commands[command] = { executable, version };
   }
   const entries = Object.values(commands);

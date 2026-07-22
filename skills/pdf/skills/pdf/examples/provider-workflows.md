@@ -18,8 +18,8 @@ The CLI rejects direct or symlink-alias source overwrite and writes output atomi
 
 ## qpdf structure inspection and repair
 
-Resolve qpdf first through [provider setup](../tasks/provider_setup.md): use a
-ready managed pack when published or an explicit `system-only` runtime. The
+Resolve qpdf first through [provider setup](../tasks/provider_setup.md): use
+the published ready managed pack or an explicit `system-only` runtime. The
 shipped wrapper exposes bounded inspect, recovery rewrite, linearize, and the
 separate AES-256 delivery-copy operation below; it does not pass arbitrary
 flags through to the provider:

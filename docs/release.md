@@ -25,17 +25,19 @@ a second PDF codec or putting large runtimes in the npm tarball:
   isolated Python specialists, OCR languages/core, veraPDF/JRE, and Poppler are
   not embedded in the tarball. The first managed targets are `darwin-arm64` and
   `linux-x64`.
-- qpdf `12.3.2-oat.1`, `python-foundation` `3.13.14-oat.1`, and
-  `python-specialists` `3.13.14-oat.1` are published as hash-pinned,
-  SBOM/notices-attached, GitHub-attested `darwin-arm64` and `linux-x64` assets.
-  Under an explicit managed policy, `ensure` can install precisely those
-  archives. Foundation provides isolated CPython with ReportLab, pdfplumber,
-  pypdf, and Pillow; specialists provide PyMuPDF, pikepdf, pyHanko, and
-  certificate validation over qpdf after an AGPL-or-commercial acknowledgement.
-  Redirect hops remain HTTPS-only and credential-free before final
-  byte-size/hash validation. OCR, veraPDF/JRE, and Poppler packs remain
-  intentionally unpublished and resolve as `blocked`; no document, Skill, or
-  API may claim that `ensure` can download a future asset today.
+- qpdf `12.3.2-oat.1`, `python-foundation` `3.13.14-oat.1`,
+  `python-specialists` `3.13.14-oat.1`, and veraPDF/JRE `1.30.2-oat.1` are
+  published as hash-pinned, SBOM/notices-attached, GitHub-attested
+  `darwin-arm64` and `linux-x64` assets. Under an explicit managed policy,
+  `ensure` can install precisely those archives. Foundation provides isolated
+  CPython with ReportLab, pdfplumber, pypdf, and Pillow; specialists provide
+  PyMuPDF, pikepdf, pyHanko, and certificate validation over qpdf after an
+  AGPL-or-commercial acknowledgement; the veraPDF pack includes its JRE and
+  does not use a global Java runtime. Redirect hops remain HTTPS-only and
+  credential-free before final byte-size/hash validation. OCR core/language
+  and Poppler packs remain intentionally unpublished and resolve as `blocked`;
+  no document, Skill, or API may claim that `ensure` can download a future
+  asset today.
 - P12/private keys, HSM/remote-signing credentials, TSA/LTV access, and trust
   roots are never capability packs and are never acquired automatically.
 

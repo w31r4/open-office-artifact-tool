@@ -118,6 +118,11 @@ assert.deepEqual(PDF_PROVIDER_CATALOG.packs["python-foundation"].releaseEvidence
 assert.equal(PDF_PROVIDER_CATALOG.packs["python-specialists"].state, "published");
 assert.equal(PDF_PROVIDER_CATALOG.packs["python-specialists"].version, "3.13.14-oat.1");
 assert.deepEqual(PDF_PROVIDER_CATALOG.packs["python-specialists"].releaseEvidence.verifiedPlatforms, ["darwin-arm64", "linux-x64"]);
+assert.equal(PDF_PROVIDER_CATALOG.packs.verapdf.state, "published");
+assert.equal(PDF_PROVIDER_CATALOG.packs.verapdf.version, "1.30.2-oat.1");
+assert.deepEqual(PDF_PROVIDER_CATALOG.packs.verapdf.releaseEvidence.verifiedPlatforms, ["darwin-arm64", "linux-x64"]);
+assert.equal(PDF_PROVIDER_CATALOG.packs.verapdf.license.expression, "MPL-2.0 AND GPL-3.0-or-later AND GPL-2.0-only WITH Classpath-exception-2.0");
+assert.equal(PDF_PROVIDER_CATALOG.providers.verapdf.probeTimeoutMs, 20_000);
 assert.ok(!("managedPack" in PDF_PROVIDER_CATALOG.providers.qpdf), "pack metadata must have one canonical top-level home");
 
 const invalidPlatformCatalog = structuredClone(PDF_PROVIDER_CATALOG);
@@ -168,6 +173,9 @@ assert.throws(() => validatePdfProviderCatalog(escapedOcrRuntimeCatalog), /outsi
 const invalidTaskMinimumCatalog = structuredClone(PDF_PROVIDER_CATALOG);
 invalidTaskMinimumCatalog.providers.qpdf.taskMinimumVersions = { unknown: "11.7" };
 assert.throws(() => validatePdfProviderCatalog(invalidTaskMinimumCatalog), /taskMinimumVersions contains an invalid task or version/);
+const invalidProbeTimeoutCatalog = structuredClone(PDF_PROVIDER_CATALOG);
+invalidProbeTimeoutCatalog.providers.verapdf.probeTimeoutMs = 60_001;
+assert.throws(() => validatePdfProviderCatalog(invalidProbeTimeoutCatalog), /probeTimeoutMs must be an integer/);
 
 const builtIn = await PdfProviders.resolve({ task: "inspect", savePolicy: "read-only", inspection: inspectedPdf });
 assert.equal(builtIn.status, "ready");
@@ -244,6 +252,24 @@ assert.equal(managedReportlab.status, "installable");
 assert.equal(managedReportlab.reason.code, "managed-install-required");
 assert.equal(managedReportlab.installPlan.packIds[0], "python-foundation");
 assert.equal(managedReportlab.installPlan.runtime.managedRuntime.pythonPath, "bin/python3");
+
+const managedVeraPdf = await PdfProviders.resolve({
+  task: "validate-conformance",
+  provider: "verapdf",
+  savePolicy: "read-only",
+  inspection: inspectedPdf,
+  policy: {
+    installPolicy: "managed",
+    allowedProviders: ["verapdf"],
+    allowedPacks: ["verapdf"],
+    maxDownloadBytes: 70_000_000,
+    maxUnpackedBytes: 200_000_000,
+  },
+});
+assert.equal(managedVeraPdf.status, "installable");
+assert.equal(managedVeraPdf.reason.code, "managed-install-required");
+assert.deepEqual(managedVeraPdf.installPlan.packIds, ["verapdf"]);
+assert.equal(managedVeraPdf.installPlan.runtime.managedRuntime.commandPaths.verapdf, "bin/verapdf");
 
 const unacknowledgedSpecialists = await PdfProviders.resolve({
   task: "inspect",

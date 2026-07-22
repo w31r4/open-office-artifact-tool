@@ -44,8 +44,10 @@ layer generation. qpdf, `python-foundation`, and `python-specialists`
 `darwin-arm64` and `linux-x64` assets. The foundation carries isolated CPython
 plus ReportLab, pdfplumber, pypdf, and Pillow; specialists carry PyMuPDF,
 pikepdf, pyHanko, and certificate validation, depend on qpdf, and require an
-explicit AGPL-or-commercial acknowledgement. OCR, Poppler, and veraPDF/JRE
-routes remain `blocked` until their own pack is published. The OCR
+explicit AGPL-or-commercial acknowledgement. veraPDF/JRE `1.30.2-oat.1` is
+also published and carries its own managed JRE, so no global Java runtime is
+used. OCR core/language and Poppler routes remain `blocked` until their own
+packs are published. The OCR
 redaction primitive requires one explicit page, an exact
 expected 0/90/180/270-degree page rotation, an exact term, expected image-backed
 match count, full sanitize rewrite, rotation-aware residue scan, and render QA;

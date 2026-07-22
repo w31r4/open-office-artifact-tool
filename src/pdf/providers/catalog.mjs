@@ -252,6 +252,9 @@ export function validatePdfProviderCatalog(catalog) {
     }
     if (provider.kind === "python-module" && !nonEmptyString(provider.module)) throw catalogError(`python provider ${providerId} is missing module.`);
     if (provider.kind === "command" && (!Array.isArray(provider.commands) || provider.commands.some((command) => !nonEmptyString(command)))) throw catalogError(`command provider ${providerId} is missing commands.`);
+    if (provider.probeTimeoutMs !== undefined && (!Number.isSafeInteger(provider.probeTimeoutMs) || provider.probeTimeoutMs < 250 || provider.probeTimeoutMs > 60_000)) {
+      throw catalogError(`provider ${providerId}.probeTimeoutMs must be an integer from 250 through 60000.`);
+    }
     if (provider.taskMinimumVersions !== undefined) {
       if (!isPlainObject(provider.taskMinimumVersions)) throw catalogError(`provider ${providerId}.taskMinimumVersions must be an object.`);
       for (const [taskId, version] of Object.entries(provider.taskMinimumVersions)) {
