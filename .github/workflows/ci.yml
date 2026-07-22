@@ -71,13 +71,14 @@ jobs:
         run: |
           npx playwright install --with-deps chromium
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libreoffice-writer libreoffice-calc libreoffice-impress poppler-utils qpdf tesseract-ocr
+          sudo apt-get install -y --no-install-recommends libreoffice-writer libreoffice-calc libreoffice-impress poppler-utils qpdf tesseract-ocr ghostscript
       - name: Verify render/runtime tools
         run: |
           node -e "const fs = require('fs'); const { chromium } = require('playwright'); if (!fs.existsSync(chromium.executablePath())) process.exit(1)"
           soffice --version
           pdftoppm -v
           qpdf --version
+          gs --version
           pdfinfo -v
           pdftotext -v
           "$OPEN_OFFICE_PDF_OCRMYPDF_TEST" --version

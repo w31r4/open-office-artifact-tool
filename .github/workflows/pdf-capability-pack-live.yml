@@ -51,3 +51,44 @@ jobs:
           asset="$(jq -r .asset <<<"$metadata")"
           gh release download "$tag" --pattern "$asset" --dir "$RUNNER_TEMP/qpdf-attestation"
           gh attestation verify "$RUNNER_TEMP/qpdf-attestation/$asset" --repo "$GITHUB_REPOSITORY"
+
+  python-foundation-managed-pack:
+    name: python foundation managed pack (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            runner: ubuntu-22.04
+          - platform: darwin-arm64
+            runner: macos-14
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Resolve, install, and probe the published foundation pack
+        env:
+          OPEN_OFFICE_PDF_LIVE_PACK_TEST: "1"
+        run: node test/pdf-python-managed-release.mjs
+      - name: Verify the release asset's GitHub attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACK_PLATFORM: ${{ matrix.platform }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          metadata="$(node --input-type=module --eval '
+            import { PDF_PROVIDER_CATALOG } from "./src/pdf/providers/index.mjs";
+            const pack = PDF_PROVIDER_CATALOG.packs["python-foundation"];
+            const artifact = pack.artifacts.find((entry) => entry.platform === process.env.PACK_PLATFORM);
+            if (!artifact) throw new Error(`missing python-foundation artifact for ${process.env.PACK_PLATFORM}`);
+            process.stdout.write(JSON.stringify({ tag: `pdf-provider-python-foundation-${pack.version}`, asset: artifact.asset }));
+          ')"
+          tag="$(jq -r .tag <<<"$metadata")"
+          asset="$(jq -r .asset <<<"$metadata")"
+          gh release download "$tag" --pattern "$asset" --dir "$RUNNER_TEMP/python-foundation-attestation"
+          gh attestation verify "$RUNNER_TEMP/python-foundation-attestation/$asset" --repo "$GITHUB_REPOSITORY"

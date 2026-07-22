@@ -25,13 +25,15 @@ a second PDF codec or putting large runtimes in the npm tarball:
   isolated Python specialists, OCR languages/core, veraPDF/JRE, and Poppler are
   not embedded in the tarball. The first managed targets are `darwin-arm64` and
   `linux-x64`.
-- qpdf `12.3.2-oat.1` is published as hash-pinned, SBOM/notices-attached,
-  GitHub-attested `darwin-arm64` and `linux-x64` assets. Under an explicit
-  managed policy, `ensure` can install precisely those archives; redirect hops
-  remain HTTPS-only and credential-free before final byte-size/hash validation.
-  Isolated Python, OCR, veraPDF/JRE, and Poppler packs remain intentionally
-  unpublished and resolve as `blocked`; no document, Skill, or API may claim
-  that `ensure` can download a future asset today.
+- qpdf `12.3.2-oat.1` and `python-foundation` `3.13.14-oat.1` are published as
+  hash-pinned, SBOM/notices-attached, GitHub-attested `darwin-arm64` and
+  `linux-x64` assets. Under an explicit managed policy, `ensure` can install
+  precisely those archives; the foundation provides isolated CPython with
+  ReportLab, pdfplumber, pypdf, and Pillow. Redirect hops remain HTTPS-only and
+  credential-free before final byte-size/hash validation. Python specialists,
+  OCR, veraPDF/JRE, and Poppler packs remain intentionally unpublished and
+  resolve as `blocked`; no document, Skill, or API may claim that `ensure` can
+  download a future asset today.
 - P12/private keys, HSM/remote-signing credentials, TSA/LTV access, and trust
   roots are never capability packs and are never acquired automatically.
 

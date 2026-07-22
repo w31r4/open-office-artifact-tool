@@ -112,6 +112,9 @@ assert.equal(PDF_PROVIDER_CATALOG.providers.qpdf.taskMinimumVersions.encrypt, "1
 assert.equal(PDF_PROVIDER_CATALOG.packs.qpdf.state, "published");
 assert.equal(PDF_PROVIDER_CATALOG.packs.qpdf.version, "12.3.2-oat.1");
 assert.deepEqual(PDF_PROVIDER_CATALOG.packs.qpdf.releaseEvidence.verifiedPlatforms, ["darwin-arm64", "linux-x64"]);
+assert.equal(PDF_PROVIDER_CATALOG.packs["python-foundation"].state, "published");
+assert.equal(PDF_PROVIDER_CATALOG.packs["python-foundation"].version, "3.13.14-oat.1");
+assert.deepEqual(PDF_PROVIDER_CATALOG.packs["python-foundation"].releaseEvidence.verifiedPlatforms, ["darwin-arm64", "linux-x64"]);
 assert.ok(!("managedPack" in PDF_PROVIDER_CATALOG.providers.qpdf), "pack metadata must have one canonical top-level home");
 
 const invalidPlatformCatalog = structuredClone(PDF_PROVIDER_CATALOG);
@@ -220,6 +223,23 @@ assert.equal(managedQpdf.status, "installable");
 assert.equal(managedQpdf.reason.code, "managed-install-required");
 assert.equal(managedQpdf.installPlan.performsDownload, true);
 await assert.rejects(() => PdfProviders.ensure({ resolution: managedQpdf }), /Policy changed after resolution/);
+
+const managedReportlab = await PdfProviders.resolve({
+  task: "create-layout",
+  provider: "reportlab",
+  savePolicy: "rewrite",
+  policy: {
+    installPolicy: "managed",
+    allowedProviders: ["reportlab"],
+    allowedPacks: ["python-foundation"],
+    maxDownloadBytes: 100_000_000,
+    maxUnpackedBytes: 200_000_000,
+  },
+});
+assert.equal(managedReportlab.status, "installable");
+assert.equal(managedReportlab.reason.code, "managed-install-required");
+assert.equal(managedReportlab.installPlan.packIds[0], "python-foundation");
+assert.equal(managedReportlab.installPlan.runtime.managedRuntime.pythonPath, "bin/python3");
 
 const encryptWithoutCredentialDeclaration = await PdfProviders.resolve({
   task: "encrypt",
@@ -345,6 +365,43 @@ try {
     else process.env.OPEN_OFFICE_PDF_QPDF = previousQpdf;
   }
 
+  // A system-only Python provider may be selected through a caller-owned
+  // absolute executable path. This keeps the managed-runtime direct-path
+  // probe and its explicit policy equivalent: neither depends on ambient PATH.
+  const explicitPython = path.join(tempRoot, "explicit-python.mjs");
+  await fs.writeFile(explicitPython, [
+    "#!/usr/bin/env node",
+    "if (!process.argv.includes('-c')) process.exit(2);",
+    "const payload = JSON.parse(process.argv.at(-1));",
+    "if (payload.module !== 'reportlab' || payload.distribution !== 'reportlab') process.exit(3);",
+    "process.stdout.write(JSON.stringify({ moduleFound: true, version: '4.4.9', companionFound: true, companionVersion: null }));",
+    "",
+  ].join("\n"), "utf8");
+  await fs.chmod(explicitPython, 0o755);
+  const explicitPythonProbe = await PdfProviders.probe({
+    provider: "reportlab",
+    task: "create-layout",
+    policy: {
+      installPolicy: "system-only",
+      allowedProviders: ["reportlab"],
+      providerPython: explicitPython,
+    },
+  });
+  assert.equal(explicitPythonProbe.status, "ready", JSON.stringify(explicitPythonProbe.reason));
+  assert.equal(explicitPythonProbe.runtime.evidence.python, explicitPython);
+  assert.equal(explicitPythonProbe.runtime.evidence.version, "4.4.9");
+  const relativePythonProbe = await PdfProviders.probe({
+    provider: "reportlab",
+    task: "create-layout",
+    policy: {
+      installPolicy: "system-only",
+      allowedProviders: ["reportlab"],
+      providerPython: path.relative(process.cwd(), explicitPython),
+    },
+  });
+  assert.equal(relativePythonProbe.status, "ready", JSON.stringify(relativePythonProbe.reason));
+  assert.equal(relativePythonProbe.runtime.evidence.python, explicitPython);
+
   const policyDirectory = path.join(tempRoot, ".open-office-artifact-tool");
   await fs.mkdir(policyDirectory);
   const policyPath = path.join(policyDirectory, "pdf-providers.json");
@@ -459,6 +516,20 @@ try {
   const traversalRoot = path.join(tempRoot, "traversal");
   await fs.mkdir(traversalRoot);
   await assert.rejects(() => safeExtractTarGz(traversal, traversalRoot, 16 * 1024), /Unsafe|escape/);
+  const tinyPayload = tarGz([{ name: "bin/tool", bytes: "two bytes", mode: 0o755 }]);
+  const tinyPayloadRoot = path.join(tempRoot, "tiny-payload");
+  await fs.mkdir(tinyPayloadRoot);
+  await assert.rejects(() => safeExtractTarGz(tinyPayload, tinyPayloadRoot, 1), /declared unpacked limit/);
+  const metadataHeavyEntries = Array.from({ length: 2_500 }, (_, index) => ({
+    name: `metadata/${String(index).padStart(5, "0")}.txt`,
+    bytes: "x",
+    mode: 0o644,
+  }));
+  const metadataHeavyArchive = tarGz(metadataHeavyEntries);
+  const metadataHeavyRoot = path.join(tempRoot, "metadata-heavy");
+  await fs.mkdir(metadataHeavyRoot);
+  const metadataHeavyExtraction = await safeExtractTarGz(metadataHeavyArchive, metadataHeavyRoot, metadataHeavyEntries.length);
+  assert.equal(metadataHeavyExtraction.unpackedBytes, metadataHeavyEntries.length, "USTAR headers and padding must not consume the advertised extracted-file budget");
   const hardlink = tarGz([{ name: "bin/tool", bytes: "target", type: "1", mode: 0o755 }]);
   await fs.mkdir(path.join(tempRoot, "hardlink"));
   await assert.rejects(() => safeExtractTarGz(hardlink, path.join(tempRoot, "hardlink"), 16 * 1024), /Unsupported or unsafe/);

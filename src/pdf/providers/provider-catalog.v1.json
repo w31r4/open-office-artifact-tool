@@ -37,17 +37,57 @@
       "license": { "expression": "AGPL-3.0-or-later", "requiresAcknowledgement": false }
     },
     "python-foundation": {
-      "state": "unpublished",
+      "state": "published",
       "delivery": "versioned-signed-platform-release-asset",
       "platforms": ["darwin-arm64", "linux-x64"],
-      "version": null,
-      "artifacts": [],
+      "version": "3.13.14-oat.1",
+      "artifacts": [
+        {
+          "platform": "darwin-arm64",
+          "asset": "python-foundation-3.13.14-oat.1-darwin-arm64.tar.gz",
+          "version": "3.13.14-oat.1",
+          "url": "https://github.com/w31r4/open-office-artifact-tool/releases/download/pdf-provider-python-foundation-3.13.14-oat.1/python-foundation-3.13.14-oat.1-darwin-arm64.tar.gz",
+          "sha256": "c45523fbcbe87363f6955698b68dd8f9c701eda85bc15c11e192de40bf43aec6",
+          "downloadBytes": 44377484,
+          "unpackedBytes": 106398446,
+          "archiveFormat": "tar.gz"
+        },
+        {
+          "platform": "linux-x64",
+          "asset": "python-foundation-3.13.14-oat.1-linux-x64.tar.gz",
+          "version": "3.13.14-oat.1",
+          "url": "https://github.com/w31r4/open-office-artifact-tool/releases/download/pdf-provider-python-foundation-3.13.14-oat.1/python-foundation-3.13.14-oat.1-linux-x64.tar.gz",
+          "sha256": "11ccf3748f6d09ec068525d321020551a5eb30675dccfde35900f65121103cf3",
+          "downloadBytes": 67327027,
+          "unpackedBytes": 179446477,
+          "archiveFormat": "tar.gz"
+        }
+      ],
       "requiresPackIds": [],
       "entrypoints": [{ "path": "bin/python3", "kind": "file", "executable": true }],
-      "dependencyClosure": ["isolated CPython", "reportlab", "pdfplumber", "pypdf"],
+      "dependencyClosure": ["isolated CPython", "reportlab", "pdfplumber", "pypdf", "Pillow"],
       "estimatedDownloadBytes": null,
       "estimatedUnpackedBytes": null,
-      "license": { "expression": "BSD-3-Clause AND MIT", "requiresAcknowledgement": false }
+      "releaseEvidence": {
+        "sbom": {
+          "asset": "python-foundation-3.13.14-oat.1.sbom.cdx.json",
+          "url": "https://github.com/w31r4/open-office-artifact-tool/releases/download/pdf-provider-python-foundation-3.13.14-oat.1/python-foundation-3.13.14-oat.1.sbom.cdx.json",
+          "sha256": "1f9e377fedc0a7d7e28519be64853c675a7717722caed2b190be2b1be86fce31"
+        },
+        "thirdPartyNotices": {
+          "asset": "python-foundation-3.13.14-oat.1.THIRD_PARTY_NOTICES.md",
+          "url": "https://github.com/w31r4/open-office-artifact-tool/releases/download/pdf-provider-python-foundation-3.13.14-oat.1/python-foundation-3.13.14-oat.1.THIRD_PARTY_NOTICES.md",
+          "sha256": "a895a09ac14debca3e365e85cdd697523fdc4761dae31bfc30826271d62c938d"
+        },
+        "provenance": {
+          "provider": "github-actions-artifact-attestation",
+          "repository": "w31r4/open-office-artifact-tool",
+          "workflow": ".github/workflows/pdf-python-capability-packs.yml",
+          "verificationCommand": "gh attestation verify <asset> --repo w31r4/open-office-artifact-tool"
+        },
+        "verifiedPlatforms": ["darwin-arm64", "linux-x64"]
+      },
+      "license": { "expression": "PSF-2.0 AND MPL-2.0 AND BSD-3-Clause AND MIT", "requiresAcknowledgement": false }
     },
     "python-specialists": {
       "state": "unpublished",

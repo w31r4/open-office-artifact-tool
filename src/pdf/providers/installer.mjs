@@ -28,6 +28,8 @@ const MAX_RECEIPT_BYTES = 128 * 1024;
 const LOCK_TIMEOUT_MS = 20_000;
 const LOCK_RETRY_MS = 25;
 const MAX_DOWNLOAD_REDIRECTS = 5;
+const MIN_TAR_METADATA_BYTES = 4 * 1024 * 1024;
+const MAX_TAR_METADATA_BYTES = 16 * 1024 * 1024;
 
 function nonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
@@ -135,12 +137,24 @@ async function gunzipLimited(compressed, maxBytes) {
   return Buffer.concat(chunks, total);
 }
 
+function tarExpansionLimit(maxUnpackedBytes) {
+  // The catalog budget is the bytes that will exist on disk after extraction.
+  // A USTAR stream additionally contains one 512-byte header per entry and
+  // block padding; allow a bounded amount of that transient metadata while
+  // retaining the exact extracted-file limit below.
+  const metadataAllowance = Math.min(
+    MAX_TAR_METADATA_BYTES,
+    Math.max(MIN_TAR_METADATA_BYTES, Math.ceil(maxUnpackedBytes / 16)),
+  );
+  return maxUnpackedBytes + metadataAllowance;
+}
+
 /** Safely extract a strict USTAR tar.gz payload into a fresh staging directory. */
 export async function safeExtractTarGz(compressed, destination, maxUnpackedBytes) {
   if (!Buffer.isBuffer(compressed)) throw new TypeError("Capability-pack archive must be bytes.");
   if (!Number.isSafeInteger(maxUnpackedBytes) || maxUnpackedBytes <= 0) throw new TypeError("Capability-pack unpacked limit must be a positive safe integer.");
   await ensureRealDirectory(destination);
-  const tar = await gunzipLimited(compressed, maxUnpackedBytes + 1024 * 1024);
+  const tar = await gunzipLimited(compressed, tarExpansionLimit(maxUnpackedBytes));
   const seen = new Set();
   let offset = 0;
   let unpackedBytes = 0;

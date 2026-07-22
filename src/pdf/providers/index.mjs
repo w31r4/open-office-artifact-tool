@@ -220,10 +220,13 @@ function buildInstallPlan(providerId, provider, task, policy, requestedLanguages
 
 function executableFromPath(command, environmentName, environment = process.env) {
   const configured = environmentName ? String(environment[environmentName] || "").trim() : "";
-  const candidates = configured ? [configured] : String(environment.PATH || "").split(path.delimiter).filter(Boolean).flatMap((directory) => {
-    const extensions = process.platform === "win32" ? (environment.PATHEXT || ".EXE;.CMD;.BAT;.COM").split(";").filter(Boolean) : [""];
-    return extensions.map((extension) => path.join(directory, `${command}${extension}`));
-  });
+  const extensions = process.platform === "win32" ? (environment.PATHEXT || ".EXE;.CMD;.BAT;.COM").split(";").filter(Boolean) : [""];
+  const directPath = path.isAbsolute(command) || command.includes("/") || command.includes("\\");
+  const candidates = configured
+    ? [configured]
+    : directPath
+      ? [command]
+      : String(environment.PATH || "").split(path.delimiter).filter(Boolean).flatMap((directory) => extensions.map((extension) => path.join(directory, `${command}${extension}`)));
   for (const candidate of candidates) {
     try {
       const stat = fs.statSync(candidate);
@@ -289,9 +292,13 @@ async function probePythonModule(provider, policy, explicitPython = undefined) {
   const program = [
     "import importlib.metadata as m, importlib.util as u, json, sys",
     "p=json.loads(sys.argv[1])",
-    "def v(n):\n try: return m.version(n)\n except Exception: return None",
+    "def v(n):",
+    "    try:",
+    "        return m.version(n)",
+    "    except Exception:",
+    "        return None",
     "print(json.dumps({'moduleFound': u.find_spec(p['module']) is not None, 'version': v(p['distribution']), 'companionFound': (not p.get('companionModule')) or u.find_spec(p['companionModule']) is not None, 'companionVersion': v(p['companionDistribution']) if p.get('companionModule') else None}))",
-  ].join("; ");
+  ].join("\n");
   try {
     const { stdout } = await execFile(executable, ["-c", program, JSON.stringify(payload)], { timeout: 3_000, maxBuffer: 16 * 1024, windowsHide: true });
     const probe = JSON.parse(stdout);

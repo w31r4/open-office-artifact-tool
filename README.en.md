@@ -50,7 +50,7 @@ More runnable examples:
 
 The official `mupdf@1.28.0` package is a required npm dependency and is resolved by a normal `npm install`. Its WASM runtime initializes only on the first PDF read, inspect, render, or edit operation. There is no `postinstall`, standalone downloader, or global environment mutation.
 
-qpdf, Python specialists, OCR, and veraPDF/JRE route through the explicit `open-office-artifact-tool/pdf/providers` API. It resolves task/inspection evidence to `ready`, `installable`, or `blocked`; a project policy then decides whether installation is allowed. Downloads are disabled by default. Immutable non-MuPDF capability-pack assets are not yet published, so they deliberately resolve as `blocked` rather than silently falling back. A deployment-owned runtime can be selected only through explicit `system-only` policy. See [PDF Provider Setup](skills/pdf/skills/pdf/tasks/provider_setup.md).
+qpdf, Python specialists, OCR, and veraPDF/JRE route through the explicit `open-office-artifact-tool/pdf/providers` API. It resolves task/inspection evidence to `ready`, `installable`, or `blocked`; a project policy then decides whether installation is allowed. Downloads are disabled by default. qpdf and the Python foundation pack now have immutable, attested assets for both managed platforms; the foundation contains only isolated CPython with ReportLab, pdfplumber, pypdf, and Pillow. PyMuPDF/pikepdf/pyHanko, OCR, Poppler, and veraPDF/JRE deliberately remain `blocked` rather than silently falling back. A deployment-owned runtime can be selected only through explicit `system-only` policy. See [PDF Provider Setup](skills/pdf/skills/pdf/tasks/provider_setup.md).
 
 ## Why it exists
 
