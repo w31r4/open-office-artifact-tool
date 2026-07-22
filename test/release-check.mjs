@@ -20,6 +20,9 @@ assert.ok(report.checks.some((check) => check.name === "npm auth" && check.skipp
 assert.match(report.nextPublishCommand, /npm publish/);
 const releaseWorkflow = fs.readFileSync(path.join(repoRoot, ".github/workflows/release.yml"), "utf8");
 const ciWorkflow = fs.readFileSync(path.join(repoRoot, ".github/workflows/ci.yml"), "utf8");
+const dotnetToolchain = JSON.parse(fs.readFileSync(path.join(repoRoot, "global.json"), "utf8"));
+assert.equal(dotnetToolchain.sdk.version, "8.0.128");
+assert.equal(dotnetToolchain.sdk.rollForward, "disable", "locked OpenChestnut restore must not select a newer SDK patch with different implicit build packages");
 assert.match(releaseWorkflow, /workflow_dispatch/);
 assert.match(releaseWorkflow, /publish_npm/);
 assert.match(releaseWorkflow, /default: "false"/);
@@ -31,6 +34,7 @@ for (const workflow of [ciWorkflow, releaseWorkflow]) {
   assert.match(workflow, /actions\/checkout@v5/);
   assert.match(workflow, /actions\/setup-node@v5/);
   assert.match(workflow, /actions\/setup-dotnet@v5/);
+  assert.match(workflow, /dotnet-version:\s*8\.0\.128/);
   assert.match(workflow, /soffice --version/);
   assert.match(workflow, /pdfinfo -v/);
   assert.match(workflow, /dotnet test native\/OfficeBridge/);
