@@ -506,6 +506,14 @@ try {
   const second = await installManagedPackForTest({ cacheRoot, pack, fetchImpl: async () => { throw new Error("cache hit must not download"); } });
   assert.equal(second.ready, true);
   assert.equal(second.reused, true);
+  const catalogUpdated = await installManagedPackForTest({
+    cacheRoot,
+    pack,
+    catalogSha256: "b".repeat(64),
+    fetchImpl: async () => { throw new Error("an unchanged pinned pack must survive an unrelated catalog update"); },
+  });
+  assert.equal(catalogUpdated.ready, true);
+  assert.equal(catalogUpdated.reused, true);
 
   const mirrorCalls = [];
   const mirrorCache = path.join(tempRoot, "mirror-cache");

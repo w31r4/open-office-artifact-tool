@@ -30,6 +30,7 @@ const LOCK_RETRY_MS = 25;
 const MAX_DOWNLOAD_REDIRECTS = 5;
 const MIN_TAR_METADATA_BYTES = 4 * 1024 * 1024;
 const MAX_TAR_METADATA_BYTES = 16 * 1024 * 1024;
+const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 
 function nonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
@@ -354,7 +355,7 @@ function locationForPack(cacheRoot, packId, version, platform) {
   return path.join(cacheRoot, safePathSegment(packId, "packId"), safePathSegment(version, "pack version"), safePathSegment(platform, "platform"));
 }
 
-async function installedPackRecord({ cacheRoot, packId, pack, platform, catalogSha256 = PDF_PROVIDER_CATALOG_SHA256 }) {
+async function installedPackRecord({ cacheRoot, packId, pack, platform }) {
   if (pack.state !== "published") return { ready: false, reason: `${pack.state}-pack` };
   const root = locationForPack(cacheRoot, packId, pack.version, platform);
   try {
@@ -362,10 +363,14 @@ async function installedPackRecord({ cacheRoot, packId, pack, platform, catalogS
     if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) return { ready: false, reason: "unsafe-cache-root", root };
     const artifact = artifactForPlatform(pack, platform);
     const receipt = await readReceipt(root);
+    // A receipt records the catalog digest that originally authorized its
+    // download, but cache identity is deliberately per pack/version/platform
+    // and exact artifact bytes. Otherwise adding an unrelated pack to a newer
+    // catalog would strand every already verified installation.
     if (!isPlainObject(receipt)
       || receipt.schema !== RECEIPT_SCHEMA
       || receipt.schemaVersion !== 1
-      || receipt.catalogSha256 !== catalogSha256
+      || !SHA256_PATTERN.test(receipt.catalogSha256 || "")
       || receipt.packId !== packId
       || receipt.version !== pack.version
       || receipt.platform !== platform
@@ -414,7 +419,7 @@ async function installPackRecord({ cacheRoot, packId, pack, platform, enterprise
   const releaseLock = await acquireLock(`${target}.lock`);
   let temporary;
   try {
-    const existing = await installedPackRecord({ cacheRoot, packId, pack, platform, catalogSha256 });
+    const existing = await installedPackRecord({ cacheRoot, packId, pack, platform });
     if (existing.ready) return { ...existing, reused: true };
     if (existing.reason !== "not-installed") throw new Error(`Refusing to replace invalid managed capability cache for ${packId}: ${existing.reason}.`);
     temporary = await fs.promises.mkdtemp(path.join(parent, `.${packId}.tmp-`));
