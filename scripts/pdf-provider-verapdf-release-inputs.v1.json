@@ -1,0 +1,50 @@
+{
+  "schema": "open-office-artifact-tool.pdf-provider-verapdf-release-inputs.v1",
+  "schemaVersion": 1,
+  "verapdf": {
+    "packId": "verapdf",
+    "version": "1.30.2-oat.1",
+    "license": "MPL-2.0 AND GPL-3.0-or-later AND GPL-2.0-only WITH Classpath-exception-2.0",
+    "installer": {
+      "url": "https://software.verapdf.org/releases/1.30/verapdf-greenfield-1.30.2-installer.zip",
+      "sha256": "6cc6341cb1af644044054b81f00a6590a7918abb18f762243de115258bcad838",
+      "downloadBytes": 32923960,
+      "installerJarPath": "verapdf-greenfield-1.30.2/verapdf-izpack-installer-1.30.2.jar",
+      "cliJarPath": "bin/cli-1.30.2.jar"
+    },
+    "jre": {
+      "distribution": "Eclipse Temurin",
+      "version": "21.0.7+6",
+      "javaVersion": "21.0.7",
+      "license": "GPL-2.0-only WITH Classpath-exception-2.0",
+      "platforms": {
+        "darwin-arm64": {
+          "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.7%2B6/OpenJDK21U-jre_aarch64_mac_hotspot_21.0.7_6.tar.gz",
+          "sha256": "61dca7744d0b92d5d270f03e2ff32d64e95f3f7c8d0acbe642d7733ccb8523ac",
+          "downloadBytes": 48027074,
+          "javaHomePath": "jdk-21.0.7+6-jre/Contents/Home"
+        },
+        "linux-x64": {
+          "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.7%2B6/OpenJDK21U-jre_x64_linux_hotspot_21.0.7_6.tar.gz",
+          "sha256": "6d48379e00d47e6fdd417e96421e973898ac90765ea8ff2d09ae0af6d5d6a1c6",
+          "downloadBytes": 51863597,
+          "javaHomePath": "jdk-21.0.7+6-jre"
+        }
+      }
+    },
+    "licenseMaterial": [
+      {
+        "name": "veraPDF GPL-3.0-or-later",
+        "url": "https://raw.githubusercontent.com/veraPDF/veraPDF-apps/v1.30.2/LICENSE.GPL",
+        "sha256": "d62f065830aa3739cc031156b9690805c7b2e811b4a178c8b4acd8725d561c94",
+        "downloadBytes": 35142
+      },
+      {
+        "name": "veraPDF MPL-2.0",
+        "url": "https://raw.githubusercontent.com/veraPDF/veraPDF-apps/v1.30.2/LICENSE.MPL",
+        "sha256": "af175b9d96ee93c21a036152e1b905b0b95304d4ae8c2c921c7609100ba8df7e",
+        "downloadBytes": 15921
+      }
+    ]
+  }
+}

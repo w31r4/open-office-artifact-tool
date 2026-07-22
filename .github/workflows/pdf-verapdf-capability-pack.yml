@@ -1,0 +1,150 @@
+name: veraPDF PDF capability pack
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Create the immutable veraPDF plus managed-JRE release only after both platform probes pass"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+# This release-only lane builds a bundled JRE for the one selected veraPDF
+# runtime. Normal npm install, root import, and ordinary tests never download
+# a JRE, installer, or capability pack.
+permissions:
+  contents: write
+  attestations: write
+  artifact-metadata: write
+  id-token: write
+
+env:
+  VERAPDF_PACK_VERSION: 1.30.2-oat.1
+  VERAPDF_INPUTS: scripts/pdf-provider-verapdf-release-inputs.v1.json
+
+jobs:
+  verapdf-pack:
+    name: veraPDF (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            runner: ubuntu-22.04
+          - platform: darwin-arm64
+            runner: macos-14
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Validate pinned veraPDF and JRE inputs
+        run: node scripts/build-verapdf-provider-pack.mjs --verify-lock
+      - name: Assemble a self-contained veraPDF CLI pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/build-verapdf-provider-pack.mjs \
+            --pack verapdf \
+            --version "$VERAPDF_PACK_VERSION" \
+            --platform "${{ matrix.platform }}" \
+            --output "$RUNNER_TEMP/verapdf-release" \
+            --source-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$GITHUB_SHA/$VERAPDF_INPUTS"
+      - name: Verify the extracted managed runtime and real conformance adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/verapdf-release/verapdf-$VERAPDF_PACK_VERSION-${{ matrix.platform }}.tar.gz"
+          destination="$RUNNER_TEMP/verapdf-consumer"
+          mkdir -p "$destination" "$RUNNER_TEMP/verapdf-home"
+          tar -xzf "$archive" -C "$destination"
+          test -x "$destination/bin/verapdf"
+          test -x "$destination/jre/bin/java"
+          test -f "$destination/libexec/bin/cli-1.30.2.jar"
+          test -d "$destination/jre/legal"
+          env -i HOME="$RUNNER_TEMP/verapdf-home" PATH="$destination/bin:/usr/bin:/bin" "$destination/bin/verapdf" --version | grep -Fx 'veraPDF 1.30.2'
+          env -i HOME="$RUNNER_TEMP/verapdf-home" PATH="$destination/bin:/usr/bin:/bin" "$destination/bin/verapdf" --list | grep -Eq '^[[:space:]]+ua2[[:space:]]+-'
+          OPEN_OFFICE_PDF_VERAPDF_TEST="$destination/bin/verapdf" node test/pdf-verapdf-provider.mjs
+      - name: Attest immutable veraPDF pack provenance
+        if: ${{ inputs.publish == 'true' }}
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ runner.temp }}/verapdf-release/*.tar.gz
+      - name: Attest veraPDF pack SBOM
+        if: ${{ inputs.publish == 'true' }}
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ runner.temp }}/verapdf-release/verapdf-${{ env.VERAPDF_PACK_VERSION }}-${{ matrix.platform }}.tar.gz
+          sbom-path: ${{ runner.temp }}/verapdf-release/verapdf-${{ env.VERAPDF_PACK_VERSION }}-${{ matrix.platform }}.sbom.cdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verapdf-${{ matrix.platform }}
+          path: ${{ runner.temp }}/verapdf-release/
+          if-no-files-found: error
+          retention-days: 14
+
+  release-verapdf-pack:
+    name: assemble veraPDF release manifest
+    needs: verapdf-pack
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: verapdf-*
+          path: ${{ runner.temp }}/verapdf-platforms
+          merge-multiple: true
+      - name: Combine audited platform manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="pdf-provider-verapdf-$VERAPDF_PACK_VERSION"
+          release_base="https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/"
+          node scripts/finalize-pdf-provider-release.mjs \
+            --pack verapdf \
+            --version "$VERAPDF_PACK_VERSION" \
+            --input "$RUNNER_TEMP/verapdf-platforms" \
+            --output "$RUNNER_TEMP/verapdf-final" \
+            --release-base-url "$release_base" \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow .github/workflows/pdf-verapdf-capability-pack.yml
+          jq -e '.catalogFragment.state == "published" and (.catalogFragment.artifacts | length == 2)' "$RUNNER_TEMP/verapdf-final/verapdf-$VERAPDF_PACK_VERSION.release-manifest.json"
+      - name: Attest veraPDF release evidence assets
+        if: ${{ inputs.publish == 'true' }}
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ runner.temp }}/verapdf-final/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verapdf-release-manifest
+          path: ${{ runner.temp }}/verapdf-final/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish immutable GitHub release assets
+        if: ${{ inputs.publish == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="pdf-provider-verapdf-$VERAPDF_PACK_VERSION"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Refusing to mutate existing release $tag" >&2
+            exit 2
+          fi
+          gh release create "$tag" \
+            --target "$GITHUB_SHA" \
+            --title "PDF capability pack: veraPDF $VERAPDF_PACK_VERSION" \
+            --notes "Hash-pinned veraPDF CLI plus managed JRE capability pack. The npm catalog does not advertise these assets until a reviewed catalog update pins their exact hashes. Verify every asset with: gh attestation verify <asset> --repo $GITHUB_REPOSITORY"
+          gh release upload "$tag" "$RUNNER_TEMP/verapdf-platforms"/* "$RUNNER_TEMP/verapdf-final"/*
