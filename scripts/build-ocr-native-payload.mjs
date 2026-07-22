@@ -224,9 +224,9 @@ async function copyByBasename(source, destinationDirectory, copied) {
   return destination;
 }
 
-async function run(command, args, label, { allowFailure = false } = {}) {
+async function run(command, args, label, { allowFailure = false, environment = undefined } = {}) {
   try {
-    return await execFile(command, args, { timeout: 60_000, maxBuffer: MAX_OUTPUT, encoding: "utf8" });
+    return await execFile(command, args, { timeout: 60_000, maxBuffer: MAX_OUTPUT, encoding: "utf8", ...(environment ? { env: environment } : {}) });
   } catch (error) {
     if (allowFailure) return undefined;
     fail(`${label} failed: ${String(error?.stderr || error?.message || error).trim()}`);
@@ -371,17 +371,15 @@ function hostBaselineLibrary(candidate) {
 }
 
 async function copyLinuxLibraries(initialTargets, libDirectory) {
-  // The isolated Python payload already owns libpython in the top-level lib
-  // directory. Seed that direct namespace so an ldd edge back to libpython is
-  // checked for byte identity rather than attempting a COPYFILE_EXCL copy
-  // onto the same destination.
   const copied = new Map();
-  for (const entry of await fs.readdir(libDirectory, { withFileTypes: true })) {
-    if (!entry.isFile()) continue;
-    const candidate = path.join(libDirectory, entry.name);
-    const stat = await fs.lstat(candidate);
-    if (stat.isSymbolicLink()) fail(`payload library directory contains an unsafe symlink: ${candidate}.`);
-    copied.set(entry.name, candidate);
+  // Native Python wheels may keep a private shared object adjacent to their
+  // extension module (pypdfium2's libde265 is one example). Move every real
+  // `lib*.so*` payload dependency into the one relocatable library root
+  // before resolving extension dependencies. `ldd` then observes exactly the
+  // same root that the final wrappers and patched rpaths will use, never an
+  // accidental host library search path.
+  for (const candidate of await listLinuxLibraryFiles(libDirectory)) {
+    await copyByBasename(candidate, libDirectory, copied);
   }
   const queued = [...initialTargets];
   const seen = new Set();
@@ -389,7 +387,9 @@ async function copyLinuxLibraries(initialTargets, libDirectory) {
     const target = await fs.realpath(queued.shift());
     if (seen.has(target)) continue;
     seen.add(target);
-    const ldd = await run("ldd", [target], `ldd ${target}`);
+    const ldd = await run("ldd", [target], `ldd ${target}`, {
+      environment: { ...process.env, LD_LIBRARY_PATH: libDirectory },
+    });
     for (const dependency of parseLddDependencies(ldd.stdout)) {
       if (hostBaselineLibrary(dependency)) continue;
       const copiedPath = await copyByBasename(dependency, libDirectory, copied);
@@ -398,6 +398,15 @@ async function copyLinuxLibraries(initialTargets, libDirectory) {
   }
   if (!copied.size) fail("no Linux native libraries were resolved.");
   return copied;
+}
+
+async function listLinuxLibraryFiles(root) {
+  const results = [];
+  for (const candidate of await listRegularFiles(root)) {
+    if (!/^lib.+\.so(?:\..+)?$/.test(path.basename(candidate))) continue;
+    if (await isElfFile(candidate)) results.push(candidate);
+  }
+  return results;
 }
 
 async function finalizeLinuxPayload(payload) {
