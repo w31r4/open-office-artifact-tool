@@ -1144,6 +1144,7 @@ function canonicalCloneSnapshot(slide, slidePartById = new Map()) {
     if (Array.isArray(value)) return value.map(normalize);
     if (!value || typeof value !== "object") return value;
     const oleObject = value.kind === "nativeObject" && value.nativeKind === "oleObject";
+    const diagramObject = value.kind === "nativeObject" && value.nativeKind === "diagram";
     const result = {};
     for (const [key, item] of Object.entries(value)) {
       if (key === "id" || key === "layoutId") continue;
@@ -1153,6 +1154,10 @@ function canonicalCloneSnapshot(slide, slidePartById = new Map()) {
         result[key] = slidePartById.get(item) || "unresolved:" + item;
       } else if (oleObject && key === "embeddedWorkbook" && item && typeof item === "object") {
         result[key] = { ...normalize(item), partPath: "<independent-clone-local-xlsx>" };
+      } else if (diagramObject && key === "diagramText" && item && typeof item === "object") {
+        // Clone-local DiagramDataPart paths are intentionally different while
+        // their source-bound node IDs/text and byte digest must stay equal.
+        result[key] = { ...normalize(item), partPath: "<independent-clone-local-diagram-data>" };
       } else {
         result[key] = normalize(item);
       }

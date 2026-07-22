@@ -4,6 +4,76 @@ import { aid } from "../shared/ids.mjs";
 import { attrEscape, xmlEscape } from "../shared/xml.mjs";
 
 const MAX_EMBEDDED_WORKBOOK_BYTES = 16 * 1024 * 1024;
+const MAX_DIAGRAM_NODE_TEXT_LENGTH = 32_767;
+
+function hasOnlyValidUnicodeScalars(value) {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return false;
+      index += 1;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function validDiagramNodeText(value) {
+  return value.length <= MAX_DIAGRAM_NODE_TEXT_LENGTH &&
+    !/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/u.test(value) &&
+    hasOnlyValidUnicodeScalars(value);
+}
+
+function validDiagramModelId(value) {
+  if (value.length > 1_024 || /[\u0000-\u001f]/u.test(value) || !hasOnlyValidUnicodeScalars(value)) return false;
+  if (/^[+-]?\d+$/u.test(value)) {
+    const numeric = BigInt(value);
+    return numeric >= -2_147_483_648n && numeric <= 2_147_483_647n;
+  }
+  return /^\{[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\}$/iu.test(value);
+}
+
+function normalizeDiagramText(config) {
+  if (!config) return undefined;
+  const partPath = String(config.partPath || "");
+  const contentType = String(config.contentType || "");
+  const sourceSha256 = String(config.sourceSha256 || "").toLowerCase();
+  const relationshipId = String(config.relationshipId || "");
+  const nodes = config.nodes;
+  if (!partPath || !contentType || !/^[0-9a-f]{64}$/i.test(sourceSha256) || !relationshipId || !Array.isArray(nodes) || !nodes.length) {
+    throw new TypeError("SmartArt diagram text binding is incomplete.");
+  }
+  const seen = new Set();
+  const normalizedNodes = nodes.map((node) => {
+    const id = String(node?.id ?? node?.modelId ?? "");
+    const text = String(node?.text ?? "");
+    if (!id || !validDiagramModelId(id) || !validDiagramNodeText(text) || seen.has(id)) {
+      throw new TypeError("SmartArt diagram text binding contains an invalid node.");
+    }
+    seen.add(id);
+    return Object.freeze({ id, text });
+  });
+  return Object.freeze({
+    partPath,
+    contentType,
+    sourceSha256,
+    relationshipId,
+    nodes: Object.freeze(normalizedNodes),
+  });
+}
+
+function diagramTextRecord(binding, nodes) {
+  if (!binding) return undefined;
+  return Object.freeze({
+    partPath: binding.partPath,
+    contentType: binding.contentType,
+    sourceSha256: binding.sourceSha256,
+    relationshipId: binding.relationshipId,
+    nodes: Object.freeze(nodes.map((node) => Object.freeze({ id: node.id, text: node.text }))),
+  });
+}
 
 export function createNativePresentationObjectClass({ normalizeFrame }) {
   return class NativePresentationObject {
@@ -33,6 +103,24 @@ export function createNativePresentationObjectClass({ normalizeFrame }) {
         enumerable: true,
         writable: false,
         value: oleWorkbook,
+      });
+      const diagramText = normalizeDiagramText(config.diagramText);
+      Object.defineProperty(this, "_diagramTextBinding", {
+        configurable: false,
+        enumerable: false,
+        writable: false,
+        value: diagramText,
+      });
+      Object.defineProperty(this, "_diagramTextNodes", {
+        configurable: false,
+        enumerable: false,
+        writable: false,
+        value: diagramText ? diagramText.nodes.map((node) => ({ ...node })) : undefined,
+      });
+      Object.defineProperty(this, "diagramText", {
+        configurable: false,
+        enumerable: true,
+        get: () => diagramTextRecord(this._diagramTextBinding, this._diagramTextNodes || []),
       });
       Object.defineProperty(this, "_embeddedWorkbookReplacement", {
         configurable: false,
@@ -91,9 +179,37 @@ export function createNativePresentationObjectClass({ normalizeFrame }) {
       return this._embeddedWorkbookReplacement ? Uint8Array.from(this._embeddedWorkbookReplacement) : undefined;
     }
 
+    setDiagramNodeText(nodeId, value) {
+      if (!this._diagramTextBinding || !this._diagramTextNodes) {
+        throw new Error(`Native ${this.nativeKind} object ${this.id} has no bounded SmartArt diagram-text capability.`);
+      }
+      const id = String(nodeId ?? "");
+      const text = String(value ?? "");
+      if (!validDiagramNodeText(text)) {
+        throw new RangeError(`SmartArt node text must contain at most ${MAX_DIAGRAM_NODE_TEXT_LENGTH} XML-safe characters.`);
+      }
+      const node = this._diagramTextNodes.find((candidate) => candidate.id === id);
+      if (!node) throw new Error(`SmartArt node ${id || "(empty)"} is not part of the source-bound diagram profile.`);
+      node.text = text;
+      return this;
+    }
+
+    _diagramTextSourceBinding() {
+      return this._diagramTextBinding ? diagramTextRecord(this._diagramTextBinding, this._diagramTextBinding.nodes) : undefined;
+    }
+
+    _diagramTextReplacement() {
+      if (!this._diagramTextBinding || !this._diagramTextNodes) return undefined;
+      const changed = this._diagramTextNodes.some((node, index) => node.text !== this._diagramTextBinding.nodes[index].text);
+      return changed ? diagramTextRecord(this._diagramTextBinding, this._diagramTextNodes) : undefined;
+    }
+
     inspectRecord() {
       const frame = this.parentGroup ? this.parentGroup.absoluteChildFrame(this) : this.position;
-      const editableFields = this.oleWorkbook ? ["embeddedWorkbook"] : [];
+      const editableFields = [
+        ...(this.oleWorkbook ? ["embeddedWorkbook"] : []),
+        ...(this._diagramTextBinding ? ["diagramText"] : []),
+      ];
       return {
         kind: "nativeObject",
         id: this.id,
@@ -109,6 +225,7 @@ export function createNativePresentationObjectClass({ normalizeFrame }) {
         nativeRelationships: this.rootRelationships.map(({ id, type, target, targetMode }) => ({ id, type, target, targetMode })),
         nativeParts: this.parts.map((part) => ({ path: part.path, contentType: part.contentType, relationships: part.relationships.length })),
         embeddedWorkbook: this.oleWorkbook ? this._embeddedWorkbookRecord(true) : undefined,
+        diagramText: this.diagramText,
         bbox: [frame.left, frame.top, frame.width, frame.height],
         bboxUnit: "px",
         editable: false,
@@ -138,8 +255,12 @@ export function createNativePresentationObjectClass({ normalizeFrame }) {
         relationships: this.rootRelationships.length,
         preservedParts: this.parts.length,
         embeddedWorkbook: this.oleWorkbook ? this._embeddedWorkbookRecord() : undefined,
+        diagramText: this.diagramText,
         editable: false,
-        editableFields: this.oleWorkbook ? ["embeddedWorkbook"] : [],
+        editableFields: [
+          ...(this.oleWorkbook ? ["embeddedWorkbook"] : []),
+          ...(this._diagramTextBinding ? ["diagramText"] : []),
+        ],
       };
     }
 

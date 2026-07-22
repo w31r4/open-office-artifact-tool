@@ -509,6 +509,48 @@ CustomXmlPart contract and its read-only boundary.
 See `api/references/embedded-video-clone.spec.md` for the exact embedded-MP4
 relationship, copy, poster-sharing, and playback-validation boundary.
 
+### Edit One Imported SmartArt Plain Node
+
+This is separate from cloning and intentionally much smaller than SmartArt
+authoring. An imported top-level SmartArt object exposes `diagramText` only
+when the closed four-part graph has a proven DiagramDataPart with direct
+`dgm:t > a:p > a:r > a:t` document nodes. `editable` stays false; only the
+returned existing `modelId` can receive a replacement string:
+
+```ts
+const diagram = presentation.slides.getItem(0).nativeObjects.items.find(
+  (object) => object.nativeKind === "diagram" && object.diagramText,
+);
+const node = diagram?.diagramText.nodes.find((item) => item.text === "Before");
+if (!diagram || !node) throw new Error("Expected canonical SmartArt node was not found.");
+diagram.setDiagramNodeText(node.id, "After");
+```
+
+For source protection, exact target selection, no-overwrite output, package
+scope validation, reimport, and audit, use the shipped workflow:
+
+```ts
+import { editPptxSmartArtNodeText } from "../examples/openchestnut-smartart-text-edit-workflow.mjs";
+
+await editPptxSmartArtNodeText({
+  inputPath: "input/source.pptx",
+  outputPath: "output/edited.pptx",
+  auditPath: "output/edited.audit.json",
+  objectName: "Closed SmartArt",
+  nodeId: "{B31B1833-2B65-4D6B-B3D4-9B3988427B21}",
+  expectedText: "Before",
+  replacementText: "After",
+});
+```
+
+The C# codec re-proves the source hash, node IDs/order, and graph before it
+rewrites only the bound DiagramDataPart. It preserves the graphic frame,
+relationship IDs, layout, quick-style, colors, geometry, and every non-data
+part. Multiple runs, fields, breaks, connected/nested graphs, node topology
+changes, layout/style/color edits, and raw XML mutation fail closed. The
+workflow's model verification is structural evidence; use LibreOffice/Poppler
+when delivery needs native render review.
+
 For the one opt-in closed-leaf profile, set `allowClosedLeaves: true` explicitly:
 
 ```ts

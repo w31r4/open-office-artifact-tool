@@ -2069,6 +2069,88 @@ assert.deepEqual(
   smartArtRoundTripClone.parts.map((part) => part.sourceSha256).sort(),
 );
 
+// A canonical closed SmartArt data model can expose only its direct plain
+// document-node text. The bounded edit rewrites the one hash-bound data part;
+// the frame, relationships, and layout/style/color leaves must stay intact.
+const smartArtTextData = '<dgm:dataModel xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><dgm:ptLst><dgm:pt modelId="{B31B1833-2B65-4D6B-B3D4-9B3988427B21}" type="doc"><dgm:t><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Original node</a:t></a:r></a:p></dgm:t></dgm:pt><dgm:pt modelId="1" type="doc"><dgm:t><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Second node</a:t></a:r></a:p></dgm:t></dgm:pt></dgm:ptLst><dgm:cxnLst/><dgm:bg/><dgm:whole/></dgm:dataModel>';
+const smartArtTextSource = await PresentationFile.patchPptx(cloneSourcePptx, [
+  { path: "ppt/slides/slide1.xml", xml: oleCloneBaseSlideXml.replace("</p:spTree>", `${smartArtFrame}</p:spTree>`) },
+  { path: "ppt/slides/_rels/slide1.xml.rels", xml: oleCloneBaseRelationships.replace("</Relationships>", `${smartArtRelationships}</Relationships>`) },
+  ...smartArtParts.map(([partPath, contentType, xml]) => ({ path: partPath, contentType, xml: partPath === "ppt/diagrams/agent-data.xml" ? smartArtTextData : xml })),
+]);
+const smartArtTextInput = Uint8Array.from(smartArtTextSource.bytes);
+const smartArtTextImported = await PresentationFile.importPptx(smartArtTextSource);
+const smartArtTextObject = itemByName(smartArtTextImported.slides.getItem(0).nativeObjects.items, "Clone-safe SmartArt");
+assert.equal(smartArtTextObject.editable, false);
+assert.deepEqual(smartArtTextObject.diagramText?.nodes, [
+  { id: "{B31B1833-2B65-4D6B-B3D4-9B3988427B21}", text: "Original node" },
+  { id: "1", text: "Second node" },
+]);
+assert.deepEqual(smartArtTextObject.inspectRecord().editableFields, ["diagramText"]);
+assert.throws(
+  () => smartArtTextObject.setDiagramNodeText("missing", "nope"),
+  /not part of the source-bound diagram profile/,
+);
+assert.throws(
+  () => smartArtTextObject.setDiagramNodeText("{B31B1833-2B65-4D6B-B3D4-9B3988427B21}", "x".repeat(32_768)),
+  /32767 XML-safe characters/,
+);
+smartArtTextObject.setDiagramNodeText("{B31B1833-2B65-4D6B-B3D4-9B3988427B21}", " Revised node ");
+const smartArtTextSlideCount = smartArtTextImported.slides.items.length;
+assert.throws(
+  () => smartArtTextImported.slides.getItem(0).duplicate(),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+  "a pending SmartArt text edit must cross an export/reimport boundary before cloning",
+);
+assert.equal(smartArtTextImported.slides.items.length, smartArtTextSlideCount);
+const smartArtTextExport = await PresentationFile.exportPptx(smartArtTextImported);
+assert.deepEqual(smartArtTextSource.bytes, smartArtTextInput, "SmartArt text edits must preserve the caller input bytes");
+const smartArtTextSourceZip = await JSZip.loadAsync(smartArtTextSource.bytes);
+const smartArtTextOutputZip = await JSZip.loadAsync(smartArtTextExport.bytes);
+for (const path of [
+  "ppt/slides/slide1.xml",
+  "ppt/slides/_rels/slide1.xml.rels",
+  "ppt/diagrams/agent-layout.xml",
+  "ppt/diagrams/agent-style.xml",
+  "ppt/diagrams/agent-colors.xml",
+]) {
+  assert.deepEqual(
+    await smartArtTextOutputZip.file(path).async("uint8array"),
+    await smartArtTextSourceZip.file(path).async("uint8array"),
+    `SmartArt text edits must not alter ${path}`,
+  );
+}
+const smartArtTextOutputData = await smartArtTextOutputZip.file("ppt/diagrams/agent-data.xml").async("text");
+assert.match(smartArtTextOutputData, / Revised node /);
+assert.match(smartArtTextOutputData, /xml:space="preserve"/);
+assert.notDeepEqual(
+  await smartArtTextOutputZip.file("ppt/diagrams/agent-data.xml").async("uint8array"),
+  await smartArtTextSourceZip.file("ppt/diagrams/agent-data.xml").async("uint8array"),
+);
+const smartArtTextRoundTrip = await PresentationFile.importPptx(smartArtTextExport);
+const smartArtTextRebound = itemByName(smartArtTextRoundTrip.slides.getItem(0).nativeObjects.items, "Clone-safe SmartArt");
+assert.deepEqual(smartArtTextRebound.diagramText?.nodes, [
+  { id: "{B31B1833-2B65-4D6B-B3D4-9B3988427B21}", text: " Revised node " },
+  { id: "1", text: "Second node" },
+]);
+assert.notEqual(smartArtTextRebound.diagramText?.sourceSha256, smartArtTextObject.diagramText?.sourceSha256);
+
+const richSmartArtTextSource = await PresentationFile.patchPptx(smartArtTextSource, [{
+  path: "ppt/diagrams/agent-data.xml",
+  xml: smartArtTextData.replace("<a:r><a:t>Original node</a:t></a:r>", "<a:r><a:t>Original</a:t></a:r><a:r><a:t> node</a:t></a:r>"),
+}]);
+const richSmartArtText = await PresentationFile.importPptx(richSmartArtTextSource);
+assert.equal(itemByName(richSmartArtText.slides.getItem(0).nativeObjects.items, "Clone-safe SmartArt").diagramText, undefined,
+  "multi-run SmartArt text must remain opaque rather than being flattened");
+
+const invalidSmartArtModelIdSource = await PresentationFile.patchPptx(smartArtTextSource, [{
+  path: "ppt/diagrams/agent-data.xml",
+  xml: smartArtTextData.replace("{B31B1833-2B65-4D6B-B3D4-9B3988427B21}", "agent-node-1"),
+}]);
+const invalidSmartArtModelId = await PresentationFile.importPptx(invalidSmartArtModelIdSource);
+assert.equal(itemByName(invalidSmartArtModelId.slides.getItem(0).nativeObjects.items, "Clone-safe SmartArt").diagramText, undefined,
+  "an invalid ST_ModelId must not expose a SmartArt text-edit capability");
+
 const connectedSmartArtSource = await PresentationFile.patchPptx(smartArtSource, [{
   path: "ppt/diagrams/_rels/agent-data.xml.rels",
   xml: '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdUnsafeSmartArtLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.invalid/smartart" TargetMode="External"/></Relationships>',

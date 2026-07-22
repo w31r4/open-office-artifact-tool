@@ -3,6 +3,7 @@ using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Validation;
 using Google.Protobuf;
 using System.IO.Compression;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using OpenOffice.Artifact.Wire.V1;
@@ -3160,6 +3161,79 @@ public sealed class PptxCodecTests
         var connectedRejected = Export(connectedImport.Artifact);
         Assert.False(connectedRejected.Ok);
         Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(connectedRejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void SourceBoundSmartArtPlainNodeTextCanBeEditedWithoutChangingItsGraph()
+    {
+        const string dataPath = "ppt/diagrams/clone-data.xml";
+        var source = ReplaceZipText(
+            AddCloneableDiagramGraph(Invoke(ExportRequest()).File.ToByteArray()),
+            dataPath,
+            _ => "<dgm:dataModel xmlns:dgm=\"http://schemas.openxmlformats.org/drawingml/2006/diagram\" xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\"><dgm:ptLst><dgm:pt modelId=\"{B31B1833-2B65-4D6B-B3D4-9B3988427B21}\" type=\"doc\"><dgm:t><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Original node</a:t></a:r></a:p></dgm:t></dgm:pt><dgm:pt modelId=\"1\" type=\"doc\"><dgm:t><a:bodyPr/><a:lstStyle/><a:p><a:r><a:t>Second node</a:t></a:r></a:p></dgm:t></dgm:pt></dgm:ptLst><dgm:cxnLst/><dgm:bg/><dgm:whole/></dgm:dataModel>");
+        var imported = Import(source);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var diagram = Assert.Single(imported.Artifact.Presentation.Slides[0].Elements, element => element.Opaque?.NativeKind == "diagram");
+        var binding = Assert.IsType<PresentationDiagramText>(diagram.Opaque.DiagramText);
+        Assert.Equal("rIdCloneDiagramData", binding.RelationshipId);
+        Assert.Equal(dataPath, binding.PartPath);
+        Assert.Equal([("{B31B1833-2B65-4D6B-B3D4-9B3988427B21}", "Original node"), ("1", "Second node")], binding.Nodes.Select(node => (node.ModelId, node.Text)));
+
+        binding.Nodes[0].Text = " Revised node ";
+        var exported = Export(imported.Artifact);
+        Assert.True(exported.Ok, Diagnostics(exported));
+        var output = exported.File.ToByteArray();
+        Assert.Equal(ZipBytes(source, "ppt/slides/slide1.xml"), ZipBytes(output, "ppt/slides/slide1.xml"));
+        Assert.Equal(ZipBytes(source, "ppt/slides/_rels/slide1.xml.rels"), ZipBytes(output, "ppt/slides/_rels/slide1.xml.rels"));
+        Assert.Equal(ZipBytes(source, "ppt/diagrams/clone-layout.xml"), ZipBytes(output, "ppt/diagrams/clone-layout.xml"));
+        Assert.Equal(ZipBytes(source, "ppt/diagrams/clone-style.xml"), ZipBytes(output, "ppt/diagrams/clone-style.xml"));
+        Assert.Equal(ZipBytes(source, "ppt/diagrams/clone-colors.xml"), ZipBytes(output, "ppt/diagrams/clone-colors.xml"));
+        Assert.NotEqual(ZipBytes(source, dataPath), ZipBytes(output, dataPath));
+        Assert.Contains("xml:space=\"preserve\"", Encoding.UTF8.GetString(ZipBytes(output, dataPath)));
+
+        var roundTrip = Import(output);
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        var rebound = Assert.IsType<PresentationDiagramText>(Assert.Single(roundTrip.Artifact.Presentation.Slides[0].Elements, element => element.Opaque?.NativeKind == "diagram").Opaque.DiagramText);
+        Assert.Equal([("{B31B1833-2B65-4D6B-B3D4-9B3988427B21}", " Revised node "), ("1", "Second node")], rebound.Nodes.Select(node => (node.ModelId, node.Text)));
+        Assert.NotEqual(binding.SourceSha256, rebound.SourceSha256);
+
+        imported = Import(source);
+        var changedIdentifier = Assert.IsType<PresentationDiagramText>(Assert.Single(imported.Artifact.Presentation.Slides[0].Elements, element => element.Opaque?.NativeKind == "diagram").Opaque.DiagramText);
+        changedIdentifier.Nodes[0].ModelId = "other-node";
+        var identifierRejected = Export(imported.Artifact);
+        Assert.False(identifierRejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(identifierRejected.Diagnostics).Code);
+
+        imported = Import(source);
+        var addedNode = Assert.IsType<PresentationDiagramText>(Assert.Single(imported.Artifact.Presentation.Slides[0].Elements, element => element.Opaque?.NativeKind == "diagram").Opaque.DiagramText);
+        addedNode.Nodes.Add(new PresentationDiagramTextNode { ModelId = "new-node", Text = "must fail" });
+        var topologyRejected = Export(imported.Artifact);
+        Assert.False(topologyRejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(topologyRejected.Diagnostics).Code);
+
+        var connected = AddZipText(
+            source,
+            "ppt/diagrams/_rels/clone-data.xml.rels",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rIdUnsafeDiagramLink\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.invalid/smartart\" TargetMode=\"External\"/></Relationships>");
+        var connectedImport = Import(connected);
+        Assert.True(connectedImport.Ok, Diagnostics(connectedImport));
+        Assert.Null(Assert.Single(connectedImport.Artifact.Presentation.Slides[0].Elements, element => element.Opaque?.NativeKind == "diagram").Opaque.DiagramText);
+
+        var invalidModelId = ReplaceZipText(
+            source,
+            dataPath,
+            xml => xml.Replace("{B31B1833-2B65-4D6B-B3D4-9B3988427B21}", "agent-node-1", StringComparison.Ordinal));
+        var invalidModelIdImport = Import(invalidModelId);
+        Assert.True(invalidModelIdImport.Ok, Diagnostics(invalidModelIdImport));
+        Assert.Null(Assert.Single(invalidModelIdImport.Artifact.Presentation.Slides[0].Elements, element => element.Opaque?.NativeKind == "diagram").Opaque.DiagramText);
+
+        var annotatedText = ReplaceZipText(
+            source,
+            dataPath,
+            xml => xml.Replace("<a:t>Original node</a:t>", "<a:t><!--source-owned annotation-->Original node</a:t>", StringComparison.Ordinal));
+        var annotatedTextImport = Import(annotatedText);
+        Assert.True(annotatedTextImport.Ok, Diagnostics(annotatedTextImport));
+        Assert.Null(Assert.Single(annotatedTextImport.Artifact.Presentation.Slides[0].Elements, element => element.Opaque?.NativeKind == "diagram").Opaque.DiagramText);
     }
 
     [Fact]

@@ -126,7 +126,10 @@ origin. Every accepted SmartArt frame has exactly one `dgm:relIds` root whose
 `dm/lo/qs/cs` relationships bind closed diagram data, layout, quick-style, and
 colors parts. Export preserves those relationship IDs and byte-copies all four
 parts into distinct clone-local typed parts; after reimport the paths are
-disjoint and per-role hashes match. SmartArt remains source-bound/read-only.
+disjoint and per-role hashes match. A separately recognized canonical
+one-paragraph/one-run DiagramDataPart may expose only
+`setDiagramNodeText(modelId, text)`; it preserves node IDs/order and changes
+only the bound data part. All other SmartArt remains source-bound/read-only.
 
 Every accepted InkML object is one top-level `p:contentPart` with exactly one
 internal `customXml` relationship to a relationship-free

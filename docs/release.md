@@ -2514,9 +2514,10 @@ slide-local relationship IDs. The SDK currently allocates those parts under
 `ppt/graphics/{data,layout,quickStyle,colors}N.xml`. Post-write validation
 requires distinct clone paths, the expected relationship and content types,
 and bytes identical to the corresponding source parts. This is independent
-package identity for safe slide cloning, not SmartArt authoring or semantic
-editing: after reimport, each SmartArt object remains opaque,
-source-bound/read-only.
+package identity for safe slide cloning, not SmartArt authoring or graph
+editing. The later plain-node profile is a separate source-bound contract: a
+canonical DiagramDataPart may replace only existing one-run document-node text;
+all other SmartArt remains opaque, source-bound/read-only.
 
 The shipped Presentation workflow independently inventories the raw OPC
 relationships, content types, part hashes, and child graphs before invoking the

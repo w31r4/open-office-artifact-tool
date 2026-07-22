@@ -2,6 +2,7 @@ import { create, toBinary } from "@bufbuild/protobuf";
 import { ChartElement, GroupShape, ImageElement, Presentation, Shape, Slide, TableElement } from "../presentation/index.mjs";
 import {
   ArtifactFamily,
+  PresentationDiagramTextNodeSchema,
   PresentationModernCommentAnchor_Kind,
   PresentationSlideSchema,
   PresentationSlideGuide_Orientation,
@@ -432,7 +433,8 @@ function cloneablePresentationMediaModel(source) {
 function cloneImportedPresentationNativeObject(container, source, context) {
   const cloneableOle = source?.kind === "nativeObject" && source.nativeKind === "oleObject" && source.oleWorkbook &&
     !source._embeddedWorkbookReplacementBytes?.();
-  if (!cloneableOle && !cloneablePresentationDiagramModel(source) && !cloneablePresentationInkContentModel(source) && !cloneablePresentationMediaModel(source)) {
+  const cloneableDiagram = cloneablePresentationDiagramModel(source) && !source?._diagramTextReplacement?.();
+  if (!cloneableOle && !cloneableDiagram && !cloneablePresentationInkContentModel(source) && !cloneablePresentationMediaModel(source)) {
     throw new OpenChestnutCodecError("The bounded imported-slide clone profile accepts only an unchanged eligible embedded-XLSX OLE object, canonical closed four-part SmartArt frame, canonical top-level closed InkML content part, or canonical top-level closed MP4 media picture.", [], { code: "unsupported_presentation_slide_clone" });
   }
   const clone = container.nativeObjects.add({
@@ -447,6 +449,7 @@ function cloneImportedPresentationNativeObject(container, source, context) {
     rootRelationships: clonedPresentationValue(source.rootRelationships),
     parts: clonedPresentationValue(source.parts),
     oleWorkbook: clonedPresentationValue(source.oleWorkbook),
+    diagramText: clonedPresentationValue(source._diagramTextSourceBinding?.()),
   });
   return registerPresentationCloneElement(context, source, clone);
 }
@@ -508,7 +511,7 @@ function cloneSupportedPresentationContent(content, allowNativeGraphLeaf = true)
 
 function collectPresentationCloneSourceIds(source, ids, allowNativeGraphLeaf = true) {
   const cloneableOle = allowNativeGraphLeaf && source?.kind === "nativeObject" && source.nativeKind === "oleObject" && Boolean(source.oleWorkbook) && !source._embeddedWorkbookReplacementBytes?.();
-  const cloneableDiagram = allowNativeGraphLeaf && cloneablePresentationDiagramModel(source);
+  const cloneableDiagram = allowNativeGraphLeaf && cloneablePresentationDiagramModel(source) && !source?._diagramTextReplacement?.();
   const cloneableInkContent = allowNativeGraphLeaf && cloneablePresentationInkContentModel(source);
   const cloneableMedia = allowNativeGraphLeaf && cloneablePresentationMediaModel(source);
   if (!(source instanceof Shape) && !(source instanceof TableElement) && !(source instanceof ChartElement) && !(source instanceof ImageElement) && !isPresentationConnectorElement(source) && !(source instanceof GroupShape) && !cloneableOle && !cloneableDiagram && !cloneableInkContent && !cloneableMedia) {
@@ -2054,6 +2057,7 @@ function opaquePresentationSnapshot(object) {
     nativeKind: object.nativeKind,
     rawXml: object.rawXml,
     oleWorkbook,
+    diagramText: object._diagramTextSourceBinding?.(),
     ...presentationNativeGraphSnapshot(object),
   });
 }
@@ -2066,10 +2070,17 @@ function presentationOpaque(object, original, snapshot, assetCatalog) {
     throw new OpenChestnutCodecError(message, [], { code: "unsupported_presentation_edit" });
   }
   const replacement = object._embeddedWorkbookReplacementBytes?.();
-  if (!replacement) return original;
+  const diagramTextReplacement = object._diagramTextReplacement?.();
+  if (!replacement && !diagramTextReplacement) return original;
   const originalOpaque = original?.content?.case === "opaque" ? original.content.value : undefined;
-  if (!object.oleWorkbook || !originalOpaque?.oleWorkbook) {
+  if (!originalOpaque) {
+    throw new OpenChestnutCodecError(`Presentation native element ${object.id} has no source-bound opaque payload.`, [], { code: "unsupported_presentation_edit" });
+  }
+  if (replacement && (!object.oleWorkbook || !originalOpaque.oleWorkbook)) {
     throw new OpenChestnutCodecError(`Presentation native element ${object.id} has no source-bound embedded XLSX workbook.`, [], { code: "unsupported_presentation_edit" });
+  }
+  if (diagramTextReplacement && !originalOpaque.diagramText) {
+    throw new OpenChestnutCodecError(`Presentation native element ${object.id} has no source-bound SmartArt diagram-text binding.`, [], { code: "unsupported_presentation_edit" });
   }
   return {
     ...original,
@@ -2077,10 +2088,14 @@ function presentationOpaque(object, original, snapshot, assetCatalog) {
       case: "opaque",
       value: {
         ...originalOpaque,
-        oleWorkbook: {
+        ...(replacement ? { oleWorkbook: {
           ...originalOpaque.oleWorkbook,
           replacementAssetId: assetCatalog.addOleWorkbook(replacement),
-        },
+        } } : {}),
+        ...(diagramTextReplacement ? { diagramText: {
+          ...originalOpaque.diagramText,
+          nodes: diagramTextReplacement.nodes.map((node) => create(PresentationDiagramTextNodeSchema, { modelId: node.id, text: node.text })),
+        } } : {}),
       },
     },
   };
@@ -2878,6 +2893,13 @@ export async function presentationFromEnvelope(envelope) {
             contentType: opaque.oleWorkbook.contentType,
             sourceSha256: opaque.oleWorkbook.sourceSha256,
             relationshipId: opaque.oleWorkbook.relationshipId,
+          } } : {}),
+          ...(opaque.diagramText ? { diagramText: {
+            partPath: opaque.diagramText.partPath,
+            contentType: opaque.diagramText.contentType,
+            sourceSha256: opaque.diagramText.sourceSha256,
+            relationshipId: opaque.diagramText.relationshipId,
+            nodes: (opaque.diagramText.nodes || []).map((node) => ({ id: node.modelId, text: node.text })),
           } } : {}),
           ...nativeGraph(opaque, sourcePart),
         });

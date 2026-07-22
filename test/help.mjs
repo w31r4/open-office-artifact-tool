@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 360);
+assert.equal(HELP_CATALOG.length, 361);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -103,7 +103,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "slide.moveTo")?.schema?.
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.duplicate")?.schema?.returns?.slide?.type, "Slide");
 const slideDuplicateDescription = HELP_CATALOG.find((item) => item.name === "slide.duplicate")?.schema?.returns?.slide?.description || "";
 assert.match(slideDuplicateDescription, /original imported PPTX.*canonical simple shapes.*canonical inline fixed-grid tables.*recognized closed literal-data charts.*eligible top-level embedded-XLSX OLE frames.*embedded rectangular images.*numbered ChartPart.*no child, external, hyperlink, or data relationship.*uniquely inbound XLSX EmbeddedPackagePart.*preview ImagePart.*every present connector endpoint.*same copied SlidePart tree.*distinct SlidePart.*distinct ChartPart.*distinct EmbeddedPackagePart.*independent.*Supported chart or OLE-workbook edits.*malformed\/shared\/external\/non-XLSX\/nested\/relationship-bearing\/replacement-pending OLE graphs.*fail closed/i);
-assert.match(slideDuplicateDescription, /canonical top-level four-part SmartArt frames.*exactly one canonical dgm:relIds root.*dm\/lo\/qs\/cs relationships.*diagram data, layout, quick-style, and colors parts.*four distinct typed diagram parts.*SmartArt.*remain source-bound\/read-only.*nested\/noncanonical\/connected SmartArt.*fail closed/i);
+assert.match(slideDuplicateDescription, /canonical top-level four-part SmartArt frames.*exactly one canonical dgm:relIds root.*dm\/lo\/qs\/cs relationships.*diagram data, layout, quick-style, and colors parts.*four distinct typed diagram parts.*canonical plain-node SmartArt.*source-bound node-text replacement.*other SmartArt.*remain source-bound\/read-only.*nested\/noncanonical\/connected SmartArt.*fail closed/i);
 assert.match(slideDuplicateDescription, /canonical top-level embedded-MP4 media pictures.*empty media action.*video\/media relationship pair.*video\/mp4.*poster ImagePart.*distinct SDK MediaDataPart.*sharing the immutable poster.*media remain source-bound\/read-only.*fail closed/i);
 const slideDuplicateNotes = (HELP_CATALOG.find((item) => item.name === "slide.duplicate")?.notes || []).join("\n");
 assert.match(slideDuplicateNotes, /top-level p:contentPart.*relationship-free application\/inkml\+xml CustomXmlPart.*standard InkML namespace.*distinct SDK-typed clone part.*disjoint paths with equal hashes.*opaque and read-only.*fail closed/i);
@@ -416,14 +416,14 @@ assert.match(HELP_CATALOG.find((item) => item.name === "document.setDateContentC
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.materializeFields")?.schema?.parameters?.dryRun?.type, "boolean");
 assert.match(HELP_CATALOG.find((item) => item.name === "document.materializeFields")?.summary || "", /SEQ counters.*REF cached results.*PAGEREF.*pagination host/i);
 const presentationCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "presentation");
-assert.equal(presentationCatalog.length, 65);
+assert.equal(presentationCatalog.length, 66);
 assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "presentation.slides.insert")?.schema?.parameters?.after?.type, "Slide|number|null");
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.moveTo")?.summary || "", /retained source SlidePart.*broad graph clones.*fail-closed/i);
 const slideDuplicateSummary = HELP_CATALOG.find((item) => item.name === "slide.duplicate")?.summary || "";
 assert.match(slideDuplicateSummary, /unchanged graph.*canonical shapes.*canonical inline fixed-grid tables.*recognized closed literal-data charts.*eligible top-level embedded-XLSX OLE frames.*numbered ChartPart.*relationship sets are empty.*uniquely inbound XLSX EmbeddedPackagePart.*preview ImagePart.*every present connector endpoint.*same copied SlidePart tree.*distinct SlidePart.*distinct byte-identical ChartPart, EmbeddedPackagePart.*OLE workbook packages.*independent.*Supported chart or OLE-workbook edits.*malformed, shared, external, non-XLSX, nested, relationship-bearing, or replacement-pending OLE graphs.*fail closed/i);
-assert.match(slideDuplicateSummary, /canonical top-level four-part SmartArt frames.*SmartArt frame owns exactly one internal dm\/lo\/qs\/cs relationship set.*diagram data, layout, quick-style, and colors parts.*four typed diagram parts.*SmartArt parts.*independent.*SmartArt.*remain source-bound\/read-only.*nested\/noncanonical\/connected SmartArt.*fail closed/i);
+assert.match(slideDuplicateSummary, /canonical top-level four-part SmartArt frames.*SmartArt frame owns exactly one internal dm\/lo\/qs\/cs relationship set.*diagram data, layout, quick-style, and colors parts.*four typed diagram parts.*SmartArt parts.*independent.*canonical plain-node SmartArt.*source-bound node-text replacement.*other SmartArt.*remain source-bound\/read-only.*nested\/noncanonical\/connected SmartArt.*fail closed/i);
 assert.match(slideDuplicateSummary, /canonical top-level embedded-MP4 media pictures.*video\/media relationship pair.*video\/mp4.*poster ImagePart.*SDK MediaDataPart.*media-poster ImageParts.*MP4 parts are then independent.*media remain source-bound\/read-only.*fail closed/i);
 assert.match(slideDuplicateSummary, /relationship-free custom-show links.*stable native show ID.*add no relationship.*never inserted into show membership/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.delete")?.summary || "", /real OPC deletion.*isolated slide.*custom shows.*clone requests fail closed/i);
@@ -433,6 +433,11 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "nativeObject.getEmbedded
 assert.equal(HELP_CATALOG.find((item) => item.name === "nativeObject.replaceEmbeddedWorkbook")?.schema?.parameters?.workbook?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "nativeObject.replaceEmbeddedWorkbook")?.schema?.parameters?.workbook?.type || "", /ArrayBufferView/);
 assert.match(HELP_CATALOG.find((item) => item.name === "nativeObject.replaceEmbeddedWorkbook")?.summary || "", /replace only the XLSX payload.*preserves the OLE shell.*fails closed/is);
+assert.ok(HELP_CATALOG.some((item) => item.name === "nativeObject.setDiagramNodeText"));
+assert.equal(HELP_CATALOG.find((item) => item.name === "nativeObject.setDiagramNodeText")?.schema?.parameters?.nodeId?.required, true);
+assert.equal(HELP_CATALOG.find((item) => item.name === "nativeObject.setDiagramNodeText")?.schema?.parameters?.text?.required, true);
+assert.match(HELP_CATALOG.find((item) => item.name === "nativeObject.setDiagramNodeText")?.summary || "", /top-level four-part graph.*DiagramDataPart.*one-paragraph\/one-run.*Node IDs.*without fallback/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "nativeObject.setDiagramNodeText")?.schema?.returns?.nativeObject?.description || "", /dgm:t > a:p > a:r > a:t.*only its bound DiagramDataPart.*Rich, multi-run.*fail closed/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /character.*picture bullets.*auto-numbering.*levels.*indents.*spacing/);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /absolute uri.*slideId.*relative action/);

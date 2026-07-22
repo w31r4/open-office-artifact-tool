@@ -40,13 +40,14 @@ const maxPackedBytes = 9_840_000;
 // The bundled OpenChestnut runtime is an audited product payload, not an
 // optional download. Keep its unpacked budget tight while allowing the
 // audited PDF provider/docs growth plus the bounded Office codecs and runnable
-// workflows. The worksheet-protection candidate measures 24,488,879 unpacked
-// bytes; the narrowly raised ceiling retains only 26,121 bytes of explicit
-// product-growth headroom.
+// workflows. The source-bound SmartArt plain-node candidate measures
+// 24,542,129 unpacked bytes: its 22 KiB codec delta, public wire schema, and
+// runnable workflow are intentional distributed product surface. The narrowly
+// raised ceiling retains only 32,871 bytes of explicit product-growth headroom.
 // The repository-only MIT Default Template Library is excluded from the npm
 // tarball. Its retained Office/PNG sources must never consume this consumer
 // package budget.
-const maxUnpackedBytes = 24_515_000;
+const maxUnpackedBytes = 24_575_000;
 // Public Skill PNGs are required user-facing assets. They are retained with
 // byte-identical non-IDAT chunks and inflated scanline streams, but their IDAT
 // payloads are deterministically recompressed. Prevent future PNG tooling from
@@ -188,6 +189,7 @@ for (const required of [
   "skills/presentations/skills/presentations/examples/openchestnut-slide-name-edit-workflow.mjs",
   "skills/presentations/skills/presentations/examples/openchestnut-custom-show-workflow.mjs",
   "skills/presentations/skills/presentations/examples/openchestnut-slide-duplicate-workflow.mjs",
+  "skills/presentations/skills/presentations/examples/openchestnut-smartart-text-edit-workflow.mjs",
   "skills/presentations/skills/presentations/artifact_tool/api/references/custom-shows.spec.md",
   "skills/presentations/skills/presentations/artifact_tool/api/references/ole-workbooks.spec.md",
   "skills/presentations/skills/presentations/artifact_tool/api/references/smartart-clone.spec.md",

@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using DocumentFormat.OpenXml;
+using DocumentFormat.OpenXml.Packaging;
 using OpenOffice.Artifact.Wire.V1;
 using A = DocumentFormat.OpenXml.Drawing;
 using P = DocumentFormat.OpenXml.Presentation;
@@ -96,8 +97,9 @@ internal sealed class PptxNativeObjectCatalog
         }
     }
 
-    internal void Populate(PresentationOpaqueElement target, OpenXmlElement source, string sourcePart)
+    internal void Populate(PresentationOpaqueElement target, OpenXmlElement source, OpenXmlPart owner)
     {
+        var sourcePart = PartPath(owner);
         target.NativeKind = Classify(source);
         var seenReferences = new HashSet<string>(StringComparer.Ordinal);
         var rootRelationships = new List<OpaqueOpcRelationship>();
@@ -155,6 +157,18 @@ internal sealed class PptxNativeObjectCatalog
         }
 
         TryPopulateOleWorkbook(target, source, sourcePart);
+        TryPopulateDiagramText(target, source, owner);
+    }
+
+    private void TryPopulateDiagramText(PresentationOpaqueElement target, OpenXmlElement source, OpenXmlPart owner)
+    {
+        if (target.NativeKind != "diagram" || !PptxDiagramTextCodec.TryDescribe(source, owner, out var diagram)) return;
+        if (!_parts.TryGetValue(diagram.PartPath, out var part) ||
+            !part.ContentType.Equals(diagram.ContentType, StringComparison.OrdinalIgnoreCase) ||
+            !part.Sha256.Equals(diagram.SourceSha256, StringComparison.OrdinalIgnoreCase) ||
+            !target.PreservedPartPaths.Contains(diagram.PartPath, StringComparer.OrdinalIgnoreCase))
+            return;
+        target.DiagramText = diagram;
     }
 
     private void TryPopulateOleWorkbook(PresentationOpaqueElement target, OpenXmlElement source, string sourcePart)
@@ -345,6 +359,8 @@ internal sealed class PptxNativeObjectCatalog
         sourcePath);
 
     private static string RelationshipKey(string sourcePath, string relationshipId) => $"{sourcePath}\0{relationshipId}";
+
+    private static string PartPath(OpenXmlPart part) => part.Uri.OriginalString.TrimStart('/');
 
     private static IEnumerable<OpenXmlElement> Elements(OpenXmlElement source)
     {

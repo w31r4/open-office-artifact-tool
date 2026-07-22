@@ -682,12 +682,14 @@ internal static class PptxCodec
                             $"Presentation slide {slideIndex + 1} element {elementIndex + 1} source semantics do not match its binding.",
                             PartPath(slidePart));
                     PptxOleWorkbookReplacement? oleWorkbookReplacement = null;
+                    PptxDiagramTextReplacement? diagramTextReplacement = null;
                     if (original.ContentCase == PresentationElement.ContentOneofCase.Opaque &&
                         requested.ContentCase == PresentationElement.ContentOneofCase.Opaque &&
                         PptxNativeObjectCatalog.SupportsPlacementEditing(sourceElement))
                     {
                         ValidateNativeObjectRequest(original, requested);
                         oleWorkbookReplacement = PptxOleWorkbookCodec.PrepareReplacement(original.Opaque, requested.Opaque, assetCatalog, limits);
+                        diagramTextReplacement = PptxDiagramTextCodec.PrepareReplacement(slidePart, sourceElement, original.Opaque, requested.Opaque);
                     }
                     if (SemanticHash(requested).Equals(elementBinding.SemanticSha256, StringComparison.OrdinalIgnoreCase)) continue;
                     if (!elementBinding.Editable)
@@ -756,6 +758,12 @@ internal static class PptxCodec
                             PptxOleWorkbookCodec.Apply(slidePart, sourceElement, original.Opaque.OleWorkbook, oleWorkbookReplacement);
                             changedParts.Add(oleWorkbookReplacement.PartPath);
                             replacedOpaquePartHashes.Add(oleWorkbookReplacement.PartPath, oleWorkbookReplacement.Sha256);
+                        }
+                        if (diagramTextReplacement is not null)
+                        {
+                            PptxDiagramTextCodec.Apply(slidePart, original.Opaque.DiagramText, diagramTextReplacement);
+                            changedParts.Add(diagramTextReplacement.PartPath);
+                            replacedOpaquePartHashes.Add(diagramTextReplacement.PartPath, diagramTextReplacement.Sha256);
                         }
                         if (NativePlacementChanged(original, requested))
                         {
@@ -892,7 +900,7 @@ internal static class PptxCodec
                 WidthEmu = frame.Width,
                 HeightEmu = frame.Height,
             };
-            nativeObjects?.Populate(element.Opaque, source, PartPath(slideContext.Owner));
+            nativeObjects?.Populate(element.Opaque, source, slideContext.Owner);
             editable = PptxNativeObjectCatalog.SupportsPlacementEditing(source);
         }
         element.Source = new PresentationElementSourceBinding
@@ -1122,6 +1130,11 @@ internal static class PptxCodec
         allowed.Opaque.HeightEmu = requested.Opaque.HeightEmu;
         if (allowed.Opaque.OleWorkbook is not null && requested.Opaque.OleWorkbook is not null)
             allowed.Opaque.OleWorkbook.ReplacementAssetId = requested.Opaque.OleWorkbook.ReplacementAssetId;
+        if (allowed.Opaque.DiagramText is not null && requested.Opaque.DiagramText is not null)
+        {
+            allowed.Opaque.DiagramText.Nodes.Clear();
+            allowed.Opaque.DiagramText.Nodes.Add(requested.Opaque.DiagramText.Nodes);
+        }
         // Source binding equality is checked against the actual source above;
         // reuse the caller's equivalent instance to keep protobuf equality
         // focused on the semantic payload.
@@ -2577,6 +2590,12 @@ internal static class PptxCodec
                             "presentation_postwrite_semantics_mismatch",
                             $"PPTX slide {slideIndex + 1} edited native object {elementIndex + 1} does not match the requested name/frame.",
                             PartPath(outputSlides[slideIndex]));
+                    PptxDiagramTextCodec.ValidateSourceBoundOutput(
+                        sourceSlide,
+                        outputSlide,
+                        before[elementIndex],
+                        after[elementIndex],
+                        request.Opaque);
                     continue;
                 }
                 if (request.ContentCase == PresentationElement.ContentOneofCase.Group)

@@ -1,7 +1,7 @@
 {
   "mainAssemblyName": "OpenChestnut.Runtime.dll",
   "resources": {
-    "hash": "sha256-OX6mFwkLebgidzZWoqDaUQua1S/GQVphqiWu9HgYJQ4=",
+    "hash": "sha256-8lXzfVsvfVcI7ia55lm9wPy3yOYIOpVriR0UeL5h61k=",
     "jsModuleNative": {
       "dotnet.native.js": "sha256-3M5CDym93zeieNAd2KEOcVjqHuLUxjPt+6MeEvdx80A="
     },
@@ -16,8 +16,8 @@
       "DocumentFormat.OpenXml.wasm": "sha256-Hc4gImmIvE3ciP3ucacgTbv7SiSABp+9HGNGabu8Y0M=",
       "DocumentFormat.OpenXml.Framework.wasm": "sha256-3lsrh0u/MkxnNv/AYYai45ZZUts8KkdLAVeeV+XrdYM=",
       "Google.Protobuf.wasm": "sha256-QeNMUbk+igKl7rU6FrDM2J9vn4+onp/EhDMVDpcMkZA=",
-      "OpenChestnut.Codec.wasm": "sha256-8/FD9GV1ODRyI+F4nHH0Eclhd86XLdpbgvYVB1eAGL0=",
-      "OpenChestnut.Runtime.wasm": "sha256-3cqNy9sgRhfMgOCNGD1dycPRwmsGkdhVe+Lg7cqd3GY=",
+      "OpenChestnut.Codec.wasm": "sha256-3jVeQaIDmCiRD6HSa55jUgVh6WjR3EnIXVzEsPJtRzo=",
+      "OpenChestnut.Runtime.wasm": "sha256-LJmdIFBUSuhO68X2w82YcSGiSVVDzhgP8E5YSfTj6Zo=",
       "System.Collections.Concurrent.wasm": "sha256-PjS0IHC3cqACW1NWl9PL//B936Cs32qXpBxz+YgUeGk=",
       "System.Collections.wasm": "sha256-zWQh+9awRirAjopZmiOPwQi9SGIi5TXMbJ/bsxjcCiA=",
       "System.Collections.NonGeneric.wasm": "sha256-b/yvU1wtbcaFYB93+JgQ4mmHJ6HOFRe4TOlEl5ABtr8=",
@@ -33,7 +33,7 @@
       "System.ObjectModel.wasm": "sha256-1bAIgbg53U+C/TA9pvmen30Pi6K0UnLQFccGRt8HfhE=",
       "System.Private.CoreLib.wasm": "sha256-iwevEOeCdgf3EgbQQuyrk7+yy9Vn4q2SiuTeAsplKhQ=",
       "System.Private.Uri.wasm": "sha256-qn0MelLc4ooWasVg6sM9spSHs3PRZAEz+h8YUUW9iEk=",
-      "System.Private.Xml.wasm": "sha256-JZn8AuhDs5PABu9wkAGKJfnqdfHwa3RG78jitVbUxr4=",
+      "System.Private.Xml.wasm": "sha256-eD6lhcoYB7Y4D3/qDShXdveBi4PiGFclawXpHAWT7KA=",
       "System.Private.Xml.Linq.wasm": "sha256-Kc/vm6bh+VKr89Oa+0/fd5d2f1vHqhQ5nuOpLK5gw4o=",
       "System.Runtime.InteropServices.JavaScript.wasm": "sha256-9wZsNOhRyG5cibDRNBWgelUGXl0Spv/k7z8UCmOgdbs=",
       "System.Security.Cryptography.wasm": "sha256-q0w+T1G8FCY6I+QoPs1+NCpk/JvqKNz5J+aj+9MyU90=",

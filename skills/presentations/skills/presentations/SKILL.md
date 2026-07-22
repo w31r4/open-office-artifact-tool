@@ -248,8 +248,10 @@ resolve to internal diagram data, layout, quick-style, and colors parts with
 the exact standard content types and no child/external/hyperlink/data graph.
 Export byte-copies all four into distinct typed clone-local parts under the
 same slide-local relationship IDs. Reimport proves disjoint paths and equal
-hashes. This prevents source/clone coupling but does not make SmartArt
-semantically editable: both objects remain source-bound and read-only.
+hashes. This prevents source/clone coupling. A separately recognized canonical
+one-paragraph/one-run DiagramDataPart may expose only source-bound
+`setDiagramNodeText(modelId, text)` after import; all other SmartArt remains
+source-bound and read-only.
 Nested, incomplete, duplicated, mistyped, external, relationship-bearing, or
 otherwise noncanonical diagram graphs fail closed.
 Read `artifact_tool/api/references/smartart-clone.spec.md` before accepting a
@@ -355,6 +357,27 @@ part, proves NotesSlide and comments XML are verbatim copies, proves the notes
 back-reference points to the clone, and proves the immutable master/catalog are
 shared. Rich/modern comments, any extra relationship, and any graph outside
 that exact profile still fail closed.
+
+For one imported canonical SmartArt document node, do not patch the ZIP or
+rebuild the diagram. First inspect `nativeObject.diagramText`; it is present
+only when the closed four-part graph has a direct plain
+`dgm:t > a:p > a:r > a:t` document-node profile. Then run the public
+transaction below, which changes only the bound DiagramDataPart and writes a
+no-overwrite audit:
+
+```sh
+node "$SKILL_DIR/examples/openchestnut-smartart-text-edit-workflow.mjs" \
+  input/source.pptx output/edited.pptx output/edited.audit.json \
+  "Closed SmartArt" "{B31B1833-2B65-4D6B-B3D4-9B3988427B21}" "Before" "After"
+```
+
+The workflow resolves exactly one object/node/expected-text triple, preserves
+the source, verifies that no non-data package part changed, reimports the
+requested node list, and fails closed for rich/multi-run, connected, nested, or
+ambiguous SmartArt. It does not add/reorder nodes, change layout/style/colors
+or geometry, or claim model SVG verification is a native-host rendering check.
+Read `artifact_tool/api/references/smartart-clone.spec.md` before using either
+the clone or text-edit profile.
 
 For an original imported slide, `slide.name = "Decision review"` is a narrow
 in-place metadata edit: OpenChestnut changes only that SlidePart's
