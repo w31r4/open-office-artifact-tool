@@ -28,7 +28,7 @@ assert.equal(
   "the OCR release lock must pin the exact isolated-Python wheel lock it builds",
 );
 assert.deepEqual(inputs.ocrCore.nativeBuild["darwin-arm64"].formulae, ["tesseract", "ghostscript", "poppler"]);
-assert.deepEqual(inputs.ocrCore.nativeBuild["linux-x64"].packages, ["tesseract-ocr", "ghostscript", "poppler-utils", "fonts-droid-fallback", "fonts-urw-base35", "patchelf"]);
+assert.deepEqual(inputs.ocrCore.nativeBuild["linux-x64"].packages, ["tesseract-ocr", "tesseract-ocr-eng", "ghostscript", "poppler-utils", "poppler-data", "libgs9-common", "fonts-droid-fallback", "fonts-urw-base35", "patchelf"]);
 
 for (const [language, expected] of Object.entries({ eng: "ocr-language-eng", chi_sim: "ocr-language-chi-sim" })) {
   const languageInput = inputs.languages[language];
@@ -67,10 +67,14 @@ assert.match(nativeSource, /if \(!await isMachOFile\(target\)\) return false;/);
 assert.match(workflowSource, /fonts-droid-fallback/);
 assert.match(workflowSource, /--resource-root/);
 assert.match(workflowSource, /fonts-urw-base35/);
+assert.match(workflowSource, /libgs9-common/);
+assert.match(workflowSource, /poppler-data/);
 assert.match(workflowSource, /resource_target/);
 assert.match(workflowSource, /dpkg-query -S/);
-assert.match(workflowSource, /brew deps --union tesseract ghostscript poppler/);
+assert.match(workflowSource, /for root_formula in tesseract ghostscript poppler; do brew deps/);
+assert.match(workflowSource, /unapproved Ghostscript resource target/);
 assert.doesNotMatch(workflowSource, /brew deps --include-optional/);
+assert.doesNotMatch(workflowSource, /brew deps --union tesseract ghostscript poppler/);
 
 const invalidPlatform = spawnSync(process.execPath, [nativeBuilder,
   "--platform", "win32-x64",

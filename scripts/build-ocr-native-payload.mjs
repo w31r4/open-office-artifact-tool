@@ -297,7 +297,7 @@ async function finalizeMacPayload(payload, libraryNames) {
     for (const dependency of parseMacDependencies(listed.stdout)) {
       const name = path.basename(dependency);
       if (dependency.startsWith("/opt/homebrew/") || dependency.startsWith("/usr/local/")) fail(`relocatable payload still links build-machine path ${dependency}.`);
-      if (dependency.startsWith("@rpath/") && libraryNames.has(name)) fail(`relocatable payload retains unresolved rpath dependency ${dependency}.`);
+      if (dependency.startsWith("@rpath/") && libraryNames.has(name)) fail(`relocatable payload ${target} retains unresolved rpath dependency ${dependency}.`);
     }
     await run("codesign", ["--force", "--sign", "-", "--timestamp=none", target], `codesign ${target}`);
   }

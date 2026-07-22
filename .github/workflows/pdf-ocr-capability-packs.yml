@@ -66,7 +66,7 @@ jobs:
           set -euo pipefail
           if [ "${{ matrix.platform }}" = "linux-x64" ]; then
             sudo apt-get update
-            sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng ghostscript poppler-utils fonts-droid-fallback fonts-urw-base35 patchelf
+            sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng ghostscript poppler-utils poppler-data libgs9-common fonts-droid-fallback fonts-urw-base35 patchelf
           else
             brew install tesseract ghostscript poppler
           fi
@@ -94,35 +94,72 @@ jobs:
           library_args=()
           poppler_args=()
           resource_args=()
-          font_packages=()
+          resource_packages=()
           if [ "${{ matrix.platform }}" = "linux-x64" ]; then
-            font_packages=(fonts-droid-fallback fonts-urw-base35)
+            # The Ghostscript Resource tree contains package-managed CMap,
+            # CID fallback, and base-font links. Keep every external target
+            # inside this explicit apt-owned allowlist; the pack builder then
+            # dereferences only those roots into regular files.
+            resource_packages=(libgs9-common poppler-data fonts-droid-fallback fonts-urw-base35)
             tessdata_root="$(dirname "$(dpkg -L tesseract-ocr-eng | awk '/eng\.traineddata$/ { print; exit }')")"
             test -d "$tessdata_root"
             ghostscript_resource="$(find /usr/share/ghostscript -type d -name Resource -print -quit)"
             test -d "$ghostscript_resource"
             resource_roots=()
-            while IFS= read -r resource_link; do
-              resource_target="$(readlink -f "$resource_link")"
-              test -f "$resource_target"
-              case "$resource_target" in "$ghostscript_resource"/*) continue ;; esac
-              package_owner=""
-              for package in "${font_packages[@]}"; do
-                if dpkg-query -S "$resource_target" | cut -d: -f1 | tr ',' '\n' | grep -Fxq "$package"; then
-                  package_owner="$package"
+            used_resource_packages=()
+            append_unique() {
+              local value="$1"
+              shift
+              local existing
+              for existing in "$@"; do
+                if [ "$existing" = "$value" ]; then return 0; fi
+              done
+              return 1
+            }
+            record_resource_owner() {
+              local candidate="$1"
+              local owner=""
+              local package
+              for package in "${resource_packages[@]}"; do
+                if dpkg-query -S "$candidate" 2>/dev/null | cut -d: -f1 | tr ',' '\n' | grep -Fxq "$package"; then
+                  owner="$package"
                   break
                 fi
               done
-              test -n "$package_owner"
-              resource_root="$(dirname "$resource_target")"
-              seen=0
-              for known_root in "${resource_roots[@]}"; do
-                if [ "$known_root" = "$resource_root" ]; then seen=1; break; fi
-              done
-              if [ "$seen" = 0 ]; then resource_roots+=("$resource_root"); fi
+              if [ -z "$owner" ]; then
+                printf 'unapproved Ghostscript resource target: %s\n' "$candidate" >&2
+                return 1
+              fi
+              if ! append_unique "$owner" "${used_resource_packages[@]}"; then used_resource_packages+=("$owner"); fi
+            }
+            record_resource_root() {
+              local candidate="$1"
+              local root="$2"
+              if ! append_unique "$root" "${resource_roots[@]}"; then resource_roots+=("$root"); fi
+              record_resource_owner "$candidate"
+            }
+            while IFS= read -r resource_link; do
+              resource_target="$(readlink -f "$resource_link")"
+              test -e "$resource_target"
+              case "$resource_target" in "$ghostscript_resource"/*) continue ;; esac
+              if [ -d "$resource_target" ]; then
+                # `Resource/CMap` is a directory symlink on Ubuntu. The
+                # directory itself and every resolved leaf must be owned by
+                # our declared package set before it may become a trusted
+                # resource root.
+                if ! append_unique "$(dirname "$resource_target")" "${resource_roots[@]}"; then resource_roots+=("$(dirname "$resource_target")"); fi
+                resource_files=0
+                while IFS= read -r resource_file; do
+                  resource_files=1
+                  record_resource_root "$resource_file" "$(dirname "$resource_file")"
+                done < <(find -L "$resource_target" -type f -print | LC_ALL=C sort)
+                if [ "$resource_files" = 0 ]; then record_resource_root "$resource_target" "$(dirname "$resource_target")"; fi
+              else
+                record_resource_root "$resource_target" "$(dirname "$resource_target")"
+              fi
             done < <(find "$ghostscript_resource" -type l -print | LC_ALL=C sort)
             for resource_root in "${resource_roots[@]}"; do resource_args+=(--resource-root "$resource_root"); done
-            for package in "${font_packages[@]}"; do
+            for package in "${resource_packages[@]}"; do
               test -r "/usr/share/doc/$package/copyright"
               dpkg-query -W -f='${Package} ${Version}\n' "$package" > "$RUNNER_TEMP/$package-package.txt"
             done
@@ -141,11 +178,15 @@ jobs:
               "${poppler_args[@]}" \
               "${library_args[@]}"
           else
-            # With no declaration-expanding flags, `brew deps` reports the
-            # installed formulae's actual runtime dependency closure. That is
-            # intentionally narrower and more reliable than their declared
-            # build/optional dependency graph for a relocatable runtime.
-            for formula in tesseract ghostscript poppler $(brew deps --union tesseract ghostscript poppler); do
+            # A one-formula `brew deps` invocation on an installed formula
+            # reports its actual runtime closure. Calling it separately keeps
+            # the union without switching to the declared (and incomplete)
+            # dependency graph that a multi-formula invocation would use.
+            formulae=(tesseract ghostscript poppler)
+            while IFS= read -r formula; do
+              if [ -n "$formula" ]; then formulae+=("$formula"); fi
+            done < <(for root_formula in tesseract ghostscript poppler; do brew deps "$root_formula"; done | LC_ALL=C sort -u)
+            for formula in "${formulae[@]}"; do
               prefix="$(brew --prefix "$formula")"
               if [ -d "$prefix/lib" ]; then library_args+=(--library-root "$prefix/lib"); fi
             done
@@ -165,7 +206,7 @@ jobs:
             cat "$RUNNER_TEMP/ocr-python-notices.md"
             printf '\n\n# Native OCR sidecars\n\n'
             cat "$native_notices"
-            for package in "${font_packages[@]}"; do
+            for package in "${resource_packages[@]}"; do
               printf '\n\n## %s build input\n\n' "$package"
               cat "$RUNNER_TEMP/$package-package.txt"
               printf '\n'
