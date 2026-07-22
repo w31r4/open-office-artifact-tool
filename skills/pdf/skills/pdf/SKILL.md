@@ -101,22 +101,22 @@ publication, and a receipt. It rejects `latest`, package-manager/global-pip
 installs, lifecycle hooks, path traversal, links, and undeclared URLs. The
 initial managed targets are `darwin-arm64` and `linux-x64`.
 
-**Current release-catalog state:** qpdf and `python-foundation`
-`3.13.14-oat.1` have published, attested `darwin-arm64` and `linux-x64`
-assets. qpdf covers repair, linearization, inspection, and the bounded AES-256
-delivery-copy route. The foundation is isolated CPython with ReportLab,
-pdfplumber, pypdf, and Pillow only. `python-specialists` (PyMuPDF/pikepdf/
-pyHanko), OCR, Poppler, and veraPDF/JRE packs remain unpublished and
-deliberately resolve as `blocked`, not as downloadable promises. Use a selected
-`system-only` policy with an explicitly configured local runtime when one is
-already managed by the deployment. Once a task chooses managed or system-only,
-do not automatically switch routes.
+**Current release-catalog state:** qpdf, `python-foundation`, and
+`python-specialists` `3.13.14-oat.1` have published, attested `darwin-arm64`
+and `linux-x64` assets. qpdf covers repair, linearization, inspection, and the
+bounded AES-256 delivery-copy route. The foundation is isolated CPython with
+ReportLab, pdfplumber, pypdf, and Pillow. Specialists contain PyMuPDF, pikepdf,
+pyHanko, and certificate validation; they depend on qpdf and require the
+catalogued AGPL-or-commercial acknowledgement. OCR, Poppler, and veraPDF/JRE
+packs remain unpublished and deliberately resolve as `blocked`, not as
+downloadable promises. Use a selected `system-only` policy with an explicitly
+configured local runtime when one is already managed by the deployment. Once a
+task chooses managed or system-only, do not automatically switch routes.
 
 See [provider setup and probes](tasks/provider_setup.md) for the full policy,
 system-runtime, probe, and failure contract. The [provider matrix](references/PROVIDER_MATRIX.md)
 states human-readable capability boundaries; the public catalog is the only
 source of pack versions, hashes, sizes, and installation facts.
-
 ## Choose the narrowest provider
 
 | Need | Explicit route | Detailed task |

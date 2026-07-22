@@ -50,7 +50,7 @@ console.log(reopened.inspect({ kind: "worksheet,table,chart" }).ndjson);
 
 官方 `mupdf@1.28.0` 是必需的 npm 依赖，会随正常的 `npm install` 一起解析安装；只有第一次读取、检查、渲染或编辑 PDF 时才初始化 WASM。项目没有 `postinstall`、额外下载器或全局环境写入。
 
-qpdf、Python 专项工具、OCR、veraPDF/JRE 等由显式的 `open-office-artifact-tool/pdf/providers` 路由：先根据任务和检查结果返回 `ready`、`installable` 或 `blocked`，再由项目策略决定是否可安装。默认策略禁止下载；qpdf 与 Python foundation 均已发布双平台、哈希固定且带证明的能力包。后者只提供隔离 CPython 上的 ReportLab、pdfplumber、pypdf 与 Pillow；PyMuPDF/pikepdf/pyHanko、OCR、Poppler、veraPDF/JRE 等仍会明确 `blocked`，不会偷偷降级到其它工具。已由部署方管理的运行时可使用显式 `system-only` 策略。详见 [PDF Provider Setup](skills/pdf/skills/pdf/tasks/provider_setup.md)。
+qpdf、Python 专项工具、OCR、veraPDF/JRE 等由显式的 `open-office-artifact-tool/pdf/providers` 路由：先根据任务和检查结果返回 `ready`、`installable` 或 `blocked`，再由项目策略决定是否可安装。默认策略禁止下载；qpdf、Python foundation 和 Python specialists 都已有双平台、哈希固定且带证明的能力包。foundation 只提供隔离 CPython 上的 ReportLab、pdfplumber、pypdf 与 Pillow；specialists 提供 PyMuPDF、pikepdf、pyHanko 与证书校验器，依赖 qpdf 并需要显式接受 AGPL 或商业许可。OCR、Poppler、veraPDF/JRE 等仍会明确 `blocked`，不会偷偷降级到其它工具。已由部署方管理的运行时可使用显式 `system-only` 策略。详见 [PDF Provider Setup](skills/pdf/skills/pdf/tasks/provider_setup.md)。
 
 ## 为什么需要它
 

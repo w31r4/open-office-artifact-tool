@@ -39,10 +39,12 @@ The bundle ships bounded adapters for strict PyMuPDF sanitize and image-backed
 pikepdf source-bound active/auxiliary structure cleanup, pyHanko exact-source
 local-PKCS#12 signing and signature validation, veraPDF exact-source PDF/A/PDF/UA
 machine-rule validation, and OCRmyPDF exact-source complete-document searchable-
-layer generation. qpdf and the `python-foundation` `3.13.14-oat.1` managed
-pack are published with hash-pinned, attested `darwin-arm64` and `linux-x64`
-assets. The foundation carries isolated CPython plus ReportLab, pdfplumber,
-pypdf, and Pillow; PyMuPDF/pikepdf/pyHanko, OCR, Poppler, and veraPDF/JRE
+layer generation. qpdf, `python-foundation`, and `python-specialists`
+`3.13.14-oat.1` managed packs are published with hash-pinned, attested
+`darwin-arm64` and `linux-x64` assets. The foundation carries isolated CPython
+plus ReportLab, pdfplumber, pypdf, and Pillow; specialists carry PyMuPDF,
+pikepdf, pyHanko, and certificate validation, depend on qpdf, and require an
+explicit AGPL-or-commercial acknowledgement. OCR, Poppler, and veraPDF/JRE
 routes remain `blocked` until their own pack is published. The OCR
 redaction primitive requires one explicit page, an exact
 expected 0/90/180/270-degree page rotation, an exact term, expected image-backed

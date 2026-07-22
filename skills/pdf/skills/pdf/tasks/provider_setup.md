@@ -99,16 +99,18 @@ language-pack directories. `ocrmypdf_provider.py` copies regular, unlinked
 `.traineddata` files into a per-operation private directory and sets its own
 `TESSDATA_PREFIX`; never point `TESSDATA_PREFIX` directly at the project cache.
 
-**Current catalog state:** qpdf and `python-foundation` `3.13.14-oat.1` have
-published attested assets for `darwin-arm64` and `linux-x64`. A
-policy-authorized qpdf route, or a ReportLab/pdfplumber/pypdf route with the
-foundation pack, can resolve as `installable` and be passed unchanged to
-`ensure`. The foundation contains isolated CPython plus ReportLab, pdfplumber,
-pypdf, and Pillow; it is not the PyMuPDF/pikepdf/pyHanko specialist pack. OCR,
-Poppler, veraPDF/JRE, and `python-specialists` remain unpublished, so those
-routes are `blocked` with a precise reason even under a permissive policy. Do
-not substitute a hand-written download URL or claim that `ensure` installed a
-future pack.
+**Current catalog state:** qpdf, `python-foundation`, and
+`python-specialists` `3.13.14-oat.1` have published attested assets for
+`darwin-arm64` and `linux-x64`. A policy-authorized qpdf route, a
+ReportLab/pdfplumber/pypdf route with the foundation pack, or a
+PyMuPDF/pikepdf/pyHanko route with `python-specialists` and qpdf can resolve as
+`installable` and be passed unchanged to `ensure`. The foundation contains
+isolated CPython plus ReportLab, pdfplumber, pypdf, and Pillow. Specialists
+contain PyMuPDF, pikepdf, pyHanko, and certificate validation, and require the
+catalogued AGPL-or-commercial acknowledgement. OCR, Poppler, and veraPDF/JRE
+remain unpublished, so those routes are `blocked` with a precise reason even
+under a permissive policy. Do not substitute a hand-written download URL or
+claim that `ensure` installed a future pack.
 
 ## Existing controlled runtime: system-only
 

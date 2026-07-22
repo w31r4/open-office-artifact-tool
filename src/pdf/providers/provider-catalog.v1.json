@@ -90,17 +90,57 @@
       "license": { "expression": "PSF-2.0 AND MPL-2.0 AND BSD-3-Clause AND MIT", "requiresAcknowledgement": false }
     },
     "python-specialists": {
-      "state": "unpublished",
+      "state": "published",
       "delivery": "versioned-signed-platform-release-asset",
       "platforms": ["darwin-arm64", "linux-x64"],
-      "version": null,
-      "artifacts": [],
+      "version": "3.13.14-oat.1",
+      "artifacts": [
+        {
+          "platform": "darwin-arm64",
+          "asset": "python-specialists-3.13.14-oat.1-darwin-arm64.tar.gz",
+          "version": "3.13.14-oat.1",
+          "url": "https://github.com/w31r4/open-office-artifact-tool/releases/download/pdf-provider-python-specialists-3.13.14-oat.1/python-specialists-3.13.14-oat.1-darwin-arm64.tar.gz",
+          "sha256": "afc248981d3c3060991fb6dca795defcd32dfdd21162fc211d46b67ac9109333",
+          "downloadBytes": 71471223,
+          "unpackedBytes": 181342971,
+          "archiveFormat": "tar.gz"
+        },
+        {
+          "platform": "linux-x64",
+          "asset": "python-specialists-3.13.14-oat.1-linux-x64.tar.gz",
+          "version": "3.13.14-oat.1",
+          "url": "https://github.com/w31r4/open-office-artifact-tool/releases/download/pdf-provider-python-specialists-3.13.14-oat.1/python-specialists-3.13.14-oat.1-linux-x64.tar.gz",
+          "sha256": "e97e0dd058c85c0304de505ef1ae6ae6916c3d49a4477a91b81dfe8a117b95cc",
+          "downloadBytes": 90635639,
+          "unpackedBytes": 247049796,
+          "archiveFormat": "tar.gz"
+        }
+      ],
       "requiresPackIds": ["qpdf"],
       "entrypoints": [{ "path": "bin/python3", "kind": "file", "executable": true }],
       "dependencyClosure": ["isolated CPython", "PyMuPDF", "pikepdf", "pyHanko", "pyhanko-certvalidator", "qpdf runtime"],
       "estimatedDownloadBytes": null,
       "estimatedUnpackedBytes": null,
-      "license": { "expression": "AGPL-3.0-or-later AND MIT AND MPL-2.0", "requiresAcknowledgement": true, "id": "python-specialists-license", "acceptedValues": ["agpl", "commercial"] }
+      "releaseEvidence": {
+        "sbom": {
+          "asset": "python-specialists-3.13.14-oat.1.sbom.cdx.json",
+          "url": "https://github.com/w31r4/open-office-artifact-tool/releases/download/pdf-provider-python-specialists-3.13.14-oat.1/python-specialists-3.13.14-oat.1.sbom.cdx.json",
+          "sha256": "d9aee32d671bc9011180d3e6dcaff8ebfe8ffda54d2cb8035969f09475f3f337"
+        },
+        "thirdPartyNotices": {
+          "asset": "python-specialists-3.13.14-oat.1.THIRD_PARTY_NOTICES.md",
+          "url": "https://github.com/w31r4/open-office-artifact-tool/releases/download/pdf-provider-python-specialists-3.13.14-oat.1/python-specialists-3.13.14-oat.1.THIRD_PARTY_NOTICES.md",
+          "sha256": "2e1cd7005751617ccfcc639e0f5c527e3bbcd5db8ad6b67fc03daa380bfb284f"
+        },
+        "provenance": {
+          "provider": "github-actions-artifact-attestation",
+          "repository": "w31r4/open-office-artifact-tool",
+          "workflow": ".github/workflows/pdf-python-capability-packs.yml",
+          "verificationCommand": "gh attestation verify <asset> --repo w31r4/open-office-artifact-tool"
+        },
+        "verifiedPlatforms": ["darwin-arm64", "linux-x64"]
+      },
+      "license": { "expression": "PSF-2.0 AND MPL-2.0 AND AGPL-3.0-or-later AND MIT", "requiresAcknowledgement": true, "id": "python-specialists-license", "acceptedValues": ["agpl", "commercial"] }
     },
     "poppler-qa": {
       "state": "unpublished",

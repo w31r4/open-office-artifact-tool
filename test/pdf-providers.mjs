@@ -115,6 +115,9 @@ assert.deepEqual(PDF_PROVIDER_CATALOG.packs.qpdf.releaseEvidence.verifiedPlatfor
 assert.equal(PDF_PROVIDER_CATALOG.packs["python-foundation"].state, "published");
 assert.equal(PDF_PROVIDER_CATALOG.packs["python-foundation"].version, "3.13.14-oat.1");
 assert.deepEqual(PDF_PROVIDER_CATALOG.packs["python-foundation"].releaseEvidence.verifiedPlatforms, ["darwin-arm64", "linux-x64"]);
+assert.equal(PDF_PROVIDER_CATALOG.packs["python-specialists"].state, "published");
+assert.equal(PDF_PROVIDER_CATALOG.packs["python-specialists"].version, "3.13.14-oat.1");
+assert.deepEqual(PDF_PROVIDER_CATALOG.packs["python-specialists"].releaseEvidence.verifiedPlatforms, ["darwin-arm64", "linux-x64"]);
 assert.ok(!("managedPack" in PDF_PROVIDER_CATALOG.providers.qpdf), "pack metadata must have one canonical top-level home");
 
 const invalidPlatformCatalog = structuredClone(PDF_PROVIDER_CATALOG);
@@ -240,6 +243,39 @@ assert.equal(managedReportlab.status, "installable");
 assert.equal(managedReportlab.reason.code, "managed-install-required");
 assert.equal(managedReportlab.installPlan.packIds[0], "python-foundation");
 assert.equal(managedReportlab.installPlan.runtime.managedRuntime.pythonPath, "bin/python3");
+
+const unacknowledgedSpecialists = await PdfProviders.resolve({
+  task: "inspect",
+  provider: "pymupdf",
+  savePolicy: "read-only",
+  policy: {
+    installPolicy: "managed",
+    allowedProviders: ["pymupdf"],
+    allowedPacks: ["python-specialists", "qpdf"],
+    maxDownloadBytes: 128_000_000,
+    maxUnpackedBytes: 300_000_000,
+  },
+});
+assert.equal(unacknowledgedSpecialists.status, "blocked");
+assert.equal(unacknowledgedSpecialists.reason.code, "provider-license-acknowledgement-required");
+
+const managedPymupdf = await PdfProviders.resolve({
+  task: "inspect",
+  provider: "pymupdf",
+  savePolicy: "read-only",
+  policy: {
+    installPolicy: "managed",
+    allowedProviders: ["pymupdf"],
+    allowedPacks: ["python-specialists", "qpdf"],
+    acceptedLicenses: ["agpl"],
+    maxDownloadBytes: 128_000_000,
+    maxUnpackedBytes: 300_000_000,
+  },
+});
+assert.equal(managedPymupdf.status, "installable");
+assert.equal(managedPymupdf.reason.code, "managed-install-required");
+assert.deepEqual(managedPymupdf.installPlan.packIds, ["qpdf", "python-specialists"]);
+assert.equal(managedPymupdf.installPlan.runtime.managedRuntime.pythonPath, "bin/python3");
 
 const encryptWithoutCredentialDeclaration = await PdfProviders.resolve({
   task: "encrypt",
