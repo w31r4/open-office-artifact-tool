@@ -137,7 +137,9 @@ package manager as an implicit repair path.
 
 The pyHanko runtime can be selected by policy, but P12/private keys, HSMs,
 remote-signing credentials, TSA/LTV access, and trust roots are always
-caller-provided. The passphrase travels only on stdin. PyMuPDF and any other
+caller-provided. The passphrase travels only on stdin. The qpdf encryption
+task likewise requires caller-owned user/owner password files; the resolver
+records only the credential type and never receives their values. PyMuPDF and any other
 catalogue licence requiring acknowledgement must be listed in
 `acceptedLicenses`; availability never waives that acknowledgement.
 
@@ -147,6 +149,7 @@ and use a distinct transactional output. Follow the linked task guide for the
 provider's source-binding, signature-invalidation, OCR, output, and QA rules:
 
 - [repair and linearization](repair_linearize.md)
+- [AES-256 delivery-copy encryption](encryption.md)
 - [active/auxiliary cleanup](structure_clean.md)
 - [scanned-PDF OCR](ocr.md)
 - [sign and verify](sign_verify.md)

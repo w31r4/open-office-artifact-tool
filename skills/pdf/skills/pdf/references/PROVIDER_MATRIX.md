@@ -17,7 +17,7 @@ to retry through another route.
 | pypdf | Attachment quarantine, complete-source merge/reorder/stamp, complex forms/annotations | `read-only`, `rewrite`, explicit `incremental` | Inspect signatures/DocMDP first; an incremental layout is not authorization. |
 | PyMuPDF | Strict scrub/residue/OCR redaction and selected advanced bounded edits | explicit `rewrite`, `incremental`, `sanitize` | Explicit specialist only. Sanitization is full-rewrite and residue-scanned; it is not the signing authority. |
 | Poppler | Independent file evidence and native raster QA | `read-only` | Renderer/inspector only, not an editor or conformance validator. |
-| qpdf | Structural diagnosis, recovery rewrite, linearization | `read-only`, `rewrite` | Not renderer, text extractor, sanitizer, password workflow, or signature validator. |
+| qpdf | Structural diagnosis, recovery rewrite, linearization, one source-to-AES-256 delivery copy | `read-only`, `rewrite` | AES-256 copy only from an unencrypted source with caller-owned restricted password files; not an encrypted-input opener/decrypter, permission editor, renderer, sanitizer, or signature validator. |
 | pikepdf | Fixed-profile active/auxiliary structure cleanup | `read-only`, `rewrite` | Not redaction, metadata/form/XFA cleanup, strict sanitize, rendering, or malware isolation. |
 | pyHanko | Local PKCS#12 signing and exact-source signature validation | `read-only`, bounded `incremental` | Certificates, keys, HSMs, TSA/LTV, remote signing, trust roots, and online retrieval remain explicit caller concerns. |
 | veraPDF | PDF/A and PDF/UA machine-rule validation | `read-only` | One explicit profile; a green report is not repair or universal accessibility certification. |

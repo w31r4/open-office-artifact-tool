@@ -11,22 +11,26 @@ from pathlib import Path
 import re
 import signal
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
 import threading
-from typing import Any, Iterator
+from typing import Any, Iterator, Sequence
 
 
 SCHEMA_INSPECT = "open-office-artifact-tool.qpdf-inspect.v1"
 SCHEMA_REWRITE = "open-office-artifact-tool.qpdf-rewrite.v1"
+SCHEMA_ENCRYPT = "open-office-artifact-tool.qpdf-encrypt.v1"
 DEFAULT_MAX_INPUT_BYTES = 512 * 1024 * 1024
 DEFAULT_MAX_JSON_BYTES = 128 * 1024 * 1024
 DEFAULT_MAX_CHECK_BYTES = 2 * 1024 * 1024
 DEFAULT_TIMEOUT_SECONDS = 120
+MAX_PASSWORD_BYTES = 4 * 1024
 MAX_CHECK_LINES = 500
 MAX_JSON_NODES = 2_000_000
 MAX_EVIDENCE_TEXT_CHARS = 4_096
+MIN_ENCRYPTION_VERSION = (11, 7, 0)
 PROCESS_ISOLATION = "new-process-group" if os.name == "nt" else "new-session"
 
 
@@ -173,15 +177,31 @@ def decoded(value: bytes | str | None) -> str:
     return value
 
 
+def version_tuple(value: str) -> tuple[int, int, int]:
+    match = re.fullmatch(r"(\d+)\.(\d+)(?:\.(\d+))?", value)
+    if not match:
+        raise ProviderError(f"qpdf returned an unsupported version {value!r}")
+    return int(match.group(1)), int(match.group(2)), int(match.group(3) or 0)
+
+
 def qpdf_version(executable: Path, timeout_seconds: int) -> str:
     result = run_qpdf(executable, ["--version"], timeout_seconds=timeout_seconds)
     output = (decoded(result.stdout) or decoded(result.stderr)).strip().splitlines()
     if result.returncode != 0 or not output:
         raise ProviderError(f"qpdf --version failed: {decoded(result.stderr).strip()}")
     match = re.search(r"\b(\d+)\.(\d+)(?:\.(\d+))?\b", output[0])
-    if not match or int(match.group(1)) < 11:
+    if not match or version_tuple(match.group(0)) < (11, 0, 0):
         raise ProviderError(f"qpdf 11 or newer with JSON v2 is required; received {output[0]!r}")
     return match.group(0)
+
+
+def require_encryption_version(version: str) -> None:
+    if version_tuple(version) < MIN_ENCRYPTION_VERSION:
+        required = ".".join(str(part) for part in MIN_ENCRYPTION_VERSION)
+        raise ProviderError(
+            f"qpdf {required} or newer is required for bounded AES-256 encryption "
+            "because older qpdf releases cannot safely accept arbitrary password text through named options"
+        )
 
 
 def input_path(value: str, max_input_bytes: int) -> Path:
@@ -206,12 +226,18 @@ def expected_hash(value: str | None) -> str | None:
     return normalized
 
 
-def bounded_check_output(result: subprocess.CompletedProcess) -> tuple[list[str], str]:
+def bounded_check_output(
+    result: subprocess.CompletedProcess,
+    *,
+    redactions: Sequence[str] = (),
+) -> tuple[list[str], str]:
     stdout = decoded(result.stdout)
     stderr = decoded(result.stderr)
     combined = "\n".join(part for part in (stdout.strip(), stderr.strip()) if part)
     if len(combined.encode("utf-8")) > DEFAULT_MAX_CHECK_BYTES:
         raise ProviderError(f"qpdf diagnostic output exceeded {DEFAULT_MAX_CHECK_BYTES} bytes")
+    for secret in sorted({value for value in redactions if value}, key=len, reverse=True):
+        combined = combined.replace(secret, "<redacted>")
     lines = [line.rstrip() for line in combined.splitlines() if line.strip()]
     if len(lines) > MAX_CHECK_LINES:
         raise ProviderError(f"qpdf diagnostic output exceeded {MAX_CHECK_LINES} lines")
@@ -399,13 +425,19 @@ def inspect_pdf(
     max_json_bytes: int,
     timeout_seconds: int,
     display_path: Path | None = None,
+    private_input_arguments: Sequence[str] = (),
+    redactions: Sequence[str] = (),
 ) -> dict[str, Any]:
     before_hash = sha256(target)
     if expected_sha256 and before_hash != expected_sha256:
         raise ProviderError(f"source SHA-256 mismatch: expected {expected_sha256}, received {before_hash}")
 
-    check = run_qpdf(executable, ["--check", str(target)], timeout_seconds=timeout_seconds)
-    check_lines, check_text = bounded_check_output(check)
+    check = run_qpdf(
+        executable,
+        [*private_input_arguments, "--check", str(target)],
+        timeout_seconds=timeout_seconds,
+    )
+    check_lines, check_text = bounded_check_output(check, redactions=redactions)
     if display_path is not None:
         check_lines = [line.replace(str(target), str(display_path)) for line in check_lines]
     if check.returncode not in {0, 3}:
@@ -416,6 +448,7 @@ def inspect_pdf(
         with tempfile.NamedTemporaryFile(prefix="open-office-qpdf-", suffix=".json", delete=False) as stream:
             json_path = Path(stream.name)
         json_result = run_qpdf(executable, [
+            *private_input_arguments,
             "--json=2",
             "--json-key=pages",
             "--json-key=outlines",
@@ -426,7 +459,7 @@ def inspect_pdf(
             "--json-stream-data=none",
             str(target),
         ], timeout_seconds=timeout_seconds, stdout_path=json_path, max_stdout_bytes=max_json_bytes)
-        json_lines, json_text = bounded_check_output(json_result)
+        json_lines, json_text = bounded_check_output(json_result, redactions=redactions)
         if display_path is not None:
             json_lines = [line.replace(str(target), str(display_path)) for line in json_lines]
         if json_result.returncode not in {0, 3}:
@@ -491,6 +524,102 @@ def output_path(value: str) -> Path:
     if destination.exists() or destination.is_symlink():
         raise ProviderError(f"output already exists and will not be replaced: {destination}")
     return destination
+
+
+def erase_bytes(value: bytearray) -> None:
+    for index in range(len(value)):
+        value[index] = 0
+
+
+def read_restricted_password_file(value: str, label: str) -> bytearray:
+    """Read one caller-owned secret without putting it in argv or the environment.
+
+    qpdf's named password options accept arbitrary text, but its argument-file
+    transport is line based. This bounded operation therefore accepts a single
+    UTF-8 line only. POSIX callers must protect the source file from group and
+    world access; Windows ACL review remains the caller's responsibility.
+    """
+
+    requested = Path(value).expanduser()
+    if not requested.is_absolute():
+        requested = Path.cwd() / requested
+    if requested.is_symlink():
+        raise ProviderError(f"{label} password file is a symbolic link and will not be followed")
+    try:
+        parent = requested.parent.resolve(strict=True)
+    except OSError as exc:
+        raise ProviderError(f"{label} password-file parent does not exist or cannot be resolved: {requested.parent}") from exc
+    target = parent / requested.name
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(target, flags)
+    except OSError as exc:
+        raise ProviderError(f"{label} password file is unavailable or unsafe") from exc
+    raw = bytearray()
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ProviderError(f"{label} password file must be a regular file")
+        if os.name != "nt" and metadata.st_uid != os.geteuid():
+            raise ProviderError(f"{label} password file must be owned by the current OS user")
+        if os.name != "nt" and metadata.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+            raise ProviderError(f"{label} password file must not grant group or world permissions")
+        if metadata.st_size > MAX_PASSWORD_BYTES:
+            raise ProviderError(f"{label} password file exceeds the {MAX_PASSWORD_BYTES} byte budget")
+        while len(raw) <= MAX_PASSWORD_BYTES:
+            chunk = os.read(descriptor, min(1024, MAX_PASSWORD_BYTES + 1 - len(raw)))
+            if not chunk:
+                break
+            raw.extend(chunk)
+        if len(raw) > MAX_PASSWORD_BYTES:
+            raise ProviderError(f"{label} password file exceeds the {MAX_PASSWORD_BYTES} byte budget")
+    except Exception:
+        erase_bytes(raw)
+        raise
+    finally:
+        os.close(descriptor)
+    if raw.endswith(b"\r\n"):
+        del raw[-2:]
+    elif raw.endswith(b"\n"):
+        del raw[-1:]
+    if not raw:
+        raise ProviderError(f"{label} password file must contain one non-empty UTF-8 line")
+    if b"\x00" in raw or b"\r" in raw or b"\n" in raw:
+        erase_bytes(raw)
+        raise ProviderError(f"{label} password file must contain exactly one UTF-8 line without NUL")
+    try:
+        bytes(raw).decode("utf-8")
+    except UnicodeDecodeError as exc:
+        erase_bytes(raw)
+        raise ProviderError(f"{label} password file must be valid UTF-8") from exc
+    return raw
+
+
+def write_private_argument_file(root: Path, name: str, arguments: Sequence[str]) -> Path:
+    if not arguments or any("\x00" in argument or "\r" in argument or "\n" in argument for argument in arguments):
+        raise ProviderError("internal qpdf argument file contains an unsafe argument")
+    target = root / name
+    descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_CLOEXEC", 0), 0o600)
+    try:
+        with os.fdopen(descriptor, "wb", closefd=False) as stream:
+            stream.write(("\n".join(arguments) + "\n").encode("utf-8"))
+            stream.flush()
+            os.fsync(stream.fileno())
+    finally:
+        os.close(descriptor)
+    return target
+
+
+def source_prefix_retained(source: Path, output: Path) -> bool:
+    if output.stat().st_size < source.stat().st_size:
+        return False
+    with source.open("rb") as source_stream, output.open("rb") as output_stream:
+        while True:
+            source_chunk = source_stream.read(1024 * 1024)
+            if not source_chunk:
+                return True
+            if output_stream.read(len(source_chunk)) != source_chunk:
+                return False
 
 
 def rewrite_pdf(args: argparse.Namespace) -> dict[str, Any]:
@@ -588,6 +717,189 @@ def rewrite_pdf(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def encrypt_pdf(args: argparse.Namespace) -> dict[str, Any]:
+    """Create one AES-256 encrypted copy from an unencrypted, inspected source.
+
+    This is deliberately not a password/decryption editor. It cannot open an
+    encrypted input, change permissions, remove encryption, or reuse either
+    password from an audit/result. qpdf only receives the two secret values in
+    a private line-oriented argument file under the transaction directory.
+    """
+
+    executable = qpdf_path()
+    version = qpdf_version(executable, args.timeout_seconds)
+    require_encryption_version(version)
+    source = input_path(args.input, args.max_input_bytes)
+    destination = output_path(args.output)
+    if source == destination:
+        raise ProviderError("input and output must be distinct; qpdf never overwrites the source")
+    expected = expected_hash(args.expected_sha256)
+    if expected is None:
+        raise ProviderError("encrypt requires --expected-sha256 from a fresh inspect result")
+
+    before = inspect_pdf(
+        source,
+        executable=executable,
+        version=version,
+        expected_sha256=expected,
+        max_json_bytes=args.max_json_bytes,
+        timeout_seconds=args.timeout_seconds,
+    )
+    if before["structure"]["encrypted"]:
+        raise ProviderError(
+            "encrypted input is unsupported by bounded qpdf encryption; this command only creates "
+            "a new AES-256 copy from an unencrypted source"
+        )
+    signature = before["signaturePolicy"]
+    if signature["hasSignatureEvidence"] and not args.invalidate_signatures:
+        raise ProviderError("signed or signature-constrained input requires --invalidate-signatures after pyHanko/DocMDP review")
+
+    user_password = bytearray()
+    owner_password = bytearray()
+    try:
+        user_password = read_restricted_password_file(args.user_password_file, "user")
+        owner_password = read_restricted_password_file(args.owner_password_file, "owner")
+        if user_password == owner_password:
+            raise ProviderError("user and owner password files must contain distinct values")
+        user_text = bytes(user_password).decode("utf-8")
+        owner_text = bytes(owner_password).decode("utf-8")
+        secret_values = (user_text, owner_text)
+        with tempfile.TemporaryDirectory(prefix=f".{destination.name}.qpdf-encrypt-", dir=destination.parent) as temporary:
+            temporary_root = Path(temporary)
+            temporary_root.chmod(0o700)
+            snapshot = temporary_root / "source.pdf"
+            candidate = temporary_root / "candidate.pdf"
+            encryption_arguments = write_private_argument_file(
+                temporary_root,
+                "qpdf-encrypt.args",
+                [
+                    "--encrypt",
+                    f"--user-password={user_text}",
+                    f"--owner-password={owner_text}",
+                    "--bits=256",
+                    "--",
+                ],
+            )
+            user_open_arguments = write_private_argument_file(
+                temporary_root,
+                "qpdf-open-user.args",
+                [f"--password={user_text}"],
+            )
+            owner_open_arguments = write_private_argument_file(
+                temporary_root,
+                "qpdf-open-owner.args",
+                [f"--password={owner_text}"],
+            )
+            shutil.copyfile(source, snapshot)
+            with snapshot.open("rb+") as stream:
+                os.fsync(stream.fileno())
+            if sha256(snapshot) != expected:
+                raise ProviderError("transaction snapshot does not match the inspected source SHA-256")
+            write = run_qpdf(
+                executable,
+                [f"@{encryption_arguments}", str(snapshot), str(candidate)],
+                timeout_seconds=args.timeout_seconds,
+            )
+            write_lines, write_text = bounded_check_output(write, redactions=secret_values)
+            write_text = write_text.replace(str(snapshot), str(source)).replace(str(candidate), str(destination))
+            write_lines = [
+                line.replace(str(snapshot), str(source)).replace(str(candidate), str(destination))
+                for line in write_lines
+            ]
+            if write.returncode not in {0, 3} or not candidate.is_file():
+                raise ProviderError(f"qpdf AES-256 encryption failed (exit {write.returncode}): {write_text[-2000:]}")
+            with candidate.open("rb+") as stream:
+                os.fsync(stream.fileno())
+            if source_prefix_retained(snapshot, candidate):
+                raise ProviderError("qpdf AES-256 output retained the complete unencrypted source byte prefix")
+            after = inspect_pdf(
+                candidate,
+                executable=executable,
+                version=version,
+                expected_sha256=None,
+                max_json_bytes=args.max_json_bytes,
+                timeout_seconds=args.timeout_seconds,
+                display_path=destination,
+                private_input_arguments=[f"@{user_open_arguments}"],
+                redactions=secret_values,
+            )
+            owner_after = inspect_pdf(
+                candidate,
+                executable=executable,
+                version=version,
+                expected_sha256=after["source"]["sha256"],
+                max_json_bytes=args.max_json_bytes,
+                timeout_seconds=args.timeout_seconds,
+                display_path=destination,
+                private_input_arguments=[f"@{owner_open_arguments}"],
+                redactions=secret_values,
+            )
+            if after["check"]["status"] != "clean":
+                raise ProviderError("qpdf AES-256 output still contains structural warnings")
+            if owner_after["check"]["status"] != "clean":
+                raise ProviderError("qpdf AES-256 output still contains structural warnings under owner authorization")
+            if not after["structure"]["encrypted"] or after["structure"]["encryption"]["bits"] != 256:
+                raise ProviderError("qpdf did not produce an inspectable AES-256 encrypted output")
+            if not after["structure"]["encryption"]["userPasswordMatched"]:
+                raise ProviderError("qpdf encrypted output could not be reopened with the supplied user password")
+            if not owner_after["structure"]["encryption"]["ownerPasswordMatched"]:
+                raise ProviderError("qpdf encrypted output could not be reopened with the supplied owner password")
+            for key in ("pageCount", "attachmentCount", "formFieldCount", "annotationCount", "outlineCount", "tagged"):
+                if before["structure"][key] != after["structure"][key]:
+                    raise ProviderError(f"qpdf encryption changed {key}: {before['structure'][key]} -> {after['structure'][key]}")
+            if sha256(source) != expected:
+                raise ProviderError("source PDF changed during qpdf encryption")
+            output_hash = sha256(candidate)
+            output_bytes = candidate.stat().st_size
+            publish_new_file(candidate, destination)
+    finally:
+        erase_bytes(user_password)
+        erase_bytes(owner_password)
+
+    return {
+        "schema": SCHEMA_ENCRYPT,
+        "ok": True,
+        "provider": {"name": "qpdf", "version": version, "executable": str(executable)},
+        "silentFallback": False,
+        "execution": {"processIsolation": PROCESS_ISOLATION, "callerIsolationRequired": True},
+        "operation": "qpdf-encrypt-aes-256",
+        "savePolicy": "rewrite",
+        "source": before["source"],
+        "output": {"path": str(destination), "bytes": output_bytes, "sha256": output_hash},
+        "sourceProtected": sha256(source) == expected,
+        "transaction": {
+            "sourceSnapshot": True,
+            "sourcePrefixRetained": False,
+            "atomicDistinctOutput": True,
+            "outputReplaced": False,
+        },
+        "encryption": {
+            "algorithm": "AES-256",
+            "qpdfMethod": after["structure"]["encryption"]["method"],
+            "keyBits": after["structure"]["encryption"]["bits"],
+            "passwordChannel": "caller-owned-restricted-files-to-private-qpdf-argument-files",
+            "credentialVerification": {
+                "userPasswordMatched": after["structure"]["encryption"]["userPasswordMatched"],
+                "ownerPasswordMatched": owner_after["structure"]["encryption"]["ownerPasswordMatched"],
+            },
+            "permissionProfile": "qpdf-default; PDF viewer enforcement is advisory",
+        },
+        "signaturePolicyBefore": signature,
+        "signaturePolicyAfter": after["signaturePolicy"],
+        "signatureInvalidated": bool(signature["hasSignatureEvidence"] and args.invalidate_signatures),
+        "checkBefore": before["check"],
+        "checkAfter": after["check"],
+        "structureBefore": before["structure"],
+        "structureAfter": after["structure"],
+        "qpdfWrite": {"exitCode": write.returncode, "lines": write_lines},
+        "requiredNextGates": [
+            "review the transaction's authorized qpdf checkAfter evidence",
+            "authorized secure-viewer opening",
+            "independent visual review through a password-safe renderer",
+        ],
+    }
+
+
 def positive_int(value: str) -> int:
     parsed = int(value)
     if parsed <= 0:
@@ -620,6 +932,18 @@ def build_parser() -> argparse.ArgumentParser:
     rewrite.add_argument("--expected-sha256", required=True)
     rewrite.add_argument("--invalidate-signatures", action="store_true")
     add_limits(rewrite)
+
+    encrypt = subparsers.add_parser(
+        "encrypt",
+        help="create one AES-256 encrypted copy from an unencrypted source without exposing passwords in argv",
+    )
+    encrypt.add_argument("input")
+    encrypt.add_argument("output")
+    encrypt.add_argument("--expected-sha256", required=True)
+    encrypt.add_argument("--user-password-file", required=True)
+    encrypt.add_argument("--owner-password-file", required=True)
+    encrypt.add_argument("--invalidate-signatures", action="store_true")
+    add_limits(encrypt)
     return parser
 
 
@@ -650,6 +974,8 @@ def main() -> int:
                 max_json_bytes=args.max_json_bytes,
                 timeout_seconds=args.timeout_seconds,
             )
+        elif args.command == "encrypt":
+            result = encrypt_pdf(args)
         else:
             result = rewrite_pdf(args)
         print(json.dumps(result, indent=2, sort_keys=True))

@@ -205,6 +205,14 @@ export function validatePdfProviderCatalog(catalog) {
     }
     if (provider.kind === "python-module" && !nonEmptyString(provider.module)) throw catalogError(`python provider ${providerId} is missing module.`);
     if (provider.kind === "command" && (!Array.isArray(provider.commands) || provider.commands.some((command) => !nonEmptyString(command)))) throw catalogError(`command provider ${providerId} is missing commands.`);
+    if (provider.taskMinimumVersions !== undefined) {
+      if (!isPlainObject(provider.taskMinimumVersions)) throw catalogError(`provider ${providerId}.taskMinimumVersions must be an object.`);
+      for (const [taskId, version] of Object.entries(provider.taskMinimumVersions)) {
+        if (!provider.taskIds.includes(taskId) || !/^\d+\.\d+\.\d+$/.test(version)) {
+          throw catalogError(`provider ${providerId}.taskMinimumVersions contains an invalid task or version.`);
+        }
+      }
+    }
     assertManagedRuntime(provider, pack, providerId);
   }
 

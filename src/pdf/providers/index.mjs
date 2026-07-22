@@ -135,12 +135,15 @@ function packArtifactForPlatform(pack, platform) {
   return pack.artifacts.find((artifact) => artifact.platform === platform);
 }
 
-function runtimeRequirement(provider, packIds) {
+function runtimeRequirement(provider, packIds, taskId = undefined) {
   return {
     providerPackId: provider.packId,
     requiredPackIds: [...packIds],
     managedRuntime: provider.managedRuntime ? clonePdfProviderValue(provider.managedRuntime) : null,
     systemOnlyEnvironment: provider.environment || null,
+    minimumMajor: provider.minimumMajor ?? null,
+    minimumVersion: provider.minimumVersion ?? null,
+    taskMinimumVersion: taskId ? provider.taskMinimumVersions?.[taskId] ?? null : null,
   };
 }
 
@@ -152,7 +155,7 @@ function policyAllowsProvider(providerId, provider, packIds, policy) {
   return policy.installPolicy === "system-only";
 }
 
-function buildInstallPlan(providerId, provider, task, policy, requestedLanguages) {
+function buildInstallPlan(providerId, provider, task, policy, requestedLanguages, taskId = undefined) {
   const platform = currentPdfProviderPlatform();
   const { packIds, missingLanguages } = packIdsFor(provider, task, requestedLanguages);
   const packs = packIds.map((packId) => {
@@ -210,7 +213,7 @@ function buildInstallPlan(providerId, provider, task, policy, requestedLanguages
     downloadBytes,
     unpackedBytes,
     missingLanguages,
-    runtime: runtimeRequirement(provider, packIds),
+    runtime: runtimeRequirement(provider, packIds, taskId),
     requiresExplicitInstallPolicy: !allBuiltIn,
   };
 }
@@ -244,7 +247,7 @@ async function commandVersion(executable, requireVersionOutput) {
   return requireVersionOutput ? undefined : executable;
 }
 
-async function probeCommand(provider, commandPaths = undefined) {
+async function probeCommand(provider, commandPaths = undefined, taskId = undefined) {
   const commands = {};
   for (const command of provider.commands) {
     const executable = commandPaths?.[command] || executableFromPath(command, provider.environment);
@@ -254,8 +257,12 @@ async function probeCommand(provider, commandPaths = undefined) {
   const entries = Object.values(commands);
   let available = entries.length > 0 && entries.every((entry) => entry.executable && entry.version);
   if (available && provider.minimumMajor !== undefined) available = entries.every((entry) => (versionParts(entry.version)?.[0] || 0) >= provider.minimumMajor);
-  if (available && (provider.minimumVersion || provider.maximumVersionExclusive)) available = entries.every((entry) => versionInRange(entry.version, provider));
-  return { available, evidence: { commands } };
+  const taskMinimumVersion = taskId ? provider.taskMinimumVersions?.[taskId] : undefined;
+  const versionRequirement = taskMinimumVersion ? { ...provider, minimumVersion: taskMinimumVersion } : provider;
+  if (available && (versionRequirement.minimumVersion || versionRequirement.maximumVersionExclusive)) {
+    available = entries.every((entry) => versionInRange(entry.version, versionRequirement));
+  }
+  return { available, evidence: { commands, ...(taskMinimumVersion ? { taskMinimumVersion } : {}) } };
 }
 
 function pythonExecutable(policy, explicitPath = undefined) {
@@ -322,10 +329,10 @@ function probeNodePackage(provider) {
   }
 }
 
-async function probeLocalRuntime(provider, policy, runtime = undefined) {
+async function probeLocalRuntime(provider, policy, runtime = undefined, taskId = undefined) {
   if (provider.kind === "core") return { available: true, evidence: { runtime: "open-office-artifact-tool" } };
   if (provider.kind === "node-package") return probeNodePackage(provider);
-  if (provider.kind === "command") return probeCommand(provider, runtime?.commandPaths);
+  if (provider.kind === "command") return probeCommand(provider, runtime?.commandPaths, taskId);
   if (provider.kind === "python-module") return probePythonModule(provider, policy, runtime?.pythonPath);
   return { available: false, evidence: { reason: `unsupported probe kind ${provider.kind}` } };
 }
@@ -367,7 +374,7 @@ export async function probePdfProvider(providerOrRequest, options = undefined) {
   const policyContext = await resolvePdfCapabilityPolicy(request);
   const task = request.task ? pdfTaskById(request.task) : { ocrLanguages: false };
   const languages = normalizeStringArray(request.languages ?? request.ocrLanguages, "languages");
-  const installPlan = buildInstallPlan(providerId, provider, task, policyContext.policy, languages);
+  const installPlan = buildInstallPlan(providerId, provider, task, policyContext.policy, languages, request.task);
   const base = providerResultBase(providerId, provider, policyContext, installPlan);
   const packIds = installPlan.packIds;
   const allBuiltin = installPlan.packs.every((pack) => pack.state === "built-in");
@@ -394,7 +401,7 @@ export async function probePdfProvider(providerOrRequest, options = undefined) {
     return { ...base, status: "blocked", reason: reason("pack-license-acknowledgement-required", "A required capability-pack license acknowledgement is missing.", { packId: packIds.find((packId) => pdfPackById(packId) === unacceptedPack) }), runtime: null };
   }
   if (allBuiltin) {
-    const runtime = await probeLocalRuntime(provider, policyContext.policy);
+    const runtime = await probeLocalRuntime(provider, policyContext.policy, undefined, request.task);
     return runtime.available
       ? { ...base, status: "ready", reason: reason("built-in-ready", "The required built-in runtime is present."), runtime }
       : { ...base, status: "blocked", reason: reason("built-in-runtime-unavailable", "The required bundled runtime is not resolvable."), runtime };
@@ -403,7 +410,7 @@ export async function probePdfProvider(providerOrRequest, options = undefined) {
     return { ...base, status: "blocked", reason: reason("install-policy-disabled", "The default disabled policy does not activate external providers."), runtime: null };
   }
   if (policyContext.policy.installPolicy === "system-only") {
-    const runtime = await probeLocalRuntime(provider, policyContext.policy);
+    const runtime = await probeLocalRuntime(provider, policyContext.policy, undefined, request.task);
     return runtime.available
       ? { ...base, status: "ready", reason: reason("system-provider-ready", "The explicitly selected system provider meets its pinned range."), runtime }
       : { ...base, status: "blocked", reason: reason("system-provider-unavailable", "The selected system provider is unavailable or outside its pinned version range."), runtime };
@@ -415,7 +422,7 @@ export async function probePdfProvider(providerOrRequest, options = undefined) {
   if (!managed.ready) {
     return { ...base, status: "installable", reason: reason("managed-install-required", "Pinned artifacts are allowed but are not yet installed in the private project cache.", { missingPackId: managed.packId, cacheReason: managed.reason }), runtime: null };
   }
-  const runtime = await probeLocalRuntime(provider, policyContext.policy, managed.runtime);
+  const runtime = await probeLocalRuntime(provider, policyContext.policy, managed.runtime, request.task);
   return runtime.available
     ? { ...base, status: "ready", reason: reason("managed-provider-ready", "A verified private managed runtime meets its pinned range."), runtime: { ...runtime, managed: managed.runtime, packs: managed.packIds } }
     : { ...base, status: "blocked", reason: reason("managed-runtime-invalid", "The verified pack cache does not provide a usable provider runtime."), runtime: { ...runtime, managed: managed.runtime, packs: managed.packIds } };
@@ -467,7 +474,7 @@ export async function resolvePdfCapability(request = {}) {
   const requestedLanguages = normalizeStringArray(request.languages ?? request.ocrLanguages, "ocrLanguages");
   const declaredCredentials = normalizeStringArray(request.credentials, "credentials");
   const requiredCredentials = task.credentials || [];
-  const installPlan = buildInstallPlan(providerId, provider, task, policyContext.policy, requestedLanguages);
+  const installPlan = buildInstallPlan(providerId, provider, task, policyContext.policy, requestedLanguages, request.task);
   const consents = {
     mutation: { required: Boolean(task.mutation), authorized: request.mutationAuthorized === true },
     invalidateSignatures: { required: Boolean(task.invalidateSignatures), authorized: request.invalidateSignaturesAuthorized === true },

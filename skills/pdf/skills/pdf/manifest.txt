@@ -9,6 +9,7 @@ tasks/accessibility.md
 tasks/render_review.md
 tasks/provider_setup.md
 tasks/repair_linearize.md
+tasks/encryption.md
 tasks/ocr.md
 tasks/structure_clean.md
 manifest.txt

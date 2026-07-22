@@ -260,6 +260,7 @@ for (const required of [
   "skills/pdf/skills/pdf/tasks/render_review.md",
   "skills/pdf/skills/pdf/tasks/provider_setup.md",
   "skills/pdf/skills/pdf/tasks/repair_linearize.md",
+  "skills/pdf/skills/pdf/tasks/encryption.md",
   "skills/pdf/skills/pdf/tasks/ocr.md",
   "skills/pdf/skills/pdf/tasks/structure_clean.md",
 ]) {

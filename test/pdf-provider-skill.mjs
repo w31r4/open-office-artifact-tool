@@ -221,6 +221,7 @@ const requiredFiles = [
   "tasks/render_review.md",
   "tasks/provider_setup.md",
   "tasks/repair_linearize.md",
+  "tasks/encryption.md",
   "tasks/ocr.md",
   "tasks/structure_clean.md",
   "scripts/mupdf.mjs",
@@ -315,6 +316,14 @@ assert.match(providerSetupText, /symlink\/hardlink/);
 assert.match(providerSetupText, /enterprise mirror.*identical hash-pinned bytes/is);
 assert.match(providerSetupText, /Current catalog state.*not yet\s+published/is);
 assert.doesNotMatch(providerSetupText, /brew install|apt-get|uv pip install/i);
+const encryptionTaskText = await fs.readFile(path.join(skillRoot, "tasks", "encryption.md"), "utf8");
+assert.match(encryptionTaskText, /qpdf `>=11\.7\.0`/);
+assert.match(encryptionTaskText, /task: "encrypt"[\s\S]*caller-owned-user-and-owner-password-files/);
+assert.match(encryptionTaskText, /AES-256[\s\S]*unencrypted source/is);
+assert.match(encryptionTaskText, /regular, non-symlink[\s\S]*0600[\s\S]*4096 bytes/is);
+assert.match(encryptionTaskText, /never appear in qpdf argv, environment variables, JSON audit output/is);
+assert.match(encryptionTaskText, /does not decrypt|never opens, decrypts/is);
+assert.match(encryptionTaskText, /permission editor/i);
 const providerMatrixText = await fs.readFile(path.join(skillRoot, "references", "PROVIDER_MATRIX.md"), "utf8");
 assert.match(providerMatrixText, /does \*\*not\*\* duplicate.*versions.*hashes.*URLs/is);
 assert.doesNotMatch(providerMatrixText, /1\.28\.0|1\.27\.2|10\.10\.x|17\.8\.x/i);

@@ -26,6 +26,18 @@ Dynamic XFA, complex Acrobat JavaScript, 3D annotations, and RichMedia require a
 
 An incremental update can retain byte-identical data covered by an earlier signature. It cannot make the earlier signer endorse arbitrary new edits. The MuPDF.js primitive does not validate cryptographic trust, DocMDP, FieldMDP, or field locks, so it rejects signed-PDF incremental editing. The shipped pyHanko signer can add one source-bound local-PKCS#12 signature only after an exact inventory and policy choice; it preserves earlier bytes and revalidates all signatures, but does not create TSA/LTV evidence or assert that old signers endorse the appended revision. A deliberate rewrite requires explicit signature invalidation and a new version/signing decision.
 
+## Encryption and reader permissions
+
+PDF encryption can make a delivered copy require a password in conforming
+readers, but reader permission flags are advisory and are not authorization,
+rights management, or a substitute for controlling file distribution. The
+shipped qpdf primitive creates only one AES-256 copy from an inspected
+unencrypted source using distinct caller-owned password files. It does not open
+or decrypt encrypted input, bypass an owner password, rotate credentials,
+customize permissions, preserve an existing signature, or expose password
+values to the public resolver/audit. Those remain separate explicit security
+workflows or fail closed.
+
 ## License boundary
 
 The project and required `mupdf` npm dependency are GNU AGPL-3.0-or-later. Normal npm installation resolves MuPDF.js; its WASM runtime is lazy and no lifecycle installer is used. Optional providers are selected only through the capability resolver: an already-provisioned `system-only` runtime or an authorized, hash-pinned managed pack. The resolver never uses a package manager, global Python installation, lifecycle hook, or unpinned URL. Missing capability or provider evidence is an explicit error, never a reason to fall back to lossy model reconstruction.

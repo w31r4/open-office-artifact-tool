@@ -108,6 +108,7 @@ assert.deepEqual(PDF_PROVIDER_CATALOG.releasePolicy.managedPlatforms, ["darwin-a
 assert.equal(PdfProviders.resolve, resolvePdfCapability);
 assert.deepEqual(Object.keys(PdfProviders).sort(), ["ensure", "probe", "resolve"]);
 assert.equal(PDF_PROVIDER_CATALOG.providers.qpdf.packId, "qpdf");
+assert.equal(PDF_PROVIDER_CATALOG.providers.qpdf.taskMinimumVersions.encrypt, "11.7.0");
 assert.equal(PDF_PROVIDER_CATALOG.packs.qpdf.state, "unpublished");
 assert.ok(!("managedPack" in PDF_PROVIDER_CATALOG.providers.qpdf), "pack metadata must have one canonical top-level home");
 
@@ -130,6 +131,9 @@ invalidPlatformCatalog.packs.qpdf.releaseEvidence = {
   verifiedPlatforms: ["win32-x64"],
 };
 assert.throws(() => validatePdfProviderCatalog(invalidPlatformCatalog), /unsupported managed platform|outside the declared managed platforms/);
+const invalidTaskMinimumCatalog = structuredClone(PDF_PROVIDER_CATALOG);
+invalidTaskMinimumCatalog.providers.qpdf.taskMinimumVersions = { unknown: "11.7" };
+assert.throws(() => validatePdfProviderCatalog(invalidTaskMinimumCatalog), /taskMinimumVersions contains an invalid task or version/);
 
 const builtIn = await PdfProviders.resolve({ task: "inspect", savePolicy: "read-only", inspection: inspectedPdf });
 assert.equal(builtIn.status, "ready");
@@ -189,6 +193,45 @@ assert.equal(managedQpdf.status, "blocked");
 assert.equal(managedQpdf.reason.code, "managed-artifact-unpublished");
 assert.equal(managedQpdf.installPlan.performsDownload, false);
 await assert.rejects(() => PdfProviders.ensure({ resolution: managedQpdf }), /installable resolution/);
+
+const encryptWithoutCredentialDeclaration = await PdfProviders.resolve({
+  task: "encrypt",
+  provider: "qpdf",
+  savePolicy: "rewrite",
+  inspection: inspectedPdf,
+  mutationAuthorized: true,
+  invalidateSignaturesAuthorized: true,
+  policy: {
+    installPolicy: "managed",
+    allowedProviders: ["qpdf"],
+    allowedPacks: ["qpdf"],
+    maxDownloadBytes: 100_000_000,
+    maxUnpackedBytes: 100_000_000,
+  },
+});
+assert.equal(encryptWithoutCredentialDeclaration.status, "blocked");
+assert.equal(encryptWithoutCredentialDeclaration.reason.code, "credential-declaration-required");
+assert.deepEqual(encryptWithoutCredentialDeclaration.consents.credentials.required, ["caller-owned-user-and-owner-password-files"]);
+const managedEncrypt = await PdfProviders.resolve({
+  task: "encrypt",
+  provider: "qpdf",
+  savePolicy: "rewrite",
+  inspection: inspectedPdf,
+  mutationAuthorized: true,
+  invalidateSignaturesAuthorized: true,
+  credentials: ["caller-owned-user-and-owner-password-files"],
+  policy: {
+    installPolicy: "managed",
+    allowedProviders: ["qpdf"],
+    allowedPacks: ["qpdf"],
+    maxDownloadBytes: 100_000_000,
+    maxUnpackedBytes: 100_000_000,
+  },
+});
+assert.equal(managedEncrypt.status, "blocked");
+assert.equal(managedEncrypt.reason.code, "managed-artifact-unpublished");
+assert.equal(managedEncrypt.installPlan.runtime.taskMinimumVersion, "11.7.0");
+assert.deepEqual(managedEncrypt.consents.credentials.declared, ["caller-owned-user-and-owner-password-files"]);
 
 const systemOnlyQpdf = await PdfProviders.resolve({
   task: "repair",
@@ -250,6 +293,31 @@ assert.equal(rootImport.stdout, "providers-import-ok");
 
 const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-pdf-providers-"));
 try {
+  const oldQpdf = path.join(tempRoot, "old-qpdf.mjs");
+  await fs.writeFile(oldQpdf, "#!/usr/bin/env node\nconsole.log('qpdf version 11.6.3');\n", "utf8");
+  await fs.chmod(oldQpdf, 0o755);
+  const previousQpdf = process.env.OPEN_OFFICE_PDF_QPDF;
+  process.env.OPEN_OFFICE_PDF_QPDF = oldQpdf;
+  try {
+    const oldRepairProbe = await PdfProviders.probe({
+      provider: "qpdf",
+      task: "repair",
+      policy: { installPolicy: "system-only", allowedProviders: ["qpdf"] },
+    });
+    assert.equal(oldRepairProbe.status, "ready", "qpdf 11.6 remains valid for repair");
+    const oldEncryptProbe = await PdfProviders.probe({
+      provider: "qpdf",
+      task: "encrypt",
+      policy: { installPolicy: "system-only", allowedProviders: ["qpdf"] },
+    });
+    assert.equal(oldEncryptProbe.status, "blocked");
+    assert.equal(oldEncryptProbe.reason.code, "system-provider-unavailable");
+    assert.equal(oldEncryptProbe.runtime.evidence.taskMinimumVersion, "11.7.0");
+  } finally {
+    if (previousQpdf === undefined) delete process.env.OPEN_OFFICE_PDF_QPDF;
+    else process.env.OPEN_OFFICE_PDF_QPDF = previousQpdf;
+  }
+
   const policyDirectory = path.join(tempRoot, ".open-office-artifact-tool");
   await fs.mkdir(policyDirectory);
   const policyPath = path.join(policyDirectory, "pdf-providers.json");

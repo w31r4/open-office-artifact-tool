@@ -20,8 +20,9 @@ The CLI rejects direct or symlink-alias source overwrite and writes output atomi
 
 Resolve qpdf first through [provider setup](../tasks/provider_setup.md): use a
 ready managed pack when published or an explicit `system-only` runtime. The
-shipped wrapper exposes only bounded inspect, recovery rewrite, and linearize
-operations; it does not pass arbitrary flags through to the provider:
+shipped wrapper exposes bounded inspect, recovery rewrite, linearize, and the
+separate AES-256 delivery-copy operation below; it does not pass arbitrary
+flags through to the provider:
 
 ```bash
 PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
@@ -42,6 +43,37 @@ with warning status, but the promoted result must re-inspect cleanly and preserv
 page/form/attachment/outline counts. Use `--mode linearize` for an explicit linearized
 rewrite. Signature evidence requires `--invalidate-signatures` after pyHanko and
 DocMDP review. This route is never sanitize; run Poppler over every final page.
+
+## qpdf AES-256 delivery copy
+
+Use this only after resolving catalog task `encrypt` and inspecting an
+unencrypted source. The two secret files must be caller-owned regular
+nonsymlinks with one distinct non-empty UTF-8 line and POSIX mode `0600` or
+stricter (or equivalent Windows ACLs). Their contents never belong in these
+commands, environment variables, or the audit:
+
+```bash
+PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"
+"$PYTHON_BIN" scripts/pdf_provider.py plan \
+  --task encrypt --provider qpdf --strategy rewrite \
+  --input input.pdf --output outputs/protected.pdf \
+  --invalidate-signatures \
+  --credential-declaration caller-owned-user-and-owner-password-files \
+  --require-provider
+"$PYTHON_BIN" scripts/qpdf_provider.py encrypt \
+  input.pdf outputs/protected.pdf \
+  --expected-sha256 '<sha256-from-qpdf-inspect>' \
+  --user-password-file /secure/channel/pdf-user-password.txt \
+  --owner-password-file /secure/channel/pdf-owner-password.txt \
+  --invalidate-signatures \
+  > tmp/pdfs/qpdf-encrypt.json
+```
+
+The output is a distinct qpdf 11.7+ AES-256 rewrite with default permission
+settings, not a decryption, re-encryption, permission-edit, access-control, or
+signature-preservation workflow. Review the report's authorized `checkAfter`
+evidence, then open and render through a separately approved password-safe
+channel. See [`tasks/encryption.md`](../tasks/encryption.md).
 
 ## pikepdf active and auxiliary structure cleanup
 

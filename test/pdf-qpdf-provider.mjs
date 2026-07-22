@@ -96,9 +96,11 @@ async function waitForGone(pid, timeoutMs = 4_000) {
 const manifest = (await fs.readFile(path.join(skillRoot, "manifest.txt"), "utf8")).split(/\r?\n/).filter(Boolean);
 assert.ok(manifest.includes("scripts/qpdf_provider.py"));
 assert.ok(manifest.includes("tasks/repair_linearize.md"));
+assert.ok(manifest.includes("tasks/encryption.md"));
 const skillText = await fs.readFile(path.join(skillRoot, "SKILL.md"), "utf8");
 assert.match(skillText, /qpdf_provider\.py/);
 assert.match(skillText, /source SHA-256.*repair.*linearize/is);
+assert.match(skillText, /AES-256.*password files/is);
 
 const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-qpdf-provider-"));
 try {
@@ -110,37 +112,44 @@ try {
     "#!/usr/bin/env node",
     "import fs from 'node:fs';",
     "import { spawn } from 'node:child_process';",
-    "const args = process.argv.slice(2);",
+    "const rawArgs = process.argv.slice(2);",
+    "if (process.env.FAKE_QPDF_ARGV_LOG) fs.appendFileSync(process.env.FAKE_QPDF_ARGV_LOG, `${JSON.stringify(rawArgs)}\\n`);",
+    "const args = rawArgs.flatMap((arg) => arg.startsWith('@') ? fs.readFileSync(arg.slice(1), 'utf8').split(/\\r?\\n/).filter(Boolean) : [arg]);",
     "const spawnChild = () => { if (process.env.FAKE_QPDF_CHILD_PID) { const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' }); fs.writeFileSync(process.env.FAKE_QPDF_CHILD_PID, String(child.pid)); } };",
     "if (args.includes('--version')) { console.log(`qpdf version ${process.env.FAKE_QPDF_VERSION || '12.3.2'}`); process.exit(0); }",
     "const input = args.at(-1);",
+    "const encrypted = Boolean(input && fs.existsSync(input) && fs.readFileSync(input).includes('FAKE_ENCRYPTED=true'));",
+    "const suppliedPassword = args.find((arg) => arg.startsWith('--password='))?.slice('--password='.length) || '';",
     "if (args.includes('--check')) {",
+    "  if (encrypted && !args.some((arg) => arg.startsWith('--password='))) { console.error('qpdf: invalid password'); process.exit(2); }",
     "  if (process.env.FAKE_QPDF_HANG_CHECK === '1') {",
     "    spawnChild();",
     "    setInterval(() => {}, 1000);",
     "  } else {",
     "  console.log(`checking ${input}`);",
     "  console.log('PDF Version: 1.7');",
-    "  console.log('File is not encrypted');",
+    "  console.log(encrypted ? 'File is encrypted' : 'File is not encrypted');",
     "  console.log('File is not linearized');",
     "  console.log('No syntax or stream encoding errors found; the file may still contain');",
     "  console.log('errors that qpdf cannot detect');",
     "  process.exit(0);",
     "  }",
     "} else if (args.includes('--json=2')) {",
+    "  if (encrypted && !args.some((arg) => arg.startsWith('--password='))) { console.error('qpdf: invalid password'); process.exit(2); }",
     "  if (process.env.FAKE_QPDF_CHILD_ON_JSON === '1') spawnChild();",
     "  if (process.env.FAKE_QPDF_BAD_JSON === '1') { console.log('{}'); process.exit(0); }",
-    "  console.log(JSON.stringify({version:2,parameters:{},pages:[{object:'1 0 R',pageposfrom1:1,contents:[],images:[],outlines:[],label:null}],outlines:[],acroform:{fields:[],hasacroform:false,needappearances:false},attachments:{},encrypt:{encrypted:false,ownerpasswordmatched:false,userpasswordmatched:false,parameters:{method:'none',bits:0}},qpdf:[{jsonversion:2,pdfversion:'1.7'},{}]}));",
+    "  console.log(JSON.stringify({version:2,parameters:{},pages:[{object:'1 0 R',pageposfrom1:1,contents:[],images:[],outlines:[],label:null}],outlines:[],acroform:{fields:[],hasacroform:false,needappearances:false},attachments:{},encrypt:{encrypted,ownerpasswordmatched:encrypted && /owner/i.test(suppliedPassword),userpasswordmatched:encrypted && Boolean(suppliedPassword) && !/owner/i.test(suppliedPassword),parameters:{method:encrypted?'AESv3':'none',bits:encrypted?256:0}},qpdf:[{jsonversion:2,pdfversion:'1.7'},{}]}));",
     "  process.exit(0);",
     "} else {",
-    "const positional = args.filter((arg) => !arg.startsWith('--'));",
-    "if (positional.length === 2) { fs.copyFileSync(positional[0], positional[1]); process.exit(0); }",
+    "const positional = args.filter((arg) => !arg.startsWith('--') && arg !== '--');",
+    "if (positional.length === 2) { if (args.includes('--encrypt')) fs.writeFileSync(positional[1], '%PDF-1.7\\n%FAKE_ENCRYPTED=true\\n'); else fs.copyFileSync(positional[0], positional[1]); process.exit(0); }",
     "console.error('unsupported fake qpdf invocation', args);",
     "process.exit(2);",
     "}",
   ].join("\n"), "utf8");
   await fs.chmod(fakeQpdf, 0o755);
-  const fakeEnv = { OPEN_OFFICE_PDF_QPDF: fakeQpdf };
+  const fakeArgvLog = path.join(tempRoot, "fake-qpdf-argv.jsonl");
+  const fakeEnv = { OPEN_OFFICE_PDF_QPDF: fakeQpdf, FAKE_QPDF_ARGV_LOG: fakeArgvLog };
 
   const fakeProbe = jsonResult(run(python, [qpdfProvider, "probe"], { env: fakeEnv, status: 0 }));
   assert.equal(fakeProbe.provider, "qpdf");
@@ -175,6 +184,99 @@ try {
   assert.equal(fakeRewrite.transaction.atomicDistinctOutput, true);
   assert.deepEqual(await fs.readFile(fakeOutput), dummyBytes);
 
+  const fakeUserPassword = path.join(tempRoot, "fake-user-password.txt");
+  const fakeOwnerPassword = path.join(tempRoot, "fake-owner-password.txt");
+  await fs.writeFile(fakeUserPassword, "correct horse battery staple\n", "utf8");
+  await fs.writeFile(fakeOwnerPassword, "owner secret only\n", "utf8");
+  await fs.chmod(fakeUserPassword, 0o600);
+  await fs.chmod(fakeOwnerPassword, 0o600);
+  const fakeEncrypted = path.join(tempRoot, "fake-encrypted.pdf");
+  const fakeEncrypt = jsonResult(run(python, [
+    qpdfProvider, "encrypt", dummyInput, fakeEncrypted,
+    "--expected-sha256", fakeInspect.source.sha256,
+    "--user-password-file", fakeUserPassword,
+    "--owner-password-file", fakeOwnerPassword,
+  ], { env: fakeEnv, status: 0 }));
+  assert.equal(fakeEncrypt.schema, "open-office-artifact-tool.qpdf-encrypt.v1");
+  assert.equal(fakeEncrypt.operation, "qpdf-encrypt-aes-256");
+  assert.equal(fakeEncrypt.encryption.algorithm, "AES-256");
+  assert.equal(fakeEncrypt.encryption.keyBits, 256);
+  assert.equal(fakeEncrypt.structureBefore.encrypted, false);
+  assert.equal(fakeEncrypt.structureAfter.encrypted, true);
+  assert.equal(fakeEncrypt.structureAfter.encryption.userPasswordMatched, true);
+  assert.equal(fakeEncrypt.encryption.credentialVerification.userPasswordMatched, true);
+  assert.equal(fakeEncrypt.encryption.credentialVerification.ownerPasswordMatched, true);
+  assert.equal(fakeEncrypt.transaction.sourcePrefixRetained, false);
+  assert.equal(fakeEncrypt.sourceProtected, true);
+  assert.doesNotMatch(JSON.stringify(fakeEncrypt), /correct horse battery staple|owner secret only/);
+  assert.deepEqual(await fs.readFile(dummyInput), dummyBytes, "encryption must not mutate source bytes");
+  const encryptedWithoutPassword = run(python, [qpdfProvider, "inspect", fakeEncrypted], { env: fakeEnv, status: 2 });
+  assert.match(encryptedWithoutPassword.stderr, /could not process the PDF/);
+  assert.doesNotMatch(encryptedWithoutPassword.stderr, /correct horse battery staple|owner secret only/);
+  const fakeArgv = (await fs.readFile(fakeArgvLog, "utf8")).trim().split(/\r?\n/).map((line) => JSON.parse(line));
+  assert.doesNotMatch(JSON.stringify(fakeArgv), /correct horse battery staple|owner secret only/, "qpdf argv must never contain a password");
+  const privateArgumentFiles = fakeArgv.flat().filter((argument) => argument.startsWith("@"));
+  assert.ok(privateArgumentFiles.length >= 3, "encryption and both authorization checks must use private qpdf argument files");
+  for (const argument of privateArgumentFiles) await assert.rejects(fs.access(argument.slice(1)), /ENOENT/);
+
+  const insecurePasswordOutput = path.join(tempRoot, "insecure-password-output.pdf");
+  await fs.chmod(fakeUserPassword, 0o644);
+  const insecurePassword = run(python, [
+    qpdfProvider, "encrypt", dummyInput, insecurePasswordOutput,
+    "--expected-sha256", fakeInspect.source.sha256,
+    "--user-password-file", fakeUserPassword,
+    "--owner-password-file", fakeOwnerPassword,
+  ], { env: fakeEnv, status: 2 });
+  assert.match(insecurePassword.stderr, /must not grant group or world permissions/);
+  assert.doesNotMatch(insecurePassword.stderr, /correct horse battery staple|owner secret only/);
+  await assert.rejects(fs.access(insecurePasswordOutput));
+  await fs.chmod(fakeUserPassword, 0o600);
+  const samePasswordOutput = path.join(tempRoot, "same-password-output.pdf");
+  const samePassword = run(python, [
+    qpdfProvider, "encrypt", dummyInput, samePasswordOutput,
+    "--expected-sha256", fakeInspect.source.sha256,
+    "--user-password-file", fakeUserPassword,
+    "--owner-password-file", fakeUserPassword,
+  ], { env: fakeEnv, status: 2 });
+  assert.match(samePassword.stderr, /distinct values/);
+  assert.doesNotMatch(samePassword.stderr, /correct horse battery staple/);
+  await assert.rejects(fs.access(samePasswordOutput));
+  const linkedPassword = path.join(tempRoot, "linked-user-password.txt");
+  await fs.symlink(fakeUserPassword, linkedPassword);
+  const linkedPasswordResult = run(python, [
+    qpdfProvider, "encrypt", dummyInput, path.join(tempRoot, "linked-password-output.pdf"),
+    "--expected-sha256", fakeInspect.source.sha256,
+    "--user-password-file", linkedPassword,
+    "--owner-password-file", fakeOwnerPassword,
+  ], { env: fakeEnv, status: 2 });
+  assert.match(linkedPasswordResult.stderr, /symbolic link.*will not be followed/);
+  const multilinePassword = path.join(tempRoot, "multiline-user-password.txt");
+  await fs.writeFile(multilinePassword, "first secret\nsecond secret\n", "utf8");
+  await fs.chmod(multilinePassword, 0o600);
+  const multilinePasswordResult = run(python, [
+    qpdfProvider, "encrypt", dummyInput, path.join(tempRoot, "multiline-password-output.pdf"),
+    "--expected-sha256", fakeInspect.source.sha256,
+    "--user-password-file", multilinePassword,
+    "--owner-password-file", fakeOwnerPassword,
+  ], { env: fakeEnv, status: 2 });
+  assert.match(multilinePasswordResult.stderr, /exactly one UTF-8 line/);
+  assert.doesNotMatch(multilinePasswordResult.stderr, /first secret|second secret/);
+  const oldEncryption = run(python, [
+    qpdfProvider, "encrypt", dummyInput, path.join(tempRoot, "old-qpdf-encryption.pdf"),
+    "--expected-sha256", fakeInspect.source.sha256,
+    "--user-password-file", fakeUserPassword,
+    "--owner-password-file", fakeOwnerPassword,
+  ], { env: { ...fakeEnv, FAKE_QPDF_VERSION: "11.6.3" }, status: 2 });
+  assert.match(oldEncryption.stderr, /qpdf 11\.7\.0 or newer/);
+  const oldEncryptionPlan = run(python, [
+    providerRegistry, "plan", "--task", "encrypt", "--provider", "qpdf", "--strategy", "rewrite",
+    "--input", dummyInput, "--output", path.join(tempRoot, "old-qpdf-planned.pdf"),
+    "--invalidate-signatures",
+    "--credential-declaration", "caller-owned-user-and-owner-password-files",
+    "--require-provider",
+  ], { env: { ...fakeEnv, FAKE_QPDF_VERSION: "11.6.3" }, status: 2 });
+  assert.match(oldEncryptionPlan.stderr, /taskMinimumVersion.*11\.7\.0/);
+
   const providerProbe = jsonResult(run(python, [providerRegistry, "check", "--provider", "qpdf", "--require"], { env: fakeEnv, status: 0 }));
   assert.equal(providerProbe.providers[0].available, true);
   assert.equal(providerProbe.providers[0].integration, "shipped-thin-script-external-cli");
@@ -190,6 +292,21 @@ try {
   ], { env: fakeEnv, status: 0 }));
   assert.equal(repairPlan.providerProbe.available, true);
   assert.equal(repairPlan.invalidateSignatures, true);
+  const encryptionPlanRequiresCredential = run(python, [
+    providerRegistry, "plan", "--task", "encrypt", "--provider", "qpdf", "--strategy", "rewrite",
+    "--input", dummyInput, "--output", path.join(tempRoot, "planned-encrypted.pdf"),
+    "--invalidate-signatures", "--require-provider",
+  ], { env: fakeEnv, status: 2 });
+  assert.match(encryptionPlanRequiresCredential.stderr, /credential-declaration.*caller-owned-user-and-owner-password-files/);
+  const encryptionPlan = jsonResult(run(python, [
+    providerRegistry, "plan", "--task", "encrypt", "--provider", "qpdf", "--strategy", "rewrite",
+    "--input", dummyInput, "--output", path.join(tempRoot, "planned-encrypted.pdf"),
+    "--invalidate-signatures",
+    "--credential-declaration", "caller-owned-user-and-owner-password-files",
+    "--require-provider",
+  ], { env: fakeEnv, status: 0 }));
+  assert.deepEqual(encryptionPlan.credentials.required, ["caller-owned-user-and-owner-password-files"]);
+  assert.deepEqual(encryptionPlan.credentials.declared, ["caller-owned-user-and-owner-password-files"]);
   const falseClean = run(python, [
     providerRegistry, "plan", "--task", "structure-clean", "--provider", "qpdf", "--strategy", "rewrite",
     "--input", dummyInput, "--output", plannedOutput, "--invalidate-signatures",
@@ -275,6 +392,38 @@ try {
     assert.equal(realInspect.structure.annotationCount, 1);
     assert.equal(realInspect.signaturePolicy.hasSignatureEvidence, false);
 
+    const realUserPassword = path.join(tempRoot, "real-user-password.txt");
+    const realOwnerPassword = path.join(tempRoot, "real-owner-password.txt");
+    await fs.writeFile(realUserPassword, "qpdf user password 2026\n", "utf8");
+    await fs.writeFile(realOwnerPassword, "qpdf owner password 2026\n", "utf8");
+    await fs.chmod(realUserPassword, 0o600);
+    await fs.chmod(realOwnerPassword, 0o600);
+    const encryptedCopy = path.join(tempRoot, "aes-256-encrypted.pdf");
+    const encryptedCopyResult = jsonResult(run(python, [
+      qpdfProvider, "encrypt", source, encryptedCopy,
+      "--expected-sha256", realInspect.source.sha256,
+      "--user-password-file", realUserPassword,
+      "--owner-password-file", realOwnerPassword,
+    ], { env: { OPEN_OFFICE_PDF_QPDF: "" }, status: 0 }));
+    assert.equal(encryptedCopyResult.schema, "open-office-artifact-tool.qpdf-encrypt.v1");
+    assert.equal(encryptedCopyResult.checkAfter.status, "clean");
+    assert.equal(encryptedCopyResult.structureAfter.encrypted, true);
+    assert.equal(encryptedCopyResult.structureAfter.encryption.bits, 256);
+    assert.equal(encryptedCopyResult.structureAfter.encryption.userPasswordMatched, true);
+    assert.equal(encryptedCopyResult.encryption.credentialVerification.userPasswordMatched, true);
+    assert.equal(encryptedCopyResult.encryption.credentialVerification.ownerPasswordMatched, true);
+    assert.equal(encryptedCopyResult.transaction.sourcePrefixRetained, false);
+    assert.match(encryptedCopyResult.structureAfter.encryption.method || "", /AES/i);
+    assert.equal(encryptedCopyResult.encryption.passwordChannel, "caller-owned-restricted-files-to-private-qpdf-argument-files");
+    assert.doesNotMatch(JSON.stringify(encryptedCopyResult), /qpdf user password 2026|qpdf owner password 2026/);
+    assert.deepEqual(await fs.readFile(source), sourceBytes, "AES-256 encryption must preserve source bytes");
+    const encryptedInspectWithoutPassword = run(python, [qpdfProvider, "inspect", encryptedCopy], {
+      env: { OPEN_OFFICE_PDF_QPDF: "" },
+      status: 2,
+    });
+    assert.match(encryptedInspectWithoutPassword.stderr, /could not process the PDF/);
+    assert.doesNotMatch(encryptedInspectWithoutPassword.stderr, /qpdf user password 2026|qpdf owner password 2026/);
+
     const repaired = path.join(tempRoot, "repaired.pdf");
     const repairedResult = jsonResult(run(python, [
       qpdfProvider, "rewrite", source, repaired,
@@ -346,6 +495,26 @@ try {
     assert.equal(invalidatedResult.signatureInvalidated, true);
     assert.equal(invalidatedResult.signaturePolicyAfter.hasSignatureEvidence, true);
     assert.equal(invalidatedResult.signaturePolicyAfter.trust, "unknown");
+    assert.deepEqual(await fs.readFile(signed), signedBytes);
+
+    const signedEncrypted = path.join(tempRoot, "signed-encrypted.pdf");
+    const signedEncryptRefused = run(python, [
+      qpdfProvider, "encrypt", signed, signedEncrypted,
+      "--expected-sha256", signedInspect.source.sha256,
+      "--user-password-file", realUserPassword,
+      "--owner-password-file", realOwnerPassword,
+    ], { env: { OPEN_OFFICE_PDF_QPDF: "" }, status: 2 });
+    assert.match(signedEncryptRefused.stderr, /invalidate-signatures.*pyHanko\/DocMDP/);
+    await assert.rejects(fs.access(signedEncrypted));
+    const signedEncryptedResult = jsonResult(run(python, [
+      qpdfProvider, "encrypt", signed, signedEncrypted,
+      "--expected-sha256", signedInspect.source.sha256,
+      "--user-password-file", realUserPassword,
+      "--owner-password-file", realOwnerPassword,
+      "--invalidate-signatures",
+    ], { env: { OPEN_OFFICE_PDF_QPDF: "" }, status: 0 }));
+    assert.equal(signedEncryptedResult.signatureInvalidated, true);
+    assert.equal(signedEncryptedResult.structureAfter.encrypted, true);
     assert.deepEqual(await fs.readFile(signed), signedBytes);
 
     if (commandAvailable("pdftoppm")) {

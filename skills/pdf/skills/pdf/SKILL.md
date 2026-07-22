@@ -124,6 +124,7 @@ source of pack versions, hashes, sizes, and installation facts.
 | Attachments, complex forms, merge/reorder/stamp | pypdf | [forms](tasks/forms_annotations.md), [transform](tasks/transform.md) |
 | Strict scrub, residue/OCR redaction, advanced bounded edit | PyMuPDF | [redact](tasks/redact.md) |
 | Repair or linearize | `scripts/qpdf_provider.py` | [repair](tasks/repair_linearize.md) |
+| Create an AES-256 encrypted delivery copy | `scripts/qpdf_provider.py` | [encryption](tasks/encryption.md) |
 | Active/auxiliary structure cleanup | `scripts/pikepdf_provider.py` | [structure cleanup](tasks/structure_clean.md) |
 | Searchable-layer OCR | `scripts/ocrmypdf_provider.py` | [OCR](tasks/ocr.md) |
 | Local PKCS#12 sign or signature validation | `scripts/pyhanko_sign_provider.py`, `scripts/pyhanko_provider.py` | [sign](tasks/sign_verify.md) |
@@ -163,8 +164,12 @@ and [forms and annotations](tasks/forms_annotations.md), not this overview.
 
 ## Specialist safety boundaries
 
-- qpdf receives a source SHA-256 before repair or linearize. It is structural
-  recovery, not redaction or sanitize; use [repair](tasks/repair_linearize.md).
+- qpdf receives a source SHA-256 before repair or linearize. Its separate
+  `encrypt` primitive creates one AES-256 copy from an unencrypted source using
+  caller-owned restricted password files and private argument files; it does
+  not open/decrypt/re-encrypt existing encrypted PDFs or edit permissions. Both
+  routes are structural/full-rewrite operations, not redaction or sanitize;
+  use [repair](tasks/repair_linearize.md) or [encryption](tasks/encryption.md).
 - pikepdf offers only `active-content` and `active-and-auxiliary` profiles. It
   is not redaction, metadata cleanup, or XFA cleanup; use
   [structure cleanup](tasks/structure_clean.md).

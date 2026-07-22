@@ -151,7 +151,7 @@ def node_package_version(package: str) -> str | None:
     return result.stdout.strip() if result.returncode == 0 and result.stdout.strip() else None
 
 
-def probe_provider(name: str) -> dict:
+def probe_provider(name: str, task: str | None = None) -> dict:
     config = PROVIDERS[name]
     result = {"provider": name, "role": config["role"], "kind": config["kind"], "integration": config["integration"], "available": False, "evidence": {}}
     if config["kind"] == "core":
@@ -199,13 +199,17 @@ def probe_provider(name: str) -> dict:
                 major is not None and major >= config["minimumMajor"]
                 for major in majors.values()
             )
-        if config.get("minimumVersion") is not None:
+        task_minimum = config.get("taskMinimumVersions", {}).get(task)
+        if config.get("minimumVersion") is not None or task_minimum is not None:
+            version_config = {**config, "minimumVersion": task_minimum or config.get("minimumVersion")}
             result["evidence"].update({
                 "semanticVersions": {command: ".".join(str(part) for part in semantic_version(version)) if semantic_version(version) else None for command, version in versions.items()},
-                "minimumVersion": config["minimumVersion"],
-                "maximumVersionExclusive": config["maximumVersionExclusive"],
+                "minimumVersion": version_config["minimumVersion"],
+                "maximumVersionExclusive": version_config.get("maximumVersionExclusive"),
             })
-            result["available"] = bool(result["available"] and all(version_in_range(version, config) for version in versions.values()))
+            if task_minimum is not None:
+                result["evidence"]["taskMinimumVersion"] = task_minimum
+            result["available"] = bool(result["available"] and all(version_in_range(version, version_config) for version in versions.values()))
     if config.get("license", {}).get("requiresAcknowledgement"):
         result["license"] = config["license"].get("id", config["license"]["expression"])
         result["licenseAccepted"] = str(os.environ.get("OPEN_OFFICE_PDF_PYMUPDF_LICENSE", "")).lower() in set(config["license"].get("acceptedValues", []))
@@ -251,8 +255,16 @@ def validate_plan(args: argparse.Namespace) -> dict:
         raise ContractError("read-only tasks do not write a PDF --output")
     if capability.get("invalidateSignatures") and not args.invalidate_signatures:
         raise ContractError("this destructive rewrite requires explicit --invalidate-signatures acknowledgement")
+    declared_credentials = sorted({value.strip() for value in args.credential_declaration if value.strip()})
+    required_credentials = capability.get("credentials", [])
+    missing_credentials = [credential for credential in required_credentials if credential not in declared_credentials]
+    if missing_credentials:
+        raise ContractError(
+            "this task requires explicit --credential-declaration for: "
+            + ", ".join(missing_credentials)
+        )
 
-    probe = probe_provider(args.provider)
+    probe = probe_provider(args.provider, args.task)
     if args.require_provider and not probe["available"]:
         raise ContractError(f"required provider {args.provider!r} is unavailable: {probe['evidence']}")
     result = {
@@ -273,6 +285,12 @@ def validate_plan(args: argparse.Namespace) -> dict:
         result["licenseChoice"] = license_choice
     if capability.get("invalidateSignatures"):
         result["invalidateSignatures"] = True
+    if required_credentials:
+        result["credentials"] = {
+            "required": required_credentials,
+            "declared": declared_credentials,
+            "automaticAcquisition": False,
+        }
     return result
 
 
@@ -295,6 +313,12 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("--output")
     plan.add_argument("--accept-license", choices=["agpl", "commercial"])
     plan.add_argument("--invalidate-signatures", action="store_true")
+    plan.add_argument(
+        "--credential-declaration",
+        action="append",
+        default=[],
+        help="declare a catalog credential type without supplying a secret or credential path",
+    )
     plan.add_argument("--require-provider", action="store_true")
     return parser
 

@@ -82,8 +82,10 @@ is not optimization of visible content and does not authorize content edits.
   never claims that the old signer approved the new bytes. Invalid signature
   fields or appearances may remain in the rewritten PDF; inspect the reported
   output-side signature evidence and use pyHanko to explain or remove them.
-- This bounded adapter rejects encrypted rewrite. Password handling, decrypt,
-  re-encrypt, and permission changes need a separate explicit policy workflow.
+- Repair and linearize reject encrypted input. The separate bounded
+  [encryption workflow](encryption.md) can create one AES-256 delivery copy
+  from an unencrypted source; it still does not decrypt/re-encrypt an existing
+  encrypted PDF or edit permission flags.
 - qpdf repair/linearize does not remove JavaScript, attachments, metadata,
   hidden text, OCR layers, signatures, or sensitive content. Do not call it
   sanitize or redaction. Use the strict PyMuPDF sanitize/residue route.

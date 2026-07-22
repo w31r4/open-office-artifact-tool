@@ -39,6 +39,13 @@ For a multi-source operation, keep `source` as the exact operation manifest and 
 
 For attachment quarantine, use `savePolicy.strategy: "read-only"`, `operation.type: "extract-attachments"`, and bind `output` to the delivered `attachments.json` manifest. The quarantine file hashes and contained paths remain task-specific validation evidence inside that manifest and the audit `validation` object.
 
+For bounded qpdf encryption, use `savePolicy.strategy: "rewrite"` and
+`operation.type: "qpdf-encrypt-aes-256"`. Record the catalog credential
+declaration, qpdf version, AES-256/key-bit evidence, signature decision,
+authorized `checkAfter`, topology comparison, and password-safe render review.
+Never record either password, a password hash/fingerprint, a secret-file path,
+private argument-file contents, or a command line containing a secret.
+
 For `failed_closed`, set `output` to `null`, include a non-empty `reason`, keep the source/provider/save-policy/operation evidence, record `preflight.probeCompleted` and `preflight.planCompleted` truthfully (either may be `false` when that gate caused the refusal), and do not leave a partial modified PDF at the requested output path. A `succeeded` record requires both preflight fields to be `true`.
 
 Validate before delivery:

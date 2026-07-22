@@ -238,13 +238,14 @@
       "commands": ["qpdf"],
       "environment": "OPEN_OFFICE_PDF_QPDF",
       "minimumMajor": 11,
+      "taskMinimumVersions": { "encrypt": "11.7.0" },
       "requireVersionOutput": true,
-      "role": "bounded structure inspection, recovery rewrite, and linearization",
+      "role": "bounded structure inspection, recovery rewrite, linearization, and source-to-AES-256 encryption",
       "integration": "shipped-thin-script-external-cli",
-      "taskIds": ["inspect", "repair", "linearize"],
+      "taskIds": ["inspect", "repair", "linearize", "encrypt"],
       "managedRuntime": { "commandPaths": { "qpdf": "bin/qpdf" }, "environment": { "OPEN_OFFICE_PDF_QPDF": "bin/qpdf" } },
       "license": { "expression": "Apache-2.0", "requiresAcknowledgement": false },
-      "matrixBoundary": "Not a renderer, text extractor, strict conformance checker, sanitizer, password workflow, or signature validator."
+      "matrixBoundary": "Not a renderer, text extractor, strict conformance checker, sanitizer, encrypted-input opener/decrypter, permission editor, or signature validator. The one bounded encryption route creates a distinct AES-256 copy from an unencrypted source with caller-owned password files."
     },
     "pikepdf": {
       "kind": "python-module",
@@ -335,6 +336,7 @@
     "merge-stamp": { "providers": ["pypdf"], "strategies": ["rewrite"], "input": "existing", "mutation": true },
     "repair": { "providers": ["qpdf"], "strategies": ["rewrite"], "input": "existing", "mutation": true, "invalidateSignatures": true },
     "linearize": { "providers": ["qpdf"], "strategies": ["rewrite"], "input": "existing", "mutation": true },
+    "encrypt": { "providers": ["qpdf"], "strategies": ["rewrite"], "input": "existing", "mutation": true, "invalidateSignatures": true, "credentials": ["caller-owned-user-and-owner-password-files"] },
     "structure-clean": { "providers": ["pikepdf"], "strategies": ["rewrite"], "input": "existing", "mutation": true, "invalidateSignatures": true },
     "ocr": { "providers": ["ocrmypdf"], "strategies": ["rewrite"], "input": "existing", "mutation": true, "ocrLanguages": true },
     "sign": { "providers": ["pyhanko"], "strategies": ["incremental"], "input": "existing", "mutation": true, "credentials": ["local-pkcs12"] },

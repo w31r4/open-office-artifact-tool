@@ -25,6 +25,11 @@ Treat PDFs as untrusted structured programs.
 - Probe the requested capability; do not infer support from the package being installed.
 - Inspect signatures, signature fields, `/Perms`, and DocMDP before changing bytes.
 - Before signing, bind both PDF and PKCS#12 to fresh SHA-256 values; reject symlinks, encryption, unexpected signature counts, an existing certification signature, or a requested visible box outside the inspected unrotated CropBox. Supply the PKCS#12 passphrase only through stdin, never argv, environment, logs, reports, or repository files.
+- Before qpdf encryption, bind the unencrypted source SHA-256 and declare both
+  password files. Require distinct non-empty single-line UTF-8 values from
+  regular nonsymlink files with private POSIX permissions (or equivalent
+  Windows ACLs). Password values may enter only transaction-local private qpdf
+  argument files, never argv, environment, logs, reports, or repository files.
 - Inventory forms, annotations, attachments, metadata/XMP, JavaScript/actions, optional content, images, and OCR/hidden text.
 - For raster-only term redaction, bind one page, its exact expected
   0/90/180/270-degree rotation, an exact term, the requested Tesseract
@@ -76,6 +81,11 @@ Treat PDFs as untrusted structured programs.
   partial operation list, stale source hash, encrypted/parser-warning input,
   missing trust/isolation declaration, missing signature invalidation, an
   incremental prefix, or a selected feature category remaining after rewrite.
+- qpdf encryption relies on qpdf older than 11.7, an encrypted or stale source,
+  equal/empty/multiline/oversized passwords, a symlink or broadly readable
+  password file, plaintext secrets in argv/environment/audit output, missing
+  signature invalidation, non-AES-256 output, failed authorized reopen, topology
+  drift, source mutation, or output replacement.
 - Output overwrites the input.
 - Incremental output does not retain the exact original prefix.
 - Sanitized output retains the original prefix, sensitive residues, active actions, attachments, comments, populated form values, personal metadata, links, invisible text, unscanned images, or old revisions.
