@@ -87,6 +87,16 @@ function assertEvidenceAsset(value, label) {
   assertHttpsAssetUrl(value.url, `${label}.url`);
 }
 
+function assertProvenance(value, label) {
+  if (!isPlainObject(value)
+    || value.provider !== "github-actions-artifact-attestation"
+    || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(value.repository || "")
+    || !/^\.github\/workflows\/[A-Za-z0-9_.-]+\.yml$/.test(value.workflow || "")
+    || value.verificationCommand !== `gh attestation verify <asset> --repo ${value.repository}`) {
+    throw catalogError(`${label} must pin a GitHub Actions artifact-attestation verification route.`);
+  }
+}
+
 function assertArtifact(value, packId, pack, index) {
   const label = `pack ${packId}.artifacts[${index}]`;
   if (!isPlainObject(value) || !nonEmptyString(value.platform) || !nonEmptyString(value.asset) || !nonEmptyString(value.version)) {
@@ -179,6 +189,7 @@ export function validatePdfProviderCatalog(catalog) {
       for (const [index, artifact] of pack.artifacts.entries()) assertArtifact(artifact, packId, pack, index);
       assertEvidenceAsset(pack.releaseEvidence.sbom, `pack ${packId}.releaseEvidence.sbom`);
       assertEvidenceAsset(pack.releaseEvidence.thirdPartyNotices, `pack ${packId}.releaseEvidence.thirdPartyNotices`);
+      assertProvenance(pack.releaseEvidence.provenance, `pack ${packId}.releaseEvidence.provenance`);
       assertStringArray(pack.releaseEvidence.verifiedPlatforms, `pack ${packId}.releaseEvidence.verifiedPlatforms`);
     } else if (pack.state === "unpublished" && (pack.artifacts.length !== 0 || pack.version !== null)) {
       throw catalogError(`${pack.state} pack ${packId} must not advertise unpublished artifacts or a version.`);

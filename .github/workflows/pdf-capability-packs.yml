@@ -1,0 +1,217 @@
+name: PDF capability packs
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Create the immutable qpdf release after both platform builds and probes pass"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+# `publish: false` is a complete dry run: it creates no tag, release, asset,
+# attestation, cache entry, or npm publication. Customer installation is only
+# possible after the reviewed catalog commit pins the resulting asset digests.
+permissions:
+  contents: write
+  attestations: write
+  artifact-metadata: write
+  id-token: write
+
+env:
+  QPDF_VERSION: 12.3.2
+  QPDF_SOURCE_SHA256: 6cba2f9f2cd887d905faeb99e0e51a307b217920d1bbf3e9cfbb2e8178a2deda
+  PACK_VERSION: 12.3.2-oat.1
+  RELEASE_TAG: pdf-provider-qpdf-12.3.2-oat.1
+
+jobs:
+  qpdf:
+    name: qpdf (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            runner: ubuntu-22.04
+          - platform: darwin-arm64
+            runner: macos-14
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Install pinned build prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.platform }}" = "linux-x64" ]; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends cmake g++ libjpeg-turbo8-dev zlib1g-dev
+          else
+            brew install cmake jpeg-turbo
+          fi
+      - name: Download and verify qpdf source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/qpdf-source"
+          cd "$RUNNER_TEMP/qpdf-source"
+          curl --fail --location --retry 3 --proto '=https' --tlsv1.2 \
+            "https://github.com/qpdf/qpdf/releases/download/v${QPDF_VERSION}/qpdf-${QPDF_VERSION}.tar.gz" \
+            --output "qpdf-${QPDF_VERSION}.tar.gz"
+          echo "${QPDF_SOURCE_SHA256}  qpdf-${QPDF_VERSION}.tar.gz" | shasum -a 256 --check --status
+          tar -xzf "qpdf-${QPDF_VERSION}.tar.gz"
+      - name: Build a self-contained qpdf command payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_dir="$RUNNER_TEMP/qpdf-source/qpdf-${QPDF_VERSION}"
+          build_dir="$RUNNER_TEMP/qpdf-build"
+          install_dir="$RUNNER_TEMP/qpdf-install"
+          payload="$RUNNER_TEMP/qpdf-payload"
+          notices="$RUNNER_TEMP/qpdf-notices.md"
+          if [ "${{ matrix.platform }}" = "linux-x64" ]; then
+            jpeg_lib=/usr/lib/x86_64-linux-gnu/libjpeg.a
+            zlib_lib=/usr/lib/x86_64-linux-gnu/libz.a
+            jpeg_include=/usr/include
+            zlib_include=/usr/include
+          else
+            jpeg_prefix="$(brew --prefix jpeg-turbo)"
+            sdk_root="$(xcrun --show-sdk-path)"
+            jpeg_lib="$jpeg_prefix/lib/libjpeg.a"
+            zlib_lib="$sdk_root/usr/lib/libz.tbd"
+            jpeg_include="$jpeg_prefix/include"
+            zlib_include="$sdk_root/usr/include"
+          fi
+          test -f "$jpeg_lib"
+          test -f "$zlib_lib"
+          PKG_CONFIG_LIBDIR=/nonexistent cmake -S "$source_dir" -B "$build_dir" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_STATIC_LIBS=ON \
+            -DUSE_IMPLICIT_CRYPTO=OFF \
+            -DREQUIRE_CRYPTO_NATIVE=ON \
+            -DZLIB_H_PATH="$zlib_include" \
+            -DZLIB_LIB_PATH="$zlib_lib" \
+            -DLIBJPEG_H_PATH="$jpeg_include" \
+            -DLIBJPEG_LIB_PATH="$jpeg_lib"
+          cmake --build "$build_dir" --parallel
+          cmake --install "$build_dir" --prefix "$install_dir" --component cli
+          mkdir -p "$payload/bin"
+          cp "$install_dir/bin/qpdf" "$payload/bin/qpdf"
+          chmod 0755 "$payload/bin/qpdf"
+          "$payload/bin/qpdf" --version | grep -Fx "qpdf version ${QPDF_VERSION}"
+          "$payload/bin/qpdf" --show-crypto | grep -q "native"
+          if [ "${{ matrix.platform }}" = "linux-x64" ]; then
+            ! ldd "$payload/bin/qpdf" | grep -q "libqpdf"
+          else
+            ! otool -L "$payload/bin/qpdf" | grep -q "/opt/homebrew"
+          fi
+          {
+            printf '%s\n\n' '# qpdf PDF capability pack notices'
+            printf '%s\n\n' 'This artifact was built from the hash-pinned qpdf source release recorded in its SBOM.'
+            cat "$source_dir/NOTICE.md"
+            printf '\n\n%s\n' '----- qpdf Apache-2.0 license -----'
+            cat "$source_dir/LICENSE.txt"
+            printf '\n\n%s\n' 'This software is based in part on the work of the Independent JPEG Group.'
+          } > "$notices"
+          node scripts/build-pdf-provider-pack.mjs \
+            --pack qpdf \
+            --version "$PACK_VERSION" \
+            --platform "${{ matrix.platform }}" \
+            --payload "$payload" \
+            --output "$RUNNER_TEMP/qpdf-release" \
+            --source-url "https://github.com/qpdf/qpdf/releases/download/v${QPDF_VERSION}/qpdf-${QPDF_VERSION}.tar.gz" \
+            --source-sha256 "$QPDF_SOURCE_SHA256" \
+            --license Apache-2.0 \
+            --notices "$notices"
+      - name: Verify produced archive can run after extraction
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/qpdf-release/qpdf-${PACK_VERSION}-${{ matrix.platform }}.tar.gz"
+          destination="$RUNNER_TEMP/qpdf-consumer"
+          mkdir -p "$destination"
+          tar -xzf "$archive" -C "$destination"
+          "$destination/bin/qpdf" --version | grep -Fx "qpdf version ${QPDF_VERSION}"
+      - name: Attest immutable pack provenance
+        if: ${{ inputs.publish == 'true' }}
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ runner.temp }}/qpdf-release/*.tar.gz
+      - name: Attest qpdf pack SBOM
+        if: ${{ inputs.publish == 'true' }}
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ runner.temp }}/qpdf-release/*.tar.gz
+          sbom-path: ${{ runner.temp }}/qpdf-release/*.sbom.cdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qpdf-${{ matrix.platform }}
+          path: ${{ runner.temp }}/qpdf-release/
+          if-no-files-found: error
+          retention-days: 14
+
+  release-qpdf:
+    name: assemble qpdf release manifest
+    needs: qpdf
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: qpdf-*
+          path: ${{ runner.temp }}/qpdf-platforms
+          merge-multiple: true
+      - name: Combine audited platform manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_base="https://github.com/${GITHUB_REPOSITORY}/releases/download/${RELEASE_TAG}/"
+          node scripts/finalize-pdf-provider-release.mjs \
+            --pack qpdf \
+            --version "$PACK_VERSION" \
+            --input "$RUNNER_TEMP/qpdf-platforms" \
+            --output "$RUNNER_TEMP/qpdf-final" \
+            --release-base-url "$release_base" \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow .github/workflows/pdf-capability-packs.yml
+          jq -e '.catalogFragment.state == "published" and (.catalogFragment.artifacts | length == 2)' "$RUNNER_TEMP/qpdf-final/qpdf-${PACK_VERSION}.release-manifest.json"
+      - name: Attest release evidence assets
+        if: ${{ inputs.publish == 'true' }}
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ runner.temp }}/qpdf-final/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qpdf-release-manifest
+          path: ${{ runner.temp }}/qpdf-final/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish immutable GitHub release assets
+        if: ${{ inputs.publish == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Refusing to mutate existing release $RELEASE_TAG" >&2
+            exit 2
+          fi
+          gh release create "$RELEASE_TAG" \
+            --target "$GITHUB_SHA" \
+            --title "PDF capability pack: qpdf ${PACK_VERSION}" \
+            --notes "Hash-pinned qpdf 12.3.2 capability packs. The npm catalog does not advertise these assets until a reviewed catalog update pins their exact hashes. Verify every asset with: gh attestation verify <asset> --repo ${GITHUB_REPOSITORY}"
+          gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/qpdf-platforms"/* "$RUNNER_TEMP/qpdf-final"/*

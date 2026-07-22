@@ -131,6 +131,25 @@ invalidPlatformCatalog.packs.qpdf.releaseEvidence = {
   verifiedPlatforms: ["win32-x64"],
 };
 assert.throws(() => validatePdfProviderCatalog(invalidPlatformCatalog), /unsupported managed platform|outside the declared managed platforms/);
+const unsignedPublishedCatalog = structuredClone(PDF_PROVIDER_CATALOG);
+unsignedPublishedCatalog.packs.qpdf.state = "published";
+unsignedPublishedCatalog.packs.qpdf.version = "1.2.3";
+unsignedPublishedCatalog.packs.qpdf.artifacts = ["darwin-arm64", "linux-x64"].map((candidatePlatform) => ({
+  platform: candidatePlatform,
+  asset: `qpdf-${candidatePlatform}.tar.gz`,
+  version: "1.2.3",
+  url: `https://releases.example.test/open-office-artifact-tool/v1.2.3/qpdf-${candidatePlatform}.tar.gz`,
+  sha256: "a".repeat(64),
+  downloadBytes: 1,
+  unpackedBytes: 1,
+  archiveFormat: "tar.gz",
+}));
+unsignedPublishedCatalog.packs.qpdf.releaseEvidence = {
+  sbom: { asset: "qpdf.cdx.json", url: "https://releases.example.test/open-office-artifact-tool/v1.2.3/qpdf.cdx.json", sha256: "b".repeat(64) },
+  thirdPartyNotices: { asset: "qpdf-notices.txt", url: "https://releases.example.test/open-office-artifact-tool/v1.2.3/qpdf-notices.txt", sha256: "c".repeat(64) },
+  verifiedPlatforms: ["darwin-arm64", "linux-x64"],
+};
+assert.throws(() => validatePdfProviderCatalog(unsignedPublishedCatalog), /artifact-attestation/);
 const invalidTaskMinimumCatalog = structuredClone(PDF_PROVIDER_CATALOG);
 invalidTaskMinimumCatalog.providers.qpdf.taskMinimumVersions = { unknown: "11.7" };
 assert.throws(() => validatePdfProviderCatalog(invalidTaskMinimumCatalog), /taskMinimumVersions contains an invalid task or version/);
