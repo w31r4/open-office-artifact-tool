@@ -79,16 +79,18 @@ internal static class DocxFormattingCodec
     internal static DocumentParagraphFormatting? ReadParagraphFormatting(W.ParagraphProperties? properties)
     {
         if (properties is null) return null;
+        if (!TryReadSuppressLineNumbers(properties, out var suppressLineNumbers)) return null;
         var result = ReadParagraphFormattingCore(properties.Justification, properties.Indentation,
-            properties.SpacingBetweenLines, properties.KeepNext, properties.PageBreakBefore);
+            properties.SpacingBetweenLines, properties.KeepNext, properties.PageBreakBefore, suppressLineNumbers);
         return HasParagraphFormatting(result) ? result : null;
     }
 
     internal static DocumentParagraphFormatting? ReadStyleParagraphFormatting(W.StyleParagraphProperties? properties)
     {
         if (properties is null) return null;
+        if (!TryReadSuppressLineNumbers(properties, out var suppressLineNumbers)) return null;
         var result = ReadParagraphFormattingCore(properties.Justification, properties.Indentation,
-            properties.SpacingBetweenLines, properties.KeepNext, properties.PageBreakBefore);
+            properties.SpacingBetweenLines, properties.KeepNext, properties.PageBreakBefore, suppressLineNumbers);
         return HasParagraphFormatting(result) ? result : null;
     }
 
@@ -150,8 +152,9 @@ internal static class DocxFormattingCodec
     internal static bool IsSupportedParagraphProperties(W.ParagraphProperties? properties, bool allowNumbering = false, bool allowSection = false)
     {
         if (properties is null) return true;
+        if (!TryReadSuppressLineNumbers(properties, out _)) return false;
         return properties.ChildElements.All(child => child is W.ParagraphStyleId or W.Justification or W.Indentation or
-            W.SpacingBetweenLines or W.KeepNext or W.PageBreakBefore ||
+            W.SpacingBetweenLines or W.KeepNext or W.PageBreakBefore or W.SuppressLineNumbers ||
             (allowNumbering && child is W.NumberingProperties) ||
             (allowSection && child is W.SectionProperties));
     }
@@ -220,14 +223,15 @@ internal static class DocxFormattingCodec
     internal static bool HasParagraphFormatting(DocumentParagraphFormatting? value) => value is not null &&
         (value.HasAlignment || value.HasLeftIndentTwips || value.HasRightIndentTwips || value.HasFirstLineIndentTwips ||
          value.HasHangingIndentTwips || value.HasSpaceBeforeTwips || value.HasSpaceAfterTwips || value.HasLineSpacingTwips ||
-         value.HasLineSpacingRule || value.HasKeepNext || value.HasPageBreakBefore);
+         value.HasLineSpacingRule || value.HasKeepNext || value.HasPageBreakBefore || value.HasSuppressLineNumbers);
 
     private static DocumentParagraphFormatting ReadParagraphFormattingCore(
         W.Justification? justification,
         W.Indentation? indentation,
         W.SpacingBetweenLines? spacing,
         W.KeepNext? keepNext,
-        W.PageBreakBefore? pageBreakBefore)
+        W.PageBreakBefore? pageBreakBefore,
+        bool? suppressLineNumbers)
     {
         var result = new DocumentParagraphFormatting();
         var nativeAlignment = justification?.Val?.Value;
@@ -262,6 +266,7 @@ internal static class DocxFormattingCodec
         if (hasLineSpacing && rule is not null) result.LineSpacingRule = rule;
         if (keepNext is not null) result.KeepNext = IsOn(keepNext);
         if (pageBreakBefore is not null) result.PageBreakBefore = IsOn(pageBreakBefore);
+        if (suppressLineNumbers is not null) result.SuppressLineNumbers = suppressLineNumbers.Value;
         return result;
     }
 
@@ -292,6 +297,8 @@ internal static class DocxFormattingCodec
         DocumentParagraphFormatting? formatting)
     {
         if (formatting is null) return;
+        if (formatting.HasSuppressLineNumbers)
+            properties.Append(new W.SuppressLineNumbers { Val = formatting.SuppressLineNumbers });
         if (formatting.HasSpaceBeforeTwips || formatting.HasSpaceAfterTwips || formatting.HasLineSpacingTwips)
         {
             var spacing = new W.SpacingBetweenLines();
@@ -331,6 +338,25 @@ internal static class DocxFormattingCodec
     }
 
     private static bool IsOn(W.OnOffType value) => value.Val?.Value != false;
+
+    private static bool TryReadSuppressLineNumbers(OpenXmlCompositeElement properties, out bool? value)
+    {
+        value = null;
+        var elements = properties.Elements<W.SuppressLineNumbers>().ToArray();
+        if (elements.Length == 0) return true;
+        if (elements.Length != 1) return false;
+        var element = elements[0];
+        if (element.ChildElements.Count != 0 || element.ExtendedAttributes.Any()) return false;
+        try
+        {
+            value = IsOn(element);
+            return true;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
     private static bool IsRgb(string? value) => value is { Length: 6 } && value.All(char.IsAsciiHexDigit);
 
     private static bool TryHalfPoints(string? value, out uint? result)

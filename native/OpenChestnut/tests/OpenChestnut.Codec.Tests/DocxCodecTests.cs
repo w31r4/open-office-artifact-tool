@@ -1388,6 +1388,119 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void ParagraphLineNumberSuppressionAuthorsImportsEditsAndRejectsIrregularMarkup()
+    {
+        var request = ExportRequest(includeSecondParagraph: true);
+        request.Artifact.Document.Blocks[0].Paragraph.Formatting = new DocumentParagraphFormatting
+        {
+            SuppressLineNumbers = true,
+            SpaceAfterTwips = 120,
+        };
+        request.Artifact.Document.Blocks[1].Paragraph.Formatting = new DocumentParagraphFormatting
+        {
+            SuppressLineNumbers = false,
+        };
+
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var paragraphs = package.MainDocumentPart!.Document!.Body!.Elements<W.Paragraph>().ToArray();
+            var firstProperties = paragraphs[0].ParagraphProperties!;
+            Assert.True(firstProperties.GetFirstChild<W.SuppressLineNumbers>()!.Val!.Value);
+            var propertyChildren = firstProperties.ChildElements.ToList();
+            Assert.True(propertyChildren.IndexOf(firstProperties.GetFirstChild<W.SuppressLineNumbers>()!) <
+                        propertyChildren.IndexOf(firstProperties.SpacingBetweenLines!));
+            Assert.False(paragraphs[1].ParagraphProperties!.GetFirstChild<W.SuppressLineNumbers>()!.Val!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedFirst = imported.Artifact.Document.Blocks[0];
+        var importedSecond = imported.Artifact.Document.Blocks[1];
+        Assert.True(importedFirst.Source.Editable);
+        Assert.True(importedFirst.Paragraph.Formatting.HasSuppressLineNumbers);
+        Assert.True(importedFirst.Paragraph.Formatting.SuppressLineNumbers);
+        Assert.True(importedSecond.Paragraph.Formatting.HasSuppressLineNumbers);
+        Assert.False(importedSecond.Paragraph.Formatting.SuppressLineNumbers);
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(authored.File, unchanged.File);
+
+        importedFirst.Paragraph.Formatting.SuppressLineNumbers = false;
+        importedSecond.Paragraph.Formatting.SuppressLineNumbers = true;
+        var edited = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var roundTrip = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = edited.File,
+        });
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        Assert.False(roundTrip.Artifact.Document.Blocks[0].Paragraph.Formatting.SuppressLineNumbers);
+        Assert.True(roundTrip.Artifact.Document.Blocks[1].Paragraph.Formatting.SuppressLineNumbers);
+
+        foreach (var mode in new[] { "duplicate", "extension", "invalid" })
+        {
+            var irregularBytes = MakeLineNumberSuppressionIrregular(authored.File.ToByteArray(), mode);
+            var irregular = Invoke(new CodecRequest
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Operation = CodecOperation.ImportDocx,
+                Family = ArtifactFamily.Document,
+                File = ByteString.CopyFrom(irregularBytes),
+            });
+            Assert.True(irregular.Ok, Diagnostics(irregular));
+            var irregularBlock = irregular.Artifact.Document.Blocks[0];
+            Assert.False(irregularBlock.Source.Editable);
+            Assert.False(irregularBlock.Paragraph.Formatting?.HasSuppressLineNumbers ?? false);
+            var preserved = Invoke(new CodecRequest
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Operation = CodecOperation.ExportDocx,
+                Family = ArtifactFamily.Document,
+                Artifact = irregular.Artifact,
+            });
+            Assert.True(preserved.Ok, Diagnostics(preserved));
+            Assert.Equal(ByteString.CopyFrom(irregularBytes), preserved.File);
+
+            irregularBlock.Paragraph.Formatting = new DocumentParagraphFormatting { SuppressLineNumbers = false };
+            var rejected = Invoke(new CodecRequest
+            {
+                ProtocolVersion = CodecProtocol.ProtocolVersion,
+                Operation = CodecOperation.ExportDocx,
+                Family = ArtifactFamily.Document,
+                Artifact = irregular.Artifact,
+            });
+            Assert.False(rejected.Ok);
+            Assert.Equal("unsupported_document_edit", Assert.Single(rejected.Diagnostics).Code);
+        }
+    }
+
+    [Fact]
     public void OfficeSkillProfileRoundTripsFormattingImagesSectionsAndHeaders()
     {
         var authored = Invoke(OfficeSkillProfileExportRequest());
@@ -1416,7 +1529,9 @@ public sealed class DocxCodecTests
         Assert.True(imported.Ok, Diagnostics(imported));
         var document = imported.Artifact.Document;
         Assert.Equal("Aptos", document.DefaultRunStyle.FontFamily);
-        Assert.Contains(document.Styles, style => style.Id == "BriefLead" && style.BasedOn == "Normal");
+        Assert.Contains(document.Styles, style => style.Id == "BriefLead" && style.BasedOn == "Normal" &&
+                                                  style.ParagraphFormat.HasSuppressLineNumbers &&
+                                                  style.ParagraphFormat.SuppressLineNumbers);
         Assert.True(document.EvenAndOddHeaders);
         Assert.Equal(2, document.Headers.Count);
         Assert.Single(document.Footers);
@@ -1426,6 +1541,8 @@ public sealed class DocxCodecTests
         Assert.True(paragraph.Source.Editable);
         Assert.Equal("center", paragraph.Paragraph.Formatting.Alignment);
         Assert.True(paragraph.Paragraph.Formatting.KeepNext);
+        Assert.True(paragraph.Paragraph.Formatting.HasSuppressLineNumbers);
+        Assert.False(paragraph.Paragraph.Formatting.SuppressLineNumbers);
         Assert.Equal("Aptos Display", paragraph.Paragraph.Runs[0].Formatting.FontFamily);
         Assert.Equal((uint)30, paragraph.Paragraph.Runs[0].Formatting.FontSizeHalfPoints);
         Assert.Equal("315A83", paragraph.Paragraph.Runs[0].Formatting.ColorRgb);
@@ -6733,6 +6850,7 @@ public sealed class DocxCodecTests
                 Alignment = "center",
                 SpaceAfterTwips = 240,
                 KeepNext = true,
+                SuppressLineNumbers = true,
             },
         });
         var lead = new DocumentBlock
@@ -6751,6 +6869,7 @@ public sealed class DocxCodecTests
                     LineSpacingTwips = 300,
                     LineSpacingRule = "auto",
                     KeepNext = true,
+                    SuppressLineNumbers = false,
                 },
             },
         };
@@ -7485,6 +7604,35 @@ public sealed class DocxCodecTests
             var paragraph = document.MainDocumentPart!.Document!.Body!.Elements<W.Paragraph>().ElementAt(1);
             var properties = paragraph.ParagraphProperties ?? paragraph.PrependChild(new W.ParagraphProperties());
             properties.Append(new W.WidowControl());
+            document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] MakeLineNumberSuppressionIrregular(byte[] bytes, string mode)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var paragraph = document.MainDocumentPart!.Document!.Body!.Elements<W.Paragraph>().First();
+            var properties = paragraph.ParagraphProperties!;
+            var suppression = properties.GetFirstChild<W.SuppressLineNumbers>()!;
+            switch (mode)
+            {
+                case "duplicate":
+                    properties.InsertAfter(new W.SuppressLineNumbers(), suppression);
+                    break;
+                case "extension":
+                    suppression.SetAttribute(new OpenXmlAttribute("oat", "probe", "urn:open-office-artifact-tool:test", "1"));
+                    break;
+                case "invalid":
+                    suppression.SetAttribute(new OpenXmlAttribute("w", "val", "http://schemas.openxmlformats.org/wordprocessingml/2006/main", "invalid"));
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unknown suppression irregularity.");
+            }
             document.MainDocumentPart.Document.Save();
         }
         return stream.ToArray();

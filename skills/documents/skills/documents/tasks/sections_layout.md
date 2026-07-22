@@ -94,11 +94,28 @@ lineNumbering: {
 ```
 
 Set `section.lineNumbering = undefined` to remove the canonical leaf. This
-does not model paragraph-level `w:suppressLineNumbers`. Duplicate leaves,
-children, extension attributes, invalid numeric values, and unknown restart
-values remain source-owned and make the section read-only. Use native
-Word/LibreOffice pagination to check the displayed numbers and column
-placement; model preview alone is not authoritative.
+paragraph can opt out of the displayed sequence and its calculation, or
+explicitly override suppression inherited from a named style:
+
+```js
+document.addParagraph("Unnumbered heading", {
+  styleId: "Heading1",
+  paragraphFormat: { suppressLineNumbers: true },
+});
+document.addParagraph("Numbered evidence.");
+
+// In a style definition, the same property suppresses every inheriting paragraph.
+// An explicit false on a paragraph overrides that inherited suppression.
+```
+
+`true` emits direct/style `w:suppressLineNumbers`; `false` retains an explicit
+direct override; omission inherits the style/default behavior. Recognized
+canonical direct and style leaves are editable. Duplicate leaves, children,
+extension attributes, and invalid lexical values remain source-owned and fail
+closed on semantic replacement. Duplicate or irregular `w:lnNumType` leaves,
+invalid numeric values, and unknown restart values likewise make the section
+read-only. Use native Word/LibreOffice pagination to check the displayed
+numbers and column placement; model preview alone is not authoritative.
 
 `pageNumbering` owns one canonical native `w:pgNumType` leaf. Use `start` to
 restart a section at an integer from 0 through 2147483647; omit it to continue

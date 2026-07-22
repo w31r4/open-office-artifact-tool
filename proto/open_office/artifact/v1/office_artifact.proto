@@ -2387,6 +2387,11 @@ message DocumentParagraphFormatting {
   optional string line_spacing_rule = 9;
   optional bool keep_next = 10;
   optional bool page_break_before = 11;
+  // Presence-aware direct/style paragraph setting for w:suppressLineNumbers.
+  // True exempts the paragraph from section line-number calculation; false
+  // explicitly restores section numbering when an inherited style suppresses
+  // it. Omission leaves the style hierarchy unchanged.
+  optional bool suppress_line_numbers = 12;
 }
 
 enum DocumentHeaderFooterReference {

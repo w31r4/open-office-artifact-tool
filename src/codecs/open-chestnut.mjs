@@ -1752,13 +1752,17 @@ function documentParagraphFormatting(block) {
   text("lineSpacingRule", "lineSpacingRule");
   if (value.keepNext != null) result.keepNext = Boolean(value.keepNext);
   if (value.pageBreakBefore != null) result.pageBreakBefore = Boolean(value.pageBreakBefore);
+  if (value.suppressLineNumbers != null) {
+    if (typeof value.suppressLineNumbers !== "boolean") throw new OpenChestnutCodecError(`Document paragraph ${block.id} suppressLineNumbers must be boolean.`, [], { code: "invalid_document_formatting" });
+    result.suppressLineNumbers = value.suppressLineNumbers;
+  }
   return Object.keys(result).length ? result : undefined;
 }
 
 function publicDocumentParagraphFormatting(value) {
   if (!value) return undefined;
   const result = {};
-  for (const key of ["alignment", "leftIndentTwips", "rightIndentTwips", "firstLineIndentTwips", "hangingIndentTwips", "spaceBeforeTwips", "spaceAfterTwips", "lineSpacingTwips", "lineSpacingRule", "keepNext", "pageBreakBefore"]) {
+  for (const key of ["alignment", "leftIndentTwips", "rightIndentTwips", "firstLineIndentTwips", "hangingIndentTwips", "spaceBeforeTwips", "spaceAfterTwips", "lineSpacingTwips", "lineSpacingRule", "keepNext", "pageBreakBefore", "suppressLineNumbers"]) {
     if (value[key] !== undefined) result[key] = value[key];
   }
   return Object.keys(result).length ? result : undefined;

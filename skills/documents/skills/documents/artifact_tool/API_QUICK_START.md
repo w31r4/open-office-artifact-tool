@@ -710,10 +710,27 @@ document.addSection({
 first displays 1), optional `distance` accepts 0 through 31680 twentieths of
 a point, and optional `restart` is `newPage`, `newSection`, or `continuous`.
 Set `section.lineNumbering = undefined` to remove it. Numbers appear before
-each text column. Paragraph-level suppression, duplicate/child-bearing/
-extension-bearing leaves, invalid values, and unknown restart modes remain
-source-owned and make section geometry read-only. Use a native pagination
-host for final visual QA.
+each text column. Exclude a heading/caption from both display and line-number
+calculation with the shared direct/style paragraph-format property:
+
+```js
+document.addParagraph("Unnumbered heading", {
+  styleId: "Heading1",
+  paragraphFormat: { suppressLineNumbers: true },
+});
+document.addParagraph("Explicitly numbered despite the style", {
+  styleId: "SuppressedCaption",
+  paragraphFormat: { suppressLineNumbers: false },
+});
+```
+
+`true` suppresses the paragraph; explicit `false` overrides suppression from a
+named style; omission inherits. Recognized canonical direct and style
+`w:suppressLineNumbers` leaves are editable. Duplicate, child-bearing,
+extension-bearing, or invalid-lexical suppression markup remains source-owned
+and semantic replacement fails closed. Irregular section numbering likewise
+makes section geometry read-only. Use a native pagination host for final visual
+QA.
 
 `start` is optional and accepts integers from 0 through 2147483647. Omit it to
 continue the preceding section's sequence. `format` is optional and accepts

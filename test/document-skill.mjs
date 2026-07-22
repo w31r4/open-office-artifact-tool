@@ -758,6 +758,8 @@ try {
   assert.deepEqual(settingsDocument.blocks.find((block) => block.kind === "section")?.lineNumbering, { countBy: 5, start: 0, distance: 360, restart: "newPage" });
   assert.deepEqual(settingsDocument.blocks.find((block) => block.kind === "section")?.pageNumbering, { start: 1, format: "lowerRoman" });
   assert.deepEqual(settingsDocument.blocks.find((block) => block.kind === "section")?.columns, { definitions: [{ width: 3000, spacing: 720 }, { width: 5640, spacing: 0 }], separator: true });
+  assert.equal(settingsDocument.blocks.find((block) => block.text === "Review first-page and even-page variants.")?.paragraphFormat.suppressLineNumbers, true);
+  assert.equal(settingsDocument.blocks.find((block) => block.text === "This paragraph remains in the section line-number sequence.")?.paragraphFormat.suppressLineNumbers, undefined);
   assert.equal(settingsDocument.sectionSettings[0]?.differentFirstPage, true);
   assert.equal(settingsDocument.headers.some((item) => item.referenceType === "first"), true);
   assert.equal(settingsDocument.headers.some((item) => item.referenceType === "even"), true);
@@ -767,6 +769,7 @@ try {
   assert.match(await packageSettingsZip.file("word/settings.xml").async("text"), /<w:gutterAtTop\s*\/>/);
   assert.match(await packageSettingsZip.file("word/document.xml").async("text"), /<w:pgMar\b(?=[^>]*w:gutter="720")[^>]*\/>/);
   assert.match(await packageSettingsZip.file("word/document.xml").async("text"), /<w:lnNumType\b(?=[^>]*w:countBy="5")(?=[^>]*w:start="0")(?=[^>]*w:distance="360")(?=[^>]*w:restart="newPage")[^>]*\/>/);
+  assert.match(await packageSettingsZip.file("word/document.xml").async("text"), /<w:p>[\s\S]*?<w:suppressLineNumbers\b[^>]*w:val="true"[^>]*\/>[\s\S]*?Review first-page and even-page variants\.[\s\S]*?<\/w:p>/);
   assert.match(await packageSettingsZip.file("word/document.xml").async("text"), /<w:pgNumType\b(?=[^>]*w:start="1")(?=[^>]*w:fmt="lowerRoman")[^>]*\/>/);
   assert.match(await packageSettingsZip.file("word/document.xml").async("text"), /<w:cols\b(?=[^>]*w:equalWidth="(?:false|0)")(?=[^>]*w:sep="(?:true|1)")[^>]*>[\s\S]*?<w:col\b(?=[^>]*w:w="3000")(?=[^>]*w:space="720")[^>]*\/>[\s\S]*?<w:col\b(?=[^>]*w:w="5640")[^>]*\/>[\s\S]*?<\/w:cols>/);
   assert.equal(sectionSettings.qa.summary.nativeRender.status, nativeStatus.available ? "passed" : "skipped");
@@ -875,6 +878,7 @@ try {
   assert.match(skillText, /definitions: \[\s*\{ width: 3000, spacing: 720 \},\s*\{ width: 5640, spacing: 0 \}/);
   assert.match(skillText, /pageNumbering: \{ start: 1, format: "lowerRoman" \}/);
   assert.match(skillText, /lineNumbering: \{ countBy: 5, start: 0, distance: 360, restart: "newPage" \}/);
+  assert.match(skillText, /paragraphFormat: \{ suppressLineNumbers: true \}/);
   assert.match(skillText, /document\.addBibliographySource/);
   assert.match(skillText, /document\.addCitation/);
   assert.match(skillText, /document\.addTableOfContents/);

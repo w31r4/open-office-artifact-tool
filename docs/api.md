@@ -22,7 +22,7 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.addImage` | api | Append an inspectable embedded PNG/JPEG image. Images are inline by default; an explicit bounded placement authors a native foreground wp:anchor with square or top-and-bottom wrapping. |
 | `document.addInsertion` | api | Append one bounded whole-paragraph tracked insertion using native w:ins markup. For one exact in-paragraph replacement in existing source bytes, use DocumentFile.addTrackedReplacement; mixed, moved, nested, and property-level revisions remain outside the bounded profile. |
 | `document.addListItem` | api | Append a numbered, character-bulleted, or bounded picture-bulleted list item using native DOCX numbering definitions. Picture markers are shared numbering-level resources: every item using the same numberingId and level must agree, and recognized imported edits must update the complete group without changing embedded-versus-external source kind. |
-| `document.addParagraph` | api | Append a styled paragraph with optional run spans, including character-style runStyleId references plus direct/theme and complex-script semantics. |
+| `document.addParagraph` | api | Append a styled paragraph with optional run spans and bounded direct paragraph formatting, including presence-aware line-number suppression. |
 | `document.addSection` | api | Append a DOCX section break with page size, orientation, margins, binding gutter, canonical equal-width or explicit-width columns, bounded page-number start/format, and break-type metadata backed by w:sectPr. Imported geometry and page numbering are writable only when their native markup is canonical. |
 | `document.addTable` | api | Append a Word-style table with physical cell values, optional logical merge geometry, and fixed-layout width/margin/border/header formatting. |
 | `document.addTableOfContents` | api | Append one canonical one-paragraph complex TOC field with bounded heading levels/switches and enable the native updateFields-on-open hint by default. Refreshed cross-paragraph result graphs remain opaque/source-bound and read-only. |
@@ -106,7 +106,7 @@ Append one canonical block-level Word plain-text content control around exactly 
 - `tag` (string) required — Block plain-text SDT tag, 1 to 64 characters without controls.
 - `alias` (string) — Human title/alias, 1 to 255 characters; defaults to tag.
 - `styleId` (string) — Optional modeled paragraph style ID.
-- `paragraphFormat` (object) — Optional modeled paragraph formatting for the wrapped paragraph.
+- `paragraphFormat` (object) — Optional modeled paragraph formatting for the wrapped paragraph, including presence-aware boolean suppressLineNumbers with the same direct/style inheritance and fail-closed source rules as document.addParagraph.
 - `runStyle` (object) — Optional modeled formatting for the single ordinary run.
 
 **Schema returns:**
@@ -349,13 +349,14 @@ Append a numbered, character-bulleted, or bounded picture-bulleted list item usi
 
 #### `document.addParagraph`
 
-Append a styled paragraph with optional run spans, including character-style runStyleId references plus direct/theme and complex-script semantics.
+Append a styled paragraph with optional run spans and bounded direct paragraph formatting, including presence-aware line-number suppression.
 
 **Schema parameters:**
 
 - `text` (string) required — Paragraph text.
 - `styleId` (string) — Named paragraph style ID.
 - `name` (string) — Inspectable block name.
+- `paragraphFormat` (object) — Optional modeled paragraph formatting. suppressLineNumbers accepts only boolean true or false: true excludes this paragraph's lines from section line-number display and calculation; false is an explicit direct override of inherited style suppression; omission inherits the named style/default. Canonical direct or style w:suppressLineNumbers leaves are editable, while duplicate, child-bearing, extension-bearing, or invalid lexical markup stays source-owned and semantic replacement fails closed.
 - `runs` (object[]) — Optional run spans whose style may include runStyleId plus direct/theme formatting. A run may carry a bounded contentControl { id, tag, alias, nativeId?, controlType?, checked?, choices?, selectedValue?, value? } or inlineField { instruction, bookmarkName?, bookmarkNativeId? }.
 
 **Schema returns:**
@@ -373,7 +374,7 @@ Append a DOCX section break with page size, orientation, margins, binding gutter
 - `pageSize` (object) — Page width/height in twentieths of a point.
 - `margins` (object) — Top/right/bottom/left margins plus optional non-negative binding gutter in twentieths of a point. document.settings.gutterAtTop chooses top-edge versus binding-side placement.
 - `columns` (object) — Optional canonical text columns. Equal-width profile: { count: 1–45, spacing, separator }. Explicit-width profile: { definitions: [{ width, spacing }], separator }, with 1–45 ordered definitions, positive widths, and non-negative spacing-after values. All values are twentieths of a point; margins, binding-side gutter, widths, and gaps must fit the page content width. The two profiles cannot be mixed; ambiguous or extension-bearing w:cols graphs stay source-owned.
-- `lineNumbering` (object) — Optional canonical line numbering before each text column: { countBy?: integer 1..32767, start?: integer 0..32767, distance?: integer 0..31680, restart?: 'newPage'|'newSection'|'continuous' }. An empty object defaults countBy to 1; start is the zero-based native value, so the first displayed line is start + 1. distance is in twentieths of a point. Paragraph-level suppression, duplicate leaves, children, unknown values, or extension-bearing w:lnNumType markup stay source-owned.
+- `lineNumbering` (object) — Optional canonical line numbering before each text column: { countBy?: integer 1..32767, start?: integer 0..32767, distance?: integer 0..31680, restart?: 'newPage'|'newSection'|'continuous' }. An empty object defaults countBy to 1; start is the zero-based native value, so the first displayed line is start + 1. distance is in twentieths of a point. Use paragraphFormat.suppressLineNumbers for presence-aware paragraph/style suppression. Duplicate leaves, children, unknown values, or extension-bearing w:lnNumType markup stay source-owned.
 - `pageNumbering` (object) — Optional canonical section numbering: { start?: integer 0..2147483647, format?: 'decimal'|'upperRoman'|'lowerRoman'|'upperLetter'|'lowerLetter' }. At least one property is required; omitting start continues the prior sequence. This controls PAGE-field presentation but does not add or refresh a field. Chapter numbering, unsupported formats, duplicate leaves, children, or extension-bearing w:pgNumType markup stay source-owned.
 
 **Schema returns:**

@@ -376,6 +376,8 @@ assert.match(HELP_CATALOG.find((item) => item.name === "PdfProviders.probe")?.sc
 const documentCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "document");
 assert.equal(documentCatalog.length, 65);
 assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
+assert.equal(HELP_CATALOG.find((item) => item.name === "document.addParagraph")?.schema?.parameters?.paragraphFormat?.type, "object");
+assert.match(HELP_CATALOG.find((item) => item.name === "document.addParagraph")?.schema?.parameters?.paragraphFormat?.description || "", /suppressLineNumbers.*true.*excludes.*display and calculation.*false.*override.*inherited style.*omission inherits.*source-owned.*fails closed/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.type, "object");
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.description || "", /binding gutter.*gutterAtTop.*top-edge.*binding-side/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.columns?.type, "object");
@@ -383,7 +385,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "document.addSection")?.s
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.pageNumbering?.type, "object");
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.pageNumbering?.description || "", /start.*0\.\.2147483647.*decimal.*upperRoman.*lowerRoman.*upperLetter.*lowerLetter.*continues the prior sequence.*does not add or refresh.*source-owned/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.lineNumbering?.type, "object");
-assert.match(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.lineNumbering?.description || "", /countBy.*1\.\.32767.*start.*0\.\.32767.*distance.*0\.\.31680.*newPage.*newSection.*continuous.*defaults countBy to 1.*zero-based.*first displayed line.*paragraph-level suppression.*source-owned/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.lineNumbering?.description || "", /countBy.*1\.\.32767.*start.*0\.\.32767.*distance.*0\.\.31680.*newPage.*newSection.*continuous.*defaults countBy to 1.*zero-based.*first displayed line.*paragraphFormat\.suppressLineNumbers.*source-owned/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.returns?.section?.description || "", /line-number markup.*page-number markup.*not canonical/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.schema?.parameters?.pictureBullet?.type, "string|object");
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.summary || "", /picture-bulleted.*shared numbering-level resources.*complete group/i);

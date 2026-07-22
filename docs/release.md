@@ -3349,6 +3349,40 @@ pikepdf, pyHanko, veraPDF, and OCRmyPDF were not configured, so their
 contract/adversarial gates passed while real-provider repeats were skipped. No
 npm publish, tag, or release operation was attempted.
 
+### DOCX paragraph line-number suppression
+
+On 2026-07-22, Documents completed the paragraph companion to bounded section
+line numbering. `paragraphFormat.suppressLineNumbers` is a presence-aware
+boolean across the public model, protobuf wire, OpenChestnut C# codec, bundled
+WASM runtime, Help catalog, and native Documents Skill. It works on direct
+paragraph formatting and named paragraph styles: true excludes the paragraph's
+lines from both display and line-number calculation, false explicitly overrides
+inherited style suppression, and omission preserves inheritance.
+
+OpenChestnut writes the canonical `w:suppressLineNumbers` leaf in schema order,
+imports true and explicit false without collapsing presence, preserves a source
+package byte-for-byte on no-op export, and supports fixed-topology source-bound
+edits. Duplicate leaves, child or extension content, and invalid lexical values
+make the affected paragraph/style source-owned and fail closed on semantic
+replacement. The runnable section-settings fixture places a suppressed review
+paragraph and an ordinary numbered paragraph after a real numbered section,
+imports twice, inspects native markup, and enters LibreOffice/Poppler QA.
+
+The complete local `npm test` gate passed after retaining every existing Office,
+PDF, template, provider, Playwright, LibreOffice, Poppler, reference-Skill, and
+release check. OpenChestnut passed `346/346` and OfficeBridge passed `5/5`;
+generated API docs and deterministic source-built WASM verification passed, with
+39 matching build files and a 38-file, 15,055,040-byte bundled runtime. The
+clean-install/package gate produced 489 files, 9,277,622 compressed bytes, and
+24,754,270 unpacked bytes (`SHA-1
+03b62c0d4bad2e383e2cbb547568e9677332aed9`). The unpacked ceiling moved narrowly
+from 24,750,000 to 24,780,000 bytes, retaining 25,730 bytes of measured headroom
+for the new wire/runtime/API/Skill surface. Managed-pack live download repeats
+and explicitly configured pikepdf, pyHanko, veraPDF, and OCRmyPDF provider
+environments were not enabled in this local shell; their offline,
+contract/adversarial, release-input, and package gates passed. No npm publish,
+tag, or release operation was attempted.
+
 ## Publishing
 
 Before publishing:
