@@ -1744,6 +1744,148 @@ await assert.rejects(
   (error) => error?.code === "invalid_document_section" && /binding gutter must leave a positive page content area/i.test(error.message),
 );
 
+const equalWidthColumnsDocument = DocumentModel.create({
+  name: "Equal-width section columns",
+  blocks: [
+    { kind: "paragraph", text: "Flow this brief through two equal columns." },
+    {
+      kind: "section",
+      breakType: "continuous",
+      pageSize: { widthTwips: 12240, heightTwips: 15840 },
+      margins: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
+      columns: { count: 2, spacing: 720, separator: true },
+    },
+  ],
+});
+const equalWidthColumnsDocx = await DocumentFile.exportDocx(equalWidthColumnsDocument);
+const equalWidthColumnsZip = await JSZip.loadAsync(await equalWidthColumnsDocx.arrayBuffer());
+const equalWidthColumnsXml = await equalWidthColumnsZip.file("word/document.xml").async("text");
+assert.match(equalWidthColumnsXml, /<w:cols\b(?=[^>]*w:equalWidth="(?:true|1)")(?=[^>]*w:num="2")(?=[^>]*w:space="720")(?=[^>]*w:sep="(?:true|1)")[^>]*\/>/);
+const importedEqualWidthColumns = await DocumentFile.importDocx(equalWidthColumnsDocx);
+const importedEqualWidthSection = importedEqualWidthColumns.blocks.find((block) => block.kind === "section");
+assert.deepEqual(importedEqualWidthSection?.columns, { count: 2, spacing: 720, separator: true });
+assert.equal(importedEqualWidthSection?.editable, true);
+assert.match(importedEqualWidthColumns.inspect({ kind: "section", maxChars: 2_000 }).ndjson, /"columns":\{"count":2,"spacing":720,"separator":true\}/);
+assert.deepEqual(
+  Buffer.from(await (await DocumentFile.exportDocx(importedEqualWidthColumns)).arrayBuffer()),
+  Buffer.from(await equalWidthColumnsDocx.arrayBuffer()),
+  "unchanged canonical equal-width columns must preserve the source package exactly",
+);
+importedEqualWidthSection.columns.count = 3;
+importedEqualWidthSection.columns.spacing = 360;
+importedEqualWidthSection.columns.separator = false;
+const editedEqualWidthColumnsDocx = await DocumentFile.exportDocx(importedEqualWidthColumns);
+const editedEqualWidthColumns = await DocumentFile.importDocx(editedEqualWidthColumnsDocx);
+const editedEqualWidthSection = editedEqualWidthColumns.blocks.find((block) => block.kind === "section");
+assert.deepEqual(editedEqualWidthSection?.columns, { count: 3, spacing: 360, separator: false });
+editedEqualWidthSection.columns = undefined;
+const removedEqualWidthColumnsDocx = await DocumentFile.exportDocx(editedEqualWidthColumns);
+const removedEqualWidthColumnsXml = await (await JSZip.loadAsync(await removedEqualWidthColumnsDocx.arrayBuffer())).file("word/document.xml").async("text");
+assert.doesNotMatch(removedEqualWidthColumnsXml, /<w:cols\b/);
+assert.equal((await DocumentFile.importDocx(removedEqualWidthColumnsDocx)).blocks.find((block) => block.kind === "section")?.columns, undefined);
+
+const implicitEqualWidthColumnsSource = await DocumentFile.patchDocx(equalWidthColumnsDocx, [{
+  path: "word/document.xml",
+  xml: equalWidthColumnsXml.replace(/(<w:cols\b[^>]*?)\s+w:equalWidth="(?:true|1)"/, "$1"),
+}]);
+const importedImplicitEqualWidthColumns = await DocumentFile.importDocx(implicitEqualWidthColumnsSource);
+assert.equal(importedImplicitEqualWidthColumns.blocks.find((block) => block.kind === "section")?.editable, true);
+assert.deepEqual(importedImplicitEqualWidthColumns.blocks.find((block) => block.kind === "section")?.columns, { count: 2, spacing: 720, separator: true });
+assert.deepEqual(
+  Buffer.from(await (await DocumentFile.exportDocx(importedImplicitEqualWidthColumns)).arrayBuffer()),
+  Buffer.from(await implicitEqualWidthColumnsSource.arrayBuffer()),
+  "an omitted equalWidth attribute must retain its source bytes and canonical true semantics",
+);
+
+const customWidthColumnsSource = await DocumentFile.patchDocx(equalWidthColumnsDocx, [{
+  path: "word/document.xml",
+  xml: equalWidthColumnsXml.replace(/<w:cols\b[^>]*\/>/, '<w:cols w:equalWidth="0"><w:col w:w="3000" w:space="720"/><w:col w:w="5000"/></w:cols>'),
+}]);
+const customWidthColumnsXml = await (await JSZip.loadAsync(await customWidthColumnsSource.arrayBuffer())).file("word/document.xml").async("text");
+const customWidthColumnsFragment = customWidthColumnsXml.match(/<w:cols\b[\s\S]*?<\/w:cols>/)?.[0];
+const importedCustomWidthColumns = await DocumentFile.importDocx(customWidthColumnsSource);
+const customWidthSection = importedCustomWidthColumns.blocks.find((block) => block.kind === "section");
+assert.equal(customWidthSection?.editable, false);
+assert.equal(customWidthSection?.columns, undefined);
+const customWidthParagraph = importedCustomWidthColumns.blocks.find((block) => block.kind === "paragraph");
+customWidthParagraph.replaceText("brief", "retained brief");
+const customWidthBodyEdit = await DocumentFile.exportDocx(importedCustomWidthColumns);
+const customWidthBodyEditXml = await (await JSZip.loadAsync(await customWidthBodyEdit.arrayBuffer())).file("word/document.xml").async("text");
+assert.equal(
+  customWidthBodyEditXml.match(/<w:cols\b[\s\S]*?<\/w:cols>/)?.[0].replace(/\s+\/>/g, "/>"),
+  customWidthColumnsFragment.replace(/\s+\/>/g, "/>"),
+  "an unrelated body edit must preserve custom-width column markup",
+);
+customWidthSection.columns = { count: 2, spacing: 720, separator: false };
+await assert.rejects(
+  () => DocumentFile.exportDocx(importedCustomWidthColumns),
+  (error) => error?.code === "unsupported_document_edit" && /source-bound and read-only/i.test(error.message),
+);
+
+const canonicalColumnsMarkup = equalWidthColumnsXml.match(/<w:cols\b[^>]*\/>/)?.[0];
+const normalizedColumnTags = (xml) => [...xml.matchAll(/<w:cols\b([^>]*)\/>/g)]
+  .map((match) => match[1].trim().split(/\s+/).sort());
+for (const [label, markup] of [
+  ["duplicate", `${canonicalColumnsMarkup}${canonicalColumnsMarkup}`],
+  ["extension-bearing", canonicalColumnsMarkup.replace("<w:cols", '<w:cols w:compatFlag="retained"')],
+]) {
+  const irregularColumnsSource = await DocumentFile.patchDocx(equalWidthColumnsDocx, [{
+    path: "word/document.xml",
+    xml: equalWidthColumnsXml.replace(canonicalColumnsMarkup, markup),
+  }]);
+  const irregularColumnsSourceXml = await (await JSZip.loadAsync(await irregularColumnsSource.arrayBuffer())).file("word/document.xml").async("text");
+  const irregularColumnsSectionMarkup = irregularColumnsSourceXml.match(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/)?.[0];
+  const importedIrregularColumns = await DocumentFile.importDocx(irregularColumnsSource);
+  const irregularColumnsSection = importedIrregularColumns.blocks.find((block) => block.kind === "section");
+  assert.equal(irregularColumnsSection?.editable, false, `${label} columns must keep section geometry source-owned`);
+  assert.equal(irregularColumnsSection?.columns, undefined);
+  importedIrregularColumns.blocks.find((block) => block.kind === "paragraph")?.replaceText("brief", `${label} brief`);
+  const unrelatedIrregularColumnsEdit = await DocumentFile.exportDocx(importedIrregularColumns);
+  const unrelatedIrregularColumnsXml = await (await JSZip.loadAsync(await unrelatedIrregularColumnsEdit.arrayBuffer())).file("word/document.xml").async("text");
+  const unrelatedIrregularColumnsSectionMarkup = unrelatedIrregularColumnsXml.match(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/)?.[0];
+  assert.equal(
+    unrelatedIrregularColumnsSectionMarkup.replace(/<w:cols\b[^>]*\/>/g, ""),
+    irregularColumnsSectionMarkup.replace(/<w:cols\b[^>]*\/>/g, ""),
+    `an unrelated body edit must preserve the section siblings around ${label} columns`,
+  );
+  assert.deepEqual(
+    normalizedColumnTags(unrelatedIrregularColumnsSectionMarkup),
+    normalizedColumnTags(irregularColumnsSectionMarkup),
+    `an unrelated body edit must preserve every ${label} columns attribute`,
+  );
+  irregularColumnsSection.columns = { count: 2, spacing: 720, separator: false };
+  await assert.rejects(
+    () => DocumentFile.exportDocx(importedIrregularColumns),
+    (error) => error?.code === "unsupported_document_edit" && /source-bound and read-only/i.test(error.message),
+  );
+}
+
+const impossibleSectionColumns = DocumentModel.create({
+  blocks: [
+    { kind: "paragraph", text: "Invalid equal-width columns" },
+    { kind: "section", pageSize: { widthTwips: 5000, heightTwips: 5000 }, margins: { top: 500, right: 500, bottom: 500, left: 500 }, columns: { count: 3, spacing: 2000, separator: false } },
+  ],
+});
+assert.equal(impossibleSectionColumns.verify().issues.some((issue) => issue.type === "sectionColumnsExceedPage"), true);
+await assert.rejects(
+  () => DocumentFile.exportDocx(impossibleSectionColumns),
+  (error) => error?.code === "invalid_document_section" && /column spacing must leave positive width/i.test(error.message),
+);
+const tooManySectionColumns = DocumentModel.create({ blocks: [
+  { kind: "paragraph", text: "Too many columns" },
+  { kind: "section", columns: { count: 46, spacing: 0, separator: false } },
+] });
+assert.equal(tooManySectionColumns.verify().issues.some((issue) => issue.type === "invalidSectionColumns"), true);
+await assert.rejects(() => DocumentFile.exportDocx(tooManySectionColumns), /column count must be 1 through 45/i);
+assert.throws(
+  () => DocumentModel.create({ blocks: [{ kind: "section", columns: "two" }] }),
+  /section columns must be an object/i,
+);
+assert.throws(
+  () => DocumentModel.create({ blocks: [{ kind: "section", columns: { count: 2, widths: [3000, 5000] } }] }),
+  /unsupported document section column properties: widths/i,
+);
+
 const protectedSettings = DocumentModel.create({
   name: "Passwordless document protection",
   settings: { documentProtection: "readOnly" },

@@ -4995,6 +4995,206 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void EqualWidthSectionColumnsAuthorImportEditAndRejectCustomWidthGraphs()
+    {
+        var request = ExportRequest();
+        request.Artifact.Document.Blocks.Add(new DocumentBlock
+        {
+            Id = "document/two-columns",
+            Section = new DocumentSection
+            {
+                BreakType = DocumentSectionBreak.Continuous,
+                PageWidthTwips = 12240,
+                PageHeightTwips = 15840,
+                MarginTopTwips = 1440,
+                MarginRightTwips = 1440,
+                MarginBottomTwips = 1440,
+                MarginLeftTwips = 1440,
+                Columns = new DocumentSectionColumns
+                {
+                    Count = 2,
+                    SpacingTwips = 720,
+                    Separator = true,
+                },
+            },
+        });
+
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var columns = package.MainDocumentPart!.Document!.Body!
+                .Descendants<W.SectionProperties>().First()
+                .GetFirstChild<W.Columns>()!;
+            Assert.True(columns.EqualWidth!.Value);
+            Assert.Equal((short)2, columns.ColumnCount!.Value);
+            Assert.Equal("720", columns.Space!.Value);
+            Assert.True(columns.Separator!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var section = imported.Artifact.Document.Blocks.Single(block =>
+            block.ContentCase == DocumentBlock.ContentOneofCase.Section);
+        Assert.True(section.Source.Editable);
+        Assert.Equal(2U, section.Section.Columns.Count);
+        Assert.Equal(720U, section.Section.Columns.SpacingTwips);
+        Assert.True(section.Section.Columns.Separator);
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(authored.File, unchanged.File);
+
+        section.Section.Columns.Count = 3;
+        section.Section.Columns.SpacingTwips = 360;
+        section.Section.Columns.Separator = false;
+        var edited = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(edited.Ok, Diagnostics(edited));
+        using (var stream = new MemoryStream(edited.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var columns = package.MainDocumentPart!.Document!.Body!
+                .Descendants<W.SectionProperties>().First()
+                .GetFirstChild<W.Columns>()!;
+            Assert.Equal((short)3, columns.ColumnCount!.Value);
+            Assert.Equal("360", columns.Space!.Value);
+            Assert.False(columns.Separator!.Value);
+        }
+
+        var editedImport = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = edited.File,
+        });
+        Assert.True(editedImport.Ok, Diagnostics(editedImport));
+        editedImport.Artifact.Document.Blocks.Single(block =>
+            block.ContentCase == DocumentBlock.ContentOneofCase.Section).Section.Columns = null;
+        var removed = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = editedImport.Artifact,
+        });
+        Assert.True(removed.Ok, Diagnostics(removed));
+        using (var stream = new MemoryStream(removed.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+            Assert.Null(package.MainDocumentPart!.Document!.Body!
+                .Descendants<W.SectionProperties>().First().GetFirstChild<W.Columns>());
+
+        var implicitEqualWidthSource = SetSectionColumnsEqualWidth(authored.File.ToByteArray(), null);
+        var implicitEqualWidth = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(implicitEqualWidthSource),
+        });
+        Assert.True(implicitEqualWidth.Ok, Diagnostics(implicitEqualWidth));
+        var implicitSection = implicitEqualWidth.Artifact.Document.Blocks.Single(block =>
+            block.ContentCase == DocumentBlock.ContentOneofCase.Section);
+        Assert.True(implicitSection.Source.Editable);
+        Assert.Equal(2U, implicitSection.Section.Columns.Count);
+        var implicitUnchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = implicitEqualWidth.Artifact,
+        });
+        Assert.True(implicitUnchanged.Ok, Diagnostics(implicitUnchanged));
+        Assert.Equal(implicitEqualWidthSource, implicitUnchanged.File.ToByteArray());
+
+        var customWidthSource = SetCustomSectionColumns(authored.File.ToByteArray());
+        string sourceColumns;
+        using (var stream = new MemoryStream(customWidthSource))
+        using (var package = WordprocessingDocument.Open(stream, false))
+            sourceColumns = package.MainDocumentPart!.Document!.Body!
+                .Descendants<W.SectionProperties>().First().GetFirstChild<W.Columns>()!.OuterXml;
+        var customWidth = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(customWidthSource),
+        });
+        Assert.True(customWidth.Ok, Diagnostics(customWidth));
+        var customSection = customWidth.Artifact.Document.Blocks.Single(block =>
+            block.ContentCase == DocumentBlock.ContentOneofCase.Section);
+        Assert.False(customSection.Source.Editable);
+        Assert.Null(customSection.Section.Columns);
+
+        var title = customWidth.Artifact.Document.Blocks[0].Paragraph;
+        title.Text = "Quarterly custom-column brief";
+        title.Runs[0].Text = title.Text;
+        var bodyEdit = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = customWidth.Artifact,
+        });
+        Assert.True(bodyEdit.Ok, Diagnostics(bodyEdit));
+        using (var stream = new MemoryStream(bodyEdit.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+            Assert.Equal(sourceColumns, package.MainDocumentPart!.Document!.Body!
+                .Descendants<W.SectionProperties>().First().GetFirstChild<W.Columns>()!.OuterXml);
+
+        customSection.Section.Columns = new DocumentSectionColumns { Count = 2, SpacingTwips = 720 };
+        var rejectedCustomWidthEdit = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = customWidth.Artifact,
+        });
+        Assert.False(rejectedCustomWidthEdit.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(rejectedCustomWidthEdit.Diagnostics).Code);
+
+        var invalid = ExportRequest();
+        invalid.Artifact.Document.Blocks.Add(new DocumentBlock
+        {
+            Id = "document/invalid-columns",
+            Section = new DocumentSection
+            {
+                BreakType = DocumentSectionBreak.NextPage,
+                PageWidthTwips = 5000,
+                PageHeightTwips = 5000,
+                MarginTopTwips = 500,
+                MarginRightTwips = 500,
+                MarginBottomTwips = 500,
+                MarginLeftTwips = 500,
+                Columns = new DocumentSectionColumns { Count = 3, SpacingTwips = 2000 },
+            },
+        });
+        var invalidResult = Invoke(invalid);
+        Assert.False(invalidResult.Ok);
+        Assert.Equal("invalid_document_section", Assert.Single(invalidResult.Diagnostics).Code);
+    }
+
+    [Fact]
     public void PasswordlessDocumentProtectionAuthorsAndImportsEveryBoundedMode()
     {
         var modes = new[]
@@ -7116,6 +7316,40 @@ public sealed class DocxCodecTests
                 .GetFirstChild<W.PageMargin>()!;
             margins.Header = header;
             margins.Footer = footer;
+            document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] SetSectionColumnsEqualWidth(byte[] bytes, bool? value)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var columns = document.MainDocumentPart!.Document!.Body!
+                .Descendants<W.SectionProperties>().First().GetFirstChild<W.Columns>()!;
+            columns.EqualWidth = value;
+            document.MainDocumentPart.Document.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] SetCustomSectionColumns(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var columns = document.MainDocumentPart!.Document!.Body!
+                .Descendants<W.SectionProperties>().First().GetFirstChild<W.Columns>()!;
+            columns.EqualWidth = false;
+            columns.RemoveAllChildren<W.Column>();
+            columns.Append(
+                new W.Column { Width = "3000", Space = "720" },
+                new W.Column { Width = "5000" });
             document.MainDocumentPart.Document.Save();
         }
         return stream.ToArray();

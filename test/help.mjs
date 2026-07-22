@@ -378,6 +378,8 @@ assert.equal(documentCatalog.length, 65);
 assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.type, "object");
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.description || "", /binding gutter.*gutterAtTop.*top-edge.*binding-side/i);
+assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.columns?.type, "object");
+assert.match(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.columns?.description || "", /equal-width.*1–45.*spacing.*separator.*custom-width.*source-owned/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.schema?.parameters?.pictureBullet?.type, "string|object");
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.summary || "", /picture-bulleted.*shared numbering-level resources.*complete group/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.schema?.parameters?.pictureBullet?.description || "", /PNG\/JPEG\/GIF.*HTTP\(S\).*4 through 72 points.*never fetched.*full-group edit.*fail closed/i);

@@ -34,6 +34,7 @@ document.addSection({
   orientation: "landscape",
   pageSize: { widthTwips: 15840, heightTwips: 12240 },
   margins: { top: 720, right: 900, bottom: 720, left: 900 },
+  columns: { count: 2, spacing: 720, separator: true },
 });
 document.addParagraph("Landscape-section evidence.");
 
@@ -54,10 +55,18 @@ Imported section relationship/linkage graphs beyond the modeled section
 boundary are source-bound. If changing one would invalidate source evidence,
 OpenChestnut fails closed; do not flatten the document to force the edit.
 
+`columns` is the bounded equal-width profile: `count` is 1–45, `spacing` is
+in twentieths of a point, and `separator` draws a rule between columns. The
+ordinary margins, binding gutter, and all inter-column spacing must leave
+positive text width. Imported custom-width `w:col` children, duplicate column
+definitions, and extension-bearing column graphs remain source-owned; inspect
+reports that section as `editable: false`.
+
 ## Render review
 
 - Only the intended pages change orientation.
 - Page size and margins match the explicit twip values.
+- Text flows through the requested equal-width columns and separator rules.
 - Headers and footers appear in the intended section.
 - First/even variants behave as requested.
 - No empty trailing page was introduced.

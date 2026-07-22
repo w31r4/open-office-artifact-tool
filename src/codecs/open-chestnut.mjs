@@ -3184,6 +3184,10 @@ function publicDocumentFloatingImagePlacement(value) {
 function wireDocumentSection(block) {
   const page = block.pageSize || {};
   const margins = block.margins || {};
+  const columns = block.columns;
+  if (columns && typeof columns.separator !== "boolean") {
+    throw new TypeError(`Document section ${block.id} column separator must be boolean.`);
+  }
   return {
     breakType: documentSectionBreak(block.breakType),
     pageWidthTwips: uint32(Math.round(Number(page.widthTwips)), `Document section ${block.id} page width`),
@@ -3194,6 +3198,11 @@ function wireDocumentSection(block) {
     marginBottomTwips: uint32(Math.round(Number(margins.bottom)), `Document section ${block.id} bottom margin`),
     marginLeftTwips: uint32(Math.round(Number(margins.left)), `Document section ${block.id} left margin`),
     marginGutterTwips: uint32(Math.round(Number(margins.gutter ?? 0)), `Document section ${block.id} gutter margin`),
+    columns: columns ? {
+      count: uint32(Number(columns.count), `Document section ${block.id} column count`),
+      spacingTwips: uint32(Number(columns.spacing), `Document section ${block.id} column spacing`),
+      separator: columns.separator,
+    } : undefined,
   };
 }
 
@@ -3978,6 +3987,7 @@ function documentFromEnvelope(envelope) {
           orientation: section.landscape ? "landscape" : "portrait",
           pageSize: { widthTwips: section.pageWidthTwips, heightTwips: section.pageHeightTwips },
           margins: { top: section.marginTopTwips, right: section.marginRightTwips, bottom: section.marginBottomTwips, left: section.marginLeftTwips, gutter: section.marginGutterTwips },
+          columns: section.columns ? { count: section.columns.count, spacing: section.columns.spacingTwips, separator: section.columns.separator } : undefined,
         };
       }
       case "opaque":

@@ -596,6 +596,7 @@ const DOCUMENT_IMAGE_WRAP_SIDES = new Set(["bothSides", "left", "right", "larges
 const DOCUMENT_IMAGE_PLACEMENT_KEYS = new Set(["type", "horizontal", "vertical", "wrap", "wrapSide", "distanceFromTextPx"]);
 const DOCUMENT_IMAGE_AXIS_KEYS = new Set(["relativeTo", "offsetPx"]);
 const DOCUMENT_IMAGE_DISTANCE_KEYS = new Set(["top", "right", "bottom", "left"]);
+const DOCUMENT_SECTION_COLUMN_KEYS = new Set(["count", "spacing", "separator"]);
 
 function assertDocumentImageObjectKeys(value, allowed, label) {
   for (const key of Object.keys(value)) if (!allowed.has(key)) throw new TypeError(`${label} contains unsupported field ${key}.`);
@@ -646,6 +647,18 @@ function normalizeDocumentImagePlacement(value) {
   return { type, horizontal, vertical, wrap, wrapSide, distanceFromTextPx };
 }
 
+function normalizeDocumentSectionColumns(value) {
+  if (value == null) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Document section columns must be an object.");
+  const unknownKeys = Object.keys(value).filter((key) => !DOCUMENT_SECTION_COLUMN_KEYS.has(key));
+  if (unknownKeys.length) throw new TypeError(`Unsupported document section column properties: ${unknownKeys.join(", ")}.`);
+  return {
+    count: Number(value.count ?? 1),
+    spacing: Number(value.spacing ?? 720),
+    separator: value.separator ?? false,
+  };
+}
+
 class DocumentImageBlock {
   constructor(document, config = {}) {
     this.document = document;
@@ -689,10 +702,11 @@ class DocumentSectionBlock {
       left: Number(margins.left ?? config.marginLeft ?? 1440),
       gutter: Number(margins.gutter ?? config.marginGutter ?? 0),
     };
+    this.columns = normalizeDocumentSectionColumns(config.columns);
   }
 
-  inspectRecord(index) { return { kind: "section", id: this.id, index, name: this.name || undefined, editable: this.editable, breakType: this.breakType, orientation: this.orientation, pageSize: this.pageSize, margins: this.margins }; }
-  toProto() { return { kind: "section", id: this.id, name: this.name, breakType: this.breakType, orientation: this.orientation, pageSize: this.pageSize, margins: this.margins }; }
+  inspectRecord(index) { return { kind: "section", id: this.id, index, name: this.name || undefined, editable: this.editable, breakType: this.breakType, orientation: this.orientation, pageSize: this.pageSize, margins: this.margins, columns: this.columns }; }
+  toProto() { return { kind: "section", id: this.id, name: this.name, breakType: this.breakType, orientation: this.orientation, pageSize: this.pageSize, margins: this.margins, columns: this.columns }; }
 }
 
 class DocumentHeaderFooterBlock {
@@ -1565,6 +1579,15 @@ export class DocumentModel {
         const verticalMargins = Number(block.margins?.top || 0) + Number(block.margins?.bottom || 0) + (this.settings.gutterAtTop ? gutter : 0);
         if (Number.isFinite(block.pageSize?.widthTwips) && horizontalMargins >= block.pageSize.widthTwips) issues.push(verificationIssue("document", "sectionMarginsExceedPage", `Section ${block.id} horizontal margins and binding gutter exceed page width.`, { id: block.id, margins: block.margins, pageSize: block.pageSize }));
         if (Number.isFinite(block.pageSize?.heightTwips) && verticalMargins >= block.pageSize.heightTwips) issues.push(verificationIssue("document", "sectionMarginsExceedPage", `Section ${block.id} vertical margins and binding gutter exceed page height.`, { id: block.id, margins: block.margins, pageSize: block.pageSize }));
+        if (block.columns) {
+          const count = Number(block.columns.count);
+          const spacing = Number(block.columns.spacing);
+          if (!Number.isInteger(count) || count < 1 || count > 45) issues.push(verificationIssue("document", "invalidSectionColumns", `Section ${block.id} equal-width column count must be an integer from 1 through 45.`, { id: block.id, columns: block.columns }));
+          if (!Number.isInteger(spacing) || spacing < 0 || spacing > 31680) issues.push(verificationIssue("document", "invalidSectionColumns", `Section ${block.id} column spacing must be an integer from 0 through 31680 twentieths of a point.`, { id: block.id, columns: block.columns }));
+          if (typeof block.columns.separator !== "boolean") issues.push(verificationIssue("document", "invalidSectionColumns", `Section ${block.id} column separator must be boolean.`, { id: block.id, columns: block.columns }));
+          const availableWidth = Number(block.pageSize?.widthTwips) - horizontalMargins;
+          if (Number.isInteger(count) && Number.isInteger(spacing) && count >= 1 && spacing >= 0 && Number.isFinite(availableWidth) && (count - 1) * spacing >= availableWidth) issues.push(verificationIssue("document", "sectionColumnsExceedPage", `Section ${block.id} column spacing must leave positive width for every text column.`, { id: block.id, columns: block.columns, margins: block.margins, pageSize: block.pageSize }));
+        }
       }
       if (block.kind === "listItem") {
         if (!Number.isInteger(block.level) || block.level < 0 || block.level > 8) issues.push(verificationIssue("document", "invalidListLevel", `List item ${block.id} level must be an integer from 0 through 8.`, { id: block.id, level: block.level }));

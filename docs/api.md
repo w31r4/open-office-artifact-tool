@@ -23,7 +23,7 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.addInsertion` | api | Append one bounded whole-paragraph tracked insertion using native w:ins markup. For one exact in-paragraph replacement in existing source bytes, use DocumentFile.addTrackedReplacement; mixed, moved, nested, and property-level revisions remain outside the bounded profile. |
 | `document.addListItem` | api | Append a numbered, character-bulleted, or bounded picture-bulleted list item using native DOCX numbering definitions. Picture markers are shared numbering-level resources: every item using the same numberingId and level must agree, and recognized imported edits must update the complete group without changing embedded-versus-external source kind. |
 | `document.addParagraph` | api | Append a styled paragraph with optional run spans, including character-style runStyleId references plus direct/theme and complex-script semantics. |
-| `document.addSection` | api | Append a DOCX section break with page size, orientation, top/right/bottom/left margins, binding gutter, and break-type metadata backed by w:sectPr. Imported geometry is writable only when page-margin mode settings are canonical. |
+| `document.addSection` | api | Append a DOCX section break with page size, orientation, margins, binding gutter, canonical equal-width columns, and break-type metadata backed by w:sectPr. Imported geometry is writable only when page-margin mode and column markup are canonical. |
 | `document.addTable` | api | Append a Word-style table with physical cell values, optional logical merge geometry, and fixed-layout width/margin/border/header formatting. |
 | `document.addTableOfContents` | api | Append one canonical one-paragraph complex TOC field with bounded heading levels/switches and enable the native updateFields-on-open hint by default. Refreshed cross-paragraph result graphs remain opaque/source-bound and read-only. |
 | `document.addWatermark` | api | Add one canonical VML text watermark to a section/header-reference scope. Recognized imported watermarks permit text-only edits or whole-object removal; adding to an imported package, changing scope, shared headers, multiple objects, DrawingML, images, and irregular VML fail closed. |
@@ -364,7 +364,7 @@ Append a styled paragraph with optional run spans, including character-style run
 
 #### `document.addSection`
 
-Append a DOCX section break with page size, orientation, top/right/bottom/left margins, binding gutter, and break-type metadata backed by w:sectPr. Imported geometry is writable only when page-margin mode settings are canonical.
+Append a DOCX section break with page size, orientation, margins, binding gutter, canonical equal-width columns, and break-type metadata backed by w:sectPr. Imported geometry is writable only when page-margin mode and column markup are canonical.
 
 **Schema parameters:**
 
@@ -372,10 +372,11 @@ Append a DOCX section break with page size, orientation, top/right/bottom/left m
 - `orientation` (string) — portrait or landscape.
 - `pageSize` (object) — Page width/height in twentieths of a point.
 - `margins` (object) — Top/right/bottom/left margins plus optional non-negative binding gutter in twentieths of a point. document.settings.gutterAtTop chooses top-edge versus binding-side placement.
+- `columns` (object) — Optional canonical equal-width text columns: integer count 1–45, non-negative spacing in twentieths of a point, and boolean separator. Margins, binding-side gutter, and all spacing must leave positive text width; custom-width w:col graphs stay source-owned.
 
 **Schema returns:**
 
-- `section` (DocumentSectionBlock) — Appended section break block. inspect reports editable=false when imported mirrorMargins/gutterAtTop mode markup is not canonical.
+- `section` (DocumentSectionBlock) — Appended section break block. inspect reports editable=false when imported mirrorMargins/gutterAtTop mode markup or section-column topology is not canonical.
 
 #### `document.addTable`
 

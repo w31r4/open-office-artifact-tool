@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using DocumentFormat.OpenXml;
@@ -26,7 +27,7 @@ internal static class DocxSectionCodec
     {
         var size = source.GetFirstChild<W.PageSize>();
         var margins = source.GetFirstChild<W.PageMargin>();
-        return new DocumentSection
+        var result = new DocumentSection
         {
             BreakType = FromNativeBreak(source.GetFirstChild<W.SectionType>()?.Val?.Value),
             PageWidthTwips = size?.Width?.Value ?? 12240U,
@@ -38,6 +39,8 @@ internal static class DocxSectionCodec
             MarginLeftTwips = margins?.Left?.Value ?? 1440U,
             MarginGutterTwips = margins?.Gutter?.Value ?? 0U,
         };
+        if (TryReadColumns(source, out var columns) && columns is not null) result.Columns = columns;
+        return result;
     }
 
     internal static W.Paragraph BuildBoundary(
@@ -69,6 +72,9 @@ internal static class DocxSectionCodec
         Replace(native, native.GetFirstChild<W.PageSize>(), BuildPageSize(requested));
         var sourceMargins = native.GetFirstChild<W.PageMargin>();
         Replace(native, sourceMargins, BuildPageMargin(requested, sourceMargins));
+        var sourceColumns = native.GetFirstChild<W.Columns>();
+        if (requested.Columns is null) sourceColumns?.Remove();
+        else Replace(native, sourceColumns, BuildColumns(requested.Columns));
     }
 
     internal static string ResidualHash(W.Paragraph paragraph)
@@ -78,6 +84,7 @@ internal static class DocxSectionCodec
         section?.GetFirstChild<W.SectionType>()?.Remove();
         section?.GetFirstChild<W.PageSize>()?.Remove();
         section?.GetFirstChild<W.PageMargin>()?.Remove();
+        section?.GetFirstChild<W.Columns>()?.Remove();
         return Hash(clone.OuterXml);
     }
 
@@ -100,6 +107,16 @@ internal static class DocxSectionCodec
         if ((ulong)section.MarginLeftTwips + section.MarginRightTwips + horizontalGutter >= section.PageWidthTwips ||
             (ulong)section.MarginTopTwips + section.MarginBottomTwips + verticalGutter >= section.PageHeightTwips)
             throw new CodecException("invalid_document_section", $"{label} margins and binding gutter must leave a positive page content area.");
+        if (section.Columns is not null)
+        {
+            if (section.Columns.Count is < 1 or > 45)
+                throw new CodecException("invalid_document_section", $"{label} equal-width column count must be 1 through 45.");
+            if (section.Columns.SpacingTwips > 31680)
+                throw new CodecException("invalid_document_section", $"{label} column spacing must not exceed 31680 twentieths of a point.");
+            var availableWidth = (ulong)section.PageWidthTwips - section.MarginLeftTwips - section.MarginRightTwips - horizontalGutter;
+            if ((ulong)(section.Columns.Count - 1) * section.Columns.SpacingTwips >= availableWidth)
+                throw new CodecException("invalid_document_section", $"{label} column spacing must leave positive width for every text column.");
+        }
     }
 
     private static W.SectionProperties BuildProperties(
@@ -110,6 +127,7 @@ internal static class DocxSectionCodec
         var properties = new W.SectionProperties();
         foreach (var reference in references) properties.Append(reference.CloneNode(true));
         properties.Append(BuildType(source.BreakType), BuildPageSize(source), BuildPageMargin(source));
+        if (source.Columns is not null) properties.Append(BuildColumns(source.Columns));
         if (differentFirstPage) properties.Append(new W.TitlePage());
         return properties;
     }
@@ -143,6 +161,14 @@ internal static class DocxSectionCodec
         Gutter = source.MarginGutterTwips,
     };
 
+    private static W.Columns BuildColumns(DocumentSectionColumns source) => new()
+    {
+        EqualWidth = true,
+        ColumnCount = checked((short)source.Count),
+        Space = source.SpacingTwips.ToString(CultureInfo.InvariantCulture),
+        Separator = source.Separator,
+    };
+
     private static DocumentSection Default() => new()
     {
         BreakType = DocumentSectionBreak.NextPage,
@@ -155,8 +181,49 @@ internal static class DocxSectionCodec
         MarginGutterTwips = 0,
     };
 
-    private static bool IsBounded(W.SectionProperties source) => source.ChildElements.All(child =>
-        child is W.HeaderReference or W.FooterReference or W.SectionType or W.PageSize or W.PageMargin or W.TitlePage);
+    private static bool IsBounded(W.SectionProperties source)
+    {
+        if (!source.ChildElements.All(child => child is W.HeaderReference or W.FooterReference or
+                W.SectionType or W.PageSize or W.PageMargin or W.Columns or W.TitlePage) ||
+            source.Elements<W.SectionType>().Count() > 1 ||
+            source.Elements<W.PageSize>().Count() > 1 ||
+            source.Elements<W.PageMargin>().Count() > 1 ||
+            source.Elements<W.TitlePage>().Count() > 1)
+            return false;
+        return TryReadColumns(source, out _);
+    }
+
+    private static bool TryReadColumns(W.SectionProperties source, out DocumentSectionColumns? result)
+    {
+        result = null;
+        var matches = source.Elements<W.Columns>().ToArray();
+        if (matches.Length == 0) return true;
+        if (matches.Length != 1) return false;
+        var columns = matches[0];
+        if (columns.HasChildren || columns.ExtendedAttributes.Any() || columns.NamespaceDeclarations.Any() || columns.MCAttributes is not null)
+            return false;
+        try
+        {
+            if (columns.EqualWidth is not null && !columns.EqualWidth.Value) return false;
+            var count = columns.ColumnCount?.Value ?? (short)1;
+            if (count is < 1 or > 45 ||
+                columns.Space?.Value is not { } spacingText ||
+                !uint.TryParse(spacingText, NumberStyles.None, CultureInfo.InvariantCulture, out var spacing) ||
+                spacing > 31680)
+                return false;
+            result = new DocumentSectionColumns
+            {
+                Count = checked((uint)count),
+                SpacingTwips = spacing,
+                Separator = columns.Separator?.Value ?? false,
+            };
+            return true;
+        }
+        catch (Exception exception) when (exception is FormatException or InvalidOperationException or OverflowException)
+        {
+            return false;
+        }
+    }
 
     private static DocumentSectionBreak FromNativeBreak(W.SectionMarkValues? value) =>
         value == W.SectionMarkValues.Continuous ? DocumentSectionBreak.Continuous :

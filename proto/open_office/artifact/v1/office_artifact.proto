@@ -2730,6 +2730,19 @@ message DocumentSection {
   // gutter_at_top setting determines whether a compatible host adds it to the
   // top edge or the binding side.
   uint32 margin_gutter_twips = 9;
+  // Optional canonical equal-width section columns. Absence leaves the
+  // section at the host default; custom per-column widths stay source-owned.
+  DocumentSectionColumns columns = 10;
+}
+
+message DocumentSectionColumns {
+  // Equal-width text column count. The bounded OpenChestnut profile accepts
+  // the Word-compatible range 1 through 45.
+  uint32 count = 1;
+  // Space between adjacent equal-width columns in twentieths of a point.
+  uint32 spacing_twips = 2;
+  // Draw a vertical rule centered in each inter-column spacing area.
+  bool separator = 3;
 }
 
 message DocumentHyperlink {

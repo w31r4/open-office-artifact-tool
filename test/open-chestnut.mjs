@@ -170,7 +170,7 @@ document.addImage({
     distanceFromTextPx: { top: 0, right: 12, bottom: 4, left: 12 },
   },
 });
-document.addSection({ breakType: "nextPage", orientation: "landscape", pageSize: { widthTwips: 15840, heightTwips: 12240 }, margins: { top: 720, right: 720, bottom: 720, left: 720, gutter: 360 } });
+document.addSection({ breakType: "nextPage", orientation: "landscape", pageSize: { widthTwips: 15840, heightTwips: 12240 }, margins: { top: 720, right: 720, bottom: 720, left: 720, gutter: 360 }, columns: { count: 2, spacing: 540, separator: true } });
 document.addComment(bodyParagraph, "Review body paragraph", { author: "Reviewer", initials: "RV", date: "2026-07-16T08:00:00Z" });
 
 const docx = await exportDocxWithOpenChestnut(document);
@@ -185,6 +185,7 @@ assert.match(await docxZip.file("word/settings.xml").async("text"), /<w:gutterAt
 assert.match(await docxZip.file("word/document.xml").async("text"), /<w:sdt>[\s\S]*<w:tag w:val="OWNER"\s*\/>[\s\S]*<w:text\s*\/>[\s\S]*Ada[\s\S]*<\/w:sdt>/);
 const docxXml = await docxZip.file("word/document.xml").async("text");
 assert.match(docxXml, /<w:pgMar\b(?=[^>]*w:gutter="360")[^>]*\/>/);
+assert.match(docxXml, /<w:cols\b(?=[^>]*w:num="2")(?=[^>]*w:space="540")(?=[^>]*w:sep="(?:true|1)")[^>]*\/>/);
 assert.match(docxXml, /<wp:anchor(?=[^>]*behindDoc="0")(?=[^>]*allowOverlap="0")[^>]*>/);
 assert.match(docxXml, /<wp:positionH relativeFrom="margin"><wp:posOffset>342900<\/wp:posOffset><\/wp:positionH>/);
 assert.match(docxXml, /<wp:positionV relativeFrom="paragraph"><wp:posOffset>95250<\/wp:posOffset><\/wp:positionV>/);
@@ -205,6 +206,7 @@ const importedDocument = await importDocxWithOpenChestnut(docx);
 assert.equal(importedDocument.settings.mirrorMargins, true);
 assert.equal(importedDocument.settings.gutterAtTop, true);
 assert.equal(importedDocument.blocks.find((block) => block.kind === "section")?.margins.gutter, 360);
+assert.deepEqual(importedDocument.blocks.find((block) => block.kind === "section")?.columns, { count: 2, spacing: 540, separator: true });
 assert.deepEqual(importedDocument.settings.documentProtection, { edit: "comments", enforcement: true, formatting: false });
 assert.equal(importedDocument.defaultRunStyle.fontFamily, "Aptos");
 assert.ok(importedDocument.styles.get("CoreHeading"));
