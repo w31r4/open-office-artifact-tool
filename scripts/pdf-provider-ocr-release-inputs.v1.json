@@ -19,7 +19,7 @@
         }
       },
       "linux-x64": {
-        "packages": ["tesseract-ocr", "ghostscript", "poppler-utils", "fonts-droid-fallback", "patchelf"],
+        "packages": ["tesseract-ocr", "ghostscript", "poppler-utils", "fonts-droid-fallback", "fonts-urw-base35", "patchelf"],
         "commands": {
           "tesseract": "/usr/bin/tesseract",
           "ghostscript": "/usr/bin/gs",

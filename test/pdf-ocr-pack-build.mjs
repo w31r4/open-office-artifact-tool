@@ -28,7 +28,7 @@ assert.equal(
   "the OCR release lock must pin the exact isolated-Python wheel lock it builds",
 );
 assert.deepEqual(inputs.ocrCore.nativeBuild["darwin-arm64"].formulae, ["tesseract", "ghostscript", "poppler"]);
-assert.deepEqual(inputs.ocrCore.nativeBuild["linux-x64"].packages, ["tesseract-ocr", "ghostscript", "poppler-utils", "fonts-droid-fallback", "patchelf"]);
+assert.deepEqual(inputs.ocrCore.nativeBuild["linux-x64"].packages, ["tesseract-ocr", "ghostscript", "poppler-utils", "fonts-droid-fallback", "fonts-urw-base35", "patchelf"]);
 
 for (const [language, expected] of Object.entries({ eng: "ocr-language-eng", chi_sim: "ocr-language-chi-sim" })) {
   const languageInput = inputs.languages[language];
@@ -57,6 +57,8 @@ for (const sourceFragment of [
   "native library basename collision",
   "MACHO_MAGICS",
   "isMachOFile",
+  "listMacLibraryFiles",
+  "path.basename(source)",
   "contains a dangling symlink",
   "contains a symlink directory cycle",
   "resource-root",
@@ -64,8 +66,8 @@ for (const sourceFragment of [
 assert.match(nativeSource, /if \(!await isMachOFile\(target\)\) return false;/);
 assert.match(workflowSource, /fonts-droid-fallback/);
 assert.match(workflowSource, /--resource-root/);
-assert.match(workflowSource, /fonts-droid-fallback build input/);
-assert.match(workflowSource, /DroidSansFallback\.ttf/);
+assert.match(workflowSource, /fonts-urw-base35/);
+assert.match(workflowSource, /resource_target/);
 assert.match(workflowSource, /dpkg-query -S/);
 assert.match(workflowSource, /brew deps --union tesseract ghostscript poppler/);
 assert.doesNotMatch(workflowSource, /brew deps --include-optional/);

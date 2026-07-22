@@ -105,7 +105,7 @@ function containedPath(roots, target, label) {
     const normalizedRoot = path.resolve(root);
     if (normalizedTarget === normalizedRoot || normalizedTarget.startsWith(`${normalizedRoot}${path.sep}`)) return normalizedTarget;
   }
-  fail(`${label} escapes its declared roots.`);
+  fail(`${label} escapes its declared roots: ${normalizedTarget}.`);
 }
 
 async function copyFile(source, destination, { executable = false } = {}) {
@@ -195,7 +195,10 @@ async function listRegularFiles(root) {
 
 async function copyByBasename(source, destinationDirectory, copied) {
   const actual = await fs.realpath(source);
-  const name = path.basename(actual);
+  // Keep the *referenced* basename even when Homebrew or the system runtime
+  // expresses it as a symlink. The final customer archive forbids symlinks,
+  // so each ABI name must become a regular copy of the verified target.
+  const name = path.basename(source);
   const destination = path.join(destinationDirectory, name);
   const existing = copied.get(name);
   if (existing) {
@@ -221,13 +224,33 @@ async function copyMacLibraries(options, libDirectory) {
   const copied = new Map();
   for (const rootPath of options.libraryRoots) {
     const root = await realDirectory(rootPath, "library root");
-    for (const candidate of await listRegularFiles(root)) {
-      if (!path.basename(candidate).includes(".dylib")) continue;
+    for (const candidate of await listMacLibraryFiles(root)) {
       await copyByBasename(candidate, libDirectory, copied);
     }
   }
   if (!copied.size) fail("no macOS native libraries were collected from the declared library roots.");
   return copied;
+}
+
+async function listMacLibraryFiles(root) {
+  const results = [];
+  async function walk(directory) {
+    for (const entry of (await fs.readdir(directory, { withFileTypes: true })).sort((left, right) => left.name.localeCompare(right.name, "en"))) {
+      const candidate = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await walk(candidate);
+        continue;
+      }
+      if ((!entry.isFile() && !entry.isSymbolicLink()) || !entry.name.includes(".dylib")) continue;
+      const actual = await fs.realpath(candidate).catch(() => fail(`macOS library link is unresolved: ${candidate}.`));
+      containedPath([root], actual, "macOS library link");
+      const stat = await fs.lstat(actual);
+      if (!stat.isFile()) fail(`macOS library link does not resolve to a regular file: ${candidate}.`);
+      results.push(candidate);
+    }
+  }
+  await walk(root);
+  return results;
 }
 
 function parseMacDependencies(output) {

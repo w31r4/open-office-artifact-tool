@@ -66,7 +66,7 @@ jobs:
           set -euo pipefail
           if [ "${{ matrix.platform }}" = "linux-x64" ]; then
             sudo apt-get update
-            sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng ghostscript poppler-utils fonts-droid-fallback patchelf
+            sudo apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng ghostscript poppler-utils fonts-droid-fallback fonts-urw-base35 patchelf
           else
             brew install tesseract ghostscript poppler
           fi
@@ -94,21 +94,38 @@ jobs:
           library_args=()
           poppler_args=()
           resource_args=()
-          font_notice=""
-          font_package=""
+          font_packages=()
           if [ "${{ matrix.platform }}" = "linux-x64" ]; then
+            font_packages=(fonts-droid-fallback fonts-urw-base35)
             tessdata_root="$(dirname "$(dpkg -L tesseract-ocr-eng | awk '/eng\.traineddata$/ { print; exit }')")"
             test -d "$tessdata_root"
-            droid_link="$(find /usr/share/ghostscript -path '*/Resource/CIDFSubst/DroidSansFallback.ttf' -type l -print -quit)"
-            test -n "$droid_link"
-            droid_font="$(readlink -f "$droid_link")"
-            test -f "$droid_font"
-            dpkg-query -S "$droid_font" | grep -Eq '^fonts-droid-fallback(:[[:alnum:]-]+)?: '
-            resource_args+=(--resource-root "$(dirname "$droid_font")")
-            font_notice="/usr/share/doc/fonts-droid-fallback/copyright"
-            test -r "$font_notice"
-            font_package="$RUNNER_TEMP/fonts-droid-fallback-package.txt"
-            dpkg-query -W -f='${Package} ${Version}\n' fonts-droid-fallback > "$font_package"
+            ghostscript_resource="$(find /usr/share/ghostscript -type d -name Resource -print -quit)"
+            test -d "$ghostscript_resource"
+            resource_roots=()
+            while IFS= read -r resource_link; do
+              resource_target="$(readlink -f "$resource_link")"
+              test -f "$resource_target"
+              case "$resource_target" in "$ghostscript_resource"/*) continue ;; esac
+              package_owner=""
+              for package in "${font_packages[@]}"; do
+                if dpkg-query -S "$resource_target" | cut -d: -f1 | tr ',' '\n' | grep -Fxq "$package"; then
+                  package_owner="$package"
+                  break
+                fi
+              done
+              test -n "$package_owner"
+              resource_root="$(dirname "$resource_target")"
+              seen=0
+              for known_root in "${resource_roots[@]}"; do
+                if [ "$known_root" = "$resource_root" ]; then seen=1; break; fi
+              done
+              if [ "$seen" = 0 ]; then resource_roots+=("$resource_root"); fi
+            done < <(find "$ghostscript_resource" -type l -print | LC_ALL=C sort)
+            for resource_root in "${resource_roots[@]}"; do resource_args+=(--resource-root "$resource_root"); done
+            for package in "${font_packages[@]}"; do
+              test -r "/usr/share/doc/$package/copyright"
+              dpkg-query -W -f='${Package} ${Version}\n' "$package" > "$RUNNER_TEMP/$package-package.txt"
+            done
             library_args+=(--library-root /usr/lib/x86_64-linux-gnu)
             if [ -d /usr/share/poppler ]; then poppler_args+=(--poppler-root /usr/share/poppler); fi
             node scripts/build-ocr-native-payload.mjs \
@@ -148,12 +165,12 @@ jobs:
             cat "$RUNNER_TEMP/ocr-python-notices.md"
             printf '\n\n# Native OCR sidecars\n\n'
             cat "$native_notices"
-            if [ -n "$font_notice" ]; then
-              printf '\n\n## fonts-droid-fallback build input\n\n'
-              cat "$font_package"
+            for package in "${font_packages[@]}"; do
+              printf '\n\n## %s build input\n\n' "$package"
+              cat "$RUNNER_TEMP/$package-package.txt"
               printf '\n'
-              cat "$font_notice"
-            fi
+              cat "/usr/share/doc/$package/copyright"
+            done
           } > "$RUNNER_TEMP/ocr-notices.md"
           inputs_sha="$(shasum -a 256 "$OCR_INPUTS" | awk '{print $1}')"
           node scripts/build-pdf-provider-pack.mjs \
