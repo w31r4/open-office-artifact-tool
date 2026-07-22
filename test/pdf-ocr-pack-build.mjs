@@ -61,6 +61,7 @@ for (const sourceFragment of [
   "isElfFile",
   "loaderPath",
   "linuxRpath",
+  "payload library directory contains an unsafe symlink",
   "listMacLibraryFiles",
   "path.basename(source)",
   "contains a dangling symlink",

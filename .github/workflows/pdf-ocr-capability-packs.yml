@@ -212,12 +212,14 @@ jobs:
             cat "$RUNNER_TEMP/ocr-python-notices.md"
             printf '\n\n# Native OCR sidecars\n\n'
             cat "$native_notices"
-            for package in "${resource_packages[@]}"; do
-              printf '\n\n## %s build input\n\n' "$package"
-              cat "$RUNNER_TEMP/$package-package.txt"
-              printf '\n'
-              cat "/usr/share/doc/$package/copyright"
-            done
+            if [ "${{ matrix.platform }}" = "linux-x64" ]; then
+              for package in "${resource_packages[@]}"; do
+                printf '\n\n## %s build input\n\n' "$package"
+                cat "$RUNNER_TEMP/$package-package.txt"
+                printf '\n'
+                cat "/usr/share/doc/$package/copyright"
+              done
+            fi
           } > "$RUNNER_TEMP/ocr-notices.md"
           inputs_sha="$(shasum -a 256 "$OCR_INPUTS" | awk '{print $1}')"
           node scripts/build-pdf-provider-pack.mjs \

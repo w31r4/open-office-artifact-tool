@@ -359,7 +359,18 @@ function hostBaselineLibrary(candidate) {
 }
 
 async function copyLinuxLibraries(initialTargets, libDirectory) {
+  // The isolated Python payload already owns libpython in the top-level lib
+  // directory. Seed that direct namespace so an ldd edge back to libpython is
+  // checked for byte identity rather than attempting a COPYFILE_EXCL copy
+  // onto the same destination.
   const copied = new Map();
+  for (const entry of await fs.readdir(libDirectory, { withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const candidate = path.join(libDirectory, entry.name);
+    const stat = await fs.lstat(candidate);
+    if (stat.isSymbolicLink()) fail(`payload library directory contains an unsafe symlink: ${candidate}.`);
+    copied.set(entry.name, candidate);
+  }
   const queued = [...initialTargets];
   const seen = new Set();
   while (queued.length) {
