@@ -34,7 +34,9 @@ jobs:
       matrix:
         include:
           - platform: linux-x64
-            runner: ubuntu-22.04
+            # Jammy ships Tesseract 4.1, while the shipped OCR provider
+            # deliberately accepts only the Tesseract 5.x contract.
+            runner: ubuntu-24.04
           - platform: darwin-arm64
             runner: macos-14
     runs-on: ${{ matrix.runner }}

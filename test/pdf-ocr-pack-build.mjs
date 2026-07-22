@@ -73,6 +73,7 @@ for (const sourceFragment of [
 assert.match(nativeSource, /if \(!await isMachOFile\(target\)\) return false;/);
 assert.match(nativeSource, /path\.relative\(path\.dirname\(target\), destination\)/);
 assert.match(workflowSource, /fonts-droid-fallback/);
+assert.match(workflowSource, /platform: linux-x64\s+# Jammy ships Tesseract 4\.1[\s\S]*?runner: ubuntu-24\.04/);
 assert.match(workflowSource, /--resource-root/);
 assert.match(workflowSource, /fonts-urw-base35/);
 assert.match(workflowSource, /libgs9-common/);
