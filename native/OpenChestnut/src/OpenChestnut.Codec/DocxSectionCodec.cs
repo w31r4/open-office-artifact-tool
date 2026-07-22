@@ -36,15 +36,17 @@ internal static class DocxSectionCodec
             MarginRightTwips = margins?.Right?.Value ?? 1440U,
             MarginBottomTwips = Positive(margins?.Bottom?.Value, 1440U),
             MarginLeftTwips = margins?.Left?.Value ?? 1440U,
+            MarginGutterTwips = margins?.Gutter?.Value ?? 0U,
         };
     }
 
     internal static W.Paragraph BuildBoundary(
         DocumentSection source,
         IEnumerable<OpenXmlElement> references,
-        bool differentFirstPage)
+        bool differentFirstPage,
+        bool gutterAtTop)
     {
-        Validate(source, "Document section");
+        Validate(source, "Document section", gutterAtTop);
         return new W.Paragraph(new W.ParagraphProperties(BuildProperties(source, references, differentFirstPage)));
     }
 
@@ -53,9 +55,9 @@ internal static class DocxSectionCodec
         bool differentFirstPage) =>
         BuildProperties(Default(), references, differentFirstPage);
 
-    internal static void Apply(W.Paragraph paragraph, DocumentSection requested)
+    internal static void Apply(W.Paragraph paragraph, DocumentSection requested, bool gutterAtTop)
     {
-        Validate(requested, "Document section");
+        Validate(requested, "Document section", gutterAtTop);
         var properties = paragraph.ParagraphProperties ?? throw new CodecException(
             "document_source_binding_mismatch", "Source section boundary has no paragraph properties.", "word/document.xml");
         var native = properties.SectionProperties ?? throw new CodecException(
@@ -65,7 +67,8 @@ internal static class DocxSectionCodec
 
         Replace(native, native.GetFirstChild<W.SectionType>(), BuildType(requested.BreakType));
         Replace(native, native.GetFirstChild<W.PageSize>(), BuildPageSize(requested));
-        Replace(native, native.GetFirstChild<W.PageMargin>(), BuildPageMargin(requested));
+        var sourceMargins = native.GetFirstChild<W.PageMargin>();
+        Replace(native, sourceMargins, BuildPageMargin(requested, sourceMargins));
     }
 
     internal static string ResidualHash(W.Paragraph paragraph)
@@ -78,7 +81,7 @@ internal static class DocxSectionCodec
         return Hash(clone.OuterXml);
     }
 
-    internal static void Validate(DocumentSection section, string label)
+    internal static void Validate(DocumentSection section, string label, bool gutterAtTop)
     {
         if (section.BreakType == DocumentSectionBreak.Unspecified)
             throw new CodecException("invalid_document_section", $"{label} requires a supported break type.");
@@ -88,12 +91,15 @@ internal static class DocxSectionCodec
                  {
                      ("top", section.MarginTopTwips), ("right", section.MarginRightTwips),
                      ("bottom", section.MarginBottomTwips), ("left", section.MarginLeftTwips),
+                     ("gutter", section.MarginGutterTwips),
                  })
             if (value > 31680)
                 throw new CodecException("invalid_document_section", $"{label} {name} margin exceeds 31680 twentieths of a point.");
-        if ((ulong)section.MarginLeftTwips + section.MarginRightTwips >= section.PageWidthTwips ||
-            (ulong)section.MarginTopTwips + section.MarginBottomTwips >= section.PageHeightTwips)
-            throw new CodecException("invalid_document_section", $"{label} margins must leave a positive page content area.");
+        var horizontalGutter = gutterAtTop ? 0U : section.MarginGutterTwips;
+        var verticalGutter = gutterAtTop ? section.MarginGutterTwips : 0U;
+        if ((ulong)section.MarginLeftTwips + section.MarginRightTwips + horizontalGutter >= section.PageWidthTwips ||
+            (ulong)section.MarginTopTwips + section.MarginBottomTwips + verticalGutter >= section.PageHeightTwips)
+            throw new CodecException("invalid_document_section", $"{label} margins and binding gutter must leave a positive page content area.");
     }
 
     private static W.SectionProperties BuildProperties(
@@ -126,15 +132,15 @@ internal static class DocxSectionCodec
         Orient = source.Landscape ? W.PageOrientationValues.Landscape : W.PageOrientationValues.Portrait,
     };
 
-    private static W.PageMargin BuildPageMargin(DocumentSection source) => new()
+    private static W.PageMargin BuildPageMargin(DocumentSection source, W.PageMargin? sourceMargins = null) => new()
     {
         Top = checked((int)source.MarginTopTwips),
         Right = source.MarginRightTwips,
         Bottom = checked((int)source.MarginBottomTwips),
         Left = source.MarginLeftTwips,
-        Header = 720U,
-        Footer = 720U,
-        Gutter = 0U,
+        Header = sourceMargins?.Header?.Value ?? 720U,
+        Footer = sourceMargins?.Footer?.Value ?? 720U,
+        Gutter = source.MarginGutterTwips,
     };
 
     private static DocumentSection Default() => new()
@@ -146,6 +152,7 @@ internal static class DocxSectionCodec
         MarginRightTwips = 1440,
         MarginBottomTwips = 1440,
         MarginLeftTwips = 1440,
+        MarginGutterTwips = 0,
     };
 
     private static bool IsBounded(W.SectionProperties source) => source.ChildElements.All(child =>

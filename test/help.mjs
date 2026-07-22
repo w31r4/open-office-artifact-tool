@@ -88,7 +88,7 @@ const revisionFinalizationSummary = HELP_CATALOG.find((item) => item.name === "D
 assert.match(revisionFinalizationSummary, /whole-paragraph.*in-paragraph.*source bytes/i);
 assert.match(revisionFinalizationSummary, /table-cell/i);
 assert.match(revisionFinalizationSummary, /SHA-256.*changed-part.*fail-closed/i);
-assert.match(HELP_CATALOG.find((item) => item.name === "document.setSettings")?.summary || "", /mirrorMargins.*trackRevisions.*inside the OpenChestnut 0\.3 DOCX boundary/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "document.setSettings")?.summary || "", /mirrorMargins.*gutterAtTop.*trackRevisions.*inside the OpenChestnut 0\.3 DOCX boundary/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.speakerNotes.capability")?.schema?.returns?.capability?.description || "", /sourceBound.*partPresent.*editable.*addable.*preflight.*not mutable write authority/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.importXlsx")?.schema?.returns?.workbook?.description || "", /images.*charts/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.images.add")?.schema?.parameters?.transform?.description || "", /rotationDegrees.*flipHorizontal.*flipVertical/);
@@ -183,8 +183,8 @@ assert.match(HELP_CATALOG.find((item) => item.name === "document.addCitation")?.
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addChange")?.summary || "", /native w:ins\/w:del.*fixed-topology/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.replyToComment")?.summary || "", /source-free direct reply.*commentsExtended.*nested replies.*imported topology.*fail closed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "documentComment.resolve")?.summary || "", /resolved=true.*source hashes.*commentsExtended topology/i);
-assert.match(HELP_CATALOG.find((item) => item.name === "document.setSettings")?.summary || "", /evenAndOddHeaders.*mirrorMargins.*trackRevisions.*updateFields.*passwordless documentProtection.*inside the OpenChestnut 0\.3 DOCX boundary.*irregular mirror-margin markup.*source-owned.*fail closed/i);
-assert.match(HELP_CATALOG.find((item) => item.name === "document.setSettings")?.schema?.parameters?.settings?.description || "", /evenAndOddHeaders.*mirrorMargins.*none\/readOnly\/comments\/trackedChanges\/forms.*password hashes.*irregular mirrorMargins markup.*source-owned/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "document.setSettings")?.summary || "", /evenAndOddHeaders.*mirrorMargins.*gutterAtTop.*trackRevisions.*updateFields.*passwordless documentProtection.*inside the OpenChestnut 0\.3 DOCX boundary.*irregular page-margin mode markup.*source-owned.*fail closed/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "document.setSettings")?.schema?.parameters?.settings?.description || "", /evenAndOddHeaders.*mirrorMargins.*gutterAtTop.*none\/readOnly\/comments\/trackedChanges\/forms.*password hashes.*irregular mirrorMargins\/gutterAtTop markup.*source-owned/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.extractTables"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.addPage"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "pdf.page.setReadingOrder"));
@@ -377,6 +377,7 @@ const documentCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "doc
 assert.equal(documentCatalog.length, 65);
 assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.type, "object");
+assert.match(HELP_CATALOG.find((item) => item.name === "document.addSection")?.schema?.parameters?.margins?.description || "", /binding gutter.*gutterAtTop.*top-edge.*binding-side/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.schema?.parameters?.pictureBullet?.type, "string|object");
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.summary || "", /picture-bulleted.*shared numbering-level resources.*complete group/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addListItem")?.schema?.parameters?.pictureBullet?.description || "", /PNG\/JPEG\/GIF.*HTTP\(S\).*4 through 72 points.*never fetched.*full-group edit.*fail closed/i);

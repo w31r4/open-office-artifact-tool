@@ -673,6 +673,7 @@ class DocumentSectionBlock {
     this.kind = "section";
     this.id = config.id || aid("dsec");
     this.name = config.name || "";
+    this.editable = config.editable !== false;
     this.breakType = config.breakType || config.type || "nextPage";
     this.orientation = config.orientation || "portrait";
     const pageSize = config.pageSize || {};
@@ -686,10 +687,11 @@ class DocumentSectionBlock {
       right: Number(margins.right ?? config.marginRight ?? 1440),
       bottom: Number(margins.bottom ?? config.marginBottom ?? 1440),
       left: Number(margins.left ?? config.marginLeft ?? 1440),
+      gutter: Number(margins.gutter ?? config.marginGutter ?? 0),
     };
   }
 
-  inspectRecord(index) { return { kind: "section", id: this.id, index, name: this.name || undefined, breakType: this.breakType, orientation: this.orientation, pageSize: this.pageSize, margins: this.margins }; }
+  inspectRecord(index) { return { kind: "section", id: this.id, index, name: this.name || undefined, editable: this.editable, breakType: this.breakType, orientation: this.orientation, pageSize: this.pageSize, margins: this.margins }; }
   toProto() { return { kind: "section", id: this.id, name: this.name, breakType: this.breakType, orientation: this.orientation, pageSize: this.pageSize, margins: this.margins }; }
 }
 
@@ -1558,8 +1560,11 @@ export class DocumentModel {
         if (!["nextPage", "continuous", "evenPage", "oddPage", ""].includes(block.breakType)) issues.push(verificationIssue("document", "invalidSectionBreak", `Section ${block.id} has invalid break type ${block.breakType}.`, { id: block.id, breakType: block.breakType }));
         for (const [side, value] of Object.entries(block.margins || {})) if (!Number.isFinite(value) || value < 0) issues.push(verificationIssue("document", "invalidSectionMargin", `Section ${block.id} has an invalid ${side} margin.`, { id: block.id, side, value }));
         for (const [dimension, value] of Object.entries(block.pageSize || {})) if (!Number.isFinite(value) || value <= 0) issues.push(verificationIssue("document", "invalidSectionPageSize", `Section ${block.id} has invalid ${dimension}.`, { id: block.id, dimension, value }));
-        const horizontalMargins = Number(block.margins?.left || 0) + Number(block.margins?.right || 0);
-        if (Number.isFinite(block.pageSize?.widthTwips) && horizontalMargins >= block.pageSize.widthTwips) issues.push(verificationIssue("document", "sectionMarginsExceedPage", `Section ${block.id} horizontal margins exceed page width.`, { id: block.id, margins: block.margins, pageSize: block.pageSize }));
+        const gutter = Number(block.margins?.gutter || 0);
+        const horizontalMargins = Number(block.margins?.left || 0) + Number(block.margins?.right || 0) + (this.settings.gutterAtTop ? 0 : gutter);
+        const verticalMargins = Number(block.margins?.top || 0) + Number(block.margins?.bottom || 0) + (this.settings.gutterAtTop ? gutter : 0);
+        if (Number.isFinite(block.pageSize?.widthTwips) && horizontalMargins >= block.pageSize.widthTwips) issues.push(verificationIssue("document", "sectionMarginsExceedPage", `Section ${block.id} horizontal margins and binding gutter exceed page width.`, { id: block.id, margins: block.margins, pageSize: block.pageSize }));
+        if (Number.isFinite(block.pageSize?.heightTwips) && verticalMargins >= block.pageSize.heightTwips) issues.push(verificationIssue("document", "sectionMarginsExceedPage", `Section ${block.id} vertical margins and binding gutter exceed page height.`, { id: block.id, margins: block.margins, pageSize: block.pageSize }));
       }
       if (block.kind === "listItem") {
         if (!Number.isInteger(block.level) || block.level < 0 || block.level > 8) issues.push(verificationIssue("document", "invalidListLevel", `List item ${block.id} level must be an integer from 0 through 8.`, { id: block.id, level: block.level }));

@@ -138,7 +138,8 @@ internal static class DocxCodec
                     body.Append(DocxSectionCodec.BuildBoundary(
                         block.Section,
                         headerFooterPlan.References(sectionIndex),
-                        headerFooterPlan.DifferentFirstPage(sectionIndex)));
+                        headerFooterPlan.DifferentFirstPage(sectionIndex),
+                        envelope.Document.GutterAtTop));
                     sectionIndex++;
                 }
                 else body.Append(BuildBlock(block, context, checked(blockIndex + 1).ToString()));
@@ -527,7 +528,7 @@ internal static class DocxCodec
                             "document_source_residual_mismatch",
                             $"Document section block {ordinal} source content does not match its binding.",
                             "word/document.xml");
-                    DocxSectionCodec.Apply(sectionParagraph, block.Section);
+                    DocxSectionCodec.Apply(sectionParagraph, block.Section, envelope.Document.GutterAtTop);
                     if (!DocxSectionCodec.ResidualHash(sectionParagraph).Equals(binding.ResidualSha256, StringComparison.OrdinalIgnoreCase))
                         throw new CodecException(
                             "document_residual_not_preserved",
@@ -624,6 +625,7 @@ internal static class DocxCodec
                 if (DocxSectionCodec.TryReadBoundary(paragraph, out var section, out editable))
                 {
                     block.Section = section;
+                    editable &= context.PageMarginModeIsCanonical;
                     semanticItems++;
                     break;
                 }
@@ -985,7 +987,7 @@ internal static class DocxCodec
                     semanticItems++;
                     break;
                 case DocumentBlock.ContentOneofCase.Section:
-                    DocxSectionCodec.Validate(block.Section, $"Document section {block.Id}");
+                    DocxSectionCodec.Validate(block.Section, $"Document section {block.Id}", envelope.Document.GutterAtTop);
                     semanticItems++;
                     break;
                 case DocumentBlock.ContentOneofCase.Opaque:

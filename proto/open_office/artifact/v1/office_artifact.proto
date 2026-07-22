@@ -2251,6 +2251,10 @@ message DocumentArtifact {
   // otherwise irregular settings markup remains source-owned and fail-closed
   // on semantic replacement.
   bool mirror_margins = 18;
+  // Place each section's w:pgMar/@w:gutter allowance at the top edge rather
+  // than the binding side. This owns one canonical leaf w:gutterAtTop setting;
+  // irregular settings markup remains source-owned and fail-closed on edit.
+  bool gutter_at_top = 19;
 }
 
 enum DocumentProtectionMode {
@@ -2722,6 +2726,10 @@ message DocumentSection {
   uint32 margin_right_twips = 6;
   uint32 margin_bottom_twips = 7;
   uint32 margin_left_twips = 8;
+  // Binding allowance from w:pgMar/@w:gutter. The document-wide
+  // gutter_at_top setting determines whether a compatible host adds it to the
+  // top edge or the binding side.
+  uint32 margin_gutter_twips = 9;
 }
 
 message DocumentHyperlink {

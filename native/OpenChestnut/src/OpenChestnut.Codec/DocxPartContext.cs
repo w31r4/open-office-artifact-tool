@@ -39,12 +39,14 @@ internal sealed class DocxPartContext
     {
         Owner = owner;
         Images = images;
+        PageMarginModeIsCanonical = !DocxSettingsCodec.HasUnsupportedPageMarginMode(owner.DocumentSettingsPart);
         _plannedBookmarks = new HashSet<string>(plannedBookmarks ?? [], StringComparer.Ordinal);
         _bibliographyTags = new HashSet<string>(bibliographyTags ?? [], StringComparer.Ordinal);
     }
 
     internal MainDocumentPart Owner { get; }
     internal DocxImageAssetCatalog? Images { get; }
+    internal bool PageMarginModeIsCanonical { get; }
     internal IReadOnlyCollection<string> MutatedRelationshipIds => _mutatedRelationshipIds;
     internal IReadOnlySet<string> BibliographyTags => _bibliographyTags;
     internal bool HasMutations =>

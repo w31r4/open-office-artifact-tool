@@ -1648,6 +1648,102 @@ for (const [label, replacement] of [
   );
 }
 
+const bindingGutterDocument = DocumentModel.create({
+  name: "Top-edge binding gutter",
+  settings: { mirrorMargins: true, gutterAtTop: true },
+  blocks: [
+    { kind: "paragraph", text: "Leave space for a top-edge binding." },
+    {
+      kind: "section",
+      breakType: "nextPage",
+      pageSize: { widthTwips: 12240, heightTwips: 15840 },
+      margins: { top: 1440, right: 1440, bottom: 1440, left: 1440, gutter: 720 },
+    },
+  ],
+});
+const bindingGutterDocx = await DocumentFile.exportDocx(bindingGutterDocument);
+const bindingGutterZip = await JSZip.loadAsync(await bindingGutterDocx.arrayBuffer());
+const bindingGutterSettingsXml = await bindingGutterZip.file("word/settings.xml").async("text");
+const bindingGutterDocumentXml = await bindingGutterZip.file("word/document.xml").async("text");
+assert.match(bindingGutterSettingsXml, /<w:gutterAtTop\s*\/>/);
+assert.match(bindingGutterDocumentXml, /<w:pgMar\b(?=[^>]*w:gutter="720")[^>]*\/>/);
+const importedBindingGutter = await DocumentFile.importDocx(bindingGutterDocx);
+const importedBindingSection = importedBindingGutter.blocks.find((block) => block.kind === "section");
+assert.equal(importedBindingGutter.settings.gutterAtTop, true);
+assert.equal(importedBindingSection?.margins.gutter, 720);
+assert.equal(importedBindingSection?.editable, true);
+assert.match(importedBindingGutter.inspect({ kind: "settings,section", maxChars: 4_000 }).ndjson, /"gutterAtTop":true/);
+assert.deepEqual(
+  Buffer.from(await (await DocumentFile.exportDocx(importedBindingGutter)).arrayBuffer()),
+  Buffer.from(await bindingGutterDocx.arrayBuffer()),
+  "an unchanged canonical top-edge gutter must preserve the source package exactly",
+);
+importedBindingGutter.setSettings({ gutterAtTop: false });
+importedBindingSection.margins.gutter = 900;
+const sideBindingGutterDocx = await DocumentFile.exportDocx(importedBindingGutter);
+const sideBindingGutterZip = await JSZip.loadAsync(await sideBindingGutterDocx.arrayBuffer());
+assert.doesNotMatch(await sideBindingGutterZip.file("word/settings.xml").async("text"), /gutterAtTop/);
+assert.match(await sideBindingGutterZip.file("word/document.xml").async("text"), /<w:pgMar\b(?=[^>]*w:gutter="900")[^>]*\/>/);
+const importedSideBindingGutter = await DocumentFile.importDocx(sideBindingGutterDocx);
+assert.equal(importedSideBindingGutter.settings.gutterAtTop, false);
+assert.equal(importedSideBindingGutter.blocks.find((block) => block.kind === "section")?.margins.gutter, 900);
+
+const disabledTopGutterSource = await DocumentFile.patchDocx(bindingGutterDocx, [{
+  path: "word/settings.xml",
+  xml: bindingGutterSettingsXml.replace(/<w:gutterAtTop\b[^>]*\/>/, '<w:gutterAtTop w:val="0"/>'),
+}]);
+const importedDisabledTopGutter = await DocumentFile.importDocx(disabledTopGutterSource);
+assert.equal(importedDisabledTopGutter.settings.gutterAtTop, false);
+assert.deepEqual(
+  Buffer.from(await (await DocumentFile.exportDocx(importedDisabledTopGutter)).arrayBuffer()),
+  Buffer.from(await disabledTopGutterSource.arrayBuffer()),
+  "an unchanged canonical gutterAtTop false value must preserve the source package exactly",
+);
+importedDisabledTopGutter.setSettings({ gutterAtTop: true });
+assert.equal((await DocumentFile.importDocx(await DocumentFile.exportDocx(importedDisabledTopGutter))).settings.gutterAtTop, true);
+
+const irregularTopGutterSource = await DocumentFile.patchDocx(bindingGutterDocx, [{
+  path: "word/settings.xml",
+  xml: bindingGutterSettingsXml.replace(/<w:gutterAtTop\b[^>]*\/>/, '<w:gutterAtTop w:compatFlag="retained"/>'),
+}]);
+const importedIrregularTopGutter = await DocumentFile.importDocx(irregularTopGutterSource);
+const irregularTopGutterSection = importedIrregularTopGutter.blocks.find((block) => block.kind === "section");
+assert.equal(importedIrregularTopGutter.settings.gutterAtTop, false);
+assert.equal(irregularTopGutterSection?.editable, false, "irregular page-margin mode settings must make section geometry read-only");
+assert.match(importedIrregularTopGutter.inspect({ kind: "section", maxChars: 2_000 }).ndjson, /"editable":false/);
+importedIrregularTopGutter.blocks.find((block) => block.kind === "paragraph")?.replaceText("top-edge", "retained top-edge");
+const unrelatedTopGutterEdit = await DocumentFile.exportDocx(importedIrregularTopGutter);
+const unrelatedTopGutterZip = await JSZip.loadAsync(await unrelatedTopGutterEdit.arrayBuffer());
+assert.equal(
+  await unrelatedTopGutterZip.file("word/settings.xml").async("text"),
+  await (await JSZip.loadAsync(await irregularTopGutterSource.arrayBuffer())).file("word/settings.xml").async("text"),
+  "an unrelated body edit must preserve irregular gutterAtTop settings bytes",
+);
+irregularTopGutterSection.margins.gutter = 1080;
+await assert.rejects(
+  () => DocumentFile.exportDocx(importedIrregularTopGutter),
+  (error) => error?.code === "unsupported_document_edit" && /source-bound and read-only/i.test(error.message),
+);
+irregularTopGutterSection.margins.gutter = 720;
+importedIrregularTopGutter.setSettings({ gutterAtTop: true });
+await assert.rejects(
+  () => DocumentFile.exportDocx(importedIrregularTopGutter),
+  (error) => error?.code === "unsupported_document_settings_edit" && /irregular gutterAtTop markup/i.test(error.message),
+);
+
+const impossibleBindingGutter = DocumentModel.create({
+  settings: { gutterAtTop: true },
+  blocks: [
+    { kind: "paragraph", text: "Invalid binding geometry" },
+    { kind: "section", pageSize: { widthTwips: 5000, heightTwips: 5000 }, margins: { top: 1000, right: 500, bottom: 1000, left: 500, gutter: 3000 } },
+  ],
+});
+assert.equal(impossibleBindingGutter.verify().issues.some((issue) => issue.type === "sectionMarginsExceedPage"), true);
+await assert.rejects(
+  () => DocumentFile.exportDocx(impossibleBindingGutter),
+  (error) => error?.code === "invalid_document_section" && /binding gutter must leave a positive page content area/i.test(error.message),
+);
+
 const protectedSettings = DocumentModel.create({
   name: "Passwordless document protection",
   settings: { documentProtection: "readOnly" },

@@ -3193,6 +3193,7 @@ function wireDocumentSection(block) {
     marginRightTwips: uint32(Math.round(Number(margins.right)), `Document section ${block.id} right margin`),
     marginBottomTwips: uint32(Math.round(Number(margins.bottom)), `Document section ${block.id} bottom margin`),
     marginLeftTwips: uint32(Math.round(Number(margins.left)), `Document section ${block.id} left margin`),
+    marginGutterTwips: uint32(Math.round(Number(margins.gutter ?? 0)), `Document section ${block.id} gutter margin`),
   };
 }
 
@@ -3529,6 +3530,7 @@ function documentEnvelope(document) {
         watermarks: wireDocumentWatermarks(document, state),
         evenAndOddHeaders: Boolean(document.settings?.evenAndOddHeaders),
         mirrorMargins: Boolean(document.settings?.mirrorMargins),
+        gutterAtTop: Boolean(document.settings?.gutterAtTop),
         updateFields: Boolean(document.settings?.updateFields),
         trackRevisions: Boolean(document.settings?.trackRevisions),
         documentProtection: wireDocumentProtection(document.settings?.documentProtection),
@@ -3971,10 +3973,11 @@ function documentFromEnvelope(envelope) {
           kind: "section",
           id: block.id,
           name: block.name,
+          editable: block.source?.editable !== false,
           breakType: publicDocumentSectionBreak(section.breakType),
           orientation: section.landscape ? "landscape" : "portrait",
           pageSize: { widthTwips: section.pageWidthTwips, heightTwips: section.pageHeightTwips },
-          margins: { top: section.marginTopTwips, right: section.marginRightTwips, bottom: section.marginBottomTwips, left: section.marginLeftTwips },
+          margins: { top: section.marginTopTwips, right: section.marginRightTwips, bottom: section.marginBottomTwips, left: section.marginLeftTwips, gutter: section.marginGutterTwips },
         };
       }
       case "opaque":
@@ -4047,6 +4050,7 @@ function documentFromEnvelope(envelope) {
     settings: {
       evenAndOddHeaders: Boolean(source.evenAndOddHeaders),
       mirrorMargins: Boolean(source.mirrorMargins),
+      gutterAtTop: Boolean(source.gutterAtTop),
       updateFields: Boolean(source.updateFields),
       trackRevisions: Boolean(source.trackRevisions),
       documentProtection: publicDocumentProtection(source.documentProtection),

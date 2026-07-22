@@ -4800,6 +4800,201 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void BindingGutterAuthorsImportsEditsAndProtectsIrregularPageMarginModeMarkup()
+    {
+        var request = ExportRequest();
+        request.Artifact.Document.MirrorMargins = true;
+        request.Artifact.Document.GutterAtTop = true;
+        request.Artifact.Document.Blocks.Add(new DocumentBlock
+        {
+            Id = "document/binding-section",
+            Section = new DocumentSection
+            {
+                BreakType = DocumentSectionBreak.NextPage,
+                PageWidthTwips = 12240,
+                PageHeightTwips = 15840,
+                MarginTopTwips = 1440,
+                MarginRightTwips = 1440,
+                MarginBottomTwips = 1440,
+                MarginLeftTwips = 1440,
+                MarginGutterTwips = 720,
+            },
+        });
+
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            Assert.NotNull(package.MainDocumentPart!.DocumentSettingsPart!.Settings!
+                .GetFirstChild<W.GutterAtTop>());
+            Assert.Equal(720U, package.MainDocumentPart.Document!.Body!
+                .Descendants<W.SectionProperties>().First()
+                .GetFirstChild<W.PageMargin>()!.Gutter!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.True(imported.Artifact.Document.GutterAtTop);
+        var section = imported.Artifact.Document.Blocks.Single(block =>
+            block.ContentCase == DocumentBlock.ContentOneofCase.Section);
+        Assert.Equal(720U, section.Section.MarginGutterTwips);
+        Assert.True(section.Source.Editable);
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(authored.File, unchanged.File);
+
+        imported.Artifact.Document.GutterAtTop = false;
+        section.Section.MarginGutterTwips = 900;
+        var sideGutter = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(sideGutter.Ok, Diagnostics(sideGutter));
+        using (var stream = new MemoryStream(sideGutter.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            Assert.Null(package.MainDocumentPart!.DocumentSettingsPart!.Settings!
+                .GetFirstChild<W.GutterAtTop>());
+            Assert.Equal(900U, package.MainDocumentPart.Document!.Body!
+                .Descendants<W.SectionProperties>().First()
+                .GetFirstChild<W.PageMargin>()!.Gutter!.Value);
+        }
+
+        var customHeaderFooterSource = SetSectionHeaderFooterDistances(authored.File.ToByteArray(), 360, 540);
+        var customHeaderFooter = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(customHeaderFooterSource),
+        });
+        Assert.True(customHeaderFooter.Ok, Diagnostics(customHeaderFooter));
+        customHeaderFooter.Artifact.Document.Blocks.Single(block =>
+            block.ContentCase == DocumentBlock.ContentOneofCase.Section).Section.MarginGutterTwips = 840;
+        var customHeaderFooterEdit = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = customHeaderFooter.Artifact,
+        });
+        Assert.True(customHeaderFooterEdit.Ok, Diagnostics(customHeaderFooterEdit));
+        using (var stream = new MemoryStream(customHeaderFooterEdit.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var margins = package.MainDocumentPart!.Document!.Body!
+                .Descendants<W.SectionProperties>().First()
+                .GetFirstChild<W.PageMargin>()!;
+            Assert.Equal(360U, margins.Header!.Value);
+            Assert.Equal(540U, margins.Footer!.Value);
+            Assert.Equal(840U, margins.Gutter!.Value);
+        }
+
+        var disabledSource = SetGutterAtTopValue(authored.File.ToByteArray(), false);
+        var disabled = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(disabledSource),
+        });
+        Assert.True(disabled.Ok, Diagnostics(disabled));
+        Assert.False(disabled.Artifact.Document.GutterAtTop);
+        var disabledUnchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = disabled.Artifact,
+        });
+        Assert.True(disabledUnchanged.Ok, Diagnostics(disabledUnchanged));
+        Assert.Equal(disabledSource, disabledUnchanged.File.ToByteArray());
+
+        var irregularSource = AddGutterAtTopExtension(authored.File.ToByteArray());
+        byte[] sourceSettings;
+        using (var stream = new MemoryStream(irregularSource))
+        using (var package = WordprocessingDocument.Open(stream, false))
+            sourceSettings = ReadPart(package.MainDocumentPart!.DocumentSettingsPart!);
+        var irregular = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(irregularSource),
+        });
+        Assert.True(irregular.Ok, Diagnostics(irregular));
+        Assert.False(irregular.Artifact.Document.GutterAtTop);
+        var irregularSection = irregular.Artifact.Document.Blocks.Single(block =>
+            block.ContentCase == DocumentBlock.ContentOneofCase.Section);
+        Assert.False(irregularSection.Source.Editable);
+
+        var title = irregular.Artifact.Document.Blocks[0].Paragraph;
+        title.Text = "Quarterly retained binding brief";
+        title.Runs[0].Text = title.Text;
+        var bodyEdit = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = irregular.Artifact,
+        });
+        Assert.True(bodyEdit.Ok, Diagnostics(bodyEdit));
+        using (var stream = new MemoryStream(bodyEdit.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+            Assert.Equal(sourceSettings, ReadPart(package.MainDocumentPart!.DocumentSettingsPart!));
+
+        irregularSection.Section.MarginGutterTwips = 1080;
+        var rejectedSectionEdit = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = irregular.Artifact,
+        });
+        Assert.False(rejectedSectionEdit.Ok);
+        Assert.Equal("unsupported_document_edit", Assert.Single(rejectedSectionEdit.Diagnostics).Code);
+
+        var impossible = ExportRequest();
+        impossible.Artifact.Document.GutterAtTop = true;
+        impossible.Artifact.Document.Blocks.Add(new DocumentBlock
+        {
+            Id = "document/impossible-gutter",
+            Section = new DocumentSection
+            {
+                BreakType = DocumentSectionBreak.NextPage,
+                PageWidthTwips = 5000,
+                PageHeightTwips = 5000,
+                MarginTopTwips = 1000,
+                MarginRightTwips = 500,
+                MarginBottomTwips = 1000,
+                MarginLeftTwips = 500,
+                MarginGutterTwips = 3000,
+            },
+        });
+        var invalid = Invoke(impossible);
+        Assert.False(invalid.Ok);
+        Assert.Equal("invalid_document_section", Assert.Single(invalid.Diagnostics).Code);
+    }
+
+    [Fact]
     public void PasswordlessDocumentProtectionAuthorsAndImportsEveryBoundedMode()
     {
         var modes = new[]
@@ -6872,6 +7067,56 @@ public sealed class DocxCodecTests
                 "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
                 "retained"));
             document.MainDocumentPart.DocumentSettingsPart.Settings.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddGutterAtTopExtension(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var gutterAtTop = document.MainDocumentPart!.DocumentSettingsPart!.Settings!
+                .GetFirstChild<W.GutterAtTop>()!;
+            gutterAtTop.SetAttribute(new OpenXmlAttribute(
+                "w",
+                "compatFlag",
+                "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+                "retained"));
+            document.MainDocumentPart.DocumentSettingsPart.Settings.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] SetGutterAtTopValue(byte[] bytes, bool value)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            document.MainDocumentPart!.DocumentSettingsPart!.Settings!
+                .GetFirstChild<W.GutterAtTop>()!.Val = value;
+            document.MainDocumentPart.DocumentSettingsPart.Settings.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] SetSectionHeaderFooterDistances(byte[] bytes, uint header, uint footer)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var margins = document.MainDocumentPart!.Document!.Body!
+                .Descendants<W.SectionProperties>().First()
+                .GetFirstChild<W.PageMargin>()!;
+            margins.Header = header;
+            margins.Footer = footer;
+            document.MainDocumentPart.Document.Save();
         }
         return stream.ToArray();
     }

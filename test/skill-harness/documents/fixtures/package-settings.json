@@ -1,7 +1,7 @@
 {
   "name": "package-settings",
   "outputName": "package-settings.docx",
-  "settings": { "evenAndOddHeaders": true, "mirrorMargins": true },
+  "settings": { "evenAndOddHeaders": true, "mirrorMargins": true, "gutterAtTop": true },
   "sectionSettings": [
     { "sectionIndex": 0, "differentFirstPage": true }
   ],
@@ -15,17 +15,19 @@
   "blocks": [
     { "kind": "paragraph", "name": "title", "styleId": "Title", "text": "Section and header settings" },
     { "kind": "field", "name": "page-count", "styleId": "Normal", "instruction": "NUMPAGES", "display": "1" },
-    { "kind": "paragraph", "name": "review-note", "styleId": "Normal", "text": "Review first-page and even-page variants." }
+    { "kind": "paragraph", "name": "review-note", "styleId": "Normal", "text": "Review first-page and even-page variants." },
+    { "kind": "section", "name": "binding-layout", "breakType": "continuous", "pageSize": { "widthTwips": 12240, "heightTwips": 15840 }, "margins": { "top": 1440, "right": 1440, "bottom": 1440, "left": 1440, "gutter": 720 } }
   ],
   "expectInspect": [
     { "kind": "field", "pattern": "NUMPAGES" },
     { "kind": "header", "pattern": "First-page review" },
-    { "kind": "footer", "pattern": "PAGE" }
+    { "kind": "footer", "pattern": "PAGE" },
+    { "kind": "section", "pattern": "\"gutter\":720" }
   ],
   "qa": {
     "previewFormat": "svg",
     "nativeRender": "auto",
-    "inspectKind": "document,settings,paragraph,header,footer,field,style,layout",
+    "inspectKind": "document,settings,section,paragraph,header,footer,field,style,layout",
     "maxChars": 12000
   }
 }

@@ -18,21 +18,28 @@ internal static class DocxSettingsCodec
     {
         var settings = mainPart.DocumentSettingsPart?.Settings;
         document.EvenAndOddHeaders = Enabled(settings?.GetFirstChild<W.EvenAndOddHeaders>());
-        if (TryReadMirrorMargins(mainPart.DocumentSettingsPart, out var mirrorMargins, out _, out _))
-            document.MirrorMargins = mirrorMargins;
+        var mirrorMargins = ReadCanonicalBooleanSetting(mainPart.DocumentSettingsPart, "mirrorMargins");
+        if (!mirrorMargins.Unsupported) document.MirrorMargins = mirrorMargins.Value;
+        var gutterAtTop = ReadCanonicalBooleanSetting(mainPart.DocumentSettingsPart, "gutterAtTop");
+        if (!gutterAtTop.Unsupported) document.GutterAtTop = gutterAtTop.Value;
         document.UpdateFields = Enabled(settings?.GetFirstChild<W.UpdateFieldsOnOpen>());
         document.TrackRevisions = Enabled(settings?.GetFirstChild<W.TrackRevisions>());
         if (TryReadProtection(settings, out var protection, out _)) document.DocumentProtection = protection;
     }
 
+    internal static bool HasUnsupportedPageMarginMode(DocumentSettingsPart? part) =>
+        ReadCanonicalBooleanSetting(part, "mirrorMargins").Unsupported ||
+        ReadCanonicalBooleanSetting(part, "gutterAtTop").Unsupported;
+
     internal static void Author(MainDocumentPart mainPart, DocumentArtifact document)
     {
         var protection = document.DocumentProtection is null ? null : CreateProtection(document.DocumentProtection);
-        if (!document.EvenAndOddHeaders && !document.MirrorMargins && !document.UpdateFields && !document.TrackRevisions && protection is null) return;
+        if (!document.EvenAndOddHeaders && !document.MirrorMargins && !document.GutterAtTop && !document.UpdateFields && !document.TrackRevisions && protection is null) return;
         var part = mainPart.AddNewPart<DocumentSettingsPart>();
         part.Settings = new W.Settings();
         if (document.EvenAndOddHeaders) part.Settings.AddChild(new W.EvenAndOddHeaders(), true);
         if (document.MirrorMargins) part.Settings.AddChild(new W.MirrorMargins(), true);
+        if (document.GutterAtTop) part.Settings.AddChild(new W.GutterAtTop(), true);
         if (document.TrackRevisions) part.Settings.AddChild(new W.TrackRevisions(), true);
         if (document.UpdateFields) part.Settings.AddChild(new W.UpdateFieldsOnOpen { Val = true }, true);
         if (protection is not null) part.Settings.AddChild(protection, true);
@@ -49,23 +56,27 @@ internal static class DocxSettingsCodec
                 "Source-preserving DOCX export cannot change even-and-odd header activation because it changes header/footer semantics.",
                 "word/settings.xml");
 
-        TryReadMirrorMargins(
-            mainPart.DocumentSettingsPart,
-            out _,
-            out var unsupportedMirrorMargins,
-            out var unsafeToReserializeMirrorMargins);
-        if (unsupportedMirrorMargins && requested.MirrorMargins)
+        var mirrorMargins = ReadCanonicalBooleanSetting(mainPart.DocumentSettingsPart, "mirrorMargins");
+        var gutterAtTop = ReadCanonicalBooleanSetting(mainPart.DocumentSettingsPart, "gutterAtTop");
+        if (mirrorMargins.Unsupported && requested.MirrorMargins)
             throw new CodecException(
                 "unsupported_document_settings_edit",
                 "Source-preserving DOCX export cannot replace duplicate, child-bearing, extension, or otherwise irregular mirrorMargins markup.",
                 "word/settings.xml");
-        if (unsafeToReserializeMirrorMargins &&
-            (source.UpdateFields != requested.UpdateFields ||
-             source.TrackRevisions != requested.TrackRevisions ||
-             !EqualProtection(source.DocumentProtection, requested.DocumentProtection)))
+        if (gutterAtTop.Unsupported && requested.GutterAtTop)
             throw new CodecException(
                 "unsupported_document_settings_edit",
-                "Source-preserving DOCX export cannot edit sibling document settings while structurally irregular mirrorMargins markup is present.",
+                "Source-preserving DOCX export cannot replace duplicate, child-bearing, extension, or otherwise irregular gutterAtTop markup.",
+                "word/settings.xml");
+        var settingsChanged = source.UpdateFields != requested.UpdateFields ||
+                              source.TrackRevisions != requested.TrackRevisions ||
+                              source.MirrorMargins != requested.MirrorMargins ||
+                              source.GutterAtTop != requested.GutterAtTop ||
+                              !EqualProtection(source.DocumentProtection, requested.DocumentProtection);
+        if ((mirrorMargins.UnsafeToReserialize || gutterAtTop.UnsafeToReserialize) && settingsChanged)
+            throw new CodecException(
+                "unsupported_document_settings_edit",
+                "Source-preserving DOCX export cannot edit sibling document settings or page-margin mode settings while structurally irregular mirrorMargins or gutterAtTop markup is present.",
                 "word/settings.xml");
 
         TryReadProtection(mainPart.DocumentSettingsPart?.Settings, out _, out var unsupportedProtection);
@@ -86,10 +97,12 @@ internal static class DocxSettingsCodec
         Read(mainPart, source);
         AssertSourceBoundSettings(mainPart, requested);
         var mirrorMarginsChanged = source.MirrorMargins != requested.MirrorMargins;
+        var gutterAtTopChanged = source.GutterAtTop != requested.GutterAtTop;
         var protectionChanged = !EqualProtection(source.DocumentProtection, requested.DocumentProtection);
         if (source.UpdateFields == requested.UpdateFields &&
             source.TrackRevisions == requested.TrackRevisions &&
             !mirrorMarginsChanged &&
+            !gutterAtTopChanged &&
             !protectionChanged) return;
 
         var part = mainPart.DocumentSettingsPart ?? mainPart.AddNewPart<DocumentSettingsPart>();
@@ -98,6 +111,8 @@ internal static class DocxSettingsCodec
         Set(part.Settings, requested.TrackRevisions, () => new W.TrackRevisions());
         if (mirrorMarginsChanged)
             Set(part.Settings, requested.MirrorMargins, () => new W.MirrorMargins());
+        if (gutterAtTopChanged)
+            Set(part.Settings, requested.GutterAtTop, () => new W.GutterAtTop());
         if (protectionChanged)
         {
             part.Settings.RemoveAllChildren<W.DocumentProtection>();
@@ -108,16 +123,16 @@ internal static class DocxSettingsCodec
         context.MarkSettingsMutated(part);
     }
 
-    private static bool TryReadMirrorMargins(
+    private sealed record CanonicalBooleanSetting(
+        bool Value,
+        bool Unsupported = false,
+        bool UnsafeToReserialize = false);
+
+    private static CanonicalBooleanSetting ReadCanonicalBooleanSetting(
         DocumentSettingsPart? part,
-        out bool result,
-        out bool unsupported,
-        out bool unsafeToReserialize)
+        string localName)
     {
-        result = false;
-        unsupported = false;
-        unsafeToReserialize = false;
-        if (part is null) return true;
+        if (part is null) return new(false);
 
         XElement root;
         try
@@ -132,58 +147,44 @@ internal static class DocxSettingsCodec
         }
         catch (Exception exception) when (exception is XmlException or InvalidOperationException)
         {
-            unsupported = true;
-            unsafeToReserialize = true;
-            return false;
+            return new(false, Unsupported: true, UnsafeToReserialize: true);
         }
 
         var wordNamespace = root.Name.NamespaceName;
         if (root.Name.LocalName != "settings" ||
             wordNamespace is not WordprocessingNamespace and not StrictWordprocessingNamespace)
         {
-            unsupported = true;
-            unsafeToReserialize = true;
-            return false;
+            return new(false, Unsupported: true, UnsafeToReserialize: true);
         }
 
         var elements = root.Elements()
-            .Where(element => element.Name.LocalName == "mirrorMargins" &&
+            .Where(element => element.Name.LocalName == localName &&
                 element.Name.NamespaceName == wordNamespace)
             .ToArray();
-        if (elements.Length == 0) return true;
+        if (elements.Length == 0) return new(false);
         if (elements.Length != 1)
         {
-            unsupported = true;
-            unsafeToReserialize = true;
-            return false;
+            return new(false, Unsupported: true, UnsafeToReserialize: true);
         }
 
         var element = elements[0];
         if (element.Nodes().Any(node =>
                 node is not XText text || node is XCData || !string.IsNullOrWhiteSpace(text.Value)))
         {
-            unsupported = true;
-            unsafeToReserialize = true;
-            return false;
+            return new(false, Unsupported: true, UnsafeToReserialize: true);
         }
 
         var attributes = element.Attributes().Where(attribute => !attribute.IsNamespaceDeclaration).ToArray();
         if (attributes.Length > 1 || attributes.Any(attribute =>
                 attribute.Name.NamespaceName != wordNamespace || attribute.Name.LocalName != "val"))
         {
-            unsupported = true;
-            return false;
+            return new(false, Unsupported: true);
         }
 
         var value = attributes.SingleOrDefault()?.Value;
-        if (value is null or "true" or "1" or "on") result = true;
-        else if (value is "false" or "0" or "off") result = false;
-        else
-        {
-            unsupported = true;
-            return false;
-        }
-        return true;
+        return value is null or "true" or "1" or "on" ? new(true)
+            : value is "false" or "0" or "off" ? new(false)
+            : new(false, Unsupported: true);
     }
 
     private static bool TryReadProtection(

@@ -751,12 +751,16 @@ try {
   const settingsDocument = await DocumentFile.importDocx(await FileBlob.load(sectionSettings.docxPath));
   assert.equal(settingsDocument.settings.evenAndOddHeaders, true);
   assert.equal(settingsDocument.settings.mirrorMargins, true);
+  assert.equal(settingsDocument.settings.gutterAtTop, true);
+  assert.equal(settingsDocument.blocks.find((block) => block.kind === "section")?.margins.gutter, 720);
   assert.equal(settingsDocument.sectionSettings[0]?.differentFirstPage, true);
   assert.equal(settingsDocument.headers.some((item) => item.referenceType === "first"), true);
   assert.equal(settingsDocument.headers.some((item) => item.referenceType === "even"), true);
   assert.equal(settingsDocument.footers[0]?.fieldInstruction, "PAGE");
   const packageSettingsZip = await JSZip.loadAsync(await fs.readFile(sectionSettings.docxPath));
   assert.match(await packageSettingsZip.file("word/settings.xml").async("text"), /<w:mirrorMargins\s*\/>/);
+  assert.match(await packageSettingsZip.file("word/settings.xml").async("text"), /<w:gutterAtTop\s*\/>/);
+  assert.match(await packageSettingsZip.file("word/document.xml").async("text"), /<w:pgMar\b(?=[^>]*w:gutter="720")[^>]*\/>/);
 
   const protection = await runFixture("open-chestnut-protection");
   const protectedDocument = await DocumentFile.importDocx(await FileBlob.load(protection.docxPath));
@@ -856,6 +860,7 @@ try {
   assert.match(skillText, /document\.setDateContentControls/);
   assert.match(skillText, /document\.setSettings\(\{ documentProtection/);
   assert.match(skillText, /document\.setSettings\(\{ mirrorMargins: true \}\)/);
+  assert.match(skillText, /document\.setSettings\(\{ gutterAtTop: true \}\)/);
   assert.match(skillText, /document\.addBibliographySource/);
   assert.match(skillText, /document\.addCitation/);
   assert.match(skillText, /document\.addTableOfContents/);

@@ -28,7 +28,7 @@ persistentDocumentId
 `.trim().split(/\s+/);
 
 const ORDER_INDEX = new Map(SETTING_ORDER.map((name, index) => [name, index]));
-const BOOLEAN_SETTINGS = ["trackRevisions", "updateFields", "evenAndOddHeaders", "mirrorMargins"];
+const BOOLEAN_SETTINGS = ["trackRevisions", "updateFields", "evenAndOddHeaders", "mirrorMargins", "gutterAtTop"];
 const PROTECTION_MODES = new Set(["none", "readOnly", "comments", "trackedChanges", "forms"]);
 const CONFIG_KEYS = new Set([...BOOLEAN_SETTINGS, "updateFieldsOnOpen", "documentProtection"]);
 const WORDPROCESSING_NAMESPACES = new Set([

@@ -23,7 +23,7 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.addInsertion` | api | Append one bounded whole-paragraph tracked insertion using native w:ins markup. For one exact in-paragraph replacement in existing source bytes, use DocumentFile.addTrackedReplacement; mixed, moved, nested, and property-level revisions remain outside the bounded profile. |
 | `document.addListItem` | api | Append a numbered, character-bulleted, or bounded picture-bulleted list item using native DOCX numbering definitions. Picture markers are shared numbering-level resources: every item using the same numberingId and level must agree, and recognized imported edits must update the complete group without changing embedded-versus-external source kind. |
 | `document.addParagraph` | api | Append a styled paragraph with optional run spans, including character-style runStyleId references plus direct/theme and complex-script semantics. |
-| `document.addSection` | api | Append a DOCX section break with page size, orientation, margin, and break-type metadata backed by w:sectPr. |
+| `document.addSection` | api | Append a DOCX section break with page size, orientation, top/right/bottom/left margins, binding gutter, and break-type metadata backed by w:sectPr. Imported geometry is writable only when page-margin mode settings are canonical. |
 | `document.addTable` | api | Append a Word-style table with physical cell values, optional logical merge geometry, and fixed-layout width/margin/border/header formatting. |
 | `document.addTableOfContents` | api | Append one canonical one-paragraph complex TOC field with bounded heading levels/switches and enable the native updateFields-on-open hint by default. Refreshed cross-paragraph result graphs remain opaque/source-bound and read-only. |
 | `document.addWatermark` | api | Add one canonical VML text watermark to a section/header-reference scope. Recognized imported watermarks permit text-only edits or whole-object removal; adding to an imported package, changing scope, shared headers, multiple objects, DrawingML, images, and irregular VML fail closed. |
@@ -42,7 +42,7 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.setDateContentControls` | api | Transactionally set every recognized canonical date control from a tag-to-YYYY-MM-DD mapping. Invalid Gregorian dates, unknown tags, and other control types fail before mutation. |
 | `document.setDropdownContentControls` | api | Transactionally set every recognized canonical drop-down control from a tag-to-choice-value string mapping. Unknown tags or values outside the declared choice table fail before mutation. |
 | `document.setSectionSettings` | api | Set per-section Word behavior such as different-first-page header/footer activation without changing preserved header/footer references. |
-| `document.setSettings` | api | Set model settings. evenAndOddHeaders, mirrorMargins, trackRevisions, the updateFields refresh hint, and bounded passwordless documentProtection are inside the OpenChestnut 0.3 DOCX boundary. Irregular mirror-margin markup and password/cryptographic protection variants stay source-owned and fail closed on replacement. |
+| `document.setSettings` | api | Set model settings. evenAndOddHeaders, mirrorMargins, gutterAtTop, trackRevisions, the updateFields refresh hint, and bounded passwordless documentProtection are inside the OpenChestnut 0.3 DOCX boundary. Irregular page-margin mode markup and password/cryptographic protection variants stay source-owned and fail closed on replacement. |
 | `document.styles.effective` | api | Resolve a named document style through basedOn inheritance so inspect/layout/render/DOCX export share the same effective style metadata. |
 | `document.textRange` | api | Inspect or resolve stable textRange anchors such as blockId/text and tableId/cell/row/column/text. Assignment is limited to fully editable text; replace() also supports explicitly advertised source-bound literal patches. |
 | `document.verify` | api | Return QA issues for invalid/duplicate content-control IDs and native IDs, malformed tags/aliases, invalid block-control profiles, fake lists, invalid links/citations/bibliography sources, malformed tracked changes, duplicate/dangling/reversed bookmark ranges, invalid footnotes/endnotes, unknown styles, malformed tables, bad images/sections, invalid watermark IDs/scopes/text, dangling comments, visual overflow, and prose-like table cells. |
@@ -364,18 +364,18 @@ Append a styled paragraph with optional run spans, including character-style run
 
 #### `document.addSection`
 
-Append a DOCX section break with page size, orientation, margin, and break-type metadata backed by w:sectPr.
+Append a DOCX section break with page size, orientation, top/right/bottom/left margins, binding gutter, and break-type metadata backed by w:sectPr. Imported geometry is writable only when page-margin mode settings are canonical.
 
 **Schema parameters:**
 
 - `breakType` (string) — Section break type such as nextPage or continuous.
 - `orientation` (string) — portrait or landscape.
 - `pageSize` (object) — Page width/height in twentieths of a point.
-- `margins` (object) — Top/right/bottom/left margins in twentieths of a point.
+- `margins` (object) — Top/right/bottom/left margins plus optional non-negative binding gutter in twentieths of a point. document.settings.gutterAtTop chooses top-edge versus binding-side placement.
 
 **Schema returns:**
 
-- `section` (DocumentSectionBlock) — Appended section break block.
+- `section` (DocumentSectionBlock) — Appended section break block. inspect reports editable=false when imported mirrorMargins/gutterAtTop mode markup is not canonical.
 
 #### `document.addTable`
 
@@ -661,15 +661,15 @@ Set per-section Word behavior such as different-first-page header/footer activat
 
 #### `document.setSettings`
 
-Set model settings. evenAndOddHeaders, mirrorMargins, trackRevisions, the updateFields refresh hint, and bounded passwordless documentProtection are inside the OpenChestnut 0.3 DOCX boundary. Irregular mirror-margin markup and password/cryptographic protection variants stay source-owned and fail closed on replacement.
+Set model settings. evenAndOddHeaders, mirrorMargins, gutterAtTop, trackRevisions, the updateFields refresh hint, and bounded passwordless documentProtection are inside the OpenChestnut 0.3 DOCX boundary. Irregular page-margin mode markup and password/cryptographic protection variants stay source-owned and fail closed on replacement.
 
 **Schema parameters:**
 
-- `settings` (object) required — Partial settings object. evenAndOddHeaders, mirrorMargins, updateFields, and trackRevisions are booleans. documentProtection accepts false/null/off to remove the element, none/readOnly/comments/trackedChanges/forms, or { edit, enforcement, formatting }; password hashes, cryptographic attributes, IRM, permission exceptions, and irregular mirrorMargins markup are unsupported/source-owned. Structurally irregular mirrorMargins also blocks sibling settings edits when exact reserialization cannot be proved.
+- `settings` (object) required — Partial settings object. evenAndOddHeaders, mirrorMargins, gutterAtTop, updateFields, and trackRevisions are booleans. documentProtection accepts false/null/off to remove the element, none/readOnly/comments/trackedChanges/forms, or { edit, enforcement, formatting }; password hashes, cryptographic attributes, IRM, permission exceptions, and irregular mirrorMargins/gutterAtTop markup are unsupported/source-owned. Structurally irregular page-margin mode markup also blocks sibling settings edits and makes imported section geometry read-only when exact reserialization cannot be proved.
 
 **Schema returns:**
 
-- `document` (DocumentModel) — Document facade with normalized facing-page/header/tracking/refresh settings; updateFields is a refresh request, and passwordless documentProtection is an editing restriction rather than encryption or access control.
+- `document` (DocumentModel) — Document facade with normalized facing-page/binding-gutter/header/tracking/refresh settings; updateFields is a refresh request, and passwordless documentProtection is an editing restriction rather than encryption or access control.
 
 #### `document.styles.effective`
 
@@ -824,7 +824,7 @@ Apply DOCX part patches with path traversal validation for settings, classic-com
 - `syncSourceReferences` (boolean) — Apply opt-in standard sourceReference XML mutations for supported semantic recipes; defaults to true.
 - `validateResult` (boolean) — Validate final content types and relationships atomically; defaults to true. Set false only for deliberate invalid-package fixtures.
 - `recipe` (string|object) — Standard OOXML part recipe with optional source/id/target and sourceReference fields; DOCX supports settings mutations, section-scoped header/footer references, batch classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people relationships, and numbering assignments for block, paragraph, or table-cell targets.
-- `sourceReference` (boolean|object) — Opt-in semantic XML mutation. Settings accepts trackRevisions/updateFields/evenAndOddHeaders/mirrorMargins booleans and passwordless documentProtection; comments accepts { anchors: [...] }; numbering accepts { assignments: [...] }.
+- `sourceReference` (boolean|object) — Opt-in semantic XML mutation. Settings accepts trackRevisions/updateFields/evenAndOddHeaders/mirrorMargins/gutterAtTop booleans and passwordless documentProtection; comments accepts { anchors: [...] }; numbering accepts { assignments: [...] }.
 - `relationship` (object) — Per-patch source/id/type/target/targetMode relationship recipe; explicit ID collisions require replaceExisting:true. relationships accepts an array.
 
 **Schema returns:**
@@ -852,7 +852,7 @@ Create a document with paragraph/character styles, formatted paragraphs/runs, ca
 - `footers` (object[]) — Footer block models.
 - `sectionSettings` (object[]) — Per-section settings with zero-based sectionIndex and differentFirstPage activation state.
 - `comments` (object[]) — Classic whole-paragraph comments. Parent/reply, resolved, durable-ID, UTC/person, and modern extension metadata are outside the OpenChestnut 0.2 boundary.
-- `settings` (object) — evenAndOddHeaders, mirrorMargins, trackRevisions, the updateFields-on-open refresh hint, and bounded passwordless documentProtection are authorable. mirrorMargins toggles the canonical facing-page inside/outside margin setting; duplicate, child-bearing, extension, or otherwise irregular markup stays source-owned. Password/cryptographic protection variants cannot be replaced through the semantic model.
+- `settings` (object) — evenAndOddHeaders, mirrorMargins, gutterAtTop, trackRevisions, the updateFields-on-open refresh hint, and bounded passwordless documentProtection are authorable. mirrorMargins toggles facing-page inside/outside margins; gutterAtTop chooses whether each section's gutter is added at the top edge or binding side. Irregular page-margin mode markup stays source-owned and makes section geometry read-only. Password/cryptographic protection variants cannot be replaced through the semantic model.
 
 **Schema returns:**
 
