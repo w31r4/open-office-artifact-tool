@@ -620,6 +620,20 @@ Enable native future-change tracking independently from authored redlines:
 document.setSettings({ trackRevisions: true });
 ```
 
+Use facing-page inside/outside margins without changing the section margin
+numbers themselves:
+
+```js
+document.setSettings({ mirrorMargins: true });
+// Disable/remove the canonical leaf setting with false.
+```
+
+OpenChestnut owns exactly one leaf `w:mirrorMargins`. Duplicate, child-bearing,
+extension, or otherwise irregular imported markup stays source-owned: unrelated
+body edits preserve it, while semantic replacement fails closed. Structurally
+irregular markup also blocks sibling settings edits when exact reserialization
+cannot be proved.
+
 Set one bounded passwordless Word editing restriction through the same settings state:
 
 ```js
@@ -726,7 +740,7 @@ For final visual QA, export the DOCX and use the packaged `render_docx.py` workf
 - PNG/JPEG inline images plus an explicit bounded foreground floating profile with absolute margin/page/column and margin/page/paragraph offsets, square or top-and-bottom wrap, and fixed-topology imported placement edits
 - Classic whole-paragraph comments and bounded modern root/direct-reply threads
 - Standalone whole-paragraph tracked insertions/deletions plus one exact source-bound in-paragraph replacement as adjacent native deletion/insertion runs; native `trackRevisions` intent; and source-hash-bound accept/reject finalization for both bounded profiles
-- Passwordless `documentProtection` settings for `none`, `readOnly`, `comments`, `trackedChanges`, and `forms`, with explicit enforcement/formatting flags and source-bound preservation of password/cryptographic variants
+- Canonical facing-page `mirrorMargins` plus passwordless `documentProtection` settings for `none`, `readOnly`, `comments`, `trackedChanges`, and `forms`, with explicit enforcement/formatting flags and source-bound preservation of irregular/cryptographic variants
 - Block plain-text plus inline/table-cell plain-text, canonical Word 2010+ checkbox, canonical Word drop-down, canonical Word combo-box, and canonical ISO/Gregorian date content controls with explicit placement, typed values, tag/alias identity, transactional tag updates, and fixed-topology imported edits
 - Canonical bibliography source catalogs and whole-paragraph `CITATION` fields with fixed imported source/tag topology
 

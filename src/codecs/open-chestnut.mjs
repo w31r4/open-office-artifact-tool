@@ -3444,12 +3444,6 @@ function documentBlock(block, original, directNumbering, assets, contentControlN
   throw new OpenChestnutCodecError(`The DOCX WebAssembly vertical slice cannot author document block kind ${block.kind}.`, [], { code: "unsupported_document_features" });
 }
 
-function unsupportedDocumentCollections(document) {
-  const unsupported = [];
-  if (document.settings?.mirrorMargins) unsupported.push("mirrored margins");
-  return unsupported;
-}
-
 function wireDocumentProtection(value) {
   if (value == null) return undefined;
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -3483,10 +3477,6 @@ function documentEnvelope(document) {
   if (!(document instanceof DocumentModel)) throw new TypeError("exportDocxWithOpenChestnut expects a DocumentModel instance.");
   const state = document[DOCUMENT_STATE];
   assertTrustedImportedState(state, "DOCX");
-  const unsupported = unsupportedDocumentCollections(document);
-  if (unsupported.length) {
-    throw new OpenChestnutCodecError(`OpenChestnut cannot author or edit these DOCX features: ${unsupported.join(", ")}. This operation fails closed; preserve imported instances only through their validated source-bound package.`, [], { code: "unsupported_document_features" });
-  }
   if (state && state.blocks.length !== document.blocks.length) {
     throw new OpenChestnutCodecError(`Source-preserving DOCX export requires the original ${state.blocks.length}-block topology; the document contains ${document.blocks.length} blocks.`, [], { code: "document_topology_changed" });
   }
@@ -3538,6 +3528,7 @@ function documentEnvelope(document) {
         footers: document.footers.map(wireHeaderFooter),
         watermarks: wireDocumentWatermarks(document, state),
         evenAndOddHeaders: Boolean(document.settings?.evenAndOddHeaders),
+        mirrorMargins: Boolean(document.settings?.mirrorMargins),
         updateFields: Boolean(document.settings?.updateFields),
         trackRevisions: Boolean(document.settings?.trackRevisions),
         documentProtection: wireDocumentProtection(document.settings?.documentProtection),
@@ -4055,6 +4046,7 @@ function documentFromEnvelope(envelope) {
     })),
     settings: {
       evenAndOddHeaders: Boolean(source.evenAndOddHeaders),
+      mirrorMargins: Boolean(source.mirrorMargins),
       updateFields: Boolean(source.updateFields),
       trackRevisions: Boolean(source.trackRevisions),
       documentProtection: publicDocumentProtection(source.documentProtection),

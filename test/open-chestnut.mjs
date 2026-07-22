@@ -92,7 +92,7 @@ await assert.rejects(exportXlsxWithOpenChestnut(workbook, { allowLossy: true }),
 // table, list, link, and classic comment.
 const document = DocumentModel.create({
   name: "Core document",
-  settings: { documentProtection: "comments" },
+  settings: { mirrorMargins: true, documentProtection: "comments" },
   blocks: [],
   defaultRunStyle: { fontFamily: "Aptos", fontSize: 11, color: "#111827" },
 });
@@ -180,6 +180,7 @@ const docxZip = await JSZip.loadAsync(docx.bytes);
 assert.ok(docxZip.file("word/document.xml"));
 assert.ok(docxZip.file("word/styles.xml"));
 assert.match(await docxZip.file("word/settings.xml").async("text"), /<w:documentProtection(?=[^>]*w:edit="comments")(?=[^>]*w:enforcement="true")[^>]*\/>/);
+assert.match(await docxZip.file("word/settings.xml").async("text"), /<w:mirrorMargins\s*\/>/);
 assert.match(await docxZip.file("word/document.xml").async("text"), /<w:sdt>[\s\S]*<w:tag w:val="OWNER"\s*\/>[\s\S]*<w:text\s*\/>[\s\S]*Ada[\s\S]*<\/w:sdt>/);
 const docxXml = await docxZip.file("word/document.xml").async("text");
 assert.match(docxXml, /<wp:anchor(?=[^>]*behindDoc="0")(?=[^>]*allowOverlap="0")[^>]*>/);
@@ -199,6 +200,7 @@ assert.equal((numberingXml.match(/<w:lvlPicBulletId\b/g) || []).length, 2);
 assert.match(numberingXml, /<v:shape(?=[^>]*style="width:12pt;height:12pt")(?=[^>]*alt="Action marker")(?=[^>]*o:bullet="(?:t|true)")[^>]*>/);
 assert.ok(Object.keys(docxZip.files).some((part) => /(?:^|\/)media\/[^/]+\.png$/.test(part)));
 const importedDocument = await importDocxWithOpenChestnut(docx);
+assert.equal(importedDocument.settings.mirrorMargins, true);
 assert.deepEqual(importedDocument.settings.documentProtection, { edit: "comments", enforcement: true, formatting: false });
 assert.equal(importedDocument.defaultRunStyle.fontFamily, "Aptos");
 assert.ok(importedDocument.styles.get("CoreHeading"));

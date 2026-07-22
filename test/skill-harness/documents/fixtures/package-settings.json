@@ -1,7 +1,7 @@
 {
   "name": "package-settings",
   "outputName": "package-settings.docx",
-  "settings": { "evenAndOddHeaders": true },
+  "settings": { "evenAndOddHeaders": true, "mirrorMargins": true },
   "sectionSettings": [
     { "sectionIndex": 0, "differentFirstPage": true }
   ],

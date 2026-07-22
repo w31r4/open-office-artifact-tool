@@ -2246,6 +2246,11 @@ message DocumentArtifact {
   // header node. DrawingML, image, shared-header, and irregular VML graphs
   // remain opaque and source-bound.
   repeated DocumentWatermark watermarks = 17;
+  // Mirror inside/outside page margins on facing pages. This is the canonical
+  // leaf w:mirrorMargins setting only; duplicate, child-bearing, extension, or
+  // otherwise irregular settings markup remains source-owned and fail-closed
+  // on semantic replacement.
+  bool mirror_margins = 18;
 }
 
 enum DocumentProtectionMode {

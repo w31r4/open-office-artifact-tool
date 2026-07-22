@@ -1,5 +1,7 @@
 using DocumentFormat.OpenXml.Packaging;
 using OpenOffice.Artifact.Wire.V1;
+using System.Xml;
+using System.Xml.Linq;
 using W = DocumentFormat.OpenXml.Wordprocessing;
 
 namespace OpenChestnut.Codec;
@@ -10,11 +12,14 @@ namespace OpenChestnut.Codec;
 internal static class DocxSettingsCodec
 {
     private const string WordprocessingNamespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    private const string StrictWordprocessingNamespace = "http://purl.oclc.org/ooxml/wordprocessingml/main";
 
     internal static void Read(MainDocumentPart mainPart, DocumentArtifact document)
     {
         var settings = mainPart.DocumentSettingsPart?.Settings;
         document.EvenAndOddHeaders = Enabled(settings?.GetFirstChild<W.EvenAndOddHeaders>());
+        if (TryReadMirrorMargins(mainPart.DocumentSettingsPart, out var mirrorMargins, out _, out _))
+            document.MirrorMargins = mirrorMargins;
         document.UpdateFields = Enabled(settings?.GetFirstChild<W.UpdateFieldsOnOpen>());
         document.TrackRevisions = Enabled(settings?.GetFirstChild<W.TrackRevisions>());
         if (TryReadProtection(settings, out var protection, out _)) document.DocumentProtection = protection;
@@ -23,10 +28,11 @@ internal static class DocxSettingsCodec
     internal static void Author(MainDocumentPart mainPart, DocumentArtifact document)
     {
         var protection = document.DocumentProtection is null ? null : CreateProtection(document.DocumentProtection);
-        if (!document.EvenAndOddHeaders && !document.UpdateFields && !document.TrackRevisions && protection is null) return;
+        if (!document.EvenAndOddHeaders && !document.MirrorMargins && !document.UpdateFields && !document.TrackRevisions && protection is null) return;
         var part = mainPart.AddNewPart<DocumentSettingsPart>();
         part.Settings = new W.Settings();
         if (document.EvenAndOddHeaders) part.Settings.AddChild(new W.EvenAndOddHeaders(), true);
+        if (document.MirrorMargins) part.Settings.AddChild(new W.MirrorMargins(), true);
         if (document.TrackRevisions) part.Settings.AddChild(new W.TrackRevisions(), true);
         if (document.UpdateFields) part.Settings.AddChild(new W.UpdateFieldsOnOpen { Val = true }, true);
         if (protection is not null) part.Settings.AddChild(protection, true);
@@ -41,6 +47,25 @@ internal static class DocxSettingsCodec
             throw new CodecException(
                 "unsupported_document_header_footer_edit",
                 "Source-preserving DOCX export cannot change even-and-odd header activation because it changes header/footer semantics.",
+                "word/settings.xml");
+
+        TryReadMirrorMargins(
+            mainPart.DocumentSettingsPart,
+            out _,
+            out var unsupportedMirrorMargins,
+            out var unsafeToReserializeMirrorMargins);
+        if (unsupportedMirrorMargins && requested.MirrorMargins)
+            throw new CodecException(
+                "unsupported_document_settings_edit",
+                "Source-preserving DOCX export cannot replace duplicate, child-bearing, extension, or otherwise irregular mirrorMargins markup.",
+                "word/settings.xml");
+        if (unsafeToReserializeMirrorMargins &&
+            (source.UpdateFields != requested.UpdateFields ||
+             source.TrackRevisions != requested.TrackRevisions ||
+             !EqualProtection(source.DocumentProtection, requested.DocumentProtection)))
+            throw new CodecException(
+                "unsupported_document_settings_edit",
+                "Source-preserving DOCX export cannot edit sibling document settings while structurally irregular mirrorMargins markup is present.",
                 "word/settings.xml");
 
         TryReadProtection(mainPart.DocumentSettingsPart?.Settings, out _, out var unsupportedProtection);
@@ -60,15 +85,19 @@ internal static class DocxSettingsCodec
         var source = new DocumentArtifact();
         Read(mainPart, source);
         AssertSourceBoundSettings(mainPart, requested);
+        var mirrorMarginsChanged = source.MirrorMargins != requested.MirrorMargins;
         var protectionChanged = !EqualProtection(source.DocumentProtection, requested.DocumentProtection);
         if (source.UpdateFields == requested.UpdateFields &&
             source.TrackRevisions == requested.TrackRevisions &&
+            !mirrorMarginsChanged &&
             !protectionChanged) return;
 
         var part = mainPart.DocumentSettingsPart ?? mainPart.AddNewPart<DocumentSettingsPart>();
         part.Settings ??= new W.Settings();
         Set(part.Settings, requested.UpdateFields, () => new W.UpdateFieldsOnOpen { Val = true });
         Set(part.Settings, requested.TrackRevisions, () => new W.TrackRevisions());
+        if (mirrorMarginsChanged)
+            Set(part.Settings, requested.MirrorMargins, () => new W.MirrorMargins());
         if (protectionChanged)
         {
             part.Settings.RemoveAllChildren<W.DocumentProtection>();
@@ -77,6 +106,84 @@ internal static class DocxSettingsCodec
         }
         part.Settings.Save();
         context.MarkSettingsMutated(part);
+    }
+
+    private static bool TryReadMirrorMargins(
+        DocumentSettingsPart? part,
+        out bool result,
+        out bool unsupported,
+        out bool unsafeToReserialize)
+    {
+        result = false;
+        unsupported = false;
+        unsafeToReserialize = false;
+        if (part is null) return true;
+
+        XElement root;
+        try
+        {
+            using var stream = part.GetStream(FileMode.Open, FileAccess.Read);
+            using var reader = XmlReader.Create(stream, new XmlReaderSettings
+            {
+                DtdProcessing = DtdProcessing.Prohibit,
+                XmlResolver = null,
+            });
+            root = XElement.Load(reader, LoadOptions.PreserveWhitespace);
+        }
+        catch (Exception exception) when (exception is XmlException or InvalidOperationException)
+        {
+            unsupported = true;
+            unsafeToReserialize = true;
+            return false;
+        }
+
+        var wordNamespace = root.Name.NamespaceName;
+        if (root.Name.LocalName != "settings" ||
+            wordNamespace is not WordprocessingNamespace and not StrictWordprocessingNamespace)
+        {
+            unsupported = true;
+            unsafeToReserialize = true;
+            return false;
+        }
+
+        var elements = root.Elements()
+            .Where(element => element.Name.LocalName == "mirrorMargins" &&
+                element.Name.NamespaceName == wordNamespace)
+            .ToArray();
+        if (elements.Length == 0) return true;
+        if (elements.Length != 1)
+        {
+            unsupported = true;
+            unsafeToReserialize = true;
+            return false;
+        }
+
+        var element = elements[0];
+        if (element.Nodes().Any(node =>
+                node is not XText text || node is XCData || !string.IsNullOrWhiteSpace(text.Value)))
+        {
+            unsupported = true;
+            unsafeToReserialize = true;
+            return false;
+        }
+
+        var attributes = element.Attributes().Where(attribute => !attribute.IsNamespaceDeclaration).ToArray();
+        if (attributes.Length > 1 || attributes.Any(attribute =>
+                attribute.Name.NamespaceName != wordNamespace || attribute.Name.LocalName != "val"))
+        {
+            unsupported = true;
+            return false;
+        }
+
+        var value = attributes.SingleOrDefault()?.Value;
+        if (value is null or "true" or "1" or "on") result = true;
+        else if (value is "false" or "0" or "off") result = false;
+        else
+        {
+            unsupported = true;
+            return false;
+        }
+        return true;
     }
 
     private static bool TryReadProtection(

@@ -1562,6 +1562,92 @@ importedTrackedSettings.setSettings({ trackRevisions: false });
 const untrackedSettingsDocx = await DocumentFile.exportDocx(importedTrackedSettings);
 assert.equal((await DocumentFile.importDocx(untrackedSettingsDocx)).settings.trackRevisions, false);
 
+const mirroredSettings = DocumentModel.create({
+  name: "Facing-page mirror margins",
+  settings: { mirrorMargins: true },
+  blocks: [{ kind: "paragraph", text: "Inside and outside margins alternate on facing pages." }],
+});
+const mirroredDocx = await DocumentFile.exportDocx(mirroredSettings);
+const mirroredZip = await JSZip.loadAsync(await mirroredDocx.arrayBuffer());
+const mirroredSettingsXml = await mirroredZip.file("word/settings.xml").async("text");
+assert.match(mirroredSettingsXml, /<w:mirrorMargins\s*\/>/);
+const importedMirroredSettings = await DocumentFile.importDocx(mirroredDocx);
+assert.equal(importedMirroredSettings.settings.mirrorMargins, true);
+assert.match(importedMirroredSettings.inspect({ kind: "settings", maxChars: 2_000 }).ndjson, /"mirrorMargins":true/);
+assert.deepEqual(
+  Buffer.from(await (await DocumentFile.exportDocx(importedMirroredSettings)).arrayBuffer()),
+  Buffer.from(await mirroredDocx.arrayBuffer()),
+  "an unchanged canonical mirrorMargins setting must preserve the source package exactly",
+);
+importedMirroredSettings.setSettings({ mirrorMargins: false });
+const unmirroredDocx = await DocumentFile.exportDocx(importedMirroredSettings);
+const unmirroredZip = await JSZip.loadAsync(await unmirroredDocx.arrayBuffer());
+assert.doesNotMatch(await unmirroredZip.file("word/settings.xml").async("text"), /mirrorMargins/);
+assert.equal((await DocumentFile.importDocx(unmirroredDocx)).settings.mirrorMargins, false);
+
+const disabledMirrorSource = await DocumentFile.patchDocx(mirroredDocx, [{
+  path: "word/settings.xml",
+  xml: mirroredSettingsXml.replace(/<w:mirrorMargins\b[^>]*\/>/, '<w:mirrorMargins w:val="0"/>'),
+}]);
+const importedDisabledMirror = await DocumentFile.importDocx(disabledMirrorSource);
+assert.equal(importedDisabledMirror.settings.mirrorMargins, false);
+assert.deepEqual(
+  Buffer.from(await (await DocumentFile.exportDocx(importedDisabledMirror)).arrayBuffer()),
+  Buffer.from(await disabledMirrorSource.arrayBuffer()),
+  "an unchanged canonical mirrorMargins false value must preserve the source package exactly",
+);
+importedDisabledMirror.setSettings({ mirrorMargins: true });
+assert.equal((await DocumentFile.importDocx(await DocumentFile.exportDocx(importedDisabledMirror))).settings.mirrorMargins, true);
+
+const irregularMirrorSource = await DocumentFile.patchDocx(mirroredDocx, [{
+  path: "word/settings.xml",
+  xml: mirroredSettingsXml.replace(/<w:mirrorMargins\b[^>]*\/>/, '<w:mirrorMargins w:compatFlag="retained"/>'),
+}]);
+const importedIrregularMirror = await DocumentFile.importDocx(irregularMirrorSource);
+assert.equal(importedIrregularMirror.settings.mirrorMargins, false);
+assert.deepEqual(await changedZipParts(irregularMirrorSource, await DocumentFile.exportDocx(importedIrregularMirror)), [],
+  "irregular mirrorMargins markup must remain source-owned when left untouched");
+importedIrregularMirror.setSettings({ updateFields: true });
+const unrelatedMirrorEdit = await DocumentFile.exportDocx(importedIrregularMirror);
+assert.match(
+  await (await JSZip.loadAsync(await unrelatedMirrorEdit.arrayBuffer())).file("word/settings.xml").async("text"),
+  /<w:mirrorMargins w:compatFlag="retained"\s*\/>/,
+);
+importedIrregularMirror.setSettings({ updateFields: false, mirrorMargins: true });
+await assert.rejects(
+  () => DocumentFile.exportDocx(importedIrregularMirror),
+  (error) => error?.code === "unsupported_document_settings_edit" && /irregular mirrorMargins markup/i.test(error.message),
+);
+
+for (const [label, replacement] of [
+  ["duplicate", '<w:mirrorMargins/><w:mirrorMargins/>'],
+  ["child-bearing", '<w:mirrorMargins><w:compat/></w:mirrorMargins>'],
+]) {
+  const structuralSource = await DocumentFile.patchDocx(mirroredDocx, [{
+    path: "word/settings.xml",
+    xml: mirroredSettingsXml.replace(/<w:mirrorMargins\b[^>]*\/>/, replacement),
+  }]);
+  const importedStructuralMirror = await DocumentFile.importDocx(structuralSource);
+  assert.equal(importedStructuralMirror.settings.mirrorMargins, false, `${label} markup must not project as canonical mirror margins`);
+  assert.deepEqual(
+    Buffer.from(await (await DocumentFile.exportDocx(importedStructuralMirror)).arrayBuffer()),
+    Buffer.from(await structuralSource.arrayBuffer()),
+    `${label} markup must remain byte-exact when no semantic edit is requested`,
+  );
+  importedStructuralMirror.setSettings({ updateFields: true });
+  await assert.rejects(
+    () => DocumentFile.exportDocx(importedStructuralMirror),
+    (error) => error?.code === "unsupported_document_settings_edit" && /sibling document settings/i.test(error.message),
+    `${label} markup must block a same-part settings rewrite that cannot prove exact preservation`,
+  );
+  importedStructuralMirror.setSettings({ updateFields: false, mirrorMargins: true });
+  await assert.rejects(
+    () => DocumentFile.exportDocx(importedStructuralMirror),
+    (error) => error?.code === "unsupported_document_settings_edit" && /irregular mirrorMargins markup/i.test(error.message),
+    `${label} markup must fail closed on semantic replacement`,
+  );
+}
+
 const protectedSettings = DocumentModel.create({
   name: "Passwordless document protection",
   settings: { documentProtection: "readOnly" },

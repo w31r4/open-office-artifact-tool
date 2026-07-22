@@ -4691,6 +4691,115 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void MirrorMarginsAuthorsImportsEditsAndFailsClosedOnIrregularSourceMarkup()
+    {
+        var request = ExportRequest();
+        request.Artifact.Document.MirrorMargins = true;
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var mirrorMargins = package.MainDocumentPart!.DocumentSettingsPart!.Settings!
+                .GetFirstChild<W.MirrorMargins>();
+            Assert.NotNull(mirrorMargins);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.True(imported.Artifact.Document.MirrorMargins);
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(authored.File, unchanged.File);
+
+        imported.Artifact.Document.MirrorMargins = false;
+        var removed = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(removed.Ok, Diagnostics(removed));
+        using (var stream = new MemoryStream(removed.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+            Assert.Null(package.MainDocumentPart!.DocumentSettingsPart!.Settings!.GetFirstChild<W.MirrorMargins>());
+        var removedImport = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = removed.File,
+        });
+        Assert.True(removedImport.Ok, Diagnostics(removedImport));
+        Assert.False(removedImport.Artifact.Document.MirrorMargins);
+
+        var irregularSource = AddMirrorMarginsExtension(authored.File.ToByteArray());
+        var irregular = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(irregularSource),
+        });
+        Assert.True(irregular.Ok, Diagnostics(irregular));
+        Assert.False(irregular.Artifact.Document.MirrorMargins);
+        var preserved = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = irregular.Artifact,
+        });
+        Assert.True(preserved.Ok, Diagnostics(preserved));
+        Assert.Equal(irregularSource, preserved.File.ToByteArray());
+
+        irregular.Artifact.Document.UpdateFields = true;
+        var unrelatedEdit = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = irregular.Artifact,
+        });
+        Assert.True(unrelatedEdit.Ok, Diagnostics(unrelatedEdit));
+        using (var stream = new MemoryStream(unrelatedEdit.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var settings = package.MainDocumentPart!.DocumentSettingsPart!.Settings!;
+            Assert.True(settings.GetFirstChild<W.UpdateFieldsOnOpen>()?.Val?.Value);
+            Assert.Equal("retained", settings.GetFirstChild<W.MirrorMargins>()!
+                .GetAttribute("compatFlag", "http://schemas.openxmlformats.org/wordprocessingml/2006/main").Value);
+        }
+
+        irregular.Artifact.Document.UpdateFields = false;
+        irregular.Artifact.Document.MirrorMargins = true;
+        var rejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = irregular.Artifact,
+        });
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_document_settings_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void PasswordlessDocumentProtectionAuthorsAndImportsEveryBoundedMode()
     {
         var modes = new[]
@@ -6743,6 +6852,25 @@ public sealed class DocxCodecTests
                 "hash",
                 "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
                 "AA=="));
+            document.MainDocumentPart.DocumentSettingsPart.Settings.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] AddMirrorMarginsExtension(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+        {
+            var mirrorMargins = document.MainDocumentPart!.DocumentSettingsPart!.Settings!
+                .GetFirstChild<W.MirrorMargins>()!;
+            mirrorMargins.SetAttribute(new OpenXmlAttribute(
+                "w",
+                "compatFlag",
+                "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+                "retained"));
             document.MainDocumentPart.DocumentSettingsPart.Settings.Save();
         }
         return stream.ToArray();

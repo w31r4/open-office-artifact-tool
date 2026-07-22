@@ -395,6 +395,7 @@ This is a quick index so you can jump from a helper script to the right task gui
 ### Forms & protection
 - Public `paragraph.addTextContentControl(...)`, `paragraph.addCheckboxContentControl(...)`, `paragraph.addDropdownContentControl(...)`, `paragraph.addComboBoxContentControl(...)`, `paragraph.addDateContentControl(...)`, the matching `table.getCell(row, column)` five-type content-control primitives, `document.addBlockTextContentControl(...)`, `document.contentControls`, `document.fillContentControls(...)`, and the four typed setters handle source-free and recognized imported canonical inline/table-cell profiles; `content_controls.py` handles explicit existing-template/package routes → `tasks/forms_content_controls.md`
 - Public `document.setSettings({ documentProtection: ... })` authors, imports, changes, or removes the bounded passwordless Word editing-restriction modes; `set_protection.py` remains an explicit reference-compatible package helper and never a silent fallback → `tasks/protection_restrict_editing.md`
+- Public `document.setSettings({ mirrorMargins: true })` authors, imports, changes, or removes the canonical facing-page inside/outside-margin flag. It does not swap margin values itself; irregular imported `w:mirrorMargins` markup remains source-owned and fails closed on replacement → `artifact_tool/API_QUICK_START.md`
 
 ### QA / regression
 - `render_and_diff.py`, `render_docx.py` → `tasks/compare_diff.md`, `tasks/verify_render.md`
