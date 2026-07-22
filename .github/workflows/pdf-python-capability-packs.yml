@@ -1,0 +1,164 @@
+name: Python PDF capability packs
+
+on:
+  workflow_dispatch:
+    inputs:
+      pack:
+        description: "Immutable isolated-Python pack to build"
+        required: true
+        default: python-foundation
+        type: choice
+        options:
+          - python-foundation
+          - python-specialists
+      publish:
+        description: "Create the immutable release only after both platform builds and probes pass"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+# This workflow is deliberately separate from ordinary CI. It constructs
+# external, hash-pinned capability packs; npm installation and `npm test` do
+# not download CPython, wheels, or any provider pack.
+permissions:
+  contents: write
+  attestations: write
+  artifact-metadata: write
+  id-token: write
+
+env:
+  PYTHON_PACK_VERSION: 3.13.14-oat.1
+
+jobs:
+  python-pack:
+    name: ${{ inputs.pack }} (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux-x64
+            runner: ubuntu-22.04
+          - platform: darwin-arm64
+            runner: macos-14
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Validate the pinned Python source lock
+        run: node scripts/build-python-provider-pack.mjs --verify-lock
+      - name: Assemble a self-contained Python provider pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/build-python-provider-pack.mjs \
+            --pack "${{ inputs.pack }}" \
+            --version "$PYTHON_PACK_VERSION" \
+            --platform "${{ matrix.platform }}" \
+            --output "$RUNNER_TEMP/python-release" \
+            --source-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/$GITHUB_SHA/scripts/pdf-provider-python-release-inputs.v1.json"
+      - name: Verify the extracted provider runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/python-release/${{ inputs.pack }}-$PYTHON_PACK_VERSION-${{ matrix.platform }}.tar.gz"
+          destination="$RUNNER_TEMP/python-consumer"
+          mkdir -p "$destination"
+          tar -xzf "$archive" -C "$destination"
+          test -x "$destination/bin/python3"
+          test ! -e "$destination/bin/pip"
+          case "${{ inputs.pack }}" in
+            python-foundation)
+              "$destination/bin/python3" -I -c 'import importlib.metadata as m, reportlab, pdfplumber, pypdf, PIL; assert m.version("reportlab") == "4.4.9"; assert m.version("pdfplumber") == "0.11.9"; assert m.version("pypdf") == "6.10.0"; assert m.version("pillow") == "12.2.0"'
+              ;;
+            python-specialists)
+              "$destination/bin/python3" -I -c 'import importlib.metadata as m, pymupdf, pikepdf, pyhanko, pyhanko_certvalidator; assert m.version("PyMuPDF") == "1.27.2.3"; assert m.version("pikepdf") == "10.10.0"; assert m.version("pyHanko") == "0.35.2"; assert m.version("pyhanko-certvalidator") == "0.31.1"'
+              ;;
+            *)
+              echo "unsupported pack" >&2
+              exit 2
+              ;;
+          esac
+      - name: Attest immutable provider pack provenance
+        if: ${{ inputs.publish == 'true' }}
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ runner.temp }}/python-release/*.tar.gz
+      - name: Attest Python provider pack SBOM
+        if: ${{ inputs.publish == 'true' }}
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ runner.temp }}/python-release/${{ inputs.pack }}-${{ env.PYTHON_PACK_VERSION }}-${{ matrix.platform }}.tar.gz
+          sbom-path: ${{ runner.temp }}/python-release/${{ inputs.pack }}-${{ env.PYTHON_PACK_VERSION }}-${{ matrix.platform }}.sbom.cdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.pack }}-${{ matrix.platform }}
+          path: ${{ runner.temp }}/python-release/
+          if-no-files-found: error
+          retention-days: 14
+
+  release-python-pack:
+    name: assemble ${{ inputs.pack }} release manifest
+    needs: python-pack
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@v5
+        with:
+          pattern: ${{ inputs.pack }}-*
+          path: ${{ runner.temp }}/python-platforms
+          merge-multiple: true
+      - name: Combine audited platform manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="pdf-provider-${{ inputs.pack }}-$PYTHON_PACK_VERSION"
+          release_base="https://github.com/${GITHUB_REPOSITORY}/releases/download/$tag/"
+          node scripts/finalize-pdf-provider-release.mjs \
+            --pack "${{ inputs.pack }}" \
+            --version "$PYTHON_PACK_VERSION" \
+            --input "$RUNNER_TEMP/python-platforms" \
+            --output "$RUNNER_TEMP/python-final" \
+            --release-base-url "$release_base" \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow .github/workflows/pdf-python-capability-packs.yml
+          jq -e '.catalogFragment.state == "published" and (.catalogFragment.artifacts | length == 2)' "$RUNNER_TEMP/python-final/${{ inputs.pack }}-$PYTHON_PACK_VERSION.release-manifest.json"
+      - name: Attest release evidence assets
+        if: ${{ inputs.publish == 'true' }}
+        uses: actions/attest@v4
+        with:
+          subject-path: ${{ runner.temp }}/python-final/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.pack }}-release-manifest
+          path: ${{ runner.temp }}/python-final/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish immutable GitHub release assets
+        if: ${{ inputs.publish == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="pdf-provider-${{ inputs.pack }}-$PYTHON_PACK_VERSION"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Refusing to mutate existing release $tag" >&2
+            exit 2
+          fi
+          gh release create "$tag" \
+            --target "$GITHUB_SHA" \
+            --title "PDF capability pack: ${{ inputs.pack }} $PYTHON_PACK_VERSION" \
+            --notes "Hash-pinned isolated Python PDF capability packs. The npm catalog does not advertise these assets until a reviewed catalog update pins their exact hashes. Verify every asset with: gh attestation verify <asset> --repo ${GITHUB_REPOSITORY}"
+          gh release upload "$tag" "$RUNNER_TEMP/python-platforms"/* "$RUNNER_TEMP/python-final"/*

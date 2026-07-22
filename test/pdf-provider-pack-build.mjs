@@ -32,11 +32,13 @@ try {
   const release = path.join(temporary, "release");
   const unpacked = path.join(temporary, "unpacked");
   const notices = path.join(temporary, "notices.md");
+  const linuxNotices = path.join(temporary, "notices-linux.md");
   await fs.mkdir(path.join(payload, "bin"), { recursive: true });
   await fs.mkdir(path.join(payload, "share", "data"), { recursive: true });
   await fs.writeFile(path.join(payload, "bin", "tool"), "#!/bin/sh\necho capability-pack\n", { mode: 0o755 });
   await fs.writeFile(path.join(payload, "share", "data", "fixture.txt"), "fixture\n", { mode: 0o644 });
   await fs.writeFile(notices, "fixture notices\n", "utf8");
+  await fs.writeFile(linuxNotices, "fixture Linux notices\n", "utf8");
   const arguments_ = [
     "--pack", "fixture-pack",
     "--version", "1.2.3",
@@ -65,8 +67,22 @@ try {
   assert.equal(embeddedSbom.bomFormat, "CycloneDX");
   assert.match(embeddedSbom.serialNumber, /^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
 
+  const expressionOutput = path.join(temporary, "expression-output");
+  const expression = JSON.parse(run([
+    "--pack", "expression-pack", "--version", "1.2.3", "--platform", "darwin-arm64", "--payload", payload,
+    "--output", expressionOutput, "--source-url", "https://releases.example.test/expression-1.2.3.tar.gz",
+    "--source-sha256", "b".repeat(64), "--license", "PSF-2.0 AND MPL-2.0", "--notices", notices,
+  ]).stdout);
+  const expressionSbom = JSON.parse(await fs.readFile(path.join(expressionOutput, expression.sbom.asset), "utf8"));
+  assert.deepEqual(expressionSbom.components[0].licenses, [{ license: { expression: "PSF-2.0 AND MPL-2.0" } }]);
+  const summaryOutput = path.join(temporary, "summary-output");
+  const summary = JSON.parse(run([...arguments_, "--output", summaryOutput, "--summary"]).stdout);
+  assert.equal(summary.payload.fileCount, first.payload.fileCount);
+  assert.equal(Object.hasOwn(summary.payload, "entries"), false);
+
   const linuxArguments = [...arguments_];
   linuxArguments[linuxArguments.indexOf("darwin-arm64")] = "linux-x64";
+  linuxArguments[linuxArguments.indexOf(notices)] = linuxNotices;
   const linux = JSON.parse(run([...linuxArguments, "--output", outputLinux]).stdout);
   for (const file of await fs.readdir(outputLinux)) await fs.copyFile(path.join(outputLinux, file), path.join(outputA, file));
   const finalized = JSON.parse(finalize([
@@ -81,6 +97,11 @@ try {
   const releaseSbom = JSON.parse(await fs.readFile(path.join(release, "fixture-pack-1.2.3.sbom.cdx.json"), "utf8"));
   assert.equal(releaseSbom.bomFormat, "CycloneDX");
   assert.match(releaseSbom.serialNumber, /^urn:uuid:[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+  const releaseNotices = await fs.readFile(path.join(release, "fixture-pack-1.2.3.THIRD_PARTY_NOTICES.md"), "utf8");
+  assert.match(releaseNotices, /## darwin-arm64/);
+  assert.match(releaseNotices, /fixture notices/);
+  assert.match(releaseNotices, /## linux-x64/);
+  assert.match(releaseNotices, /fixture Linux notices/);
 
   const malicious = path.join(temporary, "malicious");
   await fs.mkdir(malicious);

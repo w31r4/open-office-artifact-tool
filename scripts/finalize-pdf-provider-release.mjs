@@ -152,6 +152,19 @@ function deterministicBomSerial(...values) {
   return `urn:uuid:${digest.slice(0, 8)}-${digest.slice(8, 12)}-5${digest.slice(13, 16)}-${(Number.parseInt(digest[16], 16) & 0x3 | 0x8).toString(16)}${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
 }
 
+function releaseNoticesFor(ordered, noticeBytes) {
+  if (noticeBytes.every((bytes) => bytes.equals(noticeBytes[0]))) return noticeBytes[0];
+  const parts = [
+    "# PDF capability-pack release notices",
+    "",
+    "This release contains platform-specific payloads. The independently hash-verified notices for every supported platform are reproduced below.",
+  ];
+  for (let index = 0; index < ordered.length; index += 1) {
+    parts.push("", `## ${ordered[index].platform}`, "", noticeBytes[index].toString("utf8").trimEnd());
+  }
+  return Buffer.from(`${parts.join("\n")}\n`, "utf8");
+}
+
 async function main() {
   const options = parseArguments(process.argv.slice(2));
   const manifests = await collectManifests(options.input);
@@ -171,8 +184,6 @@ async function main() {
     await verifiedBytes(options.input, manifest.sbom.asset, manifest.sbom.sha256, manifest.sbom.bytes, "platform SBOM");
     noticeBytes.push(await verifiedBytes(options.input, manifest.thirdPartyNotices.asset, manifest.thirdPartyNotices.sha256, manifest.thirdPartyNotices.bytes, "platform notices"));
   }
-  if (noticeBytes.some((bytes) => !bytes.equals(noticeBytes[0]))) fail("platform packs must have byte-identical third-party notices.");
-
   const releaseBaseName = `${options.pack}-${options.version}`;
   const releaseSbomAsset = `${releaseBaseName}.sbom.cdx.json`;
   const releaseNoticesAsset = `${releaseBaseName}.THIRD_PARTY_NOTICES.md`;
@@ -203,7 +214,7 @@ async function main() {
       externalReferences: [{ type: "distribution", url: releaseAssetUrl(options.releaseBaseUrl, manifest.artifact.asset) }],
     })),
   }), "utf8");
-  const releaseNoticesBytes = noticeBytes[0];
+  const releaseNoticesBytes = releaseNoticesFor(ordered, noticeBytes);
   const releaseEvidence = {
     sbom: { asset: releaseSbomAsset, url: releaseAssetUrl(options.releaseBaseUrl, releaseSbomAsset), sha256: sha256(releaseSbomBytes) },
     thirdPartyNotices: { asset: releaseNoticesAsset, url: releaseAssetUrl(options.releaseBaseUrl, releaseNoticesAsset), sha256: sha256(releaseNoticesBytes) },

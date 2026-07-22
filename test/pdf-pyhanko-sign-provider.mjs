@@ -285,6 +285,8 @@ with (root / "source.pdf").open("rb") as source, (root / "existing-field.pdf").o
     "pyhanko",
     "--strategy",
     "incremental",
+    "--credential-declaration",
+    "local-pkcs12",
     "--input",
     source,
     "--output",

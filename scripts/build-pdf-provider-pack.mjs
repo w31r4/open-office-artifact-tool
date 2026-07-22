@@ -45,10 +45,16 @@ function sha256(bytes) {
 
 function parseArguments(argv) {
   const values = {};
+  const flags = new Set();
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index];
     if (!token.startsWith("--")) fail(`unexpected argument ${token}.`);
     const name = token.slice(2);
+    if (name === "summary") {
+      if (flags.has(name)) fail(`--${name} may be supplied only once.`);
+      flags.add(name);
+      continue;
+    }
     const value = argv[index + 1];
     if (!value || value.startsWith("--")) fail(`--${name} requires a value.`);
     if (Object.hasOwn(values, name)) fail(`--${name} may be supplied only once.`);
@@ -79,6 +85,7 @@ function parseArguments(argv) {
     sourceSha256: values["source-sha256"].toLowerCase(),
     license: values.license.trim(),
     notices: path.resolve(values.notices),
+    summary: flags.has("summary"),
   };
 }
 
@@ -193,6 +200,12 @@ function deterministicBomSerial(...values) {
   return `urn:uuid:${digest.slice(0, 8)}-${digest.slice(8, 12)}-5${digest.slice(13, 16)}-${(Number.parseInt(digest[16], 16) & 0x3 | 0x8).toString(16)}${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
 }
 
+function cycloneDxLicense(value) {
+  // A simple SPDX identifier belongs in `license.id`; a compound SPDX
+  // expression must use CycloneDX's distinct `license.expression` field.
+  return /[\s()]/.test(value) ? { expression: value } : { id: value };
+}
+
 function sbomFor({ pack, version, platform, sourceUrl, sourceSha256, license, payloadEntries }) {
   return {
     bomFormat: "CycloneDX",
@@ -215,7 +228,7 @@ function sbomFor({ pack, version, platform, sourceUrl, sourceSha256, license, pa
         type: "application",
         name: pack,
         version,
-        licenses: [{ license: { id: license } }],
+        licenses: [{ license: cycloneDxLicense(license) }],
         externalReferences: [{ type: "distribution", url: sourceUrl, hashes: [{ alg: "SHA-256", content: sourceSha256 }] }],
       },
     ],
@@ -272,7 +285,22 @@ async function main() {
     fs.writeFile(path.join(options.output, noticesName), noticeBytes, { mode: 0o600 }),
     fs.writeFile(path.join(options.output, `${baseName}.manifest.json`), stableJson(manifest), { mode: 0o600 }),
   ]);
-  process.stdout.write(`${stableJson(manifest)}`);
+  if (options.summary) {
+    process.stdout.write(stableJson({
+      schema: manifest.schema,
+      schemaVersion: manifest.schemaVersion,
+      pack: manifest.pack,
+      version: manifest.version,
+      platform: manifest.platform,
+      artifact: manifest.artifact,
+      source: manifest.source,
+      sbom: manifest.sbom,
+      thirdPartyNotices: manifest.thirdPartyNotices,
+      payload: { fileCount: manifest.payload.fileCount },
+    }));
+    return;
+  }
+  process.stdout.write(stableJson(manifest));
 }
 
 main().catch((error) => {
