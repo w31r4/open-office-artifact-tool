@@ -123,6 +123,7 @@ assert.equal(PDF_PROVIDER_CATALOG.packs.verapdf.version, "1.30.2-oat.1");
 assert.deepEqual(PDF_PROVIDER_CATALOG.packs.verapdf.releaseEvidence.verifiedPlatforms, ["darwin-arm64", "linux-x64"]);
 assert.equal(PDF_PROVIDER_CATALOG.packs.verapdf.license.expression, "MPL-2.0 AND GPL-3.0-or-later AND GPL-2.0-only WITH Classpath-exception-2.0");
 assert.equal(PDF_PROVIDER_CATALOG.providers.verapdf.probeTimeoutMs, 20_000);
+assert.equal(PDF_PROVIDER_CATALOG.providers.ocrmypdf.probeTimeoutMs, 20_000, "cold isolated OCR runtime probing needs the same bounded startup allowance as managed veraPDF");
 assert.ok(!("managedPack" in PDF_PROVIDER_CATALOG.providers.qpdf), "pack metadata must have one canonical top-level home");
 
 const invalidPlatformCatalog = structuredClone(PDF_PROVIDER_CATALOG);
@@ -165,6 +166,18 @@ unsignedPublishedCatalog.packs.qpdf.releaseEvidence = {
 assert.throws(() => validatePdfProviderCatalog(unsignedPublishedCatalog), /artifact-attestation/);
 const ocrRuntimeCatalog = structuredClone(PDF_PROVIDER_CATALOG);
 assert.deepEqual(ocrRuntimeCatalog.packs["ocr-core"].requiresPackIds, ["qpdf"], "OCR core bundles its minimal pdftotext sidecar instead of silently selecting the separate Poppler QA route");
+assert.equal(ocrRuntimeCatalog.packs["ocr-core"].state, "published");
+assert.equal(ocrRuntimeCatalog.packs["ocr-core"].version, "17.8.1-oat.1");
+assert.deepEqual(ocrRuntimeCatalog.packs["ocr-core"].artifacts.map(({ platform, sha256 }) => [platform, sha256]), [
+  ["darwin-arm64", "02a9eb183321717842a2ec886fbd78b3bf17399d2fabcda88b3ab09b2818c69b"],
+  ["linux-x64", "dc26faefa6a9d05c83c289cfe4f28dfc4b566cdaeca776da017cbb52958f8a92"],
+]);
+for (const [packId, version] of [["ocr-language-eng", "4.1.0-oat.1"], ["ocr-language-chi-sim", "4.1.0-oat.1"]]) {
+  assert.equal(ocrRuntimeCatalog.packs[packId].state, "published");
+  assert.equal(ocrRuntimeCatalog.packs[packId].version, version);
+  assert.deepEqual(ocrRuntimeCatalog.packs[packId].artifacts.map(({ platform }) => platform), ["darwin-arm64", "linux-x64"]);
+  assert.equal(ocrRuntimeCatalog.packs[packId].releaseEvidence.provenance.workflow, ".github/workflows/pdf-ocr-capability-packs.yml");
+}
 assert.equal(validatePdfProviderCatalog(ocrRuntimeCatalog), true, "OCR may reference only declared files in its qpdf dependency closure");
 assert.equal(ocrRuntimeCatalog.providers.ocrmypdf.managedRuntime.languageDirectoryEnvironment, "OPEN_OFFICE_PDF_TESSDATA_DIRS");
 const escapedOcrRuntimeCatalog = structuredClone(PDF_PROVIDER_CATALOG);
@@ -385,6 +398,26 @@ const ocrLanguagePolicy = await PdfProviders.resolve({
 assert.equal(ocrLanguagePolicy.status, "blocked");
 assert.equal(ocrLanguagePolicy.reason.code, "ocr-language-pack-unpublished");
 
+const managedOcr = await PdfProviders.resolve({
+  task: "ocr",
+  provider: "ocrmypdf",
+  savePolicy: "rewrite",
+  inspection: inspectedPdf,
+  mutationAuthorized: true,
+  ocrLanguages: ["eng", "chi_sim"],
+  policy: {
+    installPolicy: "managed",
+    allowedProviders: ["ocrmypdf"],
+    allowedPacks: ["qpdf", "ocr-core", "ocr-language-eng", "ocr-language-chi-sim"],
+    allowedOcrLanguages: ["eng", "chi_sim"],
+    maxDownloadBytes: 1_000_000_000,
+    maxUnpackedBytes: 1_000_000_000,
+  },
+});
+assert.equal(managedOcr.status, "installable");
+assert.deepEqual(managedOcr.installPlan.packIds, ["qpdf", "ocr-core", "ocr-language-eng", "ocr-language-chi-sim"]);
+assert.equal(managedOcr.installPlan.action, "install");
+
 const missingOcrProbeLanguage = await PdfProviders.probe({
   provider: "ocrmypdf",
   task: "ocr",
@@ -426,6 +459,39 @@ try {
   } finally {
     if (previousQpdf === undefined) delete process.env.OPEN_OFFICE_PDF_QPDF;
     else process.env.OPEN_OFFICE_PDF_QPDF = previousQpdf;
+  }
+
+  // A freshly unpacked isolated OCR runtime can take longer than the generic
+  // short command probe to initialize Python imports. Keep that larger bound
+  // catalogued and prove it is actually applied rather than accepting a cold
+  // start as a false unavailable result.
+  const delayedOcr = path.join(tempRoot, "delayed-ocrmypdf.sh");
+  await fs.writeFile(delayedOcr, [
+    "#!/bin/sh",
+    "if [ \"$1\" = \"--version\" ]; then",
+    "  sleep 3",
+    "  echo 17.8.1",
+    "else",
+    "  exit 2",
+    "fi",
+    "",
+  ].join("\n"), "utf8");
+  await fs.chmod(delayedOcr, 0o755);
+  const previousOcr = process.env.OPEN_OFFICE_PDF_OCRMYPDF;
+  process.env.OPEN_OFFICE_PDF_OCRMYPDF = delayedOcr;
+  try {
+    const started = Date.now();
+    const delayedOcrProbe = await PdfProviders.probe({
+      provider: "ocrmypdf",
+      task: "ocr",
+      languages: ["eng"],
+      policy: { installPolicy: "system-only", allowedProviders: ["ocrmypdf"], allowedOcrLanguages: ["eng"] },
+    });
+    assert.equal(delayedOcrProbe.status, "ready", JSON.stringify(delayedOcrProbe.reason));
+    assert.ok(Date.now() - started >= 2_500, "OCR probe must wait beyond the generic 2.5-second command timeout");
+  } finally {
+    if (previousOcr === undefined) delete process.env.OPEN_OFFICE_PDF_OCRMYPDF;
+    else process.env.OPEN_OFFICE_PDF_OCRMYPDF = previousOcr;
   }
 
   // A system-only Python provider may be selected through a caller-owned

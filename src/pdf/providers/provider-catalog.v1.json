@@ -213,11 +213,32 @@
       "license": { "expression": "Apache-2.0", "requiresAcknowledgement": false }
     },
     "ocr-core": {
-      "state": "unpublished",
+      "state": "published",
       "delivery": "versioned-signed-platform-release-asset",
       "platforms": ["darwin-arm64", "linux-x64"],
-      "version": null,
-      "artifacts": [],
+      "version": "17.8.1-oat.1",
+      "artifacts": [
+        {
+          "platform": "darwin-arm64",
+          "asset": "ocr-core-17.8.1-oat.1-darwin-arm64.tar.gz",
+          "version": "17.8.1-oat.1",
+          "url": "https://github.com/w31r4/open-office-artifact-tool/releases/download/pdf-provider-ocr-core-17.8.1-oat.1/ocr-core-17.8.1-oat.1-darwin-arm64.tar.gz",
+          "sha256": "02a9eb183321717842a2ec886fbd78b3bf17399d2fabcda88b3ab09b2818c69b",
+          "downloadBytes": 208127744,
+          "unpackedBytes": 628438042,
+          "archiveFormat": "tar.gz"
+        },
+        {
+          "platform": "linux-x64",
+          "asset": "ocr-core-17.8.1-oat.1-linux-x64.tar.gz",
+          "version": "17.8.1-oat.1",
+          "url": "https://github.com/w31r4/open-office-artifact-tool/releases/download/pdf-provider-ocr-core-17.8.1-oat.1/ocr-core-17.8.1-oat.1-linux-x64.tar.gz",
+          "sha256": "dc26faefa6a9d05c83c289cfe4f28dfc4b566cdaeca776da017cbb52958f8a92",
+          "downloadBytes": 154770547,
+          "unpackedBytes": 420653539,
+          "archiveFormat": "tar.gz"
+        }
+      ],
       "requiresPackIds": ["qpdf"],
       "entrypoints": [
         { "path": "bin/ocrmypdf", "kind": "file", "executable": true },
@@ -226,35 +247,134 @@
         { "path": "bin/pdftotext", "kind": "file", "executable": true },
         { "path": "share/tessdata", "kind": "directory", "executable": false }
       ],
-      "dependencyClosure": ["isolated Python", "OCRmyPDF", "Tesseract", "Ghostscript", "native Poppler pdftotext", "qpdf"],
+      "dependencyClosure": ["isolated Python", "OCRmyPDF >=17.8,<17.9", "Tesseract >=5,<6", "Ghostscript", "native Poppler pdftotext", "qpdf"],
       "estimatedDownloadBytes": null,
       "estimatedUnpackedBytes": null,
+      "releaseEvidence": {
+        "sbom": {
+          "asset": "ocr-core-17.8.1-oat.1.sbom.cdx.json",
+          "url": "https://github.com/w31r4/open-office-artifact-tool/releases/download/pdf-provider-ocr-core-17.8.1-oat.1/ocr-core-17.8.1-oat.1.sbom.cdx.json",
+          "sha256": "304f38f561ca2856d13287a3819cab1d764e714ed172c5c55eb419e025a6781e"
+        },
+        "thirdPartyNotices": {
+          "asset": "ocr-core-17.8.1-oat.1.THIRD_PARTY_NOTICES.md",
+          "url": "https://github.com/w31r4/open-office-artifact-tool/releases/download/pdf-provider-ocr-core-17.8.1-oat.1/ocr-core-17.8.1-oat.1.THIRD_PARTY_NOTICES.md",
+          "sha256": "bcaa162f3ef1e6a9294bcbfea5290aec91468592107c6f47a1ae4020bf72e975"
+        },
+        "provenance": {
+          "provider": "github-actions-artifact-attestation",
+          "repository": "w31r4/open-office-artifact-tool",
+          "workflow": ".github/workflows/pdf-ocr-capability-packs.yml",
+          "verificationCommand": "gh attestation verify <asset> --repo w31r4/open-office-artifact-tool"
+        },
+        "verifiedPlatforms": ["darwin-arm64", "linux-x64"]
+      },
       "license": { "expression": "PSF-2.0 AND MPL-2.0 AND Apache-2.0 AND GPL-2.0-or-later AND AGPL-3.0-or-later AND BSD-3-Clause AND MIT", "requiresAcknowledgement": false }
     },
     "ocr-language-eng": {
-      "state": "unpublished",
+      "state": "published",
       "delivery": "versioned-signed-platform-release-asset",
       "platforms": ["darwin-arm64", "linux-x64"],
-      "version": null,
-      "artifacts": [],
+      "version": "4.1.0-oat.1",
+      "artifacts": [
+        {
+          "platform": "darwin-arm64",
+          "asset": "ocr-language-eng-4.1.0-oat.1-darwin-arm64.tar.gz",
+          "version": "4.1.0-oat.1",
+          "url": "https://github.com/w31r4/open-office-artifact-tool/releases/download/pdf-provider-ocr-language-eng-4.1.0-oat.1/ocr-language-eng-4.1.0-oat.1-darwin-arm64.tar.gz",
+          "sha256": "5b848be97910c205099ecda298895ef1e9b3a26a39e80db2f788d4753562a41f",
+          "downloadBytes": 1981766,
+          "unpackedBytes": 4126093,
+          "archiveFormat": "tar.gz"
+        },
+        {
+          "platform": "linux-x64",
+          "asset": "ocr-language-eng-4.1.0-oat.1-linux-x64.tar.gz",
+          "version": "4.1.0-oat.1",
+          "url": "https://github.com/w31r4/open-office-artifact-tool/releases/download/pdf-provider-ocr-language-eng-4.1.0-oat.1/ocr-language-eng-4.1.0-oat.1-linux-x64.tar.gz",
+          "sha256": "0b7e44640e12b6c0f83995931e0887b3ebafbebfd073a9b81e91e2a8e1b5630b",
+          "downloadBytes": 1981763,
+          "unpackedBytes": 4126090,
+          "archiveFormat": "tar.gz"
+        }
+      ],
       "requiresPackIds": [],
       "entrypoints": [{ "path": "share/tessdata/eng.traineddata", "kind": "file", "executable": false }],
       "dependencyClosure": ["Tesseract English traineddata"],
       "estimatedDownloadBytes": null,
       "estimatedUnpackedBytes": null,
+      "releaseEvidence": {
+        "sbom": {
+          "asset": "ocr-language-eng-4.1.0-oat.1.sbom.cdx.json",
+          "url": "https://github.com/w31r4/open-office-artifact-tool/releases/download/pdf-provider-ocr-language-eng-4.1.0-oat.1/ocr-language-eng-4.1.0-oat.1.sbom.cdx.json",
+          "sha256": "07d70afe0df5854d78dca59e95ef5301d529c414d79eacce7e34680c6cb778f7"
+        },
+        "thirdPartyNotices": {
+          "asset": "ocr-language-eng-4.1.0-oat.1.THIRD_PARTY_NOTICES.md",
+          "url": "https://github.com/w31r4/open-office-artifact-tool/releases/download/pdf-provider-ocr-language-eng-4.1.0-oat.1/ocr-language-eng-4.1.0-oat.1.THIRD_PARTY_NOTICES.md",
+          "sha256": "f084cd6e2ce92791faed4c1e60384cb7c16a53707a214a5ac1894ca17ce5dfde"
+        },
+        "provenance": {
+          "provider": "github-actions-artifact-attestation",
+          "repository": "w31r4/open-office-artifact-tool",
+          "workflow": ".github/workflows/pdf-ocr-capability-packs.yml",
+          "verificationCommand": "gh attestation verify <asset> --repo w31r4/open-office-artifact-tool"
+        },
+        "verifiedPlatforms": ["darwin-arm64", "linux-x64"]
+      },
       "license": { "expression": "Apache-2.0", "requiresAcknowledgement": false }
     },
     "ocr-language-chi-sim": {
-      "state": "unpublished",
+      "state": "published",
       "delivery": "versioned-signed-platform-release-asset",
       "platforms": ["darwin-arm64", "linux-x64"],
-      "version": null,
-      "artifacts": [],
+      "version": "4.1.0-oat.1",
+      "artifacts": [
+        {
+          "platform": "darwin-arm64",
+          "asset": "ocr-language-chi-sim-4.1.0-oat.1-darwin-arm64.tar.gz",
+          "version": "4.1.0-oat.1",
+          "url": "https://github.com/w31r4/open-office-artifact-tool/releases/download/pdf-provider-ocr-language-chi-sim-4.1.0-oat.1/ocr-language-chi-sim-4.1.0-oat.1-darwin-arm64.tar.gz",
+          "sha256": "e202fec7e2fdc58cadaeea1652b71323c5a2eeb606aba4f0dd736b13a943fb78",
+          "downloadBytes": 1733864,
+          "unpackedBytes": 2482185,
+          "archiveFormat": "tar.gz"
+        },
+        {
+          "platform": "linux-x64",
+          "asset": "ocr-language-chi-sim-4.1.0-oat.1-linux-x64.tar.gz",
+          "version": "4.1.0-oat.1",
+          "url": "https://github.com/w31r4/open-office-artifact-tool/releases/download/pdf-provider-ocr-language-chi-sim-4.1.0-oat.1/ocr-language-chi-sim-4.1.0-oat.1-linux-x64.tar.gz",
+          "sha256": "f429ca34cdc6c25632d7c45434201b4e67aaa663d344655db4afb44e22bf6745",
+          "downloadBytes": 1733869,
+          "unpackedBytes": 2482182,
+          "archiveFormat": "tar.gz"
+        }
+      ],
       "requiresPackIds": [],
       "entrypoints": [{ "path": "share/tessdata/chi_sim.traineddata", "kind": "file", "executable": false }],
       "dependencyClosure": ["Tesseract Simplified Chinese traineddata"],
       "estimatedDownloadBytes": null,
       "estimatedUnpackedBytes": null,
+      "releaseEvidence": {
+        "sbom": {
+          "asset": "ocr-language-chi-sim-4.1.0-oat.1.sbom.cdx.json",
+          "url": "https://github.com/w31r4/open-office-artifact-tool/releases/download/pdf-provider-ocr-language-chi-sim-4.1.0-oat.1/ocr-language-chi-sim-4.1.0-oat.1.sbom.cdx.json",
+          "sha256": "28849809618daf160126b56da73b8193681319cd5a6230a673d4ddf3bf2685de"
+        },
+        "thirdPartyNotices": {
+          "asset": "ocr-language-chi-sim-4.1.0-oat.1.THIRD_PARTY_NOTICES.md",
+          "url": "https://github.com/w31r4/open-office-artifact-tool/releases/download/pdf-provider-ocr-language-chi-sim-4.1.0-oat.1/ocr-language-chi-sim-4.1.0-oat.1.THIRD_PARTY_NOTICES.md",
+          "sha256": "cef8e10c7ad7a1ebfb754dc5983bc71bf95df24222d0476d866df5ac965c49fb"
+        },
+        "provenance": {
+          "provider": "github-actions-artifact-attestation",
+          "repository": "w31r4/open-office-artifact-tool",
+          "workflow": ".github/workflows/pdf-ocr-capability-packs.yml",
+          "verificationCommand": "gh attestation verify <asset> --repo w31r4/open-office-artifact-tool"
+        },
+        "verifiedPlatforms": ["darwin-arm64", "linux-x64"]
+      },
       "license": { "expression": "Apache-2.0", "requiresAcknowledgement": false }
     },
     "verapdf": {
@@ -465,6 +585,7 @@
       "minimumVersion": "17.8.0",
       "maximumVersionExclusive": "17.9.0",
       "requireVersionOutput": true,
+      "probeTimeoutMs": 20000,
       "role": "source-bound scanned-PDF OCR and searchable layer generation",
       "integration": "shipped-thin-script-external-cli",
       "taskIds": ["ocr"],

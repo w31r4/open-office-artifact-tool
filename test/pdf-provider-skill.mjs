@@ -263,7 +263,7 @@ assert.match(skillText, /open-office-artifact-tool\/pdf\/providers/);
 assert.match(skillText, /installPolicy: "disabled"/);
 assert.match(skillText, /installPolicy": "managed"/);
 assert.match(skillText, /system-only/);
-assert.match(skillText, /Current release-catalog state.*qpdf, `python-foundation`, and[\s\S]*`python-specialists`[\s\S]*veraPDF\/JRE `1\.30\.2-oat\.1`[\s\S]*AGPL-or-commercial[\s\S]*OCR core\/language and Poppler[\s\S]*remain unpublished/is);
+assert.match(skillText, /Current release-catalog state.*qpdf, `python-foundation`, and[\s\S]*`python-specialists`[\s\S]*veraPDF\/JRE `1\.30\.2-oat\.1`[\s\S]*OCR core `17\.8\.1-oat\.1`[\s\S]*`eng`\/`chi_sim`[\s\S]*Poppler QA remains unpublished/is);
 assert.match(skillText, /hash-pinned.*versioned.*release assets/is);
 assert.match(skillText, /silent fallback/i);
 assert.match(skillText, /set_page_crop/);
@@ -314,7 +314,7 @@ assert.match(providerSetupText, /PdfProviders\.ensure/);
 assert.match(providerSetupText, /PdfProviders\.probe/);
 assert.match(providerSetupText, /symlink\/hardlink/);
 assert.match(providerSetupText, /enterprise mirror.*identical hash-pinned bytes/is);
-assert.match(providerSetupText, /Current catalog state.*qpdf, `python-foundation`, and[\s\S]*`python-specialists`[\s\S]*veraPDF\/JRE `1\.30\.2-oat\.1`[\s\S]*AGPL-or-commercial[\s\S]*OCR core\/language and[\s\S]*Poppler packs remain unpublished/is);
+assert.match(providerSetupText, /Current catalog state.*qpdf, `python-foundation`, and[\s\S]*`python-specialists`[\s\S]*veraPDF\/JRE `1\.30\.2-oat\.1`[\s\S]*OCR core[\s\S]*`17\.8\.1-oat\.1`[\s\S]*`eng`\/`chi_sim`[\s\S]*Poppler QA remains unpublished/is);
 assert.match(providerSetupText, /OPEN_OFFICE_PDF_TESSDATA_DIRS[\s\S]*private directory/is);
 assert.doesNotMatch(providerSetupText, /brew install|apt-get|uv pip install/i);
 const encryptionTaskText = await fs.readFile(path.join(skillRoot, "tasks", "encryption.md"), "utf8");
@@ -331,7 +331,7 @@ assert.doesNotMatch(providerMatrixText, /1\.28\.0|1\.27\.2|10\.10\.x|17\.8\.x/i)
 const pdfPluginReadme = await fs.readFile(path.join(repoRoot, "skills", "pdf", "README.md"), "utf8");
 assert.match(pdfPluginReadme, /open-office-artifact-tool\/pdf\/providers/);
 assert.match(pdfPluginReadme, /system-only.*hash-pinned managed pack/is);
-assert.match(pdfPluginReadme, /qpdf, `python-foundation`, and `python-specialists`[\s\S]*veraPDF\/JRE `1\.30\.2-oat\.1`[\s\S]*OCR core\/language and Poppler routes remain `blocked`/is);
+assert.match(pdfPluginReadme, /qpdf, `python-foundation`, and `python-specialists`[\s\S]*veraPDF\/JRE `1\.30\.2-oat\.1`[\s\S]*OCR core `17\.8\.1-oat\.1`[\s\S]*`eng`[\s\S]*`chi_sim`[\s\S]*Poppler QA route remains `blocked`/is);
 assert.doesNotMatch(pdfPluginReadme, /remain separately installed|brew install|apt-get|uv pip install/i);
 const nativePlacementDocs = [
   await fs.readFile(path.join(skillRoot, "artifact_tool", "API_QUICK_START.md"), "utf8"),

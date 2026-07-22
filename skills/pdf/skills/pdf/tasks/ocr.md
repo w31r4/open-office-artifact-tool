@@ -14,10 +14,10 @@ versions, and their pack closure come from the public catalog rather than this
 task page.
 
 Use [provider setup](provider_setup.md) to select a ready managed pack or an
-explicit deployment-owned `system-only` runtime. qpdf is already available as a
-managed pack, but OCR core and language packs remain unpublished; an OCR route
-therefore blocks rather than downloading a replacement. Do not repair that
-state with brew, apt, global pip, or a guessed download URL.
+explicit deployment-owned `system-only` runtime. The published managed OCR
+route installs qpdf, OCR core, and only the explicitly requested `eng` and/or
+`chi_sim` language packs after policy authorization. It never substitutes a
+different language, brew, apt, global pip, or a guessed download URL.
 
 ```bash
 PYTHON_BIN="${OPEN_OFFICE_PDF_PROVIDER_PYTHON:-python3}"

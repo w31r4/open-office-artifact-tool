@@ -101,17 +101,17 @@ publication, and a receipt. It rejects `latest`, package-manager/global-pip
 installs, lifecycle hooks, path traversal, links, and undeclared URLs. The
 initial managed targets are `darwin-arm64` and `linux-x64`.
 
-**Current release-catalog state:** qpdf, `python-foundation`, and `python-specialists` `3.13.14-oat.1`, plus veraPDF/JRE `1.30.2-oat.1`, have
+**Current release-catalog state:** qpdf, `python-foundation`, and `python-specialists` `3.13.14-oat.1`, veraPDF/JRE `1.30.2-oat.1`, OCR core `17.8.1-oat.1`, and `eng`/`chi_sim` language packs `4.1.0-oat.1` have
 published, attested `darwin-arm64` and `linux-x64` assets. qpdf covers repair,
 linearization, inspection, and the bounded AES-256 delivery-copy route. The
 foundation is isolated CPython with ReportLab, pdfplumber, pypdf, and Pillow.
 Specialists contain PyMuPDF, pikepdf, pyHanko, and certificate validation; they
 depend on qpdf and require the catalogued AGPL-or-commercial acknowledgement.
-The veraPDF pack carries its managed JRE and validates one explicit PDF/A or PDF/UA profile without a global Java runtime. OCR core/language and Poppler
-packs remain unpublished and deliberately resolve as `blocked`, not as
-downloadable promises. Use a selected `system-only` policy with an explicitly
-configured local runtime when one is already managed by the deployment. Once a
-task chooses managed or system-only, do not automatically switch routes.
+The veraPDF pack carries its managed JRE; OCR installs qpdf, its isolated OCRmyPDF/Tesseract 5/Ghostscript/`pdftotext` core, and only explicit language
+packs. Only Poppler QA remains unpublished and deliberately resolves as
+`blocked`, not as a downloadable promise. Use a selected `system-only` policy
+with an explicitly configured local runtime when one is already managed by the
+deployment. Once a task chooses managed or system-only, do not switch routes.
 
 See [provider setup and probes](tasks/provider_setup.md) for the full policy,
 system-runtime, probe, and failure contract. The [provider matrix](references/PROVIDER_MATRIX.md)
