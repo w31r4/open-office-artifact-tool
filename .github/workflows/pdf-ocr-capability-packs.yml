@@ -151,7 +151,13 @@ jobs:
                 resource_files=0
                 while IFS= read -r resource_file; do
                   resource_files=1
-                  record_resource_root "$resource_file" "$(dirname "$resource_file")"
+                  # `find -L` reports the link's spelling. Record the
+                  # resolved leaf instead so treeCopy receives the actual
+                  # external Poppler/apt root rather than only the CMap link
+                  # directory that contains it.
+                  resource_actual="$(readlink -f "$resource_file")"
+                  test -f "$resource_actual"
+                  record_resource_root "$resource_actual" "$(dirname "$resource_actual")"
                 done < <(find -L "$resource_target" -type f -print | LC_ALL=C sort)
                 if [ "$resource_files" = 0 ]; then record_resource_root "$resource_target" "$(dirname "$resource_target")"; fi
               else

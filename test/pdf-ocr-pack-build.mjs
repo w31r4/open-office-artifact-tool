@@ -64,12 +64,14 @@ for (const sourceFragment of [
   "resource-root",
 ]) assert.match(nativeSource, new RegExp(sourceFragment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
 assert.match(nativeSource, /if \(!await isMachOFile\(target\)\) return false;/);
+assert.match(nativeSource, /@loader_path\/\$\{path\.basename\(target\)\}/);
 assert.match(workflowSource, /fonts-droid-fallback/);
 assert.match(workflowSource, /--resource-root/);
 assert.match(workflowSource, /fonts-urw-base35/);
 assert.match(workflowSource, /libgs9-common/);
 assert.match(workflowSource, /poppler-data/);
 assert.match(workflowSource, /resource_target/);
+assert.match(workflowSource, /resource_actual/);
 assert.match(workflowSource, /dpkg-query -S/);
 assert.match(workflowSource, /for root_formula in tesseract ghostscript poppler; do brew deps/);
 assert.match(workflowSource, /unapproved Ghostscript resource target/);

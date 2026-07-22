@@ -281,7 +281,11 @@ async function patchMacBinary(target, libraryNames, { library = false } = {}) {
     const replacement = library ? `@loader_path/${name}` : `@loader_path/../lib/${name}`;
     if (dependency !== replacement) await run("install_name_tool", ["-change", dependency, replacement, target], `install_name_tool ${target}`);
   }
-  if (library) await run("install_name_tool", ["-id", `@rpath/${path.basename(target)}`, target], `install_name_tool id ${target}`);
+  // Every consumer is rewritten to resolve siblings through @loader_path.
+  // Keep the copied library's own install name on that same basis: a library
+  // may otherwise report its own @rpath alias as an unresolved dependency
+  // even though no runtime rpath is present in the relocated payload.
+  if (library) await run("install_name_tool", ["-id", `@loader_path/${path.basename(target)}`, target], `install_name_tool id ${target}`);
   return true;
 }
 
