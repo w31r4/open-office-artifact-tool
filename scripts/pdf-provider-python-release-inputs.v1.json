@@ -97,6 +97,68 @@
           { "name": "charset-normalizer", "version": "3.4.9", "url": "https://files.pythonhosted.org/packages/ea/f8/72eb13dcabe7257035cea8aefd922caad2f110d252bf9f67c4c2ca763aee/charset_normalizer-3.4.9-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", "sha256": "84fd18bcc17526fc2b3c1af7d2b9217d32c9c04448c16ec693b9b4f1985c3d33" }
         ]
       }
+    },
+    "ocr-core": {
+      "license": "PSF-2.0 AND MPL-2.0 AND Apache-2.0 AND GPL-2.0-or-later AND AGPL-3.0-or-later AND BSD-3-Clause AND MIT",
+      "directRequirements": {
+        "ocrmypdf": "17.8.1",
+        "pikepdf": "10.10.0",
+        "pypdfium2": "5.12.1",
+        "pillow": "12.3.0",
+        "fpdf2": "2.8.7",
+        "img2pdf": "0.6.3",
+        "pdfminer.six": "20260107",
+        "pydantic": "2.13.4",
+        "uharfbuzz": "0.55.0",
+        "pi-heif": "1.4.0"
+      },
+      "probes": ["ocrmypdf", "pikepdf", "pypdfium2", "PIL", "fpdf", "img2pdf", "pdfminer", "pydantic", "uharfbuzz", "pi_heif"],
+      "commonWheels": [
+        { "name": "annotated-types", "version": "0.7.0", "url": "https://files.pythonhosted.org/packages/78/b6/6307fbef88d9b5ee7421e68d78a9f162e0da4900bc5f5793f6d3d0e34fb8/annotated_types-0.7.0-py3-none-any.whl", "sha256": "1f02e8b43a8fbbc3f3e0d4f0f4bfc8131bcb4eebe8849b8e5c773f3a1c582a53" },
+        { "name": "defusedxml", "version": "0.7.1", "url": "https://files.pythonhosted.org/packages/07/6c/aa3f2f849e01cb6a001cd8554a88d4c77c5c1a31c95bdf1cf9301e6d9ef4/defusedxml-0.7.1-py2.py3-none-any.whl", "sha256": "a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61" },
+        { "name": "fpdf2", "version": "2.8.7", "url": "https://files.pythonhosted.org/packages/66/0a/cf50ecffa1e3747ed9380a3adfc829259f1f86b3fdbd9e505af789003141/fpdf2-2.8.7-py3-none-any.whl", "sha256": "d391fc508a3ce02fc43a577c830cda4fe6f37646f2d143d489839940932fbc19" },
+        { "name": "img2pdf", "version": "0.6.3", "url": "https://files.pythonhosted.org/packages/4d/dc/91e3a4a11c25ae183bd5a71b84ecb298db76405ff70013f76b10877bdfe3/img2pdf-0.6.3-py3-none-any.whl", "sha256": "44d12d235752edd17c43c04ff39952cdc5dd4c6aba90569c4902bd445085266b" },
+        { "name": "markdown-it-py", "version": "4.2.0", "url": "https://files.pythonhosted.org/packages/b3/81/4da04ced5a082363ecfa159c010d200ecbd959ae410c10c0264a38cac0f5/markdown_it_py-4.2.0-py3-none-any.whl", "sha256": "9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a" },
+        { "name": "mdurl", "version": "0.1.2", "url": "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl", "sha256": "84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8" },
+        { "name": "ocrmypdf", "version": "17.8.1", "url": "https://files.pythonhosted.org/packages/95/29/ce4e14fbb63ea7a1d5749ac97ccafe60e915d50ad3c4a06fddd782e952d2/ocrmypdf-17.8.1-py3-none-any.whl", "sha256": "df236ea84b6c5d9d1979fd410ca786b67da428a9e6cb0b26654e3039ac129704" },
+        { "name": "packaging", "version": "26.2", "url": "https://files.pythonhosted.org/packages/df/b2/87e62e8c3e2f4b32e5fe99e0b86d576da1312593b39f47d8ceef365e95ed/packaging-26.2-py3-none-any.whl", "sha256": "5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e" },
+        { "name": "pdfminer.six", "version": "20260107", "url": "https://files.pythonhosted.org/packages/20/8b/28c4eaec9d6b036a52cb44720408f26b1a143ca9bce76cc19e8f5de00ab4/pdfminer_six-20260107-py3-none-any.whl", "sha256": "366585ba97e80dffa8f00cebe303d2f381884d8637af4ce422f1df3ef38111a9" },
+        { "name": "pluggy", "version": "1.6.0", "url": "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl", "sha256": "e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746" },
+        { "name": "pycparser", "version": "3.0", "url": "https://files.pythonhosted.org/packages/0c/c3/44f3fbbfa403ea2a7c779186dc20772604442dde72947e7d01069cbe98e3/pycparser-3.0-py3-none-any.whl", "sha256": "b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992" },
+        { "name": "pydantic", "version": "2.13.4", "url": "https://files.pythonhosted.org/packages/fd/7b/122376b1fd3c62c1ed9dc80c931ace4844b3c55407b6fb2d199377c9736f/pydantic-2.13.4-py3-none-any.whl", "sha256": "45a282cde31d808236fd7ea9d919b128653c8b38b393d1c4ab335c62924d9aba" },
+        { "name": "pygments", "version": "2.20.0", "url": "https://files.pythonhosted.org/packages/f4/7e/a72dd26f3b0f4f2bf1dd8923c85f7ceb43172af56d63c7383eb62b332364/pygments-2.20.0-py3-none-any.whl", "sha256": "81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176" },
+        { "name": "rich", "version": "15.0.0", "url": "https://files.pythonhosted.org/packages/82/3b/64d4899d73f91ba49a8c18a8ff3f0ea8f1c1d75481760df8c68ef5235bf5/rich-15.0.0-py3-none-any.whl", "sha256": "33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb" },
+        { "name": "typing-extensions", "version": "4.16.0", "url": "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl", "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8" },
+        { "name": "typing-inspection", "version": "0.4.2", "url": "https://files.pythonhosted.org/packages/dc/9b/47798a6c91d8bdb567fe2698fe81e0c6b7cb7ef4d13da4114b41d239f65d/typing_inspection-0.4.2-py3-none-any.whl", "sha256": "4ed1cacbdc298c220f1bd249ed5287caa16f34d44ef4e9c3e0cbad5b521545e7" }
+      ],
+      "platformWheels": {
+        "darwin-arm64": [
+          { "name": "cffi", "version": "2.1.0", "url": "https://files.pythonhosted.org/packages/84/4c/82f132cb4418ee6d953d982b19191e87e2a6372c8a4ce36e50b69d6ade4a/cffi-2.1.0-cp313-cp313-macosx_11_0_arm64.whl", "sha256": "716ff8ec22f20b4d988b12884086bcef0fc99737043e503f7a3935a6be99b1ea" },
+          { "name": "charset-normalizer", "version": "3.4.9", "url": "https://files.pythonhosted.org/packages/b2/06/97ec2aeae780b31d742b6352218b43841a6871e2564578ca522dce4a45c3/charset_normalizer-3.4.9-cp313-cp313-macosx_10_13_universal2.whl", "sha256": "440eede837960000d74978f0eba527be106b5b9aee0daf779d395276ed0b0614" },
+          { "name": "cryptography", "version": "49.0.0", "url": "https://files.pythonhosted.org/packages/9b/22/adf66990e63584a68dfb50c24f48a125c07b1699899381c8151e63ed458c/cryptography-49.0.0-cp311-abi3-macosx_11_0_arm64.whl", "sha256": "966fe0e9c67490071f14c0d2b1cb2dfb3023c5ce39457343931415f08382f2db" },
+          { "name": "fonttools", "version": "4.63.0", "url": "https://files.pythonhosted.org/packages/0f/8d/d8fec3dcde2963f8c908fb315e5ff2cd0ac34f82394bbbf73a2aa5145ce3/fonttools-4.63.0-cp313-cp313-macosx_10_13_universal2.whl", "sha256": "cd7e9857e5e63738b9d9fd707bc1f59c8b09e5177726d23664db393c59bb08bd" },
+          { "name": "lxml", "version": "6.1.1", "url": "https://files.pythonhosted.org/packages/a5/eb/7e6f37c5584ccbb2ff267f56fd0339016938c1c8684cfefab9b33ffc2f36/lxml-6.1.1-cp313-cp313-macosx_10_13_universal2.whl", "sha256": "68a9198d0fc122d14bb76837de9aa80cf84caed990b5b237f532ed87d3706736" },
+          { "name": "pi-heif", "version": "1.4.0", "url": "https://files.pythonhosted.org/packages/c5/9e/22a938ed3d56451e42f4a0383fc16cdd04480b16244f4901ec92f1306b4a/pi_heif-1.4.0-cp313-cp313-macosx_11_0_arm64.whl", "sha256": "c95f5cf99285403698fc48436a05af01d4c38cbedc01949dd4d96f53590fbd33" },
+          { "name": "pikepdf", "version": "10.10.0", "url": "https://files.pythonhosted.org/packages/da/8b/31c62f96479bb4168fed80541d8bc037bdf832e1751aef50ab62f65121ec/pikepdf-10.10.0-cp313-cp313-macosx_14_0_arm64.whl", "sha256": "ebfc8e36608c01271fdeec6c08e1c87148ac9c275766876e9ac1b2c91879a0db" },
+          { "name": "pillow", "version": "12.3.0", "url": "https://files.pythonhosted.org/packages/10/76/8803c13605b763d33d156c4678fc77f8443389c0c51c8aef707bb02015f4/pillow-12.3.0-cp313-cp313-macosx_11_0_arm64.whl", "sha256": "d69141514cc30b774ceea5e3ed3a6635c8d8a96edf664689b890f4089111fb35" },
+          { "name": "pydantic-core", "version": "2.46.4", "url": "https://files.pythonhosted.org/packages/c1/81/4fa520eaffa8bd7d1525e644cd6d39e7d60b1592bc5b516693c7340b50f1/pydantic_core-2.46.4-cp313-cp313-macosx_11_0_arm64.whl", "sha256": "c94f0688e7b8d0a67abf40e57a7eaaecd17cc9586706a31b76c031f63df052b4" },
+          { "name": "pypdfium2", "version": "5.12.1", "url": "https://files.pythonhosted.org/packages/e2/a8/d7a61700db3022792b28bce5264be90a7d2e7104998362af6b93766f50b2/pypdfium2-5.12.1-py3-none-macosx_13_0_arm64.whl", "sha256": "66a9ed40d70a5d728cd42148fecb9d7a0917c6161d6bb67c844093a4ed1df089" },
+          { "name": "uharfbuzz", "version": "0.55.0", "url": "https://files.pythonhosted.org/packages/ba/05/8e4e62ee1d1f7a1060168bc5af14aa203b9d310a3eb7e97bae00d1b7dc1d/uharfbuzz-0.55.0-cp310-abi3-macosx_10_9_universal2.whl", "sha256": "40df0ff4d0c7af29c07a8adc614fb0dd421d9c4d8a139362a80a4ceb71e94a71" }
+        ],
+        "linux-x64": [
+          { "name": "cffi", "version": "2.1.0", "url": "https://files.pythonhosted.org/packages/6f/08/f2e7d62c460faae0926f2d6e423694aa409ced3bc1fe2927a0a6e5f05416/cffi-2.1.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", "sha256": "799416bae98336e400981ff6e532d67d5c709cfb30afb79865a1315f94b0e224" },
+          { "name": "charset-normalizer", "version": "3.4.9", "url": "https://files.pythonhosted.org/packages/ea/f8/72eb13dcabe7257035cea8aefd922caad2f110d252bf9f67c4c2ca763aee/charset_normalizer-3.4.9-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", "sha256": "84fd18bcc17526fc2b3c1af7d2b9217d32c9c04448c16ec693b9b4f1985c3d33" },
+          { "name": "cryptography", "version": "49.0.0", "url": "https://files.pythonhosted.org/packages/20/2c/0622f20ff02b2ef32558733443805dc82fd4c275be01b2d19d14676f3a1b/cryptography-49.0.0-cp311-abi3-manylinux_2_28_x86_64.whl", "sha256": "2afe9051da7ae7bd5905da5a949280c7d2bb75682e188f650a9d0f2756b834c6" },
+          { "name": "fonttools", "version": "4.63.0", "url": "https://files.pythonhosted.org/packages/ce/36/0b805d8c485f872f65a509cbe3b58a5d0d17bee855333b54a150c79d3061/fonttools-4.63.0-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", "sha256": "22135da48a348785c5e2d5d2d9d6bec5ed44adacbaeb9db12d9493bf6c6bfa68" },
+          { "name": "lxml", "version": "6.1.1", "url": "https://files.pythonhosted.org/packages/a6/76/dbe4a00b50385e40194231dcfe5a12c059de7cf90e89c83407d2b085b719/lxml-6.1.1-cp313-cp313-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl", "sha256": "1d4962d4c66bf830a7e59ed6cfc17d148149898a3aefa8ec6e59763e6e3ed085" },
+          { "name": "pi-heif", "version": "1.4.0", "url": "https://files.pythonhosted.org/packages/50/a8/59742173bc4c9c4831fbea9c4da542b9e28782bea13df9dc9d7902451369/pi_heif-1.4.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", "sha256": "2fd498fabcdc77159414cccfd966ca48735497fd8c038d1b0135025f3cceac90" },
+          { "name": "pikepdf", "version": "10.10.0", "url": "https://files.pythonhosted.org/packages/2d/0b/4e5271bdd40041f1b7d81cd3879003d84ece955e502f18567d4c26926e58/pikepdf-10.10.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", "sha256": "c3e725ffe276b5ab86734b2a5f7025f3e1cb3b1d26063a39adc7490834846449" },
+          { "name": "pillow", "version": "12.3.0", "url": "https://files.pythonhosted.org/packages/f7/62/de5bdd77d935331f4f802edc11e4d82950f642caad6cb2f949837b8560e2/pillow-12.3.0-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", "sha256": "0847a763afefb695bc912d7c131e7e0632d4edc1d8698f58ddabec8e46b8b6d3" },
+          { "name": "pydantic-core", "version": "2.46.4", "url": "https://files.pythonhosted.org/packages/07/f8/41db9de19d7987d6b04715a02b3b40aea467000275d9d758ffaa31af7d50/pydantic_core-2.46.4-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", "sha256": "9551187363ffc0de2a00b2e47c25aeaeb1020b69b668762966df15fc5659dd5a" },
+          { "name": "pypdfium2", "version": "5.12.1", "url": "https://files.pythonhosted.org/packages/23/16/21420a6f2bc5f981299c336817dd5d72709dad5fda30ac38cbd5f0f7b372/pypdfium2-5.12.1-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", "sha256": "e10cbf41b21233ec5e20adfc170cf60edd77abead86a97dc708fff55a8a886c7" },
+          { "name": "uharfbuzz", "version": "0.55.0", "url": "https://files.pythonhosted.org/packages/a1/45/a9ad3ccc3dc731c1df8df7f4c4ae24b266c0bff71cc2a83dd28f7cdbc6d7/uharfbuzz-0.55.0-cp310-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", "sha256": "d594f9e02a21745846477f02e13e900bfe9a697bad975fb3c26e241b7a8256c1" }
+        ]
+      }
     }
   }
 }

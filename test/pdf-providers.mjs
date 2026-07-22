@@ -159,7 +159,8 @@ unsignedPublishedCatalog.packs.qpdf.releaseEvidence = {
 };
 assert.throws(() => validatePdfProviderCatalog(unsignedPublishedCatalog), /artifact-attestation/);
 const ocrRuntimeCatalog = structuredClone(PDF_PROVIDER_CATALOG);
-assert.equal(validatePdfProviderCatalog(ocrRuntimeCatalog), true, "OCR may reference only declared files in its qpdf and Poppler dependency closure");
+assert.deepEqual(ocrRuntimeCatalog.packs["ocr-core"].requiresPackIds, ["qpdf"], "OCR core bundles its minimal pdftotext sidecar instead of silently selecting the separate Poppler QA route");
+assert.equal(validatePdfProviderCatalog(ocrRuntimeCatalog), true, "OCR may reference only declared files in its qpdf dependency closure");
 assert.equal(ocrRuntimeCatalog.providers.ocrmypdf.managedRuntime.languageDirectoryEnvironment, "OPEN_OFFICE_PDF_TESSDATA_DIRS");
 const escapedOcrRuntimeCatalog = structuredClone(PDF_PROVIDER_CATALOG);
 escapedOcrRuntimeCatalog.providers.ocrmypdf.managedRuntime.commandPaths.qpdf = { packId: "python-foundation", path: "bin/python3" };
@@ -353,7 +354,7 @@ const ocrLanguagePolicy = await PdfProviders.resolve({
   inspection: inspectedPdf,
   mutationAuthorized: true,
   ocrLanguages: ["fra"],
-  policy: { installPolicy: "managed", allowedProviders: ["ocrmypdf"], allowedPacks: ["ocr-core", "qpdf", "poppler-qa"], allowedOcrLanguages: ["eng", "chi_sim", "fra"], maxDownloadBytes: 1, maxUnpackedBytes: 1 },
+  policy: { installPolicy: "managed", allowedProviders: ["ocrmypdf"], allowedPacks: ["ocr-core", "qpdf"], allowedOcrLanguages: ["eng", "chi_sim", "fra"], maxDownloadBytes: 1, maxUnpackedBytes: 1 },
 });
 assert.equal(ocrLanguagePolicy.status, "blocked");
 assert.equal(ocrLanguagePolicy.reason.code, "ocr-language-pack-unpublished");

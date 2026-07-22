@@ -25,6 +25,7 @@ try {
   assert.deepEqual(verified.packs, {
     "python-foundation": { "darwin-arm64": 10, "linux-x64": 10 },
     "python-specialists": { "darwin-arm64": 20, "linux-x64": 20 },
+    "ocr-core": { "darwin-arm64": 27, "linux-x64": 27 },
   });
 
   async function rejectMutation(label, mutate, expected) {

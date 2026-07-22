@@ -218,17 +218,18 @@
       "platforms": ["darwin-arm64", "linux-x64"],
       "version": null,
       "artifacts": [],
-      "requiresPackIds": ["qpdf", "poppler-qa"],
+      "requiresPackIds": ["qpdf"],
       "entrypoints": [
         { "path": "bin/ocrmypdf", "kind": "file", "executable": true },
         { "path": "bin/tesseract", "kind": "file", "executable": true },
         { "path": "bin/gs", "kind": "file", "executable": true },
+        { "path": "bin/pdftotext", "kind": "file", "executable": true },
         { "path": "share/tessdata", "kind": "directory", "executable": false }
       ],
-      "dependencyClosure": ["isolated Python", "OCRmyPDF", "Tesseract", "Ghostscript", "qpdf", "Poppler"],
+      "dependencyClosure": ["isolated Python", "OCRmyPDF", "Tesseract", "Ghostscript", "native Poppler pdftotext", "qpdf"],
       "estimatedDownloadBytes": null,
       "estimatedUnpackedBytes": null,
-      "license": { "expression": "MPL-2.0 AND Apache-2.0 AND GPL-2.0-or-later", "requiresAcknowledgement": false }
+      "license": { "expression": "PSF-2.0 AND MPL-2.0 AND Apache-2.0 AND GPL-2.0-or-later AND AGPL-3.0-or-later AND BSD-3-Clause AND MIT", "requiresAcknowledgement": false }
     },
     "ocr-language-eng": {
       "state": "unpublished",
@@ -432,14 +433,14 @@
           "tesseract": "bin/tesseract",
           "gs": "bin/gs",
           "qpdf": { "packId": "qpdf", "path": "bin/qpdf" },
-          "pdftotext": { "packId": "poppler-qa", "path": "bin/pdftotext" }
+          "pdftotext": "bin/pdftotext"
         },
         "environment": {
           "OPEN_OFFICE_PDF_OCRMYPDF": "bin/ocrmypdf",
           "OPEN_OFFICE_PDF_TESSERACT": "bin/tesseract",
           "OPEN_OFFICE_PDF_GS": "bin/gs",
           "OPEN_OFFICE_PDF_QPDF": { "packId": "qpdf", "path": "bin/qpdf" },
-          "OPEN_OFFICE_PDF_PDFTOTEXT": { "packId": "poppler-qa", "path": "bin/pdftotext" }
+          "OPEN_OFFICE_PDF_PDFTOTEXT": "bin/pdftotext"
         },
         "languageDirectoryEnvironment": "OPEN_OFFICE_PDF_TESSDATA_DIRS"
       },
