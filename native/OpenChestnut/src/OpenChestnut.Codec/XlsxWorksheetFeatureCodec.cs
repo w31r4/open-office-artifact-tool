@@ -36,6 +36,10 @@ internal sealed class XlsxWorksheetFeatureCodec
     {
         "between", "notBetween", "equal", "notEqual", "lessThan", "lessThanOrEqual", "greaterThan", "greaterThanOrEqual",
     };
+    private static readonly HashSet<string> ValidationErrorStyles = new(StringComparer.Ordinal)
+    {
+        "stop", "warning", "information",
+    };
     private static readonly HashSet<string> ConditionalTypes = new(StringComparer.Ordinal)
     {
         "cellIs", "expression", "containsText", "colorScale", "dataBar", "iconSet",
@@ -130,10 +134,21 @@ internal sealed class XlsxWorksheetFeatureCodec
             var validation = new S.DataValidation
             {
                 Type = ValidationType(item.Type),
-                AllowBlank = true,
                 SequenceOfReferences = References(item.Range),
             };
+            if (item.HasAllowBlank) validation.AllowBlank = item.AllowBlank;
+            else if (!sourceBound) validation.AllowBlank = true;
             if (item.Operator.Length > 0) validation.Operator = ValidationOperator(item.Operator);
+            if (item.HasShowInputMessage) validation.ShowInputMessage = item.ShowInputMessage;
+            if (item.PromptTitle.Length > 0) validation.PromptTitle = item.PromptTitle;
+            if (item.Prompt.Length > 0) validation.Prompt = item.Prompt;
+            if (item.HasShowErrorMessage) validation.ShowErrorMessage = item.ShowErrorMessage;
+            if (item.ErrorTitle.Length > 0) validation.ErrorTitle = item.ErrorTitle;
+            if (item.Error.Length > 0) validation.Error = item.Error;
+            if (item.ErrorStyle.Length > 0) validation.ErrorStyle = ValidationErrorStyle(item.ErrorStyle);
+            // SpreadsheetML's showDropDown flag is inverted: true suppresses
+            // the in-cell arrow. The wire/public model uses intuitive semantics.
+            if (item.HasShowDropdown) validation.ShowDropDown = !item.ShowDropdown;
             var formula1 = item.Values.Count > 0 ? InlineListFormula(item.Values) : item.Formula1;
             if (formula1.Length > 0) validation.Formula1 = new S.Formula1(formula1);
             if (item.Formula2.Length > 0) validation.Formula2 = new S.Formula2(item.Formula2);
@@ -188,7 +203,7 @@ internal sealed class XlsxWorksheetFeatureCodec
         for (var index = 0; index < validations.Length; index++)
         {
             var item = validations[index];
-            if (!OnlyAttributes(item, "type", "operator", "allowBlank", "sqref") || item.AllowBlank?.Value != true ||
+            if (!OnlyAttributes(item, "type", "operator", "allowBlank", "showInputMessage", "promptTitle", "prompt", "showErrorMessage", "errorTitle", "error", "errorStyle", "showDropDown", "sqref") ||
                 item.ChildElements.Any(child => child is not S.Formula1 and not S.Formula2) ||
                 item.Elements<S.Formula1>().Skip(1).Any() || item.Elements<S.Formula2>().Skip(1).Any()) return false;
             var type = ValidationTypeText(item.Type?.Value);
@@ -206,6 +221,15 @@ internal sealed class XlsxWorksheetFeatureCodec
                 Formula1 = formula1,
                 Formula2 = formula2,
             };
+            if (item.AllowBlank is not null) artifact.AllowBlank = item.AllowBlank.Value;
+            if (item.ShowInputMessage is not null) artifact.ShowInputMessage = item.ShowInputMessage.Value;
+            artifact.PromptTitle = item.PromptTitle?.Value ?? string.Empty;
+            artifact.Prompt = item.Prompt?.Value ?? string.Empty;
+            if (item.ShowErrorMessage is not null) artifact.ShowErrorMessage = item.ShowErrorMessage.Value;
+            artifact.ErrorTitle = item.ErrorTitle?.Value ?? string.Empty;
+            artifact.Error = item.Error?.Value ?? string.Empty;
+            artifact.ErrorStyle = ValidationErrorStyleText(item.ErrorStyle?.Value);
+            if (item.ShowDropDown is not null) artifact.ShowDropdown = !item.ShowDropDown.Value;
             if (type == "list" && TryParseInlineList(formula1, out var values))
             {
                 artifact.Formula1 = string.Empty;
@@ -609,6 +633,12 @@ internal sealed class XlsxWorksheetFeatureCodec
         if (item.Values.Any(value => value.Contains(',') || !ValidText(value, 255, allowLineBreaks: false)) || item.Values.Count > 256 || InlineListFormula(item.Values).Length > 255)
             throw InvalidValidation(sheetName, $"{item.Id} contains an invalid or oversized inline list.");
         if (!ValidFormula(item.Formula1) || !ValidFormula(item.Formula2)) throw InvalidValidation(sheetName, $"{item.Id} has an invalid formula.");
+        if (item.HasShowDropdown && item.Type != "list") throw InvalidValidation(sheetName, $"{item.Id} showDropdown is valid only for list rules.");
+        if (!ValidOptionalText(item.PromptTitle, 32, allowLineBreaks: false) || !ValidOptionalText(item.ErrorTitle, 32, allowLineBreaks: false) ||
+            !ValidOptionalText(item.Prompt, 255, allowLineBreaks: true) || !ValidOptionalText(item.Error, 255, allowLineBreaks: true))
+            throw InvalidValidation(sheetName, $"{item.Id} contains an invalid or oversized prompt/error message.");
+        if (item.ErrorStyle.Length > 0 && !ValidationErrorStyles.Contains(item.ErrorStyle))
+            throw InvalidValidation(sheetName, $"{item.Id} has unsupported error style {item.ErrorStyle}.");
         if (item.Type == "custom" && item.Formula1.Length == 0 || item.Type == "list" && item.Values.Count == 0 && item.Formula1.Length == 0)
             throw InvalidValidation(sheetName, $"{item.Id} requires formula1 or inline values.");
         var between = item.Operator is "between" or "notBetween";
@@ -735,7 +765,13 @@ internal sealed class XlsxWorksheetFeatureCodec
 
     private static bool DataValidationEqual(SpreadsheetDataValidationArtifact left, SpreadsheetDataValidationArtifact right) =>
         left.Range.Equals(right.Range, StringComparison.OrdinalIgnoreCase) && left.Type == right.Type && left.Operator == right.Operator &&
-        left.Formula1 == right.Formula1 && left.Formula2 == right.Formula2 && left.Values.SequenceEqual(right.Values, StringComparer.Ordinal);
+        left.Formula1 == right.Formula1 && left.Formula2 == right.Formula2 && left.Values.SequenceEqual(right.Values, StringComparer.Ordinal) &&
+        left.HasAllowBlank == right.HasAllowBlank && (!left.HasAllowBlank || left.AllowBlank == right.AllowBlank) &&
+        left.HasShowInputMessage == right.HasShowInputMessage && (!left.HasShowInputMessage || left.ShowInputMessage == right.ShowInputMessage) &&
+        left.PromptTitle == right.PromptTitle && left.Prompt == right.Prompt &&
+        left.HasShowErrorMessage == right.HasShowErrorMessage && (!left.HasShowErrorMessage || left.ShowErrorMessage == right.ShowErrorMessage) &&
+        left.ErrorTitle == right.ErrorTitle && left.Error == right.Error && left.ErrorStyle == right.ErrorStyle &&
+        left.HasShowDropdown == right.HasShowDropdown && (!left.HasShowDropdown || left.ShowDropdown == right.ShowDropdown);
 
     private static bool ConditionalFormatListsEqual(IReadOnlyList<SpreadsheetConditionalFormatArtifact> left, RepeatedField<SpreadsheetConditionalFormatArtifact> right) =>
         left.Count == right.Count && left.Zip(right).All(pair => ConditionalFormatEqual(pair.First, pair.Second));
@@ -822,6 +858,7 @@ internal sealed class XlsxWorksheetFeatureCodec
     private static bool ValidFormula(string value) => value.Length <= 8_192 && !value.Any(character => char.IsControl(character) && character is not '\t' and not '\r' and not '\n');
     private static bool ValidText(string value, int maximum, bool allowLineBreaks) => value.Length > 0 && value.Length <= maximum &&
         !value.Any(character => char.IsControl(character) && (!allowLineBreaks || character is not '\t' and not '\r' and not '\n'));
+    private static bool ValidOptionalText(string value, int maximum, bool allowLineBreaks) => value.Length == 0 || ValidText(value, maximum, allowLineBreaks);
 
     private static string? NormalizeGuid(string? value)
     {
@@ -898,6 +935,22 @@ internal sealed class XlsxWorksheetFeatureCodec
         if (value == S.DataValidationOperatorValues.LessThanOrEqual) return "lessThanOrEqual";
         if (value == S.DataValidationOperatorValues.GreaterThan) return "greaterThan";
         if (value == S.DataValidationOperatorValues.GreaterThanOrEqual) return "greaterThanOrEqual";
+        return string.Empty;
+    }
+
+    private static S.DataValidationErrorStyleValues ValidationErrorStyle(string value) => value switch
+    {
+        "stop" => S.DataValidationErrorStyleValues.Stop,
+        "warning" => S.DataValidationErrorStyleValues.Warning,
+        "information" => S.DataValidationErrorStyleValues.Information,
+        _ => throw new InvalidOperationException(),
+    };
+
+    private static string ValidationErrorStyleText(S.DataValidationErrorStyleValues? value)
+    {
+        if (value == S.DataValidationErrorStyleValues.Stop) return "stop";
+        if (value == S.DataValidationErrorStyleValues.Warning) return "warning";
+        if (value == S.DataValidationErrorStyleValues.Information) return "information";
         return string.Empty;
     }
 

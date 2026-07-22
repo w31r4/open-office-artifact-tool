@@ -49,12 +49,64 @@ table.style = "TableStyleMedium4";
 table.showRowStripes = true;
 
 sheet.getRange("D2:D4").dataValidation = {
-  rule: { type: "list", values: ["Planned", "Review", "Done"] },
+  rule: {
+    type: "list",
+    values: ["Planned", "Review", "Done"],
+    allowBlank: false,
+    showInputMessage: true,
+    promptTitle: "Choose a status",
+    prompt: "Use one approved workflow state.",
+    showErrorMessage: true,
+    errorTitle: "Invalid status",
+    error: "Choose a value from the list.",
+    errorStyle: "warning",
+    showDropdown: true,
+  },
 };
 sheet.dataValidations.add({
   range: "B2:B4",
   rule: { type: "whole", operator: "between", formula1: "0", formula2: "1000" },
 });
+sheet.dataValidations.add({
+  range: "C2:C4",
+  rule: {
+    type: "custom",
+    formula1: "=C2<=B2",
+    allowBlank: true,
+    showErrorMessage: true,
+    errorTitle: "Cost exceeds revenue",
+    error: "Enter a cost no greater than revenue.",
+    errorStyle: "stop",
+  },
+});
+assert.throws(
+  () => sheet.dataValidations.add({ range: "A2:A4", rule: { type: "whole", formula1: "0", showDropdown: true } }),
+  /showDropdown is valid only for list rules/i,
+);
+assert.throws(
+  () => sheet.dataValidations.add({ range: "A2:A4", rule: { type: "list", values: ["North, East"] } }),
+  /inline values must be non-empty and cannot contain commas or control characters/i,
+);
+assert.throws(
+  () => sheet.dataValidations.add({ range: "A2:A4", rule: { type: "list", values: [""] } }),
+  /inline values must be non-empty/i,
+);
+assert.throws(
+  () => sheet.dataValidations.add({ range: "A2:A4", rule: { type: "list", values: ["Ready\u007F"] } }),
+  /control characters/i,
+);
+assert.throws(
+  () => sheet.dataValidations.add({ range: "A2:A4", rule: { type: "custom", formula1: "=A2<>\"\"", errorStyle: "retry" } }),
+  /errorStyle must be one of stop, warning, information/i,
+);
+assert.throws(
+  () => sheet.dataValidations.add({ range: "A2:A4", rule: { type: "list", values: ["Ready"], promptTitle: "x".repeat(33) } }),
+  /promptTitle must be at most 32 characters/i,
+);
+assert.throws(
+  () => sheet.dataValidations.add({ range: "A2:A4", rule: { type: "list", values: ["Ready"], imeMode: "fullAlpha" } }),
+  /unsupported field: imeMode/i,
+);
 sheet.getRange("F2:F4").conditionalFormats.add("cellIs", {
   operator: "greaterThan",
   formula: "0.4",
@@ -215,7 +267,9 @@ assert.equal(Object.keys(firstZip.files).filter((name) => /^xl\/persons\/[^/]+\.
 assert.equal(firstZip.file("customXml/open-office-artifact.json"), null);
 const firstWorksheetXml = await firstZip.file("xl/worksheets/sheet1.xml").async("text");
 assert.match(firstWorksheetXml, /<x:mergeCell ref="A6:F6"/);
-assert.match(firstWorksheetXml, /<x:dataValidations count="2">/);
+assert.match(firstWorksheetXml, /<x:dataValidations count="3">/);
+assert.match(firstWorksheetXml, /type="list" errorStyle="warning" allowBlank="0" showDropDown="0" showInputMessage="1" showErrorMessage="1" errorTitle="Invalid status" error="Choose a value from the list\." promptTitle="Choose a status" prompt="Use one approved workflow state\." sqref="D2:D4"/);
+assert.match(firstWorksheetXml, /type="custom" errorStyle="stop" allowBlank="1" showErrorMessage="1" errorTitle="Cost exceeds revenue" error="Enter a cost no greater than revenue\." sqref="C2:C4"/);
 assert.equal((firstWorksheetXml.match(/<x:conditionalFormatting\b/g) || []).length, 6);
 assert.match(firstWorksheetXml, /<x:dataBar showValue="0">[\s\S]*?<x:cfvo type="min"\s*\/>[\s\S]*?<x:cfvo type="max"\s*\/>[\s\S]*?<x:color rgb="FF2563EB"\s*\/>/);
 assert.match(firstWorksheetXml, /<x:iconSet iconSet="3Arrows" reverse="1">[\s\S]*?<x:cfvo type="num" val="0"\s*\/>[\s\S]*?<x:cfvo type="percent" val="50"\s*\/>[\s\S]*?<x:cfvo type="percent" val="80"\s*\/>/);
@@ -258,7 +312,30 @@ assert.deepEqual(importedScatter.series.items[0].values, [30, 55, 88]);
 assert.equal(importedScatter.series.items[0].xFormula, "'Summary'!S2:S4");
 assert.equal(importedScatter.xAxis.axisType, "valueAxis");
 assert.match(importedScatter.toSvg(), /<polygon[^>]+38BDF8/i);
-assert.deepEqual(importedSheet.dataValidations.items.map((item) => item.rule.type), ["list", "whole"]);
+assert.deepEqual(importedSheet.dataValidations.items.map((item) => item.rule.type), ["list", "whole", "custom"]);
+const importedListValidation = importedSheet.dataValidations.items.find((item) => item.rule.type === "list");
+assert.deepEqual(importedListValidation.rule, {
+  type: "list",
+  values: ["Planned", "Review", "Done"],
+  allowBlank: false,
+  showInputMessage: true,
+  promptTitle: "Choose a status",
+  prompt: "Use one approved workflow state.",
+  showErrorMessage: true,
+  errorTitle: "Invalid status",
+  error: "Choose a value from the list.",
+  errorStyle: "warning",
+  showDropdown: true,
+});
+assert.deepEqual(importedSheet.dataValidations.items.find((item) => item.rule.type === "custom").rule, {
+  type: "custom",
+  formula1: "=C2<=B2",
+  allowBlank: true,
+  showErrorMessage: true,
+  errorTitle: "Cost exceeds revenue",
+  error: "Enter a cost no greater than revenue.",
+  errorStyle: "stop",
+});
 assert.deepEqual(importedSheet.conditionalFormattings.items.map((item) => item.ruleType), ["cellIs", "expression", "containsText", "colorScale", "dataBar", "iconSet"]);
 const importedDataBar = importedSheet.conditionalFormattings.items.find((item) => item.ruleType === "dataBar");
 assert.equal(importedDataBar.color, "#2563EB");
@@ -291,6 +368,9 @@ importedScatter.series.items[0].xValues[1] = 22;
 importedScatter.series.items[0].values[1] = 60;
 const listValidation = importedSheet.dataValidations.items.find((item) => item.rule.type === "list");
 listValidation.rule.values.push("Blocked");
+listValidation.rule.prompt = "Pick the current workflow state.";
+listValidation.rule.errorStyle = "information";
+listValidation.rule.showDropdown = false;
 const marginConditional = importedSheet.conditionalFormattings.items.find((item) => item.ruleType === "cellIs");
 marginConditional.formula = "0.45";
 marginConditional.format.fill = "#BBF7D0";
@@ -322,6 +402,10 @@ assert.equal(secondSheet.charts.items[5].title, "Edited price relationship");
 assert.deepEqual(secondSheet.charts.items[5].series.items[0].xValues, [10, 22, 30]);
 assert.deepEqual(secondSheet.charts.items[5].series.items[0].values, [30, 60, 88]);
 assert.deepEqual(secondSheet.dataValidations.items.find((item) => item.rule.type === "list").rule.values, ["Planned", "Review", "Done", "Blocked"]);
+assert.equal(secondSheet.dataValidations.items.find((item) => item.rule.type === "list").rule.prompt, "Pick the current workflow state.");
+assert.equal(secondSheet.dataValidations.items.find((item) => item.rule.type === "list").rule.errorStyle, "information");
+assert.equal(secondSheet.dataValidations.items.find((item) => item.rule.type === "list").rule.showDropdown, false);
+assert.equal(secondSheet.dataValidations.items.find((item) => item.rule.type === "custom").rule.formula1, "=C2<=B2");
 assert.equal(secondSheet.conditionalFormattings.items.find((item) => item.ruleType === "cellIs").formula, "0.45");
 assert.equal(secondSheet.conditionalFormattings.items.find((item) => item.ruleType === "dataBar").color, "#0EA5E9");
 assert.equal(secondSheet.conditionalFormattings.items.find((item) => item.ruleType === "dataBar").showValue, true);

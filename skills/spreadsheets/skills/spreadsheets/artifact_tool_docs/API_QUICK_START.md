@@ -253,6 +253,11 @@ range.format.borders = {
 - `range.dataValidation = { rule: { type: "list", formula1: "Categories!$A$2:$A$4" } }`
 - `range.dataValidation = { rule: { type: "list", values: ["Not Started", "In Progress"] } }`
 - `sheet.dataValidations.add({ range: "B2:B100", rule: { type: "whole", operator: "between", formula1: 1, formula2: 10 } })`
+- Supported rule types are `list`, `whole`, `decimal`, `date`, `time`, `textLength`, and `custom`. A `custom` rule requires `formula1`; a `between`/`notBetween` rule also requires `formula2`.
+- Admission UX is part of the typed rule: `allowBlank`, `showInputMessage`, `promptTitle` (32 characters), `prompt` (255), `showErrorMessage`, `errorTitle` (32), `error` (255), and `errorStyle: "stop" | "warning" | "information"`.
+- For list rules, `showDropdown: true` means the in-cell arrow is visible. The public property intentionally reverses SpreadsheetML's confusing native `showDropDown` flag, where native true hides the arrow.
+- Inline `values` require 1 through 256 non-empty, comma-free, control-safe items and a quoted native formula no longer than 255 characters. Use `formula1` for longer or cell-backed lists. Unsupported multi-area/extension validation graphs remain source-bound; do not replace them with a simplified rule.
+- Runnable full example: `examples/openchestnut-data-validation-workflow.mjs`.
 
 ### Conditional formatting
 - Use `range.conditionalFormats.add(ruleType, ConditionalFormatConfig);`.

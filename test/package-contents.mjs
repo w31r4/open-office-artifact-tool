@@ -39,14 +39,14 @@ const files = report.files.map((item) => item.path);
 const maxPackedBytes = 9_840_000;
 // The bundled OpenChestnut runtime is an audited product payload, not an
 // optional download. Keep its unpacked budget tight while allowing the
-// audited PDF provider/docs growth plus the bounded DOCX/PPTX modern-comment,
-// native XLSX PivotTable, and DOCX picture-bullet codecs and runnable workflows.
-// The picture-bullet candidate measures 24,383,801 unpacked bytes; the narrowly
-// raised ceiling retains only 26,199 bytes of explicit product-growth headroom.
+// audited PDF provider/docs growth plus the bounded Office codecs and runnable
+// workflows. The data-validation UX candidate measures 24,447,872 unpacked
+// bytes; the narrowly raised ceiling retains only 27,128 bytes of explicit
+// product-growth headroom.
 // The repository-only MIT Default Template Library is excluded from the npm
 // tarball. Its retained Office/PNG sources must never consume this consumer
 // package budget.
-const maxUnpackedBytes = 24_440_000;
+const maxUnpackedBytes = 24_475_000;
 // Public Skill PNGs are required user-facing assets. They are retained with
 // byte-identical non-IDAT chunks and inflated scanline streams, but their IDAT
 // payloads are deterministically recompressed. Prevent future PNG tooling from
@@ -123,6 +123,7 @@ for (const required of [
   "src/shared/xml.mjs",
   "src/spreadsheet/formula-criteria.mjs",
   "src/spreadsheet/index.mjs",
+  "src/spreadsheet/data-validations.mjs",
   "src/spreadsheet/data-tables.mjs",
   "src/codecs/open-chestnut-spreadsheet-data-tables.mjs",
   "src/spreadsheet/formula-coercion.mjs",
@@ -162,6 +163,7 @@ for (const required of [
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-range-workflow.mjs",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-sparkline-workflow.mjs",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-data-table-workflow.mjs",
+  "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-data-validation-workflow.mjs",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-pivot-table-workflow.mjs",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-loan-amortization-workflow.mjs",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-asset-depreciation-workflow.mjs",

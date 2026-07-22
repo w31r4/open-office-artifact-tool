@@ -242,6 +242,144 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
+    public void DataValidationUserInterfaceContractAuthorsImportsAndEditsWithoutFlattening()
+    {
+        var request = ExportRequest();
+        var sheet = request.Artifact.Workbook.Worksheets[0];
+        sheet.DataValidations.Add(new SpreadsheetDataValidationArtifact
+        {
+            Id = "validation/status-entry",
+            Range = "D2:D20",
+            Type = "list",
+            Values = { "Planned", "In progress", "Done" },
+            AllowBlank = false,
+            ShowInputMessage = true,
+            PromptTitle = "Choose a status",
+            Prompt = "Use one approved workflow state.",
+            ShowErrorMessage = true,
+            ErrorTitle = "Invalid status",
+            Error = "Choose a value from the list.",
+            ErrorStyle = "warning",
+            ShowDropdown = false,
+        });
+        sheet.DataValidations.Add(new SpreadsheetDataValidationArtifact
+        {
+            Id = "validation/even-score",
+            Range = "E2:E20",
+            Type = "custom",
+            Formula1 = "=MOD(E2,2)=0",
+            AllowBlank = true,
+            ShowErrorMessage = true,
+            ErrorTitle = "Even number required",
+            Error = "Enter an even score.",
+            ErrorStyle = "stop",
+        });
+
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(authored.File.ToByteArray());
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+        {
+            var validations = Assert.Single(document.WorkbookPart!.WorksheetParts).Worksheet!
+                .GetFirstChild<DataValidations>()!.Elements<DataValidation>().ToArray();
+            Assert.Collection(validations,
+                status =>
+                {
+                    Assert.False(status.AllowBlank!.Value);
+                    Assert.True(status.ShowInputMessage!.Value);
+                    Assert.Equal("Choose a status", status.PromptTitle!.Value);
+                    Assert.Equal("Use one approved workflow state.", status.Prompt!.Value);
+                    Assert.True(status.ShowErrorMessage!.Value);
+                    Assert.Equal(DataValidationErrorStyleValues.Warning, status.ErrorStyle!.Value);
+                    Assert.True(status.ShowDropDown!.Value); // Native true hides the arrow.
+                },
+                custom =>
+                {
+                    Assert.Equal(DataValidationValues.Custom, custom.Type!.Value);
+                    Assert.Equal("=MOD(E2,2)=0", custom.Formula1!.Text);
+                    Assert.True(custom.AllowBlank!.Value);
+                    Assert.Equal(DataValidationErrorStyleValues.Stop, custom.ErrorStyle!.Value);
+                    Assert.Null(custom.ShowDropDown);
+                });
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var importedRules = Assert.Single(imported.Artifact.Workbook.Worksheets).DataValidations;
+        Assert.Collection(importedRules,
+            status =>
+            {
+                Assert.True(status.HasAllowBlank);
+                Assert.False(status.AllowBlank);
+                Assert.True(status.ShowInputMessage);
+                Assert.Equal("Choose a status", status.PromptTitle);
+                Assert.True(status.ShowErrorMessage);
+                Assert.Equal("warning", status.ErrorStyle);
+                Assert.True(status.HasShowDropdown);
+                Assert.False(status.ShowDropdown);
+            },
+            custom =>
+            {
+                Assert.Equal("custom", custom.Type);
+                Assert.Equal("=MOD(E2,2)=0", custom.Formula1);
+                Assert.True(custom.AllowBlank);
+                Assert.False(custom.HasShowDropdown);
+            });
+
+        var exact = Export(imported.Artifact);
+        Assert.True(exact.Ok, string.Join("\n", exact.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(ReadWorksheetDataValidationXml(authored.File.ToByteArray()), ReadWorksheetDataValidationXml(exact.File.ToByteArray()));
+
+        importedRules[0].ShowDropdown = true;
+        importedRules[0].Prompt = "Pick the current workflow state.";
+        importedRules[0].ErrorStyle = "information";
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, string.Join("\n", edited.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(edited.File.ToByteArray());
+        var second = Import(edited.File.ToByteArray());
+        Assert.True(second.Ok, string.Join("\n", second.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var secondStatus = second.Artifact.Workbook.Worksheets[0].DataValidations[0];
+        Assert.True(secondStatus.ShowDropdown);
+        Assert.Equal("Pick the current workflow state.", secondStatus.Prompt);
+        Assert.Equal("information", secondStatus.ErrorStyle);
+    }
+
+    [Fact]
+    public void ImportedDataValidationAttributeAbsenceSurvivesAnOtherwiseSupportedEdit()
+    {
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(WorksheetFeatureExportRequest().ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var source = RemoveDataValidationAllowBlank(authored.File.ToByteArray(), 1);
+        var sourceXml = ReadWorksheetDataValidationXml(source);
+
+        var imported = Import(source);
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var validations = Assert.Single(imported.Artifact.Workbook.Worksheets).DataValidations;
+        Assert.True(validations[0].HasAllowBlank);
+        Assert.False(validations[1].HasAllowBlank);
+
+        var exact = Export(imported.Artifact);
+        Assert.True(exact.Ok, string.Join("\n", exact.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(sourceXml, ReadWorksheetDataValidationXml(exact.File.ToByteArray()));
+
+        validations[1].Formula2 = "12";
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, string.Join("\n", edited.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        using (var stream = new MemoryStream(edited.File.ToByteArray()))
+        using (var document = SpreadsheetDocument.Open(stream, false))
+        {
+            var native = Assert.Single(document.WorkbookPart!.WorksheetParts).Worksheet!
+                .GetFirstChild<DataValidations>()!.Elements<DataValidation>().ElementAt(1);
+            Assert.Null(native.AllowBlank);
+            Assert.Equal("12", native.Formula2!.Text);
+        }
+        var second = Import(edited.File.ToByteArray());
+        Assert.True(second.Ok, string.Join("\n", second.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.False(second.Artifact.Workbook.Worksheets[0].DataValidations[1].HasAllowBlank);
+    }
+
+    [Fact]
     public void UnsupportedWorksheetSkillProfilesStayOpaqueAndRejectReplacement()
     {
         var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(WorksheetFeatureExportRequest().ToByteArray()));
@@ -364,6 +502,21 @@ public sealed class XlsxCodecTests
         var request = ExportRequest();
         request.Artifact.Workbook.Worksheets[0].DataValidations.Add(new SpreadsheetDataValidationArtifact { Id = "invalid", Range = "A1", Type = "list" });
         var response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
+        Assert.False(response.Ok);
+        Assert.Equal("invalid_spreadsheet_data_validation", Assert.Single(response.Diagnostics).Code);
+
+        request = ExportRequest();
+        request.Artifact.Workbook.Worksheets[0].DataValidations.Add(new SpreadsheetDataValidationArtifact
+        {
+            Id = "invalid-ui",
+            Range = "A1:A3",
+            Type = "whole",
+            Operator = "greaterThan",
+            Formula1 = "0",
+            ErrorStyle = "retry",
+            ShowDropdown = true,
+        });
+        response = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
         Assert.False(response.Ok);
         Assert.Equal("invalid_spreadsheet_data_validation", Assert.Single(response.Diagnostics).Code);
 
@@ -6935,7 +7088,7 @@ public sealed class XlsxCodecTests
         {
             var worksheetPart = Assert.Single(document.WorkbookPart!.WorksheetParts);
             var validation = worksheetPart.Worksheet!.GetFirstChild<DataValidations>()!.Elements<DataValidation>().First();
-            validation.ShowInputMessage = true;
+            validation.SetAttribute(new OpenXmlAttribute("imeMode", string.Empty, "fullAlpha"));
             worksheetPart.Worksheet.Save();
 
             var comments = Assert.Single(worksheetPart.WorksheetThreadedCommentsParts).ThreadedComments!;
@@ -6950,6 +7103,21 @@ public sealed class XlsxCodecTests
                 Done = false,
             });
             comments.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] RemoveDataValidationAllowBlank(byte[] bytes, int index)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var validation = Assert.Single(document.WorkbookPart!.WorksheetParts).Worksheet!
+                .GetFirstChild<DataValidations>()!.Elements<DataValidation>().ElementAt(index);
+            validation.AllowBlank = null;
+            validation.Ancestors<Worksheet>().Single().Save();
         }
         return stream.ToArray();
     }

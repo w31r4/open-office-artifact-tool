@@ -7,6 +7,7 @@ import { normalizeSpreadsheetChartDataLabels } from "./chart-data-labels.mjs";
 import { resolvedWorksheetChartCategories, resolvedWorksheetChartSeriesBubbleSizes, resolvedWorksheetChartSeriesValues, resolvedWorksheetChartSeriesXValues } from "./chart-source-data.mjs";
 import { renderWorksheetChartSvg } from "./chart-preview.mjs";
 import { WorksheetDataTableCollection } from "./data-tables.mjs";
+import { normalizeSpreadsheetDataValidationRecord, spreadsheetDataValidationIssue } from "./data-validations.mjs";
 import { computePivotValues, normalizePivotConfig } from "./pivots.mjs";
 import { formatSpreadsheetDisplayValue, normalizeXlsxColor, normalizeXlsxThemeConfig, xlsxColorCss, xlsxFillSvgPaint } from "./ooxml-styles.mjs";
 import { planSpreadsheetThreadedComments, validateSpreadsheetThreadedCommentPackageSemantics } from "./ooxml-threaded-comments.mjs";
@@ -217,7 +218,12 @@ class DefinedNameCollection {
 
 class WorksheetRuleCollection {
   constructor(worksheet, kind) { this.worksheet = worksheet; this.kind = kind; this.items = []; }
-  add(config = {}) { const record = { id: aid(this.kind === "dataValidation" ? "dv" : "cf"), kind: this.kind, sheet: this.worksheet.name, ...config }; this.items.push(record); return record; }
+  add(config = {}) {
+    const defaults = { id: aid(this.kind === "dataValidation" ? "dv" : "cf"), kind: this.kind, sheet: this.worksheet.name };
+    const record = this.kind === "dataValidation" ? normalizeSpreadsheetDataValidationRecord(config, defaults) : { ...defaults, ...config };
+    this.items.push(record);
+    return record;
+  }
   deleteAll() { this.items = []; }
   clear() { this.deleteAll(); }
   inspectRecords() { return this.items.map((item) => ({ ...item })); }
@@ -1540,8 +1546,8 @@ export class Workbook {
       }
       for (const validation of sheet.dataValidations.items) {
         if (!safeRangeBounds(validation.range || "")) issues.push(verificationIssue("workbook", "dataValidationRangeInvalid", `Data validation ${validation.id} on ${sheet.name} has invalid range ${validation.range}.`, { sheet: sheet.name, id: validation.id, range: validation.range }));
-        const rule = validation.rule || validation;
-        if ((rule.type || "").toLowerCase() === "list" && (!Array.isArray(rule.values) || rule.values.length === 0) && !rule.formula1) issues.push(verificationIssue("workbook", "dataValidationListEmpty", `List validation ${validation.id} on ${sheet.name} has no values or formula.`, { sheet: sheet.name, id: validation.id }));
+        const validationProblem = spreadsheetDataValidationIssue(validation);
+        if (validationProblem) issues.push(verificationIssue("workbook", "dataValidationRuleInvalid", `Data validation ${validation.id} on ${sheet.name} is invalid: ${validationProblem}`, { sheet: sheet.name, id: validation.id }));
       }
       for (const format of sheet.conditionalFormattings.items) {
         if (!safeRangeBounds(format.range || "")) issues.push(verificationIssue("workbook", "conditionalFormatRangeInvalid", `Conditional format ${format.id} on ${sheet.name} has invalid range ${format.range}.`, { sheet: sheet.name, id: format.id, range: format.range }));
@@ -4310,7 +4316,7 @@ function applyWorkbookMetadata(workbook, metadata = {}) {
     const sheet = workbook.worksheets.getItem(sheetData.name);
     if (!sheet) continue;
     if (sheetData.visibility !== undefined) sheet.visibility = sheetData.visibility;
-    sheet.dataValidations.items = (sheetData.dataValidations || []).map((item) => ({ ...item }));
+    sheet.dataValidations.items = (sheetData.dataValidations || []).map((item) => normalizeSpreadsheetDataValidationRecord(item));
     sheet.conditionalFormattings.items = (sheetData.conditionalFormattings || []).map((item) => ({ ...item }));
     sheet.tables.items = [];
     for (const tableData of sheetData.tables || []) {

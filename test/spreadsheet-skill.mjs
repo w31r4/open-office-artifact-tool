@@ -56,7 +56,7 @@ try {
   assert.equal(summary.charts.items.length, 1);
   assert.equal(summary.charts.items[0].type, "line");
   assert.equal(summary.dataValidations.items.length, 1);
-  assert.deepEqual(summary.dataValidations.items[0].rule, { type: "list", values: ["Planned", "In progress", "Done"] });
+  assert.deepEqual(summary.dataValidations.items[0].rule, { type: "list", values: ["Planned", "In progress", "Done"], allowBlank: true });
   assert.equal(summary.conditionalFormattings.items.length, 2);
   assert.deepEqual(summary.conditionalFormattings.items.map((item) => item.ruleType), ["cellIs", "colorScale"]);
   assert.equal(formulaWorkbook.comments.threads.length, 1);
@@ -254,6 +254,42 @@ try {
   const dataTableZip = await JSZip.loadAsync(await fs.readFile(dataTablePath));
   const dataTableXml = await dataTableZip.file("xl/worksheets/sheet1.xml").async("text");
   assert.equal((dataTableXml.match(/<x:f\b[^>]*t="dataTable"/g) || []).length, 2);
+
+  const { createDataValidationWorkbook } = await import(
+    "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-data-validation-workflow.mjs"
+  );
+  const dataValidationPath = path.join(outputDir, "openchestnut-data-validation-workflow.xlsx");
+  const dataValidationResult = await createDataValidationWorkbook(dataValidationPath);
+  assert.equal(dataValidationResult.verification.ok, true);
+  assert.equal(dataValidationResult.audit.provider.actual, "open-chestnut");
+  assert.equal(dataValidationResult.audit.provider.fallbackUsed, false);
+  assert.deepEqual(dataValidationResult.audit.validation.authoredRuleTypes, ["list", "whole", "custom"]);
+  assert.equal(dataValidationResult.audit.validation.dropdownVisible, false);
+  const dataValidationWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(dataValidationPath));
+  const intake = dataValidationWorkbook.worksheets.getItem("Intake");
+  assert.deepEqual(intake.dataValidations.items.map((item) => item.rule.type), ["list", "whole", "custom"]);
+  assert.equal(intake.dataValidations.items[0].rule.errorStyle, "information");
+  assert.equal(intake.dataValidations.items[0].rule.showDropdown, false);
+  const dataValidationZip = await JSZip.loadAsync(await fs.readFile(dataValidationPath));
+  const dataValidationXml = await dataValidationZip.file("xl/worksheets/sheet1.xml").async("text");
+  assert.match(dataValidationXml, /<x:dataValidations count="3">/);
+  assert.match(dataValidationXml, /type="list" errorStyle="information" allowBlank="0" showDropDown="1" showInputMessage="1" showErrorMessage="1"/);
+  assert.match(dataValidationXml, /prompt="Pick the current workflow state\."/);
+  assert.match(dataValidationXml, /type="custom" errorStyle="stop" allowBlank="1" showErrorMessage="1"/);
+  const dataValidationNativeStatus = nativeSpreadsheetRenderStatus();
+  const dataValidationQa = await verifyWorkbookFile(dataValidationPath, {
+    outputDir: path.join(outputDir, "data-validation-native-qa"),
+    sheetName: "Intake",
+    range: "A1:D8",
+    renderFormat: "svg",
+    allSheets: true,
+    nativeRender: dataValidationNativeStatus.available ? "required" : "off",
+  });
+  if (dataValidationNativeStatus.available) {
+    assert.equal(dataValidationQa.summary.nativeRender.status, "passed");
+    assert.equal(dataValidationQa.summary.nativeRender.ok, true);
+    assert.equal(dataValidationQa.summary.nativeRender.pageCount, 1);
+  }
 
   const { createPivotTableWorkbook } = await import(
     "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-pivot-table-workflow.mjs"

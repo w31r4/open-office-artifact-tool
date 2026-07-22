@@ -3007,7 +3007,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `range.conditionalFormats.add` | api | Add a conditional formatting rule; cellIs/expression/containsText/colorScale plus standard dataBar/iconSet rules cross the public model and OpenChestnut, with computedStyle inspect records, layout JSON visuals, SVG preview, and native XLSX rendering. |
 | `range.copyFrom` | api | Copy values, formulas, or complete cells from an equally sized or evenly tiling source range with relative A1 translation. |
 | `range.copyTo` | api | Copy this range to an equally sized or evenly tiled destination range. |
-| `range.dataValidation` | api | Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule }). |
+| `range.dataValidation` | api | Assign a list, whole, decimal, date, time, text-length, or custom-formula validation rule to a range, including bounded input prompts, error alerts, blank policy, and intuitive list-arrow visibility; use sheet.dataValidations.add({ range, rule }) for the collection form. |
 | `range.displayFormulas` | api | Read displayed A1 formulas, including the anchor formula projected across non-editable dynamic-array or legacy-array result cells. |
 | `range.fillDown` | api | Copy top-row contents and formatting down the range while translating relative A1 formula references. |
 | `range.fillRight` | api | Copy left-column contents and formatting right across the range while translating relative A1 formula references. |
@@ -5120,20 +5120,28 @@ Copy this range to an equally sized or evenly tiled destination range.
 
 #### `range.dataValidation`
 
-Assign a validation rule to a range or use sheet.dataValidations.add({ range, rule }).
+Assign a list, whole, decimal, date, time, text-length, or custom-formula validation rule to a range, including bounded input prompts, error alerts, blank policy, and intuitive list-arrow visibility; use sheet.dataValidations.add({ range, rule }) for the collection form.
 
 **Schema parameters:**
 
-- `type` (string) required — Validation type such as list, whole, decimal, date, or custom.
-- `values` (unknown[]) — Allowed list values.
+- `type` (string) required — Validation type: list, whole, decimal, date, time, textLength, or custom.
+- `values` (unknown[]) — One through 256 non-empty, comma-free, control-safe inline list values whose quoted SpreadsheetML formula is at most 255 characters; list rules may use formula1 instead.
 - `formula1` (string|number) — Primary validation formula/value.
 - `formula2` (string|number) — Secondary formula/value for between rules.
-- `operator` (string) — Comparison operator.
-- `allowBlank` (boolean) — Allow blank cells.
+- `operator` (string) — between, notBetween, equal, notEqual, lessThan, lessThanOrEqual, greaterThan, or greaterThanOrEqual.
+- `allowBlank` (boolean) — Whether blank cells pass validation. Omission keeps the source-free compatibility default true.
+- `showInputMessage` (boolean) — Show the bounded prompt when the cell is selected.
+- `promptTitle` (string) — Input-prompt title, at most 32 characters.
+- `prompt` (string) — Input-prompt message, at most 255 characters.
+- `showErrorMessage` (boolean) — Show an error alert when entered data fails the rule.
+- `errorTitle` (string) — Error-alert title, at most 32 characters.
+- `error` (string) — Error-alert message, at most 255 characters.
+- `errorStyle` (string) — stop, warning, or information.
+- `showDropdown` (boolean) — For list rules, true means the in-cell arrow is visible. This deliberately hides SpreadsheetML's inverted showDropDown encoding.
 
 **Schema returns:**
 
-- `validation` (object) — Inspectable data-validation rule anchored to the range.
+- `validation` (object) — Inspectable/editable bounded data-validation rule anchored to one contiguous range. Imported unsupported extension or multi-area graphs remain source-bound and unchanged.
 
 #### `range.displayFormulas`
 

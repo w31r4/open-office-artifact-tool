@@ -72,6 +72,59 @@ The Office bridge does not participate in normal import/export and must never be
 
 ## Current local evidence
 
+### XLSX data-validation admission UX
+
+On 2026-07-22, the Spreadsheet model, protocol-2 wire contract,
+OpenChestnut C# codec, bundled WASM runtime, Help/API catalog, and runnable
+Spreadsheet Skill completed a typed admission-UX slice for native data
+validation. List, whole-number, decimal, date, time, text-length, and custom
+formula rules now carry an explicit blank policy, input prompt/title, error
+alert/title, `stop`/`warning`/`information` error style, and intuitive
+`showDropdown` state. The C# codec deliberately inverts that public state when
+writing SpreadsheetML's negatively named `showDropDown` attribute, while
+presence-aware optional booleans distinguish an absent imported attribute from
+an explicit false value. Source-free rules retain the existing allow-blank
+default; source-bound edits do not materialize an attribute that was absent in
+the original package.
+
+The public validator now lives in a dedicated Spreadsheet leaf module rather
+than further enlarging the domain index. Inline list admission requires 1
+through 256 non-empty, comma-free, control-safe values and stays within
+SpreadsheetML's 255-character quoted-formula limit;
+titles are capped at 32 characters, messages at 255, and formulas at 8,192.
+Unsupported fields fail before export. Multi-area ranges, IME mode, container
+prompt-window state, x12ac/x14 extensions, and irregular native graphs remain
+opaque and source-bound instead of being flattened.
+
+The native test authors the complete source-free UX profile, validates native
+XML, imports it, proves a byte-exact no-op, edits supported fields, imports
+again, and independently proves that an absent native `allowBlank` remains
+absent during another supported edit. The shipped workflow authors list,
+whole-number, and custom-formula rules, performs import/edit/second-import,
+inspects and verifies the workbook, writes a byte-bound audit, and executes from
+a production-only clean install with `dotnet` absent from `PATH`. LibreOffice
+and Poppler opened and rendered the final workbook as one 1275 by 1650 page;
+the original-resolution PNG was manually reviewed without clipping, overlap,
+or table drift. A static render cannot display Excel's prompt popups, so native
+XML and semantic assertions are the authoritative gates for that UI state.
+
+The complete local `npm test` gate passed, including all 20 repository-only
+templates, all published Office/PDF Skills, LibreOffice, Poppler, MuPDF.js,
+qpdf, Playwright, reference-Skill sync, Agent evals, package metadata, Help,
+and the tightened npm payload budget. OpenChestnut passed `337/337`;
+OfficeBridge passed `5/5`. Generated API docs, production clean-install,
+`test:pack`, and deterministic OpenChestnut build verification passed. Two
+builds reproduced the same 39-file audit set; the bundled runtime contains 38
+files and 14,978,240 bytes. The dry-run tarball contains 479 files, 9,198,266
+compressed bytes, and 24,447,872 unpacked bytes (SHA-1
+`012711c288c15e52a82ded5ee5938fa69a08698d`). The unpacked ceiling moved
+narrowly from 24,440,000 to 24,475,000 bytes for the measured codec, generated
+binding/API, and public workflow growth. Optional real pikepdf, pyHanko,
+veraPDF, and OCRmyPDF provider branches remained explicitly skipped because
+their configured external test environments were absent; contract and
+fail-closed gates passed. npm authentication remains the external publication
+blocker, so no publish, tag, or release operation was attempted.
+
 ### DOCX typed table-cell content controls
 
 On 2026-07-22, the public Documents model, protocol-2 wire contract,

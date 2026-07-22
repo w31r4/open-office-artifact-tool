@@ -441,6 +441,20 @@ message SpreadsheetDataValidationArtifact {
   string formula1 = 5;
   string formula2 = 6;
   repeated string values = 7;
+  // Presence-aware user-interface semantics. Omitting allow_blank keeps the
+  // source-free compatibility default (true); imported native absence remains
+  // distinguishable from an explicit false value.
+  optional bool allow_blank = 8;
+  optional bool show_input_message = 9;
+  string prompt_title = 10;
+  string prompt = 11;
+  optional bool show_error_message = 12;
+  string error_title = 13;
+  string error = 14;
+  string error_style = 15;
+  // Public semantics are intuitive: true means the in-cell list arrow is
+  // visible. SpreadsheetML's showDropDown attribute has inverted semantics.
+  optional bool show_dropdown = 16;
 }
 
 message SpreadsheetConditionalFormatArtifact {

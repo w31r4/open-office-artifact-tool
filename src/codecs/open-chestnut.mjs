@@ -8,6 +8,7 @@ import { isXmlSafeText } from "../shared/xml.mjs";
 import { XLSX_THEME_COLOR_NAMES, normalizeXlsxStyle, normalizeXlsxThemeConfig } from "../spreadsheet/ooxml-styles.mjs";
 import { deterministicSpreadsheetGuid } from "../spreadsheet/ooxml-threaded-comments.mjs";
 import { normalizeDataBarConfig, normalizeIconSetConfig } from "../spreadsheet/conditional-formats.mjs";
+import { normalizeSpreadsheetDataValidationRule } from "../spreadsheet/data-validations.mjs";
 import {
   ArtifactFamily,
   CellFormulaKind,
@@ -601,7 +602,12 @@ const XLSX_CONDITIONAL_FORMAT_TYPES = new Set(["cellIs", "expression", "contains
 const BRACED_GUID = /^\{[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\}$/i;
 
 function wireDataValidation(item, sheetName) {
-  const rule = item?.rule || item || {};
+  let rule;
+  try {
+    rule = normalizeSpreadsheetDataValidationRule(item || {});
+  } catch (error) {
+    throw new OpenChestnutCodecError(`Worksheet ${sheetName} data validation ${item?.id || "(unnamed)"} is invalid: ${error.message}`, [], { code: "invalid_data_validation", cause: error });
+  }
   const type = String(rule.type || item?.type || "");
   if (!XLSX_DATA_VALIDATION_TYPES.has(type)) throw new OpenChestnutCodecError(`Worksheet ${sheetName} data validation ${item?.id || "(unnamed)"} uses unsupported type ${type || "(empty)"}.`, [], { code: "unsupported_data_validation" });
   const values = Array.isArray(rule.values) ? rule.values.map(String) : [];
@@ -614,6 +620,15 @@ function wireDataValidation(item, sheetName) {
     formula1: rule.formula1 == null ? "" : String(rule.formula1),
     formula2: rule.formula2 == null ? "" : String(rule.formula2),
     values,
+    ...(Object.hasOwn(rule, "allowBlank") ? { allowBlank: rule.allowBlank } : {}),
+    ...(Object.hasOwn(rule, "showInputMessage") ? { showInputMessage: rule.showInputMessage } : {}),
+    ...(Object.hasOwn(rule, "promptTitle") ? { promptTitle: rule.promptTitle } : {}),
+    ...(Object.hasOwn(rule, "prompt") ? { prompt: rule.prompt } : {}),
+    ...(Object.hasOwn(rule, "showErrorMessage") ? { showErrorMessage: rule.showErrorMessage } : {}),
+    ...(Object.hasOwn(rule, "errorTitle") ? { errorTitle: rule.errorTitle } : {}),
+    ...(Object.hasOwn(rule, "error") ? { error: rule.error } : {}),
+    ...(Object.hasOwn(rule, "errorStyle") ? { errorStyle: rule.errorStyle } : {}),
+    ...(Object.hasOwn(rule, "showDropdown") ? { showDropdown: rule.showDropdown } : {}),
   };
 }
 
@@ -627,6 +642,15 @@ function publicDataValidation(item) {
       ...(item.formula1 ? { formula1: item.formula1 } : {}),
       ...(item.formula2 ? { formula2: item.formula2 } : {}),
       ...(item.values?.length ? { values: [...item.values] } : {}),
+      ...(item.allowBlank !== undefined ? { allowBlank: item.allowBlank } : {}),
+      ...(item.showInputMessage !== undefined ? { showInputMessage: item.showInputMessage } : {}),
+      ...(item.promptTitle ? { promptTitle: item.promptTitle } : {}),
+      ...(item.prompt ? { prompt: item.prompt } : {}),
+      ...(item.showErrorMessage !== undefined ? { showErrorMessage: item.showErrorMessage } : {}),
+      ...(item.errorTitle ? { errorTitle: item.errorTitle } : {}),
+      ...(item.error ? { error: item.error } : {}),
+      ...(item.errorStyle ? { errorStyle: item.errorStyle } : {}),
+      ...(item.showDropdown !== undefined ? { showDropdown: item.showDropdown } : {}),
     },
   };
 }

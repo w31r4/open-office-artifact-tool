@@ -63,6 +63,27 @@ try {
     if (JSON.stringify(importedBubble.series.items[0].bubbleSizes) !== "[4,9]") process.exit(7);
     const xlsx2 = await SpreadsheetFile.exportXlsx(importedWorkbook, { recalculate: false });
     if ((await SpreadsheetFile.importXlsx(xlsx2)).worksheets.getItem("Packaged").getRange("A2").values[0][0] !== "clean install") process.exit(3);
+    {
+      const packagedRoot = path.join(process.cwd(), "node_modules", "open-office-artifact-tool");
+      const validationWorkflowPath = path.join(
+        packagedRoot,
+        "skills", "spreadsheets", "skills", "spreadsheets", "examples", "openchestnut-data-validation-workflow.mjs",
+      );
+      if (!fs.existsSync(validationWorkflowPath)) process.exit(8);
+      const validationOutput = path.join(process.cwd(), "packed-data-validation.xlsx");
+      const { createDataValidationWorkbook } = await import(pathToFileURL(validationWorkflowPath).href);
+      const validationResult = await createDataValidationWorkbook(validationOutput);
+      const validationRoundTrip = await SpreadsheetFile.importXlsx(await FileBlob.load(validationOutput));
+      const validationSheet = validationRoundTrip.worksheets.getItem("Intake");
+      if (
+        validationResult.audit.provider.actual !== "open-chestnut" ||
+        validationResult.audit.provider.fallbackUsed ||
+        validationSheet.dataValidations.items.length !== 3 ||
+        validationSheet.dataValidations.items[0].rule.prompt !== "Pick the current workflow state." ||
+        validationSheet.dataValidations.items[0].rule.errorStyle !== "information" ||
+        validationSheet.dataValidations.items[0].rule.showDropdown !== false
+      ) process.exit(9);
+    }
 
     const document = DocumentModel.create({ paragraphs: ["clean install DOCX"] });
     document.addInsertion("packaged accepted insertion", { author: "Package QA" });
