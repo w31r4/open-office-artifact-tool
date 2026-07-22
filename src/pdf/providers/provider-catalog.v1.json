@@ -80,16 +80,56 @@
       "license": { "expression": "GPL-2.0-or-later", "requiresAcknowledgement": false }
     },
     "qpdf": {
-      "state": "unpublished",
+      "state": "published",
       "delivery": "versioned-signed-platform-release-asset",
       "platforms": ["darwin-arm64", "linux-x64"],
-      "version": null,
-      "artifacts": [],
+      "version": "12.3.2-oat.1",
+      "artifacts": [
+        {
+          "platform": "darwin-arm64",
+          "asset": "qpdf-12.3.2-oat.1-darwin-arm64.tar.gz",
+          "version": "12.3.2-oat.1",
+          "url": "https://github.com/w31r4/open-office-artifact-tool/releases/download/pdf-provider-qpdf-12.3.2-oat.1/qpdf-12.3.2-oat.1-darwin-arm64.tar.gz",
+          "sha256": "33ea84e818dd1c20029e3b62c3345e7bc2d0c0f5e82ce2fdf5b1dba9ef127131",
+          "downloadBytes": 1215894,
+          "unpackedBytes": 3920089,
+          "archiveFormat": "tar.gz"
+        },
+        {
+          "platform": "linux-x64",
+          "asset": "qpdf-12.3.2-oat.1-linux-x64.tar.gz",
+          "version": "12.3.2-oat.1",
+          "url": "https://github.com/w31r4/open-office-artifact-tool/releases/download/pdf-provider-qpdf-12.3.2-oat.1/qpdf-12.3.2-oat.1-linux-x64.tar.gz",
+          "sha256": "f16d595d44d42d913bc1b0fed27ba892c5cc5ae9e90f7db15ffd35b7af2dc02b",
+          "downloadBytes": 1545519,
+          "unpackedBytes": 4522998,
+          "archiveFormat": "tar.gz"
+        }
+      ],
       "requiresPackIds": [],
       "entrypoints": [{ "path": "bin/qpdf", "kind": "file", "executable": true }],
       "dependencyClosure": ["qpdf CLI >=11"],
       "estimatedDownloadBytes": null,
       "estimatedUnpackedBytes": null,
+      "releaseEvidence": {
+        "sbom": {
+          "asset": "qpdf-12.3.2-oat.1.sbom.cdx.json",
+          "url": "https://github.com/w31r4/open-office-artifact-tool/releases/download/pdf-provider-qpdf-12.3.2-oat.1/qpdf-12.3.2-oat.1.sbom.cdx.json",
+          "sha256": "f5b718ed0fdb12361fe186f52b15e3c5f8e7550ddb4bfe80bd6f4c0c10419ff1"
+        },
+        "thirdPartyNotices": {
+          "asset": "qpdf-12.3.2-oat.1.THIRD_PARTY_NOTICES.md",
+          "url": "https://github.com/w31r4/open-office-artifact-tool/releases/download/pdf-provider-qpdf-12.3.2-oat.1/qpdf-12.3.2-oat.1.THIRD_PARTY_NOTICES.md",
+          "sha256": "3de0f185f6e303c06408bf18d41ed076fea791e27640f8acf4464b29555c435a"
+        },
+        "provenance": {
+          "provider": "github-actions-artifact-attestation",
+          "repository": "w31r4/open-office-artifact-tool",
+          "workflow": ".github/workflows/pdf-capability-packs.yml",
+          "verificationCommand": "gh attestation verify <asset> --repo w31r4/open-office-artifact-tool"
+        },
+        "verifiedPlatforms": ["darwin-arm64", "linux-x64"]
+      },
       "license": { "expression": "Apache-2.0", "requiresAcknowledgement": false }
     },
     "ocr-core": {

@@ -109,7 +109,9 @@ assert.equal(PdfProviders.resolve, resolvePdfCapability);
 assert.deepEqual(Object.keys(PdfProviders).sort(), ["ensure", "probe", "resolve"]);
 assert.equal(PDF_PROVIDER_CATALOG.providers.qpdf.packId, "qpdf");
 assert.equal(PDF_PROVIDER_CATALOG.providers.qpdf.taskMinimumVersions.encrypt, "11.7.0");
-assert.equal(PDF_PROVIDER_CATALOG.packs.qpdf.state, "unpublished");
+assert.equal(PDF_PROVIDER_CATALOG.packs.qpdf.state, "published");
+assert.equal(PDF_PROVIDER_CATALOG.packs.qpdf.version, "12.3.2-oat.1");
+assert.deepEqual(PDF_PROVIDER_CATALOG.packs.qpdf.releaseEvidence.verifiedPlatforms, ["darwin-arm64", "linux-x64"]);
 assert.ok(!("managedPack" in PDF_PROVIDER_CATALOG.providers.qpdf), "pack metadata must have one canonical top-level home");
 
 const invalidPlatformCatalog = structuredClone(PDF_PROVIDER_CATALOG);
@@ -214,10 +216,10 @@ const managedQpdf = await PdfProviders.resolve({
     maxUnpackedBytes: 100_000_000,
   },
 });
-assert.equal(managedQpdf.status, "blocked");
-assert.equal(managedQpdf.reason.code, "managed-artifact-unpublished");
-assert.equal(managedQpdf.installPlan.performsDownload, false);
-await assert.rejects(() => PdfProviders.ensure({ resolution: managedQpdf }), /installable resolution/);
+assert.equal(managedQpdf.status, "installable");
+assert.equal(managedQpdf.reason.code, "managed-install-required");
+assert.equal(managedQpdf.installPlan.performsDownload, true);
+await assert.rejects(() => PdfProviders.ensure({ resolution: managedQpdf }), /Policy changed after resolution/);
 
 const encryptWithoutCredentialDeclaration = await PdfProviders.resolve({
   task: "encrypt",
@@ -253,8 +255,8 @@ const managedEncrypt = await PdfProviders.resolve({
     maxUnpackedBytes: 100_000_000,
   },
 });
-assert.equal(managedEncrypt.status, "blocked");
-assert.equal(managedEncrypt.reason.code, "managed-artifact-unpublished");
+assert.equal(managedEncrypt.status, "installable");
+assert.equal(managedEncrypt.reason.code, "managed-install-required");
 assert.equal(managedEncrypt.installPlan.runtime.taskMinimumVersion, "11.7.0");
 assert.deepEqual(managedEncrypt.consents.credentials.declared, ["caller-owned-user-and-owner-password-files"]);
 
@@ -319,7 +321,7 @@ assert.equal(rootImport.stdout, "providers-import-ok");
 const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-pdf-providers-"));
 try {
   const oldQpdf = path.join(tempRoot, "old-qpdf.mjs");
-  await fs.writeFile(oldQpdf, "#!/usr/bin/env node\nconsole.log('qpdf version 11.6.3');\n", "utf8");
+  await fs.writeFile(oldQpdf, "#!/usr/bin/env node\nif (process.argv.includes('--version')) console.log('qpdf version 11.6.3'); else { console.error('qpdf: unrecognized argument -v'); process.exit(2); }\n", "utf8");
   await fs.chmod(oldQpdf, 0o755);
   const previousQpdf = process.env.OPEN_OFFICE_PDF_QPDF;
   process.env.OPEN_OFFICE_PDF_QPDF = oldQpdf;
@@ -365,7 +367,8 @@ try {
   assert.equal(fileBackedQpdf.policySource, "explicit-file");
   assert.equal(fileBackedQpdf.policyPath, policyPath);
   assert.equal(fileBackedQpdf.cacheRoot, path.join(policyDirectory, "providers"));
-  assert.equal(fileBackedQpdf.reason.code, "managed-artifact-unpublished");
+  assert.equal(fileBackedQpdf.status, "installable");
+  assert.equal(fileBackedQpdf.reason.code, "managed-install-required");
 
   const normalArchive = tarGz([{ name: "bin/tool", bytes: "#!/bin/sh\necho fixture\n", mode: 0o755 }]);
   const pack = fixturePack(normalArchive);
@@ -393,6 +396,43 @@ try {
     fetchImpl: fakeFetch(normalArchive, mirrorCalls),
   });
   assert.deepEqual(mirrorCalls, ["https://mirror.example.test/open-office-artifact-tool/v1.2.3/fixture.tar.gz"]);
+
+  const redirectCalls = [];
+  const redirectCache = path.join(tempRoot, "redirect-cache");
+  const redirected = await installManagedPackForTest({
+    cacheRoot: redirectCache,
+    pack,
+    fetchImpl: async (url, options) => {
+      redirectCalls.push({ url: String(url), redirect: options?.redirect });
+      if (redirectCalls.length === 1) {
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://release-storage.example.test/download/fixture.tar.gz?short_lived=token" },
+        });
+      }
+      return new Response(normalArchive, { status: 200 });
+    },
+  });
+  assert.equal(redirected.sourceUrl, pack.artifacts[0].url, "a temporary redirected URL must not enter the receipt result");
+  assert.deepEqual(redirectCalls, [
+    { url: pack.artifacts[0].url, redirect: "manual" },
+    { url: "https://release-storage.example.test/download/fixture.tar.gz?short_lived=token", redirect: "manual" },
+  ]);
+  await assert.rejects(() => installManagedPackForTest({
+    cacheRoot: path.join(tempRoot, "http-redirect-cache"),
+    pack,
+    fetchImpl: async () => new Response(null, { status: 302, headers: { location: "http://release-storage.example.test/fixture.tar.gz" } }),
+  }), /credential-free HTTPS/);
+  await assert.rejects(() => installManagedPackForTest({
+    cacheRoot: path.join(tempRoot, "missing-redirect-location-cache"),
+    pack,
+    fetchImpl: async () => new Response(null, { status: 302 }),
+  }), /redirect without a location/);
+  await assert.rejects(() => installManagedPackForTest({
+    cacheRoot: path.join(tempRoot, "redirect-loop-cache"),
+    pack,
+    fetchImpl: async () => new Response(null, { status: 307, headers: { location: "https://release-storage.example.test/again" } }),
+  }), /exceeded 5 HTTPS redirects/);
 
   const concurrentCache = path.join(tempRoot, "concurrent-cache");
   let concurrentFetches = 0;

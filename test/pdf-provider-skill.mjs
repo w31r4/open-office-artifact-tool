@@ -263,7 +263,7 @@ assert.match(skillText, /open-office-artifact-tool\/pdf\/providers/);
 assert.match(skillText, /installPolicy: "disabled"/);
 assert.match(skillText, /installPolicy": "managed"/);
 assert.match(skillText, /system-only/);
-assert.match(skillText, /non-MuPDF packs have no published immutable assets yet/);
+assert.match(skillText, /qpdf pack has published, attested[\s\S]*Python, OCR, Poppler, and[\s\S]*remain unpublished/is);
 assert.match(skillText, /hash-pinned.*versioned.*release assets/is);
 assert.match(skillText, /silent fallback/i);
 assert.match(skillText, /set_page_crop/);
@@ -314,7 +314,7 @@ assert.match(providerSetupText, /PdfProviders\.ensure/);
 assert.match(providerSetupText, /PdfProviders\.probe/);
 assert.match(providerSetupText, /symlink\/hardlink/);
 assert.match(providerSetupText, /enterprise mirror.*identical hash-pinned bytes/is);
-assert.match(providerSetupText, /Current catalog state.*not yet\s+published/is);
+assert.match(providerSetupText, /Current catalog state.*qpdf has published attested assets[\s\S]*remain unpublished/is);
 assert.match(providerSetupText, /OPEN_OFFICE_PDF_TESSDATA_DIRS[\s\S]*private directory/is);
 assert.doesNotMatch(providerSetupText, /brew install|apt-get|uv pip install/i);
 const encryptionTaskText = await fs.readFile(path.join(skillRoot, "tasks", "encryption.md"), "utf8");
@@ -331,7 +331,7 @@ assert.doesNotMatch(providerMatrixText, /1\.28\.0|1\.27\.2|10\.10\.x|17\.8\.x/i)
 const pdfPluginReadme = await fs.readFile(path.join(repoRoot, "skills", "pdf", "README.md"), "utf8");
 assert.match(pdfPluginReadme, /open-office-artifact-tool\/pdf\/providers/);
 assert.match(pdfPluginReadme, /system-only.*hash-pinned managed pack/is);
-assert.match(pdfPluginReadme, /managed release assets are not published yet.*blocked/is);
+assert.match(pdfPluginReadme, /qpdf managed pack is published[\s\S]*remain `blocked`/is);
 assert.doesNotMatch(pdfPluginReadme, /remain separately installed|brew install|apt-get|uv pip install/i);
 const nativePlacementDocs = [
   await fs.readFile(path.join(skillRoot, "artifact_tool", "API_QUICK_START.md"), "utf8"),

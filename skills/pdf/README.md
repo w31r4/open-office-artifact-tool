@@ -39,9 +39,10 @@ The bundle ships bounded adapters for strict PyMuPDF sanitize and image-backed
 pikepdf source-bound active/auxiliary structure cleanup, pyHanko exact-source
 local-PKCS#12 signing and signature validation, veraPDF exact-source PDF/A/PDF/UA
 machine-rule validation, and OCRmyPDF exact-source complete-document searchable-
-layer generation. Non-MuPDF managed release assets are not published yet, so
-such a managed route currently reports `blocked` rather than promising an
-installation. The OCR redaction primitive requires one explicit page, an exact
+layer generation. The qpdf managed pack is published with hash-pinned,
+attested `darwin-arm64` and `linux-x64` assets; Python, OCR, Poppler, and
+veraPDF/JRE routes remain `blocked` until their own pack is published. The OCR
+redaction primitive requires one explicit page, an exact
 expected 0/90/180/270-degree page rotation, an exact term, expected image-backed
 match count, full sanitize rewrite, rotation-aware residue scan, and render QA;
 it never broadens an uncertain OCR result. The shipped signer supports one

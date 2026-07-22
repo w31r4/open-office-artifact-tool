@@ -25,10 +25,13 @@ a second PDF codec or putting large runtimes in the npm tarball:
   isolated Python specialists, OCR languages/core, veraPDF/JRE, and Poppler are
   not embedded in the tarball. The first managed targets are `darwin-arm64` and
   `linux-x64`.
-- The control plane and its adversarial installer tests are shipped, but the
-  non-MuPDF catalogue assets are intentionally unpublished in this release.
-  They resolve as `blocked`; no document, Skill, or API may claim that `ensure`
-  can download a future asset today.
+- qpdf `12.3.2-oat.1` is published as hash-pinned, SBOM/notices-attached,
+  GitHub-attested `darwin-arm64` and `linux-x64` assets. Under an explicit
+  managed policy, `ensure` can install precisely those archives; redirect hops
+  remain HTTPS-only and credential-free before final byte-size/hash validation.
+  Isolated Python, OCR, veraPDF/JRE, and Poppler packs remain intentionally
+  unpublished and resolve as `blocked`; no document, Skill, or API may claim
+  that `ensure` can download a future asset today.
 - P12/private keys, HSM/remote-signing credentials, TSA/LTV access, and trust
   roots are never capability packs and are never acquired automatically.
 

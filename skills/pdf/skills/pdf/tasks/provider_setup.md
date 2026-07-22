@@ -99,10 +99,12 @@ language-pack directories. `ocrmypdf_provider.py` copies regular, unlinked
 `.traineddata` files into a per-operation private directory and sets its own
 `TESSDATA_PREFIX`; never point `TESSDATA_PREFIX` directly at the project cache.
 
-**Current catalog state:** non-MuPDF managed assets are intentionally not yet
-published. Their resolution is `blocked` with a precise reason, even under a
-permissive policy. Do not substitute a hand-written download URL or claim that
-`ensure` installed a future pack.
+**Current catalog state:** qpdf has published attested assets for
+`darwin-arm64` and `linux-x64`, so a policy-authorized qpdf route can resolve
+as `installable` and be passed unchanged to `ensure`. Python, OCR, Poppler,
+and veraPDF/JRE packs remain unpublished; those routes are `blocked` with a
+precise reason even under a permissive policy. Do not substitute a hand-written
+download URL or claim that `ensure` installed a future pack.
 
 ## Existing controlled runtime: system-only
 

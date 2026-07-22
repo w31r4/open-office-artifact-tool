@@ -238,10 +238,14 @@ async function commandVersion(executable, requireVersionOutput) {
     try {
       const { stdout, stderr } = await execFile(executable, args, { timeout: 2_500, maxBuffer: 16 * 1024, windowsHide: true });
       const line = String(stdout || stderr || "").trim().split(/\r?\n/, 1)[0];
-      if (line && !/couldn't open file/i.test(line)) return line.slice(0, 300);
+      if (line && !/couldn't open file/i.test(line) && (!requireVersionOutput || versionParts(line))) return line.slice(0, 300);
     } catch (error) {
       const line = String(error?.stdout || error?.stderr || "").trim().split(/\r?\n/, 1)[0];
-      if (line && !/couldn't open file/i.test(line)) return line.slice(0, 300);
+      // Some CLIs reject one conventional version switch before accepting the
+      // next. Only preserve a non-zero result when it is recognizably a
+      // version; diagnostics such as qpdf's "unrecognized argument -v" must
+      // not prevent trying --version.
+      if (line && !/couldn't open file/i.test(line) && versionParts(line)) return line.slice(0, 300);
     }
   }
   return requireVersionOutput ? undefined : executable;

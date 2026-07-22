@@ -101,12 +101,14 @@ publication, and a receipt. It rejects `latest`, package-manager/global-pip
 installs, lifecycle hooks, path traversal, links, and undeclared URLs. The
 initial managed targets are `darwin-arm64` and `linux-x64`.
 
-**Current release-catalog state:** the installer and policy path are shipped,
-but non-MuPDF packs have no published immutable assets yet. They deliberately
-resolve as `blocked`, not as downloadable promises. Use a selected
-`system-only` policy with an explicitly configured local runtime when one is
-already managed by the deployment. Once a task chooses managed or system-only,
-do not automatically switch routes.
+**Current release-catalog state:** the qpdf pack has published, attested
+`darwin-arm64` and `linux-x64` assets for repair, linearization, inspection,
+and the bounded AES-256 delivery-copy route. Python, OCR, Poppler, and
+veraPDF/JRE packs remain unpublished and deliberately resolve as `blocked`,
+not as downloadable promises. Use a selected `system-only` policy with an
+explicitly configured local runtime when one is already managed by the
+deployment. Once a task chooses managed or system-only, do not automatically
+switch routes.
 
 See [provider setup and probes](tasks/provider_setup.md) for the full policy,
 system-runtime, probe, and failure contract. The [provider matrix](references/PROVIDER_MATRIX.md)

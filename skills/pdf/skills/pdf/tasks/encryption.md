@@ -8,9 +8,10 @@ already encrypted input.
 
 The route needs qpdf `>=11.7.0`, a selected qpdf capability, explicit rewrite
 and signature-invalidation authority, and two caller-owned password files. A
-missing provider, absent managed release asset, unsupported qpdf version,
-encrypted input, stale hash, signed-input acknowledgement omission, output
-collision, or password-policy failure stops the operation without fallback.
+missing provider, unavailable managed release asset for the current platform,
+unsupported qpdf version, encrypted input, stale hash, signed-input
+acknowledgement omission, output collision, or password-policy failure stops
+the operation without fallback.
 
 ## Resolve and inspect first
 
@@ -35,9 +36,9 @@ if (resolution.status !== "ready") throw new Error(resolution.reason.message);
 ```
 
 For a deployment-owned qpdf runtime, select `system-only` policy first. For a
-managed runtime, `ensure` is permitted only when a published, hash-pinned pack
-is explicitly authorized. Current unpublished packs remain `blocked`; do not
-download qpdf ad hoc. See [provider setup](provider_setup.md).
+managed runtime, `ensure` is permitted only when the published, hash-pinned
+qpdf pack is explicitly authorized. Do not download qpdf ad hoc or replace a
+selected managed route with a system route. See [provider setup](provider_setup.md).
 
 Then obtain a fresh qpdf report. Copy only its SHA-256 value, never its source
 path into an output name:

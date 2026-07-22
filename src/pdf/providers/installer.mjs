@@ -27,6 +27,7 @@ const RECEIPT_FILE = ".receipt.json";
 const MAX_RECEIPT_BYTES = 128 * 1024;
 const LOCK_TIMEOUT_MS = 20_000;
 const LOCK_RETRY_MS = 25;
+const MAX_DOWNLOAD_REDIRECTS = 5;
 
 function nonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
@@ -235,10 +236,45 @@ function resolveArtifactUrl(artifact, enterpriseMirror) {
   return resolved.href;
 }
 
+function isRedirectStatus(status) {
+  return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
+}
+
+async function fetchPinnedArtifact(initialUrl, asset, fetchImpl) {
+  let url = initialUrl;
+  for (let redirects = 0; redirects <= MAX_DOWNLOAD_REDIRECTS; redirects += 1) {
+    let response;
+    try {
+      // Release assets legitimately redirect to a short-lived object URL. We
+      // retain control of every hop instead of allowing the runtime's generic
+      // redirect behavior, and still bind the final bytes to the catalog hash.
+      response = await fetchImpl(url, { redirect: "manual" });
+    } catch (error) {
+      throw new Error(`Capability-pack download failed for ${asset}: ${String(error?.message || error)}.`);
+    }
+    if (!response) throw new Error(`Capability-pack download failed for ${asset}: no HTTP response.`);
+    if (!isRedirectStatus(response.status)) return response;
+    if (redirects === MAX_DOWNLOAD_REDIRECTS) throw new Error(`Capability-pack download exceeded ${MAX_DOWNLOAD_REDIRECTS} HTTPS redirects for ${asset}.`);
+    const location = response.headers?.get?.("location");
+    if (!nonEmptyString(location)) throw new Error(`Capability-pack download returned a redirect without a location for ${asset}.`);
+    let next;
+    try {
+      next = new URL(location, url);
+    } catch {
+      throw new Error(`Capability-pack download returned an invalid redirect for ${asset}.`);
+    }
+    if (next.protocol !== "https:" || next.username || next.password) {
+      throw new Error(`Capability-pack download redirect must use credential-free HTTPS for ${asset}.`);
+    }
+    url = next.href;
+  }
+  throw new Error(`Capability-pack download exceeded ${MAX_DOWNLOAD_REDIRECTS} HTTPS redirects for ${asset}.`);
+}
+
 async function downloadArtifact(artifact, enterpriseMirror, fetchImpl) {
   if (typeof fetchImpl !== "function") throw new Error("No fetch implementation is available for managed capability installation.");
   const url = resolveArtifactUrl(artifact, enterpriseMirror);
-  const response = await fetchImpl(url, { redirect: "error" });
+  const response = await fetchPinnedArtifact(url, artifact.asset, fetchImpl);
   if (!response || response.ok !== true || !response.body) throw new Error(`Capability-pack download failed for ${artifact.asset}: HTTP ${response?.status ?? "unknown"}.`);
   const chunks = [];
   let downloadedBytes = 0;
