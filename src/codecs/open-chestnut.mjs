@@ -2970,20 +2970,49 @@ function publicHeaderFooterReference(value) {
   return "default";
 }
 
-function wireHeaderFooter(block) {
-  const instruction = String(block.fieldInstruction || block.field || "");
-  if (instruction && !DOCUMENT_FIELD_COMMANDS.has(instruction.trim().split(/\s+/)[0].toUpperCase())) throw new OpenChestnutCodecError(`Document ${block.kind} ${block.id} uses unsupported field ${instruction}.`, [], { code: "invalid_document_field" });
+function documentHeaderFooterSnapshot(block) {
   return {
     id: String(block.id || ""),
     name: String(block.name || block.kind || ""),
     styleId: String(block.styleId || "Normal"),
     text: String(block.text || ""),
-    reference: headerFooterReference(block.referenceType),
-    sectionIndex: block.sectionIndex == null ? undefined : uint32(block.sectionIndex, `Document ${block.kind} ${block.id} sectionIndex`),
+    referenceType: block.referenceType === "first" || block.referenceType === "even" ? block.referenceType : "default",
+    sectionIndex: block.sectionIndex == null ? undefined : Number(block.sectionIndex),
     relationshipId: String(block.relationshipId || ""),
     partPath: String(block.partPath || ""),
     variantActive: block.variantActive == null ? undefined : Boolean(block.variantActive),
+    fieldInstruction: String(block.fieldInstruction || block.field || ""),
+  };
+}
+
+function wireHeaderFooter(block, slot) {
+  const snapshot = documentHeaderFooterSnapshot(block);
+  const instruction = snapshot.fieldInstruction;
+  if (instruction && !DOCUMENT_FIELD_COMMANDS.has(instruction.trim().split(/\s+/)[0].toUpperCase())) throw new OpenChestnutCodecError(`Document ${block.kind} ${block.id} uses unsupported field ${instruction}.`, [], { code: "invalid_document_field" });
+  if (slot) {
+    const source = slot.publicSnapshot;
+    if (snapshot.id !== source.id || snapshot.name !== source.name || snapshot.styleId !== source.styleId ||
+      snapshot.referenceType !== source.referenceType || snapshot.sectionIndex !== source.sectionIndex ||
+      snapshot.relationshipId !== source.relationshipId || snapshot.partPath !== source.partPath ||
+      snapshot.variantActive !== source.variantActive || snapshot.fieldInstruction !== source.fieldInstruction) {
+      throw new OpenChestnutCodecError(`Imported document ${block.kind} ${snapshot.id} has fixed source identity, section scope, style, and field topology.`, [], { code: "unsupported_document_header_footer_edit" });
+    }
+    if (snapshot.text !== source.text && slot.wire.source?.editable !== true) {
+      throw new OpenChestnutCodecError(`Imported document ${block.kind} ${snapshot.id} is source-bound and cannot replace its text in this codec profile.`, [], { code: "unsupported_document_header_footer_edit" });
+    }
+  }
+  return {
+    id: snapshot.id,
+    name: snapshot.name,
+    styleId: snapshot.styleId,
+    text: snapshot.text,
+    reference: headerFooterReference(snapshot.referenceType),
+    sectionIndex: snapshot.sectionIndex == null ? undefined : uint32(snapshot.sectionIndex, `Document ${block.kind} ${block.id} sectionIndex`),
+    relationshipId: snapshot.relationshipId,
+    partPath: snapshot.partPath,
+    variantActive: snapshot.variantActive,
     fieldInstruction: instruction,
+    source: slot?.wire.source,
   };
 }
 
@@ -2999,7 +3028,17 @@ function publicHeaderFooter(block) {
     partPath: block.partPath || undefined,
     variantActive: block.variantActive,
     fieldInstruction: block.fieldInstruction || undefined,
+    sourceBound: Boolean(block.source),
+    editable: block.source ? block.source.editable === true : undefined,
   };
+}
+
+function wireDocumentHeaderFooters(blocks, slots, kind) {
+  if (!slots) return blocks.map((block) => wireHeaderFooter(block));
+  if (blocks.length !== slots.length) {
+    throw new OpenChestnutCodecError(`Source-preserving DOCX export requires the original ${kind} topology.`, [], { code: "document_header_footer_topology_changed" });
+  }
+  return blocks.map((block, index) => wireHeaderFooter(block, slots[index]));
 }
 
 function documentWatermarkSnapshot(watermark) {
@@ -3606,7 +3645,7 @@ function documentEnvelope(document) {
   if (state && Boolean(state.bibliography) !== Boolean(document.bibliographySources.length || Object.values(document.bibliography || {}).some(Boolean))) {
     throw new OpenChestnutCodecError("Source-preserving DOCX export cannot add or remove the modeled bibliography catalog.", [], { code: "document_bibliography_topology_changed" });
   }
-  if (state && (state.headers.length !== document.headers.length || state.footers.length !== document.footers.length)) {
+  if (state && ((state.headerSlots || state.headers).length !== document.headers.length || (state.footerSlots || state.footers).length !== document.footers.length)) {
     throw new OpenChestnutCodecError("Source-preserving DOCX export requires the original header/footer topology.", [], { code: "document_header_footer_topology_changed" });
   }
   for (const slot of state?.readOnlyBlockSlots || []) {
@@ -3637,8 +3676,8 @@ function documentEnvelope(document) {
         notes: document.notes.map((note, index) => documentNote(note, state?.notes[index], document)),
         styles: document.styles.values().map(wireDocumentStyle),
         defaultRunStyle: documentRunFormatting(defaultRunSource, "Document default run style"),
-        headers: document.headers.map(wireHeaderFooter),
-        footers: document.footers.map(wireHeaderFooter),
+        headers: wireDocumentHeaderFooters(document.headers, state?.headerSlots, "header"),
+        footers: wireDocumentHeaderFooters(document.footers, state?.footerSlots, "footer"),
         watermarks: wireDocumentWatermarks(document, state),
         evenAndOddHeaders: Boolean(document.settings?.evenAndOddHeaders),
         mirrorMargins: Boolean(document.settings?.mirrorMargins),
@@ -4196,6 +4235,14 @@ function documentFromEnvelope(envelope) {
     wire,
     publicSnapshot: documentWatermarkSnapshot(document.watermarks[index]),
   }));
+  const headerSlots = (source.headers || []).map((wire, index) => ({
+    wire,
+    publicSnapshot: documentHeaderFooterSnapshot(document.headers[index]),
+  }));
+  const footerSlots = (source.footers || []).map((wire, index) => ({
+    wire,
+    publicSnapshot: documentHeaderFooterSnapshot(document.footers[index]),
+  }));
   const readOnlyBlockSlots = source.blocks.flatMap((wire, index) => {
     if (wire.content.case !== "opaque" && (wire.source?.editable !== false || wire.source?.textPatchable === true)) return [];
     const block = document.blocks[index];
@@ -4203,7 +4250,7 @@ function documentFromEnvelope(envelope) {
   });
   Object.defineProperty(document, DOCUMENT_STATE, {
     configurable: true,
-    value: { source: envelope.source, opaqueOpc: envelope.opaqueOpc, diagnostics: envelope.diagnostics, assets: envelope.assets || [], blocks: source.blocks, readOnlyBlockSlots, comments: commentSlots, bookmarks: bookmarkSlots, notes: noteSlots, watermarkSlots, bibliography: source.bibliography, headers: source.headers || [], footers: source.footers || [] },
+    value: { source: envelope.source, opaqueOpc: envelope.opaqueOpc, diagnostics: envelope.diagnostics, assets: envelope.assets || [], blocks: source.blocks, readOnlyBlockSlots, comments: commentSlots, bookmarks: bookmarkSlots, notes: noteSlots, watermarkSlots, headerSlots, footerSlots, bibliography: source.bibliography, headers: source.headers || [], footers: source.footers || [] },
     writable: true,
   });
   return document;

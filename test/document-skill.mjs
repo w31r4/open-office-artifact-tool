@@ -887,6 +887,7 @@ try {
   assert.match(skillText, /openchestnut-classic-comment-edit-workflow\.mjs/);
   assert.match(skillText, /openchestnut-modern-comment-thread-workflow\.mjs/);
   assert.match(skillText, /openchestnut-watermark-workflow\.mjs/);
+  assert.match(skillText, /tasks\/headers_footers\.md/);
   assert.match(skillText, /openchestnut-tracked-replacement-workflow\.mjs/);
   assert.match(skillText, /openchestnut-revision-finalization-workflow\.mjs/);
   assert.doesNotMatch(skillText, /Author\/edit with `python-docx`|Default tool: python-docx/);
@@ -899,6 +900,7 @@ try {
   assert.match(manifestText, /^examples\/openchestnut-source-text-patch-workflow\.mjs$/m);
   assert.match(manifestText, /^examples\/openchestnut-modern-comment-thread-workflow\.mjs$/m);
   assert.match(manifestText, /^examples\/openchestnut-watermark-workflow\.mjs$/m);
+  assert.match(manifestText, /^tasks\/headers_footers\.md$/m);
   assert.match(manifestText, /^examples\/openchestnut-tracked-replacement-workflow\.mjs$/m);
   assert.match(manifestText, /^examples\/openchestnut-revision-finalization-workflow\.mjs$/m);
   assert.match(manifestText, /^examples\/end_to_end_smoke_test\.md$/m);
@@ -909,6 +911,11 @@ try {
   assert.match(watermarkGuide, /exactly one `word\/headerN\.xml`/);
   assert.match(watermarkGuide, /shared header.*multiple/is);
   assert.match(watermarkGuide, /image watermarks.*DrawingML watermarks.*irregular VML/is);
+  const headersFootersGuide = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "tasks", "headers_footers.md"), "utf8");
+  assert.match(headersFootersGuide, /sourceBound.*editable/is);
+  assert.match(headersFootersGuide, /at most one text edit.*part/is);
+  assert.match(headersFootersGuide, /PAGE or other simple fields/);
+  assert.match(headersFootersGuide, /fail closed/);
   const controlsGuide = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "tasks", "forms_content_controls.md"), "utf8");
   assert.match(controlsGuide, /paragraph\.addTextContentControl/);
   assert.match(controlsGuide, /document\.addBlockTextContentControl/);

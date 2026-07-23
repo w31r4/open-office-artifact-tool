@@ -30,9 +30,9 @@ internal static class DocxWatermarkCodec
         ICollection<Diagnostic> diagnostics)
     {
         var references = HeaderReferences(mainPart, body).ToArray();
-        var partUseCounts = references
-            .GroupBy(reference => PartPath(reference.Part), StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
+        var partUseCounts = DocxHeaderFooterCodec.HeaderFooterPartUseCounts(
+            mainPart,
+            BoundarySections(body).ToArray());
 
         foreach (var reference in references)
         {
@@ -45,7 +45,7 @@ internal static class DocxWatermarkCodec
             if (candidates.Length == 0) continue;
 
             var partPath = PartPath(reference.Part);
-            if (partUseCounts[partPath] != 1)
+            if (partUseCounts.GetValueOrDefault(partPath) != 1)
             {
                 diagnostics.Add(CodecProtocol.Warning(
                     "shared_document_watermark_preserved",

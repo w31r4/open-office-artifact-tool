@@ -1,0 +1,129 @@
+# Imported headers and footers
+
+## Agent contract
+
+Use the public OpenChestnut route only when the imported page-furniture record
+explicitly proves it is editable:
+
+```text
+intent -> import -> inspect/resolve one header or footer -> capability check
+       -> one text edit -> export -> package-scope check -> second import
+       -> document.verify -> native page render -> deliver
+```
+
+Do not infer editability from text visible at the top or bottom of a page. Word
+headers and footers can be shared, inherited, field-driven, rich, or attached
+to a section relationship graph. The public model deliberately exposes only a
+small, source-bound edit profile.
+
+## Create new page furniture
+
+For a source-free document, use the ordinary public API. First/even variants
+activate the necessary document setting when they are active.
+
+```js
+document.addHeader("Decision brief | Internal", {
+  referenceType: "default",
+  sectionIndex: 0,
+});
+document.addFooter("1", {
+  referenceType: "default",
+  sectionIndex: 0,
+  fieldInstruction: "PAGE",
+});
+```
+
+`fieldInstruction: "PAGE"` is a source-free field profile. It does not mean
+an imported PAGE field can be rewritten as ordinary header text.
+
+## Edit one imported text paragraph
+
+```js
+import { DocumentFile, FileBlob } from "open-office-artifact-tool";
+
+const source = await FileBlob.load("input.docx");
+const document = await DocumentFile.importDocx(source);
+const candidates = document.headers.filter((item) =>
+  item.referenceType === "default" && item.text === "Northwind | Internal");
+if (candidates.length !== 1) {
+  throw new Error(`Expected one header target, found ${candidates.length}.`);
+}
+
+const header = candidates[0];
+if (!header.sourceBound || !header.editable) {
+  throw new Error("The selected header has no safe source-bound text-edit capability.");
+}
+if (document.resolve(header.id) !== header) {
+  throw new Error("Header locator did not resolve.");
+}
+
+header.text = "Northwind | Reviewed";
+const output = await DocumentFile.exportDocx(document);
+await output.save("reviewed.docx");
+
+const reimported = await DocumentFile.importDocx(await FileBlob.load("reviewed.docx"));
+const verified = reimported.headers.filter((item) => item.text === "Northwind | Reviewed");
+if (verified.length !== 1 || !verified[0].sourceBound || !verified[0].editable) {
+  throw new Error("Header text did not survive the source-bound round-trip.");
+}
+if (!reimported.verify({ visualQa: true }).ok) {
+  throw new Error("Document verification failed.");
+}
+```
+
+Use `document.footers` in exactly the same way. `document.inspect({ kind:
+"header,footer" })` records `sourceBound`, `editable`, section/reference
+scope, relationship ID, and part path so an agent can state why it selected or
+rejected a candidate.
+
+## Exact editable profile
+
+An imported item is editable only when all of these remain true at export:
+
+- Its HeaderPart or FooterPart is uniquely used after effective section
+  inheritance is evaluated.
+- The target is one direct ordinary `w:p > w:r > w:t` paragraph with no run
+  formatting and no field.
+- Its source relationship, part path, paragraph locator, ID/name/style,
+  section/reference/variant state, field state, and source hashes still match.
+- At most one text edit may target a given source part; no other header/footer
+  paragraph in that part may change in the transaction.
+
+The export re-proves element, semantic, paragraph-residual, and
+part-residual hashes before modifying the existing `w:t`. It writes no new
+relationship and must change exactly the selected `word/headerN.xml` or
+`word/footerN.xml` part.
+
+## Fail-closed boundaries
+
+Do not use this profile for:
+
+- PAGE or other simple fields, complex fields, rich/multi-run text, drawings,
+  controls, tables, or extension-bearing paragraphs;
+- shared, linked, or inherited Header/Footer parts;
+- two text edits in one source part, even if both look ordinary;
+- changing first/even/default scope, section ownership, style, identity,
+  relationship, part path, variant activation, field instruction, or topology;
+- adding/removing imported page furniture or rebuilding it from visible text.
+
+If a capability check fails, preserve the source and either narrow the request,
+use an explicitly reviewed package-level workflow, or report the refusal. The
+public codec must fail closed; do not silently create a replacement
+header/footer.
+
+## Watermark coexistence and QA
+
+A recognized canonical text-watermark edit may share a header part with one
+eligible header-text edit: both operations independently prove their target and
+the remaining header content. This does **not** broaden the profile to image,
+DrawingML, shared, or irregular watermarks.
+
+Before delivery:
+
+1. Preserve the source and publish to a different output path.
+2. Inspect the ZIP content diff; permit exactly one target Header/Footer part.
+3. Import the output again and check the exact text, `sourceBound`, and
+   `editable` evidence.
+4. Run `document.verify({ visualQa: true })`.
+5. Render with `render_docx.py` and inspect every affected page at 100%; check
+   page variants, field display, body layout, and all other page furniture.

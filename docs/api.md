@@ -15,9 +15,9 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.addDeletion` | api | Append one bounded whole-paragraph tracked deletion using native w:del/w:delText markup. For one exact in-paragraph replacement in existing source bytes, use DocumentFile.addTrackedReplacement; mixed, moved, nested, and property-level revisions remain outside the bounded profile. |
 | `document.addEndnote` | api | Append one native plain-text endnote at the end of one paragraph or list item. Recognized imported canonical endnotes permit body-text edits only; anchor, kind, native ID, and note topology remain source-bound. |
 | `document.addField` | api | Append a bounded w:fldSimple block for PAGE, NUMPAGES, SECTION, date/time, and selected document-property commands. External-content and arbitrary reference commands fail closed. |
-| `document.addFooter` | api | Add a default, first-page, or even-page DOCX footer, optionally section-scoped; first/even activation is independent from the preserved relationship reference. |
+| `document.addFooter` | api | Add a default, first-page, or even-page DOCX footer, optionally section-scoped; first/even activation is independent from the preserved relationship reference. On an imported package, only a direct unformatted text paragraph in a uniquely used source part advertises editable=true; fields, rich/shared, and irregular parts stay read-only. |
 | `document.addFootnote` | api | Append one native plain-text footnote at the end of one paragraph or list item. Recognized imported canonical footnotes permit body-text edits only; anchor, kind, native ID, and note topology remain source-bound. |
-| `document.addHeader` | api | Add a default, first-page, or even-page DOCX header, optionally section-scoped; first/even activation is independent from the preserved relationship reference. |
+| `document.addHeader` | api | Add a default, first-page, or even-page DOCX header, optionally section-scoped; first/even activation is independent from the preserved relationship reference. On an imported package, only a direct unformatted text paragraph in a uniquely used source part advertises editable=true; fields, rich/shared, and irregular parts stay read-only. |
 | `document.addHyperlink` | api | Append a native w:hyperlink backed by an external relationship or internal bookmark anchor; native import restores URL/anchor, relationship identity, tooltip, and history state. |
 | `document.addImage` | api | Append an inspectable embedded PNG/JPEG image. Images are inline by default; an explicit bounded placement authors a native foreground wp:anchor with square or top-and-bottom wrapping. |
 | `document.addInsertion` | api | Append one bounded whole-paragraph tracked insertion using native w:ins markup. For one exact in-paragraph replacement in existing source bytes, use DocumentFile.addTrackedReplacement; mixed, moved, nested, and property-level revisions remain outside the bounded profile. |
@@ -31,7 +31,7 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `document.contentControls` | api | List typed mutable handles for recognized inline or table-cell plain-text, checkbox, drop-down, combo-box, and date controls plus block plain-text controls, with explicit placement and model/native identity. |
 | `document.fillContentControls` | api | Transactionally fill every recognized block, inline, or table-cell plain-text control matching an object or Map of tag-to-string entries. Checkbox, drop-down, combo-box, and date tags do not silently accept text. |
 | `document.fontFamilies` | api | Return a fresh sorted, case-insensitively deduplicated list of document theme and explicit run/style font families. |
-| `document.inspect` | api | Emit bounded NDJSON for document blocks including typed block/inline plain-text and inline checkbox/list/date content controls with explicit placement, fields, tracked changes, bookmark ranges, footnotes/endnotes, bibliography sources, comments, styles, headers/footers, canonical text watermarks, and layout; narrow with search/target anchors and fields with include/exclude. |
+| `document.inspect` | api | Emit bounded NDJSON for document blocks including typed block/inline plain-text and inline checkbox/list/date content controls with explicit placement, fields, tracked changes, bookmark ranges, footnotes/endnotes, bibliography sources, comments, styles, headers/footers with sourceBound/editable evidence, canonical text watermarks, and layout; narrow with search/target anchors and fields with include/exclude. |
 | `document.layoutJson` | api | Return page-aware layout JSON with block bounding boxes, section/page ordinals, effective inherited header/footer selections, styles, and target/search slicing. |
 | `document.materializeFields` | api | Transactionally compute canonical inline SEQ counters and REF cached results from native bookmark targets, with dry-run evidence and strict missing-target failure. PAGEREF remains skipped because trustworthy page numbers require a real pagination host. |
 | `document.render` | api | Render an SVG preview by default, return layout JSON with { format: 'layout' }, or use { source: 'docx', renderer } to feed native DOCX into LibreOffice/native Office render adapters for PDF/PNG outputs. |
@@ -51,7 +51,7 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `DocumentFile.addTrackedReplacement` | api | Add one exact replacement inside a direct body paragraph or bounded table-cell paragraph to hash-bound DOCX source bytes as adjacent native w:del/w:ins runs. A structured paragraph/tableCell selector, full expected text, and one unique literal contained in either one ordinary run or adjacent run fragments with identical w:rPr preserve source formatting; mixed formatting and broader topologies fail closed with exact changed-part audit. |
 | `DocumentFile.exportDocx` | api | Export DocumentModel to DOCX through the single bundled OpenChestnut codec. Only limits is accepted; legacy codec and lossy-fallback options fail explicitly. |
 | `DocumentFile.finalizeRevisions` | api | Accept or reject bounded direct whole-paragraph one-run revisions and exact adjacent in-paragraph w:del + w:ins pairs from source bytes, including same-format fragmented deletions in direct body paragraphs or bounded table-cell paragraphs. Mandatory SHA-256 binding, decompression budgets, exact changed-part audit, and fail-closed graph checks prevent silent model reconstruction or broad package mutation. |
-| `DocumentFile.importDocx` | api | Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Recognized inline controls, fields, revisions, notes, citations, simple tables, and exclusive canonical VML text-watermark paragraphs are fixed-topology editable; otherwise read-only paragraphs and complex table cells separately advertise textPatchable when at least one direct ordinary native text node can participate in a bounded literal patch. A unique literal may span adjacent same-format runs without rebuilding the surrounding graph. |
+| `DocumentFile.importDocx` | api | Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. An imported header/footer advertises editable only for one direct unformatted text paragraph in a uniquely used source part; it is hash-bound, allows at most one text edit per part, and leaves PAGE/simple fields, rich, shared, inherited, and irregular page furniture read-only. Recognized inline controls, fields, revisions, notes, citations, simple tables, and exclusive canonical VML text-watermark paragraphs are fixed-topology editable; otherwise read-only paragraphs and complex table cells separately advertise textPatchable when at least one direct ordinary native text node can participate in a bounded literal patch. A unique literal may span adjacent same-format runs without rebuilding the surrounding graph. |
 | `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
 | `DocumentModel.create` | api | Create a document with paragraph/character styles, formatted paragraphs/runs, canonical inline and one-paragraph table-cell plain-text, checkbox, drop-down, combo-box, and ISO/Gregorian date content controls, one-paragraph block plain-text controls, canonical inline SEQ/REF/PAGEREF fields, sections, headers/footers, canonical VML text watermarks, lists, TableGrid fixed-geometry tables, links, bounded whole-block bookmarks, plain-text footnotes/endnotes, canonical bibliography-backed citations, simple fields, a canonical complex TOC placeholder, bounded whole-paragraph tracked insertions/deletions, classic comments, bounded modern root/direct-reply threads, and PNG/JPEG images. Nested/irregular modern threads, rich comment bodies, multi-paragraph/rich/inline-within-cell/nested/data-bound/locked/placeholder table-cell SDTs, other nested/data-bound/locked/placeholder SDTs, irregular lists, localized dates, custom checkbox symbols, image/DrawingML/irregular VML watermarks, other complex field graphs, arbitrary table-style graphs, complex bookmark/note/revision graphs, and advanced settings remain unsupported or source-bound. |
@@ -63,7 +63,7 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `documentTableCell.replaceText` | api | Apply a literal source-bound text patch to one table cell that advertises textPatchable. The search must resolve exactly once inside one ordinary native w:t node or adjacent non-empty direct runs with byte-identical w:rPr. Whole-cell replacement, mixed formatting, empty-run gaps, paragraph boundaries, fields, controls, revisions, and ambiguous matches fail closed. |
 | `documentWatermark.remove` | api | Remove one modeled or recognized source-bound canonical watermark as a complete header paragraph. The source-bound operation re-proves exact element and header residual hashes and never heuristically deletes arbitrary header graphics. |
 | `exportDocxWithOpenChestnut` | api | Export bounded DocumentModel paragraphs/runs, fields, tables, bookmarks, notes, citations, tracked changes, comments, images, canonical text watermarks, sections, numbering, and settings; recognized imports permit exact-profile semantic edits plus hash-bound literal patches to one unique ordinary paragraph or table-cell span inside one direct w:r/w:t or adjacent same-format runs while preserving all surrounding native markup. |
-| `importDocxWithOpenChestnut` | api | Import DOCX bytes through OpenChestnut with source-bound blocks, recognized exclusive canonical VML text-watermark paragraphs, exact-profile editable semantics, and separate textEditable/textPatchable capability evidence. Literal patch capability never implies whole-paragraph/cell editability; only adjacent non-empty direct runs with byte-identical w:rPr may form one patch span, while mixed-format, gapped, cross-paragraph, ambiguous, field/control/revision text remains fail-closed. |
+| `importDocxWithOpenChestnut` | api | Import DOCX bytes through OpenChestnut with source-bound blocks, recognized exclusive canonical VML text-watermark paragraphs, and source-bound header/footer editable evidence. A header/footer edit is limited to one direct unformatted text paragraph in one uniquely used source part; fields, rich/shared/inherited page furniture, scope changes, and multiple edits to one part fail closed. Literal body/table patch capability never implies whole-paragraph/cell editability; only adjacent non-empty direct runs with byte-identical w:rPr may form one patch span, while mixed-format, gapped, cross-paragraph, ambiguous, field/control/revision text remains fail-closed. |
 | `paragraph.addCheckboxContentControl` | api | Append one canonical Word 2010+ checkbox content control with typed checked state; OpenChestnut owns its visible glyph and w14 symbol declarations. |
 | `paragraph.addComboBoxContentControl` | api | Append one canonical inline Word combo-box content control with ordered displayText/value choices and a typed value that may be a declared choice or bounded custom text. OpenChestnut derives the visible projection. |
 | `paragraph.addDateContentControl` | api | Append one canonical inline Word date picker from a real Gregorian YYYY-MM-DD value. OpenChestnut owns the fixed ISO display, UTC-midnight fullDate, language, mapping, and calendar projection. |
@@ -227,7 +227,7 @@ Append a bounded w:fldSimple block for PAGE, NUMPAGES, SECTION, date/time, and s
 
 #### `document.addFooter`
 
-Add a default, first-page, or even-page DOCX footer, optionally section-scoped; first/even activation is independent from the preserved relationship reference.
+Add a default, first-page, or even-page DOCX footer, optionally section-scoped; first/even activation is independent from the preserved relationship reference. On an imported package, only a direct unformatted text paragraph in a uniquely used source part advertises editable=true; fields, rich/shared, and irregular parts stay read-only.
 
 **Schema parameters:**
 
@@ -259,7 +259,7 @@ Append one native plain-text footnote at the end of one paragraph or list item. 
 
 #### `document.addHeader`
 
-Add a default, first-page, or even-page DOCX header, optionally section-scoped; first/even activation is independent from the preserved relationship reference.
+Add a default, first-page, or even-page DOCX header, optionally section-scoped; first/even activation is independent from the preserved relationship reference. On an imported package, only a direct unformatted text paragraph in a uniquely used source part advertises editable=true; fields, rich/shared, and irregular parts stay read-only.
 
 **Schema parameters:**
 
@@ -483,7 +483,7 @@ Return a fresh sorted, case-insensitively deduplicated list of document theme an
 
 #### `document.inspect`
 
-Emit bounded NDJSON for document blocks including typed block/inline plain-text and inline checkbox/list/date content controls with explicit placement, fields, tracked changes, bookmark ranges, footnotes/endnotes, bibliography sources, comments, styles, headers/footers, canonical text watermarks, and layout; narrow with search/target anchors and fields with include/exclude.
+Emit bounded NDJSON for document blocks including typed block/inline plain-text and inline checkbox/list/date content controls with explicit placement, fields, tracked changes, bookmark ranges, footnotes/endnotes, bibliography sources, comments, styles, headers/footers with sourceBound/editable evidence, canonical text watermarks, and layout; narrow with search/target anchors and fields with include/exclude.
 
 **Examples:**
 
@@ -780,7 +780,7 @@ Accept or reject bounded direct whole-paragraph one-run revisions and exact adja
 
 #### `DocumentFile.importDocx`
 
-Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. Recognized inline controls, fields, revisions, notes, citations, simple tables, and exclusive canonical VML text-watermark paragraphs are fixed-topology editable; otherwise read-only paragraphs and complex table cells separately advertise textPatchable when at least one direct ordinary native text node can participate in a bounded literal patch. A unique literal may span adjacent same-format runs without rebuilding the surrounding graph.
+Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. An imported header/footer advertises editable only for one direct unformatted text paragraph in a uniquely used source part; it is hash-bound, allows at most one text edit per part, and leaves PAGE/simple fields, rich, shared, inherited, and irregular page furniture read-only. Recognized inline controls, fields, revisions, notes, citations, simple tables, and exclusive canonical VML text-watermark paragraphs are fixed-topology editable; otherwise read-only paragraphs and complex table cells separately advertise textPatchable when at least one direct ordinary native text node can participate in a bounded literal patch. A unique literal may span adjacent same-format runs without rebuilding the surrounding graph.
 
 **Schema parameters:**
 
@@ -789,7 +789,7 @@ Import relationship-driven core DOCX semantics through the single bundled OpenCh
 
 **Schema returns:**
 
-- `document` (DocumentModel) — Imported document facade with editable core blocks, recognized canonical text watermarks, and source-bound read-only advanced content.
+- `document` (DocumentModel) — Imported document facade with editable core blocks, hash-bound direct-text header/footer capability evidence, recognized canonical text watermarks, and source-bound read-only advanced content.
 
 #### `DocumentFile.inspectDocx`
 
@@ -852,8 +852,8 @@ Create a document with paragraph/character styles, formatted paragraphs/runs, ca
 - `notes` (object[]) — Plain-text footnote/endnote records. The bounded profile permits one note at the end of each paragraph or list item; imported note text may change, but kind, anchor, native ID, and topology are source-bound.
 - `bibliography` (object) — Canonical Word bibliography SelectedStyle, StyleName, and URI metadata authored in one b:Sources Custom XML part.
 - `bibliographySources` (object[]) — Bounded Word bibliography sources with ordinary personal or corporate Author data and supported scalar fields. Imported source order, IDs, and tags remain source-bound.
-- `headers` (object[]) — Header block models.
-- `footers` (object[]) — Footer block models.
+- `headers` (object[]) — Header block models. Imported items expose sourceBound/editable; only a uniquely used one-run direct text paragraph is text-editable, and at most one edit may target each source Header part.
+- `footers` (object[]) — Footer block models. Imported items expose sourceBound/editable; only a uniquely used one-run direct text paragraph is text-editable, and at most one edit may target each source Footer part.
 - `sectionSettings` (object[]) — Per-section settings with zero-based sectionIndex and differentFirstPage activation state.
 - `comments` (object[]) — Classic whole-paragraph comments. Parent/reply, resolved, durable-ID, UTC/person, and modern extension metadata are outside the OpenChestnut 0.2 boundary.
 - `settings` (object) — evenAndOddHeaders, mirrorMargins, gutterAtTop, trackRevisions, the updateFields-on-open refresh hint, and bounded passwordless documentProtection are authorable. mirrorMargins toggles facing-page inside/outside margins; gutterAtTop chooses whether each section's gutter is added at the top edge or binding side. Irregular page-margin mode markup stays source-owned and makes section geometry read-only. Password/cryptographic protection variants cannot be replaced through the semantic model.
@@ -974,7 +974,7 @@ Export bounded DocumentModel paragraphs/runs, fields, tables, bookmarks, notes, 
 
 #### `importDocxWithOpenChestnut`
 
-Import DOCX bytes through OpenChestnut with source-bound blocks, recognized exclusive canonical VML text-watermark paragraphs, exact-profile editable semantics, and separate textEditable/textPatchable capability evidence. Literal patch capability never implies whole-paragraph/cell editability; only adjacent non-empty direct runs with byte-identical w:rPr may form one patch span, while mixed-format, gapped, cross-paragraph, ambiguous, field/control/revision text remains fail-closed.
+Import DOCX bytes through OpenChestnut with source-bound blocks, recognized exclusive canonical VML text-watermark paragraphs, and source-bound header/footer editable evidence. A header/footer edit is limited to one direct unformatted text paragraph in one uniquely used source part; fields, rich/shared/inherited page furniture, scope changes, and multiple edits to one part fail closed. Literal body/table patch capability never implies whole-paragraph/cell editability; only adjacent non-empty direct runs with byte-identical w:rPr may form one patch span, while mixed-format, gapped, cross-paragraph, ambiguous, field/control/revision text remains fail-closed.
 
 **Schema parameters:**
 
@@ -983,7 +983,7 @@ Import DOCX bytes through OpenChestnut with source-bound blocks, recognized excl
 
 **Schema returns:**
 
-- `document` (DocumentModel) — Imported document facade carrying source/opaque evidence. Canonical footnote/endnote bodies and exclusive VML text watermarks are text-editable with fixed source-bound anchors; whole-block bookmarks are fixed-topology/read-only, and other complex graphs remain source-bound.
+- `document` (DocumentModel) — Imported document facade carrying source/opaque evidence. Canonical footnote/endnote bodies, exclusive VML text watermarks, and one direct unformatted header/footer paragraph in a uniquely used source part are text-editable with fixed source-bound anchors; whole-block bookmarks are fixed-topology/read-only, and other complex graphs remain source-bound.
 
 #### `paragraph.addCheckboxContentControl`
 

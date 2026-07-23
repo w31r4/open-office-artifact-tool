@@ -16,6 +16,7 @@ tasks/navigation_internal_links.md
 tasks/verify_render.md
 tasks/watermarks_background.md
 tasks/sections_layout.md
+tasks/headers_footers.md
 tasks/accessibility_a11y.md
 tasks/images_figures.md
 tasks/redaction_anonymization.md

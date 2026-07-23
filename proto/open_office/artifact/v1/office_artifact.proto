@@ -2448,6 +2448,23 @@ message DocumentHeaderFooter {
   string part_path = 8;
   optional bool variant_active = 9;
   string field_instruction = 10;
+  DocumentHeaderFooterSourceBinding source = 11;
+}
+
+// Package-local identity and integrity evidence for one recognized ordinary
+// header/footer paragraph. These fields are not durable document identity.
+// A source-bound text edit may change only one unformatted direct w:t in one
+// uniquely owned HeaderPart/FooterPart; relationship identity, scope, style,
+// field mode, paragraph topology, and the residual part graph remain fixed.
+message DocumentHeaderFooterSourceBinding {
+  string relationship_id = 1;
+  string part_path = 2;
+  uint32 paragraph_index = 3;
+  string element_sha256 = 4;
+  string semantic_sha256 = 5;
+  string residual_sha256 = 6;
+  string part_residual_sha256 = 7;
+  bool editable = 8;
 }
 
 message DocumentWatermark {

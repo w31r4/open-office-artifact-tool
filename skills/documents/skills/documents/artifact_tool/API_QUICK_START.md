@@ -67,6 +67,39 @@ keeps the input immutable, requires `textPatchable` rather than whole-text
 editing, checks that only `word/document.xml` changed, publishes without
 overwrite, reimports, verifies, and writes an audit JSON.
 
+## Imported headers and footers: one direct-text edit per part
+
+Imported page furniture is separate from body text. Inspect a header or footer
+and proceed only when it reports both `sourceBound === true` and
+`editable === true`:
+
+```js
+const source = await FileBlob.load("input.docx");
+const document = await DocumentFile.importDocx(source);
+const matches = document.headers.filter((item) =>
+  item.referenceType === "default" && item.text === "Northwind | Internal");
+if (matches.length !== 1) throw new Error(`Expected one header target, found ${matches.length}.`);
+
+const header = matches[0];
+if (!header.sourceBound || !header.editable || document.resolve(header.id) !== header) {
+  throw new Error("The selected header is not safely editable through the public profile.");
+}
+header.text = "Northwind | Reviewed";
+const output = await DocumentFile.exportDocx(document);
+await output.save("reviewed.docx");
+```
+
+The profile is deliberately narrow: the target must be one direct unformatted
+`w:p > w:r > w:t` paragraph in a uniquely used source HeaderPart/FooterPart.
+The codec re-proves its source identity and hashes, permits at most one text
+edit in that part, and changes only that part. PAGE/simple fields, rich or
+multi-run paragraphs, shared/inherited parts, scope/style/topology changes,
+and multiple edits to one part fail closed. Reimport the output, inspect the
+record again, check that the ZIP diff contains only `header.partPath` (or
+`footer.partPath`), then render affected pages before delivery. Read
+`../tasks/headers_footers.md` for the complete workflow and watermark
+coexistence boundary.
+
 ## Create and export
 
 ```js

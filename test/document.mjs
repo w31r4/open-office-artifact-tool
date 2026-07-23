@@ -355,6 +355,7 @@ await assert.rejects(
 const watermarkDocument = DocumentModel.create({ name: "Watermark OpenChestnut slice", blocks: [] });
 watermarkDocument.addParagraph("Native watermark verification body.");
 watermarkDocument.addWatermark("CONFIDENTIAL", { id: "watermark/confidential", sectionIndex: 0 });
+watermarkDocument.addHeader("Controlled header content", { id: "header/watermark-companion", sectionIndex: 0 });
 const watermarkDocx = await DocumentFile.exportDocx(watermarkDocument);
 const watermarkZip = await JSZip.loadAsync(await watermarkDocx.arrayBuffer());
 const watermarkHeaderPath = Object.keys(watermarkZip.files).find((name) => /^word\/header\d+\.xml$/.test(name));
@@ -366,15 +367,22 @@ assert.equal(importedWatermarkDocument.watermarks[0].text, "CONFIDENTIAL");
 assert.equal(importedWatermarkDocument.watermarks[0].sourceBound, true);
 assert.equal(importedWatermarkDocument.watermarks[0].editable, true);
 assert.equal(importedWatermarkDocument.resolve(importedWatermarkDocument.watermarks[0].id), importedWatermarkDocument.watermarks[0]);
+assert.equal(importedWatermarkDocument.headers.length, 1);
+assert.equal(importedWatermarkDocument.headers[0].text, "Controlled header content");
+assert.equal(importedWatermarkDocument.headers[0].sourceBound, true);
+assert.equal(importedWatermarkDocument.headers[0].editable, true);
+assert.equal(importedWatermarkDocument.resolve(importedWatermarkDocument.headers[0].id), importedWatermarkDocument.headers[0]);
 const importedWatermarkInspect = importedWatermarkDocument.inspect({ kind: "watermark" }).ndjson;
 assert.match(importedWatermarkInspect, /"sourceBound":true/);
 const watermarkNoOp = await DocumentFile.exportDocx(importedWatermarkDocument);
 assert.deepEqual(Buffer.from(await watermarkNoOp.arrayBuffer()), Buffer.from(await watermarkDocx.arrayBuffer()), "unchanged imported watermark must preserve exact source bytes");
 importedWatermarkDocument.watermarks[0].text = "INTERNAL REVIEW";
+importedWatermarkDocument.headers[0].text = "Controlled header revised";
 const editedWatermarkDocx = await DocumentFile.exportDocx(importedWatermarkDocument);
 assert.deepEqual(await changedZipParts(watermarkDocx, editedWatermarkDocx), [watermarkHeaderPath]);
 const editedWatermarkRoundTrip = await DocumentFile.importDocx(editedWatermarkDocx);
 assert.equal(editedWatermarkRoundTrip.watermarks[0].text, "INTERNAL REVIEW");
+assert.equal(editedWatermarkRoundTrip.headers[0].text, "Controlled header revised");
 editedWatermarkRoundTrip.watermarks[0].remove();
 const removedWatermarkDocx = await DocumentFile.exportDocx(editedWatermarkRoundTrip);
 assert.deepEqual(await changedZipParts(editedWatermarkDocx, removedWatermarkDocx), [watermarkHeaderPath]);
@@ -390,6 +398,70 @@ watermarkScopeTamper.watermarks[0].referenceType = "first";
 await assert.rejects(
   () => DocumentFile.exportDocx(watermarkScopeTamper),
   (error) => error?.code === "unsupported_document_watermark_edit" && /fixed after import/i.test(error.message),
+);
+
+const headerFooterDocument = DocumentModel.create({ name: "Header footer source binding", blocks: [] });
+headerFooterDocument.addParagraph("Header/footer source-bound body.");
+headerFooterDocument.addHeader("Northwind internal", { id: "header/editable", sectionIndex: 0 });
+headerFooterDocument.addHeader("Keep this line", { id: "header/companion", sectionIndex: 0 });
+headerFooterDocument.addFooter("1", { id: "footer/page", sectionIndex: 0, fieldInstruction: "PAGE" });
+const headerFooterDocx = await DocumentFile.exportDocx(headerFooterDocument);
+const importedHeaderFooterDocument = await DocumentFile.importDocx(headerFooterDocx);
+const editableHeader = importedHeaderFooterDocument.headers.find((item) => item.text === "Northwind internal");
+const companionHeader = importedHeaderFooterDocument.headers.find((item) => item.text === "Keep this line");
+const pageFooter = importedHeaderFooterDocument.footers[0];
+assert.ok(editableHeader);
+assert.ok(companionHeader);
+assert.equal(editableHeader.sourceBound, true);
+assert.equal(editableHeader.editable, true);
+assert.equal(companionHeader.editable, true);
+assert.equal(editableHeader.partPath, companionHeader.partPath);
+assert.equal(pageFooter.sourceBound, true);
+assert.equal(pageFooter.editable, false);
+assert.match(importedHeaderFooterDocument.inspect({ kind: "header" }).ndjson, /"sourceBound":true.*"editable":true/);
+const headerFooterNoOp = await DocumentFile.exportDocx(importedHeaderFooterDocument);
+assert.deepEqual(Buffer.from(await headerFooterNoOp.arrayBuffer()), Buffer.from(await headerFooterDocx.arrayBuffer()), "unchanged imported headers and footers must preserve exact source bytes");
+editableHeader.text = "Northwind reviewed";
+const editedHeaderFooterDocx = await DocumentFile.exportDocx(importedHeaderFooterDocument);
+assert.deepEqual(await changedZipParts(headerFooterDocx, editedHeaderFooterDocx), [editableHeader.partPath]);
+const editedHeaderFooterRoundTrip = await DocumentFile.importDocx(editedHeaderFooterDocx);
+assert.equal(editedHeaderFooterRoundTrip.headers.find((item) => item.text === "Northwind reviewed")?.editable, true);
+
+const simultaneousHeaderEdits = await DocumentFile.importDocx(headerFooterDocx);
+simultaneousHeaderEdits.headers[0].text = "First simultaneous edit";
+simultaneousHeaderEdits.headers[1].text = "Second simultaneous edit";
+await assert.rejects(
+  () => DocumentFile.exportDocx(simultaneousHeaderEdits),
+  (error) => error?.code === "document_header_footer_multiple_edits" && /at most one text edit/i.test(error.message),
+);
+
+const pageFieldEdit = await DocumentFile.importDocx(headerFooterDocx);
+pageFieldEdit.footers[0].text = "2";
+await assert.rejects(
+  () => DocumentFile.exportDocx(pageFieldEdit),
+  (error) => error?.code === "unsupported_document_header_footer_edit" && /cannot replace its text/i.test(error.message),
+);
+
+const inheritedHeaderDocument = DocumentModel.create({ name: "Inherited header binding", blocks: [] });
+inheritedHeaderDocument.addParagraph("First-section body.");
+inheritedHeaderDocument.addSection({
+  breakType: "nextPage",
+  pageSize: { widthTwips: 12240, heightTwips: 15840 },
+  margins: { top: 1440, right: 1440, bottom: 1440, left: 1440 },
+});
+inheritedHeaderDocument.addParagraph("Second-section body.");
+inheritedHeaderDocument.addHeader("Shared by inheritance", { id: "header/inherited", sectionIndex: 0 });
+inheritedHeaderDocument.addWatermark("INHERITED", { id: "watermark/inherited", sectionIndex: 0 });
+const inheritedHeaderDocx = await DocumentFile.exportDocx(inheritedHeaderDocument);
+const importedInheritedHeaderDocument = await DocumentFile.importDocx(inheritedHeaderDocx);
+assert.equal(importedInheritedHeaderDocument.headers.length, 1);
+assert.equal(importedInheritedHeaderDocument.headers[0].sourceBound, true);
+assert.equal(importedInheritedHeaderDocument.headers[0].editable, false);
+assert.equal(importedInheritedHeaderDocument.watermarks.length, 0);
+importedInheritedHeaderDocument.headers[0].text = "Unsafe inherited replacement";
+await assert.rejects(
+  () => DocumentFile.exportDocx(importedInheritedHeaderDocument),
+  (error) => error?.code === "unsupported_document_header_footer_edit" && /cannot replace its text/i.test(error.message),
 );
 
 const fragmentedPatchFixture = DocumentModel.create({ name: "Fragmented source-bound patch", blocks: [] });

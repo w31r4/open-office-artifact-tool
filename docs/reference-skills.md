@@ -62,6 +62,21 @@ and residual-header hashes. Shared headers, multiple objects, DrawingML/image
 backgrounds, irregular VML, and new imported relationship topology remain
 opaque or fail closed rather than being heuristically flattened.
 
+### Documents imported header/footer evidence
+
+Imported page furniture is not rebuilt through a generic document model. A
+header or footer exposes `sourceBound` plus `editable` only when it is a
+direct unformatted text paragraph in a uniquely used source part. A transaction
+may change one such paragraph per part: OpenChestnut re-proves the relationship,
+section scope, source semantics, paragraph element/residual hash, and residual
+part hash, then permits exactly that Header/Footer part to change. PAGE/simple
+fields, rich or multi-run paragraphs, shared or inherited parts, multiple edits
+to one part, and any relationship/style/scope/topology change are read-only and
+fail closed. A watermark edit may share the same canonical Header part because
+both codecs exclude the other's proven object from their residual check; the
+result still changes only that one part and must be reimported and rendered
+before delivery.
+
 ## Compatibility discipline
 
 Plugin packaging and workflow compatibility are separate gates. A plugin is not marked fully compatible merely because its manifest validates or its files appear in the tarball.

@@ -769,9 +769,11 @@ class DocumentHeaderFooterBlock {
     this.sectionIndex = config.sectionIndex === undefined || config.sectionIndex === null ? undefined : Number(config.sectionIndex);
     this.variantActive = config.variantActive ?? config.activateVariant ?? config.active;
     this.fieldInstruction = config.fieldInstruction || config.field;
+    this.sourceBound = Boolean(config.sourceBound);
+    this.editable = config.editable !== false;
   }
 
-  inspectRecord(index) { return { kind: this.kind, id: this.id, index, name: this.name || undefined, styleId: this.styleId, referenceType: this.referenceType, variantActive: this.variantActive, relationshipId: this.relationshipId, partPath: this.partPath, sectionIndex: this.sectionIndex, fieldInstruction: this.fieldInstruction, text: this.text, textChars: this.text.length }; }
+  inspectRecord(index) { return { kind: this.kind, id: this.id, index, name: this.name || undefined, styleId: this.styleId, referenceType: this.referenceType, sourceBound: this.sourceBound, editable: this.editable, variantActive: this.variantActive, relationshipId: this.relationshipId, partPath: this.partPath, sectionIndex: this.sectionIndex, fieldInstruction: this.fieldInstruction, text: this.text, textChars: this.text.length }; }
   toProto() { return { kind: this.kind, id: this.id, name: this.name, styleId: this.styleId, referenceType: this.referenceType, variantActive: this.variantActive, relationshipId: this.relationshipId, partPath: this.partPath, sectionIndex: this.sectionIndex, fieldInstruction: this.fieldInstruction, text: this.text }; }
 }
 

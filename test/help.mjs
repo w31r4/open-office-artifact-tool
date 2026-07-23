@@ -291,6 +291,8 @@ assert.ok(HELP_CATALOG.find((item) => item.name === "DocumentFile.patchDocx")?.s
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.schema?.parameters?.preferNative, undefined);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addHeader")?.schema?.parameters?.referenceType?.type, "string");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addFooter")?.schema?.parameters?.referenceType?.type, "string");
+assert.match(HELP_CATALOG.find((item) => item.name === "document.addHeader")?.summary || "", /direct unformatted text paragraph in a uniquely used source part.*fields, rich\/shared, and irregular parts stay read-only/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.summary || "", /header\/footer advertises editable only.*at most one text edit per part/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addWatermark")?.schema?.parameters?.text?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addWatermark")?.schema?.parameters?.sectionIndex?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addWatermark")?.schema?.returns?.watermark?.type, "DocumentWatermark");

@@ -289,6 +289,7 @@ Tasks:
 - tasks/compare_diff.md
 - tasks/templates_style_packs.md
 - tasks/watermarks_background.md
+- tasks/headers_footers.md
 - tasks/footnotes_endnotes.md
 - tasks/fixtures_edge_cases.md
 - tasks/navigation_internal_links.md
@@ -480,6 +481,7 @@ Then inspect the generated `page-<N>.png` files.
 - If you need **internal navigation links** (static TOC + Back-to-TOC + Top/Bottom): `tasks/navigation_internal_links.md`
 - If headings/numbering/TOC levels are messy: `tasks/headings_numbering.md`
 - If you have mixed portrait/landscape or margin weirdness: `tasks/sections_layout.md`
+- If you need to edit one ordinary imported header/footer text paragraph: use the public source-bound capability check, then follow `tasks/headers_footers.md`; PAGE/simple fields, rich, shared, inherited, or irregular page furniture stays read-only
 - If you need a **floating or wrapped image**, or images shift/overlap across renderers: use the bounded `document.addImage({ ..., placement })` profile and follow `tasks/images_figures.md`; never infer support for an imported anchor from its visible appearance alone
 - If you need spreadsheet ↔ table round-tripping: `tasks/tables_spreadsheets.md`
 - If you need **tracked changes (redlines)**: use public `document.addInsertion(...)` / `document.addDeletion(...)` for whole blocks, or `examples/openchestnut-tracked-replacement-workflow.mjs` for one exact source-bound literal inside a direct body paragraph or bounded single-paragraph table cell; use `document.setSettings({ trackRevisions: true })` for future edits, then route broader graphs through `ooxml/tracked_changes.md`

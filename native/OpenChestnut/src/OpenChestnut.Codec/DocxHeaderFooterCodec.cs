@@ -1,5 +1,8 @@
+using System.Security.Cryptography;
+using System.Text;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
+using Google.Protobuf;
 using OpenOffice.Artifact.Wire.V1;
 using W = DocumentFormat.OpenXml.Wordprocessing;
 
@@ -39,6 +42,7 @@ internal static class DocxHeaderFooterCodec
         ICollection<Diagnostic> diagnostics)
     {
         var sections = BoundarySections(body).ToArray();
+        var partUseCounts = HeaderFooterPartUseCounts(mainPart, sections);
         for (var sectionIndex = 0; sectionIndex < sections.Length; sectionIndex++)
         {
             var properties = sections[sectionIndex];
@@ -48,8 +52,8 @@ internal static class DocxHeaderFooterCodec
                     SectionIndex = checked((uint)sectionIndex),
                     DifferentFirstPage = true,
                 });
-            ReadReferences(mainPart, properties, checked((uint)sectionIndex), header: true, document, diagnostics);
-            ReadReferences(mainPart, properties, checked((uint)sectionIndex), header: false, document, diagnostics);
+            ReadReferences(mainPart, properties, checked((uint)sectionIndex), header: true, document, diagnostics, partUseCounts);
+            ReadReferences(mainPart, properties, checked((uint)sectionIndex), header: false, document, diagnostics, partUseCounts);
         }
     }
 
@@ -100,22 +104,26 @@ internal static class DocxHeaderFooterCodec
         return plan;
     }
 
-    internal static void AssertSourceUnchanged(
-        MainDocumentPart mainPart,
+    internal static void ApplySource(
+        DocxPartContext context,
         W.Body body,
-        DocumentArtifact requested)
+        DocumentArtifact requested,
+        DocumentArtifact? sourceSnapshot = null)
     {
-        var source = new DocumentArtifact();
-        var ignored = new List<Diagnostic>();
-        DocxSettingsCodec.Read(mainPart, source);
-        Read(mainPart, body, source, ignored);
-        if (!SequenceEqual(source.SectionSettings, requested.SectionSettings) ||
-            !SequenceEqual(source.Headers, requested.Headers) ||
-            !SequenceEqual(source.Footers, requested.Footers))
+        var source = sourceSnapshot ?? new DocumentArtifact();
+        if (sourceSnapshot is null)
+        {
+            var ignored = new List<Diagnostic>();
+            DocxSettingsCodec.Read(context.Owner, source);
+            Read(context.Owner, body, source, ignored);
+        }
+        if (!SequenceEqual(source.SectionSettings, requested.SectionSettings))
             throw new CodecException(
                 "unsupported_document_header_footer_edit",
-                "Source-preserving DOCX export requires the imported header/footer topology, text, fields, and section activation settings to remain unchanged.",
+                "Source-preserving DOCX export requires the imported header/footer section activation settings to remain unchanged.",
                 "word/document.xml");
+        ApplyCollection(context, header: true, source.Headers, requested.Headers);
+        ApplyCollection(context, header: false, source.Footers, requested.Footers);
     }
 
     internal static void Validate(DocumentArtifact document)
@@ -143,6 +151,14 @@ internal static class DocxHeaderFooterCodec
                 throw new CodecException("invalid_document_header_footer", $"Document {kind} {item.Id} text is invalid or too long.");
             if (!string.IsNullOrWhiteSpace(item.FieldInstruction))
                 DocxFieldCodec.Validate(new DocumentField { Instruction = item.FieldInstruction, Display = item.Text });
+            if (item.Source is { } source &&
+                (string.IsNullOrWhiteSpace(source.RelationshipId) ||
+                 string.IsNullOrWhiteSpace(source.PartPath) ||
+                 string.IsNullOrWhiteSpace(source.ElementSha256) ||
+                 string.IsNullOrWhiteSpace(source.SemanticSha256) ||
+                 string.IsNullOrWhiteSpace(source.ResidualSha256) ||
+                 string.IsNullOrWhiteSpace(source.PartResidualSha256)))
+                throw new CodecException("invalid_document_header_footer", $"Document {kind} {item.Id} has an incomplete source binding.");
         }
     }
 
@@ -157,13 +173,71 @@ internal static class DocxHeaderFooterCodec
         else yield return new W.SectionProperties();
     }
 
+    internal static Dictionary<string, int> HeaderFooterPartUseCounts(
+        MainDocumentPart mainPart,
+        IReadOnlyList<W.SectionProperties> sections)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var active = new Dictionary<(bool Header, W.HeaderFooterValues Type), OpenXmlPart>();
+        var duplicateParts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var properties in sections)
+        {
+            var explicitReferences = new Dictionary<(bool Header, W.HeaderFooterValues Type), List<OpenXmlPart>>();
+            foreach (var reference in properties.Elements<W.HeaderReference>())
+            {
+                if (reference.Type?.Value is not { } type || string.IsNullOrWhiteSpace(reference.Id?.Value)) continue;
+                var part = mainPart.GetPartById(reference.Id!.Value!);
+                if (part is not HeaderPart) continue;
+                AddExplicitReference(explicitReferences, (true, type), part);
+            }
+            foreach (var reference in properties.Elements<W.FooterReference>())
+            {
+                if (reference.Type?.Value is not { } type || string.IsNullOrWhiteSpace(reference.Id?.Value)) continue;
+                var part = mainPart.GetPartById(reference.Id!.Value!);
+                if (part is not FooterPart) continue;
+                AddExplicitReference(explicitReferences, (false, type), part);
+            }
+
+            foreach (var header in new[] { true, false })
+            foreach (var type in new[] { W.HeaderFooterValues.Default, W.HeaderFooterValues.First, W.HeaderFooterValues.Even })
+            {
+                var key = (header, type);
+                if (explicitReferences.TryGetValue(key, out var parts))
+                {
+                    if (parts.Count == 1) active[key] = parts[0];
+                    else
+                    {
+                        active.Remove(key);
+                        foreach (var part in parts) duplicateParts.Add(PartPath(part));
+                    }
+                }
+                if (!active.TryGetValue(key, out var activePart)) continue;
+                var partPath = PartPath(activePart);
+                counts[partPath] = counts.GetValueOrDefault(partPath) + 1;
+            }
+        }
+        foreach (var partPath in duplicateParts)
+            counts[partPath] = Math.Max(2, counts.GetValueOrDefault(partPath));
+        return counts;
+    }
+
+    private static void AddExplicitReference(
+        IDictionary<(bool Header, W.HeaderFooterValues Type), List<OpenXmlPart>> references,
+        (bool Header, W.HeaderFooterValues Type) key,
+        OpenXmlPart part)
+    {
+        if (!references.TryGetValue(key, out var parts)) references[key] = parts = [];
+        parts.Add(part);
+    }
+
     private static void ReadReferences(
         MainDocumentPart mainPart,
         W.SectionProperties properties,
         uint sectionIndex,
         bool header,
         DocumentArtifact document,
-        ICollection<Diagnostic> diagnostics)
+        ICollection<Diagnostic> diagnostics,
+        IReadOnlyDictionary<string, int> partUseCounts)
     {
         var references = header
             ? properties.Elements<W.HeaderReference>().Cast<OpenXmlElement>()
@@ -178,12 +252,15 @@ internal static class DocxHeaderFooterCodec
                 : ((W.FooterReference)reference).Type?.Value;
             if (string.IsNullOrWhiteSpace(relationshipId)) continue;
             var part = mainPart.GetPartById(relationshipId);
-            var paragraphs = part switch
+            var root = part switch
             {
-                HeaderPart { Header: { } root } => root.Elements<W.Paragraph>().ToArray(),
-                FooterPart { Footer: { } root } => root.Elements<W.Paragraph>().ToArray(),
-                _ => [],
+                HeaderPart { Header: { } headerRoot } => (OpenXmlCompositeElement)headerRoot,
+                FooterPart { Footer: { } footerRoot } => footerRoot,
+                _ => null,
             };
+            if (root is null) continue;
+            var paragraphs = root.Elements<W.Paragraph>().ToArray();
+            var partPath = PartPath(part);
             var parsed = new List<DocumentHeaderFooter>(paragraphs.Length);
             for (var index = 0; index < paragraphs.Length; index++)
             {
@@ -206,18 +283,244 @@ internal static class DocxHeaderFooterCodec
                     Reference = FromNativeReference(type),
                     SectionIndex = sectionIndex,
                     RelationshipId = relationshipId,
-                    PartPath = part.Uri.OriginalString.TrimStart('/'),
+                    PartPath = partPath,
                     VariantActive = type == W.HeaderFooterValues.First
                         ? properties.GetFirstChild<W.TitlePage>() is not null
                         : type == W.HeaderFooterValues.Even ? document.EvenAndOddHeaders : true,
                     FieldInstruction = fieldInstruction,
                 };
+                artifact.Source = new DocumentHeaderFooterSourceBinding
+                {
+                    RelationshipId = relationshipId,
+                    PartPath = partPath,
+                    ParagraphIndex = checked((uint)index),
+                    ElementSha256 = HashElement(paragraphs[index]),
+                    ResidualSha256 = ResidualHash(paragraphs[index]),
+                    PartResidualSha256 = PartResidualHash(root, checked((uint)index)),
+                    Editable = partUseCounts.GetValueOrDefault(partPath) == 1 && CanEditText(paragraphs[index]),
+                };
+                artifact.Source.SemanticSha256 = SemanticHash(artifact);
                 parsed.Add(artifact);
             }
             if (header) document.Headers.Add(parsed);
             else document.Footers.Add(parsed);
         }
     }
+
+    private static void ApplyCollection(
+        DocxPartContext context,
+        bool header,
+        IList<DocumentHeaderFooter> source,
+        IList<DocumentHeaderFooter> requested)
+    {
+        if (source.Count != requested.Count)
+            throw new CodecException(
+                "document_header_footer_topology_changed",
+                $"Source-preserving DOCX export requires the original {(header ? "header" : "footer")} topology.",
+                "word/document.xml");
+
+        var changes = new List<(DocumentHeaderFooter Original, DocumentHeaderFooter Requested)>();
+        for (var index = 0; index < source.Count; index++)
+        {
+            var original = source[index];
+            var next = requested[index];
+            var binding = original.Source;
+            if (binding is null || !IdentityEquals(original, next) ||
+                !SemanticHash(original).Equals(binding.SemanticSha256, StringComparison.OrdinalIgnoreCase))
+                throw new CodecException(
+                    "document_header_footer_source_binding_mismatch",
+                    $"Document {(header ? "header" : "footer")} {original.Id} no longer matches its source binding.",
+                    binding?.PartPath ?? original.PartPath);
+            if (original.Text.Equals(next.Text, StringComparison.Ordinal)) continue;
+            if (!binding.Editable)
+                throw new CodecException(
+                    "unsupported_document_header_footer_edit",
+                    $"Document {(header ? "header" : "footer")} {original.Id} is source-bound and cannot replace its text in this codec profile.",
+                    binding.PartPath);
+            changes.Add((original, next));
+        }
+
+        foreach (var group in changes.GroupBy(change => change.Original.Source!.PartPath, StringComparer.OrdinalIgnoreCase))
+            if (group.Count() > 1)
+                throw new CodecException(
+                    "document_header_footer_multiple_edits",
+                    $"Source-preserving DOCX export permits at most one text edit per imported {(header ? "Header" : "Footer")} part.",
+                    group.Key);
+
+        foreach (var (original, next) in changes)
+            ApplyOne(context, header, original, next);
+    }
+
+    private static void ApplyOne(
+        DocxPartContext context,
+        bool header,
+        DocumentHeaderFooter original,
+        DocumentHeaderFooter requested)
+    {
+        var binding = original.Source ?? throw new CodecException(
+            "document_header_footer_source_binding_mismatch",
+            $"Document {(header ? "header" : "footer")} {original.Id} is missing its source binding.",
+            original.PartPath);
+        if (!binding.Editable)
+            throw new CodecException(
+                "unsupported_document_header_footer_edit",
+                $"Document {(header ? "header" : "footer")} {original.Id} is source-bound and cannot replace its text in this codec profile.",
+                binding.PartPath);
+        if (!binding.RelationshipId.Equals(original.RelationshipId, StringComparison.Ordinal) ||
+            !binding.PartPath.Equals(original.PartPath, StringComparison.OrdinalIgnoreCase))
+            throw new CodecException(
+                "document_header_footer_source_binding_mismatch",
+                $"Document {(header ? "header" : "footer")} {original.Id} source relationship identity changed.",
+                binding.PartPath);
+
+        var part = context.Owner.GetPartById(binding.RelationshipId);
+        OpenXmlCompositeElement? root = null;
+        if (header && part is HeaderPart headerPart) root = headerPart.Header;
+        if (!header && part is FooterPart footerPart) root = footerPart.Footer;
+        if (root is null || !PartPath(part).Equals(binding.PartPath, StringComparison.OrdinalIgnoreCase))
+            throw new CodecException(
+                "document_header_footer_source_binding_mismatch",
+                $"Document {(header ? "header" : "footer")} {original.Id} part is missing or has the wrong kind.",
+                binding.PartPath);
+
+        var paragraphs = root.Elements<W.Paragraph>().ToArray();
+        W.Paragraph paragraph;
+        uint paragraphIndex;
+        if (binding.ParagraphIndex < paragraphs.Length &&
+            MatchesSourceParagraph(paragraphs[binding.ParagraphIndex], original, binding))
+        {
+            paragraph = paragraphs[binding.ParagraphIndex];
+            paragraphIndex = binding.ParagraphIndex;
+        }
+        else
+        {
+            // A prior recognized watermark removal can shift the paragraph
+            // index in this HeaderPart. The original binding remains the
+            // authority, so only one exact hash/semantic match may re-anchor.
+            var matches = paragraphs.Select((candidate, index) => (Paragraph: candidate, Index: index))
+                .Where(candidate => MatchesSourceParagraph(candidate.Paragraph, original, binding))
+                .Take(2)
+                .ToArray();
+            if (matches.Length != 1)
+                throw new CodecException(
+                    "document_header_footer_source_binding_mismatch",
+                    $"Document {(header ? "header" : "footer")} {original.Id} paragraph locator no longer identifies one exact source paragraph.",
+                    binding.PartPath);
+            paragraph = matches[0].Paragraph;
+            paragraphIndex = checked((uint)matches[0].Index);
+        }
+        if (!PartResidualHash(root, paragraphIndex).Equals(binding.PartResidualSha256, StringComparison.OrdinalIgnoreCase))
+            throw new CodecException(
+                "document_header_footer_source_binding_mismatch",
+                $"Document {(header ? "header" : "footer")} {original.Id} no longer matches its exact source paragraph.",
+                binding.PartPath);
+
+        var partResidualBefore = PartResidualHash(root, paragraphIndex);
+        var text = paragraph.Descendants<W.Text>().Single();
+        text.Text = requested.Text;
+        text.Space = requested.Text.Length != requested.Text.Trim().Length ? SpaceProcessingModeValues.Preserve : null;
+        if (!PartResidualHash(root, paragraphIndex).Equals(partResidualBefore, StringComparison.OrdinalIgnoreCase))
+            throw new CodecException(
+                "document_header_footer_residual_not_preserved",
+                $"Document {(header ? "header" : "footer")} {original.Id} text edit changed unrelated source content.",
+                binding.PartPath);
+        if (!TryReadParagraph(paragraph, out var verifiedText, out var verifiedStyleId, out var verifiedFieldInstruction) ||
+            !CanEditText(paragraph) ||
+            !verifiedText.Equals(requested.Text, StringComparison.Ordinal) ||
+            !verifiedStyleId.Equals(original.StyleId, StringComparison.Ordinal) ||
+            !verifiedFieldInstruction.Equals(original.FieldInstruction, StringComparison.Ordinal))
+            throw new CodecException(
+                "document_header_footer_semantics_not_applied",
+                $"Document {(header ? "header" : "footer")} {original.Id} text edit did not produce the requested native semantics.",
+                binding.PartPath);
+
+        if (part is HeaderPart savedHeader) savedHeader.Header!.Save();
+        else ((FooterPart)part).Footer!.Save();
+        context.MarkPartMutated(part);
+    }
+
+    private static bool IdentityEquals(DocumentHeaderFooter left, DocumentHeaderFooter right) =>
+        left.Id.Equals(right.Id, StringComparison.Ordinal) &&
+        left.Name.Equals(right.Name, StringComparison.Ordinal) &&
+        left.StyleId.Equals(right.StyleId, StringComparison.Ordinal) &&
+        left.Reference == right.Reference &&
+        left.HasSectionIndex == right.HasSectionIndex &&
+        (!left.HasSectionIndex || left.SectionIndex == right.SectionIndex) &&
+        left.RelationshipId.Equals(right.RelationshipId, StringComparison.Ordinal) &&
+        left.PartPath.Equals(right.PartPath, StringComparison.OrdinalIgnoreCase) &&
+        left.HasVariantActive == right.HasVariantActive &&
+        (!left.HasVariantActive || left.VariantActive == right.VariantActive) &&
+        left.FieldInstruction.Equals(right.FieldInstruction, StringComparison.Ordinal) &&
+        BindingEquals(left.Source, right.Source);
+
+    private static bool BindingEquals(DocumentHeaderFooterSourceBinding? left, DocumentHeaderFooterSourceBinding? right) =>
+        left is not null && right is not null &&
+        left.RelationshipId.Equals(right.RelationshipId, StringComparison.Ordinal) &&
+        left.PartPath.Equals(right.PartPath, StringComparison.OrdinalIgnoreCase) &&
+        left.ParagraphIndex == right.ParagraphIndex &&
+        left.ElementSha256.Equals(right.ElementSha256, StringComparison.OrdinalIgnoreCase) &&
+        left.SemanticSha256.Equals(right.SemanticSha256, StringComparison.OrdinalIgnoreCase) &&
+        left.ResidualSha256.Equals(right.ResidualSha256, StringComparison.OrdinalIgnoreCase) &&
+        left.PartResidualSha256.Equals(right.PartResidualSha256, StringComparison.OrdinalIgnoreCase) &&
+        left.Editable == right.Editable;
+
+    private static bool CanEditText(W.Paragraph paragraph)
+    {
+        if (!TryReadParagraph(paragraph, out _, out _, out var fieldInstruction) ||
+            !string.IsNullOrEmpty(fieldInstruction)) return false;
+        var runs = paragraph.Elements<W.Run>().ToArray();
+        return runs.Length == 1 && runs[0].ChildElements.Count == 1 && runs[0].GetFirstChild<W.Text>() is not null;
+    }
+
+    private static bool MatchesSourceParagraph(
+        W.Paragraph paragraph,
+        DocumentHeaderFooter original,
+        DocumentHeaderFooterSourceBinding binding)
+    {
+        if (!HashElement(paragraph).Equals(binding.ElementSha256, StringComparison.OrdinalIgnoreCase) ||
+            !ResidualHash(paragraph).Equals(binding.ResidualSha256, StringComparison.OrdinalIgnoreCase) ||
+            !TryReadParagraph(paragraph, out var sourceText, out var styleId, out var fieldInstruction) ||
+            !CanEditText(paragraph)) return false;
+        return sourceText.Equals(original.Text, StringComparison.Ordinal) &&
+               styleId.Equals(original.StyleId, StringComparison.Ordinal) &&
+               fieldInstruction.Equals(original.FieldInstruction, StringComparison.Ordinal);
+    }
+
+    private static string ResidualHash(W.Paragraph paragraph)
+    {
+        var clone = (W.Paragraph)paragraph.CloneNode(true);
+        var text = clone.Descendants<W.Text>().SingleOrDefault();
+        if (text is not null)
+        {
+            text.Text = string.Empty;
+            text.Space = null;
+        }
+        return HashElement(clone);
+    }
+
+    private static string PartResidualHash(OpenXmlCompositeElement root, uint paragraphIndex)
+    {
+        var clone = (OpenXmlCompositeElement)root.CloneNode(true);
+        var paragraphs = clone.Elements<W.Paragraph>().ToArray();
+        for (var index = 0; index < paragraphs.Length; index++)
+            if (index == paragraphIndex || DocxWatermarkCodec.IsCanonicalParagraph(paragraphs[index]))
+                paragraphs[index].Remove();
+        return HashElement(clone);
+    }
+
+    private static string SemanticHash(DocumentHeaderFooter source)
+    {
+        var semantic = source.Clone();
+        semantic.Id = string.Empty;
+        semantic.Name = string.Empty;
+        semantic.Source = null;
+        return Hash(semantic.ToByteArray());
+    }
+
+    private static string PartPath(OpenXmlPart part) => part.Uri.OriginalString.TrimStart('/');
+
+    private static string HashElement(OpenXmlElement element) => Hash(Encoding.UTF8.GetBytes(element.OuterXml));
+    private static string Hash(ReadOnlySpan<byte> bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
     private static bool TryReadParagraph(W.Paragraph paragraph, out string text, out string styleId, out string fieldInstruction)
     {

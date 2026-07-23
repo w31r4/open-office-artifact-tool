@@ -6286,6 +6286,265 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void ImportedHeaderFooterTextEditsAreSourceBoundAndPreservePartScope()
+    {
+        var request = ExportRequest(includeSecondParagraph: true);
+        request.Artifact.Document.Headers.Add(new DocumentHeaderFooter
+        {
+            Id = "document/header/editable",
+            Name = "Editable header",
+            Text = "Northwind internal",
+            Reference = DocumentHeaderFooterReference.Default,
+            SectionIndex = 0,
+        });
+        request.Artifact.Document.Headers.Add(new DocumentHeaderFooter
+        {
+            Id = "document/header/companion",
+            Name = "Companion header",
+            Text = "Keep this line",
+            Reference = DocumentHeaderFooterReference.Default,
+            SectionIndex = 0,
+        });
+        request.Artifact.Document.Footers.Add(new DocumentHeaderFooter
+        {
+            Id = "document/footer/page",
+            Name = "Page number",
+            Text = "1",
+            FieldInstruction = "PAGE",
+            Reference = DocumentHeaderFooterReference.Default,
+            SectionIndex = 0,
+        });
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var authoredBytes = authored.File.ToByteArray();
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var header = Assert.Single(imported.Artifact.Document.Headers, item => item.Text == "Northwind internal");
+        var companion = Assert.Single(imported.Artifact.Document.Headers, item => item.Text == "Keep this line");
+        var footer = Assert.Single(imported.Artifact.Document.Footers);
+        Assert.True(header.Source.Editable);
+        Assert.True(companion.Source.Editable);
+        Assert.Equal(header.Source.PartPath, companion.Source.PartPath);
+        Assert.False(footer.Source.Editable);
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(authored.File, unchanged.File);
+
+        header.Text = "Northwind reviewed";
+        var edited = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(edited.Ok, Diagnostics(edited));
+        Assert.Equal([header.Source.PartPath], ChangedZipPartPaths(authoredBytes, edited.File.ToByteArray()));
+        using (var stream = new MemoryStream(edited.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var nativeHeader = Assert.Single(package.MainDocumentPart!.HeaderParts).Header!;
+            Assert.Equal(["Northwind reviewed", "Keep this line"], nativeHeader.Elements<W.Paragraph>().Select(paragraph => paragraph.InnerText).ToArray());
+            Assert.Equal("1", Assert.Single(package.MainDocumentPart.FooterParts).Footer!.InnerText);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var reimported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = edited.File,
+        });
+        Assert.True(reimported.Ok, Diagnostics(reimported));
+        Assert.Equal("Northwind reviewed", Assert.Single(reimported.Artifact.Document.Headers, item => item.Name == "Header 1").Text);
+
+        var multiple = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(multiple.Ok, Diagnostics(multiple));
+        multiple.Artifact.Document.Headers[0].Text = "First simultaneous edit";
+        multiple.Artifact.Document.Headers[1].Text = "Second simultaneous edit";
+        var multipleRejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = multiple.Artifact,
+        });
+        Assert.False(multipleRejected.Ok);
+        Assert.Equal("document_header_footer_multiple_edits", Assert.Single(multipleRejected.Diagnostics).Code);
+
+        var field = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(field.Ok, Diagnostics(field));
+        Assert.Single(field.Artifact.Document.Footers).Text = "2";
+        var fieldRejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = field.Artifact,
+        });
+        Assert.False(fieldRejected.Ok);
+        Assert.Equal("unsupported_document_header_footer_edit", Assert.Single(fieldRejected.Diagnostics).Code);
+
+        var tampered = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(tampered.Ok, Diagnostics(tampered));
+        Assert.Single(tampered.Artifact.Document.Headers, item => item.Text == "Northwind internal").Source.ParagraphIndex = 1;
+        var tamperedRejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = tampered.Artifact,
+        });
+        Assert.False(tamperedRejected.Ok);
+        Assert.Equal("document_header_footer_source_binding_mismatch", Assert.Single(tamperedRejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void ImportedInheritedHeaderPartsRemainReadOnly()
+    {
+        var request = ExportRequest(includeSecondParagraph: true);
+        request.Artifact.Document.Blocks.Add(new DocumentBlock
+        {
+            Id = "document/inherited-header-section",
+            Section = new DocumentSection
+            {
+                BreakType = DocumentSectionBreak.NextPage,
+                PageWidthTwips = 12240,
+                PageHeightTwips = 15840,
+                MarginTopTwips = 1440,
+                MarginRightTwips = 1440,
+                MarginBottomTwips = 1440,
+                MarginLeftTwips = 1440,
+            },
+        });
+        request.Artifact.Document.Headers.Add(new DocumentHeaderFooter
+        {
+            Id = "document/header/inherited",
+            Name = "Inherited header",
+            Text = "Shared by inheritance",
+            Reference = DocumentHeaderFooterReference.Default,
+            SectionIndex = 0,
+        });
+        request.Artifact.Document.Watermarks.Add(new DocumentWatermark
+        {
+            Id = "document/watermark/inherited",
+            Text = "INHERITED",
+            Reference = DocumentHeaderFooterReference.Default,
+            SectionIndex = 0,
+        });
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.Empty(imported.Artifact.Document.Watermarks);
+        var header = Assert.Single(imported.Artifact.Document.Headers);
+        Assert.False(header.Source.Editable);
+        header.Text = "Unsafe inherited replacement";
+        var rejected = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_document_header_footer_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void ImportedHeaderEditSurvivesCanonicalWatermarkRemovalBeforeItsParagraph()
+    {
+        var request = ExportRequest(includeSecondParagraph: true);
+        request.Artifact.Document.Headers.Add(new DocumentHeaderFooter
+        {
+            Id = "document/header/reanchored",
+            Name = "Reanchored header",
+            Text = "Northwind internal",
+            Reference = DocumentHeaderFooterReference.Default,
+            SectionIndex = 0,
+        });
+        request.Artifact.Document.Watermarks.Add(new DocumentWatermark
+        {
+            Id = "document/watermark/reanchored",
+            Text = "DRAFT",
+            Reference = DocumentHeaderFooterReference.Default,
+            SectionIndex = 0,
+        });
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var source = MoveCanonicalWatermarkBeforeHeader(authored.File.ToByteArray());
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = ByteString.CopyFrom(source),
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var header = Assert.Single(imported.Artifact.Document.Headers);
+        Assert.True(header.Source.Editable);
+        header.Text = "Northwind reviewed";
+        imported.Artifact.Document.Watermarks.Clear();
+
+        var edited = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(edited.Ok, Diagnostics(edited));
+        Assert.Equal([header.Source.PartPath], ChangedZipPartPaths(source, edited.File.ToByteArray()));
+        using var stream = new MemoryStream(edited.File.ToByteArray());
+        using var package = WordprocessingDocument.Open(stream, false);
+        var nativeHeader = Assert.Single(package.MainDocumentPart!.HeaderParts).Header!;
+        Assert.Empty(nativeHeader.Descendants<V.TextPath>());
+        Assert.Equal("Northwind reviewed", Assert.Single(nativeHeader.Elements<W.Paragraph>()).InnerText);
+        Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+    }
+
+    [Fact]
     public void TextWatermarkAuthorsImportsEditsRemovesAndPreservesNoOpBytes()
     {
         var request = ExportRequest(includeSecondParagraph: true);
@@ -6333,7 +6592,9 @@ public sealed class DocxCodecTests
         Assert.Equal(DocumentHeaderFooterReference.Default, watermark.Reference);
         Assert.True(watermark.Source.Editable);
         Assert.False(string.IsNullOrWhiteSpace(watermark.Source.PartResidualSha256));
-        Assert.Equal("Controlled header content", Assert.Single(imported.Artifact.Document.Headers).Text);
+        var importedHeader = Assert.Single(imported.Artifact.Document.Headers);
+        Assert.Equal("Controlled header content", importedHeader.Text);
+        Assert.True(importedHeader.Source.Editable);
 
         var unchanged = Invoke(new CodecRequest
         {
@@ -6346,6 +6607,7 @@ public sealed class DocxCodecTests
         Assert.Equal(authored.File, unchanged.File);
 
         watermark.Text = "INTERNAL REVIEW";
+        importedHeader.Text = "Controlled header revised";
         var edited = Invoke(new CodecRequest
         {
             ProtocolVersion = CodecProtocol.ProtocolVersion,
@@ -6358,7 +6620,7 @@ public sealed class DocxCodecTests
         using (var package = WordprocessingDocument.Open(stream, false))
         {
             Assert.Equal("INTERNAL REVIEW", Assert.Single(package.MainDocumentPart!.HeaderParts).Header!.Descendants<V.TextPath>().Single().String!.Value);
-            Assert.Equal("Controlled header content", Assert.Single(package.MainDocumentPart.HeaderParts).Header!.Elements<W.Paragraph>().Single(paragraph => !paragraph.Descendants<V.TextPath>().Any()).InnerText);
+            Assert.Equal("Controlled header revised", Assert.Single(package.MainDocumentPart.HeaderParts).Header!.Elements<W.Paragraph>().Single(paragraph => !paragraph.Descendants<V.TextPath>().Any()).InnerText);
             Assert.Equal(documentPart, ReadPart(package.MainDocumentPart));
             Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
         }
@@ -6372,6 +6634,7 @@ public sealed class DocxCodecTests
         });
         Assert.True(editedImport.Ok, Diagnostics(editedImport));
         Assert.Equal("INTERNAL REVIEW", Assert.Single(editedImport.Artifact.Document.Watermarks).Text);
+        Assert.Equal("Controlled header revised", Assert.Single(editedImport.Artifact.Document.Headers).Text);
         editedImport.Artifact.Document.Watermarks.Clear();
         var removed = Invoke(new CodecRequest
         {
@@ -6385,7 +6648,7 @@ public sealed class DocxCodecTests
         using (var package = WordprocessingDocument.Open(stream, false))
         {
             Assert.Empty(Assert.Single(package.MainDocumentPart!.HeaderParts).Header!.Descendants<V.TextPath>());
-            Assert.Equal("Controlled header content", Assert.Single(package.MainDocumentPart.HeaderParts).Header!.InnerText);
+            Assert.Equal("Controlled header revised", Assert.Single(package.MainDocumentPart.HeaderParts).Header!.InnerText);
             Assert.Equal(documentPart, ReadPart(package.MainDocumentPart));
             Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
         }
@@ -6553,6 +6816,33 @@ public sealed class DocxCodecTests
         return output.ToArray();
     }
 
+    private static IReadOnlyList<string> ChangedZipPartPaths(byte[] before, byte[] after)
+    {
+        var source = ZipPartBytes(before);
+        var output = ZipPartBytes(after);
+        return source.Keys.Union(output.Keys, StringComparer.Ordinal)
+            .Where(path => !source.TryGetValue(path, out var sourceBytes) ||
+                           !output.TryGetValue(path, out var outputBytes) ||
+                           !sourceBytes.SequenceEqual(outputBytes))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static Dictionary<string, byte[]> ZipPartBytes(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes, writable: false);
+        using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
+        var parts = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        foreach (var entry in archive.Entries.Where(entry => !entry.FullName.EndsWith("/", StringComparison.Ordinal)))
+        {
+            using var input = entry.Open();
+            using var output = new MemoryStream();
+            input.CopyTo(output);
+            parts.Add(entry.FullName, output.ToArray());
+        }
+        return parts;
+    }
+
     private static byte[] RenameWatermarkShape(byte[] bytes, string shapeId)
     {
         using var stream = new MemoryStream();
@@ -6563,6 +6853,22 @@ public sealed class DocxCodecTests
             var header = Assert.Single(package.MainDocumentPart!.HeaderParts);
             Assert.Single(header.Header!.Descendants<V.Shape>()).Id = shapeId;
             header.Header.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] MoveCanonicalWatermarkBeforeHeader(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var package = WordprocessingDocument.Open(stream, true, new OpenSettings { AutoSave = false }))
+        {
+            var header = Assert.Single(package.MainDocumentPart!.HeaderParts).Header!;
+            var watermark = Assert.Single(header.Elements<W.Paragraph>(), paragraph => paragraph.Descendants<V.TextPath>().Any());
+            watermark.Remove();
+            header.PrependChild(watermark);
+            header.Save();
         }
         return stream.ToArray();
     }

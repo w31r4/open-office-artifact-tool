@@ -206,8 +206,11 @@ internal static class DocxCodec
                 bibliographyTags: DocxBibliographyCodec.SourceTags(mainPart, envelope.Document.Bibliography));
             DocxDirectStyles.AssertSourceUnchanged(mainPart, envelope.Document);
             DocxSettingsCodec.AssertSourceBoundSettings(mainPart, envelope.Document);
-            DocxHeaderFooterCodec.AssertSourceUnchanged(mainPart, body, envelope.Document);
+            var headerFooterSource = new DocumentArtifact();
+            DocxSettingsCodec.Read(mainPart, headerFooterSource);
+            DocxHeaderFooterCodec.Read(mainPart, body, headerFooterSource, new List<Diagnostic>());
             DocxWatermarkCodec.ApplySource(context, body, envelope.Document);
+            DocxHeaderFooterCodec.ApplySource(context, body, envelope.Document, headerFooterSource);
             DocxSettingsCodec.ApplySource(mainPart, envelope.Document, context);
             var irregularComplexFields = IrregularComplexFieldBodyIndexes(body);
             var sourceElements = body.ChildElements.Where(element => element is not W.SectionProperties).ToArray();
