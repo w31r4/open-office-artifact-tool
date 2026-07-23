@@ -1272,6 +1272,65 @@ const matchFormulaXlsx = await SpreadsheetFile.exportXlsx(matchFormulaWorkbook);
 const importedMatchFormulaWorkbook = await SpreadsheetFile.importXlsx(matchFormulaXlsx);
 assert.deepEqual(importedMatchFormulaWorkbook.worksheets.getItem("MATCH bounds").getRange("Z1:Z21").formulas, matchFormulaSheet.getRange("Z1:Z21").formulas);
 
+const formulaBudgetWorkbook = Workbook.create();
+const formulaBudgetSheet = formulaBudgetWorkbook.worksheets.add("Formula budget");
+formulaBudgetSheet.getRange("A1:B1").values = [[1, 2]];
+formulaBudgetWorkbook.definedNames.add("WideFormulaBudget", "'Formula budget'!A1:A10001");
+formulaBudgetSheet.getRange("F1").values = [["Value"]];
+formulaBudgetSheet.tables.add("F1:F10002", true, "FormulaBudgetValues");
+formulaBudgetSheet.getRange("D1:D19").formulas = [
+  ["=SUM(A1:A10000)"],
+  ["=SUM(A1:A10001)"],
+  ["=SUM(WideFormulaBudget)"],
+  ['=COUNTIF(A1:A10001,">0")'],
+  ['=SUMIFS(A1:A10001,A1:A10001,">0")'],
+  ["=FILTER(A1:A10001,A1:A10001>0)"],
+  ["=SEQUENCE(10001)"],
+  ["=EXPAND(A1,10001,1)"],
+  ["=HSTACK(A1:A9999,B1)"],
+  ["=SUM(A1:A10000,A1:A10000,A1)"],
+  ["=SUM(FormulaBudgetValues[Value])"],
+  ['="A1:A10001"'],
+  ["=XLOOKUP(1,A1:A10000,B1:B10000)"],
+  ["=WRAPROWS(A1,10001)"],
+  ["=VSTACK(A1:A10000,B1:B10000)"],
+  ["=CHOOSECOLS(A1:A10000,1,1)"],
+  ['=IFERROR(SUM(A1:A10001),"fallback")'],
+  ["=IFERROR(SUM(A1:A10000,A1:A10000,A1),B1)"],
+  ["=AND(TRUE,SUM(A1:A10001))"],
+];
+assert.deepEqual(formulaBudgetSheet.getRange("D1:D19").values, [
+  [1], ["#VALUE!"], ["#VALUE!"], ["#VALUE!"], ["#VALUE!"], ["#VALUE!"],
+  ["#VALUE!"], ["#VALUE!"], ["#VALUE!"], ["#VALUE!"], ["#VALUE!"], ["A1:A10001"], [2],
+  ["#VALUE!"], ["#VALUE!"], ["#VALUE!"], ["fallback"], [2], ["#VALUE!"],
+]);
+const formulaBudgetGraph = formulaBudgetWorkbook.formulaGraph({ recalculate: false });
+assert.ok(formulaBudgetGraph.errors.some((error) => error.type === "referenceBudgetExceeded" && error.address === "D2" && error.ref === "A1:A10001" && error.requestedCells === 10001 && error.maximumReferenceCells === 10000 && error.maximumFormulaCells === 20000));
+assert.ok(formulaBudgetGraph.errors.some((error) => error.type === "referenceBudgetExceeded" && error.address === "D3" && error.ref === "WideFormulaBudget" && error.requestedCells === 10001));
+assert.ok(formulaBudgetGraph.errors.some((error) => error.type === "referenceBudgetExceeded" && error.address === "D10" && error.requestedCells === 1 && error.usedCells === 20000 && error.totalCells === 20001));
+assert.ok(formulaBudgetGraph.errors.some((error) => error.type === "referenceBudgetExceeded" && error.address === "D11" && error.ref === "FormulaBudgetValues[Value]" && error.requestedCells === 10001));
+assert.equal(formulaBudgetGraph.edges.some((edge) => edge.fromAddress === "D2"), false, "oversized ranges must be refused before graph edge expansion");
+assert.equal(formulaBudgetGraph.errors.some((error) => error.address === "D12" && error.type === "referenceBudgetExceeded"), false, "cell-like text literals must not consume the formula reference budget");
+const formulaBudgetTrace = formulaBudgetWorkbook.trace("'Formula budget'!D2");
+assert.deepEqual(formulaBudgetTrace.tree.precedents, [], "trace must refuse an oversized source before walking its cells");
+assert.deepEqual(formulaBudgetTrace.tree.referenceBudget, {
+  type: "referenceBudgetExceeded",
+  ref: "A1:A10001",
+  requestedCells: 10001,
+  usedCells: 0,
+  totalCells: 10001,
+  maximumReferenceCells: 10000,
+  maximumFormulaCells: 20000,
+});
+const formulaBudgetInspectRecords = formulaBudgetWorkbook.inspect({ kind: "formula", sheetName: "Formula budget", range: "D2" }).ndjson
+  .split("\n")
+  .filter(Boolean)
+  .map((line) => JSON.parse(line));
+const formulaBudgetInspectRecord = formulaBudgetInspectRecords.find((record) => record.kind === "formula" && record.address === "D2");
+assert.deepEqual(formulaBudgetInspectRecord.precedents, [], "inspect must not allocate precedents for a rejected range");
+assert.equal(formulaBudgetInspectRecord.referenceBudget?.requestedCells, 10001);
+assert.ok(formulaBudgetWorkbook.verify().issues.some((issue) => issue.type === "formulaReferenceBudgetExceeded" && issue.address === "D2"));
+
 const expressionFormulaWorkbook = Workbook.create();
 const expressionInputs = expressionFormulaWorkbook.worksheets.add("Inputs");
 const expressionTextInputs = expressionFormulaWorkbook.worksheets.add("Data & Targets");

@@ -3204,18 +3204,18 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `Workbook.create` | api | Create an empty workbook with an explicit date system and optional native SpreadsheetML theme colors. |
 | `workbook.definedNames.add` | api | Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData). |
 | `workbook.fontFamilies` | api | Return a fresh sorted, case-insensitively deduplicated list of workbook default and explicit cell font families. |
-| `workbook.formulaGraph` | api | Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA. |
+| `workbook.formulaGraph` | api | Return a bounded dependency graph of formula nodes, edges, dependents, cycles, formula errors, and reference-budget refusals for workbook QA. |
 | `workbook.inspect` | api | Emit bounded NDJSON records for workbook, connections, sheets, worksheet protections, tables, formulas, matches, comments, validations, conditional formats, and drawings; narrow with search/target anchors and shape fields with include/exclude. |
 | `workbook.layoutJson` | api | Return workbook/worksheet layout JSON with cell, table, chart, image, sparkline, rule bounding boxes, and target/search context slicing. |
-| `workbook.recalculate` | api | Recalculate workbook formulas, dynamic-array spills, dependency edges, cycles, and errors. |
+| `workbook.recalculate` | api | Recalculate bounded workbook formulas and dynamic-array spills, with dependency edges, cycles, errors, and reference-budget refusals. |
 | `workbook.render` | api | Return a lightweight SVG preview for a sheet/range or layout JSON when called with { format: 'layout' }. |
 | `workbook.resolve` | api | Resolve stable workbook, source-bound connection, worksheet, table, pivot, chart, image, sparkline, rule, comment, and defined-name IDs. |
 | `workbook.setCalculation` | api | Set bounded workbook-level SpreadsheetML calculation mode, on-save/full-recalculation flags, iterative-calculation limits, and full-precision policy. |
 | `workbook.setDateSystem` | api | Select the Excel 1900 or 1904 serial-date system for formula calculation and native workbookPr export. |
 | `workbook.sharedArrayFormulas` | formula | Import and export bounded shared and legacy-array formula metadata. XLDAPR dynamic-array anchors are inspectable after import but source-bound and read-only; creating, detaching, or editing their topology makes XLSX export fail closed. |
 | `workbook.structuredReferences` | formula | Evaluate Excel table references including sections, column ranges/unions, space intersections, escaped special-character headers, unqualified calculated-column references, and @/#This Row context while expanding exact table-cell precedents. |
-| `workbook.trace` | api | Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged. |
-| `workbook.verify` | api | Return bounded QA issues for source-bound connections, sheets, formulas, tables, charts, and comments. |
+| `workbook.trace` | api | Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references and reference-budget refusals flagged. |
+| `workbook.verify` | api | Return bounded QA issues for source-bound connections, sheets, formulas (including reference-budget refusals), tables, charts, and comments. |
 | `workbook.windows` | api | Access the ordered workbook-window collection; window 0 is the primary view used by legacy worksheet-selection APIs. |
 | `workbook.windows.add` | api | Append an additional workbook window with its own active worksheet and selected tab group. |
 | `workbook.worksheets.add` | api | Append an editable visible, hidden, or very-hidden worksheet with a stable name and ID. |
@@ -6048,7 +6048,7 @@ Return a fresh sorted, case-insensitively deduplicated list of workbook default 
 
 #### `workbook.formulaGraph`
 
-Return a dependency graph of formula nodes, edges, dependents, cycles, and formula errors for workbook QA.
+Return a bounded dependency graph of formula nodes, edges, dependents, cycles, formula errors, and reference-budget refusals for workbook QA.
 
 **Schema parameters:**
 
@@ -6057,7 +6057,7 @@ Return a dependency graph of formula nodes, edges, dependents, cycles, and formu
 
 **Schema returns:**
 
-- `graph` (object) — Formula nodes, edges, cycles, errors, and bounded NDJSON.
+- `graph` (object) — Bounded formula nodes, edges, cycles, errors, reference-budget refusals, and NDJSON.
 
 #### `workbook.inspect`
 
@@ -6114,11 +6114,11 @@ Return workbook/worksheet layout JSON with cell, table, chart, image, sparkline,
 
 #### `workbook.recalculate`
 
-Recalculate workbook formulas, dynamic-array spills, dependency edges, cycles, and errors.
+Recalculate bounded workbook formulas and dynamic-array spills, with dependency edges, cycles, errors, and reference-budget refusals.
 
 **Schema returns:**
 
-- `graph` (object) — Updated formula dependency graph including cycles and errors.
+- `graph` (object) — Updated bounded formula dependency graph including cycles, errors, and reference-budget refusals.
 
 #### `workbook.render`
 
@@ -6240,7 +6240,7 @@ Evaluate Excel table references including sections, column ranges/unions, space 
 
 #### `workbook.trace`
 
-Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references flagged.
+Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references and reference-budget refusals flagged.
 
 **Schema parameters:**
 
@@ -6250,11 +6250,11 @@ Return a formula precedent tree and bounded NDJSON trace for a target cell, with
 
 **Schema returns:**
 
-- `trace` (object) — Precedent tree plus bounded flat NDJSON trace.
+- `trace` (object) — Precedent tree plus bounded flat NDJSON trace; oversized sources are reported rather than walked.
 
 #### `workbook.verify`
 
-Return bounded QA issues for source-bound connections, sheets, formulas, tables, charts, and comments.
+Return bounded QA issues for source-bound connections, sheets, formulas (including reference-budget refusals), tables, charts, and comments.
 
 **Schema parameters:**
 
@@ -6262,7 +6262,7 @@ Return bounded QA issues for source-bound connections, sheets, formulas, tables,
 
 **Schema returns:**
 
-- `report` (object) — Workbook formula/structure/drawing/rule QA result.
+- `report` (object) — Workbook formula/structure/drawing/rule QA result, including reference-budget refusals.
 
 #### `workbook.windows`
 

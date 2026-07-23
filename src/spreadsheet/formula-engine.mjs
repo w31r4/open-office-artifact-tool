@@ -47,6 +47,65 @@ import {
 } from "./structured-references.mjs";
 import { normalizeKinds } from "../shared/inspection.mjs";
 
+// This is both a calculation and a dependency-graph budget. Every range is
+// counted before materializing cells, so a formula from an untrusted workbook
+// cannot turn a harmless-looking A1/defined/structured reference into an
+// unbounded allocation or graph walk.
+const FORMULA_VECTOR_MAX_CELLS = 10_000;
+const FORMULA_REFERENCE_TOTAL_MAX_CELLS = 20_000;
+
+class FormulaReferenceBudgetError extends Error {
+  constructor({ ref, requestedCells, usedCells = 0 }) {
+    const totalCells = usedCells + requestedCells;
+    super(`Formula reference ${ref || "range"} needs ${requestedCells.toLocaleString("en-US")} source cells (${totalCells.toLocaleString("en-US")} across this formula); the bounded evaluator allows at most ${FORMULA_VECTOR_MAX_CELLS.toLocaleString("en-US")} per source and ${FORMULA_REFERENCE_TOTAL_MAX_CELLS.toLocaleString("en-US")} per formula.`);
+    this.name = "FormulaReferenceBudgetError";
+    this.code = "formula_reference_budget_exceeded";
+    this.ref = ref;
+    this.requestedCells = requestedCells;
+    this.usedCells = usedCells;
+    this.totalCells = totalCells;
+    this.maximumReferenceCells = FORMULA_VECTOR_MAX_CELLS;
+    this.maximumFormulaCells = FORMULA_REFERENCE_TOTAL_MAX_CELLS;
+  }
+}
+
+function formulaReferenceBudgetDiagnostic(error) {
+  if (error instanceof FormulaReferenceBudgetError) {
+    return {
+      type: "referenceBudgetExceeded",
+      ref: error.ref,
+      requestedCells: error.requestedCells,
+      usedCells: error.usedCells,
+      totalCells: error.totalCells,
+      maximumReferenceCells: error.maximumReferenceCells,
+      maximumFormulaCells: error.maximumFormulaCells,
+    };
+  }
+  if (error?.type !== "referenceBudgetExceeded") return undefined;
+  return {
+    type: "referenceBudgetExceeded",
+    ref: error.ref,
+    requestedCells: error.requestedCells,
+    usedCells: error.usedCells,
+    totalCells: error.totalCells,
+    maximumReferenceCells: error.maximumReferenceCells,
+    maximumFormulaCells: error.maximumFormulaCells,
+  };
+}
+
+function createFormulaReferenceBudget() {
+  return { usedCells: 0 };
+}
+
+function consumeFormulaReferenceBudget(context, ref, requestedCells) {
+  const cells = Number(requestedCells);
+  const budget = context?.formulaReferenceBudget;
+  const usedCells = Number.isSafeInteger(budget?.usedCells) && budget.usedCells >= 0 ? budget.usedCells : 0;
+  if (!Number.isSafeInteger(cells) || cells < 0 || cells > FORMULA_VECTOR_MAX_CELLS || usedCells + cells > FORMULA_REFERENCE_TOTAL_MAX_CELLS)
+    throw new FormulaReferenceBudgetError({ ref, requestedCells: cells, usedCells });
+  if (budget) budget.usedCells = usedCells + cells;
+}
+
 function parseWorkbookReference(workbook, reference) {
   const raw = String(reference || "").trim();
   const bang = raw.lastIndexOf("!");
@@ -272,16 +331,39 @@ function scanA1ReferenceIntersections(formula = "") {
   return groups;
 }
 
+function formulaStringLiteralRanges(text = "") {
+  const ranges = [];
+  let start;
+  for (let index = 0; index < text.length; index++) {
+    if (text[index] !== '"') continue;
+    if (start == null) {
+      start = index;
+      continue;
+    }
+    if (text[index + 1] === '"') {
+      index += 1;
+      continue;
+    }
+    ranges.push([start, index + 1]);
+    start = undefined;
+  }
+  return ranges;
+}
+
 function formulaReferences(formula, sheet, formulaAddress) {
   const raw = String(formula || "");
   const refs = [];
   const consumed = [];
+  const stringLiterals = formulaStringLiteralRanges(raw);
+  const inStringLiteral = (index) => stringLiterals.some(([start, end]) => index >= start && index < end);
+  const budgetContext = { formulaReferenceBudget: createFormulaReferenceBudget() };
   const intersectionGroups = scanStructuredReferenceIntersections(raw);
   const appendStructuredReferences = (structured, refText) => {
     if (!structured || structured.missing || structured.empty || structured.error) return;
     const start = parseCellAddress(structured.start);
     const end = parseCellAddress(structured.end);
     const cols = structuredRangeGeometry(structured).columns;
+    consumeFormulaReferenceBudget(budgetContext, refText, (Math.abs(end.row - start.row) + 1) * cols.length);
     for (let row = Math.min(start.row, end.row); row <= Math.max(start.row, end.row); row++) {
       for (const col of cols) {
         refs.push({ sheetName: structured.sheetName, address: makeCellAddress(row, col), structuredRef: refText, tableName: structured.tableName, columnName: structured.columnName, columnNames: structured.columnNames });
@@ -289,14 +371,17 @@ function formulaReferences(formula, sheet, formulaAddress) {
     }
   };
   for (const group of intersectionGroups) {
+    if (inStringLiteral(group.start)) continue;
     consumed.push([group.start, group.end]);
     appendStructuredReferences(formulaStructuredRefIntersection(sheet, group.text, { formulaAddress }), group.text);
   }
   for (const group of scanA1ReferenceIntersections(raw)) {
+    if (inStringLiteral(group.start)) continue;
     consumed.push([group.start, group.end]);
     appendStructuredReferences(formulaA1RefIntersection(sheet, group.text), group.text);
   }
   for (const match of scanStructuredReferences(raw)) {
+    if (inStringLiteral(match.start)) continue;
     if (intersectionGroups.some((group) => match.start >= group.start && match.end <= group.end)) continue;
     consumed.push([match.start, match.end]);
     const structured = formulaStructuredRefRange(sheet, match.text, { formulaAddress });
@@ -304,11 +389,13 @@ function formulaReferences(formula, sheet, formulaAddress) {
   }
   const rangeRegex = /(?:(?:'([^']+)'|([A-Za-z_][A-Za-z0-9_ ]*))!)?(\$?[A-Za-z]+\$?\d+)\s*:\s*(\$?[A-Za-z]+\$?\d+)/g;
   for (const match of raw.matchAll(rangeRegex)) {
+    if (inStringLiteral(match.index)) continue;
     if (consumed.some(([start, end]) => match.index >= start && match.index < end)) continue;
     consumed.push([match.index, match.index + match[0].length]);
     const sheetName = match[1] || match[2] || undefined;
     const start = parseCellAddress(match[3].replaceAll("$", ""));
     const end = parseCellAddress(match[4].replaceAll("$", ""));
+    consumeFormulaReferenceBudget(budgetContext, match[0], (Math.abs(end.row - start.row) + 1) * (Math.abs(end.col - start.col) + 1));
     for (let row = Math.min(start.row, end.row); row <= Math.max(start.row, end.row); row++) {
       for (let col = Math.min(start.col, end.col); col <= Math.max(start.col, end.col); col++) {
         refs.push({ sheetName, address: makeCellAddress(row, col) });
@@ -317,18 +404,22 @@ function formulaReferences(formula, sheet, formulaAddress) {
   }
   const cellRegex = /(?:(?:'([^']+)'|([A-Za-z_][A-Za-z0-9_ ]*))!)?(\$?[A-Za-z]+\$?\d+)/g;
   for (const match of raw.matchAll(cellRegex)) {
+    if (inStringLiteral(match.index)) continue;
     if (consumed.some(([start, end]) => match.index >= start && match.index < end)) continue;
+    consumeFormulaReferenceBudget(budgetContext, match[0], 1);
     refs.push({ sheetName: match[1] || match[2] || undefined, address: match[3].replaceAll("$", "").toUpperCase() });
   }
   for (const definedName of sheet?.workbook?.definedNames.items || []) {
     const escaped = definedName.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const re = new RegExp(`\\b${escaped}\\b`, "g");
     for (const match of raw.matchAll(re)) {
+      if (inStringLiteral(match.index)) continue;
       if (consumed.some(([start, end]) => match.index >= start && match.index < end)) continue;
       const resolved = formulaDefinedNameRange(sheet, definedName.name);
       if (!resolved || resolved.missing) continue;
       const start = parseCellAddress(resolved.start);
       const end = parseCellAddress(resolved.end);
+      consumeFormulaReferenceBudget(budgetContext, definedName.name, (Math.abs(end.row - start.row) + 1) * (Math.abs(end.col - start.col) + 1));
       for (let row = Math.min(start.row, end.row); row <= Math.max(start.row, end.row); row++) {
         for (let col = Math.min(start.col, end.col); col <= Math.max(start.col, end.col); col++) refs.push({ sheetName: resolved.sheetName, address: makeCellAddress(row, col), definedName: definedName.name });
       }
@@ -395,7 +486,24 @@ function buildWorkbookFormulaGraph(workbook) {
 
   const edges = [];
   for (const node of nodes) {
-    for (const ref of formulaReferences(node.formula, node.sheetObject, node.address)) {
+    let references;
+    try {
+      references = formulaReferences(node.formula, node.sheetObject, node.address);
+    } catch (error) {
+      const diagnostic = formulaReferenceBudgetDiagnostic(error);
+      if (diagnostic) {
+        errors.push({
+          kind: "formulaGraphError",
+          from: node.key,
+          sheet: node.sheet,
+          address: node.address,
+          ...diagnostic,
+        });
+        continue;
+      }
+      throw error;
+    }
+    for (const ref of references) {
       const sheetName = ref.sheetName || node.sheet;
       const targetSheet = workbook.worksheets.getItem(sheetName);
       const targetAddress = String(ref.address || "").replaceAll("$", "").toUpperCase();
@@ -512,7 +620,9 @@ function formulaRefParts(refText = "") {
   return { sheetName: match[1] || match[2] || undefined, start: match[3].replaceAll("$", "").toUpperCase(), end: (match[4] || match[3]).replaceAll("$", "").toUpperCase() };
 }
 
-function formulaRangeMatrix(sheet, refText, context = {}) {
+function formulaRangeMatrix(sheet, refText, context = {}, { skipBudget = false } = {}) {
+  const referenceCells = formulaReferenceExpressionCellCount(sheet, refText, context);
+  if (!skipBudget && referenceCells != null) consumeFormulaReferenceBudget(context, refText, referenceCells);
   const structured = formulaStructuredRefIntersection(sheet, refText, context) || formulaA1RefIntersection(sheet, refText) || formulaStructuredRefRange(sheet, refText, context);
   if (structured) {
     if (structured.error) return [[structured.error]];
@@ -544,7 +654,7 @@ function formulaRangeMatrix(sheet, refText, context = {}) {
   const defined = formulaDefinedNameRange(sheet, refText);
   if (defined) {
     if (defined.missing) return [["#REF!"]];
-    return formulaRangeMatrix(sheet, `${defined.sheetName ? `${defined.sheetName}!` : ""}${defined.start}${defined.end && defined.end !== defined.start ? `:${defined.end}` : ""}`, context);
+    return formulaRangeMatrix(sheet, `${defined.sheetName ? `${defined.sheetName}!` : ""}${defined.start}${defined.end && defined.end !== defined.start ? `:${defined.end}` : ""}`, context, { skipBudget: true });
   }
   const ref = formulaRefParts(refText);
   if (!ref) return undefined;
@@ -732,8 +842,6 @@ function formulaApplyUnarySign(value, sign) {
   return sign === "-" ? -number : number;
 }
 
-const FORMULA_VECTOR_MAX_CELLS = 10_000;
-
 function formulaMatrixGeometry(matrix) {
   if (!Array.isArray(matrix)) return undefined;
   if (matrix.length === 0) return { rows: 0, cols: 0, cells: 0 };
@@ -744,9 +852,15 @@ function formulaMatrixGeometry(matrix) {
   return { rows, cols, cells: rows * cols };
 }
 
+function formulaMatrixWithinBudget(rows, cols) {
+  if (!Number.isSafeInteger(rows) || !Number.isSafeInteger(cols) || rows < 0 || cols < 0) return false;
+  const cells = rows * cols;
+  return Number.isSafeInteger(cells) && cells <= FORMULA_VECTOR_MAX_CELLS;
+}
+
 function formulaBoundedVectorMatrix(matrix) {
   const geometry = formulaMatrixGeometry(matrix);
-  if (!geometry || geometry.cells > FORMULA_VECTOR_MAX_CELLS) return "#VALUE!";
+  if (!geometry || !formulaMatrixWithinBudget(geometry.rows, geometry.cols)) return "#VALUE!";
   return matrix;
 }
 
@@ -960,6 +1074,14 @@ function writeFormulaSpill(sheet, anchorAddress, matrixValue, parentKey) {
   const rows = matrix.length;
   const cols = Math.max(0, ...matrix.map((row) => row.length));
   if (!rows || !cols) return { value: null, range: anchorAddress, values: matrix };
+  const anchorCell = sheet.store.get(anchorAddress);
+  if (!formulaMatrixWithinBudget(rows, cols)) {
+    anchorCell.value = "#VALUE!";
+    delete anchorCell.spillRange;
+    delete anchorCell.spillValues;
+    delete anchorCell.spillError;
+    return { value: "#VALUE!", range: anchorAddress, values: [] };
+  }
   const anchor = parseCellAddress(anchorAddress);
   const spillRange = rangeToAddress({ top: anchor.row, left: anchor.col, bottom: anchor.row + rows - 1, right: anchor.col + cols - 1 });
   const collisions = [];
@@ -971,7 +1093,6 @@ function writeFormulaSpill(sheet, anchorAddress, matrixValue, parentKey) {
       if (!cell.spillParent && (cell.formula || cell.value != null)) collisions.push(address);
     }
   }
-  const anchorCell = sheet.store.get(anchorAddress);
   if (collisions.length) {
     anchorCell.value = "#SPILL!";
     anchorCell.spillRange = spillRange;
@@ -996,7 +1117,19 @@ function writeFormulaSpill(sheet, anchorAddress, matrixValue, parentKey) {
 }
 
 function evaluateFormulaCondition(sheet, expr, context = {}) {
-  return formulaTruthy(evaluateFormulaExpression(sheet, String(expr || "").trim(), context));
+  const ownsBudget = !context.formulaReferenceBudget;
+  const evaluationContext = ownsBudget ? { ...context, formulaReferenceBudget: createFormulaReferenceBudget() } : context;
+  try {
+    return formulaTruthy(evaluateFormulaExpression(sheet, String(expr || "").trim(), evaluationContext));
+  } catch (error) {
+    // Conditional-format predicates are boolean-only and have no formula cell
+    // in which to surface #VALUE!, so an independently evaluated predicate
+    // fails closed. Inside a formula, preserve the error for IF/IFERROR and
+    // other normal Excel error semantics instead of silently treating it as
+    // FALSE.
+    if (error instanceof FormulaReferenceBudgetError && ownsBudget) return false;
+    throw error;
+  }
 }
 
 function aggregateFormulaValues(values, fnName) {
@@ -1490,6 +1623,24 @@ function uniqueFormulaRows(matrix) {
 }
 
 function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
+  const budget = context.formulaReferenceBudget;
+  const usedCells = budget?.usedCells;
+  try {
+    return evaluateFormulaFunctionProfile(sheet, fnName, args, context);
+  } catch (error) {
+    if (error instanceof FormulaReferenceBudgetError && fnName === "IFERROR") {
+      if (budget) budget.usedCells = Number.isSafeInteger(usedCells) && usedCells >= 0 ? usedCells : 0;
+      return formulaScalar(sheet, args[1], context) ?? "";
+    }
+    // Financial functions have long exposed #NUM! for vectors outside their
+    // bounded convergence profile. Keep that documented error contract while
+    // the common range guard prevents materializing the source vector.
+    if (error instanceof FormulaReferenceBudgetError && ["NPV", "MIRR", "XNPV", "IRR", "XIRR"].includes(fnName)) return "#NUM!";
+    throw error;
+  }
+}
+
+function evaluateFormulaFunctionProfile(sheet, fnName, args, context = {}) {
   const values = (parts = args) => parts.flatMap((part) => formulaReferenceValues(sheet, part, context));
   const dateSystem = excelFormulaDateSystem(sheet);
   const financialHelpers = {
@@ -1754,6 +1905,7 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
       const cols = Math.max(1, Math.floor(formulaNumber(scalar(1, 1))) || 1);
       const start = formulaNumber(scalar(2, 1));
       const step = formulaNumber(scalar(3, 1));
+      if (!formulaMatrixWithinBudget(rows, cols)) return "#VALUE!";
       return Array.from({ length: rows }, (_, row) => Array.from({ length: cols }, (_, col) => start + (row * cols + col) * step));
     }
     case "TRANSPOSE": {
@@ -1801,12 +1953,15 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
       const width = Math.max(0, ...matrix.map((row) => row.length));
       const indexes = args.slice(1).map((_, index) => Math.trunc(formulaNumber(scalar(index + 1, 0)))).map((value) => value > 0 ? value - 1 : width + value);
       if (!matrix.length || !indexes.length || indexes.some((index) => index < 0 || index >= width)) return "#VALUE!";
+      if (!formulaMatrixWithinBudget(matrix.length, indexes.length)) return "#VALUE!";
       return matrix.map((row) => indexes.map((index) => row[index] ?? null));
     }
     case "CHOOSEROWS": {
       const matrix = normalizeFormulaMatrix(formulaRangeMatrix(sheet, args[0], context) || []);
       const indexes = args.slice(1).map((_, index) => Math.trunc(formulaNumber(scalar(index + 1, 0)))).map((value) => value > 0 ? value - 1 : matrix.length + value);
       if (!matrix.length || !indexes.length || indexes.some((index) => index < 0 || index >= matrix.length)) return "#VALUE!";
+      const width = Math.max(0, ...matrix.map((row) => row.length));
+      if (!formulaMatrixWithinBudget(indexes.length, width)) return "#VALUE!";
       return indexes.map((index) => [...matrix[index]]);
     }
     case "TOCOL":
@@ -1843,12 +1998,14 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
       const pad = String(args[2] ?? "").trim() === "" ? "#N/A" : scalar(2, "#N/A");
       if (fnName === "WRAPROWS") {
         const rows = Math.ceil(vector.length / count);
+        if (!formulaMatrixWithinBudget(rows, count)) return "#VALUE!";
         return Array.from({ length: rows }, (_, row) => Array.from({ length: count }, (_, col) => {
           const index = row * count + col;
           return index < vector.length ? vector[index] : pad;
         }));
       }
       const columns = Math.ceil(vector.length / count);
+      if (!formulaMatrixWithinBudget(count, columns)) return "#VALUE!";
       return Array.from({ length: count }, (_, row) => Array.from({ length: columns }, (_, col) => {
         const index = col * count + row;
         return index < vector.length ? vector[index] : pad;
@@ -1861,12 +2018,16 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
       const normalizedValue = (value) => value == null || value === "" ? 0 : value;
       if (fnName === "HSTACK") {
         const height = Math.max(0, ...matrices.map((matrix) => matrix.length));
+        const width = matrices.reduce((total, matrix) => total + Math.max(0, ...matrix.map((values) => values.length)), 0);
+        if (!formulaMatrixWithinBudget(height, width)) return "#VALUE!";
         return Array.from({ length: height }, (_, row) => matrices.flatMap((matrix) => {
-          const width = Math.max(0, ...matrix.map((values) => values.length));
-          return Array.from({ length: width }, (_, col) => row < matrix.length ? normalizedValue(matrix[row]?.[col]) : "#N/A");
+          const matrixWidth = Math.max(0, ...matrix.map((values) => values.length));
+          return Array.from({ length: matrixWidth }, (_, col) => row < matrix.length ? normalizedValue(matrix[row]?.[col]) : "#N/A");
         }));
       }
       const width = Math.max(0, ...matrices.flatMap((matrix) => matrix.map((row) => row.length)));
+      const height = matrices.reduce((total, matrix) => total + matrix.length, 0);
+      if (!formulaMatrixWithinBudget(height, width)) return "#VALUE!";
       return matrices.flatMap((matrix) => matrix.map((row) => Array.from({ length: width }, (_, col) => col < row.length ? normalizedValue(row[col]) : "#N/A")));
     }
     case "EXPAND": {
@@ -1878,6 +2039,7 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
       const columns = String(args[2] ?? "").trim() === "" ? width : Number(scalar(2, width));
       if (!Number.isInteger(rows) || !Number.isInteger(columns)) return "#VALUE!";
       if (rows < height || columns < width) return "#VALUE!";
+      if (!formulaMatrixWithinBudget(rows, columns)) return "#VALUE!";
       const pad = String(args[3] ?? "").trim() === "" ? "#N/A" : scalar(3, "#N/A");
       return Array.from({ length: rows }, (_, row) => Array.from({ length: columns }, (_, col) => {
         if (row >= height || col >= width) return pad;
@@ -2063,8 +2225,17 @@ function evaluateFormula(sheet, formula, address, context = {}) {
   // Excel persists post-2010 worksheet functions with compatibility prefixes.
   // They are package syntax, not part of the agent-facing formula language.
   const expr = raw.slice(1).trim().replace(/_xlfn\.(?:_xlws\.)?/gi, "");
-  const evaluationContext = address && !context.formulaAddress ? { ...context, formulaAddress: address } : context;
-  return evaluateFormulaExpression(sheet, expr, evaluationContext);
+  const evaluationContext = {
+    ...context,
+    ...(address && !context.formulaAddress ? { formulaAddress: address } : {}),
+    formulaReferenceBudget: context.formulaReferenceBudget || createFormulaReferenceBudget(),
+  };
+  try {
+    return evaluateFormulaExpression(sheet, expr, evaluationContext);
+  } catch (error) {
+    if (error instanceof FormulaReferenceBudgetError) return "#VALUE!";
+    throw error;
+  }
 }
 
 export {
@@ -2076,12 +2247,14 @@ export {
   formulaErrorCode,
   formulaGraphRecords,
   formulaRefParts,
+  formulaReferenceBudgetDiagnostic,
   formulaReferences,
   formulaScalar,
   formulaText,
   hydrateDeclaredDynamicArraySpills,
   isFormulaMatrix,
   markDeclaredDynamicArrayChildren,
+  parseWorkbookReference,
   publicFormulaNode,
   writeFormulaSpill,
 };

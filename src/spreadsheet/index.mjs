@@ -45,12 +45,14 @@ import {
   formulaErrorCode,
   formulaGraphRecords,
   formulaRefParts,
+  formulaReferenceBudgetDiagnostic,
   formulaReferences,
   formulaScalar,
   formulaText,
   hydrateDeclaredDynamicArraySpills,
   isFormulaMatrix,
   markDeclaredDynamicArrayChildren,
+  parseWorkbookReference,
   publicFormulaNode,
   writeFormulaSpill,
 } from "./formula-engine.mjs";
@@ -1594,6 +1596,9 @@ export class Workbook {
       if (error.type === "missingSheet") {
         const { type: _type, ...details } = error;
         issues.push(verificationIssue("workbook", "missingFormulaSheet", `Formula at ${error.from} references missing worksheet ${error.sheet}.`, details));
+      } else if (error.type === "referenceBudgetExceeded") {
+        const { type: _type, ...details } = error;
+        issues.push(verificationIssue("workbook", "formulaReferenceBudgetExceeded", `Formula at ${error.from} exceeds the bounded reference budget before dependency expansion.`, details));
       }
     }
     return verificationResult("workbook", issues, options);
@@ -1619,7 +1624,15 @@ export class Workbook {
       };
       if (!cell.formula || depth >= maxDepth || seen.has(key)) return node;
       seen.add(key);
-      for (const ref of formulaReferences(cell.formula, sheet, address)) {
+      let references;
+      try {
+        references = formulaReferences(cell.formula, sheet, address);
+      } catch (error) {
+        node.referenceBudget = formulaReferenceBudgetDiagnostic(error);
+        if (!node.referenceBudget) throw error;
+        references = [];
+      }
+      for (const ref of references) {
         const targetSheet = ref.sheetName ? this.worksheets.getItem(ref.sheetName) : sheet;
         if (!targetSheet) {
           node.precedents.push({ kind: "trace", sheet: ref.sheetName, address: ref.address, missing: true, depth: depth + 1, precedents: [] });
@@ -1633,7 +1646,7 @@ export class Workbook {
     const tree = build(root.sheet, root.address, 0);
     const flat = [];
     const visit = (node) => {
-      flat.push({ kind: "trace", sheet: node.sheet, address: node.address, value: node.value, formula: node.formula, depth: node.depth, missing: node.missing, circular: node.circular, precedents: node.precedents.map((p) => `${p.sheet}!${p.address}`) });
+      flat.push({ kind: "trace", sheet: node.sheet, address: node.address, value: node.value, formula: node.formula, depth: node.depth, missing: node.missing, circular: node.circular, referenceBudget: node.referenceBudget, precedents: node.precedents.map((p) => `${p.sheet}!${p.address}`) });
       node.precedents.forEach(visit);
     };
     visit(tree);
@@ -2018,6 +2031,17 @@ export class Worksheet {
       if (!cell.formula) continue;
       if (coord.row < bounds.top || coord.row > bounds.bottom || coord.col < bounds.left || coord.col > bounds.right) continue;
       const graphNode = options.graph?.nodes?.find((node) => node.sheet === this.name && node.address === address);
+      let referenceBudget = formulaReferenceBudgetDiagnostic(options.graph?.errors?.find((error) => error.type === "referenceBudgetExceeded" && error.sheet === this.name && error.address === address));
+      let precedents = graphNode?.precedents?.map((ref) => ref.key);
+      if (!precedents && !referenceBudget) {
+        try {
+          precedents = formulaReferences(cell.formula, this, address).map((ref) => formulaCellKey(ref.sheetName || this.name, ref.address));
+        } catch (error) {
+          referenceBudget = formulaReferenceBudgetDiagnostic(error);
+          if (!referenceBudget) throw error;
+          precedents = [];
+        }
+      }
       records.push({
         kind: "formula",
         sheet: this.name,
@@ -2032,8 +2056,9 @@ export class Worksheet {
         spillRange: cell.spillRange,
         spillValues: cell.spillValues,
         spillError: cell.spillError,
-        precedents: graphNode?.precedents?.map((ref) => ref.key) || formulaReferences(cell.formula, this, address).map((ref) => formulaCellKey(ref.sheetName || this.name, ref.address)),
+        precedents: precedents || [],
         dependents: graphNode?.dependents || [],
+        referenceBudget: referenceBudget || undefined,
         error: formulaErrorCode(cell.value) || undefined,
         circular: graphNode?.circular || undefined,
       });
