@@ -316,11 +316,19 @@ async function assertPublicOfficeRoundTrip(templateId, kind, sourcePath) {
   }
   if (kind === "spreadsheet") {
     const imported = await SpreadsheetFile.importXlsx(source);
-    assertSpreadsheetTemplateCalculation(templateId, imported, sourcePath);
+    // Formula evaluation changes cached values in the in-memory workbook. It
+    // is an explicit model mutation, so prove the source-byte no-op before
+    // exercising that independent calculation oracle.
     const exported = await SpreadsheetFile.exportXlsx(imported, { recalculate: false });
     const reimported = await SpreadsheetFile.importXlsx(exported);
     assert.equal(reimported.worksheets.items.length, imported.worksheets.items.length, `Spreadsheet facade round trip: ${sourcePath}`);
     assertSpreadsheetRoundTripFormulaTopology(templateId, imported, reimported, sourcePath);
+    assert.equal(
+      Buffer.from(exported.bytes).equals(Buffer.from(source.bytes)),
+      true,
+      `Unedited XLSX facade round trip must retain exact source bytes: ${sourcePath}`,
+    );
+    assertSpreadsheetTemplateCalculation(templateId, imported, sourcePath);
     return exported;
   }
   assert.fail(`Unknown retained template kind: ${kind}`);

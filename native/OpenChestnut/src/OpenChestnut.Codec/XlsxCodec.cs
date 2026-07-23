@@ -6,6 +6,7 @@ using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
 using DocumentFormat.OpenXml.Validation;
+using Google.Protobuf;
 using OpenOffice.Artifact.Wire.V1;
 
 namespace OpenChestnut.Codec;
@@ -88,8 +89,7 @@ internal static class XlsxCodec
         }
 
         var bytes = stream.ToArray();
-        if ((ulong)bytes.LongLength > limits.MaxInputBytes)
-            throw new CodecException("output_budget_exceeded", $"Generated XLSX has {bytes.LongLength} bytes and exceeds max_input_bytes ({limits.MaxInputBytes}).");
+        ValidateOutputBudget(bytes, limits);
         ValidateOffice2021(bytes);
         return new XlsxExportResult(bytes, diagnostics);
     }
@@ -205,6 +205,12 @@ internal static class XlsxCodec
     private static XlsxExportResult ExportPreservingSource(ArtifactEnvelope envelope, EffectiveCodecLimits limits, int opaqueCount)
     {
         var sourceBytes = PackageGuards.ValidateSourcePackage(envelope.OpaqueOpc, envelope.Source, limits, OpcPackageProfile.Xlsx);
+        if (SourceBoundWorkbookMatchesValidatedSource(envelope, sourceBytes, limits))
+        {
+            ValidateOutputBudget(sourceBytes, limits);
+            ValidateOffice2021(sourceBytes);
+            return new XlsxExportResult(sourceBytes, SourcePreservationDiagnostics(opaqueCount));
+        }
         var imageAssets = new XlsxImageAssetCatalog(envelope.Assets, limits);
         var ownsTheme = false;
         var threadedRelationshipsDirty = false;
@@ -286,8 +292,7 @@ internal static class XlsxCodec
         }
 
         var bytes = stream.ToArray();
-        if ((ulong)bytes.LongLength > limits.MaxInputBytes)
-            throw new CodecException("output_budget_exceeded", $"Generated XLSX has {bytes.LongLength} bytes and exceeds max_input_bytes ({limits.MaxInputBytes}).");
+        ValidateOutputBudget(bytes, limits);
         ValidateOffice2021(bytes);
         var outputOpaque = PackageGuards.ValidateAndCollectOpaque(bytes, limits, OpcPackageProfile.Xlsx, includeSourcePackage: false);
         PackageGuards.AssertOpaqueGraphMatches(
@@ -300,10 +305,39 @@ internal static class XlsxCodec
             ignorePart: ownsTheme || dirtyModeledPartPaths.Count > 0
                 ? item => (ownsTheme && themePartPath is not null && item.Path.Equals(themePartPath, StringComparison.OrdinalIgnoreCase)) || dirtyModeledPartPaths.Contains(item.Path)
                 : null);
-        return new XlsxExportResult(bytes,
-        [
-            CodecProtocol.Warning("opaque_content_preserved", $"Preserved {opaqueCount} unsupported OPC parts or relationships from the validated source package while updating modeled workbook content."),
-        ]);
+        return new XlsxExportResult(bytes, SourcePreservationDiagnostics(opaqueCount));
+    }
+
+    // The JavaScript model deliberately has no package writer. Re-import the
+    // already hash-validated source and compare its complete modeled payload
+    // plus owned assets before opening an editable SDK package. This removes
+    // ZIP/XML serializer churn only for a genuine no-op; every semantic edit
+    // remains on the existing source-bound patch path.
+    private static bool SourceBoundWorkbookMatchesValidatedSource(ArtifactEnvelope requested, byte[] sourceBytes, EffectiveCodecLimits limits) =>
+        SourceBoundWorkbookFingerprint(requested).SequenceEqual(
+            SourceBoundWorkbookFingerprint(Import(sourceBytes, limits).Artifact));
+
+    private static byte[] SourceBoundWorkbookFingerprint(ArtifactEnvelope envelope)
+    {
+        var projection = new ArtifactEnvelope
+        {
+            ProtocolVersion = envelope.ProtocolVersion,
+            Family = envelope.Family,
+            Workbook = envelope.Workbook.Clone(),
+        };
+        projection.Assets.Add(envelope.Assets.Select(asset => asset.Clone()));
+        return SHA256.HashData(projection.ToByteArray());
+    }
+
+    private static IReadOnlyList<Diagnostic> SourcePreservationDiagnostics(int opaqueCount) =>
+    [
+        CodecProtocol.Warning("opaque_content_preserved", $"Preserved {opaqueCount} unsupported OPC parts or relationships from the validated source package while updating modeled workbook content."),
+    ];
+
+    private static void ValidateOutputBudget(byte[] bytes, EffectiveCodecLimits limits)
+    {
+        if ((ulong)bytes.LongLength > limits.MaxInputBytes)
+            throw new CodecException("output_budget_exceeded", $"Generated XLSX has {bytes.LongLength} bytes and exceeds max_input_bytes ({limits.MaxInputBytes}).");
     }
 
     private static void PatchWorksheet(WorksheetPart worksheetPart, WorksheetArtifact source, IReadOnlyList<string> sharedStrings, XlsxCellStyleCodec styles, XlsxDynamicArrayCodec dynamicArrays)

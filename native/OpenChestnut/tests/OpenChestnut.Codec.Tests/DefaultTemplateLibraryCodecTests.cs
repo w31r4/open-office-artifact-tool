@@ -245,10 +245,28 @@ public sealed class DefaultTemplateLibraryCodecTests
     [InlineData("artifact-template-project-tracker")]
     [InlineData("artifact-template-sales-pipeline")]
     [InlineData("artifact-template-three-statement-forecast")]
+    public void RetainedWorkbookTemplateNoOpExportPreservesExactSourcePackage(string templateId)
+    {
+        var limits = EffectiveCodecLimits.From(null);
+        var source = ReadReference(templateId, ".xlsx");
+        var result = XlsxCodec.Import(source, limits);
+
+        var exported = XlsxCodec.Export(result.Artifact, limits);
+        Assert.Equal(source, exported.File);
+    }
+
+    [Theory]
+    [InlineData("artifact-template-analytics-dashboard")]
+    [InlineData("artifact-template-financial-budget")]
+    [InlineData("artifact-template-operating-calendar")]
+    [InlineData("artifact-template-project-tracker")]
+    [InlineData("artifact-template-sales-pipeline")]
+    [InlineData("artifact-template-three-statement-forecast")]
     public void RetainedWorkbookTemplateSupportsOneBoundedTextCellEdit(string templateId)
     {
         var limits = EffectiveCodecLimits.From(null);
-        var result = XlsxCodec.Import(ReadReference(templateId, ".xlsx"), limits);
+        var source = ReadReference(templateId, ".xlsx");
+        var result = XlsxCodec.Import(source, limits);
         var cell = result.Artifact.Workbook.Worksheets
             .SelectMany(sheet => sheet.Cells)
             .FirstOrDefault(candidate =>
@@ -260,6 +278,7 @@ public sealed class DefaultTemplateLibraryCodecTests
         cell!.StringValue += marker;
 
         var exported = XlsxCodec.Export(result.Artifact, limits);
+        Assert.NotEqual(source, exported.File);
         var reimported = XlsxCodec.Import(exported.File, limits);
         Assert.Contains(reimported.Artifact.Workbook.Worksheets.SelectMany(sheet => sheet.Cells), candidate =>
             candidate.ValueCase == CellArtifact.ValueOneofCase.StringValue &&

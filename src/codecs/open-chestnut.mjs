@@ -148,6 +148,21 @@ function wireWorksheetMetadata(sheet, slot) {
   };
 }
 
+function wireWorksheetFreezePane(sheet, slot) {
+  const rows = sheet.freezePanes?.rows || 0;
+  const columns = sheet.freezePanes?.columns || 0;
+  // An omitted native pane is observably different from a zero-valued pane.
+  // Keep omission for an untouched imported sheet, while a source-bound pane
+  // can still be cleared by explicitly sending the zero-valued replacement.
+  if (rows === 0 && columns === 0 && slot?.wire?.freezePane == null) return undefined;
+  return {
+    rows,
+    columns,
+    topLeftCell: sheet.freezePanes?.topLeftCell || "",
+    activePane: sheet.freezePanes?.activePane || "",
+  };
+}
+
 function workbookViewSnapshots(workbook) {
   return workbook.windows.items.map((window) => ({
     activeWorksheetId: window.getActiveWorksheet().id,
@@ -436,20 +451,38 @@ function wireCellStyle(style, address) {
     invalidCellStyle(address, `has invalid static formatting: ${cause.message}`, cause);
   }
   const font = normalized.font;
+  const fontInput = style?.font || {};
+  const fontField = (flat, nested = flat) => style?.[flat] != null || fontInput[nested] != null;
+  const hasFontColor = style?.fontColor != null || style?.color != null || fontInput.color != null;
+  const hasFont = [
+    fontField("bold"), fontField("italic"), fontField("underline"), fontField("strike"),
+    fontField("fontSize", "size"), fontField("fontFamily", "name"), hasFontColor,
+  ].some(Boolean);
   const fill = typeof normalized.fill === "string" ? { patternType: "solid", foreground: normalized.fill } : normalized.fill;
   const border = normalized.border;
   const uniformEdge = border?.style ? { style: border.style, color: border.color } : undefined;
-  const edge = (name) => wireBorderEdge(uniformEdge || border?.[name], address, name);
+  // The public shorthand `{ border: { style, color } }` means the outside
+  // perimeter. It must not silently create diagonal or interior borders when
+  // a source-bound workbook is exported again.
+  const edge = (name) => wireBorderEdge(
+    (name === "left" || name === "right" || name === "top" || name === "bottom" ? uniformEdge : undefined) || border?.[name],
+    address,
+    name,
+  );
   return {
-    font: {
-      bold: font.bold,
-      italic: font.italic,
-      underline: font.underline ? String(font.underline === true ? "single" : font.underline) : undefined,
-      strike: font.strike,
-      color: wireSpreadsheetColor(font.color, address, "font"),
-      sizePoints: font.size,
-      name: font.name,
-    },
+    // `CellStyleArtifact` is sparse. Preserve that field presence instead of
+    // converting a supplied color/bold flag into unrelated Aptos/11/false
+    // defaults, which would make an untouched imported differential style a
+    // semantic edit.
+    font: hasFont ? {
+      bold: fontField("bold") ? font.bold : undefined,
+      italic: fontField("italic") ? font.italic : undefined,
+      underline: fontField("underline") ? String(font.underline === true ? "single" : font.underline || "none") : undefined,
+      strike: fontField("strike") ? font.strike : undefined,
+      color: hasFontColor ? wireSpreadsheetColor(font.color, address, "font") : undefined,
+      sizePoints: fontField("fontSize", "size") ? font.size : undefined,
+      name: fontField("fontFamily", "name") ? font.name : undefined,
+    } : undefined,
     fill: fill ? {
       patternType: fill.patternType,
       foreground: wireSpreadsheetColor(fill.foreground, address, "fill foreground"),
@@ -1365,7 +1398,8 @@ function workbookEnvelope(workbook) {
   const views = wireWorkbookViews(workbook, state);
   const assets = new Map();
   const worksheets = workbook.worksheets.items.map((sheet) => {
-    const metadata = wireWorksheetMetadata(sheet, state?.worksheetSlots?.get(sheet.id));
+    const worksheetSlot = state?.worksheetSlots?.get(sheet.id);
+    const metadata = wireWorksheetMetadata(sheet, worksheetSlot);
     const cells = (() => {
       const dynamicSlots = state?.dynamicArraySlotsBySheet?.get(sheet.id) || new Map();
       const sourceBoundFormulaSlots = state?.sourceBoundFormulaSlotsBySheet?.get(sheet.id) || new Map();
@@ -1395,12 +1429,7 @@ function workbookEnvelope(workbook) {
       visibility: metadata.visibility,
       source: metadata.source,
       showGridLines: sheet.showGridLines !== false,
-      freezePane: {
-        rows: sheet.freezePanes?.rows || 0,
-        columns: sheet.freezePanes?.columns || 0,
-        topLeftCell: sheet.freezePanes?.topLeftCell || "",
-        activePane: sheet.freezePanes?.activePane || "",
-      },
+      freezePane: wireWorksheetFreezePane(sheet, worksheetSlot),
       columnDimensions: [...(sheet.columnDimensions || new Map())].map(([column, dimension]) => ({ column, width: dimension.width || 0, hidden: Boolean(dimension.hidden), bestFit: Boolean(dimension.bestFit) })),
       rowDimensions: [...(sheet.rowDimensions || new Map())].map(([row, dimension]) => ({ row, height: dimension.height || 0, hidden: Boolean(dimension.hidden) })),
       mergedRanges: [...(sheet.mergedRanges || [])],
