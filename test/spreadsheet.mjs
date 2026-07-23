@@ -1085,6 +1085,41 @@ const importedTemplateFormulaWorkbook = await SpreadsheetFile.importXlsx(templat
 assert.deepEqual(importedTemplateFormulaWorkbook.worksheets.getItem("Template formulas").getRange("B1:B5").formulas, templateFormulaSheet.getRange("B1:B5").formulas);
 assert.deepEqual(importedTemplateFormulaWorkbook.worksheets.getItem("Template formulas").getRange("C1:C6").formulas, templateFormulaSheet.getRange("C1:C6").formulas);
 
+const expressionFormulaWorkbook = Workbook.create();
+const expressionInputs = expressionFormulaWorkbook.worksheets.add("Inputs");
+const expressionTextInputs = expressionFormulaWorkbook.worksheets.add("Data & Targets");
+const expressionSheet = expressionFormulaWorkbook.worksheets.add("Expressions");
+expressionInputs.getRange("A1:A3").values = [[2], [3], ["North"]];
+expressionTextInputs.getRange("A1").values = [["North"]];
+expressionSheet.getRange("A1:A12").formulas = [
+  ["=SUM(Inputs!A1:A2)+1"],
+  ["=TEXT(DATE(2026,7,1)+1,\"yyyy-mm-dd\")"],
+  ["=IF(MAX(Inputs!A1:A2)^2=9,\"pass\",\"fail\")"],
+  ["=\"Source: \"&Inputs!A3"],
+  ["=2^3^2"],
+  ["=-2^2"],
+  ["=1E-7+1"],
+  ["=IFERROR(1/0,\"fallback\")"],
+  ["=SIN(1)+1"],
+  ["=Inputs!A1<=Inputs!A2"],
+  ["=Inputs!A1<>Inputs!A2"],
+  ["=\"A&B\"&'Data & Targets'!A1"],
+];
+assert.deepEqual(expressionSheet.getRange("A1:A6").values, [[6], ["2026-07-02"], ["pass"], ["Source: North"], [512], [4]]);
+assert.equal(expressionSheet.getRange("A7").values[0][0], 1.0000001);
+assert.deepEqual(expressionSheet.getRange("A8:A12").values, [["fallback"], ["#NAME?"], [true], [true], ["A&BNorth"]]);
+expressionSheet.getRange("B1").values = [[46205]];
+expressionSheet.getRange("B1").conditionalFormats.add("expression", {
+  formula: "AND(ISNUMBER(B1),B1=DATE(2026,7,1)+1)",
+  format: { fill: "#DCFCE7" },
+});
+const expressionStyles = expressionFormulaWorkbook.inspect({ kind: "computedStyle", sheetName: "Expressions", range: "B1" }).ndjson
+  .trim()
+  .split("\n")
+  .filter(Boolean)
+  .map((line) => JSON.parse(line));
+assert.deepEqual(expressionStyles.map((record) => [record.address, record.style.fill]), [["B1", "#DCFCE7"]]);
+
 const textPositionWorkbook = Workbook.create();
 const textPositionSheet = textPositionWorkbook.worksheets.add("Text position");
 textPositionSheet.getRange("A1:A5").values = [

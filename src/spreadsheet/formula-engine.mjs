@@ -573,8 +573,9 @@ function formulaReferenceValues(sheet, refText, context = {}) {
 
 const FORMULA_NUMERIC_LITERAL = /^-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
 
-function formulaScalar(sheet, expr, context = {}) {
+function formulaAtomicScalar(sheet, expr, context = {}) {
   const text = String(expr ?? "").trim();
+  if (text === "") return undefined;
   const quoted = formulaUnquote(text);
   if (quoted !== undefined) return quoted;
   const error = formulaErrorCode(text);
@@ -584,8 +585,188 @@ function formulaScalar(sheet, expr, context = {}) {
   if (/^FALSE$/i.test(text)) return false;
   const matrix = formulaRangeMatrix(sheet, text, context);
   if (matrix) return matrix[0]?.[0] ?? null;
-  if (/^[A-Z][A-Z0-9.]*\(/i.test(text)) return evaluateFormula(sheet, `=${text}`, undefined, context);
   return undefined;
+}
+
+function formulaScanTopLevel(text, visit) {
+  let depth = 0;
+  let bracketDepth = 0;
+  let inString = false;
+  let inSheetName = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (inString) {
+      if (character === '"') {
+        if (text[index + 1] === '"') index += 1;
+        else inString = false;
+      }
+      continue;
+    }
+    if (inSheetName) {
+      if (character === "'") {
+        if (text[index + 1] === "'") index += 1;
+        else inSheetName = false;
+      }
+      continue;
+    }
+    if (character === '"') { inString = true; continue; }
+    if (character === "'") { inSheetName = true; continue; }
+    if (character === "[") { bracketDepth += 1; continue; }
+    if (character === "]") { bracketDepth = Math.max(0, bracketDepth - 1); continue; }
+    if (bracketDepth > 0) continue;
+    if (character === "(") { depth += 1; continue; }
+    if (character === ")") { depth -= 1; continue; }
+    if (depth === 0) visit(index, character);
+  }
+}
+
+function formulaMatchingParenthesis(text, openIndex) {
+  if (text[openIndex] !== "(") return undefined;
+  let depth = 0;
+  let inString = false;
+  let inSheetName = false;
+  let bracketDepth = 0;
+  for (let index = openIndex; index < text.length; index += 1) {
+    const character = text[index];
+    if (inString) {
+      if (character === '"') {
+        if (text[index + 1] === '"') index += 1;
+        else inString = false;
+      }
+      continue;
+    }
+    if (inSheetName) {
+      if (character === "'") {
+        if (text[index + 1] === "'") index += 1;
+        else inSheetName = false;
+      }
+      continue;
+    }
+    if (character === '"') { inString = true; continue; }
+    if (character === "'") { inSheetName = true; continue; }
+    if (character === "[") { bracketDepth += 1; continue; }
+    if (character === "]") { bracketDepth = Math.max(0, bracketDepth - 1); continue; }
+    if (bracketDepth > 0) continue;
+    if (character === "(") depth += 1;
+    else if (character === ")") {
+      depth -= 1;
+      if (depth === 0) return index;
+      if (depth < 0) return undefined;
+    }
+  }
+  return undefined;
+}
+
+function formulaOuterParentheses(text) {
+  if (!text.startsWith("(") || !text.endsWith(")")) return undefined;
+  const closeIndex = formulaMatchingParenthesis(text, 0);
+  return closeIndex === text.length - 1 ? text.slice(1, -1).trim() : undefined;
+}
+
+function formulaTopLevelOperators(text, operators, { binarySigns = false } = {}) {
+  const candidates = [];
+  formulaScanTopLevel(text, (index, character) => {
+    const operator = operators.find((value) => text.startsWith(value, index));
+    if (!operator) return;
+    if (binarySigns && (operator === "+" || operator === "-")) {
+      let previousIndex = index - 1;
+      while (previousIndex >= 0 && /\s/.test(text[previousIndex])) previousIndex -= 1;
+      const previous = text[previousIndex];
+      const exponentSign = (previous === "e" || previous === "E") && /[0-9.]/.test(text[previousIndex - 1] || "");
+      if (previousIndex < 0 || "+-*/^&=<>(".includes(previous) || exponentSign) return;
+    }
+    candidates.push({ index, operator });
+  });
+  const nonOverlapping = [];
+  let consumedThrough = -1;
+  for (const candidate of candidates) {
+    if (candidate.index < consumedThrough) continue;
+    nonOverlapping.push(candidate);
+    consumedThrough = candidate.index + candidate.operator.length;
+  }
+  return nonOverlapping;
+}
+
+function formulaWholeFunctionCall(text) {
+  const match = /^([A-Z][A-Z0-9.]*)\(/i.exec(text);
+  if (!match) return undefined;
+  const openIndex = match[0].length - 1;
+  const closeIndex = formulaMatchingParenthesis(text, openIndex);
+  return closeIndex === text.length - 1 ? { name: match[1].toUpperCase(), args: text.slice(openIndex + 1, -1) } : undefined;
+}
+
+function formulaExpressionBinary(sheet, leftText, operator, rightText, context = {}) {
+  const left = evaluateFormulaExpression(sheet, leftText, context);
+  const leftError = formulaErrorCode(left);
+  if (leftError) return leftError;
+  const right = evaluateFormulaExpression(sheet, rightText, context);
+  const rightError = formulaErrorCode(right);
+  if (rightError) return rightError;
+  if (["=", "<>", ">", "<", ">=", "<="].includes(operator)) return compareFormulaValues(left, operator, right);
+  if (operator === "&") return `${formulaText(left)}${formulaText(right)}`;
+  const leftNumber = formulaNumber(left);
+  const rightNumber = formulaNumber(right);
+  if (formulaErrorCode(leftNumber)) return leftNumber;
+  if (formulaErrorCode(rightNumber)) return rightNumber;
+  if (operator === "+") return leftNumber + rightNumber;
+  if (operator === "-") return leftNumber - rightNumber;
+  if (operator === "*") return leftNumber * rightNumber;
+  if (operator === "/") return rightNumber === 0 ? "#DIV/0!" : leftNumber / rightNumber;
+  if (operator === "^") {
+    const value = leftNumber ** rightNumber;
+    return Number.isFinite(value) ? value : "#NUM!";
+  }
+  return "#NAME?";
+}
+
+function evaluateFormulaExpression(sheet, expr, context = {}) {
+  let text = String(expr ?? "").trim();
+  if (text === "") return undefined;
+  let outer;
+  while ((outer = formulaOuterParentheses(text)) !== undefined) text = outer;
+
+  const comparison = formulaTopLevelOperators(text, [">=", "<=", "<>", "=", ">", "<"]);
+  if (comparison.length > 1) return "#VALUE!";
+  if (comparison.length === 1) {
+    const { index, operator } = comparison[0];
+    return formulaExpressionBinary(sheet, text.slice(0, index), operator, text.slice(index + operator.length), context);
+  }
+  const concatenation = formulaTopLevelOperators(text, ["&"]);
+  if (concatenation.length) {
+    const { index, operator } = concatenation.at(-1);
+    return formulaExpressionBinary(sheet, text.slice(0, index), operator, text.slice(index + operator.length), context);
+  }
+  const addition = formulaTopLevelOperators(text, ["+", "-"], { binarySigns: true });
+  if (addition.length) {
+    const { index, operator } = addition.at(-1);
+    return formulaExpressionBinary(sheet, text.slice(0, index), operator, text.slice(index + operator.length), context);
+  }
+  const multiplication = formulaTopLevelOperators(text, ["*", "/"]);
+  if (multiplication.length) {
+    const { index, operator } = multiplication.at(-1);
+    return formulaExpressionBinary(sheet, text.slice(0, index), operator, text.slice(index + operator.length), context);
+  }
+  const exponentiation = formulaTopLevelOperators(text, ["^"]);
+  if (exponentiation.length) {
+    const { index, operator } = exponentiation[0];
+    return formulaExpressionBinary(sheet, text.slice(0, index), operator, text.slice(index + operator.length), context);
+  }
+  if (text.startsWith("+") || text.startsWith("-")) {
+    const value = evaluateFormulaExpression(sheet, text.slice(1), context);
+    const error = formulaErrorCode(value);
+    if (error) return error;
+    const number = formulaNumber(value);
+    return text.startsWith("-") ? -number : number;
+  }
+  const functionCall = formulaWholeFunctionCall(text);
+  if (functionCall) return evaluateFormulaFunction(sheet, functionCall.name, splitFormulaArgs(functionCall.args), context);
+  const atomic = formulaAtomicScalar(sheet, text, context);
+  return atomic === undefined ? "#NAME?" : atomic;
+}
+
+function formulaScalar(sheet, expr, context = {}) {
+  const atomic = formulaAtomicScalar(sheet, expr, context);
+  return atomic === undefined ? evaluateFormulaExpression(sheet, expr, context) : atomic;
 }
 
 function formulaNumber(value) {
@@ -610,23 +791,6 @@ function formulaTruthy(value) {
   if (/^TRUE$/i.test(text)) return true;
   if (/^FALSE$/i.test(text) || text === "") return false;
   return Boolean(Number(text));
-}
-
-function formulaArithmeticNumberLiteral(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return "0";
-  const text = String(number);
-  if (!/[eE]/.test(text)) return text;
-  const negative = text.startsWith("-");
-  const [mantissa, exponentText] = (negative ? text.slice(1) : text).toLowerCase().split("e");
-  const exponent = Number(exponentText);
-  const digits = mantissa.replace(".", "");
-  const decimalIndex = 1 + exponent;
-  let decimal;
-  if (decimalIndex <= 0) decimal = `0.${"0".repeat(-decimalIndex)}${digits}`;
-  else if (decimalIndex >= digits.length) decimal = `${digits}${"0".repeat(decimalIndex - digits.length)}`;
-  else decimal = `${digits.slice(0, decimalIndex)}.${digits.slice(decimalIndex)}`;
-  return negative ? `-${decimal}` : decimal;
 }
 
 function isFormulaMatrix(value) {
@@ -722,25 +886,7 @@ function writeFormulaSpill(sheet, anchorAddress, matrixValue, parentKey) {
 }
 
 function evaluateFormulaCondition(sheet, expr, context = {}) {
-  const text = String(expr || "").trim();
-  const comparison = /^(.*?)\s*(>=|<=|<>|=|>|<)\s*(.*?)$/.exec(text);
-  if (comparison) {
-    const left = formulaScalar(sheet, comparison[1], context);
-    const right = formulaScalar(sheet, comparison[3], context);
-    const leftNum = Number(left), rightNum = Number(right);
-    const numeric = Number.isFinite(leftNum) && Number.isFinite(rightNum);
-    const a = numeric ? leftNum : formulaText(left);
-    const b = numeric ? rightNum : formulaText(right);
-    switch (comparison[2]) {
-      case ">=": return a >= b;
-      case "<=": return a <= b;
-      case "<>": return a !== b;
-      case "=": return a === b;
-      case ">": return a > b;
-      case "<": return a < b;
-    }
-  }
-  return formulaTruthy(formulaScalar(sheet, text, context));
+  return formulaTruthy(evaluateFormulaExpression(sheet, String(expr || "").trim(), context));
 }
 
 function aggregateFormulaValues(values, fnName) {
@@ -1682,45 +1828,7 @@ function evaluateFormula(sheet, formula, address, context = {}) {
   // They are package syntax, not part of the agent-facing formula language.
   const expr = raw.slice(1).trim().replace(/_xlfn\.(?:_xlws\.)?/gi, "");
   const evaluationContext = address && !context.formulaAddress ? { ...context, formulaAddress: address } : context;
-  const functionMatch = /^([A-Z][A-Z0-9.]*)\((.*)\)$/i.exec(expr);
-  if (functionMatch) {
-    return evaluateFormulaFunction(sheet, functionMatch[1].toUpperCase(), splitFormulaArgs(functionMatch[2]), evaluationContext);
-  }
-  if (FORMULA_NUMERIC_LITERAL.test(expr)) return Number(expr);
-  const directReference = formulaRefParts(expr);
-  if (directReference && directReference.start === directReference.end) return formulaScalar(sheet, expr, evaluationContext);
-
-  let replacementError;
-  const structuredReferences = scanStructuredReferences(expr);
-  if (structuredReferences.length === 1 && structuredReferences[0].start === 0 && structuredReferences[0].end === expr.length) return formulaScalar(sheet, structuredReferences[0].text, evaluationContext);
-  let structuredSafe = expr;
-  for (const reference of [...structuredReferences].reverse()) {
-    const value = formulaScalar(sheet, reference.text, evaluationContext);
-    const error = formulaErrorCode(value);
-    if (error) replacementError = error;
-    structuredSafe = `${structuredSafe.slice(0, reference.start)}${formulaNumber(value)}${structuredSafe.slice(reference.end)}`;
-  }
-  const safe = structuredSafe.replace(/(?:(?:'([^']+)'|([A-Za-z_][A-Za-z0-9_ ]*))!)?(\$?[A-Za-z]+\$?\d+)/g, (match, quotedSheet, bareSheet, refAddress) => {
-    const refSheetName = quotedSheet || bareSheet || undefined;
-    refAddress = refAddress.replaceAll("$", "").toUpperCase();
-    const targetSheet = refSheetName ? sheet.workbook?.worksheets.getItem(refSheetName) : sheet;
-    const value = evaluationContext.getValue ? evaluationContext.getValue({ sheetName: refSheetName, address: refAddress }) : (targetSheet ? targetSheet.store.get(refAddress).value : "#REF!");
-    const error = formulaErrorCode(value);
-    if (error) replacementError = error;
-    // Parenthesize numeric replacements so a negative referenced value cannot
-    // accidentally combine with a binary minus as JavaScript's `--` token.
-    // Scientific notation is expanded because the constrained evaluator only
-    // accepts decimal arithmetic literals after reference substitution.
-    return `(${formulaArithmeticNumberLiteral(value)})`;
-  });
-  if (replacementError) return replacementError;
-  if (!/^[0-9+\-*/().\s]+$/.test(safe)) return "#NAME?";
-  try {
-    const value = Function(`"use strict"; return (${safe});`)();
-    return Number.isFinite(value) ? value : "#DIV/0!";
-  } catch {
-    return "#VALUE!";
-  }
+  return evaluateFormulaExpression(sheet, expr, evaluationContext);
 }
 
 export {

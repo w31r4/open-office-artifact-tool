@@ -44,6 +44,15 @@ const TEMPLATES = [
   ["artifact-template-three-statement-forecast", "Three-Statement Forecast", "spreadsheet", ".xlsx"],
 ];
 
+const SPREADSHEET_RECALCULATION_SENTINELS = new Map([
+  ["artifact-template-analytics-dashboard", { sheet: "Dashboard", address: "B4" }],
+  ["artifact-template-financial-budget", { sheet: "Summary", address: "E8" }],
+  ["artifact-template-operating-calendar", { sheet: "Annual", address: "C2" }],
+  ["artifact-template-project-tracker", { sheet: "Project Plan", address: "M9" }],
+  ["artifact-template-sales-pipeline", { sheet: "Sales Pipeline", address: "B10" }],
+  ["artifact-template-three-statement-forecast", { sheet: "Exec Sum", address: "C7" }],
+]);
+
 function sha256(bytes) {
   return crypto.createHash("sha256").update(bytes).digest("hex");
 }
@@ -129,7 +138,31 @@ async function assertNativeRender(sourcePath, outputDirectory) {
   }
 }
 
-async function assertPublicOfficeRoundTrip(kind, sourcePath) {
+function sameFormulaValue(left, right) {
+  if (typeof left === "number" && typeof right === "number") return Math.abs(left - right) <= Math.max(1e-9, Math.abs(left) * 1e-10);
+  return left === right;
+}
+
+function assertSpreadsheetTemplateCalculation(templateId, workbook, sourcePath) {
+  const sentinel = SPREADSHEET_RECALCULATION_SENTINELS.get(templateId);
+  assert.ok(sentinel, `Spreadsheet template needs a model-calculation sentinel: ${sourcePath}`);
+  const sheet = workbook.worksheets.getItem(sentinel.sheet);
+  assert.ok(sheet, `Spreadsheet template sentinel sheet is missing: ${sourcePath}`);
+  const cell = sheet.store.get(sentinel.address);
+  assert.ok(cell.formula, `Spreadsheet template sentinel must retain a formula: ${sourcePath}`);
+  const cachedValue = cell.value;
+  workbook.recalculate();
+  assert.equal(sameFormulaValue(cell.value, cachedValue), true, `Spreadsheet template model calculation must match its cached sentinel: ${sourcePath}`);
+  const errors = [];
+  for (const candidateSheet of workbook.worksheets.items) {
+    for (const [address, candidate] of candidateSheet.store.entries()) {
+      if (candidate.formula && /^#(?:NAME\?|VALUE!|REF!|DIV\/0!|NUM!|N\/A|CYCLE!|SPILL!)$/.test(String(candidate.value))) errors.push(`${candidateSheet.name}!${address}`);
+    }
+  }
+  assert.deepEqual(errors, [], `Spreadsheet template model calculation must not leave formula errors: ${sourcePath}`);
+}
+
+async function assertPublicOfficeRoundTrip(templateId, kind, sourcePath) {
   const source = await FileBlob.load(sourcePath);
   if (kind === "document") {
     const imported = await DocumentFile.importDocx(source);
@@ -147,6 +180,7 @@ async function assertPublicOfficeRoundTrip(kind, sourcePath) {
   }
   if (kind === "spreadsheet") {
     const imported = await SpreadsheetFile.importXlsx(source);
+    assertSpreadsheetTemplateCalculation(templateId, imported, sourcePath);
     const exported = await SpreadsheetFile.exportXlsx(imported, { recalculate: false });
     const reimported = await SpreadsheetFile.importXlsx(exported);
     assert.equal(reimported.worksheets.items.length, imported.worksheets.items.length, `Spreadsheet facade round trip: ${sourcePath}`);
@@ -342,7 +376,7 @@ try {
 
   const roundTripped = [];
   for (const { id, kind, output } of materialized) {
-    const exported = await assertPublicOfficeRoundTrip(kind, output);
+    const exported = await assertPublicOfficeRoundTrip(id, kind, output);
     const roundTripOutput = path.join(temporary, `${id}-openchestnut${path.extname(output)}`);
     await exported.save(roundTripOutput);
     roundTripped.push({ id, output: roundTripOutput });

@@ -30,6 +30,7 @@ const spreadsheetLeafSource = await fs.readFile(path.join(repoRoot, "src", "spre
 const formulaEngineSource = await fs.readFile(path.join(repoRoot, "src", "spreadsheet", "formula-engine.mjs"), "utf8");
 assert.match(spreadsheetLeafSource, /from "\.\/formula-engine\.mjs";/, "the Spreadsheet leaf must own the formula-engine dependency boundary");
 assert.doesNotMatch(formulaEngineSource, /from\s+["']\.\/index\.mjs["']/, "the formula engine must operate on workbook data shape without a Spreadsheet-model back-edge");
+assert.doesNotMatch(formulaEngineSource, /\bFunction\s*\(/, "the bounded formula evaluator must not execute generated JavaScript");
 const skillsNpmIgnore = await fs.readFile(path.join(repoRoot, "skills", ".npmignore"), "utf8");
 assert.match(skillsNpmIgnore, /__pycache__/);
 assert.match(skillsNpmIgnore, /\*\.pyc/);
@@ -54,10 +55,11 @@ const maxPackedBytes = 9_840_000;
 // The repository-only MIT Default Template Library is excluded from the npm
 // tarball. Its retained Office/PNG sources must never consume this consumer
 // package budget. PowerPoint sections plus the bounded transition and rich
-// speaker-notes leaves and the public formula catalog add protobuf, audited
-// WASM, public Help, and native Presentation guidance;
+// speaker-notes leaves, the public formula catalog, and the bounded formula
+// expression parser add protobuf, audited WASM, public Help, and native
+// Presentation guidance;
 // retain measured headroom instead of hiding that product surface.
-const maxUnpackedBytes = 24_885_000;
+const maxUnpackedBytes = 24_890_000;
 // Public Skill PNGs are required user-facing assets. They are retained with
 // byte-identical non-IDAT chunks and inflated scanline streams, but their IDAT
 // payloads are deterministically recompressed. Prevent future PNG tooling from
