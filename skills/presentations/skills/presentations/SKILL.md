@@ -506,6 +506,39 @@ semantically replaced. Read `artifact_tool/api/references/sections.spec.md`
 before editing an imported deck, then reimport and inspect sections after
 export; run native render review when available.
 
+### Bounded Slide Transitions
+
+Use direct `p:transition` metadata only for an intentional between-slide
+movement. The public profile is deliberately small: `fade` or directional
+`push`, `slow`/`medium`/`fast`, click advancement, and an optional bounded
+timer. It is not an animation/timing/sound authoring surface:
+
+```js
+slide.setTransition({
+  effect: "push",
+  direction: "left",
+  speed: "fast",
+  advanceOnClick: false,
+  advanceAfterMs: 4_000,
+});
+```
+
+For an imported deck, inspect `slide,transition`, resolve
+`${slide.id}/transition`, and read `transition.capability` before calling
+`set(...)` or `clear()`. Only one existing canonical direct fade/push graph is
+editable. A source-bound slide with no transition is not an addable surface;
+unknown effects, timing trees, sound actions, `p14` duration, or extension
+graphs stay opaque-preserved and fail closed on mutation. The strict slide
+clone profile may carry one unchanged canonical direct transition, but never a
+timing or sound graph.
+
+Always export, reimport, and inspect the transition again. Static
+LibreOffice/Poppler review can prove the visible slide content is stable, not
+slideshow playback; use a native PowerPoint playback QA lane when timing or
+host effect behavior matters. Read
+`artifact_tool/api/references/transitions.spec.md` before modifying imported
+transition metadata.
+
 ### Bounded Imported Speaker-Notes Add
 
 An imported slide whose source SlidePart has no NotesSlide may add plain-text

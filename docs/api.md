@@ -1651,12 +1651,12 @@ Resolve one explicit PDF task and selected/default provider against the immutabl
 | `nativeObject.setDiagramNodeText` | api | Replace text in one existing source-bound SmartArt document node only when its top-level four-part graph and DiagramDataPart prove the canonical one-paragraph/one-run plain-text profile. Node IDs, graph topology, layout/style/colors, geometry, and every non-data part remain fixed; unsupported diagrams reject without fallback. |
 | `nativeObject.setName` | api | Native OLE, SmartArt/diagram, contentPart, and media objects imported through OpenChestnut are source-bound and read-only for names; setName rejects instead of mutating the preserved package graph. A separate bounded SmartArt plain-node text capability is exposed only as nativeObject.setDiagramNodeText. |
 | `nativeObject.setPosition` | api | Native OLE, SmartArt/diagram, contentPart, and media objects imported through OpenChestnut are source-bound and read-only; setPosition rejects instead of rewriting their geometry or payload graph. |
-| `Presentation.create` | api | Create a deck model whose canonical OpenChestnut export supports ordinary slides, direct solid/style-reference slide backgrounds, shapes, rich text, tables, images, connectors, recursive native p:grpSp groups, plain-text speaker notes, native custom shows with canonical run links, literal bar/line/pie/standard-area/fixed-doughnut/marker-scatter/2D-bubble charts, and a bounded literal clustered bar+line combo profile. Combo bars stay on the primary pair; all lines share either that pair or the canonical secondary top/right pair. Formula/external chart data, custom themes, Master/Layout authoring, comments, custom-show topology mutation, advanced plot geometry, mixed line groups, secondary bars, irregular combo graphs, and other package-level features remain outside the source-free PPTX boundary. |
+| `Presentation.create` | api | Create a deck model whose canonical OpenChestnut export supports ordinary slides, bounded direct fade/push transitions, direct solid/style-reference slide backgrounds, shapes, rich text, tables, images, connectors, recursive native p:grpSp groups, plain-text speaker notes, native custom shows with canonical run links, literal bar/line/pie/standard-area/fixed-doughnut/marker-scatter/2D-bubble charts, and a bounded literal clustered bar+line combo profile. Combo bars stay on the primary pair; all lines share either that pair or the canonical secondary top/right pair. Formula/external chart data, custom themes, Master/Layout authoring, comments, custom-show topology mutation, advanced plot geometry, mixed line groups, secondary bars, irregular combo graphs, and other package-level features remain outside the source-free PPTX boundary. |
 | `presentation.customShows.add` | api | Define an ordered native p:custShowLst playback route for source-free OpenChestnut export. Text runs may target a show by exact name with optional returnToSlide. Canonical imported shows may change only their name and ordered retained-slide membership; fixed native identity keeps existing run links bound across a rename, while irregular graphs stay opaque. |
 | `presentation.customShows.getItem` | api | Resolve a source-free or canonical imported custom show by zero-based index, stable facade ID, or exact name. |
 | `presentation.export` | api | Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON. |
 | `presentation.fontFamilies` | api | Return a fresh sorted, case-insensitively deduplicated list of explicitly used presentation text and bullet font families. |
-| `presentation.inspect` | api | Emit NDJSON for deck, custom shows, PowerPoint sections, slides, textboxes, shapes, grouped shapes, tables, charts, images, and native contentPart/OLE/diagram/media objects with bounded editability, relationship-reference, root-relationship, preserved-part, and eligible embedded-workbook summaries; narrow with search/target anchors and shape fields with include/exclude. |
+| `presentation.inspect` | api | Emit NDJSON for deck, custom shows, PowerPoint sections, slides, direct slide transitions, textboxes, shapes, grouped shapes, tables, charts, images, and native contentPart/OLE/diagram/media objects with bounded editability, relationship-reference, root-relationship, preserved-part, and eligible embedded-workbook summaries; narrow with search/target anchors and shape fields with include/exclude. |
 | `presentation.layout.clearBackground` | api | Clear a direct background on a bounded source-free layout. Imported-layout mutation remains source-bound and fails closed. |
 | `presentation.layout.placeholders.add` | api | Append a direct-frame title/body/ctrTitle/subTitle text placeholder to a source-free layout. It becomes a native p:ph and must be materialized on each slide through applyLayout/setLayout; object/media/chart/table placeholders remain source-bound. |
 | `presentation.layout.placeholders.summary` | api | Return a defensive layout-placeholder discovery snapshot with stable IDs, names, native types/indexes, required flags, and direct-frame presence/geometry; editing the snapshot cannot mutate the model. |
@@ -1669,11 +1669,11 @@ Resolve one explicit PDF task and selected/default provider against the immutabl
 | `presentation.master.setTheme` | api | Set a model-level master theme override for preview only. Canonical PPTX export rejects that source-free override; imported-master mutation remains source-bound and fails closed. |
 | `presentation.masters.add` | api | Append a model-level Slide Master. Source-free PPTX authoring requires exactly one master, so use Presentation.create({ master }) or presentation.master for the canonical profile; multiple masters and imported-master edits fail closed. |
 | `presentation.masters.getItem` | api | Resolve a model-level or imported Slide Master by stable ID or name. |
-| `presentation.resolve` | api | Map stable inspect anchor IDs back to facade objects, including custom shows and PowerPoint sections; imported advanced package objects may be read-only. |
+| `presentation.resolve` | api | Map stable inspect anchor IDs back to facade objects, including custom shows, PowerPoint sections, and slide transitions; imported advanced package objects may be read-only. |
 | `presentation.sections.add` | api | Define a native PowerPoint p14:sectionLst entry for source-free OpenChestnut export. Sections together must form the complete ordered slide partition. Canonical imported sections may change only existing names and contiguous boundaries while count, order, stable facade identity, and native GUID stay fixed; irregular graphs remain opaque. |
 | `presentation.sections.getItem` | api | Resolve a source-free or canonical imported PowerPoint section by zero-based index, stable facade ID, or exact name. |
-| `presentation.slides.add` | api | Append an editable core slide with an optional bounded source-free layout, direct solid/style-reference background, and plain-text speaker notes. A supplied layout is resolved and materialized transactionally; effective imported Layout/Master inheritance is never flattened. |
-| `presentation.slides.insert` | api | Insert a source-free slide after an existing Slide or 0-based index, or at the beginning with after: null. It uses the same transactional layout materialization as slides.add; imported additions fail closed, while slide.duplicate and slide.delete each have their own narrow source-preserving OPC profiles. |
+| `presentation.slides.add` | api | Append an editable core slide with an optional bounded source-free layout, direct fade/push transition, solid/style-reference background, and plain-text speaker notes. A supplied layout is resolved and materialized transactionally; effective imported Layout/Master inheritance is never flattened. |
+| `presentation.slides.insert` | api | Insert a source-free slide after an existing Slide or 0-based index, or at the beginning with after: null. It uses the same transactional layout materialization, bounded direct fade/push transition, and notes/background profile as slides.add; imported additions fail closed, while slide.duplicate and slide.delete each have their own narrow source-preserving OPC profiles. |
 | `presentation.textRange` | api | Inspect or resolve stable textRange anchors such as shapeId/text for editable slide text frames. |
 | `presentation.theme` | api | Inspect the model theme and theme inheritance. Custom source-free themes are not authored by OpenChestnut 0.2, and imported themes are source-bound and read-only. |
 | `presentation.validateLayout` | api | Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow. |
@@ -1690,6 +1690,7 @@ Resolve one explicit PDF task and selected/default provider against the immutabl
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
 | `slide.charts.add` | api | Add a source-free literal bar, line, pie, standard area, fixed 50%-hole doughnut, marker-only scatter, bounded 2D bubble, or clustered bar+line combo chart. Category families use shared literal categories; scatter and bubble use aligned per-series numeric X/Y values, with positive area-based bubble sizes. Supported variants retain title, legend, bounded axes, basic series styling, chart-level data labels, layout JSON, SVG preview, and native ChartPart output across import/edit/re-export. Formula/external data, advanced family geometry, topology changes, and unsupported styling fail closed rather than being flattened. |
 | `slide.clearBackground` | api | Remove the direct slide background so preview and PPTX output inherit from the preserved Layout/Master chain. Unsupported imported background graphs fail closed rather than being flattened or discarded. |
+| `slide.clearTransition` | api | Remove one canonical direct imported or source-free slide transition. A transition-absent imported slide is not an addable authoring surface, and unsupported timing, sound, extension, or effect graphs remain byte-preserved and reject mutation. |
 | `slide.comments.addThread` | api | Create either a bounded legacy PPTX annotation or an Office 2021 modern thread. A comment-free imported presentation may add canonical legacy review comments only when comments.capability.addable is true; existing legacy records remain source-bound and read-only. Modern mode supports a top-level element/text-range/textMatch anchor, one root, direct replies, independent people/timestamps, and active/resolved/closed state; imported modern graphs permit only fixed-topology text/status edits. |
 | `slide.comments.capability` | api | Inspect defensive source-bound comment-family evidence before authoring. A comment-free imported presentation may advertise legacy addability; existing legacy records remain read-only and modern graphs retain their separate fixed-topology edit contract. |
 | `slide.compose` | api | Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph/text, shape, table, chart, image, and rule nodes into editable slide objects. |
@@ -1702,6 +1703,7 @@ Resolve one explicit PDF task and selected/default provider against the immutabl
 | `slide.placeholders.getItem` | api | Resolve a slide placeholder shape by stable ID, name, placeholder type, or numeric index. Imported placeholder.textEditable reports a verified local SlidePart text capability; identity, geometry, formatting, layout binding, and inherited Master/Layout graphs remain source-bound. |
 | `slide.setBackground` | api | Set a direct slide background to a six-digit RGB/theme color solid fill or a native style reference. Recognized imported direct backgrounds are hash-bound and editable; inherited Layout/Master backgrounds remain inherited. |
 | `slide.setLayout` | api | Alias of slide.applyLayout(layout): bind and materialize a bounded source-free layout for native PPTX export. |
+| `slide.setTransition` | api | Set a direct p:transition to bounded fade or directional push behavior with slow/medium/fast speed plus click/timer advancement. Source-free slides may author it; imported slides may replace only one canonical existing direct transition, while absent or opaque source graphs fail closed. |
 | `slide.shapes.add` | api | Add a shape/textbox with preset or bounded literal custom geometry, position, optional center-based rotation/flips, fill, line, text, and DrawingML text-body layout. |
 | `slide.speakerNotes.capability` | api | Return defensive sourceBound, partPresent, editable, and addable evidence. addable identifies an imported notes-absent slide whose source NotesMaster/SlideMaster Theme graph can safely receive a canonical NotesSlide. Export independently re-proves the package graph, so mutating model or wire data cannot grant authority. |
 | `slide.tables.add` | api | Add an inspectable table facade with rows, columns, values, cells, rectangular merges, layout JSON, SVG preview, and canonical OpenChestnut plain-text PPTX output. |
@@ -1841,7 +1843,7 @@ Native OLE, SmartArt/diagram, contentPart, and media objects imported through Op
 
 #### `Presentation.create`
 
-Create a deck model whose canonical OpenChestnut export supports ordinary slides, direct solid/style-reference slide backgrounds, shapes, rich text, tables, images, connectors, recursive native p:grpSp groups, plain-text speaker notes, native custom shows with canonical run links, literal bar/line/pie/standard-area/fixed-doughnut/marker-scatter/2D-bubble charts, and a bounded literal clustered bar+line combo profile. Combo bars stay on the primary pair; all lines share either that pair or the canonical secondary top/right pair. Formula/external chart data, custom themes, Master/Layout authoring, comments, custom-show topology mutation, advanced plot geometry, mixed line groups, secondary bars, irregular combo graphs, and other package-level features remain outside the source-free PPTX boundary.
+Create a deck model whose canonical OpenChestnut export supports ordinary slides, bounded direct fade/push transitions, direct solid/style-reference slide backgrounds, shapes, rich text, tables, images, connectors, recursive native p:grpSp groups, plain-text speaker notes, native custom shows with canonical run links, literal bar/line/pie/standard-area/fixed-doughnut/marker-scatter/2D-bubble charts, and a bounded literal clustered bar+line combo profile. Combo bars stay on the primary pair; all lines share either that pair or the canonical secondary top/right pair. Formula/external chart data, custom themes, Master/Layout authoring, comments, custom-show topology mutation, advanced plot geometry, mixed line groups, secondary bars, irregular combo graphs, and other package-level features remain outside the source-free PPTX boundary.
 
 **Schema parameters:**
 
@@ -1908,7 +1910,7 @@ Return a fresh sorted, case-insensitively deduplicated list of explicitly used p
 
 #### `presentation.inspect`
 
-Emit NDJSON for deck, custom shows, PowerPoint sections, slides, textboxes, shapes, grouped shapes, tables, charts, images, and native contentPart/OLE/diagram/media objects with bounded editability, relationship-reference, root-relationship, preserved-part, and eligible embedded-workbook summaries; narrow with search/target anchors and shape fields with include/exclude.
+Emit NDJSON for deck, custom shows, PowerPoint sections, slides, direct slide transitions, textboxes, shapes, grouped shapes, tables, charts, images, and native contentPart/OLE/diagram/media objects with bounded editability, relationship-reference, root-relationship, preserved-part, and eligible embedded-workbook summaries; narrow with search/target anchors and shape fields with include/exclude.
 
 **Examples:**
 
@@ -1926,7 +1928,7 @@ Emit NDJSON for deck, custom shows, PowerPoint sections, slides, textboxes, shap
 
 **Schema parameters:**
 
-- `kind` (string) — Comma-separated deck/theme/layout/slide/textbox/textRange/shape/groupShape/table/chart/image/connector/nativeObject/contentPart/oleObject/diagram/comment/notes/customShow/section kinds.
+- `kind` (string) — Comma-separated deck/theme/layout/slide/transition/textbox/textRange/shape/groupShape/table/chart/image/connector/nativeObject/contentPart/oleObject/diagram/comment/notes/customShow/section kinds.
 - `search` (string) — Case-insensitive record filter.
 - `target` (string) — Stable target ID/anchor.
 - `before` (number) — Context records before matches.
@@ -2098,11 +2100,11 @@ Resolve a model-level or imported Slide Master by stable ID or name.
 
 #### `presentation.resolve`
 
-Map stable inspect anchor IDs back to facade objects, including custom shows and PowerPoint sections; imported advanced package objects may be read-only.
+Map stable inspect anchor IDs back to facade objects, including custom shows, PowerPoint sections, and slide transitions; imported advanced package objects may be read-only.
 
 **Schema parameters:**
 
-- `id` (string) required — Stable deck, theme, layout, slide, element, custom-show, section, comment, or text-range ID.
+- `id` (string) required — Stable deck, theme, layout, slide, transition, element, custom-show, section, comment, or text-range ID.
 
 **Schema returns:**
 
@@ -2136,13 +2138,14 @@ Resolve a source-free or canonical imported PowerPoint section by zero-based ind
 
 #### `presentation.slides.add`
 
-Append an editable core slide with an optional bounded source-free layout, direct solid/style-reference background, and plain-text speaker notes. A supplied layout is resolved and materialized transactionally; effective imported Layout/Master inheritance is never flattened.
+Append an editable core slide with an optional bounded source-free layout, direct fade/push transition, solid/style-reference background, and plain-text speaker notes. A supplied layout is resolved and materialized transactionally; effective imported Layout/Master inheritance is never flattened.
 
 **Schema parameters:**
 
 - `name` (string) — Inspectable slide name.
 - `layout` (string|object) — Optional bounded layout name/ID/facade. slides.add resolves it transactionally and materializes its text placeholders; an unknown or cross-presentation layout leaves no slide behind.
 - `background` (string|object) — Optional direct slide background: RGB/theme color or { fill, mode: 'solid'|'reference', index? }. Gradient, pattern, image, transform, and effect-bearing backgrounds are preview-only/source-preserved and fail closed on canonical mutation.
+- `transition` (object) — Optional direct transition: { effect: 'fade'|'push', direction?: 'left'|'up'|'right'|'down', speed?: 'slow'|'medium'|'fast', advanceOnClick?: boolean, advanceAfterMs?: integer 0..86400000 }. Fade rejects direction; push defaults to left; click defaults to true.
 - `notes` (string) — Optional plain-text speaker notes authored into the canonical PresentationML notes graph.
 
 **Schema returns:**
@@ -2151,7 +2154,7 @@ Append an editable core slide with an optional bounded source-free layout, direc
 
 #### `presentation.slides.insert`
 
-Insert a source-free slide after an existing Slide or 0-based index, or at the beginning with after: null. It uses the same transactional layout materialization as slides.add; imported additions fail closed, while slide.duplicate and slide.delete each have their own narrow source-preserving OPC profiles.
+Insert a source-free slide after an existing Slide or 0-based index, or at the beginning with after: null. It uses the same transactional layout materialization, bounded direct fade/push transition, and notes/background profile as slides.add; imported additions fail closed, while slide.duplicate and slide.delete each have their own narrow source-preserving OPC profiles.
 
 **Schema parameters:**
 
@@ -2159,6 +2162,7 @@ Insert a source-free slide after an existing Slide or 0-based index, or at the b
 - `name` (string) — Inspectable slide name.
 - `layout` (string|object) — Optional bounded layout name/ID/facade. The new source-free slide is created and materialized transactionally.
 - `background` (string|object) — Optional direct slide background: RGB/theme color or { fill, mode: 'solid'|'reference', index? }.
+- `transition` (object) — Optional direct transition with the same bounded fade/push, speed, click, and timer profile as presentation.slides.add.
 - `notes` (string) — Optional plain-text speaker notes authored into the canonical PresentationML notes graph.
 
 **Schema returns:**
@@ -2395,6 +2399,14 @@ Remove the direct slide background so preview and PPTX output inherit from the p
 
 - `slide` (Slide) — The same slide with no direct background, inheriting from its preserved Layout/Master chain.
 
+#### `slide.clearTransition`
+
+Remove one canonical direct imported or source-free slide transition. A transition-absent imported slide is not an addable authoring surface, and unsupported timing, sound, extension, or effect graphs remain byte-preserved and reject mutation.
+
+**Schema returns:**
+
+- `slide` (Slide) — The same slide with no direct p:transition. Removing an imported transition requires the same canonical editable source profile as replacement.
+
 #### `slide.comments.addThread`
 
 Create either a bounded legacy PPTX annotation or an Office 2021 modern thread. A comment-free imported presentation may add canonical legacy review comments only when comments.capability.addable is true; existing legacy records remain source-bound and read-only. Modern mode supports a top-level element/text-range/textMatch anchor, one root, direct replies, independent people/timestamps, and active/resolved/closed state; imported modern graphs permit only fixed-topology text/status edits.
@@ -2560,6 +2572,18 @@ Alias of slide.applyLayout(layout): bind and materialize a bounded source-free l
 **Schema returns:**
 
 - `slide` (Slide) — Alias of applyLayout that returns the slide.
+
+#### `slide.setTransition`
+
+Set a direct p:transition to bounded fade or directional push behavior with slow/medium/fast speed plus click/timer advancement. Source-free slides may author it; imported slides may replace only one canonical existing direct transition, while absent or opaque source graphs fail closed.
+
+**Schema parameters:**
+
+- `transition` (object) required — { effect: 'fade'|'push', direction?: 'left'|'up'|'right'|'down', speed?: 'slow'|'medium'|'fast', advanceOnClick?: boolean, advanceAfterMs?: integer 0..86400000 }. Fade rejects direction; push defaults to left; speed defaults to medium; click defaults to true.
+
+**Schema returns:**
+
+- `slide` (Slide) — The same slide with a normalized direct p:transition. Source-free slides may author it. An imported slide must already have exactly one canonical direct fade/push transition with explicit speed and click behavior; no-transition and opaque source graphs are not silently reconstructed.
 
 #### `slide.shapes.add`
 

@@ -466,6 +466,31 @@ unchanged instead of being reconstructed. Reimport and inspect the output, then
 run render QA if native tools are available. See
 `artifact_tool/api/references/sections.spec.md` for the exact contract.
 
+## Bounded Slide Transitions
+
+For source-free slides, use one direct `fade` or directional `push` transition:
+
+```ts
+slide.setTransition({
+  effect: "fade",
+  speed: "medium",
+  advanceOnClick: true,
+  advanceAfterMs: 4_000,
+});
+```
+
+`push` accepts `direction: "left" | "up" | "right" | "down"`; fade rejects a
+direction. Speed defaults to `medium`, click advancement to `true`, and the
+optional timer is an integer from `0` through `86400000` milliseconds. Inspect
+an imported deck with `kind: "transition"`, resolve `${slide.id}/transition`,
+then use `transition.set(...)` or `transition.clear()` only when its capability
+reports `editable: true`. A transition-absent imported slide is deliberately
+not addable, and timing/sound/extension/other-effect graphs stay opaque and
+fail closed rather than being reconstructed. Reimport after export. Static
+render QA proves visible slide content only; use a PowerPoint/native-host lane
+for playback QA. See
+`artifact_tool/api/references/transitions.spec.md` for the complete contract.
+
 ## Bounded Imported Slide Duplicate
 
 When an Agent needs an exact source-bound copy of one imported slide rather

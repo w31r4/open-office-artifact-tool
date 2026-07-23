@@ -1415,6 +1415,11 @@ message PresentationSlide {
   // fields; author identity, dates, anchor, position, topology, and package
   // bindings remain hash-proven source evidence.
   repeated PresentationModernCommentThread modern_comments = 10;
+  // One bounded direct p:transition leaf. The public profile deliberately
+  // separates slide advancement from p:timing animation graphs: only fade
+  // and four-direction push effects with explicit speed/click/timer settings
+  // are semantic. Other native transition children remain source-owned.
+  PresentationTransition transition = 11;
 }
 
 // One p:cm record from a legacy ppt/comments/commentN.xml part. `id` is a
@@ -1522,6 +1527,18 @@ message PresentationSlideSourceBinding {
   // A comment-free presentation reports legacy because that is the bounded
   // family OpenChestnut may author when legacy_comments_addable is true.
   string comment_family = 11;
+  // Hash of the direct p:transition semantics, or of an empty semantic message
+  // when no supported transition is exposed. The raw SlidePart hash remains
+  // the authority for an opaque transition graph.
+  string transition_semantic_sha256 = 12;
+  // True only for one canonical direct fade or push transition with explicit
+  // bounded attributes. Imported absence is intentionally not addable in the
+  // source-preserving profile; arbitrary effects, sound actions, extensions,
+  // and timing graphs remain source-owned.
+  bool transition_editable = 13;
+  // Distinguishes an absent transition from a retained opaque native one for
+  // Agent-facing inspect/capability reporting.
+  bool transition_present = 14;
 }
 
 message PresentationSpeakerNotes {
@@ -3157,4 +3174,22 @@ enum DocumentSectionLineNumberRestart {
   DOCUMENT_SECTION_LINE_NUMBER_RESTART_NEW_PAGE = 1;
   DOCUMENT_SECTION_LINE_NUMBER_RESTART_NEW_SECTION = 2;
   DOCUMENT_SECTION_LINE_NUMBER_RESTART_CONTINUOUS = 3;
+}
+
+// Appended to preserve every pre-existing generated descriptor index while
+// PresentationSlide references this additive protocol-2 transition contract.
+// A presentation transition applies when this slide enters during a slideshow;
+// it is not an animation timeline, sound action, or Office-version extension.
+message PresentationTransition {
+  // fade or push.
+  string effect = 1;
+  // Required only for push: left, up, right, or down.
+  string direction = 2;
+  // slow, medium, or fast. The codec maps medium to native spd="med".
+  string speed = 3;
+  // Presence is meaningful: canonical source import requires explicit native
+  // advClick rather than assuming a host default.
+  optional bool advance_on_click = 4;
+  // Optional native advTm milliseconds. Zero is a valid explicit value.
+  optional uint32 advance_after_ms = 5;
 }

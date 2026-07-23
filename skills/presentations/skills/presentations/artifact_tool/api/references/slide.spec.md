@@ -49,6 +49,21 @@ imported background graphs are opaque-preserved; leave them unchanged or
 OpenChestnut fails closed. Do not replace an advanced imported background with
 a simple solid and describe that as a faithful edit.
 
+## Transition
+
+```ts
+slide.setTransition({ effect: "fade", speed: "medium", advanceOnClick: true });
+slide.clearTransition();
+```
+
+The direct transition profile is a separate leaf from background/layout state:
+it supports only `fade` and directional `push`, bounded speed/click/timer
+metadata, and one canonical `p:transition`. For an imported slide, inspect and
+resolve `${slide.id}/transition` first. A canonical existing graph may be
+replaced or removed; an absent transition is not addable, and timing, sound,
+extension, or other-effect graphs remain opaque-preserved and reject mutation.
+See [`transitions.spec.md`](./transitions.spec.md).
+
 ## Slide Order, Constrained Deletion, And Bounded Clone
 
 ```ts

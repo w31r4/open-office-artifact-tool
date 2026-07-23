@@ -22,7 +22,7 @@ import { FileBlob as LeafFileBlob } from "../src/shared/file-blob.mjs";
 assert.deepEqual(Object.keys(rootApi).sort(), [
   "ChartElement", "DocumentFile", "DocumentModel", "FileBlob", "GroupShape",
   "HELP_CATALOG", "ImageElement", "PdfArtifact", "PdfFile", "Presentation",
-  "PresentationFile", "Range", "Shape", "Slide", "SpreadsheetFile",
+  "PresentationFile", "Range", "Shape", "Slide", "SlideTransition", "SpreadsheetFile",
   "TableElement", "Workbook", "Worksheet", "WorksheetDataTableCollection", "box", "chart", "column", "grid",
   "clearOfficeFontDesignMetrics", "helpArtifact", "image", "layers", "node", "paragraph",
   "registerScopedOfficeFontDesignMetrics", "renderArtifact", "resolveOfficeFontDesignMetrics",
@@ -33,7 +33,7 @@ assert.strictEqual(HELP_CATALOG, LEAF_HELP_CATALOG, "root must re-export the hel
 assert.strictEqual(node, leafNode, "root must re-export the Compose binding");
 assert.strictEqual(text, leafText, "root must re-export the reference-compatible text Compose binding");
 assert.strictEqual(FileBlob, LeafFileBlob, "root must re-export the FileBlob constructor binding");
-for (const name of ["Presentation", "PresentationFile", "Slide", "Shape", "TableElement", "ChartElement", "ImageElement", "GroupShape"]) {
+for (const name of ["Presentation", "PresentationFile", "Slide", "SlideTransition", "Shape", "TableElement", "ChartElement", "ImageElement", "GroupShape"]) {
   assert.strictEqual(rootApi[name], presentationApi[name], `root must re-export the ${name} constructor binding`);
 }
 for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Range", "SpreadsheetFile"]) {
@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 366);
+assert.equal(HELP_CATALOG.length, 368);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -255,10 +255,15 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.customShows.ad
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.customShows.getItem"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.sections.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.sections.getItem"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "slide.setTransition"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "slide.clearTransition"));
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.customShows.add")?.summary || "", /native p:custShowLst.*returnToSlide.*fixed native identity.*opaque/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.customShows.add")?.schema?.returns?.customShow?.description || "", /source-free PPTX authoring.*setSlides/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.sections.add")?.summary || "", /native PowerPoint p14:sectionLst.*complete ordered slide partition.*native GUID.*opaque/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.sections.add")?.schema?.parameters?.slides?.description || "", /partition every deck slide exactly once.*deck order/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.setTransition")?.summary || "", /direct p:transition.*fade.*push.*absent or opaque.*fail closed/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.setTransition")?.schema?.parameters?.transition?.description || "", /advanceOnClick.*advanceAfterMs.*0\.\.86400000/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "presentation.inspect")?.schema?.parameters?.kind?.description || "", /slide\/transition\/textbox/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /fields.*picture bullets.*customShow.*missing.*opaque.*fail closed/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "PdfFile.inspectPdf"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createNativeOfficeRenderer"));
@@ -438,7 +443,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "document.setDateContentC
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.materializeFields")?.schema?.parameters?.dryRun?.type, "boolean");
 assert.match(HELP_CATALOG.find((item) => item.name === "document.materializeFields")?.summary || "", /SEQ counters.*REF cached results.*PAGEREF.*pagination host/i);
 const presentationCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "presentation");
-assert.equal(presentationCatalog.length, 68);
+assert.equal(presentationCatalog.length, 70);
 assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "presentation.slides.insert")?.schema?.parameters?.after?.type, "Slide|number|null");

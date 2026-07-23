@@ -20,6 +20,7 @@ import { normalizePresentationChartExternalData, presentationChartUsesFormulaRef
 import { presentationChartLineSvgAttributes, presentationChartTrendlinesSvg } from "./chart-trendline-svg.mjs";
 import { planPresentationCustomShows, PresentationCustomShowCollection } from "./ooxml-custom-shows.mjs";
 import { planPresentationSections, PresentationSectionCollection } from "./ooxml-sections.mjs";
+import { SlideTransition } from "./ooxml-transitions.mjs";
 import { inheritPresentationParagraphs, normalizePresentationParagraphs, normalizePresentationParagraphStyles, presentationParagraphsNeedSerialization, presentationParagraphsSvg, presentationParagraphsText, replacePresentationParagraphText } from "./text-paragraphs.mjs";
 import { normalizePresentationTextBodyProperties } from "./text-body-properties.mjs";
 import { normalizePresentationCustomPaths, presentationCustomPathsSvg } from "./custom-geometry.mjs";
@@ -31,6 +32,8 @@ const importedShapeBackgroundFill = new WeakMap();
 const PRESENTATION_SLIDE_DUPLICATOR = Symbol.for("open-office-artifact-tool.open-chestnut-presentation-duplicate");
 const PRESENTATION_SPEAKER_NOTES_CAPABILITY = Symbol.for("open-office-artifact-tool.open-chestnut-speaker-notes-capability");
 const PRESENTATION_LEGACY_COMMENTS_CAPABILITY = Symbol.for("open-office-artifact-tool.open-chestnut-legacy-comments-capability");
+
+export { SlideTransition };
 
 const PPTX_PACKAGE_CONFIG = {
   family: "PPTX",
@@ -996,6 +999,7 @@ export class Slide {
     this.layoutId = options.layoutId || options.layout?.id || (typeof options.layout === "string" ? options.layout : undefined);
     this.speakerNotes = new SpeakerNotes(this, options.notes || options.speakerNotes?.text || "");
     this.background = options.background ? normalizePresentationBackground(options.background) : {};
+    this.transition = new SlideTransition(this, options.transition);
   }
 
   get index() { return this.presentation.slides.items.indexOf(this); }
@@ -1048,6 +1052,8 @@ export class Slide {
   addGroup(config = {}) { return this.groups.add(config); }
   setBackground(background) { this.background = normalizePresentationBackground(background, this.background); return this; }
   clearBackground() { this.background = {}; return this; }
+  setTransition(transition) { this.transition.set(transition); return this; }
+  clearTransition() { this.transition.clear(); return this; }
   applyLayout(layoutOrName) {
     const layout = typeof layoutOrName === "string" ? this.presentation.layouts.getItem(layoutOrName) : layoutOrName;
     if (!(layout instanceof SlideLayoutTemplate) || layout.presentation !== this.presentation) {
@@ -1062,7 +1068,7 @@ export class Slide {
   inspectRecords(kinds) {
     const records = [];
     if (kinds.has("layout")) { const layout = this.presentation.layouts.getItem(this.layoutId); records.push({ kind: "layout", layoutId: this.layoutId || `${this.id}/layout`, name: layout?.name || "Blank", type: layout?.type || "blank", masterId: layout?.masterId, themeId: this.effectiveTheme().id, placeholders: layout?.placeholders.length || 0 }); }
-    if (kinds.has("slide")) records.push({ kind: "slide", id: this.id, slide: this.index + 1, title: this.title(), background: this.background.fill ? this.background : undefined, effectiveBackground: this.effectiveBackground(), textShapes: this.shapes.items.filter((s) => s.text.value).length, tables: this.tables.items.length, charts: this.charts.items.length, images: this.images.items.length, connectors: this.connectors.items.length, groups: this.groups.items.length, nativeObjects: this.nativeObjects.items.length, comments: this.comments.items.length, commentsCapability: this.comments.capability, hasNotes: Boolean(this.speakerNotes.text), notesCapability: this.speakerNotes.capability });
+    if (kinds.has("slide")) records.push({ kind: "slide", id: this.id, slide: this.index + 1, title: this.title(), background: this.background.fill ? this.background : undefined, effectiveBackground: this.effectiveBackground(), transition: this.transition.toJSON(), transitionCapability: this.transition.capability, textShapes: this.shapes.items.filter((s) => s.text.value).length, tables: this.tables.items.length, charts: this.charts.items.length, images: this.images.items.length, connectors: this.connectors.items.length, groups: this.groups.items.length, nativeObjects: this.nativeObjects.items.length, comments: this.comments.items.length, commentsCapability: this.comments.capability, hasNotes: Boolean(this.speakerNotes.text), notesCapability: this.speakerNotes.capability });
     for (const shape of this.shapes) {
       if (kinds.has("textbox") && shape.text.value) records.push(shape.inspectRecord("textbox"));
       else if (kinds.has("shape")) records.push(shape.inspectRecord("shape"));
@@ -1077,12 +1083,14 @@ export class Slide {
     for (const group of this.groups) records.push(...group.inspectRecords(kinds));
     if (kinds.has("comment") || kinds.has("thread")) records.push(...this.comments.items.map((comment) => comment.inspectRecord()));
     if (kinds.has("notes")) records.push({ kind: "notes", id: `${this.id}/notes`, slide: this.index + 1, text: this.speakerNotes.text, textPreview: this.speakerNotes.text.slice(0, 300), textChars: this.speakerNotes.text.length, capability: this.speakerNotes.capability });
+    if (kinds.has("transition")) records.push(this.transition.inspectRecord());
     return records;
   }
 
   title() { return this.shapes.items.find((shape) => shape.text.value)?.text.value || this.charts.items[0]?.title || ""; }
   resolve(id) {
     if (id === this.speakerNotes.id) return this.speakerNotes;
+    if (id === this.transition.id) return this.transition;
     if (String(id || "").endsWith("/text")) {
       const parentId = String(id).slice(0, -5);
       const shape = this.shapes.items.find((item) => item.id === parentId);
@@ -1176,7 +1184,7 @@ export class Slide {
     return slideLayoutSlice(this, {
       schema: "open-office-artifact.layout/v1",
       unit: "px",
-      slide: { id: this.id, slide: this.index + 1, frame: this.frame, background: this.effectiveBackground(), notes: this.speakerNotes.text || undefined },
+      slide: { id: this.id, slide: this.index + 1, frame: this.frame, background: this.effectiveBackground(), transition: this.transition.toJSON(), notes: this.speakerNotes.text || undefined },
       elements,
     }, options);
   }
@@ -1187,7 +1195,7 @@ export class Slide {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="${xmlEscape(resolvePresentationBackgroundColor(this.effectiveBackground(), this.effectiveTheme()))}"/>${elements}</svg>`;
   }
 
-  toProto() { return { id: this.id, layoutId: this.layoutId, background: this.background.fill ? this.background : undefined, notes: this.speakerNotes.text || undefined, comments: this.comments.items.map((comment) => comment.toJSON()), elements: [...this.shapes.items, ...this.tables.items, ...this.charts.items, ...this.images.items, ...this.connectors.items, ...this.nativeObjects.items].map((element) => element.layoutJson()), groups: this.groups.items.map((group) => group.toProto()) }; }
+  toProto() { return { id: this.id, layoutId: this.layoutId, background: this.background.fill ? this.background : undefined, transition: this.transition.toJSON(), notes: this.speakerNotes.text || undefined, comments: this.comments.items.map((comment) => comment.toJSON()), elements: [...this.shapes.items, ...this.tables.items, ...this.charts.items, ...this.images.items, ...this.connectors.items, ...this.nativeObjects.items].map((element) => element.layoutJson()), groups: this.groups.items.map((group) => group.toProto()) }; }
 
   compose(composeNode, options = {}) {
     const frame = options.frame || { left: 72, top: 64, width: this.presentation.slideSize.width - 144, height: this.presentation.slideSize.height - 128 };

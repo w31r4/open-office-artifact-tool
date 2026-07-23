@@ -26,6 +26,7 @@ Use the presentation facades to create PowerPoint-style decks in TypeScript.
 - Duplicate one canonical top-level closed InkML content part without sharing mutable Custom XML: [`references/inkml-content-part-clone.spec.md`](./references/inkml-content-part-clone.spec.md).
 - Duplicate one canonical top-level embedded MP4 without sharing mutable media bytes: [`references/embedded-video-clone.spec.md`](./references/embedded-video-clone.spec.md).
 - Author or safely adjust native PowerPoint sections as an ordered full-deck partition: [`references/sections.spec.md`](./references/sections.spec.md).
+- Author or safely edit one direct bounded fade/push slide transition: [`references/transitions.spec.md`](./references/transitions.spec.md).
 
 ## Quick start
 

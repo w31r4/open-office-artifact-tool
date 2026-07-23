@@ -1,6 +1,6 @@
 import { DocumentFile, DocumentModel } from "./document/index.mjs";
 import { PdfArtifact, PdfFile } from "./pdf/index.mjs";
-import { ChartElement, GroupShape, ImageElement, Presentation, PresentationFile, Shape, Slide, TableElement } from "./presentation/index.mjs";
+import { ChartElement, GroupShape, ImageElement, Presentation, PresentationFile, Shape, Slide, SlideTransition, TableElement } from "./presentation/index.mjs";
 import { Range, SpreadsheetFile, Workbook, Worksheet, WorksheetDataTableCollection } from "./spreadsheet/index.mjs";
 import { queryHelpRecords } from "./help/index.mjs";
 import { createArtifactVisualQaApi } from "./qa/artifact-visual.mjs";
@@ -16,7 +16,7 @@ export {
 } from "./shared/font-design-metrics.mjs";
 export { HELP_CATALOG } from "./help/index.mjs";
 export { box, chart, column, grid, image, layers, node, paragraph, row, rule, run, shape, table, text } from "./presentation/compose.mjs";
-export { ChartElement, DocumentFile, DocumentModel, GroupShape, ImageElement, PdfArtifact, PdfFile, Presentation, PresentationFile, Range, Shape, Slide, SpreadsheetFile, TableElement, Workbook, Worksheet, WorksheetDataTableCollection };
+export { ChartElement, DocumentFile, DocumentModel, GroupShape, ImageElement, PdfArtifact, PdfFile, Presentation, PresentationFile, Range, Shape, Slide, SlideTransition, SpreadsheetFile, TableElement, Workbook, Worksheet, WorksheetDataTableCollection };
 
 function inferArtifactKind(artifact) {
   if (artifact instanceof Workbook) return "workbook";

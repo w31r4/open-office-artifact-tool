@@ -10,6 +10,7 @@ import {
 import { normalizePresentationRunLink } from "../presentation/ooxml-hyperlinks.mjs";
 import { planPresentationCustomShows } from "../presentation/ooxml-custom-shows.mjs";
 import { planPresentationSections } from "../presentation/ooxml-sections.mjs";
+import { normalizePresentationTransition, PRESENTATION_TRANSITION_CAPABILITY } from "../presentation/ooxml-transitions.mjs";
 import { deterministicPresentationGuid } from "../presentation/ooxml-modern-comments.mjs";
 import { normalizePresentationThemeConfig } from "../presentation/ooxml-theme.mjs";
 import { normalizePresentationTextBodyProperties } from "../presentation/text-body-properties.mjs";
@@ -586,6 +587,7 @@ function duplicateImportedPresentationSlide(presentation, state, slide) {
     after: slide,
     name: slide.name,
     ...(slide.background?.fill ? { background: clonedPresentationValue(slide.background) } : {}),
+    ...(slide.transition?.configured ? { transition: slide.transition.toJSON() } : {}),
     ...(source.wire.speakerNotes ? { notes: slide.speakerNotes?.text || "" } : {}),
   });
   clone.layoutId = slide.layoutId;
@@ -1188,6 +1190,36 @@ function modelBackground(background) {
   return background.kind.case === "styleReferenceIndex"
     ? { fill, mode: "reference", index: Number(background.kind.value) }
     : { fill, mode: "solid" };
+}
+
+function wirePresentationTransition(transition) {
+  const value = transition?.toJSON?.();
+  if (!value) return undefined;
+  return {
+    effect: value.effect,
+    ...(value.direction ? { direction: value.direction } : {}),
+    speed: value.speed,
+    advanceOnClick: value.advanceOnClick,
+    ...(value.advanceAfterMs === undefined ? {} : { advanceAfterMs: value.advanceAfterMs }),
+  };
+}
+
+function modelPresentationTransition(source, slideIndex) {
+  if (!source) return undefined;
+  if (typeof source.advanceOnClick !== "boolean") {
+    throw new OpenChestnutCodecError(`OpenChestnut returned slide ${slideIndex + 1} transition without an explicit advanceOnClick value.`, [], { code: "invalid_presentation_artifact" });
+  }
+  try {
+    return normalizePresentationTransition({
+      effect: source.effect,
+      ...(source.direction ? { direction: source.direction } : {}),
+      speed: source.speed,
+      advanceOnClick: source.advanceOnClick,
+      ...(source.advanceAfterMs === undefined ? {} : { advanceAfterMs: Number(source.advanceAfterMs) }),
+    });
+  } catch (error) {
+    throw new OpenChestnutCodecError(`OpenChestnut returned invalid slide ${slideIndex + 1} transition semantics: ${error.message}`, [], { code: "invalid_presentation_artifact" });
+  }
 }
 
 function wirePresentationTransform(transform, ownerLabel) {
@@ -2230,6 +2262,7 @@ export function presentationEnvelope(presentation, protocolVersion) {
       source: sourceState?.wire.source,
       ...(slide.layoutId ? { layoutId: slide.layoutId } : {}),
       ...(slide.background?.fill ? { background: wireBackground(slide.background, `slide ${slideIndex + 1}`) } : {}),
+      ...(slide.transition?.configured ? { transition: wirePresentationTransition(slide.transition) } : {}),
       ...(bindingState?.wire.speakerNotes
         ? { speakerNotes: { text: slide.speakerNotes?.text || "", source: bindingState.wire.speakerNotes.source } }
         : slide.speakerNotes?.text
@@ -2776,6 +2809,7 @@ export async function presentationFromEnvelope(envelope) {
     const slide = presentation.slides.add({
       name: sourceSlide.name,
       ...(sourceSlide.background ? { background: modelBackground(sourceSlide.background) } : {}),
+      ...(sourceSlide.transition ? { transition: modelPresentationTransition(sourceSlide.transition, slideStates.length) } : {}),
     });
     slide.id = sourceSlide.id || slide.id;
     slide.layoutId = sourceSlide.layoutId || undefined;
@@ -2786,6 +2820,14 @@ export async function presentationFromEnvelope(envelope) {
         partPresent: Boolean(sourceSlide.speakerNotes),
         editable: Boolean(sourceSlide.speakerNotes?.source?.editable),
         addable: Boolean(!sourceSlide.speakerNotes && sourceSlide.source?.speakerNotesAddable),
+      }),
+    });
+    Object.defineProperty(slide.transition, PRESENTATION_TRANSITION_CAPABILITY, {
+      value: Object.freeze({
+        sourceBound: true,
+        partPresent: Boolean(sourceSlide.source?.transitionPresent),
+        editable: Boolean(sourceSlide.source?.transitionEditable),
+        addable: false,
       }),
     });
     const entries = [];

@@ -166,6 +166,22 @@ boundary may change. Add/delete/reorder topology, pending slide clone/delete,
 and opaque native extension graphs fail closed. See
 [`sections.spec.md`](./sections.spec.md) for the full native/opaque boundary.
 
+## Slide Transitions
+
+```ts
+slide.setTransition({ effect: "fade", speed: "medium", advanceOnClick: true });
+slide.clearTransition();
+```
+
+The direct transition profile owns only `fade` and directional `push`, explicit
+slow/medium/fast speed, click advancement, and an optional bounded timer.
+Inspect/resolve the stable `${slide.id}/transition` facade before changing an
+imported deck. Only one existing canonical direct `p:transition` is editable;
+transition-absent slides and timing/sound/extension/other-effect graphs remain
+source-bound and fail closed. See
+[`transitions.spec.md`](./transitions.spec.md) for the native mapping and
+playback-QA boundary.
+
 ## Discover And Edit
 
 ```ts
@@ -178,7 +194,7 @@ const snapshot = await presentation.inspect({
 const target = presentation.resolve(anchorId);
 ```
 
-`inspect` returns stable anchor ids for slides, shapes, images, tables, charts,
+`inspect` returns stable anchor ids for slides, transitions, shapes, images, tables, charts,
 custom shows, sections, text ranges, speaker notes, and comment threads. `resolve` maps a
 returned anchor id to the matching facade. Layout records expose `layoutId` for
 search and comparison; pass only model-returned IDs such as `pr/`, `sl/`,
@@ -190,7 +206,7 @@ search and comparison; pass only model-returned IDs such as `pr/`, `sl/`,
 ```ts
 type PresentationInspectOptions = {
   target?: { id: string; beforeLines?: number; afterLines?: number };
-  kind?: string; // e.g. "slide,textbox,shape,image,table,chart,notes,thread,layout"
+  kind?: string; // e.g. "slide,transition,textbox,shape,image,table,chart,notes,thread,layout"
   include?: string;
   exclude?: string;
   search?: string;

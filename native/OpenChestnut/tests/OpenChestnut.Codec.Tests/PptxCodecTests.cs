@@ -5802,6 +5802,112 @@ public sealed class PptxCodecTests
         Assert.Equal("invalid_presentation_text", Assert.Single(Invoke(request).Diagnostics).Code);
     }
 
+    [Fact]
+    public void SlideTransitionsAuthorImportEditAndFailClosedForAbsentOrOpaqueImports()
+    {
+        var request = ExportRequest();
+        request.Artifact.Presentation.Slides[0].Transition = new PresentationTransition
+        {
+            Effect = "fade",
+            Speed = "medium",
+            AdvanceOnClick = true,
+            AdvanceAfterMs = 1_250,
+        };
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var transition = package.PresentationPart!.SlideParts.Single().Slide!.Transition!;
+            Assert.Equal(P.TransitionSpeedValues.Medium, transition.Speed!.Value);
+            Assert.True(transition.AdvanceOnClick!.Value);
+            Assert.Equal("1250", transition.AdvanceAfterTime!.Value);
+            Assert.IsType<P.FadeTransition>(Assert.Single(transition.ChildElements));
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var slide = Assert.Single(imported.Artifact.Presentation.Slides);
+        Assert.Equal(("fade", "medium", true, 1_250U), (slide.Transition.Effect, slide.Transition.Speed, slide.Transition.AdvanceOnClick, slide.Transition.AdvanceAfterMs));
+        Assert.True(slide.Source!.TransitionPresent);
+        Assert.True(slide.Source.TransitionEditable);
+
+        slide.Transition = new PresentationTransition
+        {
+            Effect = "push",
+            Direction = "right",
+            Speed = "fast",
+            AdvanceOnClick = false,
+            AdvanceAfterMs = 0,
+        };
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var editedRoundTrip = Import(edited.File.ToByteArray());
+        Assert.True(editedRoundTrip.Ok, Diagnostics(editedRoundTrip));
+        var editedTransition = Assert.Single(editedRoundTrip.Artifact.Presentation.Slides).Transition;
+        Assert.Equal(("push", "right", "fast", false, 0U), (editedTransition.Effect, editedTransition.Direction, editedTransition.Speed, editedTransition.AdvanceOnClick, editedTransition.AdvanceAfterMs));
+
+        editedRoundTrip.Artifact.Presentation.Slides[0].Transition = null;
+        var cleared = Export(editedRoundTrip.Artifact);
+        Assert.True(cleared.Ok, Diagnostics(cleared));
+        Assert.Null(Assert.Single(Import(cleared.File.ToByteArray()).Artifact.Presentation.Slides).Transition);
+
+        var absent = Import(Invoke(ExportRequest()).File.ToByteArray());
+        Assert.True(absent.Ok, Diagnostics(absent));
+        absent.Artifact.Presentation.Slides[0].Transition = new PresentationTransition
+        {
+            Effect = "fade",
+            Speed = "medium",
+            AdvanceOnClick = true,
+        };
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(Export(absent.Artifact).Diagnostics).Code);
+
+        byte[] opaqueBytes;
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        {
+            using (var package = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
+            {
+                var sourceSlide = package.PresentationPart!.SlideParts.Single();
+                sourceSlide.Slide!.Transition = new P.Transition(
+                    new P.WipeTransition { Direction = P.TransitionSlideDirectionValues.Left })
+                {
+                    Speed = P.TransitionSpeedValues.Medium,
+                    AdvanceOnClick = true,
+                };
+                sourceSlide.Slide.Save();
+            }
+            opaqueBytes = stream.ToArray();
+        }
+        var opaque = Import(opaqueBytes);
+        Assert.True(opaque.Ok, Diagnostics(opaque));
+        var opaqueSlide = Assert.Single(opaque.Artifact.Presentation.Slides);
+        Assert.Null(opaqueSlide.Transition);
+        Assert.True(opaqueSlide.Source!.TransitionPresent);
+        Assert.False(opaqueSlide.Source.TransitionEditable);
+        var preserved = Export(opaque.Artifact);
+        Assert.True(preserved.Ok, Diagnostics(preserved));
+        using (var sourceStream = new MemoryStream(opaqueBytes, writable: false))
+        using (var outputStream = new MemoryStream(preserved.File.ToByteArray(), writable: false))
+        using (var sourcePackage = PresentationDocument.Open(sourceStream, false))
+        using (var outputPackage = PresentationDocument.Open(outputStream, false))
+            Assert.Equal(
+                sourcePackage.PresentationPart!.SlideParts.Single().Slide!.Transition!.OuterXml,
+                outputPackage.PresentationPart!.SlideParts.Single().Slide!.Transition!.OuterXml);
+
+        opaqueSlide.Transition = new PresentationTransition
+        {
+            Effect = "fade",
+            Speed = "medium",
+            AdvanceOnClick = true,
+        };
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(Export(opaque.Artifact).Diagnostics).Code);
+
+        var invalid = ExportRequest();
+        invalid.Artifact.Presentation.Slides[0].Transition = new PresentationTransition { Effect = "fade", Speed = "medium" };
+        Assert.Equal("invalid_presentation_transition", Assert.Single(Invoke(invalid).Diagnostics).Code);
+    }
+
     private static CodecResponse Invoke(CodecRequest request) =>
         CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(request.ToByteArray()));
 
