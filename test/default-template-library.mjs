@@ -49,7 +49,10 @@ const SPREADSHEET_RECALCULATION_SENTINELS = new Map([
   ["artifact-template-financial-budget", { sheet: "Summary", address: "E8" }],
   ["artifact-template-operating-calendar", { sheet: "Annual", address: "C2" }],
   ["artifact-template-project-tracker", { sheet: "Project Plan", address: "M9" }],
-  ["artifact-template-sales-pipeline", { sheet: "Sales Pipeline", address: "B10" }],
+  ["artifact-template-sales-pipeline", [
+    { sheet: "Sales Pipeline", address: "B10" },
+    { sheet: "Sales Pipeline", address: "H6" },
+  ]],
   ["artifact-template-three-statement-forecast", { sheet: "Exec Sum", address: "C7" }],
 ]);
 
@@ -144,15 +147,19 @@ function sameFormulaValue(left, right) {
 }
 
 function assertSpreadsheetTemplateCalculation(templateId, workbook, sourcePath) {
-  const sentinel = SPREADSHEET_RECALCULATION_SENTINELS.get(templateId);
-  assert.ok(sentinel, `Spreadsheet template needs a model-calculation sentinel: ${sourcePath}`);
-  const sheet = workbook.worksheets.getItem(sentinel.sheet);
-  assert.ok(sheet, `Spreadsheet template sentinel sheet is missing: ${sourcePath}`);
-  const cell = sheet.store.get(sentinel.address);
-  assert.ok(cell.formula, `Spreadsheet template sentinel must retain a formula: ${sourcePath}`);
-  const cachedValue = cell.value;
+  const configured = SPREADSHEET_RECALCULATION_SENTINELS.get(templateId);
+  const sentinels = Array.isArray(configured) ? configured : [configured];
+  assert.ok(sentinels.every(Boolean), `Spreadsheet template needs a model-calculation sentinel: ${sourcePath}`);
+  const cells = sentinels.map((sentinel) => {
+    const sheet = workbook.worksheets.getItem(sentinel.sheet);
+    assert.ok(sheet, `Spreadsheet template sentinel sheet is missing: ${sourcePath}`);
+    const cell = sheet.store.get(sentinel.address);
+    assert.ok(cell.formula, `Spreadsheet template sentinel must retain a formula: ${sourcePath}`);
+    return { ...sentinel, cell, cachedValue: cell.value };
+  });
   workbook.recalculate();
-  assert.equal(sameFormulaValue(cell.value, cachedValue), true, `Spreadsheet template model calculation must match its cached sentinel: ${sourcePath}`);
+  for (const { address, cell, cachedValue } of cells)
+    assert.equal(sameFormulaValue(cell.value, cachedValue), true, `Spreadsheet template model calculation must match its cached sentinel ${address}: ${sourcePath}`);
   const errors = [];
   for (const candidateSheet of workbook.worksheets.items) {
     for (const [address, candidate] of candidateSheet.store.entries()) {

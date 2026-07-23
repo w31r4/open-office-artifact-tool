@@ -695,11 +695,9 @@ function formulaWholeFunctionCall(text) {
   return closeIndex === text.length - 1 ? { name: match[1].toUpperCase(), args: text.slice(openIndex + 1, -1) } : undefined;
 }
 
-function formulaExpressionBinary(sheet, leftText, operator, rightText, context = {}) {
-  const left = evaluateFormulaExpression(sheet, leftText, context);
+function formulaApplyBinaryOperator(left, operator, right) {
   const leftError = formulaErrorCode(left);
   if (leftError) return leftError;
-  const right = evaluateFormulaExpression(sheet, rightText, context);
   const rightError = formulaErrorCode(right);
   if (rightError) return rightError;
   if (["=", "<>", ">", "<", ">=", "<="].includes(operator)) return compareFormulaValues(left, operator, right);
@@ -717,6 +715,121 @@ function formulaExpressionBinary(sheet, leftText, operator, rightText, context =
     return Number.isFinite(value) ? value : "#NUM!";
   }
   return "#NAME?";
+}
+
+function formulaExpressionBinary(sheet, leftText, operator, rightText, context = {}) {
+  const left = evaluateFormulaExpression(sheet, leftText, context);
+  const leftError = formulaErrorCode(left);
+  if (leftError) return leftError;
+  const right = evaluateFormulaExpression(sheet, rightText, context);
+  return formulaApplyBinaryOperator(left, operator, right);
+}
+
+function formulaApplyUnarySign(value, sign) {
+  const error = formulaErrorCode(value);
+  if (error) return error;
+  const number = formulaNumber(value);
+  return sign === "-" ? -number : number;
+}
+
+const FORMULA_VECTOR_MAX_CELLS = 10_000;
+
+function formulaMatrixGeometry(matrix) {
+  if (!Array.isArray(matrix)) return undefined;
+  if (matrix.length === 0) return { rows: 0, cols: 0, cells: 0 };
+  if (!Array.isArray(matrix[0])) return undefined;
+  const rows = matrix.length;
+  const cols = matrix[0].length;
+  if (!matrix.every((row) => Array.isArray(row) && row.length === cols)) return undefined;
+  return { rows, cols, cells: rows * cols };
+}
+
+function formulaBoundedVectorMatrix(matrix) {
+  const geometry = formulaMatrixGeometry(matrix);
+  if (!geometry || geometry.cells > FORMULA_VECTOR_MAX_CELLS) return "#VALUE!";
+  return matrix;
+}
+
+function formulaReferenceCellCount(reference) {
+  const start = parseCellAddress(reference.start);
+  const end = parseCellAddress(reference.end);
+  return (Math.abs(end.row - start.row) + 1) * (Math.abs(end.col - start.col) + 1);
+}
+
+function formulaVectorOperandAt(value, isMatrix, row, col) {
+  return isMatrix ? value[row][col] : value;
+}
+
+function formulaVectorBinary(sheet, leftText, operator, rightText, context = {}) {
+  const left = evaluateFormulaVectorExpression(sheet, leftText, context);
+  const right = evaluateFormulaVectorExpression(sheet, rightText, context);
+  const leftIsMatrix = isFormulaMatrix(left);
+  const rightIsMatrix = isFormulaMatrix(right);
+  if (!leftIsMatrix && !rightIsMatrix) return formulaApplyBinaryOperator(left, operator, right);
+
+  const leftGeometry = leftIsMatrix ? formulaMatrixGeometry(left) : undefined;
+  const rightGeometry = rightIsMatrix ? formulaMatrixGeometry(right) : undefined;
+  if ((leftIsMatrix && (!leftGeometry || leftGeometry.cells > FORMULA_VECTOR_MAX_CELLS))
+    || (rightIsMatrix && (!rightGeometry || rightGeometry.cells > FORMULA_VECTOR_MAX_CELLS))) return "#VALUE!";
+  const geometry = leftGeometry || rightGeometry;
+  if (leftGeometry && rightGeometry && (leftGeometry.rows !== rightGeometry.rows || leftGeometry.cols !== rightGeometry.cols)) return "#VALUE!";
+  return Array.from({ length: geometry.rows }, (_, row) => Array.from({ length: geometry.cols }, (_, col) =>
+    formulaApplyBinaryOperator(formulaVectorOperandAt(left, leftIsMatrix, row, col), operator, formulaVectorOperandAt(right, rightIsMatrix, row, col))));
+}
+
+function formulaVectorUnarySign(sheet, valueText, sign, context = {}) {
+  const value = evaluateFormulaVectorExpression(sheet, valueText, context);
+  if (!isFormulaMatrix(value)) return formulaApplyUnarySign(value, sign);
+  const geometry = formulaMatrixGeometry(value);
+  if (!geometry || geometry.cells > FORMULA_VECTOR_MAX_CELLS) return "#VALUE!";
+  return value.map((row) => row.map((item) => formulaApplyUnarySign(item, sign)));
+}
+
+function evaluateFormulaVectorExpression(sheet, expr, context = {}) {
+  let text = String(expr ?? "").trim();
+  if (text === "") return undefined;
+  let outer;
+  while ((outer = formulaOuterParentheses(text)) !== undefined) text = outer;
+
+  const comparison = formulaTopLevelOperators(text, [">=", "<=", "<>", "=", ">", "<"]);
+  if (comparison.length > 1) return "#VALUE!";
+  if (comparison.length === 1) {
+    const { index, operator } = comparison[0];
+    return formulaVectorBinary(sheet, text.slice(0, index), operator, text.slice(index + operator.length), context);
+  }
+  const concatenation = formulaTopLevelOperators(text, ["&"]);
+  if (concatenation.length) {
+    const { index, operator } = concatenation.at(-1);
+    return formulaVectorBinary(sheet, text.slice(0, index), operator, text.slice(index + operator.length), context);
+  }
+  const addition = formulaTopLevelOperators(text, ["+", "-"], { binarySigns: true });
+  if (addition.length) {
+    const { index, operator } = addition.at(-1);
+    return formulaVectorBinary(sheet, text.slice(0, index), operator, text.slice(index + operator.length), context);
+  }
+  const multiplication = formulaTopLevelOperators(text, ["*", "/"]);
+  if (multiplication.length) {
+    const { index, operator } = multiplication.at(-1);
+    return formulaVectorBinary(sheet, text.slice(0, index), operator, text.slice(index + operator.length), context);
+  }
+  const exponentiation = formulaTopLevelOperators(text, ["^"]);
+  if (exponentiation.length) {
+    const { index, operator } = exponentiation[0];
+    return formulaVectorBinary(sheet, text.slice(0, index), operator, text.slice(index + operator.length), context);
+  }
+  if (text.startsWith("+") || text.startsWith("-")) return formulaVectorUnarySign(sheet, text.slice(1), text[0], context);
+
+  const directReference = formulaRefParts(text);
+  if (directReference && directReference.start !== directReference.end) {
+    if (formulaReferenceCellCount(directReference) > FORMULA_VECTOR_MAX_CELLS) return "#VALUE!";
+    return formulaBoundedVectorMatrix(formulaRangeMatrix(sheet, text, context));
+  }
+  const range = formulaRangeMatrix(sheet, text, context);
+  if (range && !directReference) return formulaBoundedVectorMatrix(range);
+  const functionCall = formulaWholeFunctionCall(text);
+  if (functionCall) return evaluateFormulaFunction(sheet, functionCall.name, splitFormulaArgs(functionCall.args), context);
+  const atomic = formulaAtomicScalar(sheet, text, context);
+  return atomic === undefined ? "#NAME?" : atomic;
 }
 
 function evaluateFormulaExpression(sheet, expr, context = {}) {
@@ -753,10 +866,7 @@ function evaluateFormulaExpression(sheet, expr, context = {}) {
   }
   if (text.startsWith("+") || text.startsWith("-")) {
     const value = evaluateFormulaExpression(sheet, text.slice(1), context);
-    const error = formulaErrorCode(value);
-    if (error) return error;
-    const number = formulaNumber(value);
-    return text.startsWith("-") ? -number : number;
+    return formulaApplyUnarySign(value, text[0]);
   }
   const functionCall = formulaWholeFunctionCall(text);
   if (functionCall) return evaluateFormulaFunction(sheet, functionCall.name, splitFormulaArgs(functionCall.args), context);
@@ -1756,7 +1866,10 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
       return fnName === "MINIFS" ? Math.min(...numbers) : Math.max(...numbers);
     }
     case "SUMPRODUCT": {
-      const matrices = args.map((arg) => formulaRangeMatrix(sheet, arg, context) || [[formulaScalar(sheet, arg, context)]]);
+      const matrices = args.map((arg) => {
+        const value = evaluateFormulaVectorExpression(sheet, arg, context);
+        return isFormulaMatrix(value) ? value : [[value]];
+      });
       if (!matrices.length) return 0;
       const shape = (matrix) => [matrix.length, matrix[0]?.length || 0];
       const [rows, cols] = shape(matrices[0]);

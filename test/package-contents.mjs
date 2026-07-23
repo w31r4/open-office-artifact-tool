@@ -55,11 +55,11 @@ const maxPackedBytes = 9_840_000;
 // The repository-only MIT Default Template Library is excluded from the npm
 // tarball. Its retained Office/PNG sources must never consume this consumer
 // package budget. PowerPoint sections plus the bounded transition and rich
-// speaker-notes leaves, the public formula catalog, and the bounded formula
-// expression parser add protobuf, audited WASM, public Help, and native
-// Presentation guidance;
+// speaker-notes leaves, the public formula catalog, bounded formula expression
+// parser, and SUMPRODUCT range-mask profile add protobuf, audited WASM, public
+// Help, and native Presentation guidance;
 // retain measured headroom instead of hiding that product surface.
-const maxUnpackedBytes = 24_890_000;
+const maxUnpackedBytes = 24_895_000;
 // Public Skill PNGs are required user-facing assets. They are retained with
 // byte-identical non-IDAT chunks and inflated scanline streams, but their IDAT
 // payloads are deterministically recompressed. Prevent future PNG tooling from

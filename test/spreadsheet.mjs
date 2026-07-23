@@ -1120,6 +1120,20 @@ const expressionStyles = expressionFormulaWorkbook.inspect({ kind: "computedStyl
   .map((line) => JSON.parse(line));
 assert.deepEqual(expressionStyles.map((record) => [record.address, record.style.fill]), [["B1", "#DCFCE7"]]);
 
+const sumproductMaskWorkbook = Workbook.create();
+const sumproductMaskSheet = sumproductMaskWorkbook.worksheets.add("SUMPRODUCT masks");
+sumproductMaskSheet.getRange("A1:A4").values = [[100], [200], [300], [400]];
+sumproductMaskSheet.getRange("B1:B4").values = [["Open"], [""], ["Closed Won"], ["Open"]];
+sumproductMaskSheet.getRange("C1:C4").values = [[10], [20], [30], [40]];
+sumproductMaskSheet.getRange("D1:D2").values = [[20], [20]];
+sumproductMaskSheet.getRange("E1:E4").formulas = [
+  ["=SUMPRODUCT(A1:A4,--(B1:B4<>\"\"),--(C1:C4>=D1),--(C1:C4<=D1+D2),--(B1:B4<>\"Closed Won\"))"],
+  ["=SUMPRODUCT(A1:A4,--(B1:B3<>\"\"))"],
+  ["=SUMPRODUCT(A1:A4,B1:B4)"],
+  ["=SUMPRODUCT(A1:A10001,B1:B10001)"],
+];
+assert.deepEqual(sumproductMaskSheet.getRange("E1:E4").values, [[400], ["#VALUE!"], [0], ["#VALUE!"]]);
+
 const textPositionWorkbook = Workbook.create();
 const textPositionSheet = textPositionWorkbook.worksheets.add("Text position");
 textPositionSheet.getRange("A1:A5").values = [

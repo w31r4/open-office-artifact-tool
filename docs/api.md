@@ -3112,7 +3112,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.SUM` | formula | Sum numeric values across arguments and ranges. |
 | `fx.SUMIF` | formula | Sum corresponding values using case-insensitive numeric/text criteria and Excel ?, *, and ~ wildcards. |
 | `fx.SUMIFS` | formula | Sum values where all supplied criteria ranges have the same size and match case-insensitive comparison or wildcard criteria. |
-| `fx.SUMPRODUCT` | formula | Multiply corresponding numeric values in equally sized arrays and return the sum of those products. |
+| `fx.SUMPRODUCT` | formula | Multiply corresponding numeric values in equally sized arrays and return the sum of those products; bounded same-shape direct-range predicate factors support comparisons, unary signs, and scalar arithmetic within SUMPRODUCT. |
 | `fx.SWITCH` | formula | Match an expression against ordered value/result pairs and return an optional default or #N/A when no value matches. |
 | `fx.TAKE` | formula | Take rows and optional columns from the start or end of an array and spill the result. |
 | `fx.TEXT` | formula | Format an Excel serial date as text with the bounded yyyy, yy, m/mm/mmm/mmmm, and d/dd token profile and literal separators. |
@@ -4792,11 +4792,12 @@ Sum values where all supplied criteria ranges have the same size and match case-
 
 #### `fx.SUMPRODUCT`
 
-Multiply corresponding numeric values in equally sized arrays and return the sum of those products.
+Multiply corresponding numeric values in equally sized arrays and return the sum of those products; bounded same-shape direct-range predicate factors support comparisons, unary signs, and scalar arithmetic within SUMPRODUCT.
 
 **Examples:**
 
 - =SUMPRODUCT(A1:A10,B1:B10)
+- =SUMPRODUCT(C1:C10,--(A1:A10="Open"))
 
 **Schema parameters:**
 
