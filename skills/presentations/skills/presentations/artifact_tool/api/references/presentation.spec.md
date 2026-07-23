@@ -196,8 +196,10 @@ The direct transition profile owns only `fade` and directional `push`, explicit
 slow/medium/fast speed, click advancement, and an optional bounded timer.
 Inspect/resolve the stable `${slide.id}/transition` facade before changing an
 imported deck. Only one existing canonical direct `p:transition` is editable;
-transition-absent slides and timing/sound/extension/other-effect graphs remain
-source-bound and fail closed. See
+an absent transition may be added only when `transition.capability.addable`
+proves the root contains only `p:cSld` plus optional `p:clrMapOvr` and no
+transition, timing, or extension leaf. Timing/sound/extension/other-effect
+graphs remain source-bound and fail closed. See
 [`transitions.spec.md`](./transitions.spec.md) for the native mapping and
 playback-QA boundary.
 

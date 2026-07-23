@@ -483,9 +483,11 @@ slide.setTransition({
 direction. Speed defaults to `medium`, click advancement to `true`, and the
 optional timer is an integer from `0` through `86400000` milliseconds. Inspect
 an imported deck with `kind: "transition"`, resolve `${slide.id}/transition`,
-then use `transition.set(...)` or `transition.clear()` only when its capability
-reports `editable: true`. A transition-absent imported slide is deliberately
-not addable, and timing/sound/extension/other-effect graphs stay opaque and
+then use `transition.set(...)` or `transition.clear()` when its capability
+reports `editable: true`. A transition-absent imported slide may use
+`transition.set(...)` only when `addable: true`: that proves the SlidePart has
+only `p:cSld` plus optional `p:clrMapOvr`, with no transition, timing, or
+extension leaf. Timing/sound/extension/other-effect graphs stay opaque and
 fail closed rather than being reconstructed. Reimport after export. Static
 render QA proves visible slide content only; use a PowerPoint/native-host lane
 for playback QA. See

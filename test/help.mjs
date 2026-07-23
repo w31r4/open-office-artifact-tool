@@ -270,8 +270,9 @@ assert.match(HELP_CATALOG.find((item) => item.name === "presentation.customShows
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.customShows.add")?.schema?.returns?.customShow?.description || "", /source-free PPTX authoring.*setSlides/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.sections.add")?.summary || "", /native PowerPoint p14:sectionLst.*complete ordered slide partition.*native GUID.*opaque/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.sections.add")?.schema?.parameters?.slides?.description || "", /partition every deck slide exactly once.*deck order/i);
-assert.match(HELP_CATALOG.find((item) => item.name === "slide.setTransition")?.summary || "", /direct p:transition.*fade.*push.*absent or opaque.*fail closed/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.setTransition")?.summary || "", /direct p:transition.*fade.*push.*canonical existing.*transition\.capability\.addable.*Timing.*sound.*extension.*opaque-effect.*fail closed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.setTransition")?.schema?.parameters?.transition?.description || "", /advanceOnClick.*advanceAfterMs.*0\.\.86400000/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.setTransition")?.schema?.returns?.slide?.description || "", /capability\.addable.*p:cSld.*p:clrMapOvr.*no transition, timing, or extension leaf/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.inspect")?.schema?.parameters?.kind?.description || "", /slide\/transition\/textbox/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /fields.*picture bullets.*customShow.*missing.*opaque.*fail closed/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "PdfFile.inspectPdf"));

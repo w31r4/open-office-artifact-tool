@@ -282,6 +282,7 @@ internal static class PptxCodec
                     TransitionSemanticSha256 = PptxTransitionCodec.SemanticHash(slideTransition),
                     TransitionEditable = PptxTransitionCodec.Supports(slideRoot),
                     TransitionPresent = PptxTransitionCodec.HasTransition(slideRoot),
+                    TransitionAddable = PptxTransitionCodec.CanAdd(slideRoot),
                 },
             };
             if (slideBackground is not null) target.Background = slideBackground;
@@ -649,7 +650,8 @@ internal static class PptxCodec
                     binding.CommentPartPresent != PptxLegacyCommentsCodec.CommentPartPresent(slidePart) ||
                     !binding.CommentFamily.Equals(PptxLegacyCommentsCodec.CommentFamily(presentationPart), StringComparison.Ordinal) ||
                     binding.TransitionEditable != PptxTransitionCodec.Supports(slideRoot) ||
-                    binding.TransitionPresent != PptxTransitionCodec.HasTransition(slideRoot))
+                    binding.TransitionPresent != PptxTransitionCodec.HasTransition(slideRoot) ||
+                    binding.TransitionAddable != PptxTransitionCodec.CanAdd(slideRoot))
                     throw new CodecException(
                         "presentation_slide_binding_mismatch",
                         $"Presentation slide {slideIndex + 1} does not match its hash-bound source slide.",
@@ -705,7 +707,8 @@ internal static class PptxCodec
                         PartPath(slidePart));
                 if (!PptxTransitionCodec.SemanticHash(target.Transition).Equals(originalTransitionHash, StringComparison.OrdinalIgnoreCase))
                 {
-                    if (!binding.TransitionEditable || !PptxTransitionCodec.Supports(slideRoot))
+                    var canAddTransition = binding.TransitionAddable && PptxTransitionCodec.CanAdd(slideRoot);
+                    if ((!binding.TransitionEditable || !PptxTransitionCodec.Supports(slideRoot)) && !canAddTransition)
                         throw new CodecException(
                             "unsupported_presentation_edit",
                             $"Presentation slide {slideIndex + 1} transition is preserved but not safely editable by this codec slice.",
@@ -3895,7 +3898,8 @@ internal static class PptxCodec
             !sourceBinding.BackgroundSemanticSha256.Equals(BackgroundSemanticHash(PptxBackgroundCodec.Read(common)), StringComparison.OrdinalIgnoreCase) ||
             !sourceBinding.TransitionSemanticSha256.Equals(PptxTransitionCodec.SemanticHash(PptxTransitionCodec.Read(root)), StringComparison.OrdinalIgnoreCase) ||
             sourceBinding.TransitionEditable != PptxTransitionCodec.Supports(root) ||
-            sourceBinding.TransitionPresent != PptxTransitionCodec.HasTransition(root))
+            sourceBinding.TransitionPresent != PptxTransitionCodec.HasTransition(root) ||
+            sourceBinding.TransitionAddable != PptxTransitionCodec.CanAdd(root))
             throw new CodecException("presentation_slide_clone_binding_mismatch", $"Presentation clone {target.TargetIndex + 1} does not match its source layout/background/transition binding.", PartPath(source.Part));
         if (!BackgroundSemanticHash(target.Target.Background).Equals(BackgroundSemanticHash(PptxBackgroundCodec.Read(common)), StringComparison.OrdinalIgnoreCase))
             throw UnsupportedSourceSlideClone(source, "the requested clone changes its source background");

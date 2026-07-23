@@ -1532,13 +1532,17 @@ message PresentationSlideSourceBinding {
   // the authority for an opaque transition graph.
   string transition_semantic_sha256 = 12;
   // True only for one canonical direct fade or push transition with explicit
-  // bounded attributes. Imported absence is intentionally not addable in the
-  // source-preserving profile; arbitrary effects, sound actions, extensions,
-  // and timing graphs remain source-owned.
+  // bounded attributes. Arbitrary effects, sound actions, extensions, and
+  // timing graphs remain source-owned.
   bool transition_editable = 13;
   // Distinguishes an absent transition from a retained opaque native one for
   // Agent-facing inspect/capability reporting.
   bool transition_present = 14;
+  // True only when this SlidePart has no p:transition, p:timing, or extension
+  // leaf and contains only its ordinary p:cSld plus optional p:clrMapOvr
+  // structure. Export re-proves that narrow shape before adding one canonical
+  // direct fade or push transition.
+  bool transition_addable = 15;
 }
 
 message PresentationSpeakerNotes {

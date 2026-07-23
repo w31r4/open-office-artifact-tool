@@ -67,17 +67,20 @@ edit an arbitrary package:
 
 Source-free slides are addable and editable. A source-bound slide is editable
 only when its existing transition fits this exact profile. An imported slide
-with no transition is intentionally **not addable**: adding a new transition
-to an arbitrary package is not silently treated as a harmless patch.
+with no transition is addable only when `capability.addable` is true: that
+proves its root contains only `p:cSld` plus optional `p:clrMapOvr`, with no
+`p:transition`, `p:timing`, or extension leaf. Adding the canonical direct
+leaf is then a one-SlidePart operation, not a general animation patch.
 
 ## Imported and Clone Boundary
 
 The C# Open XML SDK codec accepts one direct `p:transition` only when it has
-the explicit attributes and single child described above. `p14:dur`, sound
-actions, extension lists, extra/unknown attributes, multiple children, other
-effect names, malformed timers, and any broader timing/animation graph remain
-opaque. They are preserved byte-for-byte when unrelated supported edits occur,
-and `setTransition()` or `clearTransition()` rejects them.
+the explicit attributes and single child described above. `p:timing`,
+`p14:dur`, sound actions, extension lists, extra/unknown attributes, multiple
+children, other effect names, malformed timers, and any broader
+timing/animation graph remain opaque. They are preserved byte-for-byte when
+unrelated supported edits occur, and `setTransition()` or `clearTransition()`
+rejects them.
 
 The strict imported `slide.duplicate()` profile may copy one unchanged
 canonical direct transition with its SlidePart. It does not copy or interpret a

@@ -5903,7 +5903,7 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
-    public void SlideTransitionsAuthorImportEditAndFailClosedForAbsentOrOpaqueImports()
+    public void SlideTransitionsAuthorImportEditAddAndFailClosedForOpaqueOrTimedImports()
     {
         var request = ExportRequest();
         request.Artifact.Presentation.Slides[0].Transition = new PresentationTransition
@@ -5953,15 +5953,80 @@ public sealed class PptxCodecTests
         Assert.True(cleared.Ok, Diagnostics(cleared));
         Assert.Null(Assert.Single(Import(cleared.File.ToByteArray()).Artifact.Presentation.Slides).Transition);
 
-        var absent = Import(Invoke(ExportRequest()).File.ToByteArray());
+        var absentSource = Invoke(ExportRequest());
+        Assert.True(absentSource.Ok, Diagnostics(absentSource));
+        var absentBytes = absentSource.File.ToByteArray();
+        var absent = Import(absentBytes);
         Assert.True(absent.Ok, Diagnostics(absent));
-        absent.Artifact.Presentation.Slides[0].Transition = new PresentationTransition
+        var absentSlide = Assert.Single(absent.Artifact.Presentation.Slides);
+        Assert.False(absentSlide.Source!.TransitionPresent);
+        Assert.False(absentSlide.Source.TransitionEditable);
+        Assert.True(absentSlide.Source.TransitionAddable);
+        absentSlide.Transition = new PresentationTransition
         {
             Effect = "fade",
             Speed = "medium",
             AdvanceOnClick = true,
         };
-        Assert.Equal("unsupported_presentation_edit", Assert.Single(Export(absent.Artifact).Diagnostics).Code);
+        var added = Export(absent.Artifact);
+        Assert.True(added.Ok, Diagnostics(added));
+        var addedBytes = added.File.ToByteArray();
+        Assert.Equal(ZipPartPaths(absentBytes), ZipPartPaths(addedBytes));
+        foreach (var path in ZipPartPaths(absentBytes).Where(path => !path.Equals("ppt/slides/slide1.xml", StringComparison.OrdinalIgnoreCase)))
+            Assert.Equal(ZipBytes(absentBytes, path), ZipBytes(addedBytes, path));
+        using (var stream = new MemoryStream(addedBytes, writable: false))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var transition = package.PresentationPart!.SlideParts.Single().Slide!.Transition!;
+            Assert.Equal(P.TransitionSpeedValues.Medium, transition.Speed!.Value);
+            Assert.True(transition.AdvanceOnClick!.Value);
+            Assert.IsType<P.FadeTransition>(Assert.Single(transition.ChildElements));
+        }
+        var addedRoundTrip = Import(addedBytes);
+        Assert.True(addedRoundTrip.Ok, Diagnostics(addedRoundTrip));
+        var addedRoundTripSlide = Assert.Single(addedRoundTrip.Artifact.Presentation.Slides);
+        Assert.Equal(("fade", "medium", true), (addedRoundTripSlide.Transition.Effect, addedRoundTripSlide.Transition.Speed, addedRoundTripSlide.Transition.AdvanceOnClick));
+        Assert.True(addedRoundTripSlide.Source!.TransitionPresent);
+        Assert.True(addedRoundTripSlide.Source.TransitionEditable);
+        Assert.False(addedRoundTripSlide.Source.TransitionAddable);
+
+        var timedBytes = ReplaceZipText(
+            absentBytes,
+            "ppt/slides/slide1.xml",
+            xml => xml.Replace("</p:sld>", "<p:timing/></p:sld>", StringComparison.Ordinal));
+        var timed = Import(timedBytes);
+        Assert.True(timed.Ok, Diagnostics(timed));
+        var timedSlide = Assert.Single(timed.Artifact.Presentation.Slides);
+        Assert.False(timedSlide.Source!.TransitionPresent);
+        Assert.False(timedSlide.Source.TransitionAddable);
+        timedSlide.Transition = new PresentationTransition
+        {
+            Effect = "fade",
+            Speed = "medium",
+            AdvanceOnClick = true,
+        };
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(Export(timed.Artifact).Diagnostics).Code);
+
+        var timedExistingBytes = ReplaceZipText(
+            authored.File.ToByteArray(),
+            "ppt/slides/slide1.xml",
+            xml => xml.Replace("</p:transition>", "</p:transition><p:timing/>", StringComparison.Ordinal));
+        var timedExisting = Import(timedExistingBytes);
+        Assert.True(timedExisting.Ok, Diagnostics(timedExisting));
+        var timedExistingSlide = Assert.Single(timedExisting.Artifact.Presentation.Slides);
+        Assert.NotNull(timedExistingSlide.Transition);
+        Assert.True(timedExistingSlide.Source!.TransitionPresent);
+        Assert.False(timedExistingSlide.Source.TransitionEditable);
+        Assert.False(timedExistingSlide.Source.TransitionAddable);
+        timedExistingSlide.Transition = new PresentationTransition
+        {
+            Effect = "push",
+            Direction = "right",
+            Speed = "medium",
+            AdvanceOnClick = true,
+        };
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(Export(timedExisting.Artifact).Diagnostics).Code);
 
         byte[] opaqueBytes;
         using (var stream = new MemoryStream(authored.File.ToByteArray()))
@@ -5985,6 +6050,7 @@ public sealed class PptxCodecTests
         Assert.Null(opaqueSlide.Transition);
         Assert.True(opaqueSlide.Source!.TransitionPresent);
         Assert.False(opaqueSlide.Source.TransitionEditable);
+        Assert.False(opaqueSlide.Source.TransitionAddable);
         var preserved = Export(opaque.Artifact);
         Assert.True(preserved.Ok, Diagnostics(preserved));
         using (var sourceStream = new MemoryStream(opaqueBytes, writable: false))

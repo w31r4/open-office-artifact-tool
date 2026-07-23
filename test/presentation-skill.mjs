@@ -1630,7 +1630,7 @@ try {
   assert.match(skillText, /slide\.setBackground.*slide\.clearBackground/s);
   assert.match(skillText, /`fade` or directional\s+`push`/is);
   assert.match(skillText, /slide\.setTransition\(\{.*effect: "push".*advanceOnClick.*advanceAfterMs/is);
-  assert.match(skillText, /transition\.capability.*canonical direct fade\/push.*no transition.*not an addable surface.*timing.*sound.*p14.*extension.*opaque-preserved.*fail closed/is);
+  assert.match(skillText, /transition\.capability.*canonical direct fade\/push.*no transition.*addable: true.*p:cSld.*p:clrMapOvr.*no transition, timing, or extension leaf.*timing.*sound.*p14.*extension.*opaque-preserved.*fail closed/is);
   assert.match(skillText, /slide\.moveTo\(existingZeroBasedIndex\).*retained source.*p:sldIdLst.*slide\.delete\(\).*isolated.*layout relationship/is);
   assert.match(skillText, /starter-deck command below still needs a\s+broad imported-slide graph clone and broad graph delete semantics/is);
   assert.match(skillText, /slide\.duplicate\(\).*canonical shapes.*canonical inline fixed-grid tables.*recognized closed\s+literal-data charts.*eligible top-level embedded-XLSX OLE frames.*canonical\s+embedded rectangular images.*bounded canonical\s+straight\/elbow connectors.*new `SlidePart`.*every present\s+connector endpoint.*same copied `SlidePart`.*export plus reimport/is);
@@ -1675,13 +1675,13 @@ try {
   assert.match(slideReferenceText, /accepted embedded video.*top-level `p:pic`.*`p14:media`.*distinct SDK `MediaDataPart`.*shares the immutable poster.*playback/is);
   assert.match(slideReferenceText, /Gradient,\s+pattern, image.*opaque-preserved/is);
   assert.match(slideReferenceText, /p:cSld\/@name.*export\/reimport/is);
-  assert.match(slideReferenceText, /direct transition profile.*`fade`.*directional `push`.*absent transition is not addable.*opaque-preserved/is);
+  assert.match(slideReferenceText, /direct transition profile.*`fade`.*directional `push`.*absent transition may be added only when.*transition\.capability\.addable.*`p:cSld`.*`p:clrMapOvr`.*opaque-preserved/is);
   const transitionReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/transitions.spec.md", "utf8");
   assert.match(transitionReferenceText, /`p:transition` contract.*not a PowerPoint timing or\s+animation engine/is);
   assert.match(transitionReferenceText, /`effect`.*`"fade"`.*`"push"`/s);
   assert.match(transitionReferenceText, /advanceOnClick.*advanceAfterMs.*0\.\.86400000/is);
-  assert.match(transitionReferenceText, /with no transition is intentionally \*\*not addable\*\*/is);
-  assert.match(transitionReferenceText, /p14:dur.*sound.*extension.*opaque.*byte-for-byte/is);
+  assert.match(transitionReferenceText, /with no transition is addable only when.*capability\.addable.*`p:cSld`.*`p:clrMapOvr`.*`p:transition`, `p:timing`, or extension leaf/is);
+  assert.match(transitionReferenceText, /`p:timing`.*`p14:dur`.*sound.*extension.*opaque.*byte-for-byte/is);
   assert.match(transitionReferenceText, /static PNG\/PDF render cannot prove slideshow playback/is);
   const customShowReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/custom-shows.spec.md", "utf8");
   assert.match(customShowReferenceText, /bounded slide clone profile.*relationship-free action.*creates no hyperlink\/slide relationship.*clone is not implicitly added/is);

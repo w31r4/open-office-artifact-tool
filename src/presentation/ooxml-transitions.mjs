@@ -90,8 +90,8 @@ export class SlideTransition {
 
   set(config) {
     const capability = this.capability;
-    if (capability.sourceBound && !capability.editable) {
-      throw new Error("Presentation slide transition is source-bound and cannot be semantically replaced by this codec profile.");
+    if (capability.sourceBound && !capability.editable && !capability.addable) {
+      throw new Error("Presentation slide transition is source-bound and cannot be semantically set by this codec profile.");
     }
     this._value = normalizePresentationTransition(config);
     return this;

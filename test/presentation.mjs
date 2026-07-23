@@ -400,10 +400,33 @@ assert.deepEqual(transitionCloneRoundTrip.slides.items[0].transition.toJSON(), t
 
 const transitionAbsentDeck = Presentation.create();
 transitionAbsentDeck.slides.add({ name: "No transition" }).shapes.add({ text: "No transition" });
-const transitionAbsentImported = await PresentationFile.importPptx(await PresentationFile.exportPptx(transitionAbsentDeck));
-assert.deepEqual(transitionAbsentImported.slides.items[0].transition.capability, { sourceBound: true, partPresent: false, editable: false, addable: false });
+const transitionAbsentPptx = await PresentationFile.exportPptx(transitionAbsentDeck);
+const transitionAbsentZip = await JSZip.loadAsync(transitionAbsentPptx.bytes);
+const transitionAbsentImported = await PresentationFile.importPptx(transitionAbsentPptx);
+assert.deepEqual(transitionAbsentImported.slides.items[0].transition.capability, { sourceBound: true, partPresent: false, editable: false, addable: true });
+transitionAbsentImported.slides.items[0].setTransition({ effect: "fade", speed: "medium", advanceOnClick: true });
+const transitionAddedPptx = await PresentationFile.exportPptx(transitionAbsentImported);
+const transitionAddedZip = await JSZip.loadAsync(transitionAddedPptx.bytes);
+assert.deepEqual(Object.keys(transitionAddedZip.files).sort(), Object.keys(transitionAbsentZip.files).sort());
+for (const [path, entry] of Object.entries(transitionAbsentZip.files)) {
+  if (entry.dir || path === "ppt/slides/slide1.xml") continue;
+  assert.deepEqual(
+    await transitionAddedZip.file(path).async("uint8array"),
+    await transitionAbsentZip.file(path).async("uint8array"),
+    `adding an imported transition must preserve ${path} byte-for-byte`,
+  );
+}
+assert.match(await transitionAddedZip.file("ppt/slides/slide1.xml").async("string"), /<p:transition\b[^>]*\bspd="med"[^>]*\badvClick="1"[^>]*><p:fade\s*\/>/);
+const transitionAddedImported = await PresentationFile.importPptx(transitionAddedPptx);
+assert.deepEqual(transitionAddedImported.slides.items[0].transition.toJSON(), { effect: "fade", speed: "medium", advanceOnClick: true });
+assert.deepEqual(transitionAddedImported.slides.items[0].transition.capability, { sourceBound: true, partPresent: true, editable: true, addable: false });
+
+const timedTransitionZip = await JSZip.loadAsync(transitionAbsentPptx.bytes);
+timedTransitionZip.file("ppt/slides/slide1.xml", (await timedTransitionZip.file("ppt/slides/slide1.xml").async("string")).replace("</p:sld>", "<p:timing/></p:sld>"));
+const timedTransitionImported = await PresentationFile.importPptx(new FileBlob(await timedTransitionZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }), { type: "application/vnd.openxmlformats-officedocument.presentationml.presentation" }));
+assert.deepEqual(timedTransitionImported.slides.items[0].transition.capability, { sourceBound: true, partPresent: false, editable: false, addable: false });
 assert.throws(
-  () => transitionAbsentImported.slides.items[0].setTransition({ effect: "fade" }),
+  () => timedTransitionImported.slides.items[0].setTransition({ effect: "fade" }),
   /source-bound/,
 );
 

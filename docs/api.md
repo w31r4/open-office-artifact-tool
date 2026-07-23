@@ -1691,7 +1691,7 @@ Resolve one explicit PDF task and selected/default provider against the immutabl
 | `slide.autoLayout` | api | Place existing shapes inside a frame using horizontal or vertical flow, gap, padding, and alignment options. |
 | `slide.charts.add` | api | Add a source-free literal bar, line, pie, standard area, fixed 50%-hole doughnut, marker-only scatter, bounded 2D bubble, or clustered bar+line combo chart. Category families use shared literal categories; scatter and bubble use aligned per-series numeric X/Y values, with positive area-based bubble sizes. Supported variants retain title, legend, bounded axes, basic series styling, chart-level data labels, layout JSON, SVG preview, and native ChartPart output across import/edit/re-export. Formula/external data, advanced family geometry, topology changes, and unsupported styling fail closed rather than being flattened. |
 | `slide.clearBackground` | api | Remove the direct slide background so preview and PPTX output inherit from the preserved Layout/Master chain. Unsupported imported background graphs fail closed rather than being flattened or discarded. |
-| `slide.clearTransition` | api | Remove one canonical direct imported or source-free slide transition. A transition-absent imported slide is not an addable authoring surface, and unsupported timing, sound, extension, or effect graphs remain byte-preserved and reject mutation. |
+| `slide.clearTransition` | api | Remove one canonical direct imported or source-free slide transition. A transition-absent imported slide remains a no-op until an explicit capability-approved add; timing, sound, extension, and opaque-effect graphs remain byte-preserved and reject mutation. |
 | `slide.comments.addThread` | api | Create either a bounded legacy PPTX annotation or an Office 2021 modern thread. A comment-free imported presentation may add canonical legacy review comments only when comments.capability.addable is true; existing legacy records remain source-bound and read-only. Modern mode supports a top-level element/text-range/textMatch anchor, one root, direct replies, independent people/timestamps, and active/resolved/closed state; imported modern graphs permit only fixed-topology text/status edits. |
 | `slide.comments.capability` | api | Inspect defensive source-bound comment-family evidence before authoring. A comment-free imported presentation may advertise legacy addability; existing legacy records remain read-only and modern graphs retain their separate fixed-topology edit contract. |
 | `slide.compose` | api | Materialize a clean-room compose tree with row, column, grid, layers, box, paragraph/text, shape, table, chart, image, and rule nodes into editable slide objects. |
@@ -1704,7 +1704,7 @@ Resolve one explicit PDF task and selected/default provider against the immutabl
 | `slide.placeholders.getItem` | api | Resolve a slide placeholder shape by stable ID, name, placeholder type, or numeric index. Imported placeholder.textEditable reports a verified local SlidePart text capability; identity, geometry, formatting, layout binding, and inherited Master/Layout graphs remain source-bound. |
 | `slide.setBackground` | api | Set a direct slide background to a six-digit RGB/theme color solid fill or a native style reference. Recognized imported direct backgrounds are hash-bound and editable; inherited Layout/Master backgrounds remain inherited. |
 | `slide.setLayout` | api | Alias of slide.applyLayout(layout): bind and materialize a bounded source-free layout for native PPTX export. |
-| `slide.setTransition` | api | Set a direct p:transition to bounded fade or directional push behavior with slow/medium/fast speed plus click/timer advancement. Source-free slides may author it; imported slides may replace only one canonical existing direct transition, while absent or opaque source graphs fail closed. |
+| `slide.setTransition` | api | Set a direct p:transition to bounded fade or directional push behavior with slow/medium/fast speed plus click/timer advancement. Source-free slides may author it; imported slides may replace one canonical existing direct transition or add one only when transition.capability.addable is true. Timing, sound, extension, opaque-effect, and every other source graph fail closed. |
 | `slide.shapes.add` | api | Add a shape/textbox with preset or bounded literal custom geometry, position, optional center-based rotation/flips, fill, line, text, and DrawingML text-body layout. |
 | `slide.speakerNotes.capability` | api | Return defensive sourceBound, partPresent, editable, and addable evidence. addable identifies an imported notes-absent slide whose source NotesMaster/SlideMaster Theme graph can safely receive a canonical NotesSlide. Export independently re-proves the package graph, so mutating model or wire data cannot grant authority. |
 | `slide.tables.add` | api | Add an inspectable table facade with rows, columns, values, cells, rectangular merges, layout JSON, SVG preview, and canonical OpenChestnut plain-text PPTX output. |
@@ -2415,7 +2415,7 @@ Remove the direct slide background so preview and PPTX output inherit from the p
 
 #### `slide.clearTransition`
 
-Remove one canonical direct imported or source-free slide transition. A transition-absent imported slide is not an addable authoring surface, and unsupported timing, sound, extension, or effect graphs remain byte-preserved and reject mutation.
+Remove one canonical direct imported or source-free slide transition. A transition-absent imported slide remains a no-op until an explicit capability-approved add; timing, sound, extension, and opaque-effect graphs remain byte-preserved and reject mutation.
 
 **Schema returns:**
 
@@ -2589,7 +2589,7 @@ Alias of slide.applyLayout(layout): bind and materialize a bounded source-free l
 
 #### `slide.setTransition`
 
-Set a direct p:transition to bounded fade or directional push behavior with slow/medium/fast speed plus click/timer advancement. Source-free slides may author it; imported slides may replace only one canonical existing direct transition, while absent or opaque source graphs fail closed.
+Set a direct p:transition to bounded fade or directional push behavior with slow/medium/fast speed plus click/timer advancement. Source-free slides may author it; imported slides may replace one canonical existing direct transition or add one only when transition.capability.addable is true. Timing, sound, extension, opaque-effect, and every other source graph fail closed.
 
 **Schema parameters:**
 
@@ -2597,7 +2597,7 @@ Set a direct p:transition to bounded fade or directional push behavior with slow
 
 **Schema returns:**
 
-- `slide` (Slide) — The same slide with a normalized direct p:transition. Source-free slides may author it. An imported slide must already have exactly one canonical direct fade/push transition with explicit speed and click behavior; no-transition and opaque source graphs are not silently reconstructed.
+- `slide` (Slide) — The same slide with a normalized direct p:transition. Source-free slides may author it. An imported slide may replace exactly one canonical direct fade/push transition, or add one only when transition.capability.addable proves the root contains only p:cSld plus optional p:clrMapOvr and has no transition, timing, or extension leaf. Opaque source graphs are not reconstructed.
 
 #### `slide.shapes.add`
 

@@ -27,8 +27,17 @@ internal static class PptxTransitionCodec
     internal static bool Supports(P.Slide source)
     {
         var transitions = source.Elements<P.Transition>().ToArray();
-        return transitions.Length == 1 && TryRead(transitions[0], out _);
+        return transitions.Length == 1 &&
+            TryRead(transitions[0], out _) &&
+            source.ChildElements.All(child => child is P.CommonSlideData or P.ColorMapOverride or P.Transition);
     }
+
+    // Adding a direct transition is narrower than merely observing that one
+    // is absent. Any timing tree or extension can alter slideshow semantics,
+    // so a source-bound add is allowed only on the ordinary Slide root shape.
+    internal static bool CanAdd(P.Slide source) =>
+        !HasTransition(source) &&
+        source.ChildElements.All(child => child is P.CommonSlideData or P.ColorMapOverride);
 
     internal static void Validate(PresentationTransition? source)
     {

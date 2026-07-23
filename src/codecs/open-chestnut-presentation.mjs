@@ -2865,7 +2865,7 @@ export async function presentationFromEnvelope(envelope) {
         sourceBound: true,
         partPresent: Boolean(sourceSlide.source?.transitionPresent),
         editable: Boolean(sourceSlide.source?.transitionEditable),
-        addable: false,
+        addable: Boolean(sourceSlide.source?.transitionAddable),
       }),
     });
     const entries = [];

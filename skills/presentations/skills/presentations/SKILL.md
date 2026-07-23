@@ -526,9 +526,11 @@ slide.setTransition({
 For an imported deck, inspect `slide,transition`, resolve
 `${slide.id}/transition`, and read `transition.capability` before calling
 `set(...)` or `clear()`. Only one existing canonical direct fade/push graph is
-editable. A source-bound slide with no transition is not an addable surface;
-unknown effects, timing trees, sound actions, `p14` duration, or extension
-graphs stay opaque-preserved and fail closed on mutation. The strict slide
+editable. A source-bound slide with no transition may be set only when
+`addable: true`, which proves the Slide root contains only `p:cSld` plus
+optional `p:clrMapOvr` and no transition, timing, or extension leaf. Unknown
+effects, timing trees, sound actions, `p14` duration, or extension graphs stay
+opaque-preserved and fail closed on mutation. The strict slide
 clone profile may carry one unchanged canonical direct transition, but never a
 timing or sound graph.
 

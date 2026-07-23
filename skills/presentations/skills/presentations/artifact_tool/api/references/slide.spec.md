@@ -60,8 +60,11 @@ The direct transition profile is a separate leaf from background/layout state:
 it supports only `fade` and directional `push`, bounded speed/click/timer
 metadata, and one canonical `p:transition`. For an imported slide, inspect and
 resolve `${slide.id}/transition` first. A canonical existing graph may be
-replaced or removed; an absent transition is not addable, and timing, sound,
-extension, or other-effect graphs remain opaque-preserved and reject mutation.
+replaced or removed. An absent transition may be added only when
+`transition.capability.addable` is true: that proves the root contains only
+`p:cSld` plus optional `p:clrMapOvr`, with no transition, timing, or extension
+leaf. Timing, sound, extension, or other-effect graphs remain opaque-preserved
+and reject mutation.
 See [`transitions.spec.md`](./transitions.spec.md).
 
 ## Slide Order, Constrained Deletion, And Bounded Clone
