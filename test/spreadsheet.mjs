@@ -1055,6 +1055,39 @@ const importedIfsFormulaWorkbook = await SpreadsheetFile.importXlsx(ifsFormulaXl
 assert.deepEqual(importedIfsFormulaWorkbook.worksheets.getItem("Criteria").getRange("E1:E4").formulas, ifsFormulaSheet.getRange("E1:E4").formulas);
 assert.deepEqual(importedIfsFormulaWorkbook.worksheets.getItem("Criteria").getRange("G1:G7").formulas, ifsFormulaSheet.getRange("G1:G7").formulas);
 
+const textPositionWorkbook = Workbook.create();
+const textPositionSheet = textPositionWorkbook.worksheets.add("Text position");
+textPositionSheet.getRange("A1:A5").values = [
+  ["Quarterly Review"],
+  ["quarterly review"],
+  ["A*B"],
+  ["A?B"],
+  ["Launch 🚀 Review"],
+];
+textPositionSheet.getRange("B1:B10").formulas = [
+  ["=SEARCH(\"review\",A1)"],
+  ["=FIND(\"Review\",A2)"],
+  ["=FIND(\"review\",A2)"],
+  ["=SEARCH(\"Re*W\",A1)"],
+  ["=SEARCH(\"~*\",A3)"],
+  ["=SEARCH(\"~?\",A4)"],
+  ["=SEARCH(\"🚀\",A5)"],
+  ["=FIND(\"*\",A3)"],
+  ["=SEARCH(\"Review\",A1,12)"],
+  ["=SEARCH(\"R\",A1,99)"],
+];
+assert.deepEqual(textPositionSheet.getRange("B1:B10").values, [[11], ["#VALUE!"], [11], [11], [2], [2], [8], [2], ["#VALUE!"], ["#VALUE!"]]);
+textPositionSheet.getRange("A1:A5").conditionalFormats.add("expression", {
+  formula: "NOT(ISERROR(SEARCH(\"review\",A1)))",
+  format: { fill: "#FEF3C7" },
+});
+const textPositionStyles = textPositionWorkbook.inspect({ kind: "computedStyle", sheetName: "Text position", range: "A1:A5" }).ndjson
+  .trim()
+  .split("\n")
+  .filter(Boolean)
+  .map((line) => JSON.parse(line));
+assert.deepEqual(textPositionStyles.map((record) => [record.address, record.style.fill]), [["A1", "#FEF3C7"], ["A2", "#FEF3C7"], ["A5", "#FEF3C7"]]);
+
 const importedWithoutSourceSnapshot = await SpreadsheetFile.importXlsx(firstXlsx);
 const workbookState = importedWithoutSourceSnapshot[Symbol.for("open-office-artifact-tool.open-chestnut-state")];
 workbookState.opaqueOpc.sourcePackage = undefined;

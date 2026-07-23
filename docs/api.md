@@ -3050,6 +3050,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.EOMONTH` | formula | Return the final date serial of a month offset from a start date. |
 | `fx.EXPAND` | formula | Expand an array to requested row and column dimensions with optional padding. |
 | `fx.FILTER` | formula | Filter rows from a source range with a boolean or comparison include array and spill the matching rows. |
+| `fx.FIND` | formula | Return the 1-based position of a case-sensitive literal text sequence. |
 | `fx.FLOOR` | formula | Round a number down to the nearest significance. |
 | `fx.FV` | formula | Calculate the future value of a finite constant-payment stream from rate, term, payment, optional present value, and payment timing. |
 | `fx.HLOOKUP` | formula | Look up a value in the first row of a table range and return a value from another row. |
@@ -3100,6 +3101,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.ROUND` | formula | Round a numeric value to decimal places or, with negative digits, positions left of the decimal point. |
 | `fx.ROUNDDOWN` | formula | Round a numeric value toward zero at the requested positive or negative digit position. |
 | `fx.ROUNDUP` | formula | Round a numeric value away from zero at the requested positive or negative digit position. |
+| `fx.SEARCH` | formula | Return the 1-based position of case-insensitive text, supporting Excel ?, *, and ~ wildcard syntax. |
 | `fx.SECOND` | formula | Return the 0 through 59 second component from a nonnegative serial or supported time text. |
 | `fx.SEQUENCE` | formula | Return a dynamic array sequence that spills into neighboring cells in the clean-room formula engine. |
 | `fx.SLN` | formula | Calculate straight-line depreciation from cost, salvage value, and useful life. |
@@ -3676,6 +3678,23 @@ Filter rows from a source range with a boolean or comparison include array and s
 **Schema returns:**
 
 - `value` (unknown[][]) — Spilled two-dimensional formula result.
+
+#### `fx.FIND`
+
+Return the 1-based position of a case-sensitive literal text sequence.
+
+**Examples:**
+
+- =FIND("Review",A1,2)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =FIND(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
 
 #### `fx.FLOOR`
 
@@ -4570,6 +4589,24 @@ Round a numeric value away from zero at the requested positive or negative digit
 **Schema parameters:**
 
 - `formula` (string) required — Excel-style cell formula beginning with =ROUNDUP(...).
+- `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
+
+**Schema returns:**
+
+- `value` (number) — Calculated cell value or an Excel-style formula error string.
+
+#### `fx.SEARCH`
+
+Return the 1-based position of case-insensitive text, supporting Excel ?, *, and ~ wildcard syntax.
+
+**Examples:**
+
+- =SEARCH("review",A1)
+- =SEARCH("Re*W",A1,2)
+
+**Schema parameters:**
+
+- `formula` (string) required — Excel-style cell formula beginning with =SEARCH(...).
 - `arguments` (unknown[]) required — Function arguments may contain literals, cell references, ranges, arrays, or nested formulas as supported by the clean-room evaluator.
 
 **Schema returns:**

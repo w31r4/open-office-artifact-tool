@@ -1027,17 +1027,39 @@ function formulaMatchIndex(lookup, lookupValues = [], matchType = 0) {
   return "#N/A";
 }
 
-function formulaWildcardRegex(pattern) {
+function formulaWildcardRegex(pattern, { anchored = true, flags = "i" } = {}) {
   let source = "";
-  const text = formulaText(pattern);
-  for (let index = 0; index < text.length; index++) {
-    const char = text[index];
-    if (char === "~" && index + 1 < text.length) source += text[++index].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const characters = Array.from(formulaText(pattern));
+  for (let index = 0; index < characters.length; index++) {
+    const char = characters[index];
+    if (char === "~" && index + 1 < characters.length) source += characters[++index].replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     else if (char === "*") source += ".*";
     else if (char === "?") source += ".";
     else source += char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
-  return new RegExp(`^${source}$`, "i");
+  return new RegExp(`${anchored ? "^" : ""}${source}${anchored ? "$" : ""}`, flags);
+}
+
+function formulaTextSearchPosition(findValue, withinValue, startValue = 1, { caseSensitive = false, wildcard = false } = {}) {
+  for (const value of [findValue, withinValue, startValue]) {
+    const error = formulaErrorCode(value);
+    if (error) return error;
+  }
+  const findText = formulaText(findValue);
+  const characters = Array.from(formulaText(withinValue));
+  const start = formulaNumber(startValue);
+  if (formulaErrorCode(start)) return start;
+  if (!Number.isInteger(start) || start < 1 || start > characters.length) return "#VALUE!";
+  const tail = characters.slice(start - 1).join("");
+  if (wildcard) {
+    const match = formulaWildcardRegex(findText, { anchored: false, flags: "iu" }).exec(tail);
+    if (!match) return "#VALUE!";
+    return start + Array.from(tail.slice(0, match.index)).length;
+  }
+  const needle = caseSensitive ? findText : findText.toLocaleLowerCase();
+  const haystack = caseSensitive ? tail : tail.toLocaleLowerCase();
+  const index = haystack.indexOf(needle);
+  return index < 0 ? "#VALUE!" : start + Array.from(tail.slice(0, index)).length;
 }
 
 function formulaXmatchIndex(lookup, lookupValues = [], matchMode = 0, searchMode = 1) {
@@ -1303,6 +1325,14 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
     case "RIGHT": { const text = formulaText(scalar(0, "")); const count = Number(scalar(1, 1)) || 1; return text.slice(Math.max(0, text.length - count)); }
     case "MID": { const text = formulaText(scalar(0, "")); const start = Math.max(1, Number(scalar(1, 1)) || 1); const count = Math.max(0, Number(scalar(2, 1)) || 1); return text.slice(start - 1, start - 1 + count); }
     case "LEN": return formulaText(scalar(0, "")).length;
+    case "SEARCH": {
+      if (args.length < 2 || args.length > 3) return "#VALUE!";
+      return formulaTextSearchPosition(scalar(0), scalar(1), scalar(2, 1), { wildcard: true });
+    }
+    case "FIND": {
+      if (args.length < 2 || args.length > 3) return "#VALUE!";
+      return formulaTextSearchPosition(scalar(0), scalar(1), scalar(2, 1), { caseSensitive: true });
+    }
     case "UPPER": return formulaText(scalar(0, "")).toUpperCase();
     case "LOWER": return formulaText(scalar(0, "")).toLowerCase();
     case "TRIM": return formulaText(scalar(0, "")).trim().replace(/\s+/g, " ");

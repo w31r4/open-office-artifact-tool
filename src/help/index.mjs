@@ -165,6 +165,8 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "formula", name: "fx.RIGHT", category: "text", summary: "Return characters from the end of a text value.", examples: ["=RIGHT(A1,3)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.LEN", category: "text", summary: "Return the length of a text value.", examples: ["=LEN(A1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.MID", category: "text", summary: "Return characters from the middle of a text value.", examples: ["=MID(A1,2,3)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.SEARCH", category: "text", summary: "Return the 1-based position of case-insensitive text, supporting Excel ?, *, and ~ wildcard syntax.", examples: ["=SEARCH(\"review\",A1)", "=SEARCH(\"Re*W\",A1,2)"] },
+  { artifactKind: "workbook", kind: "formula", name: "fx.FIND", category: "text", summary: "Return the 1-based position of a case-sensitive literal text sequence.", examples: ["=FIND(\"Review\",A1,2)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.UPPER", category: "text", summary: "Convert text to uppercase.", examples: ["=UPPER(A1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.LOWER", category: "text", summary: "Convert text to lowercase.", examples: ["=LOWER(A1)"] },
   { artifactKind: "workbook", kind: "formula", name: "fx.TRIM", category: "text", summary: "Trim leading/trailing whitespace and collapse internal whitespace.", examples: ["=TRIM(A1)"] },
@@ -2186,7 +2188,7 @@ for (const item of HELP_CATALOG) {
       : item.category === "logical" || item.category === "information"
         ? (functionName === "IF" || functionName === "IFERROR" ? "unknown" : "boolean")
         : item.category === "text"
-          ? (functionName === "LEN" || functionName === "VALUE" ? "number" : "string")
+          ? (["LEN", "VALUE", "SEARCH", "FIND"].includes(functionName) ? "number" : "string")
           : functionName === "XLOOKUP" || functionName === "INDEX" || functionName === "VLOOKUP" || functionName === "HLOOKUP"
             ? "unknown"
             : "number";
