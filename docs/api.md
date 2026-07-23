@@ -3090,7 +3090,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.LEFT` | formula | Return characters from the start of a text value. |
 | `fx.LEN` | formula | Return the length of a text value. |
 | `fx.LOWER` | formula | Convert text to lowercase. |
-| `fx.MATCH` | formula | Return the 1-based position of a lookup value in a range, with exact match and basic ascending/descending approximate modes. |
+| `fx.MATCH` | formula | Return a 1-based lookup position in one row or column vector of 1 through 10,000 cells. Exact 0 matching is wildcard-aware; default/1 approximate matching requires a proven ascending homogeneous numeric or text vector and returns the greatest matching-or-lower key, while -1 requires proven descending order and returns the smallest matching-or-higher key. Two-dimensional, oversized, mixed, unordered, or invalid-mode inputs return #VALUE!. |
 | `fx.MAX` | formula | Return the maximum numeric value across arguments and ranges. |
 | `fx.MAXIFS` | formula | Return the largest numeric value where all supplied criteria ranges have the same size and match case-insensitive comparison or wildcard criteria. |
 | `fx.MEDIAN` | formula | Return the middle numeric value, or the average of the two middle values, across arguments and ranges. |
@@ -4155,11 +4155,11 @@ Convert text to lowercase.
 
 #### `fx.MATCH`
 
-Return the 1-based position of a lookup value in a range, with exact match and basic ascending/descending approximate modes.
+Return a 1-based lookup position in one row or column vector of 1 through 10,000 cells. Exact 0 matching is wildcard-aware; default/1 approximate matching requires a proven ascending homogeneous numeric or text vector and returns the greatest matching-or-lower key, while -1 requires proven descending order and returns the smallest matching-or-higher key. Two-dimensional, oversized, mixed, unordered, or invalid-mode inputs return #VALUE!.
 
 **Examples:**
 
-- =MATCH("Beta",A2:A4,0)
+- =MATCH("Beta*",A2:A10,0)
 
 **Schema parameters:**
 

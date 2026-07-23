@@ -1194,6 +1194,51 @@ const tableLookupFormulaXlsx = await SpreadsheetFile.exportXlsx(tableLookupFormu
 const importedTableLookupFormulaWorkbook = await SpreadsheetFile.importXlsx(tableLookupFormulaXlsx);
 assert.deepEqual(importedTableLookupFormulaWorkbook.worksheets.getItem("Table lookup bounds").getRange("Z1:Z21").formulas, tableLookupFormulaSheet.getRange("Z1:Z21").formulas);
 
+const matchFormulaWorkbook = Workbook.create();
+const matchFormulaSheet = matchFormulaWorkbook.worksheets.add("MATCH bounds");
+matchFormulaSheet.getRange("A1:A4").values = [[10], [20], [30], [40]];
+matchFormulaSheet.getRange("B1:B4").values = [[40], [30], [20], [10]];
+matchFormulaSheet.getRange("C1:C4").values = [[20], [10], [30], [40]];
+matchFormulaSheet.getRange("D1:D3").values = [["Alpha"], ["Beta"], ["Gamma"]];
+matchFormulaSheet.getRange("E1:E3").values = [[10], ["twenty"], [30]];
+matchFormulaSheet.getRange("F1:F3").values = [["Alpha"], ["Beta*"], ["Gamma"]];
+matchFormulaSheet.getRange("G1:J1").values = [[10, 20, 30, 40]];
+matchFormulaSheet.getRange("L1:M4").values = [["Key", "Value"], ["Alpha", 101], ["Beta", 201], ["Gamma", 301]];
+matchFormulaSheet.getRange("N1:N4").values = [[10], [20], [20], [30]];
+matchFormulaSheet.getRange("O1:O4").values = [[30], [20], [20], [10]];
+matchFormulaSheet.tables.add("L1:M4", true, "MatchKeys");
+matchFormulaWorkbook.definedNames.add("WideMatch", "'MATCH bounds'!A1:A10001");
+matchFormulaSheet.getRange("Z1:Z21").formulas = [
+  ["=MATCH(20,A1:A4,0)"],
+  ["=MATCH(25,A1:A4)"],
+  ["=MATCH(5,A1:A4,1)"],
+  ["=MATCH(25,B1:B4,-1)"],
+  ["=MATCH(45,B1:B4,-1)"],
+  ["=MATCH(20,C1:C4,1)"],
+  ["=MATCH(20,C1:C4,0)"],
+  ["=MATCH(\"Bet*\",D1:D3,0)"],
+  ["=MATCH(\"Beta~*\",F1:F3,0)"],
+  ["=MATCH(\"Beta\",MatchKeys[Key],0)"],
+  ["=MATCH(10,A1:B2,0)"],
+  ["=MATCH(10,A1:A10001,0)"],
+  ["=MATCH(10,WideMatch,0)"],
+  ["=MATCH(10,A1:A4,2)"],
+  ["=MATCH(10,A1:A4,0,99)"],
+  ["=MATCH(20,A1:A4,-1)"],
+  ["=MATCH(20,E1:E3,1)"],
+  ["=MATCH(30,G1:J1,0)"],
+  ["=MATCH(\"missing\",D1:D3,0)"],
+  ["=MATCH(20,N1:N4,1)"],
+  ["=MATCH(20,O1:O4,-1)"],
+];
+assert.deepEqual(matchFormulaSheet.getRange("Z1:Z21").values, [
+  [2], [2], ["#N/A"], [2], ["#N/A"], ["#VALUE!"], [1], [2], [2], [2],
+  ["#VALUE!"], ["#VALUE!"], ["#VALUE!"], ["#VALUE!"], ["#VALUE!"], ["#VALUE!"], ["#VALUE!"], [3], ["#N/A"], [3], [3],
+]);
+const matchFormulaXlsx = await SpreadsheetFile.exportXlsx(matchFormulaWorkbook);
+const importedMatchFormulaWorkbook = await SpreadsheetFile.importXlsx(matchFormulaXlsx);
+assert.deepEqual(importedMatchFormulaWorkbook.worksheets.getItem("MATCH bounds").getRange("Z1:Z21").formulas, matchFormulaSheet.getRange("Z1:Z21").formulas);
+
 const expressionFormulaWorkbook = Workbook.create();
 const expressionInputs = expressionFormulaWorkbook.worksheets.add("Inputs");
 const expressionTextInputs = expressionFormulaWorkbook.worksheets.add("Data & Targets");

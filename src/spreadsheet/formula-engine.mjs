@@ -1308,24 +1308,6 @@ function formulaSortCompare(left, right) {
   return formulaText(left).localeCompare(formulaText(right));
 }
 
-function formulaMatchIndex(lookup, lookupValues = [], matchType = 0) {
-  const values = lookupValues.flat ? lookupValues.flat() : lookupValues;
-  const same = (value) => formulaText(value) === formulaText(lookup) || Number(value) === Number(lookup);
-  const exact = values.findIndex(same);
-  if (matchType === 0 || exact >= 0) return exact >= 0 ? exact + 1 : "#N/A";
-  const lookupNum = Number(lookup);
-  if (Number.isFinite(lookupNum)) {
-    if (matchType < 0) {
-      const index = values.findIndex((value) => Number(value) <= lookupNum);
-      return index >= 0 ? index + 1 : "#N/A";
-    }
-    let best = -1;
-    for (let i = 0; i < values.length; i++) if (Number(values[i]) <= lookupNum) best = i;
-    return best >= 0 ? best + 1 : "#N/A";
-  }
-  return "#N/A";
-}
-
 function formulaWildcardRegex(pattern, { anchored = true, flags = "i" } = {}) {
   let source = "";
   const characters = Array.from(formulaText(pattern));
@@ -1445,10 +1427,11 @@ function formulaLookupResultIndex(value, limit) {
   return index > limit ? "#REF!" : index - 1;
 }
 
-function formulaApproximateTableLookupIndex(lookup, lookupValues = []) {
+function formulaApproximateLookupIndex(lookup, lookupValues = [], direction = "ascending") {
   const lookupError = formulaErrorCode(lookup);
   if (lookupError) return lookupError;
   if (!lookupValues.length) return "#VALUE!";
+  if (!["ascending", "descending"].includes(direction)) return "#VALUE!";
   const lookupNumber = Number(lookup);
   const numericLookup = Number.isFinite(lookupNumber) && formulaText(lookup).trim() !== "";
   const keys = [];
@@ -1464,20 +1447,23 @@ function formulaApproximateTableLookupIndex(lookup, lookupValues = []) {
   const compare = (left, right) => numericLookup
     ? left.number - right.number
     : formulaText(left.value).localeCompare(formulaText(right.value), undefined, { sensitivity: "base" });
-  for (let index = 1; index < keys.length; index += 1) if (compare(keys[index - 1], keys[index]) > 0) return "#VALUE!";
+  for (let index = 1; index < keys.length; index += 1) {
+    const ordering = compare(keys[index - 1], keys[index]);
+    if ((direction === "ascending" && ordering > 0) || (direction === "descending" && ordering < 0)) return "#VALUE!";
+  }
   let match = -1;
   for (let index = 0; index < keys.length; index += 1) {
     const comparison = numericLookup
       ? keys[index].number - lookupNumber
       : formulaText(keys[index].value).localeCompare(formulaText(lookup), undefined, { sensitivity: "base" });
-    if (comparison <= 0) match = index;
+    if ((direction === "ascending" && comparison <= 0) || (direction === "descending" && comparison >= 0)) match = index;
     else break;
   }
   return match >= 0 ? match + 1 : "#N/A";
 }
 
 function formulaTableLookupIndex(lookup, lookupValues, approximate) {
-  if (approximate) return formulaApproximateTableLookupIndex(lookup, lookupValues);
+  if (approximate) return formulaApproximateLookupIndex(lookup, lookupValues);
   const wildcard = typeof lookup === "string" && /[?*~]/.test(lookup);
   return formulaXmatchIndex(lookup, lookupValues, wildcard ? 2 : 0, 1);
 }
@@ -1997,10 +1983,17 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
       return matrix[rowIndex]?.[colIndex] ?? "#REF!";
     }
     case "MATCH": {
+      if (args.length < 2 || args.length > 3) return "#VALUE!";
       const lookup = scalar(0, "");
-      const matchValues = formulaRangeMatrix(sheet, args[1], context) || [];
-      const matchType = Math.sign(formulaNumber(scalar(2, 0)) || 0);
-      return formulaMatchIndex(lookup, matchValues.flat(), matchType);
+      const lookupVector = formulaLookupVector(sheet, args[1], context, { rejectErrors: true });
+      if (lookupVector.error) return lookupVector.error;
+      const matchType = formulaLookupMode(scalar(2), 1, [-1, 0, 1]);
+      if (formulaErrorCode(matchType)) return matchType;
+      if (matchType === 0) {
+        const wildcard = typeof lookup === "string" && /[?*~]/.test(lookup);
+        return formulaXmatchIndex(lookup, lookupVector.values, wildcard ? 2 : 0, 1);
+      }
+      return formulaApproximateLookupIndex(lookup, lookupVector.values, matchType === 1 ? "ascending" : "descending");
     }
     case "XMATCH": {
       if (args.length < 2 || args.length > 4) return "#VALUE!";
