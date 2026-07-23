@@ -3062,7 +3062,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.IFERROR` | formula | Return a fallback value when an expression evaluates to a formula error. |
 | `fx.IFNA` | formula | Return a fallback only when an expression evaluates to #N/A; preserve every other result or error. |
 | `fx.IFS` | formula | Evaluate condition/value pairs in order and return the first matching value, or #N/A when no condition matches. |
-| `fx.INDEX` | formula | Return a value from a range by 1-based row and optional column index. |
+| `fx.INDEX` | formula | Return a value from a range by 1-based row and optional column index, preserving an error-valued selector such as a failed MATCH. |
 | `fx.INT` | formula | Round a number down to the nearest integer. |
 | `fx.IPMT` | formula | Calculate the interest component of one constant-payment loan period from finite rate, period, term, present value, optional future value, and payment-timing inputs. |
 | `fx.IRR` | formula | Return a bounded-convergence periodic return rate for a finite cash-flow vector. |
@@ -3893,7 +3893,7 @@ Evaluate condition/value pairs in order and return the first matching value, or 
 
 #### `fx.INDEX`
 
-Return a value from a range by 1-based row and optional column index.
+Return a value from a range by 1-based row and optional column index, preserving an error-valued selector such as a failed MATCH.
 
 **Examples:**
 

@@ -1076,6 +1076,14 @@ templateFormulaSheet.getRange("C1:C6").formulas = [
   ["=TEXT(DATE(2026,7,12),\"0.00\")"],
 ];
 assert.deepEqual(templateFormulaSheet.getRange("C1:C6").values, [["20260712"], ["Jul 2026"], ["July 2026"], ["2026-07-02"], ["1900-02-29"], ["#VALUE!"]]);
+templateFormulaSheet.getRange("D1:D2").values = [["20260601|1"], ["20260602|1"]];
+templateFormulaSheet.getRange("E1:E4").formulas = [
+  ["=MATCH(\"20260531|1\",D1:D2,0)"],
+  ["=INDEX(D1:D2,E1)"],
+  ["=IFERROR(INDEX(D1:D2,E1),\"not found\")"],
+  ["=INDEX(D1:D2,2)"],
+];
+assert.deepEqual(templateFormulaSheet.getRange("E1:E4").values, [["#N/A"], ["#N/A"], ["not found"], ["20260602|1"]]);
 const templateFormula1904Workbook = Workbook.create({ dateSystem: "1904" });
 const templateFormula1904Sheet = templateFormula1904Workbook.worksheets.add("Date system");
 templateFormula1904Sheet.getRange("A1").formulas = [["=TEXT(DATE(1904,1,1),\"yyyy-mm-dd\")"]];

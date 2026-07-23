@@ -1886,8 +1886,14 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
     case "INDEX": {
       const matrix = normalizeFormulaMatrix(formulaRangeMatrix(sheet, args[0], context) || []);
       if (!matrix.length) return "#REF!";
-      const rowIndex = Math.max(1, Math.floor(formulaNumber(scalar(1, 1))) || 1) - 1;
-      const colIndex = Math.max(1, Math.floor(formulaNumber(scalar(2, 1))) || 1) - 1;
+      const rowValue = scalar(1, 1);
+      const rowError = formulaErrorCode(rowValue);
+      if (rowError) return rowError;
+      const columnValue = scalar(2, 1);
+      const columnError = formulaErrorCode(columnValue);
+      if (columnError) return columnError;
+      const rowIndex = Math.max(1, Math.floor(formulaNumber(rowValue)) || 1) - 1;
+      const colIndex = Math.max(1, Math.floor(formulaNumber(columnValue)) || 1) - 1;
       return matrix[rowIndex]?.[colIndex] ?? "#REF!";
     }
     case "MATCH": {

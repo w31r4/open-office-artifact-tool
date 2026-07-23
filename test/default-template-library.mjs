@@ -56,6 +56,15 @@ const SPREADSHEET_RECALCULATION_SENTINELS = new Map([
   ["artifact-template-three-statement-forecast", { sheet: "Exec Sum", address: "C7" }],
 ]);
 
+const SPREADSHEET_SOURCE_EMPTY_FORMULA_CELL_COUNTS = new Map([
+  ["artifact-template-analytics-dashboard", 0],
+  ["artifact-template-financial-budget", 0],
+  ["artifact-template-operating-calendar", 323],
+  ["artifact-template-project-tracker", 556],
+  ["artifact-template-sales-pipeline", 0],
+  ["artifact-template-three-statement-forecast", 0],
+]);
+
 function sha256(bytes) {
   return crypto.createHash("sha256").update(bytes).digest("hex");
 }
@@ -162,19 +171,27 @@ function assertSpreadsheetTemplateCalculation(templateId, workbook, sourcePath) 
     return { ...sentinel, cell, cachedValue: cell.value };
   });
   const cachedFormulaCells = [];
+  const uncachedFormulaCells = [];
   for (const candidateSheet of workbook.worksheets.items) {
     for (const [address, candidate] of candidateSheet.store.entries()) {
       if (candidate.formula && hasCachedFormulaValue(candidate.value))
         cachedFormulaCells.push({ sheet: candidateSheet.name, address, cachedValue: candidate.value });
+      if (candidate.formula && !hasCachedFormulaValue(candidate.value))
+        uncachedFormulaCells.push({ sheet: candidateSheet.name, address });
     }
   }
   assert.ok(cachedFormulaCells.length, `Spreadsheet template must retain at least one cached formula value: ${sourcePath}`);
+  assert.equal(uncachedFormulaCells.length, SPREADSHEET_SOURCE_EMPTY_FORMULA_CELL_COUNTS.get(templateId), `Spreadsheet template source-empty formula inventory must remain pinned: ${sourcePath}`);
   workbook.recalculate();
   for (const { address, cell, cachedValue } of cells)
     assert.equal(sameFormulaValue(cell.value, cachedValue), true, `Spreadsheet template model calculation must match its cached sentinel ${address}: ${sourcePath}`);
   for (const { sheet: sheetName, address, cachedValue } of cachedFormulaCells) {
     const actual = workbook.worksheets.getItem(sheetName).store.get(address).value;
     assert.equal(sameFormulaValue(actual, cachedValue), true, `Spreadsheet template model calculation must match cached ${sheetName}!${address}: ${sourcePath}`);
+  }
+  for (const { sheet: sheetName, address } of uncachedFormulaCells) {
+    const actual = workbook.worksheets.getItem(sheetName).store.get(address).value;
+    assert.equal(actual, "", `Spreadsheet template source-empty formula must retain its intentional empty-text branch at ${sheetName}!${address}: ${sourcePath}`);
   }
   const errors = [];
   for (const candidateSheet of workbook.worksheets.items) {
