@@ -275,6 +275,84 @@ await assert.rejects(
   () => PresentationFile.exportPptx(irregularCustomShowImport),
   (error) => error?.code === "unsupported_presentation_custom_show_edit",
 );
+
+// PowerPoint sections are a p14 extension graph, not a custom-show route:
+// they partition the complete ordered slide sequence through native p:sldId
+// values and keep their GUID identity fixed after an import.
+const sectionDeck = Presentation.create({ slideSize: { width: 1280, height: 720 } });
+const sectionOpening = sectionDeck.slides.add({ name: "Opening" });
+sectionOpening.shapes.add({ name: "section-opening", position: { left: 80, top: 80, width: 800, height: 80 }, text: "Opening" });
+const sectionEvidence = sectionDeck.slides.add({ name: "Evidence" });
+sectionEvidence.shapes.add({ name: "section-evidence", position: { left: 80, top: 80, width: 800, height: 80 }, text: "Evidence" });
+const sectionAppendix = sectionDeck.slides.add({ name: "Appendix" });
+sectionAppendix.shapes.add({ name: "section-appendix", position: { left: 80, top: 80, width: 800, height: 80 }, text: "Appendix" });
+const openingSection = sectionDeck.sections.add({
+  id: "section/opening",
+  name: "Opening",
+  nativeId: "{01F07B81-39E6-4BBB-9B89-66EA253FBD29}",
+  slides: [sectionOpening],
+});
+sectionDeck.sections.add({
+  id: "section/content",
+  name: "Content",
+  nativeId: "{1FEF2C88-0CF2-4176-BA81-0DE6FD9D1274}",
+  slides: [sectionEvidence, sectionAppendix],
+});
+assert.equal(sectionDeck.resolve(openingSection.id), openingSection);
+assert.match(sectionDeck.inspect({ kind: "section", maxChars: 4000 }).ndjson, /Opening/);
+assert.equal(sectionDeck.verify().ok, true);
+const sectionFirstExport = await PresentationFile.exportPptx(sectionDeck);
+const sectionFirstZip = await JSZip.loadAsync(sectionFirstExport.bytes);
+const sectionPresentationXml = await sectionFirstZip.file("ppt/presentation.xml").async("string");
+assert.match(sectionPresentationXml, /<p:ext uri="\{521415D9-36F7-43E2-AB2F-B90AF26B5E84\}"><p14:sectionLst/);
+assert.match(sectionPresentationXml, /<p14:section name="Opening" id="\{01F07B81-39E6-4BBB-9B89-66EA253FBD29\}"><p14:sldIdLst><p14:sldId id="256" \/><\/p14:sldIdLst><\/p14:section>/);
+assert.match(sectionPresentationXml, /<p14:section name="Content" id="\{1FEF2C88-0CF2-4176-BA81-0DE6FD9D1274\}"><p14:sldIdLst><p14:sldId id="257" \/><p14:sldId id="258" \/><\/p14:sldIdLst><\/p14:section>/);
+const sectionImported = await PresentationFile.importPptx(sectionFirstExport);
+assert.equal(sectionImported.sections.count, 2);
+assert.deepEqual(sectionImported.sections.getItem("Opening").slideIds, [sectionImported.slides.items[0].id]);
+assert.deepEqual(sectionImported.sections.getItem("Content").slideIds, [sectionImported.slides.items[1].id, sectionImported.slides.items[2].id]);
+const editableOpeningSection = sectionImported.sections.getItem("Opening");
+editableOpeningSection.name = "Introduction";
+editableOpeningSection.setSlides([sectionImported.slides.items[0], sectionImported.slides.items[1]]);
+sectionImported.sections.getItem("Content").setSlides([sectionImported.slides.items[2]]);
+const sectionEditedExport = await PresentationFile.exportPptx(sectionImported);
+const sectionEditedRoundTrip = await PresentationFile.importPptx(sectionEditedExport);
+assert.equal(sectionEditedRoundTrip.sections.getItem("Introduction").nativeId, "{01F07B81-39E6-4BBB-9B89-66EA253FBD29}");
+assert.deepEqual(sectionEditedRoundTrip.sections.getItem("Introduction").slides.map((slide) => slide.name), ["Opening", "Evidence"]);
+assert.deepEqual(sectionEditedRoundTrip.sections.getItem("Content").slides.map((slide) => slide.name), ["Appendix"]);
+const sectionEditedZip = await JSZip.loadAsync(sectionEditedExport.bytes);
+for (const partPath of Object.keys(sectionFirstZip.files).filter((entry) => !sectionFirstZip.files[entry].dir && entry !== "ppt/presentation.xml")) {
+  assert.deepEqual(
+    await sectionEditedZip.file(partPath).async("uint8array"),
+    await sectionFirstZip.file(partPath).async("uint8array"),
+    `section edit changed non-presentation part ${partPath}`,
+  );
+}
+const sectionAddedImport = await PresentationFile.importPptx(sectionFirstExport);
+sectionAddedImport.sections.add("Unsafe", [sectionAddedImport.slides.items[0], sectionAddedImport.slides.items[1], sectionAddedImport.slides.items[2]]);
+await assert.rejects(
+  () => PresentationFile.exportPptx(sectionAddedImport),
+  (error) => error?.code === "presentation_section_topology_changed",
+);
+const sectionCloneImport = await PresentationFile.importPptx(sectionFirstExport);
+sectionCloneImport.slides.items[0].duplicate();
+await assert.rejects(
+  () => PresentationFile.exportPptx(sectionCloneImport),
+  (error) => error?.code === "unsupported_presentation_slide_clone",
+);
+const irregularSectionZip = await JSZip.loadAsync(sectionFirstExport.bytes);
+const irregularSectionXml = (await irregularSectionZip.file("ppt/presentation.xml").async("string"))
+  .replace("</p14:section>", "<p14:extLst/></p14:section>");
+irregularSectionZip.file("ppt/presentation.xml", irregularSectionXml);
+const irregularSectionBytes = await irregularSectionZip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
+const irregularSectionFile = new FileBlob(irregularSectionBytes, { type: "application/vnd.openxmlformats-officedocument.presentationml.presentation" });
+const irregularSectionImport = await PresentationFile.importPptx(irregularSectionFile);
+assert.equal(irregularSectionImport.sections.count, 0);
+irregularSectionImport.sections.add("Unsafe", irregularSectionImport.slides.items);
+await assert.rejects(
+  () => PresentationFile.exportPptx(irregularSectionImport),
+  (error) => error?.code === "unsupported_presentation_section_edit",
+);
 // Negative DrawingML offsets are retained only for an imported opaque,
 // source-bound element. New authoring still rejects them instead of widening
 // the public source-free layout profile.

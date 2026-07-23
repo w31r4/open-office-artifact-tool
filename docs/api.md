@@ -1656,7 +1656,7 @@ Resolve one explicit PDF task and selected/default provider against the immutabl
 | `presentation.customShows.getItem` | api | Resolve a source-free or canonical imported custom show by zero-based index, stable facade ID, or exact name. |
 | `presentation.export` | api | Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON. |
 | `presentation.fontFamilies` | api | Return a fresh sorted, case-insensitively deduplicated list of explicitly used presentation text and bullet font families. |
-| `presentation.inspect` | api | Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, tables, charts, images, and native contentPart/OLE/diagram/media objects with bounded editability, relationship-reference, root-relationship, preserved-part, and eligible embedded-workbook summaries; narrow with search/target anchors and shape fields with include/exclude. |
+| `presentation.inspect` | api | Emit NDJSON for deck, custom shows, PowerPoint sections, slides, textboxes, shapes, grouped shapes, tables, charts, images, and native contentPart/OLE/diagram/media objects with bounded editability, relationship-reference, root-relationship, preserved-part, and eligible embedded-workbook summaries; narrow with search/target anchors and shape fields with include/exclude. |
 | `presentation.layout.clearBackground` | api | Clear a direct background on a bounded source-free layout. Imported-layout mutation remains source-bound and fails closed. |
 | `presentation.layout.placeholders.add` | api | Append a direct-frame title/body/ctrTitle/subTitle text placeholder to a source-free layout. It becomes a native p:ph and must be materialized on each slide through applyLayout/setLayout; object/media/chart/table placeholders remain source-bound. |
 | `presentation.layout.placeholders.summary` | api | Return a defensive layout-placeholder discovery snapshot with stable IDs, names, native types/indexes, required flags, and direct-frame presence/geometry; editing the snapshot cannot mutate the model. |
@@ -1669,7 +1669,9 @@ Resolve one explicit PDF task and selected/default provider against the immutabl
 | `presentation.master.setTheme` | api | Set a model-level master theme override for preview only. Canonical PPTX export rejects that source-free override; imported-master mutation remains source-bound and fails closed. |
 | `presentation.masters.add` | api | Append a model-level Slide Master. Source-free PPTX authoring requires exactly one master, so use Presentation.create({ master }) or presentation.master for the canonical profile; multiple masters and imported-master edits fail closed. |
 | `presentation.masters.getItem` | api | Resolve a model-level or imported Slide Master by stable ID or name. |
-| `presentation.resolve` | api | Map stable inspect anchor IDs back to facade objects; imported advanced package objects may be read-only. |
+| `presentation.resolve` | api | Map stable inspect anchor IDs back to facade objects, including custom shows and PowerPoint sections; imported advanced package objects may be read-only. |
+| `presentation.sections.add` | api | Define a native PowerPoint p14:sectionLst entry for source-free OpenChestnut export. Sections together must form the complete ordered slide partition. Canonical imported sections may change only existing names and contiguous boundaries while count, order, stable facade identity, and native GUID stay fixed; irregular graphs remain opaque. |
+| `presentation.sections.getItem` | api | Resolve a source-free or canonical imported PowerPoint section by zero-based index, stable facade ID, or exact name. |
 | `presentation.slides.add` | api | Append an editable core slide with an optional bounded source-free layout, direct solid/style-reference background, and plain-text speaker notes. A supplied layout is resolved and materialized transactionally; effective imported Layout/Master inheritance is never flattened. |
 | `presentation.slides.insert` | api | Insert a source-free slide after an existing Slide or 0-based index, or at the beginning with after: null. It uses the same transactional layout materialization as slides.add; imported additions fail closed, while slide.duplicate and slide.delete each have their own narrow source-preserving OPC profiles. |
 | `presentation.textRange` | api | Inspect or resolve stable textRange anchors such as shapeId/text for editable slide text frames. |
@@ -1906,7 +1908,7 @@ Return a fresh sorted, case-insensitively deduplicated list of explicitly used p
 
 #### `presentation.inspect`
 
-Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, tables, charts, images, and native contentPart/OLE/diagram/media objects with bounded editability, relationship-reference, root-relationship, preserved-part, and eligible embedded-workbook summaries; narrow with search/target anchors and shape fields with include/exclude.
+Emit NDJSON for deck, custom shows, PowerPoint sections, slides, textboxes, shapes, grouped shapes, tables, charts, images, and native contentPart/OLE/diagram/media objects with bounded editability, relationship-reference, root-relationship, preserved-part, and eligible embedded-workbook summaries; narrow with search/target anchors and shape fields with include/exclude.
 
 **Examples:**
 
@@ -1924,7 +1926,7 @@ Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, t
 
 **Schema parameters:**
 
-- `kind` (string) — Comma-separated deck/theme/layout/slide/textbox/textRange/shape/groupShape/table/chart/image/connector/nativeObject/contentPart/oleObject/diagram/comment/notes kinds.
+- `kind` (string) — Comma-separated deck/theme/layout/slide/textbox/textRange/shape/groupShape/table/chart/image/connector/nativeObject/contentPart/oleObject/diagram/comment/notes/customShow/section kinds.
 - `search` (string) — Case-insensitive record filter.
 - `target` (string) — Stable target ID/anchor.
 - `before` (number) — Context records before matches.
@@ -2096,15 +2098,41 @@ Resolve a model-level or imported Slide Master by stable ID or name.
 
 #### `presentation.resolve`
 
-Map stable inspect anchor IDs back to facade objects; imported advanced package objects may be read-only.
+Map stable inspect anchor IDs back to facade objects, including custom shows and PowerPoint sections; imported advanced package objects may be read-only.
 
 **Schema parameters:**
 
-- `id` (string) required — Stable deck, theme, layout, slide, element, comment, or text-range ID.
+- `id` (string) required — Stable deck, theme, layout, slide, element, custom-show, section, comment, or text-range ID.
 
 **Schema returns:**
 
 - `object` (object|undefined) — Resolved editable facade/record or undefined.
+
+#### `presentation.sections.add`
+
+Define a native PowerPoint p14:sectionLst entry for source-free OpenChestnut export. Sections together must form the complete ordered slide partition. Canonical imported sections may change only existing names and contiguous boundaries while count, order, stable facade identity, and native GUID stay fixed; irregular graphs remain opaque.
+
+**Schema parameters:**
+
+- `name` (string) required — Unique 1-255-character section name, compared case-insensitively.
+- `slides` (PresentationSlide[]|string[]) required — One or more slide facades or stable slide IDs from this presentation. Across all sections, memberships must partition every deck slide exactly once and in deck order.
+- `nativeId` (string) — Optional preserved brace-delimited GUID for native p14:section/@id; new source-free sections receive a deterministic GUID.
+
+**Schema returns:**
+
+- `section` (PresentationSection) — Appended native PowerPoint p14:sectionLst entry. Source-free authoring owns the complete ordered slide partition. Canonical imported sections keep count, order, facade identity, and native GUID fixed; only names and contiguous partition boundaries may change. Extension-bearing or irregular section graphs remain opaque and fail closed.
+
+#### `presentation.sections.getItem`
+
+Resolve a source-free or canonical imported PowerPoint section by zero-based index, stable facade ID, or exact name.
+
+**Schema parameters:**
+
+- `idOrNameOrIndex` (string|number) required — Stable section ID, exact name, or zero-based collection index.
+
+**Schema returns:**
+
+- `section` (PresentationSection|undefined) — Matching PowerPoint-section facade or undefined.
 
 #### `presentation.slides.add`
 

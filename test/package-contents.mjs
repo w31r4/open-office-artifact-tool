@@ -49,10 +49,10 @@ const maxPackedBytes = 9_840_000;
 // its Skill/API contract without concealing a runtime bundle in the npm tarball.
 // The repository-only MIT Default Template Library is excluded from the npm
 // tarball. Its retained Office/PNG sources must never consume this consumer
-// package budget. Paragraph line-number suppression adds one protobuf field,
-// one audited WASM leaf, public Help, and the runnable Documents guidance; keep
-// roughly 25 KiB of measured headroom instead of hiding that product surface.
-const maxUnpackedBytes = 24_780_000;
+// package budget. PowerPoint sections add their protobuf surface, audited WASM
+// leaf, public Help, and native Presentation guidance; keep roughly 25 KiB of
+// measured headroom instead of hiding that product surface.
+const maxUnpackedBytes = 24_830_000;
 // Public Skill PNGs are required user-facing assets. They are retained with
 // byte-identical non-IDAT chunks and inflated scanline streams, but their IDAT
 // payloads are deterministically recompressed. Prevent future PNG tooling from
@@ -201,6 +201,7 @@ for (const required of [
   "skills/presentations/skills/presentations/examples/openchestnut-slide-duplicate-workflow.mjs",
   "skills/presentations/skills/presentations/examples/openchestnut-smartart-text-edit-workflow.mjs",
   "skills/presentations/skills/presentations/artifact_tool/api/references/custom-shows.spec.md",
+  "skills/presentations/skills/presentations/artifact_tool/api/references/sections.spec.md",
   "skills/presentations/skills/presentations/artifact_tool/api/references/ole-workbooks.spec.md",
   "skills/presentations/skills/presentations/artifact_tool/api/references/smartart-clone.spec.md",
   "skills/presentations/skills/presentations/artifact_tool/api/references/inkml-content-part-clone.spec.md",

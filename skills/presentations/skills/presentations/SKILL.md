@@ -475,6 +475,37 @@ did not change; slide deletion and custom-show topology mutation remain separate
 fail-closed operations. Run LibreOffice/Poppler review after delivery when
 available.
 
+### Native PowerPoint Sections
+
+PowerPoint sections are not custom shows: sections form the complete ordered
+partition of a deck, whereas custom shows are optional playback subsets. For a
+new deck, add every slide first and then define the entire partition through
+`presentation.sections`:
+
+```js
+const opening = presentation.slides.add({ name: "Opening" });
+const evidence = presentation.slides.add({ name: "Evidence" });
+const decision = presentation.slides.add({ name: "Decision" });
+
+presentation.sections.add("Context", [opening, evidence]);
+presentation.sections.add("Decision", [decision]);
+```
+
+The export writes the native Office 2010 `p14:sectionLst` extension in
+`ppt/presentation.xml`. Each section must have a unique name and at least one
+slide; flattening all memberships must reproduce the current slide order
+exactly, with no duplicates or omissions. Inspect an imported deck with
+`presentation.inspect({ kind: "section" })`, then resolve or look up an
+existing section and change only its name or boundary with `setSlides(...)`.
+Canonical imports keep section count, order, public identity, and native GUIDs
+fixed. Do not patch `ppt/presentation.xml` directly, add/delete/reorder an
+imported section, or combine sections with slide insertion/deletion/duplicate:
+those operations fail closed. Duplicate, extension-bearing, unresolved, or
+otherwise irregular native section graphs are opaque-preserved and cannot be
+semantically replaced. Read `artifact_tool/api/references/sections.spec.md`
+before editing an imported deck, then reimport and inspect sections after
+export; run native render review when available.
+
 ### Bounded Imported Speaker-Notes Add
 
 An imported slide whose source SlidePart has no NotesSlide may add plain-text

@@ -146,6 +146,26 @@ facade IDs, and native IDs remain source-bound. See
 [`custom-shows.spec.md`](./custom-shows.spec.md) for budgets, opaque graphs, and
 the stable-identity run-link contract, and the audited workflow.
 
+## PowerPoint Sections
+
+```ts
+presentation.sections.add("Context", [slide1, slide2]);
+presentation.sections.add("Decision", [slide3]);
+
+const context = presentation.sections.getItem("Context");
+context.name = "Background";
+context.setSlides([slide1]);
+presentation.sections.getItem("Decision").setSlides([slide2, slide3]);
+```
+
+Sections are presentation-wide `p14:sectionLst` groups, not custom-show
+playback subsets. Their flattened membership must be every deck slide exactly
+once and in current deck order. Canonical imported sections retain their
+count/order, facade IDs, and native GUIDs; only an existing name or a valid
+boundary may change. Add/delete/reorder topology, pending slide clone/delete,
+and opaque native extension graphs fail closed. See
+[`sections.spec.md`](./sections.spec.md) for the full native/opaque boundary.
+
 ## Discover And Edit
 
 ```ts
@@ -159,7 +179,7 @@ const target = presentation.resolve(anchorId);
 ```
 
 `inspect` returns stable anchor ids for slides, shapes, images, tables, charts,
-custom shows, text ranges, speaker notes, and comment threads. `resolve` maps a
+custom shows, sections, text ranges, speaker notes, and comment threads. `resolve` maps a
 returned anchor id to the matching facade. Layout records expose `layoutId` for
 search and comparison; pass only model-returned IDs such as `pr/`, `sl/`,
 `custom-show/`, `sh/`, `im/`, `tb/`, `ch/`, `nt/`, `th/`, and `tr/` anchors to

@@ -1341,6 +1341,16 @@ message PresentationArtifact {
   // canonical profile. Its exact XML remains in the validated source package;
   // no semantic custom_shows are exposed and any attempted replacement fails.
   bool custom_shows_opaque = 10;
+  // Ordered PowerPoint 2010 p14:sectionLst semantics. A modeled section list
+  // partitions all presentation slides exactly once and in presentation order.
+  // Source-free authoring owns the whole list. Imported canonical sections
+  // keep their count/order and native GUIDs fixed while names and contiguous
+  // membership change through a hash-bound source profile.
+  repeated PresentationSectionArtifact sections = 11;
+  // True only when an imported p14:sectionLst extension exists outside the
+  // bounded canonical profile. Its exact XML stays in the validated source
+  // package; no semantic sections are exposed and replacement fails closed.
+  bool sections_opaque = 12;
 }
 
 message PresentationViewProperties {
@@ -3061,6 +3071,26 @@ message PresentationCustomShowArtifact {
 message PresentationCustomShowSourceBinding {
   uint32 ordinal = 1;
   string show_xml_sha256 = 2;
+  string semantic_sha256 = 3;
+  bool editable = 4;
+}
+
+// Appended to retain every pre-existing descriptor index. PowerPoint sections
+// live in p:presentation/p:extLst under the Office-defined p14:sectionLst
+// extension URI, and reference p:sldId/@id values rather than relationships.
+message PresentationSectionArtifact {
+  string id = 1;
+  string name = 2;
+  // Canonical brace-delimited GUID from p14:section/@id. It is package-local
+  // source identity, not a durable cross-file artifact identity.
+  string native_id = 3;
+  repeated string slide_ids = 4;
+  PresentationSectionSourceBinding source = 5;
+}
+
+message PresentationSectionSourceBinding {
+  uint32 ordinal = 1;
+  string section_xml_sha256 = 2;
   string semantic_sha256 = 3;
   bool editable = 4;
 }

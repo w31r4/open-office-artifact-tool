@@ -211,9 +211,11 @@ export const HELP_CATALOG = [
   { artifactKind: "presentation", kind: "api", name: "slide.clearBackground", summary: "Remove the direct slide background so preview and PPTX output inherit from the preserved Layout/Master chain. Unsupported imported background graphs fail closed rather than being flattened or discarded." },
   { artifactKind: "presentation", kind: "api", name: "presentation.customShows.add", summary: "Define an ordered native p:custShowLst playback route for source-free OpenChestnut export. Text runs may target a show by exact name with optional returnToSlide. Canonical imported shows may change only their name and ordered retained-slide membership; fixed native identity keeps existing run links bound across a rename, while irregular graphs stay opaque." },
   { artifactKind: "presentation", kind: "api", name: "presentation.customShows.getItem", summary: "Resolve a source-free or canonical imported custom show by zero-based index, stable facade ID, or exact name." },
-  { artifactKind: "presentation", kind: "api", name: "presentation.inspect", summary: "Emit NDJSON for deck, custom shows, slides, textboxes, shapes, grouped shapes, tables, charts, images, and native contentPart/OLE/diagram/media objects with bounded editability, relationship-reference, root-relationship, preserved-part, and eligible embedded-workbook summaries; narrow with search/target anchors and shape fields with include/exclude." },
+  { artifactKind: "presentation", kind: "api", name: "presentation.sections.add", summary: "Define a native PowerPoint p14:sectionLst entry for source-free OpenChestnut export. Sections together must form the complete ordered slide partition. Canonical imported sections may change only existing names and contiguous boundaries while count, order, stable facade identity, and native GUID stay fixed; irregular graphs remain opaque." },
+  { artifactKind: "presentation", kind: "api", name: "presentation.sections.getItem", summary: "Resolve a source-free or canonical imported PowerPoint section by zero-based index, stable facade ID, or exact name." },
+  { artifactKind: "presentation", kind: "api", name: "presentation.inspect", summary: "Emit NDJSON for deck, custom shows, PowerPoint sections, slides, textboxes, shapes, grouped shapes, tables, charts, images, and native contentPart/OLE/diagram/media objects with bounded editability, relationship-reference, root-relationship, preserved-part, and eligible embedded-workbook summaries; narrow with search/target anchors and shape fields with include/exclude." },
   { artifactKind: "presentation", kind: "api", name: "presentation.textRange", summary: "Inspect or resolve stable textRange anchors such as shapeId/text for editable slide text frames." },
-  { artifactKind: "presentation", kind: "api", name: "presentation.resolve", summary: "Map stable inspect anchor IDs back to facade objects; imported advanced package objects may be read-only." },
+  { artifactKind: "presentation", kind: "api", name: "presentation.resolve", summary: "Map stable inspect anchor IDs back to facade objects, including custom shows and PowerPoint sections; imported advanced package objects may be read-only." },
   { artifactKind: "presentation", kind: "api", name: "presentation.export", summary: "Export a slide SVG preview, deck SVG montage via { format: 'montage' }, or target/search-sliced layout JSON." },
   { artifactKind: "presentation", kind: "api", name: "presentation.validateLayout", summary: "Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow." },
   { artifactKind: "presentation", kind: "api", name: "presentation.verify", summary: "Return QA issues for layout validation, missing master/layout references, placeholder fidelity, chart/data consistency, table shape, image data, and dangling comments." },
@@ -1472,7 +1474,7 @@ const PRESENTATION_HELP_SCHEMAS = {
   }, "slide", "Slide", "The same slide with a normalized direct background; canonical PPTX export never flattens inherited Layout/Master backgrounds."),
   "slide.clearBackground": helpSchema({}, "slide", "Slide", "The same slide with no direct background, inheriting from its preserved Layout/Master chain."),
   "presentation.inspect": helpSchema({
-    kind: { type: "string", description: "Comma-separated deck/theme/layout/slide/textbox/textRange/shape/groupShape/table/chart/image/connector/nativeObject/contentPart/oleObject/diagram/comment/notes kinds." },
+    kind: { type: "string", description: "Comma-separated deck/theme/layout/slide/textbox/textRange/shape/groupShape/table/chart/image/connector/nativeObject/contentPart/oleObject/diagram/comment/notes/customShow/section kinds." },
     search: { type: "string", description: "Case-insensitive record filter." },
     target: { type: "string", description: "Stable target ID/anchor." },
     before: { type: "number", description: "Context records before matches." },
@@ -1485,7 +1487,7 @@ const PRESENTATION_HELP_SCHEMAS = {
     id: { type: "string", required: true, description: "Stable shape text-range ID ending in /text." },
   }, "textRange", "TextRange|undefined", "Editable slide text-range facade or undefined."),
   "presentation.resolve": helpSchema({
-    id: { type: "string", required: true, description: "Stable deck, theme, layout, slide, element, comment, or text-range ID." },
+    id: { type: "string", required: true, description: "Stable deck, theme, layout, slide, element, custom-show, section, comment, or text-range ID." },
   }, "object", "object|undefined", "Resolved editable facade/record or undefined."),
   "presentation.export": helpSchema({
     format: { type: "string", description: "svg by default, montage, or layout." },
@@ -1524,6 +1526,14 @@ const PRESENTATION_HELP_SCHEMAS = {
   "presentation.customShows.getItem": helpSchema({
     idOrNameOrIndex: { type: "string|number", required: true, description: "Stable custom-show ID, exact name, or zero-based collection index." },
   }, "customShow", "PresentationCustomShow|undefined", "Matching custom-show facade or undefined."),
+  "presentation.sections.add": helpSchema({
+    name: { type: "string", required: true, description: "Unique 1-255-character section name, compared case-insensitively." },
+    slides: { type: "PresentationSlide[]|string[]", required: true, description: "One or more slide facades or stable slide IDs from this presentation. Across all sections, memberships must partition every deck slide exactly once and in deck order." },
+    nativeId: { type: "string", description: "Optional preserved brace-delimited GUID for native p14:section/@id; new source-free sections receive a deterministic GUID." },
+  }, "section", "PresentationSection", "Appended native PowerPoint p14:sectionLst entry. Source-free authoring owns the complete ordered slide partition. Canonical imported sections keep count, order, facade identity, and native GUID fixed; only names and contiguous partition boundaries may change. Extension-bearing or irregular section graphs remain opaque and fail closed."),
+  "presentation.sections.getItem": helpSchema({
+    idOrNameOrIndex: { type: "string|number", required: true, description: "Stable section ID, exact name, or zero-based collection index." },
+  }, "section", "PresentationSection|undefined", "Matching PowerPoint-section facade or undefined."),
   "shape.text.set": helpSchema({
     text: { type: "string|string[]|object|object[]", required: true, description: "Plain text, paragraph strings, inline arrays, or paragraph objects. Canonical OpenChestnut export supports ordered text, fields, styled line breaks, bounded run/paragraph formatting, character and picture bullets, auto-numbering, levels, indents, spacing, tab stops, and one absolute uri, target slideId, relative action (nextSlide, previousSlide, firstSlide, lastSlide, endShow), or existing customShow name per link. customShow may include returnToSlide and survives the bounded slide clone as the same relationship-free stable-identity action without adding the clone to show membership; missing, opaque, malformed, relationship-bearing, or dangling targets fail closed." },
   }, "textFrame", "TextFrame", "The same live text frame with normalized paragraphs and a backward-compatible flattened value."),

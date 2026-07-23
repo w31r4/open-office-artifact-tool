@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 364);
+assert.equal(HELP_CATALOG.length, 366);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -253,8 +253,12 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "PresentationFile.patchPptx"
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.slides.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.customShows.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.customShows.getItem"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.sections.add"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "presentation.sections.getItem"));
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.customShows.add")?.summary || "", /native p:custShowLst.*returnToSlide.*fixed native identity.*opaque/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.customShows.add")?.schema?.returns?.customShow?.description || "", /source-free PPTX authoring.*setSlides/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "presentation.sections.add")?.summary || "", /native PowerPoint p14:sectionLst.*complete ordered slide partition.*native GUID.*opaque/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "presentation.sections.add")?.schema?.parameters?.slides?.description || "", /partition every deck slide exactly once.*deck order/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /fields.*picture bullets.*customShow.*missing.*opaque.*fail closed/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "PdfFile.inspectPdf"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "createNativeOfficeRenderer"));
@@ -434,7 +438,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "document.setDateContentC
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.materializeFields")?.schema?.parameters?.dryRun?.type, "boolean");
 assert.match(HELP_CATALOG.find((item) => item.name === "document.materializeFields")?.summary || "", /SEQ counters.*REF cached results.*PAGEREF.*pagination host/i);
 const presentationCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "presentation");
-assert.equal(presentationCatalog.length, 66);
+assert.equal(presentationCatalog.length, 68);
 assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "presentation.slides.insert")?.schema?.parameters?.after?.type, "Slide|number|null");

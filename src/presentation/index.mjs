@@ -19,6 +19,7 @@ import { normalizePresentationChartAxisGroup, normalizePresentationChartDataLabe
 import { normalizePresentationChartExternalData, presentationChartUsesFormulaReferences } from "./ooxml-chart-data.mjs";
 import { presentationChartLineSvgAttributes, presentationChartTrendlinesSvg } from "./chart-trendline-svg.mjs";
 import { planPresentationCustomShows, PresentationCustomShowCollection } from "./ooxml-custom-shows.mjs";
+import { planPresentationSections, PresentationSectionCollection } from "./ooxml-sections.mjs";
 import { inheritPresentationParagraphs, normalizePresentationParagraphs, normalizePresentationParagraphStyles, presentationParagraphsNeedSerialization, presentationParagraphsSvg, presentationParagraphsText, replacePresentationParagraphText } from "./text-paragraphs.mjs";
 import { normalizePresentationTextBodyProperties } from "./text-body-properties.mjs";
 import { normalizePresentationCustomPaths, presentationCustomPathsSvg } from "./custom-geometry.mjs";
@@ -530,6 +531,7 @@ export class Presentation {
     for (const layout of options.layouts || []) this.layouts.add(layout);
     this.slides = new SlideCollection(this);
     this.customShows = new PresentationCustomShowCollection(this);
+    this.sections = new PresentationSectionCollection(this);
     Object.defineProperty(this, "_viewProperties", { value: undefined, writable: true });
     this.view = new PresentationView(this);
   }
@@ -548,11 +550,12 @@ export class Presentation {
   inspect(options = {}) {
     const kinds = normalizeKinds(options.kind, ["deck", "slide", "textbox", "shape", "nativeObject", "layout"]);
     const records = [];
-    if (kinds.has("deck")) records.push({ kind: "deck", id: this.id, slides: this.slides.count, customShows: this.customShows.count });
+    if (kinds.has("deck")) records.push({ kind: "deck", id: this.id, slides: this.slides.count, customShows: this.customShows.count, sections: this.sections.count });
     if (kinds.has("theme")) records.push(this.theme.inspectRecord());
     if (kinds.has("slideMaster") || kinds.has("master")) records.push(...this.masters.items.map((master) => master.inspectRecord()));
     if (kinds.has("layout") || kinds.has("layoutTemplate")) records.push(...this.layouts.inspectRecords());
     if (kinds.has("customShow")) records.push(...this.customShows.items.map((show) => show.inspectRecord()));
+    if (kinds.has("section")) records.push(...this.sections.items.map((section) => section.inspectRecord()));
     for (const slide of this.slides) records.push(...slide.inspectRecords(kinds));
     return ndjson(filterInspectRecords(records, options), options.maxChars ?? Infinity);
   }
@@ -567,6 +570,8 @@ export class Presentation {
     if (this.slides.items.length === 0) issues.push(verificationIssue("presentation", "noSlides", "Presentation has no slides."));
     try { planPresentationCustomShows(this); }
     catch (error) { issues.push(verificationIssue("presentation", "invalidCustomShow", error.message)); }
+    try { planPresentationSections(this); }
+    catch (error) { issues.push(verificationIssue("presentation", "invalidSection", error.message)); }
     if (this.commentFormat === "modern" || this.slides.items.some((slide) => slide.comments.items.some((thread) => thread.nativeFormat === "modern"))) {
       try { planPresentationModernComments(this.slides.items); }
       catch (error) { issues.push(verificationIssue("presentation", "invalidModernCommentMetadata", error.message)); }
@@ -643,6 +648,8 @@ export class Presentation {
     if (layout) return layout;
     const customShow = this.customShows.getItem(id);
     if (customShow) return customShow;
+    const section = this.sections.getItem(id);
+    if (section) return section;
     for (const slide of this.slides) {
       if (slide.id === id) return slide;
       const found = slide.resolve(id);
@@ -663,7 +670,7 @@ export class Presentation {
   }
 
   toProto() {
-    return { id: this.id, slideSize: this.slideSize, theme: this.theme.toJSON(), master: this.master.toJSON(), masters: this.masters.items.map((master) => master.toJSON()), layouts: this.layouts.items.map((layout) => layout.toJSON()), slides: this.slides.items.map((slide) => slide.toProto()), viewProperties: this.view.toProto() };
+    return { id: this.id, slideSize: this.slideSize, theme: this.theme.toJSON(), master: this.master.toJSON(), masters: this.masters.items.map((master) => master.toJSON()), layouts: this.layouts.items.map((layout) => layout.toJSON()), slides: this.slides.items.map((slide) => slide.toProto()), customShows: this.customShows.items.map((show) => show.toJSON()), sections: this.sections.items.map((section) => section.toJSON()), viewProperties: this.view.toProto() };
   }
 }
 

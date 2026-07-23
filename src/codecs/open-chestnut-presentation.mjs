@@ -9,6 +9,7 @@ import {
 } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
 import { normalizePresentationRunLink } from "../presentation/ooxml-hyperlinks.mjs";
 import { planPresentationCustomShows } from "../presentation/ooxml-custom-shows.mjs";
+import { planPresentationSections } from "../presentation/ooxml-sections.mjs";
 import { deterministicPresentationGuid } from "../presentation/ooxml-modern-comments.mjs";
 import { normalizePresentationThemeConfig } from "../presentation/ooxml-theme.mjs";
 import { normalizePresentationTextBodyProperties } from "../presentation/text-body-properties.mjs";
@@ -2018,6 +2019,39 @@ function presentationCustomShows(presentation, state) {
   });
 }
 
+function presentationSections(presentation, state) {
+  if (state?.sectionsOpaque) {
+    if (presentation.sections.items.length) {
+      throw new OpenChestnutCodecError("The imported PPTX contains an opaque PowerPoint section graph; it can only be preserved unchanged.", [], { code: "unsupported_presentation_section_edit" });
+    }
+    return [];
+  }
+  const sourceEntries = state?.sections || [];
+  if (state && (presentation.sections.items.length !== sourceEntries.length || presentation.sections.items.some((section, index) => section !== sourceEntries[index].model))) {
+    throw new OpenChestnutCodecError("Imported PPTX sections keep their original count and order; adding, removing, or reordering sections is unsupported.", [], { code: "presentation_section_topology_changed" });
+  }
+  const entries = planPresentationSections(presentation, { allowPendingClone: Boolean(state?.clones?.length) }).entries;
+  if (!state) return entries.map((section) => ({
+    id: section.id,
+    name: section.name,
+    nativeId: section.nativeId,
+    slideIds: [...section.slideIds],
+  }));
+  return entries.map((section, index) => {
+    const sourceEntry = sourceEntries[index];
+    if (section.id !== sourceEntry.wire.id || section.nativeId !== sourceEntry.wire.nativeId) {
+      throw new OpenChestnutCodecError(`Imported PPTX section ${index + 1} cannot change its facade or native GUID identity.`, [], { code: "presentation_section_topology_changed" });
+    }
+    return {
+      id: sourceEntry.wire.id,
+      name: section.name,
+      nativeId: section.nativeId,
+      slideIds: [...section.slideIds],
+      source: sourceEntry.wire.source,
+    };
+  });
+}
+
 // Imported comment state belongs to its source SlidePart, not to its current
 // display index. Keeping the snapshot per source-state lets a valid deletion
 // omit that state while every surviving slide remains strictly read-only.
@@ -2122,6 +2156,7 @@ export function presentationEnvelope(presentation, protocolVersion) {
   }
 
   const customShows = presentationCustomShows(presentation, state);
+  const sections = presentationSections(presentation, state);
   const customShowLinks = presentationCustomShowLinkContext(customShows, state);
   const assetCatalog = createPresentationAssetCatalog();
   const masters = presentationMasters(presentation, state, assetCatalog, customShowLinks);
@@ -2231,6 +2266,8 @@ export function presentationEnvelope(presentation, protocolVersion) {
         layouts,
         customShows,
         ...(state?.customShowsOpaque ? { customShowsOpaque: true } : {}),
+        sections,
+        ...(state?.sectionsOpaque ? { sectionsOpaque: true } : {}),
         ...(state?.viewProperties ? { viewProperties: state.viewProperties } : {}),
       },
     },
@@ -2676,6 +2713,9 @@ export async function presentationFromEnvelope(envelope) {
   if (source.customShowsOpaque && source.customShows?.length) {
     throw new OpenChestnutCodecError("OpenChestnut returned both opaque and semantic presentation custom shows.", [], { code: "invalid_presentation_artifact" });
   }
+  if (source.sectionsOpaque && source.sections?.length) {
+    throw new OpenChestnutCodecError("OpenChestnut returned both opaque and semantic PowerPoint sections.", [], { code: "invalid_presentation_artifact" });
+  }
   const customShowLinks = new Map();
   for (const show of source.customShows || []) {
     if (!show.id || customShowLinks.has(show.id)) {
@@ -3040,6 +3080,16 @@ export async function presentationFromEnvelope(envelope) {
     });
     customShowStates.push({ wire: sourceShow, model });
   }
+  const sectionStates = [];
+  for (const sourceSection of source.sections || []) {
+    const model = presentation.sections.add({
+      id: sourceSection.id,
+      name: sourceSection.name,
+      nativeId: sourceSection.nativeId,
+      slideIds: [...sourceSection.slideIds],
+    });
+    sectionStates.push({ wire: sourceSection, model });
+  }
   const presentationState = {
     source: envelope.source,
     opaqueOpc: envelope.opaqueOpc,
@@ -3050,6 +3100,8 @@ export async function presentationFromEnvelope(envelope) {
     viewProperties: source.viewProperties,
     customShowsOpaque: Boolean(source.customShowsOpaque),
     customShows: customShowStates,
+    sectionsOpaque: Boolean(source.sectionsOpaque),
+    sections: sectionStates,
     advancedSnapshot: presentationAdvancedSnapshot(presentation),
     masters: masterStates,
     layouts: layoutStates,

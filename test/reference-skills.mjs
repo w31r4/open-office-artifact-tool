@@ -165,13 +165,18 @@ assert.ok(await exists(path.join(skillsRoot, "spreadsheets", "skills", "spreadsh
 const presentationApiRoot = path.join(skillsRoot, "presentations", "skills", "presentations", "artifact_tool", "api");
 const presentationApiDocs = await fs.readFile(path.join(presentationApiRoot, "API_DOCS.md"), "utf8");
 const presentationSpec = await fs.readFile(path.join(presentationApiRoot, "references", "presentation.spec.md"), "utf8");
+const presentationSectionsSpec = await fs.readFile(path.join(presentationApiRoot, "references", "sections.spec.md"), "utf8");
 const presentationLayoutSpec = await fs.readFile(path.join(presentationApiRoot, "references", "layout.spec.md"), "utf8");
 const presentationChartSpec = await fs.readFile(path.join(presentationApiRoot, "references", "charts.spec.md"), "utf8");
 assert.match(presentationApiDocs, /presentation\.view/);
 assert.match(presentationApiDocs, /inkml-content-part-clone\.spec\.md/);
 assert.match(presentationApiDocs, /references\/charts\.spec\.md/);
+assert.match(presentationApiDocs, /sections\.spec\.md/);
 assert.match(presentationSpec, /showGridlines\(\).*showGuides\(\)/s);
 assert.match(presentationSpec, /gridSpacingCxEmu.*gridSpacingCyEmu/s);
+assert.match(presentationSpec, /presentation\.sections\.add/);
+assert.match(presentationSectionsSpec, /p14:sectionLst/);
+assert.match(presentationSectionsSpec, /partition every deck slide exactly once/i);
 assert.match(presentationLayoutSpec, /read-only `slideGuides`/);
 assert.match(presentationChartSpec, /standard `area`.*50%-hole `doughnut`/s);
 assert.match(presentationChartSpec, /Marker-only `scatter`.*aligned.*`xValues`/s);

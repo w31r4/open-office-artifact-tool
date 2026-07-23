@@ -429,6 +429,43 @@ compares slide model SVGs, and emits a byte-bound audit. Noncanonical lists are
 preserved opaque and fail closed; see
 `artifact_tool/api/references/custom-shows.spec.md`.
 
+## Native PowerPoint Sections
+
+Sections are native presentation-wide groups, not custom-show routes: together
+they must partition every slide once and in deck order. Add all slides first,
+then author the complete group list:
+
+```ts
+const opening = presentation.slides.add({ name: "Opening" });
+const evidence = presentation.slides.add({ name: "Evidence" });
+const decision = presentation.slides.add({ name: "Decision" });
+
+presentation.sections.add("Context", [opening, evidence]);
+presentation.sections.add("Decision", [decision]);
+```
+
+OpenChestnut writes `p14:sectionLst` under the documented PowerPoint section
+extension in `ppt/presentation.xml`. A source-free section gets a deterministic
+native GUID unless `nativeId` is supplied. For a canonical imported list,
+inspect with `presentation.inspect({ kind: "section" })`, resolve its stable
+`section/...` ID (or call `presentation.sections.getItem(...)`), and change an
+existing name or boundary only:
+
+```ts
+const context = presentation.sections.getItem("Context");
+context.name = "Background";
+context.setSlides([opening]);
+presentation.sections.getItem("Decision").setSlides([evidence, decision]);
+```
+
+The imported section count/order, facade IDs, and native GUIDs remain fixed.
+The resulting groups still must be the exact ordered partition. New/deleted/
+reordered imported sections, pending slide insertion/deletion/duplicate, and
+irregular or extension-bearing native graphs fail closed; opaque graphs remain
+unchanged instead of being reconstructed. Reimport and inspect the output, then
+run render QA if native tools are available. See
+`artifact_tool/api/references/sections.spec.md` for the exact contract.
+
 ## Bounded Imported Slide Duplicate
 
 When an Agent needs an exact source-bound copy of one imported slide rather

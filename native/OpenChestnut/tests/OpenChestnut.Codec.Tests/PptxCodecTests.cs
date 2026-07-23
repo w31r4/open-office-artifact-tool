@@ -10,6 +10,7 @@ using OpenOffice.Artifact.Wire.V1;
 using A = DocumentFormat.OpenXml.Drawing;
 using C = DocumentFormat.OpenXml.Drawing.Charts;
 using P = DocumentFormat.OpenXml.Presentation;
+using P14 = DocumentFormat.OpenXml.Office2010.PowerPoint;
 using S = DocumentFormat.OpenXml.Spreadsheet;
 using Xunit;
 
@@ -151,6 +152,162 @@ public sealed class PptxCodecTests
         var bindingChanged = Import(authored.File.ToByteArray()).Artifact;
         bindingChanged.Presentation.CustomShows[0].Source.SemanticSha256 = new string('0', 64);
         Assert.Equal("presentation_custom_show_source_binding_mismatch", Assert.Single(Export(bindingChanged).Diagnostics).Code);
+    }
+
+    [Fact]
+    public void PowerPointSectionsAuthorImportAndEditWithinFixedTopology()
+    {
+        var request = ExportRequest();
+        request.Artifact.Presentation.Slides.Add(new PresentationSlide { Id = "presentation/slide/2", Name = "Evidence" });
+        request.Artifact.Presentation.Slides.Add(new PresentationSlide { Id = "presentation/slide/3", Name = "Appendix" });
+        var opening = new PresentationSectionArtifact
+        {
+            Id = "section/opening",
+            Name = "Opening",
+            NativeId = "{01F07B81-39E6-4BBB-9B89-66EA253FBD29}",
+        };
+        opening.SlideIds.Add("presentation/slide/1");
+        var content = new PresentationSectionArtifact
+        {
+            Id = "section/content",
+            Name = "Content",
+            NativeId = "{1FEF2C88-0CF2-4176-BA81-0DE6FD9D1274}",
+        };
+        content.SlideIds.Add("presentation/slide/2");
+        content.SlideIds.Add("presentation/slide/3");
+        request.Artifact.Presentation.Sections.Add(opening);
+        request.Artifact.Presentation.Sections.Add(content);
+
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var extension = Assert.Single(
+                package.PresentationPart!.Presentation!.PresentationExtensionList!.Elements<P.PresentationExtension>(),
+                candidate => candidate.Uri?.Value == PptxSectionCodec.ExtensionUri);
+            var sections = extension.GetFirstChild<P14.SectionList>()!.Elements<P14.Section>().ToArray();
+            Assert.Equal(2, sections.Length);
+            Assert.Equal(("Opening", "{01F07B81-39E6-4BBB-9B89-66EA253FBD29}"), (sections[0].Name!.Value, sections[0].Id!.Value));
+            Assert.Equal(new[] { 256U }, sections[0].SectionSlideIdList!.Elements<P14.SectionSlideIdListEntry>().Select(entry => entry.Id!.Value));
+            Assert.Equal(("Content", "{1FEF2C88-0CF2-4176-BA81-0DE6FD9D1274}"), (sections[1].Name!.Value, sections[1].Id!.Value));
+            Assert.Equal(new[] { 257U, 258U }, sections[1].SectionSlideIdList!.Elements<P14.SectionSlideIdListEntry>().Select(entry => entry.Id!.Value));
+        }
+
+        var imported = Import(authored.File.ToByteArray());
+        Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.False(imported.Artifact.Presentation.SectionsOpaque);
+        Assert.Collection(imported.Artifact.Presentation.Sections,
+            section =>
+            {
+                Assert.Equal("Opening", section.Name);
+                Assert.Equal("{01F07B81-39E6-4BBB-9B89-66EA253FBD29}", section.NativeId);
+                Assert.Equal(new[] { "presentation/slide/1" }, section.SlideIds);
+                Assert.True(section.Source!.Editable);
+            },
+            section =>
+            {
+                Assert.Equal("Content", section.Name);
+                Assert.Equal("{1FEF2C88-0CF2-4176-BA81-0DE6FD9D1274}", section.NativeId);
+                Assert.Equal(new[] { "presentation/slide/2", "presentation/slide/3" }, section.SlideIds);
+                Assert.True(section.Source!.Editable);
+            });
+
+        imported.Artifact.Presentation.Sections[0].Name = "Introduction";
+        imported.Artifact.Presentation.Sections[0].SlideIds.Clear();
+        imported.Artifact.Presentation.Sections[0].SlideIds.Add("presentation/slide/1");
+        imported.Artifact.Presentation.Sections[0].SlideIds.Add("presentation/slide/2");
+        imported.Artifact.Presentation.Sections[1].SlideIds.Clear();
+        imported.Artifact.Presentation.Sections[1].SlideIds.Add("presentation/slide/3");
+        var edited = Export(imported.Artifact);
+        Assert.True(edited.Ok, Diagnostics(edited));
+        var roundTrip = Import(edited.File.ToByteArray());
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        Assert.Collection(roundTrip.Artifact.Presentation.Sections,
+            section =>
+            {
+                Assert.Equal("Introduction", section.Name);
+                Assert.Equal("{01F07B81-39E6-4BBB-9B89-66EA253FBD29}", section.NativeId);
+                Assert.Equal(new[] { "presentation/slide/1", "presentation/slide/2" }, section.SlideIds);
+            },
+            section => Assert.Equal(new[] { "presentation/slide/3" }, section.SlideIds));
+
+        var added = Import(authored.File.ToByteArray()).Artifact;
+        var extra = new PresentationSectionArtifact
+        {
+            Id = "section/extra",
+            Name = "Extra",
+            NativeId = "{CA1E145A-94F4-4C2D-9BC0-76C4A01D48ED}",
+        };
+        extra.SlideIds.Add("presentation/slide/1");
+        extra.SlideIds.Add("presentation/slide/2");
+        extra.SlideIds.Add("presentation/slide/3");
+        added.Presentation.Sections.Add(extra);
+        Assert.Equal("presentation_section_topology_changed", Assert.Single(Export(added).Diagnostics).Code);
+
+        var identityChanged = Import(authored.File.ToByteArray()).Artifact;
+        identityChanged.Presentation.Sections[0].NativeId = "{CA1E145A-94F4-4C2D-9BC0-76C4A01D48ED}";
+        Assert.Equal("presentation_section_topology_changed", Assert.Single(Export(identityChanged).Diagnostics).Code);
+
+        var bindingChanged = Import(authored.File.ToByteArray()).Artifact;
+        bindingChanged.Presentation.Sections[0].Source.SemanticSha256 = new string('0', 64);
+        Assert.Equal("presentation_section_source_binding_mismatch", Assert.Single(Export(bindingChanged).Diagnostics).Code);
+
+        var clone = Import(authored.File.ToByteArray()).Artifact;
+        AddPendingClone(clone.Presentation, 0, "presentation/clone/section");
+        Assert.Equal("unsupported_presentation_slide_clone", Assert.Single(Export(clone).Diagnostics).Code);
+    }
+
+    [Fact]
+    public void IrregularPowerPointSectionGraphRemainsOpaqueAndFailClosed()
+    {
+        var request = ExportRequest();
+        var section = new PresentationSectionArtifact
+        {
+            Id = "section/1",
+            Name = "Canonical",
+            NativeId = "{01F07B81-39E6-4BBB-9B89-66EA253FBD29}",
+        };
+        section.SlideIds.Add("presentation/slide/1");
+        request.Artifact.Presentation.Sections.Add(section);
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+
+        using var stream = new MemoryStream();
+        stream.Write(authored.File.Span);
+        stream.Position = 0;
+        using (var package = PresentationDocument.Open(stream, true))
+        {
+            var extension = Assert.Single(
+                package.PresentationPart!.Presentation!.PresentationExtensionList!.Elements<P.PresentationExtension>(),
+                candidate => candidate.Uri?.Value == PptxSectionCodec.ExtensionUri);
+            extension.GetFirstChild<P14.SectionList>()!.GetFirstChild<P14.Section>()!.Append(new P14.ExtensionList());
+            package.PresentationPart.Presentation.Save();
+        }
+        var irregularBytes = stream.ToArray();
+        var imported = Import(irregularBytes);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.True(imported.Artifact.Presentation.SectionsOpaque);
+        Assert.Empty(imported.Artifact.Presentation.Sections);
+        Assert.Contains(imported.Diagnostics, diagnostic => diagnostic.Code == "opaque_presentation_sections_retained");
+
+        var preserved = Export(imported.Artifact);
+        Assert.True(preserved.Ok, Diagnostics(preserved));
+        static string SectionXml(byte[] bytes)
+        {
+            using var source = new MemoryStream(bytes);
+            using var package = PresentationDocument.Open(source, false);
+            var extension = package.PresentationPart!.Presentation!.PresentationExtensionList!.Elements<P.PresentationExtension>()
+                .Single(candidate => candidate.Uri?.Value == PptxSectionCodec.ExtensionUri);
+            return extension.OuterXml;
+        }
+        Assert.Equal(SectionXml(irregularBytes), SectionXml(preserved.File.ToByteArray()));
+
+        imported.Artifact.Presentation.SectionsOpaque = false;
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("presentation_section_topology_changed", Assert.Single(rejected.Diagnostics).Code);
     }
 
     [Fact]

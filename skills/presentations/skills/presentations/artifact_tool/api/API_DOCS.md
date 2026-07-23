@@ -25,6 +25,7 @@ Use the presentation facades to create PowerPoint-style decks in TypeScript.
 - Duplicate one canonical closed four-part SmartArt frame without sharing mutable diagram parts: [`references/smartart-clone.spec.md`](./references/smartart-clone.spec.md).
 - Duplicate one canonical top-level closed InkML content part without sharing mutable Custom XML: [`references/inkml-content-part-clone.spec.md`](./references/inkml-content-part-clone.spec.md).
 - Duplicate one canonical top-level embedded MP4 without sharing mutable media bytes: [`references/embedded-video-clone.spec.md`](./references/embedded-video-clone.spec.md).
+- Author or safely adjust native PowerPoint sections as an ordered full-deck partition: [`references/sections.spec.md`](./references/sections.spec.md).
 
 ## Quick start
 
@@ -221,6 +222,7 @@ Open these references as needed:
 - [`references/cookbook/imported-deck.md`](./references/cookbook/imported-deck.md) — safe inspect, resolve, edit, preview, and re-inspect loops for existing decks.
 - [`references/presentation.spec.md`](./references/presentation.spec.md) — `Presentation` facade, slide collection, view controls, export/toProto, scripts.
 - [`references/custom-shows.spec.md`](./references/custom-shows.spec.md) — native custom-show authoring, fixed-topology imported edits, opaque preservation, and audited workflow.
+- [`references/sections.spec.md`](./references/sections.spec.md) — native PowerPoint section authoring, fixed-topology imported boundary edits, opaque preservation, and verification.
 - [`references/slide.spec.md`](./references/slide.spec.md) — `Slide` API, backgrounds, placeholders, notes, export, auto-layout.
 - [`references/grouping.spec.md`](./references/grouping.spec.md) — recursive native `p:grpSp` authoring, local child coordinates, fixed-topology imported edits, and opaque fail-closed boundaries.
 - [`references/inspect.md`](./references/inspect.md) — grep-first snapshot (`inspect → rg → resolve/edit → re-inspect`) for loaded presentation data and templates.
