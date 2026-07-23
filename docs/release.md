@@ -97,6 +97,10 @@ The release candidate is acceptable only when all of the following are true:
 - when explicitly configured, the real optional-provider tests cover ReportLab creation, pdfplumber extraction, type-aware pypdf text/radio/checkbox forms and annotations, typed pypdf merge/reorder/selective watermarking, PyMuPDF rewrite/incremental/page/text/image/form/annotation edits, real redaction/scrub/residue scans, capped numerical text-fit behavior, canonical audit byte binding, typed Poppler source/output comparison, and OCRmyPDF/Tesseract recovery of a generated image-only scan with MuPDF second import and Poppler pixel invariance;
 - Open XML SDK validation passes for generated Office fixtures;
 - configured LibreOffice/Poppler/Playwright/native render gates pass where available;
+- every repository-only Default Template Library native probe, render,
+  rasterization, and forced-recalculation child process has a finite deadline
+  and reports its command/template context on failure; a native-host hang must
+  fail the gate rather than leave hosted CI running indefinitely;
 - a production-only packed clean install completes all three Office roundtrips, PDF smoke, and a real packaged Template Creator invocation while `dotnet` is absent from `PATH`, and proves that the repository-only Default Template Library is absent;
 - two clean OpenChestnut builds produce the same runtime file set and hashes;
 - package contents contain no legacy Office codec files, OpenChestnut C# source, incomplete OfficeBridge solution, C# build output, tests, or repository-only scripts;

@@ -75,6 +75,14 @@ const SPREADSHEET_FORMULA_CELL_COUNTS = new Map([
   ["artifact-template-three-statement-forecast", 2770],
 ]);
 
+// Rendering every retained template is intentionally a real native QA gate.
+// A hung host process must turn into a template- and command-specific failure,
+// not leave a hosted CI runner occupied indefinitely.
+const NATIVE_COMMAND_TIMEOUT_MS = 120_000;
+const NATIVE_CALCULATION_TIMEOUT_MS = 60_000;
+const NATIVE_PROBE_TIMEOUT_MS = 5_000;
+const NATIVE_MAX_BUFFER_BYTES = 1024 * 1024;
+
 function sha256(bytes) {
   return crypto.createHash("sha256").update(bytes).digest("hex");
 }
@@ -132,29 +140,61 @@ function updateAggregate(hash, relativePath, bytes) {
 }
 
 function commandAvailable(command) {
-  const probe = spawnSync(command, ["--version"], { encoding: "utf8" });
+  const probe = spawnSync(command, ["--version"], {
+    encoding: "utf8",
+    timeout: NATIVE_PROBE_TIMEOUT_MS,
+    killSignal: "SIGKILL",
+    maxBuffer: 64 * 1024,
+  });
   return !probe.error && probe.status === 0;
 }
+
+function nativeCommandFailure(label, result, timeoutMs) {
+  const stdout = String(result.stdout || "").trim();
+  const stderr = String(result.stderr || "").trim();
+  const detail = [stderr, stdout].filter(Boolean).join("\n").slice(0, 8_192);
+  if (result.error?.code === "ETIMEDOUT") {
+    return new Error(`${label} timed out after ${timeoutMs}ms.${detail ? `\n${detail}` : ""}`);
+  }
+  if (result.error) {
+    return new Error(`${label} could not start: ${result.error.message}.${detail ? `\n${detail}` : ""}`);
+  }
+  return new Error(`${label} exited with code ${result.status ?? "unknown"}.${detail ? `\n${detail}` : ""}`);
+}
+
+function runNativeCommand(label, command, args, { timeoutMs = NATIVE_COMMAND_TIMEOUT_MS } = {}) {
+  const result = spawnSync(command, args, {
+    encoding: "utf8",
+    timeout: timeoutMs,
+    killSignal: "SIGKILL",
+    maxBuffer: NATIVE_MAX_BUFFER_BYTES,
+  });
+  if (result.error || result.status !== 0) throw nativeCommandFailure(label, result, timeoutMs);
+  return result;
+}
+
+assert.throws(
+  () => runNativeCommand("native watchdog regression", process.execPath, ["-e", "setTimeout(() => {}, 5000)"], { timeoutMs: 25 }),
+  /native watchdog regression timed out after 25ms/,
+  "native template QA commands must fail closed when a child process exceeds its deadline",
+);
 
 async function assertNativeRender(sourcePath, outputDirectory) {
   const profile = path.join(outputDirectory, "profile");
   await fs.mkdir(outputDirectory, { recursive: true });
-  const converted = spawnSync("soffice", [
+  runNativeCommand(`LibreOffice could not render ${sourcePath}`, "soffice", [
     `-env:UserInstallation=${pathToFileURL(profile).href}`,
     "--headless",
     "--convert-to", "pdf",
     "--outdir", outputDirectory,
     sourcePath,
-  ], { encoding: "utf8" });
-  assert.equal(converted.status, 0, `LibreOffice could not render ${sourcePath}\n${converted.stdout}\n${converted.stderr}`);
+  ]);
   const pdfPath = path.join(outputDirectory, `${path.basename(sourcePath, path.extname(sourcePath))}.pdf`);
-  const info = spawnSync("pdfinfo", [pdfPath], { encoding: "utf8" });
-  assert.equal(info.status, 0, `Poppler could not inspect ${pdfPath}\n${info.stdout}\n${info.stderr}`);
+  const info = runNativeCommand(`Poppler could not inspect ${pdfPath}`, "pdfinfo", [pdfPath], { timeoutMs: NATIVE_PROBE_TIMEOUT_MS });
   const pages = Number(info.stdout.match(/^Pages:\s*([1-9]\d*)/m)?.[1]);
   assert.ok(Number.isInteger(pages), `native render needs at least one page: ${sourcePath}`);
   const prefix = path.join(outputDirectory, "page");
-  const raster = spawnSync("pdftoppm", ["-png", "-f", "1", "-l", String(pages), pdfPath, prefix], { encoding: "utf8" });
-  assert.equal(raster.status, 0, `Poppler could not rasterize ${pdfPath}\n${raster.stdout}\n${raster.stderr}`);
+  runNativeCommand(`Poppler could not rasterize ${pdfPath}`, "pdftoppm", ["-png", "-f", "1", "-l", String(pages), pdfPath, prefix]);
   for (let page = 1; page <= pages; page += 1) {
     assert.ok((await fs.stat(`${prefix}-${page}.png`)).size > 0, `native raster is empty: ${sourcePath} page ${page}`);
   }
@@ -181,14 +221,13 @@ async function assertNativeSpreadsheetCalculation(templateId, sourcePath, output
   sourceZip.file("xl/workbook.xml", workbookXmlWithForcedCalculation(workbookXml));
   await fs.writeFile(inputPath, await sourceZip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
 
-  const converted = spawnSync("soffice", [
+  runNativeCommand(`LibreOffice could not force-recalculate ${sourcePath}`, "soffice", [
     `-env:UserInstallation=${pathToFileURL(profile).href}`,
     "--headless",
     "--convert-to", "xlsx:Calc MS Excel 2007 XML",
     "--outdir", nativeDirectory,
     inputPath,
-  ], { encoding: "utf8", timeout: 60_000 });
-  assert.equal(converted.status, 0, `LibreOffice could not force-recalculate ${sourcePath}\n${converted.stdout}\n${converted.stderr}`);
+  ], { timeoutMs: NATIVE_CALCULATION_TIMEOUT_MS });
   const nativePath = path.join(nativeDirectory, "forced-recalculation.xlsx");
   assert.ok((await fs.stat(nativePath)).size > 0, `LibreOffice did not save a recalculated workbook: ${sourcePath}`);
 
