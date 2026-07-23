@@ -295,6 +295,11 @@ async function assertPublicOfficeRoundTrip(templateId, kind, sourcePath) {
     const exported = await DocumentFile.exportDocx(imported);
     const reimported = await DocumentFile.importDocx(exported);
     assert.equal(reimported.blocks.length, imported.blocks.length, `Document facade round trip: ${sourcePath}`);
+    assert.equal(
+      Buffer.from(exported.bytes).equals(Buffer.from(source.bytes)),
+      true,
+      `Unedited DOCX facade round trip must retain exact source bytes: ${sourcePath}`,
+    );
     return exported;
   }
   if (kind === "presentation") {

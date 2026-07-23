@@ -901,6 +901,15 @@ internal static class DocxCodec
         semantic.Id = string.Empty;
         semantic.Name = string.Empty;
         semantic.Source = null;
+        // The public DocumentModel deliberately exposes an omitted w:pStyle as
+        // its effective Normal style. DocumentBlock.style_id is a scalar, so
+        // the wire contract cannot preserve the distinction between omitted
+        // and explicitly empty. Keep source-bound no-op exports lossless when
+        // the JS facade returns that public default rather than a raw empty
+        // string; an actual formatting/content edit still changes the hash.
+        if (semantic.ContentCase == DocumentBlock.ContentOneofCase.Paragraph &&
+            string.IsNullOrEmpty(semantic.StyleId))
+            semantic.StyleId = "Normal";
         if (semantic.ContentCase == DocumentBlock.ContentOneofCase.Hyperlink)
             semantic.Hyperlink.RelationshipId = string.Empty;
         if (semantic.ContentCase == DocumentBlock.ContentOneofCase.Change && semantic.Change.HasDate)

@@ -109,6 +109,27 @@ public sealed class DefaultTemplateLibraryCodecTests
         Assert.Equal(result.Artifact.Document.Blocks.Count, reimported.Artifact.Document.Blocks.Count);
     }
 
+    [Fact]
+    public void RetainedStrategyMemorandumTreatsAnAbsentParagraphStyleAsThePublicNormalDefault()
+    {
+        var limits = EffectiveCodecLimits.From(null);
+        var source = ReadReference("artifact-template-strategy-memorandum", ".docx");
+        var result = DocxCodec.Import(source, limits);
+        var blankParagraph = result.Artifact.Document.Blocks.First(block =>
+            block.ContentCase == DocumentBlock.ContentOneofCase.Paragraph &&
+            block.Source?.Editable == true &&
+            block.StyleId.Length == 0 &&
+            block.Paragraph.Text.Length == 0 &&
+            block.Paragraph.Runs.Count == 0);
+
+        // DocumentModel represents this source omission as its public Normal
+        // default. It must remain a semantic no-op, so the source package and
+        // the w14 paragraph identity are retained byte-for-byte.
+        blankParagraph.StyleId = "Normal";
+        var exported = DocxCodec.Export(result.Artifact, limits);
+        Assert.Equal(source, exported.File);
+    }
+
     [Theory]
     [InlineData("artifact-template-design-report")]
     [InlineData("artifact-template-experiment-analysis")]
