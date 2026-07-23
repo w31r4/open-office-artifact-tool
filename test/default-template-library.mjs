@@ -264,6 +264,30 @@ function assertSpreadsheetTemplateCalculation(templateId, workbook, sourcePath) 
   assert.deepEqual(errors, [], `Spreadsheet template model calculation must not leave formula errors: ${sourcePath}`);
 }
 
+function assertSpreadsheetRoundTripFormulaTopology(templateId, sourceWorkbook, roundTripWorkbook, sourcePath) {
+  let sourceFormulaCells = 0;
+  let roundTripFormulaCells = 0;
+  for (const sourceSheet of sourceWorkbook.worksheets.items) {
+    const roundTripSheet = roundTripWorkbook.worksheets.getItem(sourceSheet.name);
+    assert.ok(roundTripSheet, `Spreadsheet round trip must retain worksheet ${sourceSheet.name}: ${sourcePath}`);
+    for (const [address, sourceCell] of sourceSheet.store.entries()) {
+      if (!sourceCell.formula) continue;
+      sourceFormulaCells += 1;
+      assert.equal(
+        roundTripSheet.store.get(address)?.formula,
+        sourceCell.formula,
+        `Spreadsheet round trip must retain formula text at ${sourceSheet.name}!${address}: ${sourcePath}`,
+      );
+    }
+  }
+  for (const roundTripSheet of roundTripWorkbook.worksheets.items) {
+    for (const [, cell] of roundTripSheet.store.entries()) if (cell.formula) roundTripFormulaCells += 1;
+  }
+  const expectedFormulaCells = SPREADSHEET_FORMULA_CELL_COUNTS.get(templateId);
+  assert.equal(sourceFormulaCells, expectedFormulaCells, `Spreadsheet source formula inventory must remain pinned: ${sourcePath}`);
+  assert.equal(roundTripFormulaCells, expectedFormulaCells, `Spreadsheet round-trip formula inventory must remain pinned: ${sourcePath}`);
+}
+
 async function assertPublicOfficeRoundTrip(templateId, kind, sourcePath) {
   const source = await FileBlob.load(sourcePath);
   if (kind === "document") {
@@ -286,6 +310,7 @@ async function assertPublicOfficeRoundTrip(templateId, kind, sourcePath) {
     const exported = await SpreadsheetFile.exportXlsx(imported, { recalculate: false });
     const reimported = await SpreadsheetFile.importXlsx(exported);
     assert.equal(reimported.worksheets.items.length, imported.worksheets.items.length, `Spreadsheet facade round trip: ${sourcePath}`);
+    assertSpreadsheetRoundTripFormulaTopology(templateId, imported, reimported, sourcePath);
     return exported;
   }
   assert.fail(`Unknown retained template kind: ${kind}`);
