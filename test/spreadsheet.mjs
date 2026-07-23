@@ -1137,6 +1137,63 @@ const xlookupFormulaXlsx = await SpreadsheetFile.exportXlsx(xlookupFormulaWorkbo
 const importedXlookupFormulaWorkbook = await SpreadsheetFile.importXlsx(xlookupFormulaXlsx);
 assert.deepEqual(importedXlookupFormulaWorkbook.worksheets.getItem("XLOOKUP bounds").getRange("D1:D18").formulas, xlookupFormulaSheet.getRange("D1:D18").formulas);
 
+const tableLookupFormulaWorkbook = Workbook.create();
+const tableLookupFormulaSheet = tableLookupFormulaWorkbook.worksheets.add("Table lookup bounds");
+tableLookupFormulaSheet.getRange("A1:C4").values = [
+  [10, "ten", 100],
+  [20, "twenty", 200],
+  [30, "thirty", 300],
+  [40, "forty", 400],
+];
+tableLookupFormulaSheet.getRange("E1:H3").values = [
+  [10, 20, 30, 40],
+  [100, 200, 300, 400],
+  ["ten", "twenty", "thirty", "forty"],
+];
+tableLookupFormulaSheet.getRange("J1:L3").values = [
+  [20, "twenty", 200],
+  [10, "ten", 100],
+  [30, "thirty", 300],
+];
+tableLookupFormulaSheet.getRange("N1:Q3").values = [
+  [20, 10, 30, 40],
+  [200, 100, 300, 400],
+  ["twenty", "ten", "thirty", "forty"],
+];
+tableLookupFormulaSheet.getRange("S1:T3").values = [["Alpha", 101], ["Beta", 201], ["Gamma", 301]];
+tableLookupFormulaSheet.getRange("V1:X2").values = [["East", "West", "North"], [11, 22, 33]];
+tableLookupFormulaWorkbook.definedNames.add("WideLookup", "'Table lookup bounds'!A1:C10001");
+tableLookupFormulaSheet.getRange("Z1:Z21").formulas = [
+  ["=VLOOKUP(20,A1:C4,3,FALSE)"],
+  ["=VLOOKUP(25,A1:C4,3)"],
+  ["=VLOOKUP(5,A1:C4,3)"],
+  ["=VLOOKUP(20,J1:L3,3)"],
+  ["=VLOOKUP(20,A1:C4,4,FALSE)"],
+  ["=VLOOKUP(20,A1:C4,0,FALSE)"],
+  ["=VLOOKUP(20,A1:C4,3,2)"],
+  ["=VLOOKUP(\"Bet*\",S1:T3,2,FALSE)"],
+  ["=HLOOKUP(20,E1:H3,3,FALSE)"],
+  ["=HLOOKUP(25,E1:H3,2)"],
+  ["=HLOOKUP(5,E1:H3,2)"],
+  ["=HLOOKUP(20,N1:Q3,2)"],
+  ["=HLOOKUP(20,E1:H3,4,FALSE)"],
+  ["=HLOOKUP(20,E1:H3,0,FALSE)"],
+  ["=HLOOKUP(20,E1:H3,2,2)"],
+  ["=HLOOKUP(\"West*\",V1:X2,2,FALSE)"],
+  ["=VLOOKUP(10,A1:C10001,3,FALSE)"],
+  ["=VLOOKUP(10,WideLookup,3,FALSE)"],
+  ["=HLOOKUP(20,E1:H3,2,FALSE,99)"],
+  ["=VLOOKUP(10,J1:L3,3,FALSE)"],
+  ["=HLOOKUP(10,N1:Q3,2,FALSE)"],
+];
+assert.deepEqual(tableLookupFormulaSheet.getRange("Z1:Z21").values, [
+  [200], [200], ["#N/A"], ["#VALUE!"], ["#REF!"], ["#VALUE!"], ["#VALUE!"], [201],
+  ["twenty"], [200], ["#N/A"], ["#VALUE!"], ["#REF!"], ["#VALUE!"], ["#VALUE!"], [22], ["#VALUE!"], ["#VALUE!"], ["#VALUE!"], [100], [100],
+]);
+const tableLookupFormulaXlsx = await SpreadsheetFile.exportXlsx(tableLookupFormulaWorkbook);
+const importedTableLookupFormulaWorkbook = await SpreadsheetFile.importXlsx(tableLookupFormulaXlsx);
+assert.deepEqual(importedTableLookupFormulaWorkbook.worksheets.getItem("Table lookup bounds").getRange("Z1:Z21").formulas, tableLookupFormulaSheet.getRange("Z1:Z21").formulas);
+
 const expressionFormulaWorkbook = Workbook.create();
 const expressionInputs = expressionFormulaWorkbook.worksheets.add("Inputs");
 const expressionTextInputs = expressionFormulaWorkbook.worksheets.add("Data & Targets");

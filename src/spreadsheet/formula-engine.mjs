@@ -1398,16 +1398,88 @@ function formulaXmatchIndex(lookup, lookupValues = [], matchMode = 0, searchMode
   return comparable[0].index + 1;
 }
 
-function formulaLookupVector(sheet, expr, context = {}, { rejectErrors = false } = {}) {
-  const directReference = formulaRefParts(expr);
-  if (directReference && formulaReferenceCellCount(directReference) > FORMULA_VECTOR_MAX_CELLS) return { error: "#VALUE!" };
+function formulaLookupReferenceCellCount(sheet, expr, context = {}) {
+  const directReference = formulaRefParts(expr) || formulaDefinedNameRange(sheet, expr);
+  if (directReference) return formulaReferenceCellCount(directReference);
+  const structured = formulaStructuredRefIntersection(sheet, expr, context)
+    || formulaA1RefIntersection(sheet, expr)
+    || formulaStructuredRefRange(sheet, expr, context);
+  if (!structured || structured.error || structured.missing || structured.empty) return undefined;
+  const geometry = structuredRangeGeometry(structured);
+  return (geometry.bottom - geometry.top + 1) * geometry.columns.length;
+}
+
+function formulaBoundedLookupMatrix(sheet, expr, context = {}) {
+  // Count source-backed ranges before materializing their cells so named and
+  // structured references observe the same 10,000-cell guard as A1 ranges.
+  if ((formulaLookupReferenceCellCount(sheet, expr, context) || 0) > FORMULA_VECTOR_MAX_CELLS) return { error: "#VALUE!" };
   const matrix = formulaRangeMatrix(sheet, expr, context);
   const geometry = formulaMatrixGeometry(matrix);
-  if (!geometry || geometry.cells < 1 || geometry.cells > FORMULA_VECTOR_MAX_CELLS ||
-    (geometry.rows !== 1 && geometry.cols !== 1)) return { error: "#VALUE!" };
-  const values = matrix.flat();
+  if (!geometry || geometry.cells < 1 || geometry.cells > FORMULA_VECTOR_MAX_CELLS) return { error: "#VALUE!" };
+  return { matrix, rows: geometry.rows, cols: geometry.cols };
+}
+
+function formulaLookupVector(sheet, expr, context = {}, { rejectErrors = false } = {}) {
+  const lookupMatrix = formulaBoundedLookupMatrix(sheet, expr, context);
+  if (lookupMatrix.error) return lookupMatrix;
+  if (lookupMatrix.rows !== 1 && lookupMatrix.cols !== 1) return { error: "#VALUE!" };
+  const values = lookupMatrix.matrix.flat();
   const error = rejectErrors ? values.map(formulaErrorCode).find(Boolean) : undefined;
-  return error ? { error } : { values, rows: geometry.rows, cols: geometry.cols };
+  return error ? { error } : { values, rows: lookupMatrix.rows, cols: lookupMatrix.cols };
+}
+
+function formulaLookupRangeMode(value) {
+  if (value === undefined) return true;
+  const error = formulaErrorCode(value);
+  if (error) return error;
+  if (value === true || value === 1) return true;
+  if (value === false || value === 0) return false;
+  return "#VALUE!";
+}
+
+function formulaLookupResultIndex(value, limit) {
+  const error = formulaErrorCode(value);
+  if (error) return error;
+  const index = Number(value);
+  if (!Number.isInteger(index) || index < 1) return "#VALUE!";
+  return index > limit ? "#REF!" : index - 1;
+}
+
+function formulaApproximateTableLookupIndex(lookup, lookupValues = []) {
+  const lookupError = formulaErrorCode(lookup);
+  if (lookupError) return lookupError;
+  if (!lookupValues.length) return "#VALUE!";
+  const lookupNumber = Number(lookup);
+  const numericLookup = Number.isFinite(lookupNumber) && formulaText(lookup).trim() !== "";
+  const keys = [];
+  for (const value of lookupValues) {
+    const error = formulaErrorCode(value);
+    if (error) return error;
+    const number = Number(value);
+    const numeric = Number.isFinite(number) && formulaText(value).trim() !== "";
+    keys.push({ value, number, numeric });
+  }
+  if (keys.some((key) => key.numeric !== keys[0].numeric)) return "#VALUE!";
+  if (keys[0].numeric !== numericLookup) return "#N/A";
+  const compare = (left, right) => numericLookup
+    ? left.number - right.number
+    : formulaText(left.value).localeCompare(formulaText(right.value), undefined, { sensitivity: "base" });
+  for (let index = 1; index < keys.length; index += 1) if (compare(keys[index - 1], keys[index]) > 0) return "#VALUE!";
+  let match = -1;
+  for (let index = 0; index < keys.length; index += 1) {
+    const comparison = numericLookup
+      ? keys[index].number - lookupNumber
+      : formulaText(keys[index].value).localeCompare(formulaText(lookup), undefined, { sensitivity: "base" });
+    if (comparison <= 0) match = index;
+    else break;
+  }
+  return match >= 0 ? match + 1 : "#N/A";
+}
+
+function formulaTableLookupIndex(lookup, lookupValues, approximate) {
+  if (approximate) return formulaApproximateTableLookupIndex(lookup, lookupValues);
+  const wildcard = typeof lookup === "string" && /[?*~]/.test(lookup);
+  return formulaXmatchIndex(lookup, lookupValues, wildcard ? 2 : 0, 1);
 }
 
 function formulaLookupMode(value, fallback, allowed) {
@@ -1942,25 +2014,30 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
       return formulaXmatchIndex(lookup, lookupVector.values, matchMode, searchMode);
     }
     case "VLOOKUP": {
+      if (args.length < 3 || args.length > 4) return "#VALUE!";
       const lookup = scalar(0, "");
-      const matrix = formulaRangeMatrix(sheet, args[1], context) || [];
-      const colIndex = Math.max(1, Number(scalar(2, 1)) || 1) - 1;
-      const row = matrix.find((item) => formulaText(item[0]) === formulaText(lookup) || Number(item[0]) === Number(lookup));
-      return row ? row[colIndex] ?? "#N/A" : "#N/A";
+      const table = formulaBoundedLookupMatrix(sheet, args[1], context);
+      if (table.error) return table.error;
+      const columnIndex = formulaLookupResultIndex(scalar(2), table.cols);
+      if (formulaErrorCode(columnIndex)) return columnIndex;
+      const approximate = formulaLookupRangeMode(scalar(3));
+      if (formulaErrorCode(approximate)) return approximate;
+      const rowIndex = formulaTableLookupIndex(lookup, table.matrix.map((row) => row[0]), approximate);
+      if (formulaErrorCode(rowIndex)) return rowIndex;
+      return table.matrix[rowIndex - 1][columnIndex] ?? null;
     }
     case "HLOOKUP": {
+      if (args.length < 3 || args.length > 4) return "#VALUE!";
       const lookup = scalar(0, "");
-      const matrix = formulaRangeMatrix(sheet, args[1], context) || [];
-      const rowIndex = Math.floor(Number(scalar(2, 1)) || 1) - 1;
-      if (rowIndex < 0 || rowIndex >= matrix.length) return "#REF!";
-      const header = matrix[0] || [];
-      const equals = (value) => formulaText(value).toLowerCase() === formulaText(lookup).toLowerCase()
-        || (formulaText(value).trim() !== "" && formulaText(lookup).trim() !== "" && Number.isFinite(Number(value)) && Number(value) === Number(lookup));
-      let columnIndex = header.findIndex(equals);
-      if (columnIndex < 0 && formulaTruthy(scalar(3, true))) {
-        for (let index = 0; index < header.length; index++) if (compareFormulaValues(header[index], "<=", lookup)) columnIndex = index;
-      }
-      return columnIndex >= 0 ? matrix[rowIndex]?.[columnIndex] ?? "#N/A" : "#N/A";
+      const table = formulaBoundedLookupMatrix(sheet, args[1], context);
+      if (table.error) return table.error;
+      const rowIndex = formulaLookupResultIndex(scalar(2), table.rows);
+      if (formulaErrorCode(rowIndex)) return rowIndex;
+      const approximate = formulaLookupRangeMode(scalar(3));
+      if (formulaErrorCode(approximate)) return approximate;
+      const columnIndex = formulaTableLookupIndex(lookup, table.matrix[0], approximate);
+      if (formulaErrorCode(columnIndex)) return columnIndex;
+      return table.matrix[rowIndex][columnIndex - 1] ?? null;
     }
     case "XLOOKUP": {
       if (args.length < 3 || args.length > 6) return "#VALUE!";

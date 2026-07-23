@@ -217,6 +217,8 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "fx.SEARCH"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.FIND"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.SUMPRODUCT"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.HLOOKUP"));
+assert.match(HELP_CATALOG.find((item) => item.name === "fx.VLOOKUP")?.summary || "", /first column.*10,000.*FALSE\/0.*TRUE\/1.*#REF!/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "fx.HLOOKUP")?.summary || "", /first row.*10,000.*FALSE\/0.*TRUE\/1.*#REF!/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.IFERROR"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.ISNUMBER"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.ISTEXT"));

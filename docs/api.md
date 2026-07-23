@@ -3069,7 +3069,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.FIND` | formula | Return the 1-based position of a case-sensitive literal text sequence. |
 | `fx.FLOOR` | formula | Round a number down to the nearest significance. |
 | `fx.FV` | formula | Calculate the future value of a finite constant-payment stream from rate, term, payment, optional present value, and payment timing. |
-| `fx.HLOOKUP` | formula | Look up a value in the first row of a table range and return a value from another row. |
+| `fx.HLOOKUP` | formula | Look up one scalar in the first row of a nonempty rectangular range of at most 10,000 cells; FALSE/0 performs an exact, wildcard-aware lookup, while TRUE/1 or omission requires a proven ascending homogeneous numeric or text key row and returns the greatest matching-or-lower key. Invalid table/mode/index inputs and unproven ordering return #VALUE!, while an out-of-range return-row index returns #REF!. |
 | `fx.HOUR` | formula | Return the 0 through 23 hour component from a nonnegative serial or supported time text. |
 | `fx.HSTACK` | formula | Append arrays horizontally, padding shorter arrays with #N/A to the maximum row count. |
 | `fx.IF` | formula | Return one value when a condition is true and another when false. |
@@ -3140,7 +3140,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.UNIQUE` | formula | Return unique rows from a range as a spilled dynamic array. |
 | `fx.UPPER` | formula | Convert text to uppercase. |
 | `fx.VALUE` | formula | Convert deterministic ASCII numeric text with optional grouping, scientific notation, accounting parentheses, or percent suffix to a number. |
-| `fx.VLOOKUP` | formula | Look up a value in the first column of a table range and return a value from another column. |
+| `fx.VLOOKUP` | formula | Look up one scalar in the first column of a nonempty rectangular range of at most 10,000 cells; FALSE/0 performs an exact, wildcard-aware lookup, while TRUE/1 or omission requires a proven ascending homogeneous numeric or text key column and returns the greatest matching-or-lower key. Invalid table/mode/index inputs and unproven ordering return #VALUE!, while an out-of-range return-column index returns #REF!. |
 | `fx.VSTACK` | formula | Append arrays vertically, padding narrower arrays with #N/A to the maximum column count. |
 | `fx.WEEKDAY` | formula | Return a weekday number for Excel return types 1, 2, 3, and 11 through 17. |
 | `fx.WORKDAY` | formula | Move forward or backward by working days while skipping weekends and optional holidays. |
@@ -3788,7 +3788,7 @@ Calculate the future value of a finite constant-payment stream from rate, term, 
 
 #### `fx.HLOOKUP`
 
-Look up a value in the first row of a table range and return a value from another row.
+Look up one scalar in the first row of a nonempty rectangular range of at most 10,000 cells; FALSE/0 performs an exact, wildcard-aware lookup, while TRUE/1 or omission requires a proven ascending homogeneous numeric or text key row and returns the greatest matching-or-lower key. Invalid table/mode/index inputs and unproven ordering return #VALUE!, while an out-of-range return-row index returns #REF!.
 
 **Examples:**
 
@@ -5046,7 +5046,7 @@ Convert deterministic ASCII numeric text with optional grouping, scientific nota
 
 #### `fx.VLOOKUP`
 
-Look up a value in the first column of a table range and return a value from another column.
+Look up one scalar in the first column of a nonempty rectangular range of at most 10,000 cells; FALSE/0 performs an exact, wildcard-aware lookup, while TRUE/1 or omission requires a proven ascending homogeneous numeric or text key column and returns the greatest matching-or-lower key. Invalid table/mode/index inputs and unproven ordering return #VALUE!, while an out-of-range return-column index returns #REF!.
 
 **Examples:**
 
