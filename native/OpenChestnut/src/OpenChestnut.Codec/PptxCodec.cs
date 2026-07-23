@@ -891,7 +891,17 @@ internal static class PptxCodec
             }
         }
 
-        var bytes = stream.ToArray();
+        // Opening an OPC package can rewrite ZIP container metadata even with
+        // AutoSave disabled. When no modeled part, relationship, or opaque
+        // graph changed, the validated source bytes are the only lossless
+        // export: returning the stream would create a spurious package-level
+        // diff while every retained part remains identical.
+        var noModeledChanges = changedParts.Count == 0 &&
+            addedRelationshipIds.Count == 0 &&
+            addedPartPaths.Count == 0 &&
+            replacedOpaquePartHashes.Count == 0 &&
+            removedSourceSlidePartPaths.Count == 0;
+        var bytes = noModeledChanges ? sourceBytes : stream.ToArray();
         ValidateOutputBudget(bytes, limits);
         var retainedValidationErrorCount = ValidateOffice2021AgainstSource(sourceBytes, bytes);
         AssertPackagePartsUnchangedExcept(sourceBytes, bytes, changedParts);

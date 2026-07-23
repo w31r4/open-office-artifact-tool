@@ -307,6 +307,11 @@ async function assertPublicOfficeRoundTrip(templateId, kind, sourcePath) {
     const exported = await PresentationFile.exportPptx(imported);
     const reimported = await PresentationFile.importPptx(exported);
     assert.equal(reimported.slides.items.length, imported.slides.items.length, `Presentation facade round trip: ${sourcePath}`);
+    assert.equal(
+      Buffer.from(exported.bytes).equals(Buffer.from(source.bytes)),
+      true,
+      `Unedited PPTX facade round trip must retain exact source bytes: ${sourcePath}`,
+    );
     return exported;
   }
   if (kind === "spreadsheet") {

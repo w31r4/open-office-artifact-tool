@@ -33,6 +33,24 @@ public sealed class DefaultTemplateLibraryCodecTests
     [InlineData("artifact-template-simple-dark-mode")]
     [InlineData("artifact-template-simple-light-mode")]
     [InlineData("artifact-template-team-alignment")]
+    public void RetainedPresentationTemplateNoOpExportPreservesExactSourcePackage(string templateId)
+    {
+        var limits = EffectiveCodecLimits.From(null);
+        var source = ReadReference(templateId, ".pptx");
+        var result = PptxCodec.Import(source, limits);
+
+        var exported = PptxCodec.Export(result.Artifact, limits);
+        Assert.Equal(source, exported.File);
+    }
+
+    [Theory]
+    [InlineData("artifact-template-business-review")]
+    [InlineData("artifact-template-market-trends-report")]
+    [InlineData("artifact-template-operating-review")]
+    [InlineData("artifact-template-project-kickoff")]
+    [InlineData("artifact-template-simple-dark-mode")]
+    [InlineData("artifact-template-simple-light-mode")]
+    [InlineData("artifact-template-team-alignment")]
     public void RetainedPresentationTemplateSupportsOneBoundedSourceSlideMetadataEdit(string templateId)
     {
         var limits = EffectiveCodecLimits.From(null);
