@@ -3148,8 +3148,8 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.WRAPCOLS` | formula | Wrap a one-dimensional vector into columns of a requested height, padding the final column when needed. |
 | `fx.WRAPROWS` | formula | Wrap a one-dimensional vector into rows of a requested width, padding the final row when needed. |
 | `fx.XIRR` | formula | Return a bounded-convergence annualized return rate for date-aligned finite cash flows using a 365-day year. |
-| `fx.XLOOKUP` | formula | Look up a value in one range and return the corresponding value from another range. |
-| `fx.XMATCH` | formula | Return a 1-based lookup position with exact, next-smaller, next-larger, wildcard, and forward or reverse search modes. |
+| `fx.XLOOKUP` | formula | Look up one scalar in same-shaped one-dimensional row or column vectors of 1 through 10,000 cells; exact, next-smaller, next-larger, wildcard, and first/last linear search modes are modeled, while binary-search modes and mismatched or two-dimensional ranges fail as #VALUE!. |
+| `fx.XMATCH` | formula | Return a 1-based lookup position in one row or column vector of 1 through 10,000 cells, with exact, next-smaller, next-larger, wildcard, and forward or reverse linear search modes; two-dimensional, oversized, and binary-search inputs fail as #VALUE!. |
 | `fx.XNPV` | formula | Discount date-aligned finite cash flows by actual day offsets from the first date using a 365-day year. |
 | `fx.YEAR` | formula | Return the year component of a serial in the workbook's 1900 or 1904 date system. |
 | `importXlsxWithOpenChestnut` | api | Import XLSX bytes through OpenChestnut with editable core cells, formulas, styles, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie/area/doughnut charts, marker-only numeric-X/Y scatter charts, and bounded numeric-X/Y/positive-Size bubble charts. Imported data-table topology is source-bound and read-only. Non-marker scatter styles, noncanonical bubble profiles, nested/branched replies, mentions, connections, QueryTables, dynamic-array topology, pivots, non-reversible sparkline graphs, and other advanced package content remain source-bound and read-only. |
@@ -5188,7 +5188,7 @@ Return a bounded-convergence annualized return rate for date-aligned finite cash
 
 #### `fx.XLOOKUP`
 
-Look up a value in one range and return the corresponding value from another range.
+Look up one scalar in same-shaped one-dimensional row or column vectors of 1 through 10,000 cells; exact, next-smaller, next-larger, wildcard, and first/last linear search modes are modeled, while binary-search modes and mismatched or two-dimensional ranges fail as #VALUE!.
 
 **Examples:**
 
@@ -5205,7 +5205,7 @@ Look up a value in one range and return the corresponding value from another ran
 
 #### `fx.XMATCH`
 
-Return a 1-based lookup position with exact, next-smaller, next-larger, wildcard, and forward or reverse search modes.
+Return a 1-based lookup position in one row or column vector of 1 through 10,000 cells, with exact, next-smaller, next-larger, wildcard, and forward or reverse linear search modes; two-dimensional, oversized, and binary-search inputs fail as #VALUE!.
 
 **Examples:**
 

@@ -1362,10 +1362,18 @@ function formulaTextSearchPosition(findValue, withinValue, startValue = 1, { cas
 }
 
 function formulaXmatchIndex(lookup, lookupValues = [], matchMode = 0, searchMode = 1) {
-  const values = lookupValues.flat ? lookupValues.flat() : lookupValues;
-  if (![0, -1, 1, 2].includes(matchMode) || ![1, -1, 2, -2].includes(searchMode)) return "#VALUE!";
+  const values = Array.isArray(lookupValues) ? lookupValues.flat() : [];
+  const lookupError = formulaErrorCode(lookup);
+  if (lookupError) return lookupError;
+  const arrayError = values.map(formulaErrorCode).find(Boolean);
+  if (arrayError) return arrayError;
+  // This evaluator intentionally models the two linear search directions.
+  // Excel's binary modes (2/-2) additionally require a proven sort order;
+  // accepting them as a linear scan would silently return the wrong row.
+  if (!Number.isInteger(matchMode) || ![0, -1, 1, 2].includes(matchMode) ||
+    !Number.isInteger(searchMode) || ![1, -1].includes(searchMode)) return "#VALUE!";
   const indexes = Array.from({ length: values.length }, (_, index) => index);
-  if (searchMode === -1 || searchMode === -2) indexes.reverse();
+  if (searchMode === -1) indexes.reverse();
   const lookupNumber = Number(lookup);
   const numericLookup = Number.isFinite(lookupNumber) && formulaText(lookup).trim() !== "";
   const exact = (value) => {
@@ -1388,6 +1396,26 @@ function formulaXmatchIndex(lookup, lookupValues = [], matchMode = 0, searchMode
     return matchMode < 0 ? -delta : delta;
   });
   return comparable[0].index + 1;
+}
+
+function formulaLookupVector(sheet, expr, context = {}, { rejectErrors = false } = {}) {
+  const directReference = formulaRefParts(expr);
+  if (directReference && formulaReferenceCellCount(directReference) > FORMULA_VECTOR_MAX_CELLS) return { error: "#VALUE!" };
+  const matrix = formulaRangeMatrix(sheet, expr, context);
+  const geometry = formulaMatrixGeometry(matrix);
+  if (!geometry || geometry.cells < 1 || geometry.cells > FORMULA_VECTOR_MAX_CELLS ||
+    (geometry.rows !== 1 && geometry.cols !== 1)) return { error: "#VALUE!" };
+  const values = matrix.flat();
+  const error = rejectErrors ? values.map(formulaErrorCode).find(Boolean) : undefined;
+  return error ? { error } : { values, rows: geometry.rows, cols: geometry.cols };
+}
+
+function formulaLookupMode(value, fallback, allowed) {
+  if (value === undefined) return fallback;
+  const error = formulaErrorCode(value);
+  if (error) return error;
+  const number = Number(value);
+  return Number.isInteger(number) && allowed.includes(number) ? number : "#VALUE!";
 }
 
 function uniqueFormulaRows(matrix) {
@@ -1903,9 +1931,15 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
       return formulaMatchIndex(lookup, matchValues.flat(), matchType);
     }
     case "XMATCH": {
+      if (args.length < 2 || args.length > 4) return "#VALUE!";
       const lookup = scalar(0, "");
-      const matchValues = formulaRangeMatrix(sheet, args[1], context) || [];
-      return formulaXmatchIndex(lookup, matchValues.flat(), formulaNumber(scalar(2, 0)), formulaNumber(scalar(3, 1)));
+      const lookupVector = formulaLookupVector(sheet, args[1], context, { rejectErrors: true });
+      if (lookupVector.error) return lookupVector.error;
+      const matchMode = formulaLookupMode(scalar(2), 0, [0, -1, 1, 2]);
+      if (formulaErrorCode(matchMode)) return matchMode;
+      const searchMode = formulaLookupMode(scalar(3), 1, [1, -1]);
+      if (formulaErrorCode(searchMode)) return searchMode;
+      return formulaXmatchIndex(lookup, lookupVector.values, matchMode, searchMode);
     }
     case "VLOOKUP": {
       const lookup = scalar(0, "");
@@ -1929,11 +1963,21 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
       return columnIndex >= 0 ? matrix[rowIndex]?.[columnIndex] ?? "#N/A" : "#N/A";
     }
     case "XLOOKUP": {
+      if (args.length < 3 || args.length > 6) return "#VALUE!";
       const lookup = scalar(0, "");
-      const lookupValues = values([args[1]]);
-      const returnValues = values([args[2]]);
-      const index = lookupValues.findIndex((value) => formulaText(value) === formulaText(lookup) || Number(value) === Number(lookup));
-      return index >= 0 ? returnValues[index] : scalar(3, "#N/A");
+      const lookupVector = formulaLookupVector(sheet, args[1], context, { rejectErrors: true });
+      if (lookupVector.error) return lookupVector.error;
+      const returnVector = formulaLookupVector(sheet, args[2], context);
+      if (returnVector.error) return returnVector.error;
+      if (lookupVector.rows !== returnVector.rows || lookupVector.cols !== returnVector.cols) return "#VALUE!";
+      const matchMode = formulaLookupMode(scalar(4), 0, [0, -1, 1, 2]);
+      if (formulaErrorCode(matchMode)) return matchMode;
+      const searchMode = formulaLookupMode(scalar(5), 1, [1, -1]);
+      if (formulaErrorCode(searchMode)) return searchMode;
+      const index = formulaXmatchIndex(lookup, lookupVector.values, matchMode, searchMode);
+      if (index === "#N/A") return scalar(3, "#N/A");
+      if (formulaErrorCode(index)) return index;
+      return returnVector.values[index - 1] ?? null;
     }
     default:
       return "#NAME?";

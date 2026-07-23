@@ -1093,6 +1093,50 @@ const importedTemplateFormulaWorkbook = await SpreadsheetFile.importXlsx(templat
 assert.deepEqual(importedTemplateFormulaWorkbook.worksheets.getItem("Template formulas").getRange("B1:B5").formulas, templateFormulaSheet.getRange("B1:B5").formulas);
 assert.deepEqual(importedTemplateFormulaWorkbook.worksheets.getItem("Template formulas").getRange("C1:C6").formulas, templateFormulaSheet.getRange("C1:C6").formulas);
 
+const xlookupFormulaWorkbook = Workbook.create();
+const xlookupFormulaSheet = xlookupFormulaWorkbook.worksheets.add("XLOOKUP bounds");
+xlookupFormulaSheet.getRange("A1:B6").values = [
+  ["Alpha", 101],
+  ["Beta", 201],
+  ["Beta", 202],
+  ["Gamma", 301],
+  [10, 401],
+  [20, 501],
+];
+xlookupFormulaSheet.getRange("G1:I2").values = [
+  ["East", "West", "North"],
+  [11, 22, 33],
+];
+xlookupFormulaSheet.getRange("D1:D18").formulas = [
+  ['=XLOOKUP("Beta",A1:A6,B1:B6)'],
+  ['=XLOOKUP("Beta",A1:A6,B1:B6,"missing",0,-1)'],
+  ['=XLOOKUP("Gam*",A1:A6,B1:B6,"missing",2)'],
+  ['=XLOOKUP(15,A5:A6,B5:B6,"missing",-1)'],
+  ['=XLOOKUP(15,A5:A6,B5:B6,"missing",1)'],
+  ['=XLOOKUP("missing",A1:A6,B1:B6,"fallback")'],
+  ['=XLOOKUP("missing",A1:A6,B1:B6)'],
+  ['=XLOOKUP("Beta",A1:A6,B1:B5)'],
+  ['=XLOOKUP("Beta",A1:A3,B1:D1)'],
+  ['=XLOOKUP("Beta",A1:B3,A1:B3)'],
+  ['=XLOOKUP("Beta",A1:A6,B1:B6,"missing",2,2)'],
+  ['=XMATCH("Beta",A1:A6,0,-1)'],
+  ['=XMATCH("Gam*",A1:A6,2)'],
+  ['=XMATCH(15,A5:A6,-1)'],
+  ['=XMATCH("Beta",A1:B3)'],
+  ['=XMATCH("Beta",A1:A6,0,2)'],
+  ['=XLOOKUP("West",G1:I1,G2:I2)'],
+  ['=XMATCH("North",G1:I1)'],
+];
+assert.deepEqual(xlookupFormulaSheet.getRange("D1:D18").values, [
+  [201], [202], [301], [401], [501], ["fallback"], ["#N/A"], ["#VALUE!"],
+  ["#VALUE!"], ["#VALUE!"], ["#VALUE!"], [3], [4], [1], ["#VALUE!"], ["#VALUE!"], [22], [3],
+]);
+xlookupFormulaSheet.getRange("E1").formulas = [['=XLOOKUP("Alpha",A1:A10001,B1:B10001)']];
+assert.deepEqual(xlookupFormulaSheet.getRange("E1").values, [["#VALUE!"]], "XLOOKUP must not silently scan vectors larger than the formula budget");
+const xlookupFormulaXlsx = await SpreadsheetFile.exportXlsx(xlookupFormulaWorkbook);
+const importedXlookupFormulaWorkbook = await SpreadsheetFile.importXlsx(xlookupFormulaXlsx);
+assert.deepEqual(importedXlookupFormulaWorkbook.worksheets.getItem("XLOOKUP bounds").getRange("D1:D18").formulas, xlookupFormulaSheet.getRange("D1:D18").formulas);
+
 const expressionFormulaWorkbook = Workbook.create();
 const expressionInputs = expressionFormulaWorkbook.worksheets.add("Inputs");
 const expressionTextInputs = expressionFormulaWorkbook.worksheets.add("Data & Targets");

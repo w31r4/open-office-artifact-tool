@@ -209,6 +209,8 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "fx.COUNTA"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.COUNTBLANK"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.XLOOKUP"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.XMATCH"));
+assert.match(HELP_CATALOG.find((item) => item.name === "fx.XLOOKUP")?.summary || "", /same-shaped.*one-dimensional.*10,000.*binary-search.*#VALUE!/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "fx.XMATCH")?.summary || "", /one row or column.*10,000.*binary-search.*#VALUE!/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.TEXTJOIN"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.TEXT"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "fx.SEARCH"));
