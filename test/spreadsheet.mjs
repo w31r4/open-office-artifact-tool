@@ -1055,6 +1055,36 @@ const importedIfsFormulaWorkbook = await SpreadsheetFile.importXlsx(ifsFormulaXl
 assert.deepEqual(importedIfsFormulaWorkbook.worksheets.getItem("Criteria").getRange("E1:E4").formulas, ifsFormulaSheet.getRange("E1:E4").formulas);
 assert.deepEqual(importedIfsFormulaWorkbook.worksheets.getItem("Criteria").getRange("G1:G7").formulas, ifsFormulaSheet.getRange("G1:G7").formulas);
 
+const templateFormulaWorkbook = Workbook.create();
+const templateFormulaSheet = templateFormulaWorkbook.worksheets.add("Template formulas");
+templateFormulaSheet.getRange("A1:A7").values = [[1], [null], [false], ["text"], [0], ["#DIV/0!"], [null]];
+templateFormulaSheet.getRange("A7").formulas = [["=IF(FALSE,1,\"\")"]];
+templateFormulaSheet.getRange("B1:B5").formulas = [
+  ["=COUNTA(A1:A7)"],
+  ["=COUNTBLANK(A1:A7)"],
+  ["=COUNTBLANK(A1:A2)"],
+  ["=COUNTBLANK(A1)"],
+  ["=COUNTBLANK(A1:A2,A3)"],
+];
+assert.deepEqual(templateFormulaSheet.getRange("B1:B5").values, [[6], [2], [1], [0], ["#VALUE!"]]);
+templateFormulaSheet.getRange("C1:C6").formulas = [
+  ["=TEXT(DATE(2026,7,12),\"yyyymmdd\")"],
+  ["=TEXT(DATE(2026,7,12),\"mmm yyyy\")"],
+  ["=TEXT(DATE(2026,7,12),\"mmmm yyyy\")"],
+  ["=TEXT(DATE(2026,7,2),\"yyyy-mm-dd\")"],
+  ["=TEXT(60,\"yyyy-mm-dd\")"],
+  ["=TEXT(DATE(2026,7,12),\"0.00\")"],
+];
+assert.deepEqual(templateFormulaSheet.getRange("C1:C6").values, [["20260712"], ["Jul 2026"], ["July 2026"], ["2026-07-02"], ["1900-02-29"], ["#VALUE!"]]);
+const templateFormula1904Workbook = Workbook.create({ dateSystem: "1904" });
+const templateFormula1904Sheet = templateFormula1904Workbook.worksheets.add("Date system");
+templateFormula1904Sheet.getRange("A1").formulas = [["=TEXT(DATE(1904,1,1),\"yyyy-mm-dd\")"]];
+assert.deepEqual(templateFormula1904Sheet.getRange("A1").values, [["1904-01-01"]]);
+const templateFormulaXlsx = await SpreadsheetFile.exportXlsx(templateFormulaWorkbook);
+const importedTemplateFormulaWorkbook = await SpreadsheetFile.importXlsx(templateFormulaXlsx);
+assert.deepEqual(importedTemplateFormulaWorkbook.worksheets.getItem("Template formulas").getRange("B1:B5").formulas, templateFormulaSheet.getRange("B1:B5").formulas);
+assert.deepEqual(importedTemplateFormulaWorkbook.worksheets.getItem("Template formulas").getRange("C1:C6").formulas, templateFormulaSheet.getRange("C1:C6").formulas);
+
 const textPositionWorkbook = Workbook.create();
 const textPositionSheet = textPositionWorkbook.worksheets.add("Text position");
 textPositionSheet.getRange("A1:A5").values = [

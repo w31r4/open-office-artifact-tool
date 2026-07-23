@@ -828,6 +828,49 @@ function excelDateParts(serialValue, dateSystem = "1900") {
   return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() };
 }
 
+const EXCEL_TEXT_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const EXCEL_TEXT_DATE_TOKENS = /yyyy|yy|mmmm|mmm|mm|m|dd|d/gi;
+
+function excelTextDateSerial(value, dateSystem = "1900") {
+  if (!(value instanceof Date)) return excelFormulaDateNumber(value);
+  if (!Number.isFinite(value.getTime())) return "#VALUE!";
+  return excelGregorianSerial(value.getUTCFullYear(), value.getUTCMonth() + 1, value.getUTCDate(), dateSystem);
+}
+
+function excelTextDateFormat(value, formatValue, dateSystem = "1900") {
+  const valueError = formulaErrorCode(value);
+  const formatError = formulaErrorCode(formatValue);
+  if (valueError) return valueError;
+  if (formatError) return formatError;
+  const serial = excelTextDateSerial(value, dateSystem);
+  if (formulaErrorCode(serial)) return serial;
+  const parts = excelDateParts(serial, dateSystem);
+  if (!parts) return "#VALUE!";
+  const format = formulaText(formatValue);
+  if (!format) return "#VALUE!";
+  const tokens = {
+    yyyy: String(parts.year).padStart(4, "0"),
+    yy: String(parts.year % 100).padStart(2, "0"),
+    mmmm: EXCEL_TEXT_MONTHS[parts.month - 1],
+    mmm: EXCEL_TEXT_MONTHS[parts.month - 1].slice(0, 3),
+    mm: String(parts.month).padStart(2, "0"),
+    m: String(parts.month),
+    dd: String(parts.day).padStart(2, "0"),
+    d: String(parts.day),
+  };
+  let output = "";
+  let cursor = 0;
+  for (const match of format.matchAll(EXCEL_TEXT_DATE_TOKENS)) {
+    const literal = format.slice(cursor, match.index);
+    if (!/^[\s/.,:_-]*$/.test(literal)) return "#VALUE!";
+    output += literal + tokens[match[0].toLowerCase()];
+    cursor = match.index + match[0].length;
+  }
+  const tail = format.slice(cursor);
+  if (!/^[\s/.,:_-]*$/.test(tail) || !output) return "#VALUE!";
+  return output + tail;
+}
+
 function excelDateValue(value, dateSystem = "1900") {
   const parsed = parseFormulaDateText(value);
   if (!parsed) return "#VALUE!";
@@ -1132,6 +1175,13 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
     case "MAX":
     case "COUNT":
       return aggregateFormulaValues(values(), fnName);
+    case "COUNTA": return values().filter((value) => value !== null && value !== undefined).length;
+    case "COUNTBLANK": {
+      if (args.length !== 1) return "#VALUE!";
+      const matrix = formulaRangeMatrix(sheet, args[0], context);
+      if (!matrix) return "#VALUE!";
+      return matrix.flat().filter((value) => value == null || value === "").length;
+    }
     case "ABS": return Math.abs(formulaNumber(scalar(0, 0)));
     case "ROUND": return roundFormulaNumber(scalar(0, 0), scalar(1, 0));
     case "ROUNDUP": return roundFormulaNumber(scalar(0, 0), scalar(1, 0), "up");
@@ -1343,6 +1393,7 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
       if (error) return error;
       return parseFormulaNumberText(value) ?? "#VALUE!";
     }
+    case "TEXT": return args.length === 2 ? excelTextDateFormat(scalar(0), scalar(1), dateSystem) : "#VALUE!";
     case "COUNTIF": { if (args.length < 2) return "#VALUE!"; const range = values([args[0]]); const criteria = scalar(1, ""); return range.filter((value) => matchesFormulaCriteria(value, criteria)).length; }
     case "COUNTIFS": {
       if (args.length < 2 || args.length % 2 !== 0) return "#VALUE!";
