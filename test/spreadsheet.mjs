@@ -1093,6 +1093,39 @@ const importedTemplateFormulaWorkbook = await SpreadsheetFile.importXlsx(templat
 assert.deepEqual(importedTemplateFormulaWorkbook.worksheets.getItem("Template formulas").getRange("B1:B5").formulas, templateFormulaSheet.getRange("B1:B5").formulas);
 assert.deepEqual(importedTemplateFormulaWorkbook.worksheets.getItem("Template formulas").getRange("C1:C6").formulas, templateFormulaSheet.getRange("C1:C6").formulas);
 
+const indexFormulaWorkbook = Workbook.create();
+const indexFormulaSheet = indexFormulaWorkbook.worksheets.add("INDEX bounds");
+indexFormulaSheet.getRange("A1:C3").values = [[11, 12, 13], [21, 22, 23], [31, 32, 33]];
+indexFormulaSheet.getRange("G1:H4").values = [["Key", "Value"], ["Alpha", 101], ["Beta", 202], ["Gamma", 303]];
+indexFormulaSheet.tables.add("G1:H4", true, "IndexValues");
+indexFormulaWorkbook.definedNames.add("WideIndex", "'INDEX bounds'!A1:A10001");
+indexFormulaSheet.getRange("E1:E17").formulas = [
+  ["=INDEX(A1:C3,2,3)"],
+  ["=INDEX(A1:C3,2)"],
+  ["=INDEX(A1:C3,0,2)"],
+  ["=INDEX(A1:C3,2,0)"],
+  ["=INDEX(A1:C3,1.9,2.9)"],
+  ["=INDEX(A1:C3,-1,2)"],
+  ["=INDEX(A1:C3,\"x\",2)"],
+  ["=INDEX(A1:C3,1,\"x\")"],
+  ["=INDEX(A1:C3,#N/A,1)"],
+  ["=INDEX(IndexValues[Value],2)"],
+  ["=INDEX(A1:C10001,1)"],
+  ["=INDEX(WideIndex,1)"],
+  ["=INDEX(A1:C3)"],
+  ["=INDEX(A1:C3,1,2,3)"],
+  ["=INDEX(1,1)"],
+  ["=INDEX(A1:C3,4,1)"],
+  ["=INDEX(A1:C3,1,4)"],
+];
+assert.deepEqual(indexFormulaSheet.getRange("E1:E17").values, [
+  [23], [21], [12], [21], [12], [12], [12], [11], ["#N/A"], [202],
+  ["#VALUE!"], ["#VALUE!"], ["#VALUE!"], ["#VALUE!"], ["#REF!"], ["#REF!"], ["#REF!"],
+]);
+const indexFormulaXlsx = await SpreadsheetFile.exportXlsx(indexFormulaWorkbook);
+const importedIndexFormulaWorkbook = await SpreadsheetFile.importXlsx(indexFormulaXlsx);
+assert.deepEqual(importedIndexFormulaWorkbook.worksheets.getItem("INDEX bounds").getRange("E1:E17").formulas, indexFormulaSheet.getRange("E1:E17").formulas);
+
 const xlookupFormulaWorkbook = Workbook.create();
 const xlookupFormulaSheet = xlookupFormulaWorkbook.worksheets.add("XLOOKUP bounds");
 xlookupFormulaSheet.getRange("A1:B6").values = [

@@ -3076,7 +3076,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.IFERROR` | formula | Return a fallback value when an expression evaluates to a formula error. |
 | `fx.IFNA` | formula | Return a fallback only when an expression evaluates to #N/A; preserve every other result or error. |
 | `fx.IFS` | formula | Evaluate condition/value pairs in order and return the first matching value, or #N/A when no condition matches. |
-| `fx.INDEX` | formula | Return a value from a range by 1-based row and optional column index, preserving an error-valued selector such as a failed MATCH. |
+| `fx.INDEX` | formula | Select one value from a nonempty rectangular range of at most 10,000 cells with host-compatible row and optional column selectors, preserving an error-valued selector such as a failed MATCH. Only the documented 2- or 3-argument array/range form is modeled; missing or extra selectors and oversized ranges return #VALUE!, while a missing or out-of-range source cell returns #REF!. |
 | `fx.INT` | formula | Round a number down to the nearest integer. |
 | `fx.IPMT` | formula | Calculate the interest component of one constant-payment loan period from finite rate, period, term, present value, optional future value, and payment-timing inputs. |
 | `fx.IRR` | formula | Return a bounded-convergence periodic return rate for a finite cash-flow vector. |
@@ -3907,7 +3907,7 @@ Evaluate condition/value pairs in order and return the first matching value, or 
 
 #### `fx.INDEX`
 
-Return a value from a range by 1-based row and optional column index, preserving an error-valued selector such as a failed MATCH.
+Select one value from a nonempty rectangular range of at most 10,000 cells with host-compatible row and optional column selectors, preserving an error-valued selector such as a failed MATCH. Only the documented 2- or 3-argument array/range form is modeled; missing or extra selectors and oversized ranges return #VALUE!, while a missing or out-of-range source cell returns #REF!.
 
 **Examples:**
 

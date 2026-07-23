@@ -1380,7 +1380,7 @@ function formulaXmatchIndex(lookup, lookupValues = [], matchMode = 0, searchMode
   return comparable[0].index + 1;
 }
 
-function formulaLookupReferenceCellCount(sheet, expr, context = {}) {
+function formulaReferenceExpressionCellCount(sheet, expr, context = {}) {
   const directReference = formulaRefParts(expr) || formulaDefinedNameRange(sheet, expr);
   if (directReference) return formulaReferenceCellCount(directReference);
   const structured = formulaStructuredRefIntersection(sheet, expr, context)
@@ -1391,18 +1391,19 @@ function formulaLookupReferenceCellCount(sheet, expr, context = {}) {
   return (geometry.bottom - geometry.top + 1) * geometry.columns.length;
 }
 
-function formulaBoundedLookupMatrix(sheet, expr, context = {}) {
+function formulaBoundedReferenceMatrix(sheet, expr, context = {}, { emptyError = "#VALUE!" } = {}) {
   // Count source-backed ranges before materializing their cells so named and
   // structured references observe the same 10,000-cell guard as A1 ranges.
-  if ((formulaLookupReferenceCellCount(sheet, expr, context) || 0) > FORMULA_VECTOR_MAX_CELLS) return { error: "#VALUE!" };
+  if ((formulaReferenceExpressionCellCount(sheet, expr, context) || 0) > FORMULA_VECTOR_MAX_CELLS) return { error: "#VALUE!" };
   const matrix = formulaRangeMatrix(sheet, expr, context);
   const geometry = formulaMatrixGeometry(matrix);
-  if (!geometry || geometry.cells < 1 || geometry.cells > FORMULA_VECTOR_MAX_CELLS) return { error: "#VALUE!" };
+  if (!geometry || geometry.cells < 1) return { error: emptyError };
+  if (geometry.cells > FORMULA_VECTOR_MAX_CELLS) return { error: "#VALUE!" };
   return { matrix, rows: geometry.rows, cols: geometry.cols };
 }
 
 function formulaLookupVector(sheet, expr, context = {}, { rejectErrors = false } = {}) {
-  const lookupMatrix = formulaBoundedLookupMatrix(sheet, expr, context);
+  const lookupMatrix = formulaBoundedReferenceMatrix(sheet, expr, context);
   if (lookupMatrix.error) return lookupMatrix;
   if (lookupMatrix.rows !== 1 && lookupMatrix.cols !== 1) return { error: "#VALUE!" };
   const values = lookupMatrix.matrix.flat();
@@ -1970,8 +1971,10 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
       return Array.from({ length }, (_, index) => arrays.reduce((product, array) => product * formulaNumber(array[index]), 1)).reduce((sum, value) => sum + value, 0);
     }
     case "INDEX": {
-      const matrix = normalizeFormulaMatrix(formulaRangeMatrix(sheet, args[0], context) || []);
-      if (!matrix.length) return "#REF!";
+      if (args.length < 2 || args.length > 3) return "#VALUE!";
+      const source = formulaBoundedReferenceMatrix(sheet, args[0], context, { emptyError: "#REF!" });
+      if (source.error) return source.error;
+      const matrix = source.matrix;
       const rowValue = scalar(1, 1);
       const rowError = formulaErrorCode(rowValue);
       if (rowError) return rowError;
@@ -2009,7 +2012,7 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
     case "VLOOKUP": {
       if (args.length < 3 || args.length > 4) return "#VALUE!";
       const lookup = scalar(0, "");
-      const table = formulaBoundedLookupMatrix(sheet, args[1], context);
+      const table = formulaBoundedReferenceMatrix(sheet, args[1], context);
       if (table.error) return table.error;
       const columnIndex = formulaLookupResultIndex(scalar(2), table.cols);
       if (formulaErrorCode(columnIndex)) return columnIndex;
@@ -2022,7 +2025,7 @@ function evaluateFormulaFunction(sheet, fnName, args, context = {}) {
     case "HLOOKUP": {
       if (args.length < 3 || args.length > 4) return "#VALUE!";
       const lookup = scalar(0, "");
-      const table = formulaBoundedLookupMatrix(sheet, args[1], context);
+      const table = formulaBoundedReferenceMatrix(sheet, args[1], context);
       if (table.error) return table.error;
       const rowIndex = formulaLookupResultIndex(scalar(2), table.rows);
       if (formulaErrorCode(rowIndex)) return rowIndex;
