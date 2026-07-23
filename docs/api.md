@@ -1674,6 +1674,7 @@ Resolve one explicit PDF task and selected/default provider against the immutabl
 | `presentation.sections.getItem` | api | Resolve a source-free or canonical imported PowerPoint section by zero-based index, stable facade ID, or exact name. |
 | `presentation.slides.add` | api | Append an editable core slide with an optional bounded source-free layout, direct fade/push transition, solid/style-reference background, and plain-text speaker notes. A supplied layout is resolved and materialized transactionally; effective imported Layout/Master inheritance is never flattened. |
 | `presentation.slides.insert` | api | Insert a source-free slide after an existing Slide or 0-based index, or at the beginning with after: null. It uses the same transactional layout materialization, bounded direct fade/push transition, and notes/background profile as slides.add; imported additions fail closed, while slide.duplicate and slide.delete each have their own narrow source-preserving OPC profiles. |
+| `presentation.slideSize` | api | Read or set the deck canvas in pixels. On a trusted imported PPTX, a changed size is a deliberately canvas-only source-bound operation: OpenChestnut updates only ppt/presentation.xml p:sldSz, clears an old preset type, and leaves slide, layout, master, chart, and shape coordinates unchanged. It never silently rescales or reflows content; callers must make any layout edits explicitly. |
 | `presentation.textRange` | api | Inspect or resolve stable textRange anchors such as shapeId/text for editable slide text frames. |
 | `presentation.theme` | api | Inspect the model theme and theme inheritance. Custom source-free themes are not authored by OpenChestnut 0.2, and imported themes are source-bound and read-only. |
 | `presentation.validateLayout` | api | Detect layout QA issues across slides, including off-canvas elements, geometry overlaps, and basic text overflow. |
@@ -1847,7 +1848,7 @@ Create a deck model whose canonical OpenChestnut export supports ordinary slides
 
 **Schema parameters:**
 
-- `slideSize` (object) — Slide width and height in pixels; defaults to 1280x720.
+- `slideSize` (object) — Slide width and height in pixels; defaults to 1280x720. On a trusted imported PPTX, changing it updates only the source-bound p:sldSz canvas and never rescales existing coordinates.
 - `theme` (object) — Model theme metadata. OpenChestnut 0.2 source-free export requires the default theme; imported themes are read-only.
 - `master` (object) — The one canonical source-free Slide Master: name/background, bounded title/body/ctrTitle/subTitle direct-frame placeholders, and bounded textParagraphStyles. Theme overrides are unsupported.
 - `masters` (object[]) — Model-level Slide Master definitions. Source-free PPTX authoring accepts exactly one master; imported master graphs remain source-bound and read-only.
@@ -2168,6 +2169,19 @@ Insert a source-free slide after an existing Slide or 0-based index, or at the b
 **Schema returns:**
 
 - `slide` (Slide) — Inserted source-free slide. Unknown insertion targets or layouts leave the collection unchanged; imported additions remain fail-closed. See slide.duplicate for the separate bounded source-preserving clone profile.
+
+#### `presentation.slideSize`
+
+Read or set the deck canvas in pixels. On a trusted imported PPTX, a changed size is a deliberately canvas-only source-bound operation: OpenChestnut updates only ppt/presentation.xml p:sldSz, clears an old preset type, and leaves slide, layout, master, chart, and shape coordinates unchanged. It never silently rescales or reflows content; callers must make any layout edits explicitly.
+
+**Schema parameters:**
+
+- `width` (number) required — Finite non-negative canvas width in pixels; a changed imported canvas must resolve to a positive signed 32-bit EMU value.
+- `height` (number) required — Finite non-negative canvas height in pixels; a changed imported canvas must resolve to a positive signed 32-bit EMU value.
+
+**Schema returns:**
+
+- `slideSize` ({ width: number, height: number }) — Current deck canvas. A trusted imported PPTX may change only this p:sldSz canvas; existing slide, layout, master, chart, and shape coordinates are preserved exactly, and callers must explicitly recompose any affected layout.
 
 #### `presentation.textRange`
 

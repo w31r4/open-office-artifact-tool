@@ -15,6 +15,15 @@ type PresentationCreateOptions = {
 };
 ```
 
+## Imported Canvas Resize
+
+For a trusted imported PPTX, assigning `presentation.slideSize = { width,
+height }` is an intentionally narrow canvas operation. OpenChestnut changes only
+`ppt/presentation.xml` `p:sldSz` and removes a stale preset `type`; it preserves
+all existing slide, layout, master, chart, and shape coordinates. It does not
+reflow, scale, crop, or reposition content. After changing the canvas, inspect,
+render, and make any required layout edits explicitly.
+
 ## Presentation Slide Collection
 
 ```ts

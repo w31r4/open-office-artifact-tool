@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 373);
+assert.equal(HELP_CATALOG.length, 374);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -100,6 +100,9 @@ assert.match(HELP_CATALOG.find((item) => item.name === "presentation.view")?.sch
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.master")?.schema?.parameters?.slideGuides?.description || "", /Read-only imported PowerPoint guide definitions/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.moveTo")?.schema?.parameters?.index?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.moveTo")?.schema?.returns?.slide?.description || "", /p:sldIdLst.*retained source SlideParts.*broad graph clones.*fail closed/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "presentation.slideSize")?.summary || "", /canvas-only.*p:sldSz.*clears an old preset type.*coordinates unchanged.*never silently rescales.*explicitly/i);
+assert.equal(HELP_CATALOG.find((item) => item.name === "presentation.slideSize")?.schema?.parameters?.width?.required, true);
+assert.match(HELP_CATALOG.find((item) => item.name === "Presentation.create")?.schema?.parameters?.slideSize?.description || "", /trusted imported PPTX.*p:sldSz.*never rescales/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.duplicate")?.schema?.returns?.slide?.type, "Slide");
 const slideDuplicateDescription = HELP_CATALOG.find((item) => item.name === "slide.duplicate")?.schema?.returns?.slide?.description || "";
 assert.match(slideDuplicateDescription, /original imported PPTX.*canonical simple shapes.*canonical inline fixed-grid tables.*recognized closed literal-data charts.*eligible top-level embedded-XLSX OLE frames.*embedded rectangular images.*numbered ChartPart.*no child, external, hyperlink, or data relationship.*uniquely inbound XLSX EmbeddedPackagePart.*preview ImagePart.*every present connector endpoint.*same copied SlidePart tree.*distinct SlidePart.*distinct ChartPart.*distinct EmbeddedPackagePart.*independent.*Supported chart or OLE-workbook edits.*malformed\/shared\/external\/non-XLSX\/nested\/relationship-bearing\/replacement-pending OLE graphs.*fail closed/i);
@@ -454,7 +457,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "document.setDateContentC
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.materializeFields")?.schema?.parameters?.dryRun?.type, "boolean");
 assert.match(HELP_CATALOG.find((item) => item.name === "document.materializeFields")?.summary || "", /SEQ counters.*REF cached results.*PAGEREF.*pagination host/i);
 const presentationCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "presentation");
-assert.equal(presentationCatalog.length, 70);
+assert.equal(presentationCatalog.length, 71);
 assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "presentation.slides.insert")?.schema?.parameters?.after?.type, "Slide|number|null");

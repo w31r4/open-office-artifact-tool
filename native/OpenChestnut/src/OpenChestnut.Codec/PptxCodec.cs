@@ -473,6 +473,8 @@ internal static class PptxCodec
                 removedSourceSlidePartPaths);
             if (ReorderSourceSlideIdList(presentationPart, targetSlides))
                 changedParts.Add(PartPath(presentationPart));
+            if (ApplySourceBoundSlideSize(presentationPart, envelope.Presentation))
+                changedParts.Add(PartPath(presentationPart));
             if (presentationPart.Presentation?.CustomShowList is not null ||
                 envelope.Presentation.CustomShowsOpaque ||
                 envelope.Presentation.CustomShows.Count > 0)
@@ -925,6 +927,41 @@ internal static class PptxCodec
                 "source_openxml_validation_warnings_preserved",
                 $"Preserved {retainedValidationErrorCount} pre-existing Office 2021 validation warning(s) from the source package; export introduced none."));
         return new PptxExportResult(bytes, diagnostics);
+    }
+
+    // This is deliberately a canvas-only mutation. PresentationML leaves all
+    // slide, layout, and master coordinates untouched when p:sldSz changes;
+    // callers that want a reflow must explicitly use their layout primitives.
+    // Clearing the preset type avoids claiming that an arbitrary pair of EMU
+    // dimensions still matches the old Office preset.
+    private static bool ApplySourceBoundSlideSize(PresentationPart presentationPart, PresentationArtifact requested)
+    {
+        var presentation = presentationPart.Presentation ??
+            throw new CodecException("missing_presentation_root", "PPTX package has no Presentation root.", "ppt/presentation.xml");
+        var source = presentation.SlideSize;
+        var sourceWidth = source?.Cx?.Value ?? DefaultSlideWidthEmu;
+        var sourceHeight = source?.Cy?.Value ?? DefaultSlideHeightEmu;
+        if (requested.SlideWidthEmu == sourceWidth && requested.SlideHeightEmu == sourceHeight)
+            return false;
+        if (requested.SlideWidthEmu <= 0 || requested.SlideHeightEmu <= 0 ||
+            requested.SlideWidthEmu > int.MaxValue || requested.SlideHeightEmu > int.MaxValue)
+            throw new CodecException(
+                "invalid_slide_size",
+                "Source-bound PPTX canvas dimensions must be positive signed 32-bit EMU values.",
+                "ppt/presentation.xml");
+
+        if (source is null)
+        {
+            source = new P.SlideSize();
+            var slideIdList = presentation.SlideIdList ??
+                throw new CodecException("missing_slide_id_list", "PPTX presentation has no slide ID list.", "ppt/presentation.xml");
+            presentation.InsertAfter(source, slideIdList);
+        }
+        source.Cx = checked((int)requested.SlideWidthEmu);
+        source.Cy = checked((int)requested.SlideHeightEmu);
+        source.Type = null;
+        presentation.Save();
+        return true;
     }
 
     private static PresentationElement ReadElement(

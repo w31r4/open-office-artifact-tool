@@ -138,6 +138,7 @@ tags default `width` to `"fill"` when you omit it.
 ## Core API Sequence
 
 - Create presentations with `Presentation.create({ slideSize })` to control default slide dimensions.
+- For a trusted imported deck, assigning `presentation.slideSize = { width, height }` is canvas-only: OpenChestnut updates `p:sldSz` and removes a stale preset type while preserving every existing slide/layout/master/chart/shape coordinate. Use explicit layout edits and render review; there is no automatic reflow.
 - Add source-free slides with `presentation.slides.add({ layout, layoutId })`, or use `presentation.slides.insert({ after, layout, ... })` to insert after a Slide/0-based index (or first with `after: null`). A supplied bounded layout is resolved and its direct-frame text placeholders are materialized transactionally. Use `slide.setLayout(layout)` when binding after creation; reapplying the same layout is idempotent, while switching an already-materialized layout fails closed.
 - Discover a layout before filling it with `layout.placeholders.summary()`. It returns a fresh copied snapshot of placeholder identity/type/index/direct-frame evidence and never grants mutation of an imported template graph.
 - Use `slide.compose(nodeOrJsx, { frame, baseUnit })` for compose-first layouts. JSX lowers into the same compose runtime as the helper-based API.

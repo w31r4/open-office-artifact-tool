@@ -2216,9 +2216,9 @@ export function presentationEnvelope(presentation, protocolVersion) {
     if (presentationAdvancedSnapshot(presentation) !== state.advancedSnapshot) {
       throw new OpenChestnutCodecError("Imported presentation theme and comment wire family are source-bound and read-only in OpenChestnut 0.2.", [], { code: "unsupported_presentation_edit" });
     }
-    if (Number(state.slideWidthEmu) !== Math.round(Number(presentation.slideSize.width) * EMU_PER_PIXEL) || Number(state.slideHeightEmu) !== Math.round(Number(presentation.slideSize.height) * EMU_PER_PIXEL)) {
-      throw new OpenChestnutCodecError("Source-preserving PPTX export does not yet support changing slide dimensions.", [], { code: "unsupported_presentation_edit" });
-    }
+    // A source-bound canvas resize is explicit and intentionally narrow: the
+    // native codec changes only p:presentation/p:sldSz. It never treats a
+    // changed canvas as permission to rescale every slide/master coordinate.
   }
 
   const customShows = presentationCustomShows(presentation, state);

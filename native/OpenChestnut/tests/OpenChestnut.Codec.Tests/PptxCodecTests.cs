@@ -3667,6 +3667,52 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void SourcePreservingExportResizesOnlyThePresentationCanvas()
+    {
+        var authored = Invoke(ExportRequest());
+        Assert.True(authored.Ok, Diagnostics(authored));
+        var sourceBytes = ReplaceZipText(
+            authored.File.ToByteArray(),
+            "ppt/presentation.xml",
+            xml => xml.Replace("<p:sldSz ", "<p:sldSz type=\"screen16x9\" ", StringComparison.Ordinal));
+        var imported = Import(sourceBytes);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        Assert.Equal(12_192_000L, imported.Artifact.Presentation.SlideWidthEmu);
+        Assert.Equal(6_858_000L, imported.Artifact.Presentation.SlideHeightEmu);
+
+        imported.Artifact.Presentation.SlideWidthEmu = 9_144_000L;
+        imported.Artifact.Presentation.SlideHeightEmu = 6_858_000L;
+        var resized = Export(imported.Artifact);
+        Assert.True(resized.Ok, Diagnostics(resized));
+        var resizedBytes = resized.File.ToByteArray();
+        Assert.NotEqual(sourceBytes, resizedBytes);
+        Assert.Equal(ZipPartPaths(sourceBytes), ZipPartPaths(resizedBytes));
+        foreach (var path in ZipPartPaths(sourceBytes).Where(path => !path.Equals("ppt/presentation.xml", StringComparison.OrdinalIgnoreCase)))
+            Assert.Equal(ZipBytes(sourceBytes, path), ZipBytes(resizedBytes, path));
+
+        using (var stream = new MemoryStream(resizedBytes, writable: false))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+            var size = package.PresentationPart!.Presentation!.SlideSize!;
+            Assert.Equal(9_144_000, size.Cx!.Value);
+            Assert.Equal(6_858_000, size.Cy!.Value);
+            Assert.Null(size.Type);
+        }
+
+        var roundTrip = Import(resizedBytes);
+        Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
+        Assert.Equal(9_144_000L, roundTrip.Artifact.Presentation.SlideWidthEmu);
+        Assert.Equal(6_858_000L, roundTrip.Artifact.Presentation.SlideHeightEmu);
+
+        var invalid = Import(sourceBytes);
+        invalid.Artifact.Presentation.SlideWidthEmu = 0;
+        var rejected = Export(invalid.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("invalid_slide_size", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
     public void SourcePreservingExportReordersEachImportedSlideExactlyOnce()
     {
         var authored = Invoke(HyperlinkExportRequest());
@@ -6875,6 +6921,17 @@ public sealed class PptxCodecTests
         using var copy = new MemoryStream();
         entry.CopyTo(copy);
         return copy.ToArray();
+    }
+
+    private static string[] ZipPartPaths(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes, writable: false);
+        using var archive = new ZipArchive(stream, ZipArchiveMode.Read);
+        return archive.Entries
+            .Where(entry => !string.IsNullOrEmpty(entry.Name))
+            .Select(entry => entry.FullName)
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
     }
 
     private static byte[] ModernPartBytes<T>(byte[] bytes) where T : OpenXmlPart

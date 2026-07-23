@@ -1215,6 +1215,35 @@ const renamedImportedRoundTrip = await PresentationFile.importPptx(renamedImport
 assert.equal(renamedImportedRoundTrip.slides.getItem(0).name, "Renamed imported overview");
 assert.equal(itemByName(renamedImportedRoundTrip.slides.getItem(0).shapes.items, "rounded-card").text.value, "Before edit");
 
+// An imported canvas resize changes only p:presentation/p:sldSz. It must not
+// silently rescale every coordinate in a source-bound deck; agents can make a
+// separate, explicit layout decision after selecting the new canvas.
+const resizedImportedDeck = await PresentationFile.importPptx(firstExport);
+resizedImportedDeck.slideSize = { width: 960, height: 720 };
+const resizedImportedPptx = await PresentationFile.exportPptx(resizedImportedDeck);
+const resizedImportedZip = await JSZip.loadAsync(resizedImportedPptx.bytes);
+assert.deepEqual(Object.keys(resizedImportedZip.files).sort(), Object.keys(originalImportedZip.files).sort());
+for (const [path, entry] of Object.entries(originalImportedZip.files)) {
+  if (entry.dir || path === "ppt/presentation.xml") continue;
+  assert.deepEqual(
+    await resizedImportedZip.file(path).async("uint8array"),
+    await originalImportedZip.file(path).async("uint8array"),
+    `resizing an imported canvas must preserve ${path} byte-for-byte`,
+  );
+}
+const resizedPresentationXml = await resizedImportedZip.file("ppt/presentation.xml").async("text");
+assert.match(resizedPresentationXml, /<p:sldSz\b[^>]*\bcx="9144000"[^>]*\bcy="6858000"/);
+assert.doesNotMatch(resizedPresentationXml, /<p:sldSz\b[^>]*\btype=/);
+const resizedImportedRoundTrip = await PresentationFile.importPptx(resizedImportedPptx);
+assert.deepEqual(resizedImportedRoundTrip.slideSize, { width: 960, height: 720 });
+assert.equal(itemByName(resizedImportedRoundTrip.slides.getItem(0).shapes.items, "rounded-card").text.value, "Before edit");
+const invalidImportedCanvas = await PresentationFile.importPptx(firstExport);
+invalidImportedCanvas.slideSize = { width: 0, height: 720 };
+await assert.rejects(
+  () => PresentationFile.exportPptx(invalidImportedCanvas),
+  (error) => error?.code === "invalid_slide_size",
+);
+
 const reorderedEditedDeck = await PresentationFile.importPptx(firstExport);
 const reorderedEditedSlide = reorderedEditedDeck.slides.getItem(0);
 reorderedEditedSlide.moveTo(2);
