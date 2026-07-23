@@ -34,11 +34,21 @@ type SlideAddOptions = {
   layout?: string | SlideLayoutTemplate;
   layoutId?: string;
   background?: string | BackgroundConfig;
-  notes?: string;
+  notes?: string | PresentationParagraph[];
 };
 
 type SlideInsertOptions = SlideAddOptions & {
   after?: Slide | number | null;
+};
+
+type PresentationParagraph = {
+  runs: Array<{ text?: string; break?: boolean; style?: TextStyle }>;
+  level?: number;
+  alignment?: "left" | "center" | "right" | "justify";
+  bulletCharacter?: string;
+  autoNumber?: { type: string; startAt?: number };
+  bulletNone?: boolean;
+  style?: TextStyle;
 };
 ```
 

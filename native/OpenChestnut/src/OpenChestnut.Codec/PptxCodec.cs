@@ -4394,7 +4394,7 @@ internal static class PptxCodec
         if (requested?.Source is not { } binding)
             throw new CodecException("missing_presentation_notes_binding", $"Presentation clone {source.Index + 1} speaker notes are missing their source binding.", PartPath(notesPart));
         var sourceBinding = original.Source;
-        if (!requested.Text.Equals(original.Text, StringComparison.Ordinal) ||
+        if (!PptxSpeakerNotesCodec.Equivalent(requested, original) ||
             !binding.PartPath.Equals(sourceBinding.PartPath, StringComparison.OrdinalIgnoreCase) ||
             !binding.RelationshipId.Equals(sourceBinding.RelationshipId, StringComparison.Ordinal) ||
             !binding.NotesXmlSha256.Equals(sourceBinding.NotesXmlSha256, StringComparison.OrdinalIgnoreCase) ||

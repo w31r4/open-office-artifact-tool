@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
+using Google.Protobuf;
 using OpenOffice.Artifact.Wire.V1;
 using A = DocumentFormat.OpenXml.Drawing;
 using P = DocumentFormat.OpenXml.Presentation;
@@ -14,10 +15,10 @@ internal sealed record PptxSpeakerNotesChange(
     IReadOnlyList<string> AddedRelationshipKeys,
     IReadOnlyDictionary<string, string> ReplacedPartHashes);
 
-// Owns the deliberately narrow speaker-notes contract: plain text in the
-// notes body placeholder. Notes masters, layout shapes, styling, and unknown
-// relationships stay in the source package and are never projected as if they
-// were safely editable.
+// Owns the deliberately narrow speaker-notes contract: a relationship-free
+// subset of the notes body placeholder. Paragraph/run formatting is semantic;
+// NotesMaster layout, fields, hyperlinks, picture bullets, and unknown graph
+// edges stay source-owned and are never projected as safely editable.
 internal static class PptxSpeakerNotesCodec
 {
     private const int MaxTextCharacters = 1_000_000;
@@ -27,27 +28,38 @@ internal static class PptxSpeakerNotesCodec
         var notesPart = slidePart.NotesSlidePart;
         if (notesPart?.NotesSlide is not { } notesRoot) return null;
         var body = BodyShape(notesRoot);
-        var text = body?.TextBody is { } textBody ? ReadText(textBody) : string.Empty;
+        var nativeTextBody = body?.TextBody;
+        var text = nativeTextBody is not null ? ReadText(nativeTextBody) : string.Empty;
         ValidateText(text);
-        return new PresentationSpeakerNotes
+        var result = new PresentationSpeakerNotes { Text = text };
+        if (nativeTextBody is not null && SupportsNotesBody(nativeTextBody) && RequiresStructuredBody(nativeTextBody))
         {
-            Text = text,
-            Source = new PresentationSpeakerNotesSourceBinding
+            var canonical = CanonicalNotes(new PresentationSpeakerNotes
             {
-                PartPath = PartPath(notesPart),
-                RelationshipId = slidePart.GetIdOfPart(notesPart),
-                NotesXmlSha256 = HashElement(notesRoot),
-                SemanticSha256 = SemanticHash(text),
-                Editable = Supports(notesRoot),
-            },
+                Text = text,
+                TextBody = PptxTextCodec.Read(nativeTextBody),
+            });
+            result.TextBody = canonical.TextBody;
+        }
+        result.Source = new PresentationSpeakerNotesSourceBinding
+        {
+            PartPath = PartPath(notesPart),
+            RelationshipId = slidePart.GetIdOfPart(notesPart),
+            NotesXmlSha256 = HashElement(notesRoot),
+            SemanticSha256 = SemanticHash(result),
+            Editable = Supports(notesRoot),
         };
+        return result;
     }
 
     internal static void Validate(PresentationSpeakerNotes? notes)
     {
         if (notes is null) return;
-        ValidateText(notes.Text);
+        _ = CanonicalNotes(notes);
     }
+
+    internal static bool Equivalent(PresentationSpeakerNotes? left, PresentationSpeakerNotes? right) =>
+        left is null ? right is null : right is not null && SemanticHash(CanonicalNotes(left)).Equals(SemanticHash(CanonicalNotes(right)), StringComparison.OrdinalIgnoreCase);
 
     internal static bool CanAddSourceBound(PresentationPart presentationPart, SlidePart slidePart)
     {
@@ -80,8 +92,7 @@ internal static class PptxSpeakerNotesCodec
                     "unsupported_presentation_edit",
                     $"Source-preserving PPTX export cannot add speaker notes to slide {slideIndex + 1} because its presentation notes graph is not safely extensible.",
                     PartPath(slidePart));
-            ValidateText(requested.Text);
-            return AddSourceBound(presentationPart, slidePart, requested.Text);
+            return AddSourceBound(presentationPart, slidePart, CanonicalNotes(requested));
         }
         if (requested?.Source is not { } binding)
             throw new CodecException(
@@ -97,15 +108,38 @@ internal static class PptxSpeakerNotesCodec
                 "presentation_notes_binding_mismatch",
                 $"Presentation slide {slideIndex + 1} speaker notes do not match their hash-bound source part.",
                 original.Source.PartPath);
-        ValidateText(requested.Text);
-        if (SemanticHash(requested.Text).Equals(original.Source.SemanticSha256, StringComparison.OrdinalIgnoreCase)) return null;
+        // Text-only imported notes are deliberately opaque. Preserve their
+        // original source hash before normalizing the legacy convenience field
+        // into a structured body for an actual edit attempt.
+        if (SemanticHash(requested).Equals(original.Source.SemanticSha256, StringComparison.OrdinalIgnoreCase)) return null;
+        if (requested.TextBody is null && original.TextBody is null)
+        {
+            if (!binding.Editable || slidePart.NotesSlidePart?.NotesSlide is not { } plainNotesRoot || !Supports(plainNotesRoot))
+                throw new CodecException(
+                    "unsupported_presentation_edit",
+                    $"Presentation slide {slideIndex + 1} speaker notes are preserved but their fields, hyperlinks, picture bullets, layout, or irregular notes body are not safely editable by this codec slice.",
+                    original.Source.PartPath);
+            ApplyPlainText(BodyShape(plainNotesRoot)!.TextBody!, requested.Text);
+            plainNotesRoot.Save();
+            return new PptxSpeakerNotesChange(
+                [original.Source.PartPath],
+                [],
+                [],
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    [original.Source.PartPath] = HashPart(slidePart.NotesSlidePart!),
+                });
+        }
+
+        var canonical = CanonicalNotes(requested);
+        if (SemanticHash(canonical).Equals(original.Source.SemanticSha256, StringComparison.OrdinalIgnoreCase)) return null;
         if (!binding.Editable || slidePart.NotesSlidePart?.NotesSlide is not { } notesRoot || !Supports(notesRoot))
             throw new CodecException(
                 "unsupported_presentation_edit",
-                $"Presentation slide {slideIndex + 1} speaker notes are preserved but their rich or irregular notes body is not safely editable by this codec slice.",
+                $"Presentation slide {slideIndex + 1} speaker notes are preserved but their fields, hyperlinks, picture bullets, layout, or irregular notes body are not safely editable by this codec slice.",
                 original.Source.PartPath);
 
-        ApplyText(BodyShape(notesRoot)!.TextBody!, requested.Text);
+        ApplyText(BodyShape(notesRoot)!, slidePart.NotesSlidePart!, canonical);
         notesRoot.Save();
         return new PptxSpeakerNotesChange(
             [original.Source.PartPath],
@@ -136,11 +170,11 @@ internal static class PptxSpeakerNotesCodec
         {
             var notes = slides[index].SpeakerNotes;
             if (notes is null || notes.Text.Length == 0) continue;
-            ValidateText(notes.Text);
+            var canonical = CanonicalNotes(notes);
             CreateNotesSlidePart(
                 slideParts[index],
                 notesMasterPart,
-                notes.Text,
+                canonical,
                 "rIdNotes1",
                 "rIdNotesMaster1",
                 "rIdSlide1");
@@ -165,8 +199,8 @@ internal static class PptxSpeakerNotesCodec
                 throw Postwrite(slideIndex, "an unchanged slide unexpectedly gained a NotesSlide", PartPath(outputSlidePart));
             return;
         }
-        if (expected is null || output is null || !output.Text.Equals(expected.Text, StringComparison.Ordinal))
-            throw Postwrite(slideIndex, "speaker-notes text does not match the requested artifact", PartPath(outputSlidePart));
+        if (expected is null || output is null || !Equivalent(output, expected))
+            throw Postwrite(slideIndex, "speaker-notes semantics do not match the requested artifact", PartPath(outputSlidePart));
 
         if (source is not null)
         {
@@ -186,7 +220,7 @@ internal static class PptxSpeakerNotesCodec
     private static PptxSpeakerNotesChange AddSourceBound(
         PresentationPart presentationPart,
         SlidePart slidePart,
-        string text)
+        PresentationSpeakerNotes notes)
     {
         var changedPartPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var addedPartPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -203,7 +237,7 @@ internal static class PptxSpeakerNotesCodec
         var notesPart = CreateNotesSlidePart(
             slidePart,
             notesMasterPart,
-            text,
+            notes,
             slideRelationshipId,
             "rIdNotesMaster1",
             "rIdSlide1");
@@ -276,7 +310,7 @@ internal static class PptxSpeakerNotesCodec
     private static NotesSlidePart CreateNotesSlidePart(
         SlidePart slidePart,
         NotesMasterPart notesMasterPart,
-        string text,
+        PresentationSpeakerNotes notes,
         string slideRelationshipId,
         string masterRelationshipId,
         string slideBackReferenceRelationshipId)
@@ -285,7 +319,7 @@ internal static class PptxSpeakerNotesCodec
         notesPart.AddPart(notesMasterPart, masterRelationshipId);
         notesPart.AddPart(slidePart, slideBackReferenceRelationshipId);
         var shapeTree = BasicShapeTree();
-        shapeTree.Append(NotesBodyShape(text));
+        shapeTree.Append(NotesBodyShape(notes, notesPart));
         notesPart.NotesSlide = new P.NotesSlide(
             new P.CommonSlideData(shapeTree),
             new P.ColorMapOverride(new A.MasterColorMapping()));
@@ -398,31 +432,35 @@ internal static class PptxSpeakerNotesCodec
     private static CodecException Postwrite(int slideIndex, string message, string path) =>
         new("presentation_postwrite_notes_mismatch", $"PPTX slide {slideIndex + 1} {message}.", path);
 
-    private static P.Shape NotesBodyShape(string text) => new(
+    private static P.Shape NotesBodyShape(PresentationSpeakerNotes notes, NotesSlidePart notesPart)
+    {
+        var shape = NotesShape(notes);
+        PptxTextCodec.Validate(shape);
+        return new P.Shape(
         new P.NonVisualShapeProperties(
             new P.NonVisualDrawingProperties { Id = 2U, Name = "Notes Placeholder 1" },
             new P.NonVisualShapeDrawingProperties(),
             new P.ApplicationNonVisualDrawingProperties(
                 new P.PlaceholderShape { Type = P.PlaceholderValues.Body, Index = 1U })),
         new P.ShapeProperties(),
-        TextBody(text));
-
-    private static P.TextBody TextBody(string text)
-    {
-        var body = new P.TextBody(new A.BodyProperties(), new A.ListStyle());
-        foreach (var line in Lines(text))
-            body.Append(new A.Paragraph(new A.Run(new A.Text(line))));
-        return body;
+        PptxTextCodec.Build(shape, new PptxPartContext(notesPart, EmptySlideIdByPartPath)));
     }
 
-    private static void ApplyText(P.TextBody body, string text)
+    private static void ApplyText(P.Shape bodyShape, NotesSlidePart notesPart, PresentationSpeakerNotes notes)
+    {
+        var shape = NotesShape(notes);
+        PptxTextCodec.Validate(shape);
+        PptxTextCodec.Apply(bodyShape, shape, new PptxPartContext(notesPart, EmptySlideIdByPartPath));
+    }
+
+    private static void ApplyPlainText(P.TextBody body, string text)
     {
         var template = body.Elements<A.Paragraph>().FirstOrDefault();
         var paragraphProperties = template?.ParagraphProperties?.CloneNode(true);
         var runProperties = template?.Elements<A.Run>().FirstOrDefault()?.RunProperties?.CloneNode(true);
         var endProperties = template?.GetFirstChild<A.EndParagraphRunProperties>()?.CloneNode(true);
         body.RemoveAllChildren<A.Paragraph>();
-        foreach (var line in Lines(text))
+        foreach (var line in text.Split('\n', StringSplitOptions.None))
         {
             var paragraph = new A.Paragraph();
             if (paragraphProperties is not null) paragraph.Append(paragraphProperties.CloneNode(true));
@@ -454,23 +492,108 @@ internal static class PptxSpeakerNotesCodec
         var bodies = notes.CommonSlideData?.ShapeTree?.Elements<P.Shape>()
             .Where(IsBodyPlaceholder)
             .ToArray() ?? [];
-        if (bodies.Length != 1 || bodies[0].TextBody is not { } body) return false;
-        foreach (var paragraph in body.Elements<A.Paragraph>())
-        {
-            if (paragraph.ChildElements.Any(child => child is not A.ParagraphProperties and not A.Run and not A.Break and not A.EndParagraphRunProperties)) return false;
-            foreach (var run in paragraph.Elements<A.Run>())
-                if (run.ChildElements.Any(child => child is not A.RunProperties and not A.Text)) return false;
-        }
-        var runStyles = body.Descendants<A.RunProperties>().Select(item => item.OuterXml).Distinct(StringComparer.Ordinal).Take(2).Count();
-        return runStyles <= 1;
+        return bodies.Length == 1 && bodies[0].TextBody is { } body && SupportsNotesBody(body);
     }
+
+    private static bool SupportsNotesBody(P.TextBody body)
+    {
+        if (!PptxTextCodec.SupportsEditing(body) ||
+            HasModeledBodyProperties(body) ||
+            body.GetFirstChild<A.ListStyle>()?.ChildElements.Count > 0 ||
+            body.Descendants<A.PictureBullet>().Any() ||
+            body.Descendants<A.Field>().Any())
+            return false;
+
+        return !body.Descendants<A.RunProperties>().Any(HasHyperlink) &&
+            !body.Descendants<A.EndParagraphRunProperties>().Any(HasHyperlink);
+    }
+
+    private static bool RequiresStructuredBody(P.TextBody body) => body.Elements<A.Paragraph>().Any(paragraph =>
+        paragraph.ParagraphProperties is { } paragraphProperties && (paragraphProperties.ChildElements.Count > 0 || paragraphProperties.GetAttributes().Count > 0) ||
+        paragraph.Elements<A.Run>().Count() != 1 ||
+        paragraph.Elements<A.Run>().Any(run => run.RunProperties is { } runProperties && HasRichRunProperties(runProperties)));
+
+    private static bool HasRichRunProperties(A.RunProperties properties) =>
+        properties.ChildElements.Count > 0 || properties.GetAttributes().Any(attribute => !attribute.LocalName.Equals("lang", StringComparison.Ordinal));
+
+    private static bool HasModeledBodyProperties(P.TextBody body) => body.BodyProperties is { } properties &&
+        (properties.ChildElements.Count > 0 || properties.GetAttributes().Count > 0);
+
+    private static bool HasHyperlink(OpenXmlElement properties) =>
+        properties.GetFirstChild<A.HyperlinkOnClick>() is not null ||
+        properties.GetFirstChild<A.HyperlinkOnHover>() is not null;
 
     private static P.Shape? BodyShape(P.NotesSlide notes) => notes.CommonSlideData?.ShapeTree?.Elements<P.Shape>().FirstOrDefault(IsBodyPlaceholder);
 
     private static bool IsBodyPlaceholder(P.Shape shape) =>
         shape.NonVisualShapeProperties?.ApplicationNonVisualDrawingProperties?.GetFirstChild<P.PlaceholderShape>()?.Type?.Value == P.PlaceholderValues.Body;
 
-    private static string[] Lines(string text) => text.Split('\n', StringSplitOptions.None);
+    private static readonly IReadOnlyDictionary<string, string> EmptySlideIdByPartPath = new Dictionary<string, string>(StringComparer.Ordinal);
+
+    private static PresentationSpeakerNotes CanonicalNotes(PresentationSpeakerNotes notes)
+    {
+        ValidateText(notes.Text);
+        var body = notes.TextBody?.Clone() ?? PlainTextBody(notes.Text);
+        if (!notes.Text.Equals(PptxTextCodec.Flatten(body), StringComparison.Ordinal) &&
+            !TryApplyPlainTextCompatibility(body, notes.Text))
+            throw new CodecException("presentation_notes_text_mismatch", "Speaker notes text must equal its structured text_body content.");
+        var shape = new PresentationShape { Text = notes.Text, TextBody = body };
+        PptxTextCodec.Validate(shape);
+        PptxTextCodec.NormalizeSemantics(shape);
+        ValidateNotesBody(shape.TextBody!);
+        return new PresentationSpeakerNotes { Text = shape.Text, TextBody = shape.TextBody.Clone() };
+    }
+
+    private static PresentationShape NotesShape(PresentationSpeakerNotes notes)
+    {
+        var canonical = CanonicalNotes(notes);
+        return new PresentationShape { Text = canonical.Text, TextBody = canonical.TextBody };
+    }
+
+    private static PresentationTextBody PlainTextBody(string text)
+    {
+        var body = new PresentationTextBody();
+        foreach (var line in text.Split('\n', StringSplitOptions.None))
+        {
+            var paragraph = new PresentationTextParagraph();
+            paragraph.Runs.Add(new PresentationTextRun { Text = line });
+            body.Paragraphs.Add(paragraph);
+        }
+        return body;
+    }
+
+    // Preserve the original text-only wire contract for a topology that has
+    // exactly one ordinary text run in each paragraph. Rich notes must update
+    // their explicit text_body so the caller cannot accidentally flatten a
+    // multi-run talk track through the legacy `text` convenience field.
+    private static bool TryApplyPlainTextCompatibility(PresentationTextBody body, string text)
+    {
+        var lines = text.Split('\n', StringSplitOptions.None);
+        if (body.Paragraphs.Count != lines.Length || body.Paragraphs.Any(paragraph =>
+                paragraph.Runs.Count != 1 ||
+                paragraph.Runs[0].ContentCase is not (PresentationTextRun.ContentOneofCase.None or PresentationTextRun.ContentOneofCase.Text)))
+            return false;
+        for (var index = 0; index < lines.Length; index++) body.Paragraphs[index].Runs[0].Text = lines[index];
+        return true;
+    }
+
+    private static void ValidateNotesBody(PresentationTextBody body)
+    {
+        if (body.ListStyles.Count > 0 || body.HasNoListStyles || body.BodyProperties is not null)
+            throw new CodecException("unsupported_presentation_notes", "Speaker notes do not support notes-body list styles or body properties in this codec slice.");
+        foreach (var paragraph in body.Paragraphs)
+        {
+            if (paragraph.BulletCase == PresentationTextParagraph.BulletOneofCase.PictureBullet)
+                throw new CodecException("unsupported_presentation_notes", "Speaker notes do not support picture bullets in this codec slice.");
+            foreach (var run in paragraph.Runs)
+            {
+                if (run.ContentCase == PresentationTextRun.ContentOneofCase.Field)
+                    throw new CodecException("unsupported_presentation_notes", "Speaker notes do not support fields in this codec slice.");
+                if (run.HyperlinkCase != PresentationTextRun.HyperlinkOneofCase.None)
+                    throw new CodecException("unsupported_presentation_notes", "Speaker notes do not support hyperlinks in this codec slice.");
+            }
+        }
+    }
 
     private static void ValidateText(string text)
     {
@@ -509,7 +632,12 @@ internal static class PptxSpeakerNotesCodec
         FollowedHyperlink = A.ColorSchemeIndexValues.FollowedHyperlink,
     };
 
-    private static string SemanticHash(string text) => Hash(Encoding.UTF8.GetBytes(text));
+    private static string SemanticHash(PresentationSpeakerNotes? notes)
+    {
+        var comparable = new PresentationSpeakerNotes { Text = notes?.Text ?? string.Empty };
+        if (notes?.TextBody is not null) comparable.TextBody = notes.TextBody.Clone();
+        return Hash(comparable.ToByteArray());
+    }
     private static string HashElement(OpenXmlElement element) => Hash(Encoding.UTF8.GetBytes(element.OuterXml));
     private static string HashPart(OpenXmlPart part)
     {

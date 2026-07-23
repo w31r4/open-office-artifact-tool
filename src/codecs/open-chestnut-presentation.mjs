@@ -588,7 +588,9 @@ function duplicateImportedPresentationSlide(presentation, state, slide) {
     name: slide.name,
     ...(slide.background?.fill ? { background: clonedPresentationValue(slide.background) } : {}),
     ...(slide.transition?.configured ? { transition: slide.transition.toJSON() } : {}),
-    ...(source.wire.speakerNotes ? { notes: slide.speakerNotes?.text || "" } : {}),
+    ...(source.wire.speakerNotes
+      ? { notes: source.wire.speakerNotes.textBody ? slide.speakerNotes?.textFrame?.paragraphs || [] : slide.speakerNotes?.text || "" }
+      : {}),
   });
   clone.layoutId = slide.layoutId;
   cloneImportedPresentationLegacyComments(clone, slide);
@@ -1134,6 +1136,38 @@ function presentationTextBody(shape, original, assetCatalog, customShowLinks) {
     ...(listStyles.length ? { listStyles } : {}),
     ...(noListStyles ? { noListStyles: true } : {}),
     ...(bodyProperties ? { bodyProperties } : {}),
+  };
+}
+
+// Speaker notes reuse the public paragraph/run wire rather than creating a
+// second rich-text format. Notes-local text is intentionally narrower than a
+// slide shape: the native codec rejects relationships, fields, picture
+// bullets, list styles, and body properties. An imported notes part without a
+// projected textBody remains text-only, so an unchanged round trip can never
+// silently turn an opaque source into a lossy rich edit request.
+function presentationSpeakerNotes(slide, original, assetCatalog, customShowLinks) {
+  const notes = slide.speakerNotes;
+  if (original) {
+    const result = { text: notes?.text || "", source: original.source };
+    if (original.textBody) {
+      result.textBody = presentationTextBody(
+        { id: `${slide.id}/notes`, text: notes?.textFrame },
+        original,
+        assetCatalog,
+        customShowLinks,
+      );
+    }
+    return result;
+  }
+  if (!notes?.text) return undefined;
+  return {
+    text: notes.text,
+    textBody: presentationTextBody(
+      { id: `${slide.id}/notes`, text: notes.textFrame },
+      undefined,
+      assetCatalog,
+      customShowLinks,
+    ),
   };
 }
 
@@ -2256,6 +2290,12 @@ export function presentationEnvelope(presentation, protocolVersion) {
     const modernComments = presentation.commentFormat === "modern"
       ? presentationModernComments(slide, slideIndex, elements, bindingState?.wire.modernComments || [])
       : [];
+    const speakerNotes = presentationSpeakerNotes(
+      slide,
+      bindingState?.wire.speakerNotes,
+      assetCatalog,
+      customShowLinks,
+    );
     const requested = {
       id: sourceState?.wire.id || slide.id,
       name: slide.name,
@@ -2263,11 +2303,7 @@ export function presentationEnvelope(presentation, protocolVersion) {
       ...(slide.layoutId ? { layoutId: slide.layoutId } : {}),
       ...(slide.background?.fill ? { background: wireBackground(slide.background, `slide ${slideIndex + 1}`) } : {}),
       ...(slide.transition?.configured ? { transition: wirePresentationTransition(slide.transition) } : {}),
-      ...(bindingState?.wire.speakerNotes
-        ? { speakerNotes: { text: slide.speakerNotes?.text || "", source: bindingState.wire.speakerNotes.source } }
-        : slide.speakerNotes?.text
-          ? { speakerNotes: { text: slide.speakerNotes.text } }
-          : {}),
+      ...(speakerNotes ? { speakerNotes } : {}),
       ...(legacyComments.length ? { legacyComments } : {}),
       ...(modernComments.length ? { modernComments } : {}),
       elements,
@@ -2813,7 +2849,9 @@ export async function presentationFromEnvelope(envelope) {
     });
     slide.id = sourceSlide.id || slide.id;
     slide.layoutId = sourceSlide.layoutId || undefined;
-    slide.addNotes(sourceSlide.speakerNotes?.text || "");
+    slide.addNotes(sourceSlide.speakerNotes?.textBody
+      ? modelText(sourceSlide.speakerNotes, assetCatalog, customShowLinks)
+      : sourceSlide.speakerNotes?.text || "");
     Object.defineProperty(slide.speakerNotes, PRESENTATION_SPEAKER_NOTES_CAPABILITY, {
       value: Object.freeze({
         sourceBound: true,

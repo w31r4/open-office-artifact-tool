@@ -1,8 +1,10 @@
 # Speaker Notes
 
-Speaker notes live on `slide.speakerNotes`. The public OpenChestnut boundary is
-plain text: the notes object is stable and resolvable, while rich notes layout,
-multiple text styles, and arbitrary notes shapes remain source-preserved.
+Speaker notes live on `slide.speakerNotes`. Their public text is always
+available through `notes.text`; source-free notes may additionally use the same
+paragraph/run data as slide text for a relationship-free talk track. Notes-page
+layout, Notes Master styling, note-local links/fields/picture bullets, list
+styles, and arbitrary notes shapes remain source-preserved.
 
 ## Create Or Replace Text
 
@@ -19,6 +21,38 @@ notes.textFrame.setText("The same plain-text contract through textFrame");
 `slide.addNotes(text)`, `notes.setText(text)`, and
 `notes.textFrame.setText(text)` replace the full notes text. OpenChestnut creates
 the canonical Notes Master/Notes Slide graph when authoring a new deck.
+
+## Rich Paragraph And Run Notes
+
+Pass structured paragraphs to `slide.addNotes(...)`, or assign the same data to
+`notes.textFrame.paragraphs`. This is the regular Presentation text subset:
+ordinary runs, direct run styles, paragraph alignment/spacing, character or
+auto-number bullets, and line breaks. `notes.text` is the exact flattened
+string, joined by `\n` between paragraphs.
+
+```js
+slide.addNotes([
+  {
+    bulletCharacter: "•",
+    runs: [
+      { text: "Open with ", style: { bold: true, fontSize: 18, color: "#0F172A" } },
+      { text: "the customer outcome.", style: { italic: true, fontSize: 18 } },
+    ],
+  },
+  { bulletNone: true, runs: [{ text: "Then explain the operating model." }] },
+]);
+
+const paragraphs = slide.speakerNotes.textFrame.paragraphs;
+paragraphs[0].runs[1].text = "the operating decision.";
+slide.speakerNotes.textFrame.paragraphs = paragraphs;
+```
+
+For an imported rich notes body, paragraph count, run count, and inline kind
+(`text` versus line break) are fixed. Update the structured paragraphs and let
+their flattened value become `notes.text`; do not set `notes.text` alone to
+replace a multi-run body. That would flatten its source topology and fails
+closed. The legacy text-only profile remains compatible with full-text
+replacement.
 
 ## Append And Clear
 
@@ -39,7 +73,8 @@ console.log(notes.text, notes.capability);
 
 - `sourceBound`: the slide came from an imported PPTX.
 - `partPresent`: the source SlidePart already has a NotesSlide.
-- `editable`: that existing NotesSlide has the bounded plain-text body profile.
+- `editable`: that existing NotesSlide has either the legacy text-only profile
+  or the bounded relationship-free paragraph/run profile.
 - `addable`: the source has no NotesSlide, but OpenChestnut has re-proved that
   the presentation can safely reuse or create the canonical NotesMaster graph.
 
@@ -77,10 +112,13 @@ fallback codec.
 
 ## Imported Deck Boundary
 
-- An existing notes part with one bounded body placeholder is hash-bound and
-  editable through the plain-text methods above.
-- Rich or irregular imported notes are inspectable and preserved, but mutation
-  fails closed instead of flattening their formatting.
+- An existing notes part with one bounded body placeholder is hash-bound. The
+  legacy one-run-per-paragraph form accepts full-text replacement; a recognized
+  rich paragraph/run form accepts fixed-topology paragraph/run edits.
+- Imported fields, hyperlinks, picture bullets, notes-body list styles/body
+  properties, notes-page layout, and irregular notes are inspectable and
+  preserved, but mutation fails closed instead of flattening their formatting
+  or graph.
 - A source-bound slide with no notes part can gain one only when
   `speakerNotes.capability.addable` is true. Missing/inconsistent NotesMaster
   lists, multiple masters, missing slide ownership, or an unusable SlideMaster

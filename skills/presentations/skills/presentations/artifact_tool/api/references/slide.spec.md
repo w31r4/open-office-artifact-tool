@@ -319,8 +319,22 @@ type AutoLayoutOptions = {
 
 ```ts
 slide.speakerNotes.textFrame.setText(notesText);
+slide.speakerNotes.textFrame.paragraphs = [
+  {
+    bulletCharacter: "•",
+    runs: [
+      { text: "Lead with ", style: { bold: true } },
+      { text: "the customer outcome.", style: { italic: true } },
+    ],
+  },
+];
 slide.speakerNotes.setVisible(visible);
 ```
+
+Notes accept the relationship-free paragraph/run subset. For a recognized
+imported rich notes body, keep paragraph/run count and text-versus-break kinds
+fixed; fields, hyperlinks, picture bullets, list styles, Notes Master/page
+layout, and arbitrary notes shapes are source-bound and fail closed.
 
 ## Visual QA Loop
 

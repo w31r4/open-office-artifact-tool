@@ -27,6 +27,13 @@ internal sealed class PptxPartContext
                 SlidePart slide => type => slide.AddImagePart(type),
                 SlideMasterPart master => type => master.AddImagePart(type),
                 SlideLayoutPart layout => type => layout.AddImagePart(type),
+                // NotesSlide rich text deliberately has no relationship-writing
+                // surface. The context exists so the shared text codec can
+                // preserve its fixed paragraph/run topology; a picture bullet
+                // still fails closed before it can add an ImagePart.
+                NotesSlidePart => _ => throw new CodecException(
+                    "unsupported_presentation_notes",
+                    "Speaker notes cannot add picture-bullet relationships."),
                 _ => throw new ArgumentException($"Unsupported PresentationML relationship owner {owner.GetType().Name}.", nameof(owner)),
             },
             slideIdByPartPath,

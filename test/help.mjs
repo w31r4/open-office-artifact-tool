@@ -133,6 +133,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "slide.groups.add")?.sche
 assert.match(HELP_CATALOG.find((item) => item.name === "nativeObject.setName")?.schema?.parameters?.name?.description || "", /1,024/);
 assert.match(HELP_CATALOG.find((item) => item.name === "nativeObject.setPosition")?.schema?.returns?.nativeObject?.description || "", /No mutation.*source-bound and read-only/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.addNotes"));
+assert.match(HELP_CATALOG.find((item) => item.name === "slide.addNotes")?.summary || "", /relationship-free paragraph\/run/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "presentation.slides.add")?.schema?.parameters?.background?.description || "", /direct slide background.*Gradient.*fail closed/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "slide.setBackground"));
 assert.match(HELP_CATALOG.find((item) => item.name === "slide.clearBackground")?.schema?.returns?.slide?.description || "", /no direct background.*Layout\/Master/i);

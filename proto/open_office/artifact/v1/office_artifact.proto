@@ -1544,6 +1544,11 @@ message PresentationSlideSourceBinding {
 message PresentationSpeakerNotes {
   string text = 1;
   PresentationSpeakerNotesSourceBinding source = 2;
+  // Optional structured form of text. It must flatten exactly to `text`.
+  // The NotesSlide profile deliberately accepts only relationship-free
+  // paragraph/run semantics; notes-master layout and note-local hyperlinks,
+  // fields, and picture bullets stay source-owned.
+  PresentationTextBody text_body = 3;
 }
 
 message PresentationSpeakerNotesSourceBinding {

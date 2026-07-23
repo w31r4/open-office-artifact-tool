@@ -539,6 +539,34 @@ host effect behavior matters. Read
 `artifact_tool/api/references/transitions.spec.md` before modifying imported
 transition metadata.
 
+### Rich Speaker Notes
+
+For a source-free deck, speaker notes may use the same ordinary paragraph/run
+data as slide text. Use this for an Agent's talk track, not for notes-page
+design:
+
+```js
+slide.addNotes([
+  {
+    bulletCharacter: "•",
+    runs: [
+      { text: "Lead with ", style: { bold: true, fontSize: 18 } },
+      { text: "the customer outcome.", style: { italic: true, fontSize: 18 } },
+    ],
+  },
+  { bulletNone: true, runs: [{ text: "Close with the requested decision." }] },
+]);
+```
+
+After importing a recognized rich NotesSlide, inspect `slide,notes`, resolve
+`${slide.id}/notes`, and edit `slide.speakerNotes.textFrame.paragraphs` without
+changing paragraph count, run count, or text/break kind. Assigning a new
+`notes.text` string to a multi-run body would flatten it and therefore fails
+closed. The legacy one-run-per-paragraph text profile still accepts full-text
+replacement. Notes-local hyperlinks, fields, picture bullets, list styles,
+body/layout properties, NotesMaster styling, and arbitrary notes shapes are
+opaque-preserved; do not try to patch them through this API.
+
 ### Bounded Imported Speaker-Notes Add
 
 An imported slide whose source SlidePart has no NotesSlide may add plain-text

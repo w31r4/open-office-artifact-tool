@@ -1559,6 +1559,7 @@ try {
   assert.deepEqual((await fs.readdir(starterRoot)).sort(), ["template-frame-map.json"]);
   assert.match(skillText, /open-office-artifact-tool/);
   assert.match(skillText, /openchestnut-speaker-notes-add-workflow\.mjs/);
+  assert.match(skillText, /### Rich Speaker Notes/);
   assert.match(skillText, /speakerNotes\.capability\.addable.*existing.*NotesMaster.*byte-for-byte.*canonical NotesMaster.*ThemePart.*back-reference/is);
   assert.match(skillText, /openchestnut-legacy-comment-add-workflow\.mjs/);
   assert.match(skillText, /comments\.capability.*format: "legacy".*partPresent: false.*addable: true.*CommentAuthorsPart.*SlideCommentsPart.*collision-free.*pixel-identical/is);
@@ -1601,6 +1602,8 @@ try {
   assert.match(skillText, /artifact_tool\/api\/references\/comments\.md/);
   const speakerNotesReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/speaker-notes.spec.md", "utf8");
   assert.match(speakerNotesReferenceText, /sourceBound.*partPresent.*editable.*addable/is);
+  assert.match(speakerNotesReferenceText, /relationship-free.*paragraph\/run/is);
+  assert.match(speakerNotesReferenceText, /fields.*hyperlinks.*picture bullets.*fail(?:s)?\s+closed/is);
   assert.match(speakerNotesReferenceText, /capability is preflight evidence.*not authority.*independently re-proves/is);
   assert.match(speakerNotesReferenceText, /existing.*NotesMaster.*reused byte-for-byte.*canonical NotesMaster.*ThemePart.*back-reference/is);
   const commentsReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/comments.md", "utf8");

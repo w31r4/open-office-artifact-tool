@@ -829,7 +829,7 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
-    public void SpeakerNotesAuthorImportEditAndFailClosedForRichSourceText()
+    public void SpeakerNotesAuthorImportEditAndFailClosedForUnsupportedSourceText()
     {
         var request = ExportRequest();
         request.Artifact.Presentation.Slides[0].SpeakerNotes = new PresentationSpeakerNotes
@@ -863,15 +863,69 @@ public sealed class PptxCodecTests
         Assert.True(roundTrip.Ok, Diagnostics(roundTrip));
         Assert.Equal("Lead with evidence.\nClose with the decision.", Assert.Single(roundTrip.Artifact.Presentation.Slides).SpeakerNotes.Text);
 
-        var richBytes = AddRichSpeakerNotes(authored.File.ToByteArray());
-        var rich = Import(richBytes);
+        var richRequest = ExportRequest();
+        richRequest.Artifact.Presentation.Slides[0].SpeakerNotes = RichSpeakerNotes();
+        var richAuthored = Invoke(richRequest);
+        Assert.True(richAuthored.Ok, Diagnostics(richAuthored));
+        using (var stream = new MemoryStream(richAuthored.File.ToByteArray()))
+        using (var package = PresentationDocument.Open(stream, false))
+        {
+            var nativeParagraphs = package.PresentationPart!.SlideParts.Single().NotesSlidePart!.NotesSlide!
+                .Descendants<A.Paragraph>().ToArray();
+            Assert.Equal(2, nativeParagraphs.Length);
+            Assert.Equal(2, nativeParagraphs[0].Elements<A.Run>().Count());
+            Assert.True(nativeParagraphs[0].Elements<A.Run>().First().RunProperties!.Bold!.Value);
+            Assert.True(nativeParagraphs[0].Elements<A.Run>().Last().RunProperties!.Italic!.Value);
+            Assert.NotNull(nativeParagraphs[0].ParagraphProperties!.GetFirstChild<A.CharacterBullet>());
+            var autoNumber = nativeParagraphs[1].ParagraphProperties!.GetFirstChild<A.AutoNumberedBullet>()!;
+            Assert.Equal("arabicPeriod", autoNumber.Type!.InnerText);
+            Assert.Equal(2, autoNumber.StartAt!.Value);
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var rich = Import(richAuthored.File.ToByteArray());
         Assert.True(rich.Ok, Diagnostics(rich));
         var richNotes = Assert.Single(rich.Artifact.Presentation.Slides).SpeakerNotes;
-        Assert.False(richNotes.Source.Editable);
-        var preserved = Export(rich.Artifact);
-        Assert.True(preserved.Ok, Diagnostics(preserved));
+        Assert.True(richNotes.Source.Editable);
+        Assert.Equal(2, richNotes.TextBody.Paragraphs.Count);
+        Assert.Equal(2, richNotes.TextBody.Paragraphs[0].Runs.Count);
+        Assert.True(richNotes.TextBody.Paragraphs[0].Runs[0].Bold);
+        Assert.True(richNotes.TextBody.Paragraphs[0].Runs[1].Italic);
+        Assert.Equal("arabicPeriod", richNotes.TextBody.Paragraphs[1].AutoNumber.Scheme);
+        Assert.Equal(2U, richNotes.TextBody.Paragraphs[1].AutoNumber.StartAt);
+
+        var richNoOp = Export(rich.Artifact);
+        Assert.True(richNoOp.Ok, Diagnostics(richNoOp));
+        Assert.Equal(
+            ZipBytes(richAuthored.File.ToByteArray(), "ppt/notesSlides/notesSlide1.xml"),
+            ZipBytes(richNoOp.File.ToByteArray(), "ppt/notesSlides/notesSlide1.xml"));
+
+        richNotes.TextBody.Paragraphs[0].Runs[1].Text = "evidence.";
+        richNotes.TextBody.Paragraphs[0].Runs[1].Italic = false;
+        richNotes.TextBody.Paragraphs[0].Runs[1].Bold = true;
+        richNotes.Text = PptxTextCodec.Flatten(richNotes.TextBody);
+        var richEdited = Export(rich.Artifact);
+        Assert.True(richEdited.Ok, Diagnostics(richEdited));
+        var richRoundTrip = Import(richEdited.File.ToByteArray());
+        Assert.True(richRoundTrip.Ok, Diagnostics(richRoundTrip));
+        var editedNotes = Assert.Single(richRoundTrip.Artifact.Presentation.Slides).SpeakerNotes;
+        Assert.Equal("Open with evidence.\nThen explain the operating model.", editedNotes.Text);
+        Assert.True(editedNotes.TextBody.Paragraphs[0].Runs[1].Bold);
+        Assert.False(editedNotes.TextBody.Paragraphs[0].Runs[1].Italic);
+
         richNotes.Text = "Do not flatten the source formatting.";
         var rejected = Export(rich.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("presentation_notes_text_mismatch", Assert.Single(rejected.Diagnostics).Code);
+
+        var unsupported = Import(AddUnsupportedSpeakerNotesField(richAuthored.File.ToByteArray()));
+        Assert.True(unsupported.Ok, Diagnostics(unsupported));
+        var unsupportedNotes = Assert.Single(unsupported.Artifact.Presentation.Slides).SpeakerNotes;
+        Assert.False(unsupportedNotes.Source.Editable);
+        var preserved = Export(unsupported.Artifact);
+        Assert.True(preserved.Ok, Diagnostics(preserved));
+        unsupportedNotes.Text = "Do not edit source-owned note fields.";
+        rejected = Export(unsupported.Artifact);
         Assert.False(rejected.Ok);
         Assert.Equal("unsupported_presentation_edit", Assert.Single(rejected.Diagnostics).Code);
     }
@@ -6254,17 +6308,49 @@ public sealed class PptxCodecTests
             .ToArray();
     }
 
-    private static byte[] AddRichSpeakerNotes(byte[] bytes)
+    private static PresentationSpeakerNotes RichSpeakerNotes()
+    {
+        var first = new PresentationTextParagraph { BulletCharacter = "•", Alignment = "left" };
+        first.Runs.Add(new PresentationTextRun
+        {
+            Text = "Open with ",
+            Bold = true,
+            FontSizePoints = 18,
+            FontFamily = "Aptos",
+            ColorRgb = "0F172A",
+        });
+        first.Runs.Add(new PresentationTextRun { Text = "the customer outcome.", Italic = true, FontSizePoints = 18 });
+        var second = new PresentationTextParagraph
+        {
+            AutoNumber = new PresentationAutoNumberBullet { Scheme = "arabicPeriod", StartAt = 2 },
+        };
+        second.Runs.Add(new PresentationTextRun { Text = "Then explain the operating model.", FontSizePoints = 16 });
+        var body = new PresentationTextBody();
+        body.Paragraphs.Add(first);
+        body.Paragraphs.Add(second);
+        return new PresentationSpeakerNotes
+        {
+            Text = PptxTextCodec.Flatten(body),
+            TextBody = body,
+        };
+    }
+
+    private static byte[] AddUnsupportedSpeakerNotesField(byte[] bytes)
     {
         using var stream = new MemoryStream();
         stream.Write(bytes);
         stream.Position = 0;
         using (var package = PresentationDocument.Open(stream, true, new OpenSettings { AutoSave = true }))
         {
-            var runs = OrderedSlides(package)[0].NotesSlidePart!.NotesSlide!.Descendants<A.Run>().ToArray();
-            Assert.Equal(2, runs.Length);
-            runs[0].RunProperties = new A.RunProperties { Bold = true };
-            runs[1].RunProperties = new A.RunProperties { Italic = true };
+            var paragraph = OrderedSlides(package)[0].NotesSlidePart!.NotesSlide!.Descendants<A.Paragraph>().First();
+            var run = paragraph.Elements<A.Run>().First();
+            var field = new A.Field(new A.Text(run.Text?.Text ?? string.Empty))
+            {
+                Id = "{11111111-2222-4333-8444-555555555555}",
+                Type = "datetime1",
+            };
+            run.InsertAfterSelf(field);
+            run.Remove();
         }
         return stream.ToArray();
     }

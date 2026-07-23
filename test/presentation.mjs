@@ -1109,6 +1109,65 @@ const firstExport = await PresentationFile.exportPptx(deck);
 assert.equal(firstExport.metadata.codec, "open-chestnut");
 assert.equal((await PresentationFile.inspectPptx(firstExport)).ok, true);
 
+// Speaker notes use the same paragraph/run model as visible slide text, but
+// retain a deliberately narrower relationship-free contract. This proves the
+// public facade can author, reimport, and edit a multi-run talk track without
+// flattening it through the legacy `.text` convenience field.
+const richNotesDeck = Presentation.create({ slideSize: { width: 640, height: 360 } });
+const richNotesSlide = richNotesDeck.slides.add({
+  name: "Rich speaker notes",
+  notes: [
+    {
+      bulletCharacter: "•",
+      runs: [
+        { text: "Open with ", style: { bold: true, fontSize: 18, fontFamily: "Aptos", color: "#0F172A" } },
+        { text: "the customer outcome.", style: { italic: true, fontSize: 18 } },
+      ],
+    },
+    { autoNumber: { type: "arabicPeriod", startAt: 2 }, runs: [{ text: "Then explain the operating model.", style: { fontSize: 16 } }] },
+  ],
+});
+richNotesSlide.shapes.add({ name: "rich-notes-title", text: "Visible slide", position: { left: 48, top: 48, width: 300, height: 72 } });
+const richNotesPptx = await PresentationFile.exportPptx(richNotesDeck);
+const richNotesZip = await JSZip.loadAsync(richNotesPptx.bytes);
+const richNotesXml = await richNotesZip.file("ppt/notesSlides/notesSlide1.xml").async("text");
+assert.match(richNotesXml, /<a:buChar\b[^>]*char="•"/);
+assert.match(richNotesXml, /<a:rPr\b[^>]*\bb="1"/);
+assert.match(richNotesXml, /<a:rPr\b[^>]*\bi="1"/);
+assert.match(richNotesXml, /<a:buAutoNum\b[^>]*type="arabicPeriod"[^>]*startAt="2"/);
+const importedRichNotesDeck = await PresentationFile.importPptx(richNotesPptx);
+const importedRichNotes = importedRichNotesDeck.slides.getItem(0).speakerNotes;
+assert.equal(importedRichNotes.text, "Open with the customer outcome.\nThen explain the operating model.");
+assert.equal(importedRichNotes.capability.editable, true);
+const importedRichParagraphs = importedRichNotes.textFrame.paragraphs;
+assert.equal(importedRichParagraphs.length, 2);
+assert.equal(importedRichParagraphs[0].runs.length, 2);
+assert.equal(importedRichParagraphs[0].runs[0].style.bold, true);
+assert.equal(importedRichParagraphs[0].runs[1].style.italic, true);
+assert.deepEqual(importedRichParagraphs[1].autoNumber, { type: "arabicPeriod", startAt: 2 });
+const richNotesNoOpPptx = await PresentationFile.exportPptx(importedRichNotesDeck);
+const richNotesNoOpZip = await JSZip.loadAsync(richNotesNoOpPptx.bytes);
+assert.deepEqual(
+  await richNotesNoOpZip.file("ppt/notesSlides/notesSlide1.xml").async("uint8array"),
+  await richNotesZip.file("ppt/notesSlides/notesSlide1.xml").async("uint8array"),
+  "unchanged imported rich notes must retain their source NotesSlide bytes",
+);
+importedRichParagraphs[0].runs[1].text = "the operating decision.";
+importedRichParagraphs[0].runs[1].style = { ...importedRichParagraphs[0].runs[1].style, bold: true, italic: false };
+importedRichNotes.textFrame.paragraphs = importedRichParagraphs;
+const richNotesEditedPptx = await PresentationFile.exportPptx(importedRichNotesDeck);
+const richNotesEditedDeck = await PresentationFile.importPptx(richNotesEditedPptx);
+const editedRichNotes = richNotesEditedDeck.slides.getItem(0).speakerNotes;
+assert.equal(editedRichNotes.text, "Open with the operating decision.\nThen explain the operating model.");
+assert.equal(editedRichNotes.textFrame.paragraphs[0].runs[1].style.bold, true);
+assert.equal(editedRichNotes.textFrame.paragraphs[0].runs[1].style.italic, false);
+const richNotesFlattenAttempt = await PresentationFile.importPptx(richNotesPptx);
+richNotesFlattenAttempt.slides.getItem(0).speakerNotes.text = "Do not flatten this multi-run talk track.";
+await assert.rejects(
+  () => PresentationFile.exportPptx(richNotesFlattenAttempt),
+  (error) => error?.code === "presentation_text_topology_changed",
+);
+
 // Imported deck reordering is intentionally a shallow package operation: it
 // preserves every original SlidePart exactly once and changes only the
 // p:sldIdLst display order. It is separate from the even narrower, isolated
