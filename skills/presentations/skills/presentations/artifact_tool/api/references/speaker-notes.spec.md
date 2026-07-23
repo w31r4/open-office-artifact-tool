@@ -54,6 +54,42 @@ replace a multi-run body. That would flatten its source topology and fails
 closed. The legacy text-only profile remains compatible with full-text
 replacement.
 
+## Bounded Imported Rich-Run Transaction
+
+When a task needs one known ordinary rich-notes run changed alongside one known
+title, use the shipped source-bound transaction rather than editing package XML
+or replacing the entire notes string:
+
+```js
+import { editPptxRichSpeakerNotes } from "../../../examples/openchestnut-rich-speaker-notes-edit-workflow.mjs";
+
+await editPptxRichSpeakerNotes({
+  inputPath: "input.pptx",
+  outputPath: "output/edited.pptx",
+  auditPath: "output/audit.json",
+  slideName: "Go-no-go decision",
+  titleShapeName: "approval-title",
+  expectedTitle: "Decision: hold for legal review",
+  replacementTitle: "Decision: approve controlled rollout",
+  paragraphIndex: 0,
+  runIndex: 1,
+  expectedRunText: "the pending legal condition.",
+  replacementRunText: "the approved control set.",
+});
+```
+
+The workflow is intentionally fixture-shaped: it requires an imported,
+editable, relationship-free NotesSlide; snapshots the complete paragraph/run
+tree; validates the selected run's exact text and direct style; changes only
+that run; and reimports to prove the paragraph/run topology and every sibling
+run remain exact. Its audit binds source/output hashes, slide/title/notes IDs,
+paragraph/run indices, expected/replacement styles, source-bound capability,
+second import, semantic verification, and model SVG evidence. It fails closed
+for fields, hyperlinks, picture bullets, list styles/body properties, any
+different inline topology, missing or ambiguous target, changed source run, or
+identity/geometry/background/order drift. It is not a general NotesSlide
+reflow, rich-text replacement, or template editor.
+
 ## Append And Clear
 
 ```js

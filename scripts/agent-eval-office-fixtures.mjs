@@ -85,6 +85,48 @@ export const PPTX_TITLE_NOTES_FIXTURE = Object.freeze({
   untouchedBackground: "#FFF7ED",
 });
 
+// PromptBench keeps the ordinary title/notes example as a small plain-text
+// workflow, while its ready presentation slice exercises the more important
+// imported rich-notes boundary: a source-bound NotesSlide can change one
+// existing ordinary run without flattening paragraphs, bullets, or sibling
+// run formatting.
+export const PPTX_RICH_NOTES_FIXTURE = Object.freeze({
+  presentationName: "rich-notes-review.pptx",
+  targetSlideName: "Go-no-go decision",
+  untouchedSlideName: "Unchanged appendix",
+  titleShapeName: "approval-title",
+  originalTitle: "Decision: hold for legal review",
+  replacementTitle: "Decision: approve controlled rollout",
+  supportingText: "The speaker-note topology, visible layout, and appendix remain unchanged.",
+  originalNotes: "Lead with the pending legal condition.\nClose with the accountable owner.",
+  replacementNotes: "Lead with the approved control set.\nClose with the accountable owner.",
+  originalNotesParagraphs: Object.freeze([
+    Object.freeze({
+      bulletCharacter: "•",
+      runs: Object.freeze([
+        Object.freeze({ text: "Lead with ", style: Object.freeze({ bold: true, fontSize: 18, fontFamily: "Aptos", color: "#0F172A" }) }),
+        Object.freeze({ text: "the pending legal condition.", style: Object.freeze({ italic: true, fontSize: 18, color: "#7C2D12" }) }),
+      ]),
+    }),
+    Object.freeze({
+      autoNumber: Object.freeze({ type: "arabicPeriod", startAt: 2 }),
+      runs: Object.freeze([
+        Object.freeze({ text: "Close with the accountable owner.", style: Object.freeze({ fontSize: 16 }) }),
+      ]),
+    }),
+  ]),
+  targetRun: Object.freeze({
+    paragraphIndex: 0,
+    runIndex: 1,
+    expectedText: "the pending legal condition.",
+    replacementText: "the approved control set.",
+    expectedStyle: Object.freeze({ italic: true, fontSize: 18, color: "#7c2d12" }),
+    replacementStyle: Object.freeze({ bold: true, italic: false, fontSize: 18, color: "#0f766e" }),
+  }),
+  targetBackground: "#F1F5F9",
+  untouchedBackground: "#FFF7ED",
+});
+
 // Reuse the same two-slide package for the non-visual source-bound rename
 // case. The title, notes, direct backgrounds, and appendix are deliberate
 // semantic and render canaries: the requested edit is only p:cSld/@name.
@@ -333,6 +375,51 @@ export async function generatePptxTitleNotesReview(target) {
   return { path: target, type: PPTX_MIME };
 }
 
+export async function generatePptxRichNotesReview(target) {
+  const fixture = PPTX_RICH_NOTES_FIXTURE;
+  const presentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });
+  const decision = presentation.slides.add({ name: fixture.targetSlideName });
+  decision.setBackground({ fill: fixture.targetBackground, mode: "solid" });
+  const title = decision.shapes.add({
+    name: fixture.titleShapeName,
+    geometry: "textbox",
+    position: { left: 72, top: 72, width: 1040, height: 96 },
+    text: fixture.originalTitle,
+    fill: "none",
+    line: { style: "solid", fill: "none", width: 0 },
+  });
+  title.text.style = { fontSize: 34, bold: true, color: "#0F172A" };
+  const supporting = decision.shapes.add({
+    name: "supporting-copy",
+    geometry: "textbox",
+    position: { left: 72, top: 194, width: 880, height: 80 },
+    text: fixture.supportingText,
+    fill: "none",
+    line: { style: "solid", fill: "none", width: 0 },
+  });
+  supporting.text.style = { fontSize: 18, color: "#334155" };
+  decision.addNotes(fixture.originalNotesParagraphs);
+
+  const appendix = presentation.slides.add({ name: fixture.untouchedSlideName });
+  appendix.setBackground({ fill: fixture.untouchedBackground, mode: "solid" });
+  const appendixTitle = appendix.shapes.add({
+    name: "appendix-title",
+    geometry: "textbox",
+    position: { left: 72, top: 72, width: 900, height: 96 },
+    text: "Appendix: unchanged evidence",
+    fill: "none",
+    line: { style: "solid", fill: "none", width: 0 },
+  });
+  appendixTitle.text.style = { fontSize: 30, bold: true, color: "#7C2D12" };
+
+  const verification = presentation.verify({ visualQa: true });
+  if (!verification.ok) throw new Error("Generated PPTX rich-notes fixture failed model verification: " + verification.ndjson);
+  const exported = await PresentationFile.exportPptx(presentation);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, new Uint8Array(await exported.arrayBuffer()));
+  return { path: target, type: PPTX_MIME };
+}
+
 export async function generatePptxSlideNameReview(target) {
   return generatePptxTitleNotesReview(target);
 }
@@ -445,6 +532,7 @@ export async function generateOfficeInput(generator, target) {
   if (generator === "xlsx-growth-update") return generateXlsxGrowthUpdate(target);
   if (generator === "docx-classic-comment-review") return generateDocxClassicCommentReview(target);
   if (generator === "pptx-title-notes-review") return generatePptxTitleNotesReview(target);
+  if (generator === "pptx-rich-notes-review") return generatePptxRichNotesReview(target);
   if (generator === "pptx-slide-name-review") return generatePptxSlideNameReview(target);
   if (generator === "pptx-closed-leaf-clone") return generatePptxClosedLeafClone(target);
   return null;

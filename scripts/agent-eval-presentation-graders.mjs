@@ -6,6 +6,7 @@ import JSZip from "jszip";
 
 import {
   PPTX_CLOSED_LEAF_CLONE_FIXTURE,
+  PPTX_RICH_NOTES_FIXTURE,
   PPTX_SLIDE_NAME_FIXTURE,
   PPTX_TITLE_NOTES_FIXTURE,
 } from "./agent-eval-office-fixtures.mjs";
@@ -19,7 +20,7 @@ export const pptxGradedCaseIds = new Set([
 ]);
 
 const defaultWeights = { machine: 45, visual: 25, security: 20, trace: 10 };
-const SHIPPED_TITLE_NOTES_WORKFLOW = /(?:^|[\s"'`])(?:\.?\/)?(?:\.agents\/skills\/presentations|node_modules\/open-office-artifact-tool\/skills\/presentations\/skills\/presentations)\/examples\/openchestnut-title-notes-edit-workflow\.mjs(?:$|[\s"'`])/i;
+const SHIPPED_RICH_NOTES_WORKFLOW = /(?:^|[\s"'`])(?:\.?\/)?(?:\.agents\/skills\/presentations|node_modules\/open-office-artifact-tool\/skills\/presentations\/skills\/presentations)\/examples\/openchestnut-rich-speaker-notes-edit-workflow\.mjs(?:$|[\s"'`])/i;
 const SHIPPED_SLIDE_NAME_WORKFLOW = /(?:^|[\s"'`])(?:\.?\/)?(?:\.agents\/skills\/presentations|node_modules\/open-office-artifact-tool\/skills\/presentations\/skills\/presentations)\/examples\/openchestnut-slide-name-edit-workflow\.mjs(?:$|[\s"'`])/i;
 const SHIPPED_SLIDE_DUPLICATE_WORKFLOW = /(?:^|[\s"'`])(?:\.?\/)?(?:\.agents\/skills\/presentations|node_modules\/open-office-artifact-tool\/skills\/presentations\/skills\/presentations)\/examples\/openchestnut-slide-duplicate-workflow\.mjs(?:$|[\s"'`])/i;
 const CLONE_TOPOLOGY_PARTS = new Set([
@@ -129,6 +130,121 @@ export async function inspectTitleNotesPptx(filePath) {
     untouched,
     targetNotesPath: "ppt/notesSlides/notesSlide1.xml",
     targetNotes: notes["ppt/notesSlides/notesSlide1.xml"] || null,
+  };
+}
+
+function notesBodyShapes(xml = "") {
+  const bodies = [];
+  for (const shape of String(xml).matchAll(/<(?:[\w.-]+:)?sp\b[^>]*>[\s\S]*?<\/(?:[\w.-]+:)?sp>/gi)) {
+    const placeholder = /<(?:[\w.-]+:)?ph\b[^>]*>/.exec(shape[0])?.[0] || "";
+    if (String(xmlAttributes(placeholder).type || "").toLowerCase() !== "body") continue;
+    const body = /<(?:[\w.-]+:)?txBody\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?txBody>/i.exec(shape[0]);
+    if (body) bodies.push(body[1]);
+  }
+  return {
+    shapeCount: [...String(xml).matchAll(/<(?:[\w.-]+:)?sp\b[^>]*>/gi)].length,
+    bodies,
+  };
+}
+
+function notesOutsideBodySha256(xml = "") {
+  const withoutBody = String(xml).replace(
+    /(<(?:[\w.-]+:)?txBody\b[^>]*>)[\s\S]*?(<\/(?:[\w.-]+:)?txBody>)/i,
+    "$1$2",
+  );
+  // Open XML SDK can move an equivalent xmlns declaration between the root
+  // and a descendant while serializing. This evaluator owns a narrow,
+  // namespace-fixed fixture, so discard declaration placement but retain every
+  // non-body element, attribute, and text node for the mutation boundary.
+  const namespacePlacementNormalized = withoutBody.replace(/\s+xmlns(?::[\w.-]+)?="[^"]*"/g, "");
+  return sha256(Buffer.from(namespacePlacementNormalized));
+}
+
+function richRunStyle(runXml = "") {
+  const properties = /<(?:[\w.-]+:)?rPr\b[^>]*>/.exec(String(runXml))?.[0] || "";
+  const attributes = xmlAttributes(properties);
+  const color = /<(?:[\w.-]+:)?srgbClr\b[^>]*\bval="([0-9A-Fa-f]{6})"/i.exec(String(runXml))?.[1] || null;
+  const fontFamily = xmlAttributes(/<(?:[\w.-]+:)?latin\b[^>]*>/.exec(String(runXml))?.[0] || "").typeface || null;
+  return {
+    bold: attributes.b === "1",
+    italic: attributes.i === "1",
+    fontSize: /^[0-9]+$/.test(String(attributes.sz || "")) ? Number(attributes.sz) : null,
+    color: color ? "#" + color.toUpperCase() : null,
+    fontFamily,
+  };
+}
+
+function inspectRichNotesBody(xml = "") {
+  const bodyShapes = notesBodyShapes(xml);
+  const body = bodyShapes.bodies[0] || null;
+  if (!body) return { present: false, shapeCount: bodyShapes.shapeCount, bodyShapeCount: 0, paragraphs: [] };
+  const paragraphs = [];
+  for (const match of body.matchAll(/<(?:[\w.-]+:)?p\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?p>/gi)) {
+    const paragraphXml = match[0];
+    const bodyXml = match[1];
+    const bulletCharacter = xmlAttributes(/<(?:[\w.-]+:)?buChar\b[^>]*>/.exec(paragraphXml)?.[0] || "").char || null;
+    const autoNumberAttributes = xmlAttributes(/<(?:[\w.-]+:)?buAutoNum\b[^>]*>/.exec(paragraphXml)?.[0] || "");
+    const autoNumber = autoNumberAttributes.type
+      ? { type: autoNumberAttributes.type, startAt: autoNumberAttributes.startAt === undefined ? null : Number(autoNumberAttributes.startAt) }
+      : null;
+    const runs = [];
+    for (const run of bodyXml.matchAll(/<(?:[\w.-]+:)?r\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?r>/gi)) {
+      const text = /<(?:[\w.-]+:)?t\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?t>/i.exec(run[0])?.[1];
+      if (text === undefined) continue;
+      runs.push({ text: decodeXml(text.replace(/<[^>]+>/g, "")), style: richRunStyle(run[0]) });
+    }
+    paragraphs.push({ bulletCharacter, autoNumber, runs });
+  }
+  return {
+    present: true,
+    shapeCount: bodyShapes.shapeCount,
+    bodyShapeCount: bodyShapes.bodies.length,
+    paragraphs,
+  };
+}
+
+/**
+ * This intentionally decodes the evaluator's own narrow NotesSlide shape
+ * rather than trusting the candidate model. It is limited to the canonical
+ * body placeholder and ordinary DrawingML runs generated for this case.
+ */
+export async function inspectRichNotesPptx(filePath) {
+  const fixture = PPTX_RICH_NOTES_FIXTURE;
+  const bytes = await fs.readFile(filePath);
+  const zip = await JSZip.loadAsync(bytes);
+  const paths = Object.keys(zip.files).filter((name) => !zip.files[name].dir).sort();
+  const slidePaths = paths.filter((name) => /^ppt\/slides\/slide\d+\.xml$/i.test(name)).sort(numericPptxOrder);
+  const notesPaths = paths.filter((name) => /^ppt\/notesSlides\/notesSlide\d+\.xml$/i.test(name)).sort(numericPptxOrder);
+  const slides = [];
+  for (const slidePath of slidePaths) {
+    const xml = await zip.file(slidePath).async("text");
+    slides.push({
+      path: slidePath,
+      name: slideName(xml),
+      texts: drawingTexts(xml),
+      title: shapeTextByName(xml, fixture.titleShapeName),
+      background: directBackground(xml),
+    });
+  }
+  const targetNotesPath = "ppt/notesSlides/notesSlide1.xml";
+  const targetNotesXml = await zip.file(targetNotesPath)?.async("text") || "";
+  const richNotes = inspectRichNotesBody(targetNotesXml);
+  richNotes.outsideBodySha256 = notesOutsideBodySha256(targetNotesXml);
+  const target = slides.find((slide) => slide.name === fixture.targetSlideName) || null;
+  const untouched = slides.find((slide) => slide.name === fixture.untouchedSlideName) || null;
+  return {
+    bytes: bytes.length,
+    sha256: sha256(bytes),
+    paths,
+    partHashes: await partHashes(zip, paths),
+    slidePaths,
+    notesPaths,
+    slides,
+    target,
+    untouched,
+    targetNotesPath,
+    targetNotes: richNotes.paragraphs.map((paragraph) => paragraph.runs.map((run) => run.text).join("")).join("\n"),
+    richNotes,
   };
 }
 
@@ -556,6 +672,10 @@ function sameArray(left, right) {
   return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
+function sameValue(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 function packageChanges(source, output) {
   const paths = [...new Set([...source.paths, ...output.paths])].sort();
   return paths.filter((filePath) => source.partHashes[filePath] !== output.partHashes[filePath]);
@@ -594,10 +714,10 @@ function stableVisualEvidence(source, output) {
   };
 }
 
-function usedTypedPptxRoundTrip(commandText) {
+function usedTypedRichNotesRoundTrip(commandText) {
   const directPublicApi = /PresentationFile\.importPptx/i.test(commandText)
     && /PresentationFile\.exportPptx/i.test(commandText);
-  return directPublicApi || SHIPPED_TITLE_NOTES_WORKFLOW.test(commandText);
+  return directPublicApi || SHIPPED_RICH_NOTES_WORKFLOW.test(commandText);
 }
 
 function usedTypedSlideNameRoundTrip(commandText) {
@@ -950,8 +1070,8 @@ export function gradePptxClosedLeafCloneEvidence({ evidence, audit, commands }) 
   ];
 }
 
-export function gradePptxTitleNotesEvidence({ evidence, audit, commands }) {
-  const fixture = PPTX_TITLE_NOTES_FIXTURE;
+export function gradePptxRichNotesEvidence({ evidence, audit, commands }) {
+  const fixture = PPTX_RICH_NOTES_FIXTURE;
   const source = evidence.source;
   const output = evidence.output;
   const visual = visualEvidence(evidence.visual?.source, evidence.visual?.output);
@@ -959,56 +1079,109 @@ export function gradePptxTitleNotesEvidence({ evidence, audit, commands }) {
   const expectedChangedPaths = [source.target?.path, source.targetNotesPath].filter(Boolean).sort();
   const sourceSlideNames = source.slides.map((slide) => slide.name);
   const outputSlideNames = output.slides.map((slide) => slide.name);
-  const commandText = commands.join("\n");
   const sourceText = source.target?.texts || [];
   const outputText = output.target?.texts || [];
+  const sourceParagraphs = source.richNotes?.paragraphs || [];
+  const outputParagraphs = output.richNotes?.paragraphs || [];
+  const sourceTargetRun = sourceParagraphs[fixture.targetRun.paragraphIndex]?.runs?.[fixture.targetRun.runIndex] || null;
+  const outputTargetRun = outputParagraphs[fixture.targetRun.paragraphIndex]?.runs?.[fixture.targetRun.runIndex] || null;
+  const sourceFirstRun = sourceParagraphs[0]?.runs?.[0] || null;
+  const outputFirstRun = outputParagraphs[0]?.runs?.[0] || null;
+  const sourceSecondParagraph = sourceParagraphs[1] || null;
+  const outputSecondParagraph = outputParagraphs[1] || null;
+  const topology = (paragraphs) => paragraphs.map((paragraph) => ({
+    bulletCharacter: paragraph.bulletCharacter,
+    autoNumber: paragraph.autoNumber,
+    runCount: paragraph.runs.length,
+  }));
+  const commandText = commands.join("\n");
+  const operation = audit?.operation && typeof audit.operation === "object" ? audit.operation : {};
   return [
-    check("pptx-machine:canonical-fixture", "machine", source.slides.length === 2
+    check("pptx-rich-notes-machine:canonical-fixture", "machine", source.slides.length === 2
       && source.target?.title === fixture.originalTitle
       && source.target?.background === fixture.targetBackground
       && source.targetNotes === fixture.originalNotes
       && source.untouched?.background === fixture.untouchedBackground
-      && sourceText.includes(fixture.supportingText), {
+      && sourceText.includes(fixture.supportingText)
+      && source.richNotes?.present === true
+      && source.richNotes?.shapeCount === 1
+      && source.richNotes?.bodyShapeCount === 1
+      && sourceParagraphs.length === 2
+      && sourceParagraphs[0]?.bulletCharacter === "•"
+      && sourceParagraphs[0]?.runs.length === 2
+      && sourceFirstRun?.text === fixture.originalNotesParagraphs[0].runs[0].text
+      && sourceFirstRun?.style.bold === true
+      && sourceFirstRun?.style.fontFamily === "Aptos"
+      && sourceTargetRun?.text === fixture.targetRun.expectedText
+      && sourceTargetRun?.style.italic === true
+      && sourceTargetRun?.style.bold === false
+      && sourceTargetRun?.style.color === "#7C2D12"
+      && sourceTargetRun?.style.fontSize !== null
+      && sourceSecondParagraph?.autoNumber?.type === "arabicPeriod"
+      && sourceSecondParagraph?.autoNumber?.startAt === 2
+      && sourceSecondParagraph?.runs.length === 1
+      && sourceSecondParagraph?.runs[0]?.text === fixture.originalNotesParagraphs[1].runs[0].text, {
       sourceTarget: source.target,
       sourceNotes: source.targetNotes,
+      sourceRichNotes: source.richNotes,
       sourceSlides: sourceSlideNames,
     }),
-    check("pptx-machine:title-and-notes-edited", "machine", output.target?.title === fixture.replacementTitle
+    check("pptx-rich-notes-machine:title-and-target-run-edited", "machine", output.target?.title === fixture.replacementTitle
       && output.targetNotes === fixture.replacementNotes
+      && outputTargetRun?.text === fixture.targetRun.replacementText
+      && outputTargetRun?.style.bold === true
+      && outputTargetRun?.style.italic === false
+      && outputTargetRun?.style.color === "#0F766E"
+      && outputTargetRun?.style.fontSize === sourceTargetRun?.style.fontSize
       && !outputText.includes(fixture.originalTitle)
-      && !String(output.targetNotes || "").includes(fixture.originalNotes), {
+      && !String(output.targetNotes || "").includes(fixture.targetRun.expectedText), {
       outputTarget: output.target,
       outputNotes: output.targetNotes,
+      outputTargetRun,
     }),
-    check("pptx-machine:target-and-untouched-structure-preserved", "machine", sameArray(sourceSlideNames, outputSlideNames)
+    check("pptx-rich-notes-machine:fixed-topology-and-siblings-preserved", "machine", sameArray(sourceSlideNames, outputSlideNames)
       && output.target?.background === fixture.targetBackground
       && outputText.includes(fixture.supportingText)
       && output.untouched?.background === fixture.untouchedBackground
-      && source.untouched?.path === output.untouched?.path, {
+      && source.untouched?.path === output.untouched?.path
+      && output.richNotes?.shapeCount === source.richNotes?.shapeCount
+      && output.richNotes?.bodyShapeCount === source.richNotes?.bodyShapeCount
+      && output.richNotes?.outsideBodySha256 === source.richNotes?.outsideBodySha256
+      && sameValue(topology(outputParagraphs), topology(sourceParagraphs))
+      && sameValue(outputFirstRun, sourceFirstRun)
+      && sameValue(outputSecondParagraph, sourceSecondParagraph), {
       sourceSlides: sourceSlideNames,
       outputSlides: outputSlideNames,
+      sourceRichNotes: source.richNotes,
+      outputRichNotes: output.richNotes,
       sourceTarget: source.target,
       outputTarget: output.target,
       sourceUntouched: source.untouched,
       outputUntouched: output.untouched,
     }),
-    check("pptx-machine:only-bounded-parts-changed", "machine", sameArray(changedPaths, expectedChangedPaths), {
+    check("pptx-rich-notes-machine:only-bounded-parts-changed", "machine", sameArray(changedPaths, expectedChangedPaths), {
       changedPaths,
       expectedChangedPaths,
     }),
-    check("pptx-machine:audit-succeeded", "machine", /^(?:success|succeeded|completed)$/i.test(String(audit?.status || "")), {
+    check("pptx-rich-notes-machine:audit-succeeded", "machine", /^(?:success|succeeded|completed)$/i.test(String(audit?.status || "")), {
       status: audit?.status || "unreported",
     }),
-    check("pptx-visual:native-render", "visual", visual.available && visual.rendered && visual.pageCountsMatch, {
+    check("pptx-rich-notes-visual:native-render", "visual", visual.available && visual.rendered && visual.pageCountsMatch, {
       visual: evidence.visual,
     }),
-    check("pptx-visual:target-change-and-untouched-slide-stable", "visual", visual.targetChanged && visual.untouchedStable, {
+    check("pptx-rich-notes-visual:target-change-and-untouched-slide-stable", "visual", visual.targetChanged && visual.untouchedStable, {
       visual: evidence.visual,
     }),
-    gate("pptx-security:fixed-topology-and-package-preservation", "security", sameArray(source.paths, output.paths)
+    gate("pptx-rich-notes-security:fixed-topology-and-package-preservation", "security", sameArray(source.paths, output.paths)
       && source.target?.path === output.target?.path
       && source.targetNotesPath === output.targetNotesPath
       && source.partHashes[source.untouched?.path] === output.partHashes[output.untouched?.path]
+      && output.richNotes?.shapeCount === source.richNotes?.shapeCount
+      && output.richNotes?.bodyShapeCount === source.richNotes?.bodyShapeCount
+      && output.richNotes?.outsideBodySha256 === source.richNotes?.outsideBodySha256
+      && sameValue(topology(outputParagraphs), topology(sourceParagraphs))
+      && sameValue(outputFirstRun, sourceFirstRun)
+      && sameValue(outputSecondParagraph, sourceSecondParagraph)
       && sameArray(changedPaths, expectedChangedPaths), {
       sourcePaths: source.paths,
       outputPaths: output.paths,
@@ -1017,28 +1190,35 @@ export function gradePptxTitleNotesEvidence({ evidence, audit, commands }) {
       notesPath: { source: source.targetNotesPath, output: output.targetNotesPath },
       untouchedPath: { source: source.untouched?.path, output: output.untouched?.path },
     }),
-    gate("pptx-security:byte-bound-audit-provenance", "security", auditHash(audit, "source") === source.sha256
+    gate("pptx-rich-notes-security:byte-bound-audit-provenance", "security", auditHash(audit, "source") === source.sha256
       && auditHash(audit, "output") === output.sha256
       && source.sha256 !== output.sha256, {
       source: { expected: source.sha256, actual: auditHash(audit, "source") },
       output: { expected: output.sha256, actual: auditHash(audit, "output") },
     }),
-    check("pptx-trace:open-chestnut-provider", "trace", /open[- ]?chestnut/i.test(auditProvider(audit)) && Boolean(auditVersion(audit)), {
+    check("pptx-rich-notes-trace:open-chestnut-provider", "trace", /open[- ]?chestnut/i.test(auditProvider(audit)) && Boolean(auditVersion(audit)), {
       provider: auditProvider(audit),
       version: auditVersion(audit),
     }),
-    gate("pptx-trace:no-silent-fallback", "trace", auditFallbackIsFalse(audit), { provider: audit?.provider || null }),
-    check("pptx-trace:rewrite-policy", "trace", /^rewrite$/i.test(auditStrategy(audit)), {
+    gate("pptx-rich-notes-trace:no-silent-fallback", "trace", auditFallbackIsFalse(audit), { provider: audit?.provider || null }),
+    check("pptx-rich-notes-trace:rewrite-policy", "trace", /^rewrite$/i.test(auditStrategy(audit)), {
       strategy: auditStrategy(audit),
     }),
-    check("pptx-trace:title-notes-operation", "trace", /title.*notes|notes.*title|speaker/i.test(auditOperation(audit)), {
-      operation: auditOperation(audit),
+    check("pptx-rich-notes-trace:fixed-topology-operation", "trace", operation.type === "title-and-rich-speaker-notes-run-edit"
+      && operation.paragraphIndex === fixture.targetRun.paragraphIndex
+      && operation.runIndex === fixture.targetRun.runIndex
+      && operation.expectedRun?.text === fixture.targetRun.expectedText
+      && operation.replacementRun?.text === fixture.targetRun.replacementText, {
+      operation: audit?.operation || null,
     }),
-    check("pptx-trace:typed-roundtrip", "trace", usedTypedPptxRoundTrip(commandText), {
-      expected: "public PresentationFile importPptx/exportPptx calls or the integrity-protected published title/notes workflow",
+    check("pptx-rich-notes-trace:typed-roundtrip", "trace", usedTypedRichNotesRoundTrip(commandText), {
+      expected: "public PresentationFile importPptx/exportPptx calls or the integrity-protected published rich-speaker-notes workflow",
     }),
-    check("pptx-trace:second-import", "trace", audit?.validation?.reimport?.ok === true || audit?.validation?.secondImport?.ok === true, {
-      validation: audit?.validation || null,
+    check("pptx-rich-notes-trace:second-import", "trace", audit?.validation?.reimport?.ok === true
+      && audit?.validation?.reimport?.richNotesFixedTopology === true
+      && audit?.validation?.reimport?.targetRunExact === true
+      && audit?.validation?.reimport?.notesIdPreserved === true, {
+      validation: audit?.validation?.reimport || null,
     }),
   ];
 }
@@ -1178,14 +1358,16 @@ export async function gradePptxCase({ item, workspace, finalMessage, trace, weig
   const isClosedLeafCloneCase = item.id === "pptx-closed-leaf-slide-clone";
   const fixture = isClosedLeafCloneCase
     ? PPTX_CLOSED_LEAF_CLONE_FIXTURE
-    : isSlideNameCase ? PPTX_SLIDE_NAME_FIXTURE : PPTX_TITLE_NOTES_FIXTURE;
+    : isSlideNameCase ? PPTX_SLIDE_NAME_FIXTURE : PPTX_RICH_NOTES_FIXTURE;
   const audit = await readAudit(workspace);
   const commands = extractCompletedCommands(trace);
   const sourcePath = path.join(workspace, "inputs", fixture.presentationName);
   const outputPath = path.join(workspace, "outputs", isClosedLeafCloneCase
     ? "release-review-with-copy.pptx"
-    : isSlideNameCase ? "launch-review-renamed.pptx" : "launch-review-updated.pptx");
-  const inspect = isClosedLeafCloneCase ? inspectClosedLeafClonePptx : inspectTitleNotesPptx;
+    : isSlideNameCase ? "launch-review-renamed.pptx" : "rich-notes-review-updated.pptx");
+  const inspect = isClosedLeafCloneCase
+    ? inspectClosedLeafClonePptx
+    : isSlideNameCase ? inspectTitleNotesPptx : inspectRichNotesPptx;
   let source;
   let output;
   try {
@@ -1222,7 +1404,7 @@ export async function gradePptxCase({ item, workspace, finalMessage, trace, weig
     ? gradePptxClosedLeafCloneEvidence({ evidence, audit, commands, item })
     : isSlideNameCase
       ? gradePptxSlideNameEvidence({ evidence, audit, commands, item })
-      : gradePptxTitleNotesEvidence({ evidence, audit, commands, item });
+      : gradePptxRichNotesEvidence({ evidence, audit, commands, item });
   const score = summarizeCaseScore(checks, item.grade, weights, checks.filter((entry) => entry.gate).every((entry) => entry.passed));
   return { supported: true, graded: true, checks, evidence, pending: [], ...score };
 }

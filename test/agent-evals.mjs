@@ -10,6 +10,7 @@ import { DocumentFile, FileBlob, PresentationFile, SpreadsheetFile } from "../sr
 import {
   DOCX_CLASSIC_COMMENT_FIXTURE,
   PPTX_CLOSED_LEAF_CLONE_FIXTURE,
+  PPTX_RICH_NOTES_FIXTURE,
   PPTX_SLIDE_NAME_FIXTURE,
   PPTX_TITLE_NOTES_FIXTURE,
   XLSX_GROWTH_UPDATE_FIXTURE,
@@ -29,9 +30,10 @@ import {
 } from "../scripts/agent-eval-spreadsheet-graders.mjs";
 import {
   gradePptxClosedLeafCloneEvidence,
+  gradePptxRichNotesEvidence,
   gradePptxSlideNameEvidence,
-  gradePptxTitleNotesEvidence,
   inspectClosedLeafClonePptx,
+  inspectRichNotesPptx,
   inspectTitleNotesPptx,
 } from "../scripts/agent-eval-presentation-graders.mjs";
 import { duplicatePptxSlide } from "../skills/presentations/skills/presentations/examples/openchestnut-slide-duplicate-workflow.mjs";
@@ -332,83 +334,151 @@ try {
   await fs.rm(classicCommentRoot, { recursive: true, force: true });
 }
 
-const titleNotesItem = cases.find((item) => item.id === "pptx-title-and-notes-edit");
-const titleNotesRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-eval-pptx-title-notes-"));
+const richNotesItem = cases.find((item) => item.id === "pptx-title-and-notes-edit");
+assert.ok(richNotesItem);
+const richNotesRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-eval-pptx-rich-notes-"));
 try {
-  const titleNotesInput = path.join(titleNotesRoot, "inputs", PPTX_TITLE_NOTES_FIXTURE.presentationName);
-  const titleNotesOutput = path.join(titleNotesRoot, "outputs", "launch-review-updated.pptx");
-  await generateOfficeInput("pptx-title-notes-review", titleNotesInput);
-  const titleNotesSource = await fs.readFile(titleNotesInput);
-  const titleNotesPresentation = await PresentationFile.importPptx(new FileBlob(titleNotesSource, {
+  const richNotesInput = path.join(richNotesRoot, "inputs", PPTX_RICH_NOTES_FIXTURE.presentationName);
+  const richNotesOutput = path.join(richNotesRoot, "outputs", "rich-notes-review-updated.pptx");
+  await generateOfficeInput("pptx-rich-notes-review", richNotesInput);
+  const richNotesSource = await fs.readFile(richNotesInput);
+  const richNotesPresentation = await PresentationFile.importPptx(new FileBlob(richNotesSource, {
     type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    name: PPTX_TITLE_NOTES_FIXTURE.presentationName,
+    name: PPTX_RICH_NOTES_FIXTURE.presentationName,
   }));
-  const titleNotesSlide = titleNotesPresentation.slides.items.find((slide) => slide.name === PPTX_TITLE_NOTES_FIXTURE.targetSlideName);
-  assert.ok(titleNotesSlide);
-  const titleShape = titleNotesSlide.shapes.items.find((shape) => shape.name === PPTX_TITLE_NOTES_FIXTURE.titleShapeName);
-  assert.ok(titleShape);
-  titleShape.text.set(PPTX_TITLE_NOTES_FIXTURE.replacementTitle);
-  titleNotesSlide.speakerNotes.textFrame.setText(PPTX_TITLE_NOTES_FIXTURE.replacementNotes);
-  const titleNotesExport = await PresentationFile.exportPptx(titleNotesPresentation);
-  const titleNotesBytes = new Uint8Array(await titleNotesExport.arrayBuffer());
-  await fs.mkdir(path.dirname(titleNotesOutput), { recursive: true });
-  await fs.writeFile(titleNotesOutput, titleNotesBytes);
+  const richNotesSlide = richNotesPresentation.slides.items.find((slide) => slide.name === PPTX_RICH_NOTES_FIXTURE.targetSlideName);
+  assert.ok(richNotesSlide);
+  const richTitle = richNotesSlide.shapes.items.find((shape) => shape.name === PPTX_RICH_NOTES_FIXTURE.titleShapeName);
+  assert.ok(richTitle);
+  const richNotesId = richNotesSlide.speakerNotes.id;
+  const sourceParagraphs = richNotesSlide.speakerNotes.textFrame.paragraphs;
+  assert.equal(sourceParagraphs.length, 2);
+  assert.equal(sourceParagraphs[0].runs.length, 2);
+  assert.equal(sourceParagraphs[0].runs[1].text, PPTX_RICH_NOTES_FIXTURE.targetRun.expectedText);
+  assert.deepEqual(sourceParagraphs[0].runs[1].style, PPTX_RICH_NOTES_FIXTURE.targetRun.expectedStyle);
+  const replacementParagraphs = JSON.parse(JSON.stringify(sourceParagraphs));
+  replacementParagraphs[PPTX_RICH_NOTES_FIXTURE.targetRun.paragraphIndex].runs[PPTX_RICH_NOTES_FIXTURE.targetRun.runIndex] = {
+    ...replacementParagraphs[PPTX_RICH_NOTES_FIXTURE.targetRun.paragraphIndex].runs[PPTX_RICH_NOTES_FIXTURE.targetRun.runIndex],
+    text: PPTX_RICH_NOTES_FIXTURE.targetRun.replacementText,
+    style: { ...PPTX_RICH_NOTES_FIXTURE.targetRun.replacementStyle },
+  };
+  richTitle.text.set(PPTX_RICH_NOTES_FIXTURE.replacementTitle);
+  richNotesSlide.speakerNotes.textFrame.paragraphs = replacementParagraphs;
+  const richNotesExport = await PresentationFile.exportPptx(richNotesPresentation);
+  const richNotesBytes = new Uint8Array(await richNotesExport.arrayBuffer());
+  await fs.mkdir(path.dirname(richNotesOutput), { recursive: true });
+  await fs.writeFile(richNotesOutput, richNotesBytes);
   const hash = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
-  const titleNotesAudit = {
+  const richNotesAudit = {
     status: "succeeded",
-    source: { sha256: hash(titleNotesSource) },
-    output: { sha256: hash(titleNotesBytes) },
+    source: { sha256: hash(richNotesSource) },
+    output: { sha256: hash(richNotesBytes) },
     provider: { actual: "open-chestnut", version: "test", silentFallback: false },
     savePolicy: { strategy: "rewrite" },
-    operation: { type: "title-and-speaker-notes-text-edit" },
-    validation: { reimport: { ok: true } },
+    operation: {
+      type: "title-and-rich-speaker-notes-run-edit",
+      paragraphIndex: PPTX_RICH_NOTES_FIXTURE.targetRun.paragraphIndex,
+      runIndex: PPTX_RICH_NOTES_FIXTURE.targetRun.runIndex,
+      expectedRun: { text: PPTX_RICH_NOTES_FIXTURE.targetRun.expectedText },
+      replacementRun: { text: PPTX_RICH_NOTES_FIXTURE.targetRun.replacementText },
+    },
+    validation: { reimport: { ok: true, richNotesFixedTopology: true, targetRunExact: true, notesIdPreserved: true, notesId: richNotesId } },
   };
-  await fs.writeFile(path.join(titleNotesRoot, "outputs", "audit.json"), JSON.stringify(titleNotesAudit, null, 2));
-  const titleNotesEvidence = {
-    source: await inspectTitleNotesPptx(titleNotesInput),
-    output: await inspectTitleNotesPptx(titleNotesOutput),
+  await fs.writeFile(path.join(richNotesRoot, "outputs", "audit.json"), JSON.stringify(richNotesAudit, null, 2));
+  const richNotesEvidence = {
+    source: await inspectRichNotesPptx(richNotesInput),
+    output: await inspectRichNotesPptx(richNotesOutput),
     visual: {
       source: { available: true, ok: true, pageCount: 2, pages: [{ width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "source" }, { width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "stable" }] },
       output: { available: true, ok: true, pageCount: 2, pages: [{ width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "output" }, { width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "stable" }] },
     },
   };
-  const titleNotesTrace = JSON.stringify({ type: "item.completed", item: { type: "command_execution", id: "pptx-title-notes", command: "node -e 'PresentationFile.importPptx(); PresentationFile.exportPptx()'" } });
-  const titleNotesChecks = gradePptxTitleNotesEvidence({
-    evidence: titleNotesEvidence,
-    audit: titleNotesAudit,
-    commands: extractCompletedCommands(titleNotesTrace),
-    item: titleNotesItem,
+  const richNotesTrace = JSON.stringify({ type: "item.completed", item: { type: "command_execution", id: "pptx-rich-notes", command: "node -e 'PresentationFile.importPptx(); PresentationFile.exportPptx()'" } });
+  const richNotesChecks = gradePptxRichNotesEvidence({
+    evidence: richNotesEvidence,
+    audit: richNotesAudit,
+    commands: extractCompletedCommands(richNotesTrace),
+    item: richNotesItem,
   });
-  assert.equal(titleNotesChecks.every((check) => check.passed), true);
-  const publishedTitleNotesWorkflowChecks = gradePptxTitleNotesEvidence({
-    evidence: titleNotesEvidence,
-    audit: titleNotesAudit,
-    commands: ["node .agents/skills/presentations/examples/openchestnut-title-notes-edit-workflow.mjs inputs/launch-review.pptx outputs/launch-review-updated.pptx outputs/audit.json"],
-    item: titleNotesItem,
+  assert.equal(richNotesChecks.every((check) => check.passed), true);
+  const siblingDriftPresentation = await PresentationFile.importPptx(new FileBlob(richNotesSource, {
+    type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    name: PPTX_RICH_NOTES_FIXTURE.presentationName,
+  }));
+  const siblingDriftSlide = siblingDriftPresentation.slides.getItem(0);
+  const siblingDriftTitle = siblingDriftSlide.shapes.items.find((shape) => shape.name === PPTX_RICH_NOTES_FIXTURE.titleShapeName);
+  assert.ok(siblingDriftTitle);
+  siblingDriftTitle.text.set(PPTX_RICH_NOTES_FIXTURE.replacementTitle);
+  const siblingDriftParagraphs = siblingDriftSlide.speakerNotes.textFrame.paragraphs;
+  siblingDriftParagraphs[0].runs[0].text = "Changed sibling run.";
+  siblingDriftParagraphs[PPTX_RICH_NOTES_FIXTURE.targetRun.paragraphIndex].runs[PPTX_RICH_NOTES_FIXTURE.targetRun.runIndex] = {
+    ...siblingDriftParagraphs[PPTX_RICH_NOTES_FIXTURE.targetRun.paragraphIndex].runs[PPTX_RICH_NOTES_FIXTURE.targetRun.runIndex],
+    text: PPTX_RICH_NOTES_FIXTURE.targetRun.replacementText,
+    style: { ...PPTX_RICH_NOTES_FIXTURE.targetRun.replacementStyle },
+  };
+  siblingDriftSlide.speakerNotes.textFrame.paragraphs = siblingDriftParagraphs;
+  const siblingDriftOutput = path.join(richNotesRoot, "outputs", "rich-notes-sibling-drift.pptx");
+  await (await PresentationFile.exportPptx(siblingDriftPresentation)).save(siblingDriftOutput);
+  const siblingDriftChecks = gradePptxRichNotesEvidence({
+    evidence: {
+      ...richNotesEvidence,
+      output: await inspectRichNotesPptx(siblingDriftOutput),
+    },
+    audit: richNotesAudit,
+    commands: extractCompletedCommands(richNotesTrace),
+    item: richNotesItem,
   });
-  assert.equal(publishedTitleNotesWorkflowChecks.find((check) => check.id === "pptx-trace:typed-roundtrip")?.passed, true);
-  const untrustedTitleNotesWorkflowChecks = gradePptxTitleNotesEvidence({
-    evidence: titleNotesEvidence,
-    audit: titleNotesAudit,
-    commands: ["node scratch/title-notes-edit.mjs inputs/launch-review.pptx outputs/launch-review-updated.pptx outputs/audit.json"],
-    item: titleNotesItem,
+  assert.equal(siblingDriftChecks.find((check) => check.id === "pptx-rich-notes-machine:fixed-topology-and-siblings-preserved")?.passed, false);
+  assert.equal(siblingDriftChecks.find((check) => check.id === "pptx-rich-notes-security:fixed-topology-and-package-preservation")?.passed, false);
+  const notesOutsideBodyDriftOutput = path.join(richNotesRoot, "outputs", "rich-notes-outside-body-drift.pptx");
+  const notesOutsideBodyDriftZip = await JSZip.loadAsync(await fs.readFile(richNotesOutput));
+  const notesPath = "ppt/notesSlides/notesSlide1.xml";
+  const notesXml = await notesOutsideBodyDriftZip.file(notesPath)?.async("text");
+  assert.equal(typeof notesXml, "string");
+  const driftedNotesXml = notesXml.replace(/(<p:cNvPr\b[^>]*\bname=")[^"]*(")/, "$1outside-body-drift$2");
+  assert.notEqual(driftedNotesXml, notesXml);
+  notesOutsideBodyDriftZip.file(notesPath, driftedNotesXml);
+  await fs.writeFile(notesOutsideBodyDriftOutput, await notesOutsideBodyDriftZip.generateAsync({ type: "nodebuffer" }));
+  const notesOutsideBodyDriftChecks = gradePptxRichNotesEvidence({
+    evidence: {
+      ...richNotesEvidence,
+      output: await inspectRichNotesPptx(notesOutsideBodyDriftOutput),
+    },
+    audit: richNotesAudit,
+    commands: extractCompletedCommands(richNotesTrace),
+    item: richNotesItem,
   });
-  assert.equal(untrustedTitleNotesWorkflowChecks.find((check) => check.id === "pptx-trace:typed-roundtrip")?.passed, false);
-  const nativeTitleNotesResult = await gradeOfficeCase({
-    item: titleNotesItem,
-    workspace: titleNotesRoot,
-    evaluator: path.join(titleNotesRoot, "evaluator"),
+  assert.equal(notesOutsideBodyDriftChecks.find((check) => check.id === "pptx-rich-notes-machine:fixed-topology-and-siblings-preserved")?.passed, false);
+  assert.equal(notesOutsideBodyDriftChecks.find((check) => check.id === "pptx-rich-notes-security:fixed-topology-and-package-preservation")?.passed, false);
+  const publishedRichNotesWorkflowChecks = gradePptxRichNotesEvidence({
+    evidence: richNotesEvidence,
+    audit: richNotesAudit,
+    commands: ["node .agents/skills/presentations/examples/openchestnut-rich-speaker-notes-edit-workflow.mjs inputs/rich-notes-review.pptx outputs/rich-notes-review-updated.pptx outputs/audit.json"],
+    item: richNotesItem,
+  });
+  assert.equal(publishedRichNotesWorkflowChecks.find((check) => check.id === "pptx-rich-notes-trace:typed-roundtrip")?.passed, true);
+  const untrustedRichNotesWorkflowChecks = gradePptxRichNotesEvidence({
+    evidence: richNotesEvidence,
+    audit: richNotesAudit,
+    commands: ["node scratch/rich-notes-edit.mjs inputs/rich-notes-review.pptx outputs/rich-notes-review-updated.pptx outputs/audit.json"],
+    item: richNotesItem,
+  });
+  assert.equal(untrustedRichNotesWorkflowChecks.find((check) => check.id === "pptx-rich-notes-trace:typed-roundtrip")?.passed, false);
+  const nativeRichNotesResult = await gradeOfficeCase({
+    item: richNotesItem,
+    workspace: richNotesRoot,
+    evaluator: path.join(richNotesRoot, "evaluator"),
     finalMessage: "completed",
-    trace: titleNotesTrace,
+    trace: richNotesTrace,
   });
-  if (nativeTitleNotesResult.graded) {
-    assert.equal(nativeTitleNotesResult.rawScorePercent, 100);
-    assert.equal(nativeTitleNotesResult.caseSpecificPassed, true);
+  if (nativeRichNotesResult.graded) {
+    assert.equal(nativeRichNotesResult.rawScorePercent, 100);
+    assert.equal(nativeRichNotesResult.caseSpecificPassed, true);
   } else {
-    assert.ok(nativeTitleNotesResult.infrastructureErrors?.length);
+    assert.ok(nativeRichNotesResult.infrastructureErrors?.length);
   }
 } finally {
-  await fs.rm(titleNotesRoot, { recursive: true, force: true });
+  await fs.rm(richNotesRoot, { recursive: true, force: true });
 }
 
 const slideNameItem = cases.find((item) => item.id === "pptx-source-bound-slide-name-edit");

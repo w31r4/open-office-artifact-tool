@@ -567,6 +567,35 @@ replacement. Notes-local hyperlinks, fields, picture bullets, list styles,
 body/layout properties, NotesMaster styling, and arbitrary notes shapes are
 opaque-preserved; do not try to patch them through this API.
 
+### Bounded Imported Rich-Notes Run Edit
+
+For the narrow case of one known imported slide, one known title, and one known
+ordinary rich-notes run, use the shipped transaction rather than replacing
+`notes.text`, calling `textFrame.setText()`, or editing XML. It protects the
+source, checks the exact target text and direct style, changes one fixed
+paragraph/run location, then requires reimported paragraph/run topology and
+every non-target run to remain exact:
+
+```bash
+node examples/openchestnut-rich-speaker-notes-edit-workflow.mjs \
+  input.pptx output/edited.pptx output/audit.json
+```
+
+The default fixture contract edits paragraph `0`, run `1` of a uniquely named
+slide. Optional arguments may replace the slide/title identities and expected
+title/run texts, but not widen the topology or turn this into a general
+reflowing editor. Its audit records source/output hashes, target IDs,
+paragraph/run indices, expected and replacement direct styles, source-bound
+capability, fixed topology, second import, semantic verification, and a model
+SVG check. Missing/duplicate targets, absent or irregular notes, a changed
+source run/style, a topology change, or any slide/title/notes identity,
+geometry, background, order, or name drift fail closed without promotion.
+
+Use LibreOffice/Poppler after delivery: speaker notes themselves are nonvisual,
+so the expected visible-slide change must come from an explicitly requested
+visible edit, not an inferred notes reflow. See
+`artifact_tool/api/references/speaker-notes.spec.md`.
+
 ### Bounded Imported Speaker-Notes Add
 
 An imported slide whose source SlidePart has no NotesSlide may add plain-text
@@ -653,8 +682,8 @@ any identity/geometry/direct-background change after reimport. A recognized
 placeholder title must also retain its native newline/inline topology; complex
 multi-run replacements and unrecognized local text graphs fail closed. It does
 not claim universal template editing: SmartArt, irregular modern comment
-graphs, rich notes, animations, and other connected PresentationML graphs stay
-source-bound.
+graphs, rich notes outside the explicit fixed-topology run workflow, animations,
+and other connected PresentationML graphs stay source-bound.
 
 Run the native render/QA route after delivery when LibreOffice/Poppler is
 available; the workflow's SVG check is model evidence, not a substitute for a

@@ -8,6 +8,7 @@ import JSZip from "jszip";
 import { FileBlob, Presentation, PresentationFile, SpreadsheetFile, Workbook } from "../src/index.mjs";
 import {
   generateOfficeInput,
+  PPTX_RICH_NOTES_FIXTURE,
   PPTX_TITLE_NOTES_FIXTURE,
 } from "../scripts/agent-eval-office-fixtures.mjs";
 import {
@@ -307,6 +308,49 @@ try {
   assert.equal(itemByName(titleNotesSlide.shapes.items, PPTX_TITLE_NOTES_FIXTURE.titleShapeName).text.value, PPTX_TITLE_NOTES_FIXTURE.replacementTitle);
   assert.equal(titleNotesSlide.speakerNotes.text, PPTX_TITLE_NOTES_FIXTURE.replacementNotes);
   assert.deepEqual(titleNotesSlide.background, { fill: "#f1f5f9", mode: "solid" });
+
+  const richNotesDir = path.join(root, "rich-notes-workflow");
+  const richNotesInput = path.join(richNotesDir, PPTX_RICH_NOTES_FIXTURE.presentationName);
+  const richNotesOutput = path.join(richNotesDir, "rich-notes-review-updated.pptx");
+  const richNotesAudit = path.join(richNotesDir, "audit.json");
+  await generateOfficeInput("pptx-rich-notes-review", richNotesInput);
+  const richNotesSource = await fs.readFile(richNotesInput);
+  const { editPptxRichSpeakerNotes } = await import(
+    "../skills/presentations/skills/presentations/examples/openchestnut-rich-speaker-notes-edit-workflow.mjs"
+  );
+  const richNotesResult = await editPptxRichSpeakerNotes({
+    inputPath: richNotesInput,
+    outputPath: richNotesOutput,
+    auditPath: richNotesAudit,
+  });
+  assert.equal(richNotesResult.audit.provider.actual, "open-chestnut");
+  assert.equal(richNotesResult.audit.operation.type, "title-and-rich-speaker-notes-run-edit");
+  assert.equal(richNotesResult.audit.validation.reimport.richNotesFixedTopology, true);
+  assert.deepEqual(await fs.readFile(richNotesInput), richNotesSource);
+  const richNotesRoundTrip = await PresentationFile.importPptx(new FileBlob(await fs.readFile(richNotesOutput), {
+    type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    name: "rich-notes-review-updated.pptx",
+  }));
+  const richNotesSlide = richNotesRoundTrip.slides.getItem(0);
+  assert.equal(itemByName(richNotesSlide.shapes.items, PPTX_RICH_NOTES_FIXTURE.titleShapeName).text.value, PPTX_RICH_NOTES_FIXTURE.replacementTitle);
+  assert.equal(richNotesSlide.speakerNotes.text, PPTX_RICH_NOTES_FIXTURE.replacementNotes);
+  assert.deepEqual(richNotesSlide.speakerNotes.textFrame.paragraphs, [
+    {
+      runs: [
+        { text: "Lead with ", style: { bold: true, fontSize: 18, fontFamily: "Aptos", color: "#0f172a" } },
+        { text: PPTX_RICH_NOTES_FIXTURE.targetRun.replacementText, style: { bold: true, italic: false, fontSize: 18, color: "#0f766e" } },
+      ],
+      level: 0,
+      bulletCharacter: "•",
+      style: {},
+    },
+    {
+      runs: [{ text: "Close with the accountable owner.", style: { fontSize: 16 } }],
+      level: 0,
+      autoNumber: { type: "arabicPeriod", startAt: 2 },
+      style: {},
+    },
+  ]);
 
   const notesAddDir = path.join(root, "speaker-notes-add-workflow");
   const notesAddInput = path.join(notesAddDir, "speaker-notes-source.pptx");
@@ -1559,6 +1603,8 @@ try {
   assert.deepEqual((await fs.readdir(starterRoot)).sort(), ["template-frame-map.json"]);
   assert.match(skillText, /open-office-artifact-tool/);
   assert.match(skillText, /openchestnut-speaker-notes-add-workflow\.mjs/);
+  assert.match(skillText, /openchestnut-rich-speaker-notes-edit-workflow\.mjs/);
+  assert.match(skillText, /paragraph `0`, run `1`[\s\S]*not widen the topology/is);
   assert.match(skillText, /### Rich Speaker Notes/);
   assert.match(skillText, /speakerNotes\.capability\.addable.*existing.*NotesMaster.*byte-for-byte.*canonical NotesMaster.*ThemePart.*back-reference/is);
   assert.match(skillText, /openchestnut-legacy-comment-add-workflow\.mjs/);
@@ -1570,6 +1616,8 @@ try {
   assert.match(skillText, /--allow-closed-leaves/);
   assert.match(quickStartText, /PresentationFile\.exportPptx/);
   assert.match(quickStartText, /addPptxSpeakerNotes/);
+  assert.match(quickStartText, /editPptxRichSpeakerNotes/);
+  assert.match(quickStartText, /fixed-topology transaction validates the imported source run text/i);
   assert.match(quickStartText, /notes\.capability\.sourceBound.*notes\.capability\.partPresent.*notes\.capability\.addable/is);
   assert.match(quickStartText, /addPptxLegacyReviewComment/);
   assert.match(quickStartText, /comments\.capability.*sourceBound.*format.*partPresent.*addable.*no legacy or Office 2021 comment graph.*re-proves/is);
@@ -1603,6 +1651,8 @@ try {
   const speakerNotesReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/speaker-notes.spec.md", "utf8");
   assert.match(speakerNotesReferenceText, /sourceBound.*partPresent.*editable.*addable/is);
   assert.match(speakerNotesReferenceText, /relationship-free.*paragraph\/run/is);
+  assert.match(speakerNotesReferenceText, /editPptxRichSpeakerNotes/);
+  assert.match(speakerNotesReferenceText, /not a general NotesSlide\s+reflow/i);
   assert.match(speakerNotesReferenceText, /fields.*hyperlinks.*picture bullets.*fail(?:s)?\s+closed/is);
   assert.match(speakerNotesReferenceText, /capability is preflight evidence.*not authority.*independently re-proves/is);
   assert.match(speakerNotesReferenceText, /existing.*NotesMaster.*reused byte-for-byte.*canonical NotesMaster.*ThemePart.*back-reference/is);

@@ -709,6 +709,38 @@ inline topology; use an exact in-run `title.text.replace(...)` when that is the
 narrower operation. It emits only model-render evidence; use the native render
 route for final visual QA.
 
+## Bounded Imported Rich Speaker-Notes Run Edit
+
+For a known ordinary rich NotesSlide, preserve the paragraph/run tree and edit
+one exact existing run through the dedicated transaction. Do not replace
+`notes.text` or call `textFrame.setText()` on a multi-run imported body:
+
+```ts
+import { editPptxRichSpeakerNotes } from "../examples/openchestnut-rich-speaker-notes-edit-workflow.mjs";
+
+await editPptxRichSpeakerNotes({
+  inputPath: "input.pptx",
+  outputPath: "output/edited.pptx",
+  auditPath: "output/audit.json",
+  slideName: "Go-no-go decision",
+  titleShapeName: "approval-title",
+  expectedTitle: "Decision: hold for legal review",
+  replacementTitle: "Decision: approve controlled rollout",
+  paragraphIndex: 0,
+  runIndex: 1,
+  expectedRunText: "the pending legal condition.",
+  replacementRunText: "the approved control set.",
+});
+```
+
+This fixed-topology transaction validates the imported source run text and
+direct style, changes that one run, and reimports to prove paragraph/run counts,
+bullets, auto-numbering, sibling runs, slide/title/notes identities, direct
+background, slide names, and order. It records byte-bound provenance plus the
+selected run/style in its audit. Fields, hyperlinks, picture bullets, notes
+body/list styles, arbitrary rich reflow, and irregular NotesSlide graphs fail
+closed rather than being flattened or silently reconstructed.
+
 ## Bounded Legacy Slide Comments
 
 For a simple slide-level review annotation, use the standard legacy PPTX
