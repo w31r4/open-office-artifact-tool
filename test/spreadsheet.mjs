@@ -1331,6 +1331,34 @@ assert.deepEqual(formulaBudgetInspectRecord.precedents, [], "inspect must not al
 assert.equal(formulaBudgetInspectRecord.referenceBudget?.requestedCells, 10001);
 assert.ok(formulaBudgetWorkbook.verify().issues.some((issue) => issue.type === "formulaReferenceBudgetExceeded" && issue.address === "D2"));
 
+const formulaInputBudgetWorkbook = Workbook.create();
+const formulaInputBudgetSheet = formulaInputBudgetWorkbook.worksheets.add("Formula input budget");
+const tooLongFormula = `=${"1+".repeat(4096)}1`;
+const tooDeepFormula = `=${"(".repeat(65)}1${")".repeat(65)}`;
+const tooComplexFormula = `=1${"+1".repeat(513)}`;
+const tooManyFormulaArguments = `=SUM(1${",1".repeat(513)})`;
+const tooManyComparisonOperators = `=1${">=1".repeat(513)}`;
+const maximumNestingFormula = `=${"(".repeat(64)}1${")".repeat(64)}`;
+formulaInputBudgetSheet.getRange("A1:A6").formulas = [[tooLongFormula], [tooDeepFormula], [tooComplexFormula], [tooManyFormulaArguments], [tooManyComparisonOperators], [maximumNestingFormula]];
+assert.deepEqual(formulaInputBudgetSheet.getRange("A1:A6").values, [["#VALUE!"], ["#VALUE!"], ["#VALUE!"], ["#VALUE!"], ["#VALUE!"], [1]]);
+const formulaInputBudgetGraph = formulaInputBudgetWorkbook.formulaGraph({ recalculate: false });
+assert.ok(formulaInputBudgetGraph.errors.some((error) => error.type === "formulaInputBudgetExceeded" && error.address === "A1" && error.reason === "formulaLength" && error.formulaCharacters === 8194 && error.maximumFormulaCharacters === 8192));
+assert.ok(formulaInputBudgetGraph.errors.some((error) => error.type === "formulaInputBudgetExceeded" && error.address === "A2" && error.reason === "formulaNesting" && error.nesting === 65 && error.maximumNesting === 64));
+assert.ok(formulaInputBudgetGraph.errors.some((error) => error.type === "formulaInputBudgetExceeded" && error.address === "A3" && error.reason === "formulaOperators" && error.operators === 513 && error.maximumOperators === 512));
+assert.ok(formulaInputBudgetGraph.errors.some((error) => error.type === "formulaInputBudgetExceeded" && error.address === "A4" && error.reason === "formulaOperators" && error.operators === 513 && error.maximumOperators === 512));
+assert.ok(formulaInputBudgetGraph.errors.some((error) => error.type === "formulaInputBudgetExceeded" && error.address === "A5" && error.reason === "formulaOperators" && error.operators === 513 && error.maximumOperators === 512));
+const formulaInputBudgetTrace = formulaInputBudgetWorkbook.trace("'Formula input budget'!A1");
+assert.deepEqual(formulaInputBudgetTrace.tree.precedents, [], "trace must refuse oversized syntax before parsing precedents");
+assert.equal(formulaInputBudgetTrace.tree.inputBudget?.reason, "formulaLength");
+const formulaInputBudgetInspectRecords = formulaInputBudgetWorkbook.inspect({ kind: "formula", sheetName: "Formula input budget", range: "A2" }).ndjson
+  .split("\n")
+  .filter(Boolean)
+  .map((line) => JSON.parse(line));
+const formulaInputBudgetInspectRecord = formulaInputBudgetInspectRecords.find((record) => record.kind === "formula" && record.address === "A2");
+assert.deepEqual(formulaInputBudgetInspectRecord.precedents, [], "inspect must not parse a deep rejected formula");
+assert.equal(formulaInputBudgetInspectRecord.inputBudget?.nesting, 65);
+assert.ok(formulaInputBudgetWorkbook.verify().issues.some((issue) => issue.type === "formulaInputBudgetExceeded" && issue.address === "A3" && issue.reason === "formulaOperators"));
+
 const expressionFormulaWorkbook = Workbook.create();
 const expressionInputs = expressionFormulaWorkbook.worksheets.add("Inputs");
 const expressionTextInputs = expressionFormulaWorkbook.worksheets.add("Data & Targets");

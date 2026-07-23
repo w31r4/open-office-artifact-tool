@@ -53,6 +53,32 @@ import { normalizeKinds } from "../shared/inspection.mjs";
 // unbounded allocation or graph walk.
 const FORMULA_VECTOR_MAX_CELLS = 10_000;
 const FORMULA_REFERENCE_TOTAL_MAX_CELLS = 20_000;
+const FORMULA_MAX_CHARACTERS = 8_192;
+const FORMULA_MAX_NESTING = 64;
+const FORMULA_MAX_OPERATORS = 512;
+
+class FormulaInputBudgetError extends Error {
+  constructor({ formulaCharacters, nesting, operators }) {
+    const reason = formulaCharacters > FORMULA_MAX_CHARACTERS
+      ? "formulaLength"
+      : nesting > FORMULA_MAX_NESTING
+        ? "formulaNesting"
+        : "formulaOperators";
+    const actual = reason === "formulaLength" ? formulaCharacters : reason === "formulaNesting" ? nesting : operators;
+    const maximum = reason === "formulaLength" ? FORMULA_MAX_CHARACTERS : reason === "formulaNesting" ? FORMULA_MAX_NESTING : FORMULA_MAX_OPERATORS;
+    super(`Formula ${reason} is ${actual}; the bounded evaluator allows at most ${maximum}.`);
+    this.name = "FormulaInputBudgetError";
+    this.code = "formula_input_budget_exceeded";
+    this.type = "formulaInputBudgetExceeded";
+    this.reason = reason;
+    this.formulaCharacters = formulaCharacters;
+    this.nesting = nesting;
+    this.operators = operators;
+    this.maximumFormulaCharacters = FORMULA_MAX_CHARACTERS;
+    this.maximumNesting = FORMULA_MAX_NESTING;
+    this.maximumOperators = FORMULA_MAX_OPERATORS;
+  }
+}
 
 class FormulaReferenceBudgetError extends Error {
   constructor({ ref, requestedCells, usedCells = 0 }) {
@@ -67,6 +93,80 @@ class FormulaReferenceBudgetError extends Error {
     this.maximumReferenceCells = FORMULA_VECTOR_MAX_CELLS;
     this.maximumFormulaCells = FORMULA_REFERENCE_TOTAL_MAX_CELLS;
   }
+}
+
+function formulaInputMetrics(formula) {
+  const text = String(formula ?? "");
+  let nesting = 0;
+  let maximumNesting = 0;
+  let operators = 0;
+  let inString = false;
+  let inSheetName = false;
+  let bracketDepth = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (inString) {
+      if (character === '"') {
+        if (text[index + 1] === '"') index += 1;
+        else inString = false;
+      }
+      continue;
+    }
+    if (inSheetName) {
+      if (character === "'") {
+        if (text[index + 1] === "'") index += 1;
+        else inSheetName = false;
+      }
+      continue;
+    }
+    if (character === '"') { inString = true; continue; }
+    if (character === "'") { inSheetName = true; continue; }
+    if (character === "[") { bracketDepth += 1; continue; }
+    if (character === "]") { bracketDepth = Math.max(0, bracketDepth - 1); continue; }
+    if (bracketDepth > 0) continue;
+    if (character === "(") {
+      nesting += 1;
+      maximumNesting = Math.max(maximumNesting, nesting);
+      continue;
+    }
+    if (character === ")") {
+      nesting = Math.max(0, nesting - 1);
+      continue;
+    }
+    if (character === "=" && index === 0) continue;
+    if (character === "," || "+-*/^&".includes(character)) {
+      operators += 1;
+      continue;
+    }
+    if ("=<>".includes(character)) {
+      operators += 1;
+      if ((character === ">" || character === "<") && (text[index + 1] === "=" || text[index + 1] === ">")) index += 1;
+    }
+  }
+  return { formulaCharacters: text.length, nesting: maximumNesting, operators };
+}
+
+function assertFormulaInputBudget(formula) {
+  const metrics = formulaInputMetrics(formula);
+  if (metrics.formulaCharacters > FORMULA_MAX_CHARACTERS || metrics.nesting > FORMULA_MAX_NESTING || metrics.operators > FORMULA_MAX_OPERATORS)
+    throw new FormulaInputBudgetError(metrics);
+  return metrics;
+}
+
+function formulaInputBudgetDiagnostic(error) {
+  if (error instanceof FormulaInputBudgetError || error?.type === "formulaInputBudgetExceeded") {
+    return {
+      type: "formulaInputBudgetExceeded",
+      reason: error.reason,
+      formulaCharacters: error.formulaCharacters,
+      nesting: error.nesting,
+      operators: error.operators,
+      maximumFormulaCharacters: error.maximumFormulaCharacters,
+      maximumNesting: error.maximumNesting,
+      maximumOperators: error.maximumOperators,
+    };
+  }
+  return undefined;
 }
 
 function formulaReferenceBudgetDiagnostic(error) {
@@ -91,6 +191,10 @@ function formulaReferenceBudgetDiagnostic(error) {
     maximumReferenceCells: error.maximumReferenceCells,
     maximumFormulaCells: error.maximumFormulaCells,
   };
+}
+
+function formulaBudgetDiagnostic(error) {
+  return formulaReferenceBudgetDiagnostic(error) || formulaInputBudgetDiagnostic(error);
 }
 
 function createFormulaReferenceBudget() {
@@ -352,6 +456,7 @@ function formulaStringLiteralRanges(text = "") {
 
 function formulaReferences(formula, sheet, formulaAddress) {
   const raw = String(formula || "");
+  assertFormulaInputBudget(raw);
   const refs = [];
   const consumed = [];
   const stringLiterals = formulaStringLiteralRanges(raw);
@@ -490,7 +595,7 @@ function buildWorkbookFormulaGraph(workbook) {
     try {
       references = formulaReferences(node.formula, node.sheetObject, node.address);
     } catch (error) {
-      const diagnostic = formulaReferenceBudgetDiagnostic(error);
+      const diagnostic = formulaBudgetDiagnostic(error);
       if (diagnostic) {
         errors.push({
           kind: "formulaGraphError",
@@ -621,6 +726,7 @@ function formulaRefParts(refText = "") {
 }
 
 function formulaRangeMatrix(sheet, refText, context = {}, { skipBudget = false } = {}) {
+  assertFormulaInputBudget(refText);
   const referenceCells = formulaReferenceExpressionCellCount(sheet, refText, context);
   if (!skipBudget && referenceCells != null) consumeFormulaReferenceBudget(context, refText, referenceCells);
   const structured = formulaStructuredRefIntersection(sheet, refText, context) || formulaA1RefIntersection(sheet, refText) || formulaStructuredRefRange(sheet, refText, context);
@@ -902,6 +1008,7 @@ function formulaVectorUnarySign(sheet, valueText, sign, context = {}) {
 function evaluateFormulaVectorExpression(sheet, expr, context = {}) {
   let text = String(expr ?? "").trim();
   if (text === "") return undefined;
+  assertFormulaInputBudget(text);
   let outer;
   while ((outer = formulaOuterParentheses(text)) !== undefined) text = outer;
 
@@ -949,6 +1056,7 @@ function evaluateFormulaVectorExpression(sheet, expr, context = {}) {
 function evaluateFormulaExpression(sheet, expr, context = {}) {
   let text = String(expr ?? "").trim();
   if (text === "") return undefined;
+  assertFormulaInputBudget(text);
   let outer;
   while ((outer = formulaOuterParentheses(text)) !== undefined) text = outer;
 
@@ -1127,7 +1235,7 @@ function evaluateFormulaCondition(sheet, expr, context = {}) {
     // fails closed. Inside a formula, preserve the error for IF/IFERROR and
     // other normal Excel error semantics instead of silently treating it as
     // FALSE.
-    if (error instanceof FormulaReferenceBudgetError && ownsBudget) return false;
+    if ((error instanceof FormulaReferenceBudgetError || error instanceof FormulaInputBudgetError) && ownsBudget) return false;
     throw error;
   }
 }
@@ -2222,18 +2330,19 @@ function evaluateFormulaFunctionProfile(sheet, fnName, args, context = {}) {
 function evaluateFormula(sheet, formula, address, context = {}) {
   const raw = String(formula || "").trim();
   if (!raw.startsWith("=")) return raw;
-  // Excel persists post-2010 worksheet functions with compatibility prefixes.
-  // They are package syntax, not part of the agent-facing formula language.
-  const expr = raw.slice(1).trim().replace(/_xlfn\.(?:_xlws\.)?/gi, "");
-  const evaluationContext = {
-    ...context,
-    ...(address && !context.formulaAddress ? { formulaAddress: address } : {}),
-    formulaReferenceBudget: context.formulaReferenceBudget || createFormulaReferenceBudget(),
-  };
   try {
+    assertFormulaInputBudget(raw);
+    // Excel persists post-2010 worksheet functions with compatibility prefixes.
+    // They are package syntax, not part of the agent-facing formula language.
+    const expr = raw.slice(1).trim().replace(/_xlfn\.(?:_xlws\.)?/gi, "");
+    const evaluationContext = {
+      ...context,
+      ...(address && !context.formulaAddress ? { formulaAddress: address } : {}),
+      formulaReferenceBudget: context.formulaReferenceBudget || createFormulaReferenceBudget(),
+    };
     return evaluateFormulaExpression(sheet, expr, evaluationContext);
   } catch (error) {
-    if (error instanceof FormulaReferenceBudgetError) return "#VALUE!";
+    if (error instanceof FormulaReferenceBudgetError || error instanceof FormulaInputBudgetError) return "#VALUE!";
     throw error;
   }
 }
@@ -2243,6 +2352,7 @@ export {
   clearFormulaSpills,
   evaluateFormula,
   evaluateFormulaCondition,
+  formulaBudgetDiagnostic,
   formulaCellKey,
   formulaErrorCode,
   formulaGraphRecords,

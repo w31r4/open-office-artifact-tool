@@ -41,11 +41,11 @@ import {
   clearFormulaSpills,
   evaluateFormula,
   evaluateFormulaCondition,
+  formulaBudgetDiagnostic,
   formulaCellKey,
   formulaErrorCode,
   formulaGraphRecords,
   formulaRefParts,
-  formulaReferenceBudgetDiagnostic,
   formulaReferences,
   formulaScalar,
   formulaText,
@@ -1599,6 +1599,9 @@ export class Workbook {
       } else if (error.type === "referenceBudgetExceeded") {
         const { type: _type, ...details } = error;
         issues.push(verificationIssue("workbook", "formulaReferenceBudgetExceeded", `Formula at ${error.from} exceeds the bounded reference budget before dependency expansion.`, details));
+      } else if (error.type === "formulaInputBudgetExceeded") {
+        const { type: _type, ...details } = error;
+        issues.push(verificationIssue("workbook", "formulaInputBudgetExceeded", `Formula at ${error.from} exceeds the bounded formula-input budget before parsing.`, details));
       }
     }
     return verificationResult("workbook", issues, options);
@@ -1628,8 +1631,10 @@ export class Workbook {
       try {
         references = formulaReferences(cell.formula, sheet, address);
       } catch (error) {
-        node.referenceBudget = formulaReferenceBudgetDiagnostic(error);
-        if (!node.referenceBudget) throw error;
+        const formulaBudget = formulaBudgetDiagnostic(error);
+        if (!formulaBudget) throw error;
+        if (formulaBudget.type === "referenceBudgetExceeded") node.referenceBudget = formulaBudget;
+        else node.inputBudget = formulaBudget;
         references = [];
       }
       for (const ref of references) {
@@ -1646,7 +1651,7 @@ export class Workbook {
     const tree = build(root.sheet, root.address, 0);
     const flat = [];
     const visit = (node) => {
-      flat.push({ kind: "trace", sheet: node.sheet, address: node.address, value: node.value, formula: node.formula, depth: node.depth, missing: node.missing, circular: node.circular, referenceBudget: node.referenceBudget, precedents: node.precedents.map((p) => `${p.sheet}!${p.address}`) });
+      flat.push({ kind: "trace", sheet: node.sheet, address: node.address, value: node.value, formula: node.formula, depth: node.depth, missing: node.missing, circular: node.circular, referenceBudget: node.referenceBudget, inputBudget: node.inputBudget, precedents: node.precedents.map((p) => `${p.sheet}!${p.address}`) });
       node.precedents.forEach(visit);
     };
     visit(tree);
@@ -2031,14 +2036,14 @@ export class Worksheet {
       if (!cell.formula) continue;
       if (coord.row < bounds.top || coord.row > bounds.bottom || coord.col < bounds.left || coord.col > bounds.right) continue;
       const graphNode = options.graph?.nodes?.find((node) => node.sheet === this.name && node.address === address);
-      let referenceBudget = formulaReferenceBudgetDiagnostic(options.graph?.errors?.find((error) => error.type === "referenceBudgetExceeded" && error.sheet === this.name && error.address === address));
+      let formulaBudget = formulaBudgetDiagnostic(options.graph?.errors?.find((error) => (error.type === "referenceBudgetExceeded" || error.type === "formulaInputBudgetExceeded") && error.sheet === this.name && error.address === address));
       let precedents = graphNode?.precedents?.map((ref) => ref.key);
-      if (!precedents && !referenceBudget) {
+      if (!precedents && !formulaBudget) {
         try {
           precedents = formulaReferences(cell.formula, this, address).map((ref) => formulaCellKey(ref.sheetName || this.name, ref.address));
         } catch (error) {
-          referenceBudget = formulaReferenceBudgetDiagnostic(error);
-          if (!referenceBudget) throw error;
+          formulaBudget = formulaBudgetDiagnostic(error);
+          if (!formulaBudget) throw error;
           precedents = [];
         }
       }
@@ -2058,7 +2063,8 @@ export class Worksheet {
         spillError: cell.spillError,
         precedents: precedents || [],
         dependents: graphNode?.dependents || [],
-        referenceBudget: referenceBudget || undefined,
+        referenceBudget: formulaBudget?.type === "referenceBudgetExceeded" ? formulaBudget : undefined,
+        inputBudget: formulaBudget?.type === "formulaInputBudgetExceeded" ? formulaBudget : undefined,
         error: formulaErrorCode(cell.value) || undefined,
         circular: graphNode?.circular || undefined,
       });
