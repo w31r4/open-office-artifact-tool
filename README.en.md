@@ -46,6 +46,20 @@ npx skills add w31r4/open-office-artifact-tool --skill '*' --yes
 not need to copy the `skills/` tree by hand. Add `--global` for a user-level
 installation, or `--agent` to select a specific host.
 
+### Start from an empty directory
+
+For a new agent project, these four lines are enough:
+
+```sh
+mkdir officekit-agent && cd officekit-agent
+npm init -y
+npx skills add w31r4/open-office-artifact-tool --skill documents --skill Spreadsheets --skill Presentations --skill pdf --yes
+npm install github:w31r4/open-office-artifact-tool
+```
+
+After the npm release, replace the last line with
+`npm install open-office-artifact-tool`.
+
 ### Install the JavaScript runtime
 
 Until the first npm release, install the release candidate from GitHub. After

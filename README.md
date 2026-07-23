@@ -42,6 +42,19 @@ npx skills add w31r4/open-office-artifact-tool --skill '*' --yes
 `skills/` 目录。也可以加 `--global` 作为用户级安装，或用 `--agent`
 明确指定宿主。
 
+### 从空目录完整启动
+
+如果你要新建一个 Agent 项目，下面四行就够了：
+
+```sh
+mkdir officekit-agent && cd officekit-agent
+npm init -y
+npx skills add w31r4/open-office-artifact-tool --skill documents --skill Spreadsheets --skill Presentations --skill pdf --yes
+npm install github:w31r4/open-office-artifact-tool
+```
+
+正式发布后，把最后一行替换成 `npm install open-office-artifact-tool`。
+
 ### 需要调用 JavaScript API
 
 当前 npm 发布前，从 GitHub 安装；正式发布后把安装源替换成包名：
