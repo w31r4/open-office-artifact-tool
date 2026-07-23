@@ -1087,6 +1087,17 @@ const textPositionStyles = textPositionWorkbook.inspect({ kind: "computedStyle",
   .filter(Boolean)
   .map((line) => JSON.parse(line));
 assert.deepEqual(textPositionStyles.map((record) => [record.address, record.style.fill]), [["A1", "#FEF3C7"], ["A2", "#FEF3C7"], ["A5", "#FEF3C7"]]);
+textPositionSheet.getRange("C1:C3").values = [["Quarterly Review"], ["quarterly review"], ["Draft"]];
+textPositionSheet.getRange("C1:C3").conditionalFormats.add("containsText", {
+  text: "Review",
+  format: { fill: "#DBEAFE" },
+});
+const containsTextStyles = textPositionWorkbook.inspect({ kind: "computedStyle", sheetName: "Text position", range: "C1:C3" }).ndjson
+  .trim()
+  .split("\n")
+  .filter(Boolean)
+  .map((line) => JSON.parse(line));
+assert.deepEqual(containsTextStyles.map((record) => [record.address, record.style.fill]), [["C1", "#DBEAFE"], ["C2", "#DBEAFE"]]);
 
 const importedWithoutSourceSnapshot = await SpreadsheetFile.importXlsx(firstXlsx);
 const workbookState = importedWithoutSourceSnapshot[Symbol.for("open-office-artifact-tool.open-chestnut-state")];

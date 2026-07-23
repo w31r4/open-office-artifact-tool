@@ -993,8 +993,14 @@ function evaluateConditionalFormatRule(sheet, rule, address) {
     return compareConditionalValues(cell.value, first, operator);
   }
   if (normalizedType === "containstext") {
-    const expected = rule.text ?? rule.formula ?? rule.rule?.text ?? rule.rule?.formula;
-    return formulaText(cell.value).includes(formulaText(expected));
+    const formula = rule.formula || rule.expression || rule.rule?.formula || rule.rule?.expression;
+    const formulaTextValue = String(formula || "").trim();
+    if (formulaTextValue && (formulaTextValue.startsWith("=") || formulaTextValue.includes("("))) {
+      const shifted = conditionalFormulaForCell(formulaTextValue.replace(/^=/, ""), bounds, address);
+      return Boolean(evaluateFormulaCondition(sheet, shifted));
+    }
+    const expected = rule.text ?? formula ?? rule.rule?.text ?? rule.rule?.formula;
+    return formulaText(cell.value).toLocaleLowerCase().includes(formulaText(expected).toLocaleLowerCase());
   }
   const formula = rule.formula || rule.expression || rule.rule?.formula || rule.rule?.expression;
   if (!formula) return false;
