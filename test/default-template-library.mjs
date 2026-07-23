@@ -146,6 +146,10 @@ function sameFormulaValue(left, right) {
   return left === right;
 }
 
+function hasCachedFormulaValue(value) {
+  return value !== null && value !== undefined && value !== "";
+}
+
 function assertSpreadsheetTemplateCalculation(templateId, workbook, sourcePath) {
   const configured = SPREADSHEET_RECALCULATION_SENTINELS.get(templateId);
   const sentinels = Array.isArray(configured) ? configured : [configured];
@@ -157,9 +161,21 @@ function assertSpreadsheetTemplateCalculation(templateId, workbook, sourcePath) 
     assert.ok(cell.formula, `Spreadsheet template sentinel must retain a formula: ${sourcePath}`);
     return { ...sentinel, cell, cachedValue: cell.value };
   });
+  const cachedFormulaCells = [];
+  for (const candidateSheet of workbook.worksheets.items) {
+    for (const [address, candidate] of candidateSheet.store.entries()) {
+      if (candidate.formula && hasCachedFormulaValue(candidate.value))
+        cachedFormulaCells.push({ sheet: candidateSheet.name, address, cachedValue: candidate.value });
+    }
+  }
+  assert.ok(cachedFormulaCells.length, `Spreadsheet template must retain at least one cached formula value: ${sourcePath}`);
   workbook.recalculate();
   for (const { address, cell, cachedValue } of cells)
     assert.equal(sameFormulaValue(cell.value, cachedValue), true, `Spreadsheet template model calculation must match its cached sentinel ${address}: ${sourcePath}`);
+  for (const { sheet: sheetName, address, cachedValue } of cachedFormulaCells) {
+    const actual = workbook.worksheets.getItem(sheetName).store.get(address).value;
+    assert.equal(sameFormulaValue(actual, cachedValue), true, `Spreadsheet template model calculation must match cached ${sheetName}!${address}: ${sourcePath}`);
+  }
   const errors = [];
   for (const candidateSheet of workbook.worksheets.items) {
     for (const [address, candidate] of candidateSheet.store.entries()) {
