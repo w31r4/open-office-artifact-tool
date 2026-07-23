@@ -1,42 +1,97 @@
-# open-office-artifact-tool
+# OfficeKit
+
+**The multi-tool for agent-operated Office and PDF files.**
 
 [简体中文](README.md) | **English**
 
-An Office and PDF toolkit for agents to create, read, edit, inspect, render, and verify artifacts.
+OfficeKit gives agents one workflow for creating, reading, editing, inspecting,
+rendering, and verifying DOCX, XLSX, PPTX, and PDF artifacts.
 
-`open-office-artifact-tool` provides a unified JavaScript object model. DOCX, XLSX, and PPTX files are read and written by **OpenChestnut**, implemented in C# with the Open XML SDK and compiled to .NET WebAssembly. PDF uses a separate semantic model and a runtime-lazy **MuPDF.js** native pipeline.
+It is not a traditional CLI with a large command tree. It is three layers that
+work together:
 
-> **Current status:** `0.3.0` release candidate. The source tree, reproducible WASM build, and npm tarball have verification gates, but the package has not yet been formally published to npm.
+- **Skills** tell an agent when to use a capability, how to verify the result,
+  and when to refuse an unsafe edit.
+- **JavaScript APIs** provide the object models, calculation, Compose, inspect,
+  render, verify, and explicit package-patch primitives.
+- **Native engines** provide OpenChestnut C#/.NET WASM for Office and lazy
+  MuPDF.js for PDF.
 
-## Quick start
+> The repository package is still named `open-office-artifact-tool`; `OfficeKit` is the user-facing product name. The current version is the `0.3.0` release candidate and has not been formally published to npm.
 
-Until the first npm release, run the project from source:
+## Deploy in 30 seconds
+
+### Install Skills only
+
+You do not need to clone the repository or install .NET, Python, or Office. Add
+the Skills you need to the current agent project:
 
 ```sh
-git clone https://github.com/w31r4/open-office-artifact-tool.git
-cd open-office-artifact-tool
-npm install
-node examples/create-xlsx-dashboard.mjs
+npx skills add w31r4/open-office-artifact-tool \
+  --skill documents \
+  --skill Spreadsheets \
+  --skill Presentations \
+  --skill pdf \
+  --skill template-creator \
+  --yes
 ```
 
-The local release gates have passed on Node.js 26.5.0, while hosted CI uses Node.js 22. These are verified environments, not a frozen minimum version. Normal consumers load the WASM bundled with the repository or npm package and do not need a local .NET installation. Rebuilding OpenChestnut, or building and testing the optional OfficeBridge, requires .NET SDK 8.
+To install every native Skill and the open-source template collection:
 
-You can also use the public API directly:
+```sh
+npx skills add w31r4/open-office-artifact-tool --skill '*' --yes
+```
+
+`npx skills` places the Skill files where the agent can discover them; you do
+not need to copy the `skills/` tree by hand. Add `--global` for a user-level
+installation, or `--agent` to select a specific host.
+
+### Install the JavaScript runtime
+
+Until the first npm release, install the release candidate from GitHub. After
+publication, replace the source with the package name:
+
+```sh
+# Current release candidate
+npm install github:w31r4/open-office-artifact-tool
+
+# After the npm release
+npm install open-office-artifact-tool
+```
+
+Consumers only need Node.js. The package includes the OpenChestnut WASM
+runtime; a local .NET SDK is not required. Node.js 22 or newer is recommended.
+MuPDF WASM initializes only on the first PDF operation. Root import, ordinary
+Office work, and `npm install` do not download additional runtimes.
+
+Run a complete example after installation:
+
+```sh
+node node_modules/open-office-artifact-tool/examples/create-xlsx-dashboard.mjs
+```
+
+### Try one Skill without installing it
+
+For a one-off prompt, use:
+
+```sh
+npx skills use w31r4/open-office-artifact-tool --skill pdf
+```
+
+## First API call
 
 ```js
 import { SpreadsheetFile, Workbook } from "open-office-artifact-tool";
 
 const workbook = Workbook.create();
 const sheet = workbook.worksheets.add("Summary");
-
 sheet.getRange("A1:B2").values = [
   ["Metric", "Value"],
   ["Revenue", 42.5],
 ];
 
-const xlsx = await SpreadsheetFile.exportXlsx(workbook, { recalculate: true });
-const reopened = await SpreadsheetFile.importXlsx(xlsx);
-console.log(reopened.inspect({ kind: "worksheet,table,chart" }).ndjson);
+const file = await SpreadsheetFile.exportXlsx(workbook, { recalculate: true });
+await file.save("summary.xlsx");
 ```
 
 More runnable examples:
@@ -46,62 +101,74 @@ More runnable examples:
 - [Create a PPTX deck with Compose](examples/create-pptx-compose.mjs)
 - [Parse and render a PDF](examples/parse-render-pdf.mjs)
 
-### PDF runtime
+## Four formats, one agent workflow
 
-The official `mupdf@1.28.0` package is a required npm dependency and is resolved by a normal `npm install`. Its WASM runtime initializes only on the first PDF read, inspect, render, or edit operation. There is no `postinstall`, standalone downloader, or global environment mutation.
-
-qpdf, Python specialists, OCR, and veraPDF/JRE route through the explicit `open-office-artifact-tool/pdf/providers` API. It resolves task/inspection evidence to `ready`, `installable`, or `blocked`; a project policy then decides whether installation is allowed. Downloads are disabled by default. qpdf, the Python foundation and specialists packs, veraPDF/JRE `1.30.2-oat.1`, OCR core `17.8.1-oat.1`, and the `eng`/`chi_sim` language packs `4.1.0-oat.1` have immutable, attested assets for both managed platforms. The foundation contains isolated CPython with ReportLab, pdfplumber, pypdf, and Pillow; specialists contain PyMuPDF, pikepdf, pyHanko, and certificate validation, depend on qpdf, and require an explicit AGPL or commercial acknowledgement. The OCR core carries isolated OCRmyPDF, Tesseract 5, Ghostscript, and `pdftotext`; each language pack remains separately policy-authorized. Only the Poppler QA pack remains `blocked`, rather than silently falling back. A deployment-owned runtime can be selected only through explicit `system-only` policy. See [PDF Provider Setup](skills/pdf/skills/pdf/tasks/provider_setup.md).
-
-## Why it exists
-
-- **Designed for agents:** artifact models expose `inspect`, `resolve`, `verify`, render, and visual QA primitives.
-- **Fidelity first:** Office content that cannot be modeled safely stays bound to its source package and is preserved unchanged; unsupported edits fail explicitly.
-- **Native Skills included:** npm ships five plugin bundles for Documents, Spreadsheets, Presentations, PDF, and Template Creator (six Skills in total). The repository additionally retains a MIT-licensed, repository-only Office Template Library with 20 templates; workflows that require a host session or an external provider state their prerequisites explicitly.
-
-## Supported surface
-
-| Format | File pipeline | Current core capabilities |
+| Format | Default engine | What it is for |
 | --- | --- | --- |
-| XLSX | OpenChestnut C# WASM | Cells and formulas, styles and layout, tables, images, validation, conditional formatting including standard data bars and icon sets, comments, charts, sparklines, bounded What-If data tables, and bounded native PivotTables. |
-| DOCX | OpenChestnut C# WASM | Structured text and styles, sections, headers and footers, lists, tables, links, fields, inline images plus bounded floating/wrapped images, classic comments, bounded modern comment threads, passwordless editing restrictions, and block plain-text plus inline/table-cell plain-text, canonical checkbox, canonical drop-down, canonical combo-box with bounded custom values, or strict `YYYY-MM-DD` date-picker content controls. |
-| PPTX | OpenChestnut C# WASM | Shapes and rich text, images with reversible cropping, tables, connectors, charts, direct backgrounds, plain-text and fixed-topology rich speaker notes, legacy comments, and bounded Office 2021 modern threads; slide masters and layouts are preserved but cannot be edited. |
-| PDF | Independent model + MuPDF.js | Tagged PDF authoring; native read/inspect/render for arbitrary PDFs; bounded annotation, form, page, metadata, link, rewrite, and incremental edits; real rewrite redaction; bounded local-PKCS#12 signing with independent validation. Specialist tools are explicit provider routes; strict sanitization, PDF/UA, OCR, and advanced signing still require independent evidence. |
+| DOCX | OpenChestnut C# WASM | Structured documents, styles, sections, tables, images, fields, comments, and bounded content controls. |
+| XLSX | OpenChestnut C# WASM | Cells, formulas, styles, layout, tables, images, validation, conditional formats, comments, charts, sparklines, What-If data tables, and bounded PivotTables. |
+| PPTX | OpenChestnut C# WASM | Shapes, rich text, reversible image crops, tables, connectors, charts, notes, comments, master/layout fidelity, and bounded source-bound edits. |
+| PDF | PdfArtifact + MuPDF.js | Tagged authoring; reading, inspection, rendering, forms, links, annotations, page edits, rewrite redaction, and bounded signing. |
 
-See the [coverage matrix](https://github.com/w31r4/open-office-artifact-tool/blob/main/docs/coverage.md) for complete, continuously updated support boundaries.
+Ordinary Office import and export use one OpenChestnut path. Content that cannot
+be modeled safely remains bound to its source package; unsupported edits fail
+explicitly instead of silently switching to a second codec.
 
-## How it works
+## PDF specialist capabilities are on demand
 
-```text
-Agent / Skill
-├─ Office → JavaScript model → OpenChestnut C# WASM → DOCX / XLSX / PPTX
-├─ PDF    → PdfArtifact (new files) or MuPDF.js (import/edit) → PDF
-└─ QA     → inspect / resolve → render → verify / visual QA
+`mupdf@1.28.0` is the required PDF npm dependency. It is resolved by a normal
+`npm install` and loaded lazily at runtime. Large specialist tools such as qpdf,
+Python, OCR, and veraPDF/JRE are not placed in the npm tarball and are never
+silently installed by a lifecycle hook or global package manager.
+
+Ask the public provider API to decide whether a specialist is ready:
+
+```js
+import { PdfFile } from "open-office-artifact-tool";
+import { PdfProviders } from "open-office-artifact-tool/pdf/providers";
+
+const inspection = await PdfFile.inspectPdf("input.pdf");
+const resolution = await PdfProviders.resolve({
+  task: "repair",
+  provider: "qpdf",
+  inspection,
+});
+
+console.log(resolution.status); // ready | installable | blocked
 ```
 
-OpenChestnut is the only parser/writer used by normal Office import and export. Explicit OOXML inspect/patch functions are advanced operations that must be invoked manually, never an automatic fallback.
+The default policy is `disabled`. Only an explicit project `managed` policy,
+matching platform/hash/size/license/language constraints, can authorize
+`ensure`; a deployment may instead select `system-only`. There is no implicit
+fallback. See [PDF Provider Setup](skills/pdf/skills/pdf/tasks/provider_setup.md)
+for the complete policy and security boundary.
 
-## Native Skills
+## Skills and templates
 
-The repository contains six plugin bundles and twenty-six Skills. The first five bundles provide six npm-distributed Skills; the last bundle provides twenty repository-only template Skills:
+The repository provides the four reference file Skills plus template tooling:
 
 - [Documents](skills/documents/skills/documents/SKILL.md)
 - [Spreadsheets](skills/spreadsheets/skills/spreadsheets/SKILL.md)
-- [Excel Live Control](skills/spreadsheets/skills/excel-live-control/SKILL.md) — requires a live Excel session supplied by the host
 - [Presentations](skills/presentations/skills/presentations/SKILL.md)
 - [PDF](skills/pdf/skills/pdf/SKILL.md)
-- [Template Creator](skills/template-creator/skills/template-creator/SKILL.md) — creates or explicitly updates reusable local templates from DOCX, PPTX, or XLSX references
-- [Office Template Library](skills/default-template-library/README.md) — 20 retained MIT-licensed templates: 7 DOCX, 7 PPTX, and 6 XLSX; repository-only and excluded from the npm tarball
+- [Template Creator](skills/template-creator/skills/template-creator/SKILL.md)
+- [Office Template Library](skills/default-template-library/README.md) — 20 MIT-licensed templates, repository-distributed and excluded from the npm runtime tarball.
 
-The first five `skills/<name>` directories are shipped in the package; loading is handled by the Agent host. Normal Office Skill workflows use OpenChestnut. The PDF Skill defaults to a thin MuPDF.js CLI that calls the same package APIs installed by npm. Template Creator writes only below `${OFFICE_ARTIFACT_HOME:-~/.office-artifact-tool}/skills`, transactionally retains the explicitly supplied local reference and PNG preview, performs no network fetch, and never overwrites an unnamed template. The Default Template Library retains original Office and PNG files from a MIT reference repository and records their provenance and hashes. An Agent must materialize a named template to a new output file and must never mutate the checked-in reference. All 20 templates are verified for import, unchanged export, second import, and native rendering; verified mutations are deliberately bounded to PPTX slide names, the DOCX update-fields setting, and ordinary XLSX text cells. Rich source-bound content still fails explicitly rather than being silently rebuilt or replaced with an approximate layout. See the [PDF Provider Matrix](skills/pdf/skills/pdf/references/PROVIDER_MATRIX.md) and [template provenance boundary](docs/template-library-provenance.md).
+Templates are not a second codec. An agent materializes a named template into a
+new output file, then uses the same Office APIs to inspect, edit, render, and
+verify it. The retained reference is never overwritten.
 
-## Important boundaries
+## Verify before delivery
 
-- To preserve unmodeled objects from an imported Office file, keep using the model returned by import and leave those objects structurally unchanged. Discarding the source snapshot or changing unsupported topology causes export to fail.
-- An arbitrary existing PDF cannot be reflowed reliably like a Word document. Original-file editing must stay within explicit, verifiable bounded operations.
-- Shipped pyHanko, veraPDF, OCRmyPDF, pikepdf, and qpdf adapters are explicit provider routes: they run only when a verified managed pack is ready or the deployment explicitly selects a `system-only` runtime. Private keys, P12 files, HSM/remote-signing credentials, TSA/LTV access, and trust roots are always caller-supplied and are never downloaded.
-- Active/auxiliary structure cleanup uses a bounded pikepdf route. It retains metadata, form values, XFA, annotations, and hidden text, so it is not complete sanitize or redaction evidence.
-- MuPDF.js supports bounded original-file operations, not Word-style arbitrary reflow. Rewrite redaction is also not full sanitization; signatures, residue, OCR, and PDF/UA still require independent evidence.
-- LibreOffice, Poppler, Playwright, and the native Office Bridge are rendering and validation tools, not hidden Office codec fallbacks.
+Agents should use this loop before handing off an artifact:
+
+```text
+intent → inspect → resolve → edit/create → export → re-import → render → verify
+```
+
+The APIs expose structured evidence wherever possible. Missing source snapshots,
+untrusted topology, signature invalidation, possible PDF revision residue, or
+missing external credentials cause a fail-closed result.
 
 ## Development and verification
 
@@ -112,10 +179,12 @@ npm run docs:api
 npm run release:check
 ```
 
-Continue with the [API reference](https://github.com/w31r4/open-office-artifact-tool/blob/main/docs/api.md), [runtime architecture](https://github.com/w31r4/open-office-artifact-tool/blob/main/docs/reference-runtime-architecture.md), [Skill compatibility](https://github.com/w31r4/open-office-artifact-tool/blob/main/docs/reference-skills.md), [Agent PromptBench](https://github.com/w31r4/open-office-artifact-tool/blob/main/docs/agent-evals.md), and [release gates](https://github.com/w31r4/open-office-artifact-tool/blob/main/docs/release.md).
-
-These documentation links follow the current development branch. They will be pinned to the corresponding version tag when the release is published.
+See [coverage](docs/coverage.md) for the support boundary, [API reference](docs/api.md),
+and [reference Skill compatibility](docs/reference-skills.md).
 
 ## License
 
-[GNU AGPL v3 or later](LICENSE). Network deployment, modification, and redistribution must satisfy the applicable AGPL obligations. Third-party runtime licenses and provenance are recorded in `THIRD_PARTY_NOTICES.md` and the OpenChestnut runtime notices.
+[GNU AGPL v3 or later](LICENSE). Network deployment, modification, and
+redistribution must satisfy the applicable AGPL obligations. Third-party
+runtime, MuPDF, and specialist-provider licenses and provenance are recorded
+in `THIRD_PARTY_NOTICES.md` and the relevant runtime notices.
