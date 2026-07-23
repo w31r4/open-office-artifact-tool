@@ -65,6 +65,15 @@ const SPREADSHEET_SOURCE_EMPTY_FORMULA_CELL_COUNTS = new Map([
   ["artifact-template-three-statement-forecast", 0],
 ]);
 
+const SPREADSHEET_FORMULA_CELL_COUNTS = new Map([
+  ["artifact-template-analytics-dashboard", 239],
+  ["artifact-template-financial-budget", 465],
+  ["artifact-template-operating-calendar", 803],
+  ["artifact-template-project-tracker", 655],
+  ["artifact-template-sales-pipeline", 83],
+  ["artifact-template-three-statement-forecast", 2770],
+]);
+
 function sha256(bytes) {
   return crypto.createHash("sha256").update(bytes).digest("hex");
 }
@@ -148,6 +157,58 @@ async function assertNativeRender(sourcePath, outputDirectory) {
   for (let page = 1; page <= pages; page += 1) {
     assert.ok((await fs.stat(`${prefix}-${page}.png`)).size > 0, `native raster is empty: ${sourcePath} page ${page}`);
   }
+}
+
+function workbookXmlWithForcedCalculation(workbookXml) {
+  const calcPr = '<calcPr calcId="191029" calcMode="auto" fullCalcOnLoad="1" forceFullCalc="1"/>';
+  const start = workbookXml.indexOf("<calcPr");
+  const end = start < 0 ? -1 : workbookXml.indexOf("/>", start);
+  return end >= 0
+    ? `${workbookXml.slice(0, start)}${calcPr}${workbookXml.slice(end + 2)}`
+    : workbookXml.replace("</workbook>", `${calcPr}</workbook>`);
+}
+
+async function assertNativeSpreadsheetCalculation(templateId, sourcePath, outputDirectory) {
+  const inputDirectory = path.join(outputDirectory, "input");
+  const nativeDirectory = path.join(outputDirectory, "native");
+  const profile = path.join(outputDirectory, "profile");
+  await Promise.all([fs.mkdir(inputDirectory, { recursive: true }), fs.mkdir(nativeDirectory, { recursive: true }), fs.mkdir(profile, { recursive: true })]);
+  const inputPath = path.join(inputDirectory, "forced-recalculation.xlsx");
+  const sourceZip = await JSZip.loadAsync(await fs.readFile(sourcePath));
+  const workbookXml = await sourceZip.file("xl/workbook.xml")?.async("text");
+  assert.ok(workbookXml, `Spreadsheet source must include xl/workbook.xml: ${sourcePath}`);
+  sourceZip.file("xl/workbook.xml", workbookXmlWithForcedCalculation(workbookXml));
+  await fs.writeFile(inputPath, await sourceZip.generateAsync({ type: "nodebuffer", compression: "DEFLATE" }));
+
+  const converted = spawnSync("soffice", [
+    `-env:UserInstallation=${pathToFileURL(profile).href}`,
+    "--headless",
+    "--convert-to", "xlsx:Calc MS Excel 2007 XML",
+    "--outdir", nativeDirectory,
+    inputPath,
+  ], { encoding: "utf8", timeout: 60_000 });
+  assert.equal(converted.status, 0, `LibreOffice could not force-recalculate ${sourcePath}\n${converted.stdout}\n${converted.stderr}`);
+  const nativePath = path.join(nativeDirectory, "forced-recalculation.xlsx");
+  assert.ok((await fs.stat(nativePath)).size > 0, `LibreOffice did not save a recalculated workbook: ${sourcePath}`);
+
+  const [model, native] = await Promise.all([
+    SpreadsheetFile.importXlsx(await FileBlob.load(sourcePath)),
+    SpreadsheetFile.importXlsx(await FileBlob.load(nativePath)),
+  ]);
+  model.recalculate();
+  let formulaCells = 0;
+  for (const sheet of model.worksheets.items) {
+    const nativeSheet = native.worksheets.getItem(sheet.name);
+    assert.ok(nativeSheet, `LibreOffice recalculation must retain worksheet ${sheet.name}: ${sourcePath}`);
+    for (const [address, cell] of sheet.store.entries()) {
+      if (!cell.formula) continue;
+      formulaCells += 1;
+      const nativeCell = nativeSheet.store.get(address);
+      assert.ok(nativeCell?.formula, `LibreOffice recalculation must retain formula ${sheet.name}!${address}: ${sourcePath}`);
+      assert.equal(sameFormulaValue(cell.value, nativeCell.value), true, `Spreadsheet model calculation must match LibreOffice at ${sheet.name}!${address}: ${sourcePath}`);
+    }
+  }
+  assert.equal(formulaCells, SPREADSHEET_FORMULA_CELL_COUNTS.get(templateId), `Spreadsheet native formula inventory must remain pinned: ${sourcePath}`);
 }
 
 function sameFormulaValue(left, right) {
@@ -460,6 +521,11 @@ try {
     (error) => error?.code === "unsupported_cell_formula_edit",
     "partial native shared-formula edits must fail closed through the public facade",
   );
+
+  if (commandAvailable("soffice")) {
+    for (const spreadsheet of materialized.filter((item) => item.kind === "spreadsheet"))
+      await assertNativeSpreadsheetCalculation(spreadsheet.id, spreadsheet.output, path.join(temporary, "native-calculation", spreadsheet.id));
+  }
 
   if (["soffice", "pdfinfo", "pdftoppm"].every(commandAvailable)) {
     const rendered = path.join(temporary, "native-render");
