@@ -26,6 +26,10 @@ assert.doesNotMatch(presentationChartCodecSource, /from "\.\.\/index\.mjs";/, "t
 const spreadsheetCodecSource = await fs.readFile(path.join(repoRoot, "src", "codecs", "open-chestnut.mjs"), "utf8");
 assert.match(spreadsheetCodecSource, /from "\.\.\/spreadsheet\/index\.mjs";/, "the Spreadsheet codec must depend on the Spreadsheet leaf module");
 assert.doesNotMatch(spreadsheetCodecSource, /from "\.\.\/index\.mjs";/, "the Spreadsheet codec must not create a back-edge to the root entry");
+const spreadsheetLeafSource = await fs.readFile(path.join(repoRoot, "src", "spreadsheet", "index.mjs"), "utf8");
+const formulaEngineSource = await fs.readFile(path.join(repoRoot, "src", "spreadsheet", "formula-engine.mjs"), "utf8");
+assert.match(spreadsheetLeafSource, /from "\.\/formula-engine\.mjs";/, "the Spreadsheet leaf must own the formula-engine dependency boundary");
+assert.doesNotMatch(formulaEngineSource, /from\s+["']\.\/index\.mjs["']/, "the formula engine must operate on workbook data shape without a Spreadsheet-model back-edge");
 const skillsNpmIgnore = await fs.readFile(path.join(repoRoot, "skills", ".npmignore"), "utf8");
 assert.match(skillsNpmIgnore, /__pycache__/);
 assert.match(skillsNpmIgnore, /\*\.pyc/);
@@ -134,6 +138,7 @@ for (const required of [
   "src/shared/text-range.mjs",
   "src/shared/xml.mjs",
   "src/spreadsheet/formula-criteria.mjs",
+  "src/spreadsheet/formula-engine.mjs",
   "src/spreadsheet/index.mjs",
   "src/spreadsheet/data-validations.mjs",
   "src/spreadsheet/data-tables.mjs",
