@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { crc32 } from "node:zlib";
+import JSZip from "jszip";
 
 import {
   DocumentFile,
@@ -523,8 +524,20 @@ try {
   );
 
   if (commandAvailable("soffice")) {
-    for (const spreadsheet of materialized.filter((item) => item.kind === "spreadsheet"))
-      await assertNativeSpreadsheetCalculation(spreadsheet.id, spreadsheet.output, path.join(temporary, "native-calculation", spreadsheet.id));
+    for (const spreadsheet of materialized.filter((item) => item.kind === "spreadsheet")) {
+      const roundTrip = roundTripped.find((item) => item.id === spreadsheet.id);
+      assert.ok(roundTrip, `Spreadsheet template must retain its public-facade round trip: ${spreadsheet.id}`);
+      await assertNativeSpreadsheetCalculation(
+        spreadsheet.id,
+        spreadsheet.output,
+        path.join(temporary, "native-calculation", spreadsheet.id, "source"),
+      );
+      await assertNativeSpreadsheetCalculation(
+        spreadsheet.id,
+        roundTrip.output,
+        path.join(temporary, "native-calculation", spreadsheet.id, "openchestnut"),
+      );
+    }
   }
 
   if (["soffice", "pdfinfo", "pdftoppm"].every(commandAvailable)) {
