@@ -1,9 +1,21 @@
 {
   "name": "open-office-artifact-tool",
   "version": "0.3.0",
-  "description": "Clean-room Office/PDF artifact toolkit with agent-friendly inspect, resolve, help, render, and export APIs.",
+  "description": "OfficeKit: agent-native Office and PDF Skills plus JavaScript APIs for creating, inspecting, editing, rendering, and verifying artifacts.",
   "type": "module",
   "license": "AGPL-3.0-or-later",
+  "keywords": [
+    "officekit",
+    "office",
+    "pdf",
+    "docx",
+    "xlsx",
+    "pptx",
+    "agent",
+    "skills",
+    "openxml",
+    "mupdf"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/w31r4/open-office-artifact-tool.git"
