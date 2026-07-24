@@ -4,6 +4,8 @@ import JSZip from "jszip";
 
 import {
   column,
+  DocumentFile,
+  DocumentModel,
   FileBlob,
   paragraph,
   Presentation,
@@ -2070,6 +2072,10 @@ assert.throws(() => oleObject.replaceEmbeddedWorkbook(new Uint8Array()), /1 thro
 assert.throws(() => oleObject.replaceEmbeddedWorkbook(new Uint8Array(16 * 1024 * 1024 + 1)), /1 through 16777216 bytes/);
 const extractedSourceWorkbook = await SpreadsheetFile.importXlsx(oleObject.getEmbeddedWorkbook());
 assert.equal(extractedSourceWorkbook.worksheets.getItem("Embedded").getRange("A1").values[0][0], "Original embedded workbook");
+const extractedGenericWorkbook = oleObject.getEmbeddedOfficePackage();
+assert.equal(extractedGenericWorkbook.metadata.artifactKind, "officePackage");
+assert.equal(extractedGenericWorkbook.metadata.officePackageKind, "xlsx");
+assert.equal((await SpreadsheetFile.importXlsx(extractedGenericWorkbook)).worksheets.getItem("Embedded").getRange("A1").values[0][0], "Original embedded workbook");
 
 const embeddedReplacementWorkbook = Workbook.create();
 embeddedReplacementWorkbook.worksheets.add("Embedded").getRange("A1:B2").values = [["Replacement workbook", 42], ["Verified", true]];
@@ -2084,6 +2090,7 @@ const pendingWorkbook = await SpreadsheetFile.importXlsx(oleObject.getEmbeddedWo
 assert.deepEqual(pendingWorkbook.worksheets.getItem("Embedded").getRange("A1:B2").values, [["Replacement workbook", 42], ["Verified", true]]);
 const replacementView = new DataView(embeddedReplacementXlsx.bytes.buffer, embeddedReplacementXlsx.bytes.byteOffset, embeddedReplacementXlsx.bytes.byteLength);
 assert.equal(oleObject.replaceEmbeddedWorkbook(replacementView), oleObject);
+assert.equal(oleObject.replaceEmbeddedOfficePackage(embeddedReplacementXlsx), oleObject);
 assert.match(olePresentation.inspect({ kind: "nativeObject", target: oleObject.id, maxChars: 4000 }).ndjson, /"replacementPending":true/);
 
 const oleExport = await PresentationFile.exportPptx(olePresentation);
@@ -2135,6 +2142,90 @@ assert.throws(
   "an OLE package with more than one inbound relationship must fail clone preflight before mutating the model",
 );
 assert.equal(sharedOlePresentation.slides.items.length, sharedOleSlideCount);
+
+// The additive Office-package capability is not a generic OLE escape hatch:
+// today it recognizes only one uniquely-bound DOCX payload. It preserves the
+// existing OLE shell/preview/relationship graph, and DOCX OLE frames cannot
+// enter the XLSX-only slide-clone profile.
+const embeddedSourceDocument = DocumentModel.create({ name: "Original embedded document", blocks: [] });
+embeddedSourceDocument.addParagraph("Original embedded document marker");
+const embeddedSourceDocx = await DocumentFile.exportDocx(embeddedSourceDocument);
+const docxContentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const oleDocumentFrame = '<p:graphicFrame xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:nvGraphicFramePr><p:cNvPr id="101" name="Embedded document"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="914400" y="1828800"/><a:ext cx="3657600" cy="2286000"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/presentationml/2006/ole"><p:oleObj showAsIcon="1" r:id="rIdEmbeddedDocument" imgW="965200" imgH="609600" progId="Word.Document.12"><p:embed/><p:pic><p:nvPicPr><p:cNvPr id="0" name=""/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="rIdEmbeddedDocumentPreview"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="914400" y="1828800"/><a:ext cx="3657600" cy="2286000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic></p:oleObj></a:graphicData></a:graphic></p:graphicFrame>';
+const oleDocumentSource = await PresentationFile.patchPptx(firstExport, [
+  { path: "ppt/slides/slide1.xml", xml: firstSlideXml.replace("</p:spTree>", `${oleDocumentFrame}</p:spTree>`) },
+  { path: "ppt/slides/_rels/slide1.xml.rels", xml: firstSlideRelationships.replace("</Relationships>", '<Relationship Id="rIdEmbeddedDocument" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="../embeddings/agent-document.docx"/><Relationship Id="rIdEmbeddedDocumentPreview" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/agent-document-preview.png"/></Relationships>') },
+  { path: "ppt/embeddings/agent-document.docx", bytes: embeddedSourceDocx.bytes, contentType: docxContentType },
+  { path: "ppt/media/agent-document-preview.png", bytes: embeddedPreviewBytes, contentType: "image/png" },
+]);
+const oleDocumentSourceSnapshot = Uint8Array.from(oleDocumentSource.bytes);
+const oleDocumentPresentation = await PresentationFile.importPptx(oleDocumentSource);
+const oleDocumentObject = itemByName(oleDocumentPresentation.slides.getItem(0).nativeObjects.items, "Embedded document");
+assert.equal(oleDocumentObject.nativeKind, "oleObject");
+assert.equal(oleDocumentObject.oleWorkbook, undefined);
+assert.equal(oleDocumentObject.oleOfficePackage.kind, "docx");
+assert.equal(oleDocumentObject.oleOfficePackage.contentType, docxContentType);
+assert.deepEqual(oleDocumentObject.inspectRecord().editableFields, ["embeddedOfficePackage"]);
+assert.equal(oleDocumentObject.inspectRecord().embeddedOfficePackage.kind, "docx");
+const extractedSourceDocument = await DocumentFile.importDocx(oleDocumentObject.getEmbeddedOfficePackage());
+assert.deepEqual(extractedSourceDocument.paragraphs, ["Original embedded document marker"]);
+assert.throws(() => oleDocumentObject.replaceEmbeddedOfficePackage("not bytes"), /FileBlob, Uint8Array, ArrayBuffer/);
+assert.throws(() => oleDocumentObject.replaceEmbeddedOfficePackage(new FileBlob(embeddedSourceDocx.bytes, { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" })), /retain content type/);
+assert.throws(() => oleDocumentObject.replaceEmbeddedOfficePackage(new Uint8Array()), /1 through 16777216 bytes/);
+assert.throws(() => oleDocumentObject.replaceEmbeddedOfficePackage(new Uint8Array(16 * 1024 * 1024 + 1)), /1 through 16777216 bytes/);
+
+const embeddedReplacementDocument = DocumentModel.create({ name: "Replacement embedded document", blocks: [] });
+embeddedReplacementDocument.addParagraph("Replacement embedded document marker");
+const embeddedReplacementDocx = await DocumentFile.exportDocx(embeddedReplacementDocument);
+const mutableDocumentReplacement = Uint8Array.from(embeddedReplacementDocx.bytes);
+assert.equal(oleDocumentObject.replaceEmbeddedOfficePackage(new FileBlob(mutableDocumentReplacement, { type: docxContentType })), oleDocumentObject);
+mutableDocumentReplacement.fill(0);
+const pendingDocumentFile = oleDocumentObject.getEmbeddedOfficePackage();
+assert.equal(pendingDocumentFile.metadata.pendingReplacement, true);
+pendingDocumentFile.bytes.fill(0);
+assert.deepEqual((await DocumentFile.importDocx(oleDocumentObject.getEmbeddedOfficePackage())).paragraphs, ["Replacement embedded document marker"]);
+assert.match(oleDocumentPresentation.inspect({ kind: "nativeObject", target: oleDocumentObject.id, maxChars: 4000 }).ndjson, /"embeddedOfficePackage"/);
+
+const oleDocumentExport = await PresentationFile.exportPptx(oleDocumentPresentation);
+assert.deepEqual(oleDocumentSource.bytes, oleDocumentSourceSnapshot);
+const oleDocumentSourceZip = await JSZip.loadAsync(oleDocumentSource.bytes);
+const oleDocumentOutputZip = await JSZip.loadAsync(oleDocumentExport.bytes);
+assert.deepEqual(Object.keys(oleDocumentOutputZip.files).sort(), Object.keys(oleDocumentSourceZip.files).sort());
+for (const partPath of Object.keys(oleDocumentSourceZip.files)) {
+  if (oleDocumentSourceZip.files[partPath].dir || partPath === "ppt/embeddings/agent-document.docx") continue;
+  assert.deepEqual(
+    await oleDocumentOutputZip.file(partPath).async("uint8array"),
+    await oleDocumentSourceZip.file(partPath).async("uint8array"),
+    `DOCX OLE payload replacement must preserve ${partPath} byte-for-byte`,
+  );
+}
+assert.deepEqual(await oleDocumentOutputZip.file("ppt/embeddings/agent-document.docx").async("uint8array"), embeddedReplacementDocx.bytes);
+assert.deepEqual(await oleDocumentOutputZip.file("ppt/media/agent-document-preview.png").async("uint8array"), Uint8Array.from(embeddedPreviewBytes));
+assert.match(await oleDocumentOutputZip.file("ppt/slides/slide1.xml").async("text"), /r:id="rIdEmbeddedDocument"/);
+const oleDocumentRoundTrip = await PresentationFile.importPptx(oleDocumentExport);
+const reboundDocumentObject = itemByName(oleDocumentRoundTrip.slides.getItem(0).nativeObjects.items, "Embedded document");
+assert.equal(reboundDocumentObject.inspectRecord().embeddedOfficePackage.replacementPending, false);
+assert.notEqual(reboundDocumentObject.oleOfficePackage.sourceSha256, oleDocumentObject.oleOfficePackage.sourceSha256);
+assert.deepEqual((await DocumentFile.importDocx(reboundDocumentObject.getEmbeddedOfficePackage())).paragraphs, ["Replacement embedded document marker"]);
+
+const invalidDocumentOlePresentation = await PresentationFile.importPptx(oleDocumentSource);
+const invalidDocumentOleObject = itemByName(invalidDocumentOlePresentation.slides.getItem(0).nativeObjects.items, "Embedded document");
+invalidDocumentOleObject.replaceEmbeddedOfficePackage(embeddedReplacementXlsx.bytes);
+await assert.rejects(
+  () => PresentationFile.exportPptx(invalidDocumentOlePresentation),
+  (error) => new Set(["invalid_opc_package", "invalid_presentation_ole_office_package"]).has(error?.code),
+);
+
+const oleDocumentSourceZipForSharing = await JSZip.loadAsync(oleDocumentSource.bytes);
+const sharedOleDocumentSource = await PresentationFile.patchPptx(oleDocumentSource, [{
+  path: "ppt/slides/_rels/slide1.xml.rels",
+  xml: (await oleDocumentSourceZipForSharing.file("ppt/slides/_rels/slide1.xml.rels").async("text")).replace("</Relationships>", '<Relationship Id="rIdSharedEmbeddedDocument" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="../embeddings/agent-document.docx"/></Relationships>'),
+}]);
+const sharedOleDocumentPresentation = await PresentationFile.importPptx(sharedOleDocumentSource);
+const sharedOleDocumentObject = itemByName(sharedOleDocumentPresentation.slides.getItem(0).nativeObjects.items, "Embedded document");
+assert.equal(sharedOleDocumentObject.oleOfficePackage, undefined);
+assert.deepEqual(sharedOleDocumentObject.inspectRecord().editableFields, []);
+assert.throws(() => sharedOleDocumentObject.getEmbeddedOfficePackage(), /has no bounded embedded Office package/);
 
 // The bounded imported-slide clone may carry the same uniquely bound,
 // top-level embedded-XLSX OLE frame. The mutable workbook package is copied

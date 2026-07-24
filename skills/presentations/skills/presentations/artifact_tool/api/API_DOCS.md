@@ -21,7 +21,7 @@ Use the presentation facades to create PowerPoint-style decks in TypeScript.
 - Tailwind-like visual strings: [`references/tokens.md`](./references/tokens.md).
 - Inspect, resolve, edit, preview, and re-inspect loops: [`references/cookbook/imported-deck.md`](./references/cookbook/imported-deck.md).
 - Author or edit canonical native chart families without an external workbook: [`references/charts.spec.md`](./references/charts.spec.md).
-- Read or replace a uniquely bound embedded XLSX payload without rewriting its OLE shell: [`references/ole-workbooks.spec.md`](./references/ole-workbooks.spec.md).
+- Read or replace a uniquely bound embedded XLSX payload, or the bounded DOCX Office-package profile, without rewriting its OLE shell: [`references/ole-workbooks.spec.md`](./references/ole-workbooks.spec.md).
 - Duplicate one canonical closed four-part SmartArt frame without sharing mutable diagram parts: [`references/smartart-clone.spec.md`](./references/smartart-clone.spec.md).
 - Duplicate one canonical top-level closed InkML content part without sharing mutable Custom XML: [`references/inkml-content-part-clone.spec.md`](./references/inkml-content-part-clone.spec.md).
 - Duplicate one canonical top-level embedded MP4 without sharing mutable media bytes: [`references/embedded-video-clone.spec.md`](./references/embedded-video-clone.spec.md).

@@ -12,6 +12,7 @@ using C = DocumentFormat.OpenXml.Drawing.Charts;
 using P = DocumentFormat.OpenXml.Presentation;
 using P14 = DocumentFormat.OpenXml.Office2010.PowerPoint;
 using S = DocumentFormat.OpenXml.Spreadsheet;
+using W = DocumentFormat.OpenXml.Wordprocessing;
 using Xunit;
 
 namespace OpenChestnut.Codec.Tests;
@@ -3240,6 +3241,84 @@ public sealed class PptxCodecTests
     }
 
     [Fact]
+    public void OleOfficePackagePayloadReplacementIsValidatedAndGraphBound()
+    {
+        var source = AddNativeDocumentOleGraph(Invoke(ExportRequest()).File.ToByteArray());
+        var sharedSource = ReplaceZipText(source, "ppt/slides/_rels/slide1.xml.rels", xml => xml.Replace(
+            "</Relationships>",
+            "<Relationship Id=\"rIdSharedOfficePackage\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/package\" Target=\"../embeddings/native-document.docx\"/></Relationships>",
+            StringComparison.Ordinal));
+        var sharedImported = Import(sharedSource);
+        Assert.True(sharedImported.Ok, Diagnostics(sharedImported));
+        var sharedOle = Assert.Single(sharedImported.Artifact.Presentation.Slides[0].Elements, element => element.Opaque?.NativeKind == "oleObject");
+        Assert.Null(sharedOle.Opaque.OleOfficePackage);
+
+        var imported = Import(source);
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var oleElement = Assert.Single(imported.Artifact.Presentation.Slides[0].Elements, element => element.Opaque?.NativeKind == "oleObject");
+        Assert.Null(oleElement.Opaque.OleWorkbook);
+        var binding = Assert.IsType<PresentationOleOfficePackage>(oleElement.Opaque.OleOfficePackage);
+        Assert.Equal("docx", binding.Kind);
+        Assert.Equal("application/vnd.openxmlformats-officedocument.wordprocessingml.document", binding.ContentType);
+        var preview = ZipBytes(source, "ppt/media/native-document-preview.png");
+        var replacement = CreateEmbeddedDocument("Replacement embedded document marker");
+        binding.ReplacementAssetId = AddOleOfficePackageAsset(imported.Artifact, replacement);
+
+        var exported = Export(imported.Artifact);
+        Assert.True(exported.Ok, Diagnostics(exported));
+        var exportedBytes = exported.File.ToByteArray();
+        Assert.Equal(ZipPartPaths(source), ZipPartPaths(exportedBytes));
+        foreach (var path in ZipPartPaths(source).Where(path => !path.Equals(binding.PartPath, StringComparison.OrdinalIgnoreCase)))
+            Assert.Equal(ZipBytes(source, path), ZipBytes(exportedBytes, path));
+        Assert.Equal(replacement, ZipBytes(exportedBytes, binding.PartPath));
+        Assert.Equal(preview, ZipBytes(exportedBytes, "ppt/media/native-document-preview.png"));
+
+        var reimported = Import(exportedBytes);
+        Assert.True(reimported.Ok, Diagnostics(reimported));
+        var reboundElement = Assert.Single(reimported.Artifact.Presentation.Slides[0].Elements, element => element.Opaque?.NativeKind == "oleObject");
+        var rebound = Assert.IsType<PresentationOleOfficePackage>(reboundElement.Opaque.OleOfficePackage);
+        Assert.Equal(Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(replacement)).ToLowerInvariant(), rebound.SourceSha256);
+        Assert.Equal("docx", rebound.Kind);
+        Assert.Empty(rebound.ReplacementAssetId);
+
+        imported = Import(source);
+        var sourceBinding = Assert.IsType<PresentationOleOfficePackage>(Assert.Single(imported.Artifact.Presentation.Slides[0].Elements, element => element.Opaque?.NativeKind == "oleObject").Opaque.OleOfficePackage);
+        sourceBinding.PartPath = "ppt/embeddings/other.docx";
+        var pathRejected = Export(imported.Artifact);
+        Assert.False(pathRejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(pathRejected.Diagnostics).Code);
+
+        imported = Import(source);
+        sourceBinding = Assert.IsType<PresentationOleOfficePackage>(Assert.Single(imported.Artifact.Presentation.Slides[0].Elements, element => element.Opaque?.NativeKind == "oleObject").Opaque.OleOfficePackage);
+        sourceBinding.Kind = "xlsx";
+        var kindRejected = Export(imported.Artifact);
+        Assert.False(kindRejected.Ok);
+        Assert.Equal("unsupported_presentation_edit", Assert.Single(kindRejected.Diagnostics).Code);
+
+        imported = Import(source);
+        sourceBinding = Assert.IsType<PresentationOleOfficePackage>(Assert.Single(imported.Artifact.Presentation.Slides[0].Elements, element => element.Opaque?.NativeKind == "oleObject").Opaque.OleOfficePackage);
+        sourceBinding.ReplacementAssetId = "asset/presentation/ole-office-package/" + new string('0', 64);
+        var missingAsset = Export(imported.Artifact);
+        Assert.False(missingAsset.Ok);
+        Assert.Equal("invalid_presentation_asset", Assert.Single(missingAsset.Diagnostics).Code);
+
+        imported = Import(source);
+        sourceBinding = Assert.IsType<PresentationOleOfficePackage>(Assert.Single(imported.Artifact.Presentation.Slides[0].Elements, element => element.Opaque?.NativeKind == "oleObject").Opaque.OleOfficePackage);
+        var malformed = new byte[] { 0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4 };
+        sourceBinding.ReplacementAssetId = AddOleOfficePackageAsset(imported.Artifact, malformed);
+        var malformedRejected = Export(imported.Artifact);
+        Assert.False(malformedRejected.Ok);
+        Assert.Contains(Assert.Single(malformedRejected.Diagnostics).Code, new[] { "invalid_opc_package", "invalid_presentation_ole_office_package" });
+
+        imported = Import(source);
+        sourceBinding = Assert.IsType<PresentationOleOfficePackage>(Assert.Single(imported.Artifact.Presentation.Slides[0].Elements, element => element.Opaque?.NativeKind == "oleObject").Opaque.OleOfficePackage);
+        sourceBinding.ReplacementAssetId = AddOleOfficePackageAsset(imported.Artifact, CreateEmbeddedWorkbook("Wrong package family"));
+        var contentTypeRejected = Export(imported.Artifact);
+        Assert.False(contentTypeRejected.Ok);
+        Assert.Contains(Assert.Single(contentTypeRejected.Diagnostics).Code, new[] { "invalid_opc_package", "invalid_presentation_ole_office_package" });
+    }
+
+    [Fact]
     public void EmbeddedXlsxOleWorkbookCloneCopiesIndependentPackageAndSharesPreview()
     {
         var source = AddCloneableOleWorkbookGraph(Invoke(ExportRequest()).File.ToByteArray());
@@ -6412,6 +6491,21 @@ public sealed class PptxCodecTests
         return id;
     }
 
+    private static string AddOleOfficePackageAsset(ArtifactEnvelope envelope, byte[] data)
+    {
+        var digest = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(data)).ToLowerInvariant();
+        var id = $"asset/presentation/ole-office-package/{digest}";
+        envelope.Assets.Add(new Asset
+        {
+            Id = id,
+            FileName = $"embedded-office-package-{digest[..16]}.docx",
+            ContentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            Data = ByteString.CopyFrom(data),
+            Sha256 = digest,
+        });
+        return id;
+    }
+
     private static SlidePart[] OrderedSlides(PresentationDocument package)
     {
         var presentationPart = package.PresentationPart!;
@@ -6924,6 +7018,25 @@ public sealed class PptxCodecTests
         return stream.ToArray();
     }
 
+    private static byte[] AddNativeDocumentOleGraph(byte[] bytes)
+    {
+        const string ole = "<p:graphicFrame xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><p:nvGraphicFramePr><p:cNvPr id=\"51\" name=\"Embedded document\"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp=\"1\"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x=\"914400\" y=\"1828800\"/><a:ext cx=\"3657600\" cy=\"2286000\"/></p:xfrm><a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/presentationml/2006/ole\"><p:oleObj showAsIcon=\"1\" r:id=\"rIdNativeOleDocument\" imgW=\"965200\" imgH=\"609600\" progId=\"Word.Document.12\"><p:embed/><p:pic><p:nvPicPr><p:cNvPr id=\"0\" name=\"\"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed=\"rIdNativeDocumentPreview\"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x=\"914400\" y=\"1828800\"/><a:ext cx=\"3657600\" cy=\"2286000\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></p:spPr></p:pic></p:oleObj></a:graphicData></a:graphic></p:graphicFrame>";
+        const string relationships = "<Relationship Id=\"rIdNativeOleDocument\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/package\" Target=\"../embeddings/native-document.docx\"/><Relationship Id=\"rIdNativeDocumentPreview\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"../media/native-document-preview.png\"/>";
+        const string contentTypes = "<Override PartName=\"/ppt/embeddings/native-document.docx\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.document\"/><Override PartName=\"/ppt/media/native-document-preview.png\" ContentType=\"image/png\"/>";
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Update, leaveOpen: true))
+        {
+            ReplaceZipText(archive, "ppt/slides/slide1.xml", xml => xml.Replace("</p:spTree>", $"{ole}</p:spTree>", StringComparison.Ordinal));
+            ReplaceZipText(archive, "ppt/slides/_rels/slide1.xml.rels", xml => xml.Replace("</Relationships>", $"{relationships}</Relationships>", StringComparison.Ordinal));
+            ReplaceZipText(archive, "[Content_Types].xml", xml => xml.Replace("</Types>", $"{contentTypes}</Types>", StringComparison.Ordinal));
+            AddZipBytes(archive, "ppt/embeddings/native-document.docx", CreateEmbeddedDocument("Original embedded document"));
+            AddZipBytes(archive, "ppt/media/native-document-preview.png", Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="));
+        }
+        return stream.ToArray();
+    }
+
     private static byte[] CreateEmbeddedWorkbook(string value)
     {
         using var stream = new MemoryStream();
@@ -6947,6 +7060,20 @@ public sealed class PptxCodecTests
             }));
             workbookPart.Workbook.Save();
             worksheetPart.Worksheet.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static byte[] CreateEmbeddedDocument(string value)
+    {
+        using var stream = new MemoryStream();
+        using (var document = WordprocessingDocument.Create(stream, WordprocessingDocumentType.Document, autoSave: true))
+        {
+            var mainPart = document.AddMainDocumentPart();
+            mainPart.Document = new W.Document(new W.Body(
+                new W.Paragraph(new W.Run(new W.Text(value))),
+                new W.SectionProperties()));
+            mainPart.Document.Save();
         }
         return stream.ToArray();
     }

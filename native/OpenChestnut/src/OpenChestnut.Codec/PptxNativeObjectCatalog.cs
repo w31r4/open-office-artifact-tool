@@ -13,6 +13,7 @@ namespace OpenChestnut.Codec;
 internal sealed class PptxNativeObjectCatalog
 {
     private const string SpreadsheetContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    private const string DocumentContentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
     private const string PowerPoint2010Namespace = "http://schemas.microsoft.com/office/powerpoint/2010/main";
     private static readonly HashSet<string> RelationshipNamespaces = new(StringComparer.Ordinal)
     {
@@ -157,6 +158,7 @@ internal sealed class PptxNativeObjectCatalog
         }
 
         TryPopulateOleWorkbook(target, source, sourcePart);
+        TryPopulateOleOfficePackage(target, source, sourcePart);
         TryPopulateDiagramText(target, source, owner);
     }
 
@@ -173,32 +175,8 @@ internal sealed class PptxNativeObjectCatalog
 
     private void TryPopulateOleWorkbook(PresentationOpaqueElement target, OpenXmlElement source, string sourcePart)
     {
-        if (target.NativeKind != "oleObject" || source is not P.GraphicFrame || !SupportsPlacementEditing(source)) return;
-        var oleObjects = Elements(source)
-            .Where(element => element.LocalName == "oleObj" && PresentationNamespaces.Contains(element.NamespaceUri))
-            .ToArray();
-        if (oleObjects.Length != 1) return;
-        var relationshipAttributes = oleObjects[0].GetAttributes()
-            .Where(attribute => attribute.LocalName == "id" && RelationshipNamespaces.Contains(attribute.NamespaceUri))
-            .ToArray();
-        if (relationshipAttributes.Length != 1 || string.IsNullOrWhiteSpace(relationshipAttributes[0].Value)) return;
-        var relationshipId = relationshipAttributes[0].Value!;
-        if (!_relationships.TryGetValue(RelationshipKey(sourcePart, relationshipId), out var relationship) ||
-            relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase) ||
-            !relationship.Type.EndsWith("/package", StringComparison.Ordinal)) return;
-        var targetPath = ResolveTarget(sourcePart, relationship.Target);
-        if (!_parts.TryGetValue(targetPath, out var part) ||
-            !part.ContentType.Equals(SpreadsheetContentType, StringComparison.OrdinalIgnoreCase) ||
-            part.Sha256.Length != 64 || !part.Sha256.All(char.IsAsciiHexDigit) ||
-            !target.PreservedPartPaths.Contains(targetPath, StringComparer.OrdinalIgnoreCase)) return;
-
-        // Replacing a shared embedded package would affect more than the
-        // selected OLE object. Expose the bounded edit only for one owner-local
-        // internal relationship to this exact part.
-        var inboundCount = _relationships.Values.Count(candidate =>
-            !candidate.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase) &&
-            ResolveTarget(candidate.SourcePath, candidate.Target).Equals(targetPath, StringComparison.OrdinalIgnoreCase));
-        if (inboundCount != 1) return;
+        if (!TryResolveEditableOlePackage(target, source, sourcePart, out var part, out var relationshipId)) return;
+        if (!part.ContentType.Equals(SpreadsheetContentType, StringComparison.OrdinalIgnoreCase)) return;
 
         target.OleWorkbook = new PresentationOleWorkbook
         {
@@ -207,6 +185,57 @@ internal sealed class PptxNativeObjectCatalog
             SourceSha256 = part.Sha256.ToLowerInvariant(),
             RelationshipId = relationshipId,
         };
+    }
+
+    private void TryPopulateOleOfficePackage(PresentationOpaqueElement target, OpenXmlElement source, string sourcePart)
+    {
+        if (!TryResolveEditableOlePackage(target, source, sourcePart, out var part, out var relationshipId)) return;
+        if (!part.ContentType.Equals(DocumentContentType, StringComparison.OrdinalIgnoreCase)) return;
+        target.OleOfficePackage = new PresentationOleOfficePackage
+        {
+            PartPath = part.Path,
+            ContentType = DocumentContentType,
+            SourceSha256 = part.Sha256.ToLowerInvariant(),
+            RelationshipId = relationshipId,
+            Kind = "docx",
+        };
+    }
+
+    // Replacing a shared embedded package would affect more than the selected
+    // OLE object. This helper exposes just the common, source-bound package
+    // proof; concrete codecs decide which content type they are willing to
+    // make editable.
+    private bool TryResolveEditableOlePackage(
+        PresentationOpaqueElement target,
+        OpenXmlElement source,
+        string sourcePart,
+        out OpaqueOpcPart part,
+        out string relationshipId)
+    {
+        part = null!;
+        relationshipId = string.Empty;
+        if (target.NativeKind != "oleObject" || source is not P.GraphicFrame || !SupportsPlacementEditing(source)) return false;
+        var oleObjects = Elements(source)
+            .Where(element => element.LocalName == "oleObj" && PresentationNamespaces.Contains(element.NamespaceUri))
+            .ToArray();
+        if (oleObjects.Length != 1) return false;
+        var relationshipAttributes = oleObjects[0].GetAttributes()
+            .Where(attribute => attribute.LocalName == "id" && RelationshipNamespaces.Contains(attribute.NamespaceUri))
+            .ToArray();
+        if (relationshipAttributes.Length != 1 || string.IsNullOrWhiteSpace(relationshipAttributes[0].Value)) return false;
+        relationshipId = relationshipAttributes[0].Value!;
+        if (!_relationships.TryGetValue(RelationshipKey(sourcePart, relationshipId), out var relationship) ||
+            relationship.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase) ||
+            !relationship.Type.EndsWith("/package", StringComparison.Ordinal)) return false;
+        var targetPath = ResolveTarget(sourcePart, relationship.Target);
+        if (!_parts.TryGetValue(targetPath, out var resolvedPart) ||
+            resolvedPart.Sha256.Length != 64 || !resolvedPart.Sha256.All(char.IsAsciiHexDigit) ||
+            !target.PreservedPartPaths.Contains(targetPath, StringComparer.OrdinalIgnoreCase)) return false;
+        part = resolvedPart;
+        var inboundCount = _relationships.Values.Count(candidate =>
+            !candidate.TargetMode.Equals("External", StringComparison.OrdinalIgnoreCase) &&
+            ResolveTarget(candidate.SourcePath, candidate.Target).Equals(targetPath, StringComparison.OrdinalIgnoreCase));
+        return inboundCount == 1;
     }
 
     // Placement editing is intentionally narrower than native-object graph

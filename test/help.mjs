@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 379);
+assert.equal(HELP_CATALOG.length, 381);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -476,7 +476,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "document.setDateContentC
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.materializeFields")?.schema?.parameters?.dryRun?.type, "boolean");
 assert.match(HELP_CATALOG.find((item) => item.name === "document.materializeFields")?.summary || "", /SEQ counters.*REF cached results.*PAGEREF.*pagination host/i);
 const presentationCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "presentation");
-assert.equal(presentationCatalog.length, 71);
+assert.equal(presentationCatalog.length, 73);
 assert.ok(presentationCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "slide.charts.add")?.schema?.parameters?.series?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "presentation.slides.insert")?.schema?.parameters?.after?.type, "Slide|number|null");
@@ -493,6 +493,11 @@ assert.equal(HELP_CATALOG.find((item) => item.name === "nativeObject.getEmbedded
 assert.equal(HELP_CATALOG.find((item) => item.name === "nativeObject.replaceEmbeddedWorkbook")?.schema?.parameters?.workbook?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "nativeObject.replaceEmbeddedWorkbook")?.schema?.parameters?.workbook?.type || "", /ArrayBufferView/);
 assert.match(HELP_CATALOG.find((item) => item.name === "nativeObject.replaceEmbeddedWorkbook")?.summary || "", /replace only the XLSX payload.*preserves the OLE shell.*fails closed/is);
+assert.equal(HELP_CATALOG.find((item) => item.name === "nativeObject.getEmbeddedOfficePackage")?.schema?.returns?.officePackage?.type, "FileBlob");
+assert.equal(HELP_CATALOG.find((item) => item.name === "nativeObject.replaceEmbeddedOfficePackage")?.schema?.parameters?.officePackage?.required, true);
+assert.match(HELP_CATALOG.find((item) => item.name === "nativeObject.replaceEmbeddedOfficePackage")?.schema?.parameters?.officePackage?.description || "", /wordprocessingml\.document.*Microsoft Open XML SDK/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "nativeObject.getEmbeddedOfficePackage")?.summary || "", /legacy XLSX.*DOCX.*arbitrary OLE/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "nativeObject.replaceEmbeddedOfficePackage")?.summary || "", /generic profile.*DOCX.*OLE shell.*shared.*fail closed/is);
 assert.ok(HELP_CATALOG.some((item) => item.name === "nativeObject.setDiagramNodeText"));
 assert.equal(HELP_CATALOG.find((item) => item.name === "nativeObject.setDiagramNodeText")?.schema?.parameters?.nodeId?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "nativeObject.setDiagramNodeText")?.schema?.parameters?.text?.required, true);

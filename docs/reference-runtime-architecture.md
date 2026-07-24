@@ -126,6 +126,10 @@ On import, OpenChestnut can attach:
 - per-part and package hashes;
 - relationship metadata;
 - recognized editable-source bindings;
+- a versioned `PresentationOleOfficePackage` binding only for accepted
+  top-level OLE Office-package profiles; current writer support is DOCX and
+  carries kind, part path, MIME type, relationship ID, source SHA-256, and an
+  optional replacement asset ID rather than a generic OLE container;
 - opaque element/part evidence.
 
 On export, recognized modeled edits are validated against their binding. Unmodeled content can be copied from the validated source package only while its evidence remains trustworthy. A topology-changing or unsupported semantic edit throws. If opaque content exists without a valid source snapshot, export throws. There is no opt-out switch.

@@ -284,7 +284,7 @@ function cloneablePresentationDiagramWire(source) {
 
 function cloneablePresentationDiagramModel(source) {
   const ids = source?.kind === "nativeObject" && source.nativeKind === "diagram" ? cloneDiagramReferenceIds(source) : undefined;
-  if (!ids || !isCloneDiagramGraphicFrame(source) || source.oleWorkbook || !Array.isArray(source.rootRelationships) || source.rootRelationships.length !== 4 ||
+  if (!ids || !isCloneDiagramGraphicFrame(source) || source.oleWorkbook || source.oleOfficePackage || !Array.isArray(source.rootRelationships) || source.rootRelationships.length !== 4 ||
       !Array.isArray(source.parts) || source.parts.length !== 4) return false;
   const roots = new Map(source.rootRelationships.map((relationship) => [relationship.id, relationship]));
   if (roots.size !== 4) return false;
@@ -330,7 +330,7 @@ function cloneablePresentationInkContentModel(source) {
   const relationshipId = source?.kind === "nativeObject" && source.nativeKind === "contentPart"
     ? cloneInkContentReference(source)
     : undefined;
-  if (!relationshipId || !isCloneInkContentPart(source) || source.oleWorkbook ||
+  if (!relationshipId || !isCloneInkContentPart(source) || source.oleWorkbook || source.oleOfficePackage ||
       !Array.isArray(source.rootRelationships) || source.rootRelationships.length !== 1 ||
       !Array.isArray(source.parts) || source.parts.length !== 1) return false;
   const relationship = source.rootRelationships[0];
@@ -409,7 +409,7 @@ function cloneablePresentationMediaWire(source) {
 
 function cloneablePresentationMediaModel(source) {
   const ids = source?.kind === "nativeObject" && source.nativeKind === "media" ? cloneMediaReferenceIds(source) : undefined;
-  if (!ids || !isCloneMediaPicture(source) || !cloneablePresentationMediaMarkup(source, ids) || source.oleWorkbook || !Array.isArray(source.rootRelationships) ||
+  if (!ids || !isCloneMediaPicture(source) || !cloneablePresentationMediaMarkup(source, ids) || source.oleWorkbook || source.oleOfficePackage || !Array.isArray(source.rootRelationships) ||
       source.rootRelationships.length !== 3 || !Array.isArray(source.parts) || source.parts.length !== 2) return false;
   const relationships = new Map(source.rootRelationships.map((relationship) => [relationship.id, relationship]));
   if (relationships.size !== 3) return false;
@@ -434,7 +434,7 @@ function cloneablePresentationMediaModel(source) {
 // C# allocates independent mutable parts during the first export.
 function cloneImportedPresentationNativeObject(container, source, context) {
   const cloneableOle = source?.kind === "nativeObject" && source.nativeKind === "oleObject" && source.oleWorkbook &&
-    !source._embeddedWorkbookReplacementBytes?.();
+    !source.oleOfficePackage && !source._embeddedWorkbookReplacementBytes?.();
   const cloneableDiagram = cloneablePresentationDiagramModel(source) && !source?._diagramTextReplacement?.();
   if (!cloneableOle && !cloneableDiagram && !cloneablePresentationInkContentModel(source) && !cloneablePresentationMediaModel(source)) {
     throw new OpenChestnutCodecError("The bounded imported-slide clone profile accepts only an unchanged eligible embedded-XLSX OLE object, canonical closed four-part SmartArt frame, canonical top-level closed InkML content part, or canonical top-level closed MP4 media picture.", [], { code: "unsupported_presentation_slide_clone" });
@@ -504,7 +504,7 @@ function cloneSupportedPresentationContent(content, allowNativeGraphLeaf = true)
     const opaque = content.value;
     const cloneableOle = opaque?.nativeKind === "oleObject" && Boolean(opaque.oleWorkbook?.partPath) &&
       Boolean(opaque.oleWorkbook?.sourceSha256) && !opaque.oleWorkbook?.replacementAssetId;
-    return allowNativeGraphLeaf && (cloneableOle || cloneablePresentationDiagramWire(opaque) || cloneablePresentationInkContentWire(opaque) || cloneablePresentationMediaWire(opaque));
+    return allowNativeGraphLeaf && !opaque?.oleOfficePackage && (cloneableOle || cloneablePresentationDiagramWire(opaque) || cloneablePresentationInkContentWire(opaque) || cloneablePresentationMediaWire(opaque));
   }
   if (content?.case !== "group") return false;
   const children = content.value?.children;
@@ -512,7 +512,7 @@ function cloneSupportedPresentationContent(content, allowNativeGraphLeaf = true)
 }
 
 function collectPresentationCloneSourceIds(source, ids, allowNativeGraphLeaf = true) {
-  const cloneableOle = allowNativeGraphLeaf && source?.kind === "nativeObject" && source.nativeKind === "oleObject" && Boolean(source.oleWorkbook) && !source._embeddedWorkbookReplacementBytes?.();
+  const cloneableOle = allowNativeGraphLeaf && source?.kind === "nativeObject" && source.nativeKind === "oleObject" && Boolean(source.oleWorkbook) && !source.oleOfficePackage && !source._embeddedWorkbookReplacementBytes?.();
   const cloneableDiagram = allowNativeGraphLeaf && cloneablePresentationDiagramModel(source) && !source?._diagramTextReplacement?.();
   const cloneableInkContent = allowNativeGraphLeaf && cloneablePresentationInkContentModel(source);
   const cloneableMedia = allowNativeGraphLeaf && cloneablePresentationMediaModel(source);
@@ -2150,6 +2150,13 @@ function opaquePresentationSnapshot(object) {
     sourceSha256: object.oleWorkbook.sourceSha256,
     relationshipId: object.oleWorkbook.relationshipId,
   } : undefined;
+  const oleOfficePackage = object.oleOfficePackage ? {
+    partPath: object.oleOfficePackage.partPath,
+    contentType: object.oleOfficePackage.contentType,
+    sourceSha256: object.oleOfficePackage.sourceSha256,
+    relationshipId: object.oleOfficePackage.relationshipId,
+    kind: object.oleOfficePackage.kind,
+  } : undefined;
   return JSON.stringify({
     id: object.id,
     name: object.name,
@@ -2157,6 +2164,7 @@ function opaquePresentationSnapshot(object) {
     nativeKind: object.nativeKind,
     rawXml: object.rawXml,
     oleWorkbook,
+    oleOfficePackage,
     diagramText: object._diagramTextSourceBinding?.(),
     ...presentationNativeGraphSnapshot(object),
   });
@@ -2164,20 +2172,24 @@ function opaquePresentationSnapshot(object) {
 
 function presentationOpaque(object, original, snapshot, assetCatalog) {
   if (opaquePresentationSnapshot(object) !== snapshot) {
-    const message = object.oleWorkbook
-      ? `Presentation native element ${object.id} changed outside its bounded embedded-workbook replacement boundary.`
+    const message = object.oleWorkbook || object.oleOfficePackage
+      ? `Presentation native element ${object.id} changed outside its bounded embedded Office package replacement boundary.`
       : `Presentation native element ${object.id} is source-bound and read-only in OpenChestnut 0.2.`;
     throw new OpenChestnutCodecError(message, [], { code: "unsupported_presentation_edit" });
   }
   const replacement = object._embeddedWorkbookReplacementBytes?.();
+  const officePackageReplacement = object._embeddedOfficePackageReplacementBytes?.();
   const diagramTextReplacement = object._diagramTextReplacement?.();
-  if (!replacement && !diagramTextReplacement) return original;
+  if (!replacement && !officePackageReplacement && !diagramTextReplacement) return original;
   const originalOpaque = original?.content?.case === "opaque" ? original.content.value : undefined;
   if (!originalOpaque) {
     throw new OpenChestnutCodecError(`Presentation native element ${object.id} has no source-bound opaque payload.`, [], { code: "unsupported_presentation_edit" });
   }
   if (replacement && (!object.oleWorkbook || !originalOpaque.oleWorkbook)) {
     throw new OpenChestnutCodecError(`Presentation native element ${object.id} has no source-bound embedded XLSX workbook.`, [], { code: "unsupported_presentation_edit" });
+  }
+  if (officePackageReplacement && (!object.oleOfficePackage || !originalOpaque.oleOfficePackage)) {
+    throw new OpenChestnutCodecError(`Presentation native element ${object.id} has no source-bound embedded Office package.`, [], { code: "unsupported_presentation_edit" });
   }
   if (diagramTextReplacement && !originalOpaque.diagramText) {
     throw new OpenChestnutCodecError(`Presentation native element ${object.id} has no source-bound SmartArt diagram-text binding.`, [], { code: "unsupported_presentation_edit" });
@@ -2191,6 +2203,10 @@ function presentationOpaque(object, original, snapshot, assetCatalog) {
         ...(replacement ? { oleWorkbook: {
           ...originalOpaque.oleWorkbook,
           replacementAssetId: assetCatalog.addOleWorkbook(replacement),
+        } } : {}),
+        ...(officePackageReplacement ? { oleOfficePackage: {
+          ...originalOpaque.oleOfficePackage,
+          replacementAssetId: assetCatalog.addOleOfficePackage(officePackageReplacement, object.oleOfficePackage),
         } } : {}),
         ...(diagramTextReplacement ? { diagramText: {
           ...originalOpaque.diagramText,
@@ -3013,6 +3029,13 @@ export async function presentationFromEnvelope(envelope) {
             contentType: opaque.oleWorkbook.contentType,
             sourceSha256: opaque.oleWorkbook.sourceSha256,
             relationshipId: opaque.oleWorkbook.relationshipId,
+          } } : {}),
+          ...(opaque.oleOfficePackage ? { oleOfficePackage: {
+            partPath: opaque.oleOfficePackage.partPath,
+            contentType: opaque.oleOfficePackage.contentType,
+            sourceSha256: opaque.oleOfficePackage.sourceSha256,
+            relationshipId: opaque.oleOfficePackage.relationshipId,
+            kind: opaque.oleOfficePackage.kind,
           } } : {}),
           ...(opaque.diagramText ? { diagramText: {
             partPath: opaque.diagramText.partPath,

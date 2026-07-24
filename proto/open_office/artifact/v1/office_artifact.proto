@@ -2227,6 +2227,13 @@ message PresentationOpaqueElement {
   // styles, colors, edges, node topology, and all other diagram markup remain
   // source-owned. An export request may change only node text values.
   PresentationDiagramText diagram_text = 12;
+  // Present only for a source-bound top-level OLE object with one uniquely
+  // bound internal Office package in a profile this codec explicitly knows.
+  // This is deliberately narrower than an arbitrary OLE byte container:
+  // `kind`, content type, relationship, source bytes, shell, preview, and
+  // surrounding graph stay source-bound. An export request may set only a
+  // replacement asset with the exact same declared package kind.
+  PresentationOleOfficePackage ole_office_package = 13;
 }
 
 message PresentationOleWorkbook {
@@ -3225,4 +3232,19 @@ message PresentationTransition {
   optional bool advance_on_click = 4;
   // Optional native advTm milliseconds. Zero is a valid explicit value.
   optional uint32 advance_after_ms = 5;
+}
+
+// Appended to preserve every pre-existing generated descriptor index. This is
+// the additive successor to PresentationOleWorkbook for bounded non-XLSX
+// Office payloads. The legacy XLSX-specific field remains intact for
+// compatibility; supported kinds are intentionally an open token so a future
+// codec slice can add a new audited profile without renumbering this message.
+// Current writer support is limited to `docx`.
+message PresentationOleOfficePackage {
+  string part_path = 1;
+  string content_type = 2;
+  string source_sha256 = 3;
+  string relationship_id = 4;
+  string kind = 5;
+  string replacement_asset_id = 6;
 }

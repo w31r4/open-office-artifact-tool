@@ -4,7 +4,22 @@ import { aid } from "../shared/ids.mjs";
 import { attrEscape, xmlEscape } from "../shared/xml.mjs";
 
 const MAX_EMBEDDED_WORKBOOK_BYTES = 16 * 1024 * 1024;
+const MAX_EMBEDDED_OFFICE_PACKAGE_BYTES = 16 * 1024 * 1024;
 const MAX_DIAGRAM_NODE_TEXT_LENGTH = 32_767;
+const DOCX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+function normalizeOleOfficePackage(config) {
+  if (!config) return undefined;
+  const partPath = String(config.partPath || "");
+  const contentType = String(config.contentType || "").toLowerCase();
+  const sourceSha256 = String(config.sourceSha256 || "").toLowerCase();
+  const relationshipId = String(config.relationshipId || "");
+  const kind = String(config.kind || "").toLowerCase();
+  if (!partPath || contentType !== DOCX_CONTENT_TYPE || !/^[0-9a-f]{64}$/i.test(sourceSha256) || !relationshipId || kind !== "docx") {
+    throw new TypeError("Embedded Office package binding is incomplete or outside the bounded DOCX profile.");
+  }
+  return Object.freeze({ partPath, contentType, sourceSha256, relationshipId, kind });
+}
 
 function hasOnlyValidUnicodeScalars(value) {
   for (let index = 0; index < value.length; index += 1) {
@@ -104,6 +119,13 @@ export function createNativePresentationObjectClass({ normalizeFrame }) {
         writable: false,
         value: oleWorkbook,
       });
+      const oleOfficePackage = normalizeOleOfficePackage(config.oleOfficePackage);
+      Object.defineProperty(this, "oleOfficePackage", {
+        configurable: false,
+        enumerable: true,
+        writable: false,
+        value: oleOfficePackage,
+      });
       const diagramText = normalizeDiagramText(config.diagramText);
       Object.defineProperty(this, "_diagramTextBinding", {
         configurable: false,
@@ -123,6 +145,12 @@ export function createNativePresentationObjectClass({ normalizeFrame }) {
         get: () => diagramTextRecord(this._diagramTextBinding, this._diagramTextNodes || []),
       });
       Object.defineProperty(this, "_embeddedWorkbookReplacement", {
+        configurable: false,
+        enumerable: false,
+        writable: true,
+        value: undefined,
+      });
+      Object.defineProperty(this, "_embeddedOfficePackageReplacement", {
         configurable: false,
         enumerable: false,
         writable: true,
@@ -179,6 +207,52 @@ export function createNativePresentationObjectClass({ normalizeFrame }) {
       return this._embeddedWorkbookReplacement ? Uint8Array.from(this._embeddedWorkbookReplacement) : undefined;
     }
 
+    embeddedOfficePackagePart() {
+      if (!this.oleOfficePackage) throw new Error(`Native ${this.nativeKind} object ${this.id} has no bounded embedded Office package.`);
+      const matches = this.parts.filter((part) => part.path === this.oleOfficePackage.partPath && part.contentType === this.oleOfficePackage.contentType);
+      if (matches.length !== 1) throw new Error(`Native ${this.nativeKind} object ${this.id} no longer resolves to one embedded Office package part.`);
+      return matches[0];
+    }
+
+    getEmbeddedOfficePackage() {
+      if (this.oleWorkbook) {
+        const workbook = this.getEmbeddedWorkbook();
+        return new FileBlob(workbook.bytes, {
+          type: workbook.type,
+          metadata: { ...workbook.metadata, artifactKind: "officePackage", officePackageKind: "xlsx" },
+        });
+      }
+      const part = this.embeddedOfficePackagePart();
+      const replacement = this._embeddedOfficePackageReplacement;
+      return new FileBlob(Uint8Array.from(replacement || part.bytes), {
+        type: this.oleOfficePackage.contentType,
+        metadata: replacement
+          ? { artifactKind: "officePackage", officePackageKind: this.oleOfficePackage.kind, source: "presentationOleObject", partPath: this.oleOfficePackage.partPath, boundSourceSha256: this.oleOfficePackage.sourceSha256, pendingReplacement: true }
+          : { artifactKind: "officePackage", officePackageKind: this.oleOfficePackage.kind, source: "presentationOleObject", partPath: this.oleOfficePackage.partPath, sourceSha256: this.oleOfficePackage.sourceSha256 },
+      });
+    }
+
+    replaceEmbeddedOfficePackage(input) {
+      if (this.oleWorkbook) return this.replaceEmbeddedWorkbook(input);
+      this.embeddedOfficePackagePart();
+      if (input == null || typeof input === "string" || !(input instanceof FileBlob || input instanceof ArrayBuffer || input instanceof Uint8Array || ArrayBuffer.isView(input))) {
+        throw new TypeError("Embedded Office package replacement must be a FileBlob, Uint8Array, ArrayBuffer, or ArrayBuffer view.");
+      }
+      if (input instanceof FileBlob && String(input.type || "").toLowerCase() !== this.oleOfficePackage.contentType) {
+        throw new TypeError(`Embedded Office package replacement must retain content type ${this.oleOfficePackage.contentType}.`);
+      }
+      const bytes = input instanceof FileBlob ? input.bytes : toUint8Array(input);
+      if (!bytes.byteLength || bytes.byteLength > MAX_EMBEDDED_OFFICE_PACKAGE_BYTES) {
+        throw new RangeError(`Embedded Office package replacement must contain 1 through ${MAX_EMBEDDED_OFFICE_PACKAGE_BYTES} bytes.`);
+      }
+      this._embeddedOfficePackageReplacement = Uint8Array.from(bytes);
+      return this;
+    }
+
+    _embeddedOfficePackageReplacementBytes() {
+      return this._embeddedOfficePackageReplacement ? Uint8Array.from(this._embeddedOfficePackageReplacement) : undefined;
+    }
+
     setDiagramNodeText(nodeId, value) {
       if (!this._diagramTextBinding || !this._diagramTextNodes) {
         throw new Error(`Native ${this.nativeKind} object ${this.id} has no bounded SmartArt diagram-text capability.`);
@@ -208,6 +282,7 @@ export function createNativePresentationObjectClass({ normalizeFrame }) {
       const frame = this.parentGroup ? this.parentGroup.absoluteChildFrame(this) : this.position;
       const editableFields = [
         ...(this.oleWorkbook ? ["embeddedWorkbook"] : []),
+        ...(this.oleOfficePackage ? ["embeddedOfficePackage"] : []),
         ...(this._diagramTextBinding ? ["diagramText"] : []),
       ];
       return {
@@ -225,6 +300,7 @@ export function createNativePresentationObjectClass({ normalizeFrame }) {
         nativeRelationships: this.rootRelationships.map(({ id, type, target, targetMode }) => ({ id, type, target, targetMode })),
         nativeParts: this.parts.map((part) => ({ path: part.path, contentType: part.contentType, relationships: part.relationships.length })),
         embeddedWorkbook: this.oleWorkbook ? this._embeddedWorkbookRecord(true) : undefined,
+        embeddedOfficePackage: this.oleOfficePackage ? this._embeddedOfficePackageRecord(true) : undefined,
         diagramText: this.diagramText,
         bbox: [frame.left, frame.top, frame.width, frame.height],
         bboxUnit: "px",
@@ -245,6 +321,19 @@ export function createNativePresentationObjectClass({ normalizeFrame }) {
       };
     }
 
+    _embeddedOfficePackageRecord(includeSourceSha256 = false) {
+      const replacement = this._embeddedOfficePackageReplacement;
+      const part = replacement ? undefined : this.embeddedOfficePackagePart();
+      return {
+        kind: this.oleOfficePackage.kind,
+        partPath: this.oleOfficePackage.partPath,
+        contentType: this.oleOfficePackage.contentType,
+        bytes: (replacement || part.bytes).length,
+        ...(includeSourceSha256 ? { sourceSha256: this.oleOfficePackage.sourceSha256 } : {}),
+        replacementPending: Boolean(replacement),
+      };
+    }
+
     layoutJson() {
       return {
         kind: "nativeObject",
@@ -255,10 +344,12 @@ export function createNativePresentationObjectClass({ normalizeFrame }) {
         relationships: this.rootRelationships.length,
         preservedParts: this.parts.length,
         embeddedWorkbook: this.oleWorkbook ? this._embeddedWorkbookRecord() : undefined,
+        embeddedOfficePackage: this.oleOfficePackage ? this._embeddedOfficePackageRecord() : undefined,
         diagramText: this.diagramText,
         editable: false,
         editableFields: [
           ...(this.oleWorkbook ? ["embeddedWorkbook"] : []),
+          ...(this.oleOfficePackage ? ["embeddedOfficePackage"] : []),
           ...(this._diagramTextBinding ? ["diagramText"] : []),
         ],
       };

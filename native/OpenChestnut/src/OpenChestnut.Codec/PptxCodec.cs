@@ -762,6 +762,7 @@ internal static class PptxCodec
                             $"Presentation slide {slideIndex + 1} element {elementIndex + 1} source semantics do not match its binding.",
                             PartPath(slidePart));
                     PptxOleWorkbookReplacement? oleWorkbookReplacement = null;
+                    PptxOleOfficePackageReplacement? oleOfficePackageReplacement = null;
                     PptxDiagramTextReplacement? diagramTextReplacement = null;
                     if (original.ContentCase == PresentationElement.ContentOneofCase.Opaque &&
                         requested.ContentCase == PresentationElement.ContentOneofCase.Opaque &&
@@ -769,6 +770,7 @@ internal static class PptxCodec
                     {
                         ValidateNativeObjectRequest(original, requested);
                         oleWorkbookReplacement = PptxOleWorkbookCodec.PrepareReplacement(original.Opaque, requested.Opaque, assetCatalog, limits);
+                        oleOfficePackageReplacement = PptxOleOfficePackageCodec.PrepareReplacement(original.Opaque, requested.Opaque, assetCatalog, limits);
                         diagramTextReplacement = PptxDiagramTextCodec.PrepareReplacement(slidePart, sourceElement, original.Opaque, requested.Opaque);
                     }
                     if (SemanticHash(requested).Equals(elementBinding.SemanticSha256, StringComparison.OrdinalIgnoreCase)) continue;
@@ -838,6 +840,12 @@ internal static class PptxCodec
                             PptxOleWorkbookCodec.Apply(slidePart, sourceElement, original.Opaque.OleWorkbook, oleWorkbookReplacement);
                             changedParts.Add(oleWorkbookReplacement.PartPath);
                             replacedOpaquePartHashes.Add(oleWorkbookReplacement.PartPath, oleWorkbookReplacement.Sha256);
+                        }
+                        if (oleOfficePackageReplacement is not null)
+                        {
+                            PptxOleOfficePackageCodec.Apply(slidePart, sourceElement, original.Opaque.OleOfficePackage, oleOfficePackageReplacement);
+                            changedParts.Add(oleOfficePackageReplacement.PartPath);
+                            replacedOpaquePartHashes.Add(oleOfficePackageReplacement.PartPath, oleOfficePackageReplacement.Sha256);
                         }
                         if (diagramTextReplacement is not null)
                         {
@@ -1255,6 +1263,8 @@ internal static class PptxCodec
         allowed.Opaque.HeightEmu = requested.Opaque.HeightEmu;
         if (allowed.Opaque.OleWorkbook is not null && requested.Opaque.OleWorkbook is not null)
             allowed.Opaque.OleWorkbook.ReplacementAssetId = requested.Opaque.OleWorkbook.ReplacementAssetId;
+        if (allowed.Opaque.OleOfficePackage is not null && requested.Opaque.OleOfficePackage is not null)
+            allowed.Opaque.OleOfficePackage.ReplacementAssetId = requested.Opaque.OleOfficePackage.ReplacementAssetId;
         if (allowed.Opaque.DiagramText is not null && requested.Opaque.DiagramText is not null)
         {
             allowed.Opaque.DiagramText.Nodes.Clear();
@@ -1267,7 +1277,7 @@ internal static class PptxCodec
         if (!allowed.Equals(requested))
             throw new CodecException(
                 "unsupported_presentation_edit",
-                $"Presentation native object {requested.Id} may edit only its name, outer frame, and an explicitly recognized OLE workbook payload.");
+                $"Presentation native object {requested.Id} may edit only its name, outer frame, and an explicitly recognized OLE payload.");
     }
 
     private static bool NativePlacementChanged(PresentationElement original, PresentationElement requested) =>

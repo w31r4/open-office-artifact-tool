@@ -58,12 +58,13 @@ const maxPackedBytes = 9_840_000;
 // speaker-notes leaves, the public formula catalog, bounded formula expression
 // parser, SUMPRODUCT range-mask profile, source-bound DOCX header/footer,
 // the compact OfficeKit routing Skill,
-// XLSX connection-refresh and imported-Pivot refresh-on-load transactions, and
-// formula-input syntax guard add
+// XLSX connection-refresh and imported-Pivot refresh-on-load transactions,
+// formula-input syntax guard, and source-bound embedded-DOCX OLE package
+// replacement add
 // protobuf, audited WASM,
 // public Help, and native guidance;
 // retain measured headroom instead of hiding that product surface.
-const maxUnpackedBytes = 25_110_000;
+const maxUnpackedBytes = 25_160_000;
 // Public Skill PNGs are required user-facing assets. They are retained with
 // byte-identical non-IDAT chunks and inflated scanline streams, but their IDAT
 // payloads are deterministically recompressed. Prevent future PNG tooling from
@@ -218,6 +219,7 @@ for (const required of [
   "skills/presentations/skills/presentations/examples/openchestnut-custom-show-workflow.mjs",
   "skills/presentations/skills/presentations/examples/openchestnut-slide-duplicate-workflow.mjs",
   "skills/presentations/skills/presentations/examples/openchestnut-smartart-text-edit-workflow.mjs",
+  "skills/presentations/skills/presentations/examples/openchestnut-ole-office-package-workflow.mjs",
   "skills/presentations/skills/presentations/artifact_tool/api/references/custom-shows.spec.md",
   "skills/presentations/skills/presentations/artifact_tool/api/references/sections.spec.md",
   "skills/presentations/skills/presentations/artifact_tool/api/references/transitions.spec.md",

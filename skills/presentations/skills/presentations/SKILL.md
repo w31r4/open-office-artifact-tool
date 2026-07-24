@@ -385,14 +385,18 @@ in-place metadata edit: OpenChestnut changes only that SlidePart's
 requires reimport for a fresh binding. It is not available for a pending clone,
 which must remain an exact source copy until its export/reimport boundary.
 
-When an imported top-level OLE object contains one uniquely bound XLSX package,
-read `artifact_tool/api/references/ole-workbooks.spec.md` before changing it.
-Only `getEmbeddedWorkbook()` and `replaceEmbeddedWorkbook(...)` are allowed:
-the latter replaces the validated workbook bytes while preserving the OLE
+When an imported top-level OLE object contains one uniquely bound Office
+package, read `artifact_tool/api/references/ole-workbooks.spec.md` before
+changing it. XLSX retains the specialized `getEmbeddedWorkbook()` and
+`replaceEmbeddedWorkbook(...)` contract. The generic
+`getEmbeddedOfficePackage()` and `replaceEmbeddedOfficePackage(...)` route is
+compatible with that XLSX profile and currently adds exactly one source-bound
+DOCX profile. It replaces validated package bytes while preserving the OLE
 shell, relationship topology, preview image, and every unrelated native part.
-Do not patch an embedding part directly or present a reconstructed OLE object
-as equivalent; ambiguous, shared, malformed, or source-tampered graphs must
-fail closed.
+Do not patch an embedding part directly, treat the API as arbitrary OLE access,
+or present a reconstructed OLE object as equivalent. DOCX OLE frames are not
+cloneable in the current bounded profile; ambiguous, shared, malformed, or
+source-tampered graphs must fail closed.
 
 For review annotations, read `artifact_tool/api/references/comments.md` before
 calling `slide.comments.addThread(...)`. Canonical PPTX export supports only

@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
 
-import { FileBlob, Presentation, PresentationFile, SpreadsheetFile, Workbook } from "../src/index.mjs";
+import { DocumentFile, DocumentModel, FileBlob, Presentation, PresentationFile, SpreadsheetFile, Workbook } from "../src/index.mjs";
 import {
   generateOfficeInput,
   PPTX_RICH_NOTES_FIXTURE,
@@ -950,6 +950,67 @@ try {
   assert.equal(oleEditedSourceWorkbook.worksheets.getItem("Embedded").getRange("A1").values[0][0], "Original clone workbook");
   assert.equal(oleEditedCloneWorkbook.worksheets.getItem("Embedded").getRange("A1").values[0][0], "Independent clone workbook");
 
+  const oleOfficePackageDir = path.join(root, "ole-office-package-workflow");
+  const oleOfficePackageInput = path.join(oleOfficePackageDir, "source.pptx");
+  const oleOfficePackageOutput = path.join(oleOfficePackageDir, "edited.pptx");
+  const oleOfficePackageAudit = path.join(oleOfficePackageDir, "audit.json");
+  const oleOfficePackageDocument = DocumentModel.create({ name: "Embedded DOCX source", blocks: [] });
+  oleOfficePackageDocument.addParagraph("Draft approval wording");
+  const oleOfficePackageDocx = await DocumentFile.exportDocx(oleOfficePackageDocument);
+  const oleOfficePackageDeck = Presentation.create({ slideSize: { width: 640, height: 360 } });
+  oleOfficePackageDeck.slides.add({ name: "DOCX package source" }).shapes.add({
+    name: "ole-package-copy",
+    position: { left: 48, top: 40, width: 300, height: 72 },
+    text: "DOCX package source",
+  });
+  const oleOfficePackageBase = await PresentationFile.exportPptx(oleOfficePackageDeck);
+  const oleOfficePackageBaseZip = await JSZip.loadAsync(oleOfficePackageBase.bytes);
+  const oleOfficePackageSlideXml = await oleOfficePackageBaseZip.file("ppt/slides/slide1.xml").async("text");
+  const oleOfficePackageRelationships = await oleOfficePackageBaseZip.file("ppt/slides/_rels/slide1.xml.rels").async("text");
+  const oleOfficePackageFrame = '<p:graphicFrame xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><p:nvGraphicFramePr><p:cNvPr id="170" name="Embedded approval document"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="914400" y="1143000"/><a:ext cx="3657600" cy="1828800"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/presentationml/2006/ole"><p:oleObj showAsIcon="1" r:id="rIdSkillEmbeddedDocument" imgW="965200" imgH="609600" progId="Word.Document.12"><p:embed/><p:pic><p:nvPicPr><p:cNvPr id="0" name=""/><p:cNvPicPr/><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="rIdSkillEmbeddedDocumentPreview"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="914400" y="1143000"/><a:ext cx="3657600" cy="1828800"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic></p:oleObj></a:graphicData></a:graphic></p:graphicFrame>';
+  const oleOfficePackagePreview = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+  const oleOfficePackageSource = await PresentationFile.patchPptx(oleOfficePackageBase, [
+    { path: "ppt/slides/slide1.xml", xml: oleOfficePackageSlideXml.replace("</p:spTree>", `${oleOfficePackageFrame}</p:spTree>`) },
+    { path: "ppt/slides/_rels/slide1.xml.rels", xml: oleOfficePackageRelationships.replace("</Relationships>", '<Relationship Id="rIdSkillEmbeddedDocument" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="../embeddings/skill-approval.docx"/><Relationship Id="rIdSkillEmbeddedDocumentPreview" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/skill-approval-preview.png"/></Relationships>') },
+    { path: "ppt/embeddings/skill-approval.docx", bytes: oleOfficePackageDocx.bytes, contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
+    { path: "ppt/media/skill-approval-preview.png", bytes: oleOfficePackagePreview, contentType: "image/png" },
+  ]);
+  await fs.mkdir(oleOfficePackageDir, { recursive: true });
+  await oleOfficePackageSource.save(oleOfficePackageInput);
+  const oleOfficePackageSourceBytes = await fs.readFile(oleOfficePackageInput);
+  const { editPptxEmbeddedDocxPackage } = await import(
+    "../skills/presentations/skills/presentations/examples/openchestnut-ole-office-package-workflow.mjs"
+  );
+  const oleOfficePackageResult = await editPptxEmbeddedDocxPackage({
+    inputPath: oleOfficePackageInput,
+    outputPath: oleOfficePackageOutput,
+    auditPath: oleOfficePackageAudit,
+    objectName: "Embedded approval document",
+    expectedText: "Draft approval wording",
+    replacementText: "Approved approval wording",
+  });
+  assert.equal(oleOfficePackageResult.audit.provider.actual, "open-chestnut");
+  assert.equal(oleOfficePackageResult.audit.provider.silentFallback, false);
+  assert.equal(oleOfficePackageResult.audit.operation.type, "source-bound-ole-docx-package-paragraph-edit");
+  assert.equal(oleOfficePackageResult.audit.operation.package.kind, "docx");
+  assert.equal(oleOfficePackageResult.audit.operation.package.partPath, "ppt/embeddings/skill-approval.docx");
+  assert.deepEqual(oleOfficePackageResult.audit.validation.package.changedPartPaths, ["ppt/embeddings/skill-approval.docx"]);
+  assert.equal(oleOfficePackageResult.audit.validation.package.nonTargetPartsByteIdentical, true);
+  assert.equal(oleOfficePackageResult.audit.validation.package.exactReplacementBytes, true);
+  assert.equal(oleOfficePackageResult.audit.validation.reimport.sourceBindingReproved, true);
+  assert.equal(oleOfficePackageResult.audit.validation.modelRender.byteIdentical, true);
+  assert.deepEqual(await fs.readFile(oleOfficePackageInput), oleOfficePackageSourceBytes);
+  const oleOfficePackageRoundTrip = await PresentationFile.importPptx(new FileBlob(await fs.readFile(oleOfficePackageOutput), {
+    type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    name: "edited.pptx",
+  }));
+  const reboundOfficePackageObject = itemByName(oleOfficePackageRoundTrip.slides.getItem(0).nativeObjects.items, "Embedded approval document");
+  assert.equal(reboundOfficePackageObject.oleOfficePackage.kind, "docx");
+  assert.equal(reboundOfficePackageObject.inspectRecord().embeddedOfficePackage.replacementPending, false);
+  assert.deepEqual((await DocumentFile.importDocx(reboundOfficePackageObject.getEmbeddedOfficePackage())).paragraphs, ["Approved approval wording"]);
+  const oleOfficePackageOutputZip = await JSZip.loadAsync(await fs.readFile(oleOfficePackageOutput));
+  assert.deepEqual(await oleOfficePackageOutputZip.file("ppt/media/skill-approval-preview.png").async("uint8array"), Uint8Array.from(oleOfficePackagePreview));
+
   const smartArtDuplicateInput = path.join(duplicateDir, "smartart-source.pptx");
   const smartArtDuplicateOutput = path.join(duplicateDir, "smartart-output.pptx");
   const smartArtDuplicateAudit = path.join(duplicateDir, "smartart-audit.json");
@@ -1699,11 +1760,16 @@ try {
   const oleWorkbookReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/ole-workbooks.spec.md", "utf8");
   assert.match(skillText, /artifact_tool\/api\/references\/ole-workbooks\.spec\.md/);
   assert.match(oleWorkbookReferenceText, /getEmbeddedWorkbook\(\).*replaceEmbeddedWorkbook/s);
+  assert.match(oleWorkbookReferenceText, /getEmbeddedOfficePackage\(\).*replaceEmbeddedOfficePackage/s);
+  assert.match(oleWorkbookReferenceText, /only newly supported kind is a DOCX package/i);
+  assert.match(oleWorkbookReferenceText, /not a generic OLE\/container API/i);
+  assert.match(oleWorkbookReferenceText, /openchestnut-ole-office-package-workflow\.mjs/);
+  assert.match(skillText, /getEmbeddedOfficePackage\(\).*replaceEmbeddedOfficePackage\(\.\.\.\).*DOCX/is);
   assert.match(oleWorkbookReferenceText, /preserving the OLE\s+shell, relationship topology, preview image/is);
   assert.match(oleWorkbookReferenceText, /Microsoft Open XML\s+SDK/);
-  assert.match(oleWorkbookReferenceText, /shared, external, ambiguous, or non-XLSX/);
+  assert.match(oleWorkbookReferenceText, /shared, external, ambiguous, or unsupported package/);
   assert.match(oleWorkbookReferenceText, /slide\.duplicate\(\).*distinct clone-local XLSX `EmbeddedPackagePart`.*shares\s+the immutable preview ImagePart.*export has been imported again/is);
-  assert.match(oleWorkbookReferenceText, /no lossy reconstruction or silent fallback/i);
+  assert.match(oleWorkbookReferenceText, /no lossy reconstruction or silent\s+fallback/i);
   const smartArtReferenceText = await fs.readFile("skills/presentations/skills/presentations/artifact_tool/api/references/smartart-clone.spec.md", "utf8");
   assert.match(skillText, /artifact_tool\/api\/references\/smartart-clone\.spec\.md/);
   assert.match(skillText, /openchestnut-smartart-text-edit-workflow\.mjs/);

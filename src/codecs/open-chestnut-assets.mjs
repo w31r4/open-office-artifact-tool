@@ -5,7 +5,9 @@ const MAX_ASSET_BYTES = 16 * 1024 * 1024;
 const MAX_ASSET_COUNT = 1024;
 const PICTURE_ASSET_PREFIX = "asset/presentation/picture-bullet/";
 const OLE_WORKBOOK_ASSET_PREFIX = "asset/presentation/ole-workbook/";
+const OLE_OFFICE_PACKAGE_ASSET_PREFIX = "asset/presentation/ole-office-package/";
 const XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const DOCX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const IMAGE_TYPES = new Map([
   ["image/png", { extension: "png", signature: (bytes) => bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex")) }],
   ["image/jpeg", { extension: "jpg", signature: (bytes) => bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff }],
@@ -69,19 +71,27 @@ function validateAsset(asset) {
   const id = String(asset?.id || "");
   const isPicture = new RegExp(`^${PICTURE_ASSET_PREFIX}[0-9a-f]{64}$`).test(id);
   const isOleWorkbook = new RegExp(`^${OLE_WORKBOOK_ASSET_PREFIX}[0-9a-f]{64}$`).test(id);
-  if (!isPicture && !isOleWorkbook) fail(`Presentation asset ID ${id || "(missing)"} is invalid.`);
+  const isOleOfficePackage = new RegExp(`^${OLE_OFFICE_PACKAGE_ASSET_PREFIX}[0-9a-f]{64}$`).test(id);
+  if (!isPicture && !isOleWorkbook && !isOleOfficePackage) fail(`Presentation asset ID ${id || "(missing)"} is invalid.`);
   const contentType = normalizeContentType(asset.contentType);
   const bytes = Buffer.from(asset.data || []);
   const format = isPicture
     ? validateImage(contentType, bytes, `Presentation asset ${id}`)
-    : validateOleWorkbook(contentType, bytes, `Presentation asset ${id}`);
+    : isOleWorkbook
+      ? validateOleWorkbook(contentType, bytes, `Presentation asset ${id}`)
+      : validateOleOfficePackage(contentType, bytes, `Presentation asset ${id}`);
   const digest = sha256(bytes);
   if (String(asset.sha256 || "").toLowerCase() !== digest) fail(`Presentation asset ${id} does not match its SHA-256 digest.`);
-  const expectedId = `${isPicture ? PICTURE_ASSET_PREFIX : OLE_WORKBOOK_ASSET_PREFIX}${digest}`;
+  const expectedPrefix = isPicture ? PICTURE_ASSET_PREFIX : isOleWorkbook ? OLE_WORKBOOK_ASSET_PREFIX : OLE_OFFICE_PACKAGE_ASSET_PREFIX;
+  const expectedId = `${expectedPrefix}${digest}`;
   if (id !== expectedId) fail(`Presentation asset ${id} is not content-addressed by its bytes.`);
   return {
     id,
-    fileName: String(asset.fileName || (isPicture ? `picture-bullet-${digest.slice(0, 16)}.${format.extension}` : `embedded-workbook-${digest.slice(0, 16)}.xlsx`)),
+    fileName: String(asset.fileName || (isPicture
+      ? `picture-bullet-${digest.slice(0, 16)}.${format.extension}`
+      : isOleWorkbook
+        ? `embedded-workbook-${digest.slice(0, 16)}.xlsx`
+        : `embedded-office-package-${digest.slice(0, 16)}.docx`)),
     contentType,
     data: bytes,
     sha256: digest,
@@ -93,6 +103,13 @@ function validateOleWorkbook(contentType, bytes, label) {
   if (!bytes.length || bytes.length > MAX_ASSET_BYTES) fail(`${label} must contain 1 through ${MAX_ASSET_BYTES} bytes.`);
   if (bytes.length < 4 || !bytes.subarray(0, 4).equals(Buffer.from("504b0304", "hex"))) fail(`${label} must contain an OPC ZIP package.`);
   return { extension: "xlsx" };
+}
+
+function validateOleOfficePackage(contentType, bytes, label) {
+  if (contentType !== DOCX_CONTENT_TYPE) fail(`${label} must use the bounded DOCX package content type.`);
+  if (!bytes.length || bytes.length > MAX_ASSET_BYTES) fail(`${label} must contain 1 through ${MAX_ASSET_BYTES} bytes.`);
+  if (bytes.length < 4 || !bytes.subarray(0, 4).equals(Buffer.from("504b0304", "hex"))) fail(`${label} must contain an OPC ZIP package.`);
+  return { extension: "docx", kind: "docx" };
 }
 
 export function createPresentationAssetCatalog(initialAssets = []) {
@@ -136,6 +153,26 @@ export function createPresentationAssetCatalog(initialAssets = []) {
           id,
           fileName: `embedded-workbook-${digest.slice(0, 16)}.xlsx`,
           contentType: XLSX_CONTENT_TYPE,
+          data: bytes,
+          sha256: digest,
+        });
+      }
+      return id;
+    },
+    addOleOfficePackage(data, binding) {
+      const bytes = Buffer.from(data || []);
+      const kind = String(binding?.kind || "");
+      const contentType = normalizeContentType(binding?.contentType);
+      if (kind !== "docx") fail("Presentation embedded Office package replacement must use the bounded docx profile.");
+      validateOleOfficePackage(contentType, bytes, "Presentation embedded Office package replacement");
+      const digest = sha256(bytes);
+      const id = `${OLE_OFFICE_PACKAGE_ASSET_PREFIX}${digest}`;
+      if (!byId.has(id)) {
+        if (byId.size >= MAX_ASSET_COUNT) fail(`Presentation exceeds the ${MAX_ASSET_COUNT}-asset budget.`, "presentation_asset_budget_exceeded");
+        byId.set(id, {
+          id,
+          fileName: `embedded-office-package-${digest.slice(0, 16)}.docx`,
+          contentType,
           data: bytes,
           sha256: digest,
         });

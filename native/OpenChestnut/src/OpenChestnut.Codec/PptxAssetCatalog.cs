@@ -16,7 +16,9 @@ internal sealed class PptxAssetCatalog
     private const int MaxAssetBytes = 16 * 1024 * 1024;
     private const string PictureAssetPrefix = "asset/presentation/picture-bullet/";
     private const string OleWorkbookAssetPrefix = "asset/presentation/ole-workbook/";
+    private const string OleOfficePackageAssetPrefix = "asset/presentation/ole-office-package/";
     private const string SpreadsheetContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    private const string DocumentContentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
     private readonly Dictionary<string, Asset> _assets = new(StringComparer.Ordinal);
     private readonly Dictionary<string, ImagePart> _partByAssetId = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Asset> _imported = new(StringComparer.Ordinal);
@@ -41,6 +43,11 @@ internal sealed class PptxAssetCatalog
         asset.Id.StartsWith(OleWorkbookAssetPrefix, StringComparison.Ordinal)
             ? asset
             : throw new CodecException("invalid_presentation_asset", $"Presentation OLE workbook references missing asset {assetId}.");
+
+    internal Asset GetOleOfficePackage(string assetId) => _assets.TryGetValue(assetId, out var asset) &&
+        asset.Id.StartsWith(OleOfficePackageAssetPrefix, StringComparison.Ordinal)
+            ? asset
+            : throw new CodecException("invalid_presentation_asset", $"Presentation OLE Office package references missing asset {assetId}.");
 
     internal Asset Import(ImagePart part)
     {
@@ -119,13 +126,15 @@ internal sealed class PptxAssetCatalog
         var data = source.Data.ToByteArray();
         var isPicture = source.Id.StartsWith(PictureAssetPrefix, StringComparison.Ordinal);
         var isOleWorkbook = source.Id.StartsWith(OleWorkbookAssetPrefix, StringComparison.Ordinal);
+        var isOleOfficePackage = source.Id.StartsWith(OleOfficePackageAssetPrefix, StringComparison.Ordinal);
         if (isPicture) ValidateImage(contentType, data, $"Presentation asset {source.Id}");
         else if (isOleWorkbook) ValidateOleWorkbook(contentType, data, $"Presentation asset {source.Id}");
+        else if (isOleOfficePackage) ValidateOleOfficePackage(contentType, data, $"Presentation asset {source.Id}");
         else throw new CodecException("invalid_presentation_asset", $"Presentation asset ID {source.Id} has an unsupported purpose prefix.");
         var digest = Hash(data);
         if (!source.Sha256.Equals(digest, StringComparison.OrdinalIgnoreCase))
             throw new CodecException("invalid_presentation_asset", $"Presentation asset {source.Id} does not match its SHA-256 digest.");
-        var expectedId = (isPicture ? PictureAssetPrefix : OleWorkbookAssetPrefix) + digest;
+        var expectedId = (isPicture ? PictureAssetPrefix : isOleWorkbook ? OleWorkbookAssetPrefix : OleOfficePackageAssetPrefix) + digest;
         if (!source.Id.Equals(expectedId, StringComparison.Ordinal))
             throw new CodecException("invalid_presentation_asset", $"Presentation asset {source.Id} is not content-addressed by its bytes.");
         if (!_assets.TryAdd(source.Id, source.Clone()))
@@ -161,6 +170,15 @@ internal sealed class PptxAssetCatalog
     {
         if (!contentType.Equals(SpreadsheetContentType, StringComparison.Ordinal))
             throw new CodecException("invalid_presentation_asset", $"{label} must use the XLSX workbook content type.");
+        if (data.Length is 0 or > MaxAssetBytes || data.Length < 4 ||
+            data[0] != 0x50 || data[1] != 0x4b || data[2] != 0x03 || data[3] != 0x04)
+            throw new CodecException("invalid_presentation_asset", $"{label} must contain 1 through {MaxAssetBytes} bytes of an OPC ZIP package.");
+    }
+
+    private static void ValidateOleOfficePackage(string contentType, byte[] data, string label)
+    {
+        if (!contentType.Equals(DocumentContentType, StringComparison.Ordinal))
+            throw new CodecException("invalid_presentation_asset", $"{label} must use one supported Office package content type.");
         if (data.Length is 0 or > MaxAssetBytes || data.Length < 4 ||
             data[0] != 0x50 || data[1] != 0x4b || data[2] != 0x03 || data[3] != 0x04)
             throw new CodecException("invalid_presentation_asset", $"{label} must contain 1 through {MaxAssetBytes} bytes of an OPC ZIP package.");

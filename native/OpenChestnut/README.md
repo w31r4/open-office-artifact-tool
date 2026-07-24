@@ -45,6 +45,17 @@ Protocol version 2 removes `allow_lossy`; the removed field name and number are 
 - PPTX InkML content-part clone leaf: one direct top-level `p:contentPart` is accepted only when its exact internal standard/strict `customXml` relationship uniquely binds a non-empty, fully well-formed, relationship-free `application/inkml+xml` CustomXmlPart whose document element is `ink` in the standard namespace. Execution preserves the slide-local relationship ID, uses the Open XML SDK typed part API, and byte-copies the payload into a distinct `ppt/customXml/itemN.xml` clone part. Second import proves disjoint paths with equal hashes. The object remains opaque/source-bound and read-only; nested, extension-bearing, ambiguous, mistyped, malformed/multi-root, wrong-root, or connected content parts fail closed.
 - PPTX embedded-MP4 clone leaf: one direct top-level canonical media `p:pic` is accepted only when its empty `ppaction://media` sentinel, `a:videoFile`, `p14:media`, and poster blip consume exactly one video relationship, one Office media relationship, and one image relationship. The video/media pair must uniquely own the same non-empty, relationship-free `video/mp4` MediaDataPart. Execution preserves both slide-local IDs, creates a distinct Open XML SDK MediaDataPart, byte-copies the MP4, and shares the immutable poster ImagePart. Postwrite and second import prove exact bytes, distinct MP4 paths, and one shared poster path. The media object stays opaque/source-bound and read-only; linked, shared, nested, non-MP4, audio, timing-rich, multi-binding, or connected graphs fail closed. Native render checks validate the poster, not playback.
 
+The additive embedded Office-package leaf is equally narrow. Existing eligible
+XLSX OLE frames retain their workbook-specific API and clone profile. The
+generic `PresentationOleOfficePackage` wire record currently recognizes only a
+top-level `p:graphicFrame`/one-`p:oleObj` DOCX package with its exact internal
+relationship, standard WordprocessingML content type, exclusive inbound owner,
+and source hash. A replacement asset must retain that kind/MIME; the codec opens
+it as a body-bearing `WordprocessingDocument`, applies package budgets and
+Office 2021 validation, re-proves the original shell/relationship binding, and
+replaces only the package bytes. It never authors OLE, accepts arbitrary binary
+payloads, updates previews, or admits DOCX OLE frames to the XLSX clone profile.
+
 The PPTX combo profile is intentionally small: literal clustered bars plus literal
 lines, globally ordered series, duplicated chart-level data labels, and either
 one shared primary category/value axis pair or one canonical secondary top/right
