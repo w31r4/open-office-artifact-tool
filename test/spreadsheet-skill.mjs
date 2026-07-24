@@ -572,15 +572,19 @@ try {
   assert.equal(queryResult.sourceQueryTable.query.refreshOnLoad, false);
   assert.equal(queryResult.sourceConnections.length, 1);
   assert.equal(queryResult.sourceConnections[0].name, "Fixture warehouse");
+  assert.equal(queryResult.sourceConnections[0].refreshOnLoad, false);
   const queryZip = await JSZip.loadAsync(await fs.readFile(queryResult.workbookPath));
   assert.ok(queryZip.file("xl/connections.xml"));
   assert.ok(queryZip.file("xl/queryTables/queryTable1.xml"));
   const queryXml = await queryZip.file("xl/queryTables/queryTable1.xml").async("text");
+  const connectionXml = await queryZip.file("xl/connections.xml").async("text");
   assert.match(queryXml, /disableRefresh="1"/);
   assert.match(queryXml, /backgroundRefresh="0"/);
   assert.match(queryXml, /firstBackgroundRefresh="0"/);
   assert.match(queryXml, /refreshOnLoad="0"/);
   assert.match(queryXml, /fixture:opaque value="kept"/);
+  assert.match(connectionXml, /refreshOnLoad="0"/);
+  assert.match(connectionXml, /fixture:connectionOpaque value="kept"/);
 
   const intersectionResult = await runFixture("structured-intersection");
   const intersectionWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(intersectionResult.workbookPath));

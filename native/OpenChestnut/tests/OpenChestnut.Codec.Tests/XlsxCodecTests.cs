@@ -2001,7 +2001,7 @@ public sealed class XlsxCodecTests
         Assert.False(connection.RefreshOnLoad);
         Assert.True(connection.SaveData);
         Assert.Equal("xl/connections.xml", connection.Source.PartPath);
-        Assert.False(connection.Source.Editable);
+        Assert.True(connection.Source.Editable);
         Assert.True(table.Source.Editable);
         var query = Assert.IsType<SpreadsheetTableQueryArtifact>(table.QueryTable);
         Assert.Equal("Warehouse sales", query.Name);
@@ -2131,6 +2131,52 @@ public sealed class XlsxCodecTests
         var secondExport = Export(reimported.Artifact);
         Assert.True(secondExport.Ok, string.Join("\n", secondExport.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
         Assert.Equal(ReadEntry(output, queryPath), ReadEntry(secondExport.File.ToByteArray(), queryPath));
+    }
+
+    [Fact]
+    public void SourceBoundWorkbookConnectionAllowsRefreshOnLoadHardeningOnly()
+    {
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(TableExportRequest().ToByteArray()));
+        var source = AddQueryTableGraph(authored.File.ToByteArray(), eagerConnectionRefresh: true);
+        var connectionPath = "xl/connections.xml";
+        var queryPath = "xl/queryTables/queryTable1.xml";
+        var tablePath = "xl/tables/table1.xml";
+
+        var imported = Import(source);
+        var connection = Assert.Single(imported.Artifact.Workbook.Connections);
+        Assert.True(connection.Source.Editable);
+        Assert.True(connection.RefreshOnLoad);
+        connection.RefreshOnLoad = false;
+        var exported = Export(imported.Artifact);
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var output = exported.File.ToByteArray();
+        AssertOffice2021Valid(output);
+        Assert.Equal(ReadEntry(source, tablePath), ReadEntry(output, tablePath));
+        Assert.Equal(ReadEntry(source, queryPath), ReadEntry(output, queryPath));
+        var connectionXml = System.Text.Encoding.UTF8.GetString(ReadEntry(output, connectionPath));
+        Assert.Contains("refreshOnLoad=\"0\"", connectionXml, StringComparison.Ordinal);
+        Assert.Contains("command=\"SELECT Region, Revenue FROM Sales\"", connectionXml, StringComparison.Ordinal);
+        Assert.Contains("fixture:connectionOpaque value=\"kept\"", connectionXml, StringComparison.Ordinal);
+
+        var reimported = Import(output);
+        Assert.False(Assert.Single(reimported.Artifact.Workbook.Connections).RefreshOnLoad);
+        var secondExport = Export(reimported.Artifact);
+        Assert.True(secondExport.Ok, string.Join("\n", secondExport.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(ReadEntry(output, connectionPath), ReadEntry(secondExport.File.ToByteArray(), connectionPath));
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Connections[0].RefreshOnLoad = false;
+        imported.Artifact.Workbook.Connections[0].KeepAlive = true;
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_workbook_connection_edit", Assert.Single(rejected.Diagnostics).Code);
+
+        var omitted = AddQueryTableGraph(authored.File.ToByteArray(), omitConnectionRefreshOnLoad: true);
+        imported = Import(omitted);
+        imported.Artifact.Workbook.Connections[0].RefreshOnLoad = false;
+        rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_workbook_connection_edit", Assert.Single(rejected.Diagnostics).Code);
     }
 
     [Fact]
@@ -7253,7 +7299,9 @@ public sealed class XlsxCodecTests
         bool opaqueDeletedFields = false,
         bool opaqueSort = false,
         bool opaqueConnection = false,
-        bool eagerRefresh = false)
+        bool eagerRefresh = false,
+        bool eagerConnectionRefresh = false,
+        bool omitConnectionRefreshOnLoad = false)
     {
         using var stream = new MemoryStream();
         stream.Write(bytes);
@@ -7263,10 +7311,11 @@ public sealed class XlsxCodecTests
             var workbookPart = document.WorkbookPart!;
             var connectionsPart = workbookPart.AddNewPart<ConnectionsPart>("rIdConnections");
             var connectionType = opaqueConnection ? 1 : 5;
+            var connectionRefreshOnLoad = omitConnectionRefreshOnLoad ? string.Empty : $" refreshOnLoad=\"{(eagerConnectionRefresh ? 1 : 0)}\"";
             WritePart(connectionsPart, $$"""
                 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
                 <x:connections xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fixture="urn:open-office-artifact-tool:query-fixture">
-                  <x:connection id="7" name="Fixture warehouse" description="Read-only warehouse source" type="{{connectionType}}" refreshedVersion="8" keepAlive="0" interval="30" background="1" refreshOnLoad="0" saveData="1" savePassword="0" credentials="integrated">
+                  <x:connection id="7" name="Fixture warehouse" description="Read-only warehouse source" type="{{connectionType}}" refreshedVersion="8" keepAlive="0" interval="30" background="1"{{connectionRefreshOnLoad}} saveData="1" savePassword="0" credentials="integrated">
                     <x:dbPr connection="Provider=Fixture.Provider;Data Source=fixture.invalid" command="SELECT Region, Revenue FROM Sales" commandType="2"/>
                     <x:extLst><x:ext uri="{E5A74D42-D212-4CC7-9D5B-A7393F4D8A61}"><fixture:connectionOpaque value="kept"/></x:ext></x:extLst>
                   </x:connection>

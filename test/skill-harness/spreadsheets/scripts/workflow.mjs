@@ -71,6 +71,9 @@ async function attachSourceQueryTableFixture(file, config = {}) {
   if (zip.file(tableRelationshipPath)) throw new Error(`sourceQueryTableFixture refuses to replace ${tableRelationshipPath}.`);
   const connectionId = Number(config.connectionId ?? 7);
   if (!Number.isInteger(connectionId) || connectionId <= 0) throw new Error("sourceQueryTableFixture.connectionId must be a positive integer.");
+  if (config.connectionRefreshOnLoad != null && typeof config.connectionRefreshOnLoad !== "boolean")
+    throw new Error("sourceQueryTableFixture.connectionRefreshOnLoad must be a boolean when supplied.");
+  const connectionRefreshOnLoad = config.connectionRefreshOnLoad === true ? 1 : 0;
   const fields = Array.isArray(config.fields) && config.fields.length ? config.fields.map(String) : ["Key", "Value"];
   const queryTarget = path.posix.relative(path.posix.dirname(tablePartPath), queryPartPath);
   zip.file("[Content_Types].xml", contentTypes.replace(
@@ -82,7 +85,7 @@ async function attachSourceQueryTableFixture(file, config = {}) {
     '<Relationship Id="rIdConnections" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/connections" Target="connections.xml"/></Relationships>',
   ));
   zip.file(tableRelationshipPath, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdQueryTable" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable" Target="${fixtureXmlEscape(queryTarget)}"/></Relationships>`);
-  zip.file("xl/connections.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:connections xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fixture="urn:open-office-artifact-tool:query-fixture"><x:connection id="${connectionId}" name="${fixtureXmlEscape(config.connectionName || "Fixture connection")}" description="Read-only fixture source" type="5" refreshedVersion="8" keepAlive="0" interval="30" background="1" refreshOnLoad="0" saveData="1" savePassword="0" credentials="integrated"><x:dbPr connection="Provider=Fixture.Provider;Data Source=fixture.invalid" command="SELECT fixture fields" commandType="2"/><x:extLst><x:ext uri="{E5A74D42-D212-4CC7-9D5B-A7393F4D8A61}"><fixture:connectionOpaque value="kept"/></x:ext></x:extLst></x:connection></x:connections>`);
+  zip.file("xl/connections.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:connections xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fixture="urn:open-office-artifact-tool:query-fixture"><x:connection id="${connectionId}" name="${fixtureXmlEscape(config.connectionName || "Fixture connection")}" description="Read-only fixture source" type="5" refreshedVersion="8" keepAlive="0" interval="30" background="1" refreshOnLoad="${connectionRefreshOnLoad}" saveData="1" savePassword="0" credentials="integrated"><x:dbPr connection="Provider=Fixture.Provider;Data Source=fixture.invalid" command="SELECT fixture fields" commandType="2"/><x:extLst><x:ext uri="{E5A74D42-D212-4CC7-9D5B-A7393F4D8A61}"><fixture:connectionOpaque value="kept"/></x:ext></x:extLst></x:connection></x:connections>`);
   const queryFields = fields.map((name, index) => index === 0
     ? `<x:queryTableField id="1" name="${fixtureXmlEscape(name)}" dataBound="1" tableColumnId="1" fillFormulas="0" clipped="0"><x:extLst><x:ext uri="{71C44015-E485-449B-93BE-190C959F820F}"><fixture:fieldOpaque value="kept"/></x:ext></x:extLst></x:queryTableField>`
     : `<x:queryTableField id="${index + 1}" name="${fixtureXmlEscape(name)}" dataBound="1" tableColumnId="${index + 1}"/>`).join("");
@@ -467,8 +470,11 @@ export async function runSpreadsheetFixture(fixturePath, options = {}) {
     if (!sheet || !table || table.isNullObject || !table.queryTable)
       throw new Error(`sourceQueryTableFixture could not resolve ${sourceQuery.sheet}!${sourceQuery.table}.`);
     if (sourceQuery.edit || sourceQuery.connectionEdit || sourceQuery.refreshEdit)
-      throw new Error("sourceQueryTableFixture permits only refreshPolicy hardening; connection, refresh-history, and other QueryTable edits are outside the canonical Spreadsheet skill boundary.");
+      throw new Error("sourceQueryTableFixture permits only QueryTable refreshPolicy hardening and one explicit connection refresh-on-load disable; other connection, refresh-history, and QueryTable edits are outside the canonical Spreadsheet skill boundary.");
     if (sourceQuery.refreshPolicy) table.setQueryRefreshPolicy(sourceQuery.refreshPolicy);
+    if (sourceQuery.disableConnectionRefreshOnLoad != null && sourceQuery.disableConnectionRefreshOnLoad !== true)
+      throw new Error("sourceQueryTableFixture.disableConnectionRefreshOnLoad may only be true when supplied.");
+    if (sourceQuery.disableConnectionRefreshOnLoad === true) imported.disableConnectionRefreshOnLoad(sourceQuery.connectionId);
     file = await SpreadsheetFile.exportXlsx(imported, { ...exportOptions, recalculate: false });
     sourceQueryTable = { sheet: sourceQuery.sheet, table: sourceQuery.table, query: structuredClone(table.queryTable) };
     sourceConnections = structuredClone(imported.connections);

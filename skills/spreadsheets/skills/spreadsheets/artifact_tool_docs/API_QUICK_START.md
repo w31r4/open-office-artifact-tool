@@ -387,6 +387,23 @@ externalSales.setQueryRefreshPolicy({
 - It does not run, recalculate, rebind, create, or rewrite external data. Connection definitions/commands/credentials, fields, deleted-field history, refresh-local sort state, topology, and unknown XML remain source-bound and immutable.
 - Export proves the source binding and residual query XML, reparses the result, and fails closed if the imported profile is not recognized or any other QueryTable semantics changed. Re-import and `inspect({ kind: "connection,table" })` before handoff.
 
+### Imported connections: disable refresh on open only
+
+An imported workbook connection is not a generic connection editor. After inspecting and resolving one exact connection, the only supported mutation is turning an explicit `refreshOnLoad="1"` into `false`:
+
+```js
+const connection = workbook.resolve("connection/7");
+if (!connection || connection.refreshOnLoad !== true) {
+  throw new Error("Expected one imported connection with refreshOnLoad=true.");
+}
+
+workbook.disableConnectionRefreshOnLoad(connection.connectionId);
+```
+
+- This is deliberately narrower than a “connection policy” setter. It changes only the native `refreshOnLoad` root attribute from explicit `true` to `false`; omitted or already-false input fails closed.
+- It stops the connection's refresh-on-open request only. It does not execute a refresh and does not promise to prevent a manual, macro, PivotTable, or other host-triggered refresh.
+- Connection strings, commands, credentials, provider/path metadata, `background`, `keepAlive`, `interval`, `saveData`, children, extensions, identity, order, and unknown XML remain immutable. Export re-proves the full part/element source bindings and normalized residual, reparses output, and fails closed on any other change.
+
 ### What-If Data Tables
 
 Use native What-If data tables when Excel or another compatible spreadsheet host should evaluate one formula over a bounded set of substituted inputs. This is not an ordinary worksheet table and is not simulated by the JavaScript formula evaluator.

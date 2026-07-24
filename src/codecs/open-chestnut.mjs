@@ -865,6 +865,26 @@ function connectionSnapshot(value) {
   return publicWorkbookConnection(value);
 }
 
+function wireSourceBoundConnectionRefreshOnLoad(slot) {
+  const source = publicWorkbookConnection(slot.wire);
+  if (source.refreshOnLoad !== true) {
+    throw new OpenChestnutCodecError(
+      `Imported workbook connection ${slot.connection.connectionId} may disable refreshOnLoad only when the validated source explicitly enables it.`,
+      [],
+      { code: "unsupported_workbook_connection_edit" },
+    );
+  }
+  const expected = { ...slot.publicSnapshot, refreshOnLoad: false };
+  if (JSON.stringify(connectionSnapshot(slot.connection)) !== JSON.stringify(expected)) {
+    throw new OpenChestnutCodecError(
+      `Imported workbook connection ${slot.connection.connectionId} is source-bound; only refreshOnLoad may change from true to false.`,
+      [],
+      { code: "unsupported_workbook_connection_edit" },
+    );
+  }
+  return { ...slot.wire, refreshOnLoad: false };
+}
+
 function wireWorkbookConnections(workbook, state) {
   const remaining = new Set(workbook.connections || []);
   const output = [];
@@ -872,13 +892,11 @@ function wireWorkbookConnections(workbook, state) {
     if (!remaining.delete(slot.connection)) {
       throw new OpenChestnutCodecError(`Workbook cannot remove imported connection ${slot.connection.connectionId} in the bounded OpenChestnut slice.`, [], { code: "invalid_workbook_connection" });
     }
-    if (JSON.stringify(connectionSnapshot(slot.connection)) !== JSON.stringify(slot.publicSnapshot)) {
-      throw new OpenChestnutCodecError(`Imported workbook connection ${slot.connection.connectionId} is source-bound and read-only in OpenChestnut 0.2.`, [], { code: "unsupported_workbook_connection_edit" });
-    }
-    output.push(slot.wire);
+    if (JSON.stringify(connectionSnapshot(slot.connection)) === JSON.stringify(slot.publicSnapshot)) output.push(slot.wire);
+    else output.push(wireSourceBoundConnectionRefreshOnLoad(slot));
   }
   if (remaining.size) {
-    throw new OpenChestnutCodecError("OpenChestnut 0.2 cannot author workbook connections; imported connections are source-bound and read-only.", [], { code: "unsupported_workbook_connection_edit" });
+    throw new OpenChestnutCodecError("OpenChestnut 0.3 cannot author workbook connections; imported connections may only disable explicit refreshOnLoad=true.", [], { code: "unsupported_workbook_connection_edit" });
   }
   return output;
 }

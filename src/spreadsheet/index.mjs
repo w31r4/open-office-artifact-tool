@@ -1275,6 +1275,14 @@ function normalizeWorkbookCalculation(value) {
 
 const WORKBOOK_CONNECTION_BOOLEAN_FIELDS = ["keepAlive", "background", "refreshOnLoad", "saveData"];
 
+function workbookConnectionId(value) {
+  const raw = typeof value === "string" && /^connection\/\d+$/.test(value) ? value.slice("connection/".length) : value;
+  const connectionId = Number(raw);
+  if (!Number.isSafeInteger(connectionId) || connectionId <= 0)
+    throw new TypeError("Workbook connection ID must be a positive integer or canonical connection/<id> locator.");
+  return connectionId;
+}
+
 function normalizeWorkbookConnection(value = {}) {
   const connectionId = Number(value.connectionId ?? (typeof value.id === "number" ? value.id : String(value.id || "").match(/^connection\/(\d+)$/)?.[1]));
   const connection = {
@@ -1328,6 +1336,16 @@ export class Workbook {
   setCalculation(calculation) {
     this.calculation = calculation == null ? undefined : normalizeWorkbookCalculation(calculation);
     return this;
+  }
+
+  disableConnectionRefreshOnLoad(connectionId) {
+    const normalizedId = workbookConnectionId(connectionId);
+    const connection = this.connections.find((item) => item.connectionId === normalizedId);
+    if (!connection) throw new Error(`Workbook connection ${normalizedId} does not exist.`);
+    if (connection.refreshOnLoad !== true)
+      throw new Error(`Workbook connection ${normalizedId} must have explicit refreshOnLoad=true before it can be disabled.`);
+    connection.refreshOnLoad = false;
+    return connection;
   }
 
   static async fromCSV(text, options = {}) {

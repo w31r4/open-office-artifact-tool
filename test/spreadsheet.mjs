@@ -997,6 +997,19 @@ const connectionWorkbook = Workbook.create({
   connections: [{ connectionId: 1, name: "Source-free connection", type: 1, refreshedVersion: 1 }],
 });
 connectionWorkbook.worksheets.add("Main").getRange("A1").values = [["No connection authoring"]];
+const connectionPolicyWorkbook = Workbook.create({
+  connections: [{ connectionId: 7, name: "Imported-shaped connection", type: 5, refreshedVersion: 8, refreshOnLoad: true }],
+});
+assert.throws(() => connectionPolicyWorkbook.disableConnectionRefreshOnLoad(8), /does not exist/i);
+assert.throws(() => connectionPolicyWorkbook.disableConnectionRefreshOnLoad("connection/0"), /positive integer/i);
+assert.deepEqual(connectionPolicyWorkbook.disableConnectionRefreshOnLoad("connection/7"), {
+  connectionId: 7,
+  name: "Imported-shaped connection",
+  type: 5,
+  refreshedVersion: 8,
+  refreshOnLoad: false,
+});
+assert.throws(() => connectionPolicyWorkbook.disableConnectionRefreshOnLoad(7), /explicit refreshOnLoad=true/i);
 await assert.rejects(
   () => SpreadsheetFile.exportXlsx(connectionWorkbook),
   (error) => error?.code === "unsupported_workbook_features" && /source-free workbook connections/i.test(error.message),

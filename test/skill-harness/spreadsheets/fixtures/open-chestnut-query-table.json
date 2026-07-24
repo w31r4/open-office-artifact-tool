@@ -26,6 +26,8 @@
     "queryPartPath": "xl/queryTables/queryTable1.xml",
     "connectionId": 7,
     "connectionName": "Fixture warehouse",
+    "connectionRefreshOnLoad": true,
+    "disableConnectionRefreshOnLoad": true,
     "queryName": "Warehouse sales",
     "fields": ["Region", "Revenue"],
     "refreshPolicy": {
