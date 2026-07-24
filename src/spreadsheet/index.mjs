@@ -79,6 +79,10 @@ const XLSX_PACKAGE_CONFIG = {
   family: "XLSX",
   packageKind: "xlsxPackage",
   partKind: "xlsxPart",
+  officeDocument: {
+    contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml",
+    partPath: "xl/workbook.xml",
+  },
   counts: { sheets: /^xl\/worksheets\/sheet\d+\.xml$/ },
   semanticIssues: validateSpreadsheetThreadedCommentPackageSemantics,
 };

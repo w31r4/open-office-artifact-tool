@@ -8,6 +8,11 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { crc32 } from "node:zlib";
+import {
+  DocumentFile,
+  PresentationFile,
+  SpreadsheetFile,
+} from "open-office-artifact-tool";
 
 const TEMPLATE_PREFIX = "artifact-template-";
 const WRITE_LOCK_NAME = ".artifact-template-write-lock";
@@ -18,6 +23,12 @@ const MAX_REFERENCE_BYTES = 512 * 1024 * 1024;
 const MAX_PREVIEW_BYTES = 64 * 1024 * 1024;
 const MAX_SELECTION_JSON_BYTES = 32 * 1024;
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+const TEMPLATE_REFERENCE_INSPECTION_OPTIONS = Object.freeze({
+  maxPartBytes: 64 * 1024 * 1024,
+  maxParts: 4_096,
+  maxTotalBytes: 256 * 1024 * 1024,
+  verifyCrc32: true,
+});
 const USAGE =
   "Usage: create-template-skill.mjs --reference-path <path> --preview-path <path> --display-name <name> --description <description> [--selection-json <json>] [--mode update --skill-name <name>]";
 const artifactKinds = new Map([
@@ -25,6 +36,7 @@ const artifactKinds = new Map([
     ".docx",
     {
       kind: "document",
+      inspect: (input, options) => DocumentFile.inspectDocx(input, options),
       workflow: "Documents",
       preservation:
         "Preserve page setup, sections, styles, lists, tables, headers, footers, and recurring page elements.",
@@ -34,6 +46,7 @@ const artifactKinds = new Map([
     ".pptx",
     {
       kind: "presentation",
+      inspect: (input, options) => PresentationFile.inspectPptx(input, options),
       workflow: "Presentations",
       preservation:
         "Preserve source slides, layouts, masters, typography, geometry, images, charts, tables, and recurring slide chrome.",
@@ -43,6 +56,7 @@ const artifactKinds = new Map([
     ".xlsx",
     {
       kind: "spreadsheet",
+      inspect: (input, options) => SpreadsheetFile.inspectXlsx(input, options),
       workflow: "Spreadsheets",
       preservation:
         "Preserve sheet structure, formulas, names, number formats, dimensions, tables, charts, validation, conditional formatting, and frozen panes.",
@@ -134,6 +148,7 @@ async function validateRequest(rawRequest) {
     assertRegularFile(referencePath, "--reference-path", MAX_REFERENCE_BYTES),
     assertRegularFile(previewPath, "--preview-path", MAX_PREVIEW_BYTES),
   ]);
+  await assertValidOfficeReference(referencePath, artifactKinds.get(extension));
   if (path.extname(previewPath).toLowerCase() !== ".png") {
     throw new Error("--preview-path must end in .png.");
   }
@@ -187,6 +202,28 @@ async function validateRequest(rawRequest) {
     selectionMetadata,
     skillName,
   };
+}
+
+async function assertValidOfficeReference(referencePath, artifact) {
+  let inspection;
+  try {
+    inspection = await artifact.inspect(
+      await fs.readFile(referencePath),
+      TEMPLATE_REFERENCE_INSPECTION_OPTIONS,
+    );
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `--reference-path must contain a structurally valid Office Open XML package: ${detail}`,
+    );
+  }
+  if (inspection.ok) return;
+  const firstIssue = inspection.issues.find(
+    (issue) => issue?.severity === "error",
+  );
+  throw new Error(
+    `--reference-path must contain a structurally valid Office Open XML package: ${firstIssue?.message || "package inspection reported an unknown structural error."}`,
+  );
 }
 
 function getDefaultOfficeArtifactHome() {

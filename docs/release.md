@@ -75,6 +75,17 @@ artifact model, codec, or runtime:
 OfficeKit is npm-distributed; the 20 retained templates remain repository-only
 and do not increase the runtime tarball with Office or preview binaries.
 
+## 0.3.0 Template Creator Office-package admission
+
+Template Creator now treats the Office reference as an input to the canonical
+bounded package inspector before it acquires a write lock or creates a staging
+tree. It requires the matching DOCX/PPTX/XLSX primary part and main content
+type, exactly one root `officeDocument` relationship to that part, and verified
+ZIP entry CRCs. Renamed text, a cross-family package, an invalid root
+relationship, and a corrupted archive fail closed without retaining bytes or
+leaving a lock/staging directory. This reuses the public inspection boundary;
+the creator does not carry a second ZIP/OPC parser.
+
 ### OfficeKit integration evidence
 
 On 2026-07-24, the integrated candidate passed the complete `npm test` chain,

@@ -16,7 +16,7 @@ Create or update a reference-backed local template. The source Office file stays
 
 ## Create workflow
 
-1. Require exactly one `.docx`, `.pptx`, or `.xlsx` reference unless the user explicitly requests a batch. For a batch, complete this workflow separately for every file.
+1. Require exactly one `.docx`, `.pptx`, or `.xlsx` reference unless the user explicitly requests a batch. For a batch, complete this workflow separately for every file. An extension alone is not evidence: the creator must accept the reference as a bounded Office OPC package before retaining it.
 2. Infer a concise display name, intended-use description, and artifact kind from the reference and request. If there is enough evidence, also prepare compact selection metadata: intended uses, avoid cases, audiences, content shapes, visual traits, visual commitment, and provenance.
 3. Create `preview.png` before packaging:
    - DOCX: render the reference and use a representative page PNG.
@@ -51,6 +51,12 @@ creator safely defaults to the intended-use description, an opinionated visual
 commitment, and `copy-only`.
 
 6. Read the JSON result. Verify that the generated directory contains `SKILL.md`, schema-v2 `artifact-template.json`, `agents/agent.yaml`, the retained `assets/reference.<ext>`, and `assets/preview.png`. Verify the recorded reference and preview hashes.
+
+The creator verifies ZIP CRCs, the required family-specific primary part and
+content type, and exactly one root `officeDocument` relationship before it
+acquires its write lock. A renamed text file, cross-family package, corrupted
+archive, or broken primary relationship must fail closed without creating or
+changing a template.
 
 ## Update workflow
 

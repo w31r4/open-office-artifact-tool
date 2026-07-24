@@ -39,6 +39,10 @@ const PPTX_PACKAGE_CONFIG = {
   family: "PPTX",
   packageKind: "pptxPackage",
   partKind: "pptxPart",
+  officeDocument: {
+    contentType: "application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml",
+    partPath: "ppt/presentation.xml",
+  },
   counts: { slides: /^ppt\/slides\/slide\d+\.xml$/ },
   semanticIssues: validatePptxPackageSemantics,
 };

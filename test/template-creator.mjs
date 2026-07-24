@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
+import JSZip from "jszip";
 
 import {
   DocumentFile,
@@ -70,6 +71,21 @@ async function runSuccessfulCreator(args) {
   } catch (error) {
     throw new Error(`Template creator did not return JSON: ${result.stdout}\n${error}`);
   }
+}
+
+async function assertRejectedOfficeReference(referencePath, label) {
+  const result = await runCreator([
+    "--reference-path", referencePath,
+    "--preview-path", path.join(fixturesDirectory, "preview.png"),
+    "--display-name", `${label} fixture`,
+    "--description", "This malformed Office reference must not be retained.",
+  ]);
+  assert.notEqual(result.code, 0, `Template creator accepted ${label}.`);
+  assert.match(
+    result.stderr,
+    /structurally valid Office Open XML package/i,
+    `Template creator did not explain the Office-package rejection for ${label}: ${result.stderr}`,
+  );
 }
 
 async function assertBytesEqual(actualPath, expectedPath, label) {
@@ -222,6 +238,11 @@ try {
   const updatedPptxPath = path.join(fixturesDirectory, "updated-reference.pptx");
   const docxPath = path.join(fixturesDirectory, "reference.docx");
   const xlsxPath = path.join(fixturesDirectory, "reference.xlsx");
+  const renamedDocxPath = path.join(fixturesDirectory, "renamed-not-office.docx");
+  const renamedPptxPath = path.join(fixturesDirectory, "renamed-not-office.pptx");
+  const renamedXlsxPath = path.join(fixturesDirectory, "renamed-not-office.xlsx");
+  const crossFamilyDocxPath = path.join(fixturesDirectory, "presentation-renamed.docx");
+  const invalidRootRelationshipDocxPath = path.join(fixturesDirectory, "invalid-root-relationship.docx");
   const previewPath = path.join(fixturesDirectory, "preview.png");
 
   await Promise.all([
@@ -229,9 +250,44 @@ try {
     writePresentationFixture(updatedPptxPath, 2),
     writeSpreadsheetFixture(xlsxPath),
     writeDocumentFixture(docxPath),
+    fs.writeFile(renamedDocxPath, "not an Office package\n", "utf8"),
+    fs.writeFile(renamedPptxPath, "not an Office package\n", "utf8"),
+    fs.writeFile(renamedXlsxPath, "not an Office package\n", "utf8"),
     writePngFixture(previewPath),
     fs.mkdir(home, { recursive: true }),
   ]);
+  await fs.copyFile(pptxPath, crossFamilyDocxPath);
+  const invalidRootRelationshipZip = await JSZip.loadAsync(
+    await fs.readFile(docxPath),
+  );
+  const rootRelationships = await invalidRootRelationshipZip.file("_rels/.rels").async("text");
+  invalidRootRelationshipZip.file(
+  "_rels/.rels",
+  rootRelationships.replace(
+    /Target="\/?word\/document\.xml"/u,
+    'Target="/word/not-the-main-document.xml"',
+  ),
+  );
+  await fs.writeFile(
+    invalidRootRelationshipDocxPath,
+    await invalidRootRelationshipZip.generateAsync({ type: "nodebuffer" }),
+  );
+
+  for (const [referencePath, label] of [
+    [renamedDocxPath, "renamed DOCX text"],
+    [renamedPptxPath, "renamed PPTX text"],
+    [renamedXlsxPath, "renamed XLSX text"],
+    [crossFamilyDocxPath, "PPTX bytes renamed as DOCX"],
+    [invalidRootRelationshipDocxPath, "DOCX with invalid root relationship"],
+  ]) {
+    await assertRejectedOfficeReference(referencePath, label);
+  }
+  assert.deepEqual(
+    await fs.readdir(home),
+    [],
+    "Template creator must reject an invalid Office reference before it creates locks or writes a template tree.",
+  );
+
   await fs.writeFile(
     path.join(home, ".artifact-template-write-lock"),
     "999999999\n",

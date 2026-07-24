@@ -26,6 +26,14 @@ node skills/template-creator/skills/template-creator/scripts/create-template-ski
 
 The command returns JSON containing the created template name, artifact kind, and local path. It selects a numbered name rather than overwriting an existing template.
 
+Before it acquires a write lock or retains any bytes, the creator checks the
+reference through the same bounded Office package inspector used by the public
+facades. The extension must match a DOCX/PPTX/XLSX OPC package with its required
+primary part, declared main content type, and exactly one root
+`officeDocument` relationship; ZIP entry CRCs are also verified. A renamed text
+file, a cross-family Office package, a broken root relationship, or a corrupt
+archive fails closed and creates no template tree.
+
 The generated `artifact-template.json` uses schema version 2. It records
 selection metadata plus SHA-256 values for the retained Office file and PNG.
 Without explicit selection metadata, new templates are intentionally
@@ -71,4 +79,5 @@ $OFFICE_ARTIFACT_HOME/skills/artifact-template-<slug>/
 
 `artifact-template.json` records the supported kind, paths, selection evidence,
 edit profile, provenance, and retained-asset hashes. The creator validates PNG
-chunk structure and CRCs before copying the preview.
+chunk structure and CRCs before copying the preview, and applies the same
+fail-closed Office-package admission check on every create or update.

@@ -41,12 +41,120 @@ async function zipOf(file) {
   return JSZip.loadAsync(new Uint8Array(await file.arrayBuffer()));
 }
 
+async function bytesOf(zip) {
+  return zip.generateAsync({ type: "uint8array" });
+}
+
+function corruptCentralDirectoryCrc(bytes, entryName) {
+  const result = new Uint8Array(bytes);
+  const view = new DataView(result.buffer, result.byteOffset, result.byteLength);
+  const name = Buffer.from(entryName, "utf8");
+  for (let offset = 0; offset + 46 <= result.byteLength; offset += 1) {
+    if (view.getUint32(offset, true) !== 0x02014b50) continue;
+    const nameLength = view.getUint16(offset + 28, true);
+    const extraLength = view.getUint16(offset + 30, true);
+    const commentLength = view.getUint16(offset + 32, true);
+    const end = offset + 46 + nameLength + extraLength + commentLength;
+    if (end > result.byteLength) break;
+    const candidate = result.subarray(offset + 46, offset + 46 + nameLength);
+    if (!Buffer.from(candidate).equals(name)) {
+      offset = end - 1;
+      continue;
+    }
+    view.setUint32(offset + 16, view.getUint32(offset + 16, true) ^ 1, true);
+    return result;
+  }
+  throw new Error(`Could not locate ZIP central-directory entry ${entryName}.`);
+}
+
 // Explicit package patching remains a low-level operation. It is never selected
 // by an Office facade as a codec or fallback.
 const document = DocumentModel.create({ blocks: [] });
 document.addParagraph("Patch this DOCX");
 const baseDocx = await DocumentFile.exportDocx(document);
-assert.equal((await DocumentFile.inspectDocx(baseDocx)).ok, true);
+assert.equal((await DocumentFile.inspectDocx(baseDocx, { verifyCrc32: true })).ok, true);
+
+const missingMainPartZip = await zipOf(baseDocx);
+missingMainPartZip.remove("word/document.xml");
+const missingMainPartInspection = await DocumentFile.inspectDocx(
+  await bytesOf(missingMainPartZip),
+  { verifyCrc32: true },
+);
+assert.equal(missingMainPartInspection.ok, false);
+assert.ok(
+  missingMainPartInspection.issues.some(
+    (issue) => issue.type === "missingOfficeDocumentPart",
+  ),
+);
+
+const invalidContentTypeZip = await zipOf(baseDocx);
+const contentTypesXml = await invalidContentTypeZip.file("[Content_Types].xml").async("text");
+invalidContentTypeZip.file(
+  "[Content_Types].xml",
+  contentTypesXml.replace(
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml",
+    "application/octet-stream",
+  ),
+);
+const invalidContentTypeInspection = await DocumentFile.inspectDocx(
+  await bytesOf(invalidContentTypeZip),
+  { verifyCrc32: true },
+);
+assert.equal(invalidContentTypeInspection.ok, false);
+assert.ok(
+  invalidContentTypeInspection.issues.some(
+    (issue) => issue.type === "invalidOfficeDocumentContentType",
+  ),
+);
+
+const invalidRootRelationshipZip = await zipOf(baseDocx);
+const rootRelationshipsXml = await invalidRootRelationshipZip.file("_rels/.rels").async("text");
+invalidRootRelationshipZip.file(
+  "_rels/.rels",
+  rootRelationshipsXml.replace(
+    /Target="\/?word\/document\.xml"/u,
+    'Target="/word/not-the-main-document.xml"',
+  ),
+);
+const invalidRootRelationshipInspection = await DocumentFile.inspectDocx(
+  await bytesOf(invalidRootRelationshipZip),
+  { verifyCrc32: true },
+);
+assert.equal(invalidRootRelationshipInspection.ok, false);
+assert.ok(
+  invalidRootRelationshipInspection.issues.some(
+    (issue) => issue.type === "invalidOfficeDocumentRelationship",
+  ),
+);
+
+const externalRootRelationshipZip = await zipOf(baseDocx);
+const externalRootRelationshipsXml = await externalRootRelationshipZip.file("_rels/.rels").async("text");
+externalRootRelationshipZip.file(
+  "_rels/.rels",
+  externalRootRelationshipsXml.replace(
+    /Target="\/?word\/document\.xml"/u,
+    'Target="https://example.invalid/document.xml" TargetMode="External"',
+  ),
+);
+const externalRootRelationshipInspection = await DocumentFile.inspectDocx(
+  await bytesOf(externalRootRelationshipZip),
+  { verifyCrc32: true },
+);
+assert.equal(externalRootRelationshipInspection.ok, false);
+assert.ok(
+  externalRootRelationshipInspection.issues.some(
+    (issue) => issue.type === "invalidOfficeDocumentRelationship",
+  ),
+);
+
+const crcCorruptedDocx = corruptCentralDirectoryCrc(
+  new Uint8Array(await baseDocx.arrayBuffer()),
+  "word/document.xml",
+);
+await assert.rejects(
+  () => DocumentFile.inspectDocx(crcCorruptedDocx, { verifyCrc32: true }),
+  /crc32|corrupted zip|corrupt/i,
+);
 
 const docxZip = await zipOf(baseDocx);
 const documentXml = await docxZip.file("word/document.xml").async("text");

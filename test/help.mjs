@@ -577,6 +577,10 @@ assert.match(HELP_CATALOG.find((item) => item.name === "table.merge")?.schema?.r
 assert.equal(HELP_CATALOG.find((item) => item.name === "openChestnutStatus")?.schema?.returns?.status?.type, "object");
 assert.equal(HELP_CATALOG.find((item) => item.name === "invokeOpenChestnut")?.schema?.parameters?.request?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.inspectXlsx")?.schema?.parameters?.maxTotalBytes?.type, "number");
+assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.inspectXlsx")?.schema?.parameters?.verifyCrc32?.type, "boolean");
+assert.equal(HELP_CATALOG.find((item) => item.name === "PresentationFile.inspectPptx")?.schema?.parameters?.verifyCrc32?.type, "boolean");
+assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.inspectDocx")?.schema?.parameters?.verifyCrc32?.type, "boolean");
+assert.match(HELP_CATALOG.find((item) => item.name === "DocumentFile.inspectDocx")?.summary || "", /root officeDocument relationship.*CRC/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.patchXlsx")?.schema?.parameters?.validateResult?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.patchXlsx")?.schema?.parameters?.syncSourceReferences?.type, "boolean");
 assert.equal(HELP_CATALOG.find((item) => item.name === "SpreadsheetFile.patchXlsx")?.schema?.parameters?.recipe?.type, "string|object");

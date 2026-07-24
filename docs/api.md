@@ -52,7 +52,7 @@ Generated from `HELP_CATALOG` in `src/help/index.mjs`.
 | `DocumentFile.exportDocx` | api | Export DocumentModel to DOCX through the single bundled OpenChestnut codec. Only limits is accepted; legacy codec and lossy-fallback options fail explicitly. |
 | `DocumentFile.finalizeRevisions` | api | Accept or reject bounded direct whole-paragraph one-run revisions and exact adjacent in-paragraph w:del + w:ins pairs from source bytes, including same-format fragmented deletions in direct body paragraphs or bounded table-cell paragraphs. Mandatory SHA-256 binding, decompression budgets, exact changed-part audit, and fail-closed graph checks prevent silent model reconstruction or broad package mutation. |
 | `DocumentFile.importDocx` | api | Import relationship-driven core DOCX semantics through the single bundled OpenChestnut codec. An imported header/footer advertises editable only for one direct unformatted text paragraph in a uniquely used source part; recognized ordered literal/simple-field page furniture is exposed as segments but remains source-bound/read-only and no-op preserved. PAGE/simple fields, rich, shared, inherited, and irregular page furniture stay read-only. Recognized inline controls, fields, revisions, notes, citations, simple tables, and exclusive canonical VML text-watermark paragraphs are fixed-topology editable; otherwise read-only paragraphs and complex table cells separately advertise textPatchable when at least one direct ordinary native text node can participate in a bounded literal patch. A unique literal may span adjacent same-format runs without rebuilding the surrounding graph. |
-| `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
+| `DocumentFile.inspectDocx` | api | Inspect bounded DOCX parts, content types, the required main-document/root officeDocument relationship, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets; verifyCrc32 additionally checks ZIP entry CRCs. |
 | `DocumentFile.patchDocx` | api | Apply DOCX part patches with path traversal validation for settings, classic-comment anchors, commentsExtended/commentsIds/commentsExtensible/people parts, and numbering assignments; atomically reject dangling packages and invalid comment graphs. |
 | `documentHeaderFooter.setSegments` | api | Atomically replace one source-free header/footer's ordered literal/simple-field sequence. The derived visible text must remain the concatenated segment displays; imported page furniture cannot use this mutation profile. |
 | `DocumentModel.create` | api | Create a document with paragraph/character styles, formatted paragraphs/runs, canonical inline and one-paragraph table-cell plain-text, checkbox, drop-down, combo-box, and ISO/Gregorian date content controls, one-paragraph block plain-text controls, canonical inline SEQ/REF/PAGEREF fields, sections, headers/footers, canonical VML text watermarks, lists, TableGrid fixed-geometry tables, links, bounded whole-block bookmarks, plain-text footnotes/endnotes, canonical bibliography-backed citations, simple fields, a canonical complex TOC placeholder, bounded whole-paragraph tracked insertions/deletions, classic comments, bounded modern root/direct-reply threads, and PNG/JPEG images. Nested/irregular modern threads, rich comment bodies, multi-paragraph/rich/inline-within-cell/nested/data-bound/locked/placeholder table-cell SDTs, other nested/data-bound/locked/placeholder SDTs, irregular lists, localized dates, custom checkbox symbols, image/DrawingML/irregular VML watermarks, other complex field graphs, arbitrary table-style graphs, complex bookmark/note/revision graphs, and advanced settings remain unsupported or source-bound. |
@@ -796,7 +796,7 @@ Import relationship-driven core DOCX semantics through the single bundled OpenCh
 
 #### `DocumentFile.inspectDocx`
 
-Inspect bounded DOCX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets.
+Inspect bounded DOCX parts, content types, the required main-document/root officeDocument relationship, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets; verifyCrc32 additionally checks ZIP entry CRCs.
 
 **Schema parameters:**
 
@@ -806,6 +806,7 @@ Inspect bounded DOCX parts, content types, relationships, and namespace-aware so
 - `maxParts` (number) — Maximum package part count.
 - `maxPartBytes` (number) — Maximum uncompressed bytes per part.
 - `maxTotalBytes` (number) — Maximum total uncompressed package bytes.
+- `verifyCrc32` (boolean) — Verify every ZIP entry CRC32 before inspecting package structure; use for untrusted retained inputs.
 - `maxChars` (number) — Maximum bounded NDJSON output size.
 
 **Schema returns:**
@@ -1699,7 +1700,7 @@ Resolve one explicit PDF task and selected/default provider against the immutabl
 | `presentation.view` | api | Control local editor gridline/guide visibility and inspect imported PowerPoint grid spacing, snap settings, and read-only slide guides. Visibility is local model state; imported viewProps.xml metadata remains source/hash-bound and unchanged by canonical export. |
 | `PresentationFile.exportPptx` | api | Serialize PPTX through the single bundled OpenChestnut codec. Only limits is accepted; legacy codec and lossy-fallback options fail explicitly. |
 | `PresentationFile.importPptx` | api | Import PPTX through the single bundled OpenChestnut codec with source-bound opaque preservation, speaker-notes edit/add capability evidence, bounded text-only edits for recognized local SlidePart placeholders and canonical SmartArt plain document nodes, eligible OLE XLSX payload access/replacement plus uniquely bound DOCX Office-package access/replacement, and fail-closed unsupported edits. |
-| `PresentationFile.inspectPptx` | api | Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, legacy notes/comments evidence, and Office 2021 modern author/thread/anchor semantics under decompression budgets. |
+| `PresentationFile.inspectPptx` | api | Inspect bounded PPTX parts, content types, the required presentation/root officeDocument relationship, namespace-aware source XML references, legacy notes/comments evidence, and Office 2021 modern author/thread/anchor semantics under decompression budgets; verifyCrc32 additionally checks ZIP entry CRCs. |
 | `PresentationFile.patchPptx` | api | Apply path-validated PPTX part patches, including safe slide/master/layout ID lists and slide image/chart DrawingML mutations, and atomically reject dangling package references or invalid notes/comments semantics. |
 | `shape.text.set` | api | Set plain or structured text with ordered text, field, and line-break inlines; bounded run formatting; character, picture-bullet, or auto-numbered lists; levels, indents, spacing; and external URI, internal-slide, relative-action, or existing custom-show hyperlinks. Missing, opaque, malformed, relationship-bearing, or dangling custom-show targets and unmodeled text graphs fail closed in canonical PPTX export. |
 | `shape.useBackgroundFill` | api | Read the presence-aware imported PresentationML p:sp useBgFill flag. It affects preview paint but remains source-bound and read-only; source-free authoring or wire mutation fails closed. |
@@ -2312,7 +2313,7 @@ Import PPTX through the single bundled OpenChestnut codec with source-bound opaq
 
 #### `PresentationFile.inspectPptx`
 
-Inspect bounded PPTX parts, content types, relationships, namespace-aware source XML references, legacy notes/comments evidence, and Office 2021 modern author/thread/anchor semantics under decompression budgets.
+Inspect bounded PPTX parts, content types, the required presentation/root officeDocument relationship, namespace-aware source XML references, legacy notes/comments evidence, and Office 2021 modern author/thread/anchor semantics under decompression budgets; verifyCrc32 additionally checks ZIP entry CRCs.
 
 **Examples:**
 
@@ -2326,6 +2327,7 @@ Inspect bounded PPTX parts, content types, relationships, namespace-aware source
 - `maxParts` (number) — Maximum package part count.
 - `maxPartBytes` (number) — Maximum uncompressed bytes per part.
 - `maxTotalBytes` (number) — Maximum total uncompressed package bytes.
+- `verifyCrc32` (boolean) — Verify every ZIP entry CRC32 before inspecting package structure; use for untrusted retained inputs.
 - `maxChars` (number) — Maximum bounded NDJSON output size.
 
 **Schema returns:**
@@ -3235,7 +3237,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `SpreadsheetFile.importTsv` | api | Import UTF-8 tab-separated bytes into an editable Workbook through the bounded delimited parser. |
 | `SpreadsheetFile.importXlsx` | api | Load XLSX through the single bundled OpenChestnut codec into an editable Workbook facade. |
 | `SpreadsheetFile.inspectDelimited` | api | Inspect bounded CSV/TSV bytes as file/row records with dimensions, delimiter, quoting, and formula-like cell evidence. |
-| `SpreadsheetFile.inspectXlsx` | api | Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
+| `SpreadsheetFile.inspectXlsx` | api | Inspect bounded XLSX parts, content types, the required workbook/root officeDocument relationship, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets; verifyCrc32 additionally checks ZIP entry CRCs. |
 | `SpreadsheetFile.patchXlsx` | api | Apply path-validated XLSX part patches, build worksheet/table/drawing/image/chart/pivot source references, and atomically reject dangling content types or relationships. |
 | `table.setQueryRefreshPolicy` | api | On one recognized imported QueryTable, monotonically disable automatic refresh without changing its connection, command, fields, sort, refresh history, or topology. |
 | `thread.addReply` | api | Append a direct reply to an Office threaded-comment root with independent author/person/date/done metadata. Nested or branched reply graphs and mentions fail closed. |
@@ -5967,7 +5969,7 @@ Inspect bounded CSV/TSV bytes as file/row records with dimensions, delimiter, qu
 
 #### `SpreadsheetFile.inspectXlsx`
 
-Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets.
+Inspect bounded XLSX parts, content types, the required workbook/root officeDocument relationship, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets; verifyCrc32 additionally checks ZIP entry CRCs.
 
 **Schema parameters:**
 
@@ -5977,6 +5979,7 @@ Inspect bounded XLSX parts, content types, relationships, and namespace-aware so
 - `maxParts` (number) — Maximum package part count.
 - `maxPartBytes` (number) — Maximum uncompressed bytes per part.
 - `maxTotalBytes` (number) — Maximum total uncompressed package bytes.
+- `verifyCrc32` (boolean) — Verify every ZIP entry CRC32 before inspecting package structure; use for untrusted retained inputs.
 - `maxChars` (number) — Maximum bounded NDJSON output size.
 
 **Schema returns:**

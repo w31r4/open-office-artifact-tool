@@ -33,6 +33,10 @@ const DOCX_PACKAGE_CONFIG = {
   family: "DOCX",
   packageKind: "docxPackage",
   partKind: "docxPart",
+  officeDocument: {
+    contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml",
+    partPath: "word/document.xml",
+  },
   semanticIssues: (context) => [
     ...validateDocxCommentPackageSemantics(context),
     ...validateDocxLinkPackageSemantics(context),

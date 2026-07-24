@@ -79,6 +79,69 @@ function ooxmlPartExtension(partPath) {
   return path.posix.extname(partPath).slice(1).toLowerCase();
 }
 
+function ooxmlDeclaredContentType(contentTypes, partPath) {
+  return contentTypes.overrides.get(partPath) ||
+    contentTypes.defaults.get(ooxmlPartExtension(partPath)) ||
+    "";
+}
+
+function ooxmlOfficeDocumentRelationshipType(value) {
+  return /(?:^|\/)officeDocument$/iu.test(String(value || "").trim());
+}
+
+function ooxmlOfficeDocumentIssues(paths, contentTypes, relationshipsBySource, family, config) {
+  const officeDocument = config.officeDocument;
+  if (!officeDocument) return [];
+  const { contentType, partPath } = officeDocument;
+  const issues = [];
+  if (!paths.has(partPath)) {
+    issues.push({
+      kind: "ooxmlIssue",
+      family,
+      type: "missingOfficeDocumentPart",
+      severity: "error",
+      path: partPath,
+      message: `${family} package is missing its required Office document part ${partPath}.`,
+    });
+  }
+  const declaredContentType = ooxmlDeclaredContentType(contentTypes, partPath);
+  if (declaredContentType !== contentType) {
+    issues.push({
+      kind: "ooxmlIssue",
+      family,
+      type: "invalidOfficeDocumentContentType",
+      severity: "error",
+      path: partPath,
+      expectedContentType: contentType,
+      actualContentType: declaredContentType || undefined,
+      message: `${family} Office document part ${partPath} must declare content type ${contentType}.`,
+    });
+  }
+  const rootRelationships = relationshipsBySource.get("")?.entries || [];
+  const officeDocumentRelationships = rootRelationships.filter(({ attrs }) =>
+    ooxmlOfficeDocumentRelationshipType(attrs.Type),
+  );
+  const isExactRootRelationship = officeDocumentRelationships.length === 1 &&
+    String(officeDocumentRelationships[0].attrs.TargetMode || "").toLowerCase() !== "external" &&
+    ooxmlResolveRelationshipTarget("", officeDocumentRelationships[0].attrs.Target) === partPath;
+  if (!isExactRootRelationship) {
+    issues.push({
+      kind: "ooxmlIssue",
+      family,
+      type: "invalidOfficeDocumentRelationship",
+      severity: "error",
+      path: "_rels/.rels",
+      expectedTarget: partPath,
+      relationshipTargets: officeDocumentRelationships
+        .map(({ attrs }) => attrs.Target)
+        .filter(Boolean)
+        .slice(0, 8),
+      message: `${family} package must have exactly one root officeDocument relationship targeting ${partPath}.`,
+    });
+  }
+  return issues;
+}
+
 const OOXML_RELATIONSHIP_BASE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
 const OOXML_MICROSOFT_RELATIONSHIP_BASE = "http://schemas.microsoft.com/office/2017/10/relationships";
 const OOXML_COMMON_PART_RECIPES = {
@@ -193,7 +256,7 @@ function ooxmlRelationshipReferences(xml = "") {
   return references.filter((reference) => reference.id);
 }
 
-function ooxmlPackageIssues(files, bytesByPath, contentTypes, family) {
+function ooxmlPackageIssues(files, bytesByPath, contentTypes, family, config) {
   const paths = new Set(files.map((file) => file.name));
   const issues = [];
   if (!paths.has("[Content_Types].xml")) issues.push({ kind: "ooxmlIssue", family, type: "missingContentTypes", severity: "error", message: `${family} package is missing [Content_Types].xml.` });
@@ -215,7 +278,11 @@ function ooxmlPackageIssues(files, bytesByPath, contentTypes, family) {
     if (source == null) continue;
     const xml = decoder.decode(bytes);
     const relationshipEntries = ooxmlRelationshipEntries(xml);
-    relationshipsBySource.set(source, { path: partPath, ids: new Set(relationshipEntries.map((entry) => entry.attrs.Id).filter(Boolean)) });
+    relationshipsBySource.set(source, {
+      entries: relationshipEntries,
+      ids: new Set(relationshipEntries.map((entry) => entry.attrs.Id).filter(Boolean)),
+      path: partPath,
+    });
     if (source && !paths.has(source)) issues.push({ kind: "ooxmlIssue", family, type: "relationshipSourceNotFound", severity: "error", path: partPath, source, message: `${family} relationship part ${partPath} belongs to missing source part ${source}.` });
     const relationshipIds = new Set();
     for (const { attrs } of relationshipEntries) {
@@ -230,6 +297,15 @@ function ooxmlPackageIssues(files, bytesByPath, contentTypes, family) {
       if (!paths.has(target)) issues.push({ kind: "ooxmlIssue", family, type: "relationshipTargetNotFound", severity: "error", path: partPath, relationshipId: attrs.Id, target, message: `${family} relationship ${attrs.Id || "(unknown)"} in ${partPath} targets missing part ${target}.` });
     }
   }
+  issues.push(
+    ...ooxmlOfficeDocumentIssues(
+      paths,
+      contentTypes,
+      relationshipsBySource,
+      family,
+      config,
+    ),
+  );
   for (const [partPath, bytes] of bytesByPath) {
     if (!partPath.endsWith(".xml") || partPath === "[Content_Types].xml") continue;
     const references = ooxmlRelationshipReferences(decoder.decode(bytes));
@@ -290,7 +366,7 @@ async function ooxmlPackageRecords(zip, options = {}, config = {}) {
     records.push(record);
     bytesByPath.set(partPath, bytes);
   }
-  const issues = ooxmlPackageIssues(files, bytesByPath, contentTypes, family);
+  const issues = ooxmlPackageIssues(files, bytesByPath, contentTypes, family, config);
   const semanticIssues = config.semanticIssues ? await config.semanticIssues({ bytesByPath, contentTypes, family }) : [];
   issues.push(...semanticIssues);
   records[0].uncompressedBytes = totalBytes;
@@ -490,6 +566,12 @@ export async function inspectOoxmlPackage(blobOrBuffer, options = {}, config = {
   const bytes = blobOrBuffer instanceof FileBlob ? new Uint8Array(await blobOrBuffer.arrayBuffer()) : toUint8Array(blobOrBuffer);
   const zip = await JSZip.loadAsync(bytes);
   const records = await ooxmlPackageRecords(zip, options, config);
+  // JSZip's eager CRC option inflates every entry before this module can apply
+  // its declared and actual decompression budgets. Re-open only after the
+  // bounded pass above has successfully materialized every entry.
+  if (options.verifyCrc32 === true) {
+    await JSZip.loadAsync(bytes, { checkCRC32: true });
+  }
   const partKind = config.partKind || "ooxmlPart";
   return { ok: records[0].ok, issues: records.filter((record) => record.kind === "ooxmlIssue"), parts: records.filter((record) => record.kind === partKind), records, ...ndjson(records, options.maxChars ?? Infinity) };
 }
