@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 374);
+assert.equal(HELP_CATALOG.length, 375);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -71,6 +71,8 @@ assert.ok(HELP_CATALOG.some((item) => item.name === "range.format.autofitColumns
 assert.ok(HELP_CATALOG.some((item) => item.name === "range.format.autofitRows"));
 assert.match(HELP_CATALOG.find((item) => item.name === "workbook.structuredReferences")?.summary || "", /#This Row/);
 assert.match(HELP_CATALOG.find((item) => item.name === "workbook.structuredReferences")?.summary || "", /space intersections/);
+assert.match(HELP_CATALOG.find((item) => item.name === "workbook.spillReferences")?.summary || "", /A1#.*current.*spill.*spillReference/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "workbook.spillReferences")?.schema?.returns?.value?.description || "", /non-spilling anchor.*#REF!.*source-bound/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "fx.COUNTIF")?.summary || "", /wildcard/);
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.worksheets.add"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.worksheets.setActiveWorksheet"));
@@ -494,7 +496,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /absolute uri.*slideId.*relative action/);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /customShow.*survives the bounded slide clone.*without adding the clone to show membership/i);
 const workbookCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "workbook");
-assert.equal(workbookCatalog.length, 198);
+assert.equal(workbookCatalog.length, 199);
 assert.ok(workbookCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "workbook.trace")?.schema?.parameters?.reference?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "Workbook.create")?.schema?.parameters?.dateSystem?.type, "string");

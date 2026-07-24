@@ -3213,6 +3213,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `workbook.setCalculation` | api | Set bounded workbook-level SpreadsheetML calculation mode, on-save/full-recalculation flags, iterative-calculation limits, and full-precision policy. |
 | `workbook.setDateSystem` | api | Select the Excel 1900 or 1904 serial-date system for formula calculation and native workbookPr export. |
 | `workbook.sharedArrayFormulas` | formula | Import and export bounded shared and legacy-array formula metadata. XLDAPR dynamic-array anchors are inspectable after import but source-bound and read-only; creating, detaching, or editing their topology makes XLSX export fail closed. |
+| `workbook.spillReferences` | formula | Use a direct or defined-name A1# reference to consume only an anchor's current, unblocked dynamic spill matrix. Supported range consumers and a direct re-spill read the verified matrix; scalar/general-vector coercion returns #VALUE!, non-spilling anchors return #REF!, and graph/trace record one spillReference edge to the anchor. |
 | `workbook.structuredReferences` | formula | Evaluate Excel table references including sections, column ranges/unions, space intersections, escaped special-character headers, unqualified calculated-column references, and @/#This Row context while expanding exact table-cell precedents. |
 | `workbook.trace` | api | Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references and syntax-input/reference-budget refusals flagged. |
 | `workbook.verify` | api | Return bounded QA issues for source-bound connections, sheets, formulas (including syntax-input and reference-budget refusals), tables, charts, and comments. |
@@ -6208,6 +6209,30 @@ Import and export bounded shared and legacy-array formula metadata. XLDAPR dynam
 **Schema returns:**
 
 - `metadata` (object) — Shared/legacy metadata is bounded and editable. dynamicArrayRef/spill metadata is import-preserved read-only; authoring, detaching, or editing it makes canonical XLSX export fail closed.
+
+#### `workbook.spillReferences`
+
+Use a direct or defined-name A1# reference to consume only an anchor's current, unblocked dynamic spill matrix. Supported range consumers and a direct re-spill read the verified matrix; scalar/general-vector coercion returns #VALUE!, non-spilling anchors return #REF!, and graph/trace record one spillReference edge to the anchor.
+
+**Examples:**
+
+- =SUM(A1#)
+- =MATCH(12,'Source Data'!A1#,0)
+- =FILTER(A1#,A1#>10)
+- =CurrentSpill
+
+**Schema parameters:**
+
+- `formula` (string) required — Formula containing a direct or defined-name A1# dynamic spill reference.
+- `anchor` (string) — Optional explanatory A1 anchor such as Source Data!A1; the actual formula must carry #.
+
+**Schema returns:**
+
+- `value` (unknown|unknown[][]|#REF!|#VALUE!|#SPILL!) — Current model-calculation spill value. Only the documented range consumers and direct re-spill profile accept A1#; scalar/general-vector coercion is #VALUE!, a non-spilling anchor is #REF!, and imported dynamic-array package topology remains source-bound.
+
+**Notes:**
+
+- A1# is a model-calculation range reference, not source-free XLSX dynamic-array topology authoring. The evaluator recalculates the formula anchor before reading it, verifies a current rectangular spill of at most 10,000 cells, charges each read against the 20,000-cell formula total, and preserves one spillReference dependency edge to the anchor. A blocked/error anchor propagates its current error; an ordinary scalar/non-spilling anchor is #REF!.
 
 #### `workbook.structuredReferences`
 

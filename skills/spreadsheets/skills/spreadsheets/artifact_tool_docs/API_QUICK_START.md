@@ -44,6 +44,7 @@ await output.save(`${outputDir}/output.xlsx`);
 ## Build Patterns
 - Prefer block writes (`range.values`, `range.formulas`) over per-cell loops. Matrix shape must match the target range (for example `"D4:M4"` should be a 1x10 matrix, row x col).
 - Seed scalar formulas once, then `fillDown()` / `fillRight()`. For dynamic-array formulas (`SEQUENCE`, `UNIQUE`, `FILTER`, `SORT`, `VSTACK`, `HSTACK`), write only the anchor cell and let the result spill after.
+- To consume a current model spill, use the anchor reference with `#`: `=SUM(A1#)`, `=MATCH(12,'Source Data'!A1#,0)`, or a defined name that refers to `A1#`. The evaluator recalculates and verifies the anchor before reading it. Use only documented range consumers or a direct re-spill; ordinary scalar/general-vector coercion returns `#VALUE!`, a non-spilling anchor is `#REF!`, and imported dynamic-array package topology remains source-bound.
 - Use `range.displayFormulas` plus `range.formulaInfos` when you need to understand a spill child or a data-table output cell.
 - You do not need to call recalculate; calculation automatically happens.
 - Date handling:

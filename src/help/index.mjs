@@ -73,6 +73,7 @@ export const HELP_CATALOG = [
   { artifactKind: "workbook", kind: "api", name: "workbook.trace", summary: "Return a formula precedent tree and bounded NDJSON trace for a target cell, with circular references and syntax-input/reference-budget refusals flagged." },
   { artifactKind: "workbook", kind: "api", name: "workbook.formulaGraph", summary: "Return a bounded dependency graph of formula nodes, edges, dependents, cycles, formula errors, and syntax-input/reference-budget refusals for workbook QA." },
   { artifactKind: "workbook", kind: "formula", name: "workbook.structuredReferences", summary: "Evaluate Excel table references including sections, column ranges/unions, space intersections, escaped special-character headers, unqualified calculated-column references, and @/#This Row context while expanding exact table-cell precedents." },
+  { artifactKind: "workbook", kind: "formula", name: "workbook.spillReferences", summary: "Use a direct or defined-name A1# reference to consume only an anchor's current, unblocked dynamic spill matrix. Supported range consumers and a direct re-spill read the verified matrix; scalar/general-vector coercion returns #VALUE!, non-spilling anchors return #REF!, and graph/trace record one spillReference edge to the anchor." },
   { artifactKind: "workbook", kind: "formula", name: "workbook.sharedArrayFormulas", summary: "Import and export bounded shared and legacy-array formula metadata. XLDAPR dynamic-array anchors are inspectable after import but source-bound and read-only; creating, detaching, or editing their topology makes XLSX export fail closed." },
   { artifactKind: "workbook", kind: "api", name: "workbook.definedNames.add", summary: "Create a workbook or sheet-scoped defined name over an A1 range; exported as native workbook.xml definedName and usable in formulas such as SUM(RevenueData)." },
   { artifactKind: "workbook", kind: "api", name: "workbook.setCalculation", summary: "Set bounded workbook-level SpreadsheetML calculation mode, on-save/full-recalculation flags, iterative-calculation limits, and full-precision policy." },
@@ -919,6 +920,10 @@ const HELP_DETAIL_OVERRIDES = {
   "workbook.structuredReferences": {
     examples: ["=SUM(TableName[Column])", "=SUM(TableName[[#Data],[First]:[Last]])", "=SUM(TableName[[First]:[Second]] TableName[[Second]:[Third]])", "=[Revenue]-[Cost]", "=TasksTable[@Revenue]", "=SUM(TasksTable[[#This Row],[Revenue]:[Cost]])", "=TasksTable['#Items]", "=TasksTable[Bracket'[Value']]"],
     notes: ["Supports #Headers/#Data/#All/#Totals/#This Row and @, unqualified current-row references inside tables, contiguous column ranges, comma-separated column unions, space intersections over common cells, and apostrophe escaping for [, ], #, ', and @ in column headers. Disjoint intersections return #NULL!; current-row references outside the referenced table return #VALUE!."],
+  },
+  "workbook.spillReferences": {
+    examples: ["=SUM(A1#)", "=MATCH(12,'Source Data'!A1#,0)", "=FILTER(A1#,A1#>10)", "=CurrentSpill"],
+    notes: ["A1# is a model-calculation range reference, not source-free XLSX dynamic-array topology authoring. The evaluator recalculates the formula anchor before reading it, verifies a current rectangular spill of at most 10,000 cells, charges each read against the 20,000-cell formula total, and preserves one spillReference dependency edge to the anchor. A blocked/error anchor propagates its current error; an ordinary scalar/non-spilling anchor is #REF!."],
   },
   createPlaywrightRenderer: {
     examples: ["const renderer = createPlaywrightRenderer({ viewport: { width: 900, height: 1200 }, deviceScaleFactor: 1 })"],
@@ -2049,6 +2054,10 @@ const WORKBOOK_HELP_SCHEMAS = {
     table: { type: "string", description: "Worksheet table name; omitted only for a calculated-column reference inside that table." },
     selector: { type: "string", required: true, description: "Column, escaped special-character header, section, current-row, range, union, or space-intersection selector." },
   }, "value", "unknown", "Calculated scalar/array value with stable table-cell precedents."),
+  "workbook.spillReferences": helpSchema({
+    formula: { type: "string", required: true, description: "Formula containing a direct or defined-name A1# dynamic spill reference." },
+    anchor: { type: "string", description: "Optional explanatory A1 anchor such as Source Data!A1; the actual formula must carry #." },
+  }, "value", "unknown|unknown[][]|#REF!|#VALUE!|#SPILL!", "Current model-calculation spill value. Only the documented range consumers and direct re-spill profile accept A1#; scalar/general-vector coercion is #VALUE!, a non-spilling anchor is #REF!, and imported dynamic-array package topology remains source-bound."),
   "workbook.sharedArrayFormulas": helpSchema({
     xlsx: { type: "FileBlob|Uint8Array", description: "XLSX bytes containing shared, legacy-array, or XLDAPR dynamic-array formula records." },
     formula: { type: "string", description: "Shared or legacy-array formula expression. Imported dynamic-array expressions are read-only." },
