@@ -9,6 +9,7 @@ import JSZip from "jszip";
 import { DocumentFile, FileBlob, PresentationFile, SpreadsheetFile } from "../src/index.mjs";
 import {
   DOCX_CLASSIC_COMMENT_FIXTURE,
+  DOCX_FOOTER_TEXT_FIXTURE,
   DOCX_HEADER_TEXT_FIXTURE,
   PPTX_CLOSED_LEAF_CLONE_FIXTURE,
   PPTX_RICH_NOTES_FIXTURE,
@@ -22,8 +23,10 @@ import {
 } from "../scripts/agent-eval-office-fixtures.mjs";
 import {
   gradeDocxClassicCommentEvidence,
+  gradeDocxFooterTextEvidence,
   gradeDocxHeaderTextEvidence,
   inspectClassicCommentDocx,
+  inspectFooterTextDocx,
   inspectHeaderTextDocx,
 } from "../scripts/agent-eval-docx-graders.mjs";
 import { gradeOfficeCase } from "../scripts/agent-eval-office-graders.mjs";
@@ -47,6 +50,7 @@ import {
 } from "../scripts/agent-eval-presentation-graders.mjs";
 import { duplicatePptxSlide } from "../skills/presentations/skills/presentations/examples/openchestnut-slide-duplicate-workflow.mjs";
 import { editImportedHeaderText } from "../skills/documents/skills/documents/examples/openchestnut-header-text-edit-workflow.mjs";
+import { editImportedFooterText } from "../skills/documents/skills/documents/examples/openchestnut-footer-text-edit-workflow.mjs";
 import { hardenXlsxConnectionRefreshOnOpen } from "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-connection-refresh-hardening-workflow.mjs";
 import { hardenXlsxPivotRefreshOnLoad } from "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-pivot-refresh-hardening-workflow.mjs";
 import {
@@ -78,11 +82,11 @@ import {
 
 const { suite, cases } = await loadSuite();
 const repoRoot = path.resolve(import.meta.dirname, "..");
-assert.deepEqual(validateSuite(suite, cases), { cases: 38, pdfCases: 21, ready: 17 });
+assert.deepEqual(validateSuite(suite, cases), { cases: 39, pdfCases: 21, ready: 18 });
 assert.equal(MINIMUM_PDF_CASE_SHARE, 0.5);
 assert.equal(cases.filter((item) => item.family === "pdf" && item.status === "ready").length, 8);
 assert.equal(cases.filter((item) => item.family === "spreadsheets" && item.status === "ready").length, 4);
-assert.equal(cases.filter((item) => item.family === "documents" && item.status === "ready").length, 2);
+assert.equal(cases.filter((item) => item.family === "documents" && item.status === "ready").length, 3);
 assert.equal(cases.filter((item) => item.family === "presentations" && item.status === "ready").length, 3);
 const referenceDocumentSkill = skillSource({ family: "documents", skill: "documents" }, "reference");
 assert.equal(referenceDocumentSkill, path.join(repoRoot, "reference", "office-artifact-tool", "skills", "documents", "skills", "documents"));
@@ -108,6 +112,7 @@ assert.match(runnerHelp.stdout, /three PPTX cases.*closed-leaf slide clone/i);
 assert.match(runnerHelp.stdout, /connection refresh-on-open/i);
 assert.match(runnerHelp.stdout, /pivot refresh-on-open/i);
 assert.match(runnerHelp.stdout, /source-bound DOCX header text/i);
+assert.match(runnerHelp.stdout, /source-bound DOCX footer text/i);
 const highlightVisible = visibleCase(suite, cases.find((item) => item.id === "pdf-source-bound-text-highlight"));
 assert.match(highlightVisible.prompt, /add_text_highlight/);
 assert.match(highlightVisible.prompt, /outputs\/review-highlighted\.pdf/);
@@ -653,6 +658,101 @@ try {
   }
 } finally {
   await fs.rm(headerTextRoot, { recursive: true, force: true });
+}
+
+const footerTextItem = cases.find((item) => item.id === "docx-footer-text-edit");
+assert.ok(footerTextItem);
+const footerTextRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-eval-docx-footer-"));
+try {
+  const footerInput = path.join(footerTextRoot, "inputs", DOCX_FOOTER_TEXT_FIXTURE.documentName);
+  const footerOutput = path.join(footerTextRoot, "outputs", "board-brief-footer-reviewed.docx");
+  const footerAuditPath = path.join(footerTextRoot, "outputs", "audit.json");
+  await generateOfficeInput("docx-footer-text-review", footerInput);
+  const footerSourceBytes = await fs.readFile(footerInput);
+  const footerResult = await editImportedFooterText({
+    inputPath: footerInput,
+    outputPath: footerOutput,
+    auditPath: footerAuditPath,
+    expectedText: DOCX_FOOTER_TEXT_FIXTURE.footer.originalText,
+    replacementText: DOCX_FOOTER_TEXT_FIXTURE.footer.replacementText,
+    sectionIndex: DOCX_FOOTER_TEXT_FIXTURE.footer.sectionIndex,
+    referenceType: DOCX_FOOTER_TEXT_FIXTURE.footer.referenceType,
+  });
+  assert.deepEqual(await fs.readFile(footerInput), footerSourceBytes);
+  assert.deepEqual(footerResult.audit.validation.changedParts, ["word/footer1.xml"]);
+  const footerAudit = JSON.parse(await fs.readFile(footerAuditPath, "utf8"));
+  const footerEvidence = {
+    source: await inspectFooterTextDocx(footerInput),
+    output: await inspectFooterTextDocx(footerOutput),
+    visual: {
+      source: { available: true, ok: true, pageCount: 1, pages: [{ width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "footer-source" }] },
+      output: { available: true, ok: true, pageCount: 1, pages: [{ width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "footer-output" }] },
+    },
+  };
+  const footerTrace = JSON.stringify({
+    type: "item.completed",
+    item: {
+      type: "command_execution",
+      id: "docx-footer-text",
+      command: "node .agents/skills/documents/examples/openchestnut-footer-text-edit-workflow.mjs inputs/board-brief-footer.docx outputs/board-brief-footer-reviewed.docx outputs/audit.json 'Northwind | Internal' 'Northwind | Reviewed' 0 default",
+    },
+  });
+  const footerChecks = gradeDocxFooterTextEvidence({
+    evidence: footerEvidence,
+    audit: footerAudit,
+    commands: extractCompletedCommands(footerTrace),
+    item: footerTextItem,
+  });
+  assert.equal(footerChecks.every((check) => check.passed), true);
+  const publishedFooterWorkflowChecks = gradeDocxFooterTextEvidence({
+    evidence: footerEvidence,
+    audit: footerAudit,
+    commands: ["node .agents/skills/documents/examples/openchestnut-footer-text-edit-workflow.mjs inputs/board-brief-footer.docx outputs/board-brief-footer-reviewed.docx outputs/audit.json"],
+    item: footerTextItem,
+  });
+  assert.equal(publishedFooterWorkflowChecks.find((check) => check.id === "docx-footer-trace:typed-roundtrip")?.passed, true);
+  const untrustedFooterWorkflowChecks = gradeDocxFooterTextEvidence({
+    evidence: footerEvidence,
+    audit: footerAudit,
+    commands: ["node scratch/patch-footer-xml.mjs inputs/board-brief-footer.docx outputs/board-brief-footer-reviewed.docx"],
+    item: footerTextItem,
+  });
+  assert.equal(untrustedFooterWorkflowChecks.find((check) => check.id === "docx-footer-trace:typed-roundtrip")?.passed, false);
+  const packageDriftEvidence = structuredClone(footerEvidence);
+  packageDriftEvidence.output.partHashes["word/header1.xml"] = "unexpected-header-drift";
+  const packageDriftChecks = gradeDocxFooterTextEvidence({
+    evidence: packageDriftEvidence,
+    audit: footerAudit,
+    commands: extractCompletedCommands(footerTrace),
+    item: footerTextItem,
+  });
+  assert.equal(packageDriftChecks.find((check) => check.id === "docx-footer-security:only-target-footer-part-changed")?.passed, false);
+  assert.equal(packageDriftChecks.find((check) => check.id === "docx-footer-security:header-field-and-package-inventory-preserved")?.passed, false);
+  const residualDriftEvidence = structuredClone(footerEvidence);
+  residualDriftEvidence.output.footerParts[0].xml = residualDriftEvidence.output.footerParts[0].xml
+    .replace(DOCX_FOOTER_TEXT_FIXTURE.footer.companionText, "Unexpected companion drift.");
+  const residualDriftChecks = gradeDocxFooterTextEvidence({
+    evidence: residualDriftEvidence,
+    audit: footerAudit,
+    commands: extractCompletedCommands(footerTrace),
+    item: footerTextItem,
+  });
+  assert.equal(residualDriftChecks.find((check) => check.id === "docx-footer-machine:footer-residual-stable")?.passed, false);
+  const nativeFooterResult = await gradeOfficeCase({
+    item: footerTextItem,
+    workspace: footerTextRoot,
+    evaluator: path.join(footerTextRoot, "evaluator"),
+    finalMessage: "completed",
+    trace: footerTrace,
+  });
+  if (nativeFooterResult.graded) {
+    assert.equal(nativeFooterResult.rawScorePercent, 100);
+    assert.equal(nativeFooterResult.caseSpecificPassed, true);
+  } else {
+    assert.ok(nativeFooterResult.infrastructureErrors?.length);
+  }
+} finally {
+  await fs.rm(footerTextRoot, { recursive: true, force: true });
 }
 
 const richNotesItem = cases.find((item) => item.id === "pptx-title-and-notes-edit");

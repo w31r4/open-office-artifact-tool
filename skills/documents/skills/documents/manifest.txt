@@ -38,7 +38,9 @@ examples/openchestnut-end-to-end.mjs
 examples/openchestnut-source-text-patch-workflow.mjs
 examples/openchestnut-watermark-workflow.mjs
 examples/openchestnut-classic-comment-edit-workflow.mjs
+examples/openchestnut-page-furniture-text-edit.mjs
 examples/openchestnut-header-text-edit-workflow.mjs
+examples/openchestnut-footer-text-edit-workflow.mjs
 examples/openchestnut-modern-comment-thread-workflow.mjs
 examples/openchestnut-tracked-replacement-workflow.mjs
 examples/openchestnut-revision-finalization-workflow.mjs

@@ -4,15 +4,24 @@ import path from "node:path";
 
 import JSZip from "jszip";
 
-import { DOCX_CLASSIC_COMMENT_FIXTURE, DOCX_HEADER_TEXT_FIXTURE } from "./agent-eval-office-fixtures.mjs";
+import {
+  DOCX_CLASSIC_COMMENT_FIXTURE,
+  DOCX_FOOTER_TEXT_FIXTURE,
+  DOCX_HEADER_TEXT_FIXTURE,
+} from "./agent-eval-office-fixtures.mjs";
 import { renderOfficeFile } from "./agent-eval-office-native-render.mjs";
 import { extractCompletedCommands, summarizeCaseScore } from "./agent-eval-pdf-graders.mjs";
 
-export const docxGradedCaseIds = new Set(["docx-classic-comment-text-edit", "docx-header-text-edit"]);
+export const docxGradedCaseIds = new Set([
+  "docx-classic-comment-text-edit",
+  "docx-header-text-edit",
+  "docx-footer-text-edit",
+]);
 
 const defaultWeights = { machine: 45, visual: 25, security: 20, trace: 10 };
 const SHIPPED_CLASSIC_COMMENT_WORKFLOW = /(?:^|[\s"'`])(?:\.?\/)?(?:\.agents\/skills\/documents|node_modules\/open-office-artifact-tool\/skills\/documents\/skills\/documents)\/examples\/openchestnut-classic-comment-edit-workflow\.mjs(?:$|[\s"'`])/i;
 const SHIPPED_HEADER_TEXT_WORKFLOW = /(?:^|[\s"'`])(?:\.?\/)?(?:\.agents\/skills\/documents|node_modules\/open-office-artifact-tool\/skills\/documents\/skills\/documents)\/examples\/openchestnut-header-text-edit-workflow\.mjs(?:$|[\s"'`])/i;
+const SHIPPED_FOOTER_TEXT_WORKFLOW = /(?:^|[\s"'`])(?:\.?\/)?(?:\.agents\/skills\/documents|node_modules\/open-office-artifact-tool\/skills\/documents\/skills\/documents)\/examples\/openchestnut-footer-text-edit-workflow\.mjs(?:$|[\s"'`])/i;
 
 function check(id, category, passed, details = {}) {
   return { id, category, gate: false, passed: Boolean(passed), ...details };
@@ -142,7 +151,7 @@ function headerFooterPartRecord(partPath, xml) {
  * It intentionally does not use DocumentFile so a wrapper cannot satisfy the
  * black-box evaluator by merely repeating its own model projection.
  */
-export async function inspectHeaderTextDocx(filePath) {
+export async function inspectPageFurnitureTextDocx(filePath) {
   const bytes = await fs.readFile(filePath);
   const zip = await JSZip.loadAsync(bytes);
   const paths = Object.keys(zip.files).filter((name) => !zip.files[name].dir).sort();
@@ -165,6 +174,9 @@ export async function inspectHeaderTextDocx(filePath) {
     footerParts,
   };
 }
+
+export const inspectHeaderTextDocx = inspectPageFurnitureTextDocx;
+export const inspectFooterTextDocx = inspectPageFurnitureTextDocx;
 
 function auditProvider(audit) {
   const provider = audit?.provider;
@@ -336,8 +348,9 @@ export function gradeDocxClassicCommentEvidence({ evidence, audit, commands }) {
   ];
 }
 
-function headerPartWithText(document, text) {
-  const matches = document.headerParts.filter((part) => part.paragraphs.filter((paragraph) => paragraph === text).length === 1);
+function pageFurniturePartWithText(document, kind, text) {
+  const parts = kind === "header" ? document.headerParts : document.footerParts;
+  const matches = parts.filter((part) => part.paragraphs.filter((paragraph) => paragraph === text).length === 1);
   return matches.length === 1 ? matches[0] : null;
 }
 
@@ -346,10 +359,10 @@ function changedPackageParts(source, output) {
   return source.paths.filter((partPath) => source.partHashes[partPath] !== output.partHashes[partPath]);
 }
 
-function normalizedHeaderResidual(sourcePart, outputPart) {
+function normalizedPageFurnitureResidual(sourcePart, outputPart, sourceText, replacementText) {
   if (!sourcePart || !outputPart || sourcePart.path !== outputPart.path) return { ok: false, source: null, output: null };
-  const source = normalizeTargetText(sourcePart.xml, DOCX_HEADER_TEXT_FIXTURE.header.originalText);
-  const output = normalizeTargetText(outputPart.xml, DOCX_HEADER_TEXT_FIXTURE.header.replacementText);
+  const source = normalizeTargetText(sourcePart.xml, sourceText);
+  const output = normalizeTargetText(outputPart.xml, replacementText);
   return {
     ok: source.matches === 1 && output.matches === 1 && source.normalized === output.normalized,
     source,
@@ -357,7 +370,7 @@ function normalizedHeaderResidual(sourcePart, outputPart) {
   };
 }
 
-function headerVisibleChange(source, output) {
+function pageFurnitureVisibleChange(source, output) {
   const visual = visualEvidence(source, output);
   const pixelsChanged = visual.pageCountsMatch
     && source?.pages?.length === output?.pages?.length
@@ -365,106 +378,119 @@ function headerVisibleChange(source, output) {
   return { ...visual, pixelsChanged };
 }
 
-function usedTypedHeaderRoundTrip(commandText) {
+function usedTypedPageFurnitureRoundTrip(commandText, kind) {
   const directPublicApi = /(?:DocumentFile\.)?importDocx/i.test(commandText)
     && /(?:DocumentFile\.)?exportDocx/i.test(commandText);
-  return directPublicApi || SHIPPED_HEADER_TEXT_WORKFLOW.test(commandText);
+  const workflow = kind === "header" ? SHIPPED_HEADER_TEXT_WORKFLOW : SHIPPED_FOOTER_TEXT_WORKFLOW;
+  return directPublicApi || workflow.test(commandText);
 }
 
-export function gradeDocxHeaderTextEvidence({ evidence, audit, commands }) {
-  const fixture = DOCX_HEADER_TEXT_FIXTURE;
+function gradeDocxPageFurnitureTextEvidence({ evidence, audit, commands, fixture, kind }) {
+  const profile = fixture[kind];
+  const otherKind = kind === "header" ? "footer" : "header";
+  const targetPartsKey = kind === "header" ? "headerParts" : "footerParts";
+  const otherPartsKey = otherKind === "header" ? "headerParts" : "footerParts";
+  const prefix = `docx-${kind}`;
   const source = evidence.source;
   const output = evidence.output;
-  const sourceTarget = headerPartWithText(source, fixture.header.originalText);
-  const outputTarget = headerPartWithText(output, fixture.header.replacementText);
-  const residual = normalizedHeaderResidual(sourceTarget, outputTarget);
+  const sourceTarget = pageFurniturePartWithText(source, kind, profile.originalText);
+  const outputTarget = pageFurniturePartWithText(output, kind, profile.replacementText);
+  const residual = normalizedPageFurnitureResidual(sourceTarget, outputTarget, profile.originalText, profile.replacementText);
   const changed = changedPackageParts(source, output);
   const companionStable = Boolean(sourceTarget && outputTarget)
-    && JSON.stringify(sourceTarget.paragraphs.map((paragraph) => paragraph === fixture.header.originalText ? "__target__" : paragraph))
-      === JSON.stringify(outputTarget.paragraphs.map((paragraph) => paragraph === fixture.header.replacementText ? "__target__" : paragraph));
-  const footerStable = source.footerParts.length === output.footerParts.length
-    && source.footerParts.every((part, index) => part.path === output.footerParts[index]?.path
+    && JSON.stringify(sourceTarget.paragraphs.map((paragraph) => paragraph === profile.originalText ? "__target__" : paragraph))
+      === JSON.stringify(outputTarget.paragraphs.map((paragraph) => paragraph === profile.replacementText ? "__target__" : paragraph));
+  const otherStable = source[otherPartsKey].length === output[otherPartsKey].length
+    && source[otherPartsKey].every((part, index) => part.path === output[otherPartsKey][index]?.path
       && source.partHashes[part.path] === output.partHashes[part.path]);
-  const visual = headerVisibleChange(evidence.visual?.source, evidence.visual?.output);
+  const visual = pageFurnitureVisibleChange(evidence.visual?.source, evidence.visual?.output);
   const commandText = commands.join("\n");
   const auditTarget = audit?.operation?.target || {};
   return [
-    check("docx-header-machine:fixture-source-profile", "machine", Boolean(sourceTarget)
-      && sourceTarget.paragraphs.includes(fixture.header.companionText)
-      && source.footerParts.length === 1
+    check(`${prefix}-machine:fixture-source-profile`, "machine", Boolean(sourceTarget)
+      && sourceTarget.paragraphs.includes(profile.companionText)
+      && source[otherPartsKey].length === 1
       && source.bodyParagraphs.includes(fixture.title)
       && fixture.body.every((paragraph) => source.bodyParagraphs.includes(paragraph)), {
       sourceTarget,
-      footerParts: source.footerParts.map((part) => ({ path: part.path, paragraphs: part.paragraphs })),
+      [otherPartsKey]: source[otherPartsKey].map((part) => ({ path: part.path, paragraphs: part.paragraphs })),
       bodyParagraphs: source.bodyParagraphs,
     }),
-    check("docx-header-machine:requested-text-edited", "machine", Boolean(sourceTarget && outputTarget)
-      && outputTarget.paragraphs.includes(fixture.header.replacementText)
-      && !outputTarget.paragraphs.includes(fixture.header.originalText)
+    check(`${prefix}-machine:requested-text-edited`, "machine", Boolean(sourceTarget && outputTarget)
+      && outputTarget.paragraphs.includes(profile.replacementText)
+      && !outputTarget.paragraphs.includes(profile.originalText)
       && companionStable, {
       sourceTarget,
       outputTarget,
       companionStable,
     }),
-    check("docx-header-machine:body-and-footer-stable", "machine", JSON.stringify(source.bodyParagraphs) === JSON.stringify(output.bodyParagraphs)
-      && footerStable, {
+    check(`${prefix}-machine:body-and-${otherKind}-stable`, "machine", JSON.stringify(source.bodyParagraphs) === JSON.stringify(output.bodyParagraphs)
+      && otherStable, {
       body: { source: source.bodyParagraphs, output: output.bodyParagraphs },
-      footerStable,
+      [`${otherKind}Stable`]: otherStable,
     }),
-    check("docx-header-machine:header-residual-stable", "machine", residual.ok, {
+    check(`${prefix}-machine:${kind}-residual-stable`, "machine", residual.ok, {
       sourceMatches: residual.source?.matches ?? 0,
       outputMatches: residual.output?.matches ?? 0,
     }),
-    check("docx-header-machine:audit-succeeded", "machine", /^(?:success|succeeded|completed)$/i.test(String(audit?.status || "")), {
+    check(`${prefix}-machine:audit-succeeded`, "machine", /^(?:success|succeeded|completed)$/i.test(String(audit?.status || "")), {
       status: audit?.status || "unreported",
     }),
-    check("docx-header-visual:native-render", "visual", visual.available && visual.rendered && visual.pageCountsMatch, {
+    check(`${prefix}-visual:native-render`, "visual", visual.available && visual.rendered && visual.pageCountsMatch, {
       visual: evidence.visual,
     }),
-    check("docx-header-visual:header-change-visible", "visual", visual.pixelsChanged, {
+    check(`${prefix}-visual:${kind}-change-visible`, "visual", visual.pixelsChanged, {
       visual: evidence.visual,
       note: "The package gate proves the changed part; native rendering confirms that the requested page-furniture edit remains visible.",
     }),
-    gate("docx-header-security:only-target-header-part-changed", "security", Boolean(sourceTarget)
+    gate(`${prefix}-security:only-target-${kind}-part-changed`, "security", Boolean(sourceTarget)
       && JSON.stringify(changed) === JSON.stringify([sourceTarget.path]), {
       changed,
       targetPart: sourceTarget?.path || null,
     }),
-    gate("docx-header-security:footer-field-and-package-inventory-preserved", "security", footerStable
+    gate(`${prefix}-security:${otherKind}-field-and-package-inventory-preserved`, "security", otherStable
       && changed !== null
-      && source.footerParts.some((part) => part.paragraphs.includes(fixture.footer.text)), {
-      footerStable,
+      && source[otherPartsKey].some((part) => part.paragraphs.includes(fixture[otherKind].text)), {
+      [`${otherKind}Stable`]: otherStable,
       sourcePaths: source.paths,
       outputPaths: output.paths,
     }),
-    gate("docx-header-security:byte-bound-audit-provenance", "security", auditHash(audit, "source") === source.sha256
+    gate(`${prefix}-security:byte-bound-audit-provenance`, "security", auditHash(audit, "source") === source.sha256
       && auditHash(audit, "output") === output.sha256
       && source.sha256 !== output.sha256, {
       source: { expected: source.sha256, actual: auditHash(audit, "source") },
       output: { expected: output.sha256, actual: auditHash(audit, "output") },
     }),
-    check("docx-header-trace:open-chestnut-provider", "trace", /open[- ]?chestnut/i.test(auditProvider(audit)) && Boolean(auditVersion(audit)), {
+    check(`${prefix}-trace:open-chestnut-provider`, "trace", /open[- ]?chestnut/i.test(auditProvider(audit)) && Boolean(auditVersion(audit)), {
       provider: auditProvider(audit),
       version: auditVersion(audit),
     }),
-    gate("docx-header-trace:no-silent-fallback", "trace", auditFallbackIsFalse(audit), { provider: audit?.provider || null }),
-    check("docx-header-trace:rewrite-policy", "trace", /^rewrite$/i.test(auditStrategy(audit)), {
+    gate(`${prefix}-trace:no-silent-fallback`, "trace", auditFallbackIsFalse(audit), { provider: audit?.provider || null }),
+    check(`${prefix}-trace:rewrite-policy`, "trace", /^rewrite$/i.test(auditStrategy(audit)), {
       strategy: auditStrategy(audit),
     }),
-    check("docx-header-trace:source-bound-header-operation", "trace", /header/i.test(auditOperation(audit))
-      && auditTarget.sectionIndex === fixture.header.sectionIndex
-      && auditTarget.referenceType === fixture.header.referenceType
+    check(`${prefix}-trace:source-bound-${kind}-operation`, "trace", new RegExp(kind, "i").test(auditOperation(audit))
+      && auditTarget.sectionIndex === profile.sectionIndex
+      && auditTarget.referenceType === profile.referenceType
       && auditTarget.partPath === sourceTarget?.path, {
       operation: audit?.operation || null,
-      expected: { sectionIndex: fixture.header.sectionIndex, referenceType: fixture.header.referenceType, partPath: sourceTarget?.path || null },
+      expected: { sectionIndex: profile.sectionIndex, referenceType: profile.referenceType, partPath: sourceTarget?.path || null },
     }),
-    check("docx-header-trace:typed-roundtrip", "trace", usedTypedHeaderRoundTrip(commandText), {
-      expected: "public DocumentFile importDocx/exportDocx calls or the integrity-protected published header-text workflow",
+    check(`${prefix}-trace:typed-roundtrip`, "trace", usedTypedPageFurnitureRoundTrip(commandText, kind), {
+      expected: `public DocumentFile importDocx/exportDocx calls or the integrity-protected published ${kind}-text workflow`,
     }),
-    check("docx-header-trace:second-import", "trace", audit?.validation?.reimport?.ok === true || audit?.validation?.secondImport?.ok === true, {
+    check(`${prefix}-trace:second-import`, "trace", audit?.validation?.reimport?.ok === true || audit?.validation?.secondImport?.ok === true, {
       validation: audit?.validation || null,
     }),
   ];
+}
+
+export function gradeDocxHeaderTextEvidence(options) {
+  return gradeDocxPageFurnitureTextEvidence({ ...options, fixture: DOCX_HEADER_TEXT_FIXTURE, kind: "header" });
+}
+
+export function gradeDocxFooterTextEvidence(options) {
+  return gradeDocxPageFurnitureTextEvidence({ ...options, fixture: DOCX_FOOTER_TEXT_FIXTURE, kind: "footer" });
 }
 
 async function readAudit(workspace) {
@@ -519,31 +545,40 @@ async function gradeDocxClassicCommentCase({ item, workspace, finalMessage, trac
   return { supported: true, graded: true, checks, evidence, pending: [], ...score };
 }
 
-async function gradeDocxHeaderTextCase({ item, workspace, finalMessage, trace, weights = defaultWeights }) {
-  const fixture = DOCX_HEADER_TEXT_FIXTURE;
+async function gradeDocxPageFurnitureTextCase({
+  item,
+  workspace,
+  finalMessage,
+  trace,
+  weights = defaultWeights,
+  fixture,
+  kind,
+  outputName,
+}) {
   const audit = await readAudit(workspace);
   const commands = extractCompletedCommands(trace);
   const sourcePath = path.join(workspace, "inputs", fixture.documentName);
-  const outputPath = path.join(workspace, "outputs", "board-brief-header-reviewed.docx");
+  const outputPath = path.join(workspace, "outputs", outputName);
+  const prefix = `docx-${kind}`;
   let source;
   let output;
   try {
     [source, output] = await Promise.all([
-      inspectHeaderTextDocx(sourcePath),
-      inspectHeaderTextDocx(outputPath),
+      inspectPageFurnitureTextDocx(sourcePath),
+      inspectPageFurnitureTextDocx(outputPath),
     ]);
   } catch (error) {
     const checks = [
-      gate("docx-header-machine:readable-output", "machine", false, { error: error.message }),
-      gate("docx-header-security:no-partial-success", "security", false, { error: error.message }),
+      gate(`${prefix}-machine:readable-output`, "machine", false, { error: error.message }),
+      gate(`${prefix}-security:no-partial-success`, "security", false, { error: error.message }),
     ];
     const score = summarizeCaseScore(checks, item.grade, weights, false);
     return { supported: true, graded: true, checks, evidence: { error: error.message }, pending: [], ...score };
   }
 
   const [sourceRender, outputRender] = await Promise.all([
-    renderOfficeFile(sourcePath, "docx-header-source"),
-    renderOfficeFile(outputPath, "docx-header-output"),
+    renderOfficeFile(sourcePath, `docx-${kind}-source`),
+    renderOfficeFile(outputPath, `docx-${kind}-output`),
   ]);
   const visualUnavailable = [sourceRender, outputRender].find((result) => !result.available);
   if (visualUnavailable) {
@@ -558,13 +593,32 @@ async function gradeDocxHeaderTextCase({ item, workspace, finalMessage, trace, w
   }
 
   const evidence = { source, output, visual: { source: sourceRender, output: outputRender }, finalMessage };
-  const checks = gradeDocxHeaderTextEvidence({ evidence, audit, commands, item });
+  const checks = gradeDocxPageFurnitureTextEvidence({ evidence, audit, commands, item, fixture, kind });
   const score = summarizeCaseScore(checks, item.grade, weights, checks.filter((entry) => entry.gate).every((entry) => entry.passed));
   return { supported: true, graded: true, checks, evidence, pending: [], ...score };
+}
+
+async function gradeDocxHeaderTextCase(options) {
+  return gradeDocxPageFurnitureTextCase({
+    ...options,
+    fixture: DOCX_HEADER_TEXT_FIXTURE,
+    kind: "header",
+    outputName: "board-brief-header-reviewed.docx",
+  });
+}
+
+async function gradeDocxFooterTextCase(options) {
+  return gradeDocxPageFurnitureTextCase({
+    ...options,
+    fixture: DOCX_FOOTER_TEXT_FIXTURE,
+    kind: "footer",
+    outputName: "board-brief-footer-reviewed.docx",
+  });
 }
 
 export async function gradeDocxCase(options) {
   if (options.item.id === "docx-classic-comment-text-edit") return gradeDocxClassicCommentCase(options);
   if (options.item.id === "docx-header-text-edit") return gradeDocxHeaderTextCase(options);
+  if (options.item.id === "docx-footer-text-edit") return gradeDocxFooterTextCase(options);
   return { supported: false };
 }

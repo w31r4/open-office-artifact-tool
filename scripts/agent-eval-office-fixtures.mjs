@@ -127,6 +127,30 @@ export const DOCX_HEADER_TEXT_FIXTURE = Object.freeze({
   }),
 });
 
+// The footer companion intentionally mirrors the header fixture's narrow
+// source-bound profile. A PAGE header is the field-driven canary: the ready
+// PromptBench task must not turn page furniture into a broad text-rebuild API.
+export const DOCX_FOOTER_TEXT_FIXTURE = Object.freeze({
+  documentName: "board-brief-footer.docx",
+  title: "Board brief — footer review",
+  body: Object.freeze([
+    "Decision: proceed with the approved controls and named accountable owner.",
+    "The review record, retention schedule, and approval evidence remain unchanged.",
+    "This document's footer is the only requested source-bound edit.",
+  ]),
+  footer: Object.freeze({
+    sectionIndex: 0,
+    referenceType: "default",
+    originalText: "Northwind | Internal",
+    replacementText: "Northwind | Reviewed",
+    companionText: "Retain the header and body exactly.",
+  }),
+  header: Object.freeze({
+    text: "1",
+    fieldInstruction: "PAGE",
+  }),
+});
+
 export const PPTX_TITLE_NOTES_FIXTURE = Object.freeze({
   presentationName: "launch-review.pptx",
   targetSlideName: "Go-no-go decision",
@@ -516,6 +540,42 @@ export async function generateDocxHeaderTextReview(target) {
   return { path: target, type: DOCX_MIME };
 }
 
+export async function generateDocxFooterTextReview(target) {
+  const fixture = DOCX_FOOTER_TEXT_FIXTURE;
+  const document = DocumentModel.create({
+    name: fixture.title,
+    defaultRunStyle: { fontFamily: "Aptos", fontSize: 11, color: "#172033" },
+    blocks: [],
+  });
+  document.addParagraph(fixture.title, {
+    paragraphFormat: { spaceAfterTwips: 160 },
+    runs: [{ text: fixture.title, style: { bold: true, fontSize: 16, color: "#123B5D" } }],
+  });
+  for (const text of fixture.body) document.addParagraph(text, { paragraphFormat: { spaceAfterTwips: 120 } });
+  document.addHeader(fixture.header.text, {
+    id: "header/page",
+    sectionIndex: fixture.footer.sectionIndex,
+    referenceType: fixture.footer.referenceType,
+    fieldInstruction: fixture.header.fieldInstruction,
+  });
+  document.addFooter(fixture.footer.originalText, {
+    id: "footer/review-target",
+    sectionIndex: fixture.footer.sectionIndex,
+    referenceType: fixture.footer.referenceType,
+  });
+  document.addFooter(fixture.footer.companionText, {
+    id: "footer/companion",
+    sectionIndex: fixture.footer.sectionIndex,
+    referenceType: fixture.footer.referenceType,
+  });
+  const verification = document.verify({ visualQa: true });
+  if (!verification.ok) throw new Error("Generated DOCX footer-text fixture failed model verification: " + verification.ndjson);
+  const exported = await DocumentFile.exportDocx(document);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, new Uint8Array(await exported.arrayBuffer()));
+  return { path: target, type: DOCX_MIME };
+}
+
 export async function generatePptxTitleNotesReview(target) {
   const fixture = PPTX_TITLE_NOTES_FIXTURE;
   const presentation = Presentation.create({ slideSize: { width: 1280, height: 720 } });
@@ -720,6 +780,7 @@ export async function generateOfficeInput(generator, target) {
   if (generator === "xlsx-pivot-refresh") return generateXlsxPivotRefresh(target);
   if (generator === "docx-classic-comment-review") return generateDocxClassicCommentReview(target);
   if (generator === "docx-header-text-review") return generateDocxHeaderTextReview(target);
+  if (generator === "docx-footer-text-review") return generateDocxFooterTextReview(target);
   if (generator === "pptx-title-notes-review") return generatePptxTitleNotesReview(target);
   if (generator === "pptx-rich-notes-review") return generatePptxRichNotesReview(target);
   if (generator === "pptx-slide-name-review") return generatePptxSlideNameReview(target);

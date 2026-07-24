@@ -234,6 +234,53 @@ try {
     }),
     /outputPath already exists/i,
   );
+
+  const footerWorkflowSourcePath = path.join(outputDir, "footer-text-source.docx");
+  const footerWorkflowOutputPath = path.join(outputDir, "footer-text-reviewed.docx");
+  const footerWorkflowAuditPath = path.join(outputDir, "footer-text-audit.json");
+  const footerWorkflowDocument = DocumentModel.create({ name: "Footer text workflow", blocks: [] });
+  footerWorkflowDocument.addParagraph("Only the requested ordinary footer text may change.");
+  footerWorkflowDocument.addHeader("1", { id: "header/page", sectionIndex: 0, fieldInstruction: "PAGE" });
+  footerWorkflowDocument.addFooter("Northwind | Internal", { id: "footer/review-target", sectionIndex: 0 });
+  footerWorkflowDocument.addFooter("Retain the header and body exactly.", { id: "footer/companion", sectionIndex: 0 });
+  await (await DocumentFile.exportDocx(footerWorkflowDocument)).save(footerWorkflowSourcePath);
+  const footerWorkflowSourceBytes = await fs.readFile(footerWorkflowSourcePath);
+  const { editImportedFooterText } = await import(
+    "../skills/documents/skills/documents/examples/openchestnut-footer-text-edit-workflow.mjs"
+  );
+  const footerWorkflow = await editImportedFooterText({
+    inputPath: footerWorkflowSourcePath,
+    outputPath: footerWorkflowOutputPath,
+    auditPath: footerWorkflowAuditPath,
+    expectedText: "Northwind | Internal",
+    replacementText: "Northwind | Reviewed",
+    sectionIndex: 0,
+    referenceType: "default",
+  });
+  assert.equal(footerWorkflow.audit.provider.actual, "open-chestnut");
+  assert.equal(footerWorkflow.audit.provider.silentFallback, false);
+  assert.equal(footerWorkflow.audit.savePolicy.noReplace, true);
+  assert.deepEqual(footerWorkflow.audit.validation.changedParts, ["word/footer1.xml"]);
+  assert.equal(footerWorkflow.audit.validation.reimport.editable, true);
+  assert.deepEqual(await fs.readFile(footerWorkflowSourcePath), footerWorkflowSourceBytes);
+  const footerWorkflowRoundTrip = await DocumentFile.importDocx(await FileBlob.load(footerWorkflowOutputPath));
+  assert.equal(footerWorkflowRoundTrip.footers.find((footer) => footer.text === "Northwind | Reviewed")?.editable, true);
+  assert.equal(footerWorkflowRoundTrip.footers.find((footer) => footer.text === "Retain the header and body exactly.")?.partPath, "word/footer1.xml");
+  assert.equal(footerWorkflowRoundTrip.headers[0]?.fieldInstruction, "PAGE");
+  const [footerWorkflowSourceZip, footerWorkflowOutputZip] = await Promise.all([
+    JSZip.loadAsync(footerWorkflowSourceBytes),
+    JSZip.loadAsync(await fs.readFile(footerWorkflowOutputPath)),
+  ]);
+  const footerSourceXml = await footerWorkflowSourceZip.file("word/footer1.xml").async("text");
+  const footerOutputXml = await footerWorkflowOutputZip.file("word/footer1.xml").async("text");
+  assert.equal(footerSourceXml.replace("Northwind | Internal", "__target__"), footerOutputXml.replace("Northwind | Reviewed", "__target__"));
+  for (const name of Object.keys(footerWorkflowSourceZip.files).filter((entry) => !footerWorkflowSourceZip.files[entry].dir && entry !== "word/footer1.xml")) {
+    assert.deepEqual(
+      Buffer.from(await footerWorkflowSourceZip.file(name).async("uint8array")),
+      Buffer.from(await footerWorkflowOutputZip.file(name).async("uint8array")),
+      `Unexpected source-bound footer workflow drift in ${name}`,
+    );
+  }
   const watermarkRemovalOutput = path.join(outputDir, "watermark-removed.docx");
   const watermarkRemovalAudit = path.join(outputDir, "watermark-removed-audit.json");
   const watermarkRemoval = await editDocumentWatermark({
@@ -943,6 +990,7 @@ try {
   assert.match(skillText, /openchestnut-source-text-patch-workflow\.mjs/);
   assert.match(skillText, /openchestnut-classic-comment-edit-workflow\.mjs/);
   assert.match(skillText, /openchestnut-header-text-edit-workflow\.mjs/);
+  assert.match(skillText, /openchestnut-footer-text-edit-workflow\.mjs/);
   assert.match(skillText, /openchestnut-modern-comment-thread-workflow\.mjs/);
   assert.match(skillText, /openchestnut-watermark-workflow\.mjs/);
   assert.match(skillText, /tasks\/headers_footers\.md/);
@@ -956,7 +1004,9 @@ try {
   assert.doesNotMatch(commentsGuide, /If the task is to \*insert\* new comments.+use the OOXML-level guide/);
   const manifestText = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "manifest.txt"), "utf8");
   assert.match(manifestText, /^examples\/openchestnut-source-text-patch-workflow\.mjs$/m);
+  assert.match(manifestText, /^examples\/openchestnut-page-furniture-text-edit\.mjs$/m);
   assert.match(manifestText, /^examples\/openchestnut-header-text-edit-workflow\.mjs$/m);
+  assert.match(manifestText, /^examples\/openchestnut-footer-text-edit-workflow\.mjs$/m);
   assert.match(manifestText, /^examples\/openchestnut-modern-comment-thread-workflow\.mjs$/m);
   assert.match(manifestText, /^examples\/openchestnut-watermark-workflow\.mjs$/m);
   assert.match(manifestText, /^tasks\/headers_footers\.md$/m);
@@ -975,7 +1025,8 @@ try {
   assert.match(headersFootersGuide, /at most one text edit.*part/is);
   assert.match(headersFootersGuide, /PAGE or other simple fields/);
   assert.match(headersFootersGuide, /openchestnut-header-text-edit-workflow\.mjs/);
-  assert.match(headersFootersGuide, /header-only transaction/i);
+  assert.match(headersFootersGuide, /openchestnut-footer-text-edit-workflow\.mjs/);
+  assert.match(headersFootersGuide, /two entry points are intentionally separate/i);
   assert.match(headersFootersGuide, /fail closed/);
   const controlsGuide = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "tasks", "forms_content_controls.md"), "utf8");
   assert.match(controlsGuide, /paragraph\.addTextContentControl/);

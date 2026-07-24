@@ -223,20 +223,25 @@ node examples/openchestnut-classic-comment-edit-workflow.mjs input.docx reviewed
 node examples/openchestnut-header-text-edit-workflow.mjs input.docx reviewed.docx audit.json \
   "Northwind | Internal" "Northwind | Reviewed" 0 default
 
-# 4) Edit one bounded modern root + direct reply and mark the root resolved
+# 4) Edit one ordinary imported footer paragraph. It uses the same narrow
+# source-bound transaction, but accepts only one word/footerN.xml part.
+node examples/openchestnut-footer-text-edit-workflow.mjs input.docx reviewed.docx audit.json \
+  "Northwind | Internal" "Northwind | Reviewed" 0 default
+
+# 5) Edit one bounded modern root + direct reply and mark the root resolved
 node examples/openchestnut-modern-comment-thread-workflow.mjs input.docx reviewed.docx audit.json \
   "Decision: proceed with controlled rollout." \
   "Please confirm the release evidence." "Release evidence approved." \
   "The evidence is attached." "Evidence retained with the approval." resolved
 
-# 4) Add one source-bound native single-format in-paragraph tracked replacement.
+# 6) Add one source-bound native single-format in-paragraph tracked replacement.
 # request.json contains either paragraph-only targetBlockIndex or a structured
 # paragraph/tableCell target, plus expectedText, search, replacement, author,
 # and optional date.
 node examples/openchestnut-tracked-replacement-workflow.mjs \
   input.docx reviewed.docx reviewed.audit.json request.json
 
-# 5) Sanitize Google Docs-targeted title blocks after OpenChestnut export
+# 7) Sanitize Google Docs-targeted title blocks after OpenChestnut export
 python scripts/google_docs_title_sanitize.py input.docx --out sanitized.docx
 python scripts/google_docs_title_sanitize.py sanitized.docx --check
 
@@ -353,6 +358,7 @@ Examples:
 - `examples/openchestnut-source-text-patch-workflow.mjs` — source-bound paragraph/table-cell literal replacement with same-format run-fragment support, immutable input, exact changed-part audit, no-replace publication, second import, verification, and model render evidence
 - `examples/openchestnut-classic-comment-edit-workflow.mjs` — imported classic-comment text-only edit with a unique text anchor, fixed comment topology, second import, model render, byte-bound audit, and atomic output
 - `examples/openchestnut-header-text-edit-workflow.mjs` — one ordinary source-bound HeaderPart paragraph edit with immutable input, exact one-part and header-residual proof, no-replace publication, second import, verification, and byte-bound audit; PAGE/simple fields and all broader page furniture fail closed
+- `examples/openchestnut-footer-text-edit-workflow.mjs` — the symmetric ordinary source-bound FooterPart transaction with the same immutable input, exact one-part/footer-residual proof, no-replace publication, second import, verification, and byte-bound audit; it never treats PAGE/simple fields or rich/shared page furniture as text
 - `examples/openchestnut-modern-comment-thread-workflow.mjs` — imported bounded root/direct-reply text and resolved-state edit with fixed identities/topology, second import, model/native render, byte-bound audit, and atomic output
 - `examples/openchestnut-watermark-workflow.mjs` — unique recognized canonical VML text-watermark edit/removal with immutable input, exact one-header-part scope, second import, model render, and byte-bound audit
 - `examples/end_to_end_smoke_test.md` — optional reference-compatible checklist for the explicit Python render/package-patch helpers; keep the public OpenChestnut workflow above as the default
@@ -488,7 +494,7 @@ Then inspect the generated `page-<N>.png` files.
 - If you need **internal navigation links** (static TOC + Back-to-TOC + Top/Bottom): `tasks/navigation_internal_links.md`
 - If headings/numbering/TOC levels are messy: `tasks/headings_numbering.md`
 - If you have mixed portrait/landscape or margin weirdness: `tasks/sections_layout.md`
-- If you need to edit one ordinary imported header paragraph: use `examples/openchestnut-header-text-edit-workflow.mjs`, then follow `tasks/headers_footers.md`; it proves one target `word/headerN.xml` part and its residual before no-replace publication. PAGE/simple fields, rich, shared, inherited, or irregular page furniture stays read-only
+- If you need to edit one ordinary imported header or footer paragraph: use the matching `examples/openchestnut-{header,footer}-text-edit-workflow.mjs`, then follow `tasks/headers_footers.md`; each proves exactly one target `word/headerN.xml` or `word/footerN.xml` part and its residual before no-replace publication. PAGE/simple fields, rich, shared, inherited, or irregular page furniture stays read-only
 - If you need a **floating or wrapped image**, or images shift/overlap across renderers: use the bounded `document.addImage({ ..., placement })` profile and follow `tasks/images_figures.md`; never infer support for an imported anchor from its visible appearance alone
 - If you need spreadsheet ↔ table round-tripping: `tasks/tables_spreadsheets.md`
 - If you need **tracked changes (redlines)**: use public `document.addInsertion(...)` / `document.addDeletion(...)` for whole blocks, or `examples/openchestnut-tracked-replacement-workflow.mjs` for one exact source-bound literal inside a direct body paragraph or bounded single-paragraph table cell; use `document.setSettings({ trackRevisions: true })` for future edits, then route broader graphs through `ooxml/tracked_changes.md`
