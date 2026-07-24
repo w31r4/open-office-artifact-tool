@@ -1,4 +1,6 @@
+import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -80,7 +82,16 @@ async function assertBytesEqual(actualPath, expectedPath, label) {
   }
 }
 
-async function assertGeneratedTemplate(result, { kind, referencePath }) {
+async function assertGeneratedTemplate(
+  result,
+  {
+    kind,
+    referencePath,
+    visualCommitment = "opinionated",
+    editLevel = "copy-only",
+    provenanceSource = "local-user-reference",
+  },
+) {
   const skillsRoot = path.join(home, "skills");
   if (path.dirname(result.skillPath) !== skillsRoot) {
     throw new Error(`Template was not written below OFFICE_ARTIFACT_HOME: ${result.skillPath}`);
@@ -109,15 +120,29 @@ async function assertGeneratedTemplate(result, { kind, referencePath }) {
     throw new Error("Generated template retained the legacy agent metadata filename.");
   }
 
-  const [sidecar, skillText] = await Promise.all([
+  const [sidecar, skillText, previewBytes, retainedReferenceBytes] = await Promise.all([
     fs.readFile(sidecarPath, "utf8").then(JSON.parse),
     fs.readFile(skillPath, "utf8"),
+    fs.readFile(previewPath),
+    fs.readFile(retainedReferencePath),
   ]);
   if (
-    sidecar.schemaVersion !== 1 ||
+    result.schemaVersion !== 2 ||
+    sidecar.schemaVersion !== 2 ||
+    sidecar.id !== result.skillName ||
+    sidecar.displayName !== result.displayName ||
     sidecar.kind !== kind ||
     sidecar.reference !== `assets/${referenceName}` ||
-    sidecar.preview !== "assets/preview.png"
+    sidecar.preview !== "assets/preview.png" ||
+    !Array.isArray(sidecar.useWhen) ||
+    sidecar.useWhen.length === 0 ||
+    sidecar.visualCommitment !== visualCommitment ||
+    sidecar.editProfile?.level !== editLevel ||
+    (editLevel === "copy-only" && sidecar.editProfile?.verifiedOperations?.length !== 0) ||
+    sidecar.provenance?.license !== "user-provided" ||
+    sidecar.provenance?.source !== provenanceSource ||
+    sidecar.provenance?.referenceSha256 !== sha256(retainedReferenceBytes) ||
+    sidecar.provenance?.previewSha256 !== sha256(previewBytes)
   ) {
     throw new Error(`Generated sidecar is invalid: ${JSON.stringify(sidecar)}`);
   }
@@ -129,6 +154,10 @@ async function assertGeneratedTemplate(result, { kind, referencePath }) {
     assertBytesEqual(retainedReferencePath, referencePath, `${kind} reference`),
     assertBytesEqual(previewPath, path.join(fixturesDirectory, "preview.png"), `${kind} preview`),
   ]);
+}
+
+function sha256(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
 }
 
 async function assertNoTransactionalResidue() {
@@ -208,13 +237,71 @@ try {
     "999999999\n",
   );
 
+  const pptxSelection = {
+    useWhen: ["quarterly project review"],
+    avoidWhen: ["legal memorandum"],
+    audiences: ["executive"],
+    contentShapes: ["status", "risks", "decisions"],
+    visualTraits: {
+      tone: ["formal"],
+      density: "medium",
+      colorMode: "light",
+      structure: ["sectioned"],
+    },
+    visualCommitment: "neutral",
+    editProfile: {
+      level: "bounded-edit",
+      verifiedOperations: ["recognized-placeholder-title-text-replace"],
+    },
+    provenance: {
+      license: "user-provided",
+      source: "local-test-reference",
+    },
+  };
+  const unsupportedSelection = structuredClone(pptxSelection);
+  unsupportedSelection.visualTraits.undocumentedTrait = true;
+  const unsupportedSelectionResult = await runCreator([
+    "--reference-path", pptxPath,
+    "--preview-path", previewPath,
+    "--display-name", "Unsupported selection fixture",
+    "--description", "This fixture must fail before writing a template.",
+    "--selection-json", JSON.stringify(unsupportedSelection),
+  ]);
+  assert.notEqual(unsupportedSelectionResult.code, 0);
+  assert.match(
+    unsupportedSelectionResult.stderr,
+    /visualTraits contains unsupported fields: undocumentedTrait/,
+  );
+
   const pptxTemplate = await runSuccessfulCreator([
     "--reference-path", pptxPath,
     "--preview-path", previewPath,
     "--display-name", "Presentation fixture",
     "--description", "Create presentations from the fixture layout.",
+    "--selection-json", JSON.stringify(pptxSelection),
   ]);
-  await assertGeneratedTemplate(pptxTemplate, { kind: "presentation", referencePath: pptxPath });
+  await assertGeneratedTemplate(pptxTemplate, {
+    kind: "presentation",
+    referencePath: pptxPath,
+    visualCommitment: "neutral",
+    editLevel: "bounded-edit",
+    provenanceSource: "local-test-reference",
+  });
+  const createdPptxMetadata = JSON.parse(
+    await fs.readFile(path.join(pptxTemplate.skillPath, "artifact-template.json"), "utf8"),
+  );
+  for (const key of [
+    "useWhen",
+    "avoidWhen",
+    "audiences",
+    "contentShapes",
+    "visualTraits",
+    "visualCommitment",
+    "editProfile",
+  ]) {
+    assert.deepEqual(createdPptxMetadata[key], pptxSelection[key], `selection metadata ${key}`);
+  }
+  assert.equal(createdPptxMetadata.provenance.source, "local-test-reference");
 
   const docxTemplate = await runSuccessfulCreator([
     "--reference-path", docxPath,
@@ -231,6 +318,32 @@ try {
     "--description", "Create spreadsheets from the fixture layout.",
   ]);
   await assertGeneratedTemplate(xlsxTemplate, { kind: "spreadsheet", referencePath: xlsxPath });
+
+  const longDescription =
+    "Create a detailed planning workbook for a recurring operating review with assumptions, " +
+    "owners, milestones, risks, decisions, supporting evidence, and a concise executive summary.";
+  const longDescriptionTemplate = await runSuccessfulCreator([
+    "--reference-path", xlsxPath,
+    "--preview-path", previewPath,
+    "--display-name", "Long description fixture",
+    "--description", longDescription,
+  ]);
+  await assertGeneratedTemplate(longDescriptionTemplate, {
+    kind: "spreadsheet",
+    referencePath: xlsxPath,
+  });
+  const longDescriptionMetadata = JSON.parse(
+    await fs.readFile(
+      path.join(longDescriptionTemplate.skillPath, "artifact-template.json"),
+      "utf8",
+    ),
+  );
+  assert.ok(longDescriptionMetadata.useWhen[0].length <= 120);
+  assert.equal(longDescriptionMetadata.useWhen[0], longDescription.slice(0, 120).trimEnd());
+  assert.match(
+    await fs.readFile(path.join(longDescriptionTemplate.skillPath, "SKILL.md"), "utf8"),
+    new RegExp(longDescription.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")),
+  );
 
   const kindChange = await runCreator([
     "--mode", "update",
@@ -263,7 +376,24 @@ try {
   await assertGeneratedTemplate(updatedPptxTemplate, {
     kind: "presentation",
     referencePath: updatedPptxPath,
+    visualCommitment: "neutral",
+    editLevel: "bounded-edit",
+    provenanceSource: "local-test-reference",
   });
+  const updatedPptxMetadata = JSON.parse(
+    await fs.readFile(path.join(updatedPptxTemplate.skillPath, "artifact-template.json"), "utf8"),
+  );
+  for (const key of [
+    "useWhen",
+    "avoidWhen",
+    "audiences",
+    "contentShapes",
+    "visualTraits",
+    "visualCommitment",
+    "editProfile",
+  ]) {
+    assert.deepEqual(updatedPptxMetadata[key], pptxSelection[key], `preserved selection metadata ${key}`);
+  }
   const restoredSentinel = await fs.readFile(
     path.join(updatedPptxTemplate.skillPath, "sentinel.txt"),
     "utf8",

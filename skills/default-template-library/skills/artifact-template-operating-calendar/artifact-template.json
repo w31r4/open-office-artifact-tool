@@ -1,6 +1,53 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "id": "artifact-template-operating-calendar",
+  "displayName": "Operating Calendar",
   "kind": "spreadsheet",
   "reference": "assets/reference.xlsx",
-  "preview": "assets/preview.png"
+  "preview": "assets/preview.png",
+  "useWhen": [
+    "operating calendar",
+    "annual planning calendar"
+  ],
+  "avoidWhen": [
+    "task-level project tracker",
+    "financial forecast"
+  ],
+  "audiences": [
+    "operations",
+    "marketing",
+    "cross-functional"
+  ],
+  "contentShapes": [
+    "milestones",
+    "campaigns",
+    "launches",
+    "deadlines",
+    "recurring events"
+  ],
+  "visualTraits": {
+    "tone": [
+      "operational",
+      "structured"
+    ],
+    "density": "medium",
+    "colorMode": "light",
+    "structure": [
+      "calendar",
+      "timeline"
+    ]
+  },
+  "visualCommitment": "neutral",
+  "editProfile": {
+    "level": "bounded-edit",
+    "verifiedOperations": [
+      "non-formula-string-cell-edit"
+    ]
+  },
+  "provenance": {
+    "license": "MIT",
+    "source": "https://github.com/w31r4/office-artifact-tool/commit/256cb31bfe0a07b3cef0051b6b159342be381378",
+    "referenceSha256": "fef758154889db179aa701a3916d6e6d30c61935b92ad259dd603322888e7f5f",
+    "previewSha256": "9511212decb870cdded2c5ef0388c1bf4b3ee1747020a61f1c3a7078b2cfa6f2"
+  }
 }

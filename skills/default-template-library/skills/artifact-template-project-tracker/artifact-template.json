@@ -1,6 +1,55 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "id": "artifact-template-project-tracker",
+  "displayName": "Project Tracker",
   "kind": "spreadsheet",
   "reference": "assets/reference.xlsx",
-  "preview": "assets/preview.png"
+  "preview": "assets/preview.png",
+  "useWhen": [
+    "project tracker",
+    "workstream status tracker"
+  ],
+  "avoidWhen": [
+    "annual operating calendar",
+    "sales pipeline"
+  ],
+  "audiences": [
+    "project manager",
+    "team",
+    "stakeholder"
+  ],
+  "contentShapes": [
+    "workstreams",
+    "tasks",
+    "owners",
+    "status",
+    "priority",
+    "dates",
+    "Gantt schedule"
+  ],
+  "visualTraits": {
+    "tone": [
+      "operational",
+      "structured"
+    ],
+    "density": "dense",
+    "colorMode": "light",
+    "structure": [
+      "tracker",
+      "timeline"
+    ]
+  },
+  "visualCommitment": "neutral",
+  "editProfile": {
+    "level": "bounded-edit",
+    "verifiedOperations": [
+      "non-formula-string-cell-edit"
+    ]
+  },
+  "provenance": {
+    "license": "MIT",
+    "source": "https://github.com/w31r4/office-artifact-tool/commit/256cb31bfe0a07b3cef0051b6b159342be381378",
+    "referenceSha256": "dd8bd283784a189061a328040e845a6d26807e2ee1005a9a195e6dc7baeefe80",
+    "previewSha256": "02811cec6d9b7d493342e03e08b6b56719af1eb6087a50dc6696c600ada90381"
+  }
 }

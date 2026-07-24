@@ -1,6 +1,53 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "id": "artifact-template-investment-committee-memo",
+  "displayName": "Investment Committee Memo",
   "kind": "document",
   "reference": "assets/reference.docx",
-  "preview": "assets/preview.png"
+  "preview": "assets/preview.png",
+  "useWhen": [
+    "investment committee memo",
+    "transaction recommendation"
+  ],
+  "avoidWhen": [
+    "general strategy memo",
+    "marketing report"
+  ],
+  "audiences": [
+    "investment committee",
+    "executive",
+    "finance"
+  ],
+  "contentShapes": [
+    "investment thesis",
+    "transaction details",
+    "financial analysis",
+    "risks",
+    "recommendation"
+  ],
+  "visualTraits": {
+    "tone": [
+      "formal",
+      "analytical"
+    ],
+    "density": "dense",
+    "colorMode": "neutral",
+    "structure": [
+      "decision memo",
+      "sectioned"
+    ]
+  },
+  "visualCommitment": "neutral",
+  "editProfile": {
+    "level": "bounded-edit",
+    "verifiedOperations": [
+      "ordinary-paragraph-unique-text-replace"
+    ]
+  },
+  "provenance": {
+    "license": "MIT",
+    "source": "https://github.com/w31r4/office-artifact-tool/commit/256cb31bfe0a07b3cef0051b6b159342be381378",
+    "referenceSha256": "0a8a4c5b8b1d8c055e19c9eadcc7eac898899f067cbbd20602c4e7c078e545de",
+    "previewSha256": "4f5efed31db5f4468e8619e6ca579be1c57d84d4a023fe9a7c5ec0deafb0812a"
+  }
 }

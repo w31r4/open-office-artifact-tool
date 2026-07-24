@@ -308,18 +308,62 @@ try {
       path.dirname(template.skillPath) !== path.join(templateHome, "skills")
     ) process.exit(52);
     const sidecar = JSON.parse(fs.readFileSync(path.join(template.skillPath, "artifact-template.json"), "utf8"));
+    const retainedReference = fs.readFileSync(path.join(template.skillPath, sidecar.reference));
+    const retainedPreview = fs.readFileSync(path.join(template.skillPath, sidecar.preview));
     if (
-      sidecar.schemaVersion !== 1 ||
+      template.schemaVersion !== 2 ||
+      sidecar.schemaVersion !== 2 ||
+      sidecar.id !== "artifact-template-packed-workbook-template" ||
+      sidecar.displayName !== "Packed workbook template" ||
       sidecar.kind !== "spreadsheet" ||
       sidecar.reference !== "assets/reference.xlsx" ||
-      sidecar.preview !== "assets/preview.png"
+      sidecar.preview !== "assets/preview.png" ||
+      sidecar.visualCommitment !== "opinionated" ||
+      sidecar.editProfile?.level !== "copy-only" ||
+      sidecar.provenance?.referenceSha256 !== createHash("sha256").update(retainedReference).digest("hex") ||
+      sidecar.provenance?.previewSha256 !== createHash("sha256").update(retainedPreview).digest("hex")
     ) process.exit(53);
     if (
-      !fs.readFileSync(path.join(template.skillPath, sidecar.reference)).equals(Buffer.from(xlsx.bytes)) ||
-      !fs.readFileSync(path.join(template.skillPath, sidecar.preview)).equals(fs.readFileSync(previewPath))
+      !retainedReference.equals(Buffer.from(xlsx.bytes)) ||
+      !retainedPreview.equals(fs.readFileSync(previewPath))
     ) process.exit(54);
 
     if (fs.existsSync(path.join(installedPackage, "skills", "default-template-library"))) process.exit(55);
+
+    const officeKitQueryPath = path.join(
+      installedPackage,
+      "skills", "officekit", "skills", "officekit", "scripts", "query-templates.mjs",
+    );
+    if (!fs.existsSync(officeKitQueryPath)) process.exit(56);
+    const queried = spawnSync(
+      process.execPath,
+      [
+        officeKitQueryPath,
+        "--kind", "spreadsheet",
+        "--root", path.join(templateHome, "skills"),
+        "--id", template.skillName,
+      ],
+      {
+        cwd: process.cwd(),
+        encoding: "utf8",
+      },
+    );
+    if (queried.status !== 0) {
+      process.stderr.write(queried.stderr);
+      process.exit(57);
+    }
+    const catalogResult = JSON.parse(queried.stdout);
+    if (
+      catalogResult.selectionMade !== false ||
+      catalogResult.invalid.length !== 0 ||
+      catalogResult.candidates.length !== 1 ||
+      catalogResult.candidates[0].id !== template.skillName ||
+      catalogResult.candidates[0].editProfile?.level !== "copy-only" ||
+      catalogResult.candidates[0].skillPath !==
+        path.join(template.skillPath, "SKILL.md") ||
+      catalogResult.candidates[0].referencePath !==
+        path.join(template.skillPath, "assets", "reference.xlsx")
+    ) process.exit(58);
   `;
 
   run(process.execPath, ["--input-type=module", "-e", probe], temporary, {
@@ -329,7 +373,7 @@ try {
   fs.rmSync(temporary, { force: true, recursive: true });
 }
 
-console.log("OpenChestnut, PDF, and Template Creator clean-install package smoke ok; repository-only templates are excluded");
+console.log("OpenChestnut, PDF, OfficeKit, and Template Creator clean-install package smoke ok; repository-only templates are excluded");
 
 function run(command, args, cwd, environment = {}) {
   const result = spawnSync(command, args, {

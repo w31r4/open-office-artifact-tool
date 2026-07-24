@@ -1,6 +1,53 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "id": "artifact-template-team-alignment",
+  "displayName": "Team Alignment",
   "kind": "presentation",
   "reference": "assets/reference.pptx",
-  "preview": "assets/preview.png"
+  "preview": "assets/preview.png",
+  "useWhen": [
+    "team alignment",
+    "planning offsite"
+  ],
+  "avoidWhen": [
+    "external investor presentation",
+    "formal legal review"
+  ],
+  "audiences": [
+    "team",
+    "cross-functional",
+    "internal"
+  ],
+  "contentShapes": [
+    "context",
+    "goals",
+    "priorities",
+    "decisions",
+    "action items"
+  ],
+  "visualTraits": {
+    "tone": [
+      "collaborative",
+      "energetic"
+    ],
+    "density": "medium",
+    "colorMode": "light",
+    "structure": [
+      "workshop",
+      "narrative"
+    ]
+  },
+  "visualCommitment": "opinionated",
+  "editProfile": {
+    "level": "bounded-edit",
+    "verifiedOperations": [
+      "recognized-placeholder-title-text-replace"
+    ]
+  },
+  "provenance": {
+    "license": "MIT",
+    "source": "https://github.com/w31r4/office-artifact-tool/commit/256cb31bfe0a07b3cef0051b6b159342be381378",
+    "referenceSha256": "72b9f23a07bfd679cde36757acb11ec99900b4be0f5d393a5b4e8c6fdce4286d",
+    "previewSha256": "8b91c66156be4dec9eca517ca330c246ca8e863ee9b97b3b93cc159eee362c2d"
+  }
 }

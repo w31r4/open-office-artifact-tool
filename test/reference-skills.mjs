@@ -16,7 +16,7 @@ import {
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const skillsRoot = path.join(repoRoot, "skills");
-const pluginNames = ["documents", "spreadsheets", "presentations", "pdf", "template-creator", "default-template-library"];
+const pluginNames = ["documents", "spreadsheets", "presentations", "pdf", "officekit", "template-creator", "default-template-library"];
 const defaultTemplateSkills = [
   "artifact-template-analytics-dashboard",
   "artifact-template-business-review",
@@ -44,6 +44,7 @@ const expectedSkills = new Map([
   ["spreadsheets", ["excel-live-control", "spreadsheets"]],
   ["presentations", ["presentations"]],
   ["pdf", ["pdf"]],
+  ["officekit", ["officekit"]],
   ["template-creator", ["template-creator"]],
   ["default-template-library", defaultTemplateSkills],
 ]);
@@ -53,6 +54,7 @@ const expectedDeclaredSkillNames = new Map([
   ["spreadsheets", "Spreadsheets"],
   ["presentations", "Presentations"],
   ["pdf", "pdf"],
+  ["officekit", "officekit"],
   ["template-creator", "template-creator"],
 ]);
 for (const skillName of defaultTemplateSkills) expectedDeclaredSkillNames.set(skillName, skillName);
@@ -80,12 +82,12 @@ for (const pluginName of pluginNames) {
   const manifestPath = path.join(pluginRoot, ".codex-plugin", "plugin.json");
   const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8"));
   assert.equal(manifest.name, pluginName);
-  assert.equal(manifest.version, "0.2.0");
+  assert.equal(manifest.version, pluginName === "officekit" ? "0.3.0" : "0.2.0");
   assert.equal(manifest.license, pluginName === "default-template-library" ? "MIT" : "AGPL-3.0-or-later");
   assert.equal(manifest.skills, "./skills/");
   assert.match(manifest.repository, /open-office-artifact-tool/);
   assert.ok(await exists(path.join(pluginRoot, "README.md")));
-  for (const iconKey of ["composerIcon", "logo"]) {
+  for (const iconKey of pluginName === "officekit" ? [] : ["composerIcon", "logo"]) {
     assert.ok(await exists(path.resolve(pluginRoot, manifest.interface[iconKey])), `${pluginName} ${iconKey} must resolve inside the plugin`);
   }
 
@@ -103,13 +105,24 @@ for (const pluginName of pluginNames) {
     const retainedTemplateSkill = pluginName === "default-template-library";
     const agentFilename = skillName === "template-creator" || retainedTemplateSkill ? "agent.yaml" : "openai.yaml";
     const agentText = await fs.readFile(path.join(skillRoot, "agents", agentFilename), "utf8");
-    for (const iconKey of retainedTemplateSkill ? ["icon_large"] : ["icon_small", "icon_large"]) {
+    for (const iconKey of pluginName === "officekit" ? [] : retainedTemplateSkill ? ["icon_large"] : ["icon_small", "icon_large"]) {
       const icon = yamlValue(agentText, iconKey);
       assert.ok(icon, `${pluginName}/${skillName} is missing ${iconKey}`);
       assert.ok(await exists(path.resolve(skillRoot, icon)), `${pluginName}/${skillName} ${iconKey} does not resolve`);
     }
   }
 }
+
+const officeKitRoot = path.join(skillsRoot, "officekit", "skills", "officekit");
+const officeKitSkillText = await fs.readFile(path.join(officeKitRoot, "SKILL.md"), "utf8");
+const officeKitRoutingText = await fs.readFile(path.join(officeKitRoot, "references", "routing.md"), "utf8");
+const officeKitTemplateText = await fs.readFile(path.join(officeKitRoot, "references", "template-selection.md"), "utf8");
+assert.match(officeKitSkillText, /exactly one owning Skill to each output/i);
+assert.match(officeKitSkillText, /selected.*ask.*none/s);
+assert.match(officeKitSkillText, /Do not use the Office template catalog for a PDF-only task/i);
+assert.match(officeKitRoutingText, /One output has one owner/i);
+assert.match(officeKitTemplateText, /none.*successful design decision|Choose `none`/i);
+assert.ok(await exists(path.join(officeKitRoot, "scripts", "query-templates.mjs")));
 
 const templateCreatorManifest = JSON.parse(await fs.readFile(path.join(skillsRoot, "template-creator", "manifest.json"), "utf8"));
 assert.equal(templateCreatorManifest.schemaVersion, 1);

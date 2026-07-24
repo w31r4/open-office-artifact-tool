@@ -1,5 +1,57 @@
 # Release
 
+## 0.3.0 OfficeKit and template routing
+
+0.3.0 adds one project-native top-level OfficeKit Skill without adding another
+artifact model, codec, or runtime:
+
+- OfficeKit inventories inputs and outputs, assigns exactly one Documents,
+  Spreadsheets, Excel Live Control, Presentations, or PDF owner to each output,
+  and orders cross-format work as a dependency graph.
+- It loads only the selected installed domain Skills and keeps their own
+  source-preservation, provider, render, verification, and fail-closed rules.
+  An unavailable selected Skill is a broken install, not permission to invoke
+  raw package APIs as a fallback.
+- Existing-file edits, user-provided references, explicit domain Skills, and
+  explicitly named templates take precedence. New DOCX/XLSX/PPTX work has one
+  of three valid template decisions: one selected template, a short user
+  choice, or no template. PDF-only work does not query the Office catalog.
+- The bounded template query validates schema-v2 metadata, safe relative
+  paths, file budgets, exact Office/preview hashes, duplicate-ID root
+  precedence, and untrusted descriptive fields. It returns compact candidates
+  but never selects a template, fetches a URL, executes metadata, or opens all
+  assets/previews.
+- The retained 20-template MIT library now has local schema-v2 selection
+  sidecars while every Office/PNG asset remains byte-identical to the pinned
+  source. Template Creator emits the same schema, defaults unverified
+  references to opinionated `copy-only`, accepts a strict complete selection
+  profile, preserves v2 metadata on update, and migrates explicitly owned v1
+  templates.
+
+OfficeKit is npm-distributed; the 20 retained templates remain repository-only
+and do not increase the runtime tarball with Office or preview binaries.
+
+### OfficeKit integration evidence
+
+On 2026-07-24, the integrated candidate passed the complete `npm test` chain,
+generated API documentation, `proto:check`, production `test:pack`, OfficeBridge
+`5/5`, OpenChestnut `370/370`, and the deterministic OpenChestnut build gate.
+Both clean WASM builds produced the same 39-file audit set; the bundled runtime
+contains 38 files and 15,123,648 bytes. The clean-install probe created a local
+XLSX template with the packaged Template Creator, discovered it through the
+packaged OfficeKit query, verified its hashes and `copy-only` boundary, and
+proved that the repository-only default templates were absent.
+
+The final dry-run tarball contains 508 files, 9,367,536 compressed bytes, and
+25,090,341 unpacked bytes (SHA-1
+`849e5416e637b7db80f0a827f1817929e17d111b`). `release:check` passed every
+code, package, documentation, JavaScript, and .NET gate; before this evidence
+commit it reported only the intentionally dirty worktree and unavailable npm
+authentication. The real managed-pack release downloads and optional external
+pikepdf/pyHanko/veraPDF/OCRmyPDF environments remained explicitly disabled;
+their offline build, policy, Skill, and fail-closed contract gates passed. No
+npm publish, tag, or GitHub release operation was attempted.
+
 ## 0.3.0 capability-pack boundary
 
 0.3.0 adds a public, explicit PDF capability-pack control plane without adding
@@ -66,7 +118,7 @@ There is no compatibility window or fallback mode.
 
 The repository is the authoritative source distribution. It contains OpenChestnut C# source, locked dependencies, protocol definitions, build scripts, tests, Skills, and reproducibility gates.
 
-The npm tarball is the consumer distribution. It contains the JavaScript object models, OpenChestnut adapter, generated wire binding, public proto, bundled runtime, integrity manifest, SBOM, license notices, render/QA helpers, PDF pipeline, the optional buildable OfficeBridge source project, and five native plugin bundles containing six Skills: the four file-type workflows, the separate `excel-live-control` route, and the local-only Template Creator utility. It excludes OpenChestnut C# source, every C# test and solution, all build output, repository-only build scripts, the development-only `test/skill-harness` fixtures, and the MIT-licensed repository-only Default Template Library with its 20 retained Office/PNG assets. MuPDF.js is declared in the required npm dependency graph rather than copied into this project's own tarball, and its WASM runtime is initialized only by a PDF operation.
+The npm tarball is the consumer distribution. It contains the JavaScript object models, OpenChestnut adapter, generated wire binding, public proto, bundled runtime, integrity manifest, SBOM, license notices, render/QA helpers, PDF pipeline, the optional buildable OfficeBridge source project, and six native plugin bundles containing seven Skills: the four file-type workflows, the separate `excel-live-control` route, the project-native OfficeKit coordinator, and the local-only Template Creator utility. It excludes OpenChestnut C# source, every C# test and solution, all build output, repository-only build scripts, the development-only `test/skill-harness` fixtures, and the MIT-licensed repository-only Default Template Library with its 20 retained Office/PNG assets. MuPDF.js is declared in the required npm dependency graph rather than copied into this project's own tarball, and its WASM runtime is initialized only by a PDF operation.
 
 Installed consumers do not need `dotnet` on `PATH`.
 
@@ -92,7 +144,7 @@ The release candidate is acceptable only when all of the following are true:
 - C# DOCX, XLSX, PPTX, package-boundary, and failure-profile tests pass;
 - default facade create/import/edit/re-export roundtrips pass for all three Office formats;
 - legacy options, old subpath, missing runtime, and opaque-without-source cases fail explicitly;
-- all five npm-distributed native plugin manifests validate, the published six-Skill topology is complete, and every workflow promoted to compatible in `docs/reference-skills.md` passes from the public package surface; the repository-only Default Template Library separately passes its canonical inventory, integrity, source-bound codec, and package-exclusion gates;
+- all six npm-distributed native plugin manifests validate, the published seven-Skill topology is complete, and every workflow promoted to compatible in `docs/reference-skills.md` passes from the public package surface; the repository-only Default Template Library separately passes its canonical inventory, integrity, source-bound codec, and package-exclusion gates;
 - PDF greenfield authoring plus default MuPDF.js import/inspect/render/bounded-edit, lazy-load, pre-WASM budget, exact-prefix incremental-save, source-bound annotation/link/form-field behavior, signature/redaction/deletion fail-closed, Skill CLI source-protection, and specialist-provider contract tests pass independently, including qpdf structure, pikepdf active/auxiliary structure cleanup, pyHanko local-PKCS#12 signing and signature validation, veraPDF conformance, and OCRmyPDF searchable-layer routing;
 - when explicitly configured, the real optional-provider tests cover ReportLab creation, pdfplumber extraction, type-aware pypdf text/radio/checkbox forms and annotations, typed pypdf merge/reorder/selective watermarking, PyMuPDF rewrite/incremental/page/text/image/form/annotation edits, real redaction/scrub/residue scans, capped numerical text-fit behavior, canonical audit byte binding, typed Poppler source/output comparison, and OCRmyPDF/Tesseract recovery of a generated image-only scan with MuPDF second import and Poppler pixel invariance;
 - Open XML SDK validation passes for generated Office fixtures;
@@ -101,7 +153,7 @@ The release candidate is acceptable only when all of the following are true:
   rasterization, and forced-recalculation child process has a finite deadline
   and reports its command/template context on failure; a native-host hang must
   fail the gate rather than leave hosted CI running indefinitely;
-- a production-only packed clean install completes all three Office roundtrips, PDF smoke, and a real packaged Template Creator invocation while `dotnet` is absent from `PATH`, and proves that the repository-only Default Template Library is absent;
+- a production-only packed clean install completes all three Office roundtrips, PDF smoke, a real packaged Template Creator invocation, and a packaged OfficeKit query against a created local template while `dotnet` is absent from `PATH`, and proves that the repository-only Default Template Library is absent;
 - two clean OpenChestnut builds produce the same runtime file set and hashes;
 - package contents contain no legacy Office codec files, OpenChestnut C# source, incomplete OfficeBridge solution, C# build output, tests, or repository-only scripts;
 - package metadata, version `0.3.0`, licenses, third-party notices, SBOM, and integrity manifest agree;

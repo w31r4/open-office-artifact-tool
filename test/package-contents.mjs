@@ -57,12 +57,13 @@ const maxPackedBytes = 9_840_000;
 // package budget. PowerPoint sections plus the bounded transition and rich
 // speaker-notes leaves, the public formula catalog, bounded formula expression
 // parser, SUMPRODUCT range-mask profile, source-bound DOCX header/footer,
+// the compact OfficeKit routing Skill,
 // XLSX connection-refresh and imported-Pivot refresh-on-load transactions, and
 // formula-input syntax guard add
 // protobuf, audited WASM,
 // public Help, and native guidance;
 // retain measured headroom instead of hiding that product surface.
-const maxUnpackedBytes = 25_050_000;
+const maxUnpackedBytes = 25_110_000;
 // Public Skill PNGs are required user-facing assets. They are retained with
 // byte-identical non-IDAT chunks and inflated scanline streams, but their IDAT
 // payloads are deterministically recompressed. Prevent future PNG tooling from
@@ -229,6 +230,13 @@ for (const required of [
   "skills/presentations/skills/presentations/builtin_templates_support/scripts/create-presentation.mjs",
   "skills/presentations/skills/presentations/assets/builtin_templates/grid-layout-library/artifact-tool-compose/index.mjs",
   "skills/presentations/skills/presentations/assets/builtin_templates/grid-layout-library/assets/previews/layout-library.png",
+  "skills/officekit/.codex-plugin/plugin.json",
+  "skills/officekit/README.md",
+  "skills/officekit/skills/officekit/SKILL.md",
+  "skills/officekit/skills/officekit/agents/openai.yaml",
+  "skills/officekit/skills/officekit/references/routing.md",
+  "skills/officekit/skills/officekit/references/template-selection.md",
+  "skills/officekit/skills/officekit/scripts/query-templates.mjs",
   "skills/template-creator/.codex-plugin/plugin.json",
   "skills/template-creator/manifest.json",
   "skills/template-creator/README.md",

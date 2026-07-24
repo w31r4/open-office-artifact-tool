@@ -1,6 +1,53 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "id": "artifact-template-legal-memorandum",
+  "displayName": "Legal Memorandum",
   "kind": "document",
   "reference": "assets/reference.docx",
-  "preview": "assets/preview.png"
+  "preview": "assets/preview.png",
+  "useWhen": [
+    "legal memorandum",
+    "legal issue analysis"
+  ],
+  "avoidWhen": [
+    "marketing content",
+    "informal team update"
+  ],
+  "audiences": [
+    "legal",
+    "executive",
+    "client"
+  ],
+  "contentShapes": [
+    "issue",
+    "brief answer",
+    "facts",
+    "analysis",
+    "conclusion"
+  ],
+  "visualTraits": {
+    "tone": [
+      "formal",
+      "restrained"
+    ],
+    "density": "dense",
+    "colorMode": "neutral",
+    "structure": [
+      "legal analysis",
+      "sectioned"
+    ]
+  },
+  "visualCommitment": "neutral",
+  "editProfile": {
+    "level": "bounded-edit",
+    "verifiedOperations": [
+      "ordinary-paragraph-unique-text-replace"
+    ]
+  },
+  "provenance": {
+    "license": "MIT",
+    "source": "https://github.com/w31r4/office-artifact-tool/commit/256cb31bfe0a07b3cef0051b6b159342be381378",
+    "referenceSha256": "d3006f9074e46823d103fe283be19901f55f75c19811558455d7a16c61797355",
+    "previewSha256": "362e4d26521d6eadc5be3c0dec37d7000ef8c967883485e94db60149e4f28660"
+  }
 }

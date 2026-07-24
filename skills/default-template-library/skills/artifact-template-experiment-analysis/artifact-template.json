@@ -1,6 +1,53 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "id": "artifact-template-experiment-analysis",
+  "displayName": "Experiment Analysis",
   "kind": "document",
   "reference": "assets/reference.docx",
-  "preview": "assets/preview.png"
+  "preview": "assets/preview.png",
+  "useWhen": [
+    "experiment analysis",
+    "test results review"
+  ],
+  "avoidWhen": [
+    "project status update",
+    "business correspondence"
+  ],
+  "audiences": [
+    "research",
+    "product",
+    "internal"
+  ],
+  "contentShapes": [
+    "hypothesis",
+    "methodology",
+    "results",
+    "limitations",
+    "next steps"
+  ],
+  "visualTraits": {
+    "tone": [
+      "analytical",
+      "restrained"
+    ],
+    "density": "medium",
+    "colorMode": "light",
+    "structure": [
+      "evidence-led",
+      "sectioned"
+    ]
+  },
+  "visualCommitment": "neutral",
+  "editProfile": {
+    "level": "bounded-edit",
+    "verifiedOperations": [
+      "ordinary-paragraph-unique-text-replace"
+    ]
+  },
+  "provenance": {
+    "license": "MIT",
+    "source": "https://github.com/w31r4/office-artifact-tool/commit/256cb31bfe0a07b3cef0051b6b159342be381378",
+    "referenceSha256": "d823cd0115186b34c01c6e4b4da3be28b64ee73cac849dbd62d6f4bb6385b0fb",
+    "previewSha256": "847743ae181c5547e9244823c236408765cff5038e2264e3d72c9e958d30929c"
+  }
 }

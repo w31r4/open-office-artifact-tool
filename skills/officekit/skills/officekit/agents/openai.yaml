@@ -1,0 +1,4 @@
+interface:
+  display_name: "OfficeKit"
+  short_description: "Route and coordinate Office and PDF work"
+  default_prompt: "Use $officekit to turn these inputs into the right Office deliverables."

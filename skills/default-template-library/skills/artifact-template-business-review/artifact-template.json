@@ -1,6 +1,53 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "id": "artifact-template-business-review",
+  "displayName": "Business Review",
   "kind": "presentation",
   "reference": "assets/reference.pptx",
-  "preview": "assets/preview.png"
+  "preview": "assets/preview.png",
+  "useWhen": [
+    "quarterly business review",
+    "executive performance review"
+  ],
+  "avoidWhen": [
+    "project kickoff",
+    "consumer campaign"
+  ],
+  "audiences": [
+    "executive",
+    "board",
+    "business leadership"
+  ],
+  "contentShapes": [
+    "KPIs",
+    "segment results",
+    "strategic priorities",
+    "decisions",
+    "outlook"
+  ],
+  "visualTraits": {
+    "tone": [
+      "formal",
+      "restrained"
+    ],
+    "density": "medium",
+    "colorMode": "neutral",
+    "structure": [
+      "narrative",
+      "sectioned"
+    ]
+  },
+  "visualCommitment": "neutral",
+  "editProfile": {
+    "level": "bounded-edit",
+    "verifiedOperations": [
+      "recognized-placeholder-title-text-replace"
+    ]
+  },
+  "provenance": {
+    "license": "MIT",
+    "source": "https://github.com/w31r4/office-artifact-tool/commit/256cb31bfe0a07b3cef0051b6b159342be381378",
+    "referenceSha256": "595b9a314c7e8e9b5f22180e7c7db167afba2437c8623d57e3f9dbc20af392c1",
+    "previewSha256": "af6b092987472013920bb251e0e9d60b97fdb02cc1fd3109abf2b0951bc6aa3c"
+  }
 }

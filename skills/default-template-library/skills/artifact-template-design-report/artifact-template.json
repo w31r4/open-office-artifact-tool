@@ -1,6 +1,52 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "id": "artifact-template-design-report",
+  "displayName": "Design Report",
   "kind": "document",
   "reference": "assets/reference.docx",
-  "preview": "assets/preview.png"
+  "preview": "assets/preview.png",
+  "useWhen": [
+    "design report",
+    "research-backed recommendation"
+  ],
+  "avoidWhen": [
+    "short business letter",
+    "legal memorandum"
+  ],
+  "audiences": [
+    "executive",
+    "client",
+    "internal"
+  ],
+  "contentShapes": [
+    "executive summary",
+    "findings",
+    "recommendations",
+    "appendix"
+  ],
+  "visualTraits": {
+    "tone": [
+      "editorial",
+      "polished"
+    ],
+    "density": "medium",
+    "colorMode": "light",
+    "structure": [
+      "sectioned",
+      "narrative"
+    ]
+  },
+  "visualCommitment": "opinionated",
+  "editProfile": {
+    "level": "bounded-edit",
+    "verifiedOperations": [
+      "ordinary-paragraph-unique-text-replace"
+    ]
+  },
+  "provenance": {
+    "license": "MIT",
+    "source": "https://github.com/w31r4/office-artifact-tool/commit/256cb31bfe0a07b3cef0051b6b159342be381378",
+    "referenceSha256": "ba1e11258ff52659318a321462a5e598c7bed33cf991329eb91150788fcd1a7b",
+    "previewSha256": "19cd1f36fbc8d7efbf27a674004f2c22145514e77bee3459fb8cc4a89caf870d"
+  }
 }

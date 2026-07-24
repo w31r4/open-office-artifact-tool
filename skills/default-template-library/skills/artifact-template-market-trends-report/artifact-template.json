@@ -1,6 +1,53 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "id": "artifact-template-market-trends-report",
+  "displayName": "Market Trends Report",
   "kind": "presentation",
   "reference": "assets/reference.pptx",
-  "preview": "assets/preview.png"
+  "preview": "assets/preview.png",
+  "useWhen": [
+    "market trends report",
+    "industry outlook"
+  ],
+  "avoidWhen": [
+    "internal operating review",
+    "project tracker"
+  ],
+  "audiences": [
+    "executive",
+    "client",
+    "strategy"
+  ],
+  "contentShapes": [
+    "trends",
+    "evidence",
+    "comparison",
+    "implications",
+    "recommended responses"
+  ],
+  "visualTraits": {
+    "tone": [
+      "editorial",
+      "insight-led"
+    ],
+    "density": "medium",
+    "colorMode": "light",
+    "structure": [
+      "narrative",
+      "visual report"
+    ]
+  },
+  "visualCommitment": "opinionated",
+  "editProfile": {
+    "level": "bounded-edit",
+    "verifiedOperations": [
+      "recognized-placeholder-title-text-replace"
+    ]
+  },
+  "provenance": {
+    "license": "MIT",
+    "source": "https://github.com/w31r4/office-artifact-tool/commit/256cb31bfe0a07b3cef0051b6b159342be381378",
+    "referenceSha256": "52396c3a70dc11d35989bb4e3f9a96d2c728c5eba8a1aad96920cfe24cff59fa",
+    "previewSha256": "a27d80525678a8b0b4e2242dd13aca95f7920ac790b1a66e96d8b39cc4a74e8f"
+  }
 }

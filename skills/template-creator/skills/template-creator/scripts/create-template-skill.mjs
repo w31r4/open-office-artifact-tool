@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { createReadStream } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -15,9 +16,10 @@ const BACKUP_NAME_PATTERN = /^(artifact-template-[a-z0-9]+(?:-[a-z0-9]+)*)\.back
 const MAX_SKILL_NAME_LENGTH = 64;
 const MAX_REFERENCE_BYTES = 512 * 1024 * 1024;
 const MAX_PREVIEW_BYTES = 64 * 1024 * 1024;
+const MAX_SELECTION_JSON_BYTES = 32 * 1024;
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const USAGE =
-  "Usage: create-template-skill.mjs --reference-path <path> --preview-path <path> --display-name <name> --description <description> [--mode update --skill-name <name>]";
+  "Usage: create-template-skill.mjs --reference-path <path> --preview-path <path> --display-name <name> --description <description> [--selection-json <json>] [--mode update --skill-name <name>]";
 const artifactKinds = new Map([
   [
     ".docx",
@@ -71,6 +73,8 @@ async function createTemplateSkill(
       artifact,
       description: request.description,
       displayName: identity.displayName,
+      selectionMetadata:
+        request.selectionMetadata ?? identity.existingMetadata ?? null,
       parentDirectory: skillsRoot,
       previewPath: request.previewPath,
       referencePath: request.referencePath,
@@ -90,6 +94,7 @@ async function createTemplateSkill(
     return {
       displayName: identity.displayName,
       kind: artifact.kind,
+      schemaVersion: 2,
       skillName: identity.skillName,
       skillPath,
     };
@@ -135,6 +140,27 @@ async function validateRequest(rawRequest) {
   if (!hasValidPngStructure(await fs.readFile(previewPath))) {
     throw new Error("--preview-path must contain a valid PNG.");
   }
+  const selectionJson = getOptionalString(
+    rawRequest,
+    "selectionJson",
+    "--selection-json",
+  );
+  let selectionMetadata = null;
+  if (selectionJson != null) {
+    if (Buffer.byteLength(selectionJson, "utf8") > MAX_SELECTION_JSON_BYTES) {
+      throw new Error(
+        `--selection-json exceeds the ${MAX_SELECTION_JSON_BYTES}-byte input budget.`,
+      );
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(selectionJson);
+    } catch (error) {
+      throw new Error(`--selection-json must be valid JSON: ${error.message}`);
+    }
+    assertSelectionMetadataKeys(parsed);
+    selectionMetadata = selectionMetadataFrom(parsed);
+  }
 
   const skillName = getOptionalString(
     rawRequest,
@@ -158,6 +184,7 @@ async function validateRequest(rawRequest) {
     mode,
     previewPath,
     referencePath,
+    selectionMetadata,
     skillName,
   };
 }
@@ -224,18 +251,26 @@ async function getUpdateIdentity(skillsRoot, request, kind) {
   await assertSafeTemplateTree(skillPath);
   const sidecarPath = path.join(skillPath, "artifact-template.json");
   const sidecar = JSON.parse(await fs.readFile(sidecarPath, "utf8"));
-  if (sidecar.schemaVersion !== 1 || sidecar.kind !== kind) {
+  if (
+    (sidecar.schemaVersion !== 1 && sidecar.schemaVersion !== 2) ||
+    sidecar.kind !== kind
+  ) {
     throw new Error(
-      `${request.skillName} is not a version 1 ${kind} artifact template.`,
+      `${request.skillName} is not a supported ${kind} artifact template.`,
     );
   }
-  return { displayName: request.displayName, skillName: request.skillName };
+  return {
+    displayName: request.displayName,
+    existingMetadata: sidecar.schemaVersion === 2 ? selectionMetadataFrom(sidecar) : null,
+    skillName: request.skillName,
+  };
 }
 
 async function stageTemplateSkill({
   artifact,
   description,
   displayName,
+  selectionMetadata,
   parentDirectory,
   previewPath,
   referencePath,
@@ -255,6 +290,25 @@ async function stageTemplateSkill({
       fs.mkdir(path.join(stagedSkill, "agents"), { recursive: true }),
       fs.mkdir(path.join(stagedSkill, "assets"), { recursive: true }),
     ]);
+    const [referenceSha256, previewSha256] = await Promise.all([
+      sha256File(referencePath),
+      sha256File(previewPath),
+    ]);
+    const metadata = {
+      schemaVersion: 2,
+      id: skillName,
+      displayName,
+      kind: artifact.kind,
+      reference: `assets/${referenceFilename}`,
+      preview: "assets/preview.png",
+      ...(selectionMetadata ?? defaultSelectionMetadata(description)),
+      provenance: {
+        license: selectionMetadata?.provenance.license ?? "user-provided",
+        source: selectionMetadata?.provenance.source ?? "local-user-reference",
+        referenceSha256,
+        previewSha256,
+      },
+    };
     await Promise.all([
       fs.writeFile(
         path.join(stagedSkill, "SKILL.md"),
@@ -271,16 +325,7 @@ async function stageTemplateSkill({
       ),
       fs.writeFile(
         path.join(stagedSkill, "artifact-template.json"),
-        `${JSON.stringify(
-          {
-            schemaVersion: 1,
-            kind: artifact.kind,
-            reference: `assets/${referenceFilename}`,
-            preview: "assets/preview.png",
-          },
-          null,
-          2,
-        )}\n`,
+        `${JSON.stringify(metadata, null, 2)}\n`,
       ),
       fs.copyFile(
         referencePath,
@@ -315,9 +360,10 @@ Create a new ${artifact.kind} from this template. Keep the reference file unchan
 
 1. Read \`artifact-template.json\` and resolve its paths relative to this skill directory.
 2. Use the matching ${artifact.workflow} workflow with the retained reference file.
-3. Treat the user's prompt and available sources as the content input. Do not invent facts merely to fill a template slot.
-4. Clone or import the reference instead of replacing its visual system with generic defaults.
-5. Render and verify the finished ${artifact.kind}, then return the final artifact.
+3. Check \`editProfile\` before changing the retained structure. A \`copy-only\` profile does not prove that content edits are safe.
+4. Treat the user's prompt and available sources as the content input. Do not invent facts merely to fill a template slot.
+5. Clone or import the reference instead of replacing its visual system with generic defaults.
+6. Render and verify the finished ${artifact.kind}, then return the final artifact.
 
 ## Fidelity
 
@@ -325,6 +371,180 @@ ${artifact.preservation}
 
 User instructions control requested content and explicit deviations. The retained reference controls layout and formatting where the user has not requested a change.
 `;
+}
+
+function defaultSelectionMetadata(description) {
+  return {
+    useWhen: [compactMetadataDescription(description)],
+    avoidWhen: [],
+    audiences: [],
+    contentShapes: [],
+    visualTraits: {
+      tone: [],
+      density: "mixed",
+      colorMode: "mixed",
+      structure: [],
+    },
+    visualCommitment: "opinionated",
+    editProfile: {
+      level: "copy-only",
+      verifiedOperations: [],
+    },
+  };
+}
+
+function compactMetadataDescription(description) {
+  let compact = "";
+  for (const character of description) {
+    if (compact.length + character.length > 120) break;
+    compact += character;
+  }
+  return compact.trimEnd();
+}
+
+function assertSelectionMetadataKeys(value) {
+  if (value == null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("--selection-json must contain an object.");
+  }
+  const allowed = new Set([
+    "useWhen",
+    "avoidWhen",
+    "audiences",
+    "contentShapes",
+    "visualTraits",
+    "visualCommitment",
+    "editProfile",
+    "provenance",
+  ]);
+  const extra = Object.keys(value).filter((key) => !allowed.has(key));
+  if (extra.length > 0) {
+    throw new Error(`--selection-json contains unsupported fields: ${extra.join(", ")}.`);
+  }
+  assertNestedSelectionKeys(
+    value.visualTraits,
+    "visualTraits",
+    ["tone", "density", "colorMode", "structure"],
+  );
+  assertNestedSelectionKeys(
+    value.editProfile,
+    "editProfile",
+    ["level", "verifiedOperations"],
+  );
+  assertNestedSelectionKeys(
+    value.provenance,
+    "provenance",
+    ["license", "source"],
+  );
+}
+
+function assertNestedSelectionKeys(value, label, allowedKeys) {
+  if (value == null || typeof value !== "object" || Array.isArray(value)) {
+    return;
+  }
+  const allowed = new Set(allowedKeys);
+  const extra = Object.keys(value).filter((key) => !allowed.has(key));
+  if (extra.length > 0) {
+    throw new Error(
+      `--selection-json ${label} contains unsupported fields: ${extra.join(", ")}.`,
+    );
+  }
+}
+
+function selectionMetadataFrom(sidecar) {
+  const metadata = {
+    useWhen: stringArrayFrom(sidecar.useWhen, "useWhen", 1, 20),
+    avoidWhen: stringArrayFrom(sidecar.avoidWhen, "avoidWhen", 0, 20),
+    audiences: stringArrayFrom(sidecar.audiences, "audiences", 0, 20),
+    contentShapes: stringArrayFrom(sidecar.contentShapes, "contentShapes", 0, 20),
+    visualTraits: {
+      tone: stringArrayFrom(sidecar.visualTraits?.tone, "visualTraits.tone", 0, 12),
+      density: enumFrom(
+        sidecar.visualTraits?.density,
+        "visualTraits.density",
+        ["sparse", "medium", "dense", "mixed"],
+      ),
+      colorMode: enumFrom(
+        sidecar.visualTraits?.colorMode,
+        "visualTraits.colorMode",
+        ["light", "dark", "neutral", "mixed"],
+      ),
+      structure: stringArrayFrom(
+        sidecar.visualTraits?.structure,
+        "visualTraits.structure",
+        0,
+        12,
+      ),
+    },
+    visualCommitment: enumFrom(
+      sidecar.visualCommitment,
+      "visualCommitment",
+      ["neutral", "opinionated"],
+    ),
+    editProfile: {
+      level: enumFrom(
+        sidecar.editProfile?.level,
+        "editProfile.level",
+        ["copy-only", "bounded-edit", "composable"],
+      ),
+      verifiedOperations: stringArrayFrom(
+        sidecar.editProfile?.verifiedOperations,
+        "editProfile.verifiedOperations",
+        0,
+        24,
+      ),
+    },
+    provenance: {
+      license: metadataStringFrom(
+        sidecar.provenance?.license,
+        "provenance.license",
+        120,
+      ),
+      source: metadataStringFrom(
+        sidecar.provenance?.source,
+        "provenance.source",
+        500,
+      ),
+    },
+  };
+  if (
+    metadata.editProfile.level === "copy-only" &&
+    metadata.editProfile.verifiedOperations.length !== 0
+  ) {
+    throw new Error("copy-only templates cannot declare verified operations.");
+  }
+  return metadata;
+}
+
+function stringArrayFrom(value, label, min, max) {
+  if (!Array.isArray(value) || value.length < min || value.length > max) {
+    throw new Error(`${label} must contain ${min}-${max} strings.`);
+  }
+  const result = value.map((entry) => metadataStringFrom(entry, label, 120));
+  const normalized = result.map((entry) => entry.normalize("NFKC").toLowerCase());
+  if (new Set(normalized).size !== normalized.length) {
+    throw new Error(`${label} must not contain duplicates.`);
+  }
+  return result;
+}
+
+function enumFrom(value, label, values) {
+  if (!values.includes(value)) {
+    throw new Error(`${label} must be one of ${values.join(", ")}.`);
+  }
+  return value;
+}
+
+function metadataStringFrom(value, label, maxLength) {
+  if (
+    typeof value !== "string" ||
+    value.trim().length === 0 ||
+    value !== value.trim() ||
+    value.length > maxLength ||
+    /[\0\r\n]/u.test(value)
+  ) {
+    throw new Error(`${label} must be one trimmed line of at most ${maxLength} characters.`);
+  }
+  return value;
 }
 
 function getTemplateAgentYaml({ artifact, displayName, skillName }) {
@@ -548,6 +768,14 @@ async function assertRegularFile(filePath, label, maxBytes) {
   }
 }
 
+async function sha256File(filePath) {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(filePath)) {
+    hash.update(chunk);
+  }
+  return hash.digest("hex");
+}
+
 async function assertSafeTemplateTree(skillPath) {
   const root = await fs.lstat(skillPath);
   if (!root.isDirectory() || root.isSymbolicLink()) {
@@ -604,6 +832,7 @@ const requestFlagToKey = new Map([
   ["--preview-path", "previewPath"],
   ["--display-name", "displayName"],
   ["--description", "description"],
+  ["--selection-json", "selectionJson"],
 ]);
 
 function getRequestFromArguments(args) {
@@ -631,7 +860,8 @@ async function main() {
 
 if (
   process.argv[1] != null &&
-  fileURLToPath(import.meta.url) === path.resolve(process.argv[1])
+  await fs.realpath(fileURLToPath(import.meta.url)) ===
+    await fs.realpath(path.resolve(process.argv[1]))
 ) {
   main().catch((error) => {
     process.stderr.write(

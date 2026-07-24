@@ -28,21 +28,22 @@ From the Node.js project where the agent will work:
 
 ```sh
 npm install github:w31r4/open-office-artifact-tool
+npx skills add w31r4/open-office-artifact-tool \
+  --skill officekit documents spreadsheets excel-live-control presentations pdf template-creator \
+  --yes
+```
+
+The first command installs the runtime; the second installs the OfficeKit entry point and the core Skills. The initial setup needs no repository clone, Office installation, .NET SDK, or Python setup. The formal npm package has not shipped yet, so use the GitHub source for now; after release, replace the first command with `npm install open-office-artifact-tool`.
+
+To expose all 20 open-source templates as directly invocable Skills:
+
+```sh
 npx skills add w31r4/open-office-artifact-tool --skill '*' --yes
 ```
 
-The first command installs the runtime; the second installs every Skill and the open-source templates. The initial setup needs no repository clone, Office installation, .NET SDK, or Python setup. The formal npm package has not shipped yet, so use the GitHub source for now; after release, replace the first command with `npm install open-office-artifact-tool`.
-
-For a smaller install:
-
-```sh
-npx skills add w31r4/open-office-artifact-tool \
-  --skill documents \
-  --skill spreadsheets \
-  --skill presentations \
-  --skill pdf \
-  --yes
-```
+The core install does not put all 20 template descriptions into the Agent’s
+default context. OfficeKit first reads compact metadata and chooses zero or one
+template; only the final shortlist needs previews and detailed instructions.
 
 Node.js 22 or newer is recommended. The Office runtime is included in the package. MuPDF.js loads only when the first PDF operation needs it.
 
@@ -52,8 +53,10 @@ The Skills are operating instructions, not a feature checklist. They tell an age
 
 | Skill | Good for |
 | --- | --- |
+| [OfficeKit](skills/officekit/skills/officekit/SKILL.md) | Broad, ambiguous, cross-format, or multi-deliverable work; routing domain Skills and deciding whether a template helps. |
 | [Documents](skills/documents/skills/documents/SKILL.md) | Word reports, letters, contract drafts, and formal documents with tables and images. |
 | [Spreadsheets](skills/spreadsheets/skills/spreadsheets/SKILL.md) | Excel models, data preparation, formulas, charts, validation, and visualization. |
+| [Excel Live Control](skills/spreadsheets/skills/excel-live-control/SKILL.md) | Working with a workbook already open in Excel without silently switching to offline file editing. |
 | [Presentations](skills/presentations/skills/presentations/SKILL.md) | PowerPoint decks, template work, charts, images, notes, and layout review. |
 | [PDF](skills/pdf/skills/pdf/SKILL.md) | PDF reading, authoring, forms, annotations, page work, rendering, and specialist operations. |
 | [Template Creator](skills/template-creator/skills/template-creator/SKILL.md) | Turning your own DOCX, XLSX, and PPTX reference files into reusable templates. |
@@ -128,7 +131,9 @@ console.log(resolution.status); // ready | installable | blocked
 
 ## Start with a good template
 
-The [Office Template Library](skills/default-template-library/README.md) has 20 MIT-licensed Office templates. The template files stay in the repository rather than the npm runtime package. An agent creates a new output from a selected template, then uses the same APIs to inspect, edit, and render it; the reference file is not used as the output.
+The [Office Template Library](skills/default-template-library/README.md) has 20 MIT-licensed Office templates. Each records intended uses, avoid cases, audiences, content shapes, visual traits, and verified edit boundaries. OfficeKit can select one, ask the user, or explicitly choose no template; “no template” is not a failure.
+
+The template files stay in the repository rather than the npm runtime package. An agent creates a new output from a selected template, then uses the same APIs to inspect, edit, and render it; the reference file is not used as the output.
 
 Use [Template Creator](skills/template-creator/skills/template-creator/SKILL.md) to turn your team’s DOCX, XLSX, or PPTX reference files into your own templates.
 

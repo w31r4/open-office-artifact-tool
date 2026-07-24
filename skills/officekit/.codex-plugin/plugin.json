@@ -1,0 +1,45 @@
+{
+  "name": "officekit",
+  "version": "0.3.0",
+  "description": "Plan and coordinate broad, cross-format Office and PDF work through the installed domain Skills.",
+  "author": {
+    "name": "w31r4",
+    "email": "w31r4@users.noreply.github.com",
+    "url": "https://github.com/w31r4/open-office-artifact-tool"
+  },
+  "homepage": "https://github.com/w31r4/open-office-artifact-tool",
+  "repository": "https://github.com/w31r4/open-office-artifact-tool",
+  "license": "AGPL-3.0-or-later",
+  "keywords": [
+    "officekit",
+    "office",
+    "word",
+    "excel",
+    "powerpoint",
+    "pdf",
+    "agent",
+    "skills",
+    "templates"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "OfficeKit",
+    "shortDescription": "Coordinate Office and PDF artifact work",
+    "longDescription": "Plan broad, ambiguous, cross-format, and multi-deliverable Office work; load only the required installed domain Skills; and decide whether zero or one available template improves a new artifact.",
+    "developerName": "w31r4",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/w31r4/open-office-artifact-tool",
+    "privacyPolicyURL": "https://github.com/w31r4/open-office-artifact-tool#readme",
+    "termsOfServiceURL": "https://github.com/w31r4/open-office-artifact-tool#readme",
+    "defaultPrompt": [
+      "Turn these inputs into the right Office deliverables",
+      "Create a report, presentation, and final PDF from these source files",
+      "Recommend whether an Office template fits this task"
+    ],
+    "screenshots": []
+  }
+}

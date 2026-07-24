@@ -1,6 +1,56 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "id": "artifact-template-sales-pipeline",
+  "displayName": "Sales Pipeline",
   "kind": "spreadsheet",
   "reference": "assets/reference.xlsx",
-  "preview": "assets/preview.png"
+  "preview": "assets/preview.png",
+  "useWhen": [
+    "sales pipeline",
+    "opportunity forecast"
+  ],
+  "avoidWhen": [
+    "general project plan",
+    "three-statement model"
+  ],
+  "audiences": [
+    "sales",
+    "revenue leadership",
+    "executive"
+  ],
+  "contentShapes": [
+    "opportunities",
+    "stages",
+    "owners",
+    "deal sizes",
+    "probabilities",
+    "forecast",
+    "next steps",
+    "risks"
+  ],
+  "visualTraits": {
+    "tone": [
+      "commercial",
+      "analytical"
+    ],
+    "density": "dense",
+    "colorMode": "light",
+    "structure": [
+      "pipeline",
+      "summary"
+    ]
+  },
+  "visualCommitment": "neutral",
+  "editProfile": {
+    "level": "bounded-edit",
+    "verifiedOperations": [
+      "non-formula-string-cell-edit"
+    ]
+  },
+  "provenance": {
+    "license": "MIT",
+    "source": "https://github.com/w31r4/office-artifact-tool/commit/256cb31bfe0a07b3cef0051b6b159342be381378",
+    "referenceSha256": "a6ac1045a0602cbb4d90878949c2970d0e815dd9f98fe34d0ff92b69ebbb4db3",
+    "previewSha256": "3208ad8051412202774cfe3f34de468d89a6c1e27cf00166933085f6a167cabe"
+  }
 }

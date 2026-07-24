@@ -1,6 +1,54 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "id": "artifact-template-project-kickoff",
+  "displayName": "Project Kickoff",
   "kind": "presentation",
   "reference": "assets/reference.pptx",
-  "preview": "assets/preview.png"
+  "preview": "assets/preview.png",
+  "useWhen": [
+    "project kickoff",
+    "initiative launch"
+  ],
+  "avoidWhen": [
+    "quarterly business review",
+    "market research report"
+  ],
+  "audiences": [
+    "project team",
+    "stakeholder",
+    "internal"
+  ],
+  "contentShapes": [
+    "goals",
+    "scope",
+    "roles",
+    "milestones",
+    "risks",
+    "working model"
+  ],
+  "visualTraits": {
+    "tone": [
+      "energetic",
+      "collaborative"
+    ],
+    "density": "medium",
+    "colorMode": "light",
+    "structure": [
+      "narrative",
+      "workshop"
+    ]
+  },
+  "visualCommitment": "opinionated",
+  "editProfile": {
+    "level": "bounded-edit",
+    "verifiedOperations": [
+      "recognized-placeholder-title-text-replace"
+    ]
+  },
+  "provenance": {
+    "license": "MIT",
+    "source": "https://github.com/w31r4/office-artifact-tool/commit/256cb31bfe0a07b3cef0051b6b159342be381378",
+    "referenceSha256": "b1b15cb0c23ad524f9832749ec31b775719bae2bdba897de9c9d8556ca00a44c",
+    "previewSha256": "02823427c2552cc894d333fb96fd2fb3e3ac04503904ab6f73643ca877362df5"
+  }
 }

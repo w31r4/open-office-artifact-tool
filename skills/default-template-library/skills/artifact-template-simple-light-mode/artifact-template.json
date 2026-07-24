@@ -1,6 +1,52 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "id": "artifact-template-simple-light-mode",
+  "displayName": "Simple Light Mode",
   "kind": "presentation",
   "reference": "assets/reference.pptx",
-  "preview": "assets/preview.png"
+  "preview": "assets/preview.png",
+  "useWhen": [
+    "general business presentation",
+    "clean light presentation"
+  ],
+  "avoidWhen": [
+    "dense operating scorecard",
+    "dark visual direction"
+  ],
+  "audiences": [
+    "general",
+    "internal",
+    "external"
+  ],
+  "contentShapes": [
+    "narrative",
+    "sections",
+    "charts",
+    "imagery"
+  ],
+  "visualTraits": {
+    "tone": [
+      "clean",
+      "minimal"
+    ],
+    "density": "sparse",
+    "colorMode": "light",
+    "structure": [
+      "narrative",
+      "visual"
+    ]
+  },
+  "visualCommitment": "neutral",
+  "editProfile": {
+    "level": "bounded-edit",
+    "verifiedOperations": [
+      "recognized-placeholder-title-text-replace"
+    ]
+  },
+  "provenance": {
+    "license": "MIT",
+    "source": "https://github.com/w31r4/office-artifact-tool/commit/256cb31bfe0a07b3cef0051b6b159342be381378",
+    "referenceSha256": "2ae8105571f68403f438458cd51e6ad14f0d989c7af64239e280437a4ac2a633",
+    "previewSha256": "9c12751105bbdea9e74df059b0b86c6eef22b3af34ba38c090edb7e2e4acf3ac"
+  }
 }

@@ -4,7 +4,8 @@
 
 OpenChestnut is the only XLSX, DOCX, and PPTX codec. It is implemented in C# with the Open XML SDK and compiled into the bundled .NET WebAssembly runtime. PDF remains an independent implementation.
 
-Version 0.2 intentionally has no Office codec registry, selector, compatibility shim, or fallback path.
+Version 0.3 retains the single-codec boundary: no Office codec registry,
+selector, compatibility shim, or fallback path.
 
 ```mermaid
 flowchart LR
@@ -70,6 +71,18 @@ Python and system adapters remain the explicit routes for strict scrub/residue, 
 The router has no silent fallback. Mutation records source hashes and uses a distinct transactional output plus one explicit strategy: `rewrite`, byte-prefix-preserving `incremental`, or destructive `sanitize`. Signature/DocMDP evidence is checked first. High-trust redaction applies real redactions, scrubs, fully rewrites, scans raw/decoded/metadata/attachment/annotation/OCR residue and old revisions, then requires Poppler review.
 
 The project and official MuPDF.js dependency are GNU AGPL-3.0-or-later. Normal npm installation resolves MuPDF.js as a required direct dependency; it remains in its own dependency tarball and is not copied into this project's `.tgz`. Capability-pack binaries, Python wheels, OCR language data, JREs, and qpdf are never bundled into the npm tarball. No lifecycle hook or standalone dependency installer is used.
+
+### Skill routing
+
+OfficeKit is a project-native coordination Skill, not another artifact model or
+codec. It assigns exactly one owning domain Skill to each output, orders
+cross-format work as a dependency graph, and loads only the selected installed
+Skills. Its template query reads bounded schema-v2 metadata and verifies safe
+paths plus retained-asset hashes; it does not import Office files, render all
+previews, execute catalog text, or select a template by itself. Template
+selection has three valid results: one selected template, a short user choice,
+or no template. The domain Skill remains responsible for editing, source
+preservation, render QA, and fail-closed behavior.
 
 ## Facade contract
 
@@ -137,7 +150,7 @@ The npm package contains:
 - `runtime/open-chestnut` WASM/runtime assets;
 - integrity manifest, SBOM, and license notices;
 - the optional `native/OfficeBridge/src` project, without its repository-only solution or tests;
-- five npm-distributed native plugin bundles containing six Skills: the four file-type workflows, the separate `excel-live-control` route, and the local-only `template-creator` utility. The source repository additionally contains a sixth, MIT-licensed, repository-only `default-template-library` bundle with twenty retained DOCX/PPTX/XLSX template Skills; it is deliberately excluded from consumer npm tarballs.
+- six npm-distributed native plugin bundles containing seven Skills: the four file-type workflows, the separate `excel-live-control` route, the project-native `officekit` coordinator, and the local-only `template-creator` utility. The source repository additionally contains a seventh, MIT-licensed, repository-only `default-template-library` bundle with twenty retained DOCX/PPTX/XLSX template Skills; it is deliberately excluded from consumer npm tarballs.
 
 It excludes OpenChestnut C# source, every C# test and solution, all C# build output, repository-only scripts/tests, and removed legacy codec modules. Normal package use therefore works without a local .NET SDK; only consumers who explicitly build the optional OfficeBridge helper need one.
 

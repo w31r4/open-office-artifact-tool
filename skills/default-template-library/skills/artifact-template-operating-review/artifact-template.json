@@ -1,6 +1,53 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "id": "artifact-template-operating-review",
+  "displayName": "Operating Review",
   "kind": "presentation",
   "reference": "assets/reference.pptx",
-  "preview": "assets/preview.png"
+  "preview": "assets/preview.png",
+  "useWhen": [
+    "weekly operating review",
+    "monthly operating review"
+  ],
+  "avoidWhen": [
+    "external sales pitch",
+    "project kickoff"
+  ],
+  "audiences": [
+    "executive",
+    "operations",
+    "functional leadership"
+  ],
+  "contentShapes": [
+    "scorecard",
+    "functional updates",
+    "risks",
+    "decisions",
+    "action items"
+  ],
+  "visualTraits": {
+    "tone": [
+      "operational",
+      "formal"
+    ],
+    "density": "dense",
+    "colorMode": "neutral",
+    "structure": [
+      "scorecard",
+      "sectioned"
+    ]
+  },
+  "visualCommitment": "neutral",
+  "editProfile": {
+    "level": "bounded-edit",
+    "verifiedOperations": [
+      "recognized-placeholder-title-text-replace"
+    ]
+  },
+  "provenance": {
+    "license": "MIT",
+    "source": "https://github.com/w31r4/office-artifact-tool/commit/256cb31bfe0a07b3cef0051b6b159342be381378",
+    "referenceSha256": "ec2084d143a4d52857cc06c24129abbb45c45d04b90cca06e319ac26d3cadd4f",
+    "previewSha256": "e8f1dd91d1258c3bb06d2b1d0c52a49fce454e6682732e2e8f43b37c494e3c19"
+  }
 }

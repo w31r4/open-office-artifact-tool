@@ -19,7 +19,15 @@ skills/default-template-library/
         └── reference.docx | reference.pptx | reference.xlsx
 ```
 
-Each nested skill retains its reference Office file and preview image. Use the named template skill to create a new artifact while preserving the retained layout and formatting unless the request calls for a change.
+Each nested skill retains its reference Office file and preview image. Its
+schema-v2 `artifact-template.json` adds intended uses, avoid cases, audiences,
+content shapes, visual traits, visual commitment, verified edit operations,
+license/source provenance, and retained-asset hashes. OfficeKit can therefore
+shortlist templates without loading all twenty Skill descriptions or opening
+every Office file.
+
+Use the named template skill to create a new artifact while preserving the
+retained layout and formatting unless the request calls for a change.
 
 These resources are repository-only and are intentionally excluded from the npm package tarball. Create a distinct output from a selected retained reference; never overwrite or mutate the checked-in reference file.
 

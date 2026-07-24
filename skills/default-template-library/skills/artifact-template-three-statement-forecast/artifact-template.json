@@ -1,6 +1,54 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "id": "artifact-template-three-statement-forecast",
+  "displayName": "Three-Statement Forecast",
   "kind": "spreadsheet",
   "reference": "assets/reference.xlsx",
-  "preview": "assets/preview.png"
+  "preview": "assets/preview.png",
+  "useWhen": [
+    "three-statement forecast",
+    "integrated financial model"
+  ],
+  "avoidWhen": [
+    "simple departmental budget",
+    "sales pipeline"
+  ],
+  "audiences": [
+    "finance",
+    "investment",
+    "executive"
+  ],
+  "contentShapes": [
+    "income statement",
+    "balance sheet",
+    "cash flow",
+    "assumptions",
+    "checks",
+    "executive summary"
+  ],
+  "visualTraits": {
+    "tone": [
+      "financial",
+      "analytical"
+    ],
+    "density": "dense",
+    "colorMode": "neutral",
+    "structure": [
+      "integrated model",
+      "summary"
+    ]
+  },
+  "visualCommitment": "neutral",
+  "editProfile": {
+    "level": "bounded-edit",
+    "verifiedOperations": [
+      "non-formula-string-cell-edit"
+    ]
+  },
+  "provenance": {
+    "license": "MIT",
+    "source": "https://github.com/w31r4/office-artifact-tool/commit/256cb31bfe0a07b3cef0051b6b159342be381378",
+    "referenceSha256": "4a4709ff9b860f762f4c3bb224c5084e9820d9a8d8085395aa121728c899d0c2",
+    "previewSha256": "2fb61600384025e1266d5f8b9c641cba4b535b78a03173b5d051662f4df48e68"
+  }
 }

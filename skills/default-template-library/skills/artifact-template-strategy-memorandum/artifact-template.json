@@ -1,6 +1,54 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "id": "artifact-template-strategy-memorandum",
+  "displayName": "Strategy Memorandum",
   "kind": "document",
   "reference": "assets/reference.docx",
-  "preview": "assets/preview.png"
+  "preview": "assets/preview.png",
+  "useWhen": [
+    "strategy memorandum",
+    "executive recommendation"
+  ],
+  "avoidWhen": [
+    "legal opinion",
+    "experiment report"
+  ],
+  "audiences": [
+    "executive",
+    "board",
+    "internal"
+  ],
+  "contentShapes": [
+    "context",
+    "strategic choices",
+    "rationale",
+    "risks",
+    "milestones",
+    "recommendation"
+  ],
+  "visualTraits": {
+    "tone": [
+      "formal",
+      "decisive"
+    ],
+    "density": "medium",
+    "colorMode": "neutral",
+    "structure": [
+      "decision memo",
+      "narrative"
+    ]
+  },
+  "visualCommitment": "neutral",
+  "editProfile": {
+    "level": "bounded-edit",
+    "verifiedOperations": [
+      "ordinary-paragraph-unique-text-replace"
+    ]
+  },
+  "provenance": {
+    "license": "MIT",
+    "source": "https://github.com/w31r4/office-artifact-tool/commit/256cb31bfe0a07b3cef0051b6b159342be381378",
+    "referenceSha256": "13bd3ae7aef4b3ae76c5d65200acd654c922782974dac18672e973fad93bd453",
+    "previewSha256": "2a615bd6c983a2a747b8cb5ea82e47e92ff3b1736a1d94742c57a9ce42aa1d55"
+  }
 }

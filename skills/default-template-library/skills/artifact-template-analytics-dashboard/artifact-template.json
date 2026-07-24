@@ -1,6 +1,53 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "id": "artifact-template-analytics-dashboard",
+  "displayName": "Analytics Dashboard",
   "kind": "spreadsheet",
   "reference": "assets/reference.xlsx",
-  "preview": "assets/preview.png"
+  "preview": "assets/preview.png",
+  "useWhen": [
+    "analytics dashboard",
+    "KPI dashboard"
+  ],
+  "avoidWhen": [
+    "transaction-level ledger",
+    "project schedule"
+  ],
+  "audiences": [
+    "executive",
+    "analytics",
+    "growth"
+  ],
+  "contentShapes": [
+    "acquisition KPIs",
+    "engagement KPIs",
+    "retention KPIs",
+    "revenue KPIs",
+    "conversion funnel"
+  ],
+  "visualTraits": {
+    "tone": [
+      "analytical",
+      "dashboard"
+    ],
+    "density": "dense",
+    "colorMode": "light",
+    "structure": [
+      "scorecard",
+      "charts"
+    ]
+  },
+  "visualCommitment": "neutral",
+  "editProfile": {
+    "level": "bounded-edit",
+    "verifiedOperations": [
+      "non-formula-string-cell-edit"
+    ]
+  },
+  "provenance": {
+    "license": "MIT",
+    "source": "https://github.com/w31r4/office-artifact-tool/commit/256cb31bfe0a07b3cef0051b6b159342be381378",
+    "referenceSha256": "ab655c867ea1c9eed617ec0eeec643946c1e49e9d5227e9db740c95daba26e46",
+    "previewSha256": "b5c458e744d46ef4211d167d3451864148853aa73708323068504da956ce03b3"
+  }
 }

@@ -1,6 +1,54 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "id": "artifact-template-system-design",
+  "displayName": "System Design",
   "kind": "document",
   "reference": "assets/reference.docx",
-  "preview": "assets/preview.png"
+  "preview": "assets/preview.png",
+  "useWhen": [
+    "system design",
+    "technical architecture document"
+  ],
+  "avoidWhen": [
+    "business letter",
+    "marketing presentation"
+  ],
+  "audiences": [
+    "engineering",
+    "architecture review",
+    "technical leadership"
+  ],
+  "contentShapes": [
+    "requirements",
+    "components",
+    "data flows",
+    "APIs",
+    "tradeoffs",
+    "operations"
+  ],
+  "visualTraits": {
+    "tone": [
+      "technical",
+      "structured"
+    ],
+    "density": "dense",
+    "colorMode": "neutral",
+    "structure": [
+      "specification",
+      "sectioned"
+    ]
+  },
+  "visualCommitment": "neutral",
+  "editProfile": {
+    "level": "bounded-edit",
+    "verifiedOperations": [
+      "ordinary-paragraph-unique-text-replace"
+    ]
+  },
+  "provenance": {
+    "license": "MIT",
+    "source": "https://github.com/w31r4/office-artifact-tool/commit/256cb31bfe0a07b3cef0051b6b159342be381378",
+    "referenceSha256": "13504f6c221a42c1726460a9e865e563355539ff97d702d6c9b2267b4b261d76",
+    "previewSha256": "703c8a85a22ebaaa129dc99f82e530532b5b46ad862d7cb253716e9759d5dfe0"
+  }
 }

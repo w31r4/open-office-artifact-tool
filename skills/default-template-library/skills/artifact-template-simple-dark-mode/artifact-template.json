@@ -1,6 +1,52 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "id": "artifact-template-simple-dark-mode",
+  "displayName": "Simple Dark Mode",
   "kind": "presentation",
   "reference": "assets/reference.pptx",
-  "preview": "assets/preview.png"
+  "preview": "assets/preview.png",
+  "useWhen": [
+    "dark presentation",
+    "high-contrast visual deck"
+  ],
+  "avoidWhen": [
+    "print-first handout",
+    "strict corporate brand"
+  ],
+  "audiences": [
+    "general",
+    "internal",
+    "external"
+  ],
+  "contentShapes": [
+    "narrative",
+    "sections",
+    "charts",
+    "imagery"
+  ],
+  "visualTraits": {
+    "tone": [
+      "bold",
+      "minimal"
+    ],
+    "density": "sparse",
+    "colorMode": "dark",
+    "structure": [
+      "narrative",
+      "visual"
+    ]
+  },
+  "visualCommitment": "opinionated",
+  "editProfile": {
+    "level": "bounded-edit",
+    "verifiedOperations": [
+      "recognized-placeholder-title-text-replace"
+    ]
+  },
+  "provenance": {
+    "license": "MIT",
+    "source": "https://github.com/w31r4/office-artifact-tool/commit/256cb31bfe0a07b3cef0051b6b159342be381378",
+    "referenceSha256": "042ef2fcb8726524a1e773e3c73bf8b8c10b98f67ae675eb01c4501b9365a897",
+    "previewSha256": "2082897b4e30c9a2ed137e51fa32503b1e85afb53c8555521ba374b75df622ec"
+  }
 }

@@ -1,6 +1,51 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "id": "artifact-template-minimal-letterhead",
+  "displayName": "Minimal Letterhead",
   "kind": "document",
   "reference": "assets/reference.docx",
-  "preview": "assets/preview.png"
+  "preview": "assets/preview.png",
+  "useWhen": [
+    "business letter",
+    "professional correspondence"
+  ],
+  "avoidWhen": [
+    "long-form report",
+    "technical specification"
+  ],
+  "audiences": [
+    "external",
+    "client",
+    "partner"
+  ],
+  "contentShapes": [
+    "sender",
+    "recipient",
+    "message",
+    "signature"
+  ],
+  "visualTraits": {
+    "tone": [
+      "formal",
+      "minimal"
+    ],
+    "density": "sparse",
+    "colorMode": "light",
+    "structure": [
+      "letter"
+    ]
+  },
+  "visualCommitment": "neutral",
+  "editProfile": {
+    "level": "bounded-edit",
+    "verifiedOperations": [
+      "complex-table-cell-text-patch"
+    ]
+  },
+  "provenance": {
+    "license": "MIT",
+    "source": "https://github.com/w31r4/office-artifact-tool/commit/256cb31bfe0a07b3cef0051b6b159342be381378",
+    "referenceSha256": "5dd55e0f5bbdb603d98db5b8560b8babc6005cbb7f31ce8ed63569417c5cae86",
+    "previewSha256": "827df9ab20cdcf07a62955c568343c27f1c597336444c84ad98d7c0ca7983b6b"
+  }
 }

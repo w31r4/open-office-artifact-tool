@@ -17,7 +17,7 @@ Create or update a reference-backed local template. The source Office file stays
 ## Create workflow
 
 1. Require exactly one `.docx`, `.pptx`, or `.xlsx` reference unless the user explicitly requests a batch. For a batch, complete this workflow separately for every file.
-2. Infer a concise display name, intended-use description, and artifact kind from the reference and request.
+2. Infer a concise display name, intended-use description, and artifact kind from the reference and request. If there is enough evidence, also prepare compact selection metadata: intended uses, avoid cases, audiences, content shapes, visual traits, visual commitment, and provenance.
 3. Create `preview.png` before packaging:
    - DOCX: render the reference and use a representative page PNG.
    - PPTX: render the reference and use a representative slide PNG.
@@ -33,14 +33,31 @@ node "$SKILL_DIR/scripts/create-template-skill.mjs" \
   --description "Run a structured daily standup with updates, blockers, and owners."
 ```
 
-6. Read the JSON result. Verify that the generated directory contains `SKILL.md`, `artifact-template.json`, `agents/agent.yaml`, the retained `assets/reference.<ext>`, and `assets/preview.png`.
+Pass selection metadata as one shell-escaped JSON value when it is known:
+
+```bash
+node "$SKILL_DIR/scripts/create-template-skill.mjs" \
+  --reference-path "/absolute/path/reference.pptx" \
+  --preview-path "/absolute/path/preview.png" \
+  --display-name "Quarterly Review" \
+  --description "Review quarterly performance, decisions, risks, and outlook." \
+  --selection-json '{"useWhen":["quarterly business review"],"avoidWhen":["project kickoff"],"audiences":["executive"],"contentShapes":["KPIs","decisions","risks"],"visualTraits":{"tone":["formal"],"density":"medium","colorMode":"light","structure":["sectioned"]},"visualCommitment":"neutral","editProfile":{"level":"copy-only","verifiedOperations":[]},"provenance":{"license":"user-provided","source":"local-user-reference"}}'
+```
+
+Do not claim a verified edit operation from visual inspection. Keep
+`editProfile.level` as `copy-only` until a real import/edit/export/reimport test
+proves a narrower or broader profile. If selection metadata is omitted, the
+creator safely defaults to the intended-use description, an opinionated visual
+commitment, and `copy-only`.
+
+6. Read the JSON result. Verify that the generated directory contains `SKILL.md`, schema-v2 `artifact-template.json`, `agents/agent.yaml`, the retained `assets/reference.<ext>`, and `assets/preview.png`. Verify the recorded reference and preview hashes.
 
 ## Update workflow
 
 1. Resolve the exact passed template and read its `SKILL.md`, `artifact-template.json`, `agents/agent.yaml`, retained reference, and preview. Stop if it is not a direct child of the local skills directory or if more than one target was passed.
 2. Preserve the template folder name and every file or behavior the user did not ask to change.
 3. For reference or visual changes, edit a temporary copy of the retained reference using the matching Office artifact workflow, render a new preview, and inspect it. For display-name or intended-use changes, retain the existing reference and preview unless they also change.
-4. Pass every current or changed value to the creator explicitly:
+4. Pass every current or changed required value to the creator explicitly. Existing schema-v2 selection metadata is preserved when `--selection-json` is omitted; pass a complete replacement value when that metadata must change:
 
 ```bash
 node "$SKILL_DIR/scripts/create-template-skill.mjs" \
@@ -52,7 +69,7 @@ node "$SKILL_DIR/scripts/create-template-skill.mjs" \
   --description "Run a structured daily standup with updates, blockers, and owners."
 ```
 
-5. The script validates the existing template kind, preserves additional template-owned files, and replaces the template atomically without changing its skill name.
+5. The script accepts schema-v1 templates for migration, validates the existing template kind, preserves additional template-owned files, emits schema v2, and replaces the template atomically without changing its skill name.
 6. Verify every requested change and confirm that no staging or backup directories remain.
 
 ## Response
@@ -61,7 +78,8 @@ Report the created or updated template's display name, artifact kind, and local 
 
 ## Constraints
 
-- Do not create an intermediary request file; pass creator inputs through command-line flags.
+- Do not create an intermediary request file; pass creator inputs through command-line flags, including optional selection JSON.
 - Do not delete or sanitize the retained reference; fidelity depends on retaining it verbatim.
 - Do not change the artifact kind during an update.
+- Do not mark a template `bounded-edit` or `composable` without repeatable capability evidence.
 - Do not modify global skill metadata or protocol files.

@@ -26,6 +26,16 @@ node skills/template-creator/skills/template-creator/scripts/create-template-ski
 
 The command returns JSON containing the created template name, artifact kind, and local path. It selects a numbered name rather than overwriting an existing template.
 
+The generated `artifact-template.json` uses schema version 2. It records
+selection metadata plus SHA-256 values for the retained Office file and PNG.
+Without explicit selection metadata, new templates are intentionally
+`copy-only` and visually `opinionated`; an Agent may recommend them but must not
+claim that their content is safely editable.
+
+Optional `--selection-json` accepts the complete selection profile in one JSON
+value. Verified edit operations must come from a real
+import/edit/export/reimport test, not visual inspection.
+
 ## Update
 
 Updates require the exact template name and preserve other skill-owned files:
@@ -40,7 +50,12 @@ node skills/template-creator/skills/template-creator/scripts/create-template-ski
   --description "Create a quarterly business review from the updated deck layout."
 ```
 
-The creator validates artifact kind consistency, stages changes beside the final directory, and replaces an updated template atomically with rollback if placement fails. A per-home write lock prevents concurrent template writes.
+The creator validates artifact kind consistency, stages changes beside the
+final directory, and replaces an updated template atomically with rollback if
+placement fails. A per-home write lock prevents concurrent template writes.
+Schema-v1 templates are migrated on update. Existing schema-v2 selection
+metadata is preserved unless a complete `--selection-json` replacement is
+provided.
 
 ## Generated template layout
 
@@ -54,4 +69,6 @@ $OFFICE_ARTIFACT_HOME/skills/artifact-template-<slug>/
     └── preview.png
 ```
 
-`artifact-template.json` records the supported kind and paths to the retained reference and preview. The creator validates PNG chunk structure and CRCs before copying the preview.
+`artifact-template.json` records the supported kind, paths, selection evidence,
+edit profile, provenance, and retained-asset hashes. The creator validates PNG
+chunk structure and CRCs before copying the preview.

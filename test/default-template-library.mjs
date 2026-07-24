@@ -515,7 +515,21 @@ for (const [id, displayName, kind, extension] of [...TEMPLATES].sort((left, righ
   assert.equal(skillText.match(/^name:\s*(.+)$/mu)?.[1]?.trim(), id, `${id} frontmatter name`);
   assert.equal(yamlValue(agentText, "display_name"), displayName, `${id} display name`);
   assert.equal(yamlValue(agentText, "icon_large"), "./assets/preview.png", `${id} preview icon`);
-  assert.deepEqual(JSON.parse(sidecarText), { schemaVersion: 1, kind, reference: referencePath, preview: "assets/preview.png" }, `${id} sidecar`);
+  const sidecar = JSON.parse(sidecarText);
+  assert.equal(sidecar.schemaVersion, 2, `${id} sidecar schema`);
+  assert.equal(sidecar.id, id, `${id} sidecar id`);
+  assert.equal(sidecar.displayName, displayName, `${id} sidecar display name`);
+  assert.equal(sidecar.kind, kind, `${id} sidecar kind`);
+  assert.equal(sidecar.reference, referencePath, `${id} sidecar reference`);
+  assert.equal(sidecar.preview, "assets/preview.png", `${id} sidecar preview`);
+  assert.ok(sidecar.useWhen.length > 0, `${id} sidecar useWhen`);
+  assert.ok(Array.isArray(sidecar.avoidWhen), `${id} sidecar avoidWhen`);
+  assert.ok(Array.isArray(sidecar.audiences), `${id} sidecar audiences`);
+  assert.ok(Array.isArray(sidecar.contentShapes), `${id} sidecar contentShapes`);
+  assert.ok(["neutral", "opinionated"].includes(sidecar.visualCommitment), `${id} sidecar visual commitment`);
+  assert.equal(sidecar.editProfile.level, "bounded-edit", `${id} edit profile`);
+  assert.ok(sidecar.editProfile.verifiedOperations.length > 0, `${id} verified edit operations`);
+  assert.equal(sidecar.provenance.license, "MIT", `${id} template license`);
   assert.equal(hasValidPngStructure(previewBytes), true, `${id} preview PNG structure`);
   assert.equal(referenceBytes.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04])), true, `${id} Office reference ZIP signature`);
 
@@ -523,6 +537,11 @@ for (const [id, displayName, kind, extension] of [...TEMPLATES].sort((left, righ
     const assetPath = path.posix.join("skills", id, relativePath);
     const record = integrity.assets.find((asset) => asset.templateId === id && asset.role === role);
     assert.deepEqual({ templateId: id, role, path: assetPath, bytes: bytes.length, sha256: sha256(bytes) }, record, `${id} ${role} integrity`);
+    assert.equal(
+      sidecar.provenance[role === "preview" ? "previewSha256" : "referenceSha256"],
+      record.sha256,
+      `${id} ${role} sidecar hash`,
+    );
     updateAggregate(aggregate, assetPath, bytes);
     totalBytes += bytes.length;
   }

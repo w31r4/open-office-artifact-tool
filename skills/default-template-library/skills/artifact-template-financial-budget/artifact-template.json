@@ -1,6 +1,54 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "id": "artifact-template-financial-budget",
+  "displayName": "Financial Budget",
   "kind": "spreadsheet",
   "reference": "assets/reference.xlsx",
-  "preview": "assets/preview.png"
+  "preview": "assets/preview.png",
+  "useWhen": [
+    "financial budget",
+    "budget versus actual"
+  ],
+  "avoidWhen": [
+    "sales CRM pipeline",
+    "content calendar"
+  ],
+  "audiences": [
+    "finance",
+    "executive",
+    "department leader"
+  ],
+  "contentShapes": [
+    "actuals",
+    "budget",
+    "scenario forecast",
+    "variance",
+    "cash runway",
+    "department plan"
+  ],
+  "visualTraits": {
+    "tone": [
+      "financial",
+      "analytical"
+    ],
+    "density": "dense",
+    "colorMode": "neutral",
+    "structure": [
+      "model",
+      "summary"
+    ]
+  },
+  "visualCommitment": "neutral",
+  "editProfile": {
+    "level": "bounded-edit",
+    "verifiedOperations": [
+      "non-formula-string-cell-edit"
+    ]
+  },
+  "provenance": {
+    "license": "MIT",
+    "source": "https://github.com/w31r4/office-artifact-tool/commit/256cb31bfe0a07b3cef0051b6b159342be381378",
+    "referenceSha256": "b15aecd03ee94fc3e29fb5c6de33c6090b75287845ab337afe0376cc0330e052",
+    "previewSha256": "ed0298a7e15051887ad2e9ca775314de1dfae41de33f7f82fee89f39cdcf20e3"
+  }
 }
