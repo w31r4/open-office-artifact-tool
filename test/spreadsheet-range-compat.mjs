@@ -315,6 +315,55 @@ assert.deepEqual(spill.formulaInfos[0][1], {
   isEditable: false,
 });
 
+const spillReferenceWorkbook = Workbook.create();
+const spillReferenceSource = spillReferenceWorkbook.worksheets.add("Source Data");
+const spillReferenceConsumer = spillReferenceWorkbook.worksheets.add("Consumer");
+spillReferenceSource.getRange("A1").formulas = [["=SEQUENCE(4,1,10,1)"]];
+spillReferenceWorkbook.definedNames.add("CurrentSpill", "'Source Data'!A1#");
+spillReferenceConsumer.getRange("A1:A4").formulas = [
+  ["=SUM('Source Data'!A1#)"],
+  ["=MATCH(12,'Source Data'!A1#,0)"],
+  ["=SUMPRODUCT('Source Data'!A1#*2)"],
+  ["=FILTER('Source Data'!A1#,'Source Data'!A1#>11)"],
+];
+spillReferenceConsumer.getRange("B1").formulas = [["=ABS('Source Data'!A1#)"]];
+spillReferenceConsumer.getRange("E1").formulas = [["=CurrentSpill"]];
+assert.deepEqual(spillReferenceSource.getRange("A1:A4").values, [[10], [11], [12], [13]]);
+assert.deepEqual(spillReferenceConsumer.getRange("A1:A5").values, [[46], [3], [92], [12], [13]]);
+assert.equal(spillReferenceConsumer.getRange("B1").values[0][0], "#VALUE!", "unsupported scalar use must not coerce a spill's upper-left value");
+assert.deepEqual(spillReferenceConsumer.getRange("E1:E4").values, [[10], [11], [12], [13]], "a direct named spill reference republishes the current matrix");
+const spillReferenceGraph = spillReferenceWorkbook.formulaGraph({ recalculate: false });
+const spillReferenceEdges = spillReferenceGraph.edges.filter((edge) => edge.toSheet === "Source Data" && edge.toAddress === "A1");
+assert.deepEqual(spillReferenceEdges.map((edge) => edge.fromAddress).sort(), ["A1", "A2", "A3", "A4", "B1", "E1"]);
+assert.ok(spillReferenceEdges.every((edge) => edge.spillReference === true), "the graph records a spill dependency on the anchor rather than stale child cells");
+assert.equal(spillReferenceWorkbook.trace("Consumer!A1").tree.precedents[0]?.spillReference, true);
+spillReferenceSource.getRange("A1").formulas = [["=SEQUENCE(3,1,20,1)"]];
+assert.deepEqual(spillReferenceConsumer.getRange("A1:A6").values, [[63], ["#N/A"], [126], [20], [21], [22]], "consumers must force a fresh source spill during recalculation");
+assert.deepEqual(spillReferenceConsumer.getRange("E1:E4").values, [[20], [21], [22], [null]], "shrinking a source spill removes stale dependent spill cells");
+
+const missingSpillReferenceWorkbook = Workbook.create();
+const missingSpillReferenceSheet = missingSpillReferenceWorkbook.worksheets.add("Missing spill");
+missingSpillReferenceSheet.getRange("A1").formulas = [["=1"]];
+missingSpillReferenceSheet.getRange("B1").formulas = [["=SUM(A1#)"]];
+assert.equal(missingSpillReferenceSheet.getRange("B1").values[0][0], "#REF!", "a scalar anchor is not silently treated as a one-cell spill");
+
+const blockedSpillReferenceWorkbook = Workbook.create();
+const blockedSpillReferenceSheet = blockedSpillReferenceWorkbook.worksheets.add("Blocked spill");
+blockedSpillReferenceSheet.getRange("A2").values = [[99]];
+blockedSpillReferenceSheet.getRange("A1").formulas = [["=SEQUENCE(2)"]];
+blockedSpillReferenceSheet.getRange("B1").formulas = [["=SUM(A1#)"]];
+assert.deepEqual(blockedSpillReferenceSheet.getRange("A1:B2").values, [["#SPILL!", "#SPILL!"], [99, null]], "a blocked source spill propagates its current error instead of reading a stale cache");
+blockedSpillReferenceSheet.getRange("A2").values = [[null]];
+assert.deepEqual(blockedSpillReferenceSheet.getRange("A1:B2").values, [[1, 3], [2, null]], "a recovered source spill is recalculated rather than retaining its prior error");
+
+const spillReferenceBudgetWorkbook = Workbook.create();
+const spillReferenceBudgetSheet = spillReferenceBudgetWorkbook.worksheets.add("Spill budget");
+spillReferenceBudgetSheet.getRange("A1").formulas = [["=SEQUENCE(10000)"]];
+spillReferenceBudgetSheet.getRange("C1").formulas = [["=SUM(A1#,A1#,A1#)"]];
+assert.equal(spillReferenceBudgetSheet.getRange("C1").values[0][0], "#VALUE!");
+const spillReferenceBudgetGraph = spillReferenceBudgetWorkbook.formulaGraph({ recalculate: false });
+assert.ok(spillReferenceBudgetGraph.errors.some((error) => error.type === "referenceBudgetExceeded" && error.address === "C1" && error.ref === "A1#" && error.requestedCells === 10000 && error.usedCells === 20000 && error.totalCells === 30000), "repeated spill references must consume their verified current matrix budget");
+
 const written = sheet.getRange("E2").write([[10, 20], [30, "=E3+10"]]);
 assert.equal(written.address, "E2:F3");
 assert.equal(written.rowIndex, 1);

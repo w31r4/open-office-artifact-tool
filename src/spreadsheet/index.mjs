@@ -1640,10 +1640,12 @@ export class Workbook {
       for (const ref of references) {
         const targetSheet = ref.sheetName ? this.worksheets.getItem(ref.sheetName) : sheet;
         if (!targetSheet) {
-          node.precedents.push({ kind: "trace", sheet: ref.sheetName, address: ref.address, missing: true, depth: depth + 1, precedents: [] });
+          node.precedents.push({ kind: "trace", sheet: ref.sheetName, address: ref.address, ...(ref.spillReference ? { spillReference: true } : {}), missing: true, depth: depth + 1, precedents: [] });
           continue;
         }
-        node.precedents.push(build(targetSheet, ref.address, depth + 1));
+        const precedent = build(targetSheet, ref.address, depth + 1);
+        if (ref.spillReference) precedent.spillReference = true;
+        node.precedents.push(precedent);
       }
       seen.delete(key);
       return node;
@@ -1651,7 +1653,7 @@ export class Workbook {
     const tree = build(root.sheet, root.address, 0);
     const flat = [];
     const visit = (node) => {
-      flat.push({ kind: "trace", sheet: node.sheet, address: node.address, value: node.value, formula: node.formula, depth: node.depth, missing: node.missing, circular: node.circular, referenceBudget: node.referenceBudget, inputBudget: node.inputBudget, precedents: node.precedents.map((p) => `${p.sheet}!${p.address}`) });
+      flat.push({ kind: "trace", sheet: node.sheet, address: node.address, value: node.value, formula: node.formula, depth: node.depth, missing: node.missing, circular: node.circular, spillReference: node.spillReference, referenceBudget: node.referenceBudget, inputBudget: node.inputBudget, precedents: node.precedents.map((p) => `${p.sheet}!${p.address}`) });
       node.precedents.forEach(visit);
     };
     visit(tree);
