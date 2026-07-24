@@ -23,7 +23,6 @@ const GUID = /^\{[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\}$
 const SHIPPED_THREADED_WORKFLOW = /(?:^|[\s"'`])(?:\.?\/)?(?:\.agents\/skills\/spreadsheets|node_modules\/open-office-artifact-tool\/skills\/spreadsheets\/skills\/spreadsheets)\/examples\/openchestnut-threaded-comment-reply-workflow\.mjs(?:$|[\s"'`])/i;
 const SHIPPED_GROWTH_WORKFLOW = /(?:^|[\s"'`])(?:\.?\/)?(?:\.agents\/skills\/spreadsheets|node_modules\/open-office-artifact-tool\/skills\/spreadsheets\/skills\/spreadsheets)\/examples\/openchestnut-growth-assumption-edit-workflow\.mjs(?:$|[\s"'`])/i;
 const SHIPPED_CONNECTION_REFRESH_WORKFLOW = /(?:^|[\s"'`])(?:\.?\/)?(?:\.agents\/skills\/spreadsheets|node_modules\/open-office-artifact-tool\/skills\/spreadsheets\/skills\/spreadsheets)\/examples\/openchestnut-connection-refresh-hardening-workflow\.mjs(?:$|[\s"'`])/i;
-const CONNECTION_REFRESH_CANONICALIZATION_PATHS = ["xl/workbook.xml", "xl/worksheets/sheet1.xml"];
 
 function check(id, category, passed, details = {}) {
   return { id, category, gate: false, passed: Boolean(passed), ...details };
@@ -232,18 +231,6 @@ function parseWorkbookConnections(xml = "") {
   return connections;
 }
 
-function normalizeConnectionRefreshCanonicalization(xml, partPath) {
-  let normalized = String(xml)
-    .replace(/^<\?xml\b[^>]*\?>/i, "")
-    .replace(/\s+xmlns(?::[\w.-]+)?="[^"]*"/g, "")
-    .replace(/>\s+</g, "><")
-    .replace(/\s+\/>/g, "/>");
-  if (partPath === "xl/workbook.xml") {
-    normalized = normalized.replace(/<x:workbookPr\s+date1904="0"\s*\/>/g, "");
-  }
-  return normalized;
-}
-
 function normalizeConnectionRefreshConnectionPart(xml, connectionId) {
   let targetCount = 0;
   let targetRefreshAttributeCount = 0;
@@ -270,12 +257,7 @@ export async function inspectConnectionRefreshWorkbook(filePath) {
   const connectionPath = "xl/connections.xml";
   const queryTablePaths = paths.filter((name) => /^xl\/queryTables\/queryTable\d+\.xml$/i.test(name));
   const tablePaths = paths.filter((name) => /^xl\/tables\/table\d+\.xml$/i.test(name));
-  const canonicalizationPartPaths = CONNECTION_REFRESH_CANONICALIZATION_PATHS.filter((name) => paths.includes(name));
   const connectionXml = await zip.file(connectionPath)?.async("text") || "";
-  const canonicalizationParts = Object.fromEntries(await Promise.all(canonicalizationPartPaths.map(async (name) => [
-    name,
-    await zip.file(name)?.async("text") || "",
-  ])));
   return {
     bytes: bytes.length,
     sha256: sha256(bytes),
@@ -286,8 +268,6 @@ export async function inspectConnectionRefreshWorkbook(filePath) {
     connections: parseWorkbookConnections(connectionXml),
     queryTablePaths,
     tablePaths,
-    canonicalizationPartPaths,
-    canonicalizationParts,
   };
 }
 
@@ -449,7 +429,7 @@ export function gradeXlsxGrowthUpdateEvidence({ evidence, audit, commands }) {
   const sourceCells = growthCells(source);
   const outputCells = growthCells(output);
   const changedPaths = packageChanges(source, output);
-  const expectedChangedPaths = ["xl/workbook.xml", source.target?.path].filter(Boolean).sort();
+  const expectedChangedPaths = [source.target?.path].filter(Boolean);
   const visual = nativeGrowthVisualEvidence(evidence.visual?.source, evidence.visual?.output);
   const commandText = commands.join("\n");
   const formulasPreserved = sourceCells.revenue.every((cell, index) => normalizeFormula(cell?.formula) === normalizeFormula(fixture.revenueFormulas[index]))
@@ -552,12 +532,7 @@ export function gradeXlsxConnectionRefreshEvidence({ evidence, audit, commands }
   const sourceConnection = source.connections.find((connection) => connection.id === fixture.connectionId);
   const outputConnection = output.connections.find((connection) => connection.id === fixture.connectionId);
   const changedPaths = packageChanges(source, output);
-  const allowedChangedPaths = [source.connectionPath, ...source.canonicalizationPartPaths].sort();
-  const changedScopeSafe = changedPaths.includes(source.connectionPath)
-    && changedPaths.every((partPath) => allowedChangedPaths.includes(partPath));
-  const canonicalizationStable = sameArray(source.canonicalizationPartPaths, output.canonicalizationPartPaths)
-    && source.canonicalizationPartPaths.every((partPath) => normalizeConnectionRefreshCanonicalization(source.canonicalizationParts[partPath], partPath)
-      === normalizeConnectionRefreshCanonicalization(output.canonicalizationParts[partPath], partPath));
+  const changedScopeSafe = sameArray(changedPaths, [source.connectionPath]);
   const sourceConnectionResidual = normalizeConnectionRefreshConnectionPart(source.connectionXml, fixture.connectionId);
   const outputConnectionResidual = normalizeConnectionRefreshConnectionPart(output.connectionXml, fixture.connectionId);
   const connectionResidualStable = sourceConnectionResidual.targetCount === 1
@@ -600,10 +575,9 @@ export function gradeXlsxConnectionRefreshEvidence({ evidence, audit, commands }
       source: sourceConnectionResidual,
       output: outputConnectionResidual,
     }),
-    check("xlsx-connection-machine:only-connection-and-canonical-root-parts-changed", "machine", changedScopeSafe && canonicalizationStable, {
+    check("xlsx-connection-machine:only-connections-part-changed", "machine", changedScopeSafe, {
       changedPaths,
-      allowedChangedPaths,
-      canonicalizationStable,
+      expectedChangedPaths: [source.connectionPath],
     }),
     check("xlsx-connection-machine:audit-succeeded", "machine", /^(?:success|succeeded|completed)$/i.test(String(audit?.status || "")), {
       status: audit?.status || "unreported",
@@ -616,7 +590,6 @@ export function gradeXlsxConnectionRefreshEvidence({ evidence, audit, commands }
     }),
     gate("xlsx-connection-security:package-scope-and-source-provenance", "security", sameArray(source.paths, output.paths)
       && changedScopeSafe
-      && canonicalizationStable
       && connectionResidualStable
       && auditHash(audit, "source") === source.sha256
       && auditHash(audit, "output") === output.sha256

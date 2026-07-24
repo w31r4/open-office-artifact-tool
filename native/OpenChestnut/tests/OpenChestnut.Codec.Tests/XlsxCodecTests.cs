@@ -2112,6 +2112,8 @@ public sealed class XlsxCodecTests
         Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
         var output = exported.File.ToByteArray();
         AssertOffice2021Valid(output);
+        Assert.Equal(ReadEntry(source, "xl/workbook.xml"), ReadEntry(output, "xl/workbook.xml"));
+        Assert.Equal(ReadEntry(source, "xl/worksheets/sheet1.xml"), ReadEntry(output, "xl/worksheets/sheet1.xml"));
         Assert.Equal(ReadEntry(source, tablePath), ReadEntry(output, tablePath));
         Assert.Equal(ReadEntry(source, connectionPath), ReadEntry(output, connectionPath));
         var queryXml = System.Text.Encoding.UTF8.GetString(ReadEntry(output, queryPath));
@@ -2151,6 +2153,8 @@ public sealed class XlsxCodecTests
         Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
         var output = exported.File.ToByteArray();
         AssertOffice2021Valid(output);
+        Assert.Equal(ReadEntry(source, "xl/workbook.xml"), ReadEntry(output, "xl/workbook.xml"));
+        Assert.Equal(ReadEntry(source, "xl/worksheets/sheet1.xml"), ReadEntry(output, "xl/worksheets/sheet1.xml"));
         Assert.Equal(ReadEntry(source, tablePath), ReadEntry(output, tablePath));
         Assert.Equal(ReadEntry(source, queryPath), ReadEntry(output, queryPath));
         var connectionXml = System.Text.Encoding.UTF8.GetString(ReadEntry(output, connectionPath));

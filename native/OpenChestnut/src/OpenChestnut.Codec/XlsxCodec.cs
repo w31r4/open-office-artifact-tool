@@ -223,10 +223,18 @@ internal static class XlsxCodec
         {
             var workbookPart = document.WorkbookPart ?? throw new CodecException("missing_workbook_part", "Source XLSX package has no Workbook part.", "xl/workbook.xml");
             var workbookRoot = workbookPart.Workbook ?? throw new CodecException("missing_workbook_root", "Source XLSX package has no Workbook root element.", "xl/workbook.xml");
+            var originalWorkbookXml = workbookRoot.OuterXml;
             var dynamicArrays = new XlsxDynamicArrayCodec(workbookPart);
             var sheets = workbookRoot.Sheets?.Elements<Sheet>().ToArray() ?? [];
             if (sheets.Length != envelope.Workbook.Worksheets.Count)
                 throw new CodecException("source_package_topology_changed", "Source-preserving XLSX export currently requires the imported worksheet count to remain unchanged.");
+            var originalWorksheetXml = new Dictionary<WorksheetPart, string>();
+            foreach (var sheet in sheets)
+            {
+                if (sheet.Id?.Value is not { Length: > 0 } relationshipId || workbookPart.GetPartById(relationshipId) is not WorksheetPart worksheetPart || worksheetPart.Worksheet is null)
+                    throw new CodecException("missing_worksheet_part", $"Source worksheet {sheet.Name?.Value ?? "unknown"} has no readable Worksheet part.");
+                originalWorksheetXml.Add(worksheetPart, worksheetPart.Worksheet.OuterXml);
+            }
             var sourceSheetNames = sheets.Select((sheet, index) => sheet.Name?.Value ?? $"Sheet{index + 1}").ToArray();
             var targetSheetNames = envelope.Workbook.Worksheets.Select(sheet => sheet.Name).ToArray();
             var definedNames = new XlsxDefinedNameCodec(workbookPart, sourceSheetNames);
@@ -236,9 +244,15 @@ internal static class XlsxCodec
             worksheetMetadata.Apply(envelope.Workbook.Worksheets);
             workbookView.Apply(envelope.Workbook.View, envelope.Workbook.AdditionalViews, sourceBound: true, envelope.Workbook.Worksheets);
 
-            if (workbookRoot.WorkbookProperties is null)
-                workbookRoot.WorkbookProperties = new WorkbookProperties();
-            workbookRoot.WorkbookProperties.Date1904 = envelope.Workbook.DateSystem == WorkbookDateSystem._1904;
+            var sourceDateSystem = workbookRoot.WorkbookProperties?.Date1904?.Value == true
+                ? WorkbookDateSystem._1904
+                : WorkbookDateSystem._1900;
+            if (sourceDateSystem != envelope.Workbook.DateSystem)
+            {
+                if (workbookRoot.WorkbookProperties is null)
+                    workbookRoot.WorkbookProperties = new WorkbookProperties();
+                workbookRoot.WorkbookProperties.Date1904 = envelope.Workbook.DateSystem == WorkbookDateSystem._1904;
+            }
             var sharedStrings = ReadSharedStrings(workbookPart.SharedStringTablePart);
             var theme = new XlsxThemeCodec(workbookPart);
             theme.Apply(envelope.Workbook.Theme, sourceBound: true);
@@ -273,7 +287,6 @@ internal static class XlsxCodec
                 dirtyModeledPartPaths.UnionWith(charts.DirtyPartPaths);
                 sparklines.Apply(worksheetPart, source.Id, source.SparklineGroups, sourceBound: true, originalWorksheetXmlSha256);
                 dirtyModeledPartPaths.UnionWith(sparklines.DirtyPartPaths);
-                worksheetPart.Worksheet!.Save();
                 worksheetBindings.Add((worksheetPart, source));
             }
             new XlsxPivotTableCodec(workbookPart).Apply(worksheetBindings, sourceBound: true);
@@ -288,7 +301,11 @@ internal static class XlsxCodec
             ownsTheme = theme.OwnsOpaqueTheme;
             themePartPath = theme.PartPath;
             styles.Save();
-            workbookRoot.Save();
+            foreach (var (worksheetPart, sourceXml) in originalWorksheetXml)
+                if (!string.Equals(worksheetPart.Worksheet!.OuterXml, sourceXml, StringComparison.Ordinal))
+                    worksheetPart.Worksheet.Save();
+            if (!string.Equals(workbookRoot.OuterXml, originalWorkbookXml, StringComparison.Ordinal))
+                workbookRoot.Save();
         }
 
         var bytes = stream.ToArray();
@@ -349,7 +366,6 @@ internal static class XlsxCodec
         PatchRowsAndCells(worksheet, source, sharedStrings, styles, formulas, dynamicArrays);
         PatchMergedRanges(worksheet, source);
         PatchWorksheetSortState(worksheet, source, styles);
-        worksheet.Save();
     }
 
     private static void ValidateOffice2021(byte[] bytes)

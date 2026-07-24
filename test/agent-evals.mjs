@@ -309,14 +309,14 @@ try {
     item: connectionRefreshItem,
   });
   assert.equal(publishedConnectionWorkflowChecks.find((check) => check.id === "xlsx-connection-trace:typed-roundtrip")?.passed, true);
-  const canonicalizationDriftChecks = gradeXlsxConnectionRefreshEvidence({
+  const rootDriftChecks = gradeXlsxConnectionRefreshEvidence({
     evidence: {
       ...connectionEvidence,
       output: {
         ...connectionEvidence.output,
-        canonicalizationParts: {
-          ...connectionEvidence.output.canonicalizationParts,
-          "xl/workbook.xml": connectionEvidence.output.canonicalizationParts["xl/workbook.xml"].replace("External Data", "Drifted workbook"),
+        partHashes: {
+          ...connectionEvidence.output.partHashes,
+          "xl/workbook.xml": "root-drift",
         },
       },
     },
@@ -324,8 +324,8 @@ try {
     commands: extractCompletedCommands(connectionTrace),
     item: connectionRefreshItem,
   });
-  assert.equal(canonicalizationDriftChecks.find((check) => check.id === "xlsx-connection-machine:only-connection-and-canonical-root-parts-changed")?.passed, false);
-  assert.equal(canonicalizationDriftChecks.find((check) => check.id === "xlsx-connection-security:package-scope-and-source-provenance")?.passed, false);
+  assert.equal(rootDriftChecks.find((check) => check.id === "xlsx-connection-machine:only-connections-part-changed")?.passed, false);
+  assert.equal(rootDriftChecks.find((check) => check.id === "xlsx-connection-security:package-scope-and-source-provenance")?.passed, false);
   const connectionResidualDriftChecks = gradeXlsxConnectionRefreshEvidence({
     evidence: {
       ...connectionEvidence,
