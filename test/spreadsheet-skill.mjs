@@ -6,8 +6,9 @@ import path from "node:path";
 import JSZip from "jszip";
 
 import { FileBlob, SpreadsheetFile } from "open-office-artifact-tool";
-import { XLSX_CONNECTION_REFRESH_FIXTURE, XLSX_GROWTH_UPDATE_FIXTURE, generateOfficeInput } from "../scripts/agent-eval-office-fixtures.mjs";
+import { XLSX_CONNECTION_REFRESH_FIXTURE, XLSX_GROWTH_UPDATE_FIXTURE, XLSX_PIVOT_REFRESH_FIXTURE, generateOfficeInput } from "../scripts/agent-eval-office-fixtures.mjs";
 import { hardenXlsxConnectionRefreshOnOpen } from "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-connection-refresh-hardening-workflow.mjs";
+import { hardenXlsxPivotRefreshOnLoad } from "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-pivot-refresh-hardening-workflow.mjs";
 import { replyAndResolveThreadedComment } from "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-threaded-comment-reply-workflow.mjs";
 import { updateXlsxGrowthAssumption } from "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-growth-assumption-edit-workflow.mjs";
 import { createWorkbookFromFixture, nativeSpreadsheetRenderStatus, runSpreadsheetFixture, verifyWorkbookFile } from "./skill-harness/spreadsheets/scripts/workflow.mjs";
@@ -235,6 +236,68 @@ try {
       outputPath: connectionEvalOutput,
       auditPath: connectionEvalAudit,
       connectionId: XLSX_CONNECTION_REFRESH_FIXTURE.connectionId,
+    }),
+    /already exists.*refusing to overwrite/i,
+  );
+
+  const pivotEvalInput = path.join(outputDir, XLSX_PIVOT_REFRESH_FIXTURE.workbookName);
+  const pivotEvalOutput = path.join(outputDir, "regional-revenue-refresh-disabled.xlsx");
+  const pivotEvalAudit = path.join(outputDir, "regional-revenue-refresh-audit.json");
+  await generateOfficeInput("xlsx-pivot-refresh", pivotEvalInput);
+  const pivotSourceBefore = await fs.readFile(pivotEvalInput);
+  const pivotResult = await hardenXlsxPivotRefreshOnLoad({
+    inputPath: pivotEvalInput,
+    outputPath: pivotEvalOutput,
+    auditPath: pivotEvalAudit,
+    worksheetName: XLSX_PIVOT_REFRESH_FIXTURE.sheetName,
+    pivotName: XLSX_PIVOT_REFRESH_FIXTURE.pivotName,
+  });
+  assert.equal(pivotResult.audit.provider.actual, "open-chestnut");
+  assert.equal(pivotResult.audit.savePolicy.strategy, "rewrite");
+  assert.equal(pivotResult.audit.operation.type, "pivot-refresh-on-load-hardening");
+  assert.equal(pivotResult.audit.validation.package.onlyCacheDefinitionChanged, true);
+  assert.equal(pivotResult.audit.validation.reimport.ok, true);
+  assert.equal(pivotResult.audit.validation.reimport.pivotProjectionPreserved, true);
+  assert.equal(pivotResult.audit.validation.reimport.refreshOnLoadDisabled, true);
+  assert.equal(pivotResult.audit.validation.reimport.refreshOnLoadHardenableWithdrawn, true);
+  assert.deepEqual(await fs.readFile(pivotEvalInput), pivotSourceBefore);
+  const pivotRoundTrip = await SpreadsheetFile.importXlsx(await FileBlob.load(pivotEvalOutput));
+  const pivotSummary = pivotRoundTrip.worksheets.getItem(XLSX_PIVOT_REFRESH_FIXTURE.sheetName);
+  assert.ok(pivotSummary);
+  assert.equal(pivotSummary.pivotTables.items.length, 1);
+  const [pivotRoundTripItem] = pivotSummary.pivotTables.items;
+  assert.equal(pivotRoundTripItem.name, XLSX_PIVOT_REFRESH_FIXTURE.pivotName);
+  assert.equal(pivotRoundTripItem.refreshPolicy.refreshOnLoad, false);
+  assert.deepEqual(pivotRoundTripItem.sourceCapabilities, { sourceBound: true, refreshOnLoadHardenable: false });
+  const [pivotSourceZip, pivotOutputZip] = await Promise.all([
+    JSZip.loadAsync(pivotSourceBefore),
+    JSZip.loadAsync(await fs.readFile(pivotEvalOutput)),
+  ]);
+  const pivotCachePaths = Object.keys(pivotSourceZip.files).filter((name) => /^pivotCache\/pivotCacheDefinition\d*\.xml$/i.test(name));
+  assert.deepEqual(pivotCachePaths, [pivotResult.audit.operation.pivot.cacheDefinitionPath]);
+  const pivotCachePath = pivotCachePaths[0];
+  const pivotSourceCache = await pivotSourceZip.file(pivotCachePath).async("text");
+  const pivotOutputCache = await pivotOutputZip.file(pivotCachePath).async("text");
+  assert.match(pivotSourceCache, /refreshOnLoad="1"/);
+  assert.match(pivotOutputCache, /refreshOnLoad="0"/);
+  assert.equal(
+    pivotOutputCache.replace(/\srefreshOnLoad="(?:1|true|TRUE|0|false|FALSE)"/, ""),
+    pivotSourceCache.replace(/\srefreshOnLoad="(?:1|true|TRUE|0|false|FALSE)"/, ""),
+  );
+  for (const partPath of Object.keys(pivotSourceZip.files).filter((name) => !pivotSourceZip.files[name].dir && name !== pivotCachePath)) {
+    assert.deepEqual(
+      await pivotOutputZip.file(partPath).async("uint8array"),
+      await pivotSourceZip.file(partPath).async("uint8array"),
+      `Only ${pivotCachePath} may change during imported Pivot refresh-on-load hardening (${partPath}).`,
+    );
+  }
+  await assert.rejects(
+    () => hardenXlsxPivotRefreshOnLoad({
+      inputPath: pivotEvalInput,
+      outputPath: pivotEvalOutput,
+      auditPath: pivotEvalAudit,
+      worksheetName: XLSX_PIVOT_REFRESH_FIXTURE.sheetName,
+      pivotName: XLSX_PIVOT_REFRESH_FIXTURE.pivotName,
     }),
     /already exists.*refusing to overwrite/i,
   );

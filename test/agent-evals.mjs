@@ -15,6 +15,7 @@ import {
   PPTX_TITLE_NOTES_FIXTURE,
   XLSX_CONNECTION_REFRESH_FIXTURE,
   XLSX_GROWTH_UPDATE_FIXTURE,
+  XLSX_PIVOT_REFRESH_FIXTURE,
   XLSX_THREADED_REVIEW_FIXTURE,
   generateOfficeInput,
 } from "../scripts/agent-eval-office-fixtures.mjs";
@@ -26,9 +27,11 @@ import { gradeOfficeCase } from "../scripts/agent-eval-office-graders.mjs";
 import {
   gradeXlsxConnectionRefreshEvidence,
   gradeXlsxGrowthUpdateEvidence,
+  gradeXlsxPivotRefreshEvidence,
   gradeXlsxThreadedReplyEvidence,
   inspectConnectionRefreshWorkbook,
   inspectGrowthWorkbook,
+  inspectPivotRefreshWorkbook,
   inspectThreadedWorkbook,
 } from "../scripts/agent-eval-spreadsheet-graders.mjs";
 import {
@@ -41,6 +44,7 @@ import {
 } from "../scripts/agent-eval-presentation-graders.mjs";
 import { duplicatePptxSlide } from "../skills/presentations/skills/presentations/examples/openchestnut-slide-duplicate-workflow.mjs";
 import { hardenXlsxConnectionRefreshOnOpen } from "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-connection-refresh-hardening-workflow.mjs";
+import { hardenXlsxPivotRefreshOnLoad } from "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-pivot-refresh-hardening-workflow.mjs";
 import {
   extractCompletedCommands,
   gradeAcroFormEvidence,
@@ -70,10 +74,10 @@ import {
 
 const { suite, cases } = await loadSuite();
 const repoRoot = path.resolve(import.meta.dirname, "..");
-assert.deepEqual(validateSuite(suite, cases), { cases: 36, pdfCases: 21, ready: 15 });
+assert.deepEqual(validateSuite(suite, cases), { cases: 37, pdfCases: 21, ready: 16 });
 assert.equal(MINIMUM_PDF_CASE_SHARE, 0.5);
 assert.equal(cases.filter((item) => item.family === "pdf" && item.status === "ready").length, 8);
-assert.equal(cases.filter((item) => item.family === "spreadsheets" && item.status === "ready").length, 3);
+assert.equal(cases.filter((item) => item.family === "spreadsheets" && item.status === "ready").length, 4);
 assert.equal(cases.filter((item) => item.family === "documents" && item.status === "ready").length, 1);
 assert.equal(cases.filter((item) => item.family === "presentations" && item.status === "ready").length, 3);
 const referenceDocumentSkill = skillSource({ family: "documents", skill: "documents" }, "reference");
@@ -98,6 +102,7 @@ const runnerHelp = spawnSync(process.execPath, ["scripts/run-agent-evals.mjs", "
 assert.equal(runnerHelp.status, 0, runnerHelp.stderr);
 assert.match(runnerHelp.stdout, /three PPTX cases.*closed-leaf slide clone/i);
 assert.match(runnerHelp.stdout, /connection refresh-on-open/i);
+assert.match(runnerHelp.stdout, /pivot refresh-on-open/i);
 const highlightVisible = visibleCase(suite, cases.find((item) => item.id === "pdf-source-bound-text-highlight"));
 assert.match(highlightVisible.prompt, /add_text_highlight/);
 assert.match(highlightVisible.prompt, /outputs\/review-highlighted\.pdf/);
@@ -362,6 +367,113 @@ try {
   }
 } finally {
   await fs.rm(connectionRefreshRoot, { recursive: true, force: true });
+}
+
+const pivotRefreshItem = cases.find((item) => item.id === "xlsx-pivot-refresh-on-open");
+assert.ok(pivotRefreshItem);
+const pivotRefreshRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-eval-xlsx-pivot-refresh-"));
+try {
+  const pivotInput = path.join(pivotRefreshRoot, "inputs", XLSX_PIVOT_REFRESH_FIXTURE.workbookName);
+  const pivotOutput = path.join(pivotRefreshRoot, "outputs", "regional-revenue-refresh-disabled.xlsx");
+  const pivotAuditPath = path.join(pivotRefreshRoot, "outputs", "audit.json");
+  await generateOfficeInput("xlsx-pivot-refresh", pivotInput);
+  const pivotSourceBytes = await fs.readFile(pivotInput);
+  const pivotResult = await hardenXlsxPivotRefreshOnLoad({
+    inputPath: pivotInput,
+    outputPath: pivotOutput,
+    auditPath: pivotAuditPath,
+    worksheetName: XLSX_PIVOT_REFRESH_FIXTURE.sheetName,
+    pivotName: XLSX_PIVOT_REFRESH_FIXTURE.pivotName,
+  });
+  assert.equal(pivotResult.audit.validation.reimport.ok, true);
+  assert.deepEqual(await fs.readFile(pivotInput), pivotSourceBytes);
+  const pivotAudit = JSON.parse(await fs.readFile(pivotAuditPath, "utf8"));
+  const pivotEvidence = {
+    source: await inspectPivotRefreshWorkbook(pivotInput),
+    output: await inspectPivotRefreshWorkbook(pivotOutput),
+    visual: {
+      source: { available: true, ok: true, pageCount: 1, pages: [{ width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "pivot-refresh-stable" }] },
+      output: { available: true, ok: true, pageCount: 1, pages: [{ width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "pivot-refresh-stable" }] },
+    },
+  };
+  const pivotTrace = JSON.stringify({
+    type: "item.completed",
+    item: {
+      type: "command_execution",
+      id: "xlsx-pivot-refresh",
+      command: "node .agents/skills/spreadsheets/examples/openchestnut-pivot-refresh-hardening-workflow.mjs inputs/regional-revenue-refresh-on-open.xlsx outputs/regional-revenue-refresh-disabled.xlsx outputs/audit.json 'Pivot Summary' 'Revenue by region'",
+    },
+  });
+  const pivotChecks = gradeXlsxPivotRefreshEvidence({
+    evidence: pivotEvidence,
+    audit: pivotAudit,
+    commands: extractCompletedCommands(pivotTrace),
+    item: pivotRefreshItem,
+  });
+  assert.equal(pivotChecks.every((check) => check.passed), true);
+  const publishedPivotWorkflowChecks = gradeXlsxPivotRefreshEvidence({
+    evidence: pivotEvidence,
+    audit: pivotAudit,
+    commands: ["node .agents/skills/spreadsheets/examples/openchestnut-pivot-refresh-hardening-workflow.mjs inputs/regional-revenue-refresh-on-open.xlsx outputs/regional-revenue-refresh-disabled.xlsx outputs/audit.json 'Pivot Summary' 'Revenue by region'"],
+    item: pivotRefreshItem,
+  });
+  assert.equal(publishedPivotWorkflowChecks.find((check) => check.id === "xlsx-pivot-trace:typed-roundtrip")?.passed, true);
+  const rootDriftChecks = gradeXlsxPivotRefreshEvidence({
+    evidence: {
+      ...pivotEvidence,
+      output: {
+        ...pivotEvidence.output,
+        partHashes: {
+          ...pivotEvidence.output.partHashes,
+          "xl/workbook.xml": "root-drift",
+        },
+      },
+    },
+    audit: pivotAudit,
+    commands: extractCompletedCommands(pivotTrace),
+    item: pivotRefreshItem,
+  });
+  assert.equal(rootDriftChecks.find((check) => check.id === "xlsx-pivot-machine:only-cache-definition-changed")?.passed, false);
+  assert.equal(rootDriftChecks.find((check) => check.id === "xlsx-pivot-security:package-scope-and-source-provenance")?.passed, false);
+  const residualDriftChecks = gradeXlsxPivotRefreshEvidence({
+    evidence: {
+      ...pivotEvidence,
+      output: {
+        ...pivotEvidence.output,
+        cache: {
+          ...pivotEvidence.output.cache,
+          normalized: `${pivotEvidence.output.cache.normalized}fixture-drift`,
+        },
+      },
+    },
+    audit: pivotAudit,
+    commands: extractCompletedCommands(pivotTrace),
+    item: pivotRefreshItem,
+  });
+  assert.equal(residualDriftChecks.find((check) => check.id === "xlsx-pivot-machine:cache-residual-stable")?.passed, false);
+  assert.equal(residualDriftChecks.find((check) => check.id === "xlsx-pivot-security:package-scope-and-source-provenance")?.passed, false);
+  const untrustedPivotWorkflowChecks = gradeXlsxPivotRefreshEvidence({
+    evidence: pivotEvidence,
+    audit: pivotAudit,
+    commands: ["node scratch/patch-pivot-cache-xml.mjs inputs/regional-revenue-refresh-on-open.xlsx outputs/regional-revenue-refresh-disabled.xlsx"],
+    item: pivotRefreshItem,
+  });
+  assert.equal(untrustedPivotWorkflowChecks.find((check) => check.id === "xlsx-pivot-trace:typed-roundtrip")?.passed, false);
+  const nativePivotResult = await gradeOfficeCase({
+    item: pivotRefreshItem,
+    workspace: pivotRefreshRoot,
+    evaluator: path.join(pivotRefreshRoot, "evaluator"),
+    finalMessage: "completed",
+    trace: pivotTrace,
+  });
+  if (nativePivotResult.graded) {
+    assert.equal(nativePivotResult.rawScorePercent, 100);
+    assert.equal(nativePivotResult.caseSpecificPassed, true);
+  } else {
+    assert.ok(nativePivotResult.infrastructureErrors?.length);
+  }
+} finally {
+  await fs.rm(pivotRefreshRoot, { recursive: true, force: true });
 }
 
 const classicCommentItem = cases.find((item) => item.id === "docx-classic-comment-text-edit");

@@ -7,6 +7,7 @@ import JSZip from "jszip";
 import {
   XLSX_CONNECTION_REFRESH_FIXTURE,
   XLSX_GROWTH_UPDATE_FIXTURE,
+  XLSX_PIVOT_REFRESH_FIXTURE,
   XLSX_THREADED_REVIEW_FIXTURE,
 } from "./agent-eval-office-fixtures.mjs";
 import { renderOfficeFile } from "./agent-eval-office-native-render.mjs";
@@ -16,6 +17,7 @@ export const spreadsheetGradedCaseIds = new Set([
   "xlsx-threaded-reply-resolve",
   "xlsx-growth-assumption-update",
   "xlsx-connection-refresh-on-open",
+  "xlsx-pivot-refresh-on-open",
 ]);
 
 const defaultWeights = { machine: 45, visual: 25, security: 20, trace: 10 };
@@ -23,6 +25,7 @@ const GUID = /^\{[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\}$
 const SHIPPED_THREADED_WORKFLOW = /(?:^|[\s"'`])(?:\.?\/)?(?:\.agents\/skills\/spreadsheets|node_modules\/open-office-artifact-tool\/skills\/spreadsheets\/skills\/spreadsheets)\/examples\/openchestnut-threaded-comment-reply-workflow\.mjs(?:$|[\s"'`])/i;
 const SHIPPED_GROWTH_WORKFLOW = /(?:^|[\s"'`])(?:\.?\/)?(?:\.agents\/skills\/spreadsheets|node_modules\/open-office-artifact-tool\/skills\/spreadsheets\/skills\/spreadsheets)\/examples\/openchestnut-growth-assumption-edit-workflow\.mjs(?:$|[\s"'`])/i;
 const SHIPPED_CONNECTION_REFRESH_WORKFLOW = /(?:^|[\s"'`])(?:\.?\/)?(?:\.agents\/skills\/spreadsheets|node_modules\/open-office-artifact-tool\/skills\/spreadsheets\/skills\/spreadsheets)\/examples\/openchestnut-connection-refresh-hardening-workflow\.mjs(?:$|[\s"'`])/i;
+const SHIPPED_PIVOT_REFRESH_WORKFLOW = /(?:^|[\s"'`])(?:\.?\/)?(?:\.agents\/skills\/spreadsheets|node_modules\/open-office-artifact-tool\/skills\/spreadsheets\/skills\/spreadsheets)\/examples\/openchestnut-pivot-refresh-hardening-workflow\.mjs(?:$|[\s"'`])/i;
 
 function check(id, category, passed, details = {}) {
   return { id, category, gate: false, passed: Boolean(passed), ...details };
@@ -268,6 +271,55 @@ export async function inspectConnectionRefreshWorkbook(filePath) {
     connections: parseWorkbookConnections(connectionXml),
     queryTablePaths,
     tablePaths,
+  };
+}
+
+function normalizePivotRefreshCacheDefinition(xml = "") {
+  const roots = [...String(xml).matchAll(/<(?:[\w.-]+:)?pivotCacheDefinition\b[^>]*>/gi)];
+  const opening = roots.length === 1 ? roots[0][0] : "";
+  const refreshAttributes = [...opening.matchAll(/\s+refreshOnLoad="([^"]*)"/gi)];
+  const lexicalValue = refreshAttributes.length === 1 ? String(refreshAttributes[0][1]).toLowerCase() : "";
+  const validLexicalValue = new Set(["1", "true", "0", "false"]).has(lexicalValue);
+  const normalized = roots.length === 1 && refreshAttributes.length === 1
+    ? `${String(xml).slice(0, roots[0].index)}${opening.replace(refreshAttributes[0][0], ' refreshOnLoad="__pivot_refresh__"')}${String(xml).slice(roots[0].index + opening.length)}`
+    : String(xml);
+  return {
+    rootCount: roots.length,
+    refreshAttributeCount: refreshAttributes.length,
+    enabled: validLexicalValue ? lexicalValue === "1" || lexicalValue === "true" : null,
+    normalized,
+  };
+}
+
+function parsePivotTableDefinition(xml = "") {
+  const roots = [...String(xml).matchAll(/<(?:[\w.-]+:)?pivotTableDefinition\b[^>]*>/gi)];
+  const attributes = roots.length === 1 ? xmlAttributes(roots[0][0]) : {};
+  return { rootCount: roots.length, name: String(attributes.name || "") };
+}
+
+export async function inspectPivotRefreshWorkbook(filePath) {
+  const bytes = await fs.readFile(filePath);
+  const zip = await JSZip.loadAsync(bytes);
+  const paths = Object.keys(zip.files).filter((name) => !zip.files[name].dir).sort();
+  const cacheDefinitionPaths = paths.filter((name) => /^pivotCache\/pivotCacheDefinition\d*\.xml$/i.test(name));
+  const cacheRecordPaths = paths.filter((name) => /^pivotCache\/pivotCacheRecords\d*\.xml$/i.test(name));
+  const pivotTablePaths = paths.filter((name) => /^xl\/pivotTables\/pivotTable\d*\.xml$/i.test(name));
+  const cacheDefinitionPath = cacheDefinitionPaths.length === 1 ? cacheDefinitionPaths[0] : null;
+  const pivotTablePath = pivotTablePaths.length === 1 ? pivotTablePaths[0] : null;
+  const cacheXml = cacheDefinitionPath ? await zip.file(cacheDefinitionPath).async("text") : "";
+  const pivotXml = pivotTablePath ? await zip.file(pivotTablePath).async("text") : "";
+  return {
+    bytes: bytes.length,
+    sha256: sha256(bytes),
+    paths,
+    partHashes: await packagePartHashes(zip, paths),
+    cacheDefinitionPaths,
+    cacheRecordPaths,
+    pivotTablePaths,
+    cacheDefinitionPath,
+    pivotTablePath,
+    cache: normalizePivotRefreshCacheDefinition(cacheXml),
+    pivot: parsePivotTableDefinition(pivotXml),
   };
 }
 
@@ -614,6 +666,125 @@ export function gradeXlsxConnectionRefreshEvidence({ evidence, audit, commands }
   ];
 }
 
+function nativePivotRefreshVisualEvidence(source, output) {
+  const available = Boolean(source?.available && output?.available);
+  const rendered = source?.ok === true && output?.ok === true
+    && source.pages?.every((page) => page.nonWhitePixels > 0)
+    && output.pages?.every((page) => page.nonWhitePixels > 0);
+  const pageCountsMatch = source?.pageCount === output?.pageCount && source?.pageCount >= 1;
+  const allPagesStable = pageCountsMatch && source.pages.every((page, index) => page.width === output.pages[index]?.width
+    && page.height === output.pages[index]?.height
+    && page.pixelSha256 === output.pages[index]?.pixelSha256);
+  return { available, rendered, pageCountsMatch, allPagesStable };
+}
+
+function usedPivotRefreshWorkflow(commandText) {
+  return (/\SpreadsheetFile\.importXlsx/i.test(commandText)
+    && /\SpreadsheetFile\.exportXlsx/i.test(commandText)
+    && /\.disableRefreshOnLoad\b/i.test(commandText))
+    || SHIPPED_PIVOT_REFRESH_WORKFLOW.test(commandText);
+}
+
+export function gradeXlsxPivotRefreshEvidence({ evidence, audit, commands }) {
+  const fixture = XLSX_PIVOT_REFRESH_FIXTURE;
+  const source = evidence.source;
+  const output = evidence.output;
+  const changedPaths = packageChanges(source, output);
+  const changedScopeSafe = source.cacheDefinitionPath !== null
+    && sameArray(changedPaths, [source.cacheDefinitionPath]);
+  const cacheResidualStable = source.cache.rootCount === 1
+    && output.cache.rootCount === 1
+    && source.cache.refreshAttributeCount === 1
+    && output.cache.refreshAttributeCount === 1
+    && source.cache.enabled === true
+    && output.cache.enabled === false
+    && source.cache.normalized === output.cache.normalized;
+  const sourceRecognized = source.cacheDefinitionPaths.length === 1
+    && source.cacheRecordPaths.length === 1
+    && source.pivotTablePaths.length === 1
+    && source.pivot.rootCount === 1
+    && source.pivot.name === fixture.pivotName
+    && source.cache.enabled === true;
+  const outputRecognized = output.cacheDefinitionPaths.length === 1
+    && output.cacheRecordPaths.length === 1
+    && output.pivotTablePaths.length === 1
+    && output.pivot.rootCount === 1
+    && output.pivot.name === fixture.pivotName
+    && output.cache.enabled === false;
+  const immutablePivotGraph = sameArray(source.pivotTablePaths, output.pivotTablePaths)
+    && sameArray(source.cacheRecordPaths, output.cacheRecordPaths)
+    && source.pivotTablePaths.every((partPath) => source.partHashes[partPath] === output.partHashes[partPath])
+    && source.cacheRecordPaths.every((partPath) => source.partHashes[partPath] === output.partHashes[partPath]);
+  const visual = nativePivotRefreshVisualEvidence(evidence.visual?.source, evidence.visual?.output);
+  const commandText = commands.join("\n");
+  const auditPivot = audit?.operation?.pivot || {};
+  return [
+    check("xlsx-pivot-machine:canonical-source", "machine", sourceRecognized, {
+      cacheDefinitionPaths: source.cacheDefinitionPaths,
+      cacheRecordPaths: source.cacheRecordPaths,
+      pivotTablePaths: source.pivotTablePaths,
+      pivot: source.pivot,
+      cache: source.cache,
+    }),
+    check("xlsx-pivot-machine:refresh-on-open-disabled", "machine", outputRecognized
+      && auditPivot.worksheetName === fixture.sheetName
+      && auditPivot.name === fixture.pivotName
+      && auditPivot.previousRefreshOnLoad === true
+      && auditPivot.refreshOnLoad === false, {
+      output: { pivot: output.pivot, cache: output.cache },
+      auditPivot,
+    }),
+    check("xlsx-pivot-machine:pivot-and-cache-records-byte-stable", "machine", immutablePivotGraph, {
+      pivotTablePaths: { source: source.pivotTablePaths, output: output.pivotTablePaths },
+      cacheRecordPaths: { source: source.cacheRecordPaths, output: output.cacheRecordPaths },
+    }),
+    check("xlsx-pivot-machine:cache-residual-stable", "machine", cacheResidualStable, {
+      source: source.cache,
+      output: output.cache,
+    }),
+    check("xlsx-pivot-machine:only-cache-definition-changed", "machine", changedScopeSafe, {
+      changedPaths,
+      expectedChangedPaths: source.cacheDefinitionPath ? [source.cacheDefinitionPath] : [],
+    }),
+    check("xlsx-pivot-machine:audit-succeeded", "machine", /^(?:success|succeeded|completed)$/i.test(String(audit?.status || "")), {
+      status: audit?.status || "unreported",
+    }),
+    check("xlsx-pivot-visual:native-render", "visual", visual.available && visual.rendered && visual.pageCountsMatch, {
+      visual: evidence.visual,
+    }),
+    check("xlsx-pivot-visual:all-pages-stable", "visual", visual.allPagesStable, {
+      visual: evidence.visual,
+    }),
+    gate("xlsx-pivot-security:package-scope-and-source-provenance", "security", sameArray(source.paths, output.paths)
+      && changedScopeSafe
+      && immutablePivotGraph
+      && cacheResidualStable
+      && auditHash(audit, "source") === source.sha256
+      && auditHash(audit, "output") === output.sha256
+      && source.sha256 !== output.sha256, {
+      changedPaths,
+      source: { expected: source.sha256, actual: auditHash(audit, "source") },
+      output: { expected: output.sha256, actual: auditHash(audit, "output") },
+    }),
+    check("xlsx-pivot-trace:open-chestnut-provider", "trace", /open[- ]?chestnut/i.test(auditProvider(audit)) && Boolean(auditVersion(audit)), {
+      provider: auditProvider(audit),
+      version: auditVersion(audit),
+    }),
+    gate("xlsx-pivot-trace:no-silent-fallback", "trace", auditFallbackIsFalse(audit), { provider: audit?.provider || null }),
+    check("xlsx-pivot-trace:rewrite-policy", "trace", /^rewrite$/i.test(auditStrategy(audit)), { strategy: auditStrategy(audit) }),
+    check("xlsx-pivot-trace:typed-operation", "trace", /pivot.*refresh|refresh.*pivot/i.test(auditOperation(audit)), { operation: auditOperation(audit) }),
+    check("xlsx-pivot-trace:typed-roundtrip", "trace", usedPivotRefreshWorkflow(commandText), {
+      expected: "public SpreadsheetFile importXlsx/exportXlsx plus pivot.disableRefreshOnLoad, or the integrity-protected published Pivot refresh workflow",
+    }),
+    check("xlsx-pivot-trace:second-import", "trace", audit?.validation?.reimport?.ok === true
+      && audit?.validation?.reimport?.pivotProjectionPreserved === true
+      && audit?.validation?.reimport?.refreshOnLoadDisabled === true
+      && audit?.validation?.reimport?.refreshOnLoadHardenableWithdrawn === true, {
+      validation: audit?.validation || null,
+    }),
+  ];
+}
+
 async function readAudit(workspace) {
   try {
     return JSON.parse(await fs.readFile(path.join(workspace, "outputs", "audit.json"), "utf8"));
@@ -736,9 +907,48 @@ async function gradeConnectionRefreshCase({ item, workspace, finalMessage, trace
   return { supported: true, graded: true, checks, evidence, pending: [], ...score };
 }
 
+async function gradePivotRefreshCase({ item, workspace, finalMessage, trace, weights }) {
+  const audit = await readAudit(workspace);
+  const commands = extractCompletedCommands(trace);
+  const fixture = XLSX_PIVOT_REFRESH_FIXTURE;
+  let source;
+  let output;
+  try {
+    source = await inspectPivotRefreshWorkbook(path.join(workspace, "inputs", fixture.workbookName));
+    output = await inspectPivotRefreshWorkbook(path.join(workspace, "outputs", "regional-revenue-refresh-disabled.xlsx"));
+  } catch (error) {
+    const checks = [
+      gate("xlsx-pivot-machine:readable-output", "machine", false, { error: error.message }),
+      gate("xlsx-pivot-security:no-partial-success", "security", false, { error: error.message }),
+    ];
+    const score = summarizeCaseScore(checks, item.grade, weights, false);
+    return { supported: true, graded: true, checks, evidence: { error: error.message }, pending: [], ...score };
+  }
+  const [sourceRender, outputRender] = await Promise.all([
+    renderOfficeFile(path.join(workspace, "inputs", fixture.workbookName), "xlsx-pivot-source"),
+    renderOfficeFile(path.join(workspace, "outputs", "regional-revenue-refresh-disabled.xlsx"), "xlsx-pivot-output"),
+  ]);
+  const visualUnavailable = [sourceRender, outputRender].find((result) => !result.available);
+  if (visualUnavailable) {
+    return {
+      supported: true,
+      graded: false,
+      checks: [],
+      evidence: { source, output, visual: { source: sourceRender, output: outputRender }, finalMessage },
+      pending: ["native LibreOffice/Poppler spreadsheet rendering"],
+      infrastructureErrors: [visualUnavailable.reason],
+    };
+  }
+  const evidence = { source, output, visual: { source: sourceRender, output: outputRender }, finalMessage };
+  const checks = gradeXlsxPivotRefreshEvidence({ evidence, audit, commands });
+  const score = summarizeCaseScore(checks, item.grade, weights, checks.filter((entry) => entry.gate).every((entry) => entry.passed));
+  return { supported: true, graded: true, checks, evidence, pending: [], ...score };
+}
+
 export async function gradeSpreadsheetCase({ item, workspace, finalMessage, trace, weights = defaultWeights }) {
   if (!spreadsheetGradedCaseIds.has(item.id)) return { supported: false };
   if (item.id === "xlsx-threaded-reply-resolve") return gradeThreadedReplyCase({ item, workspace, finalMessage, trace, weights });
   if (item.id === "xlsx-connection-refresh-on-open") return gradeConnectionRefreshCase({ item, workspace, finalMessage, trace, weights });
+  if (item.id === "xlsx-pivot-refresh-on-open") return gradePivotRefreshCase({ item, workspace, finalMessage, trace, weights });
   return gradeGrowthUpdateCase({ item, workspace, finalMessage, trace, weights });
 }

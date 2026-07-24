@@ -85,6 +85,20 @@ cache ownership, and the cache-definition residual. An absent/already-false
 attribute, a shared cache, an ambiguous graph, or any concurrent Pivot edit
 fails closed.
 
+For an existing uploaded workbook, use the transactional public Skill example
+instead of treating its ZIP as a patch target:
+
+```sh
+node examples/openchestnut-pivot-refresh-hardening-workflow.mjs \
+  input.xlsx output.xlsx audit.json "Pivot Summary" "Revenue by region"
+```
+
+It refuses overwrite, requires exactly one named eligible PivotTable and one
+cache-definition part, proves every non-cache part byte-identical, reimports,
+renders every sheet, and writes source/output hashes plus the allowed
+true-to-false proof. It is intentionally not a general imported-Pivot editor
+or a data refresh operation.
+
 ## Fail-closed boundaries
 
 Grouping, calculated fields, date/condition filters, filters on fields outside

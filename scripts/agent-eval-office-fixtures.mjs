@@ -68,6 +68,18 @@ export const XLSX_CONNECTION_REFRESH_FIXTURE = Object.freeze({
   connectionOpaqueValue: "kept",
 });
 
+// This is deliberately a native, source-bound PivotTable fixture rather than
+// a hand-written OOXML package. The corresponding PromptBench slice may turn
+// off only this uniquely-owned cache's explicit refresh-on-load request.
+export const XLSX_PIVOT_REFRESH_FIXTURE = Object.freeze({
+  workbookName: "regional-revenue-refresh-on-open.xlsx",
+  sheetName: "Pivot Summary",
+  pivotName: "Revenue by region",
+  sourceSheetName: "Data",
+  sourceRange: "Data!A1:B5",
+  targetRange: "A1",
+});
+
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
@@ -365,6 +377,52 @@ export async function generateXlsxConnectionRefresh(target) {
   return { path: target, type: XLSX_MIME };
 }
 
+export async function generateXlsxPivotRefresh(target) {
+  const fixture = XLSX_PIVOT_REFRESH_FIXTURE;
+  const workbook = Workbook.create();
+  const data = workbook.worksheets.add(fixture.sourceSheetName);
+  data.getRange("A1:B5").values = [
+    ["Region", "Revenue"],
+    ["East", 120],
+    ["West", 90],
+    ["East", 30],
+    ["North", 60],
+  ];
+  data.getRange("A1:B1").format = { fill: "#0F172A", font: { bold: true, color: "#FFFFFF" } };
+  data.getRange("A1:B5").format.columnWidthPx = 128;
+  data.freezePanes.freezeRows(1);
+  const summary = workbook.worksheets.add(fixture.sheetName);
+  summary.getRange("A1:B5").format = { border: { bottom: { style: "thin", color: "#CBD5E1" } } };
+  summary.getRange("A1:B1").format = { fill: "#DBEAFE", font: { bold: true, color: "#1E3A8A" } };
+  summary.getRange("A1:B5").format.columnWidthPx = 144;
+  summary.pivotTables.add({
+    name: fixture.pivotName,
+    sourceRange: fixture.sourceRange,
+    targetRange: fixture.targetRange,
+    rowFields: ["Region"],
+    valueFields: [{ field: "Revenue", summarizeBy: "sum", name: "Revenue" }],
+    rowGrandTotals: true,
+    columnGrandTotals: true,
+    refreshPolicy: { refreshOnLoad: true, saveData: true, enableRefresh: true },
+  });
+  const exported = await SpreadsheetFile.exportXlsx(workbook, { recalculate: false });
+  const bytes = new Uint8Array(await exported.arrayBuffer());
+  const zip = await JSZip.loadAsync(bytes);
+  const paths = Object.keys(zip.files).filter((name) => !zip.files[name].dir);
+  const cacheDefinitions = paths.filter((name) => /^pivotCache\/pivotCacheDefinition\d*\.xml$/i.test(name));
+  const pivotTables = paths.filter((name) => /^xl\/pivotTables\/pivotTable\d*\.xml$/i.test(name));
+  if (cacheDefinitions.length !== 1 || pivotTables.length !== 1) {
+    throw new Error("XLSX Pivot refresh fixture must contain exactly one native PivotTable and cache definition.");
+  }
+  const cacheXml = await zip.file(cacheDefinitions[0]).async("text");
+  if (!/refreshOnLoad="(?:1|true)"/i.test(cacheXml)) {
+    throw new Error("XLSX Pivot refresh fixture did not author an explicit cache refreshOnLoad=true request.");
+  }
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, bytes);
+  return { path: target, type: XLSX_MIME };
+}
+
 export async function generateDocxClassicCommentReview(target) {
   const fixture = DOCX_CLASSIC_COMMENT_FIXTURE;
   const document = DocumentModel.create({
@@ -598,6 +656,7 @@ export async function generateOfficeInput(generator, target) {
   if (generator === "xlsx-threaded-review") return generateXlsxThreadedReview(target);
   if (generator === "xlsx-growth-update") return generateXlsxGrowthUpdate(target);
   if (generator === "xlsx-connection-refresh") return generateXlsxConnectionRefresh(target);
+  if (generator === "xlsx-pivot-refresh") return generateXlsxPivotRefresh(target);
   if (generator === "docx-classic-comment-review") return generateDocxClassicCommentReview(target);
   if (generator === "pptx-title-notes-review") return generatePptxTitleNotesReview(target);
   if (generator === "pptx-rich-notes-review") return generatePptxRichNotesReview(target);
