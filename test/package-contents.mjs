@@ -62,7 +62,7 @@ const maxPackedBytes = 9_840_000;
 // protobuf, audited WASM,
 // public Help, and native guidance;
 // retain measured headroom instead of hiding that product surface.
-const maxUnpackedBytes = 25_030_000;
+const maxUnpackedBytes = 25_050_000;
 // Public Skill PNGs are required user-facing assets. They are retained with
 // byte-identical non-IDAT chunks and inflated scanline streams, but their IDAT
 // payloads are deterministically recompressed. Prevent future PNG tooling from

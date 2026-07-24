@@ -9,6 +9,7 @@ import JSZip from "jszip";
 import { DocumentFile, FileBlob, PresentationFile, SpreadsheetFile } from "../src/index.mjs";
 import {
   DOCX_CLASSIC_COMMENT_FIXTURE,
+  DOCX_HEADER_TEXT_FIXTURE,
   PPTX_CLOSED_LEAF_CLONE_FIXTURE,
   PPTX_RICH_NOTES_FIXTURE,
   PPTX_SLIDE_NAME_FIXTURE,
@@ -21,7 +22,9 @@ import {
 } from "../scripts/agent-eval-office-fixtures.mjs";
 import {
   gradeDocxClassicCommentEvidence,
+  gradeDocxHeaderTextEvidence,
   inspectClassicCommentDocx,
+  inspectHeaderTextDocx,
 } from "../scripts/agent-eval-docx-graders.mjs";
 import { gradeOfficeCase } from "../scripts/agent-eval-office-graders.mjs";
 import {
@@ -43,6 +46,7 @@ import {
   inspectTitleNotesPptx,
 } from "../scripts/agent-eval-presentation-graders.mjs";
 import { duplicatePptxSlide } from "../skills/presentations/skills/presentations/examples/openchestnut-slide-duplicate-workflow.mjs";
+import { editImportedHeaderText } from "../skills/documents/skills/documents/examples/openchestnut-header-text-edit-workflow.mjs";
 import { hardenXlsxConnectionRefreshOnOpen } from "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-connection-refresh-hardening-workflow.mjs";
 import { hardenXlsxPivotRefreshOnLoad } from "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-pivot-refresh-hardening-workflow.mjs";
 import {
@@ -74,11 +78,11 @@ import {
 
 const { suite, cases } = await loadSuite();
 const repoRoot = path.resolve(import.meta.dirname, "..");
-assert.deepEqual(validateSuite(suite, cases), { cases: 37, pdfCases: 21, ready: 16 });
+assert.deepEqual(validateSuite(suite, cases), { cases: 38, pdfCases: 21, ready: 17 });
 assert.equal(MINIMUM_PDF_CASE_SHARE, 0.5);
 assert.equal(cases.filter((item) => item.family === "pdf" && item.status === "ready").length, 8);
 assert.equal(cases.filter((item) => item.family === "spreadsheets" && item.status === "ready").length, 4);
-assert.equal(cases.filter((item) => item.family === "documents" && item.status === "ready").length, 1);
+assert.equal(cases.filter((item) => item.family === "documents" && item.status === "ready").length, 2);
 assert.equal(cases.filter((item) => item.family === "presentations" && item.status === "ready").length, 3);
 const referenceDocumentSkill = skillSource({ family: "documents", skill: "documents" }, "reference");
 assert.equal(referenceDocumentSkill, path.join(repoRoot, "reference", "office-artifact-tool", "skills", "documents", "skills", "documents"));
@@ -103,6 +107,7 @@ assert.equal(runnerHelp.status, 0, runnerHelp.stderr);
 assert.match(runnerHelp.stdout, /three PPTX cases.*closed-leaf slide clone/i);
 assert.match(runnerHelp.stdout, /connection refresh-on-open/i);
 assert.match(runnerHelp.stdout, /pivot refresh-on-open/i);
+assert.match(runnerHelp.stdout, /source-bound DOCX header text/i);
 const highlightVisible = visibleCase(suite, cases.find((item) => item.id === "pdf-source-bound-text-highlight"));
 assert.match(highlightVisible.prompt, /add_text_highlight/);
 assert.match(highlightVisible.prompt, /outputs\/review-highlighted\.pdf/);
@@ -553,6 +558,101 @@ try {
   }
 } finally {
   await fs.rm(classicCommentRoot, { recursive: true, force: true });
+}
+
+const headerTextItem = cases.find((item) => item.id === "docx-header-text-edit");
+assert.ok(headerTextItem);
+const headerTextRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-eval-docx-header-"));
+try {
+  const headerInput = path.join(headerTextRoot, "inputs", DOCX_HEADER_TEXT_FIXTURE.documentName);
+  const headerOutput = path.join(headerTextRoot, "outputs", "board-brief-header-reviewed.docx");
+  const headerAuditPath = path.join(headerTextRoot, "outputs", "audit.json");
+  await generateOfficeInput("docx-header-text-review", headerInput);
+  const headerSourceBytes = await fs.readFile(headerInput);
+  const headerResult = await editImportedHeaderText({
+    inputPath: headerInput,
+    outputPath: headerOutput,
+    auditPath: headerAuditPath,
+    expectedText: DOCX_HEADER_TEXT_FIXTURE.header.originalText,
+    replacementText: DOCX_HEADER_TEXT_FIXTURE.header.replacementText,
+    sectionIndex: DOCX_HEADER_TEXT_FIXTURE.header.sectionIndex,
+    referenceType: DOCX_HEADER_TEXT_FIXTURE.header.referenceType,
+  });
+  assert.deepEqual(await fs.readFile(headerInput), headerSourceBytes);
+  assert.deepEqual(headerResult.audit.validation.changedParts, ["word/header1.xml"]);
+  const headerAudit = JSON.parse(await fs.readFile(headerAuditPath, "utf8"));
+  const headerEvidence = {
+    source: await inspectHeaderTextDocx(headerInput),
+    output: await inspectHeaderTextDocx(headerOutput),
+    visual: {
+      source: { available: true, ok: true, pageCount: 1, pages: [{ width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "header-source" }] },
+      output: { available: true, ok: true, pageCount: 1, pages: [{ width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "header-output" }] },
+    },
+  };
+  const headerTrace = JSON.stringify({
+    type: "item.completed",
+    item: {
+      type: "command_execution",
+      id: "docx-header-text",
+      command: "node .agents/skills/documents/examples/openchestnut-header-text-edit-workflow.mjs inputs/board-brief-header.docx outputs/board-brief-header-reviewed.docx outputs/audit.json 'Northwind | Internal' 'Northwind | Reviewed' 0 default",
+    },
+  });
+  const headerChecks = gradeDocxHeaderTextEvidence({
+    evidence: headerEvidence,
+    audit: headerAudit,
+    commands: extractCompletedCommands(headerTrace),
+    item: headerTextItem,
+  });
+  assert.equal(headerChecks.every((check) => check.passed), true);
+  const publishedHeaderWorkflowChecks = gradeDocxHeaderTextEvidence({
+    evidence: headerEvidence,
+    audit: headerAudit,
+    commands: ["node .agents/skills/documents/examples/openchestnut-header-text-edit-workflow.mjs inputs/board-brief-header.docx outputs/board-brief-header-reviewed.docx outputs/audit.json"],
+    item: headerTextItem,
+  });
+  assert.equal(publishedHeaderWorkflowChecks.find((check) => check.id === "docx-header-trace:typed-roundtrip")?.passed, true);
+  const untrustedHeaderWorkflowChecks = gradeDocxHeaderTextEvidence({
+    evidence: headerEvidence,
+    audit: headerAudit,
+    commands: ["node scratch/patch-header-xml.mjs inputs/board-brief-header.docx outputs/board-brief-header-reviewed.docx"],
+    item: headerTextItem,
+  });
+  assert.equal(untrustedHeaderWorkflowChecks.find((check) => check.id === "docx-header-trace:typed-roundtrip")?.passed, false);
+  const packageDriftEvidence = structuredClone(headerEvidence);
+  packageDriftEvidence.output.partHashes["word/footer1.xml"] = "unexpected-footer-drift";
+  const packageDriftChecks = gradeDocxHeaderTextEvidence({
+    evidence: packageDriftEvidence,
+    audit: headerAudit,
+    commands: extractCompletedCommands(headerTrace),
+    item: headerTextItem,
+  });
+  assert.equal(packageDriftChecks.find((check) => check.id === "docx-header-security:only-target-header-part-changed")?.passed, false);
+  assert.equal(packageDriftChecks.find((check) => check.id === "docx-header-security:footer-field-and-package-inventory-preserved")?.passed, false);
+  const residualDriftEvidence = structuredClone(headerEvidence);
+  residualDriftEvidence.output.headerParts[0].xml = residualDriftEvidence.output.headerParts[0].xml
+    .replace(DOCX_HEADER_TEXT_FIXTURE.header.companionText, "Unexpected companion drift.");
+  const residualDriftChecks = gradeDocxHeaderTextEvidence({
+    evidence: residualDriftEvidence,
+    audit: headerAudit,
+    commands: extractCompletedCommands(headerTrace),
+    item: headerTextItem,
+  });
+  assert.equal(residualDriftChecks.find((check) => check.id === "docx-header-machine:header-residual-stable")?.passed, false);
+  const nativeHeaderResult = await gradeOfficeCase({
+    item: headerTextItem,
+    workspace: headerTextRoot,
+    evaluator: path.join(headerTextRoot, "evaluator"),
+    finalMessage: "completed",
+    trace: headerTrace,
+  });
+  if (nativeHeaderResult.graded) {
+    assert.equal(nativeHeaderResult.rawScorePercent, 100);
+    assert.equal(nativeHeaderResult.caseSpecificPassed, true);
+  } else {
+    assert.ok(nativeHeaderResult.infrastructureErrors?.length);
+  }
+} finally {
+  await fs.rm(headerTextRoot, { recursive: true, force: true });
 }
 
 const richNotesItem = cases.find((item) => item.id === "pptx-title-and-notes-edit");

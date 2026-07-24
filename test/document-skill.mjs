@@ -177,6 +177,63 @@ try {
   assert.deepEqual(await fs.readFile(watermark.docxPath), watermarkSourceBytes);
   const watermarkWorkflowDocument = await DocumentFile.importDocx(await FileBlob.load(watermarkWorkflowOutput));
   assert.equal(watermarkWorkflowDocument.watermarks[0]?.text, "APPROVED COPY");
+
+  const headerWorkflowSourcePath = path.join(outputDir, "header-text-source.docx");
+  const headerWorkflowOutputPath = path.join(outputDir, "header-text-reviewed.docx");
+  const headerWorkflowAuditPath = path.join(outputDir, "header-text-audit.json");
+  const headerWorkflowDocument = DocumentModel.create({ name: "Header text workflow", blocks: [] });
+  headerWorkflowDocument.addParagraph("Only the requested ordinary header text may change.");
+  headerWorkflowDocument.addHeader("Northwind | Internal", { id: "header/review-target", sectionIndex: 0 });
+  headerWorkflowDocument.addHeader("Retain the body and footer exactly.", { id: "header/companion", sectionIndex: 0 });
+  headerWorkflowDocument.addFooter("1", { id: "footer/page", sectionIndex: 0, fieldInstruction: "PAGE" });
+  await (await DocumentFile.exportDocx(headerWorkflowDocument)).save(headerWorkflowSourcePath);
+  const headerWorkflowSourceBytes = await fs.readFile(headerWorkflowSourcePath);
+  const { editImportedHeaderText } = await import(
+    "../skills/documents/skills/documents/examples/openchestnut-header-text-edit-workflow.mjs"
+  );
+  const headerWorkflow = await editImportedHeaderText({
+    inputPath: headerWorkflowSourcePath,
+    outputPath: headerWorkflowOutputPath,
+    auditPath: headerWorkflowAuditPath,
+    expectedText: "Northwind | Internal",
+    replacementText: "Northwind | Reviewed",
+    sectionIndex: 0,
+    referenceType: "default",
+  });
+  assert.equal(headerWorkflow.audit.provider.actual, "open-chestnut");
+  assert.equal(headerWorkflow.audit.provider.silentFallback, false);
+  assert.equal(headerWorkflow.audit.savePolicy.noReplace, true);
+  assert.deepEqual(headerWorkflow.audit.validation.changedParts, ["word/header1.xml"]);
+  assert.equal(headerWorkflow.audit.validation.reimport.editable, true);
+  assert.deepEqual(await fs.readFile(headerWorkflowSourcePath), headerWorkflowSourceBytes);
+  const headerWorkflowRoundTrip = await DocumentFile.importDocx(await FileBlob.load(headerWorkflowOutputPath));
+  assert.equal(headerWorkflowRoundTrip.headers.find((header) => header.text === "Northwind | Reviewed")?.editable, true);
+  assert.equal(headerWorkflowRoundTrip.headers.find((header) => header.text === "Retain the body and footer exactly.")?.partPath, "word/header1.xml");
+  assert.equal(headerWorkflowRoundTrip.footers[0]?.fieldInstruction, "PAGE");
+  const [headerWorkflowSourceZip, headerWorkflowOutputZip] = await Promise.all([
+    JSZip.loadAsync(headerWorkflowSourceBytes),
+    JSZip.loadAsync(await fs.readFile(headerWorkflowOutputPath)),
+  ]);
+  const headerSourceXml = await headerWorkflowSourceZip.file("word/header1.xml").async("text");
+  const headerOutputXml = await headerWorkflowOutputZip.file("word/header1.xml").async("text");
+  assert.equal(headerSourceXml.replace("Northwind | Internal", "__target__"), headerOutputXml.replace("Northwind | Reviewed", "__target__"));
+  for (const name of Object.keys(headerWorkflowSourceZip.files).filter((entry) => !headerWorkflowSourceZip.files[entry].dir && entry !== "word/header1.xml")) {
+    assert.deepEqual(
+      Buffer.from(await headerWorkflowSourceZip.file(name).async("uint8array")),
+      Buffer.from(await headerWorkflowOutputZip.file(name).async("uint8array")),
+      `Unexpected source-bound header workflow drift in ${name}`,
+    );
+  }
+  await assert.rejects(
+    () => editImportedHeaderText({
+      inputPath: headerWorkflowSourcePath,
+      outputPath: headerWorkflowOutputPath,
+      auditPath: path.join(outputDir, "header-text-second-audit.json"),
+      expectedText: "Northwind | Internal",
+      replacementText: "Northwind | Reviewed",
+    }),
+    /outputPath already exists/i,
+  );
   const watermarkRemovalOutput = path.join(outputDir, "watermark-removed.docx");
   const watermarkRemovalAudit = path.join(outputDir, "watermark-removed-audit.json");
   const watermarkRemoval = await editDocumentWatermark({
@@ -885,6 +942,7 @@ try {
   assert.match(skillText, /paragraph\.addField/);
   assert.match(skillText, /openchestnut-source-text-patch-workflow\.mjs/);
   assert.match(skillText, /openchestnut-classic-comment-edit-workflow\.mjs/);
+  assert.match(skillText, /openchestnut-header-text-edit-workflow\.mjs/);
   assert.match(skillText, /openchestnut-modern-comment-thread-workflow\.mjs/);
   assert.match(skillText, /openchestnut-watermark-workflow\.mjs/);
   assert.match(skillText, /tasks\/headers_footers\.md/);
@@ -898,6 +956,7 @@ try {
   assert.doesNotMatch(commentsGuide, /If the task is to \*insert\* new comments.+use the OOXML-level guide/);
   const manifestText = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "manifest.txt"), "utf8");
   assert.match(manifestText, /^examples\/openchestnut-source-text-patch-workflow\.mjs$/m);
+  assert.match(manifestText, /^examples\/openchestnut-header-text-edit-workflow\.mjs$/m);
   assert.match(manifestText, /^examples\/openchestnut-modern-comment-thread-workflow\.mjs$/m);
   assert.match(manifestText, /^examples\/openchestnut-watermark-workflow\.mjs$/m);
   assert.match(manifestText, /^tasks\/headers_footers\.md$/m);
@@ -915,6 +974,8 @@ try {
   assert.match(headersFootersGuide, /sourceBound.*editable/is);
   assert.match(headersFootersGuide, /at most one text edit.*part/is);
   assert.match(headersFootersGuide, /PAGE or other simple fields/);
+  assert.match(headersFootersGuide, /openchestnut-header-text-edit-workflow\.mjs/);
+  assert.match(headersFootersGuide, /header-only transaction/i);
   assert.match(headersFootersGuide, /fail closed/);
   const controlsGuide = await fs.readFile(path.join(repoRoot, "skills", "documents", "skills", "documents", "tasks", "forms_content_controls.md"), "utf8");
   assert.match(controlsGuide, /paragraph\.addTextContentControl/);

@@ -4,14 +4,15 @@ import path from "node:path";
 
 import JSZip from "jszip";
 
-import { DOCX_CLASSIC_COMMENT_FIXTURE } from "./agent-eval-office-fixtures.mjs";
+import { DOCX_CLASSIC_COMMENT_FIXTURE, DOCX_HEADER_TEXT_FIXTURE } from "./agent-eval-office-fixtures.mjs";
 import { renderOfficeFile } from "./agent-eval-office-native-render.mjs";
 import { extractCompletedCommands, summarizeCaseScore } from "./agent-eval-pdf-graders.mjs";
 
-export const docxGradedCaseIds = new Set(["docx-classic-comment-text-edit"]);
+export const docxGradedCaseIds = new Set(["docx-classic-comment-text-edit", "docx-header-text-edit"]);
 
 const defaultWeights = { machine: 45, visual: 25, security: 20, trace: 10 };
 const SHIPPED_CLASSIC_COMMENT_WORKFLOW = /(?:^|[\s"'`])(?:\.?\/)?(?:\.agents\/skills\/documents|node_modules\/open-office-artifact-tool\/skills\/documents\/skills\/documents)\/examples\/openchestnut-classic-comment-edit-workflow\.mjs(?:$|[\s"'`])/i;
+const SHIPPED_HEADER_TEXT_WORKFLOW = /(?:^|[\s"'`])(?:\.?\/)?(?:\.agents\/skills\/documents|node_modules\/open-office-artifact-tool\/skills\/documents\/skills\/documents)\/examples\/openchestnut-header-text-edit-workflow\.mjs(?:$|[\s"'`])/i;
 
 function check(id, category, passed, details = {}) {
   return { id, category, gate: false, passed: Boolean(passed), ...details };
@@ -46,6 +47,17 @@ function wordText(xml = "") {
   return [...String(xml).matchAll(/<(?:[\w.-]+:)?t\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?t>/g)]
     .map((match) => decodeXml(match[1].replace(/<[^>]+>/g, "")))
     .join("");
+}
+
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function escapeXmlText(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }
 
 function tagIds(xml = "", name) {
@@ -104,6 +116,53 @@ export async function inspectClassicCommentDocx(filePath) {
     peoplePaths: paths.filter((name) => /^word\/people\.xml$/i.test(name)),
     comments: parseClassicComments(commentsXml),
     paragraphs: parseParagraphs(documentXml),
+  };
+}
+
+function normalizeTargetText(xml, expectedText) {
+  const pattern = new RegExp(`(<w:t(?:\\s[^>]*)?>)${escapeRegex(escapeXmlText(expectedText))}(</w:t>)`, "g");
+  let matches = 0;
+  const normalized = xml.replace(pattern, (_whole, open, close) => {
+    matches += 1;
+    return `${open}__OPEN_CHESTNUT_TARGET_TEXT__${close}`;
+  });
+  return { normalized, matches };
+}
+
+function headerFooterPartRecord(partPath, xml) {
+  return {
+    path: partPath,
+    xml,
+    paragraphs: parseParagraphs(xml).map((paragraph) => paragraph.text),
+  };
+}
+
+/**
+ * Independent package-level reader for the source-bound header-edit case.
+ * It intentionally does not use DocumentFile so a wrapper cannot satisfy the
+ * black-box evaluator by merely repeating its own model projection.
+ */
+export async function inspectHeaderTextDocx(filePath) {
+  const bytes = await fs.readFile(filePath);
+  const zip = await JSZip.loadAsync(bytes);
+  const paths = Object.keys(zip.files).filter((name) => !zip.files[name].dir).sort();
+  const entries = await Promise.all(paths.map(async (partPath) => [partPath, Buffer.from(await zip.file(partPath)?.async("uint8array") || [])]));
+  const partHashes = Object.fromEntries(entries.map(([partPath, value]) => [partPath, sha256(value)]));
+  const content = new Map(entries.map(([partPath, value]) => [partPath, value.toString("utf8")]));
+  const documentPath = paths.find((name) => name.toLowerCase() === "word/document.xml") || null;
+  const headerParts = paths.filter((name) => /^word\/header\d+\.xml$/i.test(name))
+    .map((partPath) => headerFooterPartRecord(partPath, content.get(partPath) || ""));
+  const footerParts = paths.filter((name) => /^word\/footer\d+\.xml$/i.test(name))
+    .map((partPath) => headerFooterPartRecord(partPath, content.get(partPath) || ""));
+  return {
+    bytes: bytes.length,
+    sha256: sha256(bytes),
+    paths,
+    partHashes,
+    documentPath,
+    bodyParagraphs: parseParagraphs(documentPath ? content.get(documentPath) || "" : "").map((paragraph) => paragraph.text),
+    headerParts,
+    footerParts,
   };
 }
 
@@ -277,6 +336,137 @@ export function gradeDocxClassicCommentEvidence({ evidence, audit, commands }) {
   ];
 }
 
+function headerPartWithText(document, text) {
+  const matches = document.headerParts.filter((part) => part.paragraphs.filter((paragraph) => paragraph === text).length === 1);
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function changedPackageParts(source, output) {
+  if (JSON.stringify(source.paths) !== JSON.stringify(output.paths)) return null;
+  return source.paths.filter((partPath) => source.partHashes[partPath] !== output.partHashes[partPath]);
+}
+
+function normalizedHeaderResidual(sourcePart, outputPart) {
+  if (!sourcePart || !outputPart || sourcePart.path !== outputPart.path) return { ok: false, source: null, output: null };
+  const source = normalizeTargetText(sourcePart.xml, DOCX_HEADER_TEXT_FIXTURE.header.originalText);
+  const output = normalizeTargetText(outputPart.xml, DOCX_HEADER_TEXT_FIXTURE.header.replacementText);
+  return {
+    ok: source.matches === 1 && output.matches === 1 && source.normalized === output.normalized,
+    source,
+    output,
+  };
+}
+
+function headerVisibleChange(source, output) {
+  const visual = visualEvidence(source, output);
+  const pixelsChanged = visual.pageCountsMatch
+    && source?.pages?.length === output?.pages?.length
+    && source.pages.some((page, index) => page.pixelSha256 !== output.pages[index]?.pixelSha256);
+  return { ...visual, pixelsChanged };
+}
+
+function usedTypedHeaderRoundTrip(commandText) {
+  const directPublicApi = /(?:DocumentFile\.)?importDocx/i.test(commandText)
+    && /(?:DocumentFile\.)?exportDocx/i.test(commandText);
+  return directPublicApi || SHIPPED_HEADER_TEXT_WORKFLOW.test(commandText);
+}
+
+export function gradeDocxHeaderTextEvidence({ evidence, audit, commands }) {
+  const fixture = DOCX_HEADER_TEXT_FIXTURE;
+  const source = evidence.source;
+  const output = evidence.output;
+  const sourceTarget = headerPartWithText(source, fixture.header.originalText);
+  const outputTarget = headerPartWithText(output, fixture.header.replacementText);
+  const residual = normalizedHeaderResidual(sourceTarget, outputTarget);
+  const changed = changedPackageParts(source, output);
+  const companionStable = Boolean(sourceTarget && outputTarget)
+    && JSON.stringify(sourceTarget.paragraphs.map((paragraph) => paragraph === fixture.header.originalText ? "__target__" : paragraph))
+      === JSON.stringify(outputTarget.paragraphs.map((paragraph) => paragraph === fixture.header.replacementText ? "__target__" : paragraph));
+  const footerStable = source.footerParts.length === output.footerParts.length
+    && source.footerParts.every((part, index) => part.path === output.footerParts[index]?.path
+      && source.partHashes[part.path] === output.partHashes[part.path]);
+  const visual = headerVisibleChange(evidence.visual?.source, evidence.visual?.output);
+  const commandText = commands.join("\n");
+  const auditTarget = audit?.operation?.target || {};
+  return [
+    check("docx-header-machine:fixture-source-profile", "machine", Boolean(sourceTarget)
+      && sourceTarget.paragraphs.includes(fixture.header.companionText)
+      && source.footerParts.length === 1
+      && source.bodyParagraphs.includes(fixture.title)
+      && fixture.body.every((paragraph) => source.bodyParagraphs.includes(paragraph)), {
+      sourceTarget,
+      footerParts: source.footerParts.map((part) => ({ path: part.path, paragraphs: part.paragraphs })),
+      bodyParagraphs: source.bodyParagraphs,
+    }),
+    check("docx-header-machine:requested-text-edited", "machine", Boolean(sourceTarget && outputTarget)
+      && outputTarget.paragraphs.includes(fixture.header.replacementText)
+      && !outputTarget.paragraphs.includes(fixture.header.originalText)
+      && companionStable, {
+      sourceTarget,
+      outputTarget,
+      companionStable,
+    }),
+    check("docx-header-machine:body-and-footer-stable", "machine", JSON.stringify(source.bodyParagraphs) === JSON.stringify(output.bodyParagraphs)
+      && footerStable, {
+      body: { source: source.bodyParagraphs, output: output.bodyParagraphs },
+      footerStable,
+    }),
+    check("docx-header-machine:header-residual-stable", "machine", residual.ok, {
+      sourceMatches: residual.source?.matches ?? 0,
+      outputMatches: residual.output?.matches ?? 0,
+    }),
+    check("docx-header-machine:audit-succeeded", "machine", /^(?:success|succeeded|completed)$/i.test(String(audit?.status || "")), {
+      status: audit?.status || "unreported",
+    }),
+    check("docx-header-visual:native-render", "visual", visual.available && visual.rendered && visual.pageCountsMatch, {
+      visual: evidence.visual,
+    }),
+    check("docx-header-visual:header-change-visible", "visual", visual.pixelsChanged, {
+      visual: evidence.visual,
+      note: "The package gate proves the changed part; native rendering confirms that the requested page-furniture edit remains visible.",
+    }),
+    gate("docx-header-security:only-target-header-part-changed", "security", Boolean(sourceTarget)
+      && JSON.stringify(changed) === JSON.stringify([sourceTarget.path]), {
+      changed,
+      targetPart: sourceTarget?.path || null,
+    }),
+    gate("docx-header-security:footer-field-and-package-inventory-preserved", "security", footerStable
+      && changed !== null
+      && source.footerParts.some((part) => part.paragraphs.includes(fixture.footer.text)), {
+      footerStable,
+      sourcePaths: source.paths,
+      outputPaths: output.paths,
+    }),
+    gate("docx-header-security:byte-bound-audit-provenance", "security", auditHash(audit, "source") === source.sha256
+      && auditHash(audit, "output") === output.sha256
+      && source.sha256 !== output.sha256, {
+      source: { expected: source.sha256, actual: auditHash(audit, "source") },
+      output: { expected: output.sha256, actual: auditHash(audit, "output") },
+    }),
+    check("docx-header-trace:open-chestnut-provider", "trace", /open[- ]?chestnut/i.test(auditProvider(audit)) && Boolean(auditVersion(audit)), {
+      provider: auditProvider(audit),
+      version: auditVersion(audit),
+    }),
+    gate("docx-header-trace:no-silent-fallback", "trace", auditFallbackIsFalse(audit), { provider: audit?.provider || null }),
+    check("docx-header-trace:rewrite-policy", "trace", /^rewrite$/i.test(auditStrategy(audit)), {
+      strategy: auditStrategy(audit),
+    }),
+    check("docx-header-trace:source-bound-header-operation", "trace", /header/i.test(auditOperation(audit))
+      && auditTarget.sectionIndex === fixture.header.sectionIndex
+      && auditTarget.referenceType === fixture.header.referenceType
+      && auditTarget.partPath === sourceTarget?.path, {
+      operation: audit?.operation || null,
+      expected: { sectionIndex: fixture.header.sectionIndex, referenceType: fixture.header.referenceType, partPath: sourceTarget?.path || null },
+    }),
+    check("docx-header-trace:typed-roundtrip", "trace", usedTypedHeaderRoundTrip(commandText), {
+      expected: "public DocumentFile importDocx/exportDocx calls or the integrity-protected published header-text workflow",
+    }),
+    check("docx-header-trace:second-import", "trace", audit?.validation?.reimport?.ok === true || audit?.validation?.secondImport?.ok === true, {
+      validation: audit?.validation || null,
+    }),
+  ];
+}
+
 async function readAudit(workspace) {
   try {
     return JSON.parse(await fs.readFile(path.join(workspace, "outputs", "audit.json"), "utf8"));
@@ -285,8 +475,7 @@ async function readAudit(workspace) {
   }
 }
 
-export async function gradeDocxCase({ item, workspace, finalMessage, trace, weights = defaultWeights }) {
-  if (!docxGradedCaseIds.has(item.id)) return { supported: false };
+async function gradeDocxClassicCommentCase({ item, workspace, finalMessage, trace, weights = defaultWeights }) {
   const fixture = DOCX_CLASSIC_COMMENT_FIXTURE;
   const audit = await readAudit(workspace);
   const commands = extractCompletedCommands(trace);
@@ -328,4 +517,54 @@ export async function gradeDocxCase({ item, workspace, finalMessage, trace, weig
   const checks = gradeDocxClassicCommentEvidence({ evidence, audit, commands, item });
   const score = summarizeCaseScore(checks, item.grade, weights, checks.filter((entry) => entry.gate).every((entry) => entry.passed));
   return { supported: true, graded: true, checks, evidence, pending: [], ...score };
+}
+
+async function gradeDocxHeaderTextCase({ item, workspace, finalMessage, trace, weights = defaultWeights }) {
+  const fixture = DOCX_HEADER_TEXT_FIXTURE;
+  const audit = await readAudit(workspace);
+  const commands = extractCompletedCommands(trace);
+  const sourcePath = path.join(workspace, "inputs", fixture.documentName);
+  const outputPath = path.join(workspace, "outputs", "board-brief-header-reviewed.docx");
+  let source;
+  let output;
+  try {
+    [source, output] = await Promise.all([
+      inspectHeaderTextDocx(sourcePath),
+      inspectHeaderTextDocx(outputPath),
+    ]);
+  } catch (error) {
+    const checks = [
+      gate("docx-header-machine:readable-output", "machine", false, { error: error.message }),
+      gate("docx-header-security:no-partial-success", "security", false, { error: error.message }),
+    ];
+    const score = summarizeCaseScore(checks, item.grade, weights, false);
+    return { supported: true, graded: true, checks, evidence: { error: error.message }, pending: [], ...score };
+  }
+
+  const [sourceRender, outputRender] = await Promise.all([
+    renderOfficeFile(sourcePath, "docx-header-source"),
+    renderOfficeFile(outputPath, "docx-header-output"),
+  ]);
+  const visualUnavailable = [sourceRender, outputRender].find((result) => !result.available);
+  if (visualUnavailable) {
+    return {
+      supported: true,
+      graded: false,
+      checks: [],
+      evidence: { source, output, visual: { source: sourceRender, output: outputRender }, finalMessage },
+      pending: ["native LibreOffice/Poppler document rendering"],
+      infrastructureErrors: [visualUnavailable.reason],
+    };
+  }
+
+  const evidence = { source, output, visual: { source: sourceRender, output: outputRender }, finalMessage };
+  const checks = gradeDocxHeaderTextEvidence({ evidence, audit, commands, item });
+  const score = summarizeCaseScore(checks, item.grade, weights, checks.filter((entry) => entry.gate).every((entry) => entry.passed));
+  return { supported: true, graded: true, checks, evidence, pending: [], ...score };
+}
+
+export async function gradeDocxCase(options) {
+  if (options.item.id === "docx-classic-comment-text-edit") return gradeDocxClassicCommentCase(options);
+  if (options.item.id === "docx-header-text-edit") return gradeDocxHeaderTextCase(options);
+  return { supported: false };
 }

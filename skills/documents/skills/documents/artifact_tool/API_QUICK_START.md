@@ -100,6 +100,13 @@ record again, check that the ZIP diff contains only `header.partPath` (or
 `../tasks/headers_footers.md` for the complete workflow and watermark
 coexistence boundary.
 
+For one ordinary imported header, prefer the packaged
+`examples/openchestnut-header-text-edit-workflow.mjs` transaction. It binds an
+explicit section/reference/text target, refuses existing output or audit paths,
+proves the one-HeaderPart ZIP scope and the normalized XML residual, reimports,
+verifies, model-renders, and emits a byte-bound audit. It does not broaden the
+profile to imported footers or PAGE/simple fields.
+
 ## Create and export
 
 ```js

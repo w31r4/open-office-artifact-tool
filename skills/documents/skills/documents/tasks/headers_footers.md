@@ -76,6 +76,22 @@ Use `document.footers` in exactly the same way. `document.inspect({ kind:
 scope, relationship ID, and part path so an agent can state why it selected or
 rejected a candidate.
 
+For the ordinary imported **header** profile, prefer the packaged transaction
+instead of reproducing its package proof by hand:
+
+```bash
+node examples/openchestnut-header-text-edit-workflow.mjs \
+  input.docx reviewed.docx audit.json \
+  "Northwind | Internal" "Northwind | Reviewed" 0 default
+```
+
+It requires distinct absent output/audit paths, checks exactly one selected
+header, exports through OpenChestnut, permits only its `word/headerN.xml` part,
+normalizes the unique target `w:t` to prove the part residual, reimports,
+verifies, model-renders, and records a byte-bound audit. It is intentionally a
+header-only transaction: do not use it to reinterpret an imported footer or a
+PAGE/simple field as ordinary text.
+
 ## Exact editable profile
 
 An imported item is editable only when all of these remain true at export:
