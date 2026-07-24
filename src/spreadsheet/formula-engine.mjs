@@ -134,7 +134,7 @@ function formulaInputMetrics(formula) {
       continue;
     }
     if (character === "=" && index === 0) continue;
-    if (character === "," || "+-*/^&".includes(character)) {
+    if (character === "," || "+-*/^&%".includes(character)) {
       operators += 1;
       continue;
     }
@@ -948,6 +948,25 @@ function formulaApplyUnarySign(value, sign) {
   return sign === "-" ? -number : number;
 }
 
+function formulaTrailingPercent(text) {
+  let base = String(text ?? "").trimEnd();
+  let count = 0;
+  while (base.endsWith("%")) {
+    count += 1;
+    base = base.slice(0, -1).trimEnd();
+  }
+  return count > 0 && base ? { base, count } : undefined;
+}
+
+function formulaApplyPercent(value, count = 1) {
+  const error = formulaErrorCode(value);
+  if (error) return error;
+  let number = formulaNumber(value);
+  if (formulaErrorCode(number)) return number;
+  for (let index = 0; index < count; index += 1) number /= 100;
+  return Number.isFinite(number) ? number : "#NUM!";
+}
+
 function formulaMatrixGeometry(matrix) {
   if (!Array.isArray(matrix)) return undefined;
   if (matrix.length === 0) return { rows: 0, cols: 0, cells: 0 };
@@ -1005,6 +1024,14 @@ function formulaVectorUnarySign(sheet, valueText, sign, context = {}) {
   return value.map((row) => row.map((item) => formulaApplyUnarySign(item, sign)));
 }
 
+function formulaVectorPercent(sheet, valueText, count, context = {}) {
+  const value = evaluateFormulaVectorExpression(sheet, valueText, context);
+  if (!isFormulaMatrix(value)) return formulaApplyPercent(value, count);
+  const geometry = formulaMatrixGeometry(value);
+  if (!geometry || geometry.cells > FORMULA_VECTOR_MAX_CELLS) return "#VALUE!";
+  return value.map((row) => row.map((item) => formulaApplyPercent(item, count)));
+}
+
 function evaluateFormulaVectorExpression(sheet, expr, context = {}) {
   let text = String(expr ?? "").trim();
   if (text === "") return undefined;
@@ -1038,6 +1065,8 @@ function evaluateFormulaVectorExpression(sheet, expr, context = {}) {
     const { index, operator } = exponentiation[0];
     return formulaVectorBinary(sheet, text.slice(0, index), operator, text.slice(index + operator.length), context);
   }
+  const percent = formulaTrailingPercent(text);
+  if (percent) return formulaVectorPercent(sheet, percent.base, percent.count, context);
   if (text.startsWith("+") || text.startsWith("-")) return formulaVectorUnarySign(sheet, text.slice(1), text[0], context);
 
   const directReference = formulaRefParts(text);
@@ -1086,6 +1115,8 @@ function evaluateFormulaExpression(sheet, expr, context = {}) {
     const { index, operator } = exponentiation[0];
     return formulaExpressionBinary(sheet, text.slice(0, index), operator, text.slice(index + operator.length), context);
   }
+  const percent = formulaTrailingPercent(text);
+  if (percent) return formulaApplyPercent(evaluateFormulaExpression(sheet, percent.base, context), percent.count);
   if (text.startsWith("+") || text.startsWith("-")) {
     const value = evaluateFormulaExpression(sheet, text.slice(1), context);
     return formulaApplyUnarySign(value, text[0]);

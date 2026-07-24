@@ -1338,15 +1338,17 @@ const tooDeepFormula = `=${"(".repeat(65)}1${")".repeat(65)}`;
 const tooComplexFormula = `=1${"+1".repeat(513)}`;
 const tooManyFormulaArguments = `=SUM(1${",1".repeat(513)})`;
 const tooManyComparisonOperators = `=1${">=1".repeat(513)}`;
+const tooManyPercentOperators = `=1${"%".repeat(513)}`;
 const maximumNestingFormula = `=${"(".repeat(64)}1${")".repeat(64)}`;
-formulaInputBudgetSheet.getRange("A1:A6").formulas = [[tooLongFormula], [tooDeepFormula], [tooComplexFormula], [tooManyFormulaArguments], [tooManyComparisonOperators], [maximumNestingFormula]];
-assert.deepEqual(formulaInputBudgetSheet.getRange("A1:A6").values, [["#VALUE!"], ["#VALUE!"], ["#VALUE!"], ["#VALUE!"], ["#VALUE!"], [1]]);
+formulaInputBudgetSheet.getRange("A1:A7").formulas = [[tooLongFormula], [tooDeepFormula], [tooComplexFormula], [tooManyFormulaArguments], [tooManyComparisonOperators], [tooManyPercentOperators], [maximumNestingFormula]];
+assert.deepEqual(formulaInputBudgetSheet.getRange("A1:A7").values, [["#VALUE!"], ["#VALUE!"], ["#VALUE!"], ["#VALUE!"], ["#VALUE!"], ["#VALUE!"], [1]]);
 const formulaInputBudgetGraph = formulaInputBudgetWorkbook.formulaGraph({ recalculate: false });
 assert.ok(formulaInputBudgetGraph.errors.some((error) => error.type === "formulaInputBudgetExceeded" && error.address === "A1" && error.reason === "formulaLength" && error.formulaCharacters === 8194 && error.maximumFormulaCharacters === 8192));
 assert.ok(formulaInputBudgetGraph.errors.some((error) => error.type === "formulaInputBudgetExceeded" && error.address === "A2" && error.reason === "formulaNesting" && error.nesting === 65 && error.maximumNesting === 64));
 assert.ok(formulaInputBudgetGraph.errors.some((error) => error.type === "formulaInputBudgetExceeded" && error.address === "A3" && error.reason === "formulaOperators" && error.operators === 513 && error.maximumOperators === 512));
 assert.ok(formulaInputBudgetGraph.errors.some((error) => error.type === "formulaInputBudgetExceeded" && error.address === "A4" && error.reason === "formulaOperators" && error.operators === 513 && error.maximumOperators === 512));
 assert.ok(formulaInputBudgetGraph.errors.some((error) => error.type === "formulaInputBudgetExceeded" && error.address === "A5" && error.reason === "formulaOperators" && error.operators === 513 && error.maximumOperators === 512));
+assert.ok(formulaInputBudgetGraph.errors.some((error) => error.type === "formulaInputBudgetExceeded" && error.address === "A6" && error.reason === "formulaOperators" && error.operators === 513 && error.maximumOperators === 512));
 const formulaInputBudgetTrace = formulaInputBudgetWorkbook.trace("'Formula input budget'!A1");
 assert.deepEqual(formulaInputBudgetTrace.tree.precedents, [], "trace must refuse oversized syntax before parsing precedents");
 assert.equal(formulaInputBudgetTrace.tree.inputBudget?.reason, "formulaLength");
@@ -1382,6 +1384,21 @@ expressionSheet.getRange("A1:A12").formulas = [
 assert.deepEqual(expressionSheet.getRange("A1:A6").values, [[6], ["2026-07-02"], ["pass"], ["Source: North"], [512], [4]]);
 assert.equal(expressionSheet.getRange("A7").values[0][0], 1.0000001);
 assert.deepEqual(expressionSheet.getRange("A8:A12").values, [["fallback"], ["#NAME?"], [true], [true], ["A&BNorth"]]);
+expressionSheet.getRange("A13:A21").formulas = [
+  ["=50%"],
+  ["=50%*2"],
+  ["=100%^2"],
+  ["=(100^2)%"],
+  ["=-50%"],
+  ["=50%%"],
+  ["=SUM(10%,20%)"],
+  ["=SUMPRODUCT(Inputs!A1:A2%*10)"],
+  ["=1%/0"],
+];
+assert.deepEqual(expressionSheet.getRange("A13:A18").values, [[0.5], [1], [1], [100], [-0.5], [0.005]]);
+assert.ok(Math.abs(expressionSheet.getRange("A19").values[0][0] - 0.3) < 1e-12);
+assert.equal(expressionSheet.getRange("A20").values[0][0], 0.5);
+assert.equal(expressionSheet.getRange("A21").values[0][0], "#DIV/0!");
 expressionSheet.getRange("B1").values = [[46205]];
 expressionSheet.getRange("B1").conditionalFormats.add("expression", {
   formula: "AND(ISNUMBER(B1),B1=DATE(2026,7,1)+1)",
