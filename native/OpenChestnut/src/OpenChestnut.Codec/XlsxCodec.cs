@@ -289,7 +289,9 @@ internal static class XlsxCodec
                 dirtyModeledPartPaths.UnionWith(sparklines.DirtyPartPaths);
                 worksheetBindings.Add((worksheetPart, source));
             }
-            new XlsxPivotTableCodec(workbookPart).Apply(worksheetBindings, sourceBound: true);
+            var pivots = new XlsxPivotTableCodec(workbookPart);
+            pivots.Apply(worksheetBindings, sourceBound: true);
+            dirtyModeledPartPaths.UnionWith(pivots.DirtyPartPaths);
             worksheetFeatures.ApplyThreadedComments(workbookPart, worksheetBindings, sourceBound: true);
             dirtyModeledPartPaths.UnionWith(worksheetFeatures.DirtyPartPaths);
             threadedRelationshipsDirty = worksheetFeatures.ThreadedRelationshipGraphDirty;

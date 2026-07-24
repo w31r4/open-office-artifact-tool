@@ -422,6 +422,11 @@ try {
   assert.deepEqual(pivotTableWorkbook.worksheets.getItem("Pivot Summary").pivotTables.items[0].filters, [
     { field: "Region", exclude: ["North"] },
   ]);
+  assert.equal(pivotTableWorkbook.worksheets.getItem("Pivot Summary").pivotTables.items[0].refreshPolicy.refreshOnLoad, false);
+  assert.deepEqual(pivotTableWorkbook.worksheets.getItem("Pivot Summary").pivotTables.items[0].sourceCapabilities, {
+    sourceBound: true,
+    refreshOnLoadHardenable: false,
+  });
   const pivotTableZip = await JSZip.loadAsync(await fs.readFile(pivotTablePath));
   assert.equal(Object.keys(pivotTableZip.files).filter((name) => /pivotTables\/pivotTable.*\.xml$/i.test(name)).length, 1);
   assert.equal(Object.keys(pivotTableZip.files).filter((name) => /pivotCache\/pivotCacheRecords.*\.xml$/i.test(name)).length, 1);

@@ -685,7 +685,10 @@ message SpreadsheetPivotTableArtifact {
 // graph. The first profile is intentionally read-only after import: fixed
 // source/output snapshots can cross a second export unchanged, while edits to
 // native topology or cached data fail closed until an editable profile owns
-// the corresponding rewrite rules.
+// the corresponding rewrite rules. refresh_on_load_hardenable is deliberately
+// narrower than editable: it grants only one verified true-to-false mutation
+// of an explicitly present cache refreshOnLoad attribute on a uniquely owned
+// cache definition.
 message SpreadsheetPivotTableSourceBinding {
   string worksheet_part_path = 1;
   string pivot_table_part_path = 2;
@@ -698,6 +701,7 @@ message SpreadsheetPivotTableSourceBinding {
   uint32 cache_id = 9;
   string semantic_sha256 = 10;
   bool editable = 11;
+  bool refresh_on_load_hardenable = 12;
 }
 
 message SpreadsheetWorksheetSourceBinding {

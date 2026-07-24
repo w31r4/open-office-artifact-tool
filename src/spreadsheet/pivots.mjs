@@ -3,6 +3,22 @@ import { normalizePivotFilters, pivotItemKey, pivotItemVisible } from "./pivot-f
 import { normalizePivotGroupFields, pivotGroupValue, projectPivotMatrix } from "./pivot-groups.mjs";
 
 const AGGREGATIONS = new Set(["sum", "count", "average", "min", "max"]);
+const PIVOT_SOURCE_CAPABILITIES = new WeakMap();
+const NO_PIVOT_SOURCE_CAPABILITIES = Object.freeze({ sourceBound: false, refreshOnLoadHardenable: false });
+
+// Import adapters keep source-package authority outside the public PivotTable
+// object. A caller may inspect this snapshot, but cannot forge a capability by
+// mutating it: export reads the adapter-owned WeakMap instead.
+export function setPivotSourceCapabilities(pivot, capabilities = {}) {
+  PIVOT_SOURCE_CAPABILITIES.set(pivot, Object.freeze({
+    sourceBound: capabilities.sourceBound === true,
+    refreshOnLoadHardenable: capabilities.sourceBound === true && capabilities.refreshOnLoadHardenable === true,
+  }));
+}
+
+export function pivotSourceCapabilities(pivot) {
+  return { ...(PIVOT_SOURCE_CAPABILITIES.get(pivot) || NO_PIVOT_SOURCE_CAPABILITIES) };
+}
 
 function stringFields(value, label) {
   if (value == null) return [];

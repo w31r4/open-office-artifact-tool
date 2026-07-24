@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import JSZip from "jszip";
 
 import { SpreadsheetFile, Workbook } from "open-office-artifact-tool";
 
@@ -86,14 +87,38 @@ export async function createPivotTableWorkbook(outputPath) {
   assert.match(await preview.text(), /Revenue and units by region/);
 
   const first = await SpreadsheetFile.exportXlsx(workbook, { recalculate: false });
+  const firstZip = await JSZip.loadAsync(new Uint8Array(await first.arrayBuffer()));
   const imported = await SpreadsheetFile.importXlsx(first);
   const importedPivot = imported.worksheets.getItem(summary.name).pivotTables.items[0];
   assert.deepEqual(importedPivot.computedValues(), pivot.computedValues());
   assert.deepEqual(importedPivot.filters, [{ field: "Region", exclude: ["North"] }]);
-  assert.equal(importedPivot.refreshPolicy.saveData, true);
+  assert.deepEqual(importedPivot.sourceCapabilities, { sourceBound: true, refreshOnLoadHardenable: true });
+  importedPivot.disableRefreshOnLoad();
+  assert.equal(importedPivot.refreshPolicy.refreshOnLoad, false);
   const final = await SpreadsheetFile.exportXlsx(imported, { recalculate: false });
+  const finalZip = await JSZip.loadAsync(new Uint8Array(await final.arrayBuffer()));
+  const cacheDefinitionPath = Object.keys(firstZip.files).find((name) => /pivotCache\/pivotCacheDefinition.*\.xml$/i.test(name));
+  assert.ok(cacheDefinitionPath, "Native PivotTable must own one cache definition part.");
+  const firstCacheXml = await firstZip.file(cacheDefinitionPath).async("text");
+  const finalCacheXml = await finalZip.file(cacheDefinitionPath).async("text");
+  assert.match(firstCacheXml, /refreshOnLoad="1"/);
+  assert.match(finalCacheXml, /refreshOnLoad="0"/);
+  assert.equal(
+    finalCacheXml.replace(/\srefreshOnLoad="(?:1|true|TRUE|0|false|FALSE)"/, ""),
+    firstCacheXml.replace(/\srefreshOnLoad="(?:1|true|TRUE|0|false|FALSE)"/, ""),
+  );
+  for (const name of Object.keys(firstZip.files).filter((name) => !firstZip.files[name].dir && name !== cacheDefinitionPath)) {
+    assert.deepEqual(
+      await finalZip.file(name).async("uint8array"),
+      await firstZip.file(name).async("uint8array"),
+      `Only ${cacheDefinitionPath} may change during PivotTable refresh-on-load hardening (${name}).`,
+    );
+  }
   const roundTrip = await SpreadsheetFile.importXlsx(final);
-  assert.deepEqual(roundTrip.worksheets.getItem(summary.name).pivotTables.items[0].computedValues(), pivot.computedValues());
+  const roundTripPivot = roundTrip.worksheets.getItem(summary.name).pivotTables.items[0];
+  assert.deepEqual(roundTripPivot.computedValues(), pivot.computedValues());
+  assert.equal(roundTripPivot.refreshPolicy.refreshOnLoad, false);
+  assert.deepEqual(roundTripPivot.sourceCapabilities, { sourceBound: true, refreshOnLoadHardenable: false });
 
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
   await final.save(outputPath);

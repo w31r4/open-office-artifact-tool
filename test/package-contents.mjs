@@ -56,12 +56,13 @@ const maxPackedBytes = 9_840_000;
 // tarball. Its retained Office/PNG sources must never consume this consumer
 // package budget. PowerPoint sections plus the bounded transition and rich
 // speaker-notes leaves, the public formula catalog, bounded formula expression
-// parser, SUMPRODUCT range-mask profile, source-bound DOCX header/footer and
-// XLSX connection-refresh transactions, and formula-input syntax guard add
+// parser, SUMPRODUCT range-mask profile, source-bound DOCX header/footer,
+// XLSX connection-refresh and imported-Pivot refresh-on-load transactions, and
+// formula-input syntax guard add
 // protobuf, audited WASM,
 // public Help, and native guidance;
 // retain measured headroom instead of hiding that product surface.
-const maxUnpackedBytes = 25_010_000;
+const maxUnpackedBytes = 25_025_000;
 // Public Skill PNGs are required user-facing assets. They are retained with
 // byte-identical non-IDAT chunks and inflated scanline streams, but their IDAT
 // payloads are deterministically recompressed. Prevent future PNG tooling from

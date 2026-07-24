@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Xml;
 using System.Xml.Linq;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
@@ -28,6 +29,12 @@ internal sealed class XlsxPivotTableCodec
     private readonly WorkbookPart _workbookPart;
 
     internal XlsxPivotTableCodec(WorkbookPart workbookPart) => _workbookPart = workbookPart;
+
+    // A source-bound PivotTable stays wholly read-only except for the one
+    // explicit cache-level safety transition implemented below. XlsxCodec uses
+    // this set to exclude that controlled part from opaque-byte equality while
+    // this codec proves its own XML residual invariant.
+    internal HashSet<string> DirtyPartPaths { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     internal void Apply(IReadOnlyList<(WorksheetPart Part, WorksheetArtifact Artifact)> worksheets, bool sourceBound)
     {
@@ -68,10 +75,13 @@ internal sealed class XlsxPivotTableCodec
                     !string.Equals(binding.CacheDefinitionPartPath, PartPath(record.CachePart), StringComparison.OrdinalIgnoreCase) ||
                     !string.Equals(binding.CacheDefinitionXmlSha256, Hash(record.CachePart.PivotCacheDefinition!.OuterXml), StringComparison.OrdinalIgnoreCase) ||
                     !string.Equals(binding.CacheRecordsPartPath, record.RecordsPart is null ? "" : PartPath(record.RecordsPart), StringComparison.OrdinalIgnoreCase) ||
-                    !string.Equals(binding.CacheRecordsXmlSha256, record.RecordsPart?.PivotCacheRecords is null ? "" : Hash(record.RecordsPart.PivotCacheRecords.OuterXml), StringComparison.OrdinalIgnoreCase))
+                    !string.Equals(binding.CacheRecordsXmlSha256, record.RecordsPart?.PivotCacheRecords is null ? "" : Hash(record.RecordsPart.PivotCacheRecords.OuterXml), StringComparison.OrdinalIgnoreCase) ||
+                    binding.Editable != record.Artifact.Source!.Editable ||
+                    binding.RefreshOnLoadHardenable != record.Artifact.Source.RefreshOnLoadHardenable)
                     throw new CodecException("invalid_spreadsheet_pivot_source", $"PivotTable {target.Name} no longer matches its validated package locator.", PartPath(record.PivotPart));
-                if (!string.Equals(binding.SemanticSha256, SemanticHash(target), StringComparison.OrdinalIgnoreCase))
-                    throw new CodecException("unsupported_spreadsheet_pivot_edit", $"Imported PivotTable {target.Name} is read-only in the first native profile.", PartPath(record.PivotPart));
+                if (string.Equals(binding.SemanticSha256, SemanticHash(target), StringComparison.OrdinalIgnoreCase)) continue;
+                ValidateRefreshOnLoadHardening(record, target);
+                ApplyRefreshOnLoadHardening(record, target);
             }
         }
     }
@@ -172,6 +182,7 @@ internal sealed class XlsxPivotTableCodec
             if (pivotPart.PivotTableDefinition is null || cachePart?.PivotCacheDefinition is null) continue;
             if (!TryRead(pivotPart, cachePart, worksheetId, checked((uint)ordinal), out var artifact, out var cacheId)) continue;
             var recordsPart = cachePart.PivotTableCacheRecordsPart;
+            var refreshOnLoadHardenable = CanHardenRefreshOnLoad(cachePart);
             artifact.Source = new SpreadsheetPivotTableSourceBinding
             {
                 WorksheetPartPath = PartPath(worksheetPart),
@@ -184,11 +195,69 @@ internal sealed class XlsxPivotTableCodec
                 PivotOrdinal = checked((uint)ordinal),
                 CacheId = cacheId,
                 Editable = false,
+                RefreshOnLoadHardenable = refreshOnLoadHardenable,
             };
             artifact.Source.SemanticSha256 = SemanticHash(artifact);
-            output.Add(new PivotRecord(artifact, pivotPart, cachePart, recordsPart, checked((uint)ordinal), cacheId));
+            output.Add(new PivotRecord(artifact, pivotPart, cachePart, recordsPart, checked((uint)ordinal), cacheId, refreshOnLoadHardenable));
         }
         return output;
+    }
+
+    private bool CanHardenRefreshOnLoad(PivotTableCacheDefinitionPart cachePart)
+    {
+        if (PivotCacheUseCount(cachePart) != 1 || !TryReadPart(cachePart, out var document) ||
+            document?.Root?.Name != Main + "pivotCacheDefinition" ||
+            !TryReadOptionalBoolean(document.Root.Attribute("refreshOnLoad"), out var refreshOnLoad))
+            return false;
+        return refreshOnLoad == true;
+    }
+
+    private int PivotCacheUseCount(PivotTableCacheDefinitionPart cachePart) =>
+        _workbookPart.WorksheetParts.SelectMany(part => part.PivotTableParts).Count(part =>
+            part.PivotTableCacheDefinitionPart is { } candidate &&
+            string.Equals(PartPath(candidate), PartPath(cachePart), StringComparison.OrdinalIgnoreCase));
+
+    private void ValidateRefreshOnLoadHardening(PivotRecord record, SpreadsheetPivotTableArtifact target)
+    {
+        var source = record.Artifact;
+        var binding = source.Source!;
+        if (!record.RefreshOnLoadHardenable || !binding.RefreshOnLoadHardenable ||
+            !target.Source!.RefreshOnLoadHardenable || PivotCacheUseCount(record.CachePart) != 1)
+            throw Unsupported($"Imported PivotTable {target.Name} does not have a uniquely owned cache eligible for refreshOnLoad hardening.", PartPath(record.CachePart));
+
+        var unchanged = target.Clone();
+        unchanged.RefreshPolicy ??= new SpreadsheetPivotRefreshPolicyArtifact();
+        unchanged.RefreshPolicy.RefreshOnLoad = source.RefreshPolicy?.RefreshOnLoad ?? false;
+        if (!string.Equals(binding.SemanticSha256, SemanticHash(unchanged), StringComparison.OrdinalIgnoreCase))
+            throw Unsupported($"Imported PivotTable {target.Name} may change only refreshOnLoad.", PartPath(record.PivotPart));
+        if (source.RefreshPolicy?.RefreshOnLoad != true || target.RefreshPolicy?.RefreshOnLoad != false)
+            throw Unsupported($"Imported PivotTable {target.Name} refreshOnLoad may only change from explicit true to false.", PartPath(record.CachePart));
+    }
+
+    private void ApplyRefreshOnLoadHardening(PivotRecord record, SpreadsheetPivotTableArtifact target)
+    {
+        if (!TryReadPart(record.CachePart, out var document) || document?.Root is not { } root ||
+            root.Name != Main + "pivotCacheDefinition" ||
+            !TryReadOptionalBoolean(root.Attribute("refreshOnLoad"), out var sourceRefreshOnLoad) || sourceRefreshOnLoad != true)
+            throw Unsupported($"PivotTable {target.Name} cache definition no longer has explicit refreshOnLoad=true.", PartPath(record.CachePart));
+
+        var residualBefore = RefreshOnLoadResidualSha(root);
+        root.SetAttributeValue("refreshOnLoad", "0");
+        using (var stream = record.CachePart.GetStream(FileMode.Create, FileAccess.Write))
+        using (var writer = XmlWriter.Create(stream, new XmlWriterSettings
+        {
+            Encoding = new UTF8Encoding(false),
+            Indent = false,
+            OmitXmlDeclaration = false,
+        }))
+            document.Save(writer);
+
+        if (!TryReadPart(record.CachePart, out var output) || output?.Root is not { } outputRoot ||
+            outputRoot.Name != Main + "pivotCacheDefinition" ||
+            !TryReadOptionalBoolean(outputRoot.Attribute("refreshOnLoad"), out var outputRefreshOnLoad) || outputRefreshOnLoad != false ||
+            !string.Equals(residualBefore, RefreshOnLoadResidualSha(outputRoot), StringComparison.OrdinalIgnoreCase))
+            throw Unsupported($"PivotTable {target.Name} refreshOnLoad hardening did not preserve the validated cache definition XML.", PartPath(record.CachePart));
+        DirtyPartPaths.Add(PartPath(record.CachePart));
     }
 
     private bool TryRead(
@@ -804,6 +873,33 @@ internal sealed class XlsxPivotTableCodec
         return attribute is null || attribute.Value is "1" or "true" or "TRUE" or "0" or "false" or "FALSE";
     }
 
+    private static bool TryReadPart(OpenXmlPart part, out XDocument? document)
+    {
+        document = null;
+        try
+        {
+            using var source = part.GetStream(FileMode.Open, FileAccess.Read);
+            using var reader = XmlReader.Create(source, new XmlReaderSettings
+            {
+                DtdProcessing = DtdProcessing.Prohibit,
+                XmlResolver = null,
+            });
+            document = XDocument.Load(reader, LoadOptions.PreserveWhitespace);
+            return true;
+        }
+        catch (XmlException)
+        {
+            return false;
+        }
+    }
+
+    private static string RefreshOnLoadResidualSha(XElement root)
+    {
+        var clone = new XElement(root);
+        clone.Attribute("refreshOnLoad")?.Remove();
+        return Hash(clone.ToString(SaveOptions.DisableFormatting));
+    }
+
     private static uint ReadUInt(XAttribute? attribute) => uint.TryParse(attribute?.Value, NumberStyles.None, CultureInfo.InvariantCulture, out var value) ? value : 0;
 
     private static string SemanticHash(SpreadsheetPivotTableArtifact pivot)
@@ -820,6 +916,7 @@ internal sealed class XlsxPivotTableCodec
     private static string PartPath(OpenXmlPart part) => part.Uri.OriginalString.TrimStart('/');
     private static string Hash(string value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value))).ToLowerInvariant();
     private static CodecException Invalid(string message) => new("invalid_spreadsheet_pivot", message);
+    private static CodecException Unsupported(string message, string path) => new("unsupported_spreadsheet_pivot_edit", message, path);
 
     private sealed record PivotRecord(
         SpreadsheetPivotTableArtifact Artifact,
@@ -827,7 +924,8 @@ internal sealed class XlsxPivotTableCodec
         PivotTableCacheDefinitionPart CachePart,
         PivotTableCacheRecordsPart? RecordsPart,
         uint Ordinal,
-        uint CacheId);
+        uint CacheId,
+        bool RefreshOnLoadHardenable);
 
     private sealed record ResolvedItemFilter(SpreadsheetPivotItemFilterMode Mode, HashSet<string> Keys)
     {

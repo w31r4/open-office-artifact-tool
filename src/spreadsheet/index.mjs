@@ -9,7 +9,7 @@ import { renderWorksheetChartSvg } from "./chart-preview.mjs";
 import { WorksheetDataTableCollection } from "./data-tables.mjs";
 import { normalizeSpreadsheetDataValidationRecord, spreadsheetDataValidationIssue } from "./data-validations.mjs";
 import { normalizeWorksheetProtection, publicWorksheetProtection } from "./worksheet-protection.mjs";
-import { computePivotValues, normalizePivotConfig } from "./pivots.mjs";
+import { computePivotValues, normalizePivotConfig, pivotSourceCapabilities } from "./pivots.mjs";
 import { formatSpreadsheetDisplayValue, normalizeXlsxColor, normalizeXlsxThemeConfig, xlsxColorCss, xlsxFillSvgPaint } from "./ooxml-styles.mjs";
 import { planSpreadsheetThreadedComments, validateSpreadsheetThreadedCommentPackageSemantics } from "./ooxml-threaded-comments.mjs";
 import {
@@ -608,9 +608,21 @@ class WorksheetPivotTable {
     return computePivotValues(this.sourceValues(), this);
   }
 
+  get sourceCapabilities() { return pivotSourceCapabilities(this); }
+
+  disableRefreshOnLoad() {
+    const source = pivotSourceCapabilities(this);
+    if (this.refreshPolicy.refreshOnLoad !== true)
+      throw new Error(`PivotTable ${this.name} must have explicit refreshOnLoad=true before it can be disabled.`);
+    if (!source.sourceBound || !source.refreshOnLoadHardenable)
+      throw new Error(`PivotTable ${this.name} does not have a uniquely verified imported refreshOnLoad hardening capability.`);
+    this.refreshPolicy = { ...this.refreshPolicy, refreshOnLoad: false };
+    return this;
+  }
+
   inspectRecord() {
     const values = this.computedValues();
-    return { kind: "pivotTable", id: this.id, sheet: this.worksheet.name, name: this.name, sourceRange: this.sourceRange.address, sourceSheet: this.sourceRange.sheetName || this.worksheet.name, targetRange: this.targetRange.address, rowFields: this.rowFields, columnFields: this.columnFields, valueFields: this.valueFields, groupFields: this.groupFields, calculatedFields: this.calculatedFields, filters: this.filters, refreshPolicy: this.refreshPolicy, rowGrandTotals: this.rowGrandTotals, columnGrandTotals: this.columnGrandTotals, values, rows: Math.max(0, values.length - 1), cols: values[0]?.length || 0 };
+    return { kind: "pivotTable", id: this.id, sheet: this.worksheet.name, name: this.name, sourceRange: this.sourceRange.address, sourceSheet: this.sourceRange.sheetName || this.worksheet.name, targetRange: this.targetRange.address, rowFields: this.rowFields, columnFields: this.columnFields, valueFields: this.valueFields, groupFields: this.groupFields, calculatedFields: this.calculatedFields, filters: this.filters, refreshPolicy: this.refreshPolicy, sourceCapabilities: pivotSourceCapabilities(this), rowGrandTotals: this.rowGrandTotals, columnGrandTotals: this.columnGrandTotals, values, rows: Math.max(0, values.length - 1), cols: values[0]?.length || 0 };
   }
 
   layoutJson(bounds) {

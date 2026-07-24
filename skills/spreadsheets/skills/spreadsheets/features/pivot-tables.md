@@ -60,6 +60,31 @@ formula in the projected output rectangle is a collision and export fails closed
 Run `examples/openchestnut-pivot-table-workflow.mjs` for the complete author,
 inspect, render, export, second-import, and verification path.
 
+## Imported refresh-on-load hardening
+
+An imported PivotTable is not generally editable. The sole source-bound safety
+operation is `pivot.disableRefreshOnLoad()`:
+
+```js
+const workbook = await SpreadsheetFile.importXlsx(input);
+const pivot = workbook.worksheets.getItem("Summary").pivotTables.items[0];
+
+if (pivot.sourceCapabilities.refreshOnLoadHardenable) {
+  pivot.disableRefreshOnLoad();
+  const output = await SpreadsheetFile.exportXlsx(workbook, { recalculate: false });
+}
+```
+
+It is available only when the recognized imported cache is uniquely owned by
+that PivotTable and its cache definition has an explicit `refreshOnLoad=true`.
+It changes that one cache-root attribute to `false`; it does not refresh data,
+edit cache/source/output values, change relationships/identities, or disable
+manual, macro, external-data, or other host-triggered refreshes. The codec
+re-proves the Pivot XML, cache records, source values, cached worksheet output,
+cache ownership, and the cache-definition residual. An absent/already-false
+attribute, a shared cache, an ambiguous graph, or any concurrent Pivot edit
+fails closed.
+
 ## Fail-closed boundaries
 
 Grouping, calculated fields, date/condition filters, filters on fields outside
@@ -73,8 +98,10 @@ hides every source row also fails closed.
 
 Recognized imported PivotTables expose their semantic configuration for inspect
 and resolve, but the native graph, source range values, and cached output are
-hash-bound and read-only in this first profile. Unsupported imported PivotTable
-graphs remain opaque and unchanged in the validated source package.
+hash-bound and read-only in this first profile. `disableRefreshOnLoad()` is the
+only exception, and it does not make a Pivot generally editable. Unsupported
+imported PivotTable graphs remain opaque and unchanged in the validated source
+package.
 
 Excel-compatible hosts may omit the optional materialized `rowItems` and
 `colItems` axis caches when resaving a multi-row or multi-value PivotTable.

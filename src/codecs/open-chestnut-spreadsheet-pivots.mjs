@@ -1,6 +1,7 @@
 import { SpreadsheetPivotAggregation, SpreadsheetPivotItemFilterMode } from "../generated/open_office/artifact/v1/office_artifact_pb.js";
 import { OpenChestnutCodecError } from "./open-chestnut-error.mjs";
 import { pivotItemVisible } from "../spreadsheet/pivot-filters.mjs";
+import { setPivotSourceCapabilities } from "../spreadsheet/pivots.mjs";
 
 const A1_RANGE = /^\$?([A-Z]{1,3})\$?([1-9]\d*)(?::\$?([A-Z]{1,3})\$?([1-9]\d*))?$/i;
 const MAX_NATIVE_VALUE_FIELDS = 32;
@@ -274,6 +275,28 @@ function wireSourceFreePivot(workbook, sheet, pivot, cells) {
   };
 }
 
+function wireSourceBoundPivotRefreshOnLoadHardening(slot) {
+  const source = slot.wire.source;
+  if (!source?.refreshOnLoadHardenable) {
+    throw invalid(`Imported PivotTable ${slot.pivot.name} does not permit refreshOnLoad hardening for its validated cache graph.`, "unsupported_spreadsheet_pivot_edit");
+  }
+  const original = JSON.parse(slot.publicSnapshot);
+  if (original.refreshPolicy?.refreshOnLoad !== true) {
+    throw invalid(`Imported PivotTable ${slot.pivot.name} did not have explicit refreshOnLoad=true in its validated source.`, "unsupported_spreadsheet_pivot_edit");
+  }
+  const expected = {
+    ...original,
+    refreshPolicy: { ...original.refreshPolicy, refreshOnLoad: false },
+  };
+  if (pivotSnapshot(slot.pivot) !== snapshot(expected)) {
+    throw invalid(`Imported PivotTable ${slot.pivot.name} may change only refreshOnLoad from explicit true to false; its config, source values, cached output, and topology remain read-only.`, "unsupported_spreadsheet_pivot_edit");
+  }
+  return {
+    ...slot.wire,
+    refreshPolicy: { ...slot.wire.refreshPolicy, refreshOnLoad: false },
+  };
+}
+
 export function wireWorksheetPivots(workbook, sheet, state, cells) {
   const remaining = new Set(sheet.pivotTables.items);
   const output = [];
@@ -283,12 +306,13 @@ export function wireWorksheetPivots(workbook, sheet, state, cells) {
       continue;
     }
     if (!remaining.delete(slot.pivot)) throw invalid(`Worksheet ${sheet.name} cannot remove imported PivotTable ${slot.pivot.name}.`, "unsupported_spreadsheet_pivot_edit");
-    if (pivotSnapshot(slot.pivot) !== slot.publicSnapshot ||
-        snapshot(slot.pivot.sourceValues()) !== slot.sourceValuesSnapshot ||
+    if (snapshot(slot.pivot.sourceValues()) !== slot.sourceValuesSnapshot ||
         snapshot(outputMatrix(sheet, slot.wire.targetReference)) !== slot.outputValuesSnapshot) {
       throw invalid(`Imported PivotTable ${slot.pivot.name}, its source data, and its cached output are read-only in the first OpenChestnut native profile.`, "unsupported_spreadsheet_pivot_edit");
     }
-    output.push(slot.wire);
+    output.push(pivotSnapshot(slot.pivot) === slot.publicSnapshot
+      ? slot.wire
+      : wireSourceBoundPivotRefreshOnLoadHardening(slot));
   }
   if (state && remaining.size) throw invalid(`Source-bound worksheet ${sheet.name} cannot add PivotTables in the first OpenChestnut native profile.`, "unsupported_spreadsheet_pivot_edit");
   for (const pivot of remaining) output.push(wireSourceFreePivot(workbook, sheet, pivot, cells));
@@ -334,6 +358,10 @@ export function hydrateWorkbookPivots(workbook, sourceWorksheets) {
         rowGrandTotals: wire.rowGrandTotals,
         columnGrandTotals: wire.columnGrandTotals,
         refreshPolicy: publicRefreshPolicy(wire.refreshPolicy),
+      });
+      setPivotSourceCapabilities(pivot, {
+        sourceBound: Boolean(wire.source),
+        refreshOnLoadHardenable: wire.source?.refreshOnLoadHardenable === true,
       });
       slots.push({
         wire,

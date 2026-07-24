@@ -623,6 +623,55 @@ assert.equal(await secondPivotZip.file(nativePivotPart).async("text"), await nat
 assert.equal(await secondPivotZip.file(nativePivotCache).async("text"), await nativePivotZip.file(nativePivotCache).async("text"));
 assert.equal(await secondPivotZip.file(nativePivotRecords).async("text"), await nativePivotZip.file(nativePivotRecords).async("text"));
 
+assert.deepEqual(importedPivot.sourceCapabilities, { sourceBound: true, refreshOnLoadHardenable: true });
+assert.deepEqual(importedPivot.inspectRecord().sourceCapabilities, { sourceBound: true, refreshOnLoadHardenable: true });
+const hardeningPivotWorkbook = await SpreadsheetFile.importXlsx(nativePivotXlsx);
+const hardeningPivot = hardeningPivotWorkbook.worksheets.getItem("Summary").pivotTables.items[0];
+hardeningPivot.disableRefreshOnLoad();
+assert.equal(hardeningPivot.refreshPolicy.refreshOnLoad, false);
+const hardenedPivotXlsx = await SpreadsheetFile.exportXlsx(hardeningPivotWorkbook);
+const hardenedPivotZip = await JSZip.loadAsync(new Uint8Array(await hardenedPivotXlsx.arrayBuffer()));
+const nativeCacheXml = await nativePivotZip.file(nativePivotCache).async("text");
+const hardenedCacheXml = await hardenedPivotZip.file(nativePivotCache).async("text");
+assert.match(nativeCacheXml, /refreshOnLoad="1"/);
+assert.match(hardenedCacheXml, /refreshOnLoad="0"/);
+assert.equal(
+  hardenedCacheXml.replace(/\srefreshOnLoad="(?:1|true|TRUE|0|false|FALSE)"/, ""),
+  nativeCacheXml.replace(/\srefreshOnLoad="(?:1|true|TRUE|0|false|FALSE)"/, ""),
+);
+for (const name of Object.keys(nativePivotZip.files).filter((name) => !nativePivotZip.files[name].dir && name !== nativePivotCache)) {
+  assert.deepEqual(
+    await hardenedPivotZip.file(name).async("uint8array"),
+    await nativePivotZip.file(name).async("uint8array"),
+    `only ${nativePivotCache} may change during source-bound PivotTable refresh hardening (${name})`,
+  );
+}
+const hardenedPivotReimport = await SpreadsheetFile.importXlsx(hardenedPivotXlsx);
+const hardenedPivotReimported = hardenedPivotReimport.worksheets.getItem("Summary").pivotTables.items[0];
+assert.equal(hardenedPivotReimported.refreshPolicy.refreshOnLoad, false);
+assert.deepEqual(hardenedPivotReimported.sourceCapabilities, { sourceBound: true, refreshOnLoadHardenable: false });
+assert.throws(() => hardenedPivotReimported.disableRefreshOnLoad(), /explicit refreshOnLoad=true/i);
+
+const nonRefreshPivotEdit = await SpreadsheetFile.importXlsx(nativePivotXlsx);
+nonRefreshPivotEdit.worksheets.getItem("Summary").pivotTables.items[0].refreshPolicy = {
+  ...nonRefreshPivotEdit.worksheets.getItem("Summary").pivotTables.items[0].refreshPolicy,
+  enableRefresh: false,
+};
+await assert.rejects(
+  () => SpreadsheetFile.exportXlsx(nonRefreshPivotEdit),
+  (error) => error?.code === "unsupported_spreadsheet_pivot_edit" && /only refreshOnLoad/i.test(error.message),
+);
+
+const omittedRefreshPivotZip = await JSZip.loadAsync(new Uint8Array(await nativePivotXlsx.arrayBuffer()));
+omittedRefreshPivotZip.file(nativePivotCache, nativeCacheXml.replace(/\srefreshOnLoad="1"/, ""));
+const omittedRefreshPivot = await SpreadsheetFile.importXlsx(new FileBlob(
+  await omittedRefreshPivotZip.generateAsync({ type: "uint8array", compression: "DEFLATE" }),
+  { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", name: "pivot-refresh-omitted.xlsx" },
+));
+const omittedRefreshPivotTable = omittedRefreshPivot.worksheets.getItem("Summary").pivotTables.items[0];
+assert.deepEqual(omittedRefreshPivotTable.sourceCapabilities, { sourceBound: true, refreshOnLoadHardenable: false });
+assert.throws(() => omittedRefreshPivotTable.disableRefreshOnLoad(), /explicit refreshOnLoad=true/i);
+
 const filteredPivotWorkbook = Workbook.create();
 const filteredPivotData = filteredPivotWorkbook.worksheets.add("Data");
 filteredPivotData.getRange("A1:C5").values = [

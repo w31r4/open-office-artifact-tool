@@ -4756,6 +4756,7 @@ public sealed class XlsxCodecTests
         Assert.True(pivot.ColumnGrandTotals);
         Assert.NotNull(pivot.Source);
         Assert.False(pivot.Source.Editable);
+        Assert.True(pivot.Source.RefreshOnLoadHardenable);
 
         var beforePivot = ReadEntry(authored.File.ToByteArray(), pivot.Source.PivotTablePartPath);
         var beforeCache = ReadEntry(authored.File.ToByteArray(), pivot.Source.CacheDefinitionPartPath);
@@ -4766,10 +4767,59 @@ public sealed class XlsxCodecTests
         Assert.Equal(beforeCache, ReadEntry(preserved.File.ToByteArray(), pivot.Source.CacheDefinitionPartPath));
         Assert.Equal(beforeRecords, ReadEntry(preserved.File.ToByteArray(), pivot.Source.CacheRecordsPartPath));
 
+        var hardeningImport = Import(authored.File.ToByteArray());
+        Assert.True(hardeningImport.Ok, string.Join("\n", hardeningImport.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var hardeningPivot = Assert.Single(hardeningImport.Artifact.Workbook.Worksheets.Single(sheet => sheet.Name == "Summary").PivotTables);
+        hardeningPivot.RefreshPolicy.RefreshOnLoad = false;
+        var hardened = Export(hardeningImport.Artifact);
+        Assert.True(hardened.Ok, string.Join("\n", hardened.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        AssertOffice2021Valid(hardened.File.ToByteArray());
+        Assert.Equal(beforePivot, ReadEntry(hardened.File.ToByteArray(), hardeningPivot.Source.PivotTablePartPath));
+        Assert.Equal(beforeRecords, ReadEntry(hardened.File.ToByteArray(), hardeningPivot.Source.CacheRecordsPartPath));
+        Assert.Equal(ReadEntry(authored.File.ToByteArray(), "xl/workbook.xml"), ReadEntry(hardened.File.ToByteArray(), "xl/workbook.xml"));
+        Assert.Equal(ReadEntry(authored.File.ToByteArray(), "xl/worksheets/sheet1.xml"), ReadEntry(hardened.File.ToByteArray(), "xl/worksheets/sheet1.xml"));
+        Assert.Equal(ReadEntry(authored.File.ToByteArray(), "xl/worksheets/sheet2.xml"), ReadEntry(hardened.File.ToByteArray(), "xl/worksheets/sheet2.xml"));
+        var hardenedCache = ReadEntry(hardened.File.ToByteArray(), hardeningPivot.Source.CacheDefinitionPartPath);
+        Assert.Equal(CacheDefinitionRefreshOnLoadResidual(beforeCache), CacheDefinitionRefreshOnLoadResidual(hardenedCache));
+        Assert.Equal("0", XDocument.Parse(System.Text.Encoding.UTF8.GetString(hardenedCache), LoadOptions.PreserveWhitespace).Root!.Attribute("refreshOnLoad")!.Value);
+        var hardenedReimport = Import(hardened.File.ToByteArray());
+        Assert.True(hardenedReimport.Ok, string.Join("\n", hardenedReimport.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var hardenedReimportPivot = Assert.Single(hardenedReimport.Artifact.Workbook.Worksheets.Single(sheet => sheet.Name == "Summary").PivotTables);
+        Assert.False(hardenedReimportPivot.RefreshPolicy.RefreshOnLoad);
+        Assert.False(hardenedReimportPivot.Source!.RefreshOnLoadHardenable);
+
+        var policyEditImport = Import(authored.File.ToByteArray());
+        Assert.True(policyEditImport.Ok, string.Join("\n", policyEditImport.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Single(policyEditImport.Artifact.Workbook.Worksheets.Single(sheet => sheet.Name == "Summary").PivotTables).RefreshPolicy.EnableRefresh = false;
+        var policyRejected = Export(policyEditImport.Artifact);
+        Assert.False(policyRejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_pivot_edit", Assert.Single(policyRejected.Diagnostics).Code);
+
         pivot.Name = "Changed";
         var rejected = Export(imported.Artifact);
         Assert.False(rejected.Ok);
         Assert.Equal("unsupported_spreadsheet_pivot_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void SourceBoundSharedPivotCacheCannotPermitRefreshOnLoadHardening()
+    {
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(PivotExportRequest().ToByteArray()));
+        Assert.True(authored.Ok, string.Join("\n", authored.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var sharedCache = AddSharedPivotTable(authored.File.ToByteArray());
+        AssertOffice2021Valid(sharedCache);
+
+        var imported = Import(sharedCache);
+        Assert.True(imported.Ok, string.Join("\n", imported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var pivots = imported.Artifact.Workbook.Worksheets.Single(sheet => sheet.Name == "Summary").PivotTables;
+        Assert.Equal(2, pivots.Count);
+        Assert.All(pivots, pivot => Assert.False(pivot.Source!.RefreshOnLoadHardenable));
+
+        pivots[0].RefreshPolicy.RefreshOnLoad = false;
+        var rejected = Export(imported.Artifact);
+        Assert.False(rejected.Ok);
+        Assert.Equal("unsupported_spreadsheet_pivot_edit", Assert.Single(rejected.Diagnostics).Code);
+        Assert.Contains("uniquely owned cache", rejected.Diagnostics[0].Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -7138,6 +7188,32 @@ public sealed class XlsxCodecTests
         using var output = new MemoryStream();
         entry.CopyTo(output);
         return output.ToArray();
+    }
+
+    private static byte[] AddSharedPivotTable(byte[] bytes)
+    {
+        using var stream = new MemoryStream();
+        stream.Write(bytes);
+        stream.Position = 0;
+        using (var document = SpreadsheetDocument.Open(stream, true))
+        {
+            var worksheet = document.WorkbookPart!.WorksheetParts.Single(part => part.PivotTableParts.Any());
+            var source = Assert.Single(worksheet.PivotTableParts);
+            var cache = source.PivotTableCacheDefinitionPart!;
+            var clone = worksheet.AddNewPart<PivotTablePart>();
+            clone.AddPart(cache);
+            clone.PivotTableDefinition = (PivotTableDefinition)source.PivotTableDefinition!.CloneNode(true);
+            clone.PivotTableDefinition.Name = "Shared cache projection";
+            clone.PivotTableDefinition.Save();
+        }
+        return stream.ToArray();
+    }
+
+    private static string CacheDefinitionRefreshOnLoadResidual(byte[] bytes)
+    {
+        var document = XDocument.Parse(System.Text.Encoding.UTF8.GetString(bytes), LoadOptions.PreserveWhitespace);
+        document.Root!.Attribute("refreshOnLoad")?.Remove();
+        return document.ToString(SaveOptions.DisableFormatting);
     }
 
     private static string FindEntryPath(byte[] bytes, Func<string, bool> predicate)

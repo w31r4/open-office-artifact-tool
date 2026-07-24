@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 377);
+assert.equal(HELP_CATALOG.length, 379);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -50,6 +50,10 @@ assert.match(HELP_CATALOG.find((item) => item.name === "workbook.connections")?.
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.disableConnectionRefreshOnLoad"));
 assert.equal(HELP_CATALOG.find((item) => item.name === "workbook.disableConnectionRefreshOnLoad")?.schema?.parameters?.connectionId?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "workbook.disableConnectionRefreshOnLoad")?.summary || "", /explicit refreshOnLoad=true.*false.*command.*credentials.*other connection state/i);
+assert.ok(HELP_CATALOG.some((item) => item.name === "pivot.sourceCapabilities"));
+assert.ok(HELP_CATALOG.some((item) => item.name === "pivot.disableRefreshOnLoad"));
+assert.match(HELP_CATALOG.find((item) => item.name === "pivot.disableRefreshOnLoad")?.summary || "", /uniquely owned cache.*refreshOnLoad=true.*false.*every other cache attribute/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "pivot.sourceCapabilities")?.schema?.returns?.capabilities?.description || "", /sourceBound.*refreshOnLoadHardenable.*does not make.*editable/i);
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.freezePanes.freezeRows"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.freezePanes.freezeColumns"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "worksheet.freezePanes.unfreeze"));
@@ -499,7 +503,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /absolute uri.*slideId.*relative action/);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /customShow.*survives the bounded slide clone.*without adding the clone to show membership/i);
 const workbookCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "workbook");
-assert.equal(workbookCatalog.length, 201);
+assert.equal(workbookCatalog.length, 203);
 assert.ok(workbookCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "workbook.trace")?.schema?.parameters?.reference?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "Workbook.create")?.schema?.parameters?.dateSystem?.type, "string");
@@ -549,7 +553,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "workbook.comments.addThr
 assert.equal(HELP_CATALOG.find((item) => item.name === "thread.addReply")?.schema?.parameters?.text?.required, true);
 assert.match(HELP_CATALOG.find((item) => item.name === "thread.addReply")?.schema?.returns?.thread?.description || "", /direct reply.*nested graph.*fail closed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.tables.add")?.schema?.returns?.table?.description || "", /QueryTable.*import-only and read-only/i);
-assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.returns?.pivot?.description || "", /native XLSX authoring.*cached output.*read-only/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.returns?.pivot?.description || "", /native XLSX authoring.*cached output.*read-only.*refreshOnLoad true-to-false hardening/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.sparklineGroups.add")?.schema?.returns?.sparkline?.description || "", /Editable standard Office 2010 x14 sparkline group.*without topology changes.*opaque and unchanged/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.charts.add")?.schema?.parameters?.chartType?.description || "", /bar, line, pie, area, doughnut, scatter, or bubble.*fail closed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.charts.add")?.schema?.parameters?.series?.description || "", /xValues\/xFormula/i);
