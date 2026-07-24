@@ -1979,7 +1979,7 @@ public sealed class XlsxCodecTests
     }
 
     [Fact]
-    public void ImportsAndPreservesSourceBoundWorksheetQueryTableGraphReadOnly()
+    public void ImportsAndPreservesSourceBoundWorksheetQueryTableGraph()
     {
         var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(TableExportRequest().ToByteArray()));
         var source = AddQueryTableGraph(authored.File.ToByteArray());
@@ -2015,7 +2015,7 @@ public sealed class XlsxCodecTests
         Assert.Equal("xl/queryTables/queryTable1.xml", query.Source.QueryPartPath);
         Assert.Equal("rIdQueryTable", query.Source.RelationshipId);
         Assert.Equal("xl/connections.xml", query.Source.ConnectionPartPath);
-        Assert.False(query.Source.Editable);
+        Assert.True(query.Source.Editable);
         var refresh = Assert.IsType<SpreadsheetTableQueryRefreshArtifact>(query.Refresh);
         Assert.True(refresh.PreserveSortFilterLayout);
         Assert.False(refresh.FieldIdWrapped);
@@ -2088,6 +2088,49 @@ public sealed class XlsxCodecTests
         rejected = Export(imported.Artifact);
         Assert.False(rejected.Ok);
         Assert.Equal("unsupported_query_table_edit", Assert.Single(rejected.Diagnostics).Code);
+    }
+
+    [Fact]
+    public void SourceBoundWorksheetQueryTableAllowsRefreshPolicyHardeningOnly()
+    {
+        var authored = CodecResponse.Parser.ParseFrom(CodecProtocol.Invoke(TableExportRequest().ToByteArray()));
+        var source = AddQueryTableGraph(authored.File.ToByteArray(), eagerRefresh: true);
+        var queryPath = "xl/queryTables/queryTable1.xml";
+        var tablePath = "xl/tables/table1.xml";
+        var connectionPath = "xl/connections.xml";
+        var imported = Import(source);
+        var query = Assert.Single(imported.Artifact.Workbook.Worksheets[0].Tables).QueryTable;
+        Assert.True(query.BackgroundRefresh);
+        Assert.True(query.FirstBackgroundRefresh);
+        Assert.True(query.RefreshOnLoad);
+
+        query.DisableRefresh = true;
+        query.BackgroundRefresh = false;
+        query.FirstBackgroundRefresh = false;
+        query.RefreshOnLoad = false;
+        var exported = Export(imported.Artifact);
+        Assert.True(exported.Ok, string.Join("\n", exported.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        var output = exported.File.ToByteArray();
+        AssertOffice2021Valid(output);
+        Assert.Equal(ReadEntry(source, tablePath), ReadEntry(output, tablePath));
+        Assert.Equal(ReadEntry(source, connectionPath), ReadEntry(output, connectionPath));
+        var queryXml = System.Text.Encoding.UTF8.GetString(ReadEntry(output, queryPath));
+        Assert.Contains("disableRefresh=\"1\"", queryXml, StringComparison.Ordinal);
+        Assert.Contains("backgroundRefresh=\"0\"", queryXml, StringComparison.Ordinal);
+        Assert.Contains("firstBackgroundRefresh=\"0\"", queryXml, StringComparison.Ordinal);
+        Assert.Contains("refreshOnLoad=\"0\"", queryXml, StringComparison.Ordinal);
+        Assert.Contains("fixture:opaque value=\"kept\"", queryXml, StringComparison.Ordinal);
+        Assert.Contains("fixture:fieldOpaque value=\"kept\"", queryXml, StringComparison.Ordinal);
+
+        var reimported = Import(output);
+        var hardened = Assert.Single(reimported.Artifact.Workbook.Worksheets[0].Tables).QueryTable;
+        Assert.True(hardened.DisableRefresh);
+        Assert.False(hardened.BackgroundRefresh);
+        Assert.False(hardened.FirstBackgroundRefresh);
+        Assert.False(hardened.RefreshOnLoad);
+        var secondExport = Export(reimported.Artifact);
+        Assert.True(secondExport.Ok, string.Join("\n", secondExport.Diagnostics.Select(item => $"{item.Code}: {item.Message}")));
+        Assert.Equal(ReadEntry(output, queryPath), ReadEntry(secondExport.File.ToByteArray(), queryPath));
     }
 
     [Fact]
@@ -2194,6 +2237,18 @@ public sealed class XlsxCodecTests
 
         imported = Import(source);
         imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.Refresh.SortState.Conditions[0].Reference = "A3:B3";
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Equal("unsupported_query_table_edit", Assert.Single(response.Diagnostics).Code);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.RefreshOnLoad = true;
+        response = Export(imported.Artifact);
+        Assert.False(response.Ok);
+        Assert.Equal("unsupported_query_table_edit", Assert.Single(response.Diagnostics).Code);
+
+        imported = Import(source);
+        imported.Artifact.Workbook.Worksheets[0].Tables[0].QueryTable.RemoveDataOnSave = true;
         response = Export(imported.Artifact);
         Assert.False(response.Ok);
         Assert.Equal("unsupported_query_table_edit", Assert.Single(response.Diagnostics).Code);
@@ -7197,7 +7252,8 @@ public sealed class XlsxCodecTests
         bool opaqueRefresh = false,
         bool opaqueDeletedFields = false,
         bool opaqueSort = false,
-        bool opaqueConnection = false)
+        bool opaqueConnection = false,
+        bool eagerRefresh = false)
     {
         using var stream = new MemoryStream();
         stream.Write(bytes);
@@ -7224,7 +7280,7 @@ public sealed class XlsxCodecTests
             var sortOpaqueAttribute = opaqueSort ? " columnSort=\"1\"" : " sortMethod=\"stroke\"";
             WritePart(queryPart, $$"""
                 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-                <x:queryTable xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fixture="urn:open-office-artifact-tool:query-fixture" name="Warehouse sales" headers="1" rowNumbers="0" disableRefresh="0" backgroundRefresh="1" firstBackgroundRefresh="0" refreshOnLoad="0" growShrinkType="insertClear" fillFormulas="0" removeDataOnSave="0" disableEdit="0" preserveFormatting="1" adjustColumnWidth="1" intermediate="0" connectionId="7">
+                <x:queryTable xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fixture="urn:open-office-artifact-tool:query-fixture" name="Warehouse sales" headers="1" rowNumbers="0" disableRefresh="0" backgroundRefresh="1" firstBackgroundRefresh="{{(eagerRefresh ? 1 : 0)}}" refreshOnLoad="{{(eagerRefresh ? 1 : 0)}}" growShrinkType="insertClear" fillFormulas="0" removeDataOnSave="0" disableEdit="0" preserveFormatting="1" adjustColumnWidth="1" intermediate="0" connectionId="7">
                   <x:queryTableRefresh preserveSortFilterLayout="1" fieldIdWrapped="0" headersInLastRefresh="1" minimumVersion="0" nextId="3" unboundColumnsLeft="0" unboundColumnsRight="0">
                     <x:queryTableFields count="2">
                       <x:queryTableField id="1" name="Region" dataBound="1" tableColumnId="1" fillFormulas="0" clipped="0">

@@ -960,11 +960,11 @@ message SpreadsheetTableArtifact {
   // cell-fill/font-color, and locale-method sorts are modeled.
   SpreadsheetTableSortStateArtifact sort_state = 16;
   // A source-bound projection of an existing QueryTablePart. OpenChestnut can
-  // edit the root query policy and rebind it to another connection already in
-  // the same source ConnectionsPart, but never fabricates external connections
-  // during source-free authoring. A recognized refresh/field profile is edited
-  // in place; extensions, connection definitions, and unknown XML remain
-  // source-preserved.
+  // only monotonically harden four root automatic-refresh switches in place:
+  // disable_refresh=true and background_refresh, first_background_refresh, or
+  // refresh_on_load=false. It never rebinds, fabricates, or semantically edits
+  // an external connection; refresh history, fields, extensions, connection
+  // definitions, and unknown XML remain source-preserved.
   SpreadsheetTableQueryArtifact query_table = 17;
 }
 
@@ -1086,7 +1086,8 @@ message SpreadsheetTableSortConditionArtifact {
 // Stable root semantics from one SpreadsheetML queryTable part. Optional
 // scalar presence retains the distinction between an omitted native attribute
 // and an explicit false/zero value. Connection credentials remain outside the
-// public semantic model.
+// public semantic model. Source-bound export can only change the four
+// automatic-refresh switches documented above, and only to their safer values.
 message SpreadsheetTableQueryArtifact {
   string name = 1;
   uint32 connection_id = 2;
@@ -1118,7 +1119,8 @@ message SpreadsheetTableQueryArtifact {
 
 // Bounded refresh metadata for an existing query table. Optional scalar
 // presence retains native omission. Field IDs and table-column bindings are
-// source identities; source-bound export permits only in-place field edits.
+// source identities; this metadata is inspect/preserve-only on source-bound
+// export.
 message SpreadsheetTableQueryRefreshArtifact {
   optional bool preserve_sort_filter_layout = 1;
   optional bool field_id_wrapped = 2;
@@ -1129,10 +1131,10 @@ message SpreadsheetTableQueryRefreshArtifact {
   optional uint32 unbound_columns_right = 7;
   repeated SpreadsheetTableQueryFieldArtifact fields = 8;
   // Names from the existing queryTableDeletedFields history. Source-bound
-  // export keeps count/order fixed and permits only in-place name edits.
+  // export preserves count, order, and names unchanged.
   repeated string deleted_field_names = 9;
-  // Existing refresh-local sort state. Presence and condition topology are
-  // source-bound; recognized condition semantics can be edited in place.
+  // Existing refresh-local sort state. Its presence and semantics are
+  // source-bound and preserved unchanged.
   SpreadsheetTableSortStateArtifact sort_state = 10;
 }
 

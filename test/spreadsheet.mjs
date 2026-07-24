@@ -1007,6 +1007,16 @@ const querySheet = queryWorkbook.worksheets.add("Main");
 querySheet.getRange("A1:B2").values = [["Key", "Value"], ["A", 1]];
 const queryTable = querySheet.tables.add("A1:B2", true, "QueryTable");
 queryTable.queryTable = { name: "Source-free query", connectionId: 1 };
+assert.throws(() => queryTable.setQueryRefreshPolicy({}), /at least one explicit hardening field/i);
+assert.throws(() => queryTable.setQueryRefreshPolicy({ disableRefresh: false }), /may only be set to true/i);
+assert.throws(() => queryTable.setQueryRefreshPolicy({ backgroundRefresh: true }), /may only be set to false/i);
+assert.throws(() => queryTable.setQueryRefreshPolicy({ refresh: {} }), /Unsupported QueryTable refresh policy field/i);
+assert.deepEqual(queryTable.setQueryRefreshPolicy({ disableRefresh: true, backgroundRefresh: false }), {
+  name: "Source-free query",
+  connectionId: 1,
+  disableRefresh: true,
+  backgroundRefresh: false,
+});
 await assert.rejects(
   () => SpreadsheetFile.exportXlsx(queryWorkbook),
   (error) => error?.code === "unsupported_query_table_edit",

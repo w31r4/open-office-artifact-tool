@@ -467,7 +467,8 @@ export async function runSpreadsheetFixture(fixturePath, options = {}) {
     if (!sheet || !table || table.isNullObject || !table.queryTable)
       throw new Error(`sourceQueryTableFixture could not resolve ${sourceQuery.sheet}!${sourceQuery.table}.`);
     if (sourceQuery.edit || sourceQuery.connectionEdit || sourceQuery.refreshEdit)
-      throw new Error("sourceQueryTableFixture is preservation-only; advanced QueryTable and connection edits are outside the canonical Spreadsheet skill boundary.");
+      throw new Error("sourceQueryTableFixture permits only refreshPolicy hardening; connection, refresh-history, and other QueryTable edits are outside the canonical Spreadsheet skill boundary.");
+    if (sourceQuery.refreshPolicy) table.setQueryRefreshPolicy(sourceQuery.refreshPolicy);
     file = await SpreadsheetFile.exportXlsx(imported, { ...exportOptions, recalculate: false });
     sourceQueryTable = { sheet: sourceQuery.sheet, table: sourceQuery.table, query: structuredClone(table.queryTable) };
     sourceConnections = structuredClone(imported.connections);

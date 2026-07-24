@@ -10,8 +10,10 @@ using OpenOffice.Artifact.Wire.V1;
 namespace OpenChestnut.Codec;
 
 // Reads the narrow QueryTablePart profile for one worksheet table. Imported
-// external-data graphs are source-bound and read-only: the public projection is
-// inspectable, but only the validated source package may supply its XML.
+// external-data graphs remain source-bound: the public projection can only
+// monotonically harden the four root refresh switches in place. Connection
+// definitions, commands, credentials, refresh history, and all other XML stay
+// source-owned.
 internal sealed class XlsxQueryTableCodec
 {
     private enum RefreshProfile { Absent, Recognized, Opaque }
@@ -22,6 +24,12 @@ internal sealed class XlsxQueryTableCodec
     {
         "insertClear", "insertDelete", "overwriteClear",
     };
+    private static readonly string[] RefreshPolicyAttributes =
+    ["disableRefresh", "backgroundRefresh", "firstBackgroundRefresh", "refreshOnLoad"];
+    private readonly QueryTablePart _part;
+    private readonly XlsxCellStyleCodec _styles;
+    private readonly IReadOnlySet<uint> _tableColumnIds;
+    private readonly (uint Top, uint Left, uint Bottom, uint Right) _tableBounds;
     private readonly SpreadsheetTableQueryArtifact _sourceArtifact;
 
     private XlsxQueryTableCodec(
@@ -29,8 +37,15 @@ internal sealed class XlsxQueryTableCodec
         string relationshipId,
         byte[] queryBytes,
         XlsxConnectionCodec connections,
+        XlsxCellStyleCodec styles,
+        IReadOnlySet<uint> tableColumnIds,
+        (uint Top, uint Left, uint Bottom, uint Right) tableBounds,
         SpreadsheetTableQueryArtifact artifact)
     {
+        _part = part;
+        _styles = styles;
+        _tableColumnIds = tableColumnIds;
+        _tableBounds = tableBounds;
         RelationshipId = relationshipId;
         Path = part.Uri.OriginalString.TrimStart('/');
         artifact.Source = new SpreadsheetTableQuerySourceBinding
@@ -41,7 +56,7 @@ internal sealed class XlsxQueryTableCodec
             SemanticSha256 = SemanticSha256(artifact),
             ConnectionPartPath = connections.Path,
             ConnectionXmlSha256 = connections.PartXmlSha256,
-            Editable = false,
+            Editable = true,
         };
         _sourceArtifact = artifact.Clone();
         Artifact = artifact;
@@ -50,6 +65,7 @@ internal sealed class XlsxQueryTableCodec
     internal string Path { get; }
     internal string RelationshipId { get; }
     internal SpreadsheetTableQueryArtifact Artifact { get; }
+    internal bool Dirty { get; private set; }
 
     // Returns true when the table owns either no child relationship or exactly
     // one recognized QueryTablePart. False keeps the parent table in its prior
@@ -73,6 +89,9 @@ internal sealed class XlsxQueryTableCodec
             children[0].RelationshipId,
             queryBytes!,
             connections,
+            styles,
+            tableColumnIds,
+            tableBounds,
             artifact!);
         return true;
     }
@@ -92,7 +111,91 @@ internal sealed class XlsxQueryTableCodec
             throw Unsupported("Imported worksheet QueryTables are read-only and cannot be removed.", Path);
         ValidateBinding(desired.Source);
         if (SemanticSha256(desired).Equals(_sourceArtifact.Source.SemanticSha256, StringComparison.OrdinalIgnoreCase)) return;
-        throw Unsupported("Imported worksheet QueryTables are read-only and cannot be edited.", Path);
+        ValidateRefreshPolicyChange(desired);
+        if (!TryReadPart(_part, out var sourceBytes, out var document) ||
+            !Sha256(sourceBytes!).Equals(_sourceArtifact.Source.XmlSha256, StringComparison.OrdinalIgnoreCase) ||
+            document?.Root is not { } root)
+            throw Unsupported("Worksheet QueryTable source XML no longer matches the validated package.", Path);
+
+        var residualBefore = RefreshPolicyResidualSha(root);
+        ApplyRefreshPolicy(root, _sourceArtifact, desired);
+        using (var stream = _part.GetStream(FileMode.Create, FileAccess.Write))
+        using (var writer = XmlWriter.Create(stream, new XmlWriterSettings
+        {
+            Encoding = new UTF8Encoding(false),
+            Indent = false,
+            OmitXmlDeclaration = false,
+        }))
+            document.Save(writer);
+
+        if (!TryReadPart(_part, out _, out var output) || output?.Root is not { } outputRoot ||
+            !RefreshPolicyResidualSha(outputRoot).Equals(residualBefore, StringComparison.OrdinalIgnoreCase) ||
+            !TryReadQuery(output, _tableColumnIds, _styles, _tableBounds, out var verified, out _, out _, out _, out _, out _, out _) ||
+            !SemanticSha256(verified!).Equals(SemanticSha256(desired), StringComparison.OrdinalIgnoreCase))
+            throw Unsupported("Worksheet QueryTable refresh-policy edit did not preserve the validated source semantics.", Path);
+        Dirty = true;
+    }
+
+    private void ValidateRefreshPolicyChange(SpreadsheetTableQueryArtifact desired)
+    {
+        var source = _sourceArtifact;
+        var unchanged = desired.Clone();
+        CopyRefreshPolicy(unchanged, source);
+        if (!SemanticSha256(unchanged).Equals(source.Source.SemanticSha256, StringComparison.OrdinalIgnoreCase))
+            throw Unsupported("Imported QueryTables may change only the four root refresh-policy switches.", Path);
+
+        var changed = false;
+        changed |= ValidateRefreshPolicyValue(source.HasDisableRefresh, source.DisableRefresh, desired.HasDisableRefresh, desired.DisableRefresh,
+            "disableRefresh", requiredValue: true);
+        changed |= ValidateRefreshPolicyValue(source.HasBackgroundRefresh, source.BackgroundRefresh, desired.HasBackgroundRefresh, desired.BackgroundRefresh,
+            "backgroundRefresh", requiredValue: false);
+        changed |= ValidateRefreshPolicyValue(source.HasFirstBackgroundRefresh, source.FirstBackgroundRefresh, desired.HasFirstBackgroundRefresh, desired.FirstBackgroundRefresh,
+            "firstBackgroundRefresh", requiredValue: false);
+        changed |= ValidateRefreshPolicyValue(source.HasRefreshOnLoad, source.RefreshOnLoad, desired.HasRefreshOnLoad, desired.RefreshOnLoad,
+            "refreshOnLoad", requiredValue: false);
+        if (!changed)
+            throw Unsupported("Imported QueryTable refresh-policy export requires one explicit hardening change.", Path);
+    }
+
+    private bool ValidateRefreshPolicyValue(bool sourceHasValue, bool sourceValue, bool desiredHasValue, bool desiredValue, string name, bool requiredValue)
+    {
+        if (sourceHasValue == desiredHasValue && (!sourceHasValue || sourceValue == desiredValue)) return false;
+        if (!desiredHasValue || desiredValue != requiredValue)
+            throw Unsupported($"Imported QueryTable {name} may only be hardened to {requiredValue.ToString().ToLowerInvariant()}.", Path);
+        return true;
+    }
+
+    private static void CopyRefreshPolicy(SpreadsheetTableQueryArtifact target, SpreadsheetTableQueryArtifact source)
+    {
+        target.DisableRefresh = source.DisableRefresh;
+        if (!source.HasDisableRefresh) target.ClearDisableRefresh();
+        target.BackgroundRefresh = source.BackgroundRefresh;
+        if (!source.HasBackgroundRefresh) target.ClearBackgroundRefresh();
+        target.FirstBackgroundRefresh = source.FirstBackgroundRefresh;
+        if (!source.HasFirstBackgroundRefresh) target.ClearFirstBackgroundRefresh();
+        target.RefreshOnLoad = source.RefreshOnLoad;
+        if (!source.HasRefreshOnLoad) target.ClearRefreshOnLoad();
+    }
+
+    private static void ApplyRefreshPolicy(XElement root, SpreadsheetTableQueryArtifact source, SpreadsheetTableQueryArtifact desired)
+    {
+        SetRefreshPolicyAttribute(root, "disableRefresh", source.HasDisableRefresh, source.DisableRefresh, desired.HasDisableRefresh, desired.DisableRefresh);
+        SetRefreshPolicyAttribute(root, "backgroundRefresh", source.HasBackgroundRefresh, source.BackgroundRefresh, desired.HasBackgroundRefresh, desired.BackgroundRefresh);
+        SetRefreshPolicyAttribute(root, "firstBackgroundRefresh", source.HasFirstBackgroundRefresh, source.FirstBackgroundRefresh, desired.HasFirstBackgroundRefresh, desired.FirstBackgroundRefresh);
+        SetRefreshPolicyAttribute(root, "refreshOnLoad", source.HasRefreshOnLoad, source.RefreshOnLoad, desired.HasRefreshOnLoad, desired.RefreshOnLoad);
+    }
+
+    private static void SetRefreshPolicyAttribute(XElement root, string name, bool sourceHasValue, bool sourceValue, bool desiredHasValue, bool desiredValue)
+    {
+        if (sourceHasValue == desiredHasValue && (!sourceHasValue || sourceValue == desiredValue)) return;
+        root.SetAttributeValue(name, desiredValue ? "1" : "0");
+    }
+
+    private static string RefreshPolicyResidualSha(XElement root)
+    {
+        var clone = new XElement(root);
+        foreach (var name in RefreshPolicyAttributes) clone.Attribute(name)?.Remove();
+        return Sha256(Encoding.UTF8.GetBytes(clone.ToString(SaveOptions.DisableFormatting)));
     }
 
     private void ValidateBinding(SpreadsheetTableQuerySourceBinding? binding)

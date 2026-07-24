@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 375);
+assert.equal(HELP_CATALOG.length, 376);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -496,7 +496,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /absolute uri.*slideId.*relative action/);
 assert.match(HELP_CATALOG.find((item) => item.name === "shape.text.set")?.schema?.parameters?.text?.description || "", /customShow.*survives the bounded slide clone.*without adding the clone to show membership/i);
 const workbookCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "workbook");
-assert.equal(workbookCatalog.length, 199);
+assert.equal(workbookCatalog.length, 200);
 assert.ok(workbookCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "workbook.trace")?.schema?.parameters?.reference?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "Workbook.create")?.schema?.parameters?.dateSystem?.type, "string");
@@ -582,6 +582,8 @@ assert.match(HELP_CATALOG.find((item) => item.name === "range.conditionalFormats
 assert.equal(HELP_CATALOG.find((item) => item.name === "range.conditionalFormats.add")?.schema?.parameters?.thresholds?.type, "Array<string|number|object>");
 assert.match(HELP_CATALOG.find((item) => item.name === "range.conditionalFormats.add")?.schema?.parameters?.iconSet?.description || "", /17 base SpreadsheetML.*x14.*fail closed/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "range.conditionalFormats.add")?.schema?.parameters?.gradient?.description || "", /false requires x14.*fail/i);
+assert.equal(HELP_CATALOG.find((item) => item.name === "table.setQueryRefreshPolicy")?.schema?.parameters?.policy?.required, true);
+assert.match(HELP_CATALOG.find((item) => item.name === "table.setQueryRefreshPolicy")?.summary || "", /disable automatic refresh/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.description || "", /lazy IF\/IFERROR/);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.description || "", /LEN\/LEFT\/RIGHT\/MID/);
 assert.match(HELP_CATALOG.find((item) => item.name === "sheet.pivotTables.add")?.schema?.parameters?.calculatedFields?.description || "", /DATE\/YEAR\/MONTH\/DAY/);
@@ -610,6 +612,7 @@ assert.match(workbook.help("sheet.charts.add").ndjson, /worksheet chart/);
 assert.match(workbook.help("workbook.formulaGraph").ndjson, /dependency graph/);
 assert.match(workbook.help("range.formulasR1C1").ndjson, /R1C1 formulas/);
 assert.match(workbook.help("range.write").ndjson, /actual written range/i);
+assert.match(workbook.help("table.setQueryRefreshPolicy").ndjson, /one-way automatic-refresh hardening/i);
 assert.match(workbook.help("range.formulaInfos").ndjson, /projected/);
 assert.match(workbook.help("fx.AVERAGE").ndjson, /Average numeric values/);
 assert.match(workbook.help("fx.COUNTA").ndjson, /non-empty values/);

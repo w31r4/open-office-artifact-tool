@@ -1,6 +1,6 @@
 # Using artifact_tool APIs (JavaScript)
 
-Library version: 0.2.0+
+Library version: 0.3.0+
 
 ## Required Imports + Startup
 
@@ -361,6 +361,31 @@ grid.conditionalFormats.add("iconSet", {
 - Set + Getters: `table.name`, `table.style`, `table.style`, `table.showHeaders`
 - Toggles for table utilities (set/get): `table.showTotals`, `table.showBandedColumns = true`, `table.showFilterButton`
 - `table.delete()`
+
+### Imported QueryTables: refresh safety only
+
+An imported external-data table is not a general editable query. First inspect and resolve the exact table; then, only when its imported `queryTable` projection is present, you may make the automatic-refresh policy strictly safer:
+
+```js
+const externalSales = workbook.worksheets
+  .getItem("External Data")
+  .tables.getItemOrNullObject("ExternalSales");
+
+if (externalSales.isNullObject || !externalSales.queryTable) {
+  throw new Error("Expected one recognized imported QueryTable.");
+}
+
+externalSales.setQueryRefreshPolicy({
+  disableRefresh: true,
+  backgroundRefresh: false,
+  firstBackgroundRefresh: false,
+  refreshOnLoad: false,
+});
+```
+
+- This is a one-way hardening primitive: its only accepted values are exactly `disableRefresh: true`, `backgroundRefresh: false`, `firstBackgroundRefresh: false`, and `refreshOnLoad: false`.
+- It does not run, recalculate, rebind, create, or rewrite external data. Connection definitions/commands/credentials, fields, deleted-field history, refresh-local sort state, topology, and unknown XML remain source-bound and immutable.
+- Export proves the source binding and residual query XML, reparses the result, and fails closed if the imported profile is not recognized or any other QueryTable semantics changed. Re-import and `inspect({ kind: "connection,table" })` before handoff.
 
 ### What-If Data Tables
 

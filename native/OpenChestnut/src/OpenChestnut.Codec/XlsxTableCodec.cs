@@ -95,8 +95,13 @@ internal sealed class XlsxTableCodec
 
     internal IReadOnlyList<SpreadsheetTableArtifact> Read() => _entries.Select(item => item.Artifact.Clone()).ToArray();
     internal IReadOnlySet<string> DirtyPartPaths => _entries
-        .Where(item => item.Dirty)
-        .Select(item => item.Path)
+        .SelectMany(item => new[]
+        {
+            item.Dirty ? item.Path : null,
+            item.Query is { Dirty: true } ? item.Query.Path : null,
+        })
+        .Where(path => path is not null)
+        .Select(path => path!)
         .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     internal void Apply(IReadOnlyList<SpreadsheetTableArtifact> desired, bool sourceBound, ref uint nextTableId)

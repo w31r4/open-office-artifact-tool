@@ -1249,6 +1249,12 @@ const TABLE_QUERY_BOOLEAN_FIELDS = [
   "applyNumberFormats", "applyBorderFormats", "applyFontFormats", "applyPatternFormats", "applyAlignmentFormats",
   "applyWidthHeightFormats",
 ];
+const TABLE_QUERY_REFRESH_POLICY_VALUES = Object.freeze({
+  disableRefresh: true,
+  backgroundRefresh: false,
+  firstBackgroundRefresh: false,
+  refreshOnLoad: false,
+});
 
 const TABLE_QUERY_REFRESH_BOOLEAN_FIELDS = ["preserveSortFilterLayout", "fieldIdWrapped", "headersInLastRefresh"];
 const TABLE_QUERY_REFRESH_UINT_FIELDS = ["minimumVersion", "nextId", "unboundColumnsLeft", "unboundColumnsRight"];
@@ -1283,17 +1289,42 @@ function publicTableQuery(value) {
   return query;
 }
 
+function wireSourceBoundQueryRefreshPolicy(table, wire, query, snapshot) {
+  const source = publicTableQuery(wire);
+  if (!source || !query) {
+    throw new OpenChestnutCodecError(`Imported query table ${table.name} is source-bound and cannot change its topology.`, [], { code: "unsupported_query_table_edit" });
+  }
+  const changes = [];
+  const normalized = { ...query };
+  for (const [field, requiredValue] of Object.entries(TABLE_QUERY_REFRESH_POLICY_VALUES)) {
+    const sourceHas = Object.hasOwn(source, field);
+    const nextHas = Object.hasOwn(query, field);
+    if (sourceHas !== nextHas || source[field] !== query[field]) {
+      if (!nextHas || query[field] !== requiredValue) {
+        throw new OpenChestnutCodecError(`Imported query table ${table.name} may only harden ${field} to ${requiredValue}.`, [], { code: "unsupported_query_table_edit" });
+      }
+      changes.push(field);
+    }
+    if (sourceHas) normalized[field] = source[field];
+    else delete normalized[field];
+  }
+  if (!changes.length || JSON.stringify(normalized) !== JSON.stringify(snapshot)) {
+    throw new OpenChestnutCodecError(`Imported query table ${table.name} is source-bound: only explicit refresh-policy hardening is supported.`, [], { code: "unsupported_query_table_edit" });
+  }
+  const output = { ...wire };
+  for (const field of changes) output[field] = query[field];
+  return output;
+}
+
 function wireTableQuery(table) {
   const state = table[TABLE_STATE];
   const query = publicTableQuery(table.queryTable);
   if (state) {
-    if (JSON.stringify(query) !== JSON.stringify(state.querySnapshot)) {
-      throw new OpenChestnutCodecError(`Imported query table ${table.name} is source-bound and read-only in OpenChestnut 0.2.`, [], { code: "unsupported_query_table_edit" });
-    }
-    return state.wire?.queryTable;
+    if (JSON.stringify(query) === JSON.stringify(state.querySnapshot)) return state.wire?.queryTable;
+    return wireSourceBoundQueryRefreshPolicy(table, state.wire?.queryTable, query, state.querySnapshot);
   }
   if (query) {
-    throw new OpenChestnutCodecError(`OpenChestnut 0.2 cannot author query table ${table.name}; imported query tables are source-bound and read-only.`, [], { code: "unsupported_query_table_edit" });
+    throw new OpenChestnutCodecError(`OpenChestnut 0.3 cannot author query table ${table.name}; only recognized imported query tables may apply refresh-policy hardening.`, [], { code: "unsupported_query_table_edit" });
   }
   return undefined;
 }

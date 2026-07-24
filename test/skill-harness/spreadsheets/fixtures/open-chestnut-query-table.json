@@ -27,7 +27,12 @@
     "connectionId": 7,
     "connectionName": "Fixture warehouse",
     "queryName": "Warehouse sales",
-    "fields": ["Region", "Revenue"]
+    "fields": ["Region", "Revenue"],
+    "refreshPolicy": {
+      "disableRefresh": true,
+      "backgroundRefresh": false,
+      "refreshOnLoad": false
+    }
   },
   "expectations": [
     { "sheet": "External Data", "range": "A2:B3", "values": [["North", 120], ["South", 80]] }

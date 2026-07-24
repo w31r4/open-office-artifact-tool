@@ -3038,7 +3038,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 | Name | Kind | Summary |
 | --- | --- | --- |
-| `exportXlsxWithOpenChestnut` | api | Export the bounded Workbook model through the bundled C# Open XML SDK WebAssembly codec: cells, formulas, styles, merges, dimensions, freezes, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie/area/doughnut charts, marker-only numeric-X/Y scatter charts, bounded numeric-X/Y/positive-Size bubble charts, standard Office 2010 line/column/stacked sparklines, and canonical one-variable or two-variable What-If data tables. Nested/branched replies, mentions, imported connections, QueryTables, dynamic-array topology, pivots, and unsupported extension graphs are preservation-only; authoring or editing them fails closed. |
+| `exportXlsxWithOpenChestnut` | api | Export the bounded Workbook model through the bundled C# Open XML SDK WebAssembly codec: cells, formulas, styles, merges, dimensions, freezes, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie/area/doughnut charts, marker-only numeric-X/Y scatter charts, bounded numeric-X/Y/positive-Size bubble charts, standard Office 2010 line/column/stacked sparklines, and canonical one-variable or two-variable What-If data tables. Imported QueryTables permit only source-bound one-way refresh hardening through table.setQueryRefreshPolicy; connections, commands, fields, sorts, topology, dynamic-array topology, pivots, and unsupported extension graphs are preservation-only or fail closed. |
 | `fx.ABS` | formula | Return the absolute value of a number. |
 | `fx.AND` | formula | Return TRUE when all conditions are true. |
 | `fx.AVERAGE` | formula | Average numeric values across arguments and ranges in the clean-room formula engine. |
@@ -3152,7 +3152,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `fx.XMATCH` | formula | Return a 1-based lookup position in one row or column vector of 1 through 10,000 cells, with exact, next-smaller, next-larger, wildcard, and forward or reverse linear search modes; two-dimensional, oversized, and binary-search inputs fail as #VALUE!. |
 | `fx.XNPV` | formula | Discount date-aligned finite cash flows by actual day offsets from the first date using a 365-day year. |
 | `fx.YEAR` | formula | Return the year component of a serial in the workbook's 1900 or 1904 date system. |
-| `importXlsxWithOpenChestnut` | api | Import XLSX bytes through OpenChestnut with editable core cells, formulas, styles, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie/area/doughnut charts, marker-only numeric-X/Y scatter charts, and bounded numeric-X/Y/positive-Size bubble charts. Imported data-table topology is source-bound and read-only. Non-marker scatter styles, noncanonical bubble profiles, nested/branched replies, mentions, connections, QueryTables, dynamic-array topology, pivots, non-reversible sparkline graphs, and other advanced package content remain source-bound and read-only. |
+| `importXlsxWithOpenChestnut` | api | Import XLSX bytes through OpenChestnut with editable core cells, formulas, styles, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie/area/doughnut charts, marker-only numeric-X/Y scatter charts, and bounded numeric-X/Y/positive-Size bubble charts. Imported data-table topology is source-bound and read-only. A recognized source-bound QueryTable can only disable automatic refresh through table.setQueryRefreshPolicy; connections, commands, fields, sorts, topology, non-marker scatter styles, noncanonical bubble profiles, nested/branched replies, mentions, dynamic-array topology, pivots, non-reversible sparkline graphs, and other advanced package content remain source-bound and read-only. |
 | `invokeOpenChestnut` | api | Advanced experimental byte-boundary API for invoking the public OpenChestnut codec protocol with generated wire-message objects. |
 | `openChestnutStatus` | api | Lazily initialize the bundled OpenChestnut WebAssembly runtime and report its protocol, assembly, and integrity manifest. |
 | `range.clear` | api | Clear range contents, formats, or both without silently changing validations, dimensions, or other package graphs. |
@@ -3186,7 +3186,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `sheet.images.add` | api | Create an inspectable worksheet image from a data URL, URI, or prompt with one-cell, two-cell, or absolute pixel geometry plus optional percentage crop, bounded grayscale/luminance/opacity effects, rotation, and horizontal/vertical flips. |
 | `sheet.pivotTables.add` | api | Create a native bounded XLSX PivotTable with derived cached output, cache records, and exact axis-item filters, or use richer model-only grouping/calculation/date-filter semantics for inspect and preview. Recognized imports are hash-bound and read-only. |
 | `sheet.sparklineGroups.add` | api | Create standard Office 2010 line/column/stacked sparkline groups for inspect, SVG preview, and OpenChestnut XLSX export. Source-free groups use reversible one-dimensional target/source mappings; recognized imported groups support fixed-topology semantic edits while unsupported native graphs remain source-bound. |
-| `sheet.tables.add` | api | Create an ordinary worksheet table over an A1 range with headers, columns, totals metadata, style, and bounded filtering/sorting. QueryTable bindings are import-only and read-only; adding or editing one makes XLSX export fail closed. |
+| `sheet.tables.add` | api | Create an ordinary worksheet table over an A1 range with headers, columns, totals metadata, style, and bounded filtering/sorting. QueryTable bindings cannot be authored; recognized imported bindings expose only table.setQueryRefreshPolicy for one-way automatic-refresh hardening, while all other QueryTable edits fail closed. |
 | `SpreadsheetFile.exportCsv` | api | Export one worksheet or range as UTF-8 CSV, using calculated values unless formula output is explicitly requested. |
 | `SpreadsheetFile.exportDelimited` | api | Serialize one workbook sheet/range as bounded CSV/TSV text with calculated-value defaults and RFC-style quoting. |
 | `SpreadsheetFile.exportTsv` | api | Export one worksheet or range as UTF-8 tab-separated text with RFC-style quoting where needed. |
@@ -3198,6 +3198,7 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 | `SpreadsheetFile.inspectDelimited` | api | Inspect bounded CSV/TSV bytes as file/row records with dimensions, delimiter, quoting, and formula-like cell evidence. |
 | `SpreadsheetFile.inspectXlsx` | api | Inspect bounded XLSX parts, content types, relationships, and namespace-aware source XML r:id/r:embed/r:link references under decompression budgets. |
 | `SpreadsheetFile.patchXlsx` | api | Apply path-validated XLSX part patches, build worksheet/table/drawing/image/chart/pivot source references, and atomically reject dangling content types or relationships. |
+| `table.setQueryRefreshPolicy` | api | On one recognized imported QueryTable, monotonically disable automatic refresh without changing its connection, command, fields, sort, refresh history, or topology. |
 | `thread.addReply` | api | Append a direct reply to an Office threaded-comment root with independent author/person/date/done metadata. Nested or branched reply graphs and mentions fail closed. |
 | `workbook.comments.addThread` | api | Create one root Office threaded comment per thread with GUID/person metadata, date, and resolved state; attach bounded direct replies with thread.addReply(). |
 | `workbook.connections` | api | Inspect bounded non-secret metadata for imported database connections. Connections are source-bound and read-only: authoring, removal, or mutation makes canonical XLSX export fail closed. |
@@ -3242,11 +3243,11 @@ Render an artifact, compare PNG/JPEG/WebP/PPM decoded pixels against a baseline 
 
 #### `exportXlsxWithOpenChestnut`
 
-Export the bounded Workbook model through the bundled C# Open XML SDK WebAssembly codec: cells, formulas, styles, merges, dimensions, freezes, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie/area/doughnut charts, marker-only numeric-X/Y scatter charts, bounded numeric-X/Y/positive-Size bubble charts, standard Office 2010 line/column/stacked sparklines, and canonical one-variable or two-variable What-If data tables. Nested/branched replies, mentions, imported connections, QueryTables, dynamic-array topology, pivots, and unsupported extension graphs are preservation-only; authoring or editing them fails closed.
+Export the bounded Workbook model through the bundled C# Open XML SDK WebAssembly codec: cells, formulas, styles, merges, dimensions, freezes, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie/area/doughnut charts, marker-only numeric-X/Y scatter charts, bounded numeric-X/Y/positive-Size bubble charts, standard Office 2010 line/column/stacked sparklines, and canonical one-variable or two-variable What-If data tables. Imported QueryTables permit only source-bound one-way refresh hardening through table.setQueryRefreshPolicy; connections, commands, fields, sorts, topology, dynamic-array topology, pivots, and unsupported extension graphs are preservation-only or fail closed.
 
 **Schema parameters:**
 
-- `workbook` (Workbook) required — Workbook facade within the core cell/formula/style/merge/dimension/freeze/ordinary-table/image/validation/conditional-format/root-plus-direct-reply-comment/bar-line-pie-chart/standard-sparkline boundary. Nested reply graphs, mentions, imported connections, QueryTables, dynamic-array topology, pivots, non-reversible sparkline graphs, and other advanced package graphs must remain unchanged; source-free authoring or editing them fails closed.
+- `workbook` (Workbook) required — Workbook facade within the core cell/formula/style/merge/dimension/freeze/ordinary-table/image/validation/conditional-format/root-plus-direct-reply-comment/bar-line-pie-chart/standard-sparkline boundary. A recognized imported QueryTable may only receive one-way automatic-refresh hardening through table.setQueryRefreshPolicy; imported connections, commands, fields, sorts, topology, nested reply graphs, mentions, dynamic-array topology, pivots, non-reversible sparkline graphs, and other advanced package graphs must remain unchanged or fail closed.
 - `recalculate` (boolean) — Recalculate formulas before serialization; defaults to true.
 - `limits` (object) — Optional maxInputBytes, maxUncompressedBytes, maxParts, maxSheets, maxCells, and maxCompressionRatio codec budgets.
 
@@ -5261,7 +5262,7 @@ Return the year component of a serial in the workbook's 1900 or 1904 date system
 
 #### `importXlsxWithOpenChestnut`
 
-Import XLSX bytes through OpenChestnut with editable core cells, formulas, styles, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie/area/doughnut charts, marker-only numeric-X/Y scatter charts, and bounded numeric-X/Y/positive-Size bubble charts. Imported data-table topology is source-bound and read-only. Non-marker scatter styles, noncanonical bubble profiles, nested/branched replies, mentions, connections, QueryTables, dynamic-array topology, pivots, non-reversible sparkline graphs, and other advanced package content remain source-bound and read-only.
+Import XLSX bytes through OpenChestnut with editable core cells, formulas, styles, ordinary tables, PNG/JPEG pictures, validation, conditional formatting, threaded-comment roots with direct replies, bar/line/pie/area/doughnut charts, marker-only numeric-X/Y scatter charts, and bounded numeric-X/Y/positive-Size bubble charts. Imported data-table topology is source-bound and read-only. A recognized source-bound QueryTable can only disable automatic refresh through table.setQueryRefreshPolicy; connections, commands, fields, sorts, topology, non-marker scatter styles, noncanonical bubble profiles, nested/branched replies, mentions, dynamic-array topology, pivots, non-reversible sparkline graphs, and other advanced package content remain source-bound and read-only.
 
 **Schema parameters:**
 
@@ -5270,7 +5271,7 @@ Import XLSX bytes through OpenChestnut with editable core cells, formulas, style
 
 **Schema returns:**
 
-- `workbook` (Workbook) — Imported bounded workbook facade with editable core objects, canonical Office 2010 sparkline groups, and source/opaque package evidence. Connections, QueryTables, dynamic-array topology, pivots, non-reversible sparkline graphs, and unsupported package graphs are exposed only for inspection or preserved unchanged.
+- `workbook` (Workbook) — Imported bounded workbook facade with editable core objects, canonical Office 2010 sparkline groups, and source/opaque package evidence. A recognized QueryTable permits only table.setQueryRefreshPolicy automatic-refresh hardening; connections, commands, fields, sorts, QueryTable topology, dynamic-array topology, pivots, non-reversible sparkline graphs, and unsupported package graphs are exposed only for inspection or preserved unchanged.
 
 #### `invokeOpenChestnut`
 
@@ -5732,7 +5733,7 @@ Create standard Office 2010 line/column/stacked sparkline groups for inspect, SV
 
 #### `sheet.tables.add`
 
-Create an ordinary worksheet table over an A1 range with headers, columns, totals metadata, style, and bounded filtering/sorting. QueryTable bindings are import-only and read-only; adding or editing one makes XLSX export fail closed.
+Create an ordinary worksheet table over an A1 range with headers, columns, totals metadata, style, and bounded filtering/sorting. QueryTable bindings cannot be authored; recognized imported bindings expose only table.setQueryRefreshPolicy for one-way automatic-refresh hardening, while all other QueryTable edits fail closed.
 
 **Schema parameters:**
 
@@ -5748,7 +5749,7 @@ Create an ordinary worksheet table over an A1 range with headers, columns, total
 
 **Schema returns:**
 
-- `table` (WorksheetTable) — Editable ordinary worksheet table facade. Any QueryTable binding is import-only and read-only; creating or editing one makes XLSX export fail closed.
+- `table` (WorksheetTable) — Editable ordinary worksheet table facade. QueryTable bindings are import-only and read-only except that a recognized imported binding permits table.setQueryRefreshPolicy to harden automatic-refresh switches; all connection, command, field, sort, refresh-history, topology, and other QueryTable changes fail closed.
 
 #### `SpreadsheetFile.exportCsv`
 
@@ -5888,7 +5889,7 @@ Load XLSX through the single bundled OpenChestnut codec into an editable Workboo
 
 **Schema returns:**
 
-- `workbook` (Workbook) — Imported workbook facade with editable core cells, formulas, styles, ordinary tables, images, basic charts, validation, conditional formatting, threaded-comment roots/direct replies, and canonical Office 2010 sparkline groups; nested reply graphs, mentions, connections, QueryTables, dynamic arrays, pivots, non-reversible sparkline graphs, and unsupported package graphs remain read-only.
+- `workbook` (Workbook) — Imported workbook facade with editable core cells, formulas, styles, ordinary tables, images, basic charts, validation, conditional formatting, threaded-comment roots/direct replies, and canonical Office 2010 sparkline groups. A recognized imported QueryTable may only use table.setQueryRefreshPolicy to disable automatic refresh; connections, commands, fields, sorts, topology, nested reply graphs, mentions, dynamic arrays, pivots, non-reversible sparkline graphs, and unsupported package graphs remain source-bound and read-only.
 
 #### `SpreadsheetFile.inspectDelimited`
 
@@ -5947,6 +5948,26 @@ Apply path-validated XLSX part patches, build worksheet/table/drawing/image/char
 **Schema returns:**
 
 - `blob` (FileBlob) — Patched XLSX FileBlob with part/relationship/content-type/source-reference update counts and validation metadata.
+
+#### `table.setQueryRefreshPolicy`
+
+On one recognized imported QueryTable, monotonically disable automatic refresh without changing its connection, command, fields, sort, refresh history, or topology.
+
+**Examples:**
+
+- table.setQueryRefreshPolicy({ disableRefresh: true, backgroundRefresh: false, refreshOnLoad: false })
+
+**Schema parameters:**
+
+- `policy` (object) required — One or more of exactly { disableRefresh: true, backgroundRefresh: false, firstBackgroundRefresh: false, refreshOnLoad: false }. Unknown keys, unsafe values, an empty object, QueryTable authoring, and non-source-bound mutations fail closed.
+
+**Schema returns:**
+
+- `queryTable` (object) — The same recognized imported QueryTable projection after a one-way automatic-refresh hardening request. The source connection, command/credential metadata, fields, deleted-field history, refresh-local sort, topology, and unknown XML remain immutable and are re-proved before export.
+
+**Notes:**
+
+- This is a source-bound safety operation, not QueryTable authoring or general editing. Each supplied field has exactly one permitted value: disableRefresh: true; backgroundRefresh, firstBackgroundRefresh, and refreshOnLoad: false. Export proves the original query part, immutable connection part, and normalized XML residual before reparsing the result. Commands, credentials, connection bindings, fields, deleted-field history, refresh-local sort state, unknown XML, and every other root attribute remain immutable; unsupported or altered source graphs fail closed.
 
 #### `thread.addReply`
 
@@ -6491,7 +6512,7 @@ Get or set bounded worksheet-level row/column sorting; columnSort=true uses uniq
 
 **Schema returns:**
 
-- `sortState` (object) — Bounded worksheet-level sort state. QueryTable refresh sorts may be inspected after import but QueryTable edits are unsupported.
+- `sortState` (object) — Bounded worksheet-level sort state. QueryTable refresh sorts may be inspected after import but remain immutable; the only QueryTable edit is root automatic-refresh hardening through table.setQueryRefreshPolicy.
 
 #### `worksheet.unmergeCells`
 

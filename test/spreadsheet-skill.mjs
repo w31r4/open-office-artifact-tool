@@ -566,12 +566,21 @@ try {
   assert.equal(queryResult.sourceQueryTable.sheet, "External Data");
   assert.equal(queryResult.sourceQueryTable.table, "ExternalSales");
   assert.equal(queryResult.sourceQueryTable.query.name, "Warehouse sales");
+  assert.equal(queryResult.sourceQueryTable.query.disableRefresh, true);
+  assert.equal(queryResult.sourceQueryTable.query.backgroundRefresh, false);
+  assert.equal(queryResult.sourceQueryTable.query.firstBackgroundRefresh, false);
+  assert.equal(queryResult.sourceQueryTable.query.refreshOnLoad, false);
   assert.equal(queryResult.sourceConnections.length, 1);
   assert.equal(queryResult.sourceConnections[0].name, "Fixture warehouse");
   const queryZip = await JSZip.loadAsync(await fs.readFile(queryResult.workbookPath));
   assert.ok(queryZip.file("xl/connections.xml"));
   assert.ok(queryZip.file("xl/queryTables/queryTable1.xml"));
-  assert.match(await queryZip.file("xl/queryTables/queryTable1.xml").async("text"), /fixture:opaque value="kept"/);
+  const queryXml = await queryZip.file("xl/queryTables/queryTable1.xml").async("text");
+  assert.match(queryXml, /disableRefresh="1"/);
+  assert.match(queryXml, /backgroundRefresh="0"/);
+  assert.match(queryXml, /firstBackgroundRefresh="0"/);
+  assert.match(queryXml, /refreshOnLoad="0"/);
+  assert.match(queryXml, /fixture:opaque value="kept"/);
 
   const intersectionResult = await runFixture("structured-intersection");
   const intersectionWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(intersectionResult.workbookPath));

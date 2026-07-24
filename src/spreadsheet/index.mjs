@@ -348,6 +348,12 @@ class WorksheetTableRowsFacade {
 }
 
 const WORKSHEET_TABLE_QUERY_UNSUPPORTED = Symbol("open-office-artifact-tool.worksheet-table-query-unsupported");
+const WORKSHEET_TABLE_QUERY_REFRESH_POLICY_VALUES = Object.freeze({
+  disableRefresh: true,
+  backgroundRefresh: false,
+  firstBackgroundRefresh: false,
+  refreshOnLoad: false,
+});
 const WORKSHEET_TABLE_QUERY_BOOLEAN_FIELDS = [
   "headers", "rowNumbers", "disableRefresh", "backgroundRefresh", "firstBackgroundRefresh", "refreshOnLoad",
   "fillFormulas", "removeDataOnSave", "disableEdit", "preserveFormatting", "adjustColumnWidth", "intermediate",
@@ -523,6 +529,25 @@ class WorksheetTable {
 
   getDataRows() { return this.showHeaders ? this.values.slice(1) : this.values; }
   getHeaderRowRange() { return this.worksheet.getRange(this.range).getResizedRange(1, this.columnCount || 1); }
+  setQueryRefreshPolicy(policy) {
+    if (!this.queryTable) throw new Error(`Worksheet table ${this.name} has no imported QueryTable refresh policy.`);
+    if (!policy || typeof policy !== "object" || Array.isArray(policy)) throw new TypeError("QueryTable refresh policy must be an object.");
+    const unknown = Object.keys(policy).filter((key) => !Object.hasOwn(WORKSHEET_TABLE_QUERY_REFRESH_POLICY_VALUES, key));
+    if (unknown.length) throw new TypeError(`Unsupported QueryTable refresh policy field(s): ${unknown.join(", ")}.`);
+    const next = { ...this.queryTable };
+    let changed = false;
+    for (const [field, requiredValue] of Object.entries(WORKSHEET_TABLE_QUERY_REFRESH_POLICY_VALUES)) {
+      if (!Object.hasOwn(policy, field)) continue;
+      if (policy[field] !== requiredValue) {
+        throw new TypeError(`QueryTable refresh policy ${field} may only be set to ${requiredValue}.`);
+      }
+      next[field] = requiredValue;
+      changed = true;
+    }
+    if (!changed) throw new TypeError("QueryTable refresh policy must set at least one explicit hardening field.");
+    this.queryTable = normalizeWorksheetTableQuery(next);
+    return this.queryTable;
+  }
   delete() { this.worksheet.tables.items = this.worksheet.tables.items.filter((table) => table !== this); }
 
   inspectRecord() {

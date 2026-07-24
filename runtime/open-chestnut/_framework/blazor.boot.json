@@ -1,7 +1,7 @@
 {
   "mainAssemblyName": "OpenChestnut.Runtime.dll",
   "resources": {
-    "hash": "sha256-gx5o4eihomAHdSvISJCfSi+nmTT9KFRNlWNXFi9ObMs=",
+    "hash": "sha256-80iG3vtrOw5o6hr8B6Sbd4O7WDyjE6fKwo/s3jGH8nM=",
     "jsModuleNative": {
       "dotnet.native.js": "sha256-3M5CDym93zeieNAd2KEOcVjqHuLUxjPt+6MeEvdx80A="
     },
@@ -16,8 +16,8 @@
       "DocumentFormat.OpenXml.wasm": "sha256-dFOv+L2EodS7j3n7YVE4qzpuSPlet8SxenW0FRYbN9w=",
       "DocumentFormat.OpenXml.Framework.wasm": "sha256-j7+qFY10XXFAIzYmkdWrREuCzQgO5LxpLVLbKdrHFMI=",
       "Google.Protobuf.wasm": "sha256-QeNMUbk+igKl7rU6FrDM2J9vn4+onp/EhDMVDpcMkZA=",
-      "OpenChestnut.Codec.wasm": "sha256-fu2YxO9rdOy692elQmsegI6jRqgC2X85BRIkhjHRsH0=",
-      "OpenChestnut.Runtime.wasm": "sha256-HOPYqRcx3WxFHTjAilPczjgUiDW/6wKqKzX/jakl13w=",
+      "OpenChestnut.Codec.wasm": "sha256-W0iFLtebH82USpTi7upl9ubjKuaKq15+Fo3qn+gZf6I=",
+      "OpenChestnut.Runtime.wasm": "sha256-zQjMCidpcMgW5wOsnrWC9FLh+3/BNRdS5KFbLMUcxjc=",
       "System.Collections.Concurrent.wasm": "sha256-PjS0IHC3cqACW1NWl9PL//B936Cs32qXpBxz+YgUeGk=",
       "System.Collections.wasm": "sha256-zWQh+9awRirAjopZmiOPwQi9SGIi5TXMbJ/bsxjcCiA=",
       "System.Collections.NonGeneric.wasm": "sha256-b/yvU1wtbcaFYB93+JgQ4mmHJ6HOFRe4TOlEl5ABtr8=",
@@ -34,7 +34,7 @@
       "System.Private.CoreLib.wasm": "sha256-iwevEOeCdgf3EgbQQuyrk7+yy9Vn4q2SiuTeAsplKhQ=",
       "System.Private.Uri.wasm": "sha256-qn0MelLc4ooWasVg6sM9spSHs3PRZAEz+h8YUUW9iEk=",
       "System.Private.Xml.wasm": "sha256-eD6lhcoYB7Y4D3/qDShXdveBi4PiGFclawXpHAWT7KA=",
-      "System.Private.Xml.Linq.wasm": "sha256-Kc/vm6bh+VKr89Oa+0/fd5d2f1vHqhQ5nuOpLK5gw4o=",
+      "System.Private.Xml.Linq.wasm": "sha256-pQBSVJ5OzAgXlTsLcet4cyZAFRKtE7ev1zpHsgWDCd8=",
       "System.Runtime.InteropServices.JavaScript.wasm": "sha256-9wZsNOhRyG5cibDRNBWgelUGXl0Spv/k7z8UCmOgdbs=",
       "System.Security.Cryptography.wasm": "sha256-q0w+T1G8FCY6I+QoPs1+NCpk/JvqKNz5J+aj+9MyU90=",
       "System.Text.RegularExpressions.wasm": "sha256-leinss7gnChEGdHj066JIpWWJLV5SPvxU4VFXKBRuvE=",
