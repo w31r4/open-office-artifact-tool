@@ -84,6 +84,10 @@ await file.save("summary.xlsx");
 - [使用 Compose 创建 PPTX](examples/create-pptx-compose.mjs)
 - [解析与渲染 PDF](examples/parse-render-pdf.mjs)
 
+### 迁移旧 codec 导入
+
+旧的 `open-office-artifact-tool/codecs/openxml-wasm`（包括 `/wire`）在 0.x 仍可导入，但已弃用。它只是 `codecs/open-chestnut` 的同一模块别名：不会启用另一套 codec、fallback 或运行时，也不会在 import 时输出警告。请迁移到 `open-office-artifact-tool/codecs/open-chestnut`；最早只会在带有明确迁移说明的 1.0.0 中移除。
+
 ## 交付前，文件会被再看一遍
 
 OfficeKit 的常用路径很简单：

@@ -33,12 +33,32 @@ try {
       Presentation, PresentationFile, SpreadsheetFile, Workbook,
     } from "open-office-artifact-tool";
 
-    try {
-      await import("open-office-artifact-tool/codecs/openxml-wasm");
-      process.exit(40);
-    } catch (error) {
-      if (error?.code !== "ERR_PACKAGE_PATH_NOT_EXPORTED") process.exit(41);
+    const canonicalCodec = await import("open-office-artifact-tool/codecs/open-chestnut");
+    const legacyCodec = await import("open-office-artifact-tool/codecs/openxml-wasm");
+    const canonicalWire = await import("open-office-artifact-tool/codecs/open-chestnut/wire");
+    const legacyWire = await import("open-office-artifact-tool/codecs/openxml-wasm/wire");
+    for (const name of Object.keys(canonicalCodec)) {
+      if (legacyCodec[name] !== canonicalCodec[name]) process.exit(59);
     }
+    if (
+      legacyCodec.OPEN_XML_WASM_PROTOCOL_VERSION !== canonicalCodec.OPEN_CHESTNUT_PROTOCOL_VERSION ||
+      legacyCodec.OpenXmlWasmCodecError !== canonicalCodec.OpenChestnutCodecError ||
+      legacyCodec.exportXlsxWithOpenXmlWasm !== canonicalCodec.exportXlsxWithOpenChestnut ||
+      legacyCodec.importXlsxWithOpenXmlWasm !== canonicalCodec.importXlsxWithOpenChestnut ||
+      legacyCodec.invokeOpenXmlWasm !== canonicalCodec.invokeOpenChestnut ||
+      legacyCodec.openXmlWasmStatus !== canonicalCodec.openChestnutStatus ||
+      legacyWire.CodecRequestSchema !== canonicalWire.CodecRequestSchema ||
+      legacyWire.CodecResponseSchema !== canonicalWire.CodecResponseSchema
+    ) process.exit(60);
+
+    const legacyWorkbook = Workbook.create();
+    legacyWorkbook.worksheets.add("Legacy package import").getRange("A1").values = [["same runtime"]];
+    const legacyXlsx = await legacyCodec.exportXlsxWithOpenXmlWasm(legacyWorkbook);
+    const legacyImported = await legacyCodec.importXlsxWithOpenXmlWasm(legacyXlsx);
+    if (
+      legacyXlsx.metadata.codec !== "open-chestnut" ||
+      legacyImported.worksheets.getItem("Legacy package import").getRange("A1").values[0][0] !== "same runtime"
+    ) process.exit(61);
 
     const workbook = Workbook.create();
     const sheet = workbook.worksheets.add("Packaged");

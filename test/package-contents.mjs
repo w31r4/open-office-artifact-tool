@@ -10,6 +10,8 @@ assert.equal(packageMetadata.license, "AGPL-3.0-or-later");
 assert.equal(packageMetadata.dependencies.mupdf, "1.28.0");
 assert.equal(packageMetadata.exports["./pdf/mupdf"], "./src/pdf/mupdf.mjs");
 assert.equal(packageMetadata.exports["./pdf/providers"], "./src/pdf/providers/index.mjs");
+assert.equal(packageMetadata.exports["./codecs/openxml-wasm"], "./src/codecs/openxml-wasm.mjs");
+assert.equal(packageMetadata.exports["./codecs/openxml-wasm/wire"], "./src/codecs/openxml-wasm-wire.mjs");
 assert.equal(packageMetadata.bin, undefined, "MuPDF must not require an installer command");
 assert.equal(packageMetadata.scripts.postinstall, undefined, "MuPDF must not require npm lifecycle hooks");
 const pdfFacadeSource = await fs.readFile(path.join(repoRoot, "src", "pdf", "index.mjs"), "utf8");
@@ -82,6 +84,8 @@ for (const required of [
   "proto/open_office/artifact/v1/office_artifact.proto",
   "src/generated/open_office/artifact/v1/office_artifact_pb.js",
   "src/codecs/open-chestnut.mjs",
+  "src/codecs/openxml-wasm.mjs",
+  "src/codecs/openxml-wasm-wire.mjs",
   "src/codecs/open-chestnut-error.mjs",
   "src/codecs/open-chestnut-assets.mjs",
   "src/codecs/open-chestnut-presentation.mjs",
@@ -299,7 +303,6 @@ for (const required of [
 }
 assert.ok(files.every((file) => !file.includes("/bin/") && !file.includes("/obj/")), "npm package must exclude dotnet bin/obj build output");
 for (const removed of [
-  "src/codecs/openxml-wasm.mjs",
   "src/codecs/office-codec-policy.mjs",
   "skills/shared/open-chestnut-compat.mjs",
   "src/spreadsheet/ooxml-drawings.mjs",

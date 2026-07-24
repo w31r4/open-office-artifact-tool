@@ -86,6 +86,10 @@ Runnable examples:
 - [Create a PPTX deck with Compose](examples/create-pptx-compose.mjs)
 - [Parse and render a PDF](examples/parse-render-pdf.mjs)
 
+### Migrating an older codec import
+
+The older `open-office-artifact-tool/codecs/openxml-wasm` import (including `/wire`) remains available during 0.x, but is deprecated. It is the same module binding as `codecs/open-chestnut`: it never selects another codec, fallback, or runtime and emits no import-time warning. Migrate to `open-office-artifact-tool/codecs/open-chestnut`; the earliest possible removal is a documented 1.0.0 migration.
+
 ## Check the file before handing it over
 
 The usual path is straightforward:

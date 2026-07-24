@@ -99,7 +99,7 @@ Each method dynamically imports `codecs/open-chestnut`, then invokes the corresp
 
 Passing `codec`, `allowLossy`, `preferNative`, `relativeDateAsOf`, or any other unknown option throws before codec execution. A missing or invalid WASM runtime also throws; no alternate implementation is tried.
 
-`codecs/open-chestnut` remains a public advanced boundary. `codecs/open-chestnut/wire` exposes generated messages. `codecs/openxml-wasm` is removed.
+`codecs/open-chestnut` remains a public advanced boundary, and `codecs/open-chestnut/wire` exposes generated messages. The deprecated `codecs/openxml-wasm` and `codecs/openxml-wasm/wire` subpaths are name-only strict-identity bridges to those same modules: they have no implementation, runtime, selector, fallback, or import-time warning of their own. They remain available throughout the 0.x line and cannot be removed before a documented 1.0.0 migration.
 
 ## Wire protocol 2
 

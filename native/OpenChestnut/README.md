@@ -4,6 +4,8 @@ OpenChestnut is this repository's clean-room C# codec for XLSX, DOCX, and PPTX. 
 
 It is the only Office codec used by version 0.3. The JavaScript package supplies the public artifact model and wire adapter; it does not contain a fallback Office parser/writer. PDF is outside OpenChestnut.
 
+The deprecated `open-office-artifact-tool/codecs/openxml-wasm` and `/wire` imports remain name-only bridges for the 0.x line. They re-export the exact OpenChestnut bindings and generated wire; they do not load another runtime, choose a codec, fall back, or emit import-time warnings. They cannot be removed before a documented 1.0.0 migration.
+
 ## Projects
 
 - `OpenChestnut.Codec` implements package validation and the XLSX/DOCX/PPTX codecs.

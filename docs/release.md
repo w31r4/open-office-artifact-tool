@@ -1,5 +1,19 @@
 # Release
 
+## 0.3.0 OpenChestnut import compatibility
+
+0.3.0 restores the old `codecs/openxml-wasm` and `codecs/openxml-wasm/wire`
+subpaths as deprecated import compatibility bridges. This does **not** restore an
+old Office implementation: every canonical export is the exact OpenChestnut
+binding, historical `OpenXmlWasm` names are aliases for those bindings, and the
+wire bridge re-exports the same generated schema objects. There is no second
+runtime, codec selector, fallback path, or import-time warning.
+
+The aliases remain supported throughout the 0.x line. They cannot be removed
+before a documented 1.0.0 migration notice that includes the exact replacement
+imports. New code should import `codecs/open-chestnut` and
+`codecs/open-chestnut/wire` directly.
+
 ## 0.3.0 OfficeKit and template routing
 
 0.3.0 adds one project-native top-level OfficeKit Skill without adding another
@@ -107,12 +121,12 @@ does not change.
 - The project is licensed under GNU AGPL-3.0-or-later. Normal npm installation resolves MuPDF.js as a direct dependency; there is no PDF postinstall hook or standalone dependency downloader.
 - Wire protocol is version 2.
 - `allow_lossy` is removed and reserved in the proto.
-- `OFFICE_CODEC_IDS`, `office-codec-policy.mjs`, and the `codecs/openxml-wasm` export are removed.
+- `OFFICE_CODEC_IDS` and `office-codec-policy.mjs` are removed. The former `codecs/openxml-wasm` removal is superseded in 0.3 by the deprecated name-only compatibility bridge described above.
 - `codec`, `allowLossy`, `preferNative`, and `relativeDateAsOf` facade options are rejected.
 - Old JavaScript Office parsers/writers and dedicated dead helper modules are not packaged.
 - Imported advanced Office content is preserved only with validated source evidence; unsupported edits and opaque content without that evidence fail closed.
 
-There is no compatibility window or fallback mode.
+There is no codec compatibility window or fallback mode. The 0.3 import bridge preserves only legacy module names and bindings; it does not restore an alternate codec.
 
 ## Source and npm distributions
 
