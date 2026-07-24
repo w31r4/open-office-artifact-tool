@@ -67,6 +67,35 @@ keeps the input immutable, requires `textPatchable` rather than whole-text
 editing, checks that only `word/document.xml` changed, publishes without
 overwrite, reimports, verifies, and writes an audit JSON.
 
+## Source-free page furniture: structured fields in one paragraph
+
+Use a string plus `fieldInstruction` for one simple field, or pass an ordered
+segment array when the footer/header must combine literals and multiple simple
+fields. The following authors one native footer paragraph, not four separate
+footer paragraphs:
+
+```js
+document.addFooter([
+  { text: "Page " },
+  { field: { instruction: "PAGE", display: "1" } },
+  { text: " of " },
+  { field: { instruction: "NUMPAGES", display: "1" } },
+], { sectionIndex: 0 });
+```
+
+Segments are deliberately narrow: 2 through 32 ordered `{ text }` or
+`{ field: { instruction, display } }` entries, at least one supported simple
+field, no formatting, and one derived `footer.text` equal to their concatenated
+displays. Use `footer.setSegments(nextSegments)` for an atomic source-free
+replacement; direct `footer.text` assignment and legacy `fieldInstruction` are
+rejected while segments exist. `display` is a cached fallback, not pagination:
+render/review with a compatible host before claiming current page counts.
+
+After import, the same recognized multi-segment paragraph exposes `segments`
+for inspect/resolve and exact no-op preservation, but remains source-bound and
+read-only. Do not reinterpret it as an ordinary editable header/footer or
+rebuild it through text replacement.
+
 ## Imported headers and footers: one direct-text edit per part
 
 Imported page furniture is separate from body text. Inspect a header or footer
@@ -183,7 +212,12 @@ document.addComment(recommendation, "Confirm wording before publication.", {
   initials: "RV",
 });
 document.addHeader("Decision brief | Internal");
-document.addFooter("1", { fieldInstruction: "PAGE" });
+document.addFooter([
+  { text: "Page " },
+  { field: { instruction: "PAGE", display: "1" } },
+  { text: " of " },
+  { field: { instruction: "NUMPAGES", display: "1" } },
+]);
 document.addInsertion("Added release condition.", {
   author: "Reviewer",
   date: "2026-07-17T08:00:00Z",
@@ -891,7 +925,7 @@ For final visual QA, export the DOCX and use the packaged `render_docx.py` workf
 - Named paragraph and character styles with `basedOn`; source-free tables may use the bounded `TableGrid` style plus explicit direct geometry/formatting
 - Numbered and character-bulleted lists
 - Fixed-geometry tables
-- Sections, headers, footers, PAGE/simple fields, and one canonical complex TOC placeholder with an explicit `updateFields` refresh hint
+- Sections, headers, footers, one bounded source-free ordered literal/simple-field paragraph for page furniture, PAGE/simple field shorthand, and one canonical complex TOC placeholder with an explicit `updateFields` refresh hint
 - External/internal hyperlinks and source-free bookmarks around one paragraph-like block
 - Plain-text footnotes/endnotes anchored at the end of one paragraph or list item; recognized imported note bodies allow text-only edits
 - PNG/JPEG inline images plus an explicit bounded foreground floating profile with absolute margin/page/column and margin/page/paragraph offsets, square or top-and-bottom wrap, and fixed-topology imported placement edits

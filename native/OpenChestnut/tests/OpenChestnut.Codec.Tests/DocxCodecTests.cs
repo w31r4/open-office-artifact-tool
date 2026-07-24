@@ -6433,6 +6433,114 @@ public sealed class DocxCodecTests
     }
 
     [Fact]
+    public void StructuredHeaderFooterSegmentsAuthorImportAndRemainSourceBound()
+    {
+        var request = ExportRequest(includeSecondParagraph: true);
+        var footer = new DocumentHeaderFooter
+        {
+            Id = "document/footer/page-x-of-y",
+            Name = "Page X of Y",
+            Text = "Page 1 of 1",
+            Reference = DocumentHeaderFooterReference.Default,
+            SectionIndex = 0,
+        };
+        footer.Segments.Add(new DocumentHeaderFooterSegment { Text = "Page " });
+        footer.Segments.Add(new DocumentHeaderFooterSegment { Field = new DocumentField { Instruction = "PAGE", Display = "1" } });
+        footer.Segments.Add(new DocumentHeaderFooterSegment { Text = " of " });
+        footer.Segments.Add(new DocumentHeaderFooterSegment { Field = new DocumentField { Instruction = "NUMPAGES", Display = "1" } });
+        request.Artifact.Document.Footers.Add(footer);
+
+        var authored = Invoke(request);
+        Assert.True(authored.Ok, Diagnostics(authored));
+        using (var stream = new MemoryStream(authored.File.ToByteArray()))
+        using (var package = WordprocessingDocument.Open(stream, false))
+        {
+            var paragraph = Assert.Single(Assert.Single(package.MainDocumentPart!.FooterParts).Footer!.Elements<W.Paragraph>());
+            Assert.Equal("Page 1 of 1", paragraph.InnerText);
+            Assert.Equal(["Page ", " of "], paragraph.Elements<W.Run>().Select(run => Assert.Single(run.Elements<W.Text>()).Text).ToArray());
+            Assert.Equal(["PAGE", "NUMPAGES"], paragraph.Elements<W.SimpleField>().Select(field => field.Instruction!.Value ?? string.Empty).ToArray());
+            Assert.Equal(["1", "1"], paragraph.Elements<W.SimpleField>().Select(field => Assert.Single(field.Descendants<W.Text>()).Text).ToArray());
+            Assert.Empty(new OpenXmlValidator(FileFormatVersions.Office2021).Validate(package));
+        }
+
+        var imported = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ImportDocx,
+            Family = ArtifactFamily.Document,
+            File = authored.File,
+        });
+        Assert.True(imported.Ok, Diagnostics(imported));
+        var importedFooter = Assert.Single(imported.Artifact.Document.Footers);
+        Assert.Equal("Page 1 of 1", importedFooter.Text);
+        Assert.Empty(importedFooter.FieldInstruction);
+        Assert.False(importedFooter.Source.Editable);
+        Assert.Equal(
+            [
+                DocumentHeaderFooterSegment.ContentOneofCase.Text,
+                DocumentHeaderFooterSegment.ContentOneofCase.Field,
+                DocumentHeaderFooterSegment.ContentOneofCase.Text,
+                DocumentHeaderFooterSegment.ContentOneofCase.Field,
+            ],
+            importedFooter.Segments.Select(segment => segment.ContentCase));
+        Assert.Equal("PAGE", importedFooter.Segments[1].Field.Instruction);
+        Assert.Equal("NUMPAGES", importedFooter.Segments[3].Field.Instruction);
+
+        var unchanged = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.True(unchanged.Ok, Diagnostics(unchanged));
+        Assert.Equal(authored.File, unchanged.File);
+
+        importedFooter.Segments[0].Text = "Sheet ";
+        importedFooter.Text = "Sheet 1 of 1";
+        var edited = Invoke(new CodecRequest
+        {
+            ProtocolVersion = CodecProtocol.ProtocolVersion,
+            Operation = CodecOperation.ExportDocx,
+            Family = ArtifactFamily.Document,
+            Artifact = imported.Artifact,
+        });
+        Assert.False(edited.Ok);
+        Assert.Equal("document_header_footer_source_binding_mismatch", Assert.Single(edited.Diagnostics).Code);
+
+        var invalid = ExportRequest(includeSecondParagraph: true);
+        var invalidFooter = new DocumentHeaderFooter
+        {
+            Id = "document/footer/invalid-segments",
+            Text = "Page 1",
+            FieldInstruction = "PAGE",
+            Reference = DocumentHeaderFooterReference.Default,
+            SectionIndex = 0,
+        };
+        invalidFooter.Segments.Add(new DocumentHeaderFooterSegment { Text = "Page " });
+        invalidFooter.Segments.Add(new DocumentHeaderFooterSegment { Field = new DocumentField { Instruction = "PAGE", Display = "1" } });
+        invalid.Artifact.Document.Footers.Add(invalidFooter);
+        var invalidResult = Invoke(invalid);
+        Assert.False(invalidResult.Ok);
+        Assert.Equal("invalid_document_header_footer", Assert.Single(invalidResult.Diagnostics).Code);
+
+        var invalidXml = ExportRequest(includeSecondParagraph: true);
+        var invalidXmlFooter = new DocumentHeaderFooter
+        {
+            Id = "document/footer/invalid-xml-segment",
+            Text = "\u00011",
+            Reference = DocumentHeaderFooterReference.Default,
+            SectionIndex = 0,
+        };
+        invalidXmlFooter.Segments.Add(new DocumentHeaderFooterSegment { Text = "\u0001" });
+        invalidXmlFooter.Segments.Add(new DocumentHeaderFooterSegment { Field = new DocumentField { Instruction = "PAGE", Display = "1" } });
+        invalidXml.Artifact.Document.Footers.Add(invalidXmlFooter);
+        var invalidXmlResult = Invoke(invalidXml);
+        Assert.False(invalidXmlResult.Ok);
+        Assert.Equal("invalid_document_header_footer", Assert.Single(invalidXmlResult.Diagnostics).Code);
+    }
+
+    [Fact]
     public void ImportedInheritedHeaderPartsRemainReadOnly()
     {
         var request = ExportRequest(includeSecondParagraph: true);

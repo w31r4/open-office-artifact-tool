@@ -322,7 +322,14 @@ try {
     (block) => block.kind === "hyperlink" && block.anchor === "DecisionSection",
   ), true);
   assert.equal(documentRoundTrip.headers[0]?.text, "LAUNCH READINESS | DECISION BRIEF");
-  assert.equal(documentRoundTrip.footers[0]?.fieldInstruction, "PAGE");
+  assert.deepEqual(documentRoundTrip.footers[0]?.segments, [
+    { text: "Page " },
+    { field: { instruction: "PAGE", display: "1" } },
+    { text: " of " },
+    { field: { instruction: "NUMPAGES", display: "1" } },
+  ]);
+  assert.equal(documentRoundTrip.footers[0]?.fieldInstruction, "");
+  assert.equal(documentRoundTrip.footers[0]?.editable, false);
   assert.deepEqual(documentRoundTrip.blocks.filter((block) => block.kind === "change").map(
     (block) => [block.changeType, block.text, block.author],
   ), [

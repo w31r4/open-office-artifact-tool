@@ -14,6 +14,36 @@ before a documented 1.0.0 migration notice that includes the exact replacement
 imports. New code should import `codecs/open-chestnut` and
 `codecs/open-chestnut/wire` directly.
 
+## 0.3.0 structured header/footer page furniture
+
+Documents can now author one source-free header or footer paragraph as an
+ordered 2-through-32-item sequence of literal text and bounded simple fields.
+For example, `Page PAGE of NUMPAGES` becomes two literal `w:r/w:t` nodes and
+two native `w:fldSimple` nodes in one `w:p`; it is not a hidden placeholder or
+a generic rich-text model. The JavaScript model derives the visible `text` from
+the segment displays and rejects a mixed legacy `fieldInstruction` profile.
+
+OpenChestnut carries the sequence through the versioned public protobuf wire,
+authors it with the Open XML SDK, imports the exact recognized profile, and
+preserves it byte-for-byte on no-op source export. Imported multi-segment page
+furniture is explicitly source-bound/read-only: a consumer may inspect and
+resolve it but cannot claim a safe arbitrary field edit. PAGE and NUMPAGES
+displays remain caches; a compatible pagination host must update and render the
+final document before delivery.
+
+### Structured page-furniture integration evidence
+
+On 2026-07-25, the complete local release gate passed: `npm test`, generated
+API documentation, deterministic OpenChestnut reconstruction, production
+clean-install `test:pack`, OfficeBridge `5/5`, and OpenChestnut `372/372`.
+The two source-built WASM bundles were reproducible across 39 audited files;
+the bundled runtime contains 38 files at 15,144,128 bytes. The candidate
+tarball contains 511 files, 9,384,422 compressed bytes, and 25,164,847
+unpacked bytes; the enforced unpacked ceiling is 25,180,000 bytes. Live
+managed PDF-provider download tests and separately configured specialist Python
+providers remained opt-in environment lanes, rather than being represented as
+local release evidence.
+
 ## 0.3.0 OfficeKit and template routing
 
 0.3.0 adds one project-native top-level OfficeKit Skill without adding another

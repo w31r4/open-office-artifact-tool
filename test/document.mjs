@@ -442,6 +442,54 @@ await assert.rejects(
   (error) => error?.code === "unsupported_document_header_footer_edit" && /cannot replace its text/i.test(error.message),
 );
 
+const structuredPageFurnitureDocument = DocumentModel.create({ name: "Structured page furniture", blocks: [] });
+structuredPageFurnitureDocument.addParagraph("A source-free footer uses one native paragraph with ordered literal and field segments.");
+const structuredPageFooter = structuredPageFurnitureDocument.addFooter([
+  { text: "Page " },
+  { field: { instruction: "PAGE", display: "1" } },
+  { text: " of " },
+  { field: { instruction: "NUMPAGES", display: "1" } },
+], { id: "footer/page-x-of-y", sectionIndex: 0 });
+assert.equal(structuredPageFooter.text, "Page 1 of 1");
+assert.deepEqual(structuredPageFooter.segments, [
+  { text: "Page " },
+  { field: { instruction: "PAGE", display: "1" } },
+  { text: " of " },
+  { field: { instruction: "NUMPAGES", display: "1" } },
+]);
+assert.throws(
+  () => { structuredPageFooter.text = "Page 2 of 2"; },
+  /structured segments; call setSegments/i,
+);
+const structuredPageFurnitureDocx = await DocumentFile.exportDocx(structuredPageFurnitureDocument);
+const structuredPageFurnitureZip = await JSZip.loadAsync(await structuredPageFurnitureDocx.arrayBuffer());
+const structuredPageFurnitureXml = await structuredPageFurnitureZip.file("word/footer1.xml").async("text");
+assert.match(structuredPageFurnitureXml, /<w:r><w:t(?: xml:space="preserve")?>Page <\/w:t><\/w:r><w:fldSimple w:instr="PAGE"><w:r><w:t>1<\/w:t><\/w:r><\/w:fldSimple><w:r><w:t(?: xml:space="preserve")?> of <\/w:t><\/w:r><w:fldSimple w:instr="NUMPAGES"><w:r><w:t>1<\/w:t><\/w:r><\/w:fldSimple>/);
+const importedStructuredPageFurniture = await DocumentFile.importDocx(structuredPageFurnitureDocx);
+assert.equal(importedStructuredPageFurniture.footers.length, 1);
+const importedStructuredPageFooter = importedStructuredPageFurniture.footers[0];
+assert.equal(importedStructuredPageFooter.text, "Page 1 of 1");
+assert.deepEqual(importedStructuredPageFooter.segments, structuredPageFooter.segments);
+assert.equal(importedStructuredPageFooter.fieldInstruction, "");
+assert.equal(importedStructuredPageFooter.editable, false);
+const structuredPageFurnitureNoOp = await DocumentFile.exportDocx(importedStructuredPageFurniture);
+assert.deepEqual(Buffer.from(await structuredPageFurnitureNoOp.arrayBuffer()), Buffer.from(await structuredPageFurnitureDocx.arrayBuffer()), "unchanged structured page furniture must preserve exact source bytes");
+const mutatedStructuredSegments = importedStructuredPageFooter.segments;
+mutatedStructuredSegments[0].text = "Sheet ";
+importedStructuredPageFooter.setSegments(mutatedStructuredSegments);
+await assert.rejects(
+  () => DocumentFile.exportDocx(importedStructuredPageFurniture),
+  (error) => error?.code === "unsupported_document_header_footer_edit" && /fixed source identity.*field topology/i.test(error.message),
+);
+assert.throws(
+  () => structuredPageFurnitureDocument.addHeader([{ text: "No field" }, { text: " here" }], { sectionIndex: 0 }),
+  /must contain a field/i,
+);
+assert.throws(
+  () => structuredPageFurnitureDocument.addHeader([{ text: "\u0001" }, { field: { instruction: "PAGE", display: "1" } }], { sectionIndex: 0 }),
+  /XML-safe/i,
+);
+
 const inheritedHeaderDocument = DocumentModel.create({ name: "Inherited header binding", blocks: [] });
 inheritedHeaderDocument.addParagraph("First-section body.");
 inheritedHeaderDocument.addSection({

@@ -41,7 +41,7 @@ for (const name of ["Workbook", "Worksheet", "WorksheetDataTableCollection", "Ra
 }
 
 assert.ok(HELP_CATALOG.length >= 40);
-assert.equal(HELP_CATALOG.length, 381);
+assert.equal(HELP_CATALOG.length, 382);
 assert.ok(HELP_CATALOG.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.ok(HELP_CATALOG.some((item) => item.name === "Workbook.create"));
 assert.ok(HELP_CATALOG.some((item) => item.name === "workbook.setDateSystem"));
@@ -307,8 +307,12 @@ assert.ok(HELP_CATALOG.find((item) => item.name === "DocumentFile.patchDocx")?.s
 assert.equal(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.schema?.parameters?.preferNative, undefined);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addHeader")?.schema?.parameters?.referenceType?.type, "string");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addFooter")?.schema?.parameters?.referenceType?.type, "string");
-assert.match(HELP_CATALOG.find((item) => item.name === "document.addHeader")?.summary || "", /direct unformatted text paragraph in a uniquely used source part.*fields, rich\/shared, and irregular parts stay read-only/i);
-assert.match(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.summary || "", /header\/footer advertises editable only.*at most one text edit per part/i);
+assert.equal(HELP_CATALOG.find((item) => item.name === "document.addHeader")?.schema?.parameters?.text?.type, "string|HeaderFooterSegment[]");
+assert.equal(HELP_CATALOG.find((item) => item.name === "document.addFooter")?.schema?.parameters?.text?.type, "string|HeaderFooterSegment[]");
+assert.equal(HELP_CATALOG.find((item) => item.name === "documentHeaderFooter.setSegments")?.schema?.parameters?.segments?.required, true);
+assert.match(HELP_CATALOG.find((item) => item.name === "documentHeaderFooter.setSegments")?.summary || "", /source-free.*derived visible text.*imported.*cannot use/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "document.addHeader")?.summary || "", /Source-free.*legacy simple field.*literal\/simple-field.*Imported multi-segment.*source-bound\/read-only/i);
+assert.match(HELP_CATALOG.find((item) => item.name === "DocumentFile.importDocx")?.summary || "", /header\/footer advertises editable only.*direct unformatted.*ordered literal\/simple-field.*source-bound\/read-only/i);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addWatermark")?.schema?.parameters?.text?.required, true);
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addWatermark")?.schema?.parameters?.sectionIndex?.type, "number");
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addWatermark")?.schema?.returns?.watermark?.type, "DocumentWatermark");
@@ -416,7 +420,7 @@ assert.match(HELP_CATALOG.find((item) => item.name === "PdfProviders.resolve")?.
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfProviders.ensure")?.schema?.returns?.result?.description || "", /pinned catalog assets.*safe extraction.*never downloads credentials or falls back/i);
 assert.match(HELP_CATALOG.find((item) => item.name === "PdfProviders.probe")?.schema?.returns?.state?.description || "", /no network request.*cache write.*MuPDF import.*provider fallback/i);
 const documentCatalog = HELP_CATALOG.filter((item) => item.artifactKind === "document");
-assert.equal(documentCatalog.length, 65);
+assert.equal(documentCatalog.length, 66);
 assert.ok(documentCatalog.every((item) => item.schema?.parameters && item.schema?.returns));
 assert.equal(HELP_CATALOG.find((item) => item.name === "document.addParagraph")?.schema?.parameters?.paragraphFormat?.type, "object");
 assert.match(HELP_CATALOG.find((item) => item.name === "document.addParagraph")?.schema?.parameters?.paragraphFormat?.description || "", /suppressLineNumbers.*true.*excludes.*display and calculation.*false.*override.*inherited style.*omission inherits.*source-owned.*fails closed/i);

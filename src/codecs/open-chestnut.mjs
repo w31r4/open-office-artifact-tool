@@ -3031,19 +3031,84 @@ function documentHeaderFooterSnapshot(block) {
     partPath: String(block.partPath || ""),
     variantActive: block.variantActive == null ? undefined : Boolean(block.variantActive),
     fieldInstruction: String(block.fieldInstruction || block.field || ""),
+    segments: Array.isArray(block.segments) ? structuredClone(block.segments) : [],
   };
+}
+
+function wireDocumentHeaderFooterSegments(segments, label) {
+  if (!segments.length) return [];
+  if (segments.length < 2 || segments.length > 32) {
+    throw new OpenChestnutCodecError(`Document ${label} structured segments require 2 through 32 items.`, [], { code: "invalid_document_header_footer" });
+  }
+  let display = "";
+  let fieldCount = 0;
+  const wire = segments.map((segment, index) => {
+    if (!segment || typeof segment !== "object" || Array.isArray(segment)) {
+      throw new OpenChestnutCodecError(`Document ${label} structured segment ${index + 1} must be an object.`, [], { code: "invalid_document_header_footer" });
+    }
+    const keys = Object.keys(segment);
+    if (keys.length !== 1 || (keys[0] !== "text" && keys[0] !== "field")) {
+      throw new OpenChestnutCodecError(`Document ${label} structured segment ${index + 1} must contain exactly one text or field property.`, [], { code: "invalid_document_header_footer" });
+    }
+    if (keys[0] === "text") {
+      const text = String(segment.text ?? "");
+      if (!text || text.length > 1_000_000 || !isXmlSafeText(text)) {
+        throw new OpenChestnutCodecError(`Document ${label} structured text segment ${index + 1} is invalid.`, [], { code: "invalid_document_header_footer" });
+      }
+      display += text;
+      return { content: { case: "text", value: text } };
+    }
+    const field = segment.field;
+    if (!field || typeof field !== "object" || Array.isArray(field) || Object.keys(field).some((key) => key !== "instruction" && key !== "display")) {
+      throw new OpenChestnutCodecError(`Document ${label} structured field segment ${index + 1} must define instruction and display.`, [], { code: "invalid_document_header_footer" });
+    }
+    const instruction = String(field.instruction ?? "").trim();
+    const command = instruction.split(/\s+/, 1)[0]?.toUpperCase();
+    const fieldDisplay = String(field.display ?? "");
+    if (!instruction || instruction.length > 8192 || /[\u0000-\u001f\u007f]/.test(instruction) || !DOCUMENT_FIELD_COMMANDS.has(command) || fieldDisplay.length > 1_000_000 || !isXmlSafeText(fieldDisplay)) {
+      throw new OpenChestnutCodecError(`Document ${label} structured field segment ${index + 1} is outside the bounded simple-field profile.`, [], { code: "invalid_document_header_footer" });
+    }
+    fieldCount += 1;
+    display += fieldDisplay;
+    return { content: { case: "field", value: { instruction, display: fieldDisplay, complex: false } } };
+  });
+  if (!fieldCount || display.length > 1_000_000) {
+    throw new OpenChestnutCodecError(`Document ${label} structured segments require a field and at most 1,000,000 display characters.`, [], { code: "invalid_document_header_footer" });
+  }
+  return wire;
+}
+
+function publicDocumentHeaderFooterSegments(segments = []) {
+  if (!segments.length) return undefined;
+  return segments.map((segment) => {
+    if (segment.content?.case === "text") return { text: segment.content.value };
+    if (segment.content?.case === "field") {
+      const field = segment.content.value;
+      return { field: { instruction: field.instruction, display: field.display } };
+    }
+    throw new OpenChestnutCodecError("Imported DOCX header/footer contains an unsupported structured segment.", [], { code: "unsupported_document_header_footer_preserved" });
+  });
+}
+
+function documentHeaderFooterSegmentsEqual(left = [], right = []) {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function wireHeaderFooter(block, slot) {
   const snapshot = documentHeaderFooterSnapshot(block);
-  const instruction = snapshot.fieldInstruction;
+  const segments = wireDocumentHeaderFooterSegments(snapshot.segments, `${block.kind} ${block.id}`);
+  const instruction = segments.length ? "" : snapshot.fieldInstruction;
+  if (segments.length && snapshot.text !== segments.map((segment) => segment.content.case === "text" ? segment.content.value : segment.content.value.display).join("")) {
+    throw new OpenChestnutCodecError(`Document ${block.kind} ${block.id} structured segment display must exactly match text.`, [], { code: "invalid_document_header_footer" });
+  }
   if (instruction && !DOCUMENT_FIELD_COMMANDS.has(instruction.trim().split(/\s+/)[0].toUpperCase())) throw new OpenChestnutCodecError(`Document ${block.kind} ${block.id} uses unsupported field ${instruction}.`, [], { code: "invalid_document_field" });
   if (slot) {
     const source = slot.publicSnapshot;
     if (snapshot.id !== source.id || snapshot.name !== source.name || snapshot.styleId !== source.styleId ||
       snapshot.referenceType !== source.referenceType || snapshot.sectionIndex !== source.sectionIndex ||
       snapshot.relationshipId !== source.relationshipId || snapshot.partPath !== source.partPath ||
-      snapshot.variantActive !== source.variantActive || snapshot.fieldInstruction !== source.fieldInstruction) {
+      snapshot.variantActive !== source.variantActive || snapshot.fieldInstruction !== source.fieldInstruction ||
+      !documentHeaderFooterSegmentsEqual(snapshot.segments, source.segments)) {
       throw new OpenChestnutCodecError(`Imported document ${block.kind} ${snapshot.id} has fixed source identity, section scope, style, and field topology.`, [], { code: "unsupported_document_header_footer_edit" });
     }
     if (snapshot.text !== source.text && slot.wire.source?.editable !== true) {
@@ -3061,6 +3126,7 @@ function wireHeaderFooter(block, slot) {
     partPath: snapshot.partPath,
     variantActive: snapshot.variantActive,
     fieldInstruction: instruction,
+    segments,
     source: slot?.wire.source,
   };
 }
@@ -3077,6 +3143,7 @@ function publicHeaderFooter(block) {
     partPath: block.partPath || undefined,
     variantActive: block.variantActive,
     fieldInstruction: block.fieldInstruction || undefined,
+    segments: publicDocumentHeaderFooterSegments(block.segments || []),
     sourceBound: Boolean(block.source),
     editable: block.source ? block.source.editable === true : undefined,
   };

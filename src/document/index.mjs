@@ -755,12 +755,60 @@ class DocumentSectionBlock {
   toProto() { return { kind: "section", id: this.id, name: this.name, breakType: this.breakType, orientation: this.orientation, pageSize: this.pageSize, margins: this.margins, columns: this.columns, pageNumbering: this.pageNumbering, lineNumbering: this.lineNumbering }; }
 }
 
+const DOCUMENT_HEADER_FOOTER_FIELD_COMMANDS = new Set([
+  "PAGE", "NUMPAGES", "SECTION", "SECTIONPAGES", "DATE", "TIME", "CREATEDATE", "SAVEDATE",
+  "PRINTDATE", "AUTHOR", "TITLE", "SUBJECT", "COMMENTS", "FILENAME", "FILESIZE", "NUMWORDS", "NUMCHARS",
+]);
+
+function normalizeDocumentHeaderFooterSegments(value) {
+  if (!Array.isArray(value) || value.length < 2 || value.length > 32) {
+    throw new TypeError("Document header/footer segments must contain 2 through 32 ordered items.");
+  }
+  let fieldCount = 0;
+  let text = "";
+  const segments = value.map((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new TypeError(`Document header/footer segment ${index + 1} must be an object.`);
+    }
+    const keys = Object.keys(item);
+    if (keys.length !== 1 || (keys[0] !== "text" && keys[0] !== "field")) {
+      throw new TypeError(`Document header/footer segment ${index + 1} must contain exactly one text or field property.`);
+    }
+    if (keys[0] === "text") {
+      if (typeof item.text !== "string" || !item.text.length || item.text.length > 1_000_000 || !isXmlSafeText(item.text)) {
+        throw new TypeError(`Document header/footer text segment ${index + 1} must contain 1 through 1,000,000 XML-safe characters.`);
+      }
+      text += item.text;
+      return Object.freeze({ text: item.text });
+    }
+    const field = item.field;
+    if (!field || typeof field !== "object" || Array.isArray(field) || Object.keys(field).some((key) => key !== "instruction" && key !== "display")) {
+      throw new TypeError(`Document header/footer field segment ${index + 1} must be { field: { instruction, display } }.`);
+    }
+    const instruction = String(field.instruction ?? "").trim();
+    const command = instruction.split(/\s+/, 1)[0]?.toUpperCase();
+    const display = String(field.display ?? "");
+    if (!instruction || instruction.length > 8192 || /[\u0000-\u001f\u007f]/.test(instruction) || !DOCUMENT_HEADER_FOOTER_FIELD_COMMANDS.has(command)) {
+      throw new TypeError(`Document header/footer field segment ${index + 1} uses an unsupported simple field instruction.`);
+    }
+    if (display.length > 1_000_000 || !isXmlSafeText(display)) {
+      throw new TypeError(`Document header/footer field segment ${index + 1} display must contain at most 1,000,000 XML-safe characters.`);
+    }
+    fieldCount += 1;
+    text += display;
+    return Object.freeze({ field: Object.freeze({ instruction, display }) });
+  });
+  if (!fieldCount || text.length > 1_000_000) {
+    throw new TypeError("Document header/footer segments must contain a field and at most 1,000,000 combined display characters.");
+  }
+  return Object.freeze({ segments: Object.freeze(segments), text });
+}
+
 class DocumentHeaderFooterBlock {
   constructor(document, kind, text, config = {}) {
     this.document = document;
     this.kind = kind;
     this.id = config.id || aid(kind === "header" ? "dh" : "df");
-    this.text = String(text ?? "");
     this.name = config.name || kind;
     this.styleId = config.styleId || "Normal";
     this.referenceType = ["default", "first", "even"].includes(config.referenceType || config.type) ? (config.referenceType || config.type) : "default";
@@ -768,13 +816,39 @@ class DocumentHeaderFooterBlock {
     this.partPath = config.partPath;
     this.sectionIndex = config.sectionIndex === undefined || config.sectionIndex === null ? undefined : Number(config.sectionIndex);
     this.variantActive = config.variantActive ?? config.activateVariant ?? config.active;
+    this._segments = undefined;
+    this._fieldInstruction = "";
     this.fieldInstruction = config.fieldInstruction || config.field;
+    const segmentInput = config.segments ?? (Array.isArray(text) ? text : undefined);
+    if (segmentInput !== undefined) this.setSegments(segmentInput);
+    else this.text = String(text ?? "");
     this.sourceBound = Boolean(config.sourceBound);
     this.editable = config.editable !== false;
   }
 
-  inspectRecord(index) { return { kind: this.kind, id: this.id, index, name: this.name || undefined, styleId: this.styleId, referenceType: this.referenceType, sourceBound: this.sourceBound, editable: this.editable, variantActive: this.variantActive, relationshipId: this.relationshipId, partPath: this.partPath, sectionIndex: this.sectionIndex, fieldInstruction: this.fieldInstruction, text: this.text, textChars: this.text.length }; }
-  toProto() { return { kind: this.kind, id: this.id, name: this.name, styleId: this.styleId, referenceType: this.referenceType, variantActive: this.variantActive, relationshipId: this.relationshipId, partPath: this.partPath, sectionIndex: this.sectionIndex, fieldInstruction: this.fieldInstruction, text: this.text }; }
+  get text() { return this._text; }
+  set text(value) {
+    if (this._segments) throw new TypeError(`Document ${this.kind} ${this.id} uses structured segments; call setSegments() instead of assigning text.`);
+    this._text = String(value ?? "");
+  }
+  get fieldInstruction() { return this._fieldInstruction; }
+  set fieldInstruction(value) {
+    const instruction = String(value ?? "");
+    if (this._segments && instruction) throw new TypeError(`Document ${this.kind} ${this.id} cannot combine a legacy fieldInstruction with structured segments.`);
+    this._fieldInstruction = instruction;
+  }
+  get segments() { return this._segments ? structuredClone(this._segments) : undefined; }
+  set segments(value) { this.setSegments(value); }
+  setSegments(value) {
+    if (this._fieldInstruction) throw new TypeError(`Document ${this.kind} ${this.id} cannot combine a legacy fieldInstruction with structured segments.`);
+    const normalized = normalizeDocumentHeaderFooterSegments(value);
+    this._segments = normalized.segments;
+    this._text = normalized.text;
+    return this;
+  }
+
+  inspectRecord(index) { return { kind: this.kind, id: this.id, index, name: this.name || undefined, styleId: this.styleId, referenceType: this.referenceType, sourceBound: this.sourceBound, editable: this.editable, variantActive: this.variantActive, relationshipId: this.relationshipId, partPath: this.partPath, sectionIndex: this.sectionIndex, fieldInstruction: this.fieldInstruction || undefined, segments: this.segments, text: this.text, textChars: this.text.length }; }
+  toProto() { return { kind: this.kind, id: this.id, name: this.name, styleId: this.styleId, referenceType: this.referenceType, variantActive: this.variantActive, relationshipId: this.relationshipId, partPath: this.partPath, sectionIndex: this.sectionIndex, fieldInstruction: this.fieldInstruction || undefined, segments: this.segments, text: this.text }; }
 }
 
 class DocumentWatermark {
@@ -1752,6 +1826,14 @@ export class DocumentModel {
     for (const block of [...this.headers, ...this.footers]) {
       if (block.sectionIndex !== undefined && (!Number.isInteger(block.sectionIndex) || block.sectionIndex < 0 || block.sectionIndex > finalSectionIndex)) {
         issues.push(verificationIssue("document", "invalidHeaderFooterSection", `${block.kind} ${block.id} targets invalid section index ${block.sectionIndex}; expected 0 through ${finalSectionIndex}.`, { id: block.id, kind: block.kind, sectionIndex: block.sectionIndex, finalSectionIndex }));
+      }
+      if (block.segments) {
+        try {
+          const normalized = normalizeDocumentHeaderFooterSegments(block.segments);
+          if (normalized.text !== block.text || block.fieldInstruction) throw new TypeError("structured segments and visible text/legacy field state disagree");
+        } catch (error) {
+          issues.push(verificationIssue("document", "invalidHeaderFooterSegments", `${block.kind} ${block.id} has invalid structured page-furniture segments: ${error.message}`, { id: block.id, kind: block.kind }));
+        }
       }
     }
     const watermarkIds = new Set();

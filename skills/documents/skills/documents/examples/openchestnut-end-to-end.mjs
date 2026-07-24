@@ -281,10 +281,14 @@ export function buildDocument(spec = DEFAULT_BRIEF) {
     referenceType: "default",
     sectionIndex: 0,
   });
-  document.addFooter("1", {
+  document.addFooter([
+    { text: "Page " },
+    { field: { instruction: "PAGE", display: "1" } },
+    { text: " of " },
+    { field: { instruction: "NUMPAGES", display: "1" } },
+  ], {
     referenceType: "default",
     sectionIndex: 0,
-    fieldInstruction: "PAGE",
   });
   return document;
 }
@@ -296,6 +300,14 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
 
   const firstDocx = await DocumentFile.exportDocx(authored);
   const imported = await DocumentFile.importDocx(firstDocx);
+  assert.deepEqual(imported.footers[0]?.segments, [
+    { text: "Page " },
+    { field: { instruction: "PAGE", display: "1" } },
+    { text: " of " },
+    { field: { instruction: "NUMPAGES", display: "1" } },
+  ]);
+  assert.equal(imported.footers[0]?.fieldInstruction, "");
+  assert.equal(imported.footers[0]?.editable, false);
   assert.deepEqual(imported.fillContentControls({ OWNER: spec.owner }), {
     updated: 1,
     matchedTags: ["OWNER"],
@@ -376,6 +388,13 @@ export async function createDocument(outputPath, spec = DEFAULT_BRIEF) {
   assert.equal(finalDocument.bookmarks.some((bookmark) => bookmark.name === "DecisionSection"), true);
   assert.equal(finalDocument.bibliographySources[0]?.title, `${spec.sourceLabel} — verified`);
   assert.equal(finalDocument.blocks.find((block) => block.kind === "citation")?.text, `(${spec.owner}, 2026, verified)`);
+  assert.deepEqual(finalDocument.footers[0]?.segments, [
+    { text: "Page " },
+    { field: { instruction: "PAGE", display: "1" } },
+    { text: " of " },
+    { field: { instruction: "NUMPAGES", display: "1" } },
+  ]);
+  assert.equal(finalDocument.footers[0]?.editable, false);
   assert.deepEqual(finalDocument.contentControls.map((control) => [control.tag, control.alias, control.controlType, control.controlType === "checkbox" ? control.checked : control.text]), [
     ["OWNER", "Brief owner", "text", spec.owner],
     ["FINAL_APPROVAL", "Final approval", "checkbox", true],

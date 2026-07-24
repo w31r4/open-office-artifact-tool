@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Xml;
 using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using Google.Protobuf;
@@ -149,7 +150,9 @@ internal static class DocxHeaderFooterCodec
                 throw new CodecException("invalid_document_header_footer", $"Document {kind} {item.Id} section index is outside 0 through {sectionCount - 1}.");
             if (item.Text.Length > 1_000_000 || item.Text.Any(character => character is '\0'))
                 throw new CodecException("invalid_document_header_footer", $"Document {kind} {item.Id} text is invalid or too long.");
-            if (!string.IsNullOrWhiteSpace(item.FieldInstruction))
+            if (item.Segments.Count > 0)
+                ValidateSegments(item, kind);
+            else if (!string.IsNullOrWhiteSpace(item.FieldInstruction))
                 DocxFieldCodec.Validate(new DocumentField { Instruction = item.FieldInstruction, Display = item.Text });
             if (item.Source is { } source &&
                 (string.IsNullOrWhiteSpace(source.RelationshipId) ||
@@ -265,7 +268,7 @@ internal static class DocxHeaderFooterCodec
             for (var index = 0; index < paragraphs.Length; index++)
             {
                 if (header && DocxWatermarkCodec.IsCanonicalParagraph(paragraphs[index])) continue;
-                if (!TryReadParagraph(paragraphs[index], out var text, out var styleId, out var fieldInstruction))
+                if (!TryReadParagraph(paragraphs[index], out var text, out var styleId, out var fieldInstruction, out var segments))
                 {
                     parsed.Clear();
                     diagnostics.Add(CodecProtocol.Warning(
@@ -289,6 +292,7 @@ internal static class DocxHeaderFooterCodec
                         : type == W.HeaderFooterValues.Even ? document.EvenAndOddHeaders : true,
                     FieldInstruction = fieldInstruction,
                 };
+                artifact.Segments.Add(segments);
                 artifact.Source = new DocumentHeaderFooterSourceBinding
                 {
                     RelationshipId = relationshipId,
@@ -331,7 +335,7 @@ internal static class DocxHeaderFooterCodec
                     "document_header_footer_source_binding_mismatch",
                     $"Document {(header ? "header" : "footer")} {original.Id} no longer matches its source binding.",
                     binding?.PartPath ?? original.PartPath);
-            if (original.Text.Equals(next.Text, StringComparison.Ordinal)) continue;
+            if (original.Text.Equals(next.Text, StringComparison.Ordinal) && SegmentsEqual(original.Segments, next.Segments)) continue;
             if (!binding.Editable)
                 throw new CodecException(
                     "unsupported_document_header_footer_edit",
@@ -424,11 +428,12 @@ internal static class DocxHeaderFooterCodec
                 "document_header_footer_residual_not_preserved",
                 $"Document {(header ? "header" : "footer")} {original.Id} text edit changed unrelated source content.",
                 binding.PartPath);
-        if (!TryReadParagraph(paragraph, out var verifiedText, out var verifiedStyleId, out var verifiedFieldInstruction) ||
+        if (!TryReadParagraph(paragraph, out var verifiedText, out var verifiedStyleId, out var verifiedFieldInstruction, out var verifiedSegments) ||
             !CanEditText(paragraph) ||
             !verifiedText.Equals(requested.Text, StringComparison.Ordinal) ||
             !verifiedStyleId.Equals(original.StyleId, StringComparison.Ordinal) ||
-            !verifiedFieldInstruction.Equals(original.FieldInstruction, StringComparison.Ordinal))
+            !verifiedFieldInstruction.Equals(original.FieldInstruction, StringComparison.Ordinal) ||
+            !SegmentsEqual(verifiedSegments, original.Segments))
             throw new CodecException(
                 "document_header_footer_semantics_not_applied",
                 $"Document {(header ? "header" : "footer")} {original.Id} text edit did not produce the requested native semantics.",
@@ -451,6 +456,7 @@ internal static class DocxHeaderFooterCodec
         left.HasVariantActive == right.HasVariantActive &&
         (!left.HasVariantActive || left.VariantActive == right.VariantActive) &&
         left.FieldInstruction.Equals(right.FieldInstruction, StringComparison.Ordinal) &&
+        SegmentsEqual(left.Segments, right.Segments) &&
         BindingEquals(left.Source, right.Source);
 
     private static bool BindingEquals(DocumentHeaderFooterSourceBinding? left, DocumentHeaderFooterSourceBinding? right) =>
@@ -466,8 +472,8 @@ internal static class DocxHeaderFooterCodec
 
     private static bool CanEditText(W.Paragraph paragraph)
     {
-        if (!TryReadParagraph(paragraph, out _, out _, out var fieldInstruction) ||
-            !string.IsNullOrEmpty(fieldInstruction)) return false;
+        if (!TryReadParagraph(paragraph, out _, out _, out var fieldInstruction, out var segments) ||
+            !string.IsNullOrEmpty(fieldInstruction) || segments.Count > 0) return false;
         var runs = paragraph.Elements<W.Run>().ToArray();
         return runs.Length == 1 && runs[0].ChildElements.Count == 1 && runs[0].GetFirstChild<W.Text>() is not null;
     }
@@ -479,18 +485,18 @@ internal static class DocxHeaderFooterCodec
     {
         if (!HashElement(paragraph).Equals(binding.ElementSha256, StringComparison.OrdinalIgnoreCase) ||
             !ResidualHash(paragraph).Equals(binding.ResidualSha256, StringComparison.OrdinalIgnoreCase) ||
-            !TryReadParagraph(paragraph, out var sourceText, out var styleId, out var fieldInstruction) ||
+            !TryReadParagraph(paragraph, out var sourceText, out var styleId, out var fieldInstruction, out var segments) ||
             !CanEditText(paragraph)) return false;
         return sourceText.Equals(original.Text, StringComparison.Ordinal) &&
                styleId.Equals(original.StyleId, StringComparison.Ordinal) &&
-               fieldInstruction.Equals(original.FieldInstruction, StringComparison.Ordinal);
+               fieldInstruction.Equals(original.FieldInstruction, StringComparison.Ordinal) &&
+               SegmentsEqual(segments, original.Segments);
     }
 
     private static string ResidualHash(W.Paragraph paragraph)
     {
         var clone = (W.Paragraph)paragraph.CloneNode(true);
-        var text = clone.Descendants<W.Text>().SingleOrDefault();
-        if (text is not null)
+        foreach (var text in clone.Descendants<W.Text>())
         {
             text.Text = string.Empty;
             text.Space = null;
@@ -522,11 +528,17 @@ internal static class DocxHeaderFooterCodec
     private static string HashElement(OpenXmlElement element) => Hash(Encoding.UTF8.GetBytes(element.OuterXml));
     private static string Hash(ReadOnlySpan<byte> bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
 
-    private static bool TryReadParagraph(W.Paragraph paragraph, out string text, out string styleId, out string fieldInstruction)
+    private static bool TryReadParagraph(
+        W.Paragraph paragraph,
+        out string text,
+        out string styleId,
+        out string fieldInstruction,
+        out IReadOnlyList<DocumentHeaderFooterSegment> segments)
     {
         text = string.Empty;
         styleId = string.Empty;
         fieldInstruction = string.Empty;
+        segments = [];
         if (paragraph.ParagraphProperties?.ChildElements.Any(child => child is not W.ParagraphStyleId) == true) return false;
         styleId = paragraph.ParagraphProperties?.ParagraphStyleId?.Val?.Value ?? string.Empty;
         var fields = paragraph.Elements<W.SimpleField>().ToArray();
@@ -540,7 +552,9 @@ internal static class DocxHeaderFooterCodec
             catch (CodecException) { return false; }
             return true;
         }
-        if (fields.Length > 0 || paragraph.ChildElements.Any(child => child is not W.ParagraphProperties and not W.Run) ||
+        if (fields.Length > 0)
+            return TryReadSegments(paragraph, out text, out segments);
+        if (paragraph.ChildElements.Any(child => child is not W.ParagraphProperties and not W.Run) ||
             paragraph.Descendants<W.RunProperties>().Any() || paragraph.Descendants<W.Run>().Any(run => run.ChildElements.Any(child => child is not W.Text)))
             return false;
         text = string.Concat(paragraph.Descendants<W.Text>().Select(item => item.Text));
@@ -552,11 +566,137 @@ internal static class DocxHeaderFooterCodec
         var paragraph = new W.Paragraph();
         if (!string.IsNullOrWhiteSpace(source.StyleId))
             paragraph.ParagraphProperties = new W.ParagraphProperties(new W.ParagraphStyleId { Val = source.StyleId });
+        if (source.Segments.Count > 0)
+        {
+            foreach (var segment in source.Segments)
+            {
+                if (segment.ContentCase == DocumentHeaderFooterSegment.ContentOneofCase.Text)
+                    paragraph.Append(new W.Run(Text(segment.Text)));
+                else if (segment.ContentCase == DocumentHeaderFooterSegment.ContentOneofCase.Field)
+                    paragraph.Append(new W.SimpleField(new W.Run(Text(segment.Field.Display))) { Instruction = segment.Field.Instruction });
+            }
+            return paragraph;
+        }
         var run = new W.Run(Text(source.Text));
         if (string.IsNullOrWhiteSpace(source.FieldInstruction)) paragraph.Append(run);
         else paragraph.Append(new W.SimpleField(run) { Instruction = source.FieldInstruction });
         return paragraph;
     }
+
+    private static void ValidateSegments(DocumentHeaderFooter item, string kind)
+    {
+        if (!string.IsNullOrEmpty(item.FieldInstruction))
+            throw new CodecException("invalid_document_header_footer", $"Document {kind} {item.Id} cannot combine legacy field_instruction with structured segments.");
+        if (item.Segments.Count is < 2 or > 32)
+            throw new CodecException("invalid_document_header_footer", $"Document {kind} {item.Id} requires 2 through 32 structured page-furniture segments.");
+
+        var text = new StringBuilder();
+        var fields = 0;
+        foreach (var segment in item.Segments)
+        {
+            switch (segment.ContentCase)
+            {
+                case DocumentHeaderFooterSegment.ContentOneofCase.Text:
+                    if (string.IsNullOrEmpty(segment.Text) || segment.Text.Length > 1_000_000 ||
+                        !IsXmlSafe(segment.Text))
+                        throw new CodecException("invalid_document_header_footer", $"Document {kind} {item.Id} has an invalid structured text segment.");
+                    text.Append(segment.Text);
+                    break;
+                case DocumentHeaderFooterSegment.ContentOneofCase.Field:
+                    if (segment.Field is null || segment.Field.Complex)
+                        throw new CodecException("invalid_document_header_footer", $"Document {kind} {item.Id} structured fields must use one bounded simple-field profile.");
+                    DocxFieldCodec.Validate(segment.Field);
+                    if (!IsXmlSafe(segment.Field.Display))
+                        throw new CodecException("invalid_document_header_footer", $"Document {kind} {item.Id} has an invalid structured field display.");
+                    text.Append(segment.Field.Display);
+                    fields++;
+                    break;
+                default:
+                    throw new CodecException("invalid_document_header_footer", $"Document {kind} {item.Id} has a structured segment without text or field content.");
+            }
+            if (text.Length > 1_000_000)
+                throw new CodecException("invalid_document_header_footer", $"Document {kind} {item.Id} structured segments exceed 1,000,000 display characters.");
+        }
+        if (fields == 0 || !text.ToString().Equals(item.Text, StringComparison.Ordinal))
+            throw new CodecException("invalid_document_header_footer", $"Document {kind} {item.Id} structured segments must contain a field and exactly match text.");
+    }
+
+    private static bool IsXmlSafe(string value)
+    {
+        try
+        {
+            XmlConvert.VerifyXmlChars(value);
+            return true;
+        }
+        catch (XmlException)
+        {
+            return false;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryReadSegments(
+        W.Paragraph paragraph,
+        out string text,
+        out IReadOnlyList<DocumentHeaderFooterSegment> segments)
+    {
+        text = string.Empty;
+        segments = [];
+        if (paragraph.ChildElements.Any(child => child is not W.ParagraphProperties and not W.Run and not W.SimpleField) ||
+            paragraph.Descendants<W.RunProperties>().Any()) return false;
+
+        var parsed = new List<DocumentHeaderFooterSegment>();
+        foreach (var child in paragraph.ChildElements)
+        {
+            switch (child)
+            {
+                case W.ParagraphProperties:
+                    continue;
+                case W.Run run when run.ChildElements.Count == 1 && run.GetFirstChild<W.Text>() is { } value && !string.IsNullOrEmpty(value.Text):
+                    parsed.Add(new DocumentHeaderFooterSegment { Text = value.Text });
+                    break;
+                case W.SimpleField field when TryReadSegmentField(field, out var parsedField):
+                    parsed.Add(new DocumentHeaderFooterSegment { Field = parsedField });
+                    break;
+                default:
+                    return false;
+            }
+        }
+        if (parsed.Count is < 2 or > 32 || !parsed.Any(segment => segment.ContentCase == DocumentHeaderFooterSegment.ContentOneofCase.Field))
+            return false;
+        text = string.Concat(parsed.Select(segment => segment.ContentCase == DocumentHeaderFooterSegment.ContentOneofCase.Text
+            ? segment.Text
+            : segment.Field.Display));
+        if (text.Length > 1_000_000) return false;
+        segments = parsed;
+        return true;
+    }
+
+    private static bool TryReadSegmentField(W.SimpleField field, out DocumentField parsed)
+    {
+        parsed = new DocumentField();
+        if (field.Instruction?.Value is not { } instruction || field.ChildElements.Any(child => child is not W.Run)) return false;
+        var runs = field.Elements<W.Run>().ToArray();
+        if (runs.Length != 1 || runs[0].ChildElements.Count != 1 || runs[0].GetFirstChild<W.Text>() is not { } text) return false;
+        parsed.Instruction = instruction;
+        parsed.Display = text.Text;
+        parsed.Complex = false;
+        try
+        {
+            DocxFieldCodec.Validate(parsed);
+            return true;
+        }
+        catch (CodecException)
+        {
+            return false;
+        }
+    }
+
+    private static bool SegmentsEqual(IEnumerable<DocumentHeaderFooterSegment> left, IEnumerable<DocumentHeaderFooterSegment> right) =>
+        left.SequenceEqual(right, EqualityComparer<DocumentHeaderFooterSegment>.Default);
 
     private static IEnumerable<Group> Groups(DocumentArtifact document, uint sectionCount)
     {

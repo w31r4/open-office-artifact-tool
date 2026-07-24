@@ -2463,6 +2463,11 @@ message DocumentHeaderFooter {
   optional bool variant_active = 9;
   string field_instruction = 10;
   DocumentHeaderFooterSourceBinding source = 11;
+  // Optional bounded inline sequence for source-free page furniture. When
+  // present, `text` is the exact concatenation of every segment display and
+  // `field_instruction` must be empty. The codec writes each field as its own
+  // canonical w:fldSimple and never treats this as a general rich-run model.
+  repeated DocumentHeaderFooterSegment segments = 12;
 }
 
 // Package-local identity and integrity evidence for one recognized ordinary
@@ -2479,6 +2484,18 @@ message DocumentHeaderFooterSourceBinding {
   string residual_sha256 = 6;
   string part_residual_sha256 = 7;
   bool editable = 8;
+}
+
+// One inline item in a source-free header/footer paragraph. This deliberately
+// stays narrower than DocumentParagraph runs: ordinary text is unformatted and
+// field segments use the bounded simple-field catalog. Imported multi-segment
+// page furniture is source-bound/read-only until a separately audited edit
+// profile proves its topology and residuals.
+message DocumentHeaderFooterSegment {
+  oneof content {
+    string text = 1;
+    DocumentField field = 2;
+  }
 }
 
 message DocumentWatermark {

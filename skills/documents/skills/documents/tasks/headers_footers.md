@@ -19,22 +19,41 @@ small, source-bound edit profile.
 ## Create new page furniture
 
 For a source-free document, use the ordinary public API. First/even variants
-activate the necessary document setting when they are active.
+activate the necessary document setting when they are active. A single-field
+footer can use the legacy `fieldInstruction` shorthand; use ordered segments
+when literal text and two or more field displays must occupy one native
+paragraph.
 
 ```js
 document.addHeader("Decision brief | Internal", {
   referenceType: "default",
   sectionIndex: 0,
 });
-document.addFooter("1", {
+document.addFooter([
+  { text: "Page " },
+  { field: { instruction: "PAGE", display: "1" } },
+  { text: " of " },
+  { field: { instruction: "NUMPAGES", display: "1" } },
+], {
   referenceType: "default",
   sectionIndex: 0,
-  fieldInstruction: "PAGE",
 });
 ```
 
-`fieldInstruction: "PAGE"` is a source-free field profile. It does not mean
-an imported PAGE field can be rewritten as ordinary header text.
+The array must contain 2 through 32 ordered `{ text }` or
+`{ field: { instruction, display } }` items, at least one supported simple
+field, and no run formatting. `text` is derived from the concatenated literal
+and cached field displays; use `footer.setSegments(nextSegments)` to replace a
+source-free sequence atomically. Do not combine segments with
+`fieldInstruction`, and do not assign `footer.text` directly while segments are
+present. A compatible pagination host owns the live PAGE/NUMPAGES result; the
+`display` values are the authored fallback and must be rendered/reviewed before
+delivery.
+
+This is source-free authoring only. An imported structured field paragraph is
+reported for inspect/resolve and preserved exactly on a no-op export, but is
+source-bound/read-only. It does not make imported PAGE or NUMPAGES fields
+ordinary editable header/footer text.
 
 ## Edit one imported text paragraph
 
