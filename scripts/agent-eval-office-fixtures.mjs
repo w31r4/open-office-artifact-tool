@@ -53,9 +53,28 @@ export const XLSX_GROWTH_UPDATE_FIXTURE = Object.freeze({
   canaryText: "Approved Baseline — do not modify",
 });
 
+// This fixture contains one recognized imported workbook connection plus the
+// QueryTable that consumes it. The PromptBench task is deliberately narrower
+// than general external-data editing: it may turn only the connection's
+// explicit refresh-on-open bit off, leaving the QueryTable and every other
+// connection property intact.
+export const XLSX_CONNECTION_REFRESH_FIXTURE = Object.freeze({
+  workbookName: "external-sales-refresh-on-open.xlsx",
+  sheetName: "External Data",
+  tableName: "ExternalSales",
+  connectionId: 7,
+  connectionName: "Fixture warehouse",
+  connectionCommand: "SELECT Region, Revenue FROM Sales",
+  connectionOpaqueValue: "kept",
+});
+
 const XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const PPTX_MIME = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+
+function xmlEscape(value) {
+  return String(value).replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
 
 export const DOCX_CLASSIC_COMMENT_FIXTURE = Object.freeze({
   documentName: "legal-review.docx",
@@ -298,6 +317,54 @@ export async function generateXlsxGrowthUpdate(target) {
   return { path: target, type: XLSX_MIME };
 }
 
+async function attachConnectionRefreshFixture(file, fixture) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const zip = await JSZip.loadAsync(bytes);
+  const tablePartPath = Object.keys(zip.files).find((name) => /^xl\/tables\/table1\.xml$/i.test(name));
+  if (!tablePartPath || zip.file("xl/connections.xml")) throw new Error("XLSX connection-refresh fixture could not find an unbound TablePart.");
+  const tableRelationshipPath = `${path.posix.dirname(tablePartPath)}/_rels/${path.posix.basename(tablePartPath)}.rels`;
+  const [contentTypes, workbookRelationships] = await Promise.all([
+    zip.file("[Content_Types].xml")?.async("text"),
+    zip.file("xl/_rels/workbook.xml.rels")?.async("text"),
+  ]);
+  if (!contentTypes?.includes("</Types>") || !workbookRelationships?.includes("</Relationships>") || zip.file(tableRelationshipPath)) {
+    throw new Error("XLSX connection-refresh fixture could not safely add the required OPC relationships.");
+  }
+  const queryPartPath = "xl/queryTables/queryTable1.xml";
+  zip.file("[Content_Types].xml", contentTypes.replace(
+    "</Types>",
+    `<Override PartName="/xl/connections.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.connections+xml"/><Override PartName="/${queryPartPath}" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.queryTable+xml"/></Types>`,
+  ));
+  zip.file("xl/_rels/workbook.xml.rels", workbookRelationships.replace(
+    "</Relationships>",
+    '<Relationship Id="rIdConnections" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/connections" Target="connections.xml"/></Relationships>',
+  ));
+  zip.file(tableRelationshipPath, '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdQueryTable" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/queryTable" Target="../queryTables/queryTable1.xml"/></Relationships>');
+  zip.file("xl/connections.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:connections xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fixture="urn:open-office-artifact-tool:promptbench"><x:connection id="${fixture.connectionId}" name="${xmlEscape(fixture.connectionName)}" description="Read-only warehouse source" type="5" refreshedVersion="8" keepAlive="0" interval="30" background="1" refreshOnLoad="1" saveData="1" savePassword="0" credentials="integrated"><x:dbPr connection="Provider=Fixture.Provider;Data Source=fixture.invalid" command="${xmlEscape(fixture.connectionCommand)}" commandType="2"/><x:extLst><x:ext uri="{E5A74D42-D212-4CC7-9D5B-A7393F4D8A61}"><fixture:connectionOpaque value="${xmlEscape(fixture.connectionOpaqueValue)}"/></x:ext></x:extLst></x:connection></x:connections>`);
+  zip.file(queryPartPath, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><x:queryTable xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fixture="urn:open-office-artifact-tool:promptbench" name="Warehouse sales" headers="1" rowNumbers="0" disableRefresh="0" backgroundRefresh="1" firstBackgroundRefresh="0" refreshOnLoad="0" growShrinkType="insertClear" fillFormulas="0" removeDataOnSave="0" disableEdit="0" preserveFormatting="1" adjustColumnWidth="1" intermediate="0" connectionId="${fixture.connectionId}"><x:queryTableRefresh preserveSortFilterLayout="1" fieldIdWrapped="0" headersInLastRefresh="1" minimumVersion="0" nextId="3" unboundColumnsLeft="0" unboundColumnsRight="0"><x:queryTableFields count="2"><x:queryTableField id="1" name="Region" dataBound="1" tableColumnId="1" fillFormulas="0" clipped="0"/><x:queryTableField id="2" name="Revenue" dataBound="1" tableColumnId="2"/></x:queryTableFields></x:queryTableRefresh><x:extLst><x:ext uri="{A1D56E5F-35B8-4C51-9C80-779E6A39D52B}"><fixture:queryOpaque value="kept"/></x:ext></x:extLst></x:queryTable>`);
+  return new Uint8Array(await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" }));
+}
+
+export async function generateXlsxConnectionRefresh(target) {
+  const fixture = XLSX_CONNECTION_REFRESH_FIXTURE;
+  const workbook = Workbook.create();
+  const sheet = workbook.worksheets.add(fixture.sheetName);
+  sheet.getRange("A1:B3").values = [
+    ["Region", "Revenue"],
+    ["North", 120],
+    ["South", 90],
+  ];
+  sheet.tables.add("A1:B3", true, fixture.tableName);
+  sheet.getRange("A1:B1").format = { fill: "#0F172A", font: { bold: true, color: "#FFFFFF" } };
+  sheet.getRange("A1:B3").format.columnWidthPx = 150;
+  sheet.freezePanes.freezeRows(1);
+  const exported = await SpreadsheetFile.exportXlsx(workbook);
+  const patched = await attachConnectionRefreshFixture(exported, fixture);
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  await fs.writeFile(target, patched);
+  return { path: target, type: XLSX_MIME };
+}
+
 export async function generateDocxClassicCommentReview(target) {
   const fixture = DOCX_CLASSIC_COMMENT_FIXTURE;
   const document = DocumentModel.create({
@@ -530,6 +597,7 @@ export async function generatePptxClosedLeafClone(target) {
 export async function generateOfficeInput(generator, target) {
   if (generator === "xlsx-threaded-review") return generateXlsxThreadedReview(target);
   if (generator === "xlsx-growth-update") return generateXlsxGrowthUpdate(target);
+  if (generator === "xlsx-connection-refresh") return generateXlsxConnectionRefresh(target);
   if (generator === "docx-classic-comment-review") return generateDocxClassicCommentReview(target);
   if (generator === "pptx-title-notes-review") return generatePptxTitleNotesReview(target);
   if (generator === "pptx-rich-notes-review") return generatePptxRichNotesReview(target);

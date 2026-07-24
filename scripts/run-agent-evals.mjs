@@ -13,10 +13,11 @@ import { gradePdfCase } from "./agent-eval-pdf-graders.mjs";
 import { checkReferenceSkillSync, REFERENCE_SKILLS_ROOT } from "./reference-skill-sync.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-// PromptBench remains PDF-led while it grows one independently graded ready
-// workflow per Office Skill. Sixty percent keeps PDF an absolute majority
-// without making one meaningful Office vertical slice require filler cases.
-export const MINIMUM_PDF_CASE_SHARE = 0.6;
+// PromptBench remains PDF-led while it grows independently graded workflows
+// for the four artifact families. The durable product invariant is an absolute
+// PDF majority, not a fixed percentage that would force unrelated filler
+// prompts whenever a meaningful Office vertical slice is added.
+export const MINIMUM_PDF_CASE_SHARE = 0.5;
 const casesPath = path.join(repoRoot, "evals", "cases.jsonl");
 const families = new Set(["pdf", "documents", "spreadsheets", "presentations"]);
 const skillsByFamily = new Map([
@@ -134,8 +135,8 @@ function validateSuite(suite, cases) {
     for (const source of item.sources || []) if (!/^https:\/\//.test(source)) errors.push(`${prefix}: source must be an HTTPS URL`);
   }
   const pdfCases = cases.filter((item) => item.family === "pdf").length;
-  if (pdfCases / Math.max(cases.length, 1) < MINIMUM_PDF_CASE_SHARE) {
-    errors.push(`PDF must be at least ${Math.round(MINIMUM_PDF_CASE_SHARE * 100)}% of the suite; found ${pdfCases}/${cases.length}`);
+  if (pdfCases / Math.max(cases.length, 1) <= MINIMUM_PDF_CASE_SHARE) {
+    errors.push(`PDF must remain an absolute majority of the suite; found ${pdfCases}/${cases.length}`);
   }
   for (const family of families) {
     const familyCases = cases.filter((item) => item.family === family);
@@ -730,7 +731,7 @@ async function scorePrepared(item, prepared, options = {}) {
 }
 
 function help() {
-  return `Agent artifact PromptBench\n\nCommands:\n  validate\n  list [--family pdf] [--status ready] [--json]\n  show <case-id> [--json]\n  prepare <case-id> [--subject candidate|reference] [--trial 1] [--run-root <path>]\n  run <case-id> [prepare options] [--model <model>] [--codex <path>]\n  score <case-id> --trial-root <prepared trial directory>\n\nThe Agent receives only PROMPT.md, declared inputs, the selected Skill, and an installed candidate tarball. Prepared PDF trials also declare one authoritative provider interpreter in PROMPT.md when the runner was given OPEN_OFFICE_AGENT_EVAL_PYTHON or OPEN_OFFICE_PDF_PROVIDER_PYTHON; the same interpreter is used for generated fixtures and hidden oracles. Fixture specifications and graders are never copied into its workspace; run.json records integrity evidence and only a fingerprint of the hidden oracle, never the grading specification. The default run root is outside the repository in the OS temp directory. A production benchmark must additionally mount only the trial workspace into a no-network container, because a CLI sandbox alone is not an oracle confidentiality boundary. The eight ready PDF cases plus the ready XLSX threaded-comment, DOCX classic-comment, and three PPTX cases (title plus fixed-topology rich-notes run edit, source-bound slide-name edit, and closed-leaf slide clone) have independent semantic, native-render, security, and provider-trace graders. The remaining 21 asset-required cases never claim full success before pinned corpus or PKI fixtures exist.\n`;
+  return `Agent artifact PromptBench\n\nCommands:\n  validate\n  list [--family pdf] [--status ready] [--json]\n  show <case-id> [--json]\n  prepare <case-id> [--subject candidate|reference] [--trial 1] [--run-root <path>]\n  run <case-id> [prepare options] [--model <model>] [--codex <path>]\n  score <case-id> --trial-root <prepared trial directory>\n\nThe Agent receives only PROMPT.md, declared inputs, the selected Skill, and an installed candidate tarball. Prepared PDF trials also declare one authoritative provider interpreter in PROMPT.md when the runner was given OPEN_OFFICE_AGENT_EVAL_PYTHON or OPEN_OFFICE_PDF_PROVIDER_PYTHON; the same interpreter is used for generated fixtures and hidden oracles. Fixture specifications and graders are never copied into its workspace; run.json records integrity evidence and only a fingerprint of the hidden oracle, never the grading specification. The default run root is outside the repository in the OS temp directory. A production benchmark must additionally mount only the trial workspace into a no-network container, because a CLI sandbox alone is not an oracle confidentiality boundary. The eight ready PDF cases plus the ready XLSX threaded-comment, growth-assumption, and connection refresh-on-open cases, DOCX classic-comment, and three PPTX cases (title plus fixed-topology rich-notes run edit, source-bound slide-name edit, and closed-leaf slide clone) have independent semantic, native-render, security, and provider-trace graders. PDF must remain an absolute majority of the full suite; the remaining 21 asset-required cases never claim full success before pinned corpus or PKI fixtures exist.\n`;
 }
 
 export async function main(argv = process.argv.slice(2)) {

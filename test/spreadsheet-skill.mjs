@@ -6,7 +6,8 @@ import path from "node:path";
 import JSZip from "jszip";
 
 import { FileBlob, SpreadsheetFile } from "open-office-artifact-tool";
-import { XLSX_GROWTH_UPDATE_FIXTURE, generateOfficeInput } from "../scripts/agent-eval-office-fixtures.mjs";
+import { XLSX_CONNECTION_REFRESH_FIXTURE, XLSX_GROWTH_UPDATE_FIXTURE, generateOfficeInput } from "../scripts/agent-eval-office-fixtures.mjs";
+import { hardenXlsxConnectionRefreshOnOpen } from "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-connection-refresh-hardening-workflow.mjs";
 import { replyAndResolveThreadedComment } from "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-threaded-comment-reply-workflow.mjs";
 import { updateXlsxGrowthAssumption } from "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-growth-assumption-edit-workflow.mjs";
 import { createWorkbookFromFixture, nativeSpreadsheetRenderStatus, runSpreadsheetFixture, verifyWorkbookFile } from "./skill-harness/spreadsheets/scripts/workflow.mjs";
@@ -170,6 +171,73 @@ try {
   assert.ok(growthForecast.getRange("B5:B7").values.flat().every((value, index) => Math.abs(value - XLSX_GROWTH_UPDATE_FIXTURE.revisedRevenue[index]) < 1e-7));
   assert.equal(growthBaseline.getRange("A1").values[0][0], XLSX_GROWTH_UPDATE_FIXTURE.canaryText);
   assert.deepEqual(JSON.parse(await fs.readFile(growthEvalAudit, "utf8")).validation.reimport.revisedRevenue, growthResult.audit.validation.reimport.revisedRevenue);
+
+  const connectionEvalInput = path.join(outputDir, XLSX_CONNECTION_REFRESH_FIXTURE.workbookName);
+  const connectionEvalOutput = path.join(outputDir, "external-sales-refresh-disabled.xlsx");
+  const connectionEvalAudit = path.join(outputDir, "external-sales-refresh-audit.json");
+  await generateOfficeInput("xlsx-connection-refresh", connectionEvalInput);
+  const connectionSourceBefore = await fs.readFile(connectionEvalInput);
+  const connectionResult = await hardenXlsxConnectionRefreshOnOpen({
+    inputPath: connectionEvalInput,
+    outputPath: connectionEvalOutput,
+    auditPath: connectionEvalAudit,
+    connectionId: XLSX_CONNECTION_REFRESH_FIXTURE.connectionId,
+    expectedName: XLSX_CONNECTION_REFRESH_FIXTURE.connectionName,
+  });
+  assert.equal(connectionResult.audit.provider.actual, "open-chestnut");
+  assert.equal(connectionResult.audit.savePolicy.strategy, "rewrite");
+  assert.equal(connectionResult.audit.operation.type, "connection-refresh-on-open-hardening");
+  assert.equal(connectionResult.audit.validation.reimport.ok, true);
+  assert.equal(connectionResult.audit.validation.reimport.queryTableAssociationsPreserved, true);
+  assert.deepEqual(connectionResult.audit.validation.reimport.queryTables, [{
+    sheet: XLSX_CONNECTION_REFRESH_FIXTURE.sheetName,
+    table: XLSX_CONNECTION_REFRESH_FIXTURE.tableName,
+    connectionId: XLSX_CONNECTION_REFRESH_FIXTURE.connectionId,
+    disableRefresh: false,
+    backgroundRefresh: true,
+    firstBackgroundRefresh: false,
+    refreshOnLoad: false,
+  }]);
+  assert.deepEqual(await fs.readFile(connectionEvalInput), connectionSourceBefore);
+  const connectionRoundTrip = await SpreadsheetFile.importXlsx(await FileBlob.load(connectionEvalOutput));
+  assert.deepEqual(connectionRoundTrip.connections, [{
+    connectionId: XLSX_CONNECTION_REFRESH_FIXTURE.connectionId,
+    name: XLSX_CONNECTION_REFRESH_FIXTURE.connectionName,
+    type: 5,
+    refreshedVersion: 8,
+    description: "Read-only warehouse source",
+    keepAlive: false,
+    background: true,
+    refreshOnLoad: false,
+    saveData: true,
+    intervalMinutes: 30,
+  }]);
+  const connectionTable = connectionRoundTrip.worksheets.getItem(XLSX_CONNECTION_REFRESH_FIXTURE.sheetName).tables.items.find((item) => item.name === XLSX_CONNECTION_REFRESH_FIXTURE.tableName);
+  assert.ok(connectionTable?.queryTable);
+  assert.equal(connectionTable.queryTable.connectionId, XLSX_CONNECTION_REFRESH_FIXTURE.connectionId);
+  assert.equal(connectionTable.queryTable.refreshOnLoad, false);
+  const [connectionSourceZip, connectionOutputZip] = await Promise.all([
+    JSZip.loadAsync(connectionSourceBefore),
+    JSZip.loadAsync(await fs.readFile(connectionEvalOutput)),
+  ]);
+  assert.match(await connectionSourceZip.file("xl/connections.xml").async("text"), /refreshOnLoad="1"/);
+  const hardenedConnectionsXml = await connectionOutputZip.file("xl/connections.xml").async("text");
+  assert.match(hardenedConnectionsXml, /refreshOnLoad="0"/);
+  assert.match(hardenedConnectionsXml, new RegExp(`command="${XLSX_CONNECTION_REFRESH_FIXTURE.connectionCommand}"`));
+  assert.match(hardenedConnectionsXml, /fixture:connectionOpaque value="kept"/);
+  assert.deepEqual(
+    await connectionOutputZip.file("xl/queryTables/queryTable1.xml").async("uint8array"),
+    await connectionSourceZip.file("xl/queryTables/queryTable1.xml").async("uint8array"),
+  );
+  await assert.rejects(
+    () => hardenXlsxConnectionRefreshOnOpen({
+      inputPath: connectionEvalInput,
+      outputPath: connectionEvalOutput,
+      auditPath: connectionEvalAudit,
+      connectionId: XLSX_CONNECTION_REFRESH_FIXTURE.connectionId,
+    }),
+    /already exists.*refusing to overwrite/i,
+  );
 
   const financialFixture = await runFixture("financial-returns");
   const financialFixtureWorkbook = await SpreadsheetFile.importXlsx(await FileBlob.load(financialFixture.workbookPath));

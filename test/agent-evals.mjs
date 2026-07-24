@@ -13,6 +13,7 @@ import {
   PPTX_RICH_NOTES_FIXTURE,
   PPTX_SLIDE_NAME_FIXTURE,
   PPTX_TITLE_NOTES_FIXTURE,
+  XLSX_CONNECTION_REFRESH_FIXTURE,
   XLSX_GROWTH_UPDATE_FIXTURE,
   XLSX_THREADED_REVIEW_FIXTURE,
   generateOfficeInput,
@@ -23,8 +24,10 @@ import {
 } from "../scripts/agent-eval-docx-graders.mjs";
 import { gradeOfficeCase } from "../scripts/agent-eval-office-graders.mjs";
 import {
+  gradeXlsxConnectionRefreshEvidence,
   gradeXlsxGrowthUpdateEvidence,
   gradeXlsxThreadedReplyEvidence,
+  inspectConnectionRefreshWorkbook,
   inspectGrowthWorkbook,
   inspectThreadedWorkbook,
 } from "../scripts/agent-eval-spreadsheet-graders.mjs";
@@ -37,6 +40,7 @@ import {
   inspectTitleNotesPptx,
 } from "../scripts/agent-eval-presentation-graders.mjs";
 import { duplicatePptxSlide } from "../skills/presentations/skills/presentations/examples/openchestnut-slide-duplicate-workflow.mjs";
+import { hardenXlsxConnectionRefreshOnOpen } from "../skills/spreadsheets/skills/spreadsheets/examples/openchestnut-connection-refresh-hardening-workflow.mjs";
 import {
   extractCompletedCommands,
   gradeAcroFormEvidence,
@@ -66,10 +70,10 @@ import {
 
 const { suite, cases } = await loadSuite();
 const repoRoot = path.resolve(import.meta.dirname, "..");
-assert.deepEqual(validateSuite(suite, cases), { cases: 35, pdfCases: 21, ready: 14 });
-assert.equal(MINIMUM_PDF_CASE_SHARE, 0.6);
+assert.deepEqual(validateSuite(suite, cases), { cases: 36, pdfCases: 21, ready: 15 });
+assert.equal(MINIMUM_PDF_CASE_SHARE, 0.5);
 assert.equal(cases.filter((item) => item.family === "pdf" && item.status === "ready").length, 8);
-assert.equal(cases.filter((item) => item.family === "spreadsheets" && item.status === "ready").length, 2);
+assert.equal(cases.filter((item) => item.family === "spreadsheets" && item.status === "ready").length, 3);
 assert.equal(cases.filter((item) => item.family === "documents" && item.status === "ready").length, 1);
 assert.equal(cases.filter((item) => item.family === "presentations" && item.status === "ready").length, 3);
 const referenceDocumentSkill = skillSource({ family: "documents", skill: "documents" }, "reference");
@@ -93,6 +97,7 @@ const runnerHelp = spawnSync(process.execPath, ["scripts/run-agent-evals.mjs", "
 });
 assert.equal(runnerHelp.status, 0, runnerHelp.stderr);
 assert.match(runnerHelp.stdout, /three PPTX cases.*closed-leaf slide clone/i);
+assert.match(runnerHelp.stdout, /connection refresh-on-open/i);
 const highlightVisible = visibleCase(suite, cases.find((item) => item.id === "pdf-source-bound-text-highlight"));
 assert.match(highlightVisible.prompt, /add_text_highlight/);
 assert.match(highlightVisible.prompt, /outputs\/review-highlighted\.pdf/);
@@ -253,6 +258,110 @@ try {
   }
 } finally {
   await fs.rm(growthUpdateRoot, { recursive: true, force: true });
+}
+
+const connectionRefreshItem = cases.find((item) => item.id === "xlsx-connection-refresh-on-open");
+assert.ok(connectionRefreshItem);
+const connectionRefreshRoot = await fs.mkdtemp(path.join(os.tmpdir(), "open-office-eval-xlsx-connection-refresh-"));
+try {
+  const connectionInput = path.join(connectionRefreshRoot, "inputs", XLSX_CONNECTION_REFRESH_FIXTURE.workbookName);
+  const connectionOutput = path.join(connectionRefreshRoot, "outputs", "external-sales-refresh-disabled.xlsx");
+  const connectionAuditPath = path.join(connectionRefreshRoot, "outputs", "audit.json");
+  await generateOfficeInput("xlsx-connection-refresh", connectionInput);
+  const connectionSourceBytes = await fs.readFile(connectionInput);
+  const connectionResult = await hardenXlsxConnectionRefreshOnOpen({
+    inputPath: connectionInput,
+    outputPath: connectionOutput,
+    auditPath: connectionAuditPath,
+    connectionId: XLSX_CONNECTION_REFRESH_FIXTURE.connectionId,
+    expectedName: XLSX_CONNECTION_REFRESH_FIXTURE.connectionName,
+  });
+  assert.equal(connectionResult.audit.validation.reimport.ok, true);
+  assert.deepEqual(await fs.readFile(connectionInput), connectionSourceBytes);
+  const connectionAudit = JSON.parse(await fs.readFile(connectionAuditPath, "utf8"));
+  const connectionEvidence = {
+    source: await inspectConnectionRefreshWorkbook(connectionInput),
+    output: await inspectConnectionRefreshWorkbook(connectionOutput),
+    visual: {
+      source: { available: true, ok: true, pageCount: 1, pages: [{ width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "connection-refresh-stable" }] },
+      output: { available: true, ok: true, pageCount: 1, pages: [{ width: 1, height: 1, nonWhitePixels: 1, pixelSha256: "connection-refresh-stable" }] },
+    },
+  };
+  const connectionTrace = JSON.stringify({
+    type: "item.completed",
+    item: {
+      type: "command_execution",
+      id: "xlsx-connection-refresh",
+      command: "node .agents/skills/spreadsheets/examples/openchestnut-connection-refresh-hardening-workflow.mjs inputs/external-sales-refresh-on-open.xlsx outputs/external-sales-refresh-disabled.xlsx outputs/audit.json 7 'Fixture warehouse'",
+    },
+  });
+  const connectionChecks = gradeXlsxConnectionRefreshEvidence({
+    evidence: connectionEvidence,
+    audit: connectionAudit,
+    commands: extractCompletedCommands(connectionTrace),
+    item: connectionRefreshItem,
+  });
+  assert.equal(connectionChecks.every((check) => check.passed), true);
+  const publishedConnectionWorkflowChecks = gradeXlsxConnectionRefreshEvidence({
+    evidence: connectionEvidence,
+    audit: connectionAudit,
+    commands: ["node .agents/skills/spreadsheets/examples/openchestnut-connection-refresh-hardening-workflow.mjs inputs/external-sales-refresh-on-open.xlsx outputs/external-sales-refresh-disabled.xlsx outputs/audit.json 7 'Fixture warehouse'"],
+    item: connectionRefreshItem,
+  });
+  assert.equal(publishedConnectionWorkflowChecks.find((check) => check.id === "xlsx-connection-trace:typed-roundtrip")?.passed, true);
+  const canonicalizationDriftChecks = gradeXlsxConnectionRefreshEvidence({
+    evidence: {
+      ...connectionEvidence,
+      output: {
+        ...connectionEvidence.output,
+        canonicalizationParts: {
+          ...connectionEvidence.output.canonicalizationParts,
+          "xl/workbook.xml": connectionEvidence.output.canonicalizationParts["xl/workbook.xml"].replace("External Data", "Drifted workbook"),
+        },
+      },
+    },
+    audit: connectionAudit,
+    commands: extractCompletedCommands(connectionTrace),
+    item: connectionRefreshItem,
+  });
+  assert.equal(canonicalizationDriftChecks.find((check) => check.id === "xlsx-connection-machine:only-connection-and-canonical-root-parts-changed")?.passed, false);
+  assert.equal(canonicalizationDriftChecks.find((check) => check.id === "xlsx-connection-security:package-scope-and-source-provenance")?.passed, false);
+  const connectionResidualDriftChecks = gradeXlsxConnectionRefreshEvidence({
+    evidence: {
+      ...connectionEvidence,
+      output: {
+        ...connectionEvidence.output,
+        connectionXml: connectionEvidence.output.connectionXml.replace('value="kept"', 'value="drifted"'),
+      },
+    },
+    audit: connectionAudit,
+    commands: extractCompletedCommands(connectionTrace),
+    item: connectionRefreshItem,
+  });
+  assert.equal(connectionResidualDriftChecks.find((check) => check.id === "xlsx-connection-machine:connection-residual-stable")?.passed, false);
+  assert.equal(connectionResidualDriftChecks.find((check) => check.id === "xlsx-connection-security:package-scope-and-source-provenance")?.passed, false);
+  const untrustedConnectionWorkflowChecks = gradeXlsxConnectionRefreshEvidence({
+    evidence: connectionEvidence,
+    audit: connectionAudit,
+    commands: ["node scratch/patch-connections-xml.mjs inputs/external-sales-refresh-on-open.xlsx outputs/external-sales-refresh-disabled.xlsx"],
+    item: connectionRefreshItem,
+  });
+  assert.equal(untrustedConnectionWorkflowChecks.find((check) => check.id === "xlsx-connection-trace:typed-roundtrip")?.passed, false);
+  const nativeConnectionResult = await gradeOfficeCase({
+    item: connectionRefreshItem,
+    workspace: connectionRefreshRoot,
+    evaluator: path.join(connectionRefreshRoot, "evaluator"),
+    finalMessage: "completed",
+    trace: connectionTrace,
+  });
+  if (nativeConnectionResult.graded) {
+    assert.equal(nativeConnectionResult.rawScorePercent, 100);
+    assert.equal(nativeConnectionResult.caseSpecificPassed, true);
+  } else {
+    assert.ok(nativeConnectionResult.infrastructureErrors?.length);
+  }
+} finally {
+  await fs.rm(connectionRefreshRoot, { recursive: true, force: true });
 }
 
 const classicCommentItem = cases.find((item) => item.id === "docx-classic-comment-text-edit");

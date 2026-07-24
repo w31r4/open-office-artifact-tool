@@ -56,11 +56,12 @@ const maxPackedBytes = 9_840_000;
 // tarball. Its retained Office/PNG sources must never consume this consumer
 // package budget. PowerPoint sections plus the bounded transition and rich
 // speaker-notes leaves, the public formula catalog, bounded formula expression
-// parser, SUMPRODUCT range-mask profile, source-bound DOCX header/footer
-// transaction, and formula-input syntax guard add protobuf, audited WASM,
+// parser, SUMPRODUCT range-mask profile, source-bound DOCX header/footer and
+// XLSX connection-refresh transactions, and formula-input syntax guard add
+// protobuf, audited WASM,
 // public Help, and native guidance;
 // retain measured headroom instead of hiding that product surface.
-const maxUnpackedBytes = 24_995_000;
+const maxUnpackedBytes = 25_010_000;
 // Public Skill PNGs are required user-facing assets. They are retained with
 // byte-identical non-IDAT chunks and inflated scanline streams, but their IDAT
 // payloads are deterministically recompressed. Prevent future PNG tooling from
@@ -193,6 +194,7 @@ for (const required of [
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-scatter-chart-workflow.mjs",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-bubble-chart-workflow.mjs",
   "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-growth-assumption-edit-workflow.mjs",
+  "skills/spreadsheets/skills/spreadsheets/examples/openchestnut-connection-refresh-hardening-workflow.mjs",
   "skills/spreadsheets/skills/excel-live-control/SKILL.md",
   "skills/spreadsheets/skills/excel-live-control/agents/openai.yaml",
   "skills/spreadsheets/skills/excel-live-control/assets/file-spreadsheet.png",

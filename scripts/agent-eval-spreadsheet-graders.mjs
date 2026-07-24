@@ -5,6 +5,7 @@ import path from "node:path";
 import JSZip from "jszip";
 
 import {
+  XLSX_CONNECTION_REFRESH_FIXTURE,
   XLSX_GROWTH_UPDATE_FIXTURE,
   XLSX_THREADED_REVIEW_FIXTURE,
 } from "./agent-eval-office-fixtures.mjs";
@@ -14,12 +15,15 @@ import { extractCompletedCommands, summarizeCaseScore } from "./agent-eval-pdf-g
 export const spreadsheetGradedCaseIds = new Set([
   "xlsx-threaded-reply-resolve",
   "xlsx-growth-assumption-update",
+  "xlsx-connection-refresh-on-open",
 ]);
 
 const defaultWeights = { machine: 45, visual: 25, security: 20, trace: 10 };
 const GUID = /^\{[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\}$/i;
 const SHIPPED_THREADED_WORKFLOW = /(?:^|[\s"'`])(?:\.?\/)?(?:\.agents\/skills\/spreadsheets|node_modules\/open-office-artifact-tool\/skills\/spreadsheets\/skills\/spreadsheets)\/examples\/openchestnut-threaded-comment-reply-workflow\.mjs(?:$|[\s"'`])/i;
 const SHIPPED_GROWTH_WORKFLOW = /(?:^|[\s"'`])(?:\.?\/)?(?:\.agents\/skills\/spreadsheets|node_modules\/open-office-artifact-tool\/skills\/spreadsheets\/skills\/spreadsheets)\/examples\/openchestnut-growth-assumption-edit-workflow\.mjs(?:$|[\s"'`])/i;
+const SHIPPED_CONNECTION_REFRESH_WORKFLOW = /(?:^|[\s"'`])(?:\.?\/)?(?:\.agents\/skills\/spreadsheets|node_modules\/open-office-artifact-tool\/skills\/spreadsheets\/skills\/spreadsheets)\/examples\/openchestnut-connection-refresh-hardening-workflow\.mjs(?:$|[\s"'`])/i;
+const CONNECTION_REFRESH_CANONICALIZATION_PATHS = ["xl/workbook.xml", "xl/worksheets/sheet1.xml"];
 
 function check(id, category, passed, details = {}) {
   return { id, category, gate: false, passed: Boolean(passed), ...details };
@@ -205,6 +209,88 @@ export async function inspectGrowthWorkbook(filePath) {
   };
 }
 
+function parseWorkbookConnections(xml = "") {
+  const connections = [];
+  for (const match of String(xml).matchAll(/<(?:[\w.-]+:)?connection\b([^>]*)>([\s\S]*?)<\/(?:[\w.-]+:)?connection>/g)) {
+    const attributes = xmlAttributes(match[1]);
+    const dbPr = /<(?:[\w.-]+:)?dbPr\b([^>]*)\/?\s*>/i.exec(match[2])?.[1] || "";
+    connections.push({
+      id: Number(attributes.id),
+      name: attributes.name || "",
+      type: Number(attributes.type),
+      refreshedVersion: Number(attributes.refreshedVersion),
+      description: attributes.description || "",
+      keepAlive: new Set(["1", "true", "on"]).has(String(attributes.keepAlive || "0").toLowerCase()),
+      background: new Set(["1", "true", "on"]).has(String(attributes.background || "0").toLowerCase()),
+      refreshOnLoad: new Set(["1", "true", "on"]).has(String(attributes.refreshOnLoad || "0").toLowerCase()),
+      saveData: new Set(["1", "true", "on"]).has(String(attributes.saveData || "0").toLowerCase()),
+      intervalMinutes: Number(attributes.interval),
+      command: xmlAttributes(dbPr).command || "",
+      opaqueValue: /<(?:[\w.-]+:)?connectionOpaque\b[^>]*\bvalue="([^"]*)"/i.exec(match[2])?.[1] || "",
+    });
+  }
+  return connections;
+}
+
+function normalizeConnectionRefreshCanonicalization(xml, partPath) {
+  let normalized = String(xml)
+    .replace(/^<\?xml\b[^>]*\?>/i, "")
+    .replace(/\s+xmlns(?::[\w.-]+)?="[^"]*"/g, "")
+    .replace(/>\s+</g, "><")
+    .replace(/\s+\/>/g, "/>");
+  if (partPath === "xl/workbook.xml") {
+    normalized = normalized.replace(/<x:workbookPr\s+date1904="0"\s*\/>/g, "");
+  }
+  return normalized;
+}
+
+function normalizeConnectionRefreshConnectionPart(xml, connectionId) {
+  let targetCount = 0;
+  let targetRefreshAttributeCount = 0;
+  const normalized = String(xml)
+    .replace(/^<\?xml\b[^>]*\?>/i, "")
+    .replace(/\s+xmlns(?::[\w.-]+)?="[^"]*"/g, "")
+    .replace(/>\s+</g, "><")
+    .replace(/\s+\/>/g, "/>")
+    .replace(/<((?:[\w.-]+:)?connection)\b([^>]*)>/gi, (match, tag, attributes) => {
+      if (Number(xmlAttributes(attributes).id) !== connectionId) return match;
+      targetCount += 1;
+      const refreshAttribute = /\s+refreshOnLoad="[^"]*"/i;
+      if (!refreshAttribute.test(attributes)) return match;
+      targetRefreshAttributeCount += 1;
+      return `<${tag}${attributes.replace(refreshAttribute, "")} refreshOnLoad="__connection_refresh__">`;
+    });
+  return { normalized, targetCount, targetRefreshAttributeCount };
+}
+
+export async function inspectConnectionRefreshWorkbook(filePath) {
+  const bytes = await fs.readFile(filePath);
+  const zip = await JSZip.loadAsync(bytes);
+  const paths = Object.keys(zip.files).filter((name) => !zip.files[name].dir).sort();
+  const connectionPath = "xl/connections.xml";
+  const queryTablePaths = paths.filter((name) => /^xl\/queryTables\/queryTable\d+\.xml$/i.test(name));
+  const tablePaths = paths.filter((name) => /^xl\/tables\/table\d+\.xml$/i.test(name));
+  const canonicalizationPartPaths = CONNECTION_REFRESH_CANONICALIZATION_PATHS.filter((name) => paths.includes(name));
+  const connectionXml = await zip.file(connectionPath)?.async("text") || "";
+  const canonicalizationParts = Object.fromEntries(await Promise.all(canonicalizationPartPaths.map(async (name) => [
+    name,
+    await zip.file(name)?.async("text") || "",
+  ])));
+  return {
+    bytes: bytes.length,
+    sha256: sha256(bytes),
+    paths,
+    partHashes: await packagePartHashes(zip, paths),
+    connectionPath,
+    connectionXml,
+    connections: parseWorkbookConnections(connectionXml),
+    queryTablePaths,
+    tablePaths,
+    canonicalizationPartPaths,
+    canonicalizationParts,
+  };
+}
+
 function auditProvider(audit) {
   const provider = audit?.provider;
   return String(typeof provider === "string" ? provider : provider?.actual || provider?.selected || provider?.name || "");
@@ -237,6 +323,10 @@ function auditHash(audit, side) {
 
 function sameArray(left, right) {
   return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function sameJson(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function packageChanges(source, output) {
@@ -436,6 +526,121 @@ export function gradeXlsxGrowthUpdateEvidence({ evidence, audit, commands }) {
   ];
 }
 
+function nativeConnectionRefreshVisualEvidence(source, output) {
+  const available = Boolean(source?.available && output?.available);
+  const rendered = source?.ok === true && output?.ok === true
+    && source.pages?.every((page) => page.nonWhitePixels > 0)
+    && output.pages?.every((page) => page.nonWhitePixels > 0);
+  const pageCountsMatch = source?.pageCount === output?.pageCount && source?.pageCount >= 1;
+  const allPagesStable = pageCountsMatch && source.pages.every((page, index) => page.width === output.pages[index]?.width
+    && page.height === output.pages[index]?.height
+    && page.pixelSha256 === output.pages[index]?.pixelSha256);
+  return { available, rendered, pageCountsMatch, allPagesStable };
+}
+
+function usedConnectionRefreshWorkflow(commandText) {
+  return (/\SpreadsheetFile\.importXlsx/i.test(commandText)
+    && /\SpreadsheetFile\.exportXlsx/i.test(commandText)
+    && /\disableConnectionRefreshOnLoad/i.test(commandText))
+    || SHIPPED_CONNECTION_REFRESH_WORKFLOW.test(commandText);
+}
+
+export function gradeXlsxConnectionRefreshEvidence({ evidence, audit, commands }) {
+  const fixture = XLSX_CONNECTION_REFRESH_FIXTURE;
+  const source = evidence.source;
+  const output = evidence.output;
+  const sourceConnection = source.connections.find((connection) => connection.id === fixture.connectionId);
+  const outputConnection = output.connections.find((connection) => connection.id === fixture.connectionId);
+  const changedPaths = packageChanges(source, output);
+  const allowedChangedPaths = [source.connectionPath, ...source.canonicalizationPartPaths].sort();
+  const changedScopeSafe = changedPaths.includes(source.connectionPath)
+    && changedPaths.every((partPath) => allowedChangedPaths.includes(partPath));
+  const canonicalizationStable = sameArray(source.canonicalizationPartPaths, output.canonicalizationPartPaths)
+    && source.canonicalizationPartPaths.every((partPath) => normalizeConnectionRefreshCanonicalization(source.canonicalizationParts[partPath], partPath)
+      === normalizeConnectionRefreshCanonicalization(output.canonicalizationParts[partPath], partPath));
+  const sourceConnectionResidual = normalizeConnectionRefreshConnectionPart(source.connectionXml, fixture.connectionId);
+  const outputConnectionResidual = normalizeConnectionRefreshConnectionPart(output.connectionXml, fixture.connectionId);
+  const connectionResidualStable = sourceConnectionResidual.targetCount === 1
+    && outputConnectionResidual.targetCount === 1
+    && sourceConnectionResidual.targetRefreshAttributeCount === 1
+    && outputConnectionResidual.targetRefreshAttributeCount === 1
+    && sourceConnectionResidual.normalized === outputConnectionResidual.normalized;
+  const visual = nativeConnectionRefreshVisualEvidence(evidence.visual?.source, evidence.visual?.output);
+  const commandText = commands.join("\n");
+  const expectedConnection = sourceConnection && { ...sourceConnection, refreshOnLoad: false };
+  const sourceConnectionRecognized = source.connections.length === 1
+    && sourceConnection?.name === fixture.connectionName
+    && sourceConnection?.refreshOnLoad === true
+    && sourceConnection?.command === fixture.connectionCommand
+    && sourceConnection?.opaqueValue === fixture.connectionOpaqueValue
+    && source.queryTablePaths.length === 1
+    && source.tablePaths.length === 1;
+  const onlyRefreshChanged = Boolean(outputConnection && expectedConnection && sameJson(outputConnection, expectedConnection));
+  return [
+    check("xlsx-connection-machine:canonical-source", "machine", sourceConnectionRecognized, {
+      connections: source.connections,
+      queryTablePaths: source.queryTablePaths,
+      tablePaths: source.tablePaths,
+    }),
+    check("xlsx-connection-machine:refresh-on-open-disabled", "machine", output.connections.length === 1
+      && onlyRefreshChanged
+      && outputConnection?.refreshOnLoad === false, {
+      sourceConnection,
+      outputConnection,
+    }),
+    check("xlsx-connection-machine:querytable-and-table-byte-stable", "machine", source.queryTablePaths.length === 1
+      && sameArray(source.queryTablePaths, output.queryTablePaths)
+      && sameArray(source.tablePaths, output.tablePaths)
+      && source.queryTablePaths.every((partPath) => source.partHashes[partPath] === output.partHashes[partPath])
+      && source.tablePaths.every((partPath) => source.partHashes[partPath] === output.partHashes[partPath]), {
+      queryTablePaths: { source: source.queryTablePaths, output: output.queryTablePaths },
+      tablePaths: { source: source.tablePaths, output: output.tablePaths },
+    }),
+    check("xlsx-connection-machine:connection-residual-stable", "machine", connectionResidualStable, {
+      source: sourceConnectionResidual,
+      output: outputConnectionResidual,
+    }),
+    check("xlsx-connection-machine:only-connection-and-canonical-root-parts-changed", "machine", changedScopeSafe && canonicalizationStable, {
+      changedPaths,
+      allowedChangedPaths,
+      canonicalizationStable,
+    }),
+    check("xlsx-connection-machine:audit-succeeded", "machine", /^(?:success|succeeded|completed)$/i.test(String(audit?.status || "")), {
+      status: audit?.status || "unreported",
+    }),
+    check("xlsx-connection-visual:native-render", "visual", visual.available && visual.rendered && visual.pageCountsMatch, {
+      visual: evidence.visual,
+    }),
+    check("xlsx-connection-visual:all-pages-stable", "visual", visual.allPagesStable, {
+      visual: evidence.visual,
+    }),
+    gate("xlsx-connection-security:package-scope-and-source-provenance", "security", sameArray(source.paths, output.paths)
+      && changedScopeSafe
+      && canonicalizationStable
+      && connectionResidualStable
+      && auditHash(audit, "source") === source.sha256
+      && auditHash(audit, "output") === output.sha256
+      && source.sha256 !== output.sha256, {
+      changedPaths,
+      source: { expected: source.sha256, actual: auditHash(audit, "source") },
+      output: { expected: output.sha256, actual: auditHash(audit, "output") },
+    }),
+    check("xlsx-connection-trace:open-chestnut-provider", "trace", /open[- ]?chestnut/i.test(auditProvider(audit)) && Boolean(auditVersion(audit)), {
+      provider: auditProvider(audit),
+      version: auditVersion(audit),
+    }),
+    gate("xlsx-connection-trace:no-silent-fallback", "trace", auditFallbackIsFalse(audit), { provider: audit?.provider || null }),
+    check("xlsx-connection-trace:rewrite-policy", "trace", /^rewrite$/i.test(auditStrategy(audit)), { strategy: auditStrategy(audit) }),
+    check("xlsx-connection-trace:typed-operation", "trace", /connection.*refresh|refresh.*connection/i.test(auditOperation(audit)), { operation: auditOperation(audit) }),
+    check("xlsx-connection-trace:typed-roundtrip", "trace", usedConnectionRefreshWorkflow(commandText), {
+      expected: "public SpreadsheetFile importXlsx/exportXlsx plus workbook.disableConnectionRefreshOnLoad, or the integrity-protected published connection-refresh workflow",
+    }),
+    check("xlsx-connection-trace:second-import", "trace", audit?.validation?.reimport?.ok === true || audit?.validation?.secondImport?.ok === true, {
+      validation: audit?.validation || null,
+    }),
+  ];
+}
+
 async function readAudit(workspace) {
   try {
     return JSON.parse(await fs.readFile(path.join(workspace, "outputs", "audit.json"), "utf8"));
@@ -520,8 +725,47 @@ async function gradeGrowthUpdateCase({ item, workspace, finalMessage, trace, wei
   return { supported: true, graded: true, checks, evidence, pending: [], ...score };
 }
 
+async function gradeConnectionRefreshCase({ item, workspace, finalMessage, trace, weights }) {
+  const audit = await readAudit(workspace);
+  const commands = extractCompletedCommands(trace);
+  const fixture = XLSX_CONNECTION_REFRESH_FIXTURE;
+  let source;
+  let output;
+  try {
+    source = await inspectConnectionRefreshWorkbook(path.join(workspace, "inputs", fixture.workbookName));
+    output = await inspectConnectionRefreshWorkbook(path.join(workspace, "outputs", "external-sales-refresh-disabled.xlsx"));
+  } catch (error) {
+    const checks = [
+      gate("xlsx-connection-machine:readable-output", "machine", false, { error: error.message }),
+      gate("xlsx-connection-security:no-partial-success", "security", false, { error: error.message }),
+    ];
+    const score = summarizeCaseScore(checks, item.grade, weights, false);
+    return { supported: true, graded: true, checks, evidence: { error: error.message }, pending: [], ...score };
+  }
+  const [sourceRender, outputRender] = await Promise.all([
+    renderOfficeFile(path.join(workspace, "inputs", fixture.workbookName), "xlsx-connection-source"),
+    renderOfficeFile(path.join(workspace, "outputs", "external-sales-refresh-disabled.xlsx"), "xlsx-connection-output"),
+  ]);
+  const visualUnavailable = [sourceRender, outputRender].find((result) => !result.available);
+  if (visualUnavailable) {
+    return {
+      supported: true,
+      graded: false,
+      checks: [],
+      evidence: { source, output, visual: { source: sourceRender, output: outputRender }, finalMessage },
+      pending: ["native LibreOffice/Poppler spreadsheet rendering"],
+      infrastructureErrors: [visualUnavailable.reason],
+    };
+  }
+  const evidence = { source, output, visual: { source: sourceRender, output: outputRender }, finalMessage };
+  const checks = gradeXlsxConnectionRefreshEvidence({ evidence, audit, commands });
+  const score = summarizeCaseScore(checks, item.grade, weights, checks.filter((entry) => entry.gate).every((entry) => entry.passed));
+  return { supported: true, graded: true, checks, evidence, pending: [], ...score };
+}
+
 export async function gradeSpreadsheetCase({ item, workspace, finalMessage, trace, weights = defaultWeights }) {
   if (!spreadsheetGradedCaseIds.has(item.id)) return { supported: false };
   if (item.id === "xlsx-threaded-reply-resolve") return gradeThreadedReplyCase({ item, workspace, finalMessage, trace, weights });
+  if (item.id === "xlsx-connection-refresh-on-open") return gradeConnectionRefreshCase({ item, workspace, finalMessage, trace, weights });
   return gradeGrowthUpdateCase({ item, workspace, finalMessage, trace, weights });
 }

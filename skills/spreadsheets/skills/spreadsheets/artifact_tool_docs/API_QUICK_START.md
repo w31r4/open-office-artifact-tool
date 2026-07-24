@@ -404,6 +404,8 @@ workbook.disableConnectionRefreshOnLoad(connection.connectionId);
 - It stops the connection's refresh-on-open request only. It does not execute a refresh and does not promise to prevent a manual, macro, PivotTable, or other host-triggered refresh.
 - Connection strings, commands, credentials, provider/path metadata, `background`, `keepAlive`, `interval`, `saveData`, children, extensions, identity, order, and unknown XML remain immutable. Export re-proves the full part/element source bindings and normalized residual, reparses output, and fails closed on any other change.
 
+`examples/openchestnut-connection-refresh-hardening-workflow.mjs` is the runnable no-overwrite transaction: it binds one numeric connection ID (and optionally its expected name), protects source bytes, reimports the result, confirms every public connection field except the one `true` → `false` change, renders all sheets, and emits a byte-bound rewrite audit. It is not a provider/credential editor or a general refresh-control workflow.
+
 ### What-If Data Tables
 
 Use native What-If data tables when Excel or another compatible spreadsheet host should evaluate one formula over a bounded set of substituted inputs. This is not an ordinary worksheet table and is not simulated by the JavaScript formula evaluator.
